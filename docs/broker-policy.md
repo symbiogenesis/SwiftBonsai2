@@ -1,8 +1,9 @@
-# M1 request admission core
+# M1 request admission and bounded HTTP reception
 
-The Rust library in `src/broker/` implements request admission without a listener,
-backend connection, process launcher or production token counter. Chat remains
-disabled. This is a tested policy component, not daily-service qualification.
+The Rust library in `src/broker/` implements request admission and bounded
+reception from one supplied stream. It has no listener, backend connection,
+process launcher or production token counter. Chat remains disabled. These are
+policy/reception components, not daily-service qualification.
 
 The policy accepts only HTTP/1.1 origin-form `POST /v1/chat/completions`, numeric
 Host `127.0.0.1:<port>`, and the exact `http://127.0.0.1:<port>` Origin when supplied.
@@ -18,10 +19,48 @@ forwarding headers, transfer/content encodings, trailers, upgrades and Expect ar
 rejected. A single decimal Content-Length is required, from 1 byte to 1 MiB, and
 must equal actual body bytes. Content-Type must be `application/json`, optionally
 with `; charset=utf-8`. These are deliberately narrow adapter requirements. The
-future transport must also bound raw header/request-line bytes, header count,
-body collection and read duration **during reception**, reject invalid wire
-framing, preserve header multiplicity, and close rejected connections. This
-library does not parse raw HTTP or bound allocations already made by its caller.
+policy API alone does not bound allocations already made by its caller; the
+`reception` adapter supplies bounds during reading, as described below.
+
+## One-request receiver
+
+`reception::receive_chat(stream, &policy, supervisor_deadline)` consumes one
+owned `AsyncRead + Unpin + 'static` stream and requires a Tokio time driver.
+The caller must supply a stream whose Drop closes the connection; the lifetime
+bound prevents ordinary borrowed-stream arguments but cannot prove a wrapper's
+Drop behavior. The adapter creates no socket, filesystem object or task. Future
+listener integration must bound accepted connections before allocating a receiver.
+
+The complete raw head, including request line, whitespace and terminator, is
+limited to 16 KiB, with 64 header values. The fixed buffer can contain a coalesced
+body prefix; no more than 16 KiB is read before head policy validation. Strict
+CRLF and no leading blank lines are required. httparse 1.10.1 parses syntax; all
+header values are appended without deduplication. Raw method/target are checked
+before conversion to HTTP types, preventing URI fragment normalization from
+turning an unsupported wire route into the admitted one. Malformed, folded,
+ambiguous or unsupported framing fails closed.
+
+Only after successful head validation is the declared body allocated, at most
+1 MiB. Reads fill only its remaining length; completion does not wait for peer
+EOF. EOF before completion rejects. Already-buffered bytes beyond Content-Length
+reject as unsupported surplus; bytes arriving later are deliberately left unread
+and must be discarded on close. The existing strict JSON policy then returns a
+`PendingChat`; exact context admission still must occur before generation.
+
+Header reception has a five-second absolute deadline. The entire intake,
+including JSON preparation, has a thirty-second absolute deadline from the same
+start. Both are shortened by the supervisor's total request deadline. Progress
+never resets either timer; explicit expiry checks surround reads and successful
+return. Parsing is bounded synchronous work, with expiry checked afterwards,
+not a preemptive CPU deadline. Errors reveal only value-free categories and drop
+the owned stream; cancellation drops it through ordinary future ownership.
+
+On success, `ReceivedChat::into_parts()` returns the stream and `PendingChat` for
+the future response adapter. Send one response with `Connection: close`, then
+drop the stream. Connection reuse is unsupported. Response writing, streaming,
+backend cancellation and total generation deadlines are not implemented here.
+
+## Text-chat admission
 
 The entire public JSON schema is:
 
@@ -68,14 +107,14 @@ is supplied; bytes/characters are never treated as tokens. An admitted body is
 immutable. Parser failures return value-free error categories to keep private
 input out of diagnostics.
 
-Before any listener is enabled, implement and qualify the HTTP adapter, private
+Before any listener is enabled, integrate and qualify reception/response handling, private
 backend credential and bypass prevention, exact-count transport, single-slot
 bounded queue, total deadlines, streaming cancellation, owned process lifecycle,
 memory limits and restricted inference identity/filesystem/egress. Offline UI
 assets and creative/comfort qualification follow. These controls remain pending
 in the existing PowerShell preflight.
 
-Dependencies are exact-pinned with a committed Cargo lockfile. Native ARM64 Rust
+Dependencies, including httparse 1.10.1 and Tokio 1.50.0, are exact-pinned with a committed Cargo lockfile. Native ARM64 Rust
 1.98.0 is the initial checked toolchain. Local work may build and run focused
 regressions; the full broker suite runs only in the main-only Foundation workflow.
 See [pre-step research](implementation-research.md) for sources and sanity checks.

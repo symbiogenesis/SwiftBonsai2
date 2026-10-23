@@ -1,11 +1,12 @@
-//! M1 request-policy core. No listener, model process, filesystem access or logging.
+//! M1 request policy and bounded reception. No listener, model process or logging.
 //!
-//! A future transport must bound headers/body *while reading*, preserve duplicate
-//! headers, reject invalid HTTP framing, and call `check_head` before reading the
-//! body. It must generate a private random credential, use a separate backend key,
-//! prevent backend bypass, and enforce concurrency, deadlines and cancellation.
+//! `reception` bounds one supplied stream while preserving header multiplicity.
+//! The future supervisor must generate a private random credential, use a separate
+//! backend key, prevent bypass, and enforce concurrency, deadlines and cancellation.
 //! This library alone is not a qualified HTTP or process-isolation boundary.
 #![forbid(unsafe_code)]
+
+pub mod reception;
 
 use http::{HeaderMap, Method, Version, request::Parts};
 use serde::{Deserialize, Deserializer, Serialize, de};

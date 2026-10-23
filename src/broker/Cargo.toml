@@ -4,10 +4,15 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 publish = false
-description = "Nonlaunching request-policy core for the Bonsai local inference broker"
+description = "Nonlaunching request policy and bounded HTTP reception for the Bonsai broker"
 
 [dependencies]
 http = "=1.4.0"
+httparse = "=1.10.1"
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.149"
 subtle = "=2.6.1"
+tokio = { version = "=1.50.0", features = ["io-util", "time"] }
+
+[dev-dependencies]
+tokio = { version = "=1.50.0", features = ["rt", "test-util"] }
