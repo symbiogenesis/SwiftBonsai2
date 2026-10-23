@@ -35,7 +35,7 @@ publication, the successful receipt records `RetainedPartialPath` and
 initial output hash; source verification and final validation are additional work.
 
 Both wrappers accept `-GgufToolPath C:\Tools\bonsai-gguf.exe` for a prebuilt tool.
-Without it, the shared `Bonsai.Gguf.psm1` helper runs `cargo build --locked
+Without it, the shared `Bonsai.Tools.psm1` resolver runs `cargo build --locked
 --release` using `+1.99.1-aarch64-pc-windows-msvc`. Cargo must be installed and
 the pinned toolchain and locked dependencies must be available locally or
 downloadable by Cargo. Its native working directory, incremental target directory,

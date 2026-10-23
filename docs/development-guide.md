@@ -4,6 +4,8 @@ Run the PowerShell examples from the repository root in a native Windows ARM64 s
 
 For language standards, focused checks and hosted CI, see [Validation](validation.md). For the project overview, see the [README](../README.md).
 
+CPU/LoRA supervision, private-key creation and qualification scoring use the [Rust maintenance tool](../tools/bonsai/README.md). Select the Windows ARM64 executable from the evaluated main revision with `BONSAI_TOOLS_PATH` (or `-ToolPath`) to avoid compilation during routine commands. Without it, the shared bridge builds reviewed sources using pinned Rust in an external incremental lane. Key creation with `-WhatIf` resolves no executable. Planning never starts inference, although it may resolve the maintenance tool.
+
 ## Current implementation
 
 The owner now prioritizes **Swift Bonsai 2 PQ2_0** for the low-memory CPU path. [The assessment](swift-memory.md) records its separate immutable model/runtime pins and qualification limits. The earlier [Qwen3.8 literature decision](model-selection.md) and 8K reference profile remain reproducible; their default lock is not silently substituted with a different model.

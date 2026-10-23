@@ -13,8 +13,9 @@ Prism/llama.cpp engine retains the native call sites; its C declarations are
 generated from Rust. See the [native boundary and build](../tools/prism/README.md).
 The separate `bonsai-windows-process` and `bonsai-windows-credentials` crates are
 audited Win32 boundaries with documented unsafe calls, RAII ownership and strict
-analyzers. The broker itself retains `forbid(unsafe_code)`. Existing C# process
-helpers remain in use by the independent CPU/LoRA qualification probes.
+analyzers. The broker itself retains `forbid(unsafe_code)`. CPU/LoRA qualification
+uses the packaged safe Rust maintenance tool and the same audited process
+boundary. Small independent C# codec/probe references remain in tests.
 
 Windows regressions also check explicit `SO_EXCLUSIVEADDRUSE` before listener
 binding, Job crash policy, shutdown completion and evidence-file sharing.
@@ -84,11 +85,36 @@ inference arguments, memory guards and build concurrency; no timing improvement
 is claimed. `tests/Test-CpuCheckPolicy.ps1 -Case Artifacts` also checks rejection
 of mismatched or incomplete PTQ1 identities before model-file verification.
 
-Further Rust migration should reuse `bonsai-windows-process` for CPU and LoRA
-supervision rather than introduce another Win32 implementation. Retiring the C#
-launcher requires a packaged completion-check executable and separate lifecycle,
-resource-limit and qualification validation. Keeping setup orchestration in
-PowerShell avoids requiring a compiler or an extra process for pure planning.
+CPU and LoRA supervision now reuse `bonsai-windows-process` through the
+[packaged maintenance tool](../tools/bonsai/README.md). The Rust helper owns
+artifact verification and retained handles, the complete Job lifetime, parent
+identity/liveness, memory watchdogs, deadlines and output bounds. One LoRA batch
+shares verification across every sample. PowerShell retains parameter binding,
+fixed completion arguments and receipt assembly. Credential creation reuses
+`bonsai-windows-credentials`; the production C# launcher is retired. Existing
+independent C# codec/native probes remain as correctness references.
+
+The qualification scorer uses safe Rust with strict object-only inputs and
+bounded original-file reads. Frozen legacy fixtures preserve control canonical
+bytes/digests, Unicode response identities and accepted/pending/rejected reports.
+Known regressions still override pending evidence; missing reviews, logits and
+basis verification cannot become acceptance. Scoring does not launch inference.
+
+A root Cargo workspace shares package metadata, exact dependency pins, arithmetic
+profiles and common lint policy. Every safe target keeps `forbid(unsafe_code)`;
+audited native boundaries keep scoped allowances. The shared package/check
+registry drives Foundation and nightly compatibility without combining native
+Prism features or compiler/target lanes. Mutation checks copy a minimal isolated
+workspace. Full suites and benchmarks remain CI-only.
+
+Select an executable from the exact evaluated main revision through
+`BONSAI_TOOLS_PATH` or `-ToolPath`. Foundation builds one tool per consuming job
+and publishes an ARM64 executable artifact. Source fallback uses pinned Rust in
+an external incremental lane. Planning/diagnostic commands may resolve the
+maintenance executable but never launch a model. Ordinary setup, inventory,
+provisioning and native build orchestration remain PowerShell; the general tool
+runner retains its separate inherited-environment/output contract. No inference
+speedup or device performance acceptance is claimed by this migration.
 
 | Language | Enforced policy |
 | --- | --- |
