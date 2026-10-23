@@ -331,16 +331,16 @@ fn parse_pins(input: &str) -> Result<Pins, PolicyError> {
             metadata.ssm_convolution_kernel,
         ] != [65, 1, 4, 4, 256, 256, 128, 6144, 16, 4]
         || r.repository != "https://github.com/ggml-org/llama.cpp.git"
-        || r.commit != "620d2225cc436ab0b001e3200e590e3b286ef9ab"
-        || r.release != "b11669"
+        || r.commit != "36e36e63a54fc8f85b95e9c499a022b597e478dd"
+        || r.release != "b11840"
         || r.license != "MIT"
-        || r.asset.filename != "llama-b11669-bin-win-cpu-arm64.zip"
-        || r.asset.bytes != 12_442_177
-        || r.asset.sha256 != "9cff39ffed17edcd03a7d876073f74d7b48cd43a1e5eafdd59ee094185ad871b"
+        || r.asset.filename != "llama-b11840-bin-win-cpu-arm64.zip"
+        || r.asset.bytes != 12_781_980
+        || r.asset.sha256 != "9bfdb90329cd190c8286e5e53ed74391f8455c7cf7a6370725817440dd7ff085"
         || r.asset.url
-            != "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-win-cpu-arm64.zip"
+            != "https://github.com/ggml-org/llama.cpp/releases/download/b11840/llama-b11840-bin-win-cpu-arm64.zip"
         || r.asset.digest_source
-            != "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/b11669"
+            != "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/b11840"
         || f.repository != "google/gemma-4-12B-it-qat-q4_0-gguf"
         || f.revision != "29d097773436b69ff9feafd636ab4cf873786537"
         || f.filename != "gemma-4-12b-it-qat-q4_0.gguf"
@@ -504,8 +504,8 @@ mod tests {
     #[test]
     fn lock_drift_and_shapes_fail_closed() {
         for changed in [
-            LOCK_JSON.replace("12442177", "12442178"),
-            LOCK_JSON.replace("\"bytes\": 12442177", "\"bytes\": \"12442177\""),
+            LOCK_JSON.replace("12781980", "12781981"),
+            LOCK_JSON.replace("\"bytes\": 12781980", "\"bytes\": \"12781980\""),
             LOCK_JSON.replace(
                 "\"schemaVersion\": 1",
                 "\"schemaVersion\": 1, \"schemaVersion\": 1",
@@ -513,6 +513,7 @@ mod tests {
             LOCK_JSON.replace("\"model\": {", "\"model\": {\"argument\": \"--unsafe\","),
             "[]".to_owned(),
         ] {
+            assert_ne!(changed, LOCK_JSON, "lock mutation must change the fixture");
             assert!(parse_pins(&changed).is_err());
         }
     }
