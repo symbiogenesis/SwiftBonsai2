@@ -323,7 +323,7 @@ It returns paths only, supports WhatIf, preserves the environment and never
 reuses existing credentials. Same-user access, privileged access and directory
 replacement by the parent owner are outside its assurance. A partial directory
 may remain on setup failure; no automatic destructive cleanup is attempted.
-See the [development commands](../README.md#explicit-development-broker).
+See the [development commands](development-guide.md#explicit-development-broker).
 
 Dependencies, including httparse 1.10.1 and Tokio 1.50.0, are exact-pinned with a committed Cargo lockfile. Transport enables Tokio's net/sync features and the executable additionally enables runtime/signal support. Native ARM64 Rust
 1.98.0 is the initial checked toolchain. Local work may build and run focused
