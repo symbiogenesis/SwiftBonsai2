@@ -7,7 +7,7 @@
   "ArchiveBytes": 39423279,
   "ArchiveRoot": "llama.cpp-73bfe6cc485554822f80c473a3c0c4f25e80f41b",
   "AdapterSourceSha256": "e0abe8c4905db55c5ba4e75012798551e95d93bc5b697cba25d8e3cc86175d3b",
-  "OverlaidAdapterSha256": "62eea1a7b01e9b52ac70336496ddfb16fd0611b1286065fbdfcde824f1e0c5b9",
+  "OverlaidAdapterSha256": "b098e2d8ed2176707c90ef85f44192452d581b5a5e16a65ca69f74f7df841ca0",
   "CMakeSourceSha256": "666aaa7f44777b4abc665aae93c65480fbddd4fa34567706c01ddebf071b977d",
   "OverlaidCMakeSha256": "2afcc92bfff0d92e1b83b37e50a3493110d418affa6cfb2646cc8a375b0fe21e"
 }

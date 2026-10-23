@@ -4,10 +4,12 @@ For setup and development commands, see the [development guide](development-guid
 
 Repository-owned Rust, PowerShell and C# enforce strict language standards in local tooling and Foundation CI:
 
-Rust is the default for new repository-owned systems components. The broker and
-standalone BITCOS crate forbid unsafe code. The pinned external Prism/llama.cpp
-engine and its existing C++ LoRA storage overlay remain separate replacement
-work; moving the standalone experiment does not eliminate that native boundary.
+Rust is the default for repository-owned systems components. The broker, BITCOS,
+GGUF tooling and LoRA sharing policy forbid unsafe code. The LoRA overlay and
+its native regression are now Rust, with documented unsafe allowances confined
+to the C ABI adapter and native test bindings. The pinned external Prism/llama.cpp
+engine retains C/C++ tensor allocation calls that materialize Rust sharing
+decisions. See the [native boundary and build](../tools/prism/README.md).
 The separate `bonsai-windows-process` and `bonsai-windows-credentials` crates are
 audited Win32 boundaries with documented unsafe calls, RAII ownership and strict
 analyzers. The broker itself retains `forbid(unsafe_code)`. Existing C# process
@@ -15,7 +17,7 @@ helpers remain in use by the independent CPU/LoRA qualification probes.
 
 | Language | Enforced policy |
 | --- | --- |
-| Rust 1.99.1 / edition 2024 | Unsafe code forbidden for every target; warnings, missing API documentation, unchecked casts, production unwrap/expect/panic and Clippy all/pedantic/nursery/cargo findings rejected; Release arithmetic overflow checks enabled. Release debug assertions remain disabled to preserve the constant-time dependency's release contract. |
+| Rust 1.99.1 / edition 2024 | Unsafe code forbidden in policy/tooling; documented native-boundary allowances in the Windows crates and Prism FFI/native test. Warnings, missing API documentation, unchecked casts, production unwrap/expect/panic and Clippy all/pedantic/nursery/cargo findings rejected; Release arithmetic overflow checks enabled. Release debug assertions remain disabled to preserve the constant-time dependency's release contract. |
 | PowerShell 7.6+ | Latest strict mode, terminating errors including native-command failures, typed parameters, advanced functions and explicit output contracts; pinned PSScriptAnalyzer 1.25.0 defaults plus safety rules, with every unsuppressed diagnostic rejected. |
 | C# 14 / .NET 10 | Nullable checking, checked arithmetic, unsafe compilation disabled and compiler warnings as errors for every Add-Type invocation; all .NET analyzers, internal helpers, XML API documentation and selected code-style diagnostics checked in a separate Release build. |
 

@@ -36,7 +36,7 @@ function Edit-ExactText {
     if ($first -lt 0 -or $Text.IndexOf($Before, $first + $Before.Length, [StringComparison]::Ordinal) -ge 0) { throw 'Expected a unique exact overlay insertion point.' }
     return $Text.Replace($Before, $After, [StringComparison]::Ordinal)
 }
-$text = Edit-ExactText -Text $text -Before '#include "llama-adapter.h"' -After "#include `"llama-adapter.h`"`n#include `"bonsai_prism.h`""
+$text = Edit-ExactText -Text $text -Before '#include "llama-adapter.h"' -After "#include `"llama-adapter.h`"`n#include `"bonsai_prism.h`"`n#include <algorithm>`n#include <memory>"
 $before = '    // add tensors'
 $after = @'
     // One file handle supplies both byte-identity planning and final loading.
