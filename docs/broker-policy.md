@@ -2,17 +2,20 @@
 
 The Rust library in `src/broker/` implements request admission, bounded
 reception, backend HTTP exchange/exact-count admission, response writing and
-explicit development orchestration with numeric-loopback transport. It has no
-executable, process launcher, key generation or automatic startup. Chat launch
-remains disabled in the PowerShell preflight and reference profile. These are
-development components, not daily-service qualification.
+explicit development orchestration with numeric-loopback transport. The
+executable is an opt-in development runner against an already supplied backend;
+it does not launch a model. Model launch remains disabled in the PowerShell
+preflight and reference profile. These are development components, not
+daily-service qualification.
 
 The policy accepts only HTTP/1.1 origin-form `POST /v1/chat/completions`, numeric
 Host `127.0.0.1:<port>`, and the exact `http://127.0.0.1:<port>` Origin when supplied.
 Native clients may omit Origin but still require the bearer credential. The
-constructor requires 64 lowercase hexadecimal key characters; the future launcher
-must generate 32 random bytes with the OS RNG and protect their storage. Key format
-alone proves neither randomness nor access control. Credential comparison uses
+constructor requires 64 lowercase hexadecimal key characters. The separate
+`New-DevelopmentKeys.ps1` helper creates distinct 32-byte random keys in new files
+with protected owner/LocalSystem ACLs; the development runner explicitly does not
+verify those ACLs or ancestor ownership. Key format alone proves neither
+randomness nor access control. Credential comparison uses
 `subtle`; keys and prompt-bearing types have no Debug/Serialize diagnostics.
 
 Headers are checked before accepting the body. Limits are 64 header values and
@@ -290,7 +293,39 @@ OS memory limits and restricted inference identity/filesystem/egress. Offline
 UI assets and creative/comfort qualification follow. The existing PowerShell
 preflight retains these gates and does not call these development APIs.
 
-Dependencies, including httparse 1.10.1 and Tokio 1.50.0, are exact-pinned with a committed Cargo lockfile. Transport enables Tokio's net/sync features and locks their six additional transitive packages. Native ARM64 Rust
+## Executable runner and key files
+
+`runtime::run` drives at most `LocalChatService::capacity()` owned serving
+futures, including queued sockets, and does not spawn request tasks. It accepts
+only while below that validated bound. Shutdown is polled before acceptance;
+Ctrl-C closes admission, cancels active work and drains all owned futures before
+returning. Signal failure, accept failure and a generation-cancellation latch
+also stop the runner. Dropping the runner drops its outstanding sockets. It does
+not acknowledge backend model cancellation or terminate an externally supplied
+backend. No automatic restart or latch reset occurs.
+
+The executable requires `--development --allow-unverified-key-files`, distinct
+unprivileged frontend/backend ports (frontend zero permits OS assignment), and
+absolute key-file paths. Credentials cannot be supplied as argument values or
+environment variables. Each file is read with an exact 64-byte bound and must
+contain lowercase hexadecimal ASCII without a newline. Nonregular files and
+reparse components are rejected. On Windows the opened files allow read sharing
+only, and their handles remain alive during serving to refuse write/delete
+opens. ACLs and ancestor ownership/replacement remain explicitly unverified.
+The only routine output is the numeric frontend endpoint and value-free status;
+no prompts, keys, arguments or raw I/O errors are logged.
+
+`scripts/New-DevelopmentKeys.ps1` creates a new GUID private directory below an
+existing owner-controlled external local parent. It creates protected owner and
+LocalSystem ACLs, checks the resulting directory owner/DACL before generating
+secrets, and creates both files with explicit protected security and CreateNew.
+It returns paths only, supports WhatIf, preserves the environment and never
+reuses existing credentials. Same-user access, privileged access and directory
+replacement by the parent owner are outside its assurance. A partial directory
+may remain on setup failure; no automatic destructive cleanup is attempted.
+See the [development commands](../README.md#explicit-development-broker).
+
+Dependencies, including httparse 1.10.1 and Tokio 1.50.0, are exact-pinned with a committed Cargo lockfile. Transport enables Tokio's net/sync features and the executable additionally enables runtime/signal support. Native ARM64 Rust
 1.98.0 is the initial checked toolchain. Local work may build and run focused
 regressions; the full broker suite runs only in the main-only Foundation workflow.
 See [pre-step research](implementation-research.md) for sources and sanity checks.

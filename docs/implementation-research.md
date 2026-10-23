@@ -201,6 +201,82 @@ The full broker suite, including the new socket cases, remains in the main-only
 Foundation CI workflow. No model execution, benchmark, full local suite, driver
 change or process-isolation verdict is implied.
 
+## Development runner and private credentials (October 23)
+
+Before implementation, reviewed Tokio 1.50's [Ctrl-C registration and error contract](https://docs.rs/tokio/1.50.0/tokio/signal/fn.ctrl_c.html)
+and [current-thread runtime builder](https://docs.rs/tokio/1.50.0/tokio/runtime/struct.Builder.html).
+The executable requires explicit development and unverified-key-file opt-ins;
+it does not supply a model launcher or imply immutable backend identity. Poll a
+fixed-capacity collection of owned request futures, with shutdown checked before
+acceptance and no detached request tasks. Close admission and drain cancellation
+on Ctrl-C, signal failure, accept failure or the generation-cancellation latch.
+Use the service's validated capacity rather than a separately configured bound.
+No automatic reset, retry or backend restart follows unacknowledged generation.
+
+For credentials, checked .NET's [cryptographic random-byte API](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.randomnumbergenerator.getbytes?view=net-10.0),
+[creation-time file/directory ACL overloads](https://learn.microsoft.com/en-us/dotnet/api/system.io.filesystemaclextensions.create?view=net-10.0)
+and [ACL inheritance protection](https://learn.microsoft.com/en-us/dotnet/api/system.security.accesscontrol.objectsecurity.setaccessruleprotection?view=net-10.0).
+Generate distinct 32-byte keys only after creating and checking a new private
+directory; apply protected owner/LocalSystem ACLs when creating each file with
+CreateNew. Never return or log key values. Existing owner-controlled local
+parents are required, and the script rejects Git/reparse/device/ADS paths through
+the shared path validator. Same-user processes, privileged access and parent
+replacement remain outside this credential helper's assurance. The development
+CLI retains file handles with read sharing only but explicitly does not verify
+ACLs or ancestor ownership. This does not close the backend bypass gate.
+
+The focused key-creation regression passed on Windows ARM64, checking protected
+ACLs/ownership, exact distinct encodings, path-only output, repeated setup without
+overwrite and unchanged environment. Independent review found no blocking issue
+and passed the unsafe-path/WhatIf case in its own isolated lane. PowerShell and
+strict C# standards passed. The native SDK needed its normal user NuGet settings
+readable for that validation; no inherited OS/profile variables were redirected.
+A focused real-loopback regression also confirms an unread queued socket expires
+at thirty seconds without connecting to the synthetic backend.
+
+The integrated runner passes a native ARM64 Release build, formatting, all-target
+Release Clippy with warnings denied, rustdoc and the focused outer-runner
+cancellation regression. Its executable help probe passes. Independent review
+passed the exact-capacity/shutdown and runner-cancellation cases. The new
+regressions distinguish normal delivery, generation-latch exit, notification
+failure, shutdown/drain and strict bounded key-file configuration. Windows may
+reset a queued socket containing unread input during cancellation; the fixture
+accepts reset or EOF as closed. Full broker tests remain hosted-only.
+
+## Owned Windows process lifecycle (October 23)
+
+Before implementation, reviewed Microsoft's [process-creation attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute),
+[Job limits](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_limit_information)
+and [job-wide committed-memory contract](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information).
+Assign the noninheritable Job through `PROC_THREAD_ATTRIBUTE_JOB_LIST` during
+CreateProcessW, with a suspended child and explicit inherited standard-handle
+list. This avoids a child-execution or abrupt-parent-exit gap before Job
+assignment. Configure kill-on-close, aggregate committed-memory and active
+process limits without breakaway flags. Resume only after owning the process
+handle; setup failure closes the Job, including a still-suspended child.
+
+`Bonsai.Process.cs` supplies this primitive and the CPU check uses an 18 GiB
+commit limit and one active process. Explicit stop terminates the Job and waits
+for zero active processes, while final handle closure also covers abrupt owner
+death. Native argv quoting, an absolute external working directory and a null
+environment block preserve the inherited Windows/profile environment. Fixed
+synthetic stdout/stderr evidence goes directly to external files. The CPU check
+also rejects AIP/MTMD overrides and retains its 22 GiB admission requirement,
+one-second current-memory watchdog and ten-minute deadline. This is lifetime
+and committed-memory enforcement, not a restricted token, file, egress or
+resident-physical-memory boundary.
+
+Focused synthetic checks passed for explicit stop, disposal and abrupt owner
+death with descendant cleanup; process-count denial; single-process and
+cross-descendant aggregate native commit denial; argv quoting/Unicode; absolute
+cwd; and unchanged required environment. The allocation-denial result is the
+limit assertion: Windows' reported Job peak may include a denied request and
+is retained only as a diagnostic. Integrated PowerShell/strict Release C# checks
+and the focused Lifetime case passed on main. All lifecycle cases are wired
+into hosted Foundation CI. No model inference, performance workload or full
+local suite was run. The post-WSL admission check reported 21,596,512,256 bytes
+available against 23,622,320,128 required, with no model process started.
+
 ## Evidence obtained
 
 - Host inventory: native ARM64 Windows/PowerShell; **33,897,037,824 usable bytes** (31.57 GiB); Snapdragon X Elite X1E78100; Adreno X1-85 driver **31.0.128.0**; native CMake **4.3.1-msvc1** and MSVC **19.51.36260.0**. Presence does not qualify inference or GPU execution.

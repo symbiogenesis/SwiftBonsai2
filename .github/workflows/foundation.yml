@@ -108,6 +108,17 @@ jobs:
       - name: Engine build scheduling correctness
         shell: pwsh
         run: ./tests/Test-EngineBuild.ps1 -Case Parallelism
+      - name: Development credential creation and path policy
+        shell: pwsh
+        run: |
+          ./tests/Test-DevelopmentKeys.ps1 -Case Creation
+          ./tests/Test-DevelopmentKeys.ps1 -Case Paths
+      - name: Windows owned process lifecycle and resource limits
+        shell: pwsh
+        run: |
+          ./tests/Test-ProcessLifecycle.ps1 -Case Lifetime
+          ./tests/Test-ProcessLifecycle.ps1 -Case Limits
+          ./tests/Test-ProcessLifecycle.ps1 -Case LaunchContract
       - name: CPU admission diagnostics without model launch
         shell: pwsh
         run: |

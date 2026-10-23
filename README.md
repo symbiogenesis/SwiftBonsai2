@@ -2,7 +2,7 @@
 
 The first implementation selects **Qwen3.8-27B UD-Q3_K_XL** from published creative-writing evidence. [The decision](docs/model-selection.md) records the artifact, ARM64 compatibility, memory estimate, limitations, fallback, and stop conditions. The repository name is retained from the original Swift-first research plan.
 
-Implemented: read-only host inventory, immutable artifact locks, resumable size/hash-verified provisioning, native ARM64 CPU runtime installation/source builds, full GGUF metadata inspection, a guarded synthetic CPU check, an explicit 8K reference configuration, a fixed server-policy preflight, Rust bounded HTTP I/O and exact-count admission, single-slot scheduling, request supervision, explicit development loopback transport, and foundation CI. The chosen model/runtime are provisioned under the owner's selected `%LOCALAPPDATA%\SwiftBonsai2` directory; the complete artifact metadata is recorded in [model.metadata.json](config/model.metadata.json). **Chat launch is not enabled.** CPU loading, owned backend identity/lifecycle, daily isolation, and creative/comfort qualification remain ahead. The reference configuration is an unqualified development candidate.
+Implemented: read-only host inventory, immutable artifact locks, resumable size/hash-verified provisioning, native ARM64 CPU runtime installation/source builds, full GGUF metadata inspection, a guarded synthetic CPU check, an explicit 8K reference configuration, a fixed server-policy preflight, Rust bounded HTTP I/O and exact-count admission, single-slot scheduling, request supervision, a bounded development broker executable, private-key provisioning, and foundation CI. The chosen model/runtime are provisioned under the owner's selected `%LOCALAPPDATA%\SwiftBonsai2` directory; the complete artifact metadata is recorded in [model.metadata.json](config/model.metadata.json). **Model chat launch is not enabled.** CPU loading, integrated backend ownership/identity, daily isolation, offline UI and creative/comfort qualification remain ahead. The reference configuration is an unqualified development candidate.
 
 ## Inventory and provisioning
 
@@ -44,7 +44,9 @@ Interrupted downloads retain one `.partial` file and resume against the immutabl
 
 This fixed synthetic check uses the in-process `llama-completion` executable, a 16-token limit, 8K FP16 state, CPU-only placement, no reusable prompt cache, and a ten-minute safety timeout. It preserves the embedded template's default thinking behavior. The pinned completion path does not reliably forward thinking-control kwargs, and modern `llama-cli` starts a local server; neither is used to claim a qualified thinking-disabled chat profile.
 
-Before launch, the check requires 22 GiB currently available physical RAM: the complete 18 GiB service allowance plus a conservative 4 GiB reserve. It then watches current process working set/private bytes against 18 GiB and available physical memory against the 4 GiB floor. It fails closed rather than closing other applications. These volatile admission/watchdog readings are not peak measurements, OS-enforced limits, or performance acceptance. On October 23 the host had about 8 GiB available, so the check refused to start; CPU load/decode remains pending. Failure logs stay in unique system-temp directories. A trusted-input development check does not qualify daily process isolation.
+Before launch, the check requires 22 GiB currently available physical RAM: the complete 18 GiB service allowance plus a conservative 4 GiB reserve. It then watches current process working set/private bytes against 18 GiB and available physical memory against the 4 GiB floor. It fails closed rather than closing other applications. These volatile admission/watchdog readings are not peak measurements or performance acceptance. After the owner stopped WSL on October 23, available RAM rose to about 20.1 GiB; admission still refused model launch. CPU load/decode remains pending.
+
+The CPU check now creates its process inside a Windows Job with kill-on-close, an 18 GiB **job-wide committed-memory** cap, and one active process with no breakaway. The Job is assigned through the process-creation attribute list while the child is suspended, before any child code executes; only its standard handles are inherited. Stop terminates the whole owned Job and waits for it to become empty. Output goes directly to technical files under a unique external temp working directory, and inherited Windows system/profile variables are preserved. The reported Windows Job peak is a diagnostic counter that may include denied allocation requests. The committed-memory cap does not bound all resident file-backed model mappings; the physical-memory watchdog remains necessary. No restricted token, filesystem or egress boundary is established. Synthetic regressions qualify ownership/limits, including abrupt parent death; this remains a trusted-input development check.
 
 ## Prepare the server policy
 
@@ -73,9 +75,40 @@ The [private backend adapter](docs/broker-policy.md#private-backend-http-exchang
 
 The [development service](docs/broker-policy.md#development-orchestration-and-loopback-transport) now joins these components. It reserves capacity before accepting a socket, allows one active request and at most eight waiting reservations, and enforces a thirty-second queue limit and ten-minute total deadline. A fixed numeric-loopback connector uses the same private endpoint/key for counting and generation. Actual frontend reads detect disconnect or extra input while backend work is pending; both streams close on cancellation. Clients must keep their sending side open until the response finishes. Shutdown wakes accepting, queued and active work. Interrupted generation permanently closes admission because socket closure does not acknowledge model cancellation.
 
-These are explicit library APIs exercised with synthetic loopback backends. No executable, model launcher, key creation or UI is supplied. Backend process identity/bypass prevention, actual model tokenization and cancellation acknowledgement, OS memory/filesystem/egress restrictions and daily isolation remain unqualified. The fixed PowerShell preflight and reference profile still disable launch.
+These components are exercised with synthetic loopback backends. An explicit development executable and private-key helper are described below. Backend process identity/bypass prevention, actual model tokenization and cancellation acknowledgement, restricted filesystem/egress and daily isolation remain unqualified. The fixed PowerShell model preflight and reference profile still disable launch.
 
 Use the existing native ARM64 Rust toolchain to build it. Run Cargo from a unique system-temp working directory, with absolute `--manifest-path` and `--target-dir` paths. For a focused regression, `cargo test --locked --offline --manifest-path <repo>/src/broker/Cargo.toml --target-dir <session-temp>/build --test http_reception wire_duplicates_and_framing_cannot_be_normalized_away -- --exact`. Full broker tests remain CI-only.
+
+## Explicit development broker
+
+The executable serves the bounded text-chat API against an **already running development backend**. It does not launch a model, establish the backend's identity, or enable the daily profile. It requires both `--development` and `--allow-unverified-key-files`: loading the files does not verify their Windows ACLs or ancestor ownership. The separate helper below creates protected owner/LocalSystem ACLs; same-user processes and a parent-directory owner can still access or replace credentials. Choose an existing local parent directory you control, outside Git.
+
+```powershell
+$keys = ./scripts/New-DevelopmentKeys.ps1 -ParentDirectory $data
+# Returns paths only; neither credential is printed. -WhatIf creates nothing.
+```
+
+The helper creates a fresh GUID directory on each invocation, with distinct 32-byte cryptographic random keys encoded as exactly 64 lowercase ASCII hex characters. It uses protected ACLs at directory/file creation, verifies the directory owner/DACL, and opens each file with CreateNew. Existing credentials and ACLs are never overwritten. Failed setup may retain a partial private directory for inspection; remove only a verified directory belonging to that invocation when it is no longer useful.
+
+Build the executable from a new external scratch directory, using an absolute repository path:
+
+```powershell
+$repo = (Get-Location).Path
+$scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Broker-' + [guid]::NewGuid().ToString('N'))
+[IO.Directory]::CreateDirectory($scratch) | Out-Null
+Push-Location $scratch
+try {
+    cargo +1.98.0-aarch64-pc-windows-msvc build --locked --release --manifest-path (Join-Path $repo 'src/broker/Cargo.toml') --target-dir (Join-Path $scratch 'build')
+    if ($LASTEXITCODE) { throw 'Broker build failed.' }
+    # Configure the separate development backend to use $keys.BackendKeyFile.
+    # This command starts only the broker. It does not configure that backend.
+    & (Join-Path $scratch 'build/release/bonsai-broker.exe') --development --allow-unverified-key-files `
+        --frontend-port 5173 --backend-port 8081 `
+        --frontend-key-file $keys.FrontendKeyFile --backend-key-file $keys.BackendKeyFile --max-waiting 2
+} finally { Pop-Location }
+```
+
+Only `127.0.0.1` is bound. Frontend port zero requests an OS-assigned port; the executable prints the actual endpoint without credentials. All other ports are unprivileged. Keys are accepted only from bounded regular files, with no reparse components; Windows read-only handles remain open to deny write/delete opens during serving. The runner holds at most one active request plus the configured zero through eight waiting connections, creates no detached request tasks, and observes Ctrl-C before accepting more work. Shutdown closes admission and drains owned futures/sockets. Interrupted generation closes the whole service; there is no automatic reset or restart. No UI route is supplied.
 
 ## Build the CPU server from source
 
