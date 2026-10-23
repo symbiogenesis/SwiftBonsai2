@@ -6,7 +6,8 @@
 //! `scheduler` bounds reservations and a single active request; `supervisor`
 //! joins reception, exact counting, generation and disconnect cancellation.
 //! `service` can explicitly bind a numeric loopback listener for development.
-//! No executable, model launcher, key generation or logging is supplied.
+//! `runtime` supplies an explicit development runner with bounded concurrency.
+//! No model launcher or key generation is supplied.
 //! The future launcher must generate separate private random credentials,
 //! own/identify the backend, prevent bypass and qualify OS process isolation.
 //! This library alone is not a qualified HTTP or process-isolation boundary.
@@ -15,6 +16,7 @@
 pub mod backend;
 pub mod reception;
 pub mod response;
+pub mod runtime;
 pub mod scheduler;
 pub mod service;
 pub mod supervisor;
