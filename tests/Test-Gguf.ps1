@@ -8,7 +8,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 if ($Case -eq 'All' -and $env:GITHUB_ACTIONS -ne 'true') { throw 'The full suite runs only in GitHub Actions. Select one focused -Case locally.' }
 $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Force
-if (-not ('SwiftBonsai.GgufInspector' -as [type])) { Add-Type -Path (Join-Path $repo 'scripts/GgufMetadata.cs') -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0') }
+Import-Module (Join-Path $PSScriptRoot 'Gguf.TestSupport.psm1') -Force
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-GgufTests-' + [Guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)
 function Assert {
@@ -91,7 +91,7 @@ function New-Fixture {
 $path = Join-Path $scratch 'synthetic.gguf'
 $fixture = New-Fixture $path
 if ($Case -in @('All','Parser')) {
-    $report = [SwiftBonsai.GgufInspector]::Read($path)
+    $report = (Read-TestGguf $path)
     Assert ($report.Architecture -eq 'qwen35' -and $report.TensorCount -eq 3) 'Header/architecture inspection failed.'
     Assert ($report.Scalars['qwen35.context_length'] -eq 262144) 'Context scalar was lost.'
     Assert ($report.Arrays['qwen35.attention.recurrent_layers'].Count -eq 4) 'Small layout array was lost.'
@@ -125,7 +125,7 @@ if ($Case -in @('All','Parser')) {
         if ($replacement.Length) { [Array]::Copy($replacement, 0, $bytes, $position, $replacement.Length) }
         $badPath = Join-Path $scratch ($mutation + '.gguf')
         [IO.File]::WriteAllBytes($badPath, $bytes)
-        Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } "Corrupt GGUF was accepted: $mutation"
+        Assert-Failure { (Read-TestGguf $badPath) } "Corrupt GGUF was accepted: $mutation"
     }
 }
 if ($Case -in @('All','Strings')) {
@@ -160,7 +160,7 @@ if ($Case -in @('All','Strings')) {
         $value = if ($size -lt 4) { 'a' * $size } else { ('a' * ($size - 4)) + '🍀' }
         $stringPath = Join-Path $scratch "string-$size.gguf"
         $stringFixture = New-StringFixture -Path $stringPath -Value $value
-        $stringReport = [SwiftBonsai.GgufInspector]::Read($stringPath)
+        $stringReport = (Read-TestGguf $stringPath)
         if ($size -le 65536) {
             Assert ($stringReport.Scalars['tokenizer.test_string'] -ceq $value) "Retained UTF-8 string changed at $size bytes."
         } else {
@@ -171,20 +171,20 @@ if ($Case -in @('All','Strings')) {
     $key = 'tokenizer.' + ('a' * 1014)
     $keyPath = Join-Path $scratch 'long-key.gguf'
     $stringFixture = New-StringFixture -Path $keyPath -Value 'λ' -Key $key
-    Assert ([SwiftBonsai.GgufInspector]::Read($keyPath).Scalars[$key] -ceq 'λ') 'The 1024-byte metadata key was not decoded exactly.'
+    Assert ((Read-TestGguf $keyPath).Scalars[$key] -ceq 'λ') 'The 1024-byte metadata key was not decoded exactly.'
     foreach ($part in @('Key','Value')) {
         $bytes = [byte[]]$stringFixture.Bytes.Clone()
         $bytes[$stringFixture["${part}Start"]] = 255
         $badPath = Join-Path $scratch "invalid-utf8-$part.gguf"
         [IO.File]::WriteAllBytes($badPath, $bytes)
-        Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } "Invalid UTF-8 in $part was accepted."
+        Assert-Failure { (Read-TestGguf $badPath) } "Invalid UTF-8 in $part was accepted."
     }
     $badPath = Join-Path $scratch 'truncated-string.gguf'
     [IO.File]::WriteAllBytes($badPath, $stringFixture.Bytes[0..($stringFixture.Bytes.Length - 2)])
-    Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } 'A truncated UTF-8 string was accepted.'
+    Assert-Failure { (Read-TestGguf $badPath) } 'A truncated UTF-8 string was accepted.'
     $badPath = Join-Path $scratch 'over-limit-key.gguf'
     New-StringFixture -Path $badPath -Value 'test' -Key ($key + 'a') | Out-Null
-    Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } 'An over-limit metadata key was accepted.'
+    Assert-Failure { (Read-TestGguf $badPath) } 'An over-limit metadata key was accepted.'
 }
 if ($Case -in @('All','Arrays')) {
     function New-ArrayFixture {
@@ -219,7 +219,7 @@ if ($Case -in @('All','Arrays')) {
         $flags[0] = $flags[65536] = $flags[131076] = 1
         $writer.Write($flags)
     }
-    $arrayReport = [SwiftBonsai.GgufInspector]::Read($arrayPath)
+    $arrayReport = (Read-TestGguf $arrayPath)
     Assert ($arrayReport.Arrays['tokenizer.test_array'].Count -eq 131077 -and
         $arrayReport.Arrays['tokenizer.test_array'].ElementTypeId -eq 7) 'Large boolean array descriptor changed.'
     Assert ($arrayReport.TokenizerMetadataSha256 -ceq $arrayFixture.TokenizerHash) 'Boolean validation changed the raw tokenizer digest.'
@@ -228,11 +228,11 @@ if ($Case -in @('All','Arrays')) {
         $bytes[$arrayFixture.ValuesStart + $offset] = 2
         $badPath = Join-Path $scratch "boolean-array-invalid-$offset.gguf"
         [IO.File]::WriteAllBytes($badPath, $bytes)
-        Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } "Invalid boolean array value was accepted at $offset."
+        Assert-Failure { (Read-TestGguf $badPath) } "Invalid boolean array value was accepted at $offset."
     }
     $badPath = Join-Path $scratch 'boolean-array-truncated.gguf'
     [IO.File]::WriteAllBytes($badPath, $arrayFixture.Bytes[0..($arrayFixture.Bytes.Length - 2)])
-    Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } 'Truncated boolean array was accepted.'
+    Assert-Failure { (Read-TestGguf $badPath) } 'Truncated boolean array was accepted.'
     $nestedPath = Join-Path $scratch 'nested-array.gguf'
     $nestedFixture = New-ArrayFixture -Path $nestedPath -ElementType 9 -Count 3 -WriteValues {
         param($writer)
@@ -241,30 +241,30 @@ if ($Case -in @('All','Arrays')) {
         $writer.Write([uint32]9); $writer.Write([uint64]1)
         $writer.Write([uint32]7); $writer.Write([uint64]1); $writer.Write([byte]1)
     }
-    $nestedReport = [SwiftBonsai.GgufInspector]::Read($nestedPath)
+    $nestedReport = (Read-TestGguf $nestedPath)
     Assert ($nestedReport.Arrays['tokenizer.test_array'].Count -eq 3 -and
         $nestedReport.Arrays['tokenizer.test_array'].ElementTypeId -eq 9) 'Nested array descriptor changed.'
     Assert ($nestedReport.TokenizerMetadataSha256 -ceq $nestedFixture.TokenizerHash) 'Nested array inspection changed the raw tokenizer digest.'
     $nestedFixture.Bytes[$nestedFixture.Bytes.Length - 1] = 2
     $badPath = Join-Path $scratch 'nested-array-invalid-boolean.gguf'
     [IO.File]::WriteAllBytes($badPath, $nestedFixture.Bytes)
-    Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } 'A discarded nested array bypassed boolean validation.'
+    Assert-Failure { (Read-TestGguf $badPath) } 'A discarded nested array bypassed boolean validation.'
     $deepPath = Join-Path $scratch 'nested-array-depth.gguf'
     New-ArrayFixture -Path $deepPath -ElementType 9 -Count 1 -WriteValues {
         param($writer)
         for ($i = 0; $i -lt 3; $i++) { $writer.Write([uint32]9); $writer.Write([uint64]1) }
         $writer.Write([uint32]7); $writer.Write([uint64]1); $writer.Write([byte]1)
     } | Out-Null
-    Assert-Failure { [SwiftBonsai.GgufInspector]::Read($deepPath) } 'Boolean array validation bypassed the existing nesting limit.'
+    Assert-Failure { (Read-TestGguf $deepPath) } 'Boolean array validation bypassed the existing nesting limit.'
 }
 if ($Case -in @('All','Artifact')) {
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
     $output = Join-Path $scratch 'inspection.json'
-    $report = & (Join-Path $repo 'scripts/Read-Gguf.ps1') -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -OutputPath $output
+    $report = & (Join-Path $repo 'scripts/Read-Gguf.ps1') -GgufToolPath $env:BONSAI_GGUF_TOOL -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -OutputPath $output
     $saved = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json -DateKind String
     Assert ($saved.ArtifactVerification -eq 'verified-size-and-sha256' -and $saved.TensorCount -eq 3) 'Verified JSON report did not round-trip.'
-    Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 ('0' * 64) } 'Digest mismatch was accepted.'
-    Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -OutputPath $output } 'Existing report was overwritten.'
-    Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -ModelPath $path -ExpectedBytes $fixture.Bytes.Length } 'Incomplete artifact identity was accepted.'
+    Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -GgufToolPath $env:BONSAI_GGUF_TOOL -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 ('0' * 64) } 'Digest mismatch was accepted.'
+    Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -GgufToolPath $env:BONSAI_GGUF_TOOL -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -OutputPath $output } 'Existing report was overwritten.'
+    Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -GgufToolPath $env:BONSAI_GGUF_TOOL -ModelPath $path -ExpectedBytes $fixture.Bytes.Length } 'Incomplete artifact identity was accepted.'
 }
 Write-Information -InformationAction Continue "GGUF focused case '$Case' passed. Synthetic evidence retained at $scratch"

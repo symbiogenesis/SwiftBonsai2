@@ -429,3 +429,38 @@ Independent review caught the interaction between Cargo profile settings and the
 The external native engine remains immutable. Its [pinned warning options](https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/cmake/common.cmake) and [MSVC conformance mode](https://learn.microsoft.com/en-us/cpp/build/reference/permissive-standards-conformance?view=msvc-170) were checked before changing the builder. A real warning-as-error build stopped at upstream C4244: int64_t to uint32_t in llama-graph.cpp through make_unique. The final source builder uses required C11/C++17, no extension fallback, /permissive- and /sdl, retaining upstream warning handling. That final native ARM64 Release server build and version/identity probe passed. It ran no model, test suite or benchmark. Changing the recorded compiler configuration requires a fresh owned build lane.
 
 Local language validation passed Release Rust build/Clippy across all targets/features, rustdoc and formatting, selected authentication/context/framing/cancellation regressions, all enabled C# analyzers including private/internal code, and focused GGUF Parser and synthetic Download cases. C# negative controls rejected nullable violations, unsafe compilation and unused imports; checked arithmetic threw on overflow. The final shared checker and CI validate the integrated revision; full suites remain hosted-only. Build logs, compiler-negative controls and the engine receipt remain in session temp.
+
+## Rust GGUF consolidation — October 23, 2026
+
+The migration keeps the existing bounded GGUF v3 report and pinned Prism dialect
+contract while moving parsing, PQ2 census and streamed PTQ1 serialization into
+`tools/gguf`. The PowerShell entry points retain lock selection, external-path
+policy and `ShouldProcess`. The exporter calls the existing safe Rust
+`bonsai-bitcos` packing routines and reconstructs every converted PQ2 block.
+The independent small C# block codecs remain; the duplicated C# GGUF parser and
+repacker are removed. Provisioning and process supervision remain in PowerShell.
+
+Reviewed the primary [SHA-256 incremental API](https://docs.rs/sha2/0.10.9/sha2/),
+[Rust exclusive creation contract](https://doc.rust-lang.org/std/fs/struct.OpenOptions.html#method.create_new),
+and [hard-link publication behavior](https://doc.rust-lang.org/std/fs/fn.hard_link.html).
+A write/delete-denying source handle spans full-artifact hashing and inspection
+or export on Windows. Output creation is exclusive, failed partials are retained,
+and validated output publication cannot replace an existing destination. The
+same-directory hard link requires filesystem support such as NTFS; an alias
+cleanup failure after publication is reported in the successful receipt. The
+conversion timeout additionally covers output hashing, copying and padding;
+source verification and final output validation remain outside that timeout.
+Independent review caught JSON integer type erasure: export rechecks the raw
+UINT32 metadata tag before relabeling `general.file_type`.
+
+Existing synthetic GGUF/parser/census/export regressions now invoke the Rust CLI;
+Foundation builds it once and runs strict Rust checks and complete correctness
+suites on main. No inference, benchmark or measured speedup is part of this
+maintenance/packaging migration.
+Local verification passed the Release build, all-target strict Clippy, rustdoc,
+PowerShell standards and strict C# analyzer build. Focused GGUF Parser and PTQ1
+Repack cases passed through the CLI; one selected Rust census test checked raw
+symbols across the batch boundary and zero-scale/fourth-code rejection. A real
+auto-build wrapper invocation and same-session export `WhatIf` also passed.
+Complete Rust and PowerShell suites remain hosted-only. Build outputs, diagnostic
+logs and synthetic fixtures are retained in external session-temp lanes.

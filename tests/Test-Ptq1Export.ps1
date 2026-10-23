@@ -9,8 +9,8 @@ param([ValidateSet('Repack','Rejection','All')][string]$Case = 'All')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
-$repo = Split-Path $PSScriptRoot -Parent
-Add-Type -Path @((Join-Path $repo 'scripts/GgufMetadata.cs'), (Join-Path $repo 'scripts/GgufPtq1Repacker.cs'), (Join-Path $repo 'scripts/Pq2Ptq1Codec.cs')) -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0')
+if ($Case -eq 'All' -and $env:GITHUB_ACTIONS -ne 'true') { throw 'The full suite runs only in GitHub Actions. Select one focused -Case locally.' }
+Import-Module (Join-Path $PSScriptRoot 'Gguf.TestSupport.psm1') -Force
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PtqExport-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($scratch)
 $dialect = 'Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b'
@@ -78,9 +78,9 @@ if ($Case -in @('Repack','All')) {
     $source = Join-Path $scratch 'source.gguf'
     $fixture = New-Fixture $source
     $target = Join-Path $scratch 'export.gguf'
-    $result = [SwiftBonsai.GgufInspector]::RepackPq2ToPtq1($source, $target, 30)
-    $original = [SwiftBonsai.GgufInspector]::Read($source, $dialect, $false)
-    $converted = [SwiftBonsai.GgufInspector]::Read($target, $dialect, $false)
+    $result = (Export-TestGguf $source $target 30)
+    $original = (Read-TestGguf $source $dialect $false)
+    $converted = (Read-TestGguf $target $dialect $false)
     Assert ($result.ConvertedBlocks -eq $fixture.Blocks + 1 -and $result.ConvertedTensorCount -eq 2 -and $result.ExactPq2ReconstructionVerified) 'Not every PQ2 block was verified.'
     Assert ($converted.Scalars['general.file_type'] -eq 143 -and $converted.TensorTypeHistogram[1].TypeId -eq 143) 'PTQ1 file/tensor types differ.'
     Assert ($converted.TokenizerMetadataSha256 -ceq $original.TokenizerMetadataSha256 -and $converted.Scalars['prism.hadamard.transform'] -ceq 'unchanged-transform') 'Tokenizer, template or transform metadata changed.'
@@ -105,13 +105,15 @@ if ($Case -in @('Rejection','All')) {
     $bytes[$fixture.Data + $fixture.LastOffset + 2] = 0xff # +2 in final tensor, after earlier writes
     [IO.File]::WriteAllBytes($source, $bytes)
     $partial = Join-Path $scratch 'failed.partial'
-    Assert-Failure { [SwiftBonsai.GgufInspector]::RepackPq2ToPtq1($source, $partial, 30) } 'Late fourth symbol was silently recoded.'
-    Assert (Test-Path -LiteralPath $partial) 'Failure evidence was unexpectedly removed.'
+    Assert-Failure { (Export-TestGguf $source $partial 30) } 'Late fourth symbol was silently recoded.'
+    Assert (-not (Test-Path -LiteralPath $partial)) 'Failed export published a final output.'
+    Assert (@(Get-ChildItem -LiteralPath $scratch -Filter 'failed.partial.partial-*').Count -eq 1) 'Failure evidence was unexpectedly removed.'
+    [IO.File]::WriteAllBytes($partial, [byte[]]@(1,2,3,4))
     $before = [IO.File]::ReadAllBytes($partial)
-    Assert-Failure { [SwiftBonsai.GgufInspector]::RepackPq2ToPtq1($source, $partial, 30) } 'Existing output was overwritten.'
+    Assert-Failure { (Export-TestGguf $source $partial 30) } 'Existing output was overwritten.'
     Assert ([Convert]::ToHexString($before) -ceq [Convert]::ToHexString([IO.File]::ReadAllBytes($partial))) 'CreateNew rejection modified existing output.'
     $wrong = Join-Path $scratch 'wrong-file-type.gguf'
     New-Fixture $wrong -Blocks 1 -FileType 143 | Out-Null
-    Assert-Failure { [SwiftBonsai.GgufInspector]::RepackPq2ToPtq1($wrong, (Join-Path $scratch 'wrong-output.gguf'), 30) } 'Non-PQ2 file metadata was relabeled.'
+    Assert-Failure { Export-TestGguf $wrong (Join-Path $scratch 'wrong-output.gguf') 30 } 'Non-PQ2 file metadata was relabeled.'
 }
 Write-Output "PTQ1 export $Case checks passed. Evidence: $scratch"

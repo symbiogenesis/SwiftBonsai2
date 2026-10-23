@@ -283,6 +283,32 @@ jobs:
       - name: Full foundation suite
         shell: pwsh
         run: ./tests/Test-Foundation.ps1 -Case All
+      - name: Build and check the Rust GGUF CLI
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.99.1-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
+          if ($LASTEXITCODE) { throw 'Rust toolchain installation failed.' }
+          $scratch = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-Gguf-' + [guid]::NewGuid().ToString('N'))
+          [IO.Directory]::CreateDirectory($scratch) | Out-Null
+          $manifest = Join-Path $env:GITHUB_WORKSPACE 'tools/gguf/Cargo.toml'
+          $target = Join-Path $scratch 'build'
+          Push-Location $scratch
+          try {
+            cargo +1.99.1-aarch64-pc-windows-msvc fmt --manifest-path $manifest --check
+            if ($LASTEXITCODE) { throw 'GGUF formatting failed.' }
+            cargo +1.99.1-aarch64-pc-windows-msvc clippy --manifest-path $manifest --target-dir $target --locked --release --all-targets -- -D warnings
+            if ($LASTEXITCODE) { throw 'GGUF analyzer failed.' }
+            cargo +1.99.1-aarch64-pc-windows-msvc doc --manifest-path $manifest --target-dir $target --locked --no-deps
+            if ($LASTEXITCODE) { throw 'GGUF documentation analyzer failed.' }
+            cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path $manifest --target-dir $target --locked --release
+            if ($LASTEXITCODE) { throw 'GGUF suite failed.' }
+            cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path $manifest --target-dir $target --locked --release
+            if ($LASTEXITCODE) { throw 'GGUF CLI build failed.' }
+          } finally { Pop-Location }
+          "BONSAI_GGUF_TOOL=$(Join-Path $target 'release/bonsai-gguf.exe')" >> $env:GITHUB_ENV
       - name: Full GGUF inspector suite
         shell: pwsh
         run: ./tests/Test-Gguf.ps1 -Case All
@@ -295,7 +321,7 @@ jobs:
       - name: Exact PQ2 to native PTQ1 block packing
         shell: pwsh
         run: ./tests/Test-Pq2Ptq1Codec.ps1
-      - name: Streamed native PTQ1 weight export in a fresh type-loading process
+      - name: Streamed Rust PTQ1 weight export
         shell: pwsh
         run: ./tests/Test-Ptq1Export.ps1 -Case All
       - name: Engine build scheduling correctness

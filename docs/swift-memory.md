@@ -91,7 +91,7 @@ unqualified. Historical C++ timings do not establish Rust or Snapdragon speed.
 
 Prism's **PTQ1_0** is group-128 base-3 ternary packing, distinct from the
 unrelated weight-changing **PTQ1.61** research algorithm. A bounded
-[exporter](../scripts/Export-SwiftPtq1.ps1) repacks the current Swift symbols
+[PowerShell wrapper](../scripts/Export-SwiftPtq1.ps1) uses the [Rust GGUF CLI](../tools/gguf/README.md) to repack the current Swift symbols
 and raw scales without training or requantization. Each batch reconstructs
 the original PQ2 bytes exactly; other tensor payloads and raw metadata remain
 unchanged except the file/tensor type and offsets. Native pinned PQ2/PTQ

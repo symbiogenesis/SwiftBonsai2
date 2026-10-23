@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Force
-if (-not ('SwiftBonsai.GgufInspector' -as [type])) { Add-Type -Path (Join-Path $repo 'scripts/GgufMetadata.cs') -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0') }
+Import-Module (Join-Path $PSScriptRoot 'Gguf.TestSupport.psm1') -Force
 $dialect = 'Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b'
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Pq2Tests-' + [Guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)
@@ -91,12 +91,12 @@ $fixture = New-CensusFixture $path @(
     @{ Name = 'fixture.float'; Type = 0; Elements = 1; Payload = [byte[]]@(255,255,255,255) }
     @{ Name = 'fixture.ptq'; Type = 143; Elements = 128; Payload = [byte[]]::new(28) }
 )
-Assert-Failure { [SwiftBonsai.GgufInspector]::Read($path) } 'Stock dialect accepted private Prism IDs.'
-Assert-Failure { [SwiftBonsai.GgufInspector]::Read($path, 'Prism-unpinned', $true) } 'Unpinned Prism dialect was accepted.'
-$metadata = [SwiftBonsai.GgufInspector]::Read($path, $dialect, $false)
+Assert-Failure { (Read-TestGguf $path) } 'Stock dialect accepted private Prism IDs.'
+Assert-Failure { (Read-TestGguf $path 'Prism-unpinned' $true) } 'Unpinned Prism dialect was accepted.'
+$metadata = (Read-TestGguf $path $dialect $false)
 Assert (-not $metadata.TensorPayloadRead -and -not $metadata.ContainsKey('Pq2Census')) 'Metadata-only inspection read payloads.'
 Assert ($metadata.TensorTypeHistogram[1].Name -ceq 'PQ2_0' -and $metadata.TensorTypeHistogram[2].Name -ceq 'PTQ1_0') 'Pinned private type table differs.'
-$report = [SwiftBonsai.GgufInspector]::Read($path, $dialect, $true)
+$report = (Read-TestGguf $path $dialect $true)
 $census = $report.Pq2Census
 $first = $census.Tensors[0]
 $second = $census.Tensors[1]
@@ -125,7 +125,7 @@ for ($block = 0; $block -lt 8; $block++) {
 }
 $allPath = Join-Path $scratch 'all-packed-bytes.gguf'
 New-CensusFixture $allPath @(@{ Name = 'all.codes'; Type = 142; Elements = 1024; Payload = $allCodes }) | Out-Null
-$all = [SwiftBonsai.GgufInspector]::Read($allPath, $dialect, $true).Pq2Census
+$all = (Read-TestGguf $allPath $dialect $true).Pq2Census
 Assert ($all.CodeMinusOne -eq $expected[0] -and $all.CodeZero -eq $expected[1] -and $all.CodePlusOne -eq $expected[2] -and $all.CodePlusTwo -eq $expected[3]) 'Lookup census differs for a packed byte pattern.'
 Assert (-not $all.LosslessThreeSymbolEligible -and -not $all.BitcosCandidate.ContainsKey('TensorPackedPayloadBytesLowerBound')) 'Fourth symbols received a three-symbol candidate estimate.'
 # Invalid scales remain raw-code zeros, never silently recoded decoded zeros.
@@ -134,7 +134,7 @@ foreach ($scale in @(0,0x8000,0x7c00,0xfc00,0x7e00)) {
     [Array]::Copy([BitConverter]::GetBytes([uint16]$scale), 0, $bytes, $fixture.DataOffset, 2)
     $scalePath = Join-Path $scratch "scale-$scale.gguf"
     [IO.File]::WriteAllBytes($scalePath, $bytes)
-    $invalid = [SwiftBonsai.GgufInspector]::Read($scalePath, $dialect, $true).Pq2Census.Tensors[0]
+    $invalid = (Read-TestGguf $scalePath $dialect $true).Pq2Census.Tensors[0]
     Assert ($invalid.StrictTernaryCodes -and -not $invalid.LosslessThreeSymbolEligible -and $invalid.CodeZero -eq 253) 'Invalid-scale handling changed raw symbols or eligibility.'
     $isZero = $scale -in @(0,0x8000)
     Assert (($invalid.ZeroScaleBlocks -eq [int]$isZero) -and ($invalid.NonfiniteScaleBlocks -eq [int](-not $isZero))) 'Zero/nonfinite scale classification differs.'
@@ -149,22 +149,22 @@ foreach ($mutation in @('truncation','overlap','row-size','dimension-overflow'))
     }
     $badPath = Join-Path $scratch "$mutation.gguf"
     [IO.File]::WriteAllBytes($badPath, $bytes)
-    Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath, $dialect, $true) } "Malformed census payload accepted: $mutation"
+    Assert-Failure { (Read-TestGguf $badPath $dialect $true) } "Malformed census payload accepted: $mutation"
 }
 # Stock type 42 remains Q2_0 (64 symbols/18 bytes), never an alias for PQ2_0.
 $stockPath = Join-Path $scratch 'stock-q2.gguf'
 New-CensusFixture $stockPath @(@{ Name = 'stock.q2'; Type = 42; Elements = 64; Payload = [byte[]]::new(18) }) | Out-Null
-$stock = [SwiftBonsai.GgufInspector]::Read($stockPath)
+$stock = (Read-TestGguf $stockPath)
 Assert ($stock.TensorTypeHistogram[0].Name -ceq 'Q2_0' -and $stock.TensorTypeHistogram[0].Bytes -eq 18) 'Private dialect changed stock type 42.'
-Assert-Failure { [SwiftBonsai.GgufInspector]::Read($stockPath, $dialect, $true) } 'Empty PQ2 census was silently accepted.'
-Assert-Failure { [SwiftBonsai.GgufInspector]::Read($stockPath, 'Stock', $true) } 'Stock census was accepted.'
+Assert-Failure { (Read-TestGguf $stockPath $dialect $true) } 'Empty PQ2 census was silently accepted.'
+Assert-Failure { (Read-TestGguf $stockPath 'Stock' $true) } 'Stock census was accepted.'
 # The entrypoint verifies immutable artifact identity before payload counting.
 $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 $output = Join-Path $scratch 'census.json'
-$verified = & (Join-Path $repo 'scripts/Read-Gguf.ps1') -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -Dialect $dialect -CensusPq2 -OutputPath $output
+$verified = & (Join-Path $repo 'scripts/Read-Gguf.ps1') -GgufToolPath $env:BONSAI_GGUF_TOOL -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -Dialect $dialect -CensusPq2 -OutputPath $output
 $saved = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json -DateKind String
 Assert ($verified.ArtifactVerification -eq 'verified-size-and-sha256' -and $saved.TensorPayloadRead -and $saved.Pq2Census.CodeZero -eq $census.CodeZero) 'Verified census did not round-trip.'
-Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 ('0' * 64) -Dialect $dialect -CensusPq2 } 'Census accepted a failed artifact hash.'
-Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -CensusPq2 } 'Entrypoint permitted an implicit Prism dialect.'
-Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -Dialect $dialect -CensusPq2 -OutputPath $output } 'Census overwrote an existing evidence report.'
+Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -GgufToolPath $env:BONSAI_GGUF_TOOL -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 ('0' * 64) -Dialect $dialect -CensusPq2 } 'Census accepted a failed artifact hash.'
+Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -GgufToolPath $env:BONSAI_GGUF_TOOL -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -CensusPq2 } 'Entrypoint permitted an implicit Prism dialect.'
+Assert-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -GgufToolPath $env:BONSAI_GGUF_TOOL -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -Dialect $dialect -CensusPq2 -OutputPath $output } 'Census overwrote an existing evidence report.'
 Write-Information -InformationAction Continue "PQ2 census focused regressions passed. Synthetic evidence retained at $scratch"

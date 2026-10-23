@@ -22,12 +22,14 @@ param(
     [ValidateRange(1,[long]::MaxValue)][long]$ExpectedBytes,
     [ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ExpectedSha256,
     [ValidateSet('Stock','Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b')][string]$Dialect = 'Stock',
-    [switch]$CensusPq2
+    [switch]$CensusPq2,
+    [string]$GgufToolPath
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Gguf.psm1')
 $ModelPath = Resolve-ExternalPath $ModelPath
 if ($CensusPq2 -and $Dialect -eq 'Stock') { throw 'CensusPq2 requires the explicit pinned Prism Dialect.' }
 if ($PSBoundParameters.ContainsKey('ExpectedBytes') -ne $PSBoundParameters.ContainsKey('ExpectedSha256')) {
@@ -45,18 +47,7 @@ if ($OutputPath) {
         throw 'The external output directory must already exist.'
     }
 }
-if (-not ('SwiftBonsai.GgufInspector' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'GgufMetadata.cs') -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0') }
-# Hold a read-only, write-denying handle across verification and inspection on Windows.
-$guard = [IO.File]::Open($ModelPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-try {
-    Test-LockedArtifact $ModelPath $ExpectedBytes $ExpectedSha256
-    $report = [SwiftBonsai.GgufInspector]::Read($ModelPath, $Dialect, $CensusPq2.IsPresent)
-    $report['ArtifactSha256'] = $ExpectedSha256.ToLowerInvariant()
-    $report['ArtifactVerification'] = 'verified-size-and-sha256'
-    if ($OutputPath) {
-        $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($report | ConvertTo-Json -Depth 20) + [Environment]::NewLine)
-        $output = [IO.File]::Open($OutputPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
-        try { $output.Write($bytes); $output.Flush($true) } finally { $output.Dispose() }
-    }
-    return $report
-} finally { $guard.Dispose() }
+$arguments = @('inspect', '--model', $ModelPath, '--expected-bytes', $ExpectedBytes.ToString([Globalization.CultureInfo]::InvariantCulture), '--expected-sha256', $ExpectedSha256, '--dialect', $Dialect)
+if ($CensusPq2) { $arguments += '--census-pq2' }
+if ($OutputPath) { $arguments += @('--output', $OutputPath) }
+return Invoke-GgufTool -Arguments $arguments -GgufToolPath $GgufToolPath
