@@ -9,6 +9,37 @@ concurrency:
   group: foundation-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  broker:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Install explicit native Rust toolchain in CI
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install 1.98.0-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
+          if ($LASTEXITCODE) { throw 'Rust toolchain installation failed.' }
+          $identity = rustc +1.98.0-aarch64-pc-windows-msvc -vV
+          if ($LASTEXITCODE -or $identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
+          $identity
+      - name: Broker format, analyzer and full correctness suite
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifest = Join-Path $env:GITHUB_WORKSPACE 'src/broker/Cargo.toml'
+          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-Broker-' + [guid]::NewGuid().ToString('N'))
+          cargo +1.98.0-aarch64-pc-windows-msvc fmt --manifest-path $manifest --check
+          if ($LASTEXITCODE) { throw 'Broker formatting failed.' }
+          cargo +1.98.0-aarch64-pc-windows-msvc clippy --manifest-path $manifest --locked --all-targets -- -D warnings
+          if ($LASTEXITCODE) { throw 'Broker analyzer failed.' }
+          cargo +1.98.0-aarch64-pc-windows-msvc test --manifest-path $manifest --locked
+          if ($LASTEXITCODE) { throw 'Broker suite failed.' }
   foundation:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm

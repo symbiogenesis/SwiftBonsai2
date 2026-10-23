@@ -1,0 +1,2 @@
+# Broker build outputs; diagnostic scratch belongs in system temp.
+/src/broker/target/
