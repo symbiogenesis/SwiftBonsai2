@@ -180,7 +180,7 @@ Bind inference to `127.0.0.1` initially. Preserve an offline path once artifacts
 
 ### Agent harness selection
 
-The stronger harness requirements change the original Aider-only candidate list. Evaluate an established agent client before building a new agent loop. Keep the inference engine independent so changing clients does not reload or duplicate the model.
+Evaluate an established agent client before building a new agent loop. Keep the inference engine independent so changing clients does not reload or duplicate the model.
 
 | Candidate | Evidence and fit | Qualification / decision |
 | --- | --- | --- |
@@ -220,7 +220,7 @@ Host qualification must record the MXC revision, exact OS build, requested polic
 
 The default policy should provide one disposable project workspace, separate scratch, and required read-only tools. Deny unrelated user files, credentials, model packs, conversation/state caches, broker control handles, clipboard/GUI access, and networking unless individually required. Keep the OS/profile environment valid while removing explicitly scoped application secrets; never clear or redirect inherited Windows system/profile variables wholesale.
 
-The broker must fail closed if the requested capability cannot be enforced. No automatic unsandboxed shell fallback, broad host ACL mutation, or permissive network mode to make a tool start. Set `allowDaclMutation:false` where the chosen MXC schema supports that refusal policy. Never enable MXC's audit mode for untrusted model-generated execution; audit mode disables its security. [MXC schema][mxc-schema] · [Audit-mode contract][mxc-readme]
+The broker must fail closed if the requested capability cannot be enforced. No automatic unsandboxed shell fallback, broad host ACL mutation, or permissive network mode to make a tool start. Require `allowDaclMutation:false` in the selected MXC policy. Never enable MXC's audit mode for untrusted model-generated execution; audit mode disables its security. [MXC schema][mxc-schema] · [Audit-mode contract][mxc-readme]
 
 Qualify each of these before calling a profile contained:
 
@@ -419,7 +419,7 @@ The existing block costs come from [Prism's format definitions][quant-blocks]. I
 | 40% | 1.725 | 18.8% | 1.4% |
 | 50% | 1.625 | 23.5% | 7.1% |
 
-BITCOS beats the dense-trit PTQ block cost only above approximately `37.5% + delta` zeros. It can reduce PQ2 bytes while still losing runtime to unpacking and indexing. Swift PQ2 and the published PTQ release have different merged weights, so this table is an encoding comparison on identical hypothetical data, not an apples-to-apples comparison of those two released artifacts.
+BITCOS beats the dense-trit PTQ block cost when `z > 0.375 + delta`, with zero fraction `z` expressed from 0 to 1. It can reduce PQ2 bytes while still losing runtime to unpacking and indexing. Swift PQ2 and the published PTQ release have different merged weights, so this table is an encoding comparison on identical hypothetical data, not an apples-to-apples comparison of those two released artifacts.
 
 Proposed feasibility sequence:
 
