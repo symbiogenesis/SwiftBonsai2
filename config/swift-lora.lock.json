@@ -22,6 +22,7 @@
     "loraAlpha": 1.0,
     "tensorPairs": 129,
     "authoringBasis": "unfolded; native graph applies the adapter to unrotated activations",
+    "groupedSsmInputBasis": "unresolved publisher disagreement; requires independent native writer-level validation before behavioral qualification",
     "publishedInferenceEvidence": "original Ternary Bonsai PTQ1 only; not Swift or PQ2",
     "descriptorAudit": {
       "recordedDate": "2026-10-23",
@@ -31,6 +32,15 @@
       "allAdapterTensorsF32": true,
       "allTargetNamesAndRank1ShapesMatch": true,
       "qualification": "read-only GGUF metadata and descriptor audit; no inference"
+    },
+    "boundedNativeCheck": {
+      "recordedDate": "2026-10-23",
+      "status": "bounded-load-and-decode-completed",
+      "exitCode": 0,
+      "completionTokenLimit": 16,
+      "windowsReportedPeakJobMemoryBytes": 2074329088,
+      "baseWindowsReportedPeakJobMemoryBytes": 1487458304,
+      "qualification": "root-reported fixed trusted-input native ARM64 check; Job commit diagnostic, not total RAM, a performance benchmark, or behavioral acceptance"
     },
     "status": "unqualified-on-pinned-Swift-native-ARM64",
     "trainingRequired": false,
