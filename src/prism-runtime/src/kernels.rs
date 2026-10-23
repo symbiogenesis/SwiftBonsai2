@@ -505,7 +505,7 @@ impl MatvecScratch {
         self.selected_backend
     }
 
-    fn select_pq2(&mut self) -> Pq2RowKernel {
+    const fn select_pq2(&self) -> (MatvecBackend, Pq2RowKernel) {
         #[cfg(all(
             feature = "experimental-neon",
             target_arch = "aarch64",
@@ -513,14 +513,13 @@ impl MatvecScratch {
             target_env = "msvc",
             target_feature = "neon"
         ))]
-        if self.requested_backend == MatvecBackend::ExperimentalNeon {
-            self.selected_backend = MatvecBackend::ExperimentalNeon;
-            return dot_pq2_neon;
+        if matches!(self.requested_backend, MatvecBackend::ExperimentalNeon) {
+            return (MatvecBackend::ExperimentalNeon, dot_pq2_neon);
         }
         // Read the request on scalar-only builds as well; no request can bypass
         // the build/target contract or enable an optional instruction set.
         let _ = self.requested_backend;
-        dot_pq2
+        (MatvecBackend::Scalar, dot_pq2)
     }
 }
 
@@ -567,7 +566,8 @@ pub fn matvec_into(
         match tensor.kind {
             PQ2 if columns.is_multiple_of(256) => {
                 q8k_into(input, &mut scratch.q8k)?;
-                let dot = scratch.select_pq2();
+                let (backend, dot) = scratch.select_pq2();
+                scratch.selected_backend = backend;
                 for bytes in tensor.data.chunks_exact(row_bytes) {
                     output.push(dot(bytes, &scratch.q8k)?);
                 }
