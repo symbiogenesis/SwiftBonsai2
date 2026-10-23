@@ -2,6 +2,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Completion.psm1')
 
 function Get-BonsaiLoraEvaluationArgument {
     <# .SYNOPSIS
@@ -19,11 +20,7 @@ function Get-BonsaiLoraEvaluationArgument {
         [string]::IsNullOrWhiteSpace($Prompt) -or $Prompt.Length -gt 4096 -or $Prompt.Contains([char]0)) {
         throw 'Evaluation requires verified artifact paths and one bounded fixed prompt.'
     }
-    $arguments = @('--model', $ModelPath, '--ctx-size', '8192', '--parallel', '1',
-        '--cache-type-k', 'f16', '--cache-type-v', 'f16', '--gpu-layers', '0', '--device', 'none',
-        '--no-kv-offload', '--no-op-offload', '--fit', 'off', '--threads', '4', '--threads-batch', '4',
-        '--poll', '0', '--poll-batch', '0', '--batch-size', '128', '--ubatch-size', '64',
-        '--load-mode', 'mmap', '--no-repack', '--no-context-shift', '--offline', '--no-warmup',
+    $arguments = @(Get-BonsaiCompletionArgument -ModelPath $ModelPath -Profile swift-pq2-assessment) + @(
         '--perf', '--log-verbosity', '3', '--no-log-prefix', '--no-log-timestamps', '--log-colors', 'off',
         '--color', 'off', '--simple-io', '--no-display-prompt', '--verbose-prompt',
         '--conversation', '--jinja', '--single-turn', '--n-predict', '512',

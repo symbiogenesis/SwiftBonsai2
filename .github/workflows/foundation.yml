@@ -442,6 +442,7 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           ./tests/Test-CpuCheckPolicy.ps1 -Case Profiles
+          ./tests/Test-CpuCheckPolicy.ps1 -Case Artifacts
           $data = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime'
           $lockPath = Join-Path $env:GITHUB_WORKSPACE 'config/swift-assessment.lock.json'
           ./scripts/Get-Engine.ps1 -DataDirectory $data -LockPath $lockPath

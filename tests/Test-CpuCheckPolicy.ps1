@@ -1,24 +1,14 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([string])]
-param([Parameter(Mandatory)][ValidateSet('Profiles')][string]$Case)
+param([Parameter(Mandatory)][ValidateSet('Profiles', 'Artifacts')][string]$Case)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 
-if ($Case -ne 'Profiles') { throw 'Unsupported focused CPU check policy case.' }
-
-# Extract only pure profile/argument helpers. No inventory, native executable,
-# artifact probe, model execution or filesystem writes occur in this check.
-$path = Join-Path $PSScriptRoot '../scripts/Invoke-CpuCheck.ps1'
-$tokens = $null; $parseErrors = $null
-$ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors)
-if ($parseErrors.Count) { throw ($parseErrors.Message -join '; ') }
-foreach ($name in @('Get-CpuCheckPolicy', 'Get-CpuCheckArgument')) {
-    $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $false)
-    if ($null -eq $definition) { throw "Missing CPU check policy helper: $name" }
-    . ([scriptblock]::Create($definition.Extent.Text))
-}
+# Import only pure policy helpers. These cases never probe model files, start
+# native tools or model execution, query inventory, or write to the filesystem.
+Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Completion.psm1') -Force
 function Assert {
     [CmdletBinding()]
     [OutputType([void])]
@@ -39,6 +29,41 @@ function Assert-ArgumentValue {
     param([string[]]$Arguments, [string]$Name, [string]$Value)
     $index = [Array]::IndexOf($Arguments, $Name)
     Assert ($index -ge 0 -and $index + 1 -lt $Arguments.Count -and $Arguments[$index + 1] -ceq $Value) "Unexpected CPU argument for $Name."
+}
+
+if ($Case -eq 'Artifacts') {
+    $lock = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/swift-assessment.lock.json') -Raw | ConvertFrom-Json -AsHashtable -DateKind String
+    $derived = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/swift.ptq1-export.json') -Raw | ConvertFrom-Json -AsHashtable -DateKind String
+    $sourcePolicy = Get-CpuCheckPolicy -Profile swift-pq2-assessment
+    $ptqPolicy = Get-CpuCheckPolicy -Profile swift-pq2-assessment -UseRepackedPtq1
+    $source = Get-BonsaiCompletionArtifact -Lock $lock -Policy $sourcePolicy
+    $ptq = Get-BonsaiCompletionArtifact -Lock $lock -Policy $ptqPolicy -Derived $derived
+    Assert ($source.Filename -ceq $lock.model.filename -and $source.Bytes -eq 7206168928 -and
+        $source.Sha256 -ceq $lock.model.sha256) 'The source identity changed.'
+    Assert ($ptq.Filename -ceq 'Swift-Bonsai-2-current-repacked-PTQ1_0.gguf' -and $ptq.Bytes -eq 5946648928 -and
+        $ptq.Sha256 -ceq $derived.OutputSha256) 'The derived identity changed.'
+    Assert-Failure { Get-BonsaiCompletionArtifact -Lock $lock -Policy $ptqPolicy } 'PTQ1 policy accepted missing reconstruction evidence.'
+    Assert-Failure { Get-BonsaiCompletionArtifact -Lock $lock -Policy $sourcePolicy -Derived $derived } 'Source policy silently selected derived weights.'
+    foreach ($change in @(
+        @{ Key = 'SourceRevision'; Value = ('0' * 40) },
+        @{ Key = 'SourceSha256'; Value = ('0' * 64) },
+        @{ Key = 'SourceBytes'; Value = 1 },
+        @{ Key = 'CodecCommit'; Value = ('0' * 40) },
+        @{ Key = 'OutputFilename'; Value = '../unreviewed.gguf' },
+        @{ Key = 'OutputSha256'; Value = 'invalid' },
+        @{ Key = 'OutputSha256'; Value = $derived.OutputSha256.ToUpperInvariant() },
+        @{ Key = 'OutputBytes'; Value = 1 },
+        @{ Key = 'ExactPq2ReconstructionVerified'; Value = $false }
+    )) {
+        $invalid = $derived.Clone()
+        $invalid[$change.Key] = $change.Value
+        Assert-Failure { Get-BonsaiCompletionArtifact -Lock $lock -Policy $ptqPolicy -Derived $invalid } "Accepted invalid derived $($change.Key)."
+    }
+    $missing = $derived.Clone()
+    $missing.Remove('SourceBytes')
+    Assert-Failure { Get-BonsaiCompletionArtifact -Lock $lock -Policy $ptqPolicy -Derived $missing } 'Accepted incomplete derived evidence.'
+    Write-Output 'Completion artifact identity checks passed.'
+    return
 }
 
 $reference = Get-CpuCheckPolicy

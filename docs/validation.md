@@ -31,6 +31,25 @@ change or compiler-concurrency change; it makes no measured performance claim.
 The focused `tests/Test-NativeProcess.ps1 -Case Capture` check exercises literal
 arguments and simultaneous output; Foundation CI runs all invocation cases.
 
+Pure completion policy and argument construction live in
+`scripts/Bonsai.Completion.psm1`; CPU checks and paired LoRA evaluation share the
+CPU-only argument prefix and the same pinned source/PTQ1 artifact selection.
+Their distinct token limits, sampler, timing flags and adapter syntax remain at
+their callers. `scripts/Bonsai.Build.psm1` owns the engine's unchanged compiler
+budget and build arguments. Focused policy and scheduling tests import these
+modules directly rather than extracting functions from executable script source.
+Module imports run no native tools, model loads or inventory queries. These
+consolidations add no native process or Rust bootstrap and retain the existing
+inference arguments, memory guards and build concurrency; no timing improvement
+is claimed. `tests/Test-CpuCheckPolicy.ps1 -Case Artifacts` also checks rejection
+of mismatched or incomplete PTQ1 identities before model-file verification.
+
+Further Rust migration should reuse `bonsai-windows-process` for CPU and LoRA
+supervision rather than introduce another Win32 implementation. Retiring the C#
+launcher requires a packaged completion-check executable and separate lifecycle,
+resource-limit and qualification validation. Keeping setup orchestration in
+PowerShell avoids requiring a compiler or an extra process for pure planning.
+
 | Language | Enforced policy |
 | --- | --- |
 | Rust 1.99.1 / edition 2024 | Unsafe code forbidden in policy/tooling; documented native-boundary allowances in the Windows crates and Prism FFI/native test. Warnings, missing API documentation, unchecked casts, production unwrap/expect/panic and Clippy all/pedantic/nursery/cargo findings rejected; Release arithmetic overflow checks enabled. Release debug assertions remain disabled to preserve the constant-time dependency's release contract. |

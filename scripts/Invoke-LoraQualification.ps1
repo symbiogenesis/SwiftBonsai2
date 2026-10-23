@@ -24,6 +24,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Qualification.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.LoraEvaluation.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Completion.psm1')
 $data = Resolve-ExternalPath $DataDirectory
 $plan = Get-BonsaiLoraQualificationPlan
 $contract = $plan.Contract
@@ -56,19 +57,19 @@ $adapter = & (Join-Path $PSScriptRoot 'Get-Adapter.ps1') -DataDirectory $data -V
 $runtimeDirectory = Resolve-ExternalPath ([IO.Path]::GetDirectoryName($runtime.ServerPath))
 $executable = Resolve-ExternalPath (Join-Path $runtimeDirectory 'llama-completion.exe')
 Assert-Arm64PE $executable
-$modelFilename = $lock.model.filename
-$modelBytes = $lock.model.bytes
+$policy = Get-CpuCheckPolicy -Profile swift-pq2-assessment -UseAbliterateLora -UseRepackedPtq1:$UseRepackedPtq1
+$derived = $null
 if ($UseRepackedPtq1) {
     $derived = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/swift.ptq1-export.json') | ConvertFrom-Json -AsHashtable -DateKind String
-    if ($derived.SourceSha256 -cne $lock.model.sha256 -or $derived.SourceRevision -cne $lock.model.revision -or
-        $derived.CodecCommit -cne $lock.runtime.commit -or -not $derived.ExactPq2ReconstructionVerified) { throw 'Derived weights do not match their locked source/runtime.' }
-    $modelFilename = $derived.OutputFilename; $modelBytes = $derived.OutputBytes
 }
-$modelPath = Resolve-ExternalPath (Join-Path $data -ChildPath 'models', $lock.model.revision, $modelFilename)
+$artifact = Get-BonsaiCompletionArtifact -Lock $lock -Policy $policy -Derived $derived
+$modelBytes = $artifact.Bytes
+$modelPath = Resolve-ExternalPath (Join-Path $data -ChildPath 'models', $lock.model.revision, $artifact.Filename)
 $controls = @{}
 foreach ($key in $contract.controls.Keys) { $controls[$key] = $contract.controls[$key] }
 $controls.modelSha256 = $contract.representations[$representation]
 $controls.weightRepresentation = $representation
+if ($artifact.Sha256 -cne $controls.modelSha256) { throw 'Selected artifact and qualification controls disagree.' }
 $controlDigest = Get-BonsaiLoraControlDigest $controls
 if ($lock.runtime.commit -cne $controls.runtimeCommit -or $adapterLock.adapter.sha256 -cne $controls.adapterSha256) { throw 'Runtime/adapter and qualification controls disagree.' }
 if (-not ('SwiftBonsai.OwnedProcess' -as [type])) {

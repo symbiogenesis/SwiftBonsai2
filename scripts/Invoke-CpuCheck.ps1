@@ -30,83 +30,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
-function Get-CpuCheckPolicy {
-    [CmdletBinding()]
-    [OutputType([pscustomobject])]
-    param(
-        [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu',
-        [switch]$UseAbliterateLora,
-        [switch]$UseRepackedPtq1
-    )
-    if ($UseAbliterateLora -and $ProfileName -ne 'swift-pq2-assessment') { throw 'The pinned adapter assessment requires the Swift profile.' }
-    if ($UseRepackedPtq1 -and $ProfileName -ne 'swift-pq2-assessment') { throw 'The current-weight PTQ1 export requires the Swift profile.' }
-    [long]$ceiling = 18GB
-    [long]$weights = 13146393504
-    [long]$transforms = 0
-    [long]$transformTemporary = 0
-    $lockPath = '../config/runtime.lock.json'
-    $batch = 256
-    $microbatch = 128
-    if ($ProfileName -eq 'swift-pq2-assessment') {
-        $ceiling = 12GB
-        $weights = 7206168928
-        # One shared 1024-square F32 rotation; three shared F32 sign vectors and
-        # retained int32 sign metadata. Construction also briefly stages 4 MiB.
-        $transforms = 4L * 1024 * 1024 + 8L * (5120 + 6144 + 17408)
-        $transformTemporary = 4MB
-        $lockPath = '../config/swift-assessment.lock.json'
-        $batch = 128
-        $microbatch = 64
-    }
-    [long]$kv = 8192L * 16 * 4 * 256 * 2 * 2
-    [long]$recurrent = 48L * 4 * (128 * 6144 + 3 * (6144 + 2 * 16 * 128))
-    [long]$adapterBytes = if ($UseAbliterateLora) { 9682464 } else { 0 }
-    if ($UseRepackedPtq1) { $weights = 5946648928 }
-    [long]$known = $weights + $kv + $recurrent + $transforms + $adapterBytes
-    [pscustomobject]@{
-        Name = $ProfileName; LockRelativePath = $lockPath
-        ServiceCeilingBytes = $ceiling; AvailableMemoryFloorBytes = 4GB
-        RequiredAvailableBytes = $ceiling + 4GB
-        ContextTokens = 8192; BatchTokens = $batch; MicrobatchTokens = $microbatch
-        TokenLimit = 16; TimeoutSeconds = 600
-        EstimatedWeightBytes = $weights; EstimatedKvBytes = $kv
-        EstimatedRecurrentBytes = $recurrent; EstimatedTransformBytes = $transforms
-        EstimatedAdapterBytes = $adapterBytes
-        WeightRepresentation = if ($UseRepackedPtq1) { 'current-repacked-PTQ1_0' } elseif ($ProfileName -eq 'swift-pq2-assessment') { 'PQ2_0' } else { 'reference-mixed' }
-        EstimatedTransformConstructionTemporaryBytes = $transformTemporary
-        EstimatedKnownSubtotalBytes = $known; EstimatedRuntimeHeadroomBytes = $ceiling - $known
-        EstimateScope = 'Whole file plus persistent caches/transforms; temporary construction, tokenizer, graph/scratch and allocation overhead use remaining allowance. Source arithmetic, not measured peak.'
-    }
-}
-function Get-CpuCheckArgument {
-    [CmdletBinding()]
-    [OutputType([string], [array])]
-    param(
-        [Parameter(Mandatory)][string]$ModelPath,
-        [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu',
-        [switch]$UseAbliterateLora,
-        [string]$AdapterPath
-    )
-    $policy = Get-CpuCheckPolicy -Profile $ProfileName -UseAbliterateLora:$UseAbliterateLora
-    if ($UseAbliterateLora.IsPresent -ne (-not [string]::IsNullOrWhiteSpace($AdapterPath))) { throw 'Adapter arguments require the explicit switch and verified adapter path together.' }
-    $logVerbosity = if ($ProfileName -eq 'swift-pq2-assessment') { '3' } else { '2' }
-    $arguments = @('--model', $ModelPath, '--ctx-size', [string]$policy.ContextTokens, '--parallel', '1',
-        '--cache-type-k', 'f16', '--cache-type-v', 'f16', '--gpu-layers', '0', '--device', 'none',
-        '--no-kv-offload', '--no-op-offload', '--fit', 'off', '--threads', '4', '--threads-batch', '4',
-        '--poll', '0', '--poll-batch', '0', '--batch-size', [string]$policy.BatchTokens,
-        '--ubatch-size', [string]$policy.MicrobatchTokens,
-        '--load-mode', 'mmap', '--no-repack', '--no-context-shift', '--offline', '--no-warmup',
-        '--no-perf', '--log-verbosity', $logVerbosity, '--color', 'off', '--simple-io', '--no-display-prompt',
-        '--conversation', '--jinja', '--single-turn', '--n-predict', [string]$policy.TokenLimit)
-    if ($ProfileName -eq 'reference-cpu') {
-        $arguments += @('--system-prompt', 'You are a helpful assistant.')
-    }
-    if ($UseAbliterateLora) { $arguments += @('--lora', $AdapterPath) }
-    # Swift's template requires a user query. Completion formats an explicit
-    # system message on its own before appending the user, which throws. Start
-    # this synthetic conversation with the user; retain embedded default reasoning.
-    $arguments + @('--prompt', 'Reply with the word ready.')
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Completion.psm1')
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
     [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
     throw 'Use native ARM64 PowerShell on Windows ARM64.'
@@ -150,20 +74,14 @@ if ($ProfileName -eq 'reference-cpu') {
     $serverProfile = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json -DateKind String
     if ($serverProfile.serviceCeilingBytes -ne $policy.ServiceCeilingBytes) { throw 'Review this check before changing the reference service allowance.' }
 }
-$artifactBytes = $lock.model.bytes
-$artifactSha256 = $lock.model.sha256
-$artifactFilename = $lock.model.filename
+$derived = $null
 if ($UseRepackedPtq1) {
-    $derived = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/swift.ptq1-export.json') | ConvertFrom-Json -DateKind String
-    if ($derived.SourceRevision -cne $lock.model.revision -or $derived.SourceSha256 -cne $lock.model.sha256 -or
-        $derived.SourceBytes -ne $lock.model.bytes -or $derived.CodecCommit -cne $lock.runtime.commit -or
-        $derived.OutputFilename -cne 'Swift-Bonsai-2-current-repacked-PTQ1_0.gguf' -or
-        $derived.OutputSha256 -cnotmatch '^[a-f0-9]{64}$' -or -not $derived.ExactPq2ReconstructionVerified) { throw 'Derived PTQ1 evidence differs from its pinned source/runtime.' }
-    $artifactBytes = $derived.OutputBytes
-    $artifactSha256 = $derived.OutputSha256
-    $artifactFilename = $derived.OutputFilename
+    $derived = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/swift.ptq1-export.json') | ConvertFrom-Json -AsHashtable -DateKind String
 }
-if ($artifactBytes -ne $policy.EstimatedWeightBytes) { throw 'Review this check before changing the assessment weight estimate.' }
+$artifact = Get-BonsaiCompletionArtifact -Lock $lock -Policy $policy -Derived $derived
+$artifactBytes = $artifact.Bytes
+$artifactSha256 = $artifact.Sha256
+$artifactFilename = $artifact.Filename
 $adapterLock = $adapterPath = $null
 if ($UseAbliterateLora) {
     $adapterLock = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/swift-lora.lock.json') | ConvertFrom-Json -DateKind String
