@@ -2,7 +2,7 @@
 
 The first implementation selects **Qwen3.8-27B UD-Q3_K_XL** from published creative-writing evidence. [The decision](docs/model-selection.md) records the artifact, ARM64 compatibility, memory estimate, limitations, fallback, and stop conditions. The repository name is retained from the original Swift-first research plan.
 
-Implemented: read-only host inventory, immutable artifact locks, resumable size/hash-verified provisioning, native ARM64 CPU runtime installation/source builds, full GGUF metadata inspection, a guarded synthetic CPU check, an explicit 8K reference configuration, and foundation CI. The chosen model/runtime are provisioned under the owner's selected `%LOCALAPPDATA%\SwiftBonsai2` directory; the complete artifact metadata is recorded in [model.metadata.json](config/model.metadata.json). **Chat launch is not enabled.** CPU loading, authenticated lifecycle, daily isolation, and creative/comfort qualification remain ahead. The reference configuration is an unqualified development candidate.
+Implemented: read-only host inventory, immutable artifact locks, resumable size/hash-verified provisioning, native ARM64 CPU runtime installation/source builds, full GGUF metadata inspection, a guarded synthetic CPU check, an explicit 8K reference configuration, a fixed server-policy preflight, and foundation CI. The chosen model/runtime are provisioned under the owner's selected `%LOCALAPPDATA%\SwiftBonsai2` directory; the complete artifact metadata is recorded in [model.metadata.json](config/model.metadata.json). **Chat launch is not enabled.** CPU loading, authenticated lifecycle, daily isolation, and creative/comfort qualification remain ahead. The reference configuration is an unqualified development candidate.
 
 ## Inventory and provisioning
 
@@ -45,6 +45,21 @@ Interrupted downloads retain one `.partial` file and resume against the immutabl
 This fixed synthetic check uses the in-process `llama-completion` executable, a 16-token limit, 8K FP16 state, CPU-only placement, no reusable prompt cache, and a ten-minute safety timeout. It preserves the embedded template's default thinking behavior. The pinned completion path does not reliably forward thinking-control kwargs, and modern `llama-cli` starts a local server; neither is used to claim a qualified thinking-disabled chat profile.
 
 Before launch, the check requires 22 GiB currently available physical RAM: the complete 18 GiB service allowance plus a conservative 4 GiB reserve. It then watches current process working set/private bytes against 18 GiB and available physical memory against the 4 GiB floor. It fails closed rather than closing other applications. These volatile admission/watchdog readings are not peak measurements, OS-enforced limits, or performance acceptance. On October 23 the host had about 8 GiB available, so the check refused to start; CPU load/decode remains pending. Failure logs stay in unique system-temp directories. A trusted-input development check does not qualify daily process isolation.
+
+## Prepare the server policy
+
+```powershell
+# Pure planning: no processes, keys, storage creation, or listener
+./scripts/Get-ServerPlan.ps1 -DataDirectory $data
+# Offline runtime verification plus bounded version/help probes; no model needed
+./scripts/Get-ServerPlan.ps1 -DataDirectory $data -VerifyRuntime
+# Also hash-check the existing model; never downloads or loads it
+./scripts/Get-ServerPlan.ps1 -DataDirectory $data -VerifyArtifacts
+```
+
+The preflight rejects unreviewed profile fields/types, mapped network storage, unsafe paths, and inherited runtime overrides, including the separate `AIP_*` and `MTMD_*` namespaces. It preserves Windows system/profile environment variables. The returned argument array uses numeric loopback, a planned key-file path, no host tools/MCP/UI, one 8K CPU slot, FP16 state, no reuse/speculation, and the publisher's thinking-mode sampler. Verification checks every planned switch against the installed pinned binary's help; that does not validate option values or enforcement. Reports contain local paths; review before sharing.
+
+The preflight **cannot launch chat** and creates no key. It lists the required enforcement work: native CORS does not reject Host/Origin, control routes remain registered, and request settings can exceed the `n-predict` default. The socket timeout and offline flag do not enforce a total request duration or OS egress denial. Authentication, request bounds, restricted process lifecycle, backend bypass prevention, and the offline UI remain pending. The October 23 artifact preflight passed integrity/switch checks, while its admission-only memory check still refused model launch (about 9.3 GiB available versus 22 GiB required).
 
 ## Build the CPU server from source
 

@@ -1,6 +1,6 @@
 #requires -Version 7.4
 [CmdletBinding()]
-param([ValidateSet('All','Download','Configuration','Paths','PE','Doctor')][string]$Case = 'All')
+param([ValidateSet('All','Download','Configuration','Paths','PE','Doctor','ServerPolicy')][string]$Case = 'All')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows) { throw 'These checks target Windows.' }
@@ -132,6 +132,61 @@ public sealed class BonsaiTestHandler : HttpMessageHandler {
     }
     # Restore the production factory in the current session.
     Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Force
+}
+if ($Case -in @('All','ServerPolicy')) {
+    Import-Module (Join-Path $repo 'scripts/Bonsai.ServerPolicy.psm1') -Force
+    $before = [Environment]::GetEnvironmentVariables()
+    $data = Join-Path $scratch 'unprovisioned data'
+    $plan = & (Join-Path $repo 'scripts/Get-ServerPlan.ps1') -DataDirectory $data -Port 18080
+    Assert (-not $plan.LaunchEnabled -and -not $plan.ModelProcessStarted -and
+        $plan.SecurityQualification -eq 'not-qualified' -and $plan.ArtifactVerification -eq 'not-performed') 'Planning promoted an unqualified server.'
+    Assert (-not (Test-Path -LiteralPath $data)) 'Read-only planning created artifact/key storage.'
+    Assert ($plan.Origin -ceq 'http://127.0.0.1:18080' -and $plan.Arguments -contains $plan.PlannedKeyFile -and
+        $plan.PlannedKeyFile.StartsWith($data + '\') -and $plan.Arguments -contains $plan.ModelPath) 'Plan paths or exact origin are inconsistent.'
+    Assert ($plan.RemainingGates.Count -ge 6 -and $plan.RequiredAvailableBytes -eq 22GB) 'Plan omitted required qualification gaps.'
+    foreach ($unsafeFlag in @('--api-key','--agent','--tools','--mcp-servers-json','--mcp-servers-config',
+        '--ui-mcp-proxy','--path','--models-dir','--model-url','--rpc','--metrics','--props')) {
+        Assert ($plan.Arguments -cnotcontains $unsafeFlag) "Plan contains unsafe server option: $unsafeFlag"
+    }
+    Assert ($plan.Arguments -ccontains '--no-agent' -and $plan.Arguments -ccontains '--no-ui-mcp-proxy' -and
+        $plan.Arguments -ccontains '--no-ui' -and $plan.Arguments -ccontains '--no-slots' -and
+        $plan.Arguments -ccontains '--offline') 'Plan omitted explicit restrictions.'
+    foreach ($name in @('llama_arg_agent','LLAMACPP_FOO','GGML_BACKEND_PATH','AIP_MODE','aip_http_port',
+        'MTMD_BACKEND_DEVICE','HF_TOKEN','HF_ENDPOINT','MODEL_ENDPOINT')) {
+        $failureText = $null
+        try { Assert-BonsaiServerEnvironment -Variables @{ $name = 'PRIVATE-VALUE-NEVER-PRINT' } }
+        catch { $failureText = $_.Exception.Message }
+        Assert ($failureText -and $failureText.Contains($name) -and
+            -not $failureText.Contains('PRIVATE-VALUE-NEVER-PRINT')) 'Environment override rejection exposed a value or missed a name.'
+    }
+    Assert-BonsaiServerEnvironment -Variables @{
+        SystemDrive = 'C:'; SystemRoot = 'C:\Windows'; windir = 'C:\Windows'
+        ProgramData = 'C:\ProgramData'; LOCALAPPDATA = 'C:\Users\Owner\AppData\Local'
+        APPDATA = 'C:\Users\Owner\AppData\Roaming'; USERPROFILE = 'C:\Users\Owner'
+    }
+    $profilePath = Join-Path $repo 'config/profiles/reference-cpu.json'
+    foreach ($mutation in @(
+        @{ Name = 'launchEnabled'; Value = $true }, @{ Name = 'launchEnabled'; Value = 'false' },
+        @{ Name = 'contextTokens'; Value = '8192' }, @{ Name = 'contextTokens'; Value = 16384 },
+        @{ Name = 'cachePrompt'; Value = $true }, @{ Name = 'estimatedRuntimeHeadroomBytes'; Value = 1 },
+        @{ Name = 'remainingGates'; Value = @() }, @{ Name = 'extraArguments'; Value = @('--tools','all') }
+    )) {
+        $profile = Get-Content -Raw -LiteralPath $profilePath | ConvertFrom-Json -AsHashtable
+        $profile[$mutation.Name] = $mutation.Value
+        Expect-Failure { New-BonsaiServerPlan -DataDirectory $data -Profile $profile } "Unsafe or mistyped profile accepted: $($mutation.Name)"
+    }
+    foreach ($path in @('relative','C:relative','C:\','\\server.invalid\share','//?/C:/Bonsai','//./C:/Bonsai', $repo)) {
+        Expect-Failure { New-BonsaiServerPlan -DataDirectory $path } 'Server plan accepted a nonlocal or unsafe data path.'
+    }
+    Expect-Failure { New-BonsaiServerPlan -DataDirectory $data -Port 0 } 'Server plan accepted a dynamic port.'
+    # Exercise exact switch matching independently of native execution; a prefix
+    # such as --no-agent-unsafe must not satisfy --no-agent.
+    Assert-BonsaiServerHelp -HelpText '--host HOST --no-agent --api-key-file FILE' -Arguments @('--host','127.0.0.1','--no-agent','--api-key-file','C:\key path')
+    Expect-Failure { Assert-BonsaiServerHelp -HelpText '--no-agent-unsafe' -Arguments @('--no-agent') } 'Help verification matched a switch prefix.'
+    Expect-Failure { Assert-BonsaiServerHelp -HelpText '--host HOST' -Arguments @('--no-agent') } 'Help verification accepted a missing switch.'
+    $after = [Environment]::GetEnvironmentVariables()
+    Assert ($before.Count -eq $after.Count) 'Planning changed the parent environment.'
+    foreach ($name in $before.Keys) { Assert ($after[$name] -ceq $before[$name]) 'Planning changed an inherited environment value.' }
 }
 if ($Case -in @('All','Doctor')) {
     $reportPath = Join-Path $scratch 'doctor.json'
