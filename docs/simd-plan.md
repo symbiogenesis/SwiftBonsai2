@@ -1,10 +1,69 @@
 # Native Rust CPU SIMD plan
 
-Planning decision, October 23, 2026. This expands R3 and the CPU part of R4 in
-the [native engine roadmap](native-rust-engine.md). All work items below are
-pending. The [current runtime](../src/prism-runtime/README.md) remains a scalar
-reference; this document adds no dependency, kernel, dispatch switch or speed
-claim. The publisher Prism engine remains the assessment/fallback path.
+Implementation status, October 23, 2026. This expands R3 and the CPU part of R4
+in the [native engine roadmap](native-rust-engine.md). S1 has selected a safe
+implementation route; an opt-in baseline NEON PQ2 kernel and focused exact
+regressions are implemented. Scalar remains the default. S0 profiling, the
+remaining S2 diagnostics, PTQ1/optional-ISA work and S6 promotion remain pending.
+The publisher Prism engine remains the assessment/fallback path. No throughput
+or whole-model parity improvement is claimed.
+
+## First implementation and evidence
+
+The `experimental-neon` feature of `bonsai-prism-runtime` enables a target-only
+dependency on `fearless_simd` **1.1.0**. The selected core API compiles under the
+runtime's unchanged `forbid(unsafe_code)` without a procedural macro or a new
+unsafe boundary. A caller explicitly constructs
+`MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon)`; merely compiling
+the feature does not enable it. `matvec` and the Qwen35 graph still use the scalar
+default. `selected_backend()` reports the actual per-call backend. Detailed
+fallback reasons and build-identity logging remain future diagnostics work.
+
+Eligibility requires `aarch64-pc-windows-msvc`, the compiled feature and ambient
+baseline `neon`. Only PQ2 rows whose column count is a multiple of 256 use this
+kernel. PTQ1, odd-group PQ2, other formats and other targets fall back to scalar.
+Scalar executes natively on ARM64 too; it does not mean x86 emulation. There is
+no optional-ISA detector, feature override, global target flag, model layout
+change or persistent decoded-weight copy. Selection happens once per matrix
+operation; the block arithmetic is inlined into its selected row function.
+
+The kernel unpacks consecutive two-bit codes to -1, 0, 1, 2 with shifts, masks
+and interleaving, widens signed products and accumulates in i32. For arbitrary
+i8 input, including -128, a block's absolute sum is bounded by 32,768. Products
+fit i16 and all partial sums fit i32. The scalar quantizer, per-128-element scale
+multiplication and ordered floating block additions remain unchanged. The
+original scalar implementation remains the independent matvec oracle; malformed
+scales still fail even with zero activations. Arrays and safe slice loads bound
+every read, including unaligned inputs.
+
+Native local checks use Rust **1.99.1**, compiler commit
+`58cf8f9c35b355199727627d07ae34a4e2846d67`, LLVM **23.1.1**, the repository's
+Release profile and no custom target flags. Strict Clippy/rustdoc and CLI/no-CLI
+builds pass. Three raw-integer regressions cover every packed byte value at
+every byte offset, every activation lane/code with extrema and 4,096 deterministic
+unaligned blocks. Four differential regressions cover multiple rows/blocks,
+bitwise finite outputs and signed-zero scales, quantization ties/extremes,
+order-sensitive cancellation, fallback/reuse and failure clearing/recovery.
+The differential cases also pass with the feature disabled. These checks run no
+benchmark or full local suite.
+
+Release assembly inspection of both the isolated block and integrated row
+function finds baseline `ushr`/`and`/`zip`, signed `smull`/`smull2`, widening
+accumulation and `addv`. The isolated block is straight-line, without calls,
+spills or allocation; its baseline-token branch is eliminated. The integrated
+row retains scale validation and ordered `fmul`/`fadd` operations. No optional
+dotprod/i8mm/SVE instructions are required. A separate ordinary fixed-chunk
+prototype with four integer accumulators retains a scalar loop and checked
+overflow branches under the same Release policy. This supports the safe API
+choice; instruction inspection establishes no speedup. Source/assembly/logs are
+retained in the session's external evidence lane.
+
+Foundation's registry-driven native ARM64 checks compile all features and run
+the complete correctness suite. It also checks the no-CLI NEON library and
+feature-disabled differential cases. A Windows x86-64 lane compiles the feature
+and runs focused fallback checks as an additional portability check. Hosted
+verdicts and target-laptop profiling are separate evidence; no device benefit,
+full-model parity or promotion is inferred from these synthetic cases.
 
 ## Direction and evidence
 
@@ -183,16 +242,21 @@ attention's negative-infinity mask and all-masked-row rejection.
   gain `s` to bound end-to-end gain by `1 / ((1 - p) + p / s)`; account separately
   for bandwidth, dispatch and packing. Exit with the first PQ2 shape, numerical
   contract, benefit criterion and bounded experiment scope.
-- [ ] **S1 — Select the safe implementation route (R3).** Compare chunked Rust
+- [x] **S1 — Select the safe implementation route (R3).** Compare chunked Rust
   and one Fearless SIMD prototype on the same synthetic packed dot. Build native
   Release with pinned stable, strict Clippy/rustdoc, CLI and no-CLI library;
   inspect expansion and emitted assembly in context. Review dependency/license
   and feature coverage. Exit with one chosen abstraction or a documented reason
   for the narrow boundary crate, without broad lint exceptions.
+  Selected the core-only safe Fearless SIMD API using the evidence above; no
+  macro expansion or local unsafe allowance is needed.
 - [ ] **S2 — Land baseline PQ2 NEON behind internal selection (R3).** Retain the
   scalar quantizer and per-block scale order. Add bounded load/tail behavior,
   scalar selection and dispatch diagnostics. Exit with focused exact differential
   checks and negative controls; it stays experimental until S6 evidence.
+  Kernel, explicit selection, actual-backend reporting and focused regressions
+  are implemented. Complete fallback/build diagnostics and qualification remain
+  pending; this milestone is not a performance or production acceptance verdict.
 - [ ] **S3 — Add PTQ1 and PQ2 odd-group coverage (R3).** Fuse canonical trit decode
   with dot arithmetic; preserve four Q8_0 scales per 128-element block. Exercise
   real stored byte offsets, rows of 128/256/384 columns and multiple rows. Compare
@@ -268,11 +332,10 @@ separate from full-graph comparisons. Record:
   correctness/quality failures, raw results and the accepted/rejected/pending
   verdict. Retain useful captures outside the checkout in owned evidence lanes.
 
-No runner is configured or dispatched by this planning change. Future CI work
-uses reviewed `main` revisions and the existing target-device isolation policy;
-the session's local-only publication instruction leaves remote dispatch and
-performance qualification pending. Standard LoRA TPS/quality gates and the
-overall R7 replacement gates remain in force.
+Foundation checks run on published `main` revisions. Target-device performance
+work still needs a separate requested CI capture under the existing isolation
+policy. Standard LoRA TPS/quality gates and the overall R7 replacement gates
+remain in force.
 
 [survey]: https://shnatsel.github.io/state-of-simd-rust-2026/
 [fearless]: https://docs.rs/fearless_simd/1.1.0/fearless_simd/

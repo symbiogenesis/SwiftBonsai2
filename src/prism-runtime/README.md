@@ -18,6 +18,10 @@ The crate contains:
   and PTQ1's distinct Q8_0 activation quantization. No persistent expanded float
   matrix is created. Float accumulation and SIMD reduction order can differ from
   the publisher CPU implementation; no bit-identical full-model claim is made.
+- An opt-in baseline NEON PQ2 integer kernel using safe core Fearless SIMD APIs.
+  Scalar remains the default on ARM64 and other targets. Exact synthetic
+  differential checks preserve scalar quantization and floating block order;
+  target-device speed and whole-model parity remain unqualified.
 - Embeddings, explicit Hadamard/sign transforms, RMS normalization, full causal
   nonflash attention (including FP16 query/probability conversion), text
   interleaved MRoPE, Gated Delta Net/convolution state, gated feed-forward
@@ -101,12 +105,27 @@ position cache across reset, restoration or failed evaluation.
 
 ## Validation and remaining work
 
-The [CPU SIMD plan](../../docs/simd-plan.md) expands R3/R4 into pending S0–S6
-work, starting with exact packed PQ2 integer arithmetic on baseline NEON and
-unchanged scalar activation quantization. It covers separate PTQ1 qualification,
-safe APIs/audited boundaries, Windows optional-ISA detection, dispatch and
-numerical/performance exits. This crate still uses scalar kernels; no SIMD
-dependency or selected backend is implemented by that plan.
+The [CPU SIMD plan](../../docs/simd-plan.md) records the first implemented S1/S2
+work: compile with `--features experimental-neon`, then explicitly request
+`MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon)` when calling
+`matvec_into`. `selected_backend()` reports the actual per-call selection.
+Eligibility requires native Windows ARM64 MSVC with ambient baseline NEON and
+PQ2 rows whose column count is a multiple of 256. Other formats, odd-group PQ2,
+feature-disabled builds and other targets use scalar. Scalar runs natively on
+ARM64 as well; it does not imply x86 emulation. Compilation alone does not
+enable NEON: `matvec`, the Qwen35 graph and the token driver still use scalar
+defaults. No CLI switch or daily profile is promoted by this kernel experiment.
+
+The safe core-only `fearless_simd` 1.1.0 dependency is target-specific and
+optional; no local unsafe allowance or procedural macro is added. Packed
+unpack/dot consumes immutable bytes directly, keeps the original scalar
+quantizer and ordered scale operations, and creates no expanded matrix.
+Three focused raw-integer tests and four bitwise matvec/fallback/error tests
+cover the first path. Strict native Release checks and assembly inspection pass;
+see the plan for compiler/source identities and limitations. The feature also
+works with `--no-default-features --lib`. Separate PTQ1 qualification, optional
+ISA detection, fuller dispatch diagnostics, profiling and S6 promotion remain
+pending. No throughput or whole-model parity benefit is established.
 
 Focused fixtures cover malformed/truncated/over-budget GGUFs, exact metadata,
 immutable B sharing, native activation rounding and packed dot results, synthetic
@@ -121,10 +140,10 @@ cargo +1.99.1-aarch64-pc-windows-msvc test --locked --offline --release `
     --test runtime edited_turns_restore_complete_recurrent_prefix_and_failed_stream_rolls_back -- --exact
 ```
 
-This is a token-level scalar reference, not the accepted daily chat replacement.
+This is a token-level reference, not the accepted daily chat replacement.
 The [R0–R7 plan](../../docs/native-rust-engine.md) still requires baseline profiling,
 reference full-model logits/states and token comparisons, tokenizer/chat-template
 and stochastic RNG parity, adapter forward execution, broker count/completion and
-readiness integration, OS resource ownership, SIMD/Adreno execution, and paired
+readiness integration, OS resource ownership, broader SIMD/Adreno execution, and paired
 device correctness/TPS/quality/security acceptance. Full suites and every
 benchmark remain CI-only. No speedup is claimed.

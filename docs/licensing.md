@@ -33,7 +33,7 @@ project currently has no such dependency. See the [MIT text](https://opensource.
 Reviewed on October 23, 2026: the Cargo workspace manifests and shared lockfile, their
 resolved dependency metadata and cached package license files, the existing
 Prism notices, and the pinned runtime/model declarations. The Cargo graph
-contains 62 unique external package/version pairs, including optional build and
+contains 63 unique external package/version pairs, including optional build and
 platform-specific dependencies. Package licenses remain applicable regardless
 of the license selected for our original code.
 
@@ -41,6 +41,7 @@ of the license selected for our original code.
 | --- | --- | --- |
 | `http`, `httparse`, `serde`, `serde_json`, `sha2`, `windows-sys` | MIT OR Apache-2.0 | Permissive dependency terms; preserve the applicable license and attribution when distributing them. |
 | `tokio` 1.54.1 | MIT | Retain its copyright and permission notice. |
+| `fearless_simd` 1.1.0 | Apache-2.0 OR MIT | Optional native ARM64 Windows kernel dependency; retain its applicable license and attribution when distributing it. |
 | `subtle` 2.6.1 | BSD-3-Clause | Retain its copyright, conditions, and disclaimer in source and binary distributions; respect non-endorsement. |
 | `zip` 9.0.5 | MIT | Its enabled deflate dependency graph also has permissive options. |
 | `zlib-rs` | Zlib | Retain the notice in source distributions and identify altered source versions. |
@@ -55,10 +56,19 @@ dependency without a permissive option; its scope is the build tool. See its
 [license](https://github.com/mozilla/cbindgen/blob/v0.29.4/LICENSE) and Mozilla's
 [MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/) for distribution obligations.
 
-The native Rust reference reuses the existing local GGUF/ternary/Prism crates
-without adding any external package/version pair to that reviewed set. Its graph
-and scalar numerical code follow pinned Prism sources; the upstream MIT notice
-is retained in `src/prism-runtime/PRISM-LICENSE.txt` and the root `NOTICE`.
+The native Rust reference reuses the existing local GGUF/ternary/Prism crates.
+Its graph and scalar numerical code follow pinned Prism sources; the upstream
+MIT notice is retained in `src/prism-runtime/PRISM-LICENSE.txt` and the root
+`NOTICE`. The optional NEON kernel adds only `fearless_simd` 1.1.0, from source
+revision `b8a50a2c9ce03ee5384038ae8e6f45749662e2f6`; the reviewed crate archive
+SHA-256 is `3296eb97d869113eaf148a6bdf01884e90b3828ad7ae2340b0f93362fc158611`,
+matching `Cargo.lock`. The default `std` feature has no external dependencies;
+`libm` and the separate macro crate are unused. There is no build script. The
+review covers bounds-checked slice/array loads, signed widening, bitcast size
+checks, baseline NEON feature handling and the dependency's internal unsafe
+boundary. Runtime source keeps `forbid(unsafe_code)`. See the immutable
+[source](https://github.com/linebender/fearless_simd/tree/b8a50a2c9ce03ee5384038ae8e6f45749662e2f6/fearless_simd)
+and the [implementation evidence](simd-plan.md#first-implementation-and-evidence).
 
 The external engines are pinned separately:
 

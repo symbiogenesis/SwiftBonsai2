@@ -11,7 +11,10 @@ hybrid graph and transactional token generation. It accepts token IDs and greedy
 decoding; it has no C/C++ inference dependency. R2/R5 have implementation progress,
 but their complete parity and integration exits remain outstanding. Tokenizer,
 chat-template and stochastic-sampler parity, adapter forward execution, broker
-backend integration, optimized kernels and device qualification remain to do.
+backend integration, broader optimized kernels and device qualification remain
+to do. The first opt-in [baseline NEON PQ2 kernel](simd-plan.md) now passes exact
+synthetic integer/matvec checks through safe core SIMD APIs. Scalar remains the
+default; this does not complete R3 or establish target-device speed/parity.
 
 The separate [Hexagon NPU plan](hexagon-npu-plan.md) expands M5 into N0–N7.
 Its signed-access and compatibility discovery can run alongside this roadmap;
@@ -94,6 +97,9 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
   dimensions, zero/extreme values, scale bits and tail handling. Exit with
   focused correctness and CI microkernel plus end-to-end evidence before
   committing to the remaining optimized kernel inventory.
+  The first experimental PQ2 kernel, safe dependency route, explicit selection
+  and focused regressions are implemented. Profiling, complete diagnostics,
+  other formats/ISAs and performance promotion remain pending; see S1/S2.
 
 - [ ] **R4 — Optimize CPU memory and prompt processing.** Add phase-specific
   tiling, lossless packing/interleaving, reusable scratch, persistent thread

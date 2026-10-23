@@ -33,13 +33,23 @@ model weights or establish full-model parity, throughput, broker integration or
 daily security acceptance. Local validation remains limited to focused cases;
 all full suites and benchmarks run only in CI.
 
-Future CPU SIMD work follows the [S0–S6 plan](simd-plan.md), including exact
-symbol/activation/integer parity, initial bitwise packed-dot parity, explicit
-tolerances for later floating reductions, safe dispatch/fallback checks and
-Release assembly inspection. Local builds, disassembly and focused correctness
-checks are allowed. All timing benchmarks remain CI-only; promotion requires
-paired target-device kernel and end-to-end evidence. These are planned gates,
-not checks already implemented or passed by the scalar runtime.
+The first optional CPU SIMD implementation follows the [S0–S6 plan](simd-plan.md).
+Three exact integer regressions check all packed byte values/positions, each
+lane/code including activation -128 and deterministic unaligned blocks. Four
+matvec regressions check bitwise outputs, scale/quantization extremes, ordered
+block sums, scalar fallback on ARM64, malformed inputs and storage recovery.
+Native Release Clippy/rustdoc, CLI/no-CLI builds and assembly inspection pass.
+The runtime retains `forbid(unsafe_code)`; the optional core Fearless SIMD
+dependency owns its internal intrinsic boundary. Scalar remains the default.
+Foundation's all-feature native lane runs the complete suite, plus explicit
+feature-disabled fallback and no-CLI NEON builds; Windows x86-64 checks that the
+feature safely falls back on another architecture. This does not change the
+ARM64 target or use x86 emulation for the laptop's kernel.
+
+Local builds, disassembly and focused correctness checks are allowed. All timing
+benchmarks remain CI-only; promotion requires paired target-device kernel and
+end-to-end evidence. S0 profiling, fuller dispatch diagnostics, PTQ1/optional ISA
+work, later floating-reduction tolerances and S6 promotion remain pending.
 
 Future Adreno work follows the [GPU G0–G5 roadmap](adreno-gpu-plan.md): native
 ARM64 capability/build evidence, exact-artifact kernel and whole-graph parity,

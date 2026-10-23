@@ -616,7 +616,10 @@ freeze format/numerical contracts, evaluate stable safe SIMD APIs, prove a fused
 PQ2 baseline NEON dot with scalar quantization, qualify PTQ1 separately, then
 consider independently detected dotprod/i8mm and measured graph/prefill targets.
 It retains the unsafe-code boundary, scalar fallback and CI-only performance
-gates. These are pending implementation steps; no SIMD gain is established.
+gates. The first safe core-only NEON PQ2 kernel and exact synthetic regressions
+are implemented behind explicit library opt-in; scalar remains the default.
+Profiling, fuller diagnostics, remaining formats/ISAs and device promotion are
+pending; no SIMD throughput or whole-model parity gain is established.
 
 An experimental [native CPU reference](src/prism-runtime/README.md) now implements
 verified Rust-owned model loading, scalar packed operations, the Qwen35 hybrid
