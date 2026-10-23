@@ -171,7 +171,7 @@ function Get-QualificationMedian {
     return ($sorted[$middle - 1] + $sorted[$middle]) / 2
 }
 
-function Get-QualificationDimensions {
+function Get-QualificationDimension {
     [CmdletBinding()]
     [OutputType([string])]
     param([string]$Category)
@@ -332,7 +332,7 @@ function Test-BonsaiLoraQualification {
             $date = [datetime]::MinValue
             if (-not [datetime]::TryParseExact($record.reviewedAtUtc, 'yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeUniversal, [ref]$date)) { throw 'Invalid human review timestamp.' }
             $prompt = @($contract.prompts | Where-Object { $_.id -ceq $sample.promptId })[0]
-            $dimensions = @(Get-QualificationDimensions -Category $prompt.category)
+            $dimensions = @(Get-QualificationDimension -Category $prompt.category)
             Assert-QualificationShape -Value $record.scores -Required $dimensions -Name 'review.scores'
             foreach ($dimension in $dimensions) { Assert-QualificationNumber -Value $record.scores[$dimension] -Name "review.scores.$dimension" -Minimum 0 -Maximum 4 -Integer }
             $reviews[$record.sampleId] = $record
@@ -352,7 +352,7 @@ function Test-BonsaiLoraQualification {
         }
         $missing = @($promptSamples | Where-Object { -not $reviews.ContainsKey($_.sampleId) -or -not $reviews[$_.sampleId].answerComplete })
         if ($missing.Count) { $qualityPassed = $false; $qualityPending = $true; $pending.Add("Complete external human quality review is missing: $($prompt.id)."); continue }
-        $dimensions = @(Get-QualificationDimensions -Category $prompt.category)
+        $dimensions = @(Get-QualificationDimension -Category $prompt.category)
         $dimensionResults = [Collections.Generic.List[object]]::new()
         foreach ($dimension in $dimensions) {
             $baseScores = @($promptSamples | Where-Object { $_.arm -ceq 'baseline' } | ForEach-Object { [double]$reviews[$_.sampleId].scores[$dimension] })
