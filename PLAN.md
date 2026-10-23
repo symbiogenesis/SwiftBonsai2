@@ -12,10 +12,14 @@ exact source bytes in focused regressions. Swift's explicit 8K CPU check uses
 12 GiB service allowance plus the unchanged 4 GiB physical reserve and passes
 admission and completes the fixed 16-token decode after a template-compatible
 system-preamble repair. An exact current-weight PTQ1 exporter offers 1.173 GiB
-of payload savings; standalone compact ARM BITCOS dots pass focused numerical
+of payload savings; standalone compact BITCOS dots pass focused numerical
 parity. The verified current-weight PTQ export completes bounded native decode,
-including the separately pinned pretrained adapter. BITCOS's initial ARM
-synthetic performance fails promotion even after a vector decoder improvement.
+including the separately pinned pretrained adapter. BITCOS's initial C++ ARM
+synthetic performance failed promotion even after a vector decoder improvement.
+The standalone implementation is now safe Rust with scalar computation; exact
+C++ byte/result comparisons passed before its C++ sources were removed. Rust
+SIMD and performance remain unqualified. New systems components default to Rust;
+replacement of the pinned native engine and its LoRA overlay is separate work.
 Native optimized-model performance, creative/comfort and
 daily isolation qualification remain pending. No new training is planned.
 The approved abliteration LoRA is intended for the standard profile, with

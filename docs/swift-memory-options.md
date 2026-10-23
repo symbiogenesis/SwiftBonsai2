@@ -27,7 +27,7 @@ BITCOS blocks.
 | Option | Current state | Quantified scope | Recommended next action |
 | --- | --- | ---: | --- |
 | Current-symbol PQ2 → PTQ1 | Complete verified export and bounded native decode pass | 1,259,520,000 fewer weight bytes, **1.1730 GiB** | Qualify native PTQ output quality and performance; keep selection explicit. |
-| BITCOS with signs rounded per 128 weights | Reference codec; runtime prototype separate | 1,047,829,322 fewer bytes, **0.9759 GiB**, before new indexes/container overhead | Retain as alternate kernel experiment; do not expand the whole model back to PQ2. |
+| BITCOS with signs rounded per 128 weights | Safe Rust codec/scalar prototype; no runtime integration | 1,047,829,322 fewer bytes, **0.9759 GiB**, before new indexes/container overhead | Retain as alternate kernel experiment; qualify SIMD/performance separately. |
 | mmap and no repack | Already selected by the Swift CPU profile | Avoids a separate complete private weight copy; no new saving to count twice | Preserve these choices and verify actual backend buffer types. |
 | Lower prefill microbatch | Already 64, versus the old Qwen profile's 128 | Graph-dependent; no defensible whole-graph byte saving yet | Consider an explicit 32-token variant only after a successful 64-token baseline. |
 | Avoid unnecessary output rows | Completion normally needs one sampled row | One F32 row is 993,280 bytes; 64 rows are 63,569,920 bytes | Inspect reserve/output logs before changing native output limits. |

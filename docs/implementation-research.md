@@ -360,13 +360,25 @@ at 2.5 MiB and reviews initial graph reservation and rank-1 fusion as future
 engine changes. No training, weight merge, precision reduction or adapter
 modification is performed.
 
-Standalone native BITCOS dots preserve source scales/Q8_K values and pass
+The former standalone C++ BITCOS dots preserved source scales/Q8_K values and passed
 focused correctness plus independent review. The first hosted ARM64 synthetic
 comparison found severe unpacking overhead. A reviewed vector prefix/rank
 implementation improves it, but remains roughly 3.3× slower than the optimized
 PQ2 comparator on Cobalt 100. [Actual CI samples](../config/bitcos.synthetic-cobalt100.json)
 retain both revisions. This fails the requested speed condition; no BITCOS
 runtime is enabled. Benchmarks ran only in manually dispatched main CI.
+
+The standalone component has since moved to safe Rust with no dependencies or
+unsafe code. Its codecs, matrix offsets/payloads, round trips and scalar result
+bits matched a live strict ARM64 C++ comparison across 161 cases and 169 rows,
+including the original NEON and dot-product paths. The captured fixture and
+source hashes remain in `tools/bitcos/tests/fixtures`; the standalone C++
+sources, CMake builder and synthetic benchmark workflow were then removed.
+Additional Rust boundary checks reject noncanonical PTQ bytes and nonfinite
+activation scales. Rust is the default for new systems components. The pinned
+Prism engine/LoRA overlay remain separate native replacement work. Rust SIMD,
+throughput and end-to-end runtime qualification remain pending; the Cobalt 100
+records above measure only the retired C++ implementations.
 
 The first full export regression handoff exposed a PowerShell type collision
 between two tests sharing a process. Separate CI steps now load those assemblies

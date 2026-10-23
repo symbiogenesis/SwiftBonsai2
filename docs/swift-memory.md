@@ -77,13 +77,15 @@ scale bytes, sixteen presence bytes and `ceil(nonzero/8)` sign bytes. Decoding
 recreates the exact original 34 bytes, including scale bits and code order.
 Focused regressions cover sparse/dense/sign boundaries, signed and subnormal
 scales, fourth-code rejection, truncation, excess bytes and noncanonical padding.
-The [standalone ARM64 prototype](../tools/bitcos/README.md) now feeds compact
-blocks directly into NEON integer dots, preserving PQ2's Q8_K inputs for its
-single-row path. Strict native builds and focused dot parity pass. A row index
-adds up to about 21 MB under the documented width condition, retaining about
-0.956 GiB of estimated savings. It has no ggml/runtime integration. Full native
-correctness and manually dispatched synthetic timing comparisons run in CI;
-hosted results do not qualify Snapdragon end-to-end speed.
+The [standalone prototype](../tools/bitcos/README.md) now uses safe Rust for
+validation, exact packing and scalar dots, preserving PQ2's Q8_K inputs and
+group accumulation order. Exact byte/result comparisons against the former
+C++ scalar and ARM64 NEON paths passed before the standalone C++ sources were
+removed. A retained immutable fixture supplies ongoing regression evidence.
+A row index adds up to about 21 MB under the documented width condition,
+retaining about 0.956 GiB of estimated savings. It has no ggml/runtime
+integration. Full Rust correctness runs in CI; SIMD and Rust performance remain
+unqualified. Historical C++ timings do not establish Rust or Snapdragon speed.
 
 ## Existing ternary packing alternative
 
