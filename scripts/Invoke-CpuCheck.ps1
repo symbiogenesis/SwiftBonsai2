@@ -23,6 +23,7 @@ https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-glo
 param(
     [Parameter(Mandatory)][string]$DataDirectory,
     [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu',
+    [switch]$UseAbliterateLora,
     [switch]$CheckOnly
 )
 Set-StrictMode -Version Latest
@@ -31,7 +32,11 @@ $PSNativeCommandUseErrorActionPreference = $true
 function Get-CpuCheckPolicy {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
-    param([Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu')
+    param(
+        [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu',
+        [switch]$UseAbliterateLora
+    )
+    if ($UseAbliterateLora -and $ProfileName -ne 'swift-pq2-assessment') { throw 'The pinned adapter assessment requires the Swift profile.' }
     [long]$ceiling = 18GB
     [long]$weights = 13146393504
     [long]$transforms = 0
@@ -52,7 +57,8 @@ function Get-CpuCheckPolicy {
     }
     [long]$kv = 8192L * 16 * 4 * 256 * 2 * 2
     [long]$recurrent = 48L * 4 * (128 * 6144 + 3 * (6144 + 2 * 16 * 128))
-    [long]$known = $weights + $kv + $recurrent + $transforms
+    [long]$adapterBytes = if ($UseAbliterateLora) { 9682464 } else { 0 }
+    [long]$known = $weights + $kv + $recurrent + $transforms + $adapterBytes
     [pscustomobject]@{
         Name = $ProfileName; LockRelativePath = $lockPath
         ServiceCeilingBytes = $ceiling; AvailableMemoryFloorBytes = 4GB
@@ -61,6 +67,7 @@ function Get-CpuCheckPolicy {
         TokenLimit = 16; TimeoutSeconds = 600
         EstimatedWeightBytes = $weights; EstimatedKvBytes = $kv
         EstimatedRecurrentBytes = $recurrent; EstimatedTransformBytes = $transforms
+        EstimatedAdapterBytes = $adapterBytes
         EstimatedTransformConstructionTemporaryBytes = $transformTemporary
         EstimatedKnownSubtotalBytes = $known; EstimatedRuntimeHeadroomBytes = $ceiling - $known
         EstimateScope = 'Whole file plus persistent caches/transforms; temporary construction, tokenizer, graph/scratch and allocation overhead use remaining allowance. Source arithmetic, not measured peak.'
@@ -71,9 +78,12 @@ function Get-CpuCheckArgument {
     [OutputType([string], [array])]
     param(
         [Parameter(Mandatory)][string]$ModelPath,
-        [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu'
+        [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu',
+        [switch]$UseAbliterateLora,
+        [string]$AdapterPath
     )
-    $policy = Get-CpuCheckPolicy -Profile $ProfileName
+    $policy = Get-CpuCheckPolicy -Profile $ProfileName -UseAbliterateLora:$UseAbliterateLora
+    if ($UseAbliterateLora.IsPresent -ne (-not [string]::IsNullOrWhiteSpace($AdapterPath))) { throw 'Adapter arguments require the explicit switch and verified adapter path together.' }
     $logVerbosity = if ($ProfileName -eq 'swift-pq2-assessment') { '3' } else { '2' }
     $arguments = @('--model', $ModelPath, '--ctx-size', [string]$policy.ContextTokens, '--parallel', '1',
         '--cache-type-k', 'f16', '--cache-type-v', 'f16', '--gpu-layers', '0', '--device', 'none',
@@ -86,6 +96,7 @@ function Get-CpuCheckArgument {
     if ($ProfileName -eq 'reference-cpu') {
         $arguments += @('--system-prompt', 'You are a helpful assistant.')
     }
+    if ($UseAbliterateLora) { $arguments += @('--lora', $AdapterPath) }
     # Swift's template requires a user query. Completion formats an explicit
     # system message on its own before appending the user, which throws. Start
     # this synthetic conversation with the user; retain embedded default reasoning.
@@ -127,7 +138,7 @@ namespace SwiftBonsai {
 }
 '@
 }
-$policy = Get-CpuCheckPolicy -Profile $ProfileName
+$policy = Get-CpuCheckPolicy -Profile $ProfileName -UseAbliterateLora:$UseAbliterateLora
 $lockPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $policy.LockRelativePath))
 $lock = Read-BonsaiLock -Path $lockPath
 if ($ProfileName -eq 'reference-cpu') {
@@ -135,6 +146,13 @@ if ($ProfileName -eq 'reference-cpu') {
     if ($serverProfile.serviceCeilingBytes -ne $policy.ServiceCeilingBytes) { throw 'Review this check before changing the reference service allowance.' }
 }
 if ($lock.model.bytes -ne $policy.EstimatedWeightBytes) { throw 'Review this check before changing the assessment weight estimate.' }
+$adapterLock = $adapterPath = $null
+if ($UseAbliterateLora) {
+    $adapterLock = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/swift-lora.lock.json') | ConvertFrom-Json -DateKind String
+    if ($adapterLock.compatibility.modelRevision -cne $lock.model.revision -or
+        $adapterLock.compatibility.runtimeCommit -cne $lock.runtime.commit -or
+        $adapterLock.adapter.bytes -ne $policy.EstimatedAdapterBytes) { throw 'Review adapter compatibility and memory accounting for the pinned model/runtime.' }
+}
 [long]$ceiling = $policy.ServiceCeilingBytes
 [long]$reserve = $policy.AvailableMemoryFloorBytes
 [long]$available = [SwiftBonsai.PhysicalMemory]::AvailableBytes()
@@ -146,6 +164,7 @@ $report = [ordered]@{
     ContextTokens = $policy.ContextTokens; BatchTokens = $policy.BatchTokens; MicrobatchTokens = $policy.MicrobatchTokens
     EstimatedWeightBytes = $policy.EstimatedWeightBytes; EstimatedKvBytes = $policy.EstimatedKvBytes
     EstimatedRecurrentBytes = $policy.EstimatedRecurrentBytes; EstimatedTransformBytes = $policy.EstimatedTransformBytes
+    EstimatedAdapterBytes = $policy.EstimatedAdapterBytes; AdapterRequested = $UseAbliterateLora.IsPresent
     EstimatedTransformConstructionTemporaryBytes = $policy.EstimatedTransformConstructionTemporaryBytes
     EstimatedKnownSubtotalBytes = $policy.EstimatedKnownSubtotalBytes
     EstimatedRuntimeHeadroomBytes = $policy.EstimatedRuntimeHeadroomBytes; EstimateScope = $policy.EstimateScope
@@ -153,6 +172,12 @@ $report = [ordered]@{
     ActiveProcessLimit = 1; BreakawayAllowed = $false
     ModelRevision = $lock.model.revision; RuntimeCommit = $lock.runtime.commit
     ModelProcessStarted = $false; Qualification = 'trusted-input-development-only; no daily security or performance acceptance'
+}
+if ($UseAbliterateLora) {
+    $report['AdapterRevision'] = $adapterLock.adapter.revision
+    $report['AdapterSha256'] = $adapterLock.adapter.sha256
+    $report['AdapterScale'] = 1.0
+    $report['AdapterQualification'] = 'experimental; native loading/decode is not behavioral, creative quality or performance acceptance'
 }
 if ($available -lt $report.RequiredAvailableBytes) {
     $report.Status = 'not-run-insufficient-available-memory'
@@ -162,12 +187,16 @@ if ($CheckOnly -or $report.Status -ne 'admission-passed') { return [pscustomobje
 
 $runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly
 $modelPath = Resolve-ExternalPath (Join-Path $data -ChildPath 'models', $lock.model.revision, $lock.model.filename)
+if ($UseAbliterateLora) {
+    $adapter = & (Join-Path $PSScriptRoot 'Get-Adapter.ps1') -DataDirectory $data -VerifyOnly
+    $adapterPath = $adapter.AdapterPath
+}
 $executable = Resolve-ExternalPath (Join-Path ([IO.Path]::GetDirectoryName($runtime.ServerPath)) 'llama-completion.exe')
 Assert-Arm64PE $executable
 if (-not ('SwiftBonsai.OwnedProcess' -as [type])) {
     Add-Type -Path (Join-Path $PSScriptRoot 'Bonsai.Process.cs') -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0')
 }
-$guard = $owned = $process = $scratch = $null
+$guard = $adapterGuard = $owned = $process = $scratch = $null
 function Stop-OwnedProcess {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Mandatory finally/catch cleanup must terminate only this invocation''s process, including under WhatIf.')]
     [CmdletBinding()]
@@ -190,9 +219,13 @@ try {
     $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-CpuCheck-' + [Guid]::NewGuid().ToString('N')))
     [IO.Directory]::CreateDirectory($scratch) | Out-Null
     Test-LockedArtifact $modelPath $lock.model.bytes $lock.model.sha256
+    if ($UseAbliterateLora) {
+        $adapterGuard = [IO.File]::Open($adapterPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        Test-LockedArtifact $adapterPath $adapterLock.adapter.bytes $adapterLock.adapter.sha256
+    }
     # Recheck after verification, since available memory is volatile.
     if ([SwiftBonsai.PhysicalMemory]::AvailableBytes() -lt $report.RequiredAvailableBytes) { throw 'Memory admission changed during artifact verification; no model was launched.' }
-    $arguments = @(Get-CpuCheckArgument -ModelPath $modelPath -Profile $ProfileName)
+    $arguments = @(Get-CpuCheckArgument -ModelPath $modelPath -Profile $ProfileName -UseAbliterateLora:$UseAbliterateLora -AdapterPath $adapterPath)
     $owned = [SwiftBonsai.OwnedProcess]::Start($executable, [string[]]$arguments, $scratch,
         (Join-Path $scratch 'stdout.txt'), (Join-Path $scratch 'stderr.txt'), [ulong]$ceiling, 1)
     $process = $owned.Process
@@ -231,5 +264,6 @@ try {
     try { Stop-OwnedProcess } finally {
         if ($owned) { $owned.Dispose() }
         if ($guard) { $guard.Dispose() }
+        if ($adapterGuard) { $adapterGuard.Dispose() }
     }
 }

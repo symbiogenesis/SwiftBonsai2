@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 project(SwiftBitcosPrototype LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 option(BITCOS_DOTPROD "Require ARM dot-product instructions on the executing host" OFF)
 add_library(bitcos STATIC bitcos.cpp)
 target_compile_features(bitcos PUBLIC cxx_std_20)

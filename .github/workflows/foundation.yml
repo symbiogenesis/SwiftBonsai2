@@ -9,6 +9,33 @@ concurrency:
   group: foundation-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  bitcos:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-11-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Strict native ARM64 build and full synthetic correctness
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $receipt = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-BitcosPrototype.ps1')
+          $receipt | ConvertTo-Json
+          $start = [Diagnostics.ProcessStartInfo]::new($receipt.TestExecutable)
+          $start.WorkingDirectory = $receipt.EvidenceDirectory
+          $start.UseShellExecute = $false
+          $start.CreateNoWindow = $true
+          $start.ArgumentList.Add('all')
+          $process = [Diagnostics.Process]::Start($start)
+          try {
+            if (-not $process.WaitForExit(60000)) { $process.Kill($true); $process.WaitForExit(); throw 'Native correctness exceeded one minute.' }
+            if ($process.ExitCode) { throw 'Native BITCOS correctness failed.' }
+          } finally { $process.Dispose() }
   broker:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
@@ -147,9 +174,14 @@ jobs:
           $data = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime'
           $lockPath = Join-Path $env:GITHUB_WORKSPACE 'config/swift-assessment.lock.json'
           ./scripts/Get-Engine.ps1 -DataDirectory $data -LockPath $lockPath
+          ./scripts/Get-Adapter.ps1 -DataDirectory $data
+          ./scripts/Get-Adapter.ps1 -DataDirectory $data -VerifyOnly
           $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -CheckOnly
           if ($result.ModelProcessStarted -or $result.RequiredAvailableBytes -ne 16GB) { throw 'Invalid Swift admission-only result.' }
           $result | ConvertTo-Json
+          $adapterCheck = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -UseAbliterateLora -CheckOnly
+          if ($adapterCheck.ModelProcessStarted -or -not $adapterCheck.AdapterRequested -or $adapterCheck.EstimatedAdapterBytes -ne 9682464) { throw 'Invalid explicit adapter admission-only result.' }
+          $adapterCheck | ConvertTo-Json
       - name: Verify publisher ARM64 runtime and planned server switches
         shell: pwsh
         run: |

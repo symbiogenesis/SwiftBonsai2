@@ -58,6 +58,10 @@ Assert ($swift.EstimatedWeightBytes -eq 7206168928 -and $swift.EstimatedKvBytes 
     $swift.EstimatedTransformConstructionTemporaryBytes -eq 4MB) 'Swift assessment omits known model/cache/transform costs.'
 Assert ($swift.EstimatedKnownSubtotalBytes -eq 7904356704 -and
     $swift.EstimatedRuntimeHeadroomBytes -eq 4980545184) 'Swift assessment headroom is inconsistent with its known subtotal.'
+$withAdapter = Get-CpuCheckPolicy -Profile swift-pq2-assessment -UseAbliterateLora
+Assert ($withAdapter.EstimatedAdapterBytes -eq 9682464 -and $withAdapter.EstimatedKnownSubtotalBytes -eq 7914039168 -and
+    $withAdapter.ServiceCeilingBytes -eq 12GB -and $withAdapter.RequiredAvailableBytes -eq 16GB) 'Adapter allowance changed the fixed safety policy or omitted adapter bytes.'
+Assert ($swift.EstimatedAdapterBytes -eq 0 -and $reference.EstimatedAdapterBytes -eq 0) 'An adapter was silently enabled.'
 
 # Native ArgumentList must receive a model path as exactly one argument, even
 # when the path includes spaces or shell metacharacters.
@@ -76,6 +80,13 @@ Assert-ArgumentValue -Arguments $swiftArguments -Name '--log-verbosity' -Value '
 # template exception. The synthetic Swift check must start with its user query.
 Assert ($swiftArguments -cnotcontains '--system-prompt') 'Swift completion would format a rejected system-only message.'
 Assert-ArgumentValue -Arguments $swiftArguments -Name '--prompt' -Value 'Reply with the word ready.'
+$adapterPath = 'C:\external model & fixtures\bonsai-abliterate-lora.gguf'
+$adapterArguments = @(Get-CpuCheckArgument -ModelPath $model -Profile swift-pq2-assessment -UseAbliterateLora -AdapterPath $adapterPath)
+Assert-ArgumentValue -Arguments $adapterArguments -Name '--lora' -Value $adapterPath
+Assert ($swiftArguments -cnotcontains '--lora' -and $defaultArguments -cnotcontains '--lora') 'Default CPU arguments include an adapter.'
+Assert-Failure { Get-CpuCheckPolicy -UseAbliterateLora } 'Swift adapter was accepted for Qwen.'
+Assert-Failure { Get-CpuCheckArgument -ModelPath $model -Profile swift-pq2-assessment -UseAbliterateLora } 'Unverified empty adapter path reached native arguments.'
+Assert-Failure { Get-CpuCheckArgument -ModelPath $model -Profile swift-pq2-assessment -AdapterPath $adapterPath } 'Adapter path silently enabled an adapter.'
 foreach ($arguments in @($defaultArguments, $swiftArguments)) {
     Assert-ArgumentValue -Arguments $arguments -Name '--model' -Value $model
     Assert-ArgumentValue -Arguments $arguments -Name '--ctx-size' -Value '8192'

@@ -1,0 +1,61 @@
+name: BITCOS synthetic ARM64 comparison
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bitcos-synthetic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  comparison:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-11-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Build and compare identical synthetic inputs
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $receipt = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-BitcosPrototype.ps1')
+          $identity = [ordered]@{
+            Revision = $env:GITHUB_SHA
+            RunnerArchitecture = $env:RUNNER_ARCH
+            ImageOS = $env:ImageOS
+            ImageVersion = $env:ImageVersion
+            Processor = (Get-CimInstance Win32_Processor | Select-Object Name, Manufacturer, NumberOfCores, NumberOfLogicalProcessors)
+            Build = $receipt
+            Scope = 'Hosted ARM64 single-thread synthetic kernels; no model weights, laptop/end-to-end/LoRA performance verdict'
+          }
+          $identity | ConvertTo-Json -Depth 8
+          $start = [Diagnostics.ProcessStartInfo]::new($receipt.BenchmarkExecutable)
+          $start.WorkingDirectory = $receipt.EvidenceDirectory
+          $start.UseShellExecute = $false
+          $start.CreateNoWindow = $true
+          $start.RedirectStandardOutput = $true
+          $start.RedirectStandardError = $true
+          $start.ArgumentList.Add('--ci-synthetic')
+          $process = [Diagnostics.Process]::Start($start)
+          try {
+            $stdout = $process.StandardOutput.ReadToEndAsync()
+            $stderr = $process.StandardError.ReadToEndAsync()
+            if (-not $process.WaitForExit(180000)) { $process.Kill($true); $process.WaitForExit(); throw 'Synthetic comparison exceeded three minutes.' }
+            $results = $stdout.GetAwaiter().GetResult()
+            $errors = $stderr.GetAwaiter().GetResult()
+            $results
+            $errors
+            if ($process.ExitCode) { throw 'Synthetic comparison failed.' }
+            $rows = @($results -split '\r?\n' | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
+            if ($rows.Count -ne 18) { throw 'Expected three samples of three kernels at two footprints.' }
+            $summary = @('Hosted ARM64 synthetic comparison. This does not qualify Snapdragon model or LoRA performance.', '', '| Footprint | Kernel | Median ns | Weight bytes |', '| --- | --- | ---: | ---: |')
+            foreach ($group in ($rows | Group-Object mode,kernel)) {
+              $samples = @($group.Group | Sort-Object elapsed_ns)
+              $summary += "| $($samples[1].mode) | $($samples[1].kernel) | $($samples[1].elapsed_ns) | $($samples[1].weight_bytes) |"
+            }
+            $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          } finally { $process.Dispose() }

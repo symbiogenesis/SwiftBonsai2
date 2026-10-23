@@ -86,12 +86,13 @@ comparison with identical activations, not a blanket preference for BITCOS.
 
 ## Build and focused correctness
 
-Use an external absolute build directory and installed CMake/MSVC. For example,
-from native ARM64 PowerShell with Visual Studio 2026:
+Use the build-only wrapper from native ARM64 PowerShell with installed
+CMake/MSVC. It chooses dot-product instructions only when .NET reports support,
+limits compiler workers to two and keeps outputs/logs in a fresh system-temp lane:
 
 ```powershell
-cmake -S C:\checkout\tools\bitcos -B C:\external\bitcos-build -G 'Visual Studio 18 2026' -A ARM64 -DBITCOS_DOTPROD=ON
-cmake --build C:\external\bitcos-build --config Release --parallel 4
+$receipt = ./scripts/Build-BitcosPrototype.ps1 -CMakePath 'C:\path\to\cmake.exe'
+$receipt
 ```
 
 `BITCOS_DOTPROD=ON` requires a host that implements the ARM dot-product extension
@@ -126,3 +127,6 @@ the sample/kernel, dimensions, bytes, iteration count, elapsed nanoseconds,
 checksum and explicit dot-product ISA choice. Report CPU/compiler/power identity
 alongside those records. No default profile change follows from synthetic results;
 device end-to-end correctness, latency, RAM and sustained comfort still require CI.
+The main-only [manual workflow](../../.github/workflows/bitcos-synthetic.yml)
+runs these comparisons and records host/compiler identity plus a median table.
+Foundation runs the complete native correctness collection without benchmarks.

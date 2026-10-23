@@ -77,7 +77,36 @@ scale bytes, sixteen presence bytes and `ceil(nonzero/8)` sign bytes. Decoding
 recreates the exact original 34 bytes, including scale bits and code order.
 Focused regressions cover sparse/dense/sign boundaries, signed and subnormal
 scales, fourth-code rejection, truncation, excess bytes and noncanonical padding.
-This reference layout has no runtime/kernel integration or model-wide converter.
+The [standalone ARM64 prototype](../tools/bitcos/README.md) now feeds compact
+blocks directly into NEON integer dots, preserving PQ2's Q8_K inputs for its
+single-row path. Strict native builds and focused dot parity pass. A row index
+adds up to about 21 MB under the documented width condition, retaining about
+0.956 GiB of estimated savings. It has no ggml/runtime integration. Full native
+correctness and manually dispatched synthetic timing comparisons run in CI;
+hosted results do not qualify Snapdragon end-to-end speed.
+
+## Existing ternary packing alternative
+
+Prism's **PTQ1_0** is group-128 base-3 ternary packing, distinct from the
+unrelated weight-changing **PTQ1.61** research algorithm. A bounded
+[exporter](../scripts/Export-SwiftPtq1.ps1) repacks the current Swift symbols
+and raw scales without training or requantization. Each batch reconstructs
+the original PQ2 bytes exactly; other tensor payloads and raw metadata remain
+unchanged except the file/tensor type and offsets. Native pinned PQ2/PTQ
+dequantizers also agree bit-for-bit on 853,760 synthetic values.
+
+The expected complete PTQ file is 5,946,648,928 bytes, saving 1,259,520,000
+bytes (1.1730 GiB). This uses the current merged weights, not the older
+published PTQ checkpoint. PTQ1 and BITCOS are alternative encodings; their
+savings are not additive. At Swift's measured zero fraction PTQ1 is smaller.
+The native PTQ backend uses Q8_0 activations while PQ2 uses Q8_K, so equal
+weights do not prove equal logits, output or speed. No PTQ launch profile is
+enabled. See the [quantified allocation audit](swift-memory-options.md).
+
+The owner excludes new training on this machine; compatible pretrained LoRAs
+may be qualified separately. They are behavior changes with additional runtime
+cost, rather than lossless memory savings. The approved adapter remains an
+explicit development assessment option.
 
 ## Reproduce the assessment
 
@@ -110,18 +139,16 @@ working-set/private-byte and available-memory watchdog remains active.
 
 ## Native CPU status
 
-The verified runtime starts inside the owned Job and the Swift profile passes
-memory admission. Two fixed synthetic attempts reach model/context initialization
-and then exit with native fast-fail code `0xc0000409` before producing tokens.
-The watchdog does not report a memory-floor or process-limit violation. Failure
-evidence retains the native exit code and exact synthetic arguments; it does
-not establish decode correctness or a qualified memory peak.
+The corrected Swift profile completes its fixed 16-token CPU decode and exits
+zero inside the original 12 GiB Job allowance and 4 GiB physical reserve.
+Sixteen tokens exercise decode; they do not establish a useful finished answer,
+creative quality, performance or daily isolation. Windows reported about
+1.49 GB Job peak commit, which excludes mapped weight residency and is not a
+total RAM measurement.
 
-A bounded version-only owned-child probe succeeds. A separate model-free child
-also successfully loads the pinned CPU backend, initializes llama, retrieves
-system information and converts the returned feature string. Asynchronous logs
-do not identify the exact failing call. A debugger capture needs an additional
-1 GiB allowance while preserving the 4 GiB reserve; its 17 GiB admission check
-refused at about 16.19 GiB available without attaching or starting another model.
-Crash diagnosis remains pending. No global error-reporting, driver, pagefile,
-memory-locking or system policy setting was changed.
+Earlier attempts ended in `0xc0000409`. A bounded debugger child localized an
+unhandled C++ exception: completion formatted the explicit system message alone
+before appending the user, and Swift's template raises `No user query found in
+messages.` The Swift-only assessment now omits that system preamble and retains
+its embedded template/default reasoning. Qwen reference arguments are unchanged.
+No engine, template, model weights or global system setting was patched.

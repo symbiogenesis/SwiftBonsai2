@@ -4,7 +4,7 @@ The owner now prioritizes **Swift Bonsai 2 PQ2_0** for the low-memory CPU path a
 
 Implemented: read-only host inventory, immutable artifact locks, resumable size/hash-verified provisioning, native ARM64 CPU runtime installation/source builds, full GGUF metadata inspection, a guarded synthetic CPU check, an explicit 8K reference configuration, a fixed server-policy preflight, Rust bounded HTTP I/O and exact-count admission, single-slot scheduling, request supervision, a bounded development broker executable, private-key provisioning, and foundation CI. The chosen model/runtime are provisioned under the owner's selected `%LOCALAPPDATA%\SwiftBonsai2` directory; the complete artifact metadata is recorded in [model.metadata.json](config/model.metadata.json). **Model chat launch is not enabled.** CPU loading, integrated backend ownership/identity, daily isolation, offline UI and creative/comfort qualification remain ahead. The reference configuration is an unqualified development candidate.
 
-Swift assessment now also has pinned/verified artifacts, [actual PQ2 symbol counts](config/swift.bitcos-census.json), explicit Prism GGUF inspection and a reference BITCOS block codec. The census finds 32.76% zeros and no fourth symbols; block-rounded accounting suggests about 0.98 GiB less serialized data before new format/index overhead. It does not enable a BITCOS inference kernel. Use the [Swift commands and current qualification](docs/swift-memory.md) for this work; the provisioning commands below retain the Qwen reference default unless an explicit lock is supplied.
+Swift assessment has pinned/verified artifacts, [actual PQ2 symbol counts](config/swift.bitcos-census.json), explicit Prism inspection, an exact streaming PQ2→PTQ1 exporter, and experimental [ARM64 BITCOS dot kernels](tools/bitcos/README.md). PTQ1 can save 1.173 GiB while preserving the current weight symbols/scales; BITCOS accounting retains about 0.956 GiB after conditional row-index overhead. Neither optimized format enables a model inference profile yet. The original Swift PQ2 profile now completes its bounded CPU decode. See [qualification and commands](docs/swift-memory.md) and [additional allocation options](docs/swift-memory-options.md). No new training is required.
 
 ## Inventory and provisioning
 
@@ -43,9 +43,16 @@ For the owner-prioritized Swift assessment, use `-Profile swift-pq2-assessment`.
 It selects the separate Swift/Prism lock, 8K FP16 state, batch 128 / microbatch 64,
 and a fixed 12 GiB service allowance plus the unchanged 4 GiB physical reserve.
 The default profile below remains the earlier Qwen reference. Swift passed
-memory admission, but its native runtime fast-failed before token output;
-see [assessment evidence](docs/swift-memory.md). This is not a completed decode
-or daily-service qualification.
+the fixed load/decode check after a Swift-only system-preamble repair;
+see [assessment evidence](docs/swift-memory.md). Finished-answer quality,
+performance and daily-service qualification remain pending.
+
+The approved pretrained OrcaRouter adapter is separately pinned. Provision it
+with `./scripts/Get-Adapter.ps1 -DataDirectory $data`, then explicitly request
+`./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -UseAbliterateLora`.
+The same fixed memory guards apply. Native loading/decode has passed; refusal
+behavior, creative quality, numerical basis and runtime overhead remain under
+qualification. See [adapter evidence](docs/swift-lora.md). It requires no training.
 
 ```powershell
 ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -CheckOnly
