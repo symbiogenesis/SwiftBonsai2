@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "decision": "docs/swift-memory.md",
+  "model": {
+    "repository": "ukisai/Swift-Bonsai-2-GGUF",
+    "revision": "a3bdac086bbb6b04d87d0108d18943b5f63868f7",
+    "filename": "Swift-Bonsai-2-PQ2_0.gguf",
+    "bytes": 7206168928,
+    "sha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+    "digestSource": "https://huggingface.co/api/models/ukisai/Swift-Bonsai-2-GGUF/revision/a3bdac086bbb6b04d87d0108d18943b5f63868f7?blobs=true",
+    "license": "Apache-2.0",
+    "architecture": "qwen35"
+  },
+  "runtime": {
+    "repository": "https://github.com/PrismML-Eng/llama.cpp.git",
+    "commit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+    "release": "prism-b10787-73bfe6c",
+    "license": "MIT",
+    "asset": {
+      "filename": "llama-prism-b10787-73bfe6c-bin-win-cpu-arm64.zip",
+      "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10787-73bfe6c/llama-prism-b10787-73bfe6c-bin-win-cpu-arm64.zip",
+      "bytes": 12412126,
+      "sha256": "cc808b33d35c72a3bd5c69a0d609d422426feb9dce23868e77992b6c33b8ddb3",
+      "digestSource": "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/tags/prism-b10787-73bfe6c"
+    }
+  },
+  "qualification": {
+    "purpose": "owner-prioritized Swift memory and BITCOS feasibility assessment",
+    "modelDownload": "pending",
+    "fullGgufInspection": "pending",
+    "ternarySymbolCensus": "pending",
+    "cpuLoading": "pending",
+    "dailySecurity": "not-qualified",
+    "devicePerformance": "pending-self-hosted-ci"
+  }
+}

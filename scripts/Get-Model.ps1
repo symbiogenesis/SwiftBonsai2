@@ -1,12 +1,12 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([pscustomobject])]
-param([Parameter(Mandatory)][string]$DataDirectory, [switch]$VerifyOnly)
+param([Parameter(Mandatory)][string]$DataDirectory, [switch]$VerifyOnly, [string]$LockPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
-$lock = Read-BonsaiLock
+$lock = if ($LockPath) { Read-BonsaiLock -Path $LockPath } else { Read-BonsaiLock }
 $root = Resolve-ExternalPath $DataDirectory
 $model = $lock.model
 $path = Join-Path $root -ChildPath 'models', $model.revision, $model.filename
