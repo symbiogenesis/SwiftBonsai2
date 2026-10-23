@@ -266,15 +266,14 @@ impl Transforms {
                     if width == 0 || width > MAX_WIDTH || width % block != 0 || end > values.len() {
                         return Err(invalid("invalid Hadamard sign width"));
                     }
-                    let vector = values
-                        .iter()
-                        .skip(offset)
-                        .take(width)
-                        .map(|value| match value.as_i64() {
-                            Some(-1) => Ok(-1.0),
-                            Some(1) => Ok(1.0),
-                            _ => Err(invalid("Hadamard signs must be +1 or -1")),
-                        })
+                    let vector = (offset..end)
+                        .map(
+                            |index| match values.get(index).and_then(MetadataValueRef::as_i64) {
+                                Some(-1) => Ok(-1.0),
+                                Some(1) => Ok(1.0),
+                                _ => Err(invalid("Hadamard signs must be +1 or -1")),
+                            },
+                        )
                         .collect::<Result<Vec<_>>>()?;
                     if signs.insert(width, vector).is_some() {
                         return Err(invalid("duplicate Hadamard sign width"));
