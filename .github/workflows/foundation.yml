@@ -111,6 +111,11 @@ jobs:
       - name: Reference PQ2 BITCOS block round trips
         shell: pwsh
         run: ./tests/Test-Pq2BitcosCodec.ps1
+      - name: Exact PQ2 to native PTQ1 weight export
+        shell: pwsh
+        run: |
+          ./tests/Test-Pq2Ptq1Codec.ps1
+          ./tests/Test-Ptq1Export.ps1 -Case All
       - name: Engine build scheduling correctness
         shell: pwsh
         run: ./tests/Test-EngineBuild.ps1 -Case Parallelism

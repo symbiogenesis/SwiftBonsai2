@@ -23,6 +23,8 @@
     <GlobalAnalyzerConfigFiles Include="CSharp.Strict.globalconfig" />
     <Compile Include="../../scripts/GgufMetadata.cs" />
     <Compile Include="../../scripts/Pq2BitcosCodec.cs" />
+    <Compile Include="../../scripts/Pq2Ptq1Codec.cs" />
+    <Compile Include="../../scripts/GgufPtq1Repacker.cs" />
     <Compile Include="../../scripts/Bonsai.Process.cs" />
     <Compile Include="../../tests/ProcessLifecycleProbe.cs" />
     <EmbeddedCSharp Include="$(EmbeddedSourcesDirectory)/*.cs" Condition="'$(EmbeddedSourcesDirectory)' != ''" />

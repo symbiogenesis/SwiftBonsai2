@@ -1,0 +1,115 @@
+#requires -Version 7.6
+<#
+.SYNOPSIS
+Focused synthetic checks for streamed weight-lossless GGUF PTQ1 export.
+#>
+[CmdletBinding()]
+[OutputType([void])]
+param([ValidateSet('Repack','Rejection','All')][string]$Case = 'All')
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
+$repo = Split-Path $PSScriptRoot -Parent
+Add-Type -Path @((Join-Path $repo 'scripts/GgufMetadata.cs'), (Join-Path $repo 'scripts/GgufPtq1Repacker.cs'), (Join-Path $repo 'scripts/Pq2Ptq1Codec.cs')) -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0')
+$scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PtqExport-' + [guid]::NewGuid().ToString('N'))
+[IO.Directory]::CreateDirectory($scratch) | Out-Null
+$dialect = 'Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b'
+function Assert {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([bool]$Condition, [string]$Message)
+    if (-not $Condition) { throw $Message }
+}
+function Assert-Failure {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([scriptblock]$Action, [string]$Message)
+    $failed = $false
+    try { & $Action | Out-Null } catch { $failed = $true }
+    Assert $failed $Message
+}
+function Write-Text {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([IO.BinaryWriter]$Writer, [string]$Text)
+    $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
+    $Writer.Write([uint64]$bytes.Length); $Writer.Write($bytes)
+}
+function New-Fixture {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([hashtable])]
+    param([string]$Path, [int]$Blocks = 1928, [uint32]$FileType = 141)
+    if (-not $PSCmdlet.ShouldProcess($Path, 'Create synthetic GGUF export fixture')) { return }
+    $stream = [IO.File]::Open($Path, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    $writer = [IO.BinaryWriter]::new($stream)
+    try {
+        $writer.Write([uint32]0x46554747); $writer.Write([uint32]3)
+        $writer.Write([uint64]3); $writer.Write([uint64]4)
+        Write-Text $writer 'general.architecture'; $writer.Write([uint32]8); Write-Text $writer 'synthetic'
+        Write-Text $writer 'general.file_type'; $writer.Write([uint32]4); $writer.Write($FileType)
+        Write-Text $writer 'tokenizer.chat_template'; $writer.Write([uint32]8); Write-Text $writer '{{ unchanged }}'
+        Write-Text $writer 'prism.hadamard.transform'; $writer.Write([uint32]8); Write-Text $writer 'unchanged-transform'
+        # Descriptor order deliberately differs from physical order. Source gaps
+        # and final padding contain nonzero bytes, outside tensor payloads.
+        $sourcePqOffset = 64L
+        $secondOffset = [long]([Math]::Ceiling(($sourcePqOffset + 34 * $Blocks) / 32.0) * 32) + 32
+        Write-Text $writer 'last.pq'; $writer.Write([uint32]1); $writer.Write([uint64]128); $writer.Write([uint32]142); $writer.Write([uint64]$secondOffset)
+        Write-Text $writer 'first.bf16'; $writer.Write([uint32]1); $writer.Write([uint64]2); $writer.Write([uint32]30); $writer.Write([uint64]0)
+        Write-Text $writer 'large.pq'; $writer.Write([uint32]1); $writer.Write([uint64](128 * $Blocks)); $writer.Write([uint32]142); $writer.Write([uint64]$sourcePqOffset)
+        while ($stream.Position % 32) { $writer.Write([byte]0) }
+        $data = $stream.Position
+        for ($index = 0; $index -lt $secondOffset + 64; $index++) { $writer.Write([byte]0xEF) }
+        $stream.Position = $data
+        $writer.Write([byte[]]@(1,2,3,4))
+        $block = [byte[]]::new(34)
+        [Array]::Fill[byte]($block, 0xAA) # all +1
+        $block[0] = 0; $block[1] = 0x3c
+        $stream.Position = $data + $sourcePqOffset
+        for ($index = 0; $index -lt $Blocks; $index++) { $writer.Write($block) }
+        $stream.Position = $data + $secondOffset
+        $block[1] = 0xbc # retain negative scale bits
+        $writer.Write($block)
+        return @{ Data = $data; PqOffset = $sourcePqOffset; LastOffset = $secondOffset; Blocks = $Blocks }
+    } finally { $writer.Dispose() }
+}
+if ($Case -in @('Repack','All')) {
+    $source = Join-Path $scratch 'source.gguf'
+    $fixture = New-Fixture $source
+    $target = Join-Path $scratch 'export.gguf'
+    $result = [SwiftBonsai.GgufInspector]::RepackPq2ToPtq1($source, $target, 30)
+    $original = [SwiftBonsai.GgufInspector]::Read($source, $dialect, $false)
+    $converted = [SwiftBonsai.GgufInspector]::Read($target, $dialect, $false)
+    Assert ($result.ConvertedBlocks -eq $fixture.Blocks + 1 -and $result.ConvertedTensorCount -eq 2 -and $result.ExactPq2ReconstructionVerified) 'Not every PQ2 block was verified.'
+    Assert ($converted.Scalars['general.file_type'] -eq 143 -and $converted.TensorTypeHistogram[1].TypeId -eq 143) 'PTQ1 file/tensor types differ.'
+    Assert ($converted.TokenizerMetadataSha256 -ceq $original.TokenizerMetadataSha256 -and $converted.Scalars['prism.hadamard.transform'] -ceq 'unchanged-transform') 'Tokenizer, template or transform metadata changed.'
+    Assert ($result.OutputSha256 -ceq (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() -and $result.OutputBytes -eq (Get-Item -LiteralPath $target).Length) 'Export receipt differs from written bytes.'
+    Assert ($result.WorkingBufferBytes -lt 256KB) 'Exporter working buffers exceed their bounded allowance.'
+    $bytes = [IO.File]::ReadAllBytes($target)
+    Assert ([Convert]::ToHexString($bytes, [int]$fixture.Data, 4) -ceq '01020304') 'Non-PQ tensor bytes changed.'
+    $packedOffset = [int]$fixture.Data + 32
+    for ($block = 0; $block -lt $fixture.Blocks + 1; $block++) {
+        # Large physical tensor, followed by the separately aligned final one.
+        $offset = if ($block -lt $fixture.Blocks) { $packedOffset + 28 * $block } else { [int]$fixture.Data + [int]([Math]::Ceiling((32 + 28 * $fixture.Blocks) / 32.0) * 32) }
+        Assert (@($bytes[$offset..($offset + 23)] | Where-Object { $_ -ne 255 }).Count -eq 0) 'Five-trit byte mapping differs from independent +1 fixture.'
+        Assert ($bytes[$offset + 24] -eq 253 -and $bytes[$offset + 25] -eq 253 -and $bytes[$offset + 26] -eq 0) 'Four-trit tail or scale order differs.'
+        Assert ($bytes[$offset + 27] -eq $(if ($block -eq $fixture.Blocks) { 0xbc } else { 0x3c })) 'Raw scale bits changed.'
+    }
+    Assert ($result.OutputBytes -lt $result.SourceBytes) 'Synthetic export did not compact tensor payloads/gaps.'
+}
+if ($Case -in @('Rejection','All')) {
+    $source = Join-Path $scratch 'invalid.gguf'
+    $fixture = New-Fixture $source -Blocks 1
+    $bytes = [IO.File]::ReadAllBytes($source)
+    $bytes[$fixture.Data + $fixture.LastOffset + 2] = 0xff # +2 in final tensor, after earlier writes
+    [IO.File]::WriteAllBytes($source, $bytes)
+    $partial = Join-Path $scratch 'failed.partial'
+    Assert-Failure { [SwiftBonsai.GgufInspector]::RepackPq2ToPtq1($source, $partial, 30) } 'Late fourth symbol was silently recoded.'
+    Assert (Test-Path -LiteralPath $partial) 'Failure evidence was unexpectedly removed.'
+    $before = [IO.File]::ReadAllBytes($partial)
+    Assert-Failure { [SwiftBonsai.GgufInspector]::RepackPq2ToPtq1($source, $partial, 30) } 'Existing output was overwritten.'
+    Assert ([Convert]::ToHexString($before) -ceq [Convert]::ToHexString([IO.File]::ReadAllBytes($partial))) 'CreateNew rejection modified existing output.'
+    $wrong = Join-Path $scratch 'wrong-file-type.gguf'
+    New-Fixture $wrong -Blocks 1 -FileType 143 | Out-Null
+    Assert-Failure { [SwiftBonsai.GgufInspector]::RepackPq2ToPtq1($wrong, (Join-Path $scratch 'wrong-output.gguf'), 30) } 'Non-PQ2 file metadata was relabeled.'
+}
+Write-Output "PTQ1 export $Case checks passed. Evidence: $scratch"

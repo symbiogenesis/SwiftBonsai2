@@ -16,7 +16,7 @@ namespace SwiftBonsai {
 // Sanity choices: tighter service-specific limits; skip vocab contents; retain small
 // layout arrays; checked descriptor arithmetic; no mapping or model loading.
 /// <summary>Inspects bounded GGUF metadata and optionally streams a pinned Prism PQ2 symbol census.</summary>
-public sealed class GgufInspector : IDisposable {
+public sealed partial class GgufInspector : IDisposable {
     private const string PrismDialect = "Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b";
     private const int Pq2BlockBytes = 34;
     private const int Pq2BlockElements = 128;
@@ -37,7 +37,8 @@ public sealed class GgufInspector : IDisposable {
     private readonly Dictionary<uint, Kind> kinds = new Dictionary<uint, Kind>();
     private readonly string dialect;
     private sealed record Kind(string Name, ulong Block, ulong Bytes);
-    private sealed record Tensor(string Name, uint Type, ulong Offset, ulong Bytes, ulong Elements);
+    private sealed record Tensor(string Name, uint Type, ulong Offset, ulong Bytes, ulong Elements, long TypePosition);
+    private long fileTypePosition = -1;
     private GgufInspector(string path, string dialect) {
         if(dialect!="Stock" && dialect!=PrismDialect) throw Bad("unknown dialect; use Stock or the explicitly pinned Prism dialect.");
         this.dialect=dialect;
@@ -264,6 +265,7 @@ public sealed class GgufInspector : IDisposable {
                 long start=file.Position; string key=Text(1024);
                 if(key.Length==0 || !keys.Add(key)) throw Bad("empty or duplicate metadata key.");
                 uint type=U32();
+                if(key=="general.file_type") fileTypePosition=file.Position;
                 bool template=key=="tokenizer.chat_template" || key.StartsWith("tokenizer.chat_template.",StringComparison.Ordinal);
                 if(template && type==8) {
                     long valueStart=file.Position; ulong size=U64();
@@ -296,11 +298,12 @@ public sealed class GgufInspector : IDisposable {
             uint dimensions=U32(); if(dimensions<1 || dimensions>4) throw Bad("invalid tensor dimension count.");
             ulong n=1, first=0;
             for(uint d=0;d<dimensions;d++) { ulong size=U64(); if(size==0 || size>long.MaxValue) throw Bad("invalid tensor dimension."); if(d==0) first=size; n=checked(n*size); }
+            long typePosition=file.Position;
             uint type=U32(); Kind? kind; if(!kinds.TryGetValue(type,out kind)) throw Bad("unknown/unsupported tensor type ID "+type+".");
             if(first%kind.Block!=0) throw Bad("tensor row is not divisible by quantization block size.");
             ulong bytes=checked(n/kind.Block*kind.Bytes), offset=U64();
             if(offset%alignment!=0) throw Bad("unaligned tensor offset.");
-            tensors.Add(new Tensor(name,type,offset,bytes,n));
+            tensors.Add(new Tensor(name,type,offset,bytes,n,typePosition));
         }
         long descriptorsEnd=file.Position;
         ulong dataOffset=(ulong)descriptorsEnd;
