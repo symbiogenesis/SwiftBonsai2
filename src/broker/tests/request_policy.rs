@@ -323,9 +323,24 @@ fn strict_json_shapes_reject_positional_structs_and_tagged_roles() {
         br#"[[{"role":"user","content":"hi"}],1,false]"#.as_slice(),
         br#"{"messages":[["user","hi"]]}"#.as_slice(),
         br#"{"messages":[{"role":{"user":null},"content":"hi"}]}"#.as_slice(),
+        br#"{"messages":[{"role":null,"content":"hi"}]}"#.as_slice(),
+        br#"{"messages":[{"role":0,"content":"hi"}]}"#.as_slice(),
+        br#"{"messages":[{"role":true,"content":"hi"}]}"#.as_slice(),
+        br#"{"messages":[{"role":["user"],"content":"hi"}]}"#.as_slice(),
     ] {
         rejected_body(body, Rejection::ChatSchema);
     }
+}
+
+#[test]
+fn escaped_role_strings_preserve_the_canonical_history() {
+    let body = br#"{"messages":[{"role":"s\u0079stem","content":"hi"},{"role":"u\u0073er","content":"hi"},{"role":"a\u0073sistant","content":"hi"},{"role":"user","content":"hi"}]}"#;
+    let admitted = prepare(body).unwrap().admit(|_| Ok(100)).unwrap();
+    let canonical: serde_json::Value = serde_json::from_slice(admitted.backend_body()).unwrap();
+    assert_eq!(canonical["messages"][0]["role"], "system");
+    assert_eq!(canonical["messages"][1]["role"], "user");
+    assert_eq!(canonical["messages"][2]["role"], "assistant");
+    assert_eq!(canonical["messages"][3]["role"], "user");
 }
 
 #[test]

@@ -51,6 +51,29 @@ void codec() {
         require(unpack_ptq(pack_ptq(input[0])) == input[0], "PTQ sign boundary differs");
     }
 }
+void pq2_bytes() {
+    // Compare every possible packed byte against the independent symbol rule.
+    // Exercise every byte position so the scale and the full payload boundary
+    // remain covered by both encoders.
+    for (unsigned value = 0; value < 256; ++value) {
+        bool valid = true;
+        for (unsigned symbol = 0; symbol < 4; ++symbol) {
+            if (((value >> (symbol * 2)) & 3U) == 3) valid = false;
+        }
+        for (unsigned byte = 2; byte < 34; ++byte) {
+            std::array<Pq2Block, 2> input{zeros(), zeros()};
+            input[0][byte] = static_cast<std::uint8_t>(value);
+            if (valid) {
+                const auto packed = Matrix::pack(input, 1, 2);
+                require(packed.unpack_row(0) == std::vector<Pq2Block>(input.begin(), input.end()), "packed PQ2 byte round-trip differs");
+                require(unpack_ptq(pack_ptq(input[0])) == input[0], "packed PTQ byte round-trip differs");
+            } else {
+                rejects([&] { Matrix::pack(input, 1, 2); });
+                rejects([&] { pack_ptq(input[0]); });
+            }
+        }
+    }
+}
 void dot() {
     for (const std::size_t blocks : {2U,40U,48U,136U}) {
         std::vector<Pq2Block> input(3 * blocks); std::uint32_t random = 0x12345678;
@@ -116,8 +139,9 @@ void matrix() {
 int main(int argc, char** argv) {
     try {
         const std::string_view selected = argc == 2 ? argv[1] : "all";
-        if (argc > 2 || (selected != "all" && selected != "codec" && selected != "dot" && selected != "matrix")) throw std::invalid_argument("use bitcos-tests [codec|dot|matrix|all]");
+        if (argc > 2 || (selected != "all" && selected != "codec" && selected != "pq2-bytes" && selected != "dot" && selected != "matrix")) throw std::invalid_argument("use bitcos-tests [codec|pq2-bytes|dot|matrix|all]");
         if (selected == "all" || selected == "codec") codec();
+        if (selected == "all" || selected == "pq2-bytes") pq2_bytes();
         if (selected == "all" || selected == "dot") dot();
         if (selected == "all" || selected == "matrix") matrix();
         std::cout << "PASS " << selected << " neon=" << neon_available() << " dotprod=" << dotprod_enabled() << '\n'; return 0;

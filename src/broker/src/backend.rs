@@ -113,25 +113,20 @@ where
         deadline,
     )
     .await?;
-    let mut body = response.into_body();
-    let mut bytes = Vec::with_capacity(MAX_COUNT_BYTES);
-    let mut buffer = [0u8; 1024];
-    loop {
-        let bound = buffer.len().min(MAX_COUNT_BYTES - bytes.len() + 1);
-        let count = body.read(&mut buffer[..bound]).await.map_err(|error| {
-            if error.kind() == io::ErrorKind::TimedOut {
-                BackendError::Deadline
-            } else {
-                BackendError::Body
-            }
-        })?;
-        if count == 0 {
-            break;
+    // Read directly into the final allocation, keeping one byte for the
+    // oversized-body probe without allowing unbounded read_to_end growth.
+    let limit = u64::try_from(MAX_COUNT_BYTES + 1).map_err(|_| BackendError::CountSchema)?;
+    let mut body = response.into_body().take(limit);
+    let mut bytes = Vec::with_capacity(MAX_COUNT_BYTES + 1);
+    body.read_to_end(&mut bytes).await.map_err(|error| {
+        if error.kind() == io::ErrorKind::TimedOut {
+            BackendError::Deadline
+        } else {
+            BackendError::Body
         }
-        if count > MAX_COUNT_BYTES - bytes.len() {
-            return Err(BackendError::CountSchema);
-        }
-        bytes.extend_from_slice(&buffer[..count]);
+    })?;
+    if bytes.len() > MAX_COUNT_BYTES {
+        return Err(BackendError::CountSchema);
     }
     let Object(count): Object<Count> =
         serde_json::from_slice(&bytes).map_err(|_| BackendError::CountSchema)?;
