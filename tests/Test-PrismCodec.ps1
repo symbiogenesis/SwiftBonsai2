@@ -9,7 +9,7 @@ and a 30-second deadline. This checks format consumption, not logits or speed.
 #>
 [CmdletBinding()]
 [OutputType([string])]
-param([Parameter(Mandatory)][string]$DataDirectory)
+param([Parameter(Mandatory)][string]$DataDirectory, [string]$ToolPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -17,6 +17,7 @@ if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArc
     [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') { throw 'The pinned native codec probe requires Windows ARM64 PowerShell.' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Force
+Import-Module (Join-Path $repo 'scripts/Bonsai.Tools.psm1')
 $root = Resolve-ExternalPath -Path $DataDirectory
 $lockPath = Join-Path $repo 'config/swift-assessment.lock.json'
 $lock = Read-BonsaiLock -Path $lockPath
@@ -28,16 +29,12 @@ if ($lock.runtime.commit -cne '73bfe6cc485554822f80c473a3c0c4f25e80f41b' -or
 # before the native child starts. VerifyOnly cannot download models or runtimes.
 $engine = & (Join-Path $repo 'scripts/Get-Engine.ps1') -DataDirectory $root -LockPath $lockPath -VerifyOnly
 $runtimeDirectory = Resolve-ExternalPath -Path ([IO.Path]::GetDirectoryName($engine.ServerPath))
-if (-not ('SwiftBonsai.OwnedProcess' -as [type])) {
-    Add-Type -Path (Join-Path $repo 'scripts/Bonsai.Process.cs') -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0')
-}
 $scratch = Resolve-ExternalPath -Path (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PrismCodec-' + [guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)
 $childPath = Join-Path $scratch 'probe.ps1'
 $resultPath = Join-Path $scratch 'result.json'
 $stdoutPath = Join-Path $scratch 'stdout.txt'
 $stderrPath = Join-Path $scratch 'stderr.txt'
-$owned = $null
 try {
     # Paths are named argv entries, never interpolated into executable source.
     @'
@@ -66,19 +63,13 @@ Write-Output $json
         '-RuntimeDirectory', $runtimeDirectory, '-ResultPath', $resultPath)
     # Inherit the complete system/profile environment. The absolute external
     # native working directory and kill-on-close Job apply from creation.
-    $owned = [SwiftBonsai.OwnedProcess]::Start((Join-Path $PSHOME 'pwsh.exe'), $arguments, $scratch, $stdoutPath, $stderrPath, 1GB, 1)
-    $deadline = [Environment]::TickCount64 + 30000
-    while (-not $owned.Process.WaitForExit(1000)) {
-        $owned.Process.Refresh()
-        if ($owned.Process.PrivateMemorySize64 -gt 1GB -or $owned.Process.WorkingSet64 -gt 1GB) {
-            throw "Native codec child exceeded its private/working-set watchdog. Evidence: $scratch"
-        }
-        if ([Environment]::TickCount64 -ge $deadline) { throw "Native codec child exceeded its 30-second deadline. Evidence: $scratch" }
+    $supervision = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
+        schemaVersion = 1; executable = (Join-Path $PSHOME 'pwsh.exe'); arguments = $arguments
+        workingDirectory = $scratch; evidenceDirectory = $scratch; artifacts = @()
+        memoryLimitBytes = 1GB; requiredAvailableBytes = 0; physicalReserveBytes = 0; timeoutSeconds = 30
+        stdoutLimitBytes = $null; stderrLimitBytes = $null; requireNonemptyStdout = $false; ciOnly = $false
     }
-    $exitCode = $owned.Process.ExitCode
-    $peak = $owned.GetPeakJobMemoryBytes()
-    $owned.Stop(10000)
-    if ($exitCode -ne 0) { throw "Native codec child failed with exit code $exitCode. Evidence: $scratch" }
+    $peak = $supervision.PeakJobMemoryBytes
     if (-not [IO.File]::Exists($resultPath)) { throw "Native codec child produced no result. Evidence: $scratch" }
     $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json -DateKind String
     if ($result.Status -cne 'native-fp32-bit-parity-passed' -or $result.SyntheticBlocks -ne 6670 -or
@@ -89,12 +80,6 @@ Write-Output $json
     }
     Write-Output "Focused native PQ2/PTQ1 FP32 bit-parity checks passed. Evidence: $scratch"
 } finally {
-    try {
-        if ($null -ne $owned) {
-            try { $owned.Stop(10000) } finally { $owned.Dispose() }
-        }
-    } finally {
-        # Remove only this generated source; retain useful stdout/stderr/result.
-        if ([IO.File]::Exists($childPath)) { Remove-Item -LiteralPath $childPath -Force }
-    }
+    # Remove only this generated source; retain useful stdout/stderr/result.
+    if ([IO.File]::Exists($childPath)) { Remove-Item -LiteralPath $childPath -Force }
 }

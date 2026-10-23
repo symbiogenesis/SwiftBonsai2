@@ -4,8 +4,8 @@
 Captures the mandatory fixed paired Swift LoRA evaluation on the target CI runner.
 .DESCRIPTION
 Benchmarks run only on GitHub Actions main on the Snapdragon X Elite. Artifacts
-must already be provisioned. PlanOnly reads policy without starting any native
-process. Every sample uses a fresh owned process, 12 GiB Job commit ceiling,
+must already be provisioned. PlanOnly reads policy without starting a model or
+inference process. Every sample uses a fresh owned process, 12 GiB Job commit ceiling,
 4 GiB physical reserve, fixed controls and a ten-minute deadline. Responses,
 timings, arguments and failures remain in unique external system-temp evidence.
 This CLI capture cannot establish logits parity or the SSM authoring basis;
@@ -16,7 +16,8 @@ those checks and independent human quality review remain mandatory and pending.
 param(
     [Parameter(Mandatory)][string]$DataDirectory,
     [switch]$UseRepackedPtq1,
-    [switch]$PlanOnly
+    [switch]$PlanOnly,
+    [string]$ToolPath
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -25,6 +26,7 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Qualification.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.LoraEvaluation.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Completion.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
 $data = Resolve-ExternalPath $DataDirectory
 $plan = Get-BonsaiLoraQualificationPlan
 $contract = $plan.Contract
@@ -47,7 +49,7 @@ $processors = @(Get-CimInstance Win32_Processor)
 if ($processors.Count -ne 1 -or $processors[0].Name -notmatch 'Snapdragon.*X.*Elite') { throw 'The required Snapdragon X Elite device was not identified.' }
 $overrides = @(Get-ChildItem Env: | Where-Object Name -Match '^(LLAMA_|LLAMACPP_|GGML_|AIP_|MTMD_|HF_TOKEN$|HF_ENDPOINT$|MODEL_ENDPOINT$)')
 if ($overrides.Count) { throw ('Inherited model/backend overrides are unsupported: ' + ($overrides.Name -join ', ')) }
-$admission = & (Join-Path $PSScriptRoot 'Invoke-CpuCheck.ps1') -DataDirectory $data -Profile swift-pq2-assessment -UseAbliterateLora -UseRepackedPtq1:$UseRepackedPtq1 -CheckOnly
+$admission = & (Join-Path $PSScriptRoot 'Invoke-CpuCheck.ps1') -DataDirectory $data -Profile swift-pq2-assessment -UseAbliterateLora -UseRepackedPtq1:$UseRepackedPtq1 -CheckOnly -ToolPath $ToolPath
 if ($admission.Status -cne 'admission-passed') { throw 'The unchanged 16 GiB available-memory admission requirement was not met.' }
 $lockPath = Join-Path $PSScriptRoot '../config/swift-assessment.lock.json'
 $lock = Read-BonsaiLock $lockPath
@@ -72,9 +74,6 @@ $controls.weightRepresentation = $representation
 if ($artifact.Sha256 -cne $controls.modelSha256) { throw 'Selected artifact and qualification controls disagree.' }
 $controlDigest = Get-BonsaiLoraControlDigest $controls
 if ($lock.runtime.commit -cne $controls.runtimeCommit -or $adapterLock.adapter.sha256 -cne $controls.adapterSha256) { throw 'Runtime/adapter and qualification controls disagree.' }
-if (-not ('SwiftBonsai.OwnedProcess' -as [type])) {
-    Add-Type -Path (Join-Path $PSScriptRoot 'Bonsai.Process.cs') -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0')
-}
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-LoraQualification-' + [guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)
 if ([string]::IsNullOrWhiteSpace($env:GITHUB_ENV) -or $scratch.Contains("`n") -or $scratch.Contains("`r")) { throw 'Expected the CI environment file and a single-line evidence path.' }
@@ -103,72 +102,41 @@ function Save-CaptureEvidence {
     $evidence | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath (Join-Path $scratch 'evidence.json') -Encoding utf8
     $receipt | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $scratch 'receipt.json') -Encoding utf8
 }
-function Invoke-PairedSample {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'This explicit CI-only evaluation owns and always terminates its bounded child.')]
+function Read-PairedSample {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
-    param([string]$Id, [string]$Prompt, [ValidateSet('baseline', 'zero', 'adapter')][string]$Arm)
+    param([string]$Id)
     $lane = Resolve-ExternalPath (Join-Path $scratch $Id)
-    [void][IO.Directory]::CreateDirectory($lane)
-    $owned = $null
-    $watch = [Diagnostics.Stopwatch]::StartNew()
-    try {
-        [long]$minimumAvailable = [SwiftBonsai.PhysicalMemory]::AvailableBytes()
-        if ($minimumAvailable -lt 16GB) { throw 'Available physical memory changed before sample admission.' }
-        $arguments = @(Get-BonsaiLoraEvaluationArgument -ModelPath $modelPath -AdapterPath 'bonsai-abliterate-lora.gguf' -Arm $Arm -Prompt $Prompt)
-        $arguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $lane 'arguments.json') -Encoding utf8
-        $stdout = Join-Path $lane 'stdout.txt'; $stderr = Join-Path $lane 'stderr.txt'
-        $owned = [SwiftBonsai.OwnedProcess]::Start($executable, [string[]]$arguments, $scratch, $stdout, $stderr, 12GB, 1)
-        $receipt.ModelProcessStarted = $true
-        $process = $owned.Process
-        $deadline = [Environment]::TickCount64 + 600000L
-        while (-not $process.WaitForExit(1000)) {
-            if ([Environment]::TickCount64 -ge $deadline) { throw 'Paired sample exceeded its ten-minute deadline.' }
-            $minimumAvailable = [Math]::Min($minimumAvailable, [long][SwiftBonsai.PhysicalMemory]::AvailableBytes())
-            if ($minimumAvailable -lt 4GB) { throw 'Paired sample crossed the physical memory reserve.' }
-            $process.Refresh()
-            if (-not $process.HasExited -and ($process.WorkingSet64 -gt 12GB -or $process.PrivateMemorySize64 -gt 12GB)) { throw 'Paired sample crossed the process memory ceiling.' }
-            if ((Get-Item -LiteralPath $stdout).Length -gt 4MB -or (Get-Item -LiteralPath $stderr).Length -gt 64MB) { throw 'Paired sample exceeded the diagnostic output limit.' }
-        }
-        $watch.Stop()
-        if ($process.ExitCode -ne 0) { throw "Paired native sample failed with exit code $($process.ExitCode)." }
-        if ((Get-Item -LiteralPath $stdout).Length -gt 4MB -or (Get-Item -LiteralPath $stderr).Length -gt 64MB) { throw 'Paired sample exceeded the diagnostic output limit.' }
-        $minimumAvailable = [Math]::Min($minimumAvailable, [long][SwiftBonsai.PhysicalMemory]::AvailableBytes())
-        if ($minimumAvailable -lt 4GB) { throw 'Paired sample crossed the physical memory reserve at exit.' }
-        $encoding = [Text.UTF8Encoding]::new($false, $true)
-        # GetString preserves a leading U+FEFF if generated; ReadAllText would
-        # consume its UTF-8 bytes as an encoding preamble and change the capture.
-        $text = $encoding.GetString([IO.File]::ReadAllBytes($stdout))
-        if ([string]::IsNullOrWhiteSpace($text)) { throw 'Paired native sample returned no captured response.' }
-        $logText = [IO.File]::ReadAllText($stderr, $encoding)
-        $timing = Read-BonsaiCompletionTiming $logText
-        $counts = Read-BonsaiCompletionTokenCount -Text $logText -Timing $timing
-        $diagnostics = [ordered]@{ WallMilliseconds = $watch.ElapsedMilliseconds; PromptTokens = $timing.PromptTokens
-            PromptMilliseconds = $timing.PromptMilliseconds; DecodeTokensPerSecond = $timing.DecodeTokensPerSecond
-            EogMarkerObserved = $text.Contains(' [end of text]'); FirstTokenLatencyMilliseconds = $null
-            PromptTokenCount = $counts.PromptTokenCount; SamplerAcceptedTokens = $counts.SamplerAcceptedTokens
-            GeneratedSampledTokens = $counts.GeneratedSampledTokens
-            LogitsAvailable = $false; ResponseScope = 'Exact native stdout including reasoning, end marker and trailing newlines' }
-        $diagnostics | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $lane 'diagnostics.json') -Encoding utf8
-        return [pscustomobject]@{ Text = $text; Sha256 = Get-BonsaiResponseDigest $text; Diagnostics = $diagnostics
-            Timing = $timing; PeakJobMemoryBytes = [long]$owned.GetPeakJobMemoryBytes(); MinimumAvailablePhysicalBytes = $minimumAvailable }
-    } finally {
-        try { if ($owned) { $owned.Stop(10000) } } finally {
-            if ($owned) { $owned.Dispose() }
-        }
-    }
+    $supervisionPath = Join-Path $lane 'supervision.json'
+    if (-not [IO.File]::Exists($supervisionPath)) { return $null }
+    $supervision = Get-Content -Raw -LiteralPath $supervisionPath | ConvertFrom-Json -DateKind String
+    if ($supervision.Status -cne 'completed') { return $null }
+    $stdout = Join-Path $lane 'stdout.txt'; $stderr = Join-Path $lane 'stderr.txt'
+    $encoding = [Text.UTF8Encoding]::new($false, $true)
+    # GetString preserves a leading U+FEFF if generated; ReadAllText would
+    # consume its UTF-8 bytes as an encoding preamble and change the capture.
+    $text = $encoding.GetString([IO.File]::ReadAllBytes($stdout))
+    if ([string]::IsNullOrWhiteSpace($text)) { throw 'Paired native sample returned no captured response.' }
+    $logText = [IO.File]::ReadAllText($stderr, $encoding)
+    $timing = Read-BonsaiCompletionTiming $logText
+    $counts = Read-BonsaiCompletionTokenCount -Text $logText -Timing $timing
+    $diagnostics = [ordered]@{ WallMilliseconds = $supervision.WallMilliseconds; PromptTokens = $timing.PromptTokens
+        PromptMilliseconds = $timing.PromptMilliseconds; DecodeTokensPerSecond = $timing.DecodeTokensPerSecond
+        EogMarkerObserved = $text.Contains(' [end of text]'); FirstTokenLatencyMilliseconds = $null
+        PromptTokenCount = $counts.PromptTokenCount; SamplerAcceptedTokens = $counts.SamplerAcceptedTokens
+        GeneratedSampledTokens = $counts.GeneratedSampledTokens
+        LogitsAvailable = $false; ResponseScope = 'Exact native stdout including reasoning, end marker and trailing newlines' }
+    $diagnostics | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $lane 'diagnostics.json') -Encoding utf8
+    return [pscustomobject]@{ Text = $text; Sha256 = Get-BonsaiResponseDigest $text; Diagnostics = $diagnostics
+        Timing = $timing; PeakJobMemoryBytes = [long]$supervision.PeakJobMemoryBytes; MinimumAvailablePhysicalBytes = [long]$supervision.MinimumAvailablePhysicalBytes }
+
 }
 try {
-    $guards.Add([IO.File]::Open($modelPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read))
-    Test-LockedArtifact $modelPath $modelBytes $controls.modelSha256
-    $guards.Add([IO.File]::Open($adapter.AdapterPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read))
-    Test-LockedArtifact $adapter.AdapterPath $adapterLock.adapter.bytes $controls.adapterSha256
-    # One verified scratch copy avoids both the pinned Windows FNAME:SCALE
-    # drive-colon parser defect and a separate adapter copy for every sample.
+    # The Rust supervisor verifies and holds the model and this single scratch
+    # copy once for the complete batch. It preserves the relative FNAME:SCALE
+    # adapter argument required by the pinned Windows parser.
     $copyPath = Join-Path $scratch 'bonsai-abliterate-lora.gguf'
     [IO.File]::Copy($adapter.AdapterPath, $copyPath, $false)
-    $guards.Add([IO.File]::Open($copyPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read))
-    Test-LockedArtifact $copyPath $adapterLock.adapter.bytes $controls.adapterSha256
     foreach ($file in (Get-ChildItem -LiteralPath $runtimeDirectory -File -Recurse | Where-Object Extension -In @('.exe', '.dll'))) {
         $guards.Add([IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read))
         $receipt.RuntimeFiles += @{ Path = $file.FullName; Sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
@@ -176,9 +144,49 @@ try {
     # Reverify package identity after acquiring read-denying guards.
     $null = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly
     Save-CaptureEvidence
+    $nativeSamples = @(
+        foreach ($scheduled in $plan.Schedule) {
+            $prompt = @($contract.prompts | Where-Object { $_.id -ceq $scheduled.promptId })[0]
+            $lane = Resolve-ExternalPath (Join-Path $scratch $scheduled.sampleId)
+            [void][IO.Directory]::CreateDirectory($lane)
+            $arguments = @(Get-BonsaiLoraEvaluationArgument -ModelPath $modelPath -AdapterPath 'bonsai-abliterate-lora.gguf' -Arm $scheduled.arm -Prompt $prompt.text)
+            $arguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $lane 'arguments.json') -Encoding utf8
+            @{ id = $scheduled.sampleId; arguments = $arguments; evidenceDirectory = $lane }
+        }
+        foreach ($prompt in $contract.prompts) {
+            $id = 'zero-' + $prompt.id
+            $lane = Resolve-ExternalPath (Join-Path $scratch $id)
+            [void][IO.Directory]::CreateDirectory($lane)
+            $arguments = @(Get-BonsaiLoraEvaluationArgument -ModelPath $modelPath -AdapterPath 'bonsai-abliterate-lora.gguf' -Arm zero -Prompt $prompt.text)
+            $arguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $lane 'arguments.json') -Encoding utf8
+            @{ id = $id; arguments = $arguments; evidenceDirectory = $lane }
+        }
+    )
+    $captureFailure = $null
+    try {
+        $supervision = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
+            schemaVersion = 1; executable = $executable; arguments = @(); samples = $nativeSamples
+            workingDirectory = $scratch; evidenceDirectory = $scratch
+            artifacts = @(
+                @{ path = $modelPath; bytes = [long]$modelBytes; sha256 = $controls.modelSha256 },
+                @{ path = $copyPath; bytes = [long]$adapterLock.adapter.bytes; sha256 = $controls.adapterSha256 }
+            )
+            memoryLimitBytes = 12GB; requiredAvailableBytes = 16GB; physicalReserveBytes = 4GB
+            timeoutSeconds = 600; stdoutLimitBytes = 4MB; stderrLimitBytes = 64MB
+            requireNonemptyStdout = $false; ciOnly = $true
+        } -TimeoutSeconds 0
+        $receipt.ModelProcessStarted = $supervision.ModelProcessStarted
+    } catch {
+        $captureFailure = $_
+        $supervisionPath = Join-Path $scratch 'supervision.json'
+        if ([IO.File]::Exists($supervisionPath)) {
+            $supervision = Get-Content -Raw -LiteralPath $supervisionPath | ConvertFrom-Json -DateKind String
+            $receipt.ModelProcessStarted = $supervision.ModelProcessStarted
+        }
+    }
     foreach ($scheduled in $plan.Schedule) {
-        $prompt = @($contract.prompts | Where-Object { $_.id -ceq $scheduled.promptId })[0]
-        $captured = Invoke-PairedSample -Id $scheduled.sampleId -Prompt $prompt.text -Arm $scheduled.arm
+        $captured = Read-PairedSample -Id $scheduled.sampleId
+        if ($null -eq $captured) { if ($captureFailure) { break }; throw 'Completed paired sample evidence is missing.' }
         $sample = [ordered]@{}
         foreach ($key in $scheduled.Keys) { $sample[$key] = $scheduled[$key] }
         $sample.controlsSha256 = $controlDigest; $sample.decodeTokens = $captured.Timing.DecodeTokens
@@ -190,13 +198,15 @@ try {
         Save-CaptureEvidence
     }
     foreach ($prompt in $contract.prompts) {
-        $captured = Invoke-PairedSample -Id ('zero-' + $prompt.id) -Prompt $prompt.text -Arm zero
+        $captured = Read-PairedSample -Id ('zero-' + $prompt.id)
+        if ($null -eq $captured) { if ($captureFailure) { break }; throw 'Completed zero-scale sample evidence is missing.' }
         $baseline = @($evidence.samples | Where-Object { $_.promptId -ceq $prompt.id -and $_.arm -ceq 'baseline' -and $_.repeat -eq 1 })[0]
         $evidence.zeroScaleChecks += @{ promptId = $prompt.id; seed = 42
             baselineResponseSha256 = $baseline.responseSha256; zeroScaleResponseSha256 = $captured.Sha256
             baselineLogitsSha256 = $null; zeroScaleLogitsSha256 = $null }
         Save-CaptureEvidence
     }
+    if ($captureFailure) { throw $captureFailure }
     $qualification = Test-BonsaiLoraQualification -Evidence $evidence
     $qualification | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $scratch 'qualification.json') -Encoding utf8
     $receipt.Status = 'capture-completed'; $receipt.QualificationStatus = $qualification.Status

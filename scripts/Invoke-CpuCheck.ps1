@@ -25,12 +25,14 @@ param(
     [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu',
     [switch]$UseAbliterateLora,
     [switch]$UseRepackedPtq1,
-    [switch]$CheckOnly
+    [switch]$CheckOnly,
+    [string]$ToolPath
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Completion.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
     [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
     throw 'Use native ARM64 PowerShell on Windows ARM64.'
@@ -39,34 +41,6 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
 $data = Resolve-ExternalPath $DataDirectory
 $overrides = @(Get-ChildItem Env: | Where-Object Name -Match '^(LLAMA_|LLAMACPP_|GGML_|AIP_|MTMD_|HF_TOKEN$|HF_ENDPOINT$|MODEL_ENDPOINT$)')
 if ($overrides.Count) { throw ('Inherited model/backend overrides are unsupported: ' + ($overrides.Name -join ', ')) }
-if (-not ('SwiftBonsai.PhysicalMemory' -as [type])) {
-    Add-Type -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0') -TypeDefinition @'
-#nullable enable
-using System.ComponentModel;
-using System.Runtime.InteropServices;
-namespace SwiftBonsai {
-    /// <summary>Reads current Windows physical memory availability.</summary>
-    public static class PhysicalMemory {
-        [StructLayout(LayoutKind.Sequential)]
-        private record struct Status {
-            public uint Length, Load;
-            public ulong TotalPhysical, AvailablePhysical, TotalPageFile, AvailablePageFile;
-            public ulong TotalVirtual, AvailableVirtual, AvailableExtendedVirtual;
-        }
-        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-        [DllImport("kernel32.dll", EntryPoint="GlobalMemoryStatusEx", ExactSpelling=true, SetLastError=true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool QueryMemoryStatus(ref Status status);
-        /// <summary>Returns the physical memory currently available, in bytes.</summary>
-        public static ulong AvailableBytes() {
-            var status = new Status { Length = (uint)Marshal.SizeOf<Status>() };
-            if (!QueryMemoryStatus(ref status)) throw new Win32Exception(Marshal.GetLastWin32Error());
-            return status.AvailablePhysical;
-        }
-    }
-}
-'@
-}
 $policy = Get-CpuCheckPolicy -Profile $ProfileName -UseAbliterateLora:$UseAbliterateLora -UseRepackedPtq1:$UseRepackedPtq1
 $lockPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $policy.LockRelativePath))
 $lock = Read-BonsaiLock -Path $lockPath
@@ -91,7 +65,7 @@ if ($UseAbliterateLora) {
 }
 [long]$ceiling = $policy.ServiceCeilingBytes
 [long]$reserve = $policy.AvailableMemoryFloorBytes
-[long]$available = [SwiftBonsai.PhysicalMemory]::AvailableBytes()
+[long]$available = (Invoke-BonsaiTool -Command memory -ToolPath $ToolPath).AvailablePhysicalBytes
 $report = [ordered]@{
     SchemaVersion = 1; RecordedAtUtc = [DateTime]::UtcNow.ToString('o'); Profile = $policy.Name
     Status = 'admission-passed'; AvailablePhysicalBytesAtAdmission = $available
@@ -130,77 +104,41 @@ if ($UseAbliterateLora) {
 }
 $executable = Resolve-ExternalPath (Join-Path ([IO.Path]::GetDirectoryName($runtime.ServerPath)) 'llama-completion.exe')
 Assert-Arm64PE $executable
-if (-not ('SwiftBonsai.OwnedProcess' -as [type])) {
-    Add-Type -Path (Join-Path $PSScriptRoot 'Bonsai.Process.cs') -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0')
+$scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-CpuCheck-' + [Guid]::NewGuid().ToString('N')))
+[void][IO.Directory]::CreateDirectory($scratch)
+$arguments = @(Get-CpuCheckArgument -ModelPath $modelPath -Profile $ProfileName -UseAbliterateLora:$UseAbliterateLora -AdapterPath $adapterPath)
+$artifacts = @(@{ path = $modelPath; bytes = [long]$artifactBytes; sha256 = $artifactSha256 })
+if ($UseAbliterateLora) {
+    $artifacts += @{ path = $adapterPath; bytes = [long]$adapterLock.adapter.bytes; sha256 = $adapterLock.adapter.sha256 }
 }
-$guard = $adapterGuard = $owned = $process = $scratch = $null
-function Stop-OwnedProcess {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Mandatory finally/catch cleanup must terminate only this invocation''s process, including under WhatIf.')]
-    [CmdletBinding()]
-    [OutputType([void])]
-    param()
-    if ($owned) { $owned.Stop(10000) }
-}
-function Save-CheckEvidence {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param()
-    if (-not $scratch -or -not [IO.Directory]::Exists($scratch)) { return }
-    if ($owned) { $report['WindowsReportedPeakJobMemoryBytes'] = $owned.GetPeakJobMemoryBytes() }
-    $report['EvidenceDirectory'] = $scratch
-    $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $scratch 'result.json')
-}
+$report['EvidenceDirectory'] = $scratch
+$report['EffectiveArguments'] = $arguments
 try {
-    # Hold a read-only model handle through hashing and native execution.
-    $guard = [IO.File]::Open($modelPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-    $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-CpuCheck-' + [Guid]::NewGuid().ToString('N')))
-    [void][IO.Directory]::CreateDirectory($scratch)
-    Test-LockedArtifact $modelPath $artifactBytes $artifactSha256
-    if ($UseAbliterateLora) {
-        $adapterGuard = [IO.File]::Open($adapterPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-        Test-LockedArtifact $adapterPath $adapterLock.adapter.bytes $adapterLock.adapter.sha256
+    $supervision = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
+        schemaVersion = 1; executable = $executable; arguments = $arguments
+        workingDirectory = $scratch; evidenceDirectory = $scratch; artifacts = $artifacts
+        memoryLimitBytes = $ceiling; requiredAvailableBytes = [long]$report.RequiredAvailableBytes
+        physicalReserveBytes = $reserve; timeoutSeconds = [int]$report.TimeoutSeconds
+        stdoutLimitBytes = $null; stderrLimitBytes = $null; requireNonemptyStdout = $true; ciOnly = $false
     }
-    # Recheck after verification, since available memory is volatile.
-    if ([SwiftBonsai.PhysicalMemory]::AvailableBytes() -lt $report.RequiredAvailableBytes) { throw 'Memory admission changed during artifact verification; no model was launched.' }
-    $arguments = @(Get-CpuCheckArgument -ModelPath $modelPath -Profile $ProfileName -UseAbliterateLora:$UseAbliterateLora -AdapterPath $adapterPath)
-    $owned = [SwiftBonsai.OwnedProcess]::Start($executable, [string[]]$arguments, $scratch,
-        (Join-Path $scratch 'stdout.txt'), (Join-Path $scratch 'stderr.txt'), [ulong]$ceiling, 1)
-    $process = $owned.Process
-    $report.ModelProcessStarted = $true
-    $report['EffectiveArguments'] = $arguments
-    $deadline = [Environment]::TickCount64 + 1000L * $report.TimeoutSeconds
-    while (-not $process.WaitForExit(1000)) {
-        if ([Environment]::TickCount64 -ge $deadline) { throw 'CPU loading/decode check exceeded its safety timeout.' }
-        try {
-            $process.Refresh()
-            $workingSet = $process.WorkingSet64; $privateBytes = $process.PrivateMemorySize64
-        } catch [InvalidOperationException] {
-            if ($process.HasExited) { break }
-            throw
-        }
-        if ($workingSet -gt $ceiling -or $privateBytes -gt $ceiling -or
-            [SwiftBonsai.PhysicalMemory]::AvailableBytes() -lt $reserve) { throw 'CPU check stopped by its current-memory safety watchdog.' }
-    }
-    $report['ExitCode'] = $process.ExitCode
-    $outputFile = [IO.FileStream]::new((Join-Path $scratch 'stdout.txt'), [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-    $reader = [IO.StreamReader]::new($outputFile)
-    try { $text = $reader.ReadToEnd() } finally { $reader.Dispose(); $outputFile.Dispose() }
-    if ($process.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($text)) { throw "CPU load/decode failed; inspect technical logs at $scratch" }
+    $report.ModelProcessStarted = $supervision.ModelProcessStarted
+    $report['ExitCode'] = $supervision.ExitCode
+    $report['WindowsReportedPeakJobMemoryBytes'] = $supervision.PeakJobMemoryBytes
     $report.Status = 'bounded-load-and-decode-completed'
-    Save-CheckEvidence
+    $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $scratch 'result.json')
     return [pscustomobject]$report
 } catch {
     $failure = $_
     $report.Status = 'failed'
     $report['Failure'] = $failure.Exception.Message
-    try { Stop-OwnedProcess } catch { $report['CancellationFailure'] = $_.Exception.Message }
-    Save-CheckEvidence
-    if ($scratch) { Write-Warning "CPU check failure evidence retained at $scratch" }
-    throw $failure
-} finally {
-    try { Stop-OwnedProcess } finally {
-        if ($owned) { $owned.Dispose() }
-        if ($guard) { $guard.Dispose() }
-        if ($adapterGuard) { $adapterGuard.Dispose() }
+    $supervisionPath = Join-Path $scratch 'supervision.json'
+    if ([IO.File]::Exists($supervisionPath)) {
+        $supervision = Get-Content -Raw -LiteralPath $supervisionPath | ConvertFrom-Json -AsHashtable -DateKind String
+        $report.ModelProcessStarted = $supervision.ModelProcessStarted
+        if ($supervision.ContainsKey('PeakJobMemoryBytes')) { $report['WindowsReportedPeakJobMemoryBytes'] = $supervision.PeakJobMemoryBytes }
+        if ($supervision.ContainsKey('CancellationFailure')) { $report['CancellationFailure'] = $supervision.CancellationFailure }
     }
+    $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $scratch 'result.json')
+    Write-Warning "CPU check failure evidence retained at $scratch"
+    throw $failure
 }
