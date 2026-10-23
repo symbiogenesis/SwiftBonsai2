@@ -33,6 +33,21 @@ The existing Foundation native-runtime lane includes them in its complete suite;
 same-model prefill/decode allocation counts/bytes and peak-memory qualification
 remain separate R4.2 work and run only in CI when requested.
 
+The safe optimization pass also grows native KV storage geometrically within
+the validated context bound, reuses scalar RoPE frequencies across query/key
+and full-attention layers for one evaluation, and validates/selects greedy
+logits in one pass. Checkpoint accounting still charges actual retained vector
+capacities. PTQ unpacking uses a small immutable digit/canonicality table rather
+than re-encoding the whole decoded block; exhaustive byte-position checks and
+the pinned C++ fixtures guard its exact representation. GGUF inspection tracks
+its logical cursor instead of querying the OS position for each scalar, while
+record hashing restores the underlying file position. Broker parsing borrows
+unescaped message text until canonical serialization and bounds array growth
+at the existing message limit; archive verification compares sorted filenames
+without cloning a second tree. Focused correctness and ownership checks cover
+these changes. No measured throughput, allocation-count or device-memory
+improvement is claimed; full suites and all benchmarks remain CI-only.
+
 Ordinary build tools, GGUF commands and version/help probes share
 `scripts/Bonsai.Native.psm1`. It passes literal argument arrays, reads stdout and
 stderr concurrently, inherits the environment with explicit child overrides,
