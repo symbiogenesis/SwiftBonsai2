@@ -54,8 +54,10 @@ $receipt = [ordered]@{
     Generator = $Generator
     Binaries = @()
     BuildConfigurations = @()
+    Status = 'prepared'
     Qualification = 'source/build candidate only; no TPS, output-quality, or model qualification'
 }
+[IO.File]::WriteAllText((Join-Path $scratch 'build-receipt.json'), ($receipt | ConvertTo-Json -Depth 7))
 if (-not $PrepareOnly) {
     if (-not $CMakePath) { $CMakePath = (Get-Command -Name cmake -CommandType Application -ErrorAction Stop).Source }
     if (-not [IO.Path]::IsPathFullyQualified($CMakePath) -or $CMakePath -match '%[^%]+%' -or -not [IO.File]::Exists($CMakePath)) { throw 'CMakePath must name an existing expanded absolute executable.' }
@@ -75,13 +77,19 @@ if (-not $PrepareOnly) {
         try {
             if (-not $process.Start()) { throw 'Prism build command failed to start.' }
             $stdout = $process.StandardOutput.ReadToEndAsync(); $stderr = $process.StandardError.ReadToEndAsync()
-            $deadline = [DateTime]::UtcNow.AddMinutes(15)
+            $deadline = [Environment]::TickCount64 + 900000L
+            $timedOut = $false
             while (-not $process.WaitForExit(1000)) {
-                if ([DateTime]::UtcNow -ge $deadline) { $process.Kill($true); $process.WaitForExit(); throw 'Prism build command exceeded fifteen minutes.' }
+                if ([Environment]::TickCount64 -ge $deadline) {
+                    $timedOut = $true
+                    $process.Kill($true); $process.WaitForExit()
+                    break
+                }
             }
             $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
             $log = Join-Path $scratch ('command-{0:D2}.log' -f $script:prismCommandNumber)
             [IO.File]::WriteAllText($log, $output)
+            if ($timedOut) { throw "Prism build command exceeded fifteen minutes; see $log" }
             if ($process.ExitCode) { throw "Prism build failed; see $log" }
             return $output.Trim()
         } finally { $process.Dispose() }
@@ -132,6 +140,7 @@ if (-not $PrepareOnly) {
     }
     $receipt.Binaries = $binaries.ToArray()
     $receipt.BuildConfigurations = $configurations.ToArray()
+    $receipt.Status = 'built'
 }
 [IO.File]::WriteAllText((Join-Path $scratch 'build-receipt.json'), ($receipt | ConvertTo-Json -Depth 7))
 return $receipt
