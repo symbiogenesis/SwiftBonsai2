@@ -52,3 +52,5 @@ jobs:
             ${{ env.BONSAI_LORA_EVIDENCE }}/**/*.txt
           if-no-files-found: error
           retention-days: 14
+          # Keep text compression, with less CPU spent packaging every capture.
+          compression-level: 1

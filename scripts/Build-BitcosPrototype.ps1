@@ -1,16 +1,20 @@
 #requires -Version 7.6
 <#
 .SYNOPSIS
-Builds the experimental ARM64 BITCOS kernels in a new system-temp lane.
+Builds the experimental ARM64 BITCOS kernels with external build/evidence lanes.
 .DESCRIPTION
 Build only: no tests, benchmarks, model loading, downloads or inference. Uses
 strict repository-owned C++ settings and limits project/compiler workers to two.
 Returns absolute executable/evidence paths for focused checks or hosted CI.
+An optional external BuildDirectory permits cached CMake compiler discovery and
+intermediates. Configuration, build and ARM64 executable checks always run;
+evidence and native-command working directories remain unique system-temp lanes.
 #>
 [CmdletBinding()]
 [OutputType([Collections.IDictionary])]
 param(
     [string]$CMakePath,
+    [string]$BuildDirectory,
     [ValidateSet('Visual Studio 18 2026','Visual Studio 17 2022')][string]$Generator = 'Visual Studio 18 2026'
 )
 Set-StrictMode -Version Latest
@@ -24,8 +28,22 @@ if ($overrides.Count) { throw ('Build override environment is unsupported: ' + (
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-BitcosBuild-' + [guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)
-$build = Join-Path $scratch 'build'
+$build = if ($BuildDirectory) { Resolve-ExternalPath $BuildDirectory } else { Join-Path $scratch 'build' }
 $source = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tools/bitcos'))
+$cachePath = Join-Path $build 'CMakeCache.txt'
+if ([IO.File]::Exists($cachePath)) {
+    # CMake build trees contain absolute source/output paths. Reject a restored
+    # tree from another layout before configuring or using any generated file.
+    $cacheLines = [IO.File]::ReadAllLines($cachePath)
+    foreach ($binding in @(@('CMAKE_HOME_DIRECTORY', $source), @('CMAKE_CACHEFILE_DIR', $build))) {
+        $entries = @($cacheLines | Where-Object { $_.StartsWith($binding[0] + ':INTERNAL=') })
+        $cachedPath = if ($entries.Count -eq 1) { $entries[0].Split('=', 2)[1] } else { '' }
+        if (-not [IO.Path]::IsPathFullyQualified($cachedPath) -or
+            -not [string]::Equals([IO.Path]::GetFullPath($cachedPath), $binding[1], [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Cached CMake build directory does not match the current absolute source/build paths.'
+        }
+    }
+}
 $script:commandNumber = 0
 function Invoke-PrototypeNative {
     [CmdletBinding()]

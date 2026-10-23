@@ -15,6 +15,29 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+      - name: Identify the native build cache
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not $env:ImageOS -or -not $env:ImageVersion) { throw 'Hosted runner image identity is required for native build caching.' }
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1') -Force
+          $build = Resolve-ExternalPath (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Bitcos/build')
+          $source = [IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE 'tools/bitcos'))
+          $layout = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes("$source`n$build")))
+          "BITCOS_BUILD_DIRECTORY=$build" >> $env:GITHUB_ENV
+          "BITCOS_CACHE_LAYOUT=$layout" >> $env:GITHUB_ENV
+          "BITCOS_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
+          "BITCOS_CACHE_DOTPROD=$([Runtime.Intrinsics.Arm.Dp]::IsSupported)" >> $env:GITHUB_ENV
+      - name: Reuse matching CMake compiler discovery and intermediates
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ env.BITCOS_BUILD_DIRECTORY }}
+          # Shared with Foundation. Exact inputs, image and absolute layout only;
+          # configuration, build, PE checks and fixed samples still always run.
+          key: bitcos-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BITCOS_CACHE_HOST }}-${{ env.BITCOS_CACHE_DOTPROD }}-${{ env.BITCOS_CACHE_LAYOUT }}-${{ hashFiles('tools/bitcos/**', 'scripts/Build-BitcosPrototype.ps1', 'scripts/Bonsai.Common.psm1') }}
       - name: Build and compare identical synthetic inputs
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -22,7 +45,7 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          $receipt = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-BitcosPrototype.ps1')
+          $receipt = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-BitcosPrototype.ps1') -BuildDirectory $env:BITCOS_BUILD_DIRECTORY
           $identity = [ordered]@{
             Revision = $env:GITHUB_SHA
             RunnerArchitecture = $env:RUNNER_ARCH
