@@ -11,7 +11,7 @@ use std::ptr::{self, null, null_mut};
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{
-    ERROR_INSUFFICIENT_BUFFER, HANDLE, INVALID_HANDLE_VALUE, WAIT_FAILED, WAIT_OBJECT_0,
+    ERROR_INSUFFICIENT_BUFFER, FILETIME, HANDLE, INVALID_HANDLE_VALUE, WAIT_FAILED, WAIT_OBJECT_0,
     WAIT_TIMEOUT,
 };
 use windows_sys::Win32::NetworkManagement::IpHelper::{
@@ -38,13 +38,132 @@ use windows_sys::Win32::System::ProcessStatus::{
 use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-    EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, InitializeProcThreadAttributeList,
-    LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-    PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION, ResumeThread, STARTF_USESHOWWINDOW,
+    EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, GetProcessTimes,
+    InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess,
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, ResumeThread, STARTF_USESHOWWINDOW,
     STARTF_USESTDHANDLES, STARTUPINFOEXW, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
 use crate::{ProcessMemory, ProcessSpec, invalid};
+
+pub(super) struct ParentProcess(OwnedHandle);
+
+impl ParentProcess {
+    pub(super) fn open(id: u32, expected_creation_time: u64) -> io::Result<Self> {
+        if id == 0 || expected_creation_time == 0 {
+            return Err(invalid("caller process identity must be nonzero"));
+        }
+        // SAFETY: OpenProcess takes a numeric PID and returns a fresh owning
+        // noninheritable handle with only query and synchronization rights.
+        let handle = owned(unsafe {
+            OpenProcess(
+                PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                0,
+                id,
+            )
+        })?;
+        let actual = creation_file_time(&handle)?;
+        if actual != expected_creation_time {
+            return Err(invalid("caller process identity changed"));
+        }
+        let parent = Self(handle);
+        parent.ensure_alive()?;
+        Ok(parent)
+    }
+
+    pub(super) fn ensure_alive(&self) -> io::Result<()> {
+        // SAFETY: This noninheritable process synchronization handle remains
+        // owned for the entire wait; zero timeout cannot block.
+        match unsafe { WaitForSingleObject(self.0.as_raw_handle(), 0) } {
+            WAIT_TIMEOUT => Ok(()),
+            WAIT_OBJECT_0 => Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "caller process exited",
+            )),
+            _ => Err(io::Error::last_os_error()),
+        }
+    }
+}
+
+fn creation_file_time(handle: &OwnedHandle) -> io::Result<u64> {
+    let mut creation = FILETIME::default();
+    let mut exit = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    // SAFETY: The queried handle is live; all four output FILETIMEs are
+    // independently allocated writable values for this synchronous call.
+    check(unsafe {
+        GetProcessTimes(
+            handle.as_raw_handle(),
+            &raw mut creation,
+            &raw mut exit,
+            &raw mut kernel,
+            &raw mut user,
+        )
+    })?;
+    Ok((u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime))
+}
+
+#[cfg(test)]
+mod parent_tests {
+    use std::io;
+    use std::os::windows::process::CommandExt as _;
+    use std::process::{Command, Stdio};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, ParentProcess,
+        creation_file_time, owned,
+    };
+
+    #[test]
+    fn retained_parent_identity_rejects_mismatch_and_observes_exit() -> io::Result<()> {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("Bonsai-ParentProbe-{}-{nonce}", std::process::id()));
+        std::fs::create_dir(&directory)?;
+        let executable =
+            std::env::var_os("ComSpec").ok_or_else(|| io::Error::other("missing ComSpec"))?;
+        let mut child = Command::new(executable)
+            .args(["/d", "/c", "set /p bonsai_wait="])
+            .current_dir(&directory)
+            .creation_flags(0x0800_0000)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+        let result = (|| {
+            // SAFETY: Query a newly spawned test process by its numeric PID;
+            // the new noninheritable owning handle is immediately retained.
+            let handle = owned(unsafe {
+                OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+                    0,
+                    child.id(),
+                )
+            })?;
+            let identity = creation_file_time(&handle)?;
+            if ParentProcess::open(child.id(), identity + 1).is_ok() {
+                return Err(io::Error::other("reused process identity accepted"));
+            }
+            let parent = ParentProcess::open(child.id(), identity)?;
+            parent.ensure_alive()?;
+            child.kill()?;
+            let _ = child.wait()?;
+            if parent.ensure_alive().is_ok() || ParentProcess::open(child.id(), identity).is_ok() {
+                return Err(io::Error::other("exited caller accepted"));
+            }
+            Ok(())
+        })();
+        let _ = child.kill();
+        let _ = child.wait();
+        result
+    }
+}
 
 pub(super) struct NativeProcess {
     // Drop order closes the Job before the root process handle.
@@ -151,8 +270,17 @@ impl NativeProcess {
     }
 
     pub(super) fn try_wait(&self) -> io::Result<Option<u32>> {
-        // SAFETY: The owned process handle remains live; zero timeout cannot block.
-        match unsafe { WaitForSingleObject(self.process.as_raw_handle(), 0) } {
+        self.wait_for_exit(Duration::ZERO)
+    }
+
+    pub(super) fn wait_for_exit(&self, timeout: Duration) -> io::Result<Option<u32>> {
+        let milliseconds = u32::try_from(timeout.as_millis())
+            .ok()
+            .filter(|value| *value < u32::MAX)
+            .ok_or_else(|| invalid("process wait interval exceeds the bounded native limit"))?;
+        // SAFETY: The owned process handle remains live; milliseconds is a
+        // bounded interval that can never request the native infinite wait.
+        match unsafe { WaitForSingleObject(self.process.as_raw_handle(), milliseconds) } {
             WAIT_TIMEOUT => Ok(None),
             WAIT_OBJECT_0 => {
                 let mut code = 0;

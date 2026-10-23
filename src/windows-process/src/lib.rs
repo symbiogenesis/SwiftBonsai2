@@ -54,6 +54,30 @@ pub struct ProcessMemory {
 /// Owns a complete native process tree; dropping it kills remaining processes.
 pub struct OwnedProcess(native::NativeProcess);
 
+/// Retained identity of the caller whose lifetime bounds a supervised operation.
+pub struct ParentProcess(native::ParentProcess);
+
+impl ParentProcess {
+    /// Opens a noninheritable synchronization handle and checks creation identity.
+    ///
+    /// `creation_file_time` is the caller's Windows UTC creation FILETIME, in
+    /// 100-nanosecond ticks since 1601. Checking it prevents accepting a reused PID.
+    ///
+    /// # Errors
+    /// Rejects inaccessible, exited or mismatched processes, including PID zero.
+    pub fn open(id: u32, creation_file_time: u64) -> io::Result<Self> {
+        native::ParentProcess::open(id, creation_file_time).map(Self)
+    }
+
+    /// Confirms that the retained caller process has not exited.
+    ///
+    /// # Errors
+    /// Returns a failed native wait or `BrokenPipe` after caller exit.
+    pub fn ensure_alive(&self) -> io::Result<()> {
+        self.0.ensure_alive()
+    }
+}
+
 impl OwnedProcess {
     /// Creates evidence files, atomically assigns a suspended root, then resumes.
     ///
@@ -101,6 +125,14 @@ impl OwnedProcess {
     /// Returns failed Windows wait/query operations.
     pub fn try_wait(&self) -> io::Result<Option<u32>> {
         self.0.try_wait()
+    }
+
+    /// Waits up to a bounded interval for root completion, waking immediately on exit.
+    ///
+    /// # Errors
+    /// Rejects intervals at or above the native infinite-wait sentinel, or a failed wait.
+    pub fn wait_for_exit(&self, timeout: Duration) -> io::Result<Option<u32>> {
+        self.0.wait_for_exit(timeout)
     }
 
     /// Terminates the entire tree and waits within a positive timeout.
