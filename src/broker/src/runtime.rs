@@ -161,12 +161,7 @@ impl DevelopmentService {
 }
 
 fn number(value: Option<OsString>) -> Result<u16, ConfigurationError> {
-    let value = value.ok_or(ConfigurationError::Arguments)?;
-    let value = value.to_str().ok_or(ConfigurationError::Arguments)?;
-    if value.is_empty() || value.len() > 5 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(ConfigurationError::Arguments);
-    }
-    value.parse().map_err(|_| ConfigurationError::Arguments)
+    crate::configuration::decimal_u16(value).ok_or(ConfigurationError::Arguments)
 }
 
 fn key_path(value: Option<OsString>) -> Result<PathBuf, ConfigurationError> {

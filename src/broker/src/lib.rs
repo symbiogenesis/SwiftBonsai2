@@ -15,6 +15,7 @@
 
 pub mod artifacts;
 pub mod backend;
+mod configuration;
 pub mod launch_policy;
 #[cfg(windows)]
 pub mod launcher;

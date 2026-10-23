@@ -358,12 +358,7 @@ impl LaunchedService {
 }
 
 fn number(value: Option<OsString>) -> Result<u16, LaunchError> {
-    let value = value.ok_or(LaunchError::Arguments)?;
-    let value = value.to_str().ok_or(LaunchError::Arguments)?;
-    if value.is_empty() || value.len() > 5 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(LaunchError::Arguments);
-    }
-    value.parse().map_err(|_| LaunchError::Arguments)
+    crate::configuration::decimal_u16(value).ok_or(LaunchError::Arguments)
 }
 
 fn admit(required: u64) -> Result<(), LaunchError> {
