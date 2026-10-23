@@ -186,4 +186,13 @@ the optimized PQ2 comparator in the hot-footprint case and 10.3× slower in the
 These are single-thread synthetic kernels, not Snapdragon/end-to-end results;
 the footprint name does not establish cache misses. The adapted PTQ/Q8_K
 comparator is not Prism's released PTQ/Q8_0 backend. No runtime change follows
-from these numbers. A separately tested vector decoder may be assessed next.
+from these numbers.
+
+The [vector-rank follow-up](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/39986261941)
+tested `49693a5` with the same settings. BITCOS median time fell from 4,531,300
+to 2,024,700 ns in the hot case and from 266,135,900 to 87,101,700 ns in the
+larger-footprint case. It remains about 3.24× / 3.36× slower than that run's PQ2
+comparator, so it still fails promotion. [Portable measurements](../config/bitcos.synthetic-cobalt100.json)
+retain all three samples and exact tested revisions. Full-model bandwidth,
+multithreading and Snapdragon behavior remain unmeasured; the current evidence
+does not justify enabling this kernel in the runtime.

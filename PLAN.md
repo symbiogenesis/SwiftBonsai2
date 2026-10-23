@@ -15,7 +15,8 @@ system-preamble repair. An exact current-weight PTQ1 exporter offers 1.173 GiB
 of payload savings; standalone compact ARM BITCOS dots pass focused numerical
 parity. The verified current-weight PTQ export completes bounded native decode,
 including the separately pinned pretrained adapter. BITCOS's initial ARM
-synthetic performance fails promotion. Native optimized-model performance, creative/comfort and
+synthetic performance fails promotion even after a vector decoder improvement.
+Native optimized-model performance, creative/comfort and
 daily isolation qualification remain pending. No new training is planned;
 separately pretrained adapters are optional experiments. The earlier Qwen
 reference below is retained for reproducibility.

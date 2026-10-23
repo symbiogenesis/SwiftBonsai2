@@ -320,6 +320,43 @@ BITCOS RAM/speed result, full local suite or performance benchmark is claimed.
 
 ## Evidence obtained
 
+### Additional Swift implementation evidence (October 23)
+
+An owned debugger localized the earlier fast-fail to an uncaught template
+exception: completion submitted a system-only list before the user query. The
+Swift-only assessment omits that preamble and now completes its fixed 16-token
+decode. The Qwen reference and embedded template are unchanged.
+
+The bounded current-weight PTQ exporter converted all 209,920,000 PQ2 blocks,
+verifying byte-identical reconstruction after every batch. The final file is
+5,946,648,928 bytes (1.173 GiB smaller); its identity is in the
+[portable receipt](../config/swift.ptq1-export.json). A separate owned model-free
+probe confirms native PQ2/PTQ dequantizer FP32 bit parity on 853,760 values.
+The actual derived model completes bounded native decode alone and with the
+approved, pinned pretrained adapter. PTQ activation rounding differs from PQ2;
+neither this result nor weight parity qualifies logits, creative quality or speed.
+
+The [adapter assessment](swift-lora.md) records immutable provisioned identity,
+129 matching target pairs, bounded loading, extra Job-commit diagnostics and an
+unresolved authoring-basis question. It also quantifies exact B deduplication
+at 2.5 MiB and reviews initial graph reservation and rank-1 fusion as future
+engine changes. No training, weight merge, precision reduction or adapter
+modification is performed.
+
+Standalone native BITCOS dots preserve source scales/Q8_K values and pass
+focused correctness plus independent review. The first hosted ARM64 synthetic
+comparison found severe unpacking overhead. A reviewed vector prefix/rank
+implementation improves it, but remains roughly 3.3× slower than the optimized
+PQ2 comparator on Cobalt 100. [Actual CI samples](../config/bitcos.synthetic-cobalt100.json)
+retain both revisions. This fails the requested speed condition; no BITCOS
+runtime is enabled. Benchmarks ran only in manually dispatched main CI.
+
+The first full export regression handoff exposed a PowerShell type collision
+between two tests sharing a process. Separate CI steps now load those assemblies
+independently. All full suites remain hosted; local work uses strict builds and
+focused correctness. No laptop benchmark, daily-service or accepted performance
+verdict is implied.
+
 - Host inventory: native ARM64 Windows/PowerShell; **33,897,037,824 usable bytes** (31.57 GiB); Snapdragon X Elite X1E78100; Adreno X1-85 driver **31.0.128.0**; native CMake **4.3.1-msvc1** and MSVC **19.51.36260.0**. Presence does not qualify inference or GPU execution.
 - Focused synthetic download correctness checks passed locally. The pinned native runtime was downloaded to session temp, size/hash-checked, extracted and verified. Its bounded version-only process reported **0.7.0-dev, build 11669, commit 620d2225c**, built for Windows arm64. It loaded no model.
 - On October 23 the selected model and runtime were provisioned under the owner-selected external directory. The **13,146,393,504-byte** model passed its independently recorded publisher LFS SHA-256. Full inspection confirmed **866 tensors, 14 tensor types, 15 MTP tensors**, all source-only dimension expectations, and embedded-template SHA-256 `12827f24b742ea4e80cdc12dbcf9622227056b9f797252a3149263d4f9aaadce`. The [portable metadata record](../config/model.metadata.json) omits the local path and vocabulary contents.
