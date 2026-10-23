@@ -14,9 +14,12 @@ namespace SwiftBonsai {
 // https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/gguf-py/gguf/gguf_reader.py
 // https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/gguf-py/gguf/constants.py
 // Sanity choices: tighter service-specific limits; skip vocab contents; retain small
-// layout arrays; checked descriptor arithmetic; no mapping or tensor-payload reads.
-/// <summary>Inspects bounded GGUF metadata and tensor descriptors without reading tensor payloads.</summary>
+// layout arrays; checked descriptor arithmetic; no mapping or model loading.
+/// <summary>Inspects bounded GGUF metadata and optionally streams a pinned Prism PQ2 symbol census.</summary>
 public sealed class GgufInspector : IDisposable {
+    private const string PrismDialect = "Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b";
+    private const int Pq2BlockBytes = 34;
+    private const int Pq2BlockElements = 128;
     private const long HeaderLimit = 256L * 1024 * 1024;
     private const ulong StringLimit = 8UL * 1024 * 1024;
     private const ulong ArrayLimit = 2UL * 1024 * 1024;
@@ -32,9 +35,12 @@ public sealed class GgufInspector : IDisposable {
     private readonly Dictionary<string, object> special = new Dictionary<string, object>(StringComparer.Ordinal);
     private readonly Collection<Tensor> tensors = new Collection<Tensor>();
     private readonly Dictionary<uint, Kind> kinds = new Dictionary<uint, Kind>();
+    private readonly string dialect;
     private sealed record Kind(string Name, ulong Block, ulong Bytes);
     private sealed record Tensor(string Name, uint Type, ulong Offset, ulong Bytes, ulong Elements);
-    private GgufInspector(string path) {
+    private GgufInspector(string path, string dialect) {
+        if(dialect!="Stock" && dialect!=PrismDialect) throw Bad("unknown dialect; use Stock or the explicitly pinned Prism dialect.");
+        this.dialect=dialect;
         file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         reader = new BinaryReader(file, utf8, true);
         // The numeric IDs are ggml tensor types, not general.file_type quantization labels.
@@ -49,6 +55,13 @@ public sealed class GgufInspector : IDisposable {
         Add(29,"IQ1_M",256,56); Add(30,"BF16",1,2); Add(34,"TQ1_0",256,54);
         Add(35,"TQ2_0",256,66); Add(39,"MXFP4",32,17); Add(40,"NVFP4",64,36);
         Add(41,"Q1_0",128,18); Add(42,"Q2_0",64,18);
+        // Never reinterpret stock type IDs. This table is opt-in and tied to:
+        // https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/include/ggml.h
+        // https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-common.h
+        if(dialect==PrismDialect) {
+            Add(142,"PQ2_0",Pq2BlockElements,Pq2BlockBytes);
+            Add(143,"PTQ1_0",128,28);
+        }
     }
     private void Add(uint id, string name, ulong block, ulong bytes) { kinds.Add(id,new Kind(name,block,bytes)); }
     private static InvalidDataException Bad(string message) { return new InvalidDataException("GGUF: " + message); }
@@ -148,6 +161,96 @@ public sealed class GgufInspector : IDisposable {
         }
     }
     private object? Lookup(string key) { object? value; return scalars.TryGetValue(key,out value) ? value : null; }
+    private static ulong SignBytes(ulong nonzero) { return checked((nonzero+7)/8); }
+    private static Dictionary<string,object> Candidate(bool eligible, ulong bitmapBytes, ulong signLowerBound, ulong blockSignBytes, ulong scaleBytes) {
+        var result=new Dictionary<string,object>{{"Eligible",eligible},{"IncludesFormatOrIndexOverhead",false}};
+        if(eligible) {
+            result.Add("BitmapBytes",bitmapBytes);
+            result.Add("UnchangedFp16ScaleBytes",scaleBytes);
+            result.Add("TensorPackedSignBytesLowerBound",signLowerBound);
+            result.Add("Block128BytePaddedSignBytes",blockSignBytes);
+            result.Add("TensorPackedPayloadBytesLowerBound",checked(bitmapBytes+scaleBytes+signLowerBound));
+            result.Add("Block128BytePaddedPayloadBytes",checked(bitmapBytes+scaleBytes+blockSignBytes));
+        }
+        return result;
+    }
+    private Dictionary<string,object> CensusPq2(ulong dataOffset) {
+        if(dialect!=PrismDialect) throw Bad("PQ2 census requires the explicitly pinned Prism dialect.");
+        // Count four two-bit symbols at once. Work is linear in serialized PQ2
+        // bytes, with one shared 64 KiB buffer, one 256-entry table, and no
+        // per-block/per-weight allocations or dequantized floating-point arrays.
+        // Four byte-wide lanes hold each block's four counts. A block has only
+        // 128 symbols, so lane addition cannot carry into an adjacent lane.
+        var codeCounts=new uint[256];
+        for(int value=0;value<256;value++)
+            for(int shift=0;shift<8;shift+=2) codeCounts[value]+=1U<<(((value>>shift)&3)*8);
+        var reports=new List<object>();
+        ulong[] totalCodes=new ulong[4];
+        ulong totalBytes=0, totalBlocks=0, totalZeroScales=0, totalNonfiniteScales=0;
+        ulong totalSignLowerBound=0, totalBlockSigns=0, unchangedBytes=0;
+        bool allEligible=true;
+        foreach(Tensor tensor in tensors.OrderBy(t=>t.Offset)) {
+            if(tensor.Type!=142) { unchangedBytes=checked(unchangedBytes+tensor.Bytes); continue; }
+            file.Position=checked((long)(dataOffset+tensor.Offset));
+            ulong blocks=tensor.Elements/Pq2BlockElements, remaining=blocks;
+            ulong[] counts=new ulong[4];
+            ulong zeroScales=0, nonfiniteScales=0, blockSigns=0;
+            while(remaining>0) {
+                int batch=(int)Math.Min(remaining,(ulong)(hashBuffer.Length/Pq2BlockBytes));
+                int bytes=checked(batch*Pq2BlockBytes);
+                // Descriptor extent checks run before this method. ReadExactly
+                // still rejects truncation if a non-Windows filesystem changes.
+                file.ReadExactly(hashBuffer.AsSpan(0,bytes));
+                for(int block=0;block<batch;block++) {
+                    int start=block*Pq2BlockBytes;
+                    int scale=hashBuffer[start] | (hashBuffer[start+1]<<8);
+                    if((scale&0x7fff)==0) zeroScales++;
+                    else if((scale&0x7c00)==0x7c00) nonfiniteScales++;
+                    uint blockCodeCounts=0;
+                    for(int offset=2;offset<Pq2BlockBytes;offset++) {
+                        byte value=hashBuffer[start+offset];
+                        blockCodeCounts+=codeCounts[value];
+                    }
+                    counts[0]+=blockCodeCounts&255;
+                    uint zeros=(blockCodeCounts>>8)&255;
+                    counts[1]+=zeros;
+                    counts[2]+=(blockCodeCounts>>16)&255;
+                    counts[3]+=blockCodeCounts>>24;
+                    blockSigns+=SignBytes(Pq2BlockElements-zeros);
+                }
+                remaining-=(ulong)batch;
+            }
+            ulong nonzero=checked(counts[0]+counts[2]+counts[3]);
+            bool eligible=counts[3]==0 && zeroScales==0 && nonfiniteScales==0;
+            ulong signLowerBound=SignBytes(nonzero), bitmapBytes=checked(blocks*16), scaleBytes=checked(blocks*2);
+            reports.Add(new Dictionary<string,object>{
+                {"Name",tensor.Name},{"TypeId",tensor.Type},{"Blocks",blocks},{"Scales",blocks},{"ScaleBytes",scaleBytes},{"Elements",tensor.Elements},{"SerializedBytes",tensor.Bytes},
+                {"CodeMinusOne",counts[0]},{"CodeZero",counts[1]},{"CodePlusOne",counts[2]},{"CodePlusTwo",counts[3]},
+                {"ZeroScaleBlocks",zeroScales},{"NonfiniteScaleBlocks",nonfiniteScales},{"StrictTernaryCodes",counts[3]==0},
+                {"LosslessThreeSymbolEligible",eligible},{"BitcosCandidate",Candidate(eligible,bitmapBytes,signLowerBound,blockSigns,scaleBytes)}
+            });
+            for(int code=0;code<4;code++) totalCodes[code]=checked(totalCodes[code]+counts[code]);
+            totalBytes=checked(totalBytes+tensor.Bytes); totalBlocks=checked(totalBlocks+blocks);
+            totalZeroScales=checked(totalZeroScales+zeroScales); totalNonfiniteScales=checked(totalNonfiniteScales+nonfiniteScales);
+            totalSignLowerBound=checked(totalSignLowerBound+signLowerBound); totalBlockSigns=checked(totalBlockSigns+blockSigns);
+            allEligible &= eligible;
+        }
+        if(reports.Count==0) throw Bad("PQ2 census found no PQ2_0 tensors.");
+        var candidate=Candidate(allEligible,checked(totalBlocks*16),totalSignLowerBound,totalBlockSigns,checked(totalBlocks*2));
+        if(allEligible) {
+            ulong retained=checked((ulong)file.Length-totalBytes);
+            candidate.Add("WholeFileBytesLowerBoundWithExistingNonPq2Bytes",checked(retained+(ulong)candidate["TensorPackedPayloadBytesLowerBound"]));
+            candidate.Add("WholeFileBlock128BytePaddedBytesWithExistingNonPq2Bytes",checked(retained+(ulong)candidate["Block128BytePaddedPayloadBytes"]));
+        }
+        return new Dictionary<string,object>{
+            {"CodecCommit","73bfe6cc485554822f80c473a3c0c4f25e80f41b"},{"TensorCount",reports.Count},{"Tensors",reports},
+            {"Blocks",totalBlocks},{"Scales",totalBlocks},{"ScaleBytes",checked(totalBlocks*2)},{"SerializedBytesRead",totalBytes},{"UnchangedOtherTensorBytes",unchangedBytes},
+            {"CodeMinusOne",totalCodes[0]},{"CodeZero",totalCodes[1]},{"CodePlusOne",totalCodes[2]},{"CodePlusTwo",totalCodes[3]},
+            {"ZeroScaleBlocks",totalZeroScales},{"NonfiniteScaleBlocks",totalNonfiniteScales},{"LosslessThreeSymbolEligible",allEligible},
+            {"BitcosCandidate",candidate},{"PayloadBufferBytes",hashBuffer.Length},{"MaximumBlocksPerRead",hashBuffer.Length/Pq2BlockBytes},
+            {"Definition","PQ2_0 stores little-endian FP16 scale then 32 bytes of low-to-high 2-bit codes; decoded value is (code-1)*scale. Counts are raw codes, never decoded zeros. Eligibility requires no +2 codes and finite nonzero scales. Candidate bytes retain exact scale bytes and exclude format, tensor offsets, indices and alignment overhead. They are serialized-size estimates, not RAM or throughput measurements."}
+        };
+    }
     private Dictionary<string,object> Inspect(string path) {
         if(U32()!=0x46554747) throw Bad("invalid magic.");
         if(U32()!=3) throw Bad("only little-endian version 3 is supported.");
@@ -244,10 +347,25 @@ public sealed class GgufInspector : IDisposable {
     /// <summary>Reads a validated metadata report from a GGUF version 3 file.</summary>
     /// <param name="path">Path to the input GGUF file.</param>
     /// <returns>The inspected metadata, descriptor summaries, and inspection limits.</returns>
-    public static Dictionary<string,object> Read(string path) {
-        using(var parser=new GgufInspector(path)) {
-            try { return parser.Inspect(path); }
+    public static Dictionary<string,object> Read(string path) { return Read(path,"Stock",false); }
+    /// <summary>Inspects GGUF and optionally streams PQ2 payloads using an explicitly pinned codec dialect.</summary>
+    /// <param name="path">Path to the input GGUF file.</param>
+    /// <param name="dialect">Stock, or Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b.</param>
+    /// <param name="censusPq2">Whether to read every PQ2 payload for symbol and candidate-size counts.</param>
+    /// <returns>Validated inspection and optional bounded payload census.</returns>
+    public static Dictionary<string,object> Read(string path, string dialect, bool censusPq2) {
+        using(var parser=new GgufInspector(path,dialect)) {
+            try {
+                Dictionary<string,object> report=parser.Inspect(path);
+                report.Add("Dialect",dialect);
+                if(censusPq2) {
+                    report.Add("Pq2Census",parser.CensusPq2((ulong)report["TensorDataOffset"]));
+                    report["TensorPayloadRead"]=true;
+                }
+                return report;
+            }
             catch(OverflowException e) { throw new InvalidDataException("GGUF: descriptor/count arithmetic overflow.",e); }
+            catch(EndOfStreamException e) { throw new InvalidDataException("GGUF: truncated tensor payload.",e); }
         }
     }
     /// <summary>Closes the metadata reader and its file handle.</summary>
