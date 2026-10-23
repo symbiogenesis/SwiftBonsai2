@@ -11,8 +11,8 @@ only the embedded string UTF-8 bytes, without normalization or a length prefix.
 This is a bounded little-endian v3 inspector, not a model loader or general GGUF validator.
 Artifact verification streams the full file. Metadata inspection never reads tensor data;
 CensusPq2 additionally streams only PQ2 payloads in a bounded buffer without loading a model.
-Prism IDs are accepted only with the explicit pinned Dialect. BITCOS candidate byte counts
-exclude format/index/alignment overhead and do not establish RAM or throughput savings.
+Prism IDs are accepted only with the explicit pinned Dialect. The census reports encoded
+symbols and scale eligibility; it does not establish RAM or throughput savings.
 #>
 [CmdletBinding()]
 [OutputType([Collections.IDictionary])]

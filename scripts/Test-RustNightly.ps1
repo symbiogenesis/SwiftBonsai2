@@ -130,7 +130,7 @@ try {
         }
         [void][IO.Directory]::CreateDirectory($target)
         $environment = @{ CARGO_TARGET_DIR = $target; TEMP = $workingDirectory; TMP = $workingDirectory }
-        $packages = @('tools/bitcos', 'tools/gguf', 'tools/prism', 'src/windows-process',
+        $packages = @('tools/ternary', 'tools/gguf', 'tools/prism', 'src/windows-process',
             'src/windows-credentials', 'src/broker', 'src/prism-runtime', 'tools/rust-trial')
         $phases = @('fmt', 'clippy', 'doc')
         if ($FullTests) { $phases += 'test' }

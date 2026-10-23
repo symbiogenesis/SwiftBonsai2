@@ -3,7 +3,7 @@
 /src/windows-process/target/
 /src/windows-credentials/target/
 /src/prism-runtime/target/
-/tools/bitcos/target/
+/tools/ternary/target/
 /tools/gguf/target/
 /tools/prism/target/
 /tools/rust-trial/target/
