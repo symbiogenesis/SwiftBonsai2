@@ -113,6 +113,11 @@ impl LocalChatService {
         self.capacity
     }
 
+    #[cfg(windows)]
+    pub(crate) const fn require_backend_process(&mut self, process_id: u32) {
+        self.backend.require_process(process_id);
+    }
+
     /// Stop admission and wake queued, accepting and active operations.
     ///
     /// Polling operations observe closure and drop their owned streams. No

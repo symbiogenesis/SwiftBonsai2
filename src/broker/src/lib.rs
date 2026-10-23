@@ -7,13 +7,17 @@
 //! joins reception, exact counting, generation and disconnect cancellation.
 //! `service` can explicitly bind a numeric loopback listener for development.
 //! `runtime` supplies an explicit development runner with bounded concurrency.
-//! No model launcher or key generation is supplied.
-//! The future launcher must generate separate private random credentials,
-//! own/identify the backend, prevent bypass and qualify OS process isolation.
+//! `launcher` explicitly owns a pinned development backend on Windows, using
+//! separate audited Win32 dependencies for process and credential operations.
+//! Backend bypass prevention and daily OS isolation still require qualification.
 //! This library alone is not a qualified HTTP or process-isolation boundary.
 #![forbid(unsafe_code)]
 
+pub mod artifacts;
 pub mod backend;
+pub mod launch_policy;
+#[cfg(windows)]
+pub mod launcher;
 pub mod reception;
 pub mod response;
 pub mod runtime;
