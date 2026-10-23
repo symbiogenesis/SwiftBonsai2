@@ -26,6 +26,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 $archive = Resolve-ExternalPath -Path $SourceArchive
 $overlay = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tools/prism'))
 $lock = Get-Content -LiteralPath (Join-Path $overlay 'source.lock.json') -Raw | ConvertFrom-Json -DateKind String
@@ -49,38 +50,17 @@ function Invoke-PrismBuildCommand {
     [OutputType([string])]
     param([string[]]$Arguments, [string]$FilePath = $CMakePath, [Collections.IDictionary]$Environment)
     $script:prismCommandNumber++
-    $start = [Diagnostics.ProcessStartInfo]::new($FilePath)
-    $start.WorkingDirectory = $scratch
-    $start.UseShellExecute = $false; $start.CreateNoWindow = $true
-    $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
     # Each build still uses fresh verified sources. ccache can normalize the
     # random lane prefix while retaining its compiler/header/option checks.
-    # Preserve the inherited environment and change only this child setting.
-    if ($CompilerLauncher) { $start.Environment['CCACHE_BASEDIR'] = $scratch }
+    $overrides = @{}
+    if ($CompilerLauncher) { $overrides['CCACHE_BASEDIR'] = $scratch }
     if ($Environment) {
-        foreach ($key in $Environment.Keys) { $start.Environment[$key] = [string]$Environment[$key] }
+        foreach ($key in $Environment.Keys) { $overrides[$key] = $Environment[$key] }
     }
-    foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
-    $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
-    try {
-        if (-not $process.Start()) { throw 'Prism build command failed to start.' }
-        $stdout = $process.StandardOutput.ReadToEndAsync(); $stderr = $process.StandardError.ReadToEndAsync()
-        $deadline = [Environment]::TickCount64 + 900000L
-        $timedOut = $false
-        while (-not $process.WaitForExit(1000)) {
-            if ([Environment]::TickCount64 -ge $deadline) {
-                $timedOut = $true
-                $process.Kill($true); $process.WaitForExit()
-                break
-            }
-        }
-        $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
-        $log = Join-Path $scratch ('command-{0:D2}.log' -f $script:prismCommandNumber)
-        [IO.File]::WriteAllText($log, $output)
-        if ($timedOut) { throw "Prism build command exceeded fifteen minutes; see $log" }
-        if ($process.ExitCode) { throw "Prism build failed; see $log" }
-        return $output.Trim()
-    } finally { $process.Dispose() }
+    $log = Join-Path $scratch ('command-{0:D2}.log' -f $script:prismCommandNumber)
+    $result = Invoke-BonsaiNativeProcess -Executable $FilePath -ArgumentList $Arguments -WorkingDirectory $scratch -TimeoutSeconds 900 -Environment $overrides -LogPath $log
+    if ($result.ExitCode) { throw "Prism build failed; see $log" }
+    return ($result.StandardOutput + $result.StandardError).Trim()
 }
 
 $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source

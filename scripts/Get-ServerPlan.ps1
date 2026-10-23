@@ -25,6 +25,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 if (-not $IsWindows) { throw 'Server planning targets Windows.' }
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.ServerPolicy.psm1') -Force
 $plan = New-BonsaiServerPlan -DataDirectory $DataDirectory -Port $Port
 if (-not $VerifyRuntime -and -not $VerifyArtifacts) { return $plan }
@@ -36,24 +37,10 @@ $runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $DataDire
 if ($VerifyArtifacts) { $null = & (Join-Path $PSScriptRoot 'Get-Model.ps1') -DataDirectory $DataDirectory -VerifyOnly }
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-ServerPlan-' + [Guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)
-$process = [Diagnostics.Process]::new()
-$started = $false
 try {
-    $start = [Diagnostics.ProcessStartInfo]::new($runtime.ServerPath)
-    $start.WorkingDirectory = $scratch; $start.UseShellExecute = $false; $start.CreateNoWindow = $true
-    $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
-    $start.ArgumentList.Add('--help')
-    $process.StartInfo = $start
-    if (-not $process.Start()) { throw 'Server help probe failed to start.' }
-    $started = $true
-    $stdout = $process.StandardOutput.ReadToEndAsync(); $stderr = $process.StandardError.ReadToEndAsync()
-    if (-not $process.WaitForExit(10000)) {
-        $process.Kill($true); [void]$process.WaitForExit(10000)
-        throw 'Server help probe exceeded ten seconds.'
-    }
-    if (-not $stdout.Wait(10000) -or -not $stderr.Wait(10000)) { throw 'Server help output drain timed out.' }
-    $help = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
-    if ($process.ExitCode -ne 0) { throw 'Server help probe failed.' }
+    $result = Invoke-BonsaiNativeProcess -Executable $runtime.ServerPath -ArgumentList @('--help') -WorkingDirectory $scratch -TimeoutSeconds 10
+    $help = $result.StandardOutput + $result.StandardError
+    if ($result.ExitCode -ne 0) { throw 'Server help probe failed.' }
     Assert-BonsaiServerHelp -HelpText $help -Arguments $plan.Arguments
     $plan.ArtifactVerification = if ($VerifyArtifacts) {
         'existing-model-and-runtime-size-sha256-and-arm64-version-verified'
@@ -64,16 +51,8 @@ try {
     $plan | Add-Member NoteProperty MemoryAdmission $admission
     return $plan
 } finally {
-    try {
-        if ($started -and -not $process.HasExited) {
-            $process.Kill($true)
-            if (-not $process.WaitForExit(10000)) { throw 'Server help probe did not terminate.' }
-        }
-    } finally {
-        $process.Dispose()
-        # This invocation creates only an empty cwd; never recursively delete it.
-        if (-not [IO.Directory]::EnumerateFileSystemEntries($scratch).GetEnumerator().MoveNext()) {
-            [IO.Directory]::Delete($scratch, $false)
-        }
+    # This invocation creates only an empty cwd; never recursively delete it.
+    if (-not [IO.Directory]::EnumerateFileSystemEntries($scratch).GetEnumerator().MoveNext()) {
+        [IO.Directory]::Delete($scratch, $false)
     }
 }

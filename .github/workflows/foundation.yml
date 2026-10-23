@@ -316,6 +316,12 @@ jobs:
       - name: Full foundation suite
         shell: pwsh
         run: ./tests/Test-Foundation.ps1 -Case All
+      - name: Native tool invocation contracts
+        shell: pwsh
+        run: |
+          foreach ($case in @('Capture','Failure','Environment','Timeout','Drain')) {
+            ./tests/Test-NativeProcess.ps1 -Case $case
+          }
       - name: Build and check the Rust GGUF CLI
         shell: pwsh
         working-directory: ${{ runner.temp }}

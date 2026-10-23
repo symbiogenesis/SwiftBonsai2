@@ -16,6 +16,21 @@ audited Win32 boundaries with documented unsafe calls, RAII ownership and strict
 analyzers. The broker itself retains `forbid(unsafe_code)`. Existing C# process
 helpers remain in use by the independent CPU/LoRA qualification probes.
 
+Ordinary build tools, GGUF commands and version/help probes share
+`scripts/Bonsai.Native.psm1`. It passes literal argument arrays, reads stdout and
+stderr concurrently, inherits the environment with explicit child overrides,
+and terminates an active process tree during exceptional cleanup. Callers retain
+their exit-code policy, output formatting and execution deadlines; GGUF execution
+remains unbounded by the wrapper. Output drainage after exit is limited to ten
+seconds per stream, including for build tools, so inherited pipes cannot hang a
+finished command indefinitely. Timeout logs retain captured output. This helper
+does not provide Windows Job ownership after a parent exits; model supervision
+continues to use the separate resource-limited launcher. Consolidating this
+orchestration introduces no Rust bootstrap, additional native process, inference
+change or compiler-concurrency change; it makes no measured performance claim.
+The focused `tests/Test-NativeProcess.ps1 -Case Capture` check exercises literal
+arguments and simultaneous output; Foundation CI runs all invocation cases.
+
 | Language | Enforced policy |
 | --- | --- |
 | Rust 1.99.1 / edition 2024 | Unsafe code forbidden in policy/tooling; documented native-boundary allowances in the Windows crates and Prism FFI/native test. Warnings, missing API documentation, unchecked casts, production unwrap/expect/panic and Clippy all/pedantic/nursery/cargo findings rejected; Release arithmetic overflow checks enabled. Release debug assertions remain disabled to preserve the constant-time dependency's release contract. |

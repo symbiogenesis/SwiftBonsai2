@@ -17,6 +17,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $settings = Join-Path $repoRoot 'PSScriptAnalyzerSettings.psd1'
@@ -149,30 +150,9 @@ if (-not [IO.File]::Exists($project)) { throw 'The strict C# validation project 
 $sdkPin = Join-Path $repoRoot 'global.json'
 if (-not [IO.File]::Exists($sdkPin)) { throw 'The repository .NET SDK pin is missing.' }
 [IO.File]::Copy($sdkPin, (Join-Path $scratch 'global.json'), $false)
-$start = [Diagnostics.ProcessStartInfo]::new($DotNetPath)
-$start.WorkingDirectory = $scratch
-$start.UseShellExecute = $false
-$start.CreateNoWindow = $true
-$start.RedirectStandardOutput = $true
-$start.RedirectStandardError = $true
-foreach ($argument in @('build', $project, '--configuration', 'Release', '--artifacts-path', (Join-Path $scratch 'artifacts'), "-p:EmbeddedSourcesDirectory=$embeddedDirectory", '--nologo')) {
-    $start.ArgumentList.Add($argument)
-}
+$arguments = @('build', $project, '--configuration', 'Release', '--artifacts-path', (Join-Path $scratch 'artifacts'), "-p:EmbeddedSourcesDirectory=$embeddedDirectory", '--nologo')
 Write-Information -MessageData 'C# standards: starting the strict Release build.' -InformationAction Continue
-$process = [Diagnostics.Process]::new()
-$process.StartInfo = $start
-try {
-    if (-not $process.Start()) { throw 'The strict C# validation build failed to start.' }
-    $stdout = $process.StandardOutput.ReadToEndAsync()
-    $stderr = $process.StandardError.ReadToEndAsync()
-    if (-not $process.WaitForExit(120000)) {
-        $process.Kill($true)
-        $process.WaitForExit()
-        throw 'The strict C# validation build exceeded two minutes.'
-    }
-    $buildOutput = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
-    $log = Join-Path $scratch 'csharp-build.log'
-    [IO.File]::WriteAllText($log, $buildOutput)
-    if ($process.ExitCode -ne 0) { throw "Strict C# validation failed. See $log`n$buildOutput" }
-} finally { $process.Dispose() }
+$log = Join-Path $scratch 'csharp-build.log'
+$result = Invoke-BonsaiNativeProcess -Executable $DotNetPath -ArgumentList $arguments -WorkingDirectory $scratch -TimeoutSeconds 120 -LogPath $log
+if ($result.ExitCode -ne 0) { throw "Strict C# validation failed. See $log`n$($result.StandardOutput)$($result.StandardError)" }
 Write-Output "PowerShell standards passed for $($files.Count) files; strict C# build passed including $embeddedCount extracted helper(s). Evidence: $scratch"

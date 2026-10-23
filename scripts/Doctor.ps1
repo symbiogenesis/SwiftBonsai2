@@ -33,6 +33,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 if (-not $IsWindows) { throw 'Doctor requires Windows and PowerShell 7.6 or later.' }
 
 $issues = [System.Collections.Generic.List[string]]::new()
@@ -103,29 +104,8 @@ function Invoke-VersionCommand {
 
     param([string] $Path, [string[]] $Arguments)
 
-    $start = [System.Diagnostics.ProcessStartInfo]::new()
-    $start.FileName = $Path
-    $start.WorkingDirectory = $scratchDirectory
-    $start.UseShellExecute = $false
-    $start.CreateNoWindow = $true
-    $start.RedirectStandardOutput = $true
-    $start.RedirectStandardError = $true
-    foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
-    $process = [System.Diagnostics.Process]::new()
-    $process.StartInfo = $start
-    try {
-        if (-not $process.Start()) { throw 'Version process could not start.' }
-        $stdout = $process.StandardOutput.ReadToEndAsync()
-        $stderr = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit(10000)) {
-            $process.Kill($true)
-            $process.WaitForExit()
-            throw 'Version process exceeded ten seconds.'
-        }
-        $output = $stdout.GetAwaiter().GetResult() + "`n" + $stderr.GetAwaiter().GetResult()
-        return [pscustomobject] @{ ExitCode = $process.ExitCode; Text = $output.Trim() }
-    }
-    finally { $process.Dispose() }
+    $result = Invoke-BonsaiNativeProcess -Executable $Path -ArgumentList $Arguments -WorkingDirectory $scratchDirectory -TimeoutSeconds 10
+    return [pscustomobject] @{ ExitCode = $result.ExitCode; Text = ($result.StandardOutput + "`n" + $result.StandardError).Trim() }
 }
 
 function Get-ExecutableArchitecture {

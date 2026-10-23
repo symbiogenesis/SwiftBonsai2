@@ -24,6 +24,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') { throw 'Build in native ARM64 PowerShell on a Windows ARM64 host.' }
 function Resolve-BuildParallelism {
     [CmdletBinding()]
@@ -99,22 +100,10 @@ function Invoke-Native {
     [OutputType([string])]
     param([string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds = 3600)
     $script:commandNumber++
-    $info = [Diagnostics.ProcessStartInfo]::new($Executable)
-    $info.WorkingDirectory = $scratch
-    $info.UseShellExecute = $false; $info.CreateNoWindow = $true
-    $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
-    foreach ($argument in $Arguments) { $info.ArgumentList.Add($argument) }
-    $process = [Diagnostics.Process]::new(); $process.StartInfo = $info
-    try {
-        if (-not $process.Start()) { throw "Could not start $Executable" }
-        $stdout = $process.StandardOutput.ReadToEndAsync(); $stderr = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) { $process.Kill($true); $process.WaitForExit(); throw "Command timed out: $Executable" }
-        $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
-        $log = Join-Path $scratch ('command-{0:D2}.log' -f $script:commandNumber)
-        [IO.File]::WriteAllText($log, $output)
-        if ($process.ExitCode -ne 0) { throw "Command failed ($($process.ExitCode)): $Executable; see $log" }
-        $output.Trim()
-    } finally { $process.Dispose() }
+    $log = Join-Path $scratch ('command-{0:D2}.log' -f $script:commandNumber)
+    $result = Invoke-BonsaiNativeProcess -Executable $Executable -ArgumentList $Arguments -WorkingDirectory $scratch -TimeoutSeconds $TimeoutSeconds -LogPath $log
+    if ($result.ExitCode -ne 0) { throw "Command failed ($($result.ExitCode)): $Executable; see $log" }
+    ($result.StandardOutput + $result.StandardError).Trim()
 }
 function Invoke-Git {
     [CmdletBinding()]

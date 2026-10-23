@@ -3,6 +3,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 
 $script:GgufScratch = $null
 
@@ -26,37 +27,13 @@ function Invoke-BonsaiGgufProcess {
         [Parameter(Mandatory)][string]$WorkingDirectory,
         [string]$LogPath
     )
-    $start = [Diagnostics.ProcessStartInfo]::new($Executable)
-    $start.WorkingDirectory = $WorkingDirectory
-    $start.UseShellExecute = $false
-    $start.CreateNoWindow = $true
-    $start.RedirectStandardOutput = $true
-    $start.RedirectStandardError = $true
-    foreach ($argument in $ArgumentList) { $start.ArgumentList.Add($argument) }
-    # Inherit the host environment. Only the build target and native cwd move to temp.
-    $process = [Diagnostics.Process]::new()
-    $process.StartInfo = $start
-    $started = $false
-    try {
-        if (-not $process.Start()) { throw 'The GGUF tool process failed to start.' }
-        $started = $true
-        $stdout = $process.StandardOutput.ReadToEndAsync()
-        $stderr = $process.StandardError.ReadToEndAsync()
-        $process.WaitForExit()
-        $output = $stdout.GetAwaiter().GetResult()
-        $diagnostics = $stderr.GetAwaiter().GetResult()
-        if ($LogPath) { [IO.File]::WriteAllText($LogPath, $output + $diagnostics) }
-        if ($process.ExitCode -ne 0) {
-            $evidence = if ($LogPath) { " Build log: $LogPath" } else { '' }
-            throw "GGUF tool exited with code $($process.ExitCode).$evidence`n$diagnostics$output"
-        }
-        if ($diagnostics) { Write-Verbose -Message $diagnostics.TrimEnd() }
-        return $output
-    } finally {
-        try {
-            if ($started -and -not $process.HasExited) { $process.Kill($true); $process.WaitForExit() }
-        } finally { $process.Dispose() }
+    $result = Invoke-BonsaiNativeProcess -Executable $Executable -ArgumentList $ArgumentList -WorkingDirectory $WorkingDirectory -LogPath $LogPath
+    if ($result.ExitCode -ne 0) {
+        $evidence = if ($LogPath) { " Build log: $LogPath" } else { '' }
+        throw "GGUF tool exited with code $($result.ExitCode).$evidence`n$($result.StandardError)$($result.StandardOutput)"
     }
+    if ($result.StandardError) { Write-Verbose -Message $result.StandardError.TrimEnd() }
+    return $result.StandardOutput
 }
 
 function Resolve-GgufTool {

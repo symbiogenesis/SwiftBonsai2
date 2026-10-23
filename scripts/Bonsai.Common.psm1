@@ -2,6 +2,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 
 function Resolve-ExternalPath {
     <#
@@ -215,40 +216,16 @@ function Assert-EngineVersion {
     if ($Commit -notmatch '^[a-f0-9]{40}$') { throw 'Expected a full runtime commit.' }
     $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Version-' + [Guid]::NewGuid().ToString('N')))
     [void][IO.Directory]::CreateDirectory($scratch)
-    $process = [Diagnostics.Process]::new()
-    $started = $false
     try {
-        $start = [Diagnostics.ProcessStartInfo]::new()
-        $start.FileName = $Path
-        $start.WorkingDirectory = $scratch
-        $start.UseShellExecute = $false
-        $start.CreateNoWindow = $true
-        $start.RedirectStandardOutput = $true
-        $start.RedirectStandardError = $true
-        $start.ArgumentList.Add('--version')
-        $process.StartInfo = $start
-        if (-not $process.Start()) { throw 'Runtime version process failed to start.' }
-        $started = $true
-        $stdout = $process.StandardOutput.ReadToEndAsync()
-        $stderr = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit(10000)) { throw 'Runtime version probe timed out.' }
-        if (-not $stdout.Wait(10000) -or -not $stderr.Wait(10000)) { throw 'Runtime version output drain timed out.' }
-        $version = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
+        $result = Invoke-BonsaiNativeProcess -Executable $Path -ArgumentList @('--version') -WorkingDirectory $scratch -TimeoutSeconds 10
+        $version = $result.StandardOutput + $result.StandardError
         $match = [regex]::Match($version, '\bcommit ([a-f0-9]{7,40})\)')
-        if ($process.ExitCode -ne 0 -or -not $match.Success -or -not $Commit.StartsWith($match.Groups[1].Value, [StringComparison]::Ordinal)) {
+        if ($result.ExitCode -ne 0 -or -not $match.Success -or -not $Commit.StartsWith($match.Groups[1].Value, [StringComparison]::Ordinal)) {
             throw 'Runtime reported build identity differs from the lock file.'
         }
         return $version.Trim()
     } finally {
-        try {
-            if ($started -and -not $process.HasExited) {
-                $process.Kill($true)
-                if (-not $process.WaitForExit(10000)) { throw 'Runtime version probe did not terminate after cancellation.' }
-            }
-        } finally {
-            $process.Dispose()
-            if (-not [IO.Directory]::EnumerateFileSystemEntries($scratch).GetEnumerator().MoveNext()) { [IO.Directory]::Delete($scratch, $false) }
-        }
+        if (-not [IO.Directory]::EnumerateFileSystemEntries($scratch).GetEnumerator().MoveNext()) { [IO.Directory]::Delete($scratch, $false) }
     }
 }
 
