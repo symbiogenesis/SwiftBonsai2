@@ -46,6 +46,12 @@ and hashes are recorded in `kernels.rs`; the MIT terms are retained in the root
 
 ## Build and use
 
+The default `cli` feature enables the JSON token driver shown below. Library
+consumers can disable default features, or build with `--no-default-features
+--lib`, to omit JSON dependencies. The inference API uses native typed GGUF
+metadata and compact arrays, and the safe Prism sharing policy needs no C-header
+generator. These feature choices do not change the model's numerical contract.
+
 Use Rust 1.99.1. Run Cargo from a unique system-temp directory, specifying absolute
 manifest and target paths. For example, after fetching locked dependencies:
 

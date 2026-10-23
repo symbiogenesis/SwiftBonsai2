@@ -6,6 +6,12 @@ Every operation verifies the complete input artifact against an explicit byte
 length and SHA-256. On Windows the source handle denies writes and deletion
 through verification and use.
 
+The library exposes exact GGUF scalar types and compact homogeneous arrays through
+`Metadata`, `MetadataValue`, and `MetadataArray`. Parsing and inference retain
+native floating-point values; JSON conversion happens only when producing a
+report. Build with `--no-default-features --lib` to omit JSON and export tooling.
+The default `report` feature retains the existing CLI, census, and export APIs.
+
 The PowerShell entry points keep their existing artifact policy and defaults:
 
 ```powershell
