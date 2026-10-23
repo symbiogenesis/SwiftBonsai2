@@ -65,9 +65,11 @@ $model = 'C:\external model & fixtures\Swift-Bonsai-2-PQ2_0.gguf'
 $defaultArguments = @(Get-CpuCheckArgument -ModelPath $model)
 Assert-ArgumentValue -Arguments $defaultArguments -Name '--batch-size' -Value '256'
 Assert-ArgumentValue -Arguments $defaultArguments -Name '--ubatch-size' -Value '128'
+Assert-ArgumentValue -Arguments $defaultArguments -Name '--log-verbosity' -Value '2'
 $swiftArguments = @(Get-CpuCheckArgument -ModelPath $model -Profile swift-pq2-assessment)
 Assert-ArgumentValue -Arguments $swiftArguments -Name '--batch-size' -Value '128'
 Assert-ArgumentValue -Arguments $swiftArguments -Name '--ubatch-size' -Value '64'
+Assert-ArgumentValue -Arguments $swiftArguments -Name '--log-verbosity' -Value '3'
 foreach ($arguments in @($defaultArguments, $swiftArguments)) {
     Assert-ArgumentValue -Arguments $arguments -Name '--model' -Value $model
     Assert-ArgumentValue -Arguments $arguments -Name '--ctx-size' -Value '8192'

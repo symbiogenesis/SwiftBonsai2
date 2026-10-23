@@ -1,0 +1,149 @@
+{
+  "SchemaVersion": 1,
+  "Format": "GGUF",
+  "Version": 3,
+  "ByteOrder": "little",
+  "FileBytes": 7206168928,
+  "Architecture": "qwen35",
+  "Alignment": 32,
+  "MetadataCount": 49,
+  "MetadataEndOffset": 11070652,
+  "TensorDescriptorsEndOffset": 11120982,
+  "TensorDataOffset": 11120992,
+  "TensorCount": 851,
+  "TensorTypeHistogram": [
+    {
+      "TypeId": 0,
+      "Name": "F32",
+      "Count": 353,
+      "Bytes": 10582016,
+      "Elements": 2645504
+    },
+    {
+      "TypeId": 30,
+      "Name": "BF16",
+      "Count": 96,
+      "Bytes": 47185920,
+      "Elements": 23592960
+    },
+    {
+      "TypeId": 142,
+      "Name": "PQ2_0",
+      "Count": 402,
+      "Bytes": 7137280000,
+      "Elements": 26869760000
+    }
+  ],
+  "Scalars": {
+    "general.architecture": "qwen35",
+    "general.type": "model",
+    "general.sampling.top_k": 20,
+    "general.sampling.top_p": 0.95,
+    "general.sampling.temp": 1.0,
+    "general.name": "Hf",
+    "general.version": "v5",
+    "general.basename": "folded",
+    "general.size_label": "27B",
+    "qwen35.block_count": 64,
+    "qwen35.context_length": 262144,
+    "qwen35.embedding_length": 5120,
+    "qwen35.feed_forward_length": 17408,
+    "qwen35.attention.head_count": 24,
+    "qwen35.attention.head_count_kv": 4,
+    "qwen35.rope.freq_base": 10000000.0,
+    "qwen35.attention.layer_norm_rms_epsilon": 1E-06,
+    "qwen35.attention.key_length": 256,
+    "qwen35.attention.value_length": 256,
+    "qwen35.ssm.conv_kernel": 4,
+    "qwen35.ssm.state_size": 128,
+    "qwen35.ssm.group_count": 16,
+    "qwen35.ssm.time_step_rank": 48,
+    "qwen35.ssm.inner_size": 6144,
+    "qwen35.full_attention_interval": 4,
+    "qwen35.rope.dimension_count": 64,
+    "prism.hadamard.version": 1,
+    "prism.hadamard.block_size": 1024,
+    "prism.hadamard.transform": "normalized-sylvester-walsh-hadamard",
+    "prism.hadamard.axis": "input-last-dimension",
+    "prism.hadamard.sign_mode": "explicit",
+    "prism.hadamard.gdn_v_grouped": true,
+    "tokenizer.ggml.model": "gpt2",
+    "tokenizer.ggml.pre": "qwen35",
+    "tokenizer.ggml.eos_token_id": 248046,
+    "tokenizer.ggml.padding_token_id": 248044,
+    "tokenizer.ggml.bos_token_id": 248044,
+    "tokenizer.ggml.add_bos_token": false,
+    "general.quantization_version": 2,
+    "general.file_type": 141
+  },
+  "Arrays": {
+    "qwen35.rope.dimension_sections": [
+      11,
+      11,
+      10,
+      0
+    ],
+    "prism.hadamard.weight_names": {
+      "ElementTypeId": 8,
+      "Count": 401
+    },
+    "prism.hadamard.sign_widths": [
+      5120,
+      6144,
+      17408
+    ],
+    "prism.hadamard.sign_values": {
+      "ElementTypeId": 5,
+      "Count": 28672
+    },
+    "prism.hadamard.inverse_weight_names": {
+      "ElementTypeId": 8,
+      "Count": 1
+    },
+    "tokenizer.ggml.tokens": {
+      "ElementTypeId": 8,
+      "Count": 248320
+    },
+    "tokenizer.ggml.token_type": {
+      "ElementTypeId": 5,
+      "Count": 248320
+    },
+    "tokenizer.ggml.merges": {
+      "ElementTypeId": 8,
+      "Count": 247587
+    }
+  },
+  "SpecialTokenIds": {
+    "tokenizer.ggml.eos_token_id": 248046,
+    "tokenizer.ggml.padding_token_id": 248044,
+    "tokenizer.ggml.bos_token_id": 248044
+  },
+  "EmbeddedTemplates": {
+    "tokenizer.chat_template": {
+      "Utf8Bytes": 8952,
+      "Sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041"
+    }
+  },
+  "MtpTensorCount": 0,
+  "MtpTensorNames": [],
+  "TokenizerMetadataSha256": "4ac520292c253d0f559aa3a22de4784dee3eefec14cc0d62e2507c47063c1fe5",
+  "TokenizerMetadataBytes": 10942402,
+  "TokenizerMetadataRecords": 10,
+  "TokenizerDigestDefinition": "SHA-256 of complete raw serialized tokenizer.* KV records concatenated in file order, including chat templates",
+  "InspectionLimits": {
+    "HeaderBytes": 268435456,
+    "StringBytes": 8388608,
+    "ArrayElements": 2097152,
+    "TotalArrayElements": 8388608,
+    "ArrayNesting": 4,
+    "MetadataRecords": 10000,
+    "Tensors": 100000
+  },
+  "TensorPayloadRead": true,
+  "Dialect": "Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+  "ArtifactSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+  "ArtifactVerification": "verified-size-and-sha256",
+  "ModelRepository": "ukisai/Swift-Bonsai-2-GGUF",
+  "ModelRevision": "a3bdac086bbb6b04d87d0108d18943b5f63868f7",
+  "CensusRecord": "swift.bitcos-census.json"
+}

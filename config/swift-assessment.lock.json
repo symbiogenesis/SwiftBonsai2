@@ -26,10 +26,11 @@
   },
   "qualification": {
     "purpose": "owner-prioritized Swift memory and BITCOS feasibility assessment",
-    "modelDownload": "pending",
-    "fullGgufInspection": "pending",
-    "ternarySymbolCensus": "pending",
-    "cpuLoading": "pending",
+    "modelDownload": "verified-size-and-sha256-2026-10-23",
+    "fullGgufInspection": "config/swift.metadata.json",
+    "ternarySymbolCensus": "config/swift.bitcos-census.json",
+    "referenceBitcosCodec": "single-block-exact-byte-round-trips; no runtime integration",
+    "cpuLoading": "memory-admission-passed; native-fastfail-0xc0000409-before-token-output",
     "dailySecurity": "not-qualified",
     "devicePerformance": "pending-self-hosted-ci"
   }

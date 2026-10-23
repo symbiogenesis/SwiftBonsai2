@@ -74,13 +74,14 @@ function Get-CpuCheckArgument {
         [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu'
     )
     $policy = Get-CpuCheckPolicy -Profile $ProfileName
+    $logVerbosity = if ($ProfileName -eq 'swift-pq2-assessment') { '3' } else { '2' }
     @('--model', $ModelPath, '--ctx-size', [string]$policy.ContextTokens, '--parallel', '1',
         '--cache-type-k', 'f16', '--cache-type-v', 'f16', '--gpu-layers', '0', '--device', 'none',
         '--no-kv-offload', '--no-op-offload', '--fit', 'off', '--threads', '4', '--threads-batch', '4',
         '--poll', '0', '--poll-batch', '0', '--batch-size', [string]$policy.BatchTokens,
         '--ubatch-size', [string]$policy.MicrobatchTokens,
         '--load-mode', 'mmap', '--no-repack', '--no-context-shift', '--offline', '--no-warmup',
-        '--no-perf', '--log-verbosity', '2', '--color', 'off', '--simple-io', '--no-display-prompt',
+        '--no-perf', '--log-verbosity', $logVerbosity, '--color', 'off', '--simple-io', '--no-display-prompt',
         '--conversation', '--jinja', '--single-turn', '--n-predict', [string]$policy.TokenLimit,
         '--system-prompt', 'You are a helpful assistant.', '--prompt', 'Reply with the word ready.')
 }
@@ -190,6 +191,7 @@ try {
         (Join-Path $scratch 'stdout.txt'), (Join-Path $scratch 'stderr.txt'), [ulong]$ceiling, 1)
     $process = $owned.Process
     $report.ModelProcessStarted = $true
+    $report['EffectiveArguments'] = $arguments
     $deadline = [Environment]::TickCount64 + 1000L * $report.TimeoutSeconds
     while (-not $process.WaitForExit(1000)) {
         if ([Environment]::TickCount64 -ge $deadline) { throw 'CPU loading/decode check exceeded its safety timeout.' }
@@ -203,13 +205,12 @@ try {
         if ($workingSet -gt $ceiling -or $privateBytes -gt $ceiling -or
             [SwiftBonsai.PhysicalMemory]::AvailableBytes() -lt $reserve) { throw 'CPU check stopped by its current-memory safety watchdog.' }
     }
+    $report['ExitCode'] = $process.ExitCode
     $outputFile = [IO.FileStream]::new((Join-Path $scratch 'stdout.txt'), [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
     $reader = [IO.StreamReader]::new($outputFile)
     try { $text = $reader.ReadToEnd() } finally { $reader.Dispose(); $outputFile.Dispose() }
     if ($process.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($text)) { throw "CPU load/decode failed; inspect technical logs at $scratch" }
     $report.Status = 'bounded-load-and-decode-completed'
-    $report['ExitCode'] = $process.ExitCode
-    $report['EffectiveArguments'] = $arguments
     Save-CheckEvidence
     return [pscustomobject]$report
 } catch {

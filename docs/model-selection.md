@@ -1,5 +1,10 @@
 # Initial model choice
 
+**Priority update, October 23:** the owner subsequently prioritized Swift Bonsai 2
+for memory feasibility and BITCOS assessment. See [the new assessment](swift-memory.md).
+This document retains the earlier Qwen literature decision and its limitations;
+it does not override that later direction or establish Swift creative quality.
+
 Decision recorded October 23, 2026, before building or running an inference engine. Select **Qwen3.8-27B UD-Q3_K_XL**, revision `4ca720788d1e01f1bff70c033e0d0028fd02e502`, for the first native ARM64 CPU implementation. Nominate **Gemma 4 12B IT QAT Q4_0** as fallback. Only the selected model is provisioned by the scripts. No local candidate benchmark informed this decision.
 
 Confidence is moderate for the base-model creative preference, low for the exact quantized artifact and laptop comfort. Published creative-writing results favor Qwen overall, its native CPU route requires no new kernels, and an 8K reference configuration plausibly fits the 18 GiB service allowance. This is an initial engineering choice, not a creative-quality or performance acceptance verdict.

@@ -277,6 +277,47 @@ into hosted Foundation CI. No model inference, performance workload or full
 local suite was run. The post-WSL admission check reported 21,596,512,256 bytes
 available against 23,622,320,128 required, with no model process started.
 
+## Owner-prioritized Swift and actual BITCOS census (October 23)
+
+The owner explicitly chose Swift Bonsai 2 for the memory work after the Qwen
+baseline's conservative 22 GiB admission remained above free RAM. The separate
+[assessment](swift-memory.md) retains the old reference and records the new
+priority without presenting a local candidate benchmark. Public model metadata
+pins Swift revision `a3bdac086bbb6b04d87d0108d18943b5f63868f7` and the current
+PQ2 artifact's exact 7,206,168,928 bytes/SHA-256. Prism's released native Windows
+ARM64 CPU package pins `73bfe6cc485554822f80c473a3c0c4f25e80f41b`; offline
+verification confirms package contents, architecture and reported commit.
+
+Source inspection confirms packed PQ2 ARM NEON dots and shared Hadamard/sign
+construction. It also finds that Prism's ARM source route requires Clang; the
+earlier upstream MSVC builder must not silently build this fork. Completion
+supports the selected mmap/no-repack switches but does not accept server-only
+checkpoint/prompt-cache/speculation flags. Source arithmetic supports an explicit
+12 GiB service allowance with about 4.64 GiB remaining after known persistent
+weights/caches/transforms, while retaining the 4 GiB physical reserve. A fixed
+policy regression preserves both this assessment and the original Qwen default.
+
+Full size/SHA verification and a streaming census of the actual Swift file found
+26,869,760,000 PQ2 codes across 402 tensors: 8,802,947,576 zeros (32.76154%), no
+fourth code and no zero/nonfinite scales. The unchanged-scale BITCOS size budget
+is 6,158,339,606 bytes with per-128-block sign-byte padding and retained other
+file bytes, excluding new container/index/alignment overhead. Exact size and
+eligibility evidence is in [the portable record](../config/swift.bitcos-census.json).
+A bounded reference codec proves byte-identical block reconstruction in focused
+tests, including sign boundaries, raw scale bits and canonical padding checks.
+It supplies no whole-model conversion, fused compute kernel or runtime savings.
+Default stock GGUF interpretation remains unchanged; private type IDs require an
+explicit codec-pinned Prism dialect.
+
+Strict integrated PowerShell/C# analyzers and focused block/profile checks pass.
+Independent review also passes provisioning, census and policy regressions.
+The 16-token Swift CPU check passes memory admission, reaches initialization,
+then exits with native fast-fail status `0xc0000409` before output. No watchdog
+failure was reported. A version-only owned-child probe succeeds, as does a
+separate model-free native backend/system-info probe. The precise failing call
+is unlocalized; asynchronous logs are not a call stack. No decode correctness,
+BITCOS RAM/speed result, full local suite or performance benchmark is claimed.
+
 ## Evidence obtained
 
 - Host inventory: native ARM64 Windows/PowerShell; **33,897,037,824 usable bytes** (31.57 GiB); Snapdragon X Elite X1E78100; Adreno X1-85 driver **31.0.128.0**; native CMake **4.3.1-msvc1** and MSVC **19.51.36260.0**. Presence does not qualify inference or GPU execution.

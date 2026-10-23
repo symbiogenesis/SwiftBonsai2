@@ -105,6 +105,12 @@ jobs:
       - name: Full GGUF inspector suite
         shell: pwsh
         run: ./tests/Test-Gguf.ps1 -Case All
+      - name: Pinned Prism PQ2 census regression
+        shell: pwsh
+        run: ./tests/Test-Pq2Census.ps1
+      - name: Reference PQ2 BITCOS block round trips
+        shell: pwsh
+        run: ./tests/Test-Pq2BitcosCodec.ps1
       - name: Engine build scheduling correctness
         shell: pwsh
         run: ./tests/Test-EngineBuild.ps1 -Case Parallelism
@@ -126,6 +132,18 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime') -CheckOnly
           if ($result.ModelProcessStarted -or $result.AvailablePhysicalBytesAtAdmission -le 0) { throw 'Invalid admission-only result.' }
+          $result | ConvertTo-Json
+      - name: Swift assessment policy and pinned ARM64 runtime
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          ./tests/Test-CpuCheckPolicy.ps1 -Case Profiles
+          $data = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime'
+          $lockPath = Join-Path $env:GITHUB_WORKSPACE 'config/swift-assessment.lock.json'
+          ./scripts/Get-Engine.ps1 -DataDirectory $data -LockPath $lockPath
+          $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -CheckOnly
+          if ($result.ModelProcessStarted -or $result.RequiredAvailableBytes -ne 16GB) { throw 'Invalid Swift admission-only result.' }
           $result | ConvertTo-Json
       - name: Verify publisher ARM64 runtime and planned server switches
         shell: pwsh

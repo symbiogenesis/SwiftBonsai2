@@ -41,3 +41,87 @@ BITCOS runtime needs a qualified ARM64 unpack-and-dot path, exact weight parity
 and subsequent CI correctness/performance evidence. The paper's x86/Intel GPU
 results do not establish a Snapdragon speedup. No weights, sampler or KV precision
 will be silently changed to manufacture a memory result.
+
+## Actual artifact census
+
+The complete file passed size/SHA-256 verification, then the inspector streamed
+its PQ2 payload through a 64 KiB buffer. [Metadata](../config/swift.metadata.json)
+records 851 tensors across PQ2/F32/BF16, 64 main blocks, no MTP block, and the
+embedded template/tokenizer identities. The [portable census](../config/swift.bitcos-census.json)
+records 402 PQ2 tensors, 209,920,000 blocks and 26,869,760,000 symbols:
+
+| Symbol | Count |
+| --- | ---: |
+| −1 | 9,042,814,485 |
+| 0 | 8,802,947,576 (32.76154%) |
+| +1 | 9,023,997,939 |
+| +2 | 0 |
+
+No zero or nonfinite scales were found. Under the conservative census rules all
+402 PQ2 tensors are eligible for three-symbol lossless repacking. These counts
+describe encoded symbols; the census never converts weights to floating point.
+
+| Layout accounting | Bytes | GiB |
+| --- | ---: | ---: |
+| Existing complete PQ2 file | 7,206,168,928 | 6.7113 |
+| Tensor-packed sign lower bound, retaining other bytes | 6,105,800,658 | 5.6865 |
+| Signs rounded to bytes within each 128-weight block | 6,158,339,606 | 5.7354 |
+
+The block-rounded candidate saves 1,047,829,322 bytes (0.9759 GiB, about 14.54%)
+before new indexing/alignment/container overhead. It retains the original scale
+bytes and existing non-PQ tensors/header allowance. This is a serialized-size
+estimate from actual data, not an existing converted GGUF or a RAM/speed result.
+
+`Pq2BitcosCodec` supplies a bounded reference proof for one block: two unchanged
+scale bytes, sixteen presence bytes and `ceil(nonzero/8)` sign bytes. Decoding
+recreates the exact original 34 bytes, including scale bits and code order.
+Focused regressions cover sparse/dense/sign boundaries, signed and subnormal
+scales, fourth-code rejection, truncation, excess bytes and noncanonical padding.
+This reference layout has no runtime/kernel integration or model-wide converter.
+
+## Reproduce the assessment
+
+Use native ARM64 PowerShell, an existing owner-selected external data directory,
+and new external report paths. The explicit assessment lock does not replace
+the retained Qwen default or its serving policy:
+
+```powershell
+$lockPath = Join-Path $PWD 'config/swift-assessment.lock.json'
+$lock = Get-Content -Raw -LiteralPath $lockPath | ConvertFrom-Json -DateKind String
+./scripts/Get-Model.ps1 -DataDirectory $data -LockPath $lockPath
+./scripts/Get-Engine.ps1 -DataDirectory $data -LockPath $lockPath
+$model = Join-Path $data -ChildPath 'models', $lock.model.revision, $lock.model.filename
+./scripts/Read-Gguf.ps1 -ModelPath $model -ExpectedBytes $lock.model.bytes -ExpectedSha256 $lock.model.sha256 `
+    -Dialect Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b -CensusPq2 -OutputPath D:\Reports\new-swift-census.json
+./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -CheckOnly
+./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment
+```
+
+The Swift-only CPU check uses 8K FP16 state, batch 128 / microbatch 64 and the
+same fixed synthetic prompt, 16-token limit and ten-minute timeout. Source-level
+accounting includes the entire file, live KV/recurrent state, one shared rotation
+matrix and deduplicated sign vectors/metadata: 7,904,356,704 known bytes. A 12 GiB
+service/Job committed-memory limit leaves 4,980,545,184 bytes for remaining
+runtime/scratch/temporary allocations; admission retains a separate 4 GiB
+physical reserve, requiring 16 GiB available. This is an explicit bounded
+development allowance, not a reduction of the Qwen reference's 22 GiB admission.
+Windows Job commit limits do not cap all mapped physical residency; the existing
+working-set/private-byte and available-memory watchdog remains active.
+
+## Native CPU status
+
+The verified runtime starts inside the owned Job and the Swift profile passes
+memory admission. Two fixed synthetic attempts reach model/context initialization
+and then exit with native fast-fail code `0xc0000409` before producing tokens.
+The watchdog does not report a memory-floor or process-limit violation. Failure
+evidence retains the native exit code and exact synthetic arguments; it does
+not establish decode correctness or a qualified memory peak.
+
+A bounded version-only owned-child probe succeeds. A separate model-free child
+also successfully loads the pinned CPU backend, initializes llama, retrieves
+system information and converts the returned feature string. Asynchronous logs
+do not identify the exact failing call. A debugger capture needs an additional
+1 GiB allowance while preserving the 4 GiB reserve; its 17 GiB admission check
+refused at about 16.19 GiB available without attaching or starting another model.
+Crash diagnosis remains pending. No global error-reporting, driver, pagefile,
+memory-locking or system policy setting was changed.

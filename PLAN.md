@@ -2,6 +2,18 @@
 
 **Research and implementation plan — October 22, 2026**
 
+**Current priority — October 23, 2026:** the owner explicitly prioritized Swift
+Bonsai 2 and BITCOS memory assessment. [The assessment](docs/swift-memory.md)
+pins and verifies the current 6.71 GiB PQ2 artifact and Prism's native ARM64 CPU
+package. Actual symbol census finds 32.76% zeros, no fourth symbols and finite
+nonzero scales; block-rounded BITCOS accounting suggests about 0.98 GiB less
+serialized data before new indexes/alignment. A reference block codec preserves
+exact source bytes in focused regressions. Swift's explicit 8K CPU check uses
+12 GiB service allowance plus the unchanged 4 GiB physical reserve and passes
+admission; the native process fast-fails before token output. Runtime diagnosis,
+fused ARM BITCOS kernels and inference/creative/comfort qualification remain
+pending. The earlier Qwen reference below is retained for reproducibility.
+
 **Status — October 23, 2026:** implementation started. [M0a chooses Qwen3.8-27B UD-Q3_K_XL from literature](docs/model-selection.md), with Gemma 4 12B QAT as fallback. M0 inventory, pinned provisioning, full GGUF inspection and the native ARM64 CPU source build are implemented. The external model is size/SHA-256 verified; metadata confirms 866 tensors across 14 types and the expected template/dimensions. M1 now includes a nonlaunching fixed-policy model preflight, [bounded Rust HTTP admission/orchestration](docs/broker-policy.md), an explicit development broker executable with bounded shutdown/drain, and separate owner-private credential creation. Authentication, Host/Origin/raw routes, strict JSON and canonical sampling/output caps, exact-count admission, bounded framing, one active request with bounded waiting, absolute deadlines, frontend disconnect cancellation and fail-closed generation admission have focused synthetic coverage. The fixed CPU check uses atomic Windows Job ownership with kill-on-close, a job-wide committed-memory cap and one-process limit. Strict local builds/analyzers and focused native regressions pass. After the owner stopped WSL, available RAM rose to about 20.1 GiB; the unchanged 22 GiB admission requirement still refused model launch. No model launcher or UI is supplied, and daily chat remains disabled. CPU loading, integrated immutable backend ownership/identity and bypass prevention, real model tokenization/cancellation acknowledgement, restricted identity/filesystem/egress and creative/comfort qualification remain pending. A Job commit cap does not bound all resident mapped model bytes. No drivers, benchmarks, or inference-performance verdict changed. See [README.md](README.md) and [implementation evidence](docs/implementation-research.md). Values marked *proposed* or *estimated* remain design inputs to validate.
 
 **Model selection comes first, through literature searching only.** Choose the model up front using already-published, publicly accessible online benchmarks, evaluations, model documentation, and samples. Model selection will **not** be based on local benchmarking. Record sources, dates, exact model versions/quantizations, relevant settings, and evidence gaps, then document the choice before building the inference engine. The next phase is to **build, validate, and optimize the inference engine for that chosen model**. Engine correctness, creative-workflow checks, and latency, throughput, memory, energy, and thermal measurements remain in scope under the repository's CI rules; they validate and improve the implementation rather than serve as a candidate-model selection campaign.

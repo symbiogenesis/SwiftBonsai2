@@ -1,8 +1,10 @@
 # Swift Bonsai 2 implementation
 
-The first implementation selects **Qwen3.8-27B UD-Q3_K_XL** from published creative-writing evidence. [The decision](docs/model-selection.md) records the artifact, ARM64 compatibility, memory estimate, limitations, fallback, and stop conditions. The repository name is retained from the original Swift-first research plan.
+The owner now prioritizes **Swift Bonsai 2 PQ2_0** for the low-memory CPU path and BITCOS assessment. [The assessment](docs/swift-memory.md) records its separate immutable model/runtime pins and qualification limits. The earlier [Qwen3.8 literature decision](docs/model-selection.md) and 8K reference profile remain reproducible; their default lock is not silently substituted with a different model.
 
 Implemented: read-only host inventory, immutable artifact locks, resumable size/hash-verified provisioning, native ARM64 CPU runtime installation/source builds, full GGUF metadata inspection, a guarded synthetic CPU check, an explicit 8K reference configuration, a fixed server-policy preflight, Rust bounded HTTP I/O and exact-count admission, single-slot scheduling, request supervision, a bounded development broker executable, private-key provisioning, and foundation CI. The chosen model/runtime are provisioned under the owner's selected `%LOCALAPPDATA%\SwiftBonsai2` directory; the complete artifact metadata is recorded in [model.metadata.json](config/model.metadata.json). **Model chat launch is not enabled.** CPU loading, integrated backend ownership/identity, daily isolation, offline UI and creative/comfort qualification remain ahead. The reference configuration is an unqualified development candidate.
+
+Swift assessment now also has pinned/verified artifacts, [actual PQ2 symbol counts](config/swift.bitcos-census.json), explicit Prism GGUF inspection and a reference BITCOS block codec. The census finds 32.76% zeros and no fourth symbols; block-rounded accounting suggests about 0.98 GiB less serialized data before new format/index overhead. It does not enable a BITCOS inference kernel. Use the [Swift commands and current qualification](docs/swift-memory.md) for this work; the provisioning commands below retain the Qwen reference default unless an explicit lock is supplied.
 
 ## Inventory and provisioning
 
@@ -36,6 +38,14 @@ Interrupted downloads retain one `.partial` file and resume against the immutabl
 `Read-Gguf.ps1` verifies the complete file size/SHA-256 before reading bounded metadata and tensor descriptors. It reports tensor types, actual architecture dimensions, MTP tensors, special token IDs, a raw tokenizer-record digest, and embedded-template UTF-8 digests. It skips tensor payloads. Its optional `-OutputPath` must name a new JSON file outside Git. The inspector deliberately supports little-endian GGUF v3 within documented limits; it is not a general validator for every GGUF extension.
 
 ## First CPU loading check
+
+For the owner-prioritized Swift assessment, use `-Profile swift-pq2-assessment`.
+It selects the separate Swift/Prism lock, 8K FP16 state, batch 128 / microbatch 64,
+and a fixed 12 GiB service allowance plus the unchanged 4 GiB physical reserve.
+The default profile below remains the earlier Qwen reference. Swift passed
+memory admission, but its native runtime fast-failed before token output;
+see [assessment evidence](docs/swift-memory.md). This is not a completed decode
+or daily-service qualification.
 
 ```powershell
 ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -CheckOnly
