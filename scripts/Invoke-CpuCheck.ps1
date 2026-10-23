@@ -7,8 +7,9 @@ Vetted against the pinned tools/completion source and its actual --help. The mod
 llama-cli launches a server, so this check uses the in-process llama-completion.
 The embedded template's default thinking behavior is preserved. Sixteen generated
 tokens establish a bounded decode check, not answer quality or performance.
-Memory admission reserves the whole 18 GiB service allowance plus 4 GiB available
-headroom. A Windows Job enforces job-wide committed memory, one active process,
+Memory admission reserves the selected fixed service allowance plus 4 GiB available
+headroom. The reference remains 18 GiB; the explicit Swift assessment uses 12 GiB.
+A Windows Job enforces job-wide committed memory, one active process,
 and kill-on-close ownership from creation. The additional one-second physical
 memory watchdog is not a peak measurement. This provides no filesystem, token,
 or egress isolation. No applications are closed or system settings changed.
@@ -19,10 +20,70 @@ https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-glo
 #>
 [CmdletBinding()]
 [OutputType([pscustomobject])]
-param([Parameter(Mandatory)][string]$DataDirectory, [switch]$CheckOnly)
+param(
+    [Parameter(Mandatory)][string]$DataDirectory,
+    [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu',
+    [switch]$CheckOnly
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+function Get-CpuCheckPolicy {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu')
+    [long]$ceiling = 18GB
+    [long]$weights = 13146393504
+    [long]$transforms = 0
+    [long]$transformTemporary = 0
+    $lockPath = '../config/runtime.lock.json'
+    $batch = 256
+    $microbatch = 128
+    if ($ProfileName -eq 'swift-pq2-assessment') {
+        $ceiling = 12GB
+        $weights = 7206168928
+        # One shared 1024-square F32 rotation; three shared F32 sign vectors and
+        # retained int32 sign metadata. Construction also briefly stages 4 MiB.
+        $transforms = 4L * 1024 * 1024 + 8L * (5120 + 6144 + 17408)
+        $transformTemporary = 4MB
+        $lockPath = '../config/swift-assessment.lock.json'
+        $batch = 128
+        $microbatch = 64
+    }
+    [long]$kv = 8192L * 16 * 4 * 256 * 2 * 2
+    [long]$recurrent = 48L * 4 * (128 * 6144 + 3 * (6144 + 2 * 16 * 128))
+    [long]$known = $weights + $kv + $recurrent + $transforms
+    [pscustomobject]@{
+        Name = $ProfileName; LockRelativePath = $lockPath
+        ServiceCeilingBytes = $ceiling; AvailableMemoryFloorBytes = 4GB
+        RequiredAvailableBytes = $ceiling + 4GB
+        ContextTokens = 8192; BatchTokens = $batch; MicrobatchTokens = $microbatch
+        TokenLimit = 16; TimeoutSeconds = 600
+        EstimatedWeightBytes = $weights; EstimatedKvBytes = $kv
+        EstimatedRecurrentBytes = $recurrent; EstimatedTransformBytes = $transforms
+        EstimatedTransformConstructionTemporaryBytes = $transformTemporary
+        EstimatedKnownSubtotalBytes = $known; EstimatedRuntimeHeadroomBytes = $ceiling - $known
+        EstimateScope = 'Whole file plus persistent caches/transforms; temporary construction, tokenizer, graph/scratch and allocation overhead use remaining allowance. Source arithmetic, not measured peak.'
+    }
+}
+function Get-CpuCheckArgument {
+    [CmdletBinding()]
+    [OutputType([string], [array])]
+    param(
+        [Parameter(Mandatory)][string]$ModelPath,
+        [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu'
+    )
+    $policy = Get-CpuCheckPolicy -Profile $ProfileName
+    @('--model', $ModelPath, '--ctx-size', [string]$policy.ContextTokens, '--parallel', '1',
+        '--cache-type-k', 'f16', '--cache-type-v', 'f16', '--gpu-layers', '0', '--device', 'none',
+        '--no-kv-offload', '--no-op-offload', '--fit', 'off', '--threads', '4', '--threads-batch', '4',
+        '--poll', '0', '--poll-batch', '0', '--batch-size', [string]$policy.BatchTokens,
+        '--ubatch-size', [string]$policy.MicrobatchTokens,
+        '--load-mode', 'mmap', '--no-repack', '--no-context-shift', '--offline', '--no-warmup',
+        '--no-perf', '--log-verbosity', '2', '--color', 'off', '--simple-io', '--no-display-prompt',
+        '--conversation', '--jinja', '--single-turn', '--n-predict', [string]$policy.TokenLimit,
+        '--system-prompt', 'You are a helpful assistant.', '--prompt', 'Reply with the word ready.')
+}
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
     [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
     throw 'Use native ARM64 PowerShell on Windows ARM64.'
@@ -59,17 +120,28 @@ namespace SwiftBonsai {
 }
 '@
 }
-$lock = Read-BonsaiLock
-$serverProfile = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json -DateKind String
-[long]$ceiling = $serverProfile.serviceCeilingBytes
-if ($ceiling -ne 18GB) { throw 'Review this check before changing the reference service allowance.' }
-[long]$reserve = 4GB
+$policy = Get-CpuCheckPolicy -Profile $ProfileName
+$lockPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $policy.LockRelativePath))
+$lock = Read-BonsaiLock -Path $lockPath
+if ($ProfileName -eq 'reference-cpu') {
+    $serverProfile = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json -DateKind String
+    if ($serverProfile.serviceCeilingBytes -ne $policy.ServiceCeilingBytes) { throw 'Review this check before changing the reference service allowance.' }
+}
+if ($lock.model.bytes -ne $policy.EstimatedWeightBytes) { throw 'Review this check before changing the assessment weight estimate.' }
+[long]$ceiling = $policy.ServiceCeilingBytes
+[long]$reserve = $policy.AvailableMemoryFloorBytes
 [long]$available = [SwiftBonsai.PhysicalMemory]::AvailableBytes()
 $report = [ordered]@{
-    SchemaVersion = 1; RecordedAtUtc = [DateTime]::UtcNow.ToString('o')
+    SchemaVersion = 1; RecordedAtUtc = [DateTime]::UtcNow.ToString('o'); Profile = $policy.Name
     Status = 'admission-passed'; AvailablePhysicalBytesAtAdmission = $available
-    RequiredAvailableBytes = ($ceiling + $reserve); ServiceCeilingBytes = $ceiling
-    AvailableMemoryFloorBytes = $reserve; TokenLimit = 16; TimeoutSeconds = 600
+    RequiredAvailableBytes = $policy.RequiredAvailableBytes; ServiceCeilingBytes = $ceiling
+    AvailableMemoryFloorBytes = $reserve; TokenLimit = $policy.TokenLimit; TimeoutSeconds = $policy.TimeoutSeconds
+    ContextTokens = $policy.ContextTokens; BatchTokens = $policy.BatchTokens; MicrobatchTokens = $policy.MicrobatchTokens
+    EstimatedWeightBytes = $policy.EstimatedWeightBytes; EstimatedKvBytes = $policy.EstimatedKvBytes
+    EstimatedRecurrentBytes = $policy.EstimatedRecurrentBytes; EstimatedTransformBytes = $policy.EstimatedTransformBytes
+    EstimatedTransformConstructionTemporaryBytes = $policy.EstimatedTransformConstructionTemporaryBytes
+    EstimatedKnownSubtotalBytes = $policy.EstimatedKnownSubtotalBytes
+    EstimatedRuntimeHeadroomBytes = $policy.EstimatedRuntimeHeadroomBytes; EstimateScope = $policy.EstimateScope
     ProcessOwnership = 'windows-job-at-creation-kill-on-close'; JobCommittedMemoryLimitBytes = $ceiling
     ActiveProcessLimit = 1; BreakawayAllowed = $false
     ModelRevision = $lock.model.revision; RuntimeCommit = $lock.runtime.commit
@@ -81,7 +153,7 @@ if ($available -lt $report.RequiredAvailableBytes) {
 }
 if ($CheckOnly -or $report.Status -ne 'admission-passed') { return [pscustomobject]$report }
 
-$runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -VerifyOnly
+$runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly
 $modelPath = Resolve-ExternalPath (Join-Path $data -ChildPath 'models', $lock.model.revision, $lock.model.filename)
 $executable = Resolve-ExternalPath (Join-Path ([IO.Path]::GetDirectoryName($runtime.ServerPath)) 'llama-completion.exe')
 Assert-Arm64PE $executable
@@ -113,14 +185,7 @@ try {
     Test-LockedArtifact $modelPath $lock.model.bytes $lock.model.sha256
     # Recheck after verification, since available memory is volatile.
     if ([SwiftBonsai.PhysicalMemory]::AvailableBytes() -lt $report.RequiredAvailableBytes) { throw 'Memory admission changed during artifact verification; no model was launched.' }
-    $arguments = @('--model', $modelPath, '--ctx-size', '8192', '--parallel', '1',
-        '--cache-type-k', 'f16', '--cache-type-v', 'f16', '--gpu-layers', '0', '--device', 'none',
-        '--no-kv-offload', '--no-op-offload', '--fit', 'off', '--threads', '4', '--threads-batch', '4',
-        '--poll', '0', '--poll-batch', '0', '--batch-size', '256', '--ubatch-size', '128',
-        '--load-mode', 'mmap', '--no-repack', '--no-context-shift', '--offline', '--no-warmup',
-        '--no-perf', '--log-verbosity', '2', '--color', 'off', '--simple-io', '--no-display-prompt',
-        '--conversation', '--jinja', '--single-turn', '--n-predict', '16',
-        '--system-prompt', 'You are a helpful assistant.', '--prompt', 'Reply with the word ready.')
+    $arguments = @(Get-CpuCheckArgument -ModelPath $modelPath -Profile $ProfileName)
     $owned = [SwiftBonsai.OwnedProcess]::Start($executable, [string[]]$arguments, $scratch,
         (Join-Path $scratch 'stdout.txt'), (Join-Path $scratch 'stderr.txt'), [ulong]$ceiling, 1)
     $process = $owned.Process
