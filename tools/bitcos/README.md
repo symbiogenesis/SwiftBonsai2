@@ -105,12 +105,14 @@ only and refuse the representative synthetic benchmark. Clang/GCC ARM builds are
 also supported by CMake, but are not certified by the local MSVC build.
 
 Run a focused case locally with the native process working directory set to the
-external build directory. Available cases are `codec`, `dot`, and `matrix`.
+external build directory. Available cases are `codec`, `pq2-bytes`, `dot`, and `matrix`.
 `bitcos-tests all` / CTest run the complete native correctness collection in CI.
 The focused `dot` case compares scalar/NEON/compact results across 256, 5120, 6144
 and 17408 columns, signed/subnormal/extreme scales and the full int8 activation
-range. Other cases check bit positions, sign-byte boundaries, exact round trips,
-index accounting and malformed input rejection.
+range. `pq2-bytes` checks all 256 packed-byte values at every payload-byte position
+against an independent symbol rule for both encoders. Other cases check bit
+positions, sign-byte boundaries, exact round trips, index accounting and malformed
+input rejection.
 
 ## CI-only synthetic benchmark
 
