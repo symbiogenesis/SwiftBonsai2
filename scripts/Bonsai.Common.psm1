@@ -181,6 +181,7 @@ function Assert-EngineVersion {
     $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Version-' + [Guid]::NewGuid().ToString('N')))
     [IO.Directory]::CreateDirectory($scratch) | Out-Null
     $process = [Diagnostics.Process]::new()
+    $started = $false
     try {
         $start = [Diagnostics.ProcessStartInfo]::new()
         $start.FileName = $Path
@@ -192,9 +193,11 @@ function Assert-EngineVersion {
         $start.ArgumentList.Add('--version')
         $process.StartInfo = $start
         if (-not $process.Start()) { throw 'Runtime version process failed to start.' }
+        $started = $true
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit(10000)) { $process.Kill($true); $process.WaitForExit(); throw 'Runtime version probe timed out.' }
+        if (-not $process.WaitForExit(10000)) { throw 'Runtime version probe timed out.' }
+        if (-not $stdout.Wait(10000) -or -not $stderr.Wait(10000)) { throw 'Runtime version output drain timed out.' }
         $version = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
         $match = [regex]::Match($version, '\bcommit ([a-f0-9]{7,40})\)')
         if ($process.ExitCode -ne 0 -or -not $match.Success -or -not $Commit.StartsWith($match.Groups[1].Value, [StringComparison]::Ordinal)) {
@@ -202,8 +205,15 @@ function Assert-EngineVersion {
         }
         return $version.Trim()
     } finally {
-        $process.Dispose()
-        if (-not [IO.Directory]::EnumerateFileSystemEntries($scratch).GetEnumerator().MoveNext()) { [IO.Directory]::Delete($scratch, $false) }
+        try {
+            if ($started -and -not $process.HasExited) {
+                $process.Kill($true)
+                if (-not $process.WaitForExit(10000)) { throw 'Runtime version probe did not terminate after cancellation.' }
+            }
+        } finally {
+            $process.Dispose()
+            if (-not [IO.Directory]::EnumerateFileSystemEntries($scratch).GetEnumerator().MoveNext()) { [IO.Directory]::Delete($scratch, $false) }
+        }
     }
 }
 
