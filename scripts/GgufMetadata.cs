@@ -15,25 +15,26 @@ namespace SwiftBonsai {
 // https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/gguf-py/gguf/constants.py
 // Sanity choices: tighter service-specific limits; skip vocab contents; retain small
 // layout arrays; checked descriptor arithmetic; no mapping or tensor-payload reads.
+/// <summary>Inspects bounded GGUF metadata and tensor descriptors without reading tensor payloads.</summary>
 public sealed class GgufInspector : IDisposable {
-    const long HeaderLimit = 256L * 1024 * 1024;
-    const ulong StringLimit = 8UL * 1024 * 1024;
-    const ulong ArrayLimit = 2UL * 1024 * 1024;
-    const ulong TotalElementLimit = 8UL * 1024 * 1024;
-    readonly FileStream file;
-    readonly BinaryReader reader;
-    readonly byte[] hashBuffer = new byte[65536];
-    readonly UTF8Encoding utf8 = new UTF8Encoding(false, true);
-    ulong elements;
-    readonly Dictionary<string, object> scalars = new Dictionary<string, object>(StringComparer.Ordinal);
-    readonly Dictionary<string, object> arrays = new Dictionary<string, object>(StringComparer.Ordinal);
-    readonly Dictionary<string, object> templates = new Dictionary<string, object>(StringComparer.Ordinal);
-    readonly Dictionary<string, object> special = new Dictionary<string, object>(StringComparer.Ordinal);
-    readonly Collection<Tensor> tensors = new Collection<Tensor>();
-    readonly Dictionary<uint, Kind> kinds = new Dictionary<uint, Kind>();
-    sealed record Kind(string Name, ulong Block, ulong Bytes);
-    sealed record Tensor(string Name, uint Type, ulong Offset, ulong Bytes, ulong Elements);
-    GgufInspector(string path) {
+    private const long HeaderLimit = 256L * 1024 * 1024;
+    private const ulong StringLimit = 8UL * 1024 * 1024;
+    private const ulong ArrayLimit = 2UL * 1024 * 1024;
+    private const ulong TotalElementLimit = 8UL * 1024 * 1024;
+    private readonly FileStream file;
+    private readonly BinaryReader reader;
+    private readonly byte[] hashBuffer = new byte[65536];
+    private readonly UTF8Encoding utf8 = new UTF8Encoding(false, true);
+    private ulong elements;
+    private readonly Dictionary<string, object> scalars = new Dictionary<string, object>(StringComparer.Ordinal);
+    private readonly Dictionary<string, object> arrays = new Dictionary<string, object>(StringComparer.Ordinal);
+    private readonly Dictionary<string, object> templates = new Dictionary<string, object>(StringComparer.Ordinal);
+    private readonly Dictionary<string, object> special = new Dictionary<string, object>(StringComparer.Ordinal);
+    private readonly Collection<Tensor> tensors = new Collection<Tensor>();
+    private readonly Dictionary<uint, Kind> kinds = new Dictionary<uint, Kind>();
+    private sealed record Kind(string Name, ulong Block, ulong Bytes);
+    private sealed record Tensor(string Name, uint Type, ulong Offset, ulong Bytes, ulong Elements);
+    private GgufInspector(string path) {
         file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         reader = new BinaryReader(file, utf8, true);
         // The numeric IDs are ggml tensor types, not general.file_type quantization labels.
@@ -49,21 +50,21 @@ public sealed class GgufInspector : IDisposable {
         Add(35,"TQ2_0",256,66); Add(39,"MXFP4",32,17); Add(40,"NVFP4",64,36);
         Add(41,"Q1_0",128,18); Add(42,"Q2_0",64,18);
     }
-    void Add(uint id, string name, ulong block, ulong bytes) { kinds.Add(id,new Kind(name,block,bytes)); }
-    static InvalidDataException Bad(string message) { return new InvalidDataException("GGUF: " + message); }
-    void Need(ulong bytes) {
+    private void Add(uint id, string name, ulong block, ulong bytes) { kinds.Add(id,new Kind(name,block,bytes)); }
+    private static InvalidDataException Bad(string message) { return new InvalidDataException("GGUF: " + message); }
+    private void Need(ulong bytes) {
         if (bytes > (ulong)(file.Length-file.Position) || bytes > (ulong)Math.Max(0,HeaderLimit-file.Position))
             throw Bad("truncated or over-limit metadata/tensor descriptor region.");
     }
-    uint U32() { Need(4); return reader.ReadUInt32(); }
-    ulong U64() { Need(8); return reader.ReadUInt64(); }
-    string Text(int limit) {
+    private uint U32() { Need(4); return reader.ReadUInt32(); }
+    private ulong U64() { Need(8); return reader.ReadUInt64(); }
+    private string Text(int limit) {
         ulong size=U64();
         if (size>(ulong)limit) throw Bad("name/string exceeds inspection limit.");
         Need(size);
         return utf8.GetString(reader.ReadBytes((int)size));
     }
-    static int Width(uint type) {
+    private static int Width(uint type) {
         switch(type) {
             case 0: case 1: case 7: return 1;
             case 2: case 3: return 2;
@@ -72,7 +73,7 @@ public sealed class GgufInspector : IDisposable {
             default: return 0;
         }
     }
-    object Scalar(uint type) {
+    private object Scalar(uint type) {
         int width=Width(type); if(width==0) throw Bad("unknown scalar type."); Need((ulong)width);
         switch(type) {
             case 0: return reader.ReadByte(); case 1: return reader.ReadSByte();
@@ -85,12 +86,12 @@ public sealed class GgufInspector : IDisposable {
             default: throw Bad("unknown scalar type.");
         }
     }
-    static Dictionary<string,object>? ArrayDescriptor(bool retain, uint itemType, ulong count) {
+    private static Dictionary<string,object>? ArrayDescriptor(bool retain, uint itemType, ulong count) {
         // Only the outer retained record appears in the report. Nested skipped
         // arrays still receive every validation, without allocating a descriptor.
         return retain ? new Dictionary<string,object>{{"ElementTypeId",itemType},{"Count",count}} : null;
     }
-    void SkipBooleans(ulong count) {
+    private void SkipBooleans(ulong count) {
         Need(count);
         while(count>0) {
             int n=file.Read(hashBuffer,0,(int)Math.Min((ulong)hashBuffer.Length,count));
@@ -100,7 +101,7 @@ public sealed class GgufInspector : IDisposable {
         }
     }
     // Depth and aggregate counts cap both recursion and adversarial nested-array work.
-    object? Value(uint type, int depth, bool retain) {
+    private object? Value(uint type, int depth, bool retain) {
         if(depth>4) throw Bad("array nesting exceeds inspection limit.");
         if(type==8) {
             ulong size=U64(); if(size>StringLimit) throw Bad("string exceeds 8 MiB inspection limit."); Need(size);
@@ -131,7 +132,7 @@ public sealed class GgufInspector : IDisposable {
         }
         return values is not null ? values : ArrayDescriptor(retain,itemType,count);
     }
-    void HashRange(IncrementalHash hash, long start, long length) {
+    private void HashRange(IncrementalHash hash, long start, long length) {
         ArgumentNullException.ThrowIfNull(hash);
         long restore=file.Position;
         file.Position=start;
@@ -141,13 +142,13 @@ public sealed class GgufInspector : IDisposable {
         }
         file.Position=restore;
     }
-    string Digest(long start,long length) {
+    private string Digest(long start,long length) {
         using(var hash=IncrementalHash.CreateHash(HashAlgorithmName.SHA256)) {
             HashRange(hash,start,length); return Convert.ToHexStringLower(hash.GetHashAndReset());
         }
     }
-    object? Lookup(string key) { object? value; return scalars.TryGetValue(key,out value) ? value : null; }
-    Dictionary<string,object> Inspect(string path) {
+    private object? Lookup(string key) { object? value; return scalars.TryGetValue(key,out value) ? value : null; }
+    private Dictionary<string,object> Inspect(string path) {
         if(U32()!=0x46554747) throw Bad("invalid magic.");
         if(U32()!=3) throw Bad("only little-endian version 3 is supported.");
         ulong tensorCount=U64(), metadataCount=U64();
@@ -240,12 +241,16 @@ public sealed class GgufInspector : IDisposable {
             {"TensorPayloadRead",false}
         };
     }
+    /// <summary>Reads a validated metadata report from a GGUF version 3 file.</summary>
+    /// <param name="path">Path to the input GGUF file.</param>
+    /// <returns>The inspected metadata, descriptor summaries, and inspection limits.</returns>
     public static Dictionary<string,object> Read(string path) {
         using(var parser=new GgufInspector(path)) {
             try { return parser.Inspect(path); }
             catch(OverflowException e) { throw new InvalidDataException("GGUF: descriptor/count arithmetic overflow.",e); }
         }
     }
+    /// <summary>Closes the metadata reader and its file handle.</summary>
     public void Dispose() { reader.Dispose(); file.Dispose(); }
 }
 }

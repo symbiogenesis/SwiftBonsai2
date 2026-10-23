@@ -78,11 +78,16 @@ using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 namespace SwiftBonsai.Tests {
+/// <summary>Provides synthetic HTTP responses for locked-artifact download tests.</summary>
 public sealed class BonsaiTestHandler : HttpMessageHandler {
+    /// <summary>Gets or sets the synthetic response mode.</summary>
     public string Mode { get; set; } = string.Empty;
+    /// <summary>Gets the most recently requested range start.</summary>
     public long? LastRange { get; private set; }
+    /// <summary>Gets the number of requests handled.</summary>
     public int Requests { get; private set; }
     private readonly byte[] data = new byte[] {10,20,30,40,50,60};
+    /// <inheritdoc/>
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) {
         ArgumentNullException.ThrowIfNull(request);
         Requests++;

@@ -30,10 +30,10 @@ if ($overrides.Count) { throw ('Inherited model/backend overrides are unsupporte
 if (-not ('SwiftBonsai.PhysicalMemory' -as [type])) {
     Add-Type -TypeDefinition @'
 #nullable enable
-using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 namespace SwiftBonsai {
+    /// <summary>Reads current Windows physical memory availability.</summary>
     public static class PhysicalMemory {
         [StructLayout(LayoutKind.Sequential)]
         private record struct Status {
@@ -45,6 +45,7 @@ namespace SwiftBonsai {
         [DllImport("kernel32.dll", EntryPoint="GlobalMemoryStatusEx", ExactSpelling=true, SetLastError=true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool QueryMemoryStatus(ref Status status);
+        /// <summary>Returns the physical memory currently available, in bytes.</summary>
         public static ulong AvailableBytes() {
             var status = new Status { Length = (uint)Marshal.SizeOf<Status>() };
             if (!QueryMemoryStatus(ref status)) throw new Win32Exception(Marshal.GetLastWin32Error());
