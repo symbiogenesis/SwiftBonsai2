@@ -71,6 +71,47 @@ response value tree. The isolated test implementation was reviewed separately;
 paused-time fixtures exercise ownership, truncation and partial I/O without
 opening sockets or running performance workloads.
 
+## M1 backend transport: pre-implementation review, October 23
+
+Before implementation, the integrator and an independent reviewer in a dedicated
+detached worktree checked [RFC 9112 framing](https://www.rfc-editor.org/rfc/rfc9112.html),
+[`httparse` 1.10.1 response parsing](https://docs.rs/httparse/1.10.1/httparse/struct.Response.html),
+Tokio 1.50.0 [`AsyncRead`](https://docs.rs/tokio/1.50.0/tokio/io/trait.AsyncRead.html)
+and [absolute timeouts](https://docs.rs/tokio/1.50.0/tokio/time/fn.timeout_at.html),
+and the pinned server's [response provider](https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/tools/server/server-http.cpp#L587-L623)
+and [HTTP implementation](https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/vendor/cpp-httplib/httplib.cpp).
+
+Sanity check: a raw socket cannot satisfy the existing response writer's decoded
+EOF contract. Add an owned supplied-stream exchange and framing decoder, without
+creating sockets or tasks. Rebuild private numeric Host, bearer credential,
+Content-Length and fixed routes; never accept client headers or arbitrary URLs.
+Require a bounded strict HTTP/1.1 200 head with exactly one Content-Length or
+exact chunked encoding. Reject encodings, trailers and upgrades. The pinned
+provider emits bare hexadecimal chunks without extensions/trailers; this narrow
+adapter may reject those general HTTP features. Bound decoded payload to 4 MiB,
+chunk lines to 32 bytes and cumulative chunk metadata to 64 KiB. Incomplete
+framing must remain an error after yielded payload, never a clean EOF. One
+absolute supervisor deadline covers response head/body; the complete request
+write/flush is also shortened to five seconds. Bound work per decoder poll.
+
+For the next counting step, separately checked the pinned [count handler](https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/tools/server/server-context.cpp#L5686)
+and [endpoint contract](https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/tools/server/README.md#post-v1chatcompletionsinput_tokens-token-counting).
+The response requires both a positive integer `input_tokens` and
+`object: "response.input_tokens"`. Limit it to 4 KiB and reject duplicate,
+unknown or malformed fields before admission. Count and generation must send the
+same immutable canonical bytes. Supplied streams alone cannot attest backend
+identity: the future supervisor must own the immutable backend and prevent
+bypass or replacement between operations. This increment cannot qualify launch,
+real disconnect cancellation or isolation.
+
+The post-implementation review found that a derived Serde unit enum for the
+object tag also accepted an externally tagged JSON map. Require a `String`
+and exact equality instead; the regression includes that alternate map shape.
+Independent code and test review found no further blocking defect. The decoder
+closes its stream immediately on an error, keeps errors sticky, and requires
+the complete chunk terminator before exposing framed EOF. Tests include an
+end-to-end decoder/response-writer truncation case.
+
 ## Evidence obtained
 
 - Host inventory: native ARM64 Windows/PowerShell; **33,897,037,824 usable bytes** (31.57 GiB); Snapdragon X Elite X1E78100; Adreno X1-85 driver **31.0.128.0**; native CMake **4.3.1-msvc1** and MSVC **19.51.36260.0**. Presence does not qualify inference or GPU execution.
@@ -93,5 +134,16 @@ opening sockets or running performance workloads.
   existing hosted broker suite; the other cases remain for CI. No local full
   suite, actual backend decoder, real-disconnect cancellation, model execution,
   benchmark or daily-isolation verdict is implied.
+
+- The M1 private backend adapter builds in Release on native ARM64 with locked
+  offline dependencies. Seven selected local regressions pass: canonical body
+  and private header identity, fragmented framed completion without socket EOF,
+  malformed/truncated chunks, strict count schema including alternate tag shape,
+  the shared five-second request write/flush deadline, total response head/body
+  deadlines, and prevention of downstream terminal framing after truncation.
+  Eighteen new cases are included in the existing hosted broker suite. These
+  are synthetic supplied-stream checks; live backend connection/identity, actual
+  model tokenization, real disconnect cancellation and process isolation remain
+  unqualified. No dependency, model execution or benchmark was added.
 
 Only the selected candidate was downloaded. No projector, fallback, inference benchmark, full local suite, driver change, or global system policy change was performed. Technical captures remain outside Git in unique session temp lanes; artifact storage uses the owner-selected external directory.

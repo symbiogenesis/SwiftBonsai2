@@ -1,8 +1,9 @@
 # M1 request admission and bounded HTTP I/O
 
 The Rust library in `src/broker/` implements request admission, bounded
-reception and response writing on supplied streams. It has no listener, backend connection,
-process launcher or production token counter. Chat remains disabled. These are
+reception, backend HTTP exchange/exact-count admission and response writing on
+supplied streams. It has no listener, socket connector or process launcher.
+Chat remains disabled. These are
 policy/I/O components, not daily-service qualification.
 
 The policy accepts only HTTP/1.1 origin-form `POST /v1/chat/completions`, numeric
@@ -65,11 +66,11 @@ and generation cancellation remain integration work.
 
 `response::send_chat_response(client, backend_response, &admitted_chat,
 supervisor_deadline)` owns a client writer and an `http::Response` whose owned
-body reader **must already decode HTTP framing**. A future trusted backend
+body reader **must already decode HTTP framing**. A trusted backend
 transport must bound upstream headers, reject ambiguous/unsupported framing,
 and report short Content-Length or incomplete chunked bodies as read errors.
-Passing a raw backend socket would defeat the completion contract. No such HTTP
-client or network connection is supplied by this module.
+Passing a raw backend socket would defeat the completion contract. The `backend`
+module below supplies a compatible decoder; neither module opens a connection.
 
 Before writing anything, the adapter requires status 200, exactly one
 Content-Type matching the admitted request's `stream` flag, and no
@@ -160,13 +161,66 @@ rendered prompt tokens + requested completion tokens + 64 reserve <= 8192
 ```
 
 The 64-token reserve is a conservative initial policy, not a measured tokenizer
-error allowance or a substitute for matching rendering. No production callback
-is supplied; bytes/characters are never treated as tokens. An admitted body is
+error allowance or a substitute for matching rendering. The supplied-stream
+count helper below implements this exchange; bytes/characters are never treated as tokens. An admitted body is
 immutable. Parser failures return value-free error categories to keep private
 input out of diagnostics.
 
+## Private backend HTTP exchange and exact counts
+
+`backend::BackendPolicy::new(port, key)` accepts a numeric loopback port and the
+same 64-lowercase-hex key format as the frontend policy. The supervisor must
+supply a separate random private backend credential and protect it. The policy
+does not prove randomness, distinctness, endpoint identity or access control.
+
+`backend::count_and_admit(stream, pending_chat, &backend_policy, deadline)` owns
+one already-connected full-duplex stream and sends the pending canonical bytes
+to the fixed `/v1/chat/completions/input_tokens` route. It requires HTTP 200 JSON
+with at most 4 KiB and exactly two fields: positive integer `input_tokens` and
+the string `object: "response.input_tokens"`. Missing, duplicate, unknown, null,
+wrong-type and alternate root/tag shapes fail closed. The count then passes
+through the existing checked 8K admission rule. The original canonical allocation
+is retained unchanged, and the count connection is dropped before returning.
+
+`backend::request_chat(stream, &admitted_chat, &backend_policy, deadline)` sends
+those identical bytes to `/v1/chat/completions`. Both operations rebuild Host,
+Authorization, Content-Type, Content-Length, `Accept-Encoding: identity` and
+`Connection: close`. They accept no caller route, URL or forwarded header, never
+retry or follow redirects, and use one five-second limit for the entire request
+write/flush, shortened by the supervisor deadline. Response headers may wait
+until that total deadline, accommodating initial prefill. Every ready operation
+also checks expiry explicitly.
+
+Response heads are bounded to 16 KiB/64 fields and parsed with httparse while
+retaining duplicate headers. Strict CRLF, HTTP/1.1, status 200 and a singleton
+matching Content-Type are required. Content-Encoding, Trailer and Upgrade are
+rejected. Exactly one decimal Content-Length or singleton exact `chunked`
+Transfer-Encoding is required, even for empty bodies. Conflicting or repeated
+framing fails; interim responses, close-delimited bodies and encodings are
+unsupported. Coalesced body bytes stay in the owned buffered reader.
+
+The returned `BackendBody` implements `AsyncRead` and can be passed directly to
+`response::send_chat_response`. It enforces the same absolute supervisor deadline,
+a 4 MiB decoded limit, 32-byte chunk-size lines including CRLF, and 64 KiB of
+cumulative chunk metadata including data delimiters. Chunk extensions and
+trailers are deliberately rejected; the pinned server's provider emits neither.
+Immediately ready metadata work yields after a bounded number of steps. A short
+Content-Length, malformed/missing chunk delimiter or incomplete terminating
+empty trailer returns an I/O error after any yielded payload. Errors are sticky
+and immediately drop the stream. Framed completion does not wait for socket
+EOF; surplus is discarded on drop and the connection is never reused.
+
+These generic APIs require owned `AsyncRead + AsyncWrite + Unpin + 'static`
+streams whose Drop closes the connection, plus a Tokio time driver. They create
+no task, socket, listener or process. Dropping an exchange or returned body drops
+the supplied endpoint. The supervisor still must own one immutable verified
+backend, connect only to it for both operations, prevent bypass/replacement and
+monitor real frontend disconnects to cancel generation. Supplied streams and
+synthetic count responses cannot establish those properties or qualify actual
+model tokenization.
+
 Before any listener is enabled, integrate and qualify the reception/response adapters, private
-backend credential and bypass prevention, exact-count transport, single-slot
+backend credential and bypass prevention, the supplied-stream transport, single-slot
 bounded queue, total deadlines, streaming cancellation, owned process lifecycle,
 memory limits and restricted inference identity/filesystem/egress. Offline UI
 assets and creative/comfort qualification follow. These controls remain pending

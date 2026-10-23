@@ -2,11 +2,13 @@
 //!
 //! `reception` bounds one supplied stream while preserving header multiplicity.
 //! `response` frames a bounded, already HTTP-decoded backend response.
+//! `backend` sends canonical requests and decodes HTTP on supplied private streams.
 //! The future supervisor must generate a private random credential, use a separate
 //! backend key, prevent bypass, and enforce concurrency, deadlines and cancellation.
 //! This library alone is not a qualified HTTP or process-isolation boundary.
 #![forbid(unsafe_code)]
 
+pub mod backend;
 pub mod reception;
 pub mod response;
 
@@ -317,8 +319,8 @@ impl PendingChat {
     /// The trusted counter must send these exact canonical bytes to the pinned
     /// runtime's internal /v1/chat/completions/input_tokens endpoint. Generation
     /// must use the same immutable model/runtime/template and default thinking
-    /// mode. No production transport exists yet; bytes/characters are not tokens.
-    /// The counter must fail on missing/malformed counts or backend identity drift.
+    /// mode. backend::count_and_admit implements the supplied-stream exchange;
+    /// bytes/characters are never tokens. The supervisor must prevent identity drift.
     pub fn admit(
         self,
         count_rendered_prompt: impl FnOnce(&[u8]) -> Result<usize, Rejection>,
@@ -341,7 +343,7 @@ impl PendingChat {
 }
 
 /// Canonical body only: caller headers, credentials and JSON are never forwarded.
-/// The future transport supplies its own backend URL/Host/key/Content-Length.
+/// The backend adapter supplies its own fixed route/Host/key/Content-Length.
 pub struct AdmittedChat {
     body: Vec<u8>,
     stream: bool,

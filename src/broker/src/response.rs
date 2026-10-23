@@ -1,7 +1,7 @@
 //! Bounded responses from an already HTTP-decoded backend body.
 //!
-//! This module does not implement a backend HTTP client. Its caller must bound
-//! upstream headers, validate framing, and supply a body reader that reports
+//! The backend module provides a compatible supplied-stream HTTP decoder. Other
+//! callers must bound upstream headers, validate framing, and supply a reader that reports
 //! truncated Content-Length/chunked bodies as errors, never clean EOF. Raw socket
 //! readers are unsuitable. No upstream headers are forwarded to the client.
 
@@ -108,7 +108,10 @@ where
     }
 }
 
-fn validate_metadata<R>(backend: &Response<R>, streaming: bool) -> Result<(), ResponseError> {
+pub(crate) fn validate_metadata<R>(
+    backend: &Response<R>,
+    streaming: bool,
+) -> Result<(), ResponseError> {
     if backend.status() != StatusCode::OK || backend.headers().contains_key("content-encoding") {
         return Err(ResponseError::BackendMetadata);
     }
