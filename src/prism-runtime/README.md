@@ -32,7 +32,8 @@ The crate contains:
   greedy token streaming, backpressure, cancellation between decoder operations,
   edited prompts, reset and rollback after failed evaluation or stream delivery.
   Failed rollback closes admission until reset succeeds. Streamed tokens are
-  provisional until the request returns successfully.
+  provisional until the request returns successfully. A failed backend restore
+  still leaves the public token view at the previous committed prefix.
 - Reusable caller-owned logits through `Decoder::evaluate_into`, with the owned
   `evaluate` API retained for compatibility. The Qwen35 graph retains bounded
   workspace, per-layer state deltas and quantized activation scratch; the runtime
@@ -74,7 +75,10 @@ try {
 
 The driver requires an absolute model path, expected artifact length and SHA-256,
 a retained-model byte budget, context and checkpoint budgets, prompt token IDs,
-and a generation limit. `--stop-tokens` supplies the exact stop IDs. It emits one
+and a generation limit. It validates artifact identity syntax, positive resource
+bounds, prompt plus generation capacity and the 256-stop-token limit before
+opening or hashing the model. Vocabulary checks require the verified model.
+`--stop-tokens` supplies the exact stop IDs. It emits one
 JSON token object per line, followed by completion accounting. It does not infer
 tokenization, stop tokens or a sampler from an approximate substitute. Use token
 IDs produced by the exact reference tokenizer. It does not install/promote a

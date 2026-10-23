@@ -33,6 +33,14 @@ model weights or establish full-model parity, throughput, broker integration or
 daily security acceptance. Local validation remains limited to focused cases;
 all full suites and benchmarks run only in CI.
 
+Focused native regressions also cover token-driver validation before model I/O,
+including prompt/output capacity, positive resource bounds and bounded stop IDs.
+Failed backend rollback preserves the public committed token prefix while
+admission stays closed until reset. Loader fixtures retain exact signed-zero
+packed scale bytes and native PQ2's fourth symbol, while rejecting nonfinite
+scales and noncanonical PTQ1. The export codec keeps its stricter finite nonzero,
+ternary-only conversion contract.
+
 The first optional CPU SIMD implementation follows the [S0–S6 plan](simd-plan.md).
 Three exact integer regressions check all packed byte values/positions, each
 lane/code including activation -128 and deterministic unaligned blocks. Four
