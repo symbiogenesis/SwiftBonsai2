@@ -46,6 +46,13 @@ fn open_read(path: &Path) -> Result<File> {
     Ok(file)
 }
 
+pub(crate) fn digest_hex(hash: Sha256) -> String {
+    hash.finalize()
+        .into_iter()
+        .flat_map(|byte| [byte >> 4, byte & 0x0f])
+        .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
+        .collect()
+}
 pub(crate) fn hash_range(file: &mut File, start: u64, mut length: u64) -> Result<String> {
     let restore = file.stream_position()?;
     let result = (|| {
@@ -58,7 +65,7 @@ pub(crate) fn hash_range(file: &mut File, start: u64, mut length: u64) -> Result
             hash.update(&buffer[..count]);
             length -= u64::try_from(count)?;
         }
-        Ok(format!("{:x}", hash.finalize()))
+        Ok(digest_hex(hash))
     })();
     file.seek(SeekFrom::Start(restore))?;
     result

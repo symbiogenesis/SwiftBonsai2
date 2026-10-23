@@ -111,7 +111,7 @@ fn output_digest(
         bytes -= u64::try_from(count)?;
     }
     deadline.check()?;
-    Ok(format!("{:x}", hash.finalize()))
+    Ok(crate::digest_hex(hash))
 }
 
 fn new_output(path: &Path) -> Result<File> {

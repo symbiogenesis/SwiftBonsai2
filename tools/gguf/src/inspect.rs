@@ -570,7 +570,7 @@ pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Ins
         "MetadataEndOffset": metadata_end, "TensorDescriptorsEndOffset": descriptors_end, "TensorDataOffset": data_offset,
         "TensorCount": tensor_count, "TensorTypeHistogram": histogram, "Scalars": scalars, "Arrays": arrays,
         "SpecialTokenIds": special, "EmbeddedTemplates": templates, "MtpTensorCount": mtp.len(), "MtpTensorNames": mtp,
-        "TokenizerMetadataSha256": format!("{:x}", tokenizer_hash.finalize()), "TokenizerMetadataBytes": tokenizer_bytes,
+        "TokenizerMetadataSha256": crate::digest_hex(tokenizer_hash), "TokenizerMetadataBytes": tokenizer_bytes,
         "TokenizerMetadataRecords": tokenizer_records,
         "TokenizerDigestDefinition": "SHA-256 of complete raw serialized tokenizer.* KV records concatenated in file order, including chat templates",
         "InspectionLimits": {"HeaderBytes": HEADER_LIMIT, "StringBytes": STRING_LIMIT, "ArrayElements": ARRAY_LIMIT,

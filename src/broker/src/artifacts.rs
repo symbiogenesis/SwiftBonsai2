@@ -193,6 +193,13 @@ fn check_locked(file: &mut File, bytes: u64, hash: &str) -> Result<(), ArtifactE
     Ok(())
 }
 
+fn digest_hex(hash: Sha256) -> String {
+    hash.finalize()
+        .into_iter()
+        .flat_map(|byte| [byte >> 4, byte & 0x0f])
+        .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
+        .collect()
+}
 fn hash_reader(reader: &mut impl Read, expected: u64) -> Result<String, ArtifactError> {
     let mut hash = Sha256::new();
     let mut total = 0_u64;
@@ -215,7 +222,7 @@ fn hash_reader(reader: &mut impl Read, expected: u64) -> Result<String, Artifact
     if total != expected {
         return Err(ArtifactError::Identity);
     }
-    Ok(format!("{:x}", hash.finalize()))
+    Ok(digest_hex(hash))
 }
 
 struct Entry {
@@ -240,7 +247,10 @@ fn verify_installation<R: Read + Seek>(
         let entry = archive
             .by_index(index)
             .map_err(|_| ArtifactError::Archive)?;
-        let name = archive_name(entry.name(), entry.is_dir())?;
+        let name = archive_name(
+            &entry.name().map_err(|_| ArtifactError::Archive)?,
+            entry.is_dir(),
+        )?;
         if !names.insert(name.to_ascii_lowercase()) {
             return Err(ArtifactError::Archive);
         }
@@ -430,7 +440,7 @@ fn check_arm64(file: &mut (impl Read + Seek)) -> Result<(), ArtifactError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
+    use std::io::{Cursor, Write};
     #[test]
     fn names_reject_windows_aliases_and_redirects() {
         for name in [
@@ -460,6 +470,48 @@ mod tests {
             hash_reader(&mut Cursor::new(b"abc"), 3).ok().as_deref(),
             Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
         );
+    }
+    #[test]
+    fn zipped_installation_verifies_deflated_payload_and_rejects_drift()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "SwiftBonsai-zip-verification-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&root)?;
+        let executable = root.join("llama-server.exe");
+        let mut image = vec![0; 128];
+        image[..2].copy_from_slice(b"MZ");
+        image[60..64].copy_from_slice(&64_u32.to_le_bytes());
+        image[64..70].copy_from_slice(&[b'P', b'E', 0, 0, 0x64, 0xaa]);
+        fs::write(&executable, &image)?;
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer.start_file(
+            "llama-server.exe",
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated),
+        )?;
+        writer.write_all(&image)?;
+        let mut archive = ZipArchive::new(writer.finish()?)?;
+        let mut handles = Vec::new();
+        assert_eq!(
+            verify_installation(&mut archive, &root, &mut handles)?,
+            executable
+        );
+        drop(handles);
+        image[127] = 1;
+        fs::write(&executable, &image)?;
+        let mut handles = Vec::new();
+        assert_eq!(
+            verify_installation(&mut archive, &root, &mut handles),
+            Err(ArtifactError::Installation)
+        );
+        drop(handles);
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
     #[test]
     fn native_pe_requires_bounded_arm64_header() {
