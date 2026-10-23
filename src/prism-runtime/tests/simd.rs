@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Exact differential checks for the optional packed PQ2 backend.
+//! Exact differential checks for the optional packed PQ2/PTQ1 backend.
 //! The scalar runtime remains the arithmetic and failure-behavior oracle.
 
 use std::sync::Arc;
@@ -8,7 +8,7 @@ use bonsai_prism_runtime::kernels::{MatvecBackend, MatvecScratch, matvec_into};
 use bonsai_prism_runtime::model::Tensor;
 use bonsai_ternary::pack_ptq;
 
-type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 const SCALE_BITS: [u16; 10] = [
     0x0000, 0x8000, 0x0001, 0x8001, 0x0400, 0x8400, 0x3555, 0xb555, 0x7bff, 0xfbff,
@@ -55,6 +55,22 @@ fn pq2_tensor(
         }
     }
     Ok(tensor(142, columns, rows, data))
+}
+
+fn ptq1_tensor(columns: usize, rows: usize, scales: &[u16]) -> TestResult<Tensor> {
+    let blocks = columns / 128;
+    let mut data = Vec::new();
+    for row in 0..rows {
+        for block in 0..blocks {
+            let index = row * blocks + block;
+            let mut packed = pack_ptq(&packed_block(0x3c00, row * 3 + block * 5, 3)?)?;
+            // Native tensors allow both signed zero scales; the exporter does
+            // not, so set scale bits after constructing canonical trit bytes.
+            packed[26..].copy_from_slice(&scales[index % scales.len()].to_le_bytes());
+            data.extend_from_slice(&packed);
+        }
+    }
+    Ok(tensor(143, columns, rows, data))
 }
 
 fn activations(columns: usize, negative_first: bool) -> Vec<f32> {
@@ -228,17 +244,12 @@ fn simd_requested_backend_falls_back_and_reuses_scratch_across_formats() -> Test
     let pointer = output.as_ptr();
     for columns in [256, 128, 512, 384] {
         let weights = pq2_tensor(columns, 3, &[0x3c00, 0xb800])?;
-        let expected = if columns.is_multiple_of(256) {
-            eligible_backend()
-        } else {
-            MatvecBackend::Scalar
-        };
         compare(
             &weights,
             &activations(columns, false),
             &mut scratch,
             &mut output,
-            expected,
+            eligible_backend(),
         )?;
     }
 
@@ -252,7 +263,7 @@ fn simd_requested_backend_falls_back_and_reuses_scratch_across_formats() -> Test
         &activations(256, true),
         &mut scratch,
         &mut output,
-        MatvecBackend::Scalar,
+        eligible_backend(),
     )?;
 
     let floating = tensor(
@@ -280,6 +291,166 @@ fn simd_requested_backend_falls_back_and_reuses_scratch_across_formats() -> Test
         eligible_backend(),
     )?;
     assert_eq!(output.as_ptr(), pointer);
+    Ok(())
+}
+
+#[test]
+fn simd_q8_groups_match_scalar_for_ptq1_and_odd_pq2() -> TestResult {
+    let mut scratch = MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon);
+    let mut output = Vec::new();
+    for columns in [128, 256, 384, 640] {
+        for rows in [1, 3, 5] {
+            let ptq1 = ptq1_tensor(columns, rows, &SCALE_BITS)?;
+            let pq2 = pq2_tensor(columns, rows, &SCALE_BITS)?;
+            for weights in [&ptq1, &pq2] {
+                for negative_first in [false, true] {
+                    let mut input = activations(columns, negative_first);
+                    // Every 32-value group has its own stored FP16 Q8_0 scale;
+                    // retain unequal scales and ties-away quantization cases.
+                    for (group, values) in input.as_chunks_mut::<32>().0.iter_mut().enumerate() {
+                        let factor = f32::from(u16::try_from(group % 7 + 1)?);
+                        for value in values {
+                            *value *= factor;
+                        }
+                    }
+                    compare(
+                        weights,
+                        &input,
+                        &mut scratch,
+                        &mut output,
+                        eligible_backend(),
+                    )?;
+                }
+                for input in [
+                    vec![0.0; columns],
+                    vec![-0.0; columns],
+                    vec![1.0e-20; columns],
+                ] {
+                    compare(
+                        weights,
+                        &input,
+                        &mut scratch,
+                        &mut output,
+                        eligible_backend(),
+                    )?;
+                }
+                compare(
+                    weights,
+                    &activations(columns, false),
+                    &mut MatvecScratch::default(),
+                    &mut output,
+                    MatvecBackend::Scalar,
+                )?;
+            }
+        }
+    }
+    // Legacy packed formats keep their scalar kernel even when NEON is requested.
+    for (kind, bytes) in [(2, 18), (8, 34)] {
+        let mut data = vec![0xff; bytes];
+        data[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
+        compare(
+            &tensor(kind, 32, 1, data),
+            &[127.0; 32],
+            &mut scratch,
+            &mut output,
+            MatvecBackend::Scalar,
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn simd_q8_groups_preserve_ordered_float_sums() -> TestResult {
+    let mut scratch = MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon);
+    let mut output = Vec::new();
+    for kind in [142, 143] {
+        let mut data = Vec::new();
+        for bits in [0x7bff_u16, 0x0400, 0xfbff] {
+            let mut block = [0xaa; 34];
+            block[..2].copy_from_slice(&bits.to_le_bytes());
+            if kind == 143 {
+                data.extend_from_slice(&pack_ptq(&block)?);
+            } else {
+                data.extend_from_slice(&block);
+            }
+        }
+        let weights = tensor(kind, 384, 1, data);
+        let input: Vec<f32> = (0..384)
+            .map(|index| match index / 32 % 4 {
+                0 => 127.0 * 65_504.0,
+                1 | 3 => 127.0 / 16_384.0,
+                _ => -127.0 * 65_504.0,
+            })
+            .collect();
+        compare(
+            &weights,
+            &input,
+            &mut scratch,
+            &mut output,
+            eligible_backend(),
+        )?;
+        compare(
+            &weights,
+            &[127.0; 384],
+            &mut scratch,
+            &mut output,
+            eligible_backend(),
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn simd_q8_groups_reject_noncanonical_and_nonfinite_payloads() -> TestResult {
+    let mut scratch = MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon);
+    let mut scalar = MatvecScratch::default();
+    let mut output = vec![99.0; 16];
+    let pointer = output.as_ptr();
+    let mut scalar_output = Vec::new();
+    let valid = ptq1_tensor(384, 3, &[0x0000, 0x8000, 0x3555])?;
+    let mut cases = Vec::new();
+    for position in 0..26 {
+        let mut data = valid.data.to_vec();
+        // Byte 1 is noncanonical in both five-digit and four-digit positions.
+        // A later zero-scale block must still reject its malformed trit byte.
+        data[84 + position] = 1;
+        cases.push((tensor(143, 384, 3, data), vec![0.0; 384]));
+    }
+    for kind in [142, 143] {
+        let weights = if kind == 142 {
+            pq2_tensor(384, 3, &[0x3c00])?
+        } else {
+            ptq1_tensor(384, 3, &[0x3c00])?
+        };
+        for bits in [0x7c00_u16, 0xfc00, 0x7e00] {
+            let mut data = weights.data.to_vec();
+            let offset = if kind == 142 { 102 } else { 84 + 26 };
+            data[offset..offset + 2].copy_from_slice(&bits.to_le_bytes());
+            cases.push((tensor(kind, 384, 3, data), vec![0.0; 384]));
+        }
+        for value in [f32::NAN, f32::INFINITY, f32::MAX] {
+            cases.push((weights.clone(), vec![value; 384]));
+        }
+    }
+    for (weights, input) in cases {
+        let scalar_error = matvec_into(&weights, &input, &mut scalar_output, &mut scalar)
+            .err()
+            .ok_or("scalar accepted invalid Q8_0 group input")?;
+        let error = matvec_into(&weights, &input, &mut output, &mut scratch)
+            .err()
+            .ok_or("NEON request accepted invalid Q8_0 group input")?;
+        assert_eq!(error.to_string(), scalar_error.to_string());
+        assert_eq!(output.len(), 0);
+        assert_eq!(scalar_output.len(), 0);
+        compare(
+            &valid,
+            &activations(384, true),
+            &mut scratch,
+            &mut output,
+            eligible_backend(),
+        )?;
+        assert_eq!(output.as_ptr(), pointer);
+    }
     Ok(())
 }
 

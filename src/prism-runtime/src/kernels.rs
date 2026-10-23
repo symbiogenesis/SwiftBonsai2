@@ -1,4 +1,4 @@
-//! Safe reference kernels and opt-in baseline NEON PQ2 integer arithmetic.
+//! Safe reference kernels and opt-in baseline NEON packed integer arithmetic.
 //!
 //! The reference basis is PrismML-Eng/llama.cpp revision
 //! `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, `ggml/src/ggml-quants.c`
@@ -415,6 +415,43 @@ fn dot_q8_groups(kind: u32, bytes: &[u8], input: &[Q8Block]) -> Result<f32> {
     finite(output)
 }
 
+#[cfg(all(
+    feature = "experimental-neon",
+    target_arch = "aarch64",
+    target_os = "windows",
+    target_env = "msvc",
+    target_feature = "neon"
+))]
+#[allow(
+    clippy::suboptimal_flops,
+    reason = "Preserve scalar reference multiply-then-add rounding."
+)]
+fn dot_q8_groups_neon(kind: u32, bytes: &[u8], input: &[Q8Block]) -> Result<f32> {
+    let (_, block_bytes) = layout(kind)?;
+    let mut output = 0.0;
+    for (index, block) in bytes.chunks_exact(block_bytes).enumerate() {
+        let activations = <&[Q8Block; 4]>::try_from(&input[index * 4..index * 4 + 4])?;
+        let values = activations.each_ref().map(|activation| &activation.values);
+        let (sums, d) = if kind == PQ2 {
+            (
+                neon::dot_groups(block[2..].try_into()?, values),
+                scale(block)?,
+            )
+        } else {
+            (
+                neon::dot_ptq1_groups(block.try_into()?, values)?,
+                scale(&block[26..])?,
+            )
+        };
+        let mut sum = 0.0;
+        for (integer, activation) in sums.into_iter().zip(activations) {
+            sum += activation.scale * integer_float(integer);
+        }
+        output += d * sum;
+    }
+    finite(output)
+}
+
 #[allow(
     clippy::suboptimal_flops,
     reason = "Preserve scalar reference multiply-then-add rounding."
@@ -467,8 +504,8 @@ pub struct MatvecScratch {
 /// Packed matrix kernel selection, independent of model and activation precision.
 ///
 /// Scalar is the default. Experimental selection permits only the compiled
-/// baseline NEON implementation on native Windows ARM64 MSVC for PQ2 rows with
-/// a multiple of 256 columns. Other targets, formats and shapes use scalar.
+/// baseline NEON implementation on native Windows ARM64 MSVC for complete PQ2
+/// and PTQ1 blocks. Other targets and formats use scalar.
 /// No optional CPU extension is enabled or inferred by this selection.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum MatvecBackend {
@@ -482,6 +519,7 @@ pub enum MatvecBackend {
 }
 
 type Pq2RowKernel = fn(&[u8], &[Q8KBlock]) -> Result<f32>;
+type Q8GroupRowKernel = fn(u32, &[u8], &[Q8Block]) -> Result<f32>;
 
 impl MatvecScratch {
     /// Creates reusable storage with an explicit kernel request.
@@ -520,6 +558,21 @@ impl MatvecScratch {
         // the build/target contract or enable an optional instruction set.
         let _ = self.requested_backend;
         (MatvecBackend::Scalar, dot_pq2)
+    }
+
+    const fn select_q8_groups(&self) -> (MatvecBackend, Q8GroupRowKernel) {
+        #[cfg(all(
+            feature = "experimental-neon",
+            target_arch = "aarch64",
+            target_os = "windows",
+            target_env = "msvc",
+            target_feature = "neon"
+        ))]
+        if matches!(self.requested_backend, MatvecBackend::ExperimentalNeon) {
+            return (MatvecBackend::ExperimentalNeon, dot_q8_groups_neon);
+        }
+        let _ = self.requested_backend;
+        (MatvecBackend::Scalar, dot_q8_groups)
     }
 }
 
@@ -572,14 +625,18 @@ pub fn matvec_into(
                     output.push(dot(bytes, &scratch.q8k)?);
                 }
             }
-            PQ2 | PTQ1 | Q4_0 | Q8_0 => {
+            PQ2 | PTQ1 => {
+                q8_into(input, &mut scratch.q8)?;
+                let (backend, dot) = scratch.select_q8_groups();
+                scratch.selected_backend = backend;
+                for bytes in tensor.data.chunks_exact(row_bytes) {
+                    output.push(dot(tensor.kind, bytes, &scratch.q8)?);
+                }
+            }
+            Q4_0 | Q8_0 => {
                 q8_into(input, &mut scratch.q8)?;
                 for bytes in tensor.data.chunks_exact(row_bytes) {
-                    output.push(if matches!(tensor.kind, PQ2 | PTQ1) {
-                        dot_q8_groups(tensor.kind, bytes, &scratch.q8)?
-                    } else {
-                        dot_legacy(tensor.kind, bytes, &scratch.q8)?
-                    });
+                    output.push(dot_legacy(tensor.kind, bytes, &scratch.q8)?);
                 }
             }
             _ => {
