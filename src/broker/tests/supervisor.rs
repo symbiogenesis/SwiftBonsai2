@@ -340,7 +340,7 @@ fn rejected_count_never_connects_generation() {
                 Err(ServeError::Backend(BackendError::Admission(rejection)))
             );
             assert_eq!(backend.calls.get(), 1);
-            assert!(bytes.is_empty());
+            assert_eq!(bytes, [0_u8; 0]);
             assert!(state.borrow().dropped && dropped.get());
         }
     });

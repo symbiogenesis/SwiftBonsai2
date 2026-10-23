@@ -407,7 +407,7 @@ fn zero_length_and_zero_chunk_bodies_have_immediate_clean_eof() {
                 .into_body();
             let mut actual = Vec::new();
             assert_eq!(body.read_to_end(&mut actual).await.unwrap(), 0);
-            assert!(actual.is_empty());
+            assert_eq!(actual, [0_u8; 0]);
         }
     });
 }

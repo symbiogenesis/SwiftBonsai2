@@ -2,7 +2,7 @@
 name = "bonsai-bitcos"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.99.1"
 publish = false
 description = "Safe scalar reference implementation of experimental Bonsai ternary packing"
 repository = "https://github.com/symbiogenesis/SwiftBonsai2"

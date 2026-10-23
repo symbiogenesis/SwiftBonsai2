@@ -85,9 +85,9 @@ $manifest = Join-Path $repo 'tools/bitcos/Cargo.toml'
 $target = Join-Path $scratch 'build'
 Push-Location $scratch
 try {
-    cargo +1.98.0-aarch64-pc-windows-msvc build --locked --offline --release --manifest-path $manifest --target-dir $target
+    cargo +1.99.1-aarch64-pc-windows-msvc build --locked --offline --release --manifest-path $manifest --target-dir $target
     if ($LASTEXITCODE) { throw 'Rust BITCOS build failed.' }
-    cargo +1.98.0-aarch64-pc-windows-msvc test --locked --offline --release --manifest-path $manifest --target-dir $target --test cpp_reference cpp_reference_parity -- --exact
+    cargo +1.99.1-aarch64-pc-windows-msvc test --locked --offline --release --manifest-path $manifest --target-dir $target --test cpp_reference cpp_reference_parity -- --exact
     if ($LASTEXITCODE) { throw 'C++ reference parity failed.' }
 } finally { Pop-Location }
 ```

@@ -469,7 +469,7 @@ fn backend_status_media_type_and_compression_fail_before_any_io() {
                     Err(ResponseError::BackendMetadata)
                 ));
                 assert_closed(&client_state, &backend_state);
-                assert!(client_state.borrow().bytes.is_empty());
+                assert_eq!(client_state.borrow().bytes, [0_u8; 0]);
                 assert_eq!(client_state.borrow().shutdowns, 0);
                 assert_eq!(backend_state.borrow().polls, 0);
             }
@@ -538,7 +538,7 @@ fn json_requires_one_complete_object_and_never_sends_invalid_bytes() {
                 Err(ResponseError::JsonSyntax)
             ));
             assert_closed(&client_state, &backend_state);
-            assert!(client_state.borrow().bytes.is_empty());
+            assert_eq!(client_state.borrow().bytes, [0_u8; 0]);
             assert_eq!(client_state.borrow().shutdowns, 0);
         }
     });
@@ -606,7 +606,7 @@ fn cap_plus_one_probe_rejects_json_and_sse_without_forwarding_excess() {
                 let (_, body, _) = wire_parts(&state.bytes);
                 assert!(chunks(body, false).0.len() <= MAX_RESPONSE_BYTES);
             } else {
-                assert!(state.bytes.is_empty());
+                assert_eq!(state.bytes, [0_u8; 0]);
             }
         }
     });
@@ -685,7 +685,7 @@ fn decoded_backend_truncation_is_an_error_even_after_valid_payload() {
                 let (_, body, _) = wire_parts(&state.bytes);
                 assert_eq!(chunks(body, false).0, b"{}");
             } else {
-                assert!(state.bytes.is_empty());
+                assert_eq!(state.bytes, [0_u8; 0]);
             }
         }
     });
@@ -824,7 +824,7 @@ fn backend_reads_use_one_absolute_supervisor_deadline() {
             ));
             assert_eq!(Instant::now() - start, Duration::from_secs(2));
             assert_closed(&client_state, &backend_state);
-            assert!(client_state.borrow().bytes.is_empty());
+            assert_eq!(client_state.borrow().bytes, [0_u8; 0]);
             assert_eq!(client_state.borrow().shutdowns, 0);
         }
     });
@@ -850,7 +850,7 @@ fn expired_deadline_rejects_immediately_ready_input_before_any_io() {
             ));
             assert_closed(&client_state, &backend_state);
             assert_eq!(backend_state.borrow().polls, 0);
-            assert!(client_state.borrow().bytes.is_empty());
+            assert_eq!(client_state.borrow().bytes, [0_u8; 0]);
             assert_eq!(client_state.borrow().shutdowns, 0);
         }
     });
@@ -877,7 +877,7 @@ fn a_backend_read_becoming_ready_at_expiry_still_fails_closed() {
         ));
         assert_eq!(Instant::now() - start, Duration::from_secs(2));
         assert_closed(&client_state, &backend_state);
-        assert!(client_state.borrow().bytes.is_empty());
+        assert_eq!(client_state.borrow().bytes, [0_u8; 0]);
     });
 }
 
@@ -910,7 +910,7 @@ fn cancellation_during_backend_read_or_client_flush_drops_owned_streams() {
             assert_eq!(client_state.borrow().shutdowns, 0);
             let state = client_state.borrow();
             let (_, body, _) = wire_parts(&state.bytes);
-            assert!(body.is_empty());
+            assert_eq!(body, [0_u8; 0]);
         }
     });
 }

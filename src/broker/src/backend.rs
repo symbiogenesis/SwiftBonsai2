@@ -225,7 +225,7 @@ where
         let previous = raw.len();
         raw.extend_from_slice(&available[..count]);
         if let Some(offset) = raw[previous.saturating_sub(3)..]
-            .windows(4)
+            .array_windows()
             .position(|bytes| bytes == b"\r\n\r\n")
         {
             let end = previous.saturating_sub(3) + offset + 4;

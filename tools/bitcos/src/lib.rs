@@ -421,9 +421,9 @@ impl Matrix {
         {
             return Err(Error::InvalidMatrixIndex);
         }
-        for extent in offsets.windows(2) {
-            let start = usize::try_from(extent[0]).map_err(|_| Error::SizeOverflow)?;
-            let end = usize::try_from(extent[1]).map_err(|_| Error::SizeOverflow)?;
+        for &[start, end] in offsets.array_windows() {
+            let start = usize::try_from(start).map_err(|_| Error::SizeOverflow)?;
+            let end = usize::try_from(end).map_err(|_| Error::SizeOverflow)?;
             let mut row = payload.get(start..end).ok_or(Error::InvalidRowExtent)?;
             if blocks_per_row > row.len() / 18 {
                 return Err(Error::InvalidRowExtent);

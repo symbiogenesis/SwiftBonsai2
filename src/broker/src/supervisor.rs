@@ -17,7 +17,7 @@ use tokio::{
 };
 
 /// Maximum elapsed time for the entire request, including intake and connection.
-pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_mins(10);
 
 /// A connector preserving one fixed private backend endpoint and HTTP policy.
 ///

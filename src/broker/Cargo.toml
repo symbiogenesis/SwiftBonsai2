@@ -2,7 +2,7 @@
 name = "bonsai-broker"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.99.1"
 publish = false
 description = "Bounded development chat transport and request supervision for the Bonsai broker"
 
