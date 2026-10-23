@@ -8,6 +8,9 @@
 
 #[allow(unsafe_code)]
 pub mod ffi;
+#[cfg(feature = "engine-loader")]
+#[allow(unsafe_code)]
+pub mod loader;
 mod pool;
 
 pub use pool::{Layout, MAX_CACHE_BYTES, MAX_ENTRIES, MAX_TENSOR_BYTES, Pool};
