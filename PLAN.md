@@ -6,24 +6,26 @@
 
 ## 1. Recommended direction
 
-Build a native Windows ARM64 distribution around **Prism ML's llama.cpp fork**. Keep its built-in web UI for direct engine use, evaluate **OpenCode as the first full agent harness**, and qualify **MXC ProcessContainer** for containment of the agent and its tools. Use a small Rust policy/launch broker where custom security-sensitive orchestration is needed; retain PowerShell for installation/build management. Establish CPU correctness first, qualify **Vulkan on the Adreno X1-85** next, then select the best CPU/GPU configuration using measurements from this laptop. Treat direct Hexagon NPU execution as a separate research milestone.
+Begin with a **model-selection gate for creative writing and art assistance**, then build a native Windows ARM64 distribution around the winning model's pinned llama.cpp runtime. **Conventional Qwen3.8-27B at UD-Q3_K_XL is the primary quality challenger to base Bonsai 2 and current Swift PQ2_0; Gemma 4 12B QAT Q4_0 is the smaller daily-use candidate.** Use upstream llama.cpp for accepted conventional models and Prism ML's fork for Swift/Bonsai packs. Keep the server's built-in web UI for direct chat and engine use. Treat coding agents as an optional later feature: evaluate **OpenCode** and qualify **MXC ProcessContainer** before enabling tools. Use a small Rust policy/launch broker where custom security-sensitive orchestration is needed; retain PowerShell for installation/build management. Establish CPU correctness first, qualify **Vulkan on the Adreno X1-85** next, and consider the documented OpenCL route for supported conventional quantizations. Select the CPU/GPU configuration using measurements from this laptop. Treat direct Hexagon NPU execution as a separate research milestone.
 
 The objective is the fastest useful, correct local assistant within the laptop's memory and thermal limits. Simultaneous CPU, GPU, and NPU utilization is a candidate configuration, not an acceptance requirement: extra processors can introduce synchronization, shared-memory contention, and power competition.
 
+The owner's primary uses are **creative writing and art**, ahead of coding. Prioritize prose quality, style and voice control, character/scene continuity, revision, brainstorming, art direction, and image-prompt composition. Image critique additionally requires a qualified vision path. Generating images is a separate model/pipeline decision; a text-generating LLM does not become an image generator by accepting images.
+
 | Decision | Initial choice | Reason |
 | --- | --- | --- |
-| Runtime | Prism ML llama.cpp fork, pinned by full commit | Swift's published tensor formats need this fork |
-| Main model | Current `Swift-Bonsai-2-PQ2_0.gguf` | Current merged Swift weights; preserve this as the semantic reference |
+| Runtime | Upstream llama.cpp for conventional candidates; Prism fork for Swift; each pinned by full commit | Match the model architecture, tensor types, and backend to an explicit runtime |
+| Main model | Select from the memory-bounded comparison in section 3 | Task success and time to a useful answer decide; parameter count and file size alone do not |
 | Baseline | Native ARM64 CPU, FP16 KV, one conversation | Establish correctness with a simple execution path |
-| First accelerator | Native ARM64 Vulkan build | Released fork support exists for both Swift packings and Bonsai transforms |
+| First accelerator | Native ARM64 Vulkan; OpenCL candidate for supported conventional types | Swift needs its released packed kernels and transforms; ordinary Q4_0 has an additional documented Adreno route |
 | Direct chat / engine inspection | llama-server's built-in web UI and loopback API | Lightweight path for correctness and direct chat |
-| Full agent harness | OpenCode native Windows ARM64 candidate; Aider fallback | Existing open source clients; qualify model behavior and containment |
+| Full agent harness | Optional later: OpenCode native Windows ARM64 candidate; Aider fallback | Direct creative chat is the first delivery; qualify model behavior and containment before adding tools |
 | Tool/agent containment | MXC native ProcessContainer candidate | Explicit Windows ARM64 support; exact policy enforcement remains a gate |
 | Security-sensitive custom controller | Small Rust broker using MXC's SDK | Keep policy code small; contain unsafe/native components separately |
-| Cache policy | Hybrid KV + recurrent state + bounded checkpoints | This model is not an ordinary all-attention transformer |
+| Cache policy | Model-specific KV/state accounting and bounded reuse | Qwen/Swift recurrent state and Gemma sliding-window attention require different estimators |
 | NPU | Time-boxed feasibility investigation | No demonstrated native Swift packed-weight path established here |
 | Speculation | Disabled initially | Bonsai 2 drafter and hybrid-state compatibility remain separate gates |
-| Additional CPU optimization | Evaluate T-MAC-style lookup kernels after profiling | Existing ARM/Windows work; Swift format/graph adapter still required |
+| Additional CPU optimization | Profile first; consider WoS Porter and T-MAC-style lookup kernels | Target a demonstrated bottleneck in the selected model; Swift adapters remain separate work |
 | BITCOS | Gated lossless repacking/kernel experiment | Actual symbol census, native kernels, and end-to-end benefit required |
 | NoGraphicsAPI | Do not replace the ggml Vulkan backend with it | Vulkan-based graphics abstraction with narrower target requirements |
 | Performance evidence | Manually triggered self-hosted CI on this laptop | All benchmarks are CI-only under the working preferences |
@@ -49,17 +51,53 @@ The memory figures below use **GiB/MiB** for runtime allocation and **GB** for p
 
 Optimize these objectives in order:
 
-1. Preserve the selected model's behavior and correct conversation state.
-2. Improve total request time, first visible answer latency, and sustained generation for one active user.
-3. Keep Windows responsive and avoid sustained paging or GPU-memory eviction.
-4. Support the useful context length for the task without silently discarding information.
-5. Offer an efficient battery profile as well as maximum plugged-in performance.
+1. Establish useful creative-writing quality, artistic collaboration, and instruction following before specializing the runtime for one model; qualify coding/tools separately if wanted.
+2. Preserve each candidate's declared behavior and correct conversation state when evaluating backend or kernel changes.
+3. Improve total request time, first visible answer latency, and sustained generation for one active user.
+4. Keep Windows responsive and avoid sustained paging or GPU-memory eviction.
+5. Support the useful context length for the task without silently discarding information.
+6. Offer an efficient battery profile as well as maximum plugged-in performance.
 
 Record both first streamed reasoning token and first final-answer token. A reasoning model can appear responsive while taking much longer to produce its useful answer. Report tokens/second alongside completion length and end-to-end task time.
 
 There is no credible laptop tokens/second forecast yet. Apple, NVIDIA, or other Snapdragon results are not substitutes for measurements of this exact build, model, driver, context, and power mode.
 
 ## 3. Model identity and runtime compatibility
+
+### Select the model before investing in custom kernels
+
+The 18 GiB inference-service ceiling in section 7 leaves room for conventional low-bit models as well as Swift. The following are **candidates**, not measured winners. File sizes are publisher download figures converted to GiB; they exclude live caches, runtime copies, and compute buffers.
+
+| Candidate / artifact | Weight file | Proposed role and qualification |
+| --- | ---: | --- |
+| Qwen3.8-27B `UD-Q3_K_XL` | 13.1 GB / approximately 12.20 GiB | Primary quality challenger: test whether a conventional quantization preserves more useful prose/style behavior than ternary compression within the same service ceiling |
+| Gemma 4 12B instruction-tuned QAT `Q4_0` | 6.98 GB / approximately 6.50 GiB | Comfortable daily/battery creative-chat candidate; qualify style control, vision path, and bounded sliding-window KV allocation |
+| Current Swift Bonsai 2 `PQ2_0` | 7.206 GB / approximately 6.71 GiB | Reasoning-efficiency candidate; require useful prose, style control, and revision behavior rather than assuming shorter thinking improves creative work |
+| Base Ternary Bonsai 2 27B `PQ2_0` | Inspect and pin the actual artifact | Control for the Swift adaptation; use the same runtime, prompts, sampling, and output budget |
+| Gemma 4 26B-A4B instruction-tuned QAT `Q4_0` | 14.4 GB / approximately 13.41 GiB | Optional general-assistant/MoE comparison with approximately 4B active parameters; less memory headroom than the 12B model |
+| Qwen3.6-35B-A3B `UD-IQ3_S` | 13.7 GB / approximately 12.76 GiB | Optional response-speed/MoE comparison: 35B total, approximately 3B active per token; retain only if its actual creative output is competitive |
+
+Sources: [Qwen3.8 model][qwen38-model] and [quantization files][qwen38-quants], [Qwen3.6 architecture][qwen36-model] and [quantization files][qwen36-quants], [Gemma architecture/capabilities][gemma12-model], [official 12B QAT pack][gemma12-qat], [official 26B-A4B QAT pack][gemma26-qat], and [Swift release][swift-page]. MoE active parameters can reduce per-token work; **all resident experts still count toward memory**, and active parameter count is not a laptop speed forecast. Google's [QAT release][gemma-qat-release] describes training for the quantization format; it does not establish exact laptop quality or performance.
+
+Qwen3.8 lineage is a sensible reason to prioritize Bonsai 2 over an older-family candidate, but version numbers do not rank differently compressed or fine-tuned models. Conventional Qwen3.8, ternary Bonsai 2, and Swift have different weights/representations and can differ in voice, detail, instruction following, and long-form consistency. Swift's shorter-reasoning objective has no established advantage for fiction or art collaboration. Compare actual creative output rather than transferring math/coding benchmark rankings to this use.
+
+Screen the Qwen3.8/Bonsai/Swift comparison and smaller Gemma first; expand to the optional MoE candidates only if quality, speed, or backend gaps justify them. Publisher reasoning/coding evaluations use different harnesses, contexts, and precisions; they do not rank these exact GGUFs for prose. A larger file or higher nominal precision is not proof of better stories. Keep any later tool/coding evaluation separate from the primary creative score.
+
+Start the comparison with one resident model, one active slot, 16K context, FP16 KV, speculation off, and small bounded caches. Preserve each model's own template and recommended sampler; compare both a common bounded task budget and each candidate's documented intended-use profile. Use paired, anonymously presented samples where practical and let the owner's preferences decide close creative judgments. Record regeneration/revision count, truncation, peak memory, and time to an **acceptable finished piece**, including hidden reasoning. Run performance and comparative quality workloads in self-hosted CI under section 10; a bounded local correctness check is not a benchmark.
+
+The initial creative set should cover:
+
+- A short scene in several distinct voices; judge specificity, rhythm, dialogue, and unwanted generic phrasing.
+- A continuation from an outline/character bible; check viewpoint, motivations, world facts, and continuity after editing an earlier turn.
+- Revision under explicit constraints, such as preserving plot while changing voice, length, pacing, or emotional tone.
+- Art concepts, composition/palette alternatives, and image prompts with controllable details; judge usefulness and responsiveness to feedback.
+- Image critique only for a validated vision model/projector pair; distinguish observed image details from inventions.
+
+Sample multiple outputs using a predeclared rubric; creative preference is not a single deterministic right answer. Include a thinking-disabled or lower-reasoning profile when the exact model supports it, since visible prose and collaboration may matter more than a long private reasoning trace.
+
+[EQ-Bench Creative Writing][creative-bench] and its [longform benchmark][longform-bench] supply useful evaluation ideas: style, repetition, continuity, and degradation across chapters. Pin the evaluated version and inspect samples rather than importing a leaderboard rank as the local result. Judge/API settings and full-precision or hosted models differ from these exact quantized files; the owner's preferences remain the acceptance authority.
+
+Retain Swift and base Bonsai controls while establishing whether the current merged Swift file actually saves work. Choose the daily model only after this gate. Preserve CPU-first bring-up, containment, and cache correctness across candidates; defer Swift-specific NPU kernels, BITCOS, and lookup-kernel adapters until Swift earns that investment.
 
 ### Preserve the actual Swift release
 
@@ -70,7 +108,24 @@ There is no credible laptop tokens/second forecast yet. Apple, NVIDIA, or other 
 
 Both files are complete models. PQ2_0 contains updated merged weights relative to PTQ1_0. Consequently their comparison changes **model version as well as packing**. A faster PTQ1_0 result cannot establish a lossless optimization of current PQ2_0. Keep quality and performance results separately attributed. [Publisher release details][swift-page]
 
-Create a manifest before implementation validation with:
+### What Swift's token-efficiency evidence establishes
+
+The [publisher's methodology][swift-page] separates historical runtime-correction results from the current merged PQ2_0 results:
+
+| Evaluation | Base / Swift score | Mean token change | Evidence scope |
+| --- | --- | ---: | --- |
+| GPQA Diamond | 84.18% / 84.34% | -19.0% thinking tokens | Historical correction; not rerun on the current merged pack; GPQA informed training choices |
+| C-Eval | 81.37% / 81.47% | -18.4% thinking tokens | Historical correction; not rerun on the current merged pack |
+| IFBench | 82.13% / 82.60% | -1.7% thinking tokens | Current PQ2_0; loose scoring |
+| AIME 2025 | 92.00% / 93.33% | +4.3% completion tokens | Current PQ2_0; final-answer-only scoring gives 90.67% for both |
+
+The advertised 39.8% reduction is the **historical GPQA median**, not the mean or an established current-file saving. Small score differences are not established gains. UkisAI also reports uneven instruction following, tool use, and open-ended coding. These findings justify a comparison, not a production-quality assumption. [Current model limitations][swift-model]
+
+At unchanged decode speed, 19% fewer generated tokens would cut **generation time** by 19%, equivalent to about `1 / 0.81 = 1.235` times generation-only throughput. That is conditional arithmetic; prefill, tool work, retries, and quality failures can erase the benefit. Current IFBench savings are much smaller, and AIME uses more tokens. Measure the merged Swift model against the matched base on held-out tasks before attributing end-to-end savings to the adaptation.
+
+### Artifact manifests and semantic references
+
+Create a separate manifest and correctness reference for every model before implementation validation with:
 
 - Hugging Face repository, immutable model revision, exact filename, byte length, and SHA-256.
 - Tensor-type histogram, architecture, recurrent/full-attention split, head dimensions, context metadata, and rotation/sign metadata.
@@ -80,27 +135,34 @@ Create a manifest before implementation validation with:
 
 Use actual GGUF metadata as the implementation authority. The marketing name Qwen3.8 and GGUF architecture `qwen35` are not by themselves a mismatch: the upstream [Qwen configuration][qwen-config] uses the Qwen3.5 architecture family.
 
-### Candidate runtime pins
+### Candidate runtime pins and lightweight bring-up
 
 - **Publisher compatibility reference:** revision `1a07bfa5f`, cited by UkisAI. Resolve its full commit before retaining it as a control.
 - **Newer accelerator candidate:** release `prism-b10787-73bfe6c`, commit `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, pinned by the current Bonsai demo. Its backend audit records Vulkan PQ2_0 support shipping from `prism-b10735-842b188`. [Release][runtime-release] · [Backend audit][backend-support]
 
 Build the newer candidate natively and compare focused correctness against the reference. A documented compatibility reference is not an ARM64 performance certification. Capture release assets and source status at implementation time; the observed release has an ARM64 Windows CPU package, while the Windows Vulkan package is x64, so native ARM64 Vulkan needs its own build qualification.
 
-Never mix fork binaries with unrelated stock ggml DLLs. Do not rename a tensor type, edit GGUF type IDs to bypass a loader, or substitute base Bonsai/Qwen weights for Swift. A future repacker is acceptable only if decoded values, group scales, transforms, tokenizer, and template are preserved and verified. Requantization is a new quality tradeoff.
+A pinned, hash-verified publisher ARM64 CPU binary can provide the first bounded loading/chat check before custom compilation. Verify its PE/dependency architecture and matching libraries. Inspect the pinned [Bonsai demo setup][demo-setup] before adopting it: its default model download is unnecessary when qualifying an explicitly selected Swift artifact. Download only the intended pack to the external model directory and pass its exact absolute path with `-m`; do not copy an unpinned setup command or assume a release directory layout. Rebuild the accepted source pin for the reproducible distribution.
+
+Pin upstream llama.cpp separately for conventional candidates. Its [Qwen hybrid-MoE graph][upstream-qwenmoe] and [Gemma graph][upstream-gemma] provide implementation evidence; inspect the chosen revision's exact 12B/unified variant, loader, tool template, and backend operations before accepting it. Hugging Face's autogenerated application snippets alone are not runtime compatibility evidence.
+
+Never mix fork binaries with unrelated stock ggml DLLs. Do not rename a tensor type, edit GGUF type IDs to bypass a loader, or substitute base Bonsai/Qwen weights inside a Swift correctness comparison. Model selection may deliberately choose other weights under their own manifest. A future lossless repacker must preserve decoded values, group scales, transforms, tokenizer, and template. Requantization is a new quality tradeoff.
 
 ## 4. Backend feasibility and acceleration order
 
 | Route | Evidence available now | Implementation gate | Priority |
 | --- | --- | --- | --- |
-| ARM64 CPU | Fork supports Swift packings and Bonsai transforms | Native build, actual SIMD dispatch, focused model correctness | Required baseline |
-| Vulkan GPU | Native PQ2_0/PTQ1_0 and FWHT paths are released | ARM64 build, Adreno driver capabilities, full graph correctness, useful offload | First acceleration candidate |
-| OpenCL GPU | Exact X1-85 and Windows ARM64 are documented | Custom Swift packing support and transform/graph audit still needed | Contingency / development lane |
+| ARM64 CPU | Upstream conventional-model graphs; Prism Swift packings and Bonsai transforms | Native build, actual SIMD dispatch, focused model correctness | Required baseline |
+| Vulkan GPU | Upstream conventional kernels; Prism native PQ2_0/PTQ1_0 and FWHT paths are released | ARM64 build, exact quantization/graph, Adreno capabilities, correctness, useful offload | First acceleration candidate |
+| OpenCL GPU | Exact X1-85 and Windows ARM64 are documented; ordinary Q4_0/K-quants listed | Exact graph/quantization audit; Swift packing and transforms remain unestablished | Conventional-model candidate / Swift development lane |
 | Hexagon ggml backend | Windows Snapdragon route exists, experimentally | Custom packed matmul, full graph, state placement, SDK and driver access | Research lane |
+| Qualcomm GenieX | Windows ARM64; GGUF llama_cpp plugin and separate QAIRT plugin | Supported exact model/quantization, signed package, placement, state/memory, and API behavior | Conventional-model NPU candidate; no demonstrated Swift pack path |
 | ONNX Runtime + QNN | Alternative NPU stack to investigate | Faithful export, quantization, supported graph, cache I/O, resource limits | Separate conversion project |
 | DirectML / generic ONNX GPU | Potential alternative after conversion | Exact model conversion and custom ternary execution are unestablished | Lower priority |
 
 The [Vulkan audit][backend-support] describes scalar/coopmat1 and integer-dot paths; device and driver choose usable kernels. It does not promise direct coopmat2 decoding or a particular Adreno speed. The [OpenCL guide][opencl-guide] explicitly lists X1-85, but its datatype list does not establish Swift PQ2_0/PTQ1_0 support. These are different compatibility questions.
+
+For conventional models, the [upstream OpenCL guide][upstream-opencl] lists Q4_0, Q4_K, Q5_K, and Q6_K among its supported types. This makes Gemma's QAT Q4_0 a useful platform-fit candidate. IQ3_S and Q3_K are absent from that advertised list: do not assume the chosen Qwen three-bit packs can use this route. CPU/Vulkan compatibility and actual operation placement need their own checks; format support alone is not full-graph acceleration.
 
 ### CPU implementation
 
@@ -109,6 +171,8 @@ Use a Release build with the selected revision's Windows ARM64 LLVM toolchain. V
 Begin with a single resident model. Tune generation threads independently from prefill threads; proposed candidate counts are 4, 6, 8, and 12, restricted to discovered cores. More threads can lose on a shared-memory-bound decode path. Avoid realtime process priority and leave capacity for the UI and operating system.
 
 Only write custom CPU kernels after profiling identifies the cost. Candidate work includes packed dot products, decode into registers rather than persistent FP16 expansion, fused transforms, cache-friendly tiling, and projection fusion. Every optimized kernel needs a portable reference and adversarial shape/value checks.
+
+**Optional profiling aid: Qualcomm WoS Porter.** Its [repository][wos-porter] documents Copilot, Claude Code, and Codex integrations, including `wos-etl-hotspot` for ETL CPU-hotspot/call-graph analysis and suggested ARM64 optimizations. Capture representative performance traces through approved self-hosted CI, then inspect retained traces locally. Restrict suggested instructions to the actual Oryon feature set; review patches and apply the normal correctness/performance gates. Its default local benchmark workflow must not override repository policy. No release-date or speedup claim is needed to use it as an engineering lead.
 
 ### Adreno Vulkan implementation
 
@@ -121,7 +185,13 @@ Only write custom CPU kernels after profiling identifies the cost. Candidate wor
 
 Prefer an intact, supported execution graph over frequent CPU/GPU crossings. Add backend-specific fusion or shader improvements only after an end-to-end profile identifies a bottleneck. Keep a CPU fallback that reports why the requested GPU profile could not start.
 
+A [community ARM64/Adreno report][adreno-history] is useful for build and allocation troubleshooting. It reports about 14.4 CPU versus 12.6 GPU tokens/second for an earlier 8B type-42 Q2_0 model on an X1E-80-100 machine with 64 GB RAM, using a GPU path that dequantized to float. This is historical single-machine evidence, not a Swift 27B forecast or a verdict on current Prism kernels. The guide contains placeholder model/fork identifiers, so inspect the actual pinned sources rather than inheriting its patches or memory flags. Review its PolyForm Noncommercial terms before copying implementation material.
+
 ### Hexagon NPU feasibility gate
+
+Qualify a conventional-model route before undertaking custom Swift kernels. Qualcomm's [GenieX SDK][geniex-sdk] documents a `llama_cpp` plugin consuming compatible GGUF files across CPU/Adreno/Hexagon and a **separate** `qairt` plugin consuming QAIRT `.bin` packages. Its [model guide][geniex-models] recommends Q4_0 for the GGUF Hexagon path; other types may fall back. Qwen3.5-9B Q4_0 is a smaller candidate to investigate, not an established whole-model result on this laptop. This route does not establish support for Swift PQ2_0/PTQ1_0 or the three-bit Qwen candidates. Pin runtime/model licenses, exact package, actual placement, memory, and API behavior; do not add another model server until it offers a concrete benefit.
+
+The [GenieX v0.8.0 release][geniex-release] documents a Microsoft-signed HTP catalog for its Windows route. Prefer a compatible signed package. Ordinary GGUF NPU execution and QAIRT conversion are distinct paths; neither should be inferred from the other or from a model-name match.
 
 The Windows [Snapdragon backend guide][snapdragon-guide] supplies a starting point, not proof that this custom model can run on the NPU. Pin the Hexagon SDK, runtime libraries, and drivers required by the selected fork revision; SDK requirements change between guides/releases. The [Hexagon matmul implementation][hexagon-implementation] does not establish native support for Swift's packed types.
 
@@ -145,10 +215,10 @@ A separate small embedding model could eventually use the NPU for retrieval. Tha
 
 ### Keep the native engine upstream-based
 
-Use **Prism llama-server plus its built-in web UI** for direct chat and engine inspection. It provides a browser interface, streaming API, monitoring, and structured-output support without requiring a second model loader. It is not by itself a complete coding-agent harness or a security boundary. The runtime is MIT-licensed; Swift weights carry Apache-2.0 terms and retained notices. [Server documentation][server-docs] · [Runtime license][runtime-license] · [Swift model][swift-model]
+Use the selected runtime's **llama-server plus its built-in web UI** for direct creative chat and engine inspection; Swift/Bonsai use the matching Prism distribution. It provides a browser interface, streaming API, monitoring, and structured-output support without requiring a second model loader. It is not by itself a complete coding-agent harness or a security boundary. The Prism runtime is MIT-licensed; Swift weights carry Apache-2.0 terms and retained notices. Inventory every alternate model/runtime's terms under its own manifest. [Server documentation][server-docs] · [Runtime license][runtime-license] · [Swift model][swift-model]
 
 ```text
-Direct browser UI ---------> Native ARM64 Prism llama-server
+Direct browser UI ---------> Native ARM64 llama-server (matched runtime)
                                       |
                              ggml CPU / Vulkan / NPU (gated)
                                       ^
@@ -180,7 +250,7 @@ Bind inference to `127.0.0.1` initially. Preserve an offline path once artifacts
 
 ### Agent harness selection
 
-Evaluate an established agent client before building a new agent loop. Keep the inference engine independent so changing clients does not reload or duplicate the model.
+If tool automation is wanted after creative chat works, evaluate an established agent client before building a new agent loop. Keep the inference engine independent so changing clients does not reload or duplicate the model. Harness/containment qualification is required for enabling tools, not a prerequisite for delivering direct creative chat.
 
 | Candidate | Evidence and fit | Qualification / decision |
 | --- | --- | --- |
@@ -243,7 +313,7 @@ Keep the model resident outside short-lived tool environments. Stream bounded ou
 
 ### Model behavior contract
 
-Preserve the embedded tokenizer/template and the publisher's generation settings: temperature 1.0, top-p 0.95, top-k 20, min-p 0, repetition penalty 1, presence penalty 0, and no added logit penalty. Preserve the documented thinking/template controls. [Publisher generation contract][swift-page]
+Preserve each artifact's embedded tokenizer/template and publisher settings in its reference profile. **Swift's** contract is temperature 1.0, top-p 0.95, top-k 20, min-p 0, repetition penalty 1, presence penalty 0, and no added logit penalty. Preserve its documented thinking/template controls. Base Bonsai, Qwen, and Gemma have their own settings; do not apply Swift's sampler universally. [Swift generation contract][swift-page] · [Base Bonsai settings][bonsai-model]
 
 For an initial interactive profile, propose a 4,096-token completion cap and make truncation visible; long reasoning tasks need a separately budgeted profile. Count reasoning tokens toward the total limit. Require:
 
@@ -254,7 +324,13 @@ rendered prompt tokens + maximum generated tokens + template margin
 
 The client must preserve roles/tool messages, stream reasoning and answer content correctly, and report finish reasons. Use deterministic settings only for diagnostics; do not silently replace the publisher's sampling defaults in quality evaluations.
 
+Add **explicit creative profiles** after the reference: thinking disabled, or a supported moderate reasoning effort, for drafting, brainstorming, and revision; retain a deeper-thinking profile for difficult planning or analysis. Qwen3.8 documents per-request thinking control. Base Bonsai's card warns that `low` is unsupported and can behave near `xhigh`, while recommending `medium` for shorter reasoning. Verify the actual template controls instead of inventing a universal effort flag. Count hidden thinking in latency, output, and context budgets. Treat shorter caps, thinking changes, and sampling adjustments as behavior/quality tradeoffs; compare creative preferences and finish reasons before promotion. Do not silently truncate a story to manufacture a speedup.
+
+For image critique, pin the matching vision projector/preprocessor and include image tokens, extra weights, and peak preprocessing allocations in admission checks. A text GGUF alone is insufficient evidence of working vision. For future image generation, select a separate qualified image model and schedule it within the same shared-memory budget, unloading/reducing LLM residency when necessary; concurrent full-size pipelines are not an initial requirement.
+
 ## 6. Hybrid attention and cache design
+
+The detailed 64-layer calculations below apply to **Swift/Bonsai's Qwen3.8-derived graph**. Derive fresh estimates from each candidate GGUF: Qwen3.6 MoE has different recurrent/full-attention dimensions; Gemma uses local sliding-window plus global attention rather than Gated Delta Net snapshots. Do not copy Swift's checkpoint settings or cache arithmetic into a Gemma profile. Validate both continuity after revisions and actual allocation, including any runtime option that retains a full-size sliding-window cache.
 
 ### Account for three kinds of state
 
@@ -340,6 +416,23 @@ Begin with one active slot and no automatic context shifting. If the request wil
 
 With agent/tool containment added, use a provisional **18 GiB inference-service ceiling**, about **2 GiB for an ordinary tool worker**, **0.5 GiB for the controller/client**, and roughly **8 GiB for Windows and other applications**. That leaves about 3 GiB of headroom against the reported usable memory. Adjust after recording actual usage; these are admission-policy budgets, not discovered or guaranteed OS enforcement limits. A compiler-heavy task or VM may require shrinking/unloading inference rather than admitting both at their normal maxima.
 
+For the primary creative-chat delivery, the optional tool worker need not be resident. Keep the same conservative inference ceiling until actual Windows/application use is known. Budget any vision projector and image preprocessing explicitly; future image generation shares this physical RAM and may require unloading the language model.
+
+The conventional-model candidates fit **on paper**, with one active sequence, no drafter/MTP allocation, limited reuse, and no persistent expanded/duplicate weight copy:
+
+| Candidate profile | Initial memory reasoning | Proposed service allowance, not a measurement |
+| --- | --- | ---: |
+| Qwen3.8-27B UD-Q3_K_XL, 16K FP16 KV | Approximately 12.20 GiB weights + 1 GiB live KV + recurrent state/few checkpoints + small prompt cache + compute/staging | Approximately 16–18 GiB |
+| Gemma 4 12B QAT Q4_0, 16K | Approximately 6.50 GiB weights, local/global KV, small reuse budget, and compute/staging; no Qwen-style recurrent checkpoints | Approximately 10–13 GiB |
+| Gemma 4 26B-A4B QAT Q4_0, 16K | Approximately 13.41 GiB weights; fit depends on bounded sliding-window/global KV and actual backend scratch | Approximately 16–18 GiB |
+| Qwen3.6-35B-A3B UD-IQ3_S, 16K–32K | Approximately 12.76 GiB weights; conditional FP16 live KV is 0.31/0.625 GiB and recurrent matrix state about 60 MiB per sequence | Approximately 16–18 GiB |
+
+Derive cache values from the actual GGUF and reconcile logs against the [Qwen3.8][qwen-config], [Qwen3.6][qwen36-config], and [Gemma][gemma12-config] configurations. For Qwen3.8 bring-up, propose **two checkpoints and 256 MiB prompt-cache storage** while its larger weights are resident, instead of automatically using Swift's eight-checkpoint/1 GiB settings. Keep 2–3 GiB as a provisional compute/staging allowance and reject unexpected copies. Qwen3.8 at 32K adds another 1 GiB of FP16 KV; longer context, vision, or large batches may require accepted Q8 KV, less cache, or a smaller model. Do not promote a configuration whose measured peak crosses the ceiling.
+
+Do not select a quantization solely by its familiar name: Qwen3.6's published UD-Q4_K_M file is 22.1 GB, approximately 20.6 GiB, exceeding the service ceiling before caches. Model size, active parameters, and backend-supported types must all fit together.
+
+The original **Swift PQ2_0-specific** starting allowance remains:
+
 | Component | Proposed first daily-profile allowance | Notes |
 | --- | ---: | --- |
 | Packed weights plus unavoidable layout overhead | Up to 8 GiB | PQ2_0 file alone is about 6.71 GiB; detect duplicated/repacked copies |
@@ -365,17 +458,22 @@ All settings here are **candidates**, not known optima. The launcher must obtain
 | --- | --- | --- | --- | --- |
 | `reference-cpu` | 8K / 1 | FP16, speculation off; reuse separately switchable | CPU only | Correctness and regression reference |
 | `daily` | 16K initially; promote 32K after validation / 1 | FP16 initially; Q8 candidate; 8 checkpoints, 1 GiB prompt cache | Best validated CPU/Vulkan placement | General interactive use |
+| `creative` | 16K initially / 1 | Model-specific FP16/Q8; for conventional Qwen3.8 start with 2 checkpoints and 256 MiB prompt cache; Gemma uses its own cache policy | Selected creative model; supported thinking-off/moderate effort and sampler, explicitly shown | Drafting, revision, art direction; promote using prose preference and finished-piece latency |
 | `long-context` | 64K first; larger only after acceptance / 1 | Q8 candidate; Q4 separately experimental | Best supported placement within budget | Documents and extended reasoning |
 | `battery` | 8K–16K / 1 | Bounded reuse, no speculation | Selected by energy/task and responsiveness | Lower power use |
 | `npu-experimental` | Explicitly bounded / 1 | Backend-specific validated state path | Only after NPU gate | Research, never silent default |
 
 Initial batch/microbatch candidates are 256/64 for bring-up and 512/128 for qualification. Increase only with memory evidence; prefill and decoding have different bottlenecks. Explicitly set one slot rather than inheriting an automatic concurrency default.
 
+The eight-checkpoint/1 GiB `daily` defaults above describe the Swift candidate, not every model. Qualify the smaller-cache `creative` profile first for conventional Qwen3.8. Vision gets a separately admitted variant with its exact projector and image budget; long-form writing gets an explicit longer-context profile only after continuity and memory acceptance.
+
 Retain GPU kernel/shader caches supported by the chosen backend and invalidate them on relevant source/toolchain/device changes. Separate cold startup, warm model, and warm prompt-cache results. Do not count shader compilation as steady-state decode or hide it from startup measurements.
 
 ## 9. Speculative decoding and advanced optimization
 
 Keep speculation off until ordinary execution, caching, and rollback are correct. The current [Bonsai speculative guide][speculation] says Bonsai 2 27B has no official DSpark drafter; previous-generation drafters and their speedups do not establish compatibility with Swift Bonsai 2.
+
+The default `bonsai2` demo deliberately runs without speculation even if a drafter file is present. Community Bonsai 2 experiments requiring runtime changes, and reported GB10 gains, are leads to audit rather than released Swift/Snapdragon support. An NPU drafter is a later heterogeneous-inference experiment: tokenizer/template agreement, target verification, hybrid rollback, actual draft acceptance, and cross-device overhead must all pass before enabling it. Do not multiply its hypothetical speedup by token-efficiency or kernel claims.
 
 Possible later experiments, in this order:
 
@@ -437,6 +535,7 @@ This could be a lossless storage optimization, but different accumulation paths 
 
 | Priority | Candidate | Why investigate / constraint |
 | --- | --- | --- |
+| P0 | Creative model choice and supported reasoning/sampling budgets | Improve usable prose and collaboration before optimizing one model's packed kernels; count revisions and hidden reasoning |
 | P0 | Stable minimal system/tool prefixes; bounded tool output; relevant file selection | Reduce prefill, context pressure, and agent retries without changing the engine |
 | P0 | Warm resident model, valid hybrid prefix reuse, bounded checkpoints | Avoid repeated loading/prefill while respecting memory and state correctness |
 | P1 | Actual ARM packed SIMD dispatch and runtime tiling/repacking | Improve the selected weights' execution before adding a new model format |
@@ -482,6 +581,8 @@ Use native `llama-bench` where appropriate plus a small repository-owned streami
 
 | Dimension | Initial representative cases |
 | --- | --- |
+| Model / creative quality | Direct Qwen3.8 Q3, base Bonsai 2 PQ2, current Swift PQ2, smaller Gemma QAT; staged optional MoE comparison; paired samples and owner preference |
+| Creative workflow | Scene drafting, voice/style changes, constrained revision, multi-chapter continuity, art direction/image prompts; grounded image critique only after vision qualification |
 | Prompt size | 512, 2K, 8K, 16K; then 32K/64K for accepted profiles |
 | Output | Fixed-length 128/512-token performance cases; separate natural task completions |
 | Cache | Fresh process, warm model/no reusable prompt, repeated prefix, edited prefix, conversation switch |
@@ -493,7 +594,7 @@ Use native `llama-bench` where appropriate plus a small repository-owned streami
 | Harness / containment | Direct API, accepted agent workflow, cold/warm MXC worker; separate VM tier if qualified |
 | Experimental packing | Same current weights/layout control, actual BITCOS serialized size, native kernel, end-to-end results |
 
-Avoid a full Cartesian sweep. Establish a baseline, screen thread/batch choices, compare feasible device placements, then qualify cache choices on the best candidates. Keep CPU/GPU comparisons on the same Swift artifact; measure alternate-weight PTQ separately.
+Avoid a full Cartesian sweep. Establish a small baseline, screen model suitability for creative use, then thread/batch choices and feasible device placements; qualify cache choices on the best candidates. Keep backend/kernel comparisons on the same exact model artifact and settings. Attribute different models, Swift/base adaptations, weight versions, and samplers as separate quality/performance comparisons; measure alternate-weight PTQ separately.
 
 Record:
 
@@ -505,7 +606,7 @@ Record:
 - Quality, finish reasons, error/cancellation behavior, speculative acceptance if enabled, and client-visible truncation.
 - Every artifact/version/configuration identity plus CI run URL, tested revision, and verdict.
 
-Use held-out reasoning, instruction-following, coding/edit, JSON-format, and long-context retrieval cases. Include evidence at early/middle/late context positions and multi-turn edits. Benchmark correctness includes failures and truncation; do not discard them from the score.
+Use held-out creative briefs, instruction-following/revision, long-form continuity, and long-context retrieval cases first. Include character/world facts at early/middle/late context positions and edits to earlier turns. Track generic phrasing, repetition, viewpoint drift, constraint violations, revision count, and owner preference alongside automated checks. Add coding/edit, tool/JSON, and containment suites only for profiles enabling those capabilities. Benchmark correctness includes failures and truncation; do not discard them from the score. Keep private manuscripts and artwork out of shared CI artifacts unless the owner explicitly chooses otherwise.
 
 ### Promotion criteria
 
@@ -513,7 +614,7 @@ Promote a configuration only when:
 
 1. Focused state/streaming/cancellation checks and the required CI suites pass.
 2. It stays within memory budgets without sustained paging or eviction and remains usable through the sustained workload.
-3. It has no unresolved critical task failure and its quality difference is within a predeclared evaluation tolerance. Report uncertainty when sample size cannot establish this.
+3. It has no unresolved critical task failure and its quality difference is within a predeclared evaluation tolerance. For creative work, use the owner's paired preferences and explicit voice/continuity/revision rubric; faster text is not a win if it takes more revisions or misses the brief. Report uncertainty when sample size cannot establish a preference.
 4. Paired CI measurements establish a useful improvement. Use **10% lower end-to-end latency** as an initial promotion target, or a documented capacity/energy benefit without unacceptable interactive regression.
 5. The manifest and effective profile reproduce the outcome on the settled `main` revision.
 6. An agent profile enforces its declared filesystem/network/process boundary, contains all execution paths, and fails closed. A successful model response alone does not qualify the sandbox or the agent.
@@ -545,7 +646,7 @@ docs/results/                     concise reports linking retained CI evidence
 
 Keep third-party source at pinned revisions without copying an untracked engine into the repository. Model packs and personal conversation caches stay outside Git. Build outputs use documented artifact lanes; disposable diagnostics live in temp. A tool should fail clearly if a required native component is absent rather than installing arbitrary replacements.
 
-During implementation, publish only `main`. Give every delegated worker a dedicated worktree, retain useful evidence, merge all session changes back to local/remote `main`, run required validation on the settled revision, and remove eligible session worktrees/branches. Preserve other sessions' work.
+Give every delegated worker a dedicated worktree, retain useful evidence, integrate session changes into local `main`, validate the settled revision, and remove eligible session worktrees/branches. Preserve other sessions' work. For this repository, remote publication is required **only when instructed**; when publishing, publish only `main`. The owner's separate mandatory-publication rules for VerifiedOS and JetDatabaseWriter do not create a universal requirement for this project.
 
 ## 12. Delivery milestones and stop/go decisions
 
@@ -555,21 +656,28 @@ Effort ranges below are planning estimates for one engineer after dependencies a
 | --- | --- | --- | --- |
 | M0: inventory and reproducibility | 0.5–1 day | Device report, GGUF metadata, immutable manifests, toolchain/CI design | Exact architecture and dependency gaps known |
 | M1: CPU + direct local chat | 1–3 days | Native engine, web UI, launcher, pinned model, focused regressions | Correct bounded chat, cancellation, offline restart |
-| M1b: agent + containment qualification | 3–5 days if supported paths work | Native agent candidate, MXC broker/policy, bounded inference bridge, bypass checks | Successful reviewed task and enforced whole-agent boundary; otherwise direct chat remains the accepted path |
+| M1a: creative model selection | 1–3 days after initial loading paths work | Qwen3.8/Bonsai/Swift and smaller Gemma comparison, bounded memory profiles, paired creative samples and CI provenance | Owner-preferred useful prose/art collaboration within budget; exact model/quantization and intended-use sampler selected |
+| M1b: optional agent + containment qualification | 3–5 days if wanted and supported paths work | Native agent candidate, MXC broker/policy, bounded inference bridge, bypass checks | Successful reviewed task and enforced whole-agent boundary before enabling tools |
 | M2: Vulkan qualification | 2–5 days if existing kernels work | Native GPU build, placement audit, CI CPU/GPU comparison | Correct graph and demonstrated benefit, or documented no-go |
 | M3: cache and context qualification | 2–4 days | Hybrid-state tests, memory estimator, bounded reuse, accepted KV types | Fresh/reused continuations agree; selected contexts fit and retain quality |
-| M4: profiles and performance report | 2–4 days | Daily/long/battery and accepted agent profiles, CI provenance, installation guide | Sustained, task-level, and containment acceptance on settled main |
+| M4: profiles and performance report | 2–4 days | Creative/daily/long/battery profiles, optional vision/accepted agent profiles, CI provenance, installation guide | Sustained creative-task and memory acceptance on settled main; containment acceptance for enabled tools |
 | M5: NPU feasibility | About 2 days initially | Operation/packing/memory gap report and decision | Feasible bounded implementation or explicit deferral |
 | M6: lookup kernels / BITCOS / speculation | Separately estimated after feasibility | Focused patch or experimental profile | Same-weight correctness, native-platform support, and CI benefit justify maintenance cost |
 
-M0 -> M1 -> M1b/M2/M3 -> M4 is the main delivery path, with independent work isolated appropriately. Agent automation is accepted only after M1b; direct chat can be useful earlier. Investigate M5 after the CPU/GPU path exposes realistic bottlenecks; do not make everyday usability depend on a speculative NPU port. A substantial custom ternary NPU backend is a multiweek project to scope after the feasibility report, not a two-day integration.
+M0 -> M1 -> M1a -> M2/M3 -> M4 is the main creative-chat delivery path, with independent work isolated appropriately. M1b is an optional branch; agent automation is accepted only after it passes. Investigate M5 after model selection and CPU/GPU results expose realistic bottlenecks; do not make everyday usability depend on a speculative NPU port. A substantial custom ternary NPU backend is a multiweek project to scope after the feasibility report, not a two-day integration.
 
-The first future implementation step should be **M0 plus M1**: pin the model/runtime, inspect native capabilities, establish an honest CPU reference, and make the local UI usable. That produces the correctness reference needed to assess every later optimization.
+The first future implementation step should be **M0 plus M1, immediately followed by M1a**: pin the initial artifacts/runtimes, inspect native capabilities, establish an honest CPU reference, and make the local UI usable. Compare creative usefulness and memory before selecting a default or funding custom low-bit kernels. Qwen3.8 lineage earns Bonsai a place in that comparison; it does not replace evaluating the actual compressed/adapted model.
 
 ## 13. Risk register and explicit open questions
 
 | Risk / question | Resolution |
 | --- | --- |
+| Does a math/coding benchmark or newer base imply better creative prose? | Compare actual quantized outputs for voice, originality, revision fidelity, and continuity; owner preference decides |
+| Does Swift's shorter-thinking objective help fiction or art direction? | Current merged Swift versus matched base control; count finished-piece latency and revisions, not only reasoning tokens |
+| Does conventional Qwen3.8 Q3 fit the service ceiling with useful context? | Start 16K, few checkpoints and small cache; inspect peak copies/scratch; qualify longer context or Q8 KV separately |
+| Is image input actually enabled and grounded? | Pin matching projector/preprocessor, budget image tokens/allocations, and validate observed details before recommending critique |
+| Is image generation being confused with text or image understanding? | Separate image-model pipeline and shared-memory scheduling decision |
+| Does an ordinary GGUF NPU route establish Swift support? | GenieX plugin/format/operator audit; require exact packed types and placement rather than inferring from Q4_0 support |
 | Does current Swift metadata exactly match the upstream dimensions? | Read the selected GGUF before allocating caches or accepting the estimates |
 | Does native ARM64 Vulkan work correctly on the installed Adreno driver? | Native dependency check, operation tests, whole-model comparison, device CI |
 | Is CPU or GPU faster for the actual context/task? | Paired self-hosted CI; retain both validated profiles |
@@ -597,8 +705,13 @@ Sources were checked on October 22, 2026. Moving branch documentation is researc
 
 - [UkisAI release page][swift-page] and [Swift artifact/model instructions][swift-model].
 - [Prism base Bonsai 2 architecture][bonsai-model] and [upstream Qwen configuration][qwen-config].
+- [Qwen3.8 model][qwen38-model] and [quantization choices][qwen38-quants]; [Qwen3.6 MoE model][qwen36-model], [quantizations][qwen36-quants], and [configuration][qwen36-config].
+- [Gemma 4 architecture][gemma12-model], [configuration][gemma12-config], [12B QAT pack][gemma12-qat], [26B-A4B QAT pack][gemma26-qat], and [Google's QAT explanation][gemma-qat-release].
+- [Creative-writing evaluation][creative-bench] and [longform methodology][longform-bench]; these are evaluation leads, not exact local-quantization results.
 - [Prism backend/format audit][backend-support] and [candidate runtime release][runtime-release].
 - [Windows ARM64 OpenCL guide][opencl-guide] and [Snapdragon/Hexagon guide][snapdragon-guide].
+- [Upstream OpenCL support][upstream-opencl], [Qwen MoE graph][upstream-qwenmoe], [Gemma graph][upstream-gemma], and [Bonsai demo setup][demo-setup].
+- [Qualcomm WoS Porter][wos-porter], [GenieX SDK][geniex-sdk], [model/quantization guide][geniex-models], [signed Windows release][geniex-release], and [historical community Adreno report][adreno-history].
 - [llama-server interface/options][server-docs], [Qwen35 graph][qwen-implementation], and [recurrent allocation implementation][recurrent-implementation].
 - [Prompt reuse/checkpoints][prompt-cache], [experimental KV4][kv-cache], and [speculative compatibility][speculation].
 - [Aider local API connection][aider-api] and [lm-evaluation-harness local API adapters][lm-eval-api].
@@ -611,6 +724,27 @@ Sources were checked on October 22, 2026. Moving branch documentation is researc
 [swift-model]: https://huggingface.co/ukisai/Swift-Bonsai-2-GGUF
 [bonsai-model]: https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf
 [qwen-config]: https://huggingface.co/Qwen/Qwen3.8-27B/blob/main/config.json
+[qwen38-model]: https://huggingface.co/Qwen/Qwen3.8-27B
+[qwen38-quants]: https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/tree/main
+[qwen36-model]: https://huggingface.co/Qwen/Qwen3.6-35B-A3B
+[qwen36-quants]: https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/tree/main
+[qwen36-config]: https://huggingface.co/Qwen/Qwen3.6-35B-A3B/blob/main/config.json
+[gemma12-model]: https://huggingface.co/google/gemma-4-12B-it
+[gemma12-config]: https://huggingface.co/google/gemma-4-12B-it/blob/main/config.json
+[gemma12-qat]: https://huggingface.co/google/gemma-4-12B-it-qat-q4_0-gguf
+[gemma26-qat]: https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf
+[gemma-qat-release]: https://blog.google/innovation-and-ai/technology/developers-tools/quantization-aware-training-gemma-4/
+[creative-bench]: https://eqbench.com/creative_writing
+[longform-bench]: https://eqbench.com/creative_writing_longform.html
+[upstream-opencl]: https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/OPENCL.md
+[upstream-qwenmoe]: https://github.com/ggml-org/llama.cpp/blob/master/src/models/qwen35moe.cpp
+[upstream-gemma]: https://github.com/ggml-org/llama.cpp/blob/master/src/models/gemma4.cpp
+[demo-setup]: https://github.com/PrismML-Eng/Bonsai-demo/blob/main/setup.ps1
+[wos-porter]: https://github.com/qualcomm/extension-wos-porter
+[geniex-sdk]: https://github.com/qualcomm/GenieX/blob/main/sdk/README.md
+[geniex-models]: https://geniex.aihub.qualcomm.com/en/models/supported
+[geniex-release]: https://github.com/qualcomm/GenieX/releases/tag/v0.8.0
+[adreno-history]: https://github.com/LucRoot/Windows_ARM64_bonsai_adreno_vulkan
 [backend-support]: https://github.com/PrismML-Eng/Bonsai-demo/blob/main/BACKEND-SUPPORT.md
 [runtime-release]: https://github.com/PrismML-Eng/llama.cpp/releases/tag/prism-b10787-73bfe6c
 [runtime-license]: https://github.com/PrismML-Eng/llama.cpp/blob/prism/LICENSE
