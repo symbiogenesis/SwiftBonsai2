@@ -42,7 +42,7 @@ Runtime support and the distinction between the published Swift files are docume
 | CPU | Snapdragon X Elite X1E-78-100, Oryon, reported 3.42 GHz | Tune generation and prompt-processing threads separately |
 | GPU | Adreno X1-85; Windows reports 128 MB dedicated graphics memory | Query usable shared-memory budgets; do not treat 128 MB as the model capacity |
 | NPU | Snapdragon Hexagon | Verify Windows runtime access, supported operations, packing, and memory limits |
-| RAM | 32 GB installed, 31.6 GB reported usable | Budget weights, caches, checkpoints, staging buffers, Windows, and applications together |
+| RAM | 32 GB installed, 31.6 GB reported usable; usable-byte count not yet verified | Resolve the reported units, then budget weights, caches, checkpoints, staging buffers, Windows, and applications together |
 | Storage | Approximately 292 GB free from supplied figures | Enough for initial packs/builds; avoid uncontrolled model and cache duplication |
 
 A read-only host check during this plan revision reports **Windows 11 Professional 26H2, ARM64, build 26300.9711**. MXC's current [OS support table][mxc-os-support] lists 26300.9550 for that release family. The host is above that documented floor; this does not establish that the installed MXC package or the requested policy will work. No Windows feature, policy, or software was installed or changed.
@@ -128,7 +128,7 @@ At unchanged decode speed, 19% fewer generated tokens would cut **generation tim
 Create a separate manifest and correctness reference for every model before implementation validation with:
 
 - Hugging Face repository, immutable model revision, exact filename, byte length, and SHA-256.
-- Tensor-type histogram, architecture, recurrent/full-attention split, head dimensions, context metadata, and rotation/sign metadata.
+- Tensor-type histogram, architecture, recurrent/local/full-attention layout, head dimensions, sliding-window/KV-sharing settings, context metadata, and rotation/sign metadata.
 - Tokenizer identity, embedded chat-template hash, special token IDs, and optional MTP/NextN tensors.
 - Runtime commit, any local patch commits, compiler, build flags, binary architecture, and matching runtime libraries.
 - Driver versions, device capabilities, effective configuration, and calibration-file identity where applicable.
@@ -262,7 +262,7 @@ Sources: [OpenCode provider integration][opencode-provider], [license][opencode-
 
 OpenCode's [security policy][opencode-security] explicitly says its permission prompts are not a sandbox. Run the entire agent and its executable dependencies inside the qualified boundary. A tool-call plugin or shell wrapper cannot contain in-process plugins, project configuration hooks, language servers, package scripts, or an alternate execution path. [Whole-agent versus tool-only isolation][pi-security]
 
-For every candidate, verify streamed reasoning/answers, cancellation, sampler forwarding, exact templates, tool-call parsing, malformed/unsupported schemas, tool-result round trips, patch application, and context/output limits with Swift. If native function calling is unreliable, use a validated simpler edit workflow or direct chat; do not compensate by granting broader tool privileges.
+For every candidate, verify streamed reasoning/answers, cancellation, sampler forwarding, exact templates, tool-call parsing, malformed/unsupported schemas, tool-result round trips, patch application, and context/output limits with the selected model. If native function calling is unreliable, use a validated simpler edit workflow or direct chat; do not compensate by granting broader tool privileges.
 
 Judge effectiveness by **successful task latency**, retries, prompt growth, tool output volume, and total memory. A faster client language alone does not accelerate model decoding. Pin a supported release and dependencies, review security advisories and update behavior, and retain a working fallback.
 
@@ -414,7 +414,7 @@ Begin with one active slot and no automatic context shifting. If the request wil
 
 ## 7. Memory and storage budgets
 
-With agent/tool containment added, use a provisional **18 GiB inference-service ceiling**, about **2 GiB for an ordinary tool worker**, **0.5 GiB for the controller/client**, and roughly **8 GiB for Windows and other applications**. That leaves about 3 GiB of headroom against the reported usable memory. Adjust after recording actual usage; these are admission-policy budgets, not discovered or guaranteed OS enforcement limits. A compiler-heavy task or VM may require shrinking/unloading inference rather than admitting both at their normal maxima.
+With agent/tool containment added, use a provisional **18 GiB inference-service ceiling**, about **2 GiB for an ordinary tool worker**, **0.5 GiB for the controller/client**, and roughly **8 GiB for Windows and other applications**: 28.5 GiB combined. The reserve is about **3.1 GiB only if the reported usable figure means 31.6 GiB** (as Windows commonly labels it). Literal decimal 31.6 GB is about 29.43 GiB, leaving only about 0.93 GiB. M0 must record actual usable bytes and reduce admissions if needed; do not rely on an unverified 3 GiB reserve. These are admission-policy budgets, not discovered or guaranteed OS enforcement limits. A compiler-heavy task or VM may require shrinking/unloading inference rather than admitting both at their normal maxima.
 
 For the primary creative-chat delivery, the optional tool worker need not be resident. Keep the same conservative inference ceiling until actual Windows/application use is known. Budget any vision projector and image preprocessing explicitly; future image generation shares this physical RAM and may require unloading the language model.
 
@@ -615,7 +615,7 @@ Promote a configuration only when:
 1. Focused state/streaming/cancellation checks and the required CI suites pass.
 2. It stays within memory budgets without sustained paging or eviction and remains usable through the sustained workload.
 3. It has no unresolved critical task failure and its quality difference is within a predeclared evaluation tolerance. For creative work, use the owner's paired preferences and explicit voice/continuity/revision rubric; faster text is not a win if it takes more revisions or misses the brief. Report uncertainty when sample size cannot establish a preference.
-4. Paired CI measurements establish a useful improvement. Use **10% lower end-to-end latency** as an initial promotion target, or a documented capacity/energy benefit without unacceptable interactive regression.
+4. For same-model performance optimizations, paired CI measurements establish a useful improvement: use **10% lower end-to-end latency** as an initial target, or a documented capacity/energy benefit without unacceptable interactive regression. For model selection or creative behavior profiles, owner-preferred prose/continuity can justify slower generation within an explicitly accepted interactive-latency and memory budget. Report that quality/speed tradeoff rather than rejecting a better creative model solely for missing the performance target.
 5. The manifest and effective profile reproduce the outcome on the settled `main` revision.
 6. An agent profile enforces its declared filesystem/network/process boundary, contains all execution paths, and fails closed. A successful model response alone does not qualify the sandbox or the agent.
 
