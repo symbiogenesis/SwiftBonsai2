@@ -1,10 +1,6 @@
 //! CI-only, interleaved broker dependency screening on Windows ARM64.
 #![forbid(unsafe_code)]
 #![allow(
-    clippy::multiple_crate_versions,
-    reason = "comparing independent runtime and JSON stacks requires their incompatible transitive versions"
-)]
-#![allow(
     clippy::redundant_pub_crate,
     reason = "binary-private modules expose trial interfaces only to their parent executable"
 )]

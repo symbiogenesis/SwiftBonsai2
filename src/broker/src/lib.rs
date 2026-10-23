@@ -12,13 +12,6 @@
 //! Backend bypass prevention and daily OS isolation still require qualification.
 //! This library alone is not a qualified HTTP or process-isolation boundary.
 #![forbid(unsafe_code)]
-#![cfg_attr(
-    feature = "dependency-trial",
-    allow(
-        clippy::multiple_crate_versions,
-        reason = "opt-in JSON competitors require incompatible transitive hashbrown and syn versions"
-    )
-)]
 
 pub mod artifacts;
 pub mod backend;

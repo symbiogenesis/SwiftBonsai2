@@ -225,10 +225,10 @@ try {
     $receipt.source_digests = @($sourcePaths | Sort-Object -Unique | ForEach-Object {
         [pscustomobject]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $repoRoot $_) -Algorithm SHA256).Hash.ToLowerInvariant() }
     })
-    $rustup = (Get-Command -Name rustup -CommandType Application -ErrorAction Stop).Source
-    $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
-    $rustc = (Get-Command -Name rustc -CommandType Application -ErrorAction Stop).Source
-    $git = (Get-Command -Name git -CommandType Application -ErrorAction Stop).Source
+    $rustup = (Get-Command -Name rustup -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $rustc = (Get-Command -Name rustc -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    $git = (Get-Command -Name git -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     $revision = Invoke-DependencyTool -Name 'revision' -Executable $git -Arguments @('-C', $repoRoot, 'rev-parse', 'HEAD') -TimeoutSeconds 60
     if ($revision.StandardOutput.Trim() -cne $env:GITHUB_SHA) { throw 'Checked-out revision differs from the GitHub tested revision.' }
     $status = Invoke-DependencyTool -Name 'checkout-status' -Executable $git -Arguments @('-C', $repoRoot, 'status', '--porcelain') -TimeoutSeconds 60
@@ -251,11 +251,15 @@ try {
         -Arguments ($prefix + @('build', '--manifest-path', $manifest, '--locked', '--release', '-p', 'bonsai-dependency-trial'))
     $null = Invoke-DependencyTool -Name 'correctness-release' -Executable $cargo `
         -Arguments ($prefix + @('test', '--manifest-path', $manifest, '--locked', '--release', '-p', 'bonsai-dependency-trial'))
+    $null = Invoke-DependencyTool -Name 'broker-correctness-release' -Executable $cargo `
+        -Arguments ($prefix + @('test', '--manifest-path', $manifest, '--locked', '--release', '-p', 'bonsai-broker', '--features', 'dependency-trial'))
     $binary = Join-Path $target 'release/bonsai-dependency-trial.exe'
     $measurement = Invoke-DependencyTool -Name 'measure' -Executable $binary -Arguments @() -TimeoutSeconds 120
     [IO.File]::WriteAllText((Join-Path $evidence 'results.json'), $measurement.StandardOutput)
     $report = $measurement.StandardOutput | ConvertFrom-Json -DateKind String -NoEnumerate
-    if ($report.schema_version -ne 1 -or @($report.runtime).Count -ne 4) { throw 'Unsupported or incomplete dependency report.' }
+    if ($report.schema_version -ne 1 -or @($report.runtime).Count -ne 4 -or
+        $report.revision -cne $env:GITHUB_SHA -or $report.architecture -cne 'aarch64' -or
+        $report.repetitions -ne 9 -or $report.correctness_cases -lt 40) { throw 'Unsupported or incomplete dependency report.' }
     $selection = Get-JsonSelection -Candidates @($report.json)
     $runtimeBaseline = @($report.runtime | Where-Object { $_.engine -ceq 'tokio' })
     if ($runtimeBaseline.Count -ne 1) { throw 'Runtime screening requires the Tokio baseline.' }
@@ -276,7 +280,8 @@ try {
         foreach ($case in $candidate.cases) {
             if (-not $runtimeCases.ContainsKey($case.name)) { throw 'Runtime candidate case differs from the common workload.' }
             $reference = $runtimeCases[$case.name]
-            if ($case.input_bytes -ne $reference.case.input_bytes -or $case.iterations -ne $reference.case.iterations) {
+            if ($case.input_bytes -ne $reference.case.input_bytes -or $case.iterations -ne $reference.case.iterations -or
+                $case.checksum -ne $reference.case.checksum) {
                 throw 'Runtime candidates must execute identical byte and operation counts.'
             }
             $median = Get-CaseMedian -Case $case

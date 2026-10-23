@@ -1,0 +1,5 @@
+# The opt-in dependency comparison resolves incompatible major/minor versions
+# through the independent JSON/runtime stacks. Clippy checks the workspace's
+# resolved graph even when those optional stacks are not enabled. Ordinary
+# production builds still compile only their selected dependency graph.
+allowed-duplicate-crates = ["hashbrown", "syn"]
