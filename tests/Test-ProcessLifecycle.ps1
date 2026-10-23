@@ -78,10 +78,22 @@ function New-Probe {
 }
 function Wait-Marker {
     [CmdletBinding()]
-    [OutputType([void])]
+    [OutputType([string])]
     param([string]$Path)
     $deadline = [Environment]::TickCount64 + 10000
-    while (-not [IO.File]::Exists($Path) -or [IO.File]::ReadAllText($Path).Length -eq 0) {
+    while ($true) {
+        if ([IO.File]::Exists($Path)) {
+            try {
+                # The marker becomes visible before WriteAllText closes its
+                # writer. Wait for that complete publication, then use this read.
+                $text = [IO.File]::ReadAllText($Path)
+                if ($text.Length -gt 0) { return $text }
+            } catch [IO.IOException] {
+                # Retry only Windows sharing/lock conflicts while the writer is
+                # publishing. Missing, corrupt or otherwise unreadable data fails.
+                if (($_.Exception.HResult -band 0xffff) -notin @(32, 33)) { throw }
+            }
+        }
         if ([Environment]::TickCount64 -ge $deadline) { throw "Synthetic process did not create marker: $Path" }
         Start-Sleep -Milliseconds 20
     }
@@ -90,9 +102,9 @@ function Get-TreeProcess {
     [CmdletBinding()]
     [OutputType([Diagnostics.Process])]
     param([string]$Marker)
-    Wait-Marker $Marker
-    Wait-Marker ($Marker + '.child')
-    foreach ($processId in [IO.File]::ReadAllText($Marker).Split(',')) { [Diagnostics.Process]::GetProcessById([int]$processId) }
+    $processIds = Wait-Marker $Marker
+    $null = Wait-Marker ($Marker + '.child')
+    foreach ($processId in $processIds.Split(',')) { [Diagnostics.Process]::GetProcessById([int]$processId) }
 }
 function Assert-TreeExited {
     [CmdletBinding()]
