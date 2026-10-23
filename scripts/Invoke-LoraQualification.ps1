@@ -135,7 +135,9 @@ function Invoke-PairedSample {
         $minimumAvailable = [Math]::Min($minimumAvailable, [long][SwiftBonsai.PhysicalMemory]::AvailableBytes())
         if ($minimumAvailable -lt 4GB) { throw 'Paired sample crossed the physical memory reserve at exit.' }
         $encoding = [Text.UTF8Encoding]::new($false, $true)
-        $text = [IO.File]::ReadAllText($stdout, $encoding)
+        # GetString preserves a leading U+FEFF if generated; ReadAllText would
+        # consume its UTF-8 bytes as an encoding preamble and change the capture.
+        $text = $encoding.GetString([IO.File]::ReadAllBytes($stdout))
         if ([string]::IsNullOrWhiteSpace($text)) { throw 'Paired native sample returned no captured response.' }
         $logText = [IO.File]::ReadAllText($stderr, $encoding)
         $timing = Read-BonsaiCompletionTiming $logText

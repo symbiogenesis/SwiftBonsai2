@@ -127,8 +127,10 @@ the expansion; it does not construct a dense vocabulary-by-embedding correction.
 Do not multiply that per-site bound by 128 as though all corrections remain live;
 actual overlap and storage recycling are determined by the graph allocator.
 
-The following designs preserve the stored adapter and intended operator. None is
-implemented or accepted yet:
+The following designs preserve the stored adapter and intended operator. Storage
+sharing is now implemented as a pinned source overlay with a passing focused
+native allocator/arithmetic regression. Graph reservation and fusion remain
+unimplemented. Model-level acceptance is still pending:
 
 1. **Reserve the configured graph once.**
    [Common initialization](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/common/common.cpp)
@@ -144,15 +146,18 @@ implemented or accepted yet:
    Startup allocation churn may affect peak accounting without establishing a
    persistent steady-state increment.
 
-2. **Share identical immutable B storage.** A read-only payload audit found all
+2. **Share identical immutable B storage (implemented source candidate).** A read-only payload audit found all
    129 B tensors byte-identical, each F32 `[1,5120]`, with SHA-256
    `1cdf553ae2623501140ec2e52c3dfa6a80d33fcfe6f91a6d3c4dcd5f887eeca0`.
    During adapter loading, key candidates by backend buffer type/device, dtype,
    exact shape/layout and content; confirm byte equality, then give each target
-   its own metadata view over one retained read-only B allocation. Do not alias
-   mutable tensors or across independent adapter lifetimes. This removes exactly
-   **2,621,440 bytes (2.5 MiB)** of duplicate payload for this artifact. It changes
-   no arithmetic and is a modest saving, not a solution to the larger diagnostic.
+   its own metadata view over one retained read-only B allocation. The
+   [pinned CPU overlay](prism-storage-overlay.md) implements this bounded policy
+   without sharing across independent adapter lifetimes. The focused native
+   backend regression verifies **2,621,440 fewer allocation bytes (2.5 MiB)** and
+   byte-identical matrix-operation outputs for this shape. The released runtime
+   is not replaced automatically. This changes no arithmetic and is a modest
+   saving, not a solution to the larger diagnostic.
 
 3. **Fuse rank-1 accumulation without changing A's reduction.** Keep the existing
    `t = mul_mat(A, original_cur)` node and backend dot-product order. A CPU-only

@@ -61,6 +61,11 @@ capture workflow and an independent TPS/quality gate scorer. A target Snapdragon
 CI runner, native correctness evidence and external human reviews are still
 required; no performance or quality parity is claimed from successful loading.
 
+A [pinned CPU source overlay](docs/prism-storage-overlay.md) now shares identical
+immutable LoRA B storage. Its native regression verifies a 2.5 MiB allocation
+saving and unchanged matrix-operation outputs. Whole-model TPS and quality remain
+gated; the installed publisher runtime is retained during qualification.
+
 ```powershell
 ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -CheckOnly
 ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data

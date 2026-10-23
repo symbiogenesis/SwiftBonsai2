@@ -11,7 +11,9 @@ greedy sampling, a 512-token output cap, 8K FP16 context, batch 128/microbatch 6
 four CPU threads and the exact model/runtime/adapter identities. Each arm starts
 a fresh process. Every prompt must independently meet a median decode-throughput
 ratio of at least 1.0. Each applicable quality dimension must independently meet
-the baseline median and score at least 3/4. Reduced refusals, shorter responses
+the baseline median and score at least 3/4. An explicitly reviewed adapter refusal
+on any of these benign prompts rejects quality acceptance even if numeric scores
+are high. Reduced refusals, shorter responses
 and memory savings cannot compensate for failure of either primary criterion.
 
 A modest memory premium is permitted: the median peak Job-commit increment for
@@ -73,7 +75,8 @@ or statistical equivalence. Broader creative/comfort checks remain required.
 
 ## Independent review and correctness evidence
 
-`evidence.json` is hash-bound to the contract and matched controls. It deliberately
+`evidence.json` is hash-bound to the LF-normalized UTF-8 contract and matched
+controls, so Windows/Linux checkout line endings do not invalidate a review. It deliberately
 records pending SSM basis verification, unavailable zero-scale logits and
 unverified nonzero-logits application. Completion exposes no logits or generated
 token IDs. Response identity is checked, but cannot substitute for those native

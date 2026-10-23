@@ -105,6 +105,12 @@ if ($Case -ceq 'Scoring') {
     $result = Test-BonsaiLoraQualification -Evidence $incomplete.Evidence -Review $incomplete.Review
     Assert ($result.Status -ceq 'pending' -and $result.Gates.Quality -ceq 'pending') 'A truncated answer was treated as qualified output.'
 
+    $refusal = Copy-Fixture $fixture
+    $refusal.Review.reviews[1].refused = $true
+    $result = Test-BonsaiLoraQualification -Evidence $refusal.Evidence -Review $refusal.Review
+    Assert ($result.Status -ceq 'rejected' -and $result.Gates.Quality -ceq 'failed' -and
+        $result.Prompts[0].adapterReviewedRefusals -eq 1) 'An explicitly reviewed unwanted refusal passed on high numeric scores.'
+
     $regression = Copy-Fixture $fixture
     foreach ($sample in $regression.Evidence.samples) {
         if ($sample.arm -ceq 'adapter') { $sample.decodeMilliseconds = if ($sample.promptId -ceq 'general-logic') { 11000 } else { 1000 } }

@@ -100,4 +100,4 @@ function Get-BonsaiResponseDigest {
     [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Text)))
 }
 
-Export-ModuleMember -Function Get-BonsaiLoraEvaluationArgument, Read-BonsaiCompletionTiming, Read-BonsaiCompletionTokenCount, Get-BonsaiResponseDigest
+Microsoft.PowerShell.Core\Export-ModuleMember -Function Get-BonsaiLoraEvaluationArgument, Read-BonsaiCompletionTiming, Read-BonsaiCompletionTokenCount, Get-BonsaiResponseDigest

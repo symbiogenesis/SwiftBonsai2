@@ -59,7 +59,7 @@ function Get-BonsaiQualificationDigest {
 
 function Get-BonsaiLoraQualificationPlan {
     <# .SYNOPSIS
-    Returns the committed contract, its raw-file digest, and the fixed paired schedule.
+    Returns the committed contract, its LF-normalized UTF-8 digest, and the fixed paired schedule.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -71,8 +71,13 @@ function Get-BonsaiLoraQualificationPlan {
         $contract.execution.seed -ne 42 -or $contract.execution.minimumDecodeTokens -ne 16 -or
         $contract.execution.githubActionsRequired -ne $true -or $contract.execution.runnerArchitecture -cne 'Arm64' -or
         $contract.execution.deviceModel -cne 'Snapdragon X Elite' -or $contract.controls.maxOutputTokens -ne 512 -or
+        $contract.controls.contextTokens -ne 8192 -or $contract.controls.batchTokens -ne 128 -or
+        $contract.controls.microbatchTokens -ne 64 -or $contract.controls.threads -ne 4 -or $contract.controls.seed -ne 42 -or
+        $contract.controls.sampler.temperature -ne 0 -or $contract.controls.sampler.topP -ne 1 -or
+        $contract.controls.sampler.topK -ne 1 -or $contract.controls.sampler.minP -ne 0 -or $contract.controls.sampler.repeatPenalty -ne 1 -or
         $contract.gates.minimumPerPromptMedianTpsRatio -ne 1 -or $contract.gates.minimumQualityScore -ne 3 -or
         $contract.gates.minimumPerPromptDimensionMedianQualityDelta -ne 0 -or
+        $contract.gates.rejectUnwantedAdapterRefusals -ne $true -or
         $contract.gates.maximumPeakJobMemoryBytes -ne 12GB -or
         $contract.gates.maximumPerPromptMedianJobMemoryPremiumBytes -ne 768MB -or
         $contract.gates.minimumAvailablePhysicalBytes -ne 4GB -or
@@ -108,7 +113,9 @@ function Get-BonsaiLoraQualificationPlan {
     }
     return [pscustomobject]@{
         Contract = $contract
-        ContractSha256 = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([IO.File]::ReadAllBytes($path)))
+        # Git can materialize JSON as CRLF on Windows and LF on Linux. Contract
+        # identity must survive that checkout conversion for external review.
+        ContractSha256 = Get-BonsaiQualificationDigest -Text ([IO.File]::ReadAllText($path).Replace("`r`n", "`n"))
         Schedule = $schedule.ToArray()
     }
 }
@@ -325,6 +332,12 @@ function Test-BonsaiLoraQualification {
     foreach ($result in $promptResults) {
         $prompt = @($contract.prompts | Where-Object { $_.id -ceq $result.promptId })[0]
         $promptSamples = @($Evidence.samples | Where-Object { $_.promptId -ceq $prompt.id })
+        $result.baselineReviewedRefusals = @($promptSamples | Where-Object { $_.arm -ceq 'baseline' -and $reviews.ContainsKey($_.sampleId) -and $reviews[$_.sampleId].refused }).Count
+        $result.adapterReviewedRefusals = @($promptSamples | Where-Object { $_.arm -ceq 'adapter' -and $reviews.ContainsKey($_.sampleId) -and $reviews[$_.sampleId].refused }).Count
+        if ($result.adapterReviewedRefusals -gt 0) {
+            $qualityPassed = $false; $qualityFailed = $true
+            $rejections.Add("Unwanted adapter refusal on a fixed benign prompt: $($prompt.id).")
+        }
         $missing = @($promptSamples | Where-Object { -not $reviews.ContainsKey($_.sampleId) -or -not $reviews[$_.sampleId].answerComplete })
         if ($missing.Count) { $qualityPassed = $false; $qualityPending = $true; $pending.Add("Complete external human quality review is missing: $($prompt.id)."); continue }
         $dimensions = @('instructionFollowing', 'correctness', 'coherence')

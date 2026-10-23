@@ -30,7 +30,7 @@
     "fullGgufInspection": "config/swift.metadata.json",
     "ternarySymbolCensus": "config/swift.bitcos-census.json",
     "referenceBitcosCodec": "single-block-exact-byte-round-trips; no runtime integration",
-    "cpuLoading": "memory-admission-passed; native-fastfail-0xc0000409-before-token-output",
+    "cpuLoading": "bounded-16-token-native-decode-completed; PQ2/current-repacked-PTQ1 with and without approved adapter; quality and TPS unqualified",
     "dailySecurity": "not-qualified",
     "devicePerformance": "pending-self-hosted-ci"
   }

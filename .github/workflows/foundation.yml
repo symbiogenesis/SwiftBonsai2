@@ -9,6 +9,48 @@ concurrency:
   group: foundation-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  prism:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Verify pinned source and build the actual storage overlay and native regression
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ([Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') { throw 'Expected native ARM64 source build.' }
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1') -Force
+          $lock = Get-Content -Raw -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'tools/prism/source.lock.json') | ConvertFrom-Json
+          $lane = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-PrismSource-' + [guid]::NewGuid().ToString('N'))
+          [IO.Directory]::CreateDirectory($lane) | Out-Null
+          $archive = Join-Path $lane 'prism-source.zip'
+          $null = Receive-LockedArtifact -Uri $lock.ArchiveUrl -Path $archive -Bytes $lock.ArchiveBytes -Sha256 $lock.ArchiveSha256 -TimeoutSeconds 600
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismOverlay.ps1') -SourceArchive $archive
+          $result = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-PrismEngine.ps1') -SourceArchive $archive -BuildMode All -Generator Ninja
+          $result | ConvertTo-Json -Depth 10
+          "BONSAI_PRISM_EVIDENCE=$($result.EvidenceDirectory)" >> $env:GITHUB_ENV
+          ctest --test-dir (Join-Path $result.EvidenceDirectory 'build-probe') --output-on-failure --timeout 60
+          if ($LASTEXITCODE) { throw 'Native immutable B-sharing regression failed.' }
+          'Pinned overlaid engine compiled; native storage/allocation/arithmetic correctness passed. Model TPS/quality remains unqualified.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Retain source-build receipts and technical logs
+        if: always() && env.BONSAI_PRISM_EVIDENCE != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: prism-storage-overlay-${{ github.run_id }}
+          path: |
+            ${{ env.BONSAI_PRISM_EVIDENCE }}/build-receipt.json
+            ${{ env.BONSAI_PRISM_EVIDENCE }}/command-*.log
+            ${{ env.BONSAI_PRISM_EVIDENCE }}/build-probe/Testing/Temporary/LastTest.log
+          if-no-files-found: error
   bitcos:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
@@ -173,7 +215,8 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraQualification.ps1') -Case All
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraQualification.ps1') -Case Scoring
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraQualification.ps1') -Case Rejection
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraEvaluation.ps1') -Case All
           $plan = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-LoraQualification.ps1') -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime') -PlanOnly
           if ($plan.ModelProcessStarted -or $plan.PairedSamples -ne 24 -or $plan.ZeroScaleSamples -ne 4) { throw 'Invalid nonlaunching LoRA qualification plan.' }
