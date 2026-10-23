@@ -11,10 +11,19 @@ fn generate_header() -> Result<(), Box<dyn Error>> {
     let configuration = manifest.join("cbindgen.toml");
     println!("cargo:rerun-if-changed={}", source.display());
     println!("cargo:rerun-if-changed={}", configuration.display());
-    let bindings = cbindgen::Builder::new()
+    let mut generator = cbindgen::Builder::new()
         .with_src(source)
-        .with_config(cbindgen::Config::from_file(configuration)?)
-        .generate()?;
+        .with_config(cbindgen::Config::from_file(configuration)?);
+    // cbindgen also parses the loader's imported ggml declarations. Only the
+    // Rust-owned loader exports belong in the generated engine-facing ABI.
+    let declarations = generator.clone().generate()?;
+    for symbol in declarations
+        .dynamic_symbols_names()
+        .filter(|symbol| !symbol.starts_with("bonsai_prism_loader_"))
+    {
+        generator = generator.exclude_item(symbol);
+    }
+    let bindings = generator.generate()?;
     let mut exports: Vec<_> = bindings.dynamic_symbols_names().collect();
     exports.sort_unstable();
     if exports
@@ -28,7 +37,9 @@ fn generate_header() -> Result<(), Box<dyn Error>> {
             "bonsai_prism_loader_shared_tensors",
         ]
     {
-        return Err("generated loader ABI does not match the public loader exports".into());
+        return Err(
+            format!("generated loader ABI differs from the public exports: {exports:?}").into(),
+        );
     }
     let output = PathBuf::from(env::var_os("OUT_DIR").ok_or("missing build output path")?);
     let mut header = Vec::new();
