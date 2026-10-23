@@ -187,6 +187,15 @@ separate from storage sharing, allocation reuse and validated execution fusion.
   baseline/control. Until this gate passes, the current explicit development
   assessment switch does not certify or enable the intended standard profile.
 
+The owner accepts a modest, bounded RAM premium for this standard LoRA. Require
+the complete profile to fit its memory/comfort envelope rather than requiring
+the adapter to use exactly the baseline's RAM. Continue validated lossless
+storage/allocation improvements. Judge overall parity through useful completed
+work: output quality, elapsed time, generated/reasoning tokens and retries,
+including tokens spent on refusals and discarded generations. Fewer refusals
+may improve quality or real-world token usage; this is a testable possible
+benefit, not an assumed gain or a substitute for general capability checks.
+
 Keep all benchmarks on CI. Pin model, adapter, runtime, template, sampler, context,
 batching, threads and deterministic seed; record the complete configuration.
 First compare no adapter against loaded adapter at scale zero, checking token

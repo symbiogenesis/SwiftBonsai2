@@ -37,7 +37,13 @@ reference below is retained for reproducibility.
   Record prefill, first-token latency, decode throughput, tokens/time/retries to
   useful completed output, memory, power/thermals and failures. Predeclare
   workloads, quality rubric and parity tolerances; retain per-metric regressions
-  rather than hiding them in an aggregate score. Abliteration and this comparison
+  rather than hiding them in an aggregate score. A modest, bounded LoRA RAM
+  premium is acceptable within the resource envelope; equal RAM usage is not an
+  acceptance requirement. Evaluate useful completed work, including refusal and
+  retry tokens/time: improved answers or fewer wasted generations may improve
+  overall performance even with added adapter computation. Continue lossless
+  overhead reduction without assuming those gains are already demonstrated.
+  Abliteration and this comparison
   are part of standard-profile acceptance, not optional enhancements. Keep the
   no-LoRA path as the control and diagnostic reference. Loading alone does not
   complete this TODO. See [required qualification](docs/swift-lora.md#required-standard-profile-qualification).
