@@ -1,0 +1,2908 @@
+{
+  "provenance": "Frozen from PowerShell scorer at 0a7806e65fbf46a6e71867e4d5ecba8d0ba5f5d8 before migration; synthetic evidence only.",
+  "plan": {
+    "Contract": {
+      "schemaVersion": 1,
+      "name": "swift-standard-abliteration-paired-qualification",
+      "purpose": "Mandatory matched tokens-per-second and independently human-reviewed output-quality gate before the approved LoRA becomes the standard profile.",
+      "execution": {
+        "githubActionsRequired": true,
+        "runnerArchitecture": "Arm64",
+        "deviceModel": "Snapdragon X Elite",
+        "repeatCount": 3,
+        "ordering": "alternate arm order within each prompt and repeat; fresh process for every sample",
+        "seed": 42,
+        "minimumDecodeTokens": 16,
+        "metricDefinition": "decodeTokens / (decodeMilliseconds / 1000); both values from the same pinned native eval timing record, excluding prompt evaluation",
+        "memoryMetric": "Windows peak Job committed bytes; excludes mapped weight pages and is not total physical RAM"
+      },
+      "controls": {
+        "runtimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+        "templateSha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+        "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42",
+        "contextTokens": 8192,
+        "batchTokens": 128,
+        "microbatchTokens": 64,
+        "threads": 4,
+        "seed": 42,
+        "maxOutputTokens": 512,
+        "sampler": {
+          "temperature": 0,
+          "topP": 1,
+          "topK": 1,
+          "minP": 0,
+          "repeatPenalty": 1
+        }
+      },
+      "representations": {
+        "PQ2_0": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+        "current-repacked-PTQ1_0": "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5"
+      },
+      "gates": {
+        "minimumPerPromptMedianTpsRatio": 1.0,
+        "minimumQualityScore": 3,
+        "minimumPerPromptDimensionMedianQualityDelta": 0,
+        "rejectUnwantedAdapterRefusals": true,
+        "maximumPeakJobMemoryBytes": 12884901888,
+        "maximumPerPromptMedianJobMemoryPremiumBytes": 805306368,
+        "minimumAvailablePhysicalBytes": 4294967296,
+        "basisVerificationRequired": true,
+        "zeroScaleResponseAndLogitsIdentityRequired": true,
+        "nonzeroLogitsApplicationRequired": true,
+        "qualityAggregation": "Every prompt and each applicable dimension independently passes; reduced refusals or total generated tokens never compensate for throughput or quality regression."
+      },
+      "rubric": {
+        "scale": "0 unusable; 1 major defects; 2 material defects; 3 useful with minor defects; 4 fully satisfies the prompt with no identified defect",
+        "dimensions": {
+          "instructionFollowing": "Required content, constraints, structure, and requested length are respected.",
+          "correctness": "Factual and logical claims are correct; creative writing is internally consistent.",
+          "coherence": "The final answer is clear, complete, relevant, and non-repetitive.",
+          "creativeUsefulness": "Creative prompts receive specific, engaging, useful writing rather than generic filler."
+        },
+        "humanReview": "An external human must review the exact hashed captured response and record a reason for each sample. The scorer does not manufacture scores or authenticate a reviewer identity. Incomplete or missing reviews stay pending."
+      },
+      "prompts": [
+        {
+          "id": "general-logic",
+          "category": "general",
+          "text": "A library has 120 books. On Monday, one quarter are borrowed. On Tuesday, 18 are returned and 12 are borrowed. On Wednesday, half of the books currently in the library are borrowed. Explain the calculation step by step, state how many books remain in the library, and give one independent check. Use 100 to 160 words.",
+          "reviewNotes": "Correct final count: 48. Monday 90, Tuesday 96, Wednesday 48. A useful check accounts for 72 books outside the library."
+        },
+        {
+          "id": "general-explanation",
+          "category": "general",
+          "text": "Explain to a curious teenager why a metal spoon and a wooden spoon at the same room temperature can feel different to the touch. Distinguish temperature from heat transfer, mention the direction of energy flow, and give one safe everyday demonstration. Use 100 to 160 words.",
+          "reviewNotes": "Metal conducts heat from a warmer hand faster; room-temperature objects can share temperature while feeling different. A safe demonstration avoids hot surfaces."
+        },
+        {
+          "id": "creative-scene",
+          "category": "creative",
+          "text": "Write a complete 120 to 170 word scene about an elderly lighthouse keeper who discovers a handwritten letter from their future self. Include a concrete sensory detail, one line of dialogue, and a hopeful ending. Avoid explaining the time travel mechanism.",
+          "reviewNotes": "Check all explicit constraints, internal consistency, specific sensory detail, dialogue, and a complete hopeful ending."
+        },
+        {
+          "id": "creative-plan",
+          "category": "creative",
+          "text": "Design a welcoming, inexpensive two-hour neighborhood event where strangers exchange practical skills. Give the event a memorable name, a timed schedule totaling exactly 120 minutes, three concrete skill examples, and a way for a shy newcomer to participate. Use 120 to 180 words.",
+          "reviewNotes": "The schedule totals exactly 120 minutes, examples are practical, cost is modest, and newcomer participation is concrete and welcoming."
+        }
+      ]
+    },
+    "ContractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+    "Schedule": [
+      {
+        "sampleId": "s0001",
+        "promptId": "general-logic",
+        "repeat": 1,
+        "arm": "baseline",
+        "order": 1,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0002",
+        "promptId": "general-logic",
+        "repeat": 1,
+        "arm": "adapter",
+        "order": 2,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0003",
+        "promptId": "general-logic",
+        "repeat": 2,
+        "arm": "adapter",
+        "order": 3,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0004",
+        "promptId": "general-logic",
+        "repeat": 2,
+        "arm": "baseline",
+        "order": 4,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0005",
+        "promptId": "general-logic",
+        "repeat": 3,
+        "arm": "baseline",
+        "order": 5,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0006",
+        "promptId": "general-logic",
+        "repeat": 3,
+        "arm": "adapter",
+        "order": 6,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0007",
+        "promptId": "general-explanation",
+        "repeat": 1,
+        "arm": "adapter",
+        "order": 7,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0008",
+        "promptId": "general-explanation",
+        "repeat": 1,
+        "arm": "baseline",
+        "order": 8,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0009",
+        "promptId": "general-explanation",
+        "repeat": 2,
+        "arm": "baseline",
+        "order": 9,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0010",
+        "promptId": "general-explanation",
+        "repeat": 2,
+        "arm": "adapter",
+        "order": 10,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0011",
+        "promptId": "general-explanation",
+        "repeat": 3,
+        "arm": "adapter",
+        "order": 11,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0012",
+        "promptId": "general-explanation",
+        "repeat": 3,
+        "arm": "baseline",
+        "order": 12,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0013",
+        "promptId": "creative-scene",
+        "repeat": 1,
+        "arm": "baseline",
+        "order": 13,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0014",
+        "promptId": "creative-scene",
+        "repeat": 1,
+        "arm": "adapter",
+        "order": 14,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0015",
+        "promptId": "creative-scene",
+        "repeat": 2,
+        "arm": "adapter",
+        "order": 15,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0016",
+        "promptId": "creative-scene",
+        "repeat": 2,
+        "arm": "baseline",
+        "order": 16,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0017",
+        "promptId": "creative-scene",
+        "repeat": 3,
+        "arm": "baseline",
+        "order": 17,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0018",
+        "promptId": "creative-scene",
+        "repeat": 3,
+        "arm": "adapter",
+        "order": 18,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0019",
+        "promptId": "creative-plan",
+        "repeat": 1,
+        "arm": "adapter",
+        "order": 19,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0020",
+        "promptId": "creative-plan",
+        "repeat": 1,
+        "arm": "baseline",
+        "order": 20,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0021",
+        "promptId": "creative-plan",
+        "repeat": 2,
+        "arm": "baseline",
+        "order": 21,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0022",
+        "promptId": "creative-plan",
+        "repeat": 2,
+        "arm": "adapter",
+        "order": 22,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0023",
+        "promptId": "creative-plan",
+        "repeat": 3,
+        "arm": "adapter",
+        "order": 23,
+        "seed": 42
+      },
+      {
+        "sampleId": "s0024",
+        "promptId": "creative-plan",
+        "repeat": 3,
+        "arm": "baseline",
+        "order": 24,
+        "seed": 42
+      }
+    ]
+  },
+  "controlVectors": [
+    {
+      "controls": {
+        "runtimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+        "templateSha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+        "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42",
+        "contextTokens": 8192,
+        "batchTokens": 128,
+        "microbatchTokens": 64,
+        "threads": 4,
+        "seed": 42,
+        "maxOutputTokens": 512,
+        "sampler": {
+          "temperature": 0,
+          "topP": 1,
+          "topK": 1,
+          "minP": 0,
+          "repeatPenalty": 1
+        },
+        "modelSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+        "weightRepresentation": "PQ2_0"
+      },
+      "canonicalJson": "{\"modelSha256\":\"5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5\",\"weightRepresentation\":\"PQ2_0\",\"adapterSha256\":\"f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42\",\"batchTokens\":128,\"contextTokens\":8192,\"maxOutputTokens\":512,\"microbatchTokens\":64,\"runtimeCommit\":\"73bfe6cc485554822f80c473a3c0c4f25e80f41b\",\"sampler\":{\"minP\":0.0,\"repeatPenalty\":1.0,\"temperature\":0.0,\"topK\":1.0,\"topP\":1.0},\"seed\":42,\"templateSha256\":\"c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041\",\"threads\":4}",
+      "sha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3"
+    },
+    {
+      "controls": {
+        "runtimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+        "templateSha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+        "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42",
+        "contextTokens": 8192,
+        "batchTokens": 128,
+        "microbatchTokens": 64,
+        "threads": 4,
+        "seed": 42,
+        "maxOutputTokens": 512,
+        "sampler": {
+          "temperature": 0,
+          "topP": 1,
+          "topK": 1,
+          "minP": 0,
+          "repeatPenalty": 1
+        },
+        "modelSha256": "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5",
+        "weightRepresentation": "current-repacked-PTQ1_0"
+      },
+      "canonicalJson": "{\"modelSha256\":\"e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5\",\"weightRepresentation\":\"current-repacked-PTQ1_0\",\"adapterSha256\":\"f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42\",\"batchTokens\":128,\"contextTokens\":8192,\"maxOutputTokens\":512,\"microbatchTokens\":64,\"runtimeCommit\":\"73bfe6cc485554822f80c473a3c0c4f25e80f41b\",\"sampler\":{\"minP\":0.0,\"repeatPenalty\":1.0,\"temperature\":0.0,\"topK\":1.0,\"topP\":1.0},\"seed\":42,\"templateSha256\":\"c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041\",\"threads\":4}",
+      "sha256": "ad442fb2bf37cbc2d6555421d386da6c11b6cd6509c522c78f6ba978f138bc92"
+    }
+  ],
+  "textVectors": [
+    {
+      "text": "",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "text": "exact",
+      "sha256": "fa79d4746c21cd960a17b92db8976ddef95a7e20b590721f8e0fa7847a05e486"
+    },
+    {
+      "text": "exact\n",
+      "sha256": "8e266f4266798896afd029fd0502d7ced391c612da600485ff68fa04c984b630"
+    },
+    {
+      "text": "﻿Unicode ☃ é\r\n",
+      "sha256": "58d43048191ed8b50b28da1e4d0d9a81af0d1500247020e35b2012a66da57a32"
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "accepted",
+      "evidence": {
+        "execution": {
+          "githubActions": true,
+          "deviceModel": "Snapdragon X Elite",
+          "runnerArchitecture": "Arm64",
+          "runnerName": "synthetic",
+          "runUrl": "https://github.com/example/synthetic/actions/runs/123"
+        },
+        "contractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "samples": [
+          {
+            "sampleId": "s0001",
+            "promptId": "general-logic",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 1,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 1.",
+            "responseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3"
+          },
+          {
+            "sampleId": "s0002",
+            "promptId": "general-logic",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 2,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 1.",
+            "responseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3"
+          },
+          {
+            "sampleId": "s0003",
+            "promptId": "general-logic",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 3,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 2.",
+            "responseSha256": "e4f95c609e538df514b958ca4e2b78c2b33aeddb117ec255daab2fd937c9cc08"
+          },
+          {
+            "sampleId": "s0004",
+            "promptId": "general-logic",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 4,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 2.",
+            "responseSha256": "e4f95c609e538df514b958ca4e2b78c2b33aeddb117ec255daab2fd937c9cc08"
+          },
+          {
+            "sampleId": "s0005",
+            "promptId": "general-logic",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 5,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 3.",
+            "responseSha256": "c5f7de1421906e03f93f5c28d148bb930aed2b2fc89df0000240e059d098187d"
+          },
+          {
+            "sampleId": "s0006",
+            "promptId": "general-logic",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 6,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 3.",
+            "responseSha256": "c5f7de1421906e03f93f5c28d148bb930aed2b2fc89df0000240e059d098187d"
+          },
+          {
+            "sampleId": "s0007",
+            "promptId": "general-explanation",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 7,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 1.",
+            "responseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778"
+          },
+          {
+            "sampleId": "s0008",
+            "promptId": "general-explanation",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 8,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 1.",
+            "responseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778"
+          },
+          {
+            "sampleId": "s0009",
+            "promptId": "general-explanation",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 9,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 2.",
+            "responseSha256": "238c57b4159fc4142503eddfe8632949a13405473b3e091caa71a3dcd62b169f"
+          },
+          {
+            "sampleId": "s0010",
+            "promptId": "general-explanation",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 10,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 2.",
+            "responseSha256": "238c57b4159fc4142503eddfe8632949a13405473b3e091caa71a3dcd62b169f"
+          },
+          {
+            "sampleId": "s0011",
+            "promptId": "general-explanation",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 11,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 3.",
+            "responseSha256": "dab7a5a158f88681683f3bee213359662e2ca4bcd026dbdb12036fbc7e6d7e77"
+          },
+          {
+            "sampleId": "s0012",
+            "promptId": "general-explanation",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 12,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 3.",
+            "responseSha256": "dab7a5a158f88681683f3bee213359662e2ca4bcd026dbdb12036fbc7e6d7e77"
+          },
+          {
+            "sampleId": "s0013",
+            "promptId": "creative-scene",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 13,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 1.",
+            "responseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf"
+          },
+          {
+            "sampleId": "s0014",
+            "promptId": "creative-scene",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 14,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 1.",
+            "responseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf"
+          },
+          {
+            "sampleId": "s0015",
+            "promptId": "creative-scene",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 15,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 2.",
+            "responseSha256": "1f9febaef600cb569b63805005d0d1e5334690204c05556451781536e267bc6d"
+          },
+          {
+            "sampleId": "s0016",
+            "promptId": "creative-scene",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 16,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 2.",
+            "responseSha256": "1f9febaef600cb569b63805005d0d1e5334690204c05556451781536e267bc6d"
+          },
+          {
+            "sampleId": "s0017",
+            "promptId": "creative-scene",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 17,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 3.",
+            "responseSha256": "e1ac8bef4eed78e491313d0b97117d1b9331969cebddaef68df46186aa3cb488"
+          },
+          {
+            "sampleId": "s0018",
+            "promptId": "creative-scene",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 18,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 3.",
+            "responseSha256": "e1ac8bef4eed78e491313d0b97117d1b9331969cebddaef68df46186aa3cb488"
+          },
+          {
+            "sampleId": "s0019",
+            "promptId": "creative-plan",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 19,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 1.",
+            "responseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687"
+          },
+          {
+            "sampleId": "s0020",
+            "promptId": "creative-plan",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 20,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 1.",
+            "responseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687"
+          },
+          {
+            "sampleId": "s0021",
+            "promptId": "creative-plan",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 21,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 2.",
+            "responseSha256": "b9bd4946027ca748cb8cb015cd5bea9c5e22b1bc8c7322e634d5d61d62fe82da"
+          },
+          {
+            "sampleId": "s0022",
+            "promptId": "creative-plan",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 22,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 2.",
+            "responseSha256": "b9bd4946027ca748cb8cb015cd5bea9c5e22b1bc8c7322e634d5d61d62fe82da"
+          },
+          {
+            "sampleId": "s0023",
+            "promptId": "creative-plan",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 23,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 3.",
+            "responseSha256": "33f1f3db31d393f7d8357ad4768481df639f3db102b2e9608a68da8d35ebda0f"
+          },
+          {
+            "sampleId": "s0024",
+            "promptId": "creative-plan",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 24,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 3.",
+            "responseSha256": "33f1f3db31d393f7d8357ad4768481df639f3db102b2e9608a68da8d35ebda0f"
+          }
+        ],
+        "runId": "synthetic-unit-fixture",
+        "controls": {
+          "runtimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+          "templateSha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+          "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42",
+          "contextTokens": 8192,
+          "batchTokens": 128,
+          "microbatchTokens": 64,
+          "threads": 4,
+          "seed": 42,
+          "maxOutputTokens": 512,
+          "sampler": {
+            "temperature": 0,
+            "topP": 1,
+            "topK": 1,
+            "minP": 0,
+            "repeatPenalty": 1
+          },
+          "weightRepresentation": "PQ2_0",
+          "modelSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5"
+        },
+        "zeroScaleChecks": [
+          {
+            "promptId": "general-logic",
+            "seed": 42,
+            "baselineResponseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3",
+            "zeroScaleResponseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3",
+            "baselineLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44",
+            "zeroScaleLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44"
+          },
+          {
+            "promptId": "general-explanation",
+            "seed": 42,
+            "baselineResponseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778",
+            "zeroScaleResponseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778",
+            "baselineLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44",
+            "zeroScaleLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44"
+          },
+          {
+            "promptId": "creative-scene",
+            "seed": 42,
+            "baselineResponseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf",
+            "zeroScaleResponseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf",
+            "baselineLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44",
+            "zeroScaleLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44"
+          },
+          {
+            "promptId": "creative-plan",
+            "seed": 42,
+            "baselineResponseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687",
+            "zeroScaleResponseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687",
+            "baselineLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44",
+            "zeroScaleLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44"
+          }
+        ],
+        "nonzeroAdapterCheck": {
+          "status": "verified",
+          "logitsChanged": true,
+          "evidenceSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44",
+          "scale": 1,
+          "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42"
+        },
+        "basis": {
+          "status": "verified",
+          "reviewerId": "synthetic-fixture",
+          "note": "Synthetic operator proof for unit checks only.",
+          "evidenceSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44"
+        },
+        "schemaVersion": 1
+      },
+      "review": {
+        "runId": "synthetic-unit-fixture",
+        "contractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "source": "external-human-review",
+        "attestation": "I reviewed the exact captured responses without automated scoring.",
+        "schemaVersion": 1,
+        "reviews": [
+          {
+            "sampleId": "s0001",
+            "responseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0002",
+            "responseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0003",
+            "responseSha256": "e4f95c609e538df514b958ca4e2b78c2b33aeddb117ec255daab2fd937c9cc08",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0004",
+            "responseSha256": "e4f95c609e538df514b958ca4e2b78c2b33aeddb117ec255daab2fd937c9cc08",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0005",
+            "responseSha256": "c5f7de1421906e03f93f5c28d148bb930aed2b2fc89df0000240e059d098187d",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0006",
+            "responseSha256": "c5f7de1421906e03f93f5c28d148bb930aed2b2fc89df0000240e059d098187d",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0007",
+            "responseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0008",
+            "responseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0009",
+            "responseSha256": "238c57b4159fc4142503eddfe8632949a13405473b3e091caa71a3dcd62b169f",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0010",
+            "responseSha256": "238c57b4159fc4142503eddfe8632949a13405473b3e091caa71a3dcd62b169f",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0011",
+            "responseSha256": "dab7a5a158f88681683f3bee213359662e2ca4bcd026dbdb12036fbc7e6d7e77",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0012",
+            "responseSha256": "dab7a5a158f88681683f3bee213359662e2ca4bcd026dbdb12036fbc7e6d7e77",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0013",
+            "responseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0014",
+            "responseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0015",
+            "responseSha256": "1f9febaef600cb569b63805005d0d1e5334690204c05556451781536e267bc6d",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0016",
+            "responseSha256": "1f9febaef600cb569b63805005d0d1e5334690204c05556451781536e267bc6d",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0017",
+            "responseSha256": "e1ac8bef4eed78e491313d0b97117d1b9331969cebddaef68df46186aa3cb488",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0018",
+            "responseSha256": "e1ac8bef4eed78e491313d0b97117d1b9331969cebddaef68df46186aa3cb488",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0019",
+            "responseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0020",
+            "responseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0021",
+            "responseSha256": "b9bd4946027ca748cb8cb015cd5bea9c5e22b1bc8c7322e634d5d61d62fe82da",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0022",
+            "responseSha256": "b9bd4946027ca748cb8cb015cd5bea9c5e22b1bc8c7322e634d5d61d62fe82da",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0023",
+            "responseSha256": "33f1f3db31d393f7d8357ad4768481df639f3db102b2e9608a68da8d35ebda0f",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0024",
+            "responseSha256": "33f1f3db31d393f7d8357ad4768481df639f3db102b2e9608a68da8d35ebda0f",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          }
+        ]
+      },
+      "expected": {
+        "SchemaVersion": 1,
+        "RunId": "synthetic-unit-fixture",
+        "ContractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "ControlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+        "Status": "accepted",
+        "StandardProfileMayEnable": true,
+        "Gates": {
+          "Throughput": "passed",
+          "Quality": "passed",
+          "MemoryAllowance": "passed",
+          "AuthoringBasis": "passed",
+          "ZeroScaleIdentity": "passed",
+          "NonzeroApplication": "passed"
+        },
+        "Prompts": [
+          {
+            "promptId": "general-logic",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [
+              {
+                "dimension": "instructionFollowing",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "correctness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "coherence",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              }
+            ],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 0
+          },
+          {
+            "promptId": "general-explanation",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [
+              {
+                "dimension": "instructionFollowing",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "correctness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "coherence",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              }
+            ],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 0
+          },
+          {
+            "promptId": "creative-scene",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [
+              {
+                "dimension": "instructionFollowing",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "correctness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "coherence",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "creativeUsefulness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              }
+            ],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 0
+          },
+          {
+            "promptId": "creative-plan",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [
+              {
+                "dimension": "instructionFollowing",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "correctness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "coherence",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "creativeUsefulness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              }
+            ],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 0
+          }
+        ],
+        "Rejections": [],
+        "Pending": [],
+        "Scope": "Matched pinned representation only. Job commit is not total RAM. Human review identity is recorded, not authenticated. No serving configuration was changed."
+      }
+    },
+    {
+      "name": "pending",
+      "evidence": {
+        "execution": {
+          "githubActions": true,
+          "deviceModel": "Snapdragon X Elite",
+          "runnerArchitecture": "Arm64",
+          "runnerName": "synthetic",
+          "runUrl": "https://github.com/example/synthetic/actions/runs/123"
+        },
+        "contractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "samples": [
+          {
+            "sampleId": "s0001",
+            "promptId": "general-logic",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 1,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 1.",
+            "responseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3"
+          },
+          {
+            "sampleId": "s0002",
+            "promptId": "general-logic",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 2,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 1.",
+            "responseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3"
+          },
+          {
+            "sampleId": "s0003",
+            "promptId": "general-logic",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 3,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 2.",
+            "responseSha256": "e4f95c609e538df514b958ca4e2b78c2b33aeddb117ec255daab2fd937c9cc08"
+          },
+          {
+            "sampleId": "s0004",
+            "promptId": "general-logic",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 4,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 2.",
+            "responseSha256": "e4f95c609e538df514b958ca4e2b78c2b33aeddb117ec255daab2fd937c9cc08"
+          },
+          {
+            "sampleId": "s0005",
+            "promptId": "general-logic",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 5,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 3.",
+            "responseSha256": "c5f7de1421906e03f93f5c28d148bb930aed2b2fc89df0000240e059d098187d"
+          },
+          {
+            "sampleId": "s0006",
+            "promptId": "general-logic",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 6,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 3.",
+            "responseSha256": "c5f7de1421906e03f93f5c28d148bb930aed2b2fc89df0000240e059d098187d"
+          },
+          {
+            "sampleId": "s0007",
+            "promptId": "general-explanation",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 7,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 1.",
+            "responseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778"
+          },
+          {
+            "sampleId": "s0008",
+            "promptId": "general-explanation",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 8,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 1.",
+            "responseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778"
+          },
+          {
+            "sampleId": "s0009",
+            "promptId": "general-explanation",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 9,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 2.",
+            "responseSha256": "238c57b4159fc4142503eddfe8632949a13405473b3e091caa71a3dcd62b169f"
+          },
+          {
+            "sampleId": "s0010",
+            "promptId": "general-explanation",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 10,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 2.",
+            "responseSha256": "238c57b4159fc4142503eddfe8632949a13405473b3e091caa71a3dcd62b169f"
+          },
+          {
+            "sampleId": "s0011",
+            "promptId": "general-explanation",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 11,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 3.",
+            "responseSha256": "dab7a5a158f88681683f3bee213359662e2ca4bcd026dbdb12036fbc7e6d7e77"
+          },
+          {
+            "sampleId": "s0012",
+            "promptId": "general-explanation",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 12,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 3.",
+            "responseSha256": "dab7a5a158f88681683f3bee213359662e2ca4bcd026dbdb12036fbc7e6d7e77"
+          },
+          {
+            "sampleId": "s0013",
+            "promptId": "creative-scene",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 13,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 1.",
+            "responseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf"
+          },
+          {
+            "sampleId": "s0014",
+            "promptId": "creative-scene",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 14,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 1.",
+            "responseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf"
+          },
+          {
+            "sampleId": "s0015",
+            "promptId": "creative-scene",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 15,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 2.",
+            "responseSha256": "1f9febaef600cb569b63805005d0d1e5334690204c05556451781536e267bc6d"
+          },
+          {
+            "sampleId": "s0016",
+            "promptId": "creative-scene",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 16,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 2.",
+            "responseSha256": "1f9febaef600cb569b63805005d0d1e5334690204c05556451781536e267bc6d"
+          },
+          {
+            "sampleId": "s0017",
+            "promptId": "creative-scene",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 17,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 3.",
+            "responseSha256": "e1ac8bef4eed78e491313d0b97117d1b9331969cebddaef68df46186aa3cb488"
+          },
+          {
+            "sampleId": "s0018",
+            "promptId": "creative-scene",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 18,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 3.",
+            "responseSha256": "e1ac8bef4eed78e491313d0b97117d1b9331969cebddaef68df46186aa3cb488"
+          },
+          {
+            "sampleId": "s0019",
+            "promptId": "creative-plan",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 19,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 1.",
+            "responseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687"
+          },
+          {
+            "sampleId": "s0020",
+            "promptId": "creative-plan",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 20,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 1.",
+            "responseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687"
+          },
+          {
+            "sampleId": "s0021",
+            "promptId": "creative-plan",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 21,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 2.",
+            "responseSha256": "b9bd4946027ca748cb8cb015cd5bea9c5e22b1bc8c7322e634d5d61d62fe82da"
+          },
+          {
+            "sampleId": "s0022",
+            "promptId": "creative-plan",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 22,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 2.",
+            "responseSha256": "b9bd4946027ca748cb8cb015cd5bea9c5e22b1bc8c7322e634d5d61d62fe82da"
+          },
+          {
+            "sampleId": "s0023",
+            "promptId": "creative-plan",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 23,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 3.",
+            "responseSha256": "33f1f3db31d393f7d8357ad4768481df639f3db102b2e9608a68da8d35ebda0f"
+          },
+          {
+            "sampleId": "s0024",
+            "promptId": "creative-plan",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 24,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 3.",
+            "responseSha256": "33f1f3db31d393f7d8357ad4768481df639f3db102b2e9608a68da8d35ebda0f"
+          }
+        ],
+        "runId": "synthetic-unit-fixture",
+        "controls": {
+          "runtimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+          "templateSha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+          "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42",
+          "contextTokens": 8192,
+          "batchTokens": 128,
+          "microbatchTokens": 64,
+          "threads": 4,
+          "seed": 42,
+          "maxOutputTokens": 512,
+          "sampler": {
+            "temperature": 0,
+            "topP": 1,
+            "topK": 1,
+            "minP": 0,
+            "repeatPenalty": 1
+          },
+          "weightRepresentation": "PQ2_0",
+          "modelSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5"
+        },
+        "zeroScaleChecks": [
+          {
+            "promptId": "general-logic",
+            "seed": 42,
+            "baselineResponseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3",
+            "zeroScaleResponseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3",
+            "baselineLogitsSha256": null,
+            "zeroScaleLogitsSha256": null
+          },
+          {
+            "promptId": "general-explanation",
+            "seed": 42,
+            "baselineResponseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778",
+            "zeroScaleResponseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778",
+            "baselineLogitsSha256": null,
+            "zeroScaleLogitsSha256": null
+          },
+          {
+            "promptId": "creative-scene",
+            "seed": 42,
+            "baselineResponseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf",
+            "zeroScaleResponseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf",
+            "baselineLogitsSha256": null,
+            "zeroScaleLogitsSha256": null
+          },
+          {
+            "promptId": "creative-plan",
+            "seed": 42,
+            "baselineResponseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687",
+            "zeroScaleResponseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687",
+            "baselineLogitsSha256": null,
+            "zeroScaleLogitsSha256": null
+          }
+        ],
+        "nonzeroAdapterCheck": {
+          "status": "pending",
+          "logitsChanged": null,
+          "evidenceSha256": null,
+          "scale": 1,
+          "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42"
+        },
+        "basis": {
+          "status": "pending",
+          "reviewerId": null,
+          "note": null,
+          "evidenceSha256": null
+        },
+        "schemaVersion": 1
+      },
+      "review": null,
+      "expected": {
+        "SchemaVersion": 1,
+        "RunId": "synthetic-unit-fixture",
+        "ContractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "ControlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+        "Status": "pending",
+        "StandardProfileMayEnable": false,
+        "Gates": {
+          "Throughput": "passed",
+          "Quality": "pending",
+          "MemoryAllowance": "passed",
+          "AuthoringBasis": "pending",
+          "ZeroScaleIdentity": "not-passed",
+          "NonzeroApplication": "not-passed"
+        },
+        "Prompts": [
+          {
+            "promptId": "general-logic",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 0
+          },
+          {
+            "promptId": "general-explanation",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 0
+          },
+          {
+            "promptId": "creative-scene",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 0
+          },
+          {
+            "promptId": "creative-plan",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 0
+          }
+        ],
+        "Rejections": [],
+        "Pending": [
+          "Grouped SSM authoring-basis/operator validation is unresolved.",
+          "Zero-scale native logits identity is unavailable: general-logic.",
+          "Zero-scale native logits identity is unavailable: general-explanation.",
+          "Zero-scale native logits identity is unavailable: creative-scene.",
+          "Zero-scale native logits identity is unavailable: creative-plan.",
+          "Nonzero adapter application lacks independent native logits evidence.",
+          "Complete external human quality review is missing: general-logic.",
+          "Complete external human quality review is missing: general-explanation.",
+          "Complete external human quality review is missing: creative-scene.",
+          "Complete external human quality review is missing: creative-plan."
+        ],
+        "Scope": "Matched pinned representation only. Job commit is not total RAM. Human review identity is recorded, not authenticated. No serving configuration was changed."
+      }
+    },
+    {
+      "name": "rejected",
+      "evidence": {
+        "execution": {
+          "githubActions": true,
+          "deviceModel": "Snapdragon X Elite",
+          "runnerArchitecture": "Arm64",
+          "runnerName": "synthetic",
+          "runUrl": "https://github.com/example/synthetic/actions/runs/123"
+        },
+        "contractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "samples": [
+          {
+            "sampleId": "s0001",
+            "promptId": "general-logic",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 1,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 1.",
+            "responseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3"
+          },
+          {
+            "sampleId": "s0002",
+            "promptId": "general-logic",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 2,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 20000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 1.",
+            "responseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3"
+          },
+          {
+            "sampleId": "s0003",
+            "promptId": "general-logic",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 3,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 2.",
+            "responseSha256": "e4f95c609e538df514b958ca4e2b78c2b33aeddb117ec255daab2fd937c9cc08"
+          },
+          {
+            "sampleId": "s0004",
+            "promptId": "general-logic",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 4,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 2.",
+            "responseSha256": "e4f95c609e538df514b958ca4e2b78c2b33aeddb117ec255daab2fd937c9cc08"
+          },
+          {
+            "sampleId": "s0005",
+            "promptId": "general-logic",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 5,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 3.",
+            "responseSha256": "c5f7de1421906e03f93f5c28d148bb930aed2b2fc89df0000240e059d098187d"
+          },
+          {
+            "sampleId": "s0006",
+            "promptId": "general-logic",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 6,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-logic 3.",
+            "responseSha256": "c5f7de1421906e03f93f5c28d148bb930aed2b2fc89df0000240e059d098187d"
+          },
+          {
+            "sampleId": "s0007",
+            "promptId": "general-explanation",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 7,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 1.",
+            "responseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778"
+          },
+          {
+            "sampleId": "s0008",
+            "promptId": "general-explanation",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 8,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 1.",
+            "responseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778"
+          },
+          {
+            "sampleId": "s0009",
+            "promptId": "general-explanation",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 9,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 2.",
+            "responseSha256": "238c57b4159fc4142503eddfe8632949a13405473b3e091caa71a3dcd62b169f"
+          },
+          {
+            "sampleId": "s0010",
+            "promptId": "general-explanation",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 10,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 2.",
+            "responseSha256": "238c57b4159fc4142503eddfe8632949a13405473b3e091caa71a3dcd62b169f"
+          },
+          {
+            "sampleId": "s0011",
+            "promptId": "general-explanation",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 11,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 3.",
+            "responseSha256": "dab7a5a158f88681683f3bee213359662e2ca4bcd026dbdb12036fbc7e6d7e77"
+          },
+          {
+            "sampleId": "s0012",
+            "promptId": "general-explanation",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 12,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response general-explanation 3.",
+            "responseSha256": "dab7a5a158f88681683f3bee213359662e2ca4bcd026dbdb12036fbc7e6d7e77"
+          },
+          {
+            "sampleId": "s0013",
+            "promptId": "creative-scene",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 13,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 1.",
+            "responseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf"
+          },
+          {
+            "sampleId": "s0014",
+            "promptId": "creative-scene",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 14,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 1.",
+            "responseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf"
+          },
+          {
+            "sampleId": "s0015",
+            "promptId": "creative-scene",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 15,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 2.",
+            "responseSha256": "1f9febaef600cb569b63805005d0d1e5334690204c05556451781536e267bc6d"
+          },
+          {
+            "sampleId": "s0016",
+            "promptId": "creative-scene",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 16,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 2.",
+            "responseSha256": "1f9febaef600cb569b63805005d0d1e5334690204c05556451781536e267bc6d"
+          },
+          {
+            "sampleId": "s0017",
+            "promptId": "creative-scene",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 17,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 3.",
+            "responseSha256": "e1ac8bef4eed78e491313d0b97117d1b9331969cebddaef68df46186aa3cb488"
+          },
+          {
+            "sampleId": "s0018",
+            "promptId": "creative-scene",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 18,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-scene 3.",
+            "responseSha256": "e1ac8bef4eed78e491313d0b97117d1b9331969cebddaef68df46186aa3cb488"
+          },
+          {
+            "sampleId": "s0019",
+            "promptId": "creative-plan",
+            "repeat": 1,
+            "arm": "adapter",
+            "order": 19,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 1.",
+            "responseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687"
+          },
+          {
+            "sampleId": "s0020",
+            "promptId": "creative-plan",
+            "repeat": 1,
+            "arm": "baseline",
+            "order": 20,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 1.",
+            "responseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687"
+          },
+          {
+            "sampleId": "s0021",
+            "promptId": "creative-plan",
+            "repeat": 2,
+            "arm": "baseline",
+            "order": 21,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 2.",
+            "responseSha256": "b9bd4946027ca748cb8cb015cd5bea9c5e22b1bc8c7322e634d5d61d62fe82da"
+          },
+          {
+            "sampleId": "s0022",
+            "promptId": "creative-plan",
+            "repeat": 2,
+            "arm": "adapter",
+            "order": 22,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 2.",
+            "responseSha256": "b9bd4946027ca748cb8cb015cd5bea9c5e22b1bc8c7322e634d5d61d62fe82da"
+          },
+          {
+            "sampleId": "s0023",
+            "promptId": "creative-plan",
+            "repeat": 3,
+            "arm": "adapter",
+            "order": 23,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2734686208,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 3.",
+            "responseSha256": "33f1f3db31d393f7d8357ad4768481df639f3db102b2e9608a68da8d35ebda0f"
+          },
+          {
+            "sampleId": "s0024",
+            "promptId": "creative-plan",
+            "repeat": 3,
+            "arm": "baseline",
+            "order": 24,
+            "seed": 42,
+            "controlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+            "decodeTokens": 100,
+            "decodeMilliseconds": 10000,
+            "peakJobMemoryBytes": 2147483648,
+            "minimumAvailablePhysicalBytes": 5368709120,
+            "completed": true,
+            "responseText": "Synthetic response creative-plan 3.",
+            "responseSha256": "33f1f3db31d393f7d8357ad4768481df639f3db102b2e9608a68da8d35ebda0f"
+          }
+        ],
+        "runId": "synthetic-unit-fixture",
+        "controls": {
+          "runtimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+          "templateSha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+          "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42",
+          "contextTokens": 8192,
+          "batchTokens": 128,
+          "microbatchTokens": 64,
+          "threads": 4,
+          "seed": 42,
+          "maxOutputTokens": 512,
+          "sampler": {
+            "temperature": 0,
+            "topP": 1,
+            "topK": 1,
+            "minP": 0,
+            "repeatPenalty": 1
+          },
+          "weightRepresentation": "PQ2_0",
+          "modelSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5"
+        },
+        "zeroScaleChecks": [
+          {
+            "promptId": "general-logic",
+            "seed": 42,
+            "baselineResponseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3",
+            "zeroScaleResponseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3",
+            "baselineLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44",
+            "zeroScaleLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44"
+          },
+          {
+            "promptId": "general-explanation",
+            "seed": 42,
+            "baselineResponseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778",
+            "zeroScaleResponseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778",
+            "baselineLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44",
+            "zeroScaleLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44"
+          },
+          {
+            "promptId": "creative-scene",
+            "seed": 42,
+            "baselineResponseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf",
+            "zeroScaleResponseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf",
+            "baselineLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44",
+            "zeroScaleLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44"
+          },
+          {
+            "promptId": "creative-plan",
+            "seed": 42,
+            "baselineResponseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687",
+            "zeroScaleResponseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687",
+            "baselineLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44",
+            "zeroScaleLogitsSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44"
+          }
+        ],
+        "nonzeroAdapterCheck": {
+          "status": "verified",
+          "logitsChanged": true,
+          "evidenceSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44",
+          "scale": 1,
+          "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42"
+        },
+        "basis": {
+          "status": "verified",
+          "reviewerId": "synthetic-fixture",
+          "note": "Synthetic operator proof for unit checks only.",
+          "evidenceSha256": "df66fc8067e9d2a59d935ae90884aacdb341e00101c452b68b09d799ea8b7f44"
+        },
+        "schemaVersion": 1
+      },
+      "review": {
+        "runId": "synthetic-unit-fixture",
+        "contractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "source": "external-human-review",
+        "attestation": "I reviewed the exact captured responses without automated scoring.",
+        "schemaVersion": 1,
+        "reviews": [
+          {
+            "sampleId": "s0001",
+            "responseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0002",
+            "responseSha256": "005a010bfc95a0d2cf42e3056d50f8f1e75eae55e174181261a778ecfe3970d3",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": true,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0003",
+            "responseSha256": "e4f95c609e538df514b958ca4e2b78c2b33aeddb117ec255daab2fd937c9cc08",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0004",
+            "responseSha256": "e4f95c609e538df514b958ca4e2b78c2b33aeddb117ec255daab2fd937c9cc08",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0005",
+            "responseSha256": "c5f7de1421906e03f93f5c28d148bb930aed2b2fc89df0000240e059d098187d",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0006",
+            "responseSha256": "c5f7de1421906e03f93f5c28d148bb930aed2b2fc89df0000240e059d098187d",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0007",
+            "responseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0008",
+            "responseSha256": "e743fc0c9214a2b09c114210128f4086d4bf40650f4d740d1ab948944cc65778",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0009",
+            "responseSha256": "238c57b4159fc4142503eddfe8632949a13405473b3e091caa71a3dcd62b169f",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0010",
+            "responseSha256": "238c57b4159fc4142503eddfe8632949a13405473b3e091caa71a3dcd62b169f",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0011",
+            "responseSha256": "dab7a5a158f88681683f3bee213359662e2ca4bcd026dbdb12036fbc7e6d7e77",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0012",
+            "responseSha256": "dab7a5a158f88681683f3bee213359662e2ca4bcd026dbdb12036fbc7e6d7e77",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0013",
+            "responseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0014",
+            "responseSha256": "bd071f7b3761dce027527bf8c4fc7dc4a3ff1de5d23ba3d8c025f605a35d50bf",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0015",
+            "responseSha256": "1f9febaef600cb569b63805005d0d1e5334690204c05556451781536e267bc6d",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0016",
+            "responseSha256": "1f9febaef600cb569b63805005d0d1e5334690204c05556451781536e267bc6d",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0017",
+            "responseSha256": "e1ac8bef4eed78e491313d0b97117d1b9331969cebddaef68df46186aa3cb488",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0018",
+            "responseSha256": "e1ac8bef4eed78e491313d0b97117d1b9331969cebddaef68df46186aa3cb488",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0019",
+            "responseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0020",
+            "responseSha256": "0af8d5db7569a96e982f97ce759b8be643b70d93bf94afd1a2cd05bf2d807687",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0021",
+            "responseSha256": "b9bd4946027ca748cb8cb015cd5bea9c5e22b1bc8c7322e634d5d61d62fe82da",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0022",
+            "responseSha256": "b9bd4946027ca748cb8cb015cd5bea9c5e22b1bc8c7322e634d5d61d62fe82da",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0023",
+            "responseSha256": "33f1f3db31d393f7d8357ad4768481df639f3db102b2e9608a68da8d35ebda0f",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          },
+          {
+            "sampleId": "s0024",
+            "responseSha256": "33f1f3db31d393f7d8357ad4768481df639f3db102b2e9608a68da8d35ebda0f",
+            "reviewerId": "synthetic-test-fixture-only",
+            "humanReviewed": true,
+            "reviewedAtUtc": "2026-10-23T15:00:00Z",
+            "answerComplete": true,
+            "refused": false,
+            "scores": {
+              "instructionFollowing": 3,
+              "correctness": 3,
+              "coherence": 3,
+              "creativeUsefulness": 3
+            },
+            "rationale": "Synthetic fixture tests the scorer, never represents a real human review."
+          }
+        ]
+      },
+      "expected": {
+        "SchemaVersion": 1,
+        "RunId": "synthetic-unit-fixture",
+        "ContractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "ControlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
+        "Status": "rejected",
+        "StandardProfileMayEnable": false,
+        "Gates": {
+          "Throughput": "passed",
+          "Quality": "failed",
+          "MemoryAllowance": "passed",
+          "AuthoringBasis": "passed",
+          "ZeroScaleIdentity": "passed",
+          "NonzeroApplication": "passed"
+        },
+        "Prompts": [
+          {
+            "promptId": "general-logic",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [
+              {
+                "dimension": "instructionFollowing",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "correctness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "coherence",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              }
+            ],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 1
+          },
+          {
+            "promptId": "general-explanation",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [
+              {
+                "dimension": "instructionFollowing",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "correctness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "coherence",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              }
+            ],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 0
+          },
+          {
+            "promptId": "creative-scene",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [
+              {
+                "dimension": "instructionFollowing",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "correctness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "coherence",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "creativeUsefulness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              }
+            ],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 0
+          },
+          {
+            "promptId": "creative-plan",
+            "baselineMedianTps": 10.0,
+            "adapterMedianTps": 10.0,
+            "tpsRatio": 1.0,
+            "tpsPassed": true,
+            "medianJobMemoryPremiumBytes": 587202560.0,
+            "quality": [
+              {
+                "dimension": "instructionFollowing",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "correctness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "coherence",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              },
+              {
+                "dimension": "creativeUsefulness",
+                "baselineMedian": 3.0,
+                "adapterMedian": 3.0,
+                "passed": true
+              }
+            ],
+            "baselineReviewedRefusals": 0,
+            "adapterReviewedRefusals": 0
+          }
+        ],
+        "Rejections": [
+          "Unwanted adapter refusal on a fixed benign prompt: general-logic."
+        ],
+        "Pending": [],
+        "Scope": "Matched pinned representation only. Job commit is not total RAM. Human review identity is recorded, not authenticated. No serving configuration was changed."
+      }
+    }
+  ]
+}
