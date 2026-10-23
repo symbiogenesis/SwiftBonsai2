@@ -4,7 +4,10 @@ use bonsai_prism_runtime::{
     Decoder, Result,
     runtime::{Cancellation, Finish, Generation, Limits, Runtime, greedy},
 };
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 struct Recurrent {
     tokens: Vec<u32>,
@@ -197,5 +200,161 @@ fn snapshot_budget_rejects_before_mutating_a_committed_conversation() -> Result<
     );
     assert_eq!(steps.get(), 0);
     assert_eq!(runtime.tokens(), &[0_u32; 0]);
+    Ok(())
+}
+
+#[derive(Clone, Copy, Default)]
+enum OutputFault {
+    #[default]
+    None,
+    PartialFailure,
+    WrongSize,
+    Nonfinite,
+    Cancel,
+}
+
+struct Reusing {
+    inner: Recurrent,
+    storage: Rc<RefCell<Vec<(usize, usize)>>>,
+    owned_calls: Rc<Cell<usize>>,
+    fault: Rc<Cell<OutputFault>>,
+    cancellation: Cancellation,
+}
+
+impl Decoder for Reusing {
+    type Checkpoint = Vec<u32>;
+
+    fn identity(&self) -> &str {
+        self.inner.identity()
+    }
+    fn vocab_size(&self) -> usize {
+        self.inner.vocab_size()
+    }
+    fn checkpoint_bytes(&self) -> usize {
+        self.inner.checkpoint_bytes()
+    }
+    fn reset(&mut self) -> Result<()> {
+        self.inner.reset()
+    }
+    fn checkpoint(&self) -> Result<Self::Checkpoint> {
+        self.inner.checkpoint()
+    }
+    fn restore(&mut self, checkpoint: &Self::Checkpoint) -> Result<()> {
+        self.inner.restore(checkpoint)
+    }
+    fn evaluate(&mut self, token: u32) -> Result<Vec<f32>> {
+        self.owned_calls.set(self.owned_calls.get() + 1);
+        let mut output = Vec::new();
+        self.evaluate_into(token, &mut output)?;
+        Ok(output)
+    }
+    fn evaluate_into(&mut self, token: u32, output: &mut Vec<f32>) -> Result<()> {
+        self.inner.tokens.push(token);
+        output.clear();
+        output.try_reserve_exact(8)?;
+        output.resize(8, -1.0);
+        let next = usize::try_from(self.inner.tokens.iter().sum::<u32>() % 8)?;
+        output[next] = 1.0;
+        self.storage
+            .borrow_mut()
+            .push((output.as_ptr().addr(), output.capacity()));
+        // Deliberately violate the output contract to verify the runtime's
+        // defensive validation and rollback independently of the decoder.
+        match self.fault.replace(OutputFault::None) {
+            OutputFault::None => {}
+            OutputFault::PartialFailure => {
+                output.truncate(1);
+                return Err(std::io::Error::other("partial output after mutation").into());
+            }
+            OutputFault::WrongSize => {
+                output.pop();
+            }
+            OutputFault::Nonfinite => {
+                output[0] = f32::NAN;
+            }
+            OutputFault::Cancel => self.cancellation.cancel(),
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn reusable_logits_preserve_storage_prefixes_and_transaction_recovery() -> Result<()> {
+    let storage = Rc::new(RefCell::new(Vec::new()));
+    let owned_calls = Rc::new(Cell::new(0));
+    let fault = Rc::new(Cell::new(OutputFault::None));
+    let cancellation = Cancellation::default();
+    let mut runtime = Runtime::new(
+        Reusing {
+            inner: decoder(),
+            storage: storage.clone(),
+            owned_calls: owned_calls.clone(),
+            fault: fault.clone(),
+            cancellation: cancellation.clone(),
+        },
+        LIMITS,
+    )?;
+    let active = Cancellation::default();
+    runtime.generate(&[1], &options(), &active, |_| Ok(()))?;
+    runtime.generate(&[1, 1, 2], &options(), &active, |_| Ok(()))?;
+    let edited = runtime.generate(&[1, 1, 3], &options(), &active, |_| Ok(()))?;
+    assert_eq!(edited.reused_tokens, 2);
+    assert_eq!(runtime.tokens(), &[1, 1, 3, 5]);
+    runtime.reset()?;
+    runtime.generate(&[1], &options(), &active, |_| Ok(()))?;
+    let first_storage = storage.borrow()[0];
+    assert!(storage.borrow().iter().all(|&entry| entry == first_storage));
+    assert_eq!(owned_calls.get(), 0);
+
+    for failure in [
+        OutputFault::PartialFailure,
+        OutputFault::WrongSize,
+        OutputFault::Nonfinite,
+    ] {
+        fault.set(failure);
+        assert!(
+            runtime
+                .generate(&[2], &options(), &active, |_| Ok(()))
+                .is_err()
+        );
+        assert_eq!(runtime.tokens(), &[1, 1]);
+        assert!(!runtime.is_faulted());
+        // Reusing the exact committed prefix must use its saved logits rather
+        // than the partial/invalid buffer written by the failed evaluation.
+        let restored = runtime.generate(&[1, 1], &options(), &active, |_| Ok(()))?;
+        assert_eq!(restored.reused_tokens, 2);
+        assert_eq!(runtime.tokens(), &[1, 1, 2]);
+        runtime.reset()?;
+        runtime.generate(&[1], &options(), &active, |_| Ok(()))?;
+    }
+    fault.set(OutputFault::Cancel);
+    assert!(
+        runtime
+            .generate(&[2], &options(), &cancellation, |_| Ok(()))
+            .is_err()
+    );
+    assert_eq!(runtime.tokens(), &[1, 1]);
+    assert!(!runtime.is_faulted());
+    runtime.generate(&[1, 1], &options(), &active, |_| Ok(()))?;
+    assert_eq!(runtime.tokens(), &[1, 1, 2]);
+    assert_eq!(owned_calls.get(), 0);
+    Ok(())
+}
+
+#[test]
+fn owned_decoder_fallback_reuses_output_and_clears_failed_evaluations() -> Result<()> {
+    let mut decoder = decoder();
+    let mut output = Vec::with_capacity(16);
+    decoder.evaluate_into(1, &mut output)?;
+    let address = output.as_ptr();
+    let checkpoint = decoder.checkpoint()?;
+    let expected = decoder.evaluate(2)?;
+    decoder.restore(&checkpoint)?;
+    decoder.evaluate_into(2, &mut output)?;
+    assert_eq!(output, expected);
+    assert_eq!(output.as_ptr(), address);
+    decoder.fail.set(true);
+    assert!(decoder.evaluate_into(3, &mut output).is_err());
+    assert_eq!(output, [0.0_f32; 0]);
     Ok(())
 }

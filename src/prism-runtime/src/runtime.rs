@@ -80,7 +80,7 @@ pub struct Completion {
 struct Snapshot<S> {
     state: S,
     tokens: Vec<u32>,
-    logits: Option<Vec<f32>>,
+    logits: Vec<f32>,
     bytes: usize,
 }
 
@@ -95,7 +95,8 @@ pub struct Runtime<D: Decoder> {
     decoder: D,
     limits: Limits,
     tokens: Vec<u32>,
-    logits: Option<Vec<f32>>,
+    // Empty means invalid; a valid decoder vocabulary is always nonempty.
+    logits: Vec<f32>,
     checkpoints: Vec<Snapshot<D::Checkpoint>>,
     faulted: bool,
 }
@@ -128,7 +129,7 @@ impl<D: Decoder> Runtime<D> {
             decoder,
             limits,
             tokens,
-            logits: None,
+            logits: Vec::new(),
             checkpoints,
             faulted: false,
         })
@@ -160,7 +161,7 @@ impl<D: Decoder> Runtime<D> {
         self.faulted = true;
         self.checkpoints.clear();
         self.tokens.clear();
-        self.logits = None;
+        self.logits.clear();
         self.decoder.reset()?;
         self.faulted = false;
         Ok(())
@@ -238,7 +239,7 @@ impl<D: Decoder> Runtime<D> {
     }
 
     fn capture(&mut self, reserved: usize) -> Result<Snapshot<D::Checkpoint>> {
-        let logits_len = self.logits.as_ref().map_or(0, Vec::len);
+        let logits_len = self.logits.len();
         let bytes = self
             .tokens
             .len()
@@ -265,7 +266,7 @@ impl<D: Decoder> Runtime<D> {
             self.checkpoints.remove(0);
         }
         let tokens = copy(&self.tokens)?;
-        let logits = self.logits.as_deref().map(copy).transpose()?;
+        let logits = copy(&self.logits)?;
         let state = self.decoder.checkpoint()?;
         Ok(Snapshot {
             state,
@@ -276,7 +277,7 @@ impl<D: Decoder> Runtime<D> {
     }
 
     fn prepare(&mut self, prompt: &[u32]) -> Result<usize> {
-        if !self.tokens.is_empty() && prompt.starts_with(&self.tokens) && self.logits.is_some() {
+        if !self.tokens.is_empty() && prompt.starts_with(&self.tokens) && !self.logits.is_empty() {
             return Ok(self.tokens.len());
         }
         let best = self
@@ -289,14 +290,15 @@ impl<D: Decoder> Runtime<D> {
         if let Some(index) = best {
             let snapshot = &self.checkpoints[index];
             let tokens = copy(&snapshot.tokens)?;
-            let logits = snapshot.logits.as_deref().map(copy).transpose()?;
+            self.logits.clear();
+            self.logits.try_reserve_exact(snapshot.logits.len())?;
             self.decoder.restore(&snapshot.state)?;
             self.tokens = tokens;
-            self.logits = logits;
+            self.logits.extend_from_slice(&snapshot.logits);
         } else {
             self.decoder.reset()?;
             self.tokens.clear();
-            self.logits = None;
+            self.logits.clear();
         }
         Ok(self.tokens.len())
     }
@@ -306,13 +308,23 @@ impl<D: Decoder> Runtime<D> {
         // Reserve before mutating decoder state; rollback is still available if
         // a decoder allocation or arithmetic operation subsequently fails.
         self.tokens.try_reserve(1)?;
-        let logits = self.decoder.evaluate(token)?;
-        if logits.len() != self.decoder.vocab_size() || logits.iter().any(|x| !x.is_finite()) {
-            return Err(invalid("native decoder returned invalid logits"));
+        self.logits.clear();
+        let result = self
+            .decoder
+            .evaluate_into(token, &mut self.logits)
+            .and_then(|()| {
+                if self.logits.len() != self.decoder.vocab_size()
+                    || self.logits.iter().any(|x| !x.is_finite())
+                {
+                    return Err(invalid("native decoder returned invalid logits"));
+                }
+                cancellation.check()
+            });
+        if let Err(error) = result {
+            self.logits.clear();
+            return Err(error);
         }
-        cancellation.check()?;
         self.tokens.push(token);
-        self.logits = Some(logits);
         Ok(())
     }
 
@@ -335,11 +347,7 @@ impl<D: Decoder> Runtime<D> {
         };
         for _ in 0..options.max_tokens {
             cancellation.check()?;
-            let logits = self
-                .logits
-                .as_deref()
-                .ok_or_else(|| invalid("native decoder has no prompt logits"))?;
-            let token = greedy(logits)?;
+            let token = greedy(&self.logits)?;
             if options.stop_tokens.contains(&token) {
                 completion.finish = Finish::Stop;
                 break;

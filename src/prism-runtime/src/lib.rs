@@ -47,6 +47,28 @@ pub trait Decoder {
     /// # Errors
     /// Rejects invalid tokens, exhausted context, numerical and allocation errors.
     fn evaluate(&mut self, token: u32) -> Result<Vec<f32>>;
+    /// Include one token and replace a caller-owned reusable logits buffer.
+    ///
+    /// The caller must finish consuming the previous output before this call.
+    /// On success the buffer contains exactly [`Self::vocab_size`] finite logits;
+    /// on error it is empty. Implementations may retain independent graph scratch,
+    /// but checkpoints must never borrow either scratch or this output storage.
+    /// The compatibility implementation copies the owned evaluation result;
+    /// decoders can override it to write directly into the retained allocation.
+    ///
+    /// # Errors
+    /// Returns evaluation or output-allocation errors. Decoder state may have
+    /// changed on failure and requires transaction restoration before reuse.
+    fn evaluate_into(&mut self, token: u32, output: &mut Vec<f32>) -> Result<()> {
+        output.clear();
+        let logits = self.evaluate(token)?;
+        if logits.len() != self.vocab_size() || logits.iter().any(|value| !value.is_finite()) {
+            return Err(invalid("native decoder returned invalid logits"));
+        }
+        output.try_reserve_exact(logits.len())?;
+        output.extend_from_slice(&logits);
+        Ok(())
+    }
     /// Capture every mutable component needed for exact prefix restoration.
     ///
     /// # Errors
