@@ -44,10 +44,14 @@ if ($Case -in @('All','Configuration')) {
 }
 if ($Case -in @('All','Paths')) {
     foreach ($invalidPath in @('relative', 'C:relative', '%SystemDrive%\Bonsai', '\\?\C:\Bonsai',
+        '//?/C:/Bonsai', '//./C:/Bonsai', '\\?/C:/Bonsai',
         (Join-Path $repo 'models'), (Join-Path $scratch 'file:stream'))) {
         Expect-Failure { Resolve-ExternalPath $invalidPath } "Unsafe path accepted: $invalidPath"
     }
     Assert ((Resolve-ExternalPath (Join-Path $scratch 'new/artifact.bin')) -eq (Join-Path $scratch 'new/artifact.bin')) 'External path resolution failed.'
+    foreach ($invalidPath in @('//?/C:/Bonsai', '//./C:/Bonsai')) {
+        Expect-Failure { & (Join-Path $repo 'scripts/Doctor.ps1') -DataPath $invalidPath } 'Doctor accepted an alternate device namespace spelling.'
+    }
 }
 if ($Case -in @('All','PE')) {
     $image = [byte[]]::new(128)

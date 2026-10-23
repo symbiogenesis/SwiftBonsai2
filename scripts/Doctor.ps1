@@ -41,7 +41,7 @@ function Get-ExternalPath {
 
     if ([string]::IsNullOrWhiteSpace($Path) -or $Path -match '%[^%]+%' -or
         -not [System.IO.Path]::IsPathFullyQualified($Path) -or
-        $Path.StartsWith('\\?\') -or $Path.StartsWith('\\.\')) {
+        $Path.Replace('/', '\').StartsWith('\\?\') -or $Path.Replace('/', '\').StartsWith('\\.\')) {
         throw 'Use a fully qualified filesystem path with all environment variables expanded.'
     }
     $fullPath = [System.IO.Path]::GetFullPath($Path)

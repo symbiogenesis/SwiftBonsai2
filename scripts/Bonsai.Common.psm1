@@ -5,8 +5,11 @@ $ErrorActionPreference = 'Stop'
 function Resolve-ExternalPath {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Path)
+    # Windows normalizes forward slashes before recognizing device namespaces.
+    # Check the normalized spelling before probing any filesystem path.
+    $namespacePath = $Path.Replace('/', '\')
     if ($Path -match '%[^%]+%' -or -not [IO.Path]::IsPathFullyQualified($Path) -or
-        $Path.StartsWith('\\?\') -or $Path.StartsWith('\\.\')) {
+        $namespacePath.StartsWith('\\?\') -or $namespacePath.StartsWith('\\.\')) {
         throw 'Use an absolute path with all environment variables already expanded.'
     }
     $full = [IO.Path]::GetFullPath($Path)
