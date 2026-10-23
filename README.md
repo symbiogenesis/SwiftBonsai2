@@ -127,7 +127,7 @@ $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Broker-' + [guid]:
 [IO.Directory]::CreateDirectory($scratch) | Out-Null
 Push-Location $scratch
 try {
-    cargo +1.98.0-aarch64-pc-windows-msvc build --locked --release --manifest-path (Join-Path $repo 'src/broker/Cargo.toml') --target-dir (Join-Path $scratch 'build')
+    cargo +1.99.1-aarch64-pc-windows-msvc build --locked --release --manifest-path (Join-Path $repo 'src/broker/Cargo.toml') --target-dir (Join-Path $scratch 'build')
     if ($LASTEXITCODE) { throw 'Broker build failed.' }
     # Configure the separate development backend to use $keys.BackendKeyFile.
     # This command starts only the broker. It does not configure that backend.
@@ -165,7 +165,7 @@ work; moving the standalone experiment does not eliminate that native boundary.
 
 | Language | Enforced policy |
 | --- | --- |
-| Rust 1.98.0 / edition 2024 | Unsafe code forbidden for every target; warnings, missing API documentation, unchecked casts, production unwrap/expect/panic and Clippy all/pedantic/nursery/cargo findings rejected; Release arithmetic overflow checks enabled. Release debug assertions remain disabled to preserve the constant-time dependency's release contract. |
+| Rust 1.99.1 / edition 2024 | Unsafe code forbidden for every target; warnings, missing API documentation, unchecked casts, production unwrap/expect/panic and Clippy all/pedantic/nursery/cargo findings rejected; Release arithmetic overflow checks enabled. Release debug assertions remain disabled to preserve the constant-time dependency's release contract. |
 | PowerShell 7.6+ | Latest strict mode, terminating errors including native-command failures, typed parameters, advanced functions and explicit output contracts; pinned PSScriptAnalyzer 1.25.0 defaults plus safety rules, with every unsuppressed diagnostic rejected. |
 | C# 14 / .NET 10 | Nullable checking, checked arithmetic, unsafe compilation disabled and compiler warnings as errors for every Add-Type invocation; all .NET analyzers, internal helpers, XML API documentation and selected code-style diagnostics checked in a separate Release build. |
 
@@ -177,11 +177,13 @@ Save-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Repository PSGallery -Path
 ./scripts/Test-Standards.ps1 -AnalyzerModulePath (Join-Path $tooling 'PSScriptAnalyzer/1.25.0/PSScriptAnalyzer.psd1')
 ```
 
-The checker extracts every embedded C# helper and keeps build outputs/logs in a unique system-temp directory. The SDK is pinned to stable 10.0.4xx patches. Rust commands run from external scratch must explicitly select `cargo +1.98.0-aarch64-pc-windows-msvc`, because a toolchain file is discovered from the working directory. Manifest lint settings apply to ordinary Cargo builds too. The native source builder explicitly requires C11/C++17 without language-extension fallback, MSVC conformance mode and SDL checks. The pinned external engine retains upstream warning handling: an actual strict warning audit found upstream MSVC C4244 in `llama-graph.cpp`; it is not claimed to meet the first-party warning policy. A different source-build configuration requires a fresh build lane or reviewed removal of the old owned build directory.
+The checker extracts every embedded C# helper and keeps build outputs/logs in a unique system-temp directory. The SDK baseline is stable 10.0.402 with patch roll-forward within 10.0.4xx. Rust commands run from external scratch must explicitly select `cargo +1.99.1-aarch64-pc-windows-msvc`, because a toolchain file is discovered from the working directory. Manifest lint settings apply to ordinary Cargo builds too. The native source builder explicitly requires C11/C++17 without language-extension fallback, MSVC conformance mode and SDL checks. The pinned external engine retains upstream warning handling: an actual strict warning audit found upstream MSVC C4244 in `llama-graph.cpp`; it is not claimed to meet the first-party warning policy. A different source-build configuration requires a fresh build lane or reviewed removal of the old owned build directory.
 
 Analyzer exceptions are documented at their scope. PowerShell's UTF-8 BOM rule targets legacy Windows PowerShell and is excluded for this 7.6 baseline; its obsolete API compatibility profiles are not applied to .NET 10. Dynamic PowerShell output annotations support analysis and documentation rather than enforcing return types at runtime. No blanket Rust restriction group is enabled, since it contains mutually incompatible rules; selected safety restrictions are enforced explicitly.
 
 Use stable PowerShell and .NET features supported by the 7.6 baseline where they improve clarity or correctness. Artifact paths use the [array form of `Join-Path -ChildPath`](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/join-path?view=powershell-7.6), and configuration reads use [`ConvertFrom-Json -DateKind String`](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json?view=powershell-7.6) to preserve JSON strings exactly.
+
+Stable toolchains were checked on October 23, 2026: [PowerShell 7.6.7](https://github.com/PowerShell/PowerShell/releases/tag/v7.6.7), [.NET SDK 10.0.402 / C# 14](https://dotnet.microsoft.com/en-us/download/dotnet/10.0), and [Rust 1.99.1 / edition 2024](https://blog.rust-lang.org/2026/10/15/Rust-1.99.1/). JSON schema readers also use `ConvertFrom-Json -NoEnumerate` so array roots cannot become objects through pipeline enumeration. GGUF text decoding reuses a bounded buffer with `ReadExactly` and span-based UTF-8 decoding; boolean validation uses `ContainsAnyExceptInRange`, and FP16 scale reads use explicit little-endian `BinaryPrimitives`. These are correctness and allocation changes without a measured performance claim.
 
 One focused local correctness case is allowed, for example:
 

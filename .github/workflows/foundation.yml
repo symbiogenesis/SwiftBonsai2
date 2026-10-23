@@ -98,8 +98,8 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          rustup toolchain install 1.98.0-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
-          $identity = rustc +1.98.0-aarch64-pc-windows-msvc -vV
+          rustup toolchain install 1.99.1-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
+          $identity = rustc +1.99.1-aarch64-pc-windows-msvc -vV
           if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
           $identity
           "BITCOS_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
@@ -108,9 +108,9 @@ jobs:
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ env.BITCOS_TARGET_DIR }}
-          key: bitcos-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BITCOS_CACHE_HOST }}-1.98.0-${{ hashFiles('tools/bitcos/**', 'rust-toolchain.toml') }}
+          key: bitcos-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BITCOS_CACHE_HOST }}-1.99.1-${{ hashFiles('tools/bitcos/**', 'rust-toolchain.toml') }}
           restore-keys: |
-            bitcos-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BITCOS_CACHE_HOST }}-1.98.0-
+            bitcos-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BITCOS_CACHE_HOST }}-1.99.1-
       - name: Rust format, analyzers, C++ reference parity and full correctness
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -125,10 +125,10 @@ jobs:
           $provenance = Get-Content -Raw -LiteralPath (Join-Path $fixtures 'provenance.json') | ConvertFrom-Json -DateKind String
           $fixture = Join-Path $fixtures 'cpp-reference.bin'
           if ((Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant() -cne $provenance.fixtureSha256) { throw 'C++ reference fixture digest differs from provenance.' }
-          cargo +1.98.0-aarch64-pc-windows-msvc fmt --manifest-path $manifest --check
-          cargo +1.98.0-aarch64-pc-windows-msvc clippy --manifest-path $manifest --locked --offline --release --all-targets --all-features -- -D warnings
-          cargo +1.98.0-aarch64-pc-windows-msvc doc --manifest-path $manifest --locked --offline --no-deps --all-features
-          cargo +1.98.0-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --offline --release --all-features
+          cargo +1.99.1-aarch64-pc-windows-msvc fmt --manifest-path $manifest --check
+          cargo +1.99.1-aarch64-pc-windows-msvc clippy --manifest-path $manifest --locked --offline --release --all-targets --all-features -- -D warnings
+          cargo +1.99.1-aarch64-pc-windows-msvc doc --manifest-path $manifest --locked --offline --no-deps --all-features
+          cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --offline --release --all-features
           'Safe Rust BITCOS codecs and scalar computation match the retained C++ reference bytes/results. SIMD and model performance remain unqualified.' >> $env:GITHUB_STEP_SUMMARY
   broker:
     if: github.ref == 'refs/heads/main'
@@ -144,9 +144,9 @@ jobs:
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
-          rustup toolchain install 1.98.0-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
+          rustup toolchain install 1.99.1-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
           if ($LASTEXITCODE) { throw 'Rust toolchain installation failed.' }
-          $identity = rustc +1.98.0-aarch64-pc-windows-msvc -vV
+          $identity = rustc +1.99.1-aarch64-pc-windows-msvc -vV
           if ($LASTEXITCODE -or $identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
           $identity
       - name: Select external Cargo cache paths
@@ -176,9 +176,9 @@ jobs:
             ${{ env.CARGO_HOME }}/registry/cache
             ${{ env.CARGO_HOME }}/git/db
             ${{ env.CARGO_TARGET_DIR }}
-          key: broker-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.98.0-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs') }}
+          key: broker-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs') }}
           restore-keys: |
-            broker-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.98.0-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'rust-toolchain.toml') }}-
+            broker-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'rust-toolchain.toml') }}-
       - name: Broker format, analyzer and full correctness suite
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -186,13 +186,13 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $manifest = Join-Path $env:GITHUB_WORKSPACE 'src/broker/Cargo.toml'
-          cargo +1.98.0-aarch64-pc-windows-msvc fmt --manifest-path $manifest --check
+          cargo +1.99.1-aarch64-pc-windows-msvc fmt --manifest-path $manifest --check
           if ($LASTEXITCODE) { throw 'Broker formatting failed.' }
-          cargo +1.98.0-aarch64-pc-windows-msvc clippy --manifest-path $manifest --locked --release --all-targets --all-features -- -D warnings
+          cargo +1.99.1-aarch64-pc-windows-msvc clippy --manifest-path $manifest --locked --release --all-targets --all-features -- -D warnings
           if ($LASTEXITCODE) { throw 'Broker analyzer failed.' }
-          cargo +1.98.0-aarch64-pc-windows-msvc doc --manifest-path $manifest --locked --no-deps --all-features
+          cargo +1.99.1-aarch64-pc-windows-msvc doc --manifest-path $manifest --locked --no-deps --all-features
           if ($LASTEXITCODE) { throw 'Broker documentation analyzer failed.' }
-          cargo +1.98.0-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --release --all-features
+          cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --release --all-features
           if ($LASTEXITCODE) { throw 'Broker suite failed.' }
   standards:
     if: github.ref == 'refs/heads/main'
@@ -323,6 +323,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraQualification.ps1') -Case Scoring
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraQualification.ps1') -Case Rejection
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraQualification.ps1') -Case Json
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraEvaluation.ps1') -Case All
           $plan = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-LoraQualification.ps1') -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime') -PlanOnly
           if ($plan.ModelProcessStarted -or $plan.PairedSamples -ne 24 -or $plan.ZeroScaleSamples -ne 4) { throw 'Invalid nonlaunching LoRA qualification plan.' }
