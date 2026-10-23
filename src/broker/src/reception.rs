@@ -34,7 +34,7 @@ pub struct ReceivedChat<R> {
 }
 
 impl<R> ReceivedChat<R> {
-    /// The future response adapter must send one response with Connection: close,
+    /// The response adapter must send one response with Connection: close,
     /// then drop the stream. Never reuse it for another request. Exact token
     /// admission is still required before contacting the generation endpoint.
     pub fn into_parts(self) -> (R, PendingChat) {

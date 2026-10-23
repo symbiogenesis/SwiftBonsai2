@@ -1,12 +1,14 @@
-//! M1 request policy and bounded reception. No listener, model process or logging.
+//! M1 request policy and bounded HTTP I/O. No listener, model process or logging.
 //!
 //! `reception` bounds one supplied stream while preserving header multiplicity.
+//! `response` frames a bounded, already HTTP-decoded backend response.
 //! The future supervisor must generate a private random credential, use a separate
 //! backend key, prevent bypass, and enforce concurrency, deadlines and cancellation.
 //! This library alone is not a qualified HTTP or process-isolation boundary.
 #![forbid(unsafe_code)]
 
 pub mod reception;
+pub mod response;
 
 use http::{HeaderMap, Method, Version, request::Parts};
 use serde::{Deserialize, Deserializer, Serialize, de};
@@ -201,6 +203,7 @@ impl AuthorizedHead {
         Ok(PendingChat {
             body,
             max_completion_tokens,
+            stream: chat.stream,
         })
     }
 }
@@ -307,6 +310,7 @@ fn valid_history(messages: &[Message]) -> bool {
 pub struct PendingChat {
     body: Vec<u8>,
     max_completion_tokens: u32,
+    stream: bool,
 }
 
 impl PendingChat {
@@ -329,7 +333,10 @@ impl PendingChat {
         if total.is_none_or(|n| n > CONTEXT_TOKENS) {
             return Err(Rejection::ContextLimit);
         }
-        Ok(AdmittedChat { body: self.body })
+        Ok(AdmittedChat {
+            body: self.body,
+            stream: self.stream,
+        })
     }
 }
 
@@ -337,11 +344,17 @@ impl PendingChat {
 /// The future transport supplies its own backend URL/Host/key/Content-Length.
 pub struct AdmittedChat {
     body: Vec<u8>,
+    stream: bool,
 }
 
 impl AdmittedChat {
     pub fn backend_body(&self) -> &[u8] {
         &self.body
+    }
+
+    /// Retained from the canonical request, never inferred from backend headers.
+    pub fn streams_response(&self) -> bool {
+        self.stream
     }
 }
 

@@ -34,6 +34,43 @@ The receiver will own one supplied stream, bound the complete raw head to 16 KiB
 
 The post-implementation review found no blocking defect and recommended a [`'static` bound](https://doc.rust-lang.org/rust-by-example/scope/lifetime/static_lifetime.html#trait-bound) to discourage borrowed-stream callers from defeating the drop contract. Applied that refinement while retaining the explicit requirement that the supplied stream closes on Drop; the lifetime bound alone cannot prove a wrapper's ownership/close semantics. Tests use Tokio's paused time and in-memory streams, not model execution, network listeners or performance workloads.
 
+## M1 bounded HTTP responses: pre-implementation review, October 23
+
+Before implementation, the integrator and an independent reviewer in an isolated
+detached worktree checked [RFC 9112 framing](https://www.rfc-editor.org/rfc/rfc9112.html),
+Tokio 1.50.0 [absolute timeouts](https://docs.rs/tokio/1.50.0/tokio/time/fn.timeout_at.html)
+and [write/flush/shutdown semantics](https://docs.rs/tokio/1.50.0/tokio/io/trait.AsyncWriteExt.html),
+and the pinned server's [HTTP response provider](https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/tools/server/server-http.cpp#L587-L623)
+and [SSE completion/error paths](https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/tools/server/server-context.cpp#L4548-L4675).
+
+Sanity check: raw backend socket EOF cannot prove a complete HTTP body, and
+close-delimited downstream SSE would hide truncation. Accept only an owned,
+already HTTP-decoded backend response whose trusted transport reports truncated
+framing as an I/O error. Validate status and the admitted request's expected media
+type before writing. Rebuild fixed headers; never copy upstream headers. Buffer
+at most 4 MiB for a JSON object, or stream SSE in 8 KiB chunks under the same byte
+cap. Only clean decoded EOF permits a downstream terminating zero chunk. Preserve
+SSE bytes, including error events and pings; transport completion is not a
+generation-success verdict and must not synthesize `[DONE]`.
+
+Use the supervisor's absolute deadline for backend reads and shorten each entire
+client write/flush operation to five seconds, without resetting for partial
+writes. Check expiry before and after ready operations. Own both endpoints and
+drop them on error or cancellation; do not flush/shutdown on error or retry a
+partially written response. A write-only client cannot detect disconnect while
+awaiting backend data: real disconnect monitoring and generation cancellation
+remain supervisor/transport integration work. This step adds no listener, HTTP
+client, process launch or model execution.
+
+The independent post-implementation review found no blocking defect. It clarified
+that a final flush/shutdown failure can occur after the terminating zero chunk
+has reached the client; an error return is not proof that no complete HTTP body
+was transmitted. The contract documents that commitment point. The JSON check
+uses a map-only visitor and explicit UTF-8 validation without constructing a
+response value tree. The isolated test implementation was reviewed separately;
+paused-time fixtures exercise ownership, truncation and partial I/O without
+opening sockets or running performance workloads.
+
 ## Evidence obtained
 
 - Host inventory: native ARM64 Windows/PowerShell; **33,897,037,824 usable bytes** (31.57 GiB); Snapdragon X Elite X1E78100; Adreno X1-85 driver **31.0.128.0**; native CMake **4.3.1-msvc1** and MSVC **19.51.36260.0**. Presence does not qualify inference or GPU execution.
@@ -45,5 +82,16 @@ The post-implementation review found no blocking defect and recommended a [`'sta
 - The Rust request-admission core builds in Release on native ARM64 with locked cached dependencies; formatting and Clippy pass with warnings denied. Five focused local regressions cover duplicate-header rejection, duplicate-key/type rejection, canonical-body preservation, context boundary/overflow admission, and the reviewed JSON-shape repair. The count tests use synthetic callbacks; they do not qualify real model tokenization. Independent review found and prompted repair of Serde's alternate struct/enum input shapes. The full broker suite is handed to hosted Foundation CI; live HTTP, real template/token counts, cancellation, backend bypass prevention and restricted process policy remain unqualified. See [policy contract](broker-policy.md).
 
 - The M1 one-request receiver builds on native ARM64 with locked cached dependencies. Formatting and Release Clippy with warnings denied pass. Six selected local regressions pass: wire duplicates/framing, raw routes, stalled absolute deadlines, fragmented valid requests, cancellation/drop, and raw head byte/count boundaries. Independent review found no blocking defect. Thirteen receiver regressions are committed for the existing hosted full broker suite; tests not selected locally await that handoff. These are synthetic reception checks, not live HTTP responses, real token counting, generation cancellation or isolation qualification.
+
+- The M1 response writer builds in Release on native ARM64 with locked offline
+  dependencies; formatting and Release Clippy across all targets pass with
+  warnings denied. Six selected local regressions pass: backend status/media/
+  encoding rejection before I/O, exact cap-plus-one probes for JSON/SSE, one
+  deadline across partial chunk writes, unchanged JSON with fresh headers,
+  fragmented SSE with bounded flushed chunks, and cancellation while awaiting
+  backend data or client flush. Sixteen response regressions are added to the
+  existing hosted broker suite; the other cases remain for CI. No local full
+  suite, actual backend decoder, real-disconnect cancellation, model execution,
+  benchmark or daily-isolation verdict is implied.
 
 Only the selected candidate was downloaded. No projector, fallback, inference benchmark, full local suite, driver change, or global system policy change was performed. Technical captures remain outside Git in unique session temp lanes; artifact storage uses the owner-selected external directory.

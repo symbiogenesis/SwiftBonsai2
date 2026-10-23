@@ -1,9 +1,9 @@
-# M1 request admission and bounded HTTP reception
+# M1 request admission and bounded HTTP I/O
 
-The Rust library in `src/broker/` implements request admission and bounded
-reception from one supplied stream. It has no listener, backend connection,
+The Rust library in `src/broker/` implements request admission, bounded
+reception and response writing on supplied streams. It has no listener, backend connection,
 process launcher or production token counter. Chat remains disabled. These are
-policy/reception components, not daily-service qualification.
+policy/I/O components, not daily-service qualification.
 
 The policy accepts only HTTP/1.1 origin-form `POST /v1/chat/completions`, numeric
 Host `127.0.0.1:<port>`, and the exact `http://127.0.0.1:<port>` Origin when supplied.
@@ -56,9 +56,67 @@ not a preemptive CPU deadline. Errors reveal only value-free categories and drop
 the owned stream; cancellation drops it through ordinary future ownership.
 
 On success, `ReceivedChat::into_parts()` returns the stream and `PendingChat` for
-the future response adapter. Send one response with `Connection: close`, then
-drop the stream. Connection reuse is unsupported. Response writing, streaming,
-backend cancellation and total generation deadlines are not implemented here.
+the response adapter. Send one response with `Connection: close`, then
+drop the stream. Connection reuse is unsupported. Response writing, streaming
+and total response deadlines are implemented separately below; backend transport
+and generation cancellation remain integration work.
+
+## One-response writer
+
+`response::send_chat_response(client, backend_response, &admitted_chat,
+supervisor_deadline)` owns a client writer and an `http::Response` whose owned
+body reader **must already decode HTTP framing**. A future trusted backend
+transport must bound upstream headers, reject ambiguous/unsupported framing,
+and report short Content-Length or incomplete chunked bodies as read errors.
+Passing a raw backend socket would defeat the completion contract. No such HTTP
+client or network connection is supplied by this module.
+
+Before writing anything, the adapter requires status 200, exactly one
+Content-Type matching the admitted request's `stream` flag, and no
+Content-Encoding. Accepted media types are `application/json` and
+`text/event-stream`, optionally followed by `; charset=utf-8`, case-insensitively.
+The stream flag is retained alongside the identical immutable canonical request;
+backend headers cannot select a different response mode. Every downstream header
+is rebuilt: `Connection: close`, `Cache-Control: no-store`,
+`X-Content-Type-Options: nosniff`, the fixed media type, and computed framing.
+No upstream header, cookie, redirect, CORS policy or credential is forwarded.
+
+JSON is collected up to 4 MiB, checked for UTF-8 and JSON object syntax, and sent
+unchanged with its computed Content-Length. Invalid or oversized JSON fails
+before any client write. This syntax check does not validate the completion
+schema, duplicate response keys or model behavior. SSE uses an 8 KiB read buffer
+with the same 4 MiB total decoded-byte limit. Each buffer becomes a downstream
+HTTP chunk and is flushed; SSE bytes, event boundaries, pings and error events
+remain unchanged. The adapter does not wait for event boundaries or retain the
+full stream. At the byte
+limit, one further byte is read to distinguish exact-limit EOF from surplus;
+no payload beyond the limit is forwarded.
+
+Only clean decoded backend EOF permits the terminating HTTP zero chunk. Backend
+read errors, byte-limit violations and observed expiry abandon the stream without
+attempting that terminator or inventing an SSE `[DONE]` event. A final write,
+flush or shutdown can still fail after the terminator has been transmitted; an
+error return does not prove that no complete HTTP body reached the peer.
+Clean HTTP completion is a transport verdict,
+not a successful-generation verdict: the pinned server can finish after an SSE
+error event. Clients still need completion/error interpretation and safe rendering
+of model text.
+
+Backend reads use the supervisor's absolute deadline, permitting slow initial
+prefill without an arbitrary short idle timeout. Each entire client operation
+(headers, one chunk's prefix/payload/suffix, or final flush/shutdown) is shortened
+to five seconds. Partial writes do not restart it. JSON's complete write shares
+one such deadline. Expiry is checked before and after I/O and after synchronous
+JSON parsing; this is not a preemptive CPU limit. No automatic retry occurs.
+Any error may follow a partial write, so callers must close and never append a
+second response. Shutdown runs only on success and is itself bounded.
+
+Both supplied endpoints must close on Drop; `'static` bounds discourage borrowed
+streams but cannot prove wrapper behavior. Dropping the future or observing an
+I/O failure drops both endpoints. An `AsyncWrite` client alone cannot detect a
+read-side disconnect while waiting for backend data. Actual disconnect monitoring,
+backend cancellation, process ownership and the total generation lifecycle remain
+supervisor/transport gates. The adapter creates no task, listener or process.
 
 ## Text-chat admission
 
@@ -107,14 +165,14 @@ is supplied; bytes/characters are never treated as tokens. An admitted body is
 immutable. Parser failures return value-free error categories to keep private
 input out of diagnostics.
 
-Before any listener is enabled, integrate and qualify reception/response handling, private
+Before any listener is enabled, integrate and qualify the reception/response adapters, private
 backend credential and bypass prevention, exact-count transport, single-slot
 bounded queue, total deadlines, streaming cancellation, owned process lifecycle,
 memory limits and restricted inference identity/filesystem/egress. Offline UI
 assets and creative/comfort qualification follow. These controls remain pending
 in the existing PowerShell preflight.
 
-Dependencies, including httparse 1.10.1 and Tokio 1.50.0, are exact-pinned with a committed Cargo lockfile. Native ARM64 Rust
+Dependencies, including httparse 1.10.1 and Tokio 1.50.0, are exact-pinned with a committed Cargo lockfile. The response adapter adds no dependency. Native ARM64 Rust
 1.98.0 is the initial checked toolchain. Local work may build and run focused
 regressions; the full broker suite runs only in the main-only Foundation workflow.
 See [pre-step research](implementation-research.md) for sources and sanity checks.
