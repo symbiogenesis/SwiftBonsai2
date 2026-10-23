@@ -159,6 +159,7 @@ struct Evaluation<'a> {
     geometry: &'a Geometry,
     transforms: &'a Transforms,
     position: usize,
+    frequencies_ready: bool,
     projection: &'a mut ProjectionScratch,
 }
 
@@ -715,6 +716,7 @@ impl Qwen35 {
             geometry: &self.geometry,
             transforms: &self.transforms,
             position: self.position,
+            frequencies_ready: false,
             projection,
         };
         row_into(&self.embedding, token, hidden)?;
@@ -772,8 +774,8 @@ impl Qwen35 {
         let width = self.geometry.head * self.geometry.kv_heads;
         for state in &mut self.state {
             if let LayerState::Full { keys, values } = state {
-                keys.try_reserve_exact(width)?;
-                values.try_reserve_exact(width)?;
+                reserve_cache_append(keys, width, self.context_limit)?;
+                reserve_cache_append(values, width, self.context_limit)?;
             }
         }
         for (state, delta) in self.state.iter_mut().zip(deltas.iter_mut()) {
@@ -856,13 +858,15 @@ impl Evaluation<'_> {
             key.extend_from_slice(&scratch.normalized);
         }
         self.project_into(&layer.value, input, value)?;
-        rope(
-            &mut scratch.query,
-            g,
-            self.position,
-            &mut scratch.frequencies,
-        )?;
-        rope(key, g, self.position, &mut scratch.frequencies)?;
+        // Geometry and position are shared by every full-attention layer in
+        // this token evaluation. Reuse the exact scalar frequencies for Q/K
+        // and subsequent layers; the flag resets for every evaluation attempt.
+        if !self.frequencies_ready {
+            rope_frequencies(g, self.position, &mut scratch.frequencies)?;
+            self.frequencies_ready = true;
+        }
+        rope(&mut scratch.query, g, &scratch.frequencies)?;
+        rope(key, g, &scratch.frequencies)?;
         // F16 K x Q converts the F32 query to F16 even with F32 precision.
         for element in scratch
             .query
@@ -1434,6 +1438,26 @@ fn capacity<T>(count: usize) -> Result<Vec<T>> {
     Ok(result)
 }
 
+fn reserve_cache_append(cache: &mut Vec<f32>, width: usize, context: usize) -> Result<()> {
+    let required = checked_sum(cache.len(), width)?;
+    let maximum = checked_product(&[width, context])?;
+    if required > maximum {
+        return Err(invalid("KV cache append exceeds context bound"));
+    }
+    if required > cache.capacity() {
+        // Exact per-token growth can repeatedly copy the entire prefix.
+        // Double only up to the already validated context allocation bound.
+        // Snapshot accounting continues to charge the actual Vec capacities.
+        let capacity = cache
+            .capacity()
+            .saturating_mul(2)
+            .min(maximum)
+            .max(required);
+        cache.try_reserve_exact(capacity - cache.len())?;
+    }
+    Ok(())
+}
+
 fn copy_values(values: &[f32]) -> Result<Vec<f32>> {
     let mut result = capacity(values.len())?;
     result.extend_from_slice(values);
@@ -1522,12 +1546,7 @@ fn add(target: &mut [f32], other: &[f32]) {
     clippy::as_conversions,
     reason = "Bounded token positions are converted to the same binary32 RoPE input as Prism."
 )]
-#[allow(
-    clippy::suboptimal_flops,
-    reason = "Preserve separate multiply/add rounding in the scalar RoPE reference."
-)]
-fn rope(
-    input: &mut [f32],
+fn rope_frequencies(
     geometry: &Geometry,
     position: usize,
     frequencies: &mut Vec<(f32, f32)>,
@@ -1546,6 +1565,14 @@ fn rope(
         frequencies.push((angle.cos(), angle.sin()));
         theta *= theta_scale;
     }
+    Ok(())
+}
+
+#[allow(
+    clippy::suboptimal_flops,
+    reason = "Preserve separate multiply/add rounding in the scalar RoPE reference."
+)]
+fn rope(input: &mut [f32], geometry: &Geometry, frequencies: &[(f32, f32)]) -> Result<()> {
     for head in input.chunks_exact_mut(geometry.head) {
         for (index, &(cosine, sine)) in frequencies.iter().enumerate() {
             let first = head[index];
@@ -1559,7 +1586,7 @@ fn rope(
 
 #[cfg(test)]
 mod tests {
-    use super::{Geometry, rope};
+    use super::{Geometry, reserve_cache_append, rope, rope_frequencies};
     use crate::Result;
 
     #[test]
@@ -1583,12 +1610,43 @@ mod tests {
         input[0] = 1.0;
         input[4] = 1.0;
         input[10] = 2.0;
-        rope(&mut input, &geometry, 3, &mut Vec::new())?;
+        let mut frequencies = Vec::new();
+        rope_frequencies(&geometry, 3, &mut frequencies)?;
+        rope(&mut input, &geometry, &frequencies)?;
         // Sector four is outside the height section, so [p,p,p,0] selects 0.
         assert_eq!(input[4].to_bits(), 1.0_f32.to_bits());
         assert_eq!(input[10].to_bits(), 2.0_f32.to_bits());
         assert!((input[0] - 3.0_f32.cos()).abs() < 0.000_001);
         assert!((input[6] - 3.0_f32.sin()).abs() < 0.000_001);
+        Ok(())
+    }
+
+    #[test]
+    fn kv_cache_growth_is_geometric_bounded_and_keeps_the_prefix() -> Result<()> {
+        let mut cache = Vec::new();
+        let mut growths = 0;
+        let width = 3;
+        let context = 33;
+        for position in 0..context {
+            let old_capacity = cache.capacity();
+            reserve_cache_append(&mut cache, width, context)?;
+            growths += usize::from(cache.capacity() != old_capacity);
+            assert!(cache.capacity() <= width * context);
+            assert_eq!(cache, vec![1.0; position * width]);
+            cache.extend_from_slice(&[1.0; 3]);
+        }
+        // Thirty-three appends require at most seven allocation growths,
+        // including the final non-power-of-two context cap.
+        assert!(growths <= 7);
+        assert!(reserve_cache_append(&mut cache, width, context).is_err());
+        assert_eq!(cache.len(), width * context);
+        let mut oversized = Vec::with_capacity(width * (context + 1));
+        oversized.resize(width * context, 1.0);
+        assert!(reserve_cache_append(&mut oversized, width, context).is_err());
+        let capacity = cache.capacity();
+        cache.clear();
+        reserve_cache_append(&mut cache, width, context)?;
+        assert_eq!(cache.capacity(), capacity);
         Ok(())
     }
 }

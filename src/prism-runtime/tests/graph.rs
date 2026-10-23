@@ -112,6 +112,130 @@ fn hybrid_fixture() -> Model {
     model
 }
 
+fn two_full_layer_fixture() -> Model {
+    let mut model = fixture(false);
+    model
+        .metadata
+        .insert("qwen35.block_count".to_owned(), json!(2));
+    model.metadata.insert(
+        "qwen35.attention.recurrent_layers".to_owned(),
+        json!([false, false]),
+    );
+    for (suffix, dimensions, values) in [
+        (
+            "attn_q.weight",
+            &[2, 4][..],
+            &[1.0, 0.25, -0.5, 0.75, 0.2, -0.1, 0.4, 0.3][..],
+        ),
+        ("attn_k.weight", &[2, 2][..], &[0.5, -0.25, 0.75, 1.0][..]),
+    ] {
+        let name = format!("blk.0.{suffix}");
+        model
+            .tensors
+            .insert(name.clone(), weight(&name, dimensions, values));
+    }
+    for (_, mut tensor) in model.tensors.clone() {
+        if let Some(suffix) = tensor.name.strip_prefix("blk.0.") {
+            let name = format!("blk.1.{suffix}");
+            tensor.name.clone_from(&name);
+            model.tensors.insert(name, tensor);
+        }
+    }
+    model
+}
+
+#[test]
+fn shared_rope_frequencies_preserve_multi_layer_reference_bits_and_restoration() -> Result<()> {
+    // Captured from the scalar runtime at 3e403cb, before frequency sharing
+    // and geometric KV growth, using this nonzero Q/K two-layer fixture.
+    let expected = [
+        [1_068_827_889, 0],
+        [1_051_613_334, 1_068_478_857],
+        [1_032_297_567, 1_068_814_879],
+        [1_065_414_184, 1_065_230_382],
+        [1_049_817_547, 1_068_581_028],
+        [1_067_000_921, 1_061_226_664],
+        [1_067_657_464, 1_058_852_234],
+        [1_054_981_332, 1_068_236_638],
+    ];
+    let tokens = [0, 1, 1, 0, 1, 0, 0, 1];
+    let mut decoder = Qwen35::new(two_full_layer_fixture(), 16)?;
+    let mut logits = Vec::new();
+    for (&token, expected) in tokens[..3].iter().zip(&expected[..3]) {
+        decoder.evaluate_into(token, &mut logits)?;
+        assert_eq!(
+            logits
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+    let checkpoint = decoder.checkpoint()?;
+    for (&token, expected) in tokens[3..].iter().zip(&expected[3..]) {
+        decoder.evaluate_into(token, &mut logits)?;
+        assert_eq!(
+            logits
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+    decoder.restore(&checkpoint)?;
+    assert!(decoder.evaluate_into(2, &mut logits).is_err());
+    assert_eq!(logits, Vec::<f32>::new());
+    for (&token, expected) in tokens[3..].iter().zip(&expected[3..]) {
+        decoder.evaluate_into(token, &mut logits)?;
+        assert_eq!(
+            logits
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+    decoder.reset()?;
+    for (&token, expected) in tokens.iter().zip(&expected) {
+        decoder.evaluate_into(token, &mut logits)?;
+        assert_eq!(
+            logits
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn staged_multi_layer_rope_failure_does_not_advance_state() -> Result<()> {
+    let fault_fixture = || {
+        let mut model = two_full_layer_fixture();
+        model.tensors.insert(
+            "output.weight".to_owned(),
+            weight("output.weight", &[2, 2], &[0.0, f32::MAX, 0.0, 0.0]),
+        );
+        model
+    };
+    let mut decoder = Qwen35::new(fault_fixture(), 16)?;
+    let mut fresh = Qwen35::new(fault_fixture(), 16)?;
+    let mut logits = Vec::new();
+    decoder.evaluate_into(0, &mut logits)?;
+    assert_eq!(logits, fresh.evaluate(0)?);
+    // Both full layers and their RoPE tables have run before output overflows.
+    assert!(decoder.evaluate_into(1, &mut logits).is_err());
+    assert_eq!(logits, Vec::<f32>::new());
+    decoder.evaluate_into(0, &mut logits)?;
+    assert_eq!(logits, fresh.evaluate(0)?);
+    decoder.reset()?;
+    fresh.reset()?;
+    decoder.evaluate_into(0, &mut logits)?;
+    assert_eq!(logits, fresh.evaluate(0)?);
+    Ok(())
+}
+
 #[test]
 fn reusable_logits_match_owned_evaluation_across_hybrid_restore_and_reset() -> Result<()> {
     let mut owned = Qwen35::new(hybrid_fixture(), 16)?;

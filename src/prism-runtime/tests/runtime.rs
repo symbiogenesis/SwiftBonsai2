@@ -183,6 +183,22 @@ fn bounds_stop_tokens_and_ties_do_not_silently_change_decoding() -> Result<()> {
 }
 
 #[test]
+fn greedy_validates_the_entire_vocabulary_and_preserves_first_ties() -> Result<()> {
+    assert!(greedy(&[]).is_err());
+    for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        for position in 0..4 {
+            let mut logits = [f32::MAX, -1.0, -2.0, -3.0];
+            logits[position] = invalid;
+            assert!(greedy(&logits).is_err());
+        }
+    }
+    assert_eq!(greedy(&[-0.0, 0.0, -0.0])?, 0);
+    assert_eq!(greedy(&[-3.0, -1.0, -1.0, -2.0])?, 1);
+    assert_eq!(greedy(&[-2.0, -1.0, 0.0, 1.0])?, 3);
+    Ok(())
+}
+
+#[test]
 fn snapshot_budget_rejects_before_mutating_a_committed_conversation() -> Result<()> {
     let decoder = decoder();
     let steps = decoder.steps.clone();

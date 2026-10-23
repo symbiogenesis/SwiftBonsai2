@@ -373,16 +373,21 @@ fn copy<T: Copy>(source: &[T]) -> Result<Vec<T>> {
 /// # Errors
 /// Rejects empty, oversized or nonfinite logits.
 pub fn greedy(logits: &[f32]) -> Result<u32> {
-    if logits.is_empty()
-        || logits.len() > 1_048_576
-        || logits.iter().any(|value| !value.is_finite())
-    {
+    if logits.is_empty() || logits.len() > 1_048_576 {
         return Err(invalid("greedy sampling requires nonempty finite logits"));
     }
     let mut best = 0;
-    for index in 1..logits.len() {
-        if logits[index] > logits[best] {
+    let mut maximum = logits[0];
+    for (index, &value) in logits.iter().enumerate() {
+        // Validate every element even after finding an unbeatable maximum.
+        // A strict comparison retains the lowest token ID for all ties,
+        // including equal positive/negative zero values.
+        if !value.is_finite() {
+            return Err(invalid("greedy sampling requires nonempty finite logits"));
+        }
+        if value > maximum {
             best = index;
+            maximum = value;
         }
     }
     Ok(u32::try_from(best)?)
