@@ -23,7 +23,7 @@ repository = "https://github.com/symbiogenesis/SwiftBonsai2"
 [workspace.dependencies]
 serde = "=1.0.229"
 serde_json = "=1.0.154"
-sha2 = "=0.11.1"
+sha2 = { version = "=0.11.1", default-features = false }
 tokio = "=1.54.1"
 windows-sys = "=0.61.2"
 
