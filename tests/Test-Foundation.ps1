@@ -29,6 +29,12 @@ function Assert-Failure {
 
 if ($Case -in @('All','Configuration')) {
     $lock = Read-BonsaiLock
+    $invalidLock = Join-Path $scratch 'invalid-root-lock.json'
+    $lockJson = $lock | ConvertTo-Json -Depth 10
+    foreach ($root in @("[$lockJson]", "[[$lockJson]]", '[]', 'null', 'true', '"text"')) {
+        [IO.File]::WriteAllText($invalidLock, $root)
+        Assert-Failure { Read-BonsaiLock $invalidLock } 'A non-object lock root was accepted.'
+    }
     $serverProfile = Get-Content -LiteralPath (Join-Path $repo 'config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json -DateKind String
     $metadata = Get-Content -LiteralPath (Join-Path $repo 'config/model.metadata.json') -Raw | ConvertFrom-Json -DateKind String
     Assert ($metadata.ModelRevision -eq $lock.model.revision -and $metadata.ArtifactSha256 -eq $lock.model.sha256 -and

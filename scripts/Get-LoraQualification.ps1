@@ -25,7 +25,7 @@ function Read-QualificationJson {
         if ($guard.Length -gt 16MB) { throw 'Qualification JSON exceeds its bounded input size.' }
         $reader = [IO.StreamReader]::new($guard, [Text.UTF8Encoding]::new($false, $true), $true, 4096, $true)
         try { $text = $reader.ReadToEnd() } finally { $reader.Dispose() }
-        $value = $text | ConvertFrom-Json -AsHashtable -DateKind String -Depth 32
+        $value = $text | ConvertFrom-Json -AsHashtable -DateKind String -Depth 32 -NoEnumerate
         if ($value -isnot [Collections.IDictionary]) { throw 'Qualification input must be a JSON object.' }
         return $value
     } finally { $guard.Dispose() }

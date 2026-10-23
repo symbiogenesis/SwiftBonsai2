@@ -47,7 +47,8 @@ function Read-BonsaiLock {
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
     param([string]$Path = (Join-Path $PSScriptRoot '../config/runtime.lock.json'))
-    $lock = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -DateKind String -AsHashtable
+    $lock = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -DateKind String -AsHashtable -NoEnumerate
+    if ($lock -isnot [Collections.IDictionary]) { throw 'The lock file must contain a JSON object.' }
     if ($lock.schemaVersion -ne 1 -or $lock.model.revision -notmatch '^[a-f0-9]{40}$' -or
         $lock.model.repository -notmatch '^[\w.-]+/[\w.-]+$' -or
         $lock.runtime.commit -notmatch '^[a-f0-9]{40}$' -or

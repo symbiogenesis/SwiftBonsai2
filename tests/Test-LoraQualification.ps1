@@ -4,7 +4,7 @@ Focused synthetic qualification scoring regressions; no model or benchmark runs.
 #>
 [CmdletBinding()]
 [OutputType([string])]
-param([Parameter(Mandatory)][ValidateSet('Scoring', 'Rejection')][string]$Case)
+param([Parameter(Mandatory)][ValidateSet('Scoring', 'Rejection', 'Json')][string]$Case)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -78,7 +78,29 @@ function New-Fixture {
     }
 }
 
-if ($Case -ceq 'Scoring') {
+if ($Case -ceq 'Json') {
+    Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Common.psm1') -Force
+    $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-QualificationJson-' + [guid]::NewGuid().ToString('N')))
+    [void][IO.Directory]::CreateDirectory($scratch)
+    $fixture = New-Fixture
+    $paths = @{}
+    $json = @{}
+    foreach ($name in @('Evidence', 'Review')) {
+        $paths[$name] = Join-Path $scratch ($name + '.json')
+        $json[$name] = $fixture[$name] | ConvertTo-Json -Depth 30
+        [IO.File]::WriteAllText($paths[$name], $json[$name])
+    }
+    $command = Join-Path $PSScriptRoot '../scripts/Get-LoraQualification.ps1'
+    $result = & $command -EvidencePath $paths.Evidence -ReviewPath $paths.Review
+    Assert ($result.Status -ceq 'accepted') 'JSON object evidence and timestamp-preserving review did not pass.'
+    foreach ($name in @('Evidence', 'Review')) {
+        foreach ($root in @("[$($json[$name])]", "[[$($json[$name])]]", '[]', 'null', 'true', '"text"')) {
+            [IO.File]::WriteAllText($paths[$name], $root)
+            Assert-Failure { & $command -EvidencePath $paths.Evidence -ReviewPath $paths.Review } "A non-object $name root was accepted."
+        }
+        [IO.File]::WriteAllText($paths[$name], $json[$name])
+    }
+} elseif ($Case -ceq 'Scoring') {
     $fixture = New-Fixture
     $result = Test-BonsaiLoraQualification -Evidence $fixture.Evidence -Review $fixture.Review
     Assert ($result.Status -ceq 'accepted' -and $result.StandardProfileMayEnable -and $result.Gates.Throughput -ceq 'passed' -and $result.Gates.Quality -ceq 'passed') 'Matched synthetic evidence did not pass.'
