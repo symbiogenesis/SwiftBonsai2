@@ -70,20 +70,23 @@ if ($Case -in @('All','Download')) {
     # Synthetic HTTP responses exercise resumption and hostile transport behavior without network access.
     if (-not ('BonsaiTestHandler' -as [type])) {
         Add-Type -TypeDefinition @'
+#nullable enable
 using System;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
+namespace SwiftBonsai.Tests {
 public sealed class BonsaiTestHandler : HttpMessageHandler {
-    public string Mode;
-    public long? LastRange;
-    public int Requests;
-    public byte[] Data = new byte[] {10,20,30,40,50,60};
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) {
+    public string Mode { get; set; } = string.Empty;
+    public long? LastRange { get; private set; }
+    public int Requests { get; private set; }
+    private readonly byte[] data = new byte[] {10,20,30,40,50,60};
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) {
+        ArgumentNullException.ThrowIfNull(request);
         Requests++;
-        foreach (var r in request.Headers.Range?.Ranges ?? new RangeItemHeaderValue[0]) LastRange = r.From;
+        foreach (var r in request.Headers.Range?.Ranges ?? Array.Empty<RangeItemHeaderValue>()) LastRange = r.From;
         if (Mode == "cancel") throw new OperationCanceledException();
         if (Mode == "redirect") {
             var redirect = new HttpResponseMessage(HttpStatusCode.Found);
@@ -92,13 +95,14 @@ public sealed class BonsaiTestHandler : HttpMessageHandler {
         }
         long start = Mode == "resume" || Mode == "bad-range" ? LastRange ?? 0 : 0;
         var response = new HttpResponseMessage(start > 0 ? HttpStatusCode.PartialContent : HttpStatusCode.OK);
-        var data = new byte[Data.Length - start];
-        Array.Copy(Data, start, data, 0, data.Length);
+        var data = new byte[this.data.Length - start];
+        Array.Copy(this.data, start, data, 0, data.Length);
         response.Content = new ByteArrayContent(data);
         if (start > 0) response.Content.Headers.ContentRange = new ContentRangeHeaderValue(
-            Mode == "bad-range" ? 0 : start, Data.Length - 1, Data.Length);
+            Mode == "bad-range" ? 0 : start, this.data.Length - 1, this.data.Length);
         return Task.FromResult(response);
     }
+}
 }
 '@
     }

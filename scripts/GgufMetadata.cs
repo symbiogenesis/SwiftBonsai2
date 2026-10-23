@@ -1,6 +1,9 @@
+#nullable enable
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -26,15 +29,10 @@ public sealed class GgufInspector : IDisposable {
     readonly Dictionary<string, object> arrays = new Dictionary<string, object>(StringComparer.Ordinal);
     readonly Dictionary<string, object> templates = new Dictionary<string, object>(StringComparer.Ordinal);
     readonly Dictionary<string, object> special = new Dictionary<string, object>(StringComparer.Ordinal);
-    readonly List<Tensor> tensors = new List<Tensor>();
+    readonly Collection<Tensor> tensors = new Collection<Tensor>();
     readonly Dictionary<uint, Kind> kinds = new Dictionary<uint, Kind>();
-    sealed class Kind {
-        public string Name; public ulong Block; public ulong Bytes;
-        public Kind(string name, ulong block, ulong bytes) { Name=name; Block=block; Bytes=bytes; }
-    }
-    sealed class Tensor {
-        public string Name; public uint Type; public ulong Offset; public ulong Bytes; public ulong Elements;
-    }
+    sealed record Kind(string Name, ulong Block, ulong Bytes);
+    sealed record Tensor(string Name, uint Type, ulong Offset, ulong Bytes, ulong Elements);
     GgufInspector(string path) {
         file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         reader = new BinaryReader(file, utf8, true);
@@ -87,7 +85,7 @@ public sealed class GgufInspector : IDisposable {
             default: throw Bad("unknown scalar type.");
         }
     }
-    object ArrayDescriptor(bool retain, uint itemType, ulong count) {
+    static Dictionary<string,object>? ArrayDescriptor(bool retain, uint itemType, ulong count) {
         // Only the outer retained record appears in the report. Nested skipped
         // arrays still receive every validation, without allocating a descriptor.
         return retain ? new Dictionary<string,object>{{"ElementTypeId",itemType},{"Count",count}} : null;
@@ -102,7 +100,7 @@ public sealed class GgufInspector : IDisposable {
         }
     }
     // Depth and aggregate counts cap both recursion and adversarial nested-array work.
-    object Value(uint type, int depth, bool retain) {
+    object? Value(uint type, int depth, bool retain) {
         if(depth>4) throw Bad("array nesting exceeds inspection limit.");
         if(type==8) {
             ulong size=U64(); if(size>StringLimit) throw Bad("string exceeds 8 MiB inspection limit."); Need(size);
@@ -128,12 +126,13 @@ public sealed class GgufInspector : IDisposable {
         }
         var values=keep ? new List<object>((int)count) : null;
         for(ulong i=0;i<count;i++) {
-            object value=Value(itemType,depth+1,keep);
-            if(keep) values.Add(value);
+            object? value=Value(itemType,depth+1,keep);
+            if(values is not null) values.Add(value ?? throw Bad("retained scalar cannot be null."));
         }
-        return keep ? (object)values : ArrayDescriptor(retain,itemType,count);
+        return values is not null ? values : ArrayDescriptor(retain,itemType,count);
     }
     void HashRange(IncrementalHash hash, long start, long length) {
+        ArgumentNullException.ThrowIfNull(hash);
         long restore=file.Position;
         file.Position=start;
         while(length>0) {
@@ -144,10 +143,10 @@ public sealed class GgufInspector : IDisposable {
     }
     string Digest(long start,long length) {
         using(var hash=IncrementalHash.CreateHash(HashAlgorithmName.SHA256)) {
-            HashRange(hash,start,length); return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+            HashRange(hash,start,length); return Convert.ToHexStringLower(hash.GetHashAndReset());
         }
     }
-    object Lookup(string key) { object value; return scalars.TryGetValue(key,out value) ? value : null; }
+    object? Lookup(string key) { object? value; return scalars.TryGetValue(key,out value) ? value : null; }
     Dictionary<string,object> Inspect(string path) {
         if(U32()!=0x46554747) throw Bad("invalid magic.");
         if(U32()!=3) throw Bad("only little-endian version 3 is supported.");
@@ -167,14 +166,14 @@ public sealed class GgufInspector : IDisposable {
                     if(size>StringLimit) throw Bad("template exceeds inspection limit."); Need(size); file.Position+=checked((long)size);
                     templates.Add(key,new Dictionary<string,object>{{"Utf8Bytes",size},{"Sha256",Digest(valueStart+8,(long)size)}});
                 } else {
-                    object value=Value(type,0,true);
-                    if(type==9) arrays.Add(key,value); else if(value!=null) scalars.Add(key,value);
+                    object? value=Value(type,0,true);
+                    if(type==9) arrays.Add(key,value ?? throw Bad("retained array descriptor is required.")); else if(value!=null) scalars.Add(key,value);
                     if(key.StartsWith("tokenizer.",StringComparison.Ordinal) && key.EndsWith("_token_id",StringComparison.Ordinal)) {
                         if(type!=4 && type!=5 && type!=10 && type!=11) throw Bad("special token ID must be an integer.");
-                        special.Add(key,value);
+                        special.Add(key,value ?? throw Bad("special token ID is required."));
                     }
                     if(key=="general.alignment") {
-                        if(type!=4) throw Bad("general.alignment must be UINT32."); alignment=(uint)value;
+                        if(value is not uint alignmentValue) throw Bad("general.alignment must be UINT32."); alignment=alignmentValue;
                         if(alignment==0 || (alignment&(alignment-1))!=0 || alignment>1048576) throw Bad("invalid/over-limit alignment.");
                     }
                 }
@@ -182,22 +181,22 @@ public sealed class GgufInspector : IDisposable {
                     long bytes=file.Position-start; HashRange(hash,start,bytes); tokenizerBytes=checked(tokenizerBytes+bytes); tokenizerRecords++;
                 }
             }
-            tokenizerHash=Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+            tokenizerHash=Convert.ToHexStringLower(hash.GetHashAndReset());
         }
         long metadataEnd=file.Position;
-        object architecture=Lookup("general.architecture");
-        if(!(architecture is string) || ((string)architecture).Length==0) throw Bad("general.architecture string is required.");
+        object? architecture=Lookup("general.architecture");
+        if(architecture is not string arch || arch.Length==0) throw Bad("general.architecture string is required.");
         var names=new HashSet<string>(StringComparer.Ordinal);
         for(ulong i=0;i<tensorCount;i++) {
             string name=Text(1024); if(name.Length==0 || !names.Add(name)) throw Bad("empty or duplicate tensor name.");
             uint dimensions=U32(); if(dimensions<1 || dimensions>4) throw Bad("invalid tensor dimension count.");
             ulong n=1, first=0;
             for(uint d=0;d<dimensions;d++) { ulong size=U64(); if(size==0 || size>long.MaxValue) throw Bad("invalid tensor dimension."); if(d==0) first=size; n=checked(n*size); }
-            uint type=U32(); Kind kind; if(!kinds.TryGetValue(type,out kind)) throw Bad("unknown/unsupported tensor type ID "+type+".");
+            uint type=U32(); Kind? kind; if(!kinds.TryGetValue(type,out kind)) throw Bad("unknown/unsupported tensor type ID "+type+".");
             if(first%kind.Block!=0) throw Bad("tensor row is not divisible by quantization block size.");
             ulong bytes=checked(n/kind.Block*kind.Bytes), offset=U64();
             if(offset%alignment!=0) throw Bad("unaligned tensor offset.");
-            tensors.Add(new Tensor{Name=name,Type=type,Offset=offset,Bytes=bytes,Elements=n});
+            tensors.Add(new Tensor(name,type,offset,bytes,n));
         }
         long descriptorsEnd=file.Position;
         ulong dataOffset=(ulong)descriptorsEnd;
@@ -215,18 +214,17 @@ public sealed class GgufInspector : IDisposable {
             foreach(Tensor t in group) { bytes=checked(bytes+t.Bytes); parameters=checked(parameters+t.Elements); }
             histogram.Add(new Dictionary<string,object>{{"TypeId",group.Key},{"Name",kinds[group.Key].Name},{"Count",group.Count()},{"Bytes",bytes},{"Elements",parameters}});
         }
-        string arch=(string)architecture;
         ulong blocks=0, nextn=0;
-        object blockValue=Lookup(arch+".block_count"), nextnValue=Lookup(arch+".nextn_predict_layers");
-        if(blockValue!=null) blocks=Convert.ToUInt64(blockValue);
-        if(nextnValue!=null) nextn=Convert.ToUInt64(nextnValue);
+        object? blockValue=Lookup(arch+".block_count"), nextnValue=Lookup(arch+".nextn_predict_layers");
+        if(blockValue!=null) blocks=Convert.ToUInt64(blockValue,CultureInfo.InvariantCulture);
+        if(nextnValue!=null) nextn=Convert.ToUInt64(nextnValue,CultureInfo.InvariantCulture);
         if(nextn>blocks) throw Bad("MTP block count exceeds block count.");
         var mtp=new List<string>();
         foreach(Tensor t in tensors) {
             bool match=t.Name.StartsWith("nextn.",StringComparison.Ordinal) || t.Name.Contains(".nextn.",StringComparison.Ordinal);
             if(nextn>0 && t.Name.StartsWith("blk.",StringComparison.Ordinal)) {
                 int end=t.Name.IndexOf('.',4); ulong block;
-                if(end>4 && ulong.TryParse(t.Name.Substring(4,end-4),out block) && block>=blocks-nextn && block<blocks) match=true;
+                if(end>4 && ulong.TryParse(t.Name.AsSpan(4,end-4),NumberStyles.None,CultureInfo.InvariantCulture,out block) && block>=blocks-nextn && block<blocks) match=true;
             }
             if(match) mtp.Add(t.Name);
         }
