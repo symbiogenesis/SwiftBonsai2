@@ -37,6 +37,15 @@ public static class PtqBatchProbe {
         var method=codec.GetMethod(decode ? "DecodeBlocks" : "EncodeBlocks") ?? throw new InvalidDataException("Missing real codec batch method.");
         method.CreateDelegate<Transform>()(source,destination);
     }
+    /// <summary>Exercises actual overlapping span slices with otherwise valid block lengths.</summary>
+    /// <param name="codec">The already loaded codec type.</param>
+    /// <param name="decode">Whether to decode rather than encode.</param>
+    public static void RunOverlap(Type codec, bool decode) {
+        ArgumentNullException.ThrowIfNull(codec);
+        var buffer=new byte[34];
+        var method=codec.GetMethod(decode ? "DecodeBlocks" : "EncodeBlocks") ?? throw new InvalidDataException("Missing real codec batch method.");
+        method.CreateDelegate<Transform>()(buffer.AsSpan(0,decode ? 28 : 34),buffer.AsSpan(0,decode ? 34 : 28));
+    }
 }
 }
 '@
@@ -165,4 +174,6 @@ Assert-Failure { [SwiftBonsai.PtqBatchProbe]::Run([SwiftBonsai.Pq2Ptq1Codec], [b
 Assert-Failure { [SwiftBonsai.PtqBatchProbe]::Run([SwiftBonsai.Pq2Ptq1Codec], $batch, [byte[]]::new(85), $false) } 'Extra PTQ destination byte was accepted.'
 Assert-Failure { [SwiftBonsai.PtqBatchProbe]::Run([SwiftBonsai.Pq2Ptq1Codec], [byte[]]::new(29), [byte[]]::new(34), $true) } 'Incomplete PTQ batch was accepted.'
 Assert-Failure { [SwiftBonsai.PtqBatchProbe]::Run([SwiftBonsai.Pq2Ptq1Codec], $packedBatch, [byte[]]::new(101), $true) } 'Short PQ2 destination was accepted.'
+Assert-Failure { [SwiftBonsai.PtqBatchProbe]::RunOverlap([SwiftBonsai.Pq2Ptq1Codec], $false) } 'Overlapping encode buffers were accepted.'
+Assert-Failure { [SwiftBonsai.PtqBatchProbe]::RunOverlap([SwiftBonsai.Pq2Ptq1Codec], $true) } 'Overlapping decode buffers were accepted.'
 Write-Information -InformationAction Continue 'PQ2/PTQ1 focused regressions passed: exact symbols/scales and pinned canonical byte layout, no runtime parity claim.'
