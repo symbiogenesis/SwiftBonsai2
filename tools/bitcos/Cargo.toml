@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99.1"
 publish = false
+license = "Apache-2.0"
 description = "Safe scalar reference implementation of experimental Bonsai ternary packing"
 repository = "https://github.com/symbiogenesis/SwiftBonsai2"
 keywords = ["ternary", "quantization", "scalar"]
@@ -41,9 +42,6 @@ all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 nursery = { level = "deny", priority = -1 }
 cargo = { level = "deny", priority = -1 }
-# The repository has no project-wide license grant; do not invent one for this
-# unpublished crate. All other package metadata is supplied above.
-cargo_common_metadata = "allow"
 as_conversions = "deny"
 dbg_macro = "deny"
 exit = "deny"

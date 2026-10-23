@@ -49,3 +49,13 @@ and [Qwen reference accounting](docs/model-selection.md#source-only-compatibilit
 - [Model and memory research](docs/swift-memory.md) — the current Swift assessment and experiments.
 - [Implementation plan](PLAN.md) — goals, design, and remaining work.
 - [Implementation research](docs/implementation-research.md) — technical decisions and evidence.
+
+## License
+
+Original project code, documentation, and configuration are licensed under the
+[Apache License 2.0](LICENSE). Third-party code retains its own terms, including
+the MIT-licensed Prism/ggml portions identified in [NOTICE](NOTICE).
+
+Model weights and adapters are separate downloads governed by their publishers'
+licenses. See the [license decision and dependency review](docs/licensing.md)
+for scope, attribution, and redistribution requirements.
