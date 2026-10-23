@@ -2,7 +2,7 @@
 
 **Research and implementation plan — October 22, 2026**
 
-**Status:** planning only. No inference engine has been implemented, models downloaded, drivers changed, benchmarks run, or laptop performance established. Values marked *proposed* or *estimated* are design inputs to validate.
+**Status — October 23, 2026:** implementation started. [M0a chooses Qwen3.8-27B UD-Q3_K_XL from literature](docs/model-selection.md), with Gemma 4 12B QAT as fallback. M0 inventory and pinned provisioning are implemented; a temporary ARM64 CPU package passes integrity/architecture/version checks. No model weights, driver changes, benchmarks, or laptop inference-performance verdict exist. CPU loading and M1 chat/security remain pending. See [README.md](README.md) and [implementation evidence](docs/implementation-research.md). Values marked *proposed* or *estimated* remain design inputs to validate.
 
 **Model selection comes first, through literature searching only.** Choose the model up front using already-published, publicly accessible online benchmarks, evaluations, model documentation, and samples. Model selection will **not** be based on local benchmarking. Record sources, dates, exact model versions/quantizations, relevant settings, and evidence gaps, then document the choice before building the inference engine. The next phase is to **build, validate, and optimize the inference engine for that chosen model**. Engine correctness, creative-workflow checks, and latency, throughput, memory, energy, and thermal measurements remain in scope under the repository's CI rules; they validate and improve the implementation rather than serve as a candidate-model selection campaign.
 
@@ -697,7 +697,7 @@ Choose among a small Pareto set: fastest interactive, best long-context capacity
 
 ## 11. Proposed repository implementation layout
 
-This is a future layout; only this Markdown plan is being delivered now.
+This is the target layout. The initial foundation is implemented as described in README.md; later broker, launch, and qualification components remain pending.
 
 ```text
 PLAN.md
@@ -723,7 +723,7 @@ docs/writing-workflow.md          scene packets, canon, summaries, context/outpu
 
 Keep third-party source at pinned revisions without copying an untracked engine into the repository. Model packs and personal conversation caches stay outside Git. Build outputs use documented artifact lanes; disposable diagnostics live in temp. A tool should fail clearly if a required native component is absent rather than installing arbitrary replacements.
 
-Give every delegated worker a dedicated worktree, retain useful evidence, integrate session changes into local `main`, validate the settled revision, and remove eligible session worktrees/branches. Preserve other sessions' work. This planning revision is explicitly **local-only** at the owner's request. Follow the owner's applicable publication instructions for subsequent work; when remote publication is authorized or required, publish only `main`, never work branches or publication tags.
+Give every delegated worker a dedicated worktree, retain useful evidence, integrate session changes into local `main`, validate the settled revision, and remove eligible session worktrees/branches. Preserve other sessions' work. The original planning revision was explicitly **local-only**. Subsequent implementation follows the owner's current publication instructions: publish only `main`, never work branches or publication tags.
 
 ## 12. Delivery milestones and stop/go decisions
 

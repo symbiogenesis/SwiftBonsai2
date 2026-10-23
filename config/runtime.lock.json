@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "decision": "docs/model-selection.md",
+  "model": {
+    "repository": "unsloth/Qwen3.8-27B-GGUF",
+    "revision": "4ca720788d1e01f1bff70c033e0d0028fd02e502",
+    "filename": "Qwen3.8-27B-UD-Q3_K_XL.gguf",
+    "bytes": 13146393504,
+    "sha256": "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e",
+    "digestSource": "https://huggingface.co/api/models/unsloth/Qwen3.8-27B-GGUF/revision/4ca720788d1e01f1bff70c033e0d0028fd02e502?blobs=true",
+    "license": "Apache-2.0",
+    "architecture": "qwen35",
+    "expectedMetadata": {
+      "blockCountIncludingMtp": 65,
+      "mtpBlocks": 1,
+      "fullAttentionInterval": 4,
+      "kvHeads": 4,
+      "keyLength": 256,
+      "valueLength": 256,
+      "ssmStateSize": 128,
+      "ssmInnerSize": 6144,
+      "ssmGroupCount": 16,
+      "ssmConvolutionKernel": 4
+    }
+  },
+  "runtime": {
+    "repository": "https://github.com/ggml-org/llama.cpp.git",
+    "commit": "620d2225cc436ab0b001e3200e590e3b286ef9ab",
+    "release": "b11669",
+    "license": "MIT",
+    "asset": {
+      "filename": "llama-b11669-bin-win-cpu-arm64.zip",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-win-cpu-arm64.zip",
+      "bytes": 12442177,
+      "sha256": "9cff39ffed17edcd03a7d876073f74d7b48cd43a1e5eafdd59ee094185ad871b",
+      "digestSource": "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/b11669"
+    }
+  },
+  "fallback": {
+    "repository": "google/gemma-4-12B-it-qat-q4_0-gguf",
+    "revision": "29d097773436b69ff9feafd636ab4cf873786537",
+    "filename": "gemma-4-12b-it-qat-q4_0.gguf",
+    "bytes": 6975879296,
+    "sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+    "status": "literature-nominated-only; not downloaded or selected"
+  },
+  "qualification": {
+    "sourceCompatibility": "passed",
+    "modelDownload": "not-performed",
+    "cpuLoading": "pending",
+    "dailySecurity": "pending",
+    "devicePerformance": "pending-self-hosted-ci"
+  }
+}
