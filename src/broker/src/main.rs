@@ -7,9 +7,10 @@ fn main() -> ExitCode {
     let mut args = env::args_os().skip(1).peekable();
     if args.peek().is_some_and(|value| value == "--help") {
         args.next();
-        let mut help = USAGE.to_owned();
         #[cfg(windows)]
-        help.push_str(bonsai_broker::launcher::LAUNCH_USAGE);
+        let help = format!("{USAGE}{}", bonsai_broker::launcher::LAUNCH_USAGE);
+        #[cfg(not(windows))]
+        let help = USAGE;
         return if args.next().is_none() && std::io::stdout().write_all(help.as_bytes()).is_ok() {
             ExitCode::SUCCESS
         } else {
