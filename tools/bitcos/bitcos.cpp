@@ -25,7 +25,10 @@ void check_scale(const std::uint8_t* p) {
 unsigned code(const Pq2Block& b, std::size_t i) noexcept { return (b[2 + i / 4] >> (2 * (i % 4))) & 3U; }
 void check_pq2(const Pq2Block& b) {
     check_scale(b.data());
-    for (std::size_t i = 0; i < 128; ++i) if (code(b, i) == 3) bad("PQ2 +2 symbol is not ternary");
+    // A 2-bit code is 3 exactly when both bits in its pair are set.
+    for (std::size_t i = 2; i < b.size(); ++i) {
+        if ((b[i] & (b[i] >> 1) & 0x55U) != 0) bad("PQ2 +2 symbol is not ternary");
+    }
 }
 void check_dot(std::size_t blocks, std::size_t activation_blocks) {
     if (blocks == 0 || blocks % 2 != 0 || activation_blocks != blocks / 2) bad("Q8_K dot requires nonempty pairs of PQ2 groups");
@@ -39,7 +42,6 @@ unsigned present(const std::uint8_t* block) noexcept {
     return n;
 #endif
 }
-std::size_t block_bytes(const std::uint8_t* block) noexcept { return 18 + (present(block) + 7U) / 8U; }
 float scale_product(const std::uint8_t* block, const Q8KBlock& activation) noexcept {
     return half_to_float(scale_bits(block)) * activation.scale;
 }
@@ -258,7 +260,7 @@ Matrix Matrix::pack(std::span<const Pq2Block> source, std::size_t rows, std::siz
     for (std::size_t row = 0; row < rows; ++row) {
         offsets[row] = static_cast<std::uint32_t>(cursor);
         for (std::size_t b = 0; b < blocks; ++b) {
-            const auto& source_block = source[row * blocks + b]; check_pq2(source_block);
+            const auto& source_block = source[row * blocks + b];
             std::array<std::uint8_t, 34> block{}; block[0] = source_block[0]; block[1] = source_block[1];
             unsigned rank = 0;
             for (unsigned i = 0; i < 128; ++i) {
@@ -303,7 +305,7 @@ std::vector<Pq2Block> Matrix::unpack_row(std::size_t row) const {
             if ((src[2 + i / 8] & (1U << (i % 8))) != 0) { c = ((src[18 + rank / 8] >> (rank % 8)) & 1U) * 2; ++rank; }
             block[2 + i / 4] |= static_cast<std::uint8_t>(c << (2 * (i % 4)));
         }
-        cursor += block_bytes(src);
+        cursor += 18 + (rank + 7U) / 8U;
     }
     return result;
 }
@@ -316,7 +318,7 @@ float Matrix::dot_scalar(std::size_t row, std::span<const Q8KBlock> a) const {
             const int w = ((block[18 + rank / 8] >> (rank % 8)) & 1U) != 0 ? 1 : -1; ++rank;
             sum += w * a[b / 2].values[(b % 2) * 128 + i];
         }
-        total += scale_product(block, a[b / 2]) * static_cast<float>(sum); cursor += block_bytes(block);
+        total += scale_product(block, a[b / 2]) * static_cast<float>(sum); cursor += 18 + (rank + 7U) / 8U;
     }
     return total;
 }
