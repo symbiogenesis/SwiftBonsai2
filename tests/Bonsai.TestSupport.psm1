@@ -15,14 +15,16 @@ function Assert {
 
 function Assert-Failure {
     <# .SYNOPSIS
-    Requires an invalid-input action to throw.
+    Requires an invalid-input action to throw, optionally returning its diagnostic.
     #>
     [CmdletBinding()]
-    [OutputType([void])]
-    param([scriptblock]$Action, [string]$Message = 'Expected invalid input to fail.')
-    $failed = $false
-    try { & $Action | Out-Null } catch { $failed = $true }
-    Assert $failed $Message
+    [OutputType([string])]
+    param([scriptblock]$Action, [string]$Message = 'Expected invalid input to fail.', [switch]$PassThru)
+    try { & $Action | Out-Null } catch {
+        if ($PassThru) { return $_.Exception.Message }
+        return
+    }
+    throw $Message
 }
 
 Export-ModuleMember -Function Assert, Assert-Failure

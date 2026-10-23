@@ -175,7 +175,7 @@ switch ($Case) {
         $mode = if ($Case -eq 'Timeout') { 'Tree' } else { 'Drain' }
         $processIds = @()
         try {
-            $message = Assert-Failure { Invoke-Probe -Mode $mode -Arguments @($marker) -TimeoutSeconds 10 -LogPath $log } 'The long-running process or inherited output pipe was not bounded.'
+            $message = Assert-Failure -PassThru { Invoke-Probe -Mode $mode -Arguments @($marker) -TimeoutSeconds 10 -LogPath $log } 'The long-running process or inherited output pipe was not bounded.'
             Assert ([IO.File]::Exists($marker)) 'The synthetic process did not publish its ownership marker.'
             $processIds = @([IO.File]::ReadAllText($marker) | ConvertFrom-Json -DateKind String)
             Assert ($processIds.Count -eq 2) 'The synthetic process tree marker was incomplete.'
