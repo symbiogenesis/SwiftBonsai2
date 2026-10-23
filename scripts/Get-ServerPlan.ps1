@@ -1,4 +1,4 @@
-#requires -Version 7.4
+#requires -Version 7.6
 <#
 .SYNOPSIS
 Prepares the fixed CPU server configuration without enabling chat or loading a model.

@@ -1,4 +1,4 @@
-#requires -Version 7.4
+#requires -Version 7.6
 # Nonlaunching M1 policy preparation; this module is not an HTTP or OS boundary.
 # Literature and pre-implementation sanity checks: docs/implementation-research.md.
 Set-StrictMode -Version Latest
@@ -23,7 +23,7 @@ function New-BonsaiServerPlan {
     param(
         [Parameter(Mandatory)][string]$DataDirectory,
         [ValidateRange(1024,65535)][int]$Port = 8080,
-        [Collections.IDictionary]$Profile = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') | ConvertFrom-Json -AsHashtable)
+        [Collections.IDictionary]$Profile = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') | ConvertFrom-Json -DateKind String -AsHashtable)
     )
     Assert-BonsaiServerEnvironment
     # Reject UNC before filesystem probing; this plan promises local/offline paths.
@@ -68,7 +68,7 @@ function New-BonsaiServerPlan {
         @($Profile.remainingGates | Where-Object { $_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_) }).Count) {
         throw 'Reference profile needs explicit estimate scope and remaining gates.'
     }
-    $model = Resolve-ExternalPath (Join-Path $data "models/$($lock.model.revision)/$($lock.model.filename)")
+    $model = Resolve-ExternalPath (Join-Path $data -ChildPath 'models', $lock.model.revision, $lock.model.filename)
     $keyFile = Resolve-ExternalPath (Join-Path $data 'private/server.key')
     $origin = 'http://127.0.0.1:' + $Port.ToString([Globalization.CultureInfo]::InvariantCulture)
     # Values are separate tokens, never a shell command. This is a reviewable

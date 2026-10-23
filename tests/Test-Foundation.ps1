@@ -171,7 +171,7 @@ if ($Case -in @('All','ServerPolicy')) {
         @{ Name = 'cachePrompt'; Value = $true }, @{ Name = 'estimatedRuntimeHeadroomBytes'; Value = 1 },
         @{ Name = 'remainingGates'; Value = @() }, @{ Name = 'extraArguments'; Value = @('--tools','all') }
     )) {
-        $profile = Get-Content -Raw -LiteralPath $profilePath | ConvertFrom-Json -AsHashtable
+        $profile = Get-Content -Raw -LiteralPath $profilePath | ConvertFrom-Json -DateKind String -AsHashtable
         $profile[$mutation.Name] = $mutation.Value
         Expect-Failure { New-BonsaiServerPlan -DataDirectory $data -Profile $profile } "Unsafe or mistyped profile accepted: $($mutation.Name)"
     }
