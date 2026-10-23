@@ -80,7 +80,7 @@ pub enum ServeError {
 /// # Errors
 /// Returns [`ServeError`] for request rejection, backend/response failure,
 /// deadline expiry or client abandonment.
-#[expect(
+#[allow(
     clippy::future_not_send,
     reason = "the supplied connector and streams may be local; no task is spawned"
 )]

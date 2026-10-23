@@ -314,7 +314,7 @@ impl LaunchedService {
     ///
     /// # Errors
     /// Returns resource/backend/cleanup failure after shutting down the service.
-    #[expect(
+    #[allow(
         clippy::future_not_send,
         reason = "the bounded runner and shutdown may be local; no task is spawned"
     )]

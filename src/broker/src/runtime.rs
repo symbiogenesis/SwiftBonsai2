@@ -292,7 +292,7 @@ enum Event<'a> {
 /// Pass `tokio::signal::ctrl_c()` for console cancellation, or an application
 /// notification future with the same `io::Result<()>` output. A notification
 /// failure causes the same cancellation/drain and a distinct failure report.
-#[expect(
+#[allow(
     clippy::future_not_send,
     reason = "the bounded request futures and shutdown source may be local; no task is spawned"
 )]

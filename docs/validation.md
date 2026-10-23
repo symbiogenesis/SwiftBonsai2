@@ -91,6 +91,25 @@ the Rust 2024 language and formatting editions for Cargo and standalone rustfmt.
 Foundation also checks Prism's optional loader documentation with all features
 after the native library paths are configured.
 
+The opt-in [Rust nightly trial](../tools/rust-trial/README.md) compares the stable
+baseline with `nightly-2026-10-22` on native Windows ARM64. The candidate is pinned
+in [its configuration](../config/rust-nightly-trial.json); the default toolchain,
+production decoders and Foundation gates retain stable Rust. Its separate manual,
+main-only [workflow](../.github/workflows/rust-nightly.yml) runs formatting, Release
+Clippy, documentation and complete correctness suites for both toolchains. Prism
+loader APIs are compiled, while native linking and engine regression remain in
+Foundation. Trial targets and logs use separate external storage.
+
+The compiler probes compare all four trait-solver/Polonius combinations using
+the same nightly binary, with stable as an additional baseline. Positive and
+invalid-alias controls distinguish intended acceptance from broken compilation;
+expected failures require the specific borrow/type error code. Receipts include
+compiler identities, exact arguments, source hashes and verdicts. A synthetic
+borrowed-logits cache demonstrates stable-compatible output storage reuse. The
+trial makes no claim of improved model memory, inference speed or checkpoint
+ownership. Full trial selections and complete suites remain CI-only; the script
+supports one focused compiler case locally and rejects local `-FullTests`.
+
 Analyzer exceptions are documented at their scope. PowerShell's UTF-8 BOM rule targets legacy Windows PowerShell and is excluded for this 7.6 baseline; its obsolete API compatibility profiles are not applied to .NET 10. Dynamic PowerShell output annotations support analysis and documentation rather than enforcing return types at runtime. No blanket Rust restriction group is enabled, since it contains mutually incompatible rules; selected safety restrictions are enforced explicitly.
 
 Use stable PowerShell and .NET features supported by the 7.6 baseline where they improve clarity or correctness. Artifact paths use the [array form of `Join-Path -ChildPath`](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/join-path?view=powershell-7.6), and configuration reads use [`ConvertFrom-Json -DateKind String`](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json?view=powershell-7.6) to preserve JSON strings exactly.
