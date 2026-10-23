@@ -8,6 +8,7 @@
 use std::ffi::{OsStr, OsString};
 use std::io;
 use std::os::windows::ffi::OsStrExt as _;
+use std::os::windows::io::AsSocket;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
@@ -151,6 +152,19 @@ pub fn listener_process_id(port: u16) -> io::Result<Option<u32>> {
         return Err(invalid("listener port must be nonzero"));
     }
     native::listener_process_id(port)
+}
+
+/// Requires exclusive Windows ownership of a socket's bound address.
+///
+/// Call this before binding a server socket or reserving a backend port. Without
+/// exclusivity, some conflicting `SO_REUSEADDR` binds can share an
+/// address and make delivery indeterminate. The socket stays borrowed;
+/// this function does not bind it or take ownership of its handle.
+///
+/// # Errors
+/// Returns the Winsock error if `SO_EXCLUSIVEADDRUSE` cannot be enabled.
+pub fn require_exclusive_address(socket: &impl AsSocket) -> io::Result<()> {
+    native::require_exclusive_address(socket)
 }
 
 fn invalid(message: &'static str) -> io::Error {

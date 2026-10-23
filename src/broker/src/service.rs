@@ -13,6 +13,7 @@ use crate::{
 };
 use std::{
     future::poll_fn,
+    io,
     net::{Ipv4Addr, SocketAddrV4},
     pin::pin,
     sync::atomic::{AtomicBool, Ordering},
@@ -21,12 +22,23 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 use tokio::{
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpSocket, TcpStream},
     time::{Instant, timeout_at},
 };
 
 /// Maximum time an accepted socket may wait for the single active request slot.
 pub const QUEUE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Reserve numeric IPv4 loopback with exclusive Windows address ownership.
+pub(crate) fn bound_loopback_socket(port: u16) -> io::Result<TcpSocket> {
+    let socket = TcpSocket::new_v4()?;
+    // Windows requires this option before bind. Disabling SO_REUSEADDR alone
+    // does not request exclusive ownership of the transport address.
+    #[cfg(windows)]
+    bonsai_windows_process::require_exclusive_address(&socket)?;
+    socket.bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into())?;
+    Ok(socket)
+}
 
 /// Value-free service configuration, admission, transport or request error.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,6 +76,11 @@ impl LocalChatService {
     ///
     /// # Errors
     /// Returns a value-free [`ServiceError`] for invalid policy or bind failure.
+    #[expect(
+        clippy::unused_async,
+        clippy::unused_async_trait_impl,
+        reason = "Preserve the existing asynchronous service-binding API."
+    )]
     pub async fn bind(
         port: u16,
         frontend_key: &str,
@@ -82,8 +99,8 @@ impl LocalChatService {
         let backend = LoopbackBackend::new(backend_port, backend_key)
             .map_err(|_| ServiceError::Configuration)?;
         let gate = RequestGate::new(max_waiting).map_err(ServiceError::Gate)?;
-        let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port))
-            .await
+        let listener = bound_loopback_socket(port)
+            .and_then(|socket| socket.listen(1024))
             .map_err(|_| ServiceError::Io)?;
         let port = listener.local_addr().map_err(|_| ServiceError::Io)?.port();
         if port < 1024 || port == backend_port {

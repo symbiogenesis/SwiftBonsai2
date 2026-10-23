@@ -17,12 +17,16 @@ namespace SwiftBonsai {
 /// <summary>Owns a process tree in a Windows Job with enforced resource limits.</summary>
 [SupportedOSPlatform("windows10.0")]
 public sealed class OwnedProcess : IDisposable {
-    private const uint LimitFlags = 0x2000 | 0x200 | 0x8; // kill on close, job commit, process count
+    private const uint LimitFlags = 0x2000 | 0x400 | 0x200 | 0x8; // kill on close, no crash dialog, job commit, process count
+    private readonly Lock lifetime = new();
     private readonly NativeHandle job;
+    private readonly NativeHandle rootHandle;
     private readonly Process rootProcess;
     private bool disposed;
 
-    private OwnedProcess(NativeHandle job, Process process) { this.job = job; rootProcess = process; }
+    private OwnedProcess(NativeHandle job, NativeHandle rootHandle, Process process) {
+        this.job = job; this.rootHandle = rootHandle; rootProcess = process;
+    }
 
     /// <summary>Gets the root process for waiting and current-memory observations.</summary>
     public Process Process => rootProcess;
@@ -30,10 +34,12 @@ public sealed class OwnedProcess : IDisposable {
     /// <summary>Gets the observed peak job-wide committed bytes, including descendants.</summary>
     /// <returns>The Windows native accounting counter, not physical memory acceptance evidence.</returns>
     public ulong GetPeakJobMemoryBytes() {
-        ObjectDisposedException.ThrowIf(disposed, this);
-        if (!Native.QueryLimits(job, 9, out ExtendedLimits limits, (uint)Marshal.SizeOf<ExtendedLimits>(), IntPtr.Zero))
-            throw Error("Query job memory");
-        return limits.PeakJobMemoryUsed.ToUInt64();
+        lock (lifetime) {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (!Native.QueryLimits(job, 9, out ExtendedLimits limits, (uint)Marshal.SizeOf<ExtendedLimits>(), IntPtr.Zero))
+                throw Error("Query job memory");
+            return limits.PeakJobMemoryUsed.ToUInt64();
+        }
     }
 
     /// <summary>Starts suspended, atomically assigns a Job, then resumes the root.</summary>
@@ -58,6 +64,7 @@ public sealed class OwnedProcess : IDisposable {
         if (command.Length >= 32767) throw new ArgumentException("The Windows command line is too long.", nameof(arguments));
 
         NativeHandle? job = null;
+        NativeHandle? nativeProcess = null;
         Process? process = null;
         try {
             job = Native.CreateJob(IntPtr.Zero, null);
@@ -67,9 +74,11 @@ public sealed class OwnedProcess : IDisposable {
                 JobMemoryLimit = new UIntPtr(jobMemoryBytes)
             };
             if (!Native.SetLimits(job, 9, ref limits, (uint)Marshal.SizeOf<ExtendedLimits>())) throw Error("Set job limits");
-            using SafeFileHandle input = OpenStandardFile("NUL", 0x80000000, 3);
-            using SafeFileHandle output = OpenStandardFile(stdoutPath, 0x40000000, 1);
-            using SafeFileHandle error = OpenStandardFile(stderrPath, 0x40000000, 1);
+            using SafeFileHandle input = OpenStandardFile("NUL", 0x80000000, 3, 3);
+            // Readers can inspect active evidence, but another writer must not
+            // overwrite it while the inherited stream handle is still open.
+            using SafeFileHandle output = OpenStandardFile(stdoutPath, 0x40000000, 1, 1);
+            using SafeFileHandle error = OpenStandardFile(stderrPath, 0x40000000, 1, 1);
             using var attributes = new CreationAttributes(job, input, output, error);
             var startup = new ExtendedStartupInfo {
                 StartupInfo = new StartupInfo {
@@ -87,19 +96,20 @@ public sealed class OwnedProcess : IDisposable {
             if (!Native.CreateProcess(executable, commandBuffer, IntPtr.Zero, IntPtr.Zero, true,
                 0x4 | 0x80000 | 0x8000000, IntPtr.Zero, workingDirectory, ref startup, out ProcessInformation info))
                 throw Error("Create suspended job-owned process");
-            using var nativeProcess = new NativeHandle(info.Process);
+            nativeProcess = new NativeHandle(info.Process);
             using var thread = new NativeHandle(info.Thread);
             process = Process.GetProcessById(checked((int)info.ProcessId));
             // Cache a process handle while the native creation handle is alive.
             _ = process.Handle;
             if (Native.ResumeThread(thread) == uint.MaxValue) throw Error("Resume job-owned process");
-            var owned = new OwnedProcess(job, process);
-            job = null; process = null; // ownership transferred only after successful resume
+            var owned = new OwnedProcess(job, nativeProcess, process);
+            job = null; nativeProcess = null; process = null; // ownership transferred only after successful resume
             return owned;
         } finally {
             // Closing the last Job handle kills the entire tree, including a
             // suspended root when any post-creation setup operation fails.
             job?.Dispose();
+            nativeProcess?.Dispose();
             process?.Dispose();
         }
     }
@@ -107,24 +117,44 @@ public sealed class OwnedProcess : IDisposable {
     /// <summary>Terminates all owned processes and waits for the job to become empty.</summary>
     /// <param name="timeoutMilliseconds">Positive bounded cleanup timeout.</param>
     public void Stop(int timeoutMilliseconds) {
-        ObjectDisposedException.ThrowIf(disposed, this);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(timeoutMilliseconds);
-        if (!Native.TerminateJob(job, 1)) throw Error("Terminate owned job");
         var timer = Stopwatch.StartNew();
-        while (true) {
-            if (!Native.QueryAccounting(job, 1, out Accounting info, (uint)Marshal.SizeOf<Accounting>(), IntPtr.Zero))
-                throw Error("Query owned job process count");
-            if (info.ActiveProcesses == 0) return;
-            if (timer.ElapsedMilliseconds >= timeoutMilliseconds) throw new TimeoutException("The owned job did not become empty after cancellation.");
-            Thread.Sleep(10);
-        }
+        if (!lifetime.TryEnter(timeoutMilliseconds)) throw new TimeoutException("Timed out waiting for another owned process operation.");
+        try {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (timer.ElapsedMilliseconds >= timeoutMilliseconds) throw new TimeoutException("The owned process cleanup deadline expired.");
+            if (!Native.TerminateJob(job, 1)) throw Error("Terminate owned job");
+            while (true) {
+                if (!Native.QueryAccounting(job, 1, out Accounting info, (uint)Marshal.SizeOf<Accounting>(), IntPtr.Zero))
+                    throw Error("Query owned job process count");
+                // Job accounting can reach zero before the root process is
+                // signaled. Retain the creation handle for this completion check
+                // independently of the publicly exposed Process component.
+                if (info.ActiveProcesses == 0) {
+                    uint wait = Native.WaitForSingleObject(rootHandle, 0);
+                    if (wait == 0) return;
+                    if (wait == uint.MaxValue) throw Error("Wait for owned root process");
+                    if (wait != 258) throw new InvalidOperationException("Unexpected owned process wait result.");
+                }
+                long remaining = timeoutMilliseconds - timer.ElapsedMilliseconds;
+                if (remaining <= 0) throw new TimeoutException("The owned job did not complete termination after cancellation.");
+                Thread.Sleep((int)Math.Min(10, remaining));
+            }
+        } finally { lifetime.Exit(); }
     }
 
     /// <summary>Closes the final Job handle, killing every remaining owned process.</summary>
     public void Dispose() {
-        if (disposed) return;
-        disposed = true;
-        job.Dispose();
+        // Keep Dispose from closing handles between a native operation and its
+        // completion check. SafeHandle marshaling protects one call at a time.
+        lock (lifetime) {
+            if (disposed) return;
+            disposed = true;
+            job.Dispose();
+            rootHandle.Dispose();
+        }
+        // Process.Close takes its own monitor. An Exited callback can hold that
+        // monitor while reentering this owner, so never acquire it under lifetime.
         rootProcess.Dispose();
     }
 
@@ -146,11 +176,12 @@ public sealed class OwnedProcess : IDisposable {
         }
         return text.Append('\\', checked(slashes * 2)).Append('"').ToString();
     }
-    private static SafeFileHandle OpenStandardFile(string path, uint access, uint disposition) {
+    private static SafeFileHandle OpenStandardFile(string path, uint access, uint share, uint disposition) {
         var security = new SecurityAttributes { Length = (uint)Marshal.SizeOf<SecurityAttributes>(), InheritHandle = 1 };
-        SafeFileHandle handle = Native.CreateFile(path, access, 3, ref security, disposition, 0x80, IntPtr.Zero);
+        SafeFileHandle handle = Native.CreateFile(path, access, share, ref security, disposition, 0x80, IntPtr.Zero);
         if (!handle.IsInvalid) return handle;
-        handle.Dispose(); throw Error("Open process standard stream");
+        Win32Exception failure = Error("Open process standard stream");
+        handle.Dispose(); throw failure;
     }
 
     private sealed class NativeHandle : SafeHandleZeroOrMinusOneIsInvalid {
@@ -275,6 +306,9 @@ public sealed class OwnedProcess : IDisposable {
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("kernel32.dll", EntryPoint="ResumeThread", ExactSpelling=true, SetLastError=true)]
         internal static extern uint ResumeThread(NativeHandle thread);
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        [DllImport("kernel32.dll", EntryPoint="WaitForSingleObject", ExactSpelling=true, SetLastError=true)]
+        internal static extern uint WaitForSingleObject(NativeHandle handle, uint milliseconds);
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("kernel32.dll", EntryPoint="CloseHandle", ExactSpelling=true)]
         [return: MarshalAs(UnmanagedType.Bool)]

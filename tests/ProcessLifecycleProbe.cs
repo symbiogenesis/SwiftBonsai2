@@ -31,6 +31,32 @@ internal static class ProcessLifecycleProbe {
                 File.WriteAllText(arguments[1], Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
                 Thread.Sleep(Timeout.Infinite);
                 return 0;
+            case "callback-lifetime":
+                return VerifyCallbackLifetime(arguments[1]);
+            case "crash":
+                ThrowNativeException(0xe0424242, 1, 0, IntPtr.Zero);
+                return 20;
+            case "error-policy":
+                using (Process child = StartSelf("crash", arguments[1])) {
+                    if (!child.WaitForExit(10000)) { child.Kill(); child.WaitForExit(); return 17; }
+                    File.WriteAllText(arguments[1] + ".child", child.ExitCode.ToString(CultureInfo.InvariantCulture));
+                    return child.ExitCode == 0 ? 21 : 0;
+                }
+            case "error-policy-owner":
+                // Only this disposable owner changes its process-wide mode. The
+                // Job must handle root and descendant crashes without changing
+                // this owner's error mode or waiting for interactive dialogs.
+                _ = SetErrorMode(0);
+                File.WriteAllText(arguments[1] + ".before", GetErrorMode().ToString(CultureInfo.InvariantCulture));
+                foreach (string mode in new[] { "crash", "error-policy" }) {
+                    using OwnedProcess owned = OwnedProcess.Start(Environment.ProcessPath!, [mode, arguments[1]], Environment.CurrentDirectory,
+                        arguments[1] + "." + mode + ".stdout", arguments[1] + "." + mode + ".stderr", 512UL * 1024 * 1024, 2);
+                    if (!owned.Process.WaitForExit(10000)) { owned.Stop(10000); return 19; }
+                    if (mode == "crash") File.WriteAllText(arguments[1] + ".root", owned.Process.ExitCode.ToString(CultureInfo.InvariantCulture));
+                    else if (owned.Process.ExitCode != 0) return owned.Process.ExitCode;
+                }
+                File.WriteAllText(arguments[1] + ".after", GetErrorMode().ToString(CultureInfo.InvariantCulture));
+                return 0;
             case "tree":
                 using (Process child = StartSelf("wait", arguments[1] + ".child")) {
                     File.WriteAllText(arguments[1], string.Create(CultureInfo.InvariantCulture, $"{Environment.ProcessId},{child.Id}"));
@@ -93,6 +119,45 @@ internal static class ProcessLifecycleProbe {
         return Process.Start(start) ?? throw new InvalidOperationException("The synthetic child did not start.");
     }
 
+    private static int VerifyCallbackLifetime(string marker) {
+        using OwnedProcess owned = OwnedProcess.Start(Environment.ProcessPath!, ["wait", marker], Environment.CurrentDirectory,
+            marker + ".inner.stdout", marker + ".inner.stderr", 512UL * 1024 * 1024, 1);
+        using var callbackFinished = new ManualResetEventSlim();
+        var disposer = new Thread(owned.Dispose) { IsBackground = true };
+        var callback = new CallbackState();
+        owned.Process.Exited += (_, _) => {
+            try {
+                // Process's completion callback holds its monitor. A concurrent
+                // owner Dispose must release its own lock before Process.Close;
+                // this reentry must observe disposal rather than time out on it.
+                disposer.Start();
+                var timer = Stopwatch.StartNew();
+                while (true) {
+                    try { owned.Stop(50); }
+                    catch (ObjectDisposedException) { return; }
+                    catch (TimeoutException exception) { callback.Failure = exception; return; }
+                    catch (Win32Exception exception) { callback.Failure = exception; return; }
+                    catch (InvalidOperationException exception) { callback.Failure = exception; return; }
+                    if (timer.ElapsedMilliseconds >= 3000) {
+                        callback.Failure = new TimeoutException("Concurrent owner disposal did not become visible.");
+                        return;
+                    }
+                    _ = Thread.Yield();
+                }
+            } finally { callbackFinished.Set(); }
+        };
+        owned.Process.EnableRaisingEvents = true;
+        owned.Process.Kill();
+        if (!callbackFinished.Wait(10000)) throw new TimeoutException("The exit callback did not complete.");
+        if (!disposer.Join(10000)) throw new TimeoutException("Concurrent owner disposal did not complete.");
+        if (callback.Failure is Exception failure) throw new InvalidOperationException("The exit callback could not reenter the disposing owner.", failure);
+        return 0;
+    }
+
+    private sealed class CallbackState {
+        internal Exception? Failure { get; set; }
+    }
+
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("kernel32.dll", EntryPoint="VirtualAlloc", ExactSpelling=true, SetLastError=true)]
     private static extern IntPtr Allocate(IntPtr address, UIntPtr size, uint allocationType, uint protection);
@@ -100,5 +165,14 @@ internal static class ProcessLifecycleProbe {
     [DllImport("kernel32.dll", EntryPoint="VirtualFree", ExactSpelling=true, SetLastError=true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool Free(IntPtr address, UIntPtr size, uint freeType);
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", EntryPoint="GetErrorMode", ExactSpelling=true)]
+    private static extern uint GetErrorMode();
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", EntryPoint="SetErrorMode", ExactSpelling=true)]
+    private static extern uint SetErrorMode(uint mode);
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("kernel32.dll", EntryPoint="RaiseException", ExactSpelling=true)]
+    private static extern void ThrowNativeException(uint code, uint flags, uint count, IntPtr arguments);
 }
 }

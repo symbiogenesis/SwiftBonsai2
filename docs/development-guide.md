@@ -14,7 +14,7 @@ Swift assessment has pinned/verified artifacts, [actual PQ2 symbol counts](../co
 
 ## Inventory and provisioning
 
-Use native Windows ARM64 PowerShell 7.6 or later. Choose an absolute data directory outside all Git checkouts. Junctions and device paths are unsupported by provisioning. Run inventory first:
+Use native Windows ARM64 PowerShell 7.6 or later. Choose an absolute data directory outside all Git checkouts on a filesystem supporting same-volume hard links, such as NTFS. Provisioning retains its exclusive partial-file handle through verification and hard-link publication; unsupported filesystems fail with the partial retained. Junctions and device paths are unsupported by provisioning. Run inventory first:
 
 ```powershell
 ./scripts/Doctor.ps1

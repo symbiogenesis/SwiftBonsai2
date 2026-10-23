@@ -130,12 +130,42 @@ public sealed class BonsaiTestHandler : HttpMessageHandler {
     $module = Get-Module Bonsai.Common
     $payload = [byte[]]@(10,20,30,40,50,60)
     $hash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($payload))
-    foreach ($mode in @('fresh','resume','ignore-range','bad-range','redirect','cancel','oversize','bad-hash','completed')) {
+    & $module {
+        $script:originalPublish = ${function:Publish-LockedArtifact}
+        function script:Publish-LockedArtifact {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test seam validates the private publication step of explicitly requested synthetic downloads.')]
+            [CmdletBinding()]
+            [OutputType([void])]
+            param([Parameter(Mandatory)][string]$PartialPath, [Parameter(Mandatory)][string]$Path)
+            $writerDenied = $false
+            try {
+                $writer = [IO.File]::Open($PartialPath, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+                $writer.Dispose()
+            } catch [IO.IOException] { $writerDenied = $true }
+            if (-not $writerDenied) { throw 'Artifact ownership was released before publication.' }
+            $renameDenied = $false
+            try { [IO.File]::Move($PartialPath, $PartialPath + '.other-owner', $false) }
+            catch [IO.IOException] { $renameDenied = $true }
+            if (-not $renameDenied) { throw 'A verified partial could be renamed before publication.' }
+            if ($script:testPublicationMode -eq 'publication-failure') { throw [IO.IOException]::new('Synthetic filesystem publication failure.') }
+            if ($script:testPublicationMode -eq 'existing-output') { [IO.File]::WriteAllText($Path, 'competing artifact') }
+            & $script:originalPublish -PartialPath $PartialPath -Path $Path
+            $writerDenied = $false
+            try {
+                $writer = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+                $writer.Dispose()
+            } catch [IO.IOException] { $writerDenied = $true }
+            if (-not $writerDenied) { throw 'A published alias admitted a writer before ownership was released.' }
+        }
+    }
+    foreach ($mode in @('fresh','resume','ignore-range','bad-range','redirect','cancel','oversize','bad-hash','completed',
+        'existing-output','publication-failure','literal-[name]')) {
         $handler = [SwiftBonsai.Tests.BonsaiTestHandler]::new()
         $handler.Mode = $mode
         & $module {
-            param($fake)
+            param($fake, $mode)
             $script:testDownloadHandler = $fake
+            $script:testPublicationMode = $mode
             function script:New-ArtifactHttpClient {
                 [CmdletBinding()]
                 [OutputType([Net.Http.HttpClient])]
@@ -143,14 +173,20 @@ public sealed class BonsaiTestHandler : HttpMessageHandler {
                 if ($null -eq $Handler) { throw 'The production factory contract requires a handler.' }
                 [Net.Http.HttpClient]::new($script:testDownloadHandler)
             }
-        } $handler
+        } $handler $mode
         $path = Join-Path $scratch ($mode + '.bin')
         if ($mode -in @('resume','ignore-range','bad-range')) { [IO.File]::WriteAllBytes($path + '.partial', $payload[0..1]) }
         if ($mode -eq 'completed') { [IO.File]::WriteAllBytes($path + '.partial', $payload) }
         $expectedBytes = if ($mode -eq 'oversize') { 5 } else { 6 }
         $expectedHash = if ($mode -eq 'bad-hash') { '0' * 64 } else { $hash }
         $action = { Receive-LockedArtifact -Uri 'https://example.invalid/pinned.bin' -Path $path -Bytes $expectedBytes -Sha256 $expectedHash }
-        if ($mode -in @('bad-range','redirect','cancel','oversize','bad-hash')) {
+        if ($mode -in @('existing-output','publication-failure')) {
+            Assert-Failure $action "Unsafe publication accepted: $mode"
+            Test-LockedArtifact ($path + '.partial') 6 $hash
+            if ($mode -eq 'existing-output') {
+                Assert ([IO.File]::ReadAllText($path) -ceq 'competing artifact') 'Publication replaced an existing final artifact.'
+            } else { Assert (-not (Test-Path -LiteralPath $path)) 'Failed publication left a final artifact.' }
+        } elseif ($mode -in @('bad-range','redirect','cancel','oversize','bad-hash')) {
             Assert-Failure $action "Unsafe download accepted: $mode"
             Assert (-not (Test-Path -LiteralPath $path)) "Invalid final artifact published: $mode"
         } else {
@@ -161,6 +197,14 @@ public sealed class BonsaiTestHandler : HttpMessageHandler {
             if ($mode -eq 'completed') { Assert ($handler.Requests -eq 0) 'A complete partial caused a network request.' }
         }
     }
+    # Whole-file verification must reject an already open writer, even one that
+    # opts into sharing reads. The check must cover length and digest together.
+    $verificationPath = Join-Path $scratch 'verification-sharing.bin'
+    [IO.File]::WriteAllBytes($verificationPath, $payload)
+    $writer = [IO.File]::Open($verificationPath, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+    try { Assert-Failure { Test-LockedArtifact $verificationPath 6 $hash } 'Artifact verification admitted an existing writer.' }
+    finally { $writer.Dispose() }
+    Test-LockedArtifact $verificationPath 6 $hash
     # Restore the production factory in the current session.
     Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Force
 }

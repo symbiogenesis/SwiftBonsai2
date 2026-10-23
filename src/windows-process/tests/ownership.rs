@@ -6,6 +6,7 @@ use std::fs;
 use std::io;
 use std::net::TcpListener;
 use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
+use std::os::windows::fs::OpenOptionsExt as _;
 use std::os::windows::process::CommandExt as _;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -194,5 +195,63 @@ fn backend_overrides_are_rejected_without_changing_parent_environment() -> io::R
         .status()?;
     assert!(!status.success());
     assert!(!lane.path.join("owned.stdout").exists());
+    Ok(())
+}
+
+#[test]
+fn active_standard_evidence_allows_readers_and_rejects_other_writers() -> io::Result<()> {
+    let lane = Lane::new("stream-sharing")?;
+    let process = OwnedProcess::start(&lane.spec(vec![OsString::from("sleep")]))?;
+    for name in ["stdout.log", "stderr.log"] {
+        let path = lane.path.join(name);
+        let _reader = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(3)
+            .open(&path)?;
+        let writer = fs::OpenOptions::new().write(true).share_mode(3).open(&path);
+        assert_eq!(
+            writer.err().and_then(|error| error.raw_os_error()),
+            Some(32)
+        );
+    }
+    process.stop(TIMEOUT)?;
+    Ok(())
+}
+
+#[test]
+fn headless_error_policy_applies_to_root_and_descendants_only() -> io::Result<()> {
+    let lane = Lane::new("error-policy")?;
+    let status = Command::new(env!("CARGO_BIN_EXE_bonsai-process-test-probe"))
+        .arg("error-policy-owner")
+        .current_dir(&lane.path)
+        .creation_flags(0x0800_0000)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    assert!(status.success());
+    assert_eq!(
+        fs::read_to_string(lane.path.join("crash-exit.txt"))?,
+        0xe042_4242_u32.to_string()
+    );
+    assert_eq!(
+        fs::read_to_string(lane.path.join("error-policy-exit.txt"))?,
+        "0"
+    );
+    assert_eq!(
+        fs::read_to_string(lane.path.join("child-crash.txt"))?,
+        format!(
+            "Some({})",
+            i32::from_ne_bytes(0xe042_4242_u32.to_ne_bytes())
+        )
+    );
+    assert_eq!(
+        fs::read_to_string(lane.path.join("owner-error-mode-before.txt"))?,
+        "0"
+    );
+    assert_eq!(
+        fs::read_to_string(lane.path.join("owner-error-mode-after.txt"))?,
+        "0"
+    );
     Ok(())
 }

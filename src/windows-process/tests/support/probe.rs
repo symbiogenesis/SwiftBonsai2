@@ -12,6 +12,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use bonsai_windows_process::{OwnedProcess, ProcessSpec};
+use windows_sys::Win32::System::Diagnostics::Debug::{GetErrorMode, RaiseException, SetErrorMode};
 
 fn main() -> io::Result<()> {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -38,6 +39,8 @@ fn main() -> io::Result<()> {
             fs::write("report.txt", text)?;
         }
         "sleep" => wait_forever(),
+        "crash" => native_crash(),
+        "error-policy" | "error-policy-owner" => error_policy(mode)?,
         "listen" => {
             let port = argument(&args, 1)?
                 .parse::<u16>()
@@ -112,4 +115,74 @@ fn wait_forever() {
     loop {
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+#[allow(
+    unsafe_code,
+    reason = "Read this disposable probe process's native error mode."
+)]
+fn error_mode() -> u32 {
+    // SAFETY: GetErrorMode has no arguments or pointer/handle requirements.
+    unsafe { GetErrorMode() }
+}
+
+#[allow(
+    unsafe_code,
+    reason = "Reset only this disposable owner process for an inheritance control."
+)]
+fn reset_error_mode() {
+    // SAFETY: The single-threaded probe changes only its own process-wide mode.
+    let _ = unsafe { SetErrorMode(0) };
+}
+
+#[allow(
+    unsafe_code,
+    reason = "Raise a synthetic native exception only in this disposable crash fixture."
+)]
+fn native_crash() {
+    // SAFETY: The test-only noncontinuable exception takes no arguments. Its
+    // documented effect is process termination; no pointers are dereferenced.
+    unsafe { RaiseException(0xe042_4242, 1, 0, std::ptr::null()) };
+}
+
+fn error_policy(mode: &str) -> io::Result<()> {
+    if mode == "error-policy" {
+        let status = Command::new(std::env::current_exe()?)
+            .arg("crash")
+            .current_dir(std::env::current_dir()?)
+            .creation_flags(0x0800_0000)
+            .status()?;
+        fs::write("child-crash.txt", format!("{:?}", status.code()))?;
+        return Ok(());
+    }
+    reset_error_mode();
+    fs::write("owner-error-mode-before.txt", error_mode().to_string())?;
+    let directory = std::env::current_dir()?;
+    for mode in ["crash", "error-policy"] {
+        let process = OwnedProcess::start(&ProcessSpec {
+            executable: std::env::current_exe()?,
+            arguments: vec![OsString::from(mode)],
+            working_directory: directory.clone(),
+            stdout: directory.join(format!("{mode}.stdout")),
+            stderr: directory.join(format!("{mode}.stderr")),
+            memory_limit_bytes: 256 * 1024 * 1024,
+            active_process_limit: 2,
+        })?;
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            if let Some(code) = process.try_wait()? {
+                fs::write(format!("{mode}-exit.txt"), code.to_string())?;
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "crash fixture hung",
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    fs::write("owner-error-mode-after.txt", error_mode().to_string())?;
+    Ok(())
 }

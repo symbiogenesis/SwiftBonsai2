@@ -16,6 +16,14 @@ audited Win32 boundaries with documented unsafe calls, RAII ownership and strict
 analyzers. The broker itself retains `forbid(unsafe_code)`. Existing C# process
 helpers remain in use by the independent CPU/LoRA qualification probes.
 
+Windows regressions also check explicit `SO_EXCLUSIVEADDRUSE` before listener
+binding, Job crash policy, shutdown completion and evidence-file sharing.
+Provisioning's focused `Download` case checks retained-handle verification,
+no-overwrite hard-link publication and failure recovery. Publication requires a
+hard-link-capable filesystem such as NTFS. These checks establish OS contracts,
+not measured inference performance; the [Windows review](implementation-research.md#windows-integration-review-october-23)
+records the rationale and tuning choices that still need device evidence.
+
 The experimental [native Rust CPU reference](../src/prism-runtime/README.md)
 forbids unsafe code and links no C/C++ inference library. Its Windows ARM64
 Foundation lane checks formatting, Release Clippy/documentation, the complete

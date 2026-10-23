@@ -123,10 +123,19 @@ switch ($Case) {
             $owned = New-Probe @('tree', $marker) "tree-$method"
             try {
                 $members = @(Get-TreeProcess $marker)
-                if ($method -eq 'Stop') { $owned.Stop(10000) } else { $owned.Dispose() }
+                if ($method -eq 'Stop') {
+                    $owned.Stop(10000)
+                    Assert ($owned.Process.WaitForExit(0)) 'Stop returned before the root process became signaled.'
+                } else { $owned.Dispose() }
                 Assert-TreeExited $members
             } finally { $owned.Dispose() }
         }
+        $owned = New-Probe @('callback-lifetime', (Join-Path $scratch 'callback-lifetime')) 'callback-lifetime'
+        try {
+            Assert ($owned.Process.WaitForExit(15000)) 'The concurrent exit callback and owner disposal deadlocked.'
+            Assert ($owned.Process.ExitCode -eq 0) 'The exit callback could not reenter a concurrently disposing owner.'
+            $owned.Stop(10000)
+        } finally { $owned.Dispose() }
         # Kill just the owner, without invoking its finally/Dispose methods.
         # The kernel must close the owner's noninheritable Job handle itself.
         $marker = Join-Path $scratch 'abrupt-owner'
@@ -173,6 +182,41 @@ switch ($Case) {
         } finally { $owned.Dispose() }
     }
     'LaunchContract' {
+        $marker = Join-Path $scratch 'stream-sharing'
+        $owned = New-Probe @('wait', $marker) 'stream-sharing' -Processes 1
+        try {
+            $null = Wait-Marker $marker
+            foreach ($stream in @('stdout', 'stderr')) {
+                $path = Join-Path $scratch "stream-sharing.$stream"
+                $null = Read-SharedText $path
+                $writeDenied = $false
+                try {
+                    $writer = [IO.FileStream]::new($path, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+                    $writer.Dispose()
+                } catch [IO.IOException] {
+                    if (($_.Exception.HResult -band 0xffff) -ne 32) { throw }
+                    $writeDenied = $true
+                }
+                Assert $writeDenied "Another writer could overwrite active $stream evidence."
+            }
+            $owned.Stop(10000)
+        } finally { $owned.Dispose() }
+        $marker = Join-Path $scratch 'error-policy'
+        $start = [Diagnostics.ProcessStartInfo]::new($executable)
+        $start.WorkingDirectory = $scratch; $start.UseShellExecute = $false; $start.CreateNoWindow = $true
+        $start.ArgumentList.Add('error-policy-owner'); $start.ArgumentList.Add($marker)
+        $owner = [Diagnostics.Process]::Start($start)
+        try {
+            Assert ($owner.WaitForExit(30000)) 'Synthetic error-mode owner did not exit.'
+            Assert ($owner.ExitCode -eq 0) 'Synthetic error-mode owner failed.'
+            Assert ((Wait-Marker ($marker + '.before')) -ceq '0') 'Synthetic owner error mode did not start at the default.'
+            Assert ((Wait-Marker ($marker + '.after')) -ceq '0') 'Creating owned processes changed the owner error mode.'
+            Assert (([int](Wait-Marker ($marker + '.root'))) -ne 0) 'The root native exception lost its failure status.'
+            Assert (([int](Wait-Marker ($marker + '.child'))) -ne 0) 'The descendant native exception lost its failure status.'
+        } finally {
+            if (-not $owner.HasExited) { $owner.Kill($true); $owner.WaitForExit() }
+            $owner.Dispose()
+        }
         $values = @('', 'space and & shell | symbols', 'a"b', 'C:\trailing slash\', 'slash\\"quote', "unicode-$([char]0x03bb)")
         $owned = New-Probe (@('echo') + $values) 'arguments' -Processes 1
         try {

@@ -55,6 +55,24 @@ async fn service(backend: &TcpListener, waiting: usize) -> Arc<LocalChatService>
     )
 }
 
+#[test]
+#[cfg(windows)]
+fn frontend_retains_exclusive_loopback_address_ownership() {
+    run(async {
+        let backend = listener().await;
+        let service = service(&backend, 0).await;
+        let competing = tokio::net::TcpSocket::new_v4().unwrap();
+        competing.set_reuseaddr(true).unwrap();
+        let address = std::net::SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, service.port());
+        assert!(competing.bind(address.into()).is_err());
+        // Exclusivity does not change numeric-loopback reachability.
+        let client = TcpStream::connect(address).await.unwrap();
+        let accepted = service.accept().await.unwrap();
+        drop(accepted);
+        drop(client);
+    });
+}
+
 async fn send_request(client: &mut TcpStream, port: u16) {
     let body = br#"{"messages":[{"role":"user","content":"A rainy scene."}],"max_completion_tokens":128,"stream":false}"#;
     let head = format!(

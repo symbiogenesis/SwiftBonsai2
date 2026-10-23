@@ -9,7 +9,7 @@ use crate::{
     launch_policy::LaunchPlan,
     runtime::{RunExit, RunReport, run},
     scheduler::MAX_WAITING,
-    service::LocalChatService,
+    service::{LocalChatService, bound_loopback_socket},
 };
 use bonsai_windows_credentials::{PrivateCredentials, validate_external_path};
 use bonsai_windows_process::{
@@ -238,8 +238,7 @@ impl LaunchConfig {
         // Reserve only as a collision check; PID checks close the release/bind
         // race without ever trusting a pre-existing server on the selected port.
         let reservation =
-            std::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, self.backend_port))
-                .map_err(|_| LaunchError::Port)?;
+            bound_loopback_socket(self.backend_port).map_err(|_| LaunchError::Port)?;
         admit(plan.required_available_bytes)?;
         let specification = ProcessSpec {
             executable: plan.executable,

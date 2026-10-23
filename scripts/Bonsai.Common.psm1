@@ -76,6 +76,20 @@ function Read-BonsaiLock {
     return $lock
 }
 
+function Assert-LockedArtifactStream {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory)][IO.FileStream]$Stream, [Parameter(Mandatory)][string]$Path,
+          [Parameter(Mandatory)][long]$Bytes, [Parameter(Mandatory)][string]$Sha256)
+    # Length and digest must describe the same open file, with no writer admitted.
+    if ($Stream.Length -ne $Bytes) { throw "Artifact byte length mismatch: $Path" }
+    $Stream.Position = 0
+    $actualHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Stream))
+    if ($actualHash -ine $Sha256) {
+        throw "Artifact SHA-256 mismatch; remove the invalid file before retrying: $Path"
+    }
+}
+
 function Test-LockedArtifact {
     <#
     .SYNOPSIS
@@ -86,10 +100,24 @@ function Test-LockedArtifact {
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][long]$Bytes,
           [Parameter(Mandatory)][string]$Sha256)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Artifact is missing: $Path" }
-    if ((Get-Item -LiteralPath $Path).Length -ne $Bytes) { throw "Artifact byte length mismatch: $Path" }
-    if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ine $Sha256) {
-        throw "Artifact SHA-256 mismatch; remove the invalid file before retrying: $Path"
-    }
+    # Windows share modes reject existing or new writers and renames for the
+    # entire verification. SequentialScan helps cache a multi-gigabyte digest.
+    $stream = [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+        [IO.FileShare]::Read, 65536, [IO.FileOptions]::SequentialScan)
+    try { Assert-LockedArtifactStream -Stream $stream -Path $Path -Bytes $Bytes -Sha256 $Sha256 }
+    finally { $stream.Dispose() }
+}
+
+function Publish-LockedArtifact {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Private publication step called only for an explicitly requested artifact download.')]
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory)][string]$PartialPath, [Parameter(Mandatory)][string]$Path)
+    # A hard link publishes without replacement while the verified source is
+    # still open exclusively. No close/reopen/rename window admits a writer.
+    # Unsupported filesystems fail closed and retain the resumable partial.
+    $link = New-Item -ItemType HardLink -Path $Path -Value $PartialPath -ErrorAction Stop
+    if ($null -eq $link) { throw 'Artifact publication did not create a hard link; partial retained.' }
 }
 
 function New-ArtifactHttpClient {
@@ -123,7 +151,8 @@ function Receive-LockedArtifact {
     $output = $client = $handler = $response = $inputStream = $request = $cancellation = $null
     try {
         # Exclusive ownership also prevents two setup processes appending to one partial.
-        $output = [IO.File]::Open($partial, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        $output = [IO.FileStream]::new($partial, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite,
+            [IO.FileShare]::None, 65536, [IO.FileOptions]::SequentialScan)
         $offset = $output.Length
         if ($offset -gt $Bytes) { throw "Partial file exceeds expected size; remove it before retrying: $partial" }
         if ($offset -lt $Bytes) {
@@ -171,9 +200,11 @@ function Receive-LockedArtifact {
             }
             $output.Flush($true)
         }
+        Assert-LockedArtifactStream -Stream $output -Path $partial -Bytes $Bytes -Sha256 $Sha256
+        Publish-LockedArtifact -PartialPath $partial -Path $Path
         $output.Dispose(); $output = $null
-        Test-LockedArtifact -Path $partial -Bytes $Bytes -Sha256 $Sha256
-        [IO.File]::Move($partial, $Path, $false)
+        try { [IO.File]::Delete($partial) }
+        catch { Write-Warning "Artifact published successfully; partial alias retained at ${partial}: $_" }
         return $Path
     } finally {
         foreach ($resource in @($inputStream, $response, $request, $client, $handler, $output, $cancellation)) {

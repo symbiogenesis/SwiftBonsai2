@@ -448,3 +448,52 @@ symbols across the batch boundary and zero-scale/fourth-code rejection. A real
 auto-build wrapper invocation and same-session export `WhatIf` also passed.
 Complete Rust and PowerShell suites remain hosted-only. Build outputs, diagnostic
 logs and synthetic fixtures are retained in external session-temp lanes.
+
+## Windows integration review (October 23)
+
+The review retains the existing SafeHandle/RAII owners, atomic Job assignment,
+explicit inherited-handle list, protected credential creation, artifact read
+guards and bounded async socket ownership. Changes address specific Windows
+contracts rather than assuming every optional OS feature improves inference.
+
+- [Winsock exclusive address use](https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse)
+  must be selected before binding. The broker explicitly requests it for its
+  frontend listener and temporary backend-port reservation. This makes exclusive
+  ownership explicit; current Windows enhanced socket security already rejects
+  some conflicting binds even without this option. The publisher backend still
+  owns its own socket policy, and listener-PID checks remain necessary.
+- [Job limits](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_limit_information)
+  include `JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION`. Both process launchers
+  use it so an unhandled exception cannot strand a headless owned process at a
+  debugger dialog. C# shutdown waits for the root process as well as empty Job
+  accounting, and serializes native queries/shutdown with disposal. Active
+  stdout/stderr evidence handles allow readers while denying unrelated writers.
+- [CreateFile sharing and cache hints](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+  apply to the lifetime of an opened handle. Artifact verification reads size
+  and SHA-256 through one write/delete-denying stream with a sequential-scan
+  hint. Provisioning keeps the exclusive partial handle through hashing and
+  [same-volume hard-link publication](https://learn.microsoft.com/en-us/windows/win32/fileio/hard-links-and-junctions),
+  without replacing an existing final name. Publication requires filesystem
+  support such as NTFS and retains the partial on failure.
+
+[Byte-range locks](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-lockfileex)
+do not prevent access through mapped views. Existing whole-file sharing modes
+are a better fit for immutable model/runtime artifacts and credentials; adding
+range locks would not strengthen their existing contract. Mapped-view mutation
+by a preexisting mapping is not a newly established isolation boundary.
+
+[Hard thread affinity](https://learn.microsoft.com/en-us/windows/win32/procthread/multiple-processors)
+can interfere with Windows scheduling. CPU sets, EcoQoS, priority changes and
+large pages are workload-dependent candidates, not unconditional improvements.
+[Large pages](https://learn.microsoft.com/en-us/windows/win32/memory/large-page-support)
+also require a privilege and nonpageable allocations. This pass introduces no
+affinity, priority, privilege or residency change and claims no measured
+throughput, latency, power or thermal improvement. Such tuning needs the existing
+device qualification and CI-only benchmark process.
+
+Local verification passed Release all-target/all-feature Clippy for the broker
+and Windows process boundary, Windows API documentation and formatting checks,
+focused download/publication, exclusive-listener, native crash and C# lifecycle
+regressions. Independent review removed a `Process.Dispose`/`Exited` callback
+lock inversion; a temporary mutation restoring that inversion correctly failed
+the callback regression. Complete correctness suites remain in Foundation CI.

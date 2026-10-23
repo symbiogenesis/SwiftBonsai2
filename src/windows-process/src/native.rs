@@ -4,7 +4,9 @@
 use std::ffi::{OsStr, c_void};
 use std::io;
 use std::os::windows::ffi::OsStrExt as _;
-use std::os::windows::io::{AsRawHandle as _, FromRawHandle as _, OwnedHandle};
+use std::os::windows::io::{
+    AsRawHandle as _, AsRawSocket as _, AsSocket, FromRawHandle as _, OwnedHandle,
+};
 use std::ptr::{self, null, null_mut};
 use std::time::{Duration, Instant};
 
@@ -15,18 +17,20 @@ use windows_sys::Win32::Foundation::{
 use windows_sys::Win32::NetworkManagement::IpHelper::{
     GetExtendedTcpTable, MIB_TCPROW_OWNER_PID, TCP_TABLE_OWNER_PID_LISTENER,
 };
-use windows_sys::Win32::Networking::WinSock::AF_INET;
+use windows_sys::Win32::Networking::WinSock::{
+    AF_INET, SO_EXCLUSIVEADDRUSE, SOCKET_ERROR, SOL_SOCKET, WSAGetLastError, setsockopt,
+};
 use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
 use windows_sys::Win32::Storage::FileSystem::{
     CREATE_NEW, CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE,
     OPEN_EXISTING,
 };
 use windows_sys::Win32::System::JobObjects::{
-    CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
-    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
-    JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
-    TerminateJobObject,
+    CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION,
+    JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
+    QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::ProcessStatus::{
     K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX,
@@ -57,6 +61,10 @@ impl NativeProcess {
         let job = owned(unsafe { CreateJobObjectW(null(), null()) })?;
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            // A headless engine must terminate on an unhandled exception rather
+            // than waiting for a Windows Error Reporting dialog. The Job applies
+            // this policy to descendants without changing the owner's error mode.
+            | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION
             | JOB_OBJECT_LIMIT_JOB_MEMORY
             | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
         limits.BasicLimitInformation.ActiveProcessLimit = spec.active_process_limit;
@@ -71,9 +79,24 @@ impl NativeProcess {
                 win_size::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>(),
             )
         })?;
-        let input = standard_file(OsStr::new("NUL"), 0x8000_0000, OPEN_EXISTING)?;
-        let output = standard_file(spec.stdout.as_os_str(), 0x4000_0000, CREATE_NEW)?;
-        let error = standard_file(spec.stderr.as_os_str(), 0x4000_0000, CREATE_NEW)?;
+        let input = standard_file(
+            OsStr::new("NUL"),
+            0x8000_0000,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            OPEN_EXISTING,
+        )?;
+        let output = standard_file(
+            spec.stdout.as_os_str(),
+            0x4000_0000,
+            FILE_SHARE_READ,
+            CREATE_NEW,
+        )?;
+        let error = standard_file(
+            spec.stderr.as_os_str(),
+            0x4000_0000,
+            FILE_SHARE_READ,
+            CREATE_NEW,
+        )?;
         let attributes = CreationAttributes::new(
             job.as_raw_handle(),
             [
@@ -225,6 +248,31 @@ pub(super) fn available_memory_bytes() -> io::Result<u64> {
     Ok(status.ullAvailPhys)
 }
 
+pub(super) fn require_exclusive_address(socket: &impl AsSocket) -> io::Result<()> {
+    let socket = socket.as_socket();
+    let handle = usize::try_from(socket.as_raw_socket())
+        .map_err(|_| io::Error::other("socket handle overflow"))?;
+    let enabled = 1_i32;
+    // SAFETY: AsSocket keeps the live socket borrowed throughout this synchronous
+    // call. SOL_SOCKET/SO_EXCLUSIVEADDRUSE requires a readable BOOL-sized integer;
+    // its pointer and exact byte count agree. No raw ownership is transferred.
+    let result = unsafe {
+        setsockopt(
+            handle,
+            SOL_SOCKET,
+            SO_EXCLUSIVEADDRUSE,
+            ptr::from_ref(&enabled).cast(),
+            i32::try_from(size_of_val(&enabled))
+                .map_err(|_| io::Error::other("socket option size overflow"))?,
+        )
+    };
+    if result == SOCKET_ERROR {
+        // SAFETY: Retrieve this thread's Winsock error immediately after failure.
+        return Err(io::Error::from_raw_os_error(unsafe { WSAGetLastError() }));
+    }
+    Ok(())
+}
+
 pub(super) fn listener_process_id(port: u16) -> io::Result<Option<u32>> {
     let mut bytes = 0;
     // SAFETY: The documented size-query call uses null storage and a valid size
@@ -315,7 +363,12 @@ fn table_error(code: u32) -> io::Error {
     )
 }
 
-fn standard_file(path: &OsStr, access: u32, disposition: u32) -> io::Result<OwnedHandle> {
+fn standard_file(
+    path: &OsStr,
+    access: u32,
+    share: u32,
+    disposition: u32,
+) -> io::Result<OwnedHandle> {
     let name = wide(path);
     let security = SECURITY_ATTRIBUTES {
         nLength: win_size::<SECURITY_ATTRIBUTES>(),
@@ -328,7 +381,7 @@ fn standard_file(path: &OsStr, access: u32, disposition: u32) -> io::Result<Owne
         CreateFileW(
             name.as_ptr(),
             access,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            share,
             &raw const security,
             disposition,
             FILE_ATTRIBUTE_NORMAL,
@@ -436,5 +489,65 @@ impl Drop for CreationAttributes {
             // all backing storage/attribute values remain live during deletion.
             unsafe { DeleteProcThreadAttributeList(self.address()) };
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{Ipv4Addr, TcpListener};
+    use std::os::windows::io::{FromRawSocket as _, OwnedSocket};
+
+    use windows_sys::Win32::Networking::WinSock::{
+        INVALID_SOCKET, IPPROTO_TCP, SOCK_STREAM, getsockopt, socket,
+    };
+
+    use super::*;
+
+    #[test]
+    fn exclusive_socket_option_is_enabled_on_the_borrowed_unbound_socket() -> io::Result<()> {
+        // Let std initialize Winsock without taking responsibility for global
+        // WSAStartup/WSACleanup lifetime inside this native test.
+        let _initialized = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        // SAFETY: Winsock is initialized; AF_INET/SOCK_STREAM/IPPROTO_TCP agree.
+        let raw = unsafe { socket(i32::from(AF_INET), SOCK_STREAM, IPPROTO_TCP) };
+        if raw == INVALID_SOCKET {
+            // SAFETY: Read the failing socket creation's thread-local error.
+            return Err(io::Error::from_raw_os_error(unsafe { WSAGetLastError() }));
+        }
+        // SAFETY: A successful socket() returned a uniquely owned fresh socket.
+        let socket = unsafe {
+            OwnedSocket::from_raw_socket(
+                u64::try_from(raw).map_err(|_| io::Error::other("socket handle overflow"))?,
+            )
+        };
+        assert_eq!(exclusive_option(&socket)?, 0);
+        require_exclusive_address(&socket)?;
+        assert_ne!(exclusive_option(&socket)?, 0);
+        Ok(())
+    }
+
+    fn exclusive_option(socket: &impl AsSocket) -> io::Result<i32> {
+        let socket = socket.as_socket();
+        let handle = usize::try_from(socket.as_raw_socket())
+            .map_err(|_| io::Error::other("socket handle overflow"))?;
+        let mut enabled = 0_i32;
+        let mut bytes = i32::try_from(size_of_val(&enabled))
+            .map_err(|_| io::Error::other("socket option size overflow"))?;
+        // SAFETY: Socket stays borrowed; the writable integer buffer and its
+        // byte count match the documented SO_EXCLUSIVEADDRUSE BOOL result.
+        let result = unsafe {
+            getsockopt(
+                handle,
+                SOL_SOCKET,
+                SO_EXCLUSIVEADDRUSE,
+                ptr::from_mut(&mut enabled).cast(),
+                &raw mut bytes,
+            )
+        };
+        if result == SOCKET_ERROR {
+            // SAFETY: Read the failing getsockopt call's thread-local error.
+            return Err(io::Error::from_raw_os_error(unsafe { WSAGetLastError() }));
+        }
+        Ok(enabled)
     }
 }
