@@ -11,7 +11,8 @@
 use std::sync::Arc;
 
 use bonsai_prism_runtime::kernels::{
-    hadamard, matvec, rms_norm, round_f16, row, softmax, validate_tensor,
+    MatvecScratch, hadamard, matvec, matvec_into, rms_norm, rms_norm_into, round_f16, row,
+    row_into, softmax, validate_tensor,
 };
 use bonsai_prism_runtime::model::Tensor;
 use bonsai_ternary::pack_ptq;
@@ -249,5 +250,155 @@ fn hadamard_and_nonexpanding_validation_fixture() -> TestResult {
     validate_tensor(&valid)?;
     assert!(validate_tensor(&tensor(30, vec![1], 0x7f80_u16.to_le_bytes().to_vec())).is_err());
     assert!(validate_tensor(&tensor(142, vec![128], vec![0; 33])).is_err());
+    Ok(())
+}
+
+#[test]
+fn reusable_rows_and_normalization_clear_and_recover_without_shrinking() -> TestResult {
+    let weights = tensor(
+        0,
+        vec![2, 2],
+        [1.0_f32, 2.0, -1.0, 0.5]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect(),
+    );
+    let mut output = vec![99.0; 256];
+    let pointer = output.as_ptr();
+    row_into(&weights, 1, &mut output)?;
+    assert_eq!(output, [-1.0, 0.5]);
+    assert_eq!(output.as_ptr(), pointer);
+    assert!(row_into(&weights, 2, &mut output).is_err());
+    assert_eq!(output, [0.0; 0]);
+    assert_eq!(output.as_ptr(), pointer);
+    let invalid = tensor(
+        0,
+        vec![2],
+        [1.0_f32, f32::NAN]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect(),
+    );
+    assert!(row_into(&invalid, 0, &mut output).is_err());
+    assert_eq!(output, [0.0; 0]);
+    rms_norm_into(&[3.0, 4.0], &[1.0, 2.0], 0.0, &mut output)?;
+    assert_eq!(output, [3.0 / 12.5_f32.sqrt(), 8.0 / 12.5_f32.sqrt()]);
+    assert_eq!(output.as_ptr(), pointer);
+    assert!(rms_norm_into(&[0.0, 2.0], &[1.0, f32::MAX], 0.0, &mut output).is_err());
+    assert_eq!(output, [0.0; 0]);
+    assert!(rms_norm_into(&[], &[], 0.0, &mut output).is_err());
+    assert_eq!(output, [0.0; 0]);
+    rms_norm_into(&[2.0], &[3.0], 0.0, &mut output)?;
+    assert_eq!(output, [3.0]);
+    assert_eq!(output.as_ptr(), pointer);
+    Ok(())
+}
+
+#[test]
+fn reusable_matvec_crosses_quantization_formats_and_retains_output_storage() -> TestResult {
+    let mut scratch = MatvecScratch::default();
+    let mut output = vec![99.0; 16];
+    let pointer = output.as_ptr();
+    let first = pq2(0x3c00, &[(1, 2), (2, 2), (3, 2)]);
+    let second = pq2(0x3800, &[(0, 0)]);
+    let packed = [first.as_slice(), second.as_slice()].concat();
+    let weights = tensor(142, vec![256, 2], [packed.as_slice(); 2].concat());
+    let mut input = [0.0; 256];
+    input[0] = 127.0;
+    input[1] = 0.5;
+    input[2] = 1.5;
+    input[3] = 2.5;
+    input[128] = -1.5;
+    input[255] = -127.0;
+    matvec_into(&weights, &input, &mut output, &mut scratch)?;
+    assert_eq!(output, [5.0, 5.0]);
+
+    let block = pack_ptq(&pq2(0x4000, &[(1, 2), (2, 2), (33, 2)]))?;
+    let weights = tensor(143, vec![128], block.to_vec());
+    let mut input = [0.0; 128];
+    input[0] = 127.0;
+    input[1] = 0.5;
+    input[2] = 1.5;
+    input[32] = 63.5;
+    input[33] = 0.25;
+    matvec_into(&weights, &input, &mut output, &mut scratch)?;
+    assert_eq!(output, [7.0]);
+
+    let fallback = tensor(
+        142,
+        vec![128],
+        pq2(0x4000, &[(1, 2), (2, 3), (33, 2)]).to_vec(),
+    );
+    matvec_into(&fallback, &input, &mut output, &mut scratch)?;
+    assert_eq!(output, [11.0]);
+    let block = pack_ptq(&pq2(0x3c00, &[(0, 2)]))?;
+    let rounded = tensor(143, vec![128], block.to_vec());
+    let mut input = [0.0; 128];
+    input[0] = 1.0;
+    matvec_into(&rounded, &input, &mut output, &mut scratch)?;
+    assert_eq!(output, [0.999_938_96]);
+
+    let mut q4 = [0x99; 18];
+    q4[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
+    let mut q8 = [1; 34];
+    q8[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
+    let mut input = [0.0; 32];
+    input[0] = 127.0;
+    input[1] = 0.5;
+    input[2] = 1.5;
+    for weights in [
+        tensor(2, vec![32], q4.to_vec()),
+        tensor(8, vec![32], q8.to_vec()),
+    ] {
+        matvec_into(&weights, &input, &mut output, &mut scratch)?;
+        assert_eq!(output, [130.0]);
+    }
+    assert_eq!(output.as_ptr(), pointer);
+    Ok(())
+}
+
+#[test]
+fn reusable_matvec_preserves_float_order_and_recovers_from_partial_errors() -> TestResult {
+    let mut scratch = MatvecScratch::default();
+    let mut output = vec![99.0; 16];
+    let pointer = output.as_ptr();
+    let weights = tensor(
+        0,
+        vec![3],
+        [16_777_216.0_f32, 1.0, -16_777_216.0]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect(),
+    );
+    // Rounded f32 products accumulate in f64, preserving the middle unit.
+    matvec_into(&weights, &[1.0; 3], &mut output, &mut scratch)?;
+    assert_eq!(output, [1.0]);
+    let invalid = tensor(
+        0,
+        vec![1, 2],
+        [1.0_f32, f32::INFINITY]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect(),
+    );
+    assert!(matvec_into(&invalid, &[1.0], &mut output, &mut scratch).is_err());
+    assert_eq!(output, [0.0; 0]);
+    assert!(matvec_into(&weights, &[1.0; 2], &mut output, &mut scratch).is_err());
+    assert_eq!(output, [0.0; 0]);
+    for (kind, bits, input) in [(1, 0x3c00_u16, 1.000_1), (30, 0x3f80_u16, 1.001)] {
+        let weights = tensor(kind, vec![1], bits.to_le_bytes().to_vec());
+        matvec_into(&weights, &[input], &mut output, &mut scratch)?;
+        assert_eq!(output, [1.0]);
+    }
+    let block = pack_ptq(&pq2(0x3c00, &[(0, 2)]))?;
+    let mut corrupted = block;
+    corrupted[24] = 255;
+    let invalid = tensor(143, vec![128, 2], [block, corrupted].concat());
+    assert!(matvec_into(&invalid, &[1.0; 128], &mut output, &mut scratch).is_err());
+    assert_eq!(output, [0.0; 0]);
+    let valid = tensor(143, vec![128], block.to_vec());
+    matvec_into(&valid, &[0.0; 128], &mut output, &mut scratch)?;
+    assert_eq!(output, [0.0]);
+    assert_eq!(output.as_ptr(), pointer);
     Ok(())
 }

@@ -70,13 +70,26 @@ fn scale(bytes: &[u8]) -> Result<f32> {
     finite(half_to_float(u16::from_le_bytes([bytes[0], bytes[1]])))
 }
 
-fn allocated_collect<T>(values: impl ExactSizeIterator<Item = Result<T>>) -> Result<Vec<T>> {
-    let mut output = Vec::new();
-    output.try_reserve_exact(values.len())?;
-    for value in values {
-        output.push(value?);
+fn fill_into<T>(output: &mut Vec<T>, fill: impl FnOnce(&mut Vec<T>) -> Result<()>) -> Result<()> {
+    output.clear();
+    let result = fill(output);
+    if result.is_err() {
+        output.clear();
     }
-    Ok(output)
+    result
+}
+
+fn collect_into<T>(
+    values: impl ExactSizeIterator<Item = Result<T>>,
+    output: &mut Vec<T>,
+) -> Result<()> {
+    fill_into(output, |output| {
+        output.try_reserve_exact(values.len())?;
+        for value in values {
+            output.push(value?);
+        }
+        Ok(())
+    })
 }
 
 fn pq2_values(block: &[u8]) -> [i16; 128] {
@@ -138,12 +151,29 @@ pub fn validate_tensor(tensor: &Tensor) -> Result<()> {
 /// Rejects unsupported kinds, incomplete blocks, invalid PTQ1 encodings,
 /// nonfinite values, malformed byte extents, and an out-of-range row.
 pub fn row(tensor: &Tensor, index: usize) -> Result<Vec<f32>> {
+    let mut output = Vec::new();
+    row_into(tensor, index, &mut output)?;
+    Ok(output)
+}
+
+/// Decodes a single row into reusable caller-owned storage.
+///
+/// Existing elements are discarded. Capacity is retained, including on error;
+/// the output is empty whenever decoding fails. Only the selected row expands.
+///
+/// # Errors
+/// Rejects the same malformed tensors and row indices as [`row`], and returns
+/// an error if the output cannot be allocated.
+pub fn row_into(tensor: &Tensor, index: usize, output: &mut Vec<f32>) -> Result<()> {
+    fill_into(output, |output| row_impl(tensor, index, output))
+}
+
+fn row_impl(tensor: &Tensor, index: usize, output: &mut Vec<f32>) -> Result<()> {
     let (columns, rows, row_bytes) = dimensions(tensor)?;
     if index >= rows {
         return Err(invalid("tensor row index out of bounds"));
     }
     let bytes = &tensor.data[index * row_bytes..(index + 1) * row_bytes];
-    let mut output = Vec::new();
     output.try_reserve_exact(columns)?;
     match tensor.kind {
         F32 => {
@@ -196,7 +226,7 @@ pub fn row(tensor: &Tensor, index: usize) -> Result<Vec<f32>> {
         }
         _ => return Err(invalid("unsupported row decoder")),
     }
-    Ok(output)
+    Ok(())
 }
 
 // Bounded casts implement the native float quantizers, with checked finite
@@ -216,42 +246,45 @@ fn quantized(value: f32) -> Result<i8> {
     }
 }
 
-fn q8k(input: &[f32]) -> Result<Vec<Q8KBlock>> {
+fn q8k_into(input: &[f32], output: &mut Vec<Q8KBlock>) -> Result<()> {
     if !input.len().is_multiple_of(256) {
         return Err(invalid(
             "Q8_K activations require a multiple of 256 columns",
         ));
     }
-    allocated_collect(input.as_chunks::<256>().0.iter().map(|chunk| {
-        let mut maximum = 0.0_f32;
-        for &value in chunk {
-            finite(value)?;
-            if value.abs() > maximum.abs() {
-                maximum = value;
+    collect_into(
+        input.as_chunks::<256>().0.iter().map(|chunk| {
+            let mut maximum = 0.0_f32;
+            for &value in chunk {
+                finite(value)?;
+                if value.abs() > maximum.abs() {
+                    maximum = value;
+                }
             }
-        }
-        let mut block = Q8KBlock {
-            scale: 0.0,
-            values: [0; 256],
-            sums: [0; 16],
-        };
-        if maximum == 0.0 {
-            return Ok(block);
-        }
-        let inverse_scale = -127.0 / maximum;
-        if !inverse_scale.is_finite() {
-            return Err(invalid("Q8_K activation scale overflow"));
-        }
-        block.scale = 1.0 / inverse_scale;
-        for (target, &value) in block.values.iter_mut().zip(chunk) {
-            // nearest_int in the pinned C reference is ties-to-even.
-            *target = quantized((value * inverse_scale).round_ties_even().min(127.0))?;
-        }
-        for (sum, values) in block.sums.iter_mut().zip(block.values.as_chunks::<16>().0) {
-            *sum = values.iter().map(|&value| i16::from(value)).sum();
-        }
-        Ok(block)
-    }))
+            let mut block = Q8KBlock {
+                scale: 0.0,
+                values: [0; 256],
+                sums: [0; 16],
+            };
+            if maximum == 0.0 {
+                return Ok(block);
+            }
+            let inverse_scale = -127.0 / maximum;
+            if !inverse_scale.is_finite() {
+                return Err(invalid("Q8_K activation scale overflow"));
+            }
+            block.scale = 1.0 / inverse_scale;
+            for (target, &value) in block.values.iter_mut().zip(chunk) {
+                // nearest_int in the pinned C reference is ties-to-even.
+                *target = quantized((value * inverse_scale).round_ties_even().min(127.0))?;
+            }
+            for (sum, values) in block.sums.iter_mut().zip(block.values.as_chunks::<16>().0) {
+                *sum = values.iter().map(|&value| i16::from(value)).sum();
+            }
+            Ok(block)
+        }),
+        output,
+    )
 }
 
 struct Q8Block {
@@ -259,27 +292,30 @@ struct Q8Block {
     values: [i8; 32],
 }
 
-fn q8(input: &[f32]) -> Result<Vec<Q8Block>> {
+fn q8_into(input: &[f32], output: &mut Vec<Q8Block>) -> Result<()> {
     if !input.len().is_multiple_of(32) {
         return Err(invalid("Q8_0 activations require a multiple of 32 columns"));
     }
-    allocated_collect(input.as_chunks::<32>().0.iter().map(|chunk| {
-        let mut maximum = 0.0_f32;
-        for &value in chunk {
-            maximum = maximum.max(finite(value)?.abs());
-        }
-        let d = maximum / 127.0;
-        let inverse_scale = if d == 0.0 { 0.0 } else { 1.0 / d };
-        let mut block = Q8Block {
-            scale: round_f16(d),
-            values: [0; 32],
-        };
-        finite(block.scale)?;
-        for (target, &value) in block.values.iter_mut().zip(chunk) {
-            *target = quantized((value * inverse_scale).round())?;
-        }
-        Ok(block)
-    }))
+    collect_into(
+        input.as_chunks::<32>().0.iter().map(|chunk| {
+            let mut maximum = 0.0_f32;
+            for &value in chunk {
+                maximum = maximum.max(finite(value)?.abs());
+            }
+            let d = maximum / 127.0;
+            let inverse_scale = if d == 0.0 { 0.0 } else { 1.0 / d };
+            let mut block = Q8Block {
+                scale: round_f16(d),
+                values: [0; 32],
+            };
+            finite(block.scale)?;
+            for (target, &value) in block.values.iter_mut().zip(chunk) {
+                *target = quantized((value * inverse_scale).round())?;
+            }
+            Ok(block)
+        }),
+        output,
+    )
 }
 
 #[allow(
@@ -379,6 +415,19 @@ fn float_dot(weights: &[f32], input: &[f32]) -> f32 {
         .sum::<f64>() as f32
 }
 
+/// Reusable activation and decoded-row storage for [`matvec_into`].
+///
+/// Construct with [`Default::default`]. Storage grows fallibly to accommodate
+/// each call and retains its capacity across tensors, activation formats and
+/// errors. Scratch contains no tensor-sized decoded matrix or model state.
+#[derive(Default)]
+pub struct MatvecScratch {
+    q8k: Vec<Q8KBlock>,
+    q8: Vec<Q8Block>,
+    activations: Vec<f32>,
+    row: Vec<f32>,
+}
+
 /// Multiplies packed rows by one activation vector in the stored tensor basis.
 ///
 /// Floating tensors use their native activation precision. PQ2 uses `Q8_K`
@@ -390,49 +439,70 @@ fn float_dot(weights: &[f32], input: &[f32]) -> f32 {
 /// Rejects malformed tensors, unsupported kinds, nonfinite values, invalid PTQ1
 /// encodings, input dimension mismatches, and incomplete activation groups.
 pub fn matvec(tensor: &Tensor, input: &[f32]) -> Result<Vec<f32>> {
-    let (columns, _, row_bytes) = dimensions(tensor)?;
-    if input.len() != columns || input.iter().any(|value| !value.is_finite()) {
-        return Err(invalid(
-            "matvec requires a matching finite activation vector",
-        ));
-    }
-    match tensor.kind {
-        PQ2 if columns.is_multiple_of(256) => {
-            let activations = q8k(input)?;
-            allocated_collect(
-                tensor
-                    .data
-                    .chunks_exact(row_bytes)
-                    .map(|bytes| dot_pq2(bytes, &activations)),
-            )
+    let mut output = Vec::new();
+    matvec_into(tensor, input, &mut output, &mut MatvecScratch::default())?;
+    Ok(output)
+}
+
+/// Multiplies packed rows into reusable output and activation storage.
+///
+/// Numerical operations follow [`matvec`]. Existing output elements are
+/// discarded, and the output is empty on error. Output and scratch capacities
+/// are retained for subsequent calls; any required growth is fallible.
+///
+/// # Errors
+/// Rejects the same invalid tensors and activations as [`matvec`], and returns
+/// an error if output or scratch storage cannot be allocated.
+pub fn matvec_into(
+    tensor: &Tensor,
+    input: &[f32],
+    output: &mut Vec<f32>,
+    scratch: &mut MatvecScratch,
+) -> Result<()> {
+    fill_into(output, |output| {
+        let (columns, rows, row_bytes) = dimensions(tensor)?;
+        if input.len() != columns || input.iter().any(|value| !value.is_finite()) {
+            return Err(invalid(
+                "matvec requires a matching finite activation vector",
+            ));
         }
-        PQ2 | PTQ1 | Q4_0 | Q8_0 => {
-            let activations = q8(input)?;
-            allocated_collect(tensor.data.chunks_exact(row_bytes).map(|bytes| {
-                if matches!(tensor.kind, PQ2 | PTQ1) {
-                    dot_q8_groups(tensor.kind, bytes, &activations)
-                } else {
-                    dot_legacy(tensor.kind, bytes, &activations)
+        output.try_reserve_exact(rows)?;
+        match tensor.kind {
+            PQ2 if columns.is_multiple_of(256) => {
+                q8k_into(input, &mut scratch.q8k)?;
+                for bytes in tensor.data.chunks_exact(row_bytes) {
+                    output.push(dot_pq2(bytes, &scratch.q8k)?);
                 }
-            }))
+            }
+            PQ2 | PTQ1 | Q4_0 | Q8_0 => {
+                q8_into(input, &mut scratch.q8)?;
+                for bytes in tensor.data.chunks_exact(row_bytes) {
+                    output.push(if matches!(tensor.kind, PQ2 | PTQ1) {
+                        dot_q8_groups(tensor.kind, bytes, &scratch.q8)?
+                    } else {
+                        dot_legacy(tensor.kind, bytes, &scratch.q8)?
+                    });
+                }
+            }
+            _ => {
+                collect_into(
+                    input.iter().map(|&value| {
+                        Ok(match tensor.kind {
+                            F16 => round_f16(value),
+                            BF16 => round_bf16(value),
+                            _ => value,
+                        })
+                    }),
+                    &mut scratch.activations,
+                )?;
+                for (index, _) in tensor.data.chunks_exact(row_bytes).enumerate() {
+                    row_into(tensor, index, &mut scratch.row)?;
+                    output.push(finite(float_dot(&scratch.row, &scratch.activations))?);
+                }
+            }
         }
-        _ => {
-            let activations = allocated_collect(input.iter().map(|&value| {
-                Ok(match tensor.kind {
-                    F16 => round_f16(value),
-                    BF16 => round_bf16(value),
-                    _ => value,
-                })
-            }))?;
-            allocated_collect(
-                tensor
-                    .data
-                    .chunks_exact(row_bytes)
-                    .enumerate()
-                    .map(|(index, _)| finite(float_dot(&row(tensor, index)?, &activations))),
-            )
-        }
-    }
+        Ok(())
+    })
 }
 
 #[allow(
@@ -484,12 +554,37 @@ pub fn silu(value: f32) -> f32 {
 /// # Errors
 /// Rejects unequal or empty vectors, nonfinite inputs, negative epsilon, and
 /// a normalization whose scale is not finite and positive.
+pub fn rms_norm(input: &[f32], weight: &[f32], epsilon: f32) -> Result<Vec<f32>> {
+    let mut output = Vec::new();
+    rms_norm_into(input, weight, epsilon, &mut output)?;
+    Ok(output)
+}
+
+/// Normalizes a vector into reusable caller-owned storage.
+///
+/// Numerical operations follow [`rms_norm`]. Existing elements are discarded,
+/// capacity is retained, and the output is empty on every error.
+///
+/// # Errors
+/// Rejects the same invalid vectors and epsilon as [`rms_norm`], and returns
+/// an error if the output cannot be allocated.
+pub fn rms_norm_into(
+    input: &[f32],
+    weight: &[f32],
+    epsilon: f32,
+    output: &mut Vec<f32>,
+) -> Result<()> {
+    fill_into(output, |output| {
+        rms_norm_impl(input, weight, epsilon, output)
+    })
+}
+
 #[allow(
     clippy::as_conversions,
     clippy::cast_possible_truncation,
     reason = "The scalar normalization contract rounds the binary64 mean to binary32."
 )]
-pub fn rms_norm(input: &[f32], weight: &[f32], epsilon: f32) -> Result<Vec<f32>> {
+fn rms_norm_impl(input: &[f32], weight: &[f32], epsilon: f32, output: &mut Vec<f32>) -> Result<()> {
     if input.is_empty() || input.len() != weight.len() || !epsilon.is_finite() || epsilon < 0.0 {
         return Err(invalid(
             "RMS normalization requires equal nonempty vectors and nonnegative epsilon",
@@ -507,11 +602,12 @@ pub fn rms_norm(input: &[f32], weight: &[f32], epsilon: f32) -> Result<Vec<f32>>
     if !scale.is_finite() || scale <= 0.0 {
         return Err(invalid("RMS normalization produced an invalid scale"));
     }
-    allocated_collect(
+    collect_into(
         input
             .iter()
             .zip(weight)
             .map(|(&value, &w)| finite(value * scale * w)),
+        output,
     )
 }
 
