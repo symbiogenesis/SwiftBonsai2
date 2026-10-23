@@ -43,10 +43,14 @@ jobs:
           $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime') -CheckOnly
           if ($result.ModelProcessStarted -or $result.AvailablePhysicalBytesAtAdmission -le 0) { throw 'Invalid admission-only result.' }
           $result | ConvertTo-Json
-      - name: Verify publisher ARM64 runtime and offline recheck
+      - name: Verify publisher ARM64 runtime and planned server switches
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $data = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime'
           ./scripts/Get-Engine.ps1 -DataDirectory $data
-          ./scripts/Get-Engine.ps1 -DataDirectory $data -VerifyOnly
+          $plan = ./scripts/Get-ServerPlan.ps1 -DataDirectory $data -VerifyRuntime
+          if ($plan.LaunchEnabled -or $plan.ModelProcessStarted -or
+              $plan.RuntimeHelpVerification -notlike 'all-planned-switches-advertised*' -or
+              $plan.ArtifactVerification -notlike '*model-not-checked') { throw 'Invalid runtime-only preflight result.' }
+          $plan | Select-Object Status, ArtifactVerification, RuntimeHelpVerification | ConvertTo-Json

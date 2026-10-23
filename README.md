@@ -84,6 +84,6 @@ One focused local correctness case is allowed, for example:
 ./tests/Test-Foundation.ps1 -Case Download
 ```
 
-The full suite runs only in the main-only [Foundation workflow](.github/workflows/foundation.yml), on hosted ARM64 Windows. It checks configuration, unsafe paths, synthetic HTTP failures/resumption, PE rejection, inventory, and the pinned runtime package. It downloads no model weights and runs no inference benchmark. Test scratch/evidence stays in unique system-temp directories.
+The full suite runs only in the main-only [Foundation workflow](.github/workflows/foundation.yml), on hosted ARM64 Windows. It checks configuration, unsafe paths, synthetic HTTP failures/resumption, PE rejection, inventory, strict server policy, and the pinned runtime package plus planned switches. It downloads no model weights and runs no inference benchmark. Test scratch/evidence stays in unique system-temp directories.
 
 All benchmarks and full engine suites remain CI-only. Device latency, power, thermals, memory acceptance, creative outputs, and daily security require later gates. No laptop self-hosted runner is configured here; hosted foundation CI cannot supply those verdicts. See [PLAN.md](PLAN.md) for delivery order and [implementation research](docs/implementation-research.md) for pre-step literature and sanity checks.
