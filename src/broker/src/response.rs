@@ -78,65 +78,81 @@ where
     validate_metadata(&backend, chat.streams_response())?;
     let mut body = backend.into_body();
     if chat.streams_response() {
-        let head = format!(
-            "HTTP/1.1 200 OK\r\n{COMMON_HEADERS}Content-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
-        );
-        write_group(&mut client, &[head.as_bytes()], supervisor_deadline, false).await?;
-        // Read into the final wire frame: no per-chunk String allocation or
-        // separate writes for the size, payload and CRLF.
-        let mut buffer = [0u8; CHUNK_PREFIX_BYTES + RESPONSE_BUFFER_BYTES + 2];
-        let mut sent = 0;
-        loop {
-            // At the cap, probe one byte to distinguish exact-limit EOF from
-            // surplus without forwarding any byte beyond the limit.
-            let bound = RESPONSE_BUFFER_BYTES.min(MAX_RESPONSE_BYTES - sent + 1);
-            let count = read_before(
-                &mut body,
-                &mut buffer[CHUNK_PREFIX_BYTES..CHUNK_PREFIX_BYTES + bound],
-                supervisor_deadline,
-            )
-            .await?;
-            if count == 0 {
-                break;
-            }
-            if count > MAX_RESPONSE_BYTES - sent {
-                return Err(ResponseError::BodyLimit);
-            }
-            buffer[CHUNK_PREFIX_BYTES - 2..CHUNK_PREFIX_BYTES].copy_from_slice(b"\r\n");
-            let mut first = CHUNK_PREFIX_BYTES - 2;
-            let mut size = count;
-            while size != 0 {
-                first -= 1;
-                buffer[first] = b"0123456789ABCDEF"[size & 0xf];
-                size >>= 4;
-            }
-            let end = CHUNK_PREFIX_BYTES + count;
-            buffer[end..end + 2].copy_from_slice(b"\r\n");
-            write_group(
-                &mut client,
-                &[&buffer[first..end + 2]],
-                supervisor_deadline,
-                false,
-            )
-            .await?;
-            sent += count;
-        }
-        // Never emit the terminator on backend error, byte limit or deadline.
-        write_group(&mut client, &[b"0\r\n\r\n"], supervisor_deadline, true).await
+        write_sse_response(&mut client, &mut body, supervisor_deadline).await
     } else {
-        let bytes = collect_json(&mut body, supervisor_deadline).await?;
-        let head = format!(
-            "HTTP/1.1 200 OK\r\n{COMMON_HEADERS}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n",
-            bytes.len()
-        );
-        write_group(
-            &mut client,
-            &[head.as_bytes(), &bytes],
-            supervisor_deadline,
-            true,
-        )
-        .await
+        write_json_response(&mut client, &mut body, supervisor_deadline).await
     }
+}
+
+async fn write_sse_response<W: AsyncWrite + Unpin, R: AsyncRead + Unpin>(
+    client: &mut W,
+    body: &mut R,
+    supervisor_deadline: Instant,
+) -> Result<(), ResponseError> {
+    let head = format!(
+        "HTTP/1.1 200 OK\r\n{COMMON_HEADERS}Content-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
+    );
+    write_group(client, &[head.as_bytes()], supervisor_deadline, false).await?;
+    // Read into the final wire frame: no per-chunk String allocation or
+    // separate writes for the size, payload and CRLF.
+    let mut buffer = [0u8; CHUNK_PREFIX_BYTES + RESPONSE_BUFFER_BYTES + 2];
+    let mut sent = 0;
+    loop {
+        // At the cap, probe one byte to distinguish exact-limit EOF from
+        // surplus without forwarding any byte beyond the limit.
+        let bound = RESPONSE_BUFFER_BYTES.min(MAX_RESPONSE_BYTES - sent + 1);
+        let count = read_before(
+            body,
+            &mut buffer[CHUNK_PREFIX_BYTES..CHUNK_PREFIX_BYTES + bound],
+            supervisor_deadline,
+        )
+        .await?;
+        if count == 0 {
+            break;
+        }
+        if count > MAX_RESPONSE_BYTES - sent {
+            return Err(ResponseError::BodyLimit);
+        }
+        buffer[CHUNK_PREFIX_BYTES - 2..CHUNK_PREFIX_BYTES].copy_from_slice(b"\r\n");
+        let mut first = CHUNK_PREFIX_BYTES - 2;
+        let mut size = count;
+        while size != 0 {
+            first -= 1;
+            buffer[first] = b"0123456789ABCDEF"[size & 0xf];
+            size >>= 4;
+        }
+        let end = CHUNK_PREFIX_BYTES + count;
+        buffer[end..end + 2].copy_from_slice(b"\r\n");
+        write_group(
+            client,
+            &[&buffer[first..end + 2]],
+            supervisor_deadline,
+            false,
+        )
+        .await?;
+        sent += count;
+    }
+    // Never emit the terminator on backend error, byte limit or deadline.
+    write_group(client, &[b"0\r\n\r\n"], supervisor_deadline, true).await
+}
+
+async fn write_json_response<W: AsyncWrite + Unpin, R: AsyncRead + Unpin>(
+    client: &mut W,
+    body: &mut R,
+    supervisor_deadline: Instant,
+) -> Result<(), ResponseError> {
+    let bytes = collect_json(body, supervisor_deadline).await?;
+    let head = format!(
+        "HTTP/1.1 200 OK\r\n{COMMON_HEADERS}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+        bytes.len()
+    );
+    write_group(
+        client,
+        &[head.as_bytes(), &bytes],
+        supervisor_deadline,
+        true,
+    )
+    .await
 }
 
 pub(crate) fn validate_metadata<R>(
