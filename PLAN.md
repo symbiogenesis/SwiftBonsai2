@@ -4,20 +4,22 @@
 
 **Status:** planning only. No inference engine has been implemented, models downloaded, drivers changed, benchmarks run, or laptop performance established. Values marked *proposed* or *estimated* are design inputs to validate.
 
+**Model selection comes first, through literature searching only.** Choose the model up front using already-published, publicly accessible online benchmarks, evaluations, model documentation, and samples. Model selection will **not** be based on local benchmarking. Record sources, dates, exact model versions/quantizations, relevant settings, and evidence gaps, then document the choice before building the inference engine. The next phase is to **build, validate, and optimize the inference engine for that chosen model**. Engine correctness, creative-workflow checks, and latency, throughput, memory, energy, and thermal measurements remain in scope under the repository's CI rules; they validate and improve the implementation rather than serve as a candidate-model selection campaign.
+
 ## 1. Recommended direction
 
-**Try current Swift Bonsai 2 PQ2_0 first** for creative writing and art assistance on this laptop. Its compact weights, inherited hybrid attention, and shorter-reasoning training make it a promising efficiency candidate; qualify actual creative usefulness, response time, and sustained heat before selecting a daily profile. Keep base Bonsai 2 as the matched control, try smaller Gemma 4 12B QAT Q4_0 if responsiveness or heat is unacceptable, and compare conventional Qwen3.8-27B UD-Q3_K_XL if Swift's creative quality disappoints. Use Prism ML's pinned llama.cpp fork for Swift/Bonsai and upstream llama.cpp for accepted conventional alternatives. Keep the server's built-in web UI for direct chat and engine use. Treat coding agents as an optional later feature: evaluate **OpenCode** and qualify **MXC ProcessContainer** before enabling tools. Use a small Rust policy/launch broker where custom security-sensitive orchestration is needed; retain PowerShell for installation/build management. Establish CPU correctness first, qualify **Vulkan on the Adreno X1-85** next, and consider the documented OpenCL route for supported conventional quantizations. Select the CPU/GPU configuration using measurements from this laptop. Treat direct Hexagon NPU execution as a separate research milestone.
+**Research current Swift Bonsai 2 PQ2_0 first**, alongside the alternatives in section 3, and choose the model from published online evidence before implementation. Its compact weights, inherited hybrid attention, and shorter-reasoning training make it a promising efficiency candidate, not an established creative-quality winner. Review published Swift/base Bonsai comparisons and relevant Gemma/Qwen results; document uncertainty where exact-pack creative or laptop evidence is missing. Then build the inference engine for the chosen model: use Prism ML's pinned llama.cpp fork for Swift/Bonsai or upstream llama.cpp for a selected conventional alternative. Keep the server's built-in web UI for direct chat and engine use. Treat coding agents as an optional later feature: evaluate **OpenCode** and qualify **MXC ProcessContainer** before enabling tools. Use a small Rust policy/launch broker where custom security-sensitive orchestration is needed; retain PowerShell for installation/build management. Establish CPU correctness first, qualify **Vulkan on the Adreno X1-85** next, and consider the documented OpenCL route where the selected model's quantization is supported. Select the CPU/GPU configuration using measurements from this laptop. Treat direct Hexagon NPU execution as a separate research milestone.
 
 The objective is the fastest useful, correct local assistant within the laptop's memory and thermal limits. Simultaneous CPU, GPU, and NPU utilization is a candidate configuration, not an acceptance requirement: extra processors can introduce synchronization, shared-memory contention, and power competition.
 
 The owner's primary uses are **creative writing and art**, ahead of coding. Prioritize prose quality, style and voice control, character/scene continuity, revision, brainstorming, art direction, and image-prompt composition. Image critique additionally requires a qualified vision path. Generating images is a separate model/pipeline decision; a text-generating LLM does not become an image generator by accepting images.
 
-The owner also places strong weight on **short waits and comfortable sustained laptop operation**. First require useful creative output and correct behavior; among acceptable profiles, favor time to useful prose, time to an acceptable finished piece, and restrained sustained heat/fan activity. A more capable model that takes too long or keeps the machine uncomfortably hot need not become the default. Swift-first is a trial order, not a measured efficiency or quality verdict.
+The owner also places strong weight on **short waits and comfortable sustained laptop operation**. Use published evidence for these concerns when choosing the model up front. During engine development, require useful creative output and correct behavior; among implementation profiles for the chosen model, favor time to useful prose, time to an acceptable finished piece, and restrained sustained heat/fan activity. Swift-first is a research priority, not a measured efficiency or quality verdict.
 
 | Decision | Initial choice | Reason |
 | --- | --- | --- |
 | Runtime | Upstream llama.cpp for conventional candidates; Prism fork for Swift; each pinned by full commit | Match the model architecture, tensor types, and backend to an explicit runtime |
-| Main model | Current Swift PQ2_0 first; staged alternatives in section 3 | Establish useful creative output, short waits, and acceptable sustained heat before broadening the search |
+| Main model | Choose up front through the section 3 literature review | Use published evidence for creative usefulness, memory fit, responsiveness, and comfort, then build its engine |
 | Baseline | Native ARM64 CPU, FP16 KV, one conversation | Establish correctness with a simple execution path |
 | First accelerator | Native ARM64 Vulkan; OpenCL candidate for supported conventional types | Swift needs its released packed kernels and transforms; ordinary Q4_0 has an additional documented Adreno route |
 | Direct chat / engine inspection | llama-server's built-in web UI and loopback API | Lightweight path for correctness and direct chat |
@@ -66,30 +68,30 @@ There is no credible laptop tokens/second forecast yet. Apple, NVIDIA, or other 
 
 ## 3. Model identity and runtime compatibility
 
-### Select the model before investing in custom kernels
+### Select the model through literature before building its engine
 
 The 18 GiB inference-service ceiling in section 7 leaves room for conventional low-bit models as well as Swift. The following are **candidates**, not measured winners. File sizes are publisher download figures converted to GiB; they exclude live caches, runtime copies, and compute buffers.
 
-| Candidate / artifact | Weight file | Proposed role and qualification |
+| Candidate / artifact | Weight file | Role in the upfront literature review |
 | --- | ---: | --- |
-| Current Swift Bonsai 2 `PQ2_0` | 7.206 GB / approximately 6.71 GiB | First trial: require useful prose/style control plus acceptable response time and sustained heat; establish whether shorter reasoning helps actual creative work |
-| Base Ternary Bonsai 2 27B `PQ2_0` | Inspect and pin the actual artifact | Control for the Swift adaptation; use the same runtime, prompts, sampling, and output budget |
-| Gemma 4 12B instruction-tuned QAT `Q4_0` | 6.98 GB / approximately 6.50 GiB | Smaller-model fallback to test if Swift's latency/heat is unacceptable; speed or lower power is not established by parameter count alone |
-| Qwen3.8-27B `UD-Q3_K_XL` | 13.1 GB / approximately 12.20 GiB | Quality comparison if Swift's prose/style behavior disappoints; require the larger footprint and sustained cost to remain acceptable |
-| Gemma 4 26B-A4B instruction-tuned QAT `Q4_0` | 14.4 GB / approximately 13.41 GiB | Optional general-assistant/MoE comparison with approximately 4B active parameters; less memory headroom than the 12B model |
-| Qwen3.6-35B-A3B `UD-IQ3_S` | 13.7 GB / approximately 12.76 GiB | Optional response-speed/MoE comparison: 35B total, approximately 3B active per token; retain only if its actual creative output is competitive |
+| Current Swift Bonsai 2 `PQ2_0` | 7.206 GB / approximately 6.71 GiB | First research candidate; seek published prose/style evidence and relevant response-time/thermal reports |
+| Base Ternary Bonsai 2 27B `PQ2_0` | Inspect publisher artifact metadata | Published comparator for the Swift adaptation; check runtime, prompts, sampling, and output budgets before attributing differences |
+| Gemma 4 12B instruction-tuned QAT `Q4_0` | 6.98 GB / approximately 6.50 GiB | Smaller-model alternative; speed or lower power is not established by parameter count alone |
+| Qwen3.8-27B `UD-Q3_K_XL` | 13.1 GB / approximately 12.20 GiB | Alternative creative-quality evidence to review, subject to its larger footprint and published runtime support |
+| Gemma 4 26B-A4B instruction-tuned QAT `Q4_0` | 14.4 GB / approximately 13.41 GiB | Optional published general-assistant/MoE comparison with approximately 4B active parameters and less memory headroom |
+| Qwen3.6-35B-A3B `UD-IQ3_S` | 13.7 GB / approximately 12.76 GiB | Optional published MoE comparison: 35B total, approximately 3B active per token; seek evidence relevant to creative work |
 
 Sources: [Qwen3.8 model][qwen38-model] and [quantization files][qwen38-quants], [Qwen3.6 architecture][qwen36-model] and [quantization files][qwen36-quants], [Gemma architecture/capabilities][gemma12-model], [official 12B QAT pack][gemma12-qat], [official 26B-A4B QAT pack][gemma26-qat], and [Swift release][swift-page]. MoE active parameters can reduce per-token work; **all resident experts still count toward memory**, and active parameter count is not a laptop speed forecast. Google's [QAT release][gemma-qat-release] describes training for the quantization format; it does not establish exact laptop quality or performance.
 
-Qwen3.8 lineage is a sensible reason to prioritize Bonsai 2 over an older-family candidate, but version numbers do not rank differently compressed or fine-tuned models. Conventional Qwen3.8, ternary Bonsai 2, and Swift have different weights/representations and can differ in voice, detail, instruction following, and long-form consistency. Swift's shorter-reasoning objective has no established advantage for fiction or art collaboration. Compare actual creative output rather than transferring math/coding benchmark rankings to this use.
+Qwen3.8 lineage is a sensible reason to research Bonsai 2, but version numbers do not rank differently compressed or fine-tuned models. Conventional Qwen3.8, ternary Bonsai 2, and Swift have different weights/representations and can differ in voice, detail, instruction following, and long-form consistency. Swift's shorter-reasoning objective has no established advantage for fiction or art collaboration. Inspect published creative-writing results and existing samples rather than transferring math/coding benchmark rankings to this use.
 
 Swift combines three potentially complementary savings: ternary packing reduces stored weight bytes and may reduce decode memory traffic when consumed by efficient packed kernels; Qwen3.8's inherited hybrid attention reduces context-state requirements relative to an all-attention graph; Swift training aims to reduce generated reasoning work. The attention benefit is shared with the conventional Qwen3.8 base. These savings address different costs and do not establish multiplicative speedups, lower device power, or cooler operation. It remains a dense 27B-class language model: a small weight file is not a thermal limit. CPU/Vulkan paths exist, while NPU execution and speculative decoding remain separate gates. [Architecture][bonsai-model] · [Swift evidence][swift-page] · [Backend status][backend-support]
 
-Use a staged selection gate: qualify Swift's bounded reference and creative profiles first, retain base Bonsai for attributing adaptation effects, and open the appropriate fallback comparison only when quality, responsiveness, heat, or backend gaps justify it. Useful Swift chat need not wait for every alternative to be evaluated. Publisher reasoning/coding evaluations use different harnesses, contexts, and precisions; they do not rank these exact GGUFs for prose. Keep any later tool/coding evaluation separate from the primary creative score.
+Complete model selection as an upfront literature-search gate. Compare existing public benchmarks, methodologies, and samples for the candidates, prioritizing creative writing and art assistance, then memory fit and relevant performance evidence. Record each source URL/date, benchmark and judge version, exact model/quantization, settings, and hardware where available. Distinguish independent evaluations from publisher reports and exact-pack results from indirect base-model evidence. Where evidence is missing or noncomparable, state the limitation and confidence in the recommendation. Produce a model-choice decision record before engine implementation; local model benchmarking is not an input to this decision.
 
-Start Swift with one resident model, one active slot, **8K context initially, then 16K when needed**, FP16 KV, speculation off, and small bounded caches. Preserve each model's own template and recommended sampler; compare both a common bounded task budget and each candidate's documented intended-use profile. Use paired, anonymously presented samples where practical and let the owner's preferences decide close creative judgments. Record regeneration/revision count, truncation, peak memory, time to useful prose, time to an **acceptable finished piece** including hidden reasoning, and sustained heat/fan behavior. Run performance and comparative quality workloads in self-hosted CI under section 10; a bounded local correctness check is not a benchmark.
+After that decision, build the engine for the chosen model with one resident model, one active slot, **8K context initially, then 16K when needed**, FP16 KV, speculation off, and small bounded caches. Preserve its own template and recommended sampler. Engine validation may compare reference and optimized implementations/profiles, including paired creative samples where useful, and record regeneration/revision count, truncation, peak memory, time to useful prose, time to an **acceptable finished piece** including hidden reasoning, and sustained heat/fan behavior. Run performance and comparative quality workloads in self-hosted CI under section 10; these qualify the implementation of the already-selected model.
 
-The initial creative set should cover:
+The chosen engine's initial creative-workflow validation set should cover:
 
 - A short scene in several distinct voices; judge specificity, rhythm, dialogue, and unwanted generic phrasing.
 - A continuation from an outline/character bible; check viewpoint, motivations, world facts, and continuity after editing an earlier turn.
@@ -99,9 +101,9 @@ The initial creative set should cover:
 
 Sample multiple outputs using a predeclared rubric; creative preference is not a single deterministic right answer. Include a thinking-disabled or lower-reasoning profile when the exact model supports it, since visible prose and collaboration may matter more than a long private reasoning trace.
 
-[EQ-Bench Creative Writing][creative-bench] and its [longform benchmark][longform-bench] supply useful evaluation ideas: style, repetition, continuity, and degradation across chapters. Pin the evaluated version and inspect samples rather than importing a leaderboard rank as the local result. Judge/API settings and full-precision or hosted models differ from these exact quantized files; the owner's preferences remain the acceptance authority.
+[EQ-Bench Creative Writing][creative-bench] and its [longform benchmark][longform-bench] supply published scores, methodology, and samples for the upfront literature review, as well as ideas for later engine validation. Record the evaluated version and inspect existing samples. Judge/API settings and full-precision or hosted models differ from these exact quantized files; mark indirect evidence accordingly. An absent model entry is an evidence gap, not a requirement to run that benchmark before selecting a model.
 
-Retain Swift and base Bonsai controls while establishing whether the current merged Swift file actually saves work. Choose the daily model only after this gate. Preserve CPU-first bring-up, containment, and cache correctness across candidates; defer Swift-specific NPU kernels, BITCOS, and lookup-kernel adapters until Swift earns that investment.
+Once the literature decision is recorded, proceed with CPU-first engine bring-up, containment, and cache correctness for the selected model. Keep a reference implementation/profile for optimization comparisons. Defer model-specific NPU kernels, BITCOS, and lookup-kernel adapters until the engine's measured bottlenecks justify them.
 
 ### Preserve the actual Swift release
 
@@ -125,7 +127,7 @@ The [publisher's methodology][swift-page] separates historical runtime-correctio
 
 The advertised 39.8% reduction is the **historical GPQA median**, not the mean or an established current-file saving. Small score differences are not established gains. UkisAI also reports uneven instruction following, tool use, and open-ended coding. These findings justify a comparison, not a production-quality assumption. [Current model limitations][swift-model]
 
-At unchanged decode speed, 19% fewer generated tokens would cut **generation time** by 19%, equivalent to about `1 / 0.81 = 1.235` times generation-only throughput. That is conditional arithmetic; prefill, tool work, retries, and quality failures can erase the benefit. Current IFBench savings are much smaller, and AIME uses more tokens. Measure the merged Swift model against the matched base on held-out tasks before attributing end-to-end savings to the adaptation.
+At unchanged decode speed, 19% fewer generated tokens would cut **generation time** by 19%, equivalent to about `1 / 0.81 = 1.235` times generation-only throughput. That is conditional arithmetic; prefill, tool work, retries, and quality failures can erase the benefit. Current IFBench savings are much smaller, and AIME uses more tokens. Seek published matched Swift/base comparisons before attributing end-to-end savings to the adaptation; missing evidence remains a limitation in the upfront model choice. Later measurements establish the built engine's behavior, not a retroactive model-selection benchmark.
 
 ### Artifact manifests and semantic references
 
@@ -462,14 +464,14 @@ All settings here are **candidates**, not known optima. The launcher must obtain
 | --- | --- | --- | --- | --- |
 | `reference-cpu` | 8K / 1 | FP16, speculation off; reuse separately switchable | CPU only | Correctness and regression reference |
 | `daily` | 16K initially; promote 32K after validation / 1 | FP16 initially; Q8 candidate; 8 checkpoints, 1 GiB prompt cache | Best validated CPU/Vulkan placement | General interactive use |
-| `creative` | Swift PQ2_0: 8K initially, then 16K as needed / 1 | FP16 initially; propose 2 checkpoints and 256 MiB prompt cache; qualify Q8 if useful | CPU 4/6/8-thread screen, then accepted CPU/Vulkan profile; qualified thinking-off/moderate effort and sampler, explicitly shown | First daily-use candidate for drafting, revision, art direction; useful prose, short waits, and acceptable sustained heat |
+| `creative` | Chosen model: 8K initially, then 16K as needed / 1 | FP16 initially; for Swift, propose 2 checkpoints and 256 MiB prompt cache; qualify Q8 if useful | CPU 4/6/8-thread screen, then accepted CPU/Vulkan profile; qualified thinking-off/moderate effort and sampler, explicitly shown | First engine profile for drafting, revision, art direction; useful prose, short waits, and acceptable sustained heat |
 | `long-context` | 64K first; larger only after acceptance / 1 | Q8 candidate; Q4 separately experimental | Best supported placement within budget | Documents and extended reasoning |
 | `battery` | 8K–16K / 1 | Bounded reuse, no speculation | Selected by energy/task and responsiveness | Lower power use |
 | `npu-experimental` | Explicitly bounded / 1 | Backend-specific validated state path | Only after NPU gate | Research, never silent default |
 
 Initial batch/microbatch candidates are 256/64 for bring-up and 512/128 for qualification. Increase only with memory evidence; prefill and decoding have different bottlenecks. Explicitly set one slot rather than inheriting an automatic concurrency default.
 
-Qualify the smaller-cache **Swift `creative` profile first**. The eight-checkpoint/1 GiB `daily` settings are a later Swift reuse candidate, not the initial comfort-oriented default. Conventional Qwen3.8 can also start with two checkpoints and 256 MiB prompt cache; Gemma requires its own non-recurrent cache policy. Keep the model warm during active use where residency is comfortable. Vision gets a separately admitted variant with its exact projector and image budget; long-form writing gets an explicit longer-context profile only after continuity, memory, and sustained-operation acceptance. Do not force a lower reasoning mode unless the exact Swift template supports it and creative checks pass; unsupported `low` can behave near `xhigh` on the base.
+Qualify the smaller-cache **`creative` profile for the model chosen in the upfront literature review first**. If Swift is chosen, the eight-checkpoint/1 GiB `daily` settings are a later reuse candidate, not the initial comfort-oriented default. Conventional Qwen3.8 can also start with two checkpoints and 256 MiB prompt cache; Gemma requires its own non-recurrent cache policy. Keep the model warm during active use where residency is comfortable. Vision gets a separately admitted variant with its exact projector and image budget; long-form writing gets an explicit longer-context profile only after continuity, memory, and sustained-operation acceptance. Do not force a lower reasoning mode unless the exact template supports it and creative checks pass; unsupported `low` can behave near `xhigh` on base Bonsai.
 
 Retain GPU kernel/shader caches supported by the chosen backend and invalidate them on relevant source/toolchain/device changes. Separate cold startup, warm model, and warm prompt-cache results. Do not count shader compilation as steady-state decode or hide it from startup measurements.
 
@@ -581,11 +583,13 @@ Numerical comparisons use explicit dtype-appropriate tolerances. Greedy token ag
 
 ### CI workload matrix
 
+This matrix applies **after the literature-based model choice**, to building and qualifying that model's inference engine. It covers engine correctness, creative workflows, performance, and optimization; it is not the model-selection gate.
+
 Use native `llama-bench` where appropriate plus a small repository-owned streaming HTTP runner for user-visible latency/cache behavior. Add [EleutherAI's evaluation harness][lm-eval-api] through its local API adapters for compatible tasks; validate templates, scoring, tokenization, and required log probabilities before relying on it.
 
 | Dimension | Initial representative cases |
 | --- | --- |
-| Model / creative quality | Swift PQ2 first; matched base Bonsai control; smaller Gemma if responsiveness/heat disappoints, direct Qwen3.8 Q3 if creative quality disappoints; optional MoE only for an unresolved gap |
+| Model / creative quality | The artifact chosen up front from literature; compare its reference and optimized runtime/profile outputs for quality regressions |
 | Creative workflow | Scene drafting, voice/style changes, constrained revision, multi-chapter continuity, art direction/image prompts; grounded image critique only after vision qualification |
 | Prompt size | 512, 2K, 8K, 16K; then 32K/64K for accepted profiles |
 | Output | Fixed-length 128/512-token performance cases; separate natural task completions |
@@ -598,7 +602,7 @@ Use native `llama-bench` where appropriate plus a small repository-owned streami
 | Harness / containment | Direct API, accepted agent workflow, cold/warm MXC worker; separate VM tier if qualified |
 | Experimental packing | Same current weights/layout control, actual BITCOS serialized size, native kernel, end-to-end results |
 
-Avoid a full Cartesian sweep. Establish a small baseline, screen model suitability for creative use, then thread/batch choices and feasible device placements; qualify cache choices on the best candidates. Keep backend/kernel comparisons on the same exact model artifact and settings. Attribute different models, Swift/base adaptations, weight versions, and samplers as separate quality/performance comparisons; measure alternate-weight PTQ separately.
+Avoid a full Cartesian sweep. Establish a small engine baseline for the selected model, then screen thread/batch choices and feasible device placements; qualify cache choices on the best implementation profiles. Keep backend/kernel comparisons on the same exact model artifact and settings. Attribute weight-version, packing, and sampler changes separately so they cannot be mistaken for an engine optimization. The upfront literature review has already settled model selection.
 
 Record:
 
@@ -619,7 +623,7 @@ Promote a configuration only when:
 1. Focused state/streaming/cancellation checks and the required CI suites pass.
 2. It stays within memory budgets without sustained paging or eviction and remains responsive through the sustained workload, with heat/fan behavior acceptable to the owner. Record temperature, throttling, power, and energy per acceptable finished piece where telemetry is valid; mark missing readings unavailable. Do not infer a thermal pass from small weights or a short burst.
 3. It has no unresolved critical task failure and its quality difference is within a predeclared evaluation tolerance. For creative work, use the owner's paired preferences and explicit voice/continuity/revision rubric; faster text is not a win if it takes more revisions or misses the brief. Report uncertainty when sample size cannot establish a preference.
-4. For same-model performance optimizations, paired CI measurements establish a useful improvement: use **10% lower end-to-end latency** as an initial target, or a documented capacity/energy benefit without unacceptable interactive regression. For model selection or creative behavior profiles, owner-preferred prose/continuity can justify slower generation only within accepted interactive-latency, memory, and sustained heat/energy limits. Report that quality/speed/comfort tradeoff rather than silently favoring either a higher creative score or peak throughput.
+4. For same-model performance optimizations, paired CI measurements establish a useful improvement: use **10% lower end-to-end latency** as an initial target, or a documented capacity/energy benefit without unacceptable interactive regression. For creative behavior profiles of the chosen model, owner-preferred prose/continuity can justify slower generation only within accepted interactive-latency, memory, and sustained heat/energy limits. Report that quality/speed/comfort tradeoff. These are engine/profile promotion criteria; model choice was completed through literature before implementation.
 5. The manifest and effective profile reproduce the outcome on the settled `main` revision.
 6. An agent profile enforces its declared filesystem/network/process boundary, contains all execution paths, and fails closed. A successful model response alone does not qualify the sandbox or the agent.
 
@@ -646,6 +650,7 @@ tests/                            focused correctness fixtures and CI suites
 tools/evaluation/                 API runner, task definitions, result schema
 .github/workflows/                build/test plus manual laptop performance jobs
 docs/results/                     concise reports linking retained CI evidence
+docs/model-selection.md           upfront literature sources, comparisons, model choice, confidence
 ```
 
 Keep third-party source at pinned revisions without copying an untracked engine into the repository. Model packs and personal conversation caches stay outside Git. Build outputs use documented artifact lanes; disposable diagnostics live in temp. A tool should fail clearly if a required native component is absent rather than installing arbitrary replacements.
@@ -658,9 +663,10 @@ Effort ranges below are planning estimates for one engineer after dependencies a
 
 | Milestone | Approximate effort | Concrete output | Exit condition |
 | --- | --- | --- | --- |
+| M0a: upfront literature search and model choice | 0.5–1 day | Published benchmark/methodology/sample review; source dates, exact-pack distinctions, confidence and gaps; model-choice decision record | One model chosen before engine implementation, using literature rather than local model benchmarking |
 | M0: inventory and reproducibility | 0.5–1 day | Device report, GGUF metadata, immutable manifests, toolchain/CI design | Exact architecture and dependency gaps known |
-| M1: CPU + direct local chat | 1–3 days | Native Prism engine, web UI, launcher, current Swift PQ2_0, focused regressions | Correct bounded Swift chat, cancellation, offline restart |
-| M1a: Swift-first creative/comfort qualification | 1–3 days after initial loading paths work | Bounded Swift creative profile, matched base control, paired samples, sustained CI evidence; conditional fallback comparison | Useful prose/art collaboration with acceptable waits, heat, and memory; no all-model sweep required |
+| M1: CPU + direct local chat | 1–3 days | Native engine for the chosen model and matching runtime, web UI, launcher, focused regressions | Correct bounded chat, cancellation, offline restart |
+| M1a: chosen engine's creative/comfort qualification | 1–3 days after initial loading paths work | Bounded creative profile, reference/optimized engine comparisons, paired samples where useful, sustained CI evidence | Useful prose/art collaboration with acceptable waits, heat, and memory on the selected model |
 | M1b: optional agent + containment qualification | 3–5 days if wanted and supported paths work | Native agent candidate, MXC broker/policy, bounded inference bridge, bypass checks | Successful reviewed task and enforced whole-agent boundary before enabling tools |
 | M2: Vulkan qualification | 2–5 days if existing kernels work | Native GPU build, placement audit, CI CPU/GPU comparison | Correct graph and demonstrated benefit, or documented no-go |
 | M3: cache and context qualification | 2–4 days | Hybrid-state tests, memory estimator, bounded reuse, accepted KV types | Fresh/reused continuations agree; selected contexts fit and retain quality |
@@ -668,16 +674,16 @@ Effort ranges below are planning estimates for one engineer after dependencies a
 | M5: NPU feasibility | About 2 days initially | Operation/packing/memory gap report and decision | Feasible bounded implementation or explicit deferral |
 | M6: lookup kernels / BITCOS / speculation | Separately estimated after feasibility | Focused patch or experimental profile | Same-weight correctness, native-platform support, and CI benefit justify maintenance cost |
 
-M0 -> M1 -> M1a -> M2/M3 -> M4 is the main creative-chat delivery path, with independent work isolated appropriately. M1b is an optional branch; agent automation is accepted only after it passes. Investigate M5 after model selection and CPU/GPU results expose realistic bottlenecks; do not make everyday usability depend on a speculative NPU port. A substantial custom ternary NPU backend is a multiweek project to scope after the feasibility report, not a two-day integration.
+M0a -> M0 -> M1 -> M1a -> M2/M3 -> M4 is the main creative-chat delivery path: choose the model from literature first, then build and qualify its inference engine, with independent work isolated appropriately. M1b is an optional branch; agent automation is accepted only after it passes. Investigate M5 after the selected engine's CPU/GPU results expose realistic bottlenecks; do not make everyday usability depend on a speculative NPU port. A substantial custom ternary NPU backend is a multiweek project to scope after the feasibility report, not a two-day integration.
 
-The first future implementation step should be **M0 plus M1, immediately followed by M1a**: pin current Swift PQ2_0 and its Prism runtime, inspect native capabilities, establish an honest CPU reference, and make the local UI usable. Qualify the 8K–16K creative profile for useful output, short waits, and sustained comfort. Use the matched Bonsai control to test Swift's contribution; broaden to the smaller-model or conventional-Qwen fallback only for an observed gap. Select the daily profile before funding custom low-bit kernels, NPU work, or speculation.
+The first step is **M0a: finish the literature search and choose the model**. Then proceed directly to **M0 plus M1, followed by M1a**: pin that model and its matching runtime, inspect native capabilities, build the engine, establish an honest CPU reference, and make the local UI usable. Qualify its 8K–16K creative profile for useful output, short waits, and sustained comfort. Continue CPU/GPU, cache, and performance work on that engine; the build phase is not a prerequisite for deciding which model to use.
 
 ## 13. Risk register and explicit open questions
 
 | Risk / question | Resolution |
 | --- | --- |
-| Does a math/coding benchmark or newer base imply better creative prose? | Compare actual quantized outputs for voice, originality, revision fidelity, and continuity; owner preference decides |
-| Does Swift's shorter-thinking objective help fiction or art direction? | Current merged Swift versus matched base control; count finished-piece latency and revisions, not only reasoning tokens |
+| Does a math/coding benchmark or newer base imply better creative prose? | Upfront literature review of published creative results and samples; distinguish exact quantized artifacts from base-model evidence and record gaps |
+| Does Swift's shorter-thinking objective help fiction or art direction? | Seek published current-Swift/base comparisons relevant to creative work; missing evidence remains uncertainty in the upfront choice |
 | Does conventional Qwen3.8 Q3 fit the service ceiling with useful context? | Start 16K, few checkpoints and small cache; inspect peak copies/scratch; qualify longer context or Q8 KV separately |
 | Is image input actually enabled and grounded? | Pin matching projector/preprocessor, budget image tokens/allocations, and validate observed details before recommending critique |
 | Is image generation being confused with text or image understanding? | Separate image-model pipeline and shared-memory scheduling decision |
@@ -687,7 +693,7 @@ The first future implementation step should be **M0 plus M1, immediately followe
 | Is CPU or GPU faster for the actual context/task? | Paired self-hosted CI; retain both validated profiles |
 | Do generic backend types omit a Bonsai transform or force CPU fallback? | Audit full graph and placement, not just the quantization decoder |
 | Can custom ternary weights execute efficiently on Hexagon? | Time-boxed format/operator/memory investigation; separate port decision |
-| Does the smaller PTQ release alter quality? | Attribute it as a different Swift version; compare held-out tasks separately |
+| Does the smaller PTQ release alter quality? | Consult published evidence during model selection and attribute it as a different Swift version; later engine experiments must keep version changes distinct |
 | Does prefix reuse restore incorrect recurrent state? | Fresh-prefill comparison after edits, cancellation, eviction, and slot switching |
 | Do checkpoint/rollback copies overwhelm RAM? | Separate caps, actual allocation accounting, one sequence initially |
 | Does Q8/Q4 KV impair long-context reasoning or retrieval? | Held-out task evaluation with exact calibration and runtime identity |
