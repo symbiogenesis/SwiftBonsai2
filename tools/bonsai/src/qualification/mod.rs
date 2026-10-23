@@ -9,7 +9,7 @@ mod score;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::Read as _;
 use std::path::Path;
@@ -150,6 +150,36 @@ fn validate_fixed_contract(contract: &Value) -> Result<()> {
             && contract["execution"]["deviceModel"] == "Snapdragon X Elite",
         "Qualification device changed.",
     )?;
+    for (value, expected) in [
+        (
+            &contract["controls"],
+            &[
+                "runtimeCommit",
+                "templateSha256",
+                "adapterSha256",
+                "contextTokens",
+                "batchTokens",
+                "microbatchTokens",
+                "threads",
+                "seed",
+                "maxOutputTokens",
+                "sampler",
+            ][..],
+        ),
+        (
+            &contract["controls"]["sampler"],
+            &["temperature", "topP", "topK", "minP", "repeatPenalty"][..],
+        ),
+    ] {
+        let fields = value
+            .as_object()
+            .ok_or("Fixed qualification controls must be objects.")?;
+        require(
+            fields.len() == expected.len()
+                && fields.keys().all(|key| expected.contains(&key.as_str())),
+            "Fixed qualification control fields changed.",
+        )?;
+    }
     Ok(())
 }
 
@@ -270,7 +300,12 @@ fn control_identity(controls: &Controls, policy: &Policy) -> Result<(String, Str
     // Legacy PowerShell writes these first two members before the sorted keys,
     // integer controls as integers, and sampler controls as doubles. This is a
     // versioned byte contract, not an arbitrary JSON serialization choice.
-    let tail = serde_json::to_string(&canonical).map_err(|error| error.to_string())?;
+    let sorted: BTreeMap<_, _> = canonical
+        .as_object()
+        .ok_or("Canonical controls must be an object.")?
+        .iter()
+        .collect();
+    let tail = serde_json::to_string(&sorted).map_err(|error| error.to_string())?;
     let canonical = format!(
         "{{\"modelSha256\":\"{}\",\"weightRepresentation\":\"{}\",{}",
         controls.model_sha256,
