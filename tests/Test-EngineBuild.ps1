@@ -8,17 +8,9 @@ $PSNativeCommandUseErrorActionPreference = $true
 
 if ($Case -ne 'Parallelism') { throw 'Unsupported focused engine build case.' }
 
-# Load only the pure scheduling helpers. This focused check never fetches engine
-# sources, starts a native build, or changes the host's build environment.
-$path = Join-Path $PSScriptRoot '../scripts/Build-Engine.ps1'
-$tokens = $null; $parseErrors = $null
-$ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors)
-if ($parseErrors.Count) { throw ($parseErrors.Message -join '; ') }
-foreach ($name in @('Resolve-BuildParallelism', 'Get-EngineBuildArgument')) {
-    $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $false)
-    if ($null -eq $definition) { throw "Missing build scheduling helper: $name" }
-    . ([scriptblock]::Create($definition.Extent.Text))
-}
+# Import only the pure scheduling helpers. This focused check never fetches
+# engine sources, starts a native build, or changes the host's build environment.
+Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Build.psm1') -Force
 function Assert {
     [CmdletBinding()]
     [OutputType([void])]
