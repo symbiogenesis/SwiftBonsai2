@@ -13,6 +13,19 @@ later memory/prefill work and numerical/device exits. This is documentation
 research; dependencies, kernels, CI configuration and performance verdicts are
 unchanged.
 
+The October 23 [Hexagon planning review](hexagon-npu-plan.md) checks Qualcomm's
+[plugin contracts](https://github.com/qualcomm/GenieX/blob/main/sdk/README.md),
+[signed HTP release](https://github.com/qualcomm/GenieX/releases/tag/v0.8.0),
+upstream [Windows deployment](https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/snapdragon/windows.md)
+and [mapping/tiling design](https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/snapdragon/developer.md),
+and Microsoft's [prepared QNN model requirements](https://github.com/microsoft/onnxruntime-genai/blob/main/docs/qnn.md).
+An isolated-worktree review identifies distinct PQ2/PTQ1 activation contracts,
+the unresolved adapter basis, signed custom-kernel deployment, complete hybrid
+state recovery and allocations outside Job commit accounting as early gates.
+M5 now continues through kernel/graph implementation, phase placement, broker
+integration and paired device promotion. All exits remain pending; no SDK,
+driver, runtime, model, launch policy or performance verdict changes here.
+
 | Step | Literature checked first | Sanity check and implementation consequence |
 | --- | --- | --- |
 | M0a model selection | EQ-Bench published data/methodology/samples; model cards; immutable APIs; pinned Qwen graph/CPU operations | Elo and raw-rubric ordering disagree; exact-pack/laptop evidence is missing. Qwen chosen with limited confidence, Gemma12 fallback. Native graph support and 12.89 GiB known subtotal provide a credible CPU route. See [decision](model-selection.md). |

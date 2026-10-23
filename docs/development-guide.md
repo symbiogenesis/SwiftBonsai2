@@ -14,6 +14,13 @@ Implemented: read-only host inventory, immutable artifact locks, resumable size/
 
 Swift assessment has pinned/verified artifacts, [actual PQ2 symbol counts](../config/swift.pq2-census.json), explicit Prism inspection and a verified streaming PQ2→PTQ1 export using the shared [safe Rust ternary codecs](../tools/ternary/README.md). PTQ1 saves 1.173 GiB while preserving the current weight symbols/scales and passes explicit bounded native decode. Native output quality and performance remain unqualified. The alternate packing experiment was [retired](bitcos-retirement.md). See [qualification and commands](swift-memory.md) and [additional allocation options](swift-memory-options.md). No new training is required.
 
+The [Hexagon NPU plan](hexagon-npu-plan.md) adds pending N0–N7 work for signed
+Windows access, exact Swift packed/transform/state support, phase-specific
+placement, a guarded experimental broker profile and paired device CI. Begin
+inventory/compatibility alongside CPU/Adreno work. Existing commands remain
+CPU-only; the plan adds no NPU setup command or accepted profile. Driver/SDK
+installation and boot/signing-policy changes are not part of this docs update.
+
 ## Inventory and provisioning
 
 Use native Windows ARM64 PowerShell 7.6 or later. Choose an absolute data directory outside all Git checkouts on a filesystem supporting same-volume hard links, such as NTFS. Provisioning retains its exclusive partial-file handle through verification and hard-link publication; unsupported filesystems fail with the partial retained. Junctions and device paths are unsupported by provisioning. Run inventory first:

@@ -41,6 +41,16 @@ checks are allowed. All timing benchmarks remain CI-only; promotion requires
 paired target-device kernel and end-to-end evidence. These are planned gates,
 not checks already implemented or passed by the scalar runtime.
 
+Future Hexagon work follows [M5/N0–N7](hexagon-npu-plan.md): signed native
+access, exact packed arithmetic/transforms, per-operation placement, complete
+KV/recurrent-state recovery, host/shared/device memory accounting and guarded
+broker integration. Local builds and focused untimed correctness checks are
+allowed. All NPU profiling, microkernel timing, full suites and end-to-end
+benchmarks remain CI-only; promotion requires paired target-laptop evidence,
+the mandatory same-backend LoRA TPS/quality gates and the project promotion
+criteria. A supported-type device control does not qualify Swift. These are
+pending gates; this documentation change requires no CI dispatch or push.
+
 The native decoder's stable `evaluate_into` path reuses caller-owned logits and
 retained graph/kernel workspace. Focused correctness cases check numerical
 fixtures, output storage reuse, checkpoint independence, malformed outputs and

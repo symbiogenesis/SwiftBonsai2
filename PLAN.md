@@ -17,6 +17,10 @@ New systems components default to Rust;
 replacement of the pinned native engine is now tracked in the
 [native Rust engine TODO](docs/native-rust-engine.md), milestone M7. The existing
 Rust LoRA storage component is retained as part of that work.
+The [Hexagon NPU execution plan](docs/hexagon-npu-plan.md) expands M5 into
+N0–N7: signed native access, exact Swift packed kernels and hybrid-state parity,
+phase-specific placement, broker integration and paired device promotion.
+Discovery can proceed alongside CPU/Adreno work; every NPU exit is pending.
 Native optimized-model performance, creative/comfort and
 daily isolation qualification remain pending. No new training is planned.
 The approved abliteration LoRA is intended for the standard profile, with
@@ -59,7 +63,7 @@ reference below is retained for reproducibility.
   no-LoRA path as the control and diagnostic reference. Loading alone does not
   complete this TODO. See [required qualification](docs/swift-lora.md#required-standard-profile-qualification).
 
-**Research current Swift Bonsai 2 PQ2_0 first**, alongside the alternatives in section 3, and choose the model from published online evidence before implementation. Its compact weights, inherited hybrid attention, and shorter-reasoning training make it a promising efficiency candidate, not an established creative-quality winner. Review published Swift/base Bonsai comparisons and relevant Gemma/Qwen results; document uncertainty where exact-pack creative or laptop evidence is missing. Then build the inference engine for the chosen model: use Prism ML's pinned llama.cpp fork for Swift/Bonsai or upstream llama.cpp for a selected conventional alternative. Keep the server's built-in web UI for direct chat and engine use. Treat coding agents as an optional later feature: evaluate **OpenCode** and qualify **MXC ProcessContainer** before enabling tools. Use a small Rust policy/launch broker where custom security-sensitive orchestration is needed; retain PowerShell for installation/build management. Establish CPU correctness first, qualify **Vulkan on the Adreno X1-85** next, and consider the documented OpenCL route where the selected model's quantization is supported. Select the CPU/GPU configuration using measurements from this laptop. Treat direct Hexagon NPU execution as a separate research milestone.
+**Research current Swift Bonsai 2 PQ2_0 first**, alongside the alternatives in section 3, and choose the model from published online evidence before implementation. Its compact weights, inherited hybrid attention, and shorter-reasoning training make it a promising efficiency candidate, not an established creative-quality winner. Review published Swift/base Bonsai comparisons and relevant Gemma/Qwen results; document uncertainty where exact-pack creative or laptop evidence is missing. Then build the inference engine for the chosen model: use Prism ML's pinned llama.cpp fork for Swift/Bonsai or upstream llama.cpp for a selected conventional alternative. Keep the server's built-in web UI for direct chat and engine use. Treat coding agents as an optional later feature: evaluate **OpenCode** and qualify **MXC ProcessContainer** before enabling tools. Use a small Rust policy/launch broker where custom security-sensitive orchestration is needed; retain PowerShell for installation/build management. Establish CPU correctness first, qualify **Vulkan on the Adreno X1-85** next, and consider the documented OpenCL route where the selected model's quantization is supported. Run the staged [Hexagon NPU work](docs/hexagon-npu-plan.md) alongside that delivery, beginning with signed access and exact-model compatibility. Select CPU/GPU/NPU placement separately for prefill and decode using target-device CI; promote only configurations with correct state, bounded memory and a useful latency or energy benefit.
 
 The objective is the best useful creative assistant that can run responsively and comfortably within this laptop's memory and thermal limits. Choose creative quality within those constraints; model branding, parameter count, compression ratio, and processor utilization are not objectives. Simultaneous CPU, GPU, and NPU utilization is a candidate configuration, not an acceptance requirement: extra processors can introduce synchronization, shared-memory contention, and power competition.
 
@@ -78,7 +82,7 @@ The owner also places strong weight on **short waits and comfortable sustained l
 | Tool/agent containment | MXC native ProcessContainer candidate | Explicit Windows ARM64 support; exact policy enforcement remains a gate |
 | Security-sensitive custom controller | Small Rust broker using MXC's SDK | Keep policy code small; contain unsafe/native components separately |
 | Cache policy | Model-specific KV/state accounting and bounded reuse | Qwen/Swift recurrent state and Gemma sliding-window attention require different estimators |
-| NPU | Time-boxed feasibility investigation | No demonstrated native Swift packed-weight path established here |
+| NPU | [M5 / N0–N7 execution and qualification](docs/hexagon-npu-plan.md) | Establish signed access, exact Swift packing/graph support and phase-specific device benefit before promotion |
 | Speculation | Disabled initially; model-free prompt lookup first experiment | Copy-heavy revision may benefit without a second model; verification/rollback remain gates |
 | Additional CPU optimization | Profile first; consider WoS Porter and T-MAC-style lookup kernels | Target a demonstrated bottleneck in the selected model; Swift adapters remain separate work |
 | NoGraphicsAPI | Do not replace the ggml Vulkan backend with it | Vulkan-based graphics abstraction with narrower target requirements |
@@ -217,7 +221,7 @@ Never mix fork binaries with unrelated stock ggml DLLs. Do not rename a tensor t
 | ARM64 CPU | Upstream conventional-model graphs; Prism Swift packings and Bonsai transforms | Native build, actual SIMD dispatch, focused model correctness | Required baseline |
 | Vulkan GPU | Upstream conventional kernels; Prism native PQ2_0/PTQ1_0 and FWHT paths are released | ARM64 build, exact quantization/graph, Adreno capabilities, correctness, useful offload | First acceleration candidate |
 | OpenCL GPU | Exact X1-85 and Windows ARM64 are documented; ordinary Q4_0/K-quants listed | Exact graph/quantization audit; Swift packing and transforms remain unestablished | Conventional-model candidate / Swift development lane |
-| Hexagon ggml backend | Windows Snapdragon route exists, experimentally | Custom packed matmul, full graph, state placement, SDK and driver access | Research lane |
+| Hexagon ggml backend | Windows Snapdragon route exists, experimentally | Custom packed matmul, full graph, state placement, SDK and signed deployment | M5 primary Swift prototype route; N0–N7 pending |
 | Qualcomm GenieX | Windows ARM64; GGUF llama_cpp plugin and separate QAIRT plugin | Supported exact model/quantization, signed package, placement, state/memory, and API behavior | Conventional-model NPU candidate; no demonstrated Swift pack path |
 | ONNX Runtime + QNN | Alternative NPU stack to investigate | Faithful export, quantization, supported graph, cache I/O, resource limits | Separate conversion project |
 | DirectML / generic ONNX GPU | Potential alternative after conversion | Exact model conversion and custom ternary execution are unestablished | Lower priority |
@@ -253,29 +257,37 @@ Prefer an intact, supported execution graph over frequent CPU/GPU crossings. Add
 
 A [community ARM64/Adreno report][adreno-history] is useful for build and allocation troubleshooting. It reports about 14.4 CPU versus 12.6 GPU tokens/second for an earlier 8B type-42 Q2_0 model on an X1E-80-100 machine with 64 GB RAM, using a GPU path that dequantized to float. This is historical single-machine evidence, not a Swift 27B forecast or a verdict on current Prism kernels. The guide contains placeholder model/fork identifiers, so inspect the actual pinned sources rather than inheriting its patches or memory flags. Review its PolyForm Noncommercial terms before copying implementation material.
 
-### Hexagon NPU feasibility gate
+### Hexagon NPU execution and qualification
 
-Qualify a conventional-model route before undertaking custom Swift kernels. Qualcomm's [GenieX SDK][geniex-sdk] documents a `llama_cpp` plugin consuming compatible GGUF files across CPU/Adreno/Hexagon and a **separate** `qairt` plugin consuming QAIRT `.bin` packages. Its [model guide][geniex-models] recommends Q4_0 for the GGUF Hexagon path; other types may fall back. Qwen3.5-9B Q4_0 is a smaller candidate to investigate, not an established whole-model result on this laptop. This route does not establish support for Swift PQ2_0/PTQ1_0 or the three-bit Qwen candidates. Pin runtime/model licenses, exact package, actual placement, memory, and API behavior; do not add another model server until it offers a concrete benefit.
+The [dedicated NPU plan](docs/hexagon-npu-plan.md) owns M5's implementation
+sequence and pending exits. Begin N0/N1 now alongside CPU/Adreno work: pin a
+native signed Windows route, prove actual device access with a bounded
+supported-type fixture, then audit every operation/shape in the exact Swift
+graph. A conventional-model control does not change the selected model or
+establish Swift support. Discovery remains approximately two engineering days;
+estimate the actual packed-kernel/graph port separately.
 
-The [GenieX v0.8.0 release][geniex-release] documents a Microsoft-signed HTP catalog for its Windows route. Prefer a compatible signed package. Ordinary GGUF NPU execution and QAIRT conversion are distinct paths; neither should be inferred from the other or from a model-name match.
+N2/N3 implement and qualify PQ2 first, PTQ1 separately, Hadamard/sign transforms,
+hybrid attention/recurrent state and the approved adapter contract. Budget host,
+RPC/shared and device allocations, repacking, per-session mapping windows,
+scratch and checkpoints together. Preserve the current Swift memory guards and
+the unresolved adapter-basis gate. A supported signed deployment must cover the
+actual custom kernels; ordinary setup never changes boot/signing policy.
 
-The Windows [Snapdragon backend guide][snapdragon-guide] supplies a starting point, not proof that this custom model can run on the NPU. Pin the Hexagon SDK, runtime libraries, and drivers required by the selected fork revision; SDK requirements change between guides/releases. The [Hexagon matmul implementation][hexagon-implementation] does not establish native support for Swift's packed types.
+N4 screens contiguous Hexagon execution, prefill/decode splits and selected
+CPU/GPU/NPU regions. Measure transfers, mapping churn, synchronization, shared
+bandwidth and sustained power rather than assuming more offload wins. N5 adds a
+named experimental profile with broker/resource ownership, bounded device
+cancellation/reset and explicit pre-generation fallback; partial state cannot
+silently continue on another backend. N6/N7 require paired target-device CI,
+same-backend LoRA TPS/quality parity, the existing promotion criteria and a
+reproducible rollback before daily selection.
 
-Use supported signed HTP libraries where available. The current [Windows Hexagon development guide][hexagon-windows] discusses signing/test-signing requirements; if a development path requires changing boot security or machine signing policy, treat that as a separate explicit owner decision. It is not part of ordinary engine setup or GPU qualification.
-
-Time-box an initial investigation to approximately two engineering days:
-
-- Establish native Windows device access and applicable SDK redistribution terms.
-- Audit packed tensor formats and every operation in the actual Swift graph. Existing generic Q4/Q8 support does not imply PQ2_0/PTQ1_0 support.
-- Determine whether unsupported operations fall back, whether those boundaries dominate runtime, and where recurrent/KV state resides.
-- Inspect allocation/session limits and any repacked copies. The [backend design notes][hexagon-developer] describe per-session mapping constraints, so account for weights, state, and scratch per session rather than treating all shared RAM as one NPU pool.
-- Estimate the missing implementation work and its likely benefit before committing to a port.
-
-**Proceed with direct NPU execution only if** faithful packed execution or a clearly bounded alternative is feasible, state movement fits the budget, and self-hosted CI shows an end-to-end benefit. Otherwise retain CPU/GPU as the main engine and document the NPU gap.
-
-An ONNX/QNN route requires an explicit exporter and graph/quantization validation; it is not a provider toggle for a GGUF file. The [ONNX Runtime GenAI QNN guide][qnn-guide] describes a separately prepared model package. Expanding 27B weights toward INT8 is roughly 27 GB before scales, caches, activations, and duplication; FP16 is roughly 54 GB. Those are order-of-magnitude calculations, not viable 32 GB deployment assumptions. Retaining efficient low-bit representations is central to feasibility.
-
-A separate small embedding model could eventually use the NPU for retrieval. That would accelerate an added application feature, not Swift decoding. A small NPU draft model is also conditional on tokenizer alignment, supported speculative verification, and correct hybrid-state rollback.
+The plan distinguishes ggml/GenieX GGUF execution from separately exported
+QAIRT/ONNX packages and from M7's native Rust device boundary. Low-bit weight
+and activation contracts remain central to 32 GB feasibility. Full suites,
+profiling and every benchmark stay CI-only. No NPU backend is enabled or
+qualified by this planning update; a documented no-go remains an honest result.
 
 ### Snapdragon literature and GitHub check — October 22, 2026
 
@@ -572,7 +584,7 @@ All settings here are **candidates**, not known optima. The launcher must obtain
 | `creative` | Chosen model: 8K initially, then 16K as needed / 1 | FP16 initially; for Swift, propose 2 checkpoints and 256 MiB prompt cache; qualify Q8 if useful | CPU 4/6/8-thread screen, then accepted CPU/Vulkan profile; qualified thinking-off/moderate effort and sampler, explicitly shown | First engine profile for drafting, revision, art direction; useful prose, short waits, and acceptable sustained heat |
 | `long-context` | 64K first; larger only after acceptance / 1 | Q8 candidate; Q4 separately experimental | Best supported placement within budget | Documents and extended reasoning |
 | `battery` | 8K–16K / 1 | Bounded reuse, no speculation | Screen zero/low CPU polling and phase-specific threads; choose by energy/task and responsiveness | Lower power use |
-| `npu-experimental` | Explicitly bounded / 1 | Backend-specific validated state path | Only after NPU gate | Research, never silent default |
+| `npu-experimental` | Admitted 8K initially / 1 | N3-qualified KV/recurrent state and full host/device memory ledger | N5 explicit profile after N3 correctness; N4 tunes placement | N6/N7 device acceptance before daily selection; never silent default |
 
 Initial batch/microbatch candidates are 256/64 for bring-up and 512/128 for qualification. Increase only with memory evidence; prefill and decoding have different bottlenecks. Explicitly set one slot rather than inheriting an automatic concurrency default.
 
@@ -748,6 +760,7 @@ README.md                         project introduction and documentation links
 docs/development-guide.md         setup and development commands
 docs/validation.md                standards, focused checks, and CI
 docs/native-rust-engine.md        staged Rust replacement TODO and qualification
+docs/hexagon-npu-plan.md          staged Hexagon execution, placement and device gates
 config/runtime.lock.json          runtime/model/toolchain identities
 config/profiles/*.json            explicit validated settings
 config/policies/*.json            versioned MXC requests and capability limits
@@ -785,11 +798,11 @@ Effort ranges below are planning estimates for one engineer after dependencies a
 | M2: Vulkan qualification | 2–5 days if existing kernels work | Native GPU build, placement audit, CI CPU/GPU comparison | Correct graph and demonstrated benefit, or documented no-go |
 | M3: cache and context qualification | 2–4 days | Hybrid-state tests, memory estimator, bounded reuse, accepted KV types | Fresh/reused continuations agree; selected contexts fit and retain quality |
 | M4: profiles and performance report | 2–4 days | Creative/daily/long/battery profiles, optional vision/accepted agent profiles, CI provenance, installation guide | Sustained creative-task and memory acceptance on settled main; containment acceptance for enabled tools |
-| M5: NPU feasibility | About 2 days initially | Operation/packing/memory/signing gap report, including audited HTP prototype where relevant | Feasible bounded implementation or explicit deferral; no unsafe signing-policy workaround |
+| M5: Hexagon execution and qualification | N0/N1 discovery about 2 days; scope port/tuning from gaps | [N0–N7](docs/hexagon-npu-plan.md): signed access, exact packed kernels/graph/state, phase placement, guarded profile, device report and rollback | Exact-model/state/LoRA correctness, bounded signed deployment and useful CI latency/energy benefit, or explicit no-go; all exits pending |
 | M6: R8 / lookup kernels / speculation | Separately estimated after feasibility | Narrow reviewed native-kernel patch or profile; model-free lookup before a second drafter | Decoded-weight and behavior correctness, native-platform support, and CI benefit justify maintenance cost |
 | M7: native Rust Prism engine | Scope after R0/R1 profiling; no delivery estimate yet | [R0–R7 TODO](docs/native-rust-engine.md): audited techniques, reference graph, packed kernels, Rust runtime and Adreno path | Same-model correctness/quality/security and paired device CI acceptance; retain Prism fallback until each replacement profile qualifies |
 
-M0a -> M0 -> M1 -> M1a -> M2/M3 -> M4 is the main creative-chat delivery path: preflight source compatibility and choose the model from literature first, then build and qualify its inference engine, with independent work isolated appropriately. M1b is optional; agent automation is accepted only after it passes. M6 is also optional and may follow whichever CPU/cache bottleneck justifies it; a small existing-kernel backport need not wait for NPU research. Investigate M5 after the selected engine's CPU/GPU results expose realistic bottlenecks; do not make everyday usability depend on a speculative NPU port. A substantial custom ternary NPU backend is a multiweek project to scope after the feasibility report, not a two-day integration.
+M0a -> M0 -> M1 -> M1a -> M2/M3 -> M4 is the main creative-chat delivery path: preflight source compatibility and choose the model from literature first, then build and qualify its inference engine, with independent work isolated appropriately. M1b is optional; agent automation is accepted only after it passes. M6 is also optional and may follow whichever CPU/cache bottleneck justifies it; a small existing-kernel backport need not wait for NPU work. Start M5/N0–N1 alongside CPU/Adreno delivery without waiting for complete M2 or M7. N2/N3 require trusted per-operation reference correctness; N4 measures feasible placements, N5 preserves broker/resource ownership, and N6/N7 gate promotion. Keep everyday CPU/GPU usability independent of unresolved NPU gaps. A substantial custom ternary NPU backend is a multiweek project to scope after discovery, not a two-day integration.
 
 The first step is **M0a: finish the source-only preflight and literature model choice**. Then proceed directly to **M0 plus M1, followed by M1a**: pin the model and matching runtime, inspect native capabilities, establish an honest CPU reference, and make authenticated local chat usable. Qualify its 8K–16K creative profile with scene packets, short waits, sustained comfort, and the daily security contract. Continue CPU/GPU, cache, and justified kernel work on that engine; the build phase is not a prerequisite for model choice. Reopen the literature decision if its documented stop conditions are reached.
 
@@ -815,7 +828,8 @@ it does not configure a runner, dispatch benchmarks or promote a runtime.
 | Does native ARM64 Vulkan work correctly on the installed Adreno driver? | Native dependency check, operation tests, whole-model comparison, device CI |
 | Is CPU or GPU faster for the actual context/task? | Paired self-hosted CI; retain both validated profiles |
 | Do generic backend types omit a Bonsai transform or force CPU fallback? | Audit full graph and placement, not just the quantization decoder |
-| Can custom ternary weights execute efficiently on Hexagon? | Time-boxed format/operator/memory investigation; separate port decision |
+| Can custom ternary weights execute efficiently on Hexagon? | M5/N0–N7: exact packed/transform/state correctness, signed custom kernels, bounded mappings/copies and paired phase-specific device results |
+| Does NPU fallback corrupt state or weaken process/resource policy? | N5 explicit profile, complete KV/recurrent rollback or closed admission, bounded device teardown and existing broker/Job ownership gates |
 | Does the smaller PTQ release alter quality? | Consult published evidence during model selection and attribute it as a different Swift version; later engine experiments must keep version changes distinct |
 | Does prefix reuse restore incorrect recurrent state? | Fresh-prefill comparison after edits, cancellation, eviction, and slot switching |
 | Does context selection or a generated summary damage story canon? | Author-owned bible/originals, sourced versioned summaries, contradiction checks, and explicit acceptance of changes |

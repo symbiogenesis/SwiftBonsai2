@@ -13,6 +13,13 @@ but their complete parity and integration exits remain outstanding. Tokenizer,
 chat-template and stochastic-sampler parity, adapter forward execution, broker
 backend integration, optimized kernels and device qualification remain to do.
 
+The separate [Hexagon NPU plan](hexagon-npu-plan.md) expands M5 into N0–N7.
+Its signed-access and compatibility discovery can run alongside this roadmap;
+packed kernels, transform fixtures and hybrid-state contracts share the same
+reference work. External Prism/GenieX controls do not satisfy the native Rust
+replacement gate. A later Rust NPU path needs a safe ownership interface and
+audited driver boundary while preserving the no-C/C++-inference-library scope.
+
 ## Scope and performance goals
 
 Keep the exact model weights, decoded scales, activation/cache precision,
@@ -151,8 +158,11 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
   contention and partial fallback. Check optimized kernels against reference
   calculations before enabling them. Exit with correct whole-model Windows
   ARM64/Adreno execution and CI benefit; another board's Vulkan result or an
-  untested DX12 backend is insufficient. NPU execution remains a separate
-  feasibility milestone.
+  untested DX12 backend is insufficient. Coordinate phase-specific placement
+  and shared-memory accounting with [M5/N3–N6](hexagon-npu-plan.md); Hexagon
+  kernels and state must pass their own exits before heterogeneous comparisons.
+  NPU discovery does not depend on completing R6, and neither accelerator path
+  bypasses R5 ownership or R7 replacement qualification.
 
 - [ ] **R7 — Qualify replacement and retire the old path deliberately.** Run
   paired CI comparisons on the target laptop, with fixed workloads, repeated
