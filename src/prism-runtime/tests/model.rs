@@ -249,7 +249,7 @@ fn reads_only_budgeted_payloads_through_the_verified_handle() -> Result<()> {
 fn accepts_f16_bf16_and_the_two_exact_prism_encodings() -> Result<()> {
     let mut pq = [0x55; 34];
     pq[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
-    let ptq = bonsai_bitcos::pack_ptq(&pq)?;
+    let ptq = bonsai_ternary::pack_ptq(&pq)?;
     let fixture = Artifact::new(
         &[
             Spec {

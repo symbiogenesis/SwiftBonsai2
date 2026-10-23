@@ -188,13 +188,13 @@ fn validate_payload(kind: u32, bytes: &[u8]) -> Result<()> {
             .all(|value| u16::from_le_bytes(*value) & 0x7f80 != 0x7f80),
         142 => {
             for block in bytes.as_chunks::<34>().0 {
-                let _ = bonsai_bitcos::pack_ptq(block)?;
+                let _ = bonsai_ternary::pack_ptq(block)?;
             }
             true
         }
         143 => {
             for block in bytes.as_chunks::<28>().0 {
-                let _ = bonsai_bitcos::unpack_ptq(block)?;
+                let _ = bonsai_ternary::unpack_ptq(block)?;
             }
             true
         }

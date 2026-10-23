@@ -10,11 +10,11 @@
 
 use std::sync::Arc;
 
-use bonsai_bitcos::pack_ptq;
 use bonsai_prism_runtime::kernels::{
     hadamard, matvec, rms_norm, round_f16, row, softmax, validate_tensor,
 };
 use bonsai_prism_runtime::model::Tensor;
+use bonsai_ternary::pack_ptq;
 
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 

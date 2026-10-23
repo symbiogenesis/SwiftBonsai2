@@ -10,7 +10,7 @@
 //! pinned `Q8_0` fallback for odd numbers of 128-element groups. PTQ1 uses
 //! `Q8_0` activations in groups of 32. Neither path expands a matrix to floats.
 
-use bonsai_bitcos::{Q8KBlock, half_to_float, unpack_ptq};
+use bonsai_ternary::{Q8KBlock, half_to_float, unpack_ptq};
 
 use crate::model::Tensor;
 use crate::{Result, invalid};

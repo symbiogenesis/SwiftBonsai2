@@ -5,7 +5,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use bonsai_bitcos::{pack_ptq, unpack_ptq};
+use bonsai_ternary::{pack_ptq, unpack_ptq};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 

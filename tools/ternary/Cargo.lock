@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "bonsai-bitcos"
+name = "bonsai-ternary"
 version = "0.1.0"

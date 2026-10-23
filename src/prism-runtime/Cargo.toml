@@ -11,7 +11,7 @@ keywords = ["inference", "ternary", "qwen35"]
 categories = ["science"]
 
 [dependencies]
-bonsai-bitcos = { path = "../../tools/bitcos" }
+bonsai-ternary = { path = "../../tools/ternary" }
 bonsai-gguf = { path = "../../tools/gguf" }
 bonsai-prism = { path = "../../tools/prism" }
 serde_json = "=1.0.154"
