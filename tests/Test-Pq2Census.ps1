@@ -14,7 +14,7 @@ Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Force
 if (-not ('SwiftBonsai.GgufInspector' -as [type])) { Add-Type -Path (Join-Path $repo 'scripts/GgufMetadata.cs') -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0') }
 $dialect = 'Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b'
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Pq2Tests-' + [Guid]::NewGuid().ToString('N')))
-[IO.Directory]::CreateDirectory($scratch) | Out-Null
+[void][IO.Directory]::CreateDirectory($scratch)
 function Assert {
     [CmdletBinding()]
     [OutputType([void])]
@@ -60,7 +60,9 @@ function New-CensusFixture {
         while ($memory.Position % 32) { $writer.Write([byte]0) }
         $dataOffset = $memory.Position
         # Nonzero padding detects any accidental scanning of tensor gaps.
-        for ($i = 0L; $i -lt $offset; $i++) { $writer.Write([byte]255) }
+        $padding = [byte[]]::new($offset)
+        [Array]::Fill[byte]($padding, 255)
+        $writer.Write($padding)
         for ($index = 0; $index -lt $Tensors.Count; $index++) {
             $memory.Position = $dataOffset + $positions[$index].Data
             $writer.Write([byte[]]$Tensors[$index].Payload)

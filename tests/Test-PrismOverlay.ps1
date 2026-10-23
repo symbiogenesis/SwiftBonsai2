@@ -28,7 +28,7 @@ catch { $rejected = $_.Exception.Message -eq 'Pinned llama-adapter.cpp source ha
 if (-not $rejected) { throw 'Repeat application was not rejected.' }
 if ((Get-FileHash -LiteralPath $adapter -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lock.OverlaidAdapterSha256) { throw 'Repeat rejection changed source.' }
 $fixture = Join-Path $result.EvidenceDirectory 'drift-fixture'
-[IO.Directory]::CreateDirectory((Join-Path $fixture 'src')) | Out-Null
+[void][IO.Directory]::CreateDirectory((Join-Path $fixture 'src'))
 $driftPath = Join-Path $fixture 'src/llama-adapter.cpp'
 [IO.File]::WriteAllText($driftPath, '// wrong source revision')
 $before = (Get-FileHash -LiteralPath $driftPath -Algorithm SHA256).Hash

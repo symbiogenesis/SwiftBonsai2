@@ -20,7 +20,7 @@ if (-not ('SwiftBonsai.OwnedProcess' -as [type])) {
 }
 $scratch = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-ProcessTest-' + [guid]::NewGuid().ToString('N'))))
 if (-not [IO.Path]::IsPathFullyQualified($scratch) -or $scratch -match '%[^%]+%') { throw 'The native test lane must be expanded and absolute.' }
-[IO.Directory]::CreateDirectory($scratch) | Out-Null
+[void][IO.Directory]::CreateDirectory($scratch)
 [IO.File]::Copy((Join-Path $repo 'global.json'), (Join-Path $scratch 'global.json'))
 $probeSource = [Security.SecurityElement]::Escape((Join-Path $PSScriptRoot 'ProcessLifecycleProbe.cs'))
 $helperSource = [Security.SecurityElement]::Escape($helper)

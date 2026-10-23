@@ -23,7 +23,7 @@ $overrides = @(Get-ChildItem Env: | Where-Object Name -Match '^(CMAKE_.*|CC|CXX|
 if ($overrides.Count) { throw ('Build override environment is unsupported: ' + ($overrides.Name -join ', ')) }
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-BitcosBuild-' + [guid]::NewGuid().ToString('N')))
-[IO.Directory]::CreateDirectory($scratch) | Out-Null
+[void][IO.Directory]::CreateDirectory($scratch)
 $build = Join-Path $scratch 'build'
 $source = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tools/bitcos'))
 $script:commandNumber = 0

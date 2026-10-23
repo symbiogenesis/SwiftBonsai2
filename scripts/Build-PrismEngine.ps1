@@ -25,7 +25,7 @@ $archive = Resolve-ExternalPath -Path $SourceArchive
 $overlay = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tools/prism'))
 $lock = Get-Content -LiteralPath (Join-Path $overlay 'source.lock.json') -Raw | ConvertFrom-Json -DateKind String
 $scratch = Resolve-ExternalPath -Path (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PrismBuild-' + [guid]::NewGuid().ToString('N')))
-[IO.Directory]::CreateDirectory($scratch) | Out-Null
+[void][IO.Directory]::CreateDirectory($scratch)
 if ($env:GITHUB_ACTIONS -eq 'true' -and $env:GITHUB_ENV) {
     $environmentPath = Resolve-ExternalPath -Path $env:GITHUB_ENV
     if ($scratch.IndexOfAny([char[]]"`r`n") -ge 0) { throw 'The evidence directory cannot contain line breaks.' }

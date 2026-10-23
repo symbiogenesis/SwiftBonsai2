@@ -32,7 +32,7 @@ if (-not ('SwiftBonsai.OwnedProcess' -as [type])) {
     Add-Type -Path (Join-Path $repo 'scripts/Bonsai.Process.cs') -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0')
 }
 $scratch = Resolve-ExternalPath -Path (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PrismCodec-' + [guid]::NewGuid().ToString('N')))
-[IO.Directory]::CreateDirectory($scratch) | Out-Null
+[void][IO.Directory]::CreateDirectory($scratch)
 $childPath = Join-Path $scratch 'probe.ps1'
 $resultPath = Join-Path $scratch 'result.json'
 $stdoutPath = Join-Path $scratch 'stdout.txt'

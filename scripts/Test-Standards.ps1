@@ -45,7 +45,7 @@ function Assert-ParameterContract {
         [switch]$RequireOutputType
     )
     foreach ($parameter in $ParamBlock.Parameters) {
-        if (-not @($parameter.Attributes | Where-Object { $_ -is [Management.Automation.Language.TypeConstraintAst] }).Count) {
+        if (-not $parameter.Attributes.Where({ $_ -is [Management.Automation.Language.TypeConstraintAst] }, 'First').Count) {
             throw "${Context}: parameter $($parameter.Name) must declare a type."
         }
     }
@@ -57,7 +57,7 @@ function Assert-ParameterContract {
 $scratch = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Standards-' + [guid]::NewGuid().ToString('N'))))
 if (-not [IO.Path]::IsPathFullyQualified($scratch) -or $scratch -match '%[^%]+%') { throw 'The system temp path must be expanded and absolute.' }
 $embeddedDirectory = Join-Path $scratch 'embedded-csharp'
-[IO.Directory]::CreateDirectory($embeddedDirectory) | Out-Null
+[void][IO.Directory]::CreateDirectory($embeddedDirectory)
 $files = [Collections.Generic.List[IO.FileInfo]]::new()
 $directories = [Collections.Generic.Stack[string]]::new()
 $directories.Push($repoRoot)
@@ -90,15 +90,15 @@ foreach ($file in ($files | Sort-Object -Property FullName -Unique)) {
             Assert-ParameterContract -ParamBlock $ast.ParamBlock -Context $file.FullName -RequireOutputType
         }
         $statements = $ast.EndBlock.Statements
-        if (-not @($statements | Where-Object { $_.Extent.Text -match '^Set-StrictMode\s+-Version\s+Latest$' }).Count) {
+        if (-not $statements.Where({ $_.Extent.Text -match '^Set-StrictMode\s+-Version\s+Latest$' }, 'First').Count) {
             throw "$($file.FullName): enable Set-StrictMode -Version Latest at script scope."
         }
         foreach ($preference in @('ErrorActionPreference', 'PSNativeCommandUseErrorActionPreference')) {
             $expected = if ($preference -eq 'ErrorActionPreference') { "'Stop'" } else { '$true' }
-            if (-not @($statements | Where-Object {
+            if (-not $statements.Where({
                 $_ -is [Management.Automation.Language.AssignmentStatementAst] -and
                 $_.Left.Extent.Text -ceq ('$' + $preference) -and $_.Right.Extent.Text -ceq $expected
-            }).Count) { throw "$($file.FullName): set `$$preference = $expected at script scope." }
+            }, 'First').Count) { throw "$($file.FullName): set `$$preference = $expected at script scope." }
         }
         $functions = $ast.FindAll({ param([Management.Automation.Language.Ast]$Node) $Node -is [Management.Automation.Language.FunctionDefinitionAst] }, $true)
         foreach ($function in $functions) {
@@ -126,7 +126,7 @@ foreach ($file in ($files | Sort-Object -Property FullName -Unique)) {
             }
             if ($optionsIndex -lt 0 -or $optionsIndex -ge $elements.Count) { throw "$($file.FullName): Add-Type must declare strict compiler options." }
             $declaredOptions = @($elements[$optionsIndex].SafeGetValue())
-            if ($declaredOptions.Count -ne $compilerOptions.Count -or @($compilerOptions | Where-Object { $_ -cnotin $declaredOptions }).Count) {
+            if ($declaredOptions.Count -ne $compilerOptions.Count -or $compilerOptions.Where({ $_ -cnotin $declaredOptions }, 'First').Count) {
                 throw "$($file.FullName): Add-Type compiler options must match the strict C# policy."
             }
         }

@@ -95,7 +95,7 @@ if (-not [System.IO.Path]::IsPathFullyQualified($scratchRoot) -or $scratchRoot -
 }
 $scratchRoot = Get-ExternalPath $scratchRoot -Directory
 $scratchDirectory = Join-Path $scratchRoot ('SwiftBonsai-Doctor-' + [guid]::NewGuid().ToString('N'))
-[System.IO.Directory]::CreateDirectory($scratchDirectory) | Out-Null
+[void][System.IO.Directory]::CreateDirectory($scratchDirectory)
 
 function Invoke-VersionCommand {
     [CmdletBinding()]
@@ -251,7 +251,7 @@ try {
     }
     $gitFallbacks = @($programDirectories | ForEach-Object { Join-Path $_ 'Git\cmd\git.exe' })
     $cmakeFallbacks = @($programDirectories | ForEach-Object { Join-Path $_ 'CMake\bin\cmake.exe' })
-    $compilerFallbacks = @()
+    $compilerFallbacks = [System.Collections.Generic.List[string]]::new()
     foreach ($vsRoot in ($vsRoots | Select-Object -Unique)) {
         $gitFallbacks += Join-Path $vsRoot 'Common7\IDE\CommonExtensions\Microsoft\TeamFoundation\Team Explorer\Git\cmd\git.exe'
         $gitFallbacks += Join-Path $vsRoot 'Common7\IDE\CommonExtensions\Microsoft\TeamFoundation\Team Explorer\Git\mingw64\bin\git.exe'
@@ -261,7 +261,7 @@ try {
             foreach ($version in (Get-ChildItem -LiteralPath $msvcRoot -Directory | Sort-Object Name -Descending)) {
                 # Native ARM64 host/target first; other compilers are reported honestly if found.
                 foreach ($compilerLane in @('Hostarm64\arm64', 'Hostx64\arm64', 'Hostx64\x64', 'Hostx86\x86')) {
-                    $compilerFallbacks += Join-Path $version.FullName "bin\$compilerLane\cl.exe"
+                    $compilerFallbacks.Add((Join-Path $version.FullName "bin\$compilerLane\cl.exe"))
                 }
             }
         }

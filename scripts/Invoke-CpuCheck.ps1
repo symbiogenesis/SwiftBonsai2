@@ -236,7 +236,7 @@ try {
     # Hold a read-only model handle through hashing and native execution.
     $guard = [IO.File]::Open($modelPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-CpuCheck-' + [Guid]::NewGuid().ToString('N')))
-    [IO.Directory]::CreateDirectory($scratch) | Out-Null
+    [void][IO.Directory]::CreateDirectory($scratch)
     Test-LockedArtifact $modelPath $artifactBytes $artifactSha256
     if ($UseAbliterateLora) {
         $adapterGuard = [IO.File]::Open($adapterPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)

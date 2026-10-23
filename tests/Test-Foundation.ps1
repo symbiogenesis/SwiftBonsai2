@@ -11,7 +11,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Force
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Tests-' + [Guid]::NewGuid().ToString('N'))
 $scratch = Resolve-ExternalPath $scratch
-[IO.Directory]::CreateDirectory($scratch) | Out-Null
+[void][IO.Directory]::CreateDirectory($scratch)
 function Assert {
     [CmdletBinding()]
     [OutputType([void])]

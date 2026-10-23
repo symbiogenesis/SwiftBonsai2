@@ -24,7 +24,7 @@ function Assert-Failure {
 $script = Join-Path $PSScriptRoot '../scripts/New-DevelopmentKeys.ps1'
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-KeyTests-' + [guid]::NewGuid().ToString('N'))
 if (-not [IO.Path]::IsPathFullyQualified($scratch) -or $scratch -match '%[^%]+%') { throw 'Expected expanded absolute scratch.' }
-[IO.Directory]::CreateDirectory($scratch) | Out-Null
+[void][IO.Directory]::CreateDirectory($scratch)
 if ($Case -eq 'Paths') {
     Assert-Failure { & $script -ParentDirectory '.' }
     Assert-Failure { & $script -ParentDirectory '%TEMP%\keys' }

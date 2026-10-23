@@ -12,7 +12,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 $repo = Split-Path $PSScriptRoot -Parent
 Add-Type -Path @((Join-Path $repo 'scripts/GgufMetadata.cs'), (Join-Path $repo 'scripts/GgufPtq1Repacker.cs'), (Join-Path $repo 'scripts/Pq2Ptq1Codec.cs')) -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0')
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PtqExport-' + [guid]::NewGuid().ToString('N'))
-[IO.Directory]::CreateDirectory($scratch) | Out-Null
+[void][IO.Directory]::CreateDirectory($scratch)
 $dialect = 'Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b'
 function Assert {
     [CmdletBinding()]
@@ -58,7 +58,9 @@ function New-Fixture {
         Write-Text $writer 'large.pq'; $writer.Write([uint32]1); $writer.Write([uint64](128 * $Blocks)); $writer.Write([uint32]142); $writer.Write([uint64]$sourcePqOffset)
         while ($stream.Position % 32) { $writer.Write([byte]0) }
         $data = $stream.Position
-        for ($index = 0; $index -lt $secondOffset + 64; $index++) { $writer.Write([byte]0xEF) }
+        $padding = [byte[]]::new($secondOffset + 64)
+        [Array]::Fill[byte]($padding, 0xEF)
+        $writer.Write($padding)
         $stream.Position = $data
         $writer.Write([byte[]]@(1,2,3,4))
         $block = [byte[]]::new(34)

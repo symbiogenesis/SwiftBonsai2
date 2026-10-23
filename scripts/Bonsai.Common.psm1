@@ -116,7 +116,7 @@ function Receive-LockedArtifact {
         Test-LockedArtifact -Path $Path -Bytes $Bytes -Sha256 $Sha256
         return $Path
     }
-    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path)) | Out-Null
+    [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path))
     $partial = Resolve-ExternalPath ($Path + '.partial')
     $output = $client = $handler = $response = $inputStream = $request = $cancellation = $null
     try {
@@ -213,7 +213,7 @@ function Assert-EngineVersion {
     Assert-Arm64PE $Path
     if ($Commit -notmatch '^[a-f0-9]{40}$') { throw 'Expected a full runtime commit.' }
     $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Version-' + [Guid]::NewGuid().ToString('N')))
-    [IO.Directory]::CreateDirectory($scratch) | Out-Null
+    [void][IO.Directory]::CreateDirectory($scratch)
     $process = [Diagnostics.Process]::new()
     $started = $false
     try {

@@ -30,10 +30,10 @@ try {
     if (-not (Test-Path -LiteralPath $destination)) {
         if ($VerifyOnly) { throw 'Runtime is not installed.' }
         $staging = Resolve-ExternalPath ($destination + '.staging-' + [Guid]::NewGuid().ToString('N'))
-        [IO.Directory]::CreateDirectory($staging) | Out-Null
+        [void][IO.Directory]::CreateDirectory($staging)
         foreach ($entry in $entries) {
             $target = Resolve-ExternalPath (Join-Path $staging $entry.FullName)
-            [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
+            [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
             $sourceStream = $targetStream = $null
             try {
                 $sourceStream = $entry.Open()

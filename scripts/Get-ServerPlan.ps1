@@ -35,7 +35,7 @@ if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
 $runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $DataDirectory -VerifyOnly
 if ($VerifyArtifacts) { $null = & (Join-Path $PSScriptRoot 'Get-Model.ps1') -DataDirectory $DataDirectory -VerifyOnly }
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-ServerPlan-' + [Guid]::NewGuid().ToString('N')))
-[IO.Directory]::CreateDirectory($scratch) | Out-Null
+[void][IO.Directory]::CreateDirectory($scratch)
 $process = [Diagnostics.Process]::new()
 $started = $false
 try {
@@ -48,7 +48,7 @@ try {
     $started = $true
     $stdout = $process.StandardOutput.ReadToEndAsync(); $stderr = $process.StandardError.ReadToEndAsync()
     if (-not $process.WaitForExit(10000)) {
-        $process.Kill($true); $process.WaitForExit(10000) | Out-Null
+        $process.Kill($true); [void]$process.WaitForExit(10000)
         throw 'Server help probe exceeded ten seconds.'
     }
     if (-not $stdout.Wait(10000) -or -not $stderr.Wait(10000)) { throw 'Server help output drain timed out.' }

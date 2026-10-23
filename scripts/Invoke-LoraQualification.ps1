@@ -75,7 +75,7 @@ if (-not ('SwiftBonsai.OwnedProcess' -as [type])) {
     Add-Type -Path (Join-Path $PSScriptRoot 'Bonsai.Process.cs') -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0')
 }
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-LoraQualification-' + [guid]::NewGuid().ToString('N')))
-[IO.Directory]::CreateDirectory($scratch) | Out-Null
+[void][IO.Directory]::CreateDirectory($scratch)
 if ([string]::IsNullOrWhiteSpace($env:GITHUB_ENV) -or $scratch.Contains("`n") -or $scratch.Contains("`r")) { throw 'Expected the CI environment file and a single-line evidence path.' }
 $environmentFile = Resolve-ExternalPath $env:GITHUB_ENV
 "BONSAI_LORA_EVIDENCE=$scratch" | Add-Content -LiteralPath $environmentFile -Encoding utf8
@@ -108,7 +108,7 @@ function Invoke-PairedSample {
     [OutputType([pscustomobject])]
     param([string]$Id, [string]$Prompt, [ValidateSet('baseline', 'zero', 'adapter')][string]$Arm)
     $lane = Resolve-ExternalPath (Join-Path $scratch $Id)
-    [IO.Directory]::CreateDirectory($lane) | Out-Null
+    [void][IO.Directory]::CreateDirectory($lane)
     $owned = $null
     $watch = [Diagnostics.Stopwatch]::StartNew()
     try {

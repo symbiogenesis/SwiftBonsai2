@@ -11,11 +11,13 @@ function Assert-QualificationShape {
     [OutputType([void])]
     param([AllowNull()][object]$Value, [string[]]$Required, [string]$Name, [string[]]$Optional = @())
     if ($Value -isnot [Collections.IDictionary]) { throw "$Name must be a JSON object." }
+    $keys = @($Value.Keys)
+    $allowed = $Required + $Optional
     foreach ($key in $Required) {
-        if ($key -cnotin @($Value.Keys)) { throw "$Name is missing $key." }
+        if ($key -cnotin $keys) { throw "$Name is missing $key." }
     }
-    foreach ($key in $Value.Keys) {
-        if ($key -isnot [string] -or $key -cnotin ($Required + $Optional)) { throw "$Name contains an unrecognized field." }
+    foreach ($key in $keys) {
+        if ($key -isnot [string] -or $key -cnotin $allowed) { throw "$Name contains an unrecognized field." }
     }
 }
 
@@ -65,7 +67,8 @@ function Get-BonsaiLoraQualificationPlan {
     [OutputType([pscustomobject])]
     param()
     $path = Join-Path $PSScriptRoot '../config/swift-lora.qualification.json'
-    $contract = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json -AsHashtable -DateKind String
+    $contractText = [IO.File]::ReadAllText($path)
+    $contract = $contractText | ConvertFrom-Json -AsHashtable -DateKind String
     # These safety and acceptance constants cannot be relaxed by editing only JSON.
     if ($contract.schemaVersion -ne 1 -or $contract.execution.repeatCount -ne 3 -or
         $contract.execution.seed -ne 42 -or $contract.execution.minimumDecodeTokens -ne 16 -or
@@ -115,7 +118,7 @@ function Get-BonsaiLoraQualificationPlan {
         Contract = $contract
         # Git can materialize JSON as CRLF on Windows and LF on Linux. Contract
         # identity must survive that checkout conversion for external review.
-        ContractSha256 = Get-BonsaiQualificationDigest -Text ([IO.File]::ReadAllText($path).Replace("`r`n", "`n"))
+        ContractSha256 = Get-BonsaiQualificationDigest -Text ($contractText.Replace("`r`n", "`n"))
         Schedule = $schedule.ToArray()
     }
 }
@@ -161,7 +164,8 @@ function Get-QualificationMedian {
     [OutputType([double])]
     param([double[]]$Values)
     if ($Values.Count -eq 0) { throw 'A median needs at least one observation.' }
-    $sorted = @($Values | Sort-Object)
+    $sorted = [double[]]$Values.Clone()
+    [Array]::Sort($sorted)
     $middle = [int][Math]::Floor($sorted.Count / 2)
     if ($sorted.Count % 2) { return $sorted[$middle] }
     return ($sorted[$middle - 1] + $sorted[$middle]) / 2
