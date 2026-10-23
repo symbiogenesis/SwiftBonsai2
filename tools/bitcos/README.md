@@ -58,8 +58,11 @@ as a comparison reference; a future loader must release or unmap it separately.
 
 ## Fused computation and comparison scope
 
-The BITCOS path popcounts a 128-bit bitmap once, then reconstructs sixteen int8
-lanes at a time using a 1 KiB constant nibble lookup table. Sign reads are guarded;
+The BITCOS path counts bitmap bytes with NEON, computes exclusive byte-prefix
+ranks, and combines them with per-lane population counts below each presence bit.
+These independent ranks gather compact sign bytes with NEON table instructions
+and reconstruct sixteen int8 lanes at a time, avoiding the earlier serial nibble
+cursor chain. Sign bytes load once per block through exact 8/4/2/1-byte copies;
 the final block needs no readable padding/sentinel. The sixteen live lanes feed
 NEON widening multiply/reduction, or ARM dot-product instructions when explicitly
 enabled. There is no persistent PQ2, int8 or F32 expanded weight buffer.
