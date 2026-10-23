@@ -33,8 +33,6 @@ $scratch = Resolve-ExternalPath -Path (Join-Path ([IO.Path]::GetTempPath()) ('Sw
 [void][IO.Directory]::CreateDirectory($scratch)
 $childPath = Join-Path $scratch 'probe.ps1'
 $resultPath = Join-Path $scratch 'result.json'
-$stdoutPath = Join-Path $scratch 'stdout.txt'
-$stderrPath = Join-Path $scratch 'stderr.txt'
 try {
     # Paths are named argv entries, never interpolated into executable source.
     @'

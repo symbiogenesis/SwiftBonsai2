@@ -12,20 +12,9 @@ Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Qualification.psm1')
 $toolArguments = @{}
 if ($ToolPath) { $toolArguments.ToolPath = $ToolPath }
 
-function Assert {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
-}
-function Assert-Failure {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([scriptblock]$Action, [string]$Message)
-    $failed = $false
-    try { & $Action | Out-Null } catch { $failed = $true }
-    Assert $failed $Message
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
+
+
 function Assert-JsonEqual {
     [CmdletBinding()]
     [OutputType([void])]
@@ -90,7 +79,7 @@ function New-Fixture {
 
 if ($Case -ceq 'Compatibility') {
     $golden = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/lora-qualification-v1.json') -Raw | ConvertFrom-Json -AsHashtable -DateKind String -Depth 40
-    Assert-JsonEqual (Get-BonsaiLoraQualificationPlan @toolArguments) $golden.plan 'The packaged plan differs from the frozen PowerShell contract.'
+    Assert-JsonEqual -Actual (Get-BonsaiLoraQualificationPlan @toolArguments) -Expected $golden.plan -Message 'The packaged plan differs from the frozen PowerShell contract.'
     foreach ($vector in $golden.controlVectors) {
         Assert ((Get-BonsaiLoraControlDigest @toolArguments $vector.controls) -ceq $vector.sha256) 'A legacy canonical control identity changed.'
     }
@@ -99,7 +88,7 @@ if ($Case -ceq 'Compatibility') {
     }
     foreach ($scenario in $golden.scenarios) {
         $result = Test-BonsaiLoraQualification @toolArguments -Evidence $scenario.evidence -Review $scenario.review
-        Assert-JsonEqual $result $scenario.expected "Frozen $($scenario.name) scoring changed."
+        Assert-JsonEqual -Actual $result -Expected $scenario.expected -Message "Frozen $($scenario.name) scoring changed."
     }
 } elseif ($Case -ceq 'Json') {
     Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Common.psm1') -Force
