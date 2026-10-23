@@ -1,11 +1,11 @@
-//! Safe scalar kernels for the pinned Prism tensor dialect.
+//! Safe reference kernels and opt-in baseline NEON PQ2 integer arithmetic.
 //!
 //! The reference basis is PrismML-Eng/llama.cpp revision
 //! `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, `ggml/src/ggml-quants.c`
 //! (SHA256 `46dd353f30e7f1c42c7d82d88d91fad64dbe5d6e680b234de25355d9fb482d13`)
 //! and `ggml/src/ggml-cpu/quants.c`
 //! (SHA256 `b8dd3a7c7da1ff702908d5b71c7c7791eb11e2481f6ce3d0ca91e4705f33bb65`).
-//! These are scalar reference semantics, without a claim of SIMD bit parity.
+//! These reference semantics do not establish full-model bit parity with Prism.
 //! PQ2 uses signed `Q8_K` activations for rows divisible by 256, retaining the
 //! pinned `Q8_0` fallback for odd numbers of 128-element groups. PTQ1 uses
 //! `Q8_0` activations in groups of 32. Neither path expands a matrix to floats.
@@ -14,6 +14,15 @@ use bonsai_ternary::{Q8KBlock, half_to_float, unpack_ptq};
 
 use crate::model::Tensor;
 use crate::{Result, invalid};
+
+#[cfg(all(
+    feature = "experimental-neon",
+    target_arch = "aarch64",
+    target_os = "windows",
+    target_env = "msvc",
+    target_feature = "neon"
+))]
+mod neon;
 
 const F32: u32 = 0;
 const F16: u32 = 1;
@@ -354,6 +363,31 @@ fn dot_pq2(bytes: &[u8], input: &[Q8KBlock]) -> Result<f32> {
     finite(output)
 }
 
+#[cfg(all(
+    feature = "experimental-neon",
+    target_arch = "aarch64",
+    target_os = "windows",
+    target_env = "msvc",
+    target_feature = "neon"
+))]
+#[allow(
+    clippy::suboptimal_flops,
+    reason = "Preserve scalar reference multiply-then-add rounding."
+)]
+fn dot_pq2_neon(bytes: &[u8], input: &[Q8KBlock]) -> Result<f32> {
+    let mut output = 0.0;
+    for (index, block) in bytes.as_chunks::<34>().0.iter().enumerate() {
+        let activation = &input[index / 2];
+        let start = (index % 2) * 128;
+        output += (scale(block)? * activation.scale)
+            * integer_float(neon::dot(
+                block[2..].try_into()?,
+                activation.values[start..start + 128].try_into()?,
+            ));
+    }
+    finite(output)
+}
+
 #[allow(
     clippy::suboptimal_flops,
     reason = "Preserve scalar reference multiply-then-add rounding."
@@ -426,6 +460,68 @@ pub struct MatvecScratch {
     q8: Vec<Q8Block>,
     activations: Vec<f32>,
     row: Vec<f32>,
+    requested_backend: MatvecBackend,
+    selected_backend: MatvecBackend,
+}
+
+/// Packed matrix kernel selection, independent of model and activation precision.
+///
+/// Scalar is the default. Experimental selection permits only the compiled
+/// baseline NEON implementation on native Windows ARM64 MSVC for PQ2 rows with
+/// a multiple of 256 columns. Other targets, formats and shapes use scalar.
+/// No optional CPU extension is enabled or inferred by this selection.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MatvecBackend {
+    /// Scalar reference implementation and unconditional fallback.
+    #[default]
+    Scalar,
+    /// Opt-in baseline NEON packed dot, requiring the `experimental-neon` feature.
+    ///
+    /// Exact synthetic parity does not qualify whole-model performance or parity.
+    ExperimentalNeon,
+}
+
+type Pq2RowKernel = fn(&[u8], &[Q8KBlock]) -> Result<f32>;
+
+impl MatvecScratch {
+    /// Creates reusable storage with an explicit kernel request.
+    ///
+    /// Unsupported requests fall back to scalar at each matrix operation. The
+    /// default constructor always requests scalar, even in builds with NEON.
+    #[must_use]
+    pub fn with_backend(backend: MatvecBackend) -> Self {
+        Self {
+            requested_backend: backend,
+            ..Self::default()
+        }
+    }
+
+    /// Returns the backend selected for the most recent matrix operation.
+    ///
+    /// Initially scalar. Selection resets for every call, including failed calls;
+    /// this records dispatch rather than successful completion or qualification.
+    #[must_use]
+    pub const fn selected_backend(&self) -> MatvecBackend {
+        self.selected_backend
+    }
+
+    fn select_pq2(&mut self) -> Pq2RowKernel {
+        #[cfg(all(
+            feature = "experimental-neon",
+            target_arch = "aarch64",
+            target_os = "windows",
+            target_env = "msvc",
+            target_feature = "neon"
+        ))]
+        if self.requested_backend == MatvecBackend::ExperimentalNeon {
+            self.selected_backend = MatvecBackend::ExperimentalNeon;
+            return dot_pq2_neon;
+        }
+        // Read the request on scalar-only builds as well; no request can bypass
+        // the build/target contract or enable an optional instruction set.
+        let _ = self.requested_backend;
+        dot_pq2
+    }
 }
 
 /// Multiplies packed rows by one activation vector in the stored tensor basis.
@@ -459,6 +555,7 @@ pub fn matvec_into(
     output: &mut Vec<f32>,
     scratch: &mut MatvecScratch,
 ) -> Result<()> {
+    scratch.selected_backend = MatvecBackend::Scalar;
     fill_into(output, |output| {
         let (columns, rows, row_bytes) = dimensions(tensor)?;
         if input.len() != columns || input.iter().any(|value| !value.is_finite()) {
@@ -470,8 +567,9 @@ pub fn matvec_into(
         match tensor.kind {
             PQ2 if columns.is_multiple_of(256) => {
                 q8k_into(input, &mut scratch.q8k)?;
+                let dot = scratch.select_pq2();
                 for bytes in tensor.data.chunks_exact(row_bytes) {
-                    output.push(dot_pq2(bytes, &scratch.q8k)?);
+                    output.push(dot(bytes, &scratch.q8k)?);
                 }
             }
             PQ2 | PTQ1 | Q4_0 | Q8_0 => {
