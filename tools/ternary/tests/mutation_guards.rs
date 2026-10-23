@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Tiny independent oracles for the bounded source-mutation catalog.
 #![expect(
     clippy::unwrap_used,

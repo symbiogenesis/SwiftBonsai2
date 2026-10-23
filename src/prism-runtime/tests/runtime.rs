@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Recurrent-state ownership regressions independent of a model artifact.
 
 use bonsai_prism_runtime::{

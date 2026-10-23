@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Command-line entry point for verified GGUF inspection and PTQ1 export.
 
 use std::collections::BTreeMap;

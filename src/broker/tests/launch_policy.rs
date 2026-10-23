@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Fixed launch arguments and environment-policy regressions; no real model starts.
 use bonsai_broker::launch_policy::{
     LaunchPlan, MEMORY_LIMIT_BYTES, PolicyError, REQUIRED_AVAILABLE_BYTES, validate_environment,

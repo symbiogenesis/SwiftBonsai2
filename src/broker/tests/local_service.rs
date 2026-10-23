@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Real loopback transport regressions; no model or external network is used.
 #![expect(
     clippy::unwrap_used,

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Development runner regressions use synthetic loopback backends only.
 #![expect(
     clippy::unwrap_used,

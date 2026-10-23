@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Regression coverage for bounded single-active request admission.
 #![expect(
     clippy::unwrap_used,

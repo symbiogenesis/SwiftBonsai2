@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Synthetic, focused checks of verified native model storage.
 
 use std::fs;

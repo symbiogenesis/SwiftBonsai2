@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Explicit development-only broker with optional owned Windows backend launch.
 
 use bonsai_broker::runtime::{DevelopmentConfig, RunExit, USAGE, run};

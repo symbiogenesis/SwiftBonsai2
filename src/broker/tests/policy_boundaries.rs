@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Small boundary and metamorphic fixtures for strict request policy.
 #![expect(
     clippy::unwrap_used,

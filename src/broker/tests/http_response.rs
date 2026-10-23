@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Regression coverage for bounded response framing and endpoint ownership.
 #![expect(
     clippy::unwrap_used,

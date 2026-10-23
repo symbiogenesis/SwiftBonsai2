@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Explicit token-ID driver for the unqualified native CPU reference engine.
 
 use bonsai_prism_runtime::{

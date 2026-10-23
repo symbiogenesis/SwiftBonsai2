@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Focused regressions for one-request orchestration and real disconnect reads.
 #![expect(
     clippy::unwrap_used,

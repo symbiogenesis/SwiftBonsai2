@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Whole-pipeline framing regressions with bounded, deterministic in-memory I/O.
 #![expect(
     clippy::unwrap_used,

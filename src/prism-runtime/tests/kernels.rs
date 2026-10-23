@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Focused scalar kernel fixtures pinned to Prism revision
 //! `73bfe6cc485554822f80c473a3c0c4f25e80f41b`.
 //! Expected quantized results below follow the C reference integer sums,

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Synthetic export checks with independent expected native wire bytes.
 
 use std::fs;

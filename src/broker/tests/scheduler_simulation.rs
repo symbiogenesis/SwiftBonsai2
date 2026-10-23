@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Bounded, replayable scheduler histories against a semaphore-free model.
 #![expect(
     clippy::unwrap_used,

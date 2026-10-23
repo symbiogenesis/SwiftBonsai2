@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Exact PQ2/PTQ and binary16 parity against captured native C++ results.
 //!
 //! Every read is bounded, fields use little endian byte order, and unexpected

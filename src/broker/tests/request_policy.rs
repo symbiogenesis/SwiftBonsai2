@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Regression coverage for strict request parsing and context admission.
 #![expect(
     clippy::unwrap_used,

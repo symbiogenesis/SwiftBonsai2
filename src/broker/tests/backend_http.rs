@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Regression coverage for private backend HTTP exchanges and body decoding.
 #![expect(
     clippy::unwrap_used,

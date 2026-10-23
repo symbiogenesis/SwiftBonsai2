@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Regression coverage for bounded HTTP request reception and cancellation.
 #![expect(
     clippy::unwrap_used,

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Independent wire-format, numerical-layout, and malformed-input regressions.
 #![expect(
     clippy::unwrap_used,
