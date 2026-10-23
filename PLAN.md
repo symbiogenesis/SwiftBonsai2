@@ -19,7 +19,9 @@ synthetic performance failed promotion even after a vector decoder improvement.
 The standalone implementation is now safe Rust with scalar computation; exact
 C++ byte/result comparisons passed before its C++ sources were removed. Rust
 SIMD and performance remain unqualified. New systems components default to Rust;
-replacement of the pinned native engine and its LoRA overlay is separate work.
+replacement of the pinned native engine is now tracked in the
+[native Rust engine TODO](docs/native-rust-engine.md), milestone M7. The existing
+Rust LoRA storage component is retained as part of that work.
 Native optimized-model performance, creative/comfort and
 daily isolation qualification remain pending. No new training is planned.
 The approved abliteration LoRA is intended for the standard profile, with
@@ -72,7 +74,7 @@ The owner also places strong weight on **short waits and comfortable sustained l
 
 | Decision | Initial choice | Reason |
 | --- | --- | --- |
-| Runtime | Upstream llama.cpp for conventional candidates; Prism fork for Swift; each pinned by full commit | Match the model architecture, tensor types, and backend to an explicit runtime |
+| Runtime | Pinned upstream llama.cpp/Prism baseline; staged native Rust Prism replacement in M7 | Preserve the selected model contract; replace only after correctness, security, quality and device CI qualification |
 | Main model | Source-only compatibility preflight, then literature-based choice | Choose creative usefulness within support/memory constraints before building its engine; record a fallback decision |
 | Baseline | Native ARM64 CPU, FP16 KV, one conversation | Establish correctness with a simple execution path |
 | First accelerator | Native ARM64 Vulkan; OpenCL candidate for supported conventional types | Swift needs its released packed kernels and transforms; ordinary Q4_0 has an additional documented Adreno route |
@@ -298,7 +300,7 @@ The HTP prototype is a useful gap map, not a deployable accelerator. Inspect its
 
 ## 5. Engine, agent harness, and execution isolation
 
-### Keep the native engine upstream-based
+### Preserve the pinned baseline while building the Rust replacement
 
 Use the selected runtime's **llama-server plus its built-in web UI** for direct creative chat and engine inspection; Swift/Bonsai use the matching Prism distribution. It provides a browser interface, streaming API, monitoring, and structured-output support without requiring a second model loader. It is not by itself a complete coding-agent harness or a security boundary. The Prism runtime is MIT-licensed; Swift weights carry Apache-2.0 terms and retained notices. Inventory every alternate model/runtime's terms under its own manifest. [Server documentation][server-docs] · [Runtime license][runtime-license] · [Swift model][swift-model]
 
@@ -320,7 +322,13 @@ PowerShell: installation and reproducible builds
 CI: same binaries/policies/profiles -> results + provenance
 ```
 
-The repository should own reproducibility, profiles, lifecycle, focused tests, and any justified small upstream patches. Avoid a replacement scheduler, attention engine, or serving stack until evidence shows a concrete gap.
+The repository owns reproducibility, profiles, lifecycle, focused tests and
+justified upstream patches. The planned [native Rust engine](docs/native-rust-engine.md)
+replaces the inference implementation in stages, beginning with a profiled
+packed-kernel experiment. Keep the pinned server/UI and broker contracts usable
+throughout development; Rust consistency does not waive model, state, security
+or performance qualification. The diagram above describes the baseline until
+the replacement passes those gates.
 
 The manager should:
 
@@ -582,6 +590,14 @@ For an accepted OpenCL build supporting the documented program cache, set `GGML_
 
 ## 9. Speculative decoding and advanced optimization
 
+The [native Rust Prism engine TODO](docs/native-rust-engine.md) tracks
+implementation-only work separately: source/provenance review, CI profiling,
+scalar parity, packed SIMD, memory/tiling/fusion, serving/state integration,
+Adreno execution and promotion. Aim for about 2× throughput; 3–5× is conditional
+upside if major inefficiencies exist, not a measured result or acceptance
+promise. This lane preserves model/activation/cache precision and decoding
+semantics; speculation and approximate arithmetic remain separate experiments.
+
 Keep speculation off until ordinary execution, caching, and rollback are correct. The current [Bonsai speculative guide][speculation] says Bonsai 2 27B has no official DSpark drafter; previous-generation drafters and their speedups do not establish compatibility with Swift Bonsai 2.
 
 The default `bonsai2` demo deliberately runs without speculation even if a drafter file is present. Community Bonsai 2 experiments requiring runtime changes, and reported GB10 gains, are leads to audit rather than released Swift/Snapdragon support. An NPU drafter is a later heterogeneous-inference experiment: tokenizer/template agreement, target verification, hybrid rollback, actual draft acceptance, and cross-device overhead must all pass before enabling it. Do not multiply its hypothetical speedup by token-efficiency or kernel claims.
@@ -655,6 +671,7 @@ This could be a lossless storage optimization, but different accumulation paths 
 | P0 | Scene packets, author-owned canon, visible prompt/output budgets | Reduce unnecessary context while preserving source facts, voice, and reviewable revisions |
 | P1 | Thread/polling profiles and persistent compiled-kernel caches | Cheap existing controls for comfort and startup; qualify phase-specific tradeoffs |
 | P1 | Actual ARM packed SIMD dispatch and runtime tiling/repacking | Improve the selected weights' execution before adding a new model format |
+| P1 | Native Rust Prism implementation, borrowing audited Camelid/Orangu techniques | Follow M7/R0–R7; profile first, preserve numerical contracts, prove kernel benefit and qualify the full Windows ARM64 runtime |
 | P1 | Reviewed ik_llama Prism-format R8 ARM NEON backport if missing | Concrete existing PQ2/PTQ source lead before inventing an adapter; validate activation/transform semantics |
 | P1 | T-MAC-style ARM lookup kernels | Existing Windows/ARM work; adapt exact Swift quantization and graph semantics |
 | P1 | Vulkan fused operations, persistent scratch, graph/command reuse | Reduce measured dispatch/intermediate-memory costs without an API rewrite |
@@ -758,6 +775,7 @@ PLAN.md
 README.md                         project introduction and documentation links
 docs/development-guide.md         setup and development commands
 docs/validation.md                standards, focused checks, and CI
+docs/native-rust-engine.md        staged Rust replacement TODO and qualification
 config/runtime.lock.json          runtime/model/toolchain identities
 config/profiles/*.json            explicit validated settings
 config/policies/*.json            versioned MXC requests and capability limits
@@ -797,10 +815,18 @@ Effort ranges below are planning estimates for one engineer after dependencies a
 | M4: profiles and performance report | 2–4 days | Creative/daily/long/battery profiles, optional vision/accepted agent profiles, CI provenance, installation guide | Sustained creative-task and memory acceptance on settled main; containment acceptance for enabled tools |
 | M5: NPU feasibility | About 2 days initially | Operation/packing/memory/signing gap report, including audited HTP prototype where relevant | Feasible bounded implementation or explicit deferral; no unsafe signing-policy workaround |
 | M6: R8 / lookup kernels / speculation / BITCOS | Separately estimated after feasibility | Narrow reviewed native-kernel patch or profile; model-free lookup before a second drafter | Decoded-weight and behavior correctness, native-platform support, and CI benefit justify maintenance cost |
+| M7: native Rust Prism engine | Scope after R0/R1 profiling; no delivery estimate yet | [R0–R7 TODO](docs/native-rust-engine.md): audited techniques, reference graph, packed kernels, Rust runtime and Adreno path | Same-model correctness/quality/security and paired device CI acceptance; retain Prism fallback until each replacement profile qualifies |
 
 M0a -> M0 -> M1 -> M1a -> M2/M3 -> M4 is the main creative-chat delivery path: preflight source compatibility and choose the model from literature first, then build and qualify its inference engine, with independent work isolated appropriately. M1b is optional; agent automation is accepted only after it passes. M6 is also optional and may follow whichever CPU/cache bottleneck justifies it; a small existing-kernel backport need not wait for NPU research. Investigate M5 after the selected engine's CPU/GPU results expose realistic bottlenecks; do not make everyday usability depend on a speculative NPU port. A substantial custom ternary NPU backend is a multiweek project to scope after the feasibility report, not a two-day integration.
 
 The first step is **M0a: finish the source-only preflight and literature model choice**. Then proceed directly to **M0 plus M1, followed by M1a**: pin the model and matching runtime, inspect native capabilities, establish an honest CPU reference, and make authenticated local chat usable. Qualify its 8K–16K creative profile with scene packets, short waits, sustained comfort, and the daily security contract. Continue CPU/GPU, cache, and justified kernel work on that engine; the build phase is not a prerequisite for model choice. Reopen the literature decision if its documented stop conditions are reached.
+
+M7 is planned follow-up work and can begin with the existing CPU baseline;
+it does not require M5/M6 or block usable chat on the pinned engine. R0/R1
+determine scope, followed by CPU parity and a measured packed-kernel prototype
+before the full runtime and accelerator replacement. Qualify each proposed
+profile separately. This TODO update is committed locally only, as requested;
+it does not configure a runner, dispatch benchmarks or promote a runtime.
 
 ## 13. Risk register and explicit open questions
 
@@ -838,6 +864,7 @@ The first step is **M0a: finish the source-only preflight and literature model c
 | Are actual PQ2 symbols strictly ternary, and is BITCOS smaller/faster? | Per-tensor census, exact round-trip, overhead-aware size, native kernels, CI; reject unsupported symbols |
 | Is speculative decoding actually compatible and beneficial? | Exact tensors/drafter identity, rollback tests, cache tests, CI end-to-end gain |
 | Can the result be reproduced after an upstream update? | Pin all artifacts, retain baseline profile, qualify upgrades deliberately |
+| Would a Rust rewrite inherit other engines' speedups or trust claims? | M7/R0–R7: audit provenance, preserve arithmetic, profile the critical path and require same-device CI; 2× is a goal, 3–5× is conditional upside |
 
 ## 14. Primary sources and freshness
 

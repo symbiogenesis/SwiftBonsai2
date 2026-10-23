@@ -29,6 +29,13 @@ inserts only ownership, calls and exception translation into that loader.
 The generated declarations and these call sites are the remaining interop;
 payload I/O, copying, bounds checks and sharing behavior are authored in Rust.
 
+The [native Rust engine TODO](../../docs/native-rust-engine.md) tracks full
+inference replacement as M7/R0–R7: baseline profiling, reference parity, packed
+CPU kernels, Rust runtime, Adreno execution and qualification. It preserves the
+model's numerical/decoding contract and this component's storage behavior. The
+rough 2× performance goal and conditional 3–5× upside are unmeasured; this crate
+does not implement or qualify that replacement.
+
 `src/loader.rs` is the audited engine boundary: it reads only the pinned tensor's
 initial C layout fields and calls the public ggml/gguf C APIs. It owns one file handle and
 a reusable fallible read buffer. Windows denies file writes/deletion during
