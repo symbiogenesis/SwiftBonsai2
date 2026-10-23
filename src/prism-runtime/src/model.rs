@@ -41,10 +41,12 @@ impl Model {
     /// scratch, and converting vectors to shared storage can transiently copy
     /// one tensor. This is a storage budget, not a process resident-set limit.
     /// Executable payloads currently support F32, F16, BF16, PQ2 and PTQ1.
+    /// Finite native PQ2/PTQ1 scales include both signed zeroes.
+    /// Native PQ2 supports all four two-bit codes, decoding to -1, 0, 1, 2.
     ///
     /// # Errors
     /// Rejects identity mismatches, malformed GGUF, unsupported encodings,
-    /// nonfinite values, nonternary/noncanonical quantization, insufficient
+    /// nonfinite values, noncanonical PTQ1 quantization, insufficient
     /// memory budgets, allocation failures, and I/O failures.
     pub fn load(
         path: &Path,
@@ -187,19 +189,34 @@ fn validate_payload(kind: u32, bytes: &[u8]) -> Result<()> {
             .all(|value| u16::from_le_bytes(*value) & 0x7f80 != 0x7f80),
         142 => {
             for block in bytes.as_chunks::<34>().0 {
-                let _ = bonsai_ternary::pack_ptq(block)?;
+                validate_prism_scale([block[0], block[1]])?;
+                // Every two-bit symbol is valid for native PQ2. The ternary
+                // export codec deliberately accepts a narrower symbol set.
             }
             true
         }
         143 => {
             for block in bytes.as_chunks::<28>().0 {
-                let _ = bonsai_ternary::unpack_ptq(block)?;
+                validate_prism_scale([block[26], block[27]])?;
+                // Export requires a nonzero scale, but native execution accepts
+                // both signed zeroes. Validate canonical trits with a neutral
+                // scale without changing the retained model bytes.
+                let mut symbols = *block;
+                symbols[26..].copy_from_slice(&0x3c00_u16.to_le_bytes());
+                let _ = bonsai_ternary::unpack_ptq(&symbols)?;
             }
             true
         }
         _ => return Err(invalid("unsupported executable tensor encoding")),
     };
     if !finite {
+        return Err(invalid("nonfinite executable tensor payload"));
+    }
+    Ok(())
+}
+
+fn validate_prism_scale(bytes: [u8; 2]) -> Result<()> {
+    if u16::from_le_bytes(bytes) & 0x7c00 == 0x7c00 {
         return Err(invalid("nonfinite executable tensor payload"));
     }
     Ok(())

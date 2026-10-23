@@ -321,6 +321,132 @@ fn accepts_f16_bf16_and_the_two_exact_prism_encodings() -> Result<()> {
 }
 
 #[test]
+fn accepts_signed_zero_prism_scales_without_altering_stored_bytes() -> Result<()> {
+    for scale in [0_u16, 0x8000] {
+        let mut pq = [0; 34];
+        pq[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
+        let mut ptq = bonsai_ternary::pack_ptq(&pq)?;
+        pq[..2].copy_from_slice(&scale.to_le_bytes());
+        ptq[26..].copy_from_slice(&scale.to_le_bytes());
+        let fixture = Artifact::new(
+            &[
+                Spec {
+                    name: "pq",
+                    dimensions: &[128],
+                    kind: 142,
+                    data: pq.to_vec(),
+                },
+                Spec {
+                    name: "ptq",
+                    dimensions: &[128],
+                    kind: 143,
+                    data: ptq.to_vec(),
+                },
+            ],
+            false,
+        )?;
+        let model = fixture.load(BUDGET)?;
+        assert_eq!(&*model.tensors["pq"].data, &pq);
+        assert_eq!(&*model.tensors["ptq"].data, &ptq);
+        let expected = -bonsai_ternary::half_to_float(scale);
+        for name in ["pq", "ptq"] {
+            let decoded = bonsai_prism_runtime::kernels::row(&model.tensors[name], 0)?;
+            assert_eq!(decoded.len(), 128);
+            assert!(
+                decoded
+                    .iter()
+                    .all(|value| value.to_bits() == expected.to_bits())
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn accepts_all_native_pq2_codes_with_finite_scales() -> Result<()> {
+    for scale in [0x3c00_u16, 0xbc00, 0, 0x8000] {
+        // Each byte contains native codes 0, 1, 2 and 3, in order.
+        let mut block = [0xe4; 34];
+        block[..2].copy_from_slice(&scale.to_le_bytes());
+        let data = [block, block].concat();
+        let fixture = Artifact::new(
+            &[Spec {
+                name: "native",
+                dimensions: &[256],
+                kind: 142,
+                data: data.clone(),
+            }],
+            false,
+        )?;
+        let model = fixture.load(BUDGET)?;
+        let tensor = &model.tensors["native"];
+        assert_eq!(&*tensor.data, &data);
+        let decoded = bonsai_prism_runtime::kernels::row(tensor, 0)?;
+        for (index, actual) in decoded.iter().enumerate() {
+            let symbol = [-1.0_f32, 0.0, 1.0, 2.0][index % 4];
+            let expected = symbol * bonsai_ternary::half_to_float(scale);
+            assert_eq!(actual.to_bits(), expected.to_bits());
+        }
+        if scale & 0x7fff != 0 {
+            let mut input = [0.0; 256];
+            input[3] = 127.0;
+            let output = bonsai_prism_runtime::kernels::matvec(tensor, &input)?;
+            let expected = 254.0 * bonsai_ternary::half_to_float(scale);
+            assert_eq!(output[0].to_bits(), expected.to_bits());
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn rejects_nonfinite_prism_scales_and_noncanonical_zero_scale_ptq1() -> Result<()> {
+    let mut source = [0; 34];
+    source[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
+    let canonical = bonsai_ternary::pack_ptq(&source)?;
+    for scale in [0x7c00_u16, 0xfc00, 0x7e00, 0xfe00] {
+        let mut pq = source;
+        pq[..2].copy_from_slice(&scale.to_le_bytes());
+        let mut ptq = canonical;
+        ptq[26..].copy_from_slice(&scale.to_le_bytes());
+        for (kind, data) in [(142, pq.to_vec()), (143, ptq.to_vec())] {
+            assert!(
+                Artifact::new(
+                    &[Spec {
+                        name: "nonfinite",
+                        dimensions: &[128],
+                        kind,
+                        data,
+                    }],
+                    false,
+                )?
+                .load(BUDGET)
+                .is_err()
+            );
+        }
+    }
+    for scale in [0_u16, 0x8000] {
+        let mut ptq = canonical;
+        ptq[26..].copy_from_slice(&scale.to_le_bytes());
+        // A noncanonical final byte must fail even with an all-zero result.
+        ptq[25] = 1;
+        assert!(
+            Artifact::new(
+                &[Spec {
+                    name: "malformed",
+                    dimensions: &[128],
+                    kind: 143,
+                    data: ptq.to_vec(),
+                }],
+                false,
+            )?
+            .load(BUDGET)
+            .is_err()
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn rejects_nonfinite_and_invalid_executable_payloads() -> Result<()> {
     for (kind, data) in [
         (0, f32::NAN.to_le_bytes().to_vec()),
@@ -342,7 +468,7 @@ fn rejects_nonfinite_and_invalid_executable_payloads() -> Result<()> {
         );
     }
     let mut pq = [0xff; 34];
-    pq[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
+    pq[..2].copy_from_slice(&0x7c00_u16.to_le_bytes());
     assert!(
         Artifact::new(
             &[Spec {
