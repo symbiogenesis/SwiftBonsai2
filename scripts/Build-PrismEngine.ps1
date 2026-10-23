@@ -10,6 +10,8 @@ Probe builds ggml and the Rust native alias test; Engine builds completion and s
 The pinned Rust toolchain builds the storage policy as a static library.
 Parallel defaults to two compiler jobs; CI can explicitly choose a bounded budget.
 CompilerLauncher optionally enables a compiler cache with the Ninja generator.
+RustTargetDirectory optionally reuses Cargo build artifacts in external storage;
+engine and native-test targets remain separate to preserve the policy archive.
 #>
 [CmdletBinding()]
 [OutputType([Collections.IDictionary])]
@@ -20,6 +22,7 @@ param(
     [ValidateSet('Ninja','Visual Studio 18 2026','Visual Studio 17 2022')][string]$Generator = 'Ninja',
     [ValidateRange(1,12)][int]$Parallel = 2,
     [string]$CompilerLauncher,
+    [string]$RustTargetDirectory,
     [switch]$PrepareOnly
 )
 Set-StrictMode -Version Latest
@@ -65,10 +68,11 @@ function Invoke-PrismBuildCommand {
 
 $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
 $manifest = Join-Path $overlay 'Cargo.toml'
-$rustBuild = Join-Path $scratch 'rust'
+$rustRoot = if ($RustTargetDirectory) { Resolve-ExternalPath -Path $RustTargetDirectory } else { $scratch }
+$rustBuild = Join-Path $rustRoot 'engine-loader'
 # Opt-in native-test linking must never overwrite the policy archive used by
 # the engine or invalidate its already recorded hash.
-$rustNativeBuild = Join-Path $scratch 'rust-native'
+$rustNativeBuild = Join-Path $rustRoot 'native-tests'
 $rustVersion = Invoke-PrismBuildCommand -FilePath $cargo -Arguments @('+1.99.1','--version')
 $cargoOutput = Invoke-PrismBuildCommand -FilePath $cargo -Arguments @('+1.99.1','build','--locked','--offline','--release','--features','engine-loader','--message-format=json','--manifest-path',$manifest,'--target-dir',$rustBuild)
 $records = @($cargoOutput -split "`n" | Where-Object { $_.StartsWith('{') } | ConvertFrom-Json -DateKind String)
