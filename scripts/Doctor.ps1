@@ -23,6 +23,7 @@ https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-computersyste
 https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-videocontroller
 #>
 [CmdletBinding()]
+[OutputType([Collections.IDictionary])]
 param(
     [string] $DataPath,
     [string] $OutputPath,
@@ -31,12 +32,16 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 if (-not $IsWindows) { throw 'Doctor requires Windows and PowerShell 7.6 or later.' }
 
 $issues = [System.Collections.Generic.List[string]]::new()
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 
 function Get-ExternalPath {
+    [CmdletBinding()]
+    [OutputType([string])]
+
     param([string] $Path, [switch] $Directory)
 
     if ([string]::IsNullOrWhiteSpace($Path) -or $Path -match '%[^%]+%' -or
@@ -93,6 +98,9 @@ $scratchDirectory = Join-Path $scratchRoot ('SwiftBonsai-Doctor-' + [guid]::NewG
 [System.IO.Directory]::CreateDirectory($scratchDirectory) | Out-Null
 
 function Invoke-VersionCommand {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+
     param([string] $Path, [string[]] $Arguments)
 
     $start = [System.Diagnostics.ProcessStartInfo]::new()
@@ -121,6 +129,9 @@ function Invoke-VersionCommand {
 }
 
 function Get-ExecutableArchitecture {
+    [CmdletBinding()]
+    [OutputType([string])]
+
     param([string] $Path)
     $stream = $null
     $reader = $null
@@ -150,6 +161,9 @@ function Get-ExecutableArchitecture {
 }
 
 function Find-Application {
+    [CmdletBinding()]
+    [OutputType([string])]
+
     param([string] $Name, [string[]] $Fallbacks = @())
     $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($null -ne $command) { return $command.Source }
@@ -160,6 +174,9 @@ function Find-Application {
 }
 
 function Get-Tool {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+
     param([string] $Name, [string] $Path, [string[]] $Arguments = @('--version'), [switch] $FileVersion)
     if ([string]::IsNullOrEmpty($Path)) {
         return [pscustomobject] @{ Name = $Name; Present = $false; Path = $null; Architecture = $null; Version = $null; VersionStatus = 'not-found' }
@@ -187,7 +204,10 @@ function Get-Tool {
     }
 }
 
-function Get-CimFacts {
+function Get-CimFact {
+    [CmdletBinding()]
+    [OutputType([Microsoft.Management.Infrastructure.CimInstance])]
+
     param([string] $ClassName, [string[]] $Properties)
     try { Get-CimInstance -ClassName $ClassName -Property $Properties -ErrorAction Stop }
     catch { $issues.Add("CIM $ClassName unavailable; hardware facts remain unverified.") }
@@ -195,10 +215,10 @@ function Get-CimFacts {
 
 try {
     # Query only required properties, avoiding user, hostname, serial, and network inventories.
-    $os = Get-CimFacts 'Win32_OperatingSystem' @('Caption', 'Version', 'BuildNumber', 'TotalVisibleMemorySize')
-    $computer = Get-CimFacts 'Win32_ComputerSystem' @('Manufacturer', 'Model', 'TotalPhysicalMemory')
-    $cpus = @(Get-CimFacts 'Win32_Processor' @('Name', 'Manufacturer', 'NumberOfCores', 'NumberOfLogicalProcessors'))
-    $gpus = @(Get-CimFacts 'Win32_VideoController' @('Name', 'AdapterCompatibility', 'DriverVersion', 'DriverDate', 'Status'))
+    $os = Get-CimFact 'Win32_OperatingSystem' @('Caption', 'Version', 'BuildNumber', 'TotalVisibleMemorySize')
+    $computer = Get-CimFact 'Win32_ComputerSystem' @('Manufacturer', 'Model', 'TotalPhysicalMemory')
+    $cpus = @(Get-CimFact 'Win32_Processor' @('Name', 'Manufacturer', 'NumberOfCores', 'NumberOfLogicalProcessors'))
+    $gpus = @(Get-CimFact 'Win32_VideoController' @('Name', 'AdapterCompatibility', 'DriverVersion', 'DriverDate', 'Status'))
 
     $vsRoots = [System.Collections.Generic.List[string]]::new()
     $programDirectories = @(${env:ProgramFiles}, ${env:ProgramFiles(x86)}, ${env:ProgramW6432}) |
@@ -315,21 +335,21 @@ try {
         finally { $file.Dispose() }
     }
 
-    Write-Host "Windows architecture: $osArchitecture; PowerShell process: $processArchitecture ($($PSVersionTable.PSVersion))"
+    Write-Information -InformationAction Continue "Windows architecture: $osArchitecture; PowerShell process: $processArchitecture ($($PSVersionTable.PSVersion))"
     if ($null -ne $report.Memory.UsablePhysicalBytes) {
-        Write-Host "OS-usable physical memory: $($report.Memory.UsablePhysicalBytes) bytes ($([Math]::Round($report.Memory.UsablePhysicalBytes / 1GB, 2)) GiB)"
+        Write-Information -InformationAction Continue "OS-usable physical memory: $($report.Memory.UsablePhysicalBytes) bytes ($([Math]::Round($report.Memory.UsablePhysicalBytes / 1GB, 2)) GiB)"
     }
-    else { Write-Host 'OS-usable physical memory: unavailable' }
-    foreach ($cpu in $report.Processors) { Write-Host "CPU: $($cpu.Name.Trim()) ($($cpu.Cores) cores, $($cpu.LogicalProcessors) logical)" }
-    foreach ($gpu in $report.Graphics) { Write-Host "GPU: $($gpu.Name); driver $($gpu.DriverVersion)" }
+    else { Write-Information -InformationAction Continue 'OS-usable physical memory: unavailable' }
+    foreach ($cpu in $report.Processors) { Write-Information -InformationAction Continue "CPU: $($cpu.Name.Trim()) ($($cpu.Cores) cores, $($cpu.LogicalProcessors) logical)" }
+    foreach ($gpu in $report.Graphics) { Write-Information -InformationAction Continue "GPU: $($gpu.Name); driver $($gpu.DriverVersion)" }
     foreach ($tool in $tools) {
         $summary = if ($tool.Present) { "$($tool.Architecture); $($tool.Version ?? $tool.VersionStatus)" } else { 'not found' }
-        Write-Host "$($tool.Name): $summary"
+        Write-Information -InformationAction Continue "$($tool.Name): $summary"
     }
-    if ($dataDirectory) { Write-Host "External data directory: validated; available bytes: $($storage.AvailableBytes ?? 'unavailable')" }
-    foreach ($issue in $issues) { Write-Host "Gap: $issue" }
-    Write-Host $report.Qualification
-    if ($reportPath) { Write-Host 'JSON report written to the requested external file; it includes exact tool paths.' }
+    if ($dataDirectory) { Write-Information -InformationAction Continue "External data directory: validated; available bytes: $($storage.AvailableBytes ?? 'unavailable')" }
+    foreach ($issue in $issues) { Write-Information -InformationAction Continue "Gap: $issue" }
+    Write-Information -InformationAction Continue $report.Qualification
+    if ($reportPath) { Write-Information -InformationAction Continue 'JSON report written to the requested external file; it includes exact tool paths.' }
     if ($PassThru) { Write-Output $report }
 }
 finally {

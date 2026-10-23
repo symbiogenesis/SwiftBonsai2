@@ -13,6 +13,7 @@ The returned arguments are unqualified development intent, not a safe launcher.
 https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/tools/server/server-http.cpp
 #>
 [CmdletBinding(DefaultParameterSetName = 'PolicyOnly')]
+[OutputType([pscustomobject])]
 param(
     [Parameter(Mandatory)][string]$DataDirectory,
     [ValidateRange(1024,65535)][int]$Port = 8080,
@@ -21,6 +22,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 if (-not $IsWindows) { throw 'Server planning targets Windows.' }
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.ServerPolicy.psm1') -Force

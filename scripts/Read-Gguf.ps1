@@ -12,6 +12,7 @@ This is a bounded little-endian v3 inspector, not a model loader or general GGUF
 The artifact verification streams the full file; metadata inspection never reads tensor data.
 #>
 [CmdletBinding()]
+[OutputType([Collections.IDictionary])]
 param(
     [Parameter(Mandatory)][string]$ModelPath,
     [string]$OutputPath,
@@ -20,6 +21,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
 $ModelPath = Resolve-ExternalPath $ModelPath
 if ($PSBoundParameters.ContainsKey('ExpectedBytes') -ne $PSBoundParameters.ContainsKey('ExpectedSha256')) {
@@ -37,7 +39,7 @@ if ($OutputPath) {
         throw 'The external output directory must already exist.'
     }
 }
-if (-not ('SwiftBonsai.GgufInspector' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'GgufMetadata.cs') }
+if (-not ('SwiftBonsai.GgufInspector' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'GgufMetadata.cs') -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0') }
 # Hold a read-only, write-denying handle across verification and inspection on Windows.
 $guard = [IO.File]::Open($ModelPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
 try {

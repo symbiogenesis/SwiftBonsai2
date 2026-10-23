@@ -3,10 +3,16 @@
 # Literature and pre-implementation sanity checks: docs/implementation-research.md.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 
 function Assert-BonsaiServerEnvironment {
+    <#
+    .SYNOPSIS
+    Rejects inherited model/backend overrides without exposing their values.
+    #>
     [CmdletBinding()]
+    [OutputType([void])]
     param([Collections.IDictionary]$Variables = [Environment]::GetEnvironmentVariables())
     # AIP and MTMD are read outside the runtime's usual LLAMA/GGML namespaces.
     $overrides = @($Variables.Keys | Where-Object {
@@ -19,11 +25,17 @@ function Assert-BonsaiServerEnvironment {
 }
 
 function New-BonsaiServerPlan {
+    <#
+    .SYNOPSIS
+    Returns a fixed, nonlaunching development server plan after policy validation.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Returns an in-memory plan; no filesystem, process, or network state is changed.')]
     [CmdletBinding()]
+    [OutputType([pscustomobject])]
     param(
         [Parameter(Mandatory)][string]$DataDirectory,
         [ValidateRange(1024,65535)][int]$Port = 8080,
-        [Collections.IDictionary]$Profile = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') | ConvertFrom-Json -DateKind String -AsHashtable)
+        [Collections.IDictionary]$ServerProfile = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') | ConvertFrom-Json -DateKind String -AsHashtable)
     )
     Assert-BonsaiServerEnvironment
     # Reject UNC before filesystem probing; this plan promises local/offline paths.
@@ -49,11 +61,11 @@ function New-BonsaiServerPlan {
         estimatedRuntimeHeadroomBytes = 5487195232; launchEnabled = $false
     }
     $allowed = @($expected.Keys) + @('estimateScope','remainingGates')
-    if ($Profile.Count -ne $allowed.Count -or @($Profile.Keys | Where-Object { $_ -cnotin $allowed }).Count) {
+    if ($ServerProfile.Count -ne $allowed.Count -or @($ServerProfile.Keys | Where-Object { $_ -cnotin $allowed }).Count) {
         throw 'Reference profile has missing or unreviewed fields.'
     }
     foreach ($name in $expected.Keys) {
-        $actual = $Profile[$name]; $wanted = $expected[$name]
+        $actual = $ServerProfile[$name]; $wanted = $expected[$name]
         $valid = if ($wanted -is [bool]) {
             $actual -is [bool] -and $actual -eq $wanted
         } elseif ($wanted -is [string]) {
@@ -63,9 +75,9 @@ function New-BonsaiServerPlan {
         }
         if (-not $valid) { throw "Unreviewed reference profile value/type: $name" }
     }
-    if ($Profile.estimateScope -isnot [string] -or [string]::IsNullOrWhiteSpace($Profile.estimateScope) -or
-        $Profile.remainingGates -isnot [array] -or $Profile.remainingGates.Count -eq 0 -or
-        @($Profile.remainingGates | Where-Object { $_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_) }).Count) {
+    if ($ServerProfile.estimateScope -isnot [string] -or [string]::IsNullOrWhiteSpace($ServerProfile.estimateScope) -or
+        $ServerProfile.remainingGates -isnot [array] -or $ServerProfile.remainingGates.Count -eq 0 -or
+        @($ServerProfile.remainingGates | Where-Object { $_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_) }).Count) {
         throw 'Reference profile needs explicit estimate scope and remaining gates.'
     }
     $model = Resolve-ExternalPath (Join-Path $data -ChildPath 'models', $lock.model.revision, $lock.model.filename)
@@ -88,10 +100,10 @@ function New-BonsaiServerPlan {
         '--n-predict', '4096', '--timeout', '60', '--no-perf', '--log-disable')
     [pscustomobject]@{
         SchemaVersion = 1; Status = 'preflight-only-launch-disabled'; LaunchEnabled = $false
-        ModelProcessStarted = $false; Profile = $Profile.name; RuntimeCommit = $lock.runtime.commit
+        ModelProcessStarted = $false; Profile = $ServerProfile.name; RuntimeCommit = $lock.runtime.commit
         ModelRevision = $lock.model.revision; ModelPath = $model; PlannedKeyFile = $keyFile
         Origin = $origin; Arguments = [string[]]$arguments
-        ServiceCeilingBytes = $Profile.serviceCeilingBytes; RequiredAvailableBytes = 22GB
+        ServiceCeilingBytes = $ServerProfile.serviceCeilingBytes; RequiredAvailableBytes = 22GB
         ArtifactVerification = 'not-performed'; RuntimeHelpVerification = 'not-performed'
         SecurityQualification = 'not-qualified'
         RemainingGates = @(
@@ -106,7 +118,12 @@ function New-BonsaiServerPlan {
 }
 
 function Assert-BonsaiServerHelp {
+    <#
+    .SYNOPSIS
+    Verifies the exact planned switches are advertised by pinned server help.
+    #>
     [CmdletBinding()]
+    [OutputType([void])]
     param([Parameter(Mandatory)][string]$HelpText, [Parameter(Mandatory)][string[]]$Arguments)
     $flags = @($Arguments | Where-Object { $_ -cmatch '^--[a-z]' } | Select-Object -Unique)
     if ($flags.Count -eq 0) { throw 'No server switches to verify.' }

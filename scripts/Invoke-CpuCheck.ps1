@@ -16,9 +16,11 @@ https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef
 https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-globalmemorystatusex
 #>
 [CmdletBinding()]
+[OutputType([pscustomobject])]
 param([Parameter(Mandatory)][string]$DataDirectory, [switch]$CheckOnly)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
     [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
     throw 'Use native ARM64 PowerShell on Windows ARM64.'
@@ -56,8 +58,8 @@ namespace SwiftBonsai {
 '@
 }
 $lock = Read-BonsaiLock
-$profile = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json -DateKind String
-[long]$ceiling = $profile.serviceCeilingBytes
+$serverProfile = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json -DateKind String
+[long]$ceiling = $serverProfile.serviceCeilingBytes
 if ($ceiling -ne 18GB) { throw 'Review this check before changing the reference service allowance.' }
 [long]$reserve = 4GB
 [long]$available = [SwiftBonsai.PhysicalMemory]::AvailableBytes()
@@ -81,6 +83,10 @@ $executable = Resolve-ExternalPath (Join-Path ([IO.Path]::GetDirectoryName($runt
 Assert-Arm64PE $executable
 $guard = $process = $scratch = $stdout = $stderr = $null
 function Stop-OwnedProcess {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Mandatory finally/catch cleanup must terminate only this invocation''s process, including under WhatIf.')]
+    [CmdletBinding()]
+    [OutputType([void])]
+    param()
     if ($process -and $report.ModelProcessStarted) {
         try { if (-not $process.HasExited) { $process.Kill($true) } }
         catch [InvalidOperationException] { if (-not $process.HasExited) { throw } }
@@ -88,6 +94,9 @@ function Stop-OwnedProcess {
     }
 }
 function Save-CheckEvidence {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param()
     if (-not $scratch -or -not [IO.Directory]::Exists($scratch)) { return }
     foreach ($stream in @(@{Task=$stdout;Name='stdout.txt'}, @{Task=$stderr;Name='stderr.txt'})) {
         if ($stream.Task) {

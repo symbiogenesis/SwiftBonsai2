@@ -1,9 +1,15 @@
 #requires -Version 7.6
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 
 function Resolve-ExternalPath {
+    <#
+    .SYNOPSIS
+    Validates expanded absolute external storage without Git or reparse ancestors.
+    #>
     [CmdletBinding()]
+    [OutputType([string])]
     param([Parameter(Mandatory)][string]$Path)
     # Windows normalizes forward slashes before recognizing device namespaces.
     # Check the normalized spelling before probing any filesystem path.
@@ -34,7 +40,12 @@ function Resolve-ExternalPath {
 }
 
 function Read-BonsaiLock {
+    <#
+    .SYNOPSIS
+    Reads and validates immutable model and runtime artifact identities.
+    #>
     [CmdletBinding()]
+    [OutputType([Collections.IDictionary])]
     param([string]$Path = (Join-Path $PSScriptRoot '../config/runtime.lock.json'))
     $lock = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -DateKind String -AsHashtable
     if ($lock.schemaVersion -ne 1 -or $lock.model.revision -notmatch '^[a-f0-9]{40}$' -or
@@ -64,7 +75,12 @@ function Read-BonsaiLock {
 }
 
 function Test-LockedArtifact {
+    <#
+    .SYNOPSIS
+    Rejects an artifact whose exact byte length or SHA-256 differs from its lock.
+    #>
     [CmdletBinding()]
+    [OutputType([void])]
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][long]$Bytes,
           [Parameter(Mandatory)][string]$Sha256)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Artifact is missing: $Path" }
@@ -75,12 +91,20 @@ function Test-LockedArtifact {
 }
 
 function New-ArtifactHttpClient {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Constructs an in-memory client; no request or persistent change occurs.')]
+    [CmdletBinding()]
+    [OutputType([Net.Http.HttpClient])]
     param([Net.Http.HttpClientHandler]$Handler)
     return [Net.Http.HttpClient]::new($Handler)
 }
 
 function Receive-LockedArtifact {
+    <#
+    .SYNOPSIS
+    Downloads a bounded HTTPS artifact and publishes it only after lock verification.
+    #>
     [CmdletBinding()]
+    [OutputType([string])]
     param([Parameter(Mandatory)][Uri]$Uri, [Parameter(Mandatory)][string]$Path,
           [Parameter(Mandatory)][long]$Bytes, [Parameter(Mandatory)][string]$Sha256,
           [ValidateRange(1,86400)][int]$TimeoutSeconds = 7200)
@@ -89,7 +113,7 @@ function Receive-LockedArtifact {
         throw 'A public HTTPS URL, positive byte limit, and expected SHA-256 are required.'
     }
     if (Test-Path -LiteralPath $Path) {
-        Test-LockedArtifact $Path $Bytes $Sha256
+        Test-LockedArtifact -Path $Path -Bytes $Bytes -Sha256 $Sha256
         return $Path
     }
     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path)) | Out-Null
@@ -146,7 +170,7 @@ function Receive-LockedArtifact {
             $output.Flush($true)
         }
         $output.Dispose(); $output = $null
-        Test-LockedArtifact $partial $Bytes $Sha256
+        Test-LockedArtifact -Path $partial -Bytes $Bytes -Sha256 $Sha256
         [IO.File]::Move($partial, $Path, $false)
         return $Path
     } finally {
@@ -157,7 +181,12 @@ function Receive-LockedArtifact {
 }
 
 function Assert-Arm64PE {
+    <#
+    .SYNOPSIS
+    Validates a native ARM64 PE signature without executing the file.
+    #>
     [CmdletBinding()]
+    [OutputType([void])]
     param([Parameter(Mandatory)][string]$Path)
     $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($Path))
     try {
@@ -174,7 +203,12 @@ function Assert-Arm64PE {
 }
 
 function Assert-EngineVersion {
+    <#
+    .SYNOPSIS
+    Checks a bounded ARM64 runtime version probe against the locked commit.
+    #>
     [CmdletBinding()]
+    [OutputType([string])]
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Commit)
     Assert-Arm64PE $Path
     if ($Commit -notmatch '^[a-f0-9]{40}$') { throw 'Expected a full runtime commit.' }
