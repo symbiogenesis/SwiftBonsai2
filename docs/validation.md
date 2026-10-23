@@ -33,6 +33,14 @@ model weights or establish full-model parity, throughput, broker integration or
 daily security acceptance. Local validation remains limited to focused cases;
 all full suites and benchmarks run only in CI.
 
+Future CPU SIMD work follows the [S0–S6 plan](simd-plan.md), including exact
+symbol/activation/integer parity, initial bitwise packed-dot parity, explicit
+tolerances for later floating reductions, safe dispatch/fallback checks and
+Release assembly inspection. Local builds, disassembly and focused correctness
+checks are allowed. All timing benchmarks remain CI-only; promotion requires
+paired target-device kernel and end-to-end evidence. These are planned gates,
+not checks already implemented or passed by the scalar runtime.
+
 The native decoder's stable `evaluate_into` path reuses caller-owned logits and
 retained graph/kernel workspace. Focused correctness cases check numerical
 fixtures, output storage reuse, checkpoint independence, malformed outputs and

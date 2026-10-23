@@ -2,6 +2,17 @@
 
 Work began October 22 and continued October 23, 2026. Each step was checked against primary sources before implementation. Later engine changes require their own literature search and sanity check.
 
+The October 23 [SIMD planning review](simd-plan.md) reads Davidoff's
+[2026 survey](https://shnatsel.github.io/state-of-simd-rust-2026/) alongside
+primary Rust and library documentation linked in the plan. Source inspection
+and an independent isolated-worktree review identify distinct Q8_K/Q8_0
+rounding, native PQ2's fourth symbol, PTQ1 canonicality, unaligned block strides
+and the runtime's `forbid(unsafe_code)` as design constraints. S0–S6 now specify
+the safe-API trial, exact integer-first NEON work, optional Windows ISA proof,
+later memory/prefill work and numerical/device exits. This is documentation
+research; dependencies, kernels, CI configuration and performance verdicts are
+unchanged.
+
 | Step | Literature checked first | Sanity check and implementation consequence |
 | --- | --- | --- |
 | M0a model selection | EQ-Bench published data/methodology/samples; model cards; immutable APIs; pinned Qwen graph/CPU operations | Elo and raw-rubric ordering disagree; exact-pack/laptop evidence is missing. Qwen chosen with limited confidence, Gemma12 fallback. Native graph support and 12.89 GiB known subtotal provide a credible CPU route. See [decision](model-selection.md). |

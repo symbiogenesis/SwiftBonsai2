@@ -74,7 +74,11 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
   scalar-operation parity and bounded full-model correctness against Prism.
 
 - [ ] **R3 — Prove the hottest packed CPU kernel first.** Implement fused
-  unpack-and-dot in Rust with NEON/intrinsics where supported. Preserve the
+  unpack-and-dot using the detailed [SIMD plan](simd-plan.md), S0–S4 and S6.
+  Evaluate stable safe SIMD APIs before introducing a separate audited intrinsic
+  boundary; keep the runtime's unsafe-code prohibition. Begin with baseline NEON
+  integer unpack/dot and unchanged scalar quantization/scale ordering; qualify
+  PTQ1 and optional dotprod/i8mm independently. Preserve the
   baseline's activation quantization and accumulation contract; avoid persistent
   expanded weight copies unless a separately measured layout tradeoff wins.
   Validate actual Oryon feature detection and instruction results, with a scalar
@@ -93,6 +97,9 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
   adapter loading/basis and forward execution with the unchanged artifact;
   rank-one fusion must preserve its arithmetic contract. Exit with incremental
   same-workload CI results rather than combined hypothetical multipliers.
+  [SIMD S5](simd-plan.md#delivery-sequence-and-exits) details later transforms,
+  quantizers, floating reductions and prefill tiles; changing the reduction or
+  FMA contract needs separate numerical qualification before performance capture.
 
   - [x] **R4.1 — Integrate reusable decoder logits and graph scratch.**
     `Decoder::evaluate_into` replaces a caller-owned logits buffer on stable

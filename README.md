@@ -47,6 +47,7 @@ and [Qwen reference accounting](docs/model-selection.md#source-only-compatibilit
 - [Development guide](docs/development-guide.md) — requirements, setup, and development commands.
 - [Validation](docs/validation.md) — code standards, focused tests, and CI.
 - [Native Rust CPU reference](src/prism-runtime/README.md) — experimental token-level Prism execution and remaining parity gates.
+- [CPU SIMD plan](docs/simd-plan.md) — staged packed NEON kernels, numerical contracts, safe dispatch, and qualification.
 - [Model and memory research](docs/swift-memory.md) — the current Swift assessment and experiments.
 - [Implementation plan](PLAN.md) — goals, design, and remaining work.
 - [Implementation research](docs/implementation-research.md) — technical decisions and evidence.

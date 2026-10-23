@@ -592,6 +592,13 @@ upside if major inefficiencies exist, not a measured result or acceptance
 promise. This lane preserves model/activation/cache precision and decoding
 semantics; speculation and approximate arithmetic remain separate experiments.
 
+The detailed [CPU SIMD plan](docs/simd-plan.md) expands R3/R4 into S0–S6:
+freeze format/numerical contracts, evaluate stable safe SIMD APIs, prove a fused
+PQ2 baseline NEON dot with scalar quantization, qualify PTQ1 separately, then
+consider independently detected dotprod/i8mm and measured graph/prefill targets.
+It retains the unsafe-code boundary, scalar fallback and CI-only performance
+gates. These are pending implementation steps; no SIMD gain is established.
+
 An experimental [native CPU reference](src/prism-runtime/README.md) now implements
 verified Rust-owned model loading, scalar packed operations, the Qwen35 hybrid
 graph and bounded transactional token generation. It consumes token IDs and

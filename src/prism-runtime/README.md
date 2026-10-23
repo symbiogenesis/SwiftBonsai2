@@ -101,6 +101,13 @@ position cache across reset, restoration or failed evaluation.
 
 ## Validation and remaining work
 
+The [CPU SIMD plan](../../docs/simd-plan.md) expands R3/R4 into pending S0–S6
+work, starting with exact packed PQ2 integer arithmetic on baseline NEON and
+unchanged scalar activation quantization. It covers separate PTQ1 qualification,
+safe APIs/audited boundaries, Windows optional-ISA detection, dispatch and
+numerical/performance exits. This crate still uses scalar kernels; no SIMD
+dependency or selected backend is implemented by that plan.
+
 Focused fixtures cover malformed/truncated/over-budget GGUFs, exact metadata,
 immutable B sharing, native activation rounding and packed dot results, synthetic
 full/recurrent graph state, and transactional edited-prefix/cancellation behavior.
