@@ -29,6 +29,9 @@ reference below is retained for reproducibility.
 ## 1. Recommended direction
 
 - [ ] **Required: qualify the standard abliteration LoRA against the same model without it.**
+  The fixed [paired CI capture and gate scorer](docs/lora-qualification.md) are
+  implemented. Device capture, native correctness evidence and human reviews
+  remain pending; the TODO is not complete.
   Run matched CI comparisons on the target Snapdragon with the exact model,
   representation, runtime, template, sampler, context and resource limits held
   fixed. Resolve adapter application/basis correctness first. Require overall

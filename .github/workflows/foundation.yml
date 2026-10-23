@@ -166,6 +166,18 @@ jobs:
           $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime') -CheckOnly
           if ($result.ModelProcessStarted -or $result.AvailablePhysicalBytesAtAdmission -le 0) { throw 'Invalid admission-only result.' }
           $result | ConvertTo-Json
+      - name: Mandatory standard LoRA scorer and native capture parser correctness
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraQualification.ps1') -Case All
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraEvaluation.ps1') -Case All
+          $plan = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-LoraQualification.ps1') -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime') -PlanOnly
+          if ($plan.ModelProcessStarted -or $plan.PairedSamples -ne 24 -or $plan.ZeroScaleSamples -ne 4) { throw 'Invalid nonlaunching LoRA qualification plan.' }
+          $plan | ConvertTo-Json
       - name: Swift assessment policy and pinned ARM64 runtime
         shell: pwsh
         run: |

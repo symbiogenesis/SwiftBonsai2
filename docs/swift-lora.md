@@ -176,6 +176,10 @@ separate from storage sharing, allocation reuse and validated execution fusion.
 
 ## Required standard-profile qualification
 
+The [fixed paired capture and independent gate scorer](lora-qualification.md) are
+now implemented. The target-device CI run, native basis/logits evidence and human
+quality reviews remain pending; implementation does not establish parity.
+
 - [ ] **Mandatory TODO: establish that the model with the approved abliteration
   LoRA has decode tokens per second and output quality each on par with or
   better than the same model without it.** The owner intends this LoRA to be standard, rather than

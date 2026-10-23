@@ -56,6 +56,11 @@ The same fixed memory guards apply. Native loading/decode has passed; refusal
 behavior, creative quality, numerical basis and runtime overhead remain under
 qualification. See [adapter evidence](docs/swift-lora.md). It requires no training.
 
+The [required paired evaluation](docs/lora-qualification.md) now has a fixed
+capture workflow and an independent TPS/quality gate scorer. A target Snapdragon
+CI runner, native correctness evidence and external human reviews are still
+required; no performance or quality parity is claimed from successful loading.
+
 ```powershell
 ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -CheckOnly
 ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data

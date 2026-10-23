@@ -1,0 +1,54 @@
+name: Swift standard LoRA paired capture
+on:
+  workflow_dispatch:
+    inputs:
+      representation:
+        description: Fixed representation for both arms
+        type: choice
+        options: [PQ2_0, current-repacked-PTQ1_0]
+        default: PQ2_0
+permissions:
+  contents: read
+concurrency:
+  group: swift-lora-snapdragon
+  cancel-in-progress: false
+jobs:
+  capture:
+    if: github.ref == 'refs/heads/main'
+    # Requires the owner-managed laptop runner and already verified artifacts.
+    # Never executes on pull requests or substitutes a hosted ARM processor.
+    runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Capture matched throughput and exact responses; qualification may remain pending
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          BONSAI_REPRESENTATION: ${{ inputs.representation }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-LoraQualification.ps1'
+          $data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
+          $ptq = $env:BONSAI_REPRESENTATION -ceq 'current-repacked-PTQ1_0'
+          $result = & $script -DataDirectory $data -UseRepackedPtq1:$ptq
+          $result | ConvertTo-Json -Depth 8
+          @('Paired capture completed. Standard-profile qualification: ' + $result.QualificationStatus,
+            'Tokens/sec and human-reviewed output quality are independent mandatory gates.',
+            'Missing native logits/basis evidence and human reviews remain pending.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          if ($result.QualificationStatus -ceq 'rejected') { throw 'A mandatory matched qualification gate regressed; inspect retained evidence.' }
+      - name: Retain capture, controls, technical logs and independent gate report
+        if: always() && env.BONSAI_LORA_EVIDENCE != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: swift-lora-${{ github.run_id }}-${{ github.run_attempt }}
+          # Deliberately list technical evidence; never upload model/adapter files.
+          path: |
+            ${{ env.BONSAI_LORA_EVIDENCE }}/**/*.json
+            ${{ env.BONSAI_LORA_EVIDENCE }}/**/*.txt
+          if-no-files-found: error
+          retention-days: 14
