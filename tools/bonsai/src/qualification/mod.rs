@@ -12,7 +12,7 @@ mod tests;
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::Read as _;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -328,7 +328,7 @@ fn take<T: for<'de> Deserialize<'de>>(request: &mut Map<String, Value>, key: &st
 ///
 /// # Errors
 /// Rejects malformed schemas, changed pins, mismatched evidence, unsafe external
-/// paths, oversized/unreadable JSON, or unexpected request fields. Known valid
+/// paths, oversized/unreadable standard JSON, or unexpected request fields. Known valid
 /// regressions return a rejected report; missing proofs/reviews remain pending.
 pub fn run(request: Value) -> Result<Value> {
     let Value::Object(mut request) = request else {
@@ -372,7 +372,7 @@ pub fn run(request: Value) -> Result<Value> {
 }
 
 fn read_json(path: &Path) -> Result<Value> {
-    validate_path(path)?;
+    let path = validate_path(path)?;
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(windows)]
@@ -418,37 +418,76 @@ fn bounded_depth(value: &Value, remaining: usize) -> Result<()> {
     Ok(())
 }
 
-fn validate_path(path: &Path) -> Result<()> {
-    #[cfg(windows)]
-    {
-        bonsai_windows_credentials::validate_external_path(path).map_err(|error| error.to_string())
-    }
-    #[cfg(not(windows))]
-    {
-        require(path.is_absolute(), "Qualification paths must be absolute.")?;
-        for ancestor in path.ancestors() {
-            if let Ok(metadata) = ancestor.symlink_metadata() {
+fn expanded_path(path: &Path) -> Result<PathBuf> {
+    let spelling = path.to_str().ok_or("Qualification path must be Unicode.")?;
+    let namespace = spelling.replace('/', "\\");
+    // Match %[^%]+%, permitting ordinary percent characters in filenames.
+    let percent_positions: Vec<_> = spelling
+        .match_indices('%')
+        .map(|(index, _)| index)
+        .collect();
+    let unresolved = percent_positions
+        .windows(2)
+        .any(|pair| pair[1] > pair[0] + 1);
+    require(
+        path.is_absolute()
+            && !unresolved
+            && !namespace.starts_with("\\\\?\\")
+            && !namespace.starts_with("\\\\.\\"),
+        "Use an expanded absolute qualification path without device syntax.",
+    )?;
+    let full = std::path::absolute(path).map_err(|error| error.to_string())?;
+    require(!full.components().any(|component| matches!(component, Component::Normal(name) if name.to_string_lossy().contains(':'))),
+        "Alternate data stream paths are unsupported.")?;
+    Ok(full)
+}
+
+fn validate_path(path: &Path) -> Result<PathBuf> {
+    // Evidence paths retain Resolve-ExternalPath's contract, including UNC and
+    // lexical dot-segment normalization. Credential creation has a different,
+    // intentionally stricter local-drive policy and is not reused here.
+    let full = expanded_path(path)?;
+    for ancestor in full.ancestors() {
+        match ancestor.symlink_metadata() {
+            Ok(metadata) => {
+                #[cfg(windows)]
+                let reparse = {
+                    use std::os::windows::fs::MetadataExt as _;
+                    metadata.file_attributes() & 0x400 != 0 // FILE_ATTRIBUTE_REPARSE_POINT
+                };
+                #[cfg(not(windows))]
+                let reparse = metadata.file_type().is_symlink();
                 require(
-                    !metadata.file_type().is_symlink() && !ancestor.join(".git").exists(),
-                    "Qualification paths must be external without links.",
+                    !reparse,
+                    "Reparse-point qualification storage is unsupported.",
                 )?;
+                if metadata.is_dir() {
+                    match ancestor.join(".git").metadata() {
+                        Ok(_) => {
+                            return Err(
+                                "Qualification storage must be outside Git repositories.".into()
+                            );
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => return Err(error.to_string()),
+                    }
+                }
             }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
         }
-        Ok(())
     }
+    Ok(full)
 }
 
 fn decode_text(bytes: &[u8]) -> Result<String> {
-    // Match StreamReader's BOM detection while retaining strict decoding.
+    // StreamReader uses strict UTF-8 initially, but BOM detection selects the
+    // standard UTF-8/UTF-16/UTF-32 decoders with replacement fallback. Preserve that
+    // behavior: hashes bind the resulting text, including replacement chars.
     if bytes.starts_with(&[0xff, 0xfe, 0, 0]) || bytes.starts_with(&[0, 0, 0xfe, 0xff]) {
-        require(
-            (bytes.len() - 4).is_multiple_of(4),
-            "Invalid UTF-32 qualification JSON.",
-        )?;
         let little = bytes[0] == 0xff;
-        bytes[4..]
-            .as_chunks::<4>()
-            .0
+        let (units, trailing) = bytes[4..].as_chunks::<4>();
+        let mut text: String = units
             .iter()
             .map(|chunk| {
                 char::from_u32(if little {
@@ -456,18 +495,17 @@ fn decode_text(bytes: &[u8]) -> Result<String> {
                 } else {
                     u32::from_be_bytes(*chunk)
                 })
-                .ok_or_else(|| "Invalid UTF-32 qualification JSON.".into())
+                .unwrap_or(char::REPLACEMENT_CHARACTER)
             })
-            .collect()
+            .collect();
+        if !trailing.is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+        Ok(text)
     } else if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff]) {
-        require(
-            (bytes.len() - 2).is_multiple_of(2),
-            "Invalid UTF-16 qualification JSON.",
-        )?;
         let little = bytes[0] == 0xff;
-        let words: Vec<_> = bytes[2..]
-            .as_chunks::<2>()
-            .0
+        let (units, trailing) = bytes[2..].as_chunks::<2>();
+        let words: Vec<_> = units
             .iter()
             .map(|chunk| {
                 if little {
@@ -477,14 +515,14 @@ fn decode_text(bytes: &[u8]) -> Result<String> {
                 }
             })
             .collect();
-        String::from_utf16(&words).map_err(|error| error.to_string())
+        let mut text = String::from_utf16_lossy(&words);
+        if !trailing.is_empty() {
+            text.push(char::REPLACEMENT_CHARACTER);
+        }
+        Ok(text)
+    } else if let Some(text) = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]) {
+        Ok(String::from_utf8_lossy(text).into_owned())
     } else {
-        String::from_utf8(
-            bytes
-                .strip_prefix(&[0xef, 0xbb, 0xbf])
-                .unwrap_or(bytes)
-                .to_vec(),
-        )
-        .map_err(|error| error.to_string())
+        String::from_utf8(bytes.to_vec()).map_err(|error| error.to_string())
     }
 }

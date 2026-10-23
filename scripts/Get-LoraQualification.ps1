@@ -6,6 +6,8 @@ Reports mandatory LoRA gates from captured evidence and an external human review
 Read-only and never starts a model or enables a serving profile. Review records
 must bind each exact response digest and attest direct human review. Missing
 correctness evidence or reviews remain pending; known regressions are rejected.
+Evidence and reviews must use standard JSON. UTF-8 and BOM-identified Unicode
+encodings retain the previous reader's decoding behavior.
 #>
 [CmdletBinding()]
 [OutputType([pscustomobject])]
