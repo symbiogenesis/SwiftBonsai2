@@ -206,6 +206,13 @@ impl LaunchConfig {
         self,
         shutdown: impl Future<Output = io::Result<()>>,
     ) -> Result<LaunchedService, LaunchError> {
+        // Register cancellation before synchronous policy/artifact work. The CLI
+        // retains this same future across startup and serving, so a signal in
+        // the readiness-to-serving handoff remains observable.
+        let mut shutdown = pin!(shutdown);
+        if poll_fn(|cx| Poll::Ready(shutdown.as_mut().poll(cx).is_ready())).await {
+            return Err(LaunchError::Cancelled);
+        }
         if self.check_only {
             return Err(LaunchError::Arguments);
         }
@@ -219,6 +226,9 @@ impl LaunchConfig {
             VerifiedArtifacts::verify(&self.data).map_err(|_| LaunchError::Artifacts)?;
         if artifacts.executable() != preliminary.executable {
             return Err(LaunchError::Artifacts);
+        }
+        if poll_fn(|cx| Poll::Ready(shutdown.as_mut().poll(cx).is_ready())).await {
+            return Err(LaunchError::Cancelled);
         }
         let credentials = PrivateCredentials::create(&self.evidence_parent)
             .map_err(|_| LaunchError::Credentials)?;
@@ -397,7 +407,10 @@ async fn wait_ready(
             guard(process, limit)?;
             match listener_process_id(port).map_err(|_| LaunchError::Backend)? {
                 Some(pid) if pid != process.id() => return Err(LaunchError::Backend),
-                Some(_) if healthy(port, key).await && authenticated(port, key).await => {
+                Some(_)
+                    if healthy(port, key, process.id()).await
+                        && authenticated(port, key, process.id()).await =>
+                {
                     owner(process, port)?;
                     guard(process, limit)?;
                     return Ok(());
@@ -421,23 +434,26 @@ async fn wait_ready(
     .await
 }
 
-async fn healthy(port: u16, key: &str) -> bool {
-    timeout(Duration::from_secs(1), health_exchange(port, key))
-        .await
-        .is_ok_and(|result| result.is_ok())
+async fn healthy(port: u16, key: &str, process_id: u32) -> bool {
+    timeout(
+        Duration::from_secs(1),
+        health_exchange(port, key, process_id),
+    )
+    .await
+    .is_ok_and(|result| result.is_ok())
 }
 
-async fn health_exchange(port: u16, key: &str) -> io::Result<()> {
-    validate_health(&exchange(port, "/health", Some(key)).await?)
+async fn health_exchange(port: u16, key: &str, process_id: u32) -> io::Result<()> {
+    validate_health(&exchange(port, "/health", Some(key), process_id).await?)
 }
 
-async fn authenticated(port: u16, key: &str) -> bool {
+async fn authenticated(port: u16, key: &str, process_id: u32) -> bool {
     timeout(Duration::from_secs(2), async {
         // /health is public in the pinned engine. A protected endpoint must
         // reject missing credentials and accept this newly generated key.
-        let denied = exchange(port, "/v1/models", None).await?;
+        let denied = exchange(port, "/v1/models", None, process_id).await?;
         validate_response(&denied, 401)?;
-        let allowed = exchange(port, "/v1/models", Some(key)).await?;
+        let allowed = exchange(port, "/v1/models", Some(key), process_id).await?;
         let body = validate_response(&allowed, 200)?;
         let models: serde_json::Value = serde_json::from_slice(body).map_err(io::Error::other)?;
         if !models.get("data").is_some_and(serde_json::Value::is_array) {
@@ -449,15 +465,29 @@ async fn authenticated(port: u16, key: &str) -> bool {
     .is_ok_and(|result| result.is_ok())
 }
 
-async fn exchange(port: u16, path: &str, key: Option<&str>) -> io::Result<Vec<u8>> {
+async fn exchange(
+    port: u16,
+    path: &str,
+    key: Option<&str>,
+    process_id: u32,
+) -> io::Result<Vec<u8>> {
+    let check_owner = || {
+        if listener_process_id(port)? != Some(process_id) {
+            return Err(io::Error::other("Readiness listener owner changed."));
+        }
+        Ok(())
+    };
+    check_owner()?;
     let mut stream = TcpStream::connect(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)).await?;
-    let authorization = key.map_or_else(String::new, |key| {
-        format!("Authorization: Bearer {key}\r\n")
-    });
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{authorization}Connection: close\r\n\r\n"
-    );
-    stream.write_all(request.as_bytes()).await?;
+    check_owner()?;
+    let head = format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n");
+    stream.write_all(head.as_bytes()).await?;
+    if let Some(key) = key {
+        stream.write_all(b"Authorization: Bearer ").await?;
+        stream.write_all(key.as_bytes()).await?;
+        stream.write_all(b"\r\n").await?;
+    }
+    stream.write_all(b"Connection: close\r\n\r\n").await?;
     let mut bytes = Vec::with_capacity(1024);
     stream
         .take(u64::try_from(HEALTH_LIMIT + 1).map_err(io::Error::other)?)
@@ -533,6 +563,10 @@ fn validate_response(bytes: &[u8], status: u16) -> io::Result<&[u8]> {
     }
     Ok(body)
 }
+
+#[cfg(test)]
+#[path = "launcher_tests.rs"]
+mod lifecycle_tests;
 
 #[cfg(test)]
 mod tests {

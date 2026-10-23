@@ -89,7 +89,8 @@ fn launched(args: Vec<OsString>) -> ExitCode {
         return failure(b"Development launch runtime initialization failed.\n");
     };
     runtime.block_on(async {
-        let owner = match configuration.start(tokio::signal::ctrl_c()).await {
+        let mut shutdown = std::pin::pin!(tokio::signal::ctrl_c());
+        let owner = match configuration.start(shutdown.as_mut()).await {
             Ok(owner) => owner,
             Err(error) => {
                 let message = format!("Development backend launch failed: {error:?}.\n");
@@ -103,7 +104,7 @@ fn launched(args: Vec<OsString>) -> ExitCode {
         if std::io::stdout().write_all(notice.as_bytes()).is_err() {
             return ExitCode::FAILURE;
         }
-        match owner.run(tokio::signal::ctrl_c()).await {
+        match owner.run(shutdown.as_mut()).await {
             Ok(report) if report.exit == RunExit::Shutdown => ExitCode::SUCCESS,
             Ok(_) => failure(b"Admission closed; the owned backend has been stopped.\n"),
             Err(error) => {

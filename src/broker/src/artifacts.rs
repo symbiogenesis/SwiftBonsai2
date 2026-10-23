@@ -59,6 +59,17 @@ pub struct VerifiedArtifacts {
     _handles: Vec<File>,
 }
 impl VerifiedArtifacts {
+    #[cfg(test)]
+    pub(crate) const fn synthetic_for_test() -> Self {
+        Self {
+            executable: PathBuf::new(),
+            model: PathBuf::new(),
+            runtime_directory: PathBuf::new(),
+            archive_path: PathBuf::new(),
+            _handles: Vec::new(),
+        }
+    }
+
     /// Verify whole locked artifacts and every installed file against the ZIP.
     /// Native executable and DLL entries must be ARM64 PE images.
     ///
