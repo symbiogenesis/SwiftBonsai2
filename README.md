@@ -48,6 +48,7 @@ and [Qwen reference accounting](docs/model-selection.md#source-only-compatibilit
 - [Validation](docs/validation.md) — code standards, focused tests, and CI.
 - [Native Rust CPU reference](src/prism-runtime/README.md) — experimental token-level Prism execution and remaining parity gates.
 - [CPU SIMD plan](docs/simd-plan.md) — staged packed NEON kernels, numerical contracts, safe dispatch, and qualification.
+- [Inference algorithms](docs/inference-algorithms.md) — sourced LUT/prefill/cache opportunities, mathematical limits, and experimental boundaries.
 - [Adreno GPU plan](docs/adreno-gpu-plan.md) — current CPU-only status, native Vulkan bring-up, placement, and device qualification.
 - [Hexagon NPU plan](docs/hexagon-npu-plan.md) — signed runtime access, exact Swift kernels/state, CPU/GPU/NPU placement, and device qualification.
 - [Model and memory research](docs/swift-memory.md) — the current Swift assessment and experiments.

@@ -628,6 +628,15 @@ uses greedy decoding. The R2/R5 parity/integration exits and R0/R1 profiling,
 optimized execution and replacement qualification remain outstanding; the
 publisher runtime remains the assessment/fallback profile.
 
+The [inference algorithm review](docs/inference-algorithms.md) maps the October
+23 literature to concrete R3/R4/R5 work: exact ternary LUTs, Vec-LUT, state-only
+and block prefill, shared activation preparation, physical FP16 KV, chunkwise
+WY/UT GDN and immutable KV checkpoint pages. It also records the FlashAttention
+I/O bound and current FP16 probability-rounding constraint. SuffixDecoding and
+SpecLA state recovery stay behind block verification; approximate solvers and
+trained architecture/drafter changes remain separate experiments. These tasks
+are pending and establish no additional target-device speedup.
+
 Keep speculation off until ordinary execution, caching, and rollback are correct. The current [Bonsai speculative guide][speculation] says Bonsai 2 27B has no official DSpark drafter; previous-generation drafters and their speedups do not establish compatibility with Swift Bonsai 2.
 
 The default `bonsai2` demo deliberately runs without speculation even if a drafter file is present. Community Bonsai 2 experiments requiring runtime changes, and reported GB10 gains, are leads to audit rather than released Swift/Snapdragon support. An NPU drafter is a later heterogeneous-inference experiment: tokenizer/template agreement, target verification, hybrid rollback, actual draft acceptance, and cross-device overhead must all pass before enabling it. Do not multiply its hypothetical speedup by token-efficiency or kernel claims.
@@ -668,7 +677,9 @@ Use a simple Amdahl bound to decide whether API work deserves attention. If seri
 | P1 | Native Rust Prism implementation, borrowing audited Camelid/Orangu techniques | Follow M7/R0–R7; profile first, preserve numerical contracts, prove kernel benefit and qualify the full Windows ARM64 runtime |
 | P1 | Qualify reusable Rust logits/scratch and assess lending interfaces | [R4.1](docs/native-rust-engine.md#ordered-work) implements stable caller-owned logits and retained graph/kernel workspace; R4.2 still requires same-model allocation/memory qualification, and R5.1 requires a concrete API benefit before changing the stable compiler baseline |
 | P1 | Reviewed ik_llama Prism-format R8 ARM NEON backport if missing | Concrete existing PQ2/PTQ source lead before inventing an adapter; validate activation/transform semantics |
-| P1 | T-MAC-style ARM lookup kernels | Existing Windows/ARM work; adapt exact Swift quantization and graph semantics |
+| P1 | T-MAC-style ARM lookup kernels and exact ternary TL variants | Existing Windows/ARM lead plus [TL1_1/TL2_1](docs/inference-algorithms.md#exact-ternary-tables-for-decode); preserve Swift activation quantizers/scales and compare with NEON |
+| P1 | State-only/block prefill, shared activation preparation and chunkwise GDN | [R4.3–R4.6](docs/native-rust-engine.md#ordered-work) remove unused work before comparing Vec-LUT/WY tiles; preserve causal/state and numerical contracts |
+| P1 | Physical FP16 KV and shared immutable checkpoint pages | Preserve already-rounded values and exact GDN checkpoint boundaries; qualify accounting and copy-on-write without assuming total RAM or throughput gains |
 | P1 | Vulkan fused operations, persistent scratch, graph/command reuse | Reduce measured dispatch/intermediate-memory costs without an API rewrite |
 | P1 | Separate prefill/decode tuning and small contiguous device partitions | Different phases may favor different hardware; count migration/state-copy costs |
 | P1 | Model-free prompt lookup for copy-heavy revisions | No second model; still needs correct target sampling, hybrid rollback, and net CI benefit |

@@ -33,6 +33,12 @@ tolerances; unchanged algorithms do not guarantee bit-identical full-model
 output. Precision reduction, approximate attention, pruning, retraining and
 speculative decoding belong to separate experiments.
 
+The [algorithm research map](inference-algorithms.md) records the October 23
+paper/source review and concrete pending work below: exact ternary LUTs,
+Vec-LUT, state-only/batched prefill, chunkwise WY/UT GDN and shared hybrid
+checkpoints. It distinguishes mathematical equivalence from numerical parity,
+and keeps speculative recovery and approximate solvers in separate experiments.
+
 These are engineering estimates for end-to-end throughput, not measured
 Snapdragon results or mandatory speedup thresholds:
 
@@ -100,6 +106,9 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
   The first experimental PQ2 kernel, safe dependency route, explicit selection
   and focused regressions are implemented. Profiling, complete diagnostics,
   other formats/ISAs and performance promotion remain pending; see S1/S2.
+  Compare that control with [exact TL1_1/TL2_1 lookup techniques](inference-algorithms.md#exact-ternary-tables-for-decode)
+  only while preserving our activation quantizers, scale order and generic PQ2
+  fourth-symbol behavior. Ordinary INT8 table quantization is not an exact swap.
 
 - [ ] **R4 — Optimize CPU memory and prompt processing.** Add phase-specific
   tiling, lossless packing/interleaving, reusable scratch, persistent thread
@@ -133,6 +142,24 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
     recovery. Run performance measurements only in CI when requested. Synthetic
     address/capacity reuse is not evidence of a full-model memory or speed gain.
 
+  - [ ] **R4.3 — Add state-only prompt ingestion.** Compute logits only for the
+    final uncached prompt token; define skipped-output validation explicitly
+    and preserve the existing single-token API, prefix hits, cancellation and
+    request rollback. Compare final logits and complete hybrid state.
+  - [ ] **R4.4 — Share compatible activation preparation.** Reuse sign/Hadamard
+    transforms and packed activations across sibling projections only where
+    input, basis/permutation and Q8_K/Q8_0 contracts match. Storage reuse alone
+    does not complete this task.
+  - [ ] **R4.5 — Store already-rounded KV physically as FP16.** Preserve exact
+    binary16 bits and widening behavior, with convolution/GDN state remaining
+    FP32. Verify attention, snapshots and memory/admission accounting; the
+    expected halving applies to KV element payload, not total process memory.
+  - [ ] **R4.6 — Add bounded block prefill and qualify its algorithms.** Establish
+    causal/state scheduling, atomic commit and cancellation before comparing
+    [Vec-LUT and chunkwise WY/UT GDN](inference-algorithms.md#chunkwise-gated-deltanet-prefill).
+    Keep scalar decode and declared numerical tolerances; prefill throughput
+    requires its own target-device CI evidence.
+
 - [ ] **R5 — Implement and qualify the complete Rust runtime.** Add bounded
   conversation state, cache/checkpoint ownership, exact prefix restoration,
   streaming, cancellation, edited turns, slot reset and failure recovery. Keep
@@ -156,6 +183,12 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
     The production caller-owned output API also works on stable and encounters
     neither limitation, so it requires no nightly migration or solver change.
 
+  - [ ] **R5.2 — Share immutable KV checkpoint pages.** Copy only a mutable tail
+    while separately retaining exact convolution/recurrent snapshots. Follow
+    [hybrid component reuse boundaries](inference-algorithms.md#hybrid-cache-reuse-and-speculative-state),
+    prove snapshot isolation and edited-prefix recovery, and budget unique
+    physical pages plus worst-case copy-on-write and retained GDN state.
+
 - [ ] **R6 — Optimize the Adreno path after CPU parity.** Implement the same
   packed types, transforms and full hybrid graph on a supported GPU backend.
   Follow the [Adreno G0–G5 roadmap](adreno-gpu-plan.md), reusing the initial Prism
@@ -173,6 +206,9 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
   kernels and state must pass their own exits before heterogeneous comparisons.
   NPU discovery does not depend on completing R6, and neither accelerator path
   bypasses R5 ownership or R7 replacement qualification.
+  Apply the [attention locality and FP16 probability constraints](inference-algorithms.md#attention-locality-and-the-io-bound)
+  when adding tiled/Flash attention; online softmax is not automatically
+  equivalent to the scalar nonflash reference's intermediate rounding.
 
 - [ ] **R7 — Qualify replacement and retire the old path deliberately.** Run
   paired CI comparisons on the target laptop, with fixed workloads, repeated

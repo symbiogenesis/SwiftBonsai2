@@ -161,6 +161,17 @@ packed execution or demonstrate a bounded alternative before undertaking export.
   experimental placement when the full bounded ledger cannot fit; do not
   quietly borrow the Qwen reference's 18 GiB allowance or shorten context.
 
+For N2/N3 prefill, evaluate the [chunkwise WY/UT GDN formulation](inference-algorithms.md#chunkwise-gated-deltanet-prefill)
+only after faithful state scheduling and reference fixtures. Keep its exact
+real-arithmetic derivation separate from floating-point evaluation order.
+Qualcomm's [June 2026 multiplication-only inverse](https://arxiv.org/abs/2606.06034)
+uses truncated Neumann terms, masking and residual correction. It belongs in
+a separate approximation profile: evidence on Snapdragon 8 Elite Gen 5 phone
+NPU does not qualify this Windows X Elite. Check signed Gram-entry/norm
+assumptions and full-model quality rather than treating strict triangularity
+as a sufficient truncation-error bound. The [review](inference-algorithms.md#compression-bound-and-deferred-experiments)
+also distinguishes low-bit LUT KV research from lossless physical FP16 storage.
+
 ### N4: Select placement separately for prefill and decode
 
 Use a small successive screen, holding model, adapter setting, sampler, context

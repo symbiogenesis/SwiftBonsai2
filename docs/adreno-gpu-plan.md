@@ -189,6 +189,15 @@ model/cache precision and decoding semantics; lower precision, speculation and
 other quality-changing methods remain separate lanes. Apply Amdahl/bandwidth
 bounds before a backend rewrite.
 
+G4's [algorithm candidates and attention constraints](inference-algorithms.md#attention-locality-and-the-io-bound)
+include grouped-head/cache-sized tiling and chunkwise WY/UT GDN prefill. The
+FlashAttention I/O proof motivates reduced traffic within its memory model;
+it is not an Adreno speed forecast. The scalar reference rounds globally
+normalized probabilities to FP16 before multiplying V. Conventional online
+softmax needs a separately declared numerical contract and identity, or an
+implementation retaining that intermediate rounding. Preserve G2 state/logit,
+adapter and cancellation checks when changing scheduling or reduction order.
+
 ### G5 — Qualify and promote a useful profile
 
 - [ ] Retain exact model/export/adapter hashes, source/patch/build identities,

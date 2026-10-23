@@ -172,6 +172,14 @@ their activation quantizers differ. See the [packing assessment](swift-memory.md
 
 ## Architecture and dispatch
 
+The [algorithm review](inference-algorithms.md#packed-lookup-kernels) adds exact
+Bitnet.cpp TL1_1/TL2_1 as S3 comparisons and Vec-LUT as a later S5 block-prefill
+candidate. Retain this plan's NEON/scalar controls, our activation quantizers,
+per-group scales and generic PQ2 +2 semantics. Table quantization or copied
+overflow constants cannot silently change that contract. Further immutable
+validation reuse and compatible shared activation preparation must retain
+public input checks; reusable buffers alone do not remove repeated computation.
+
 Keep the runtime, loader, graph, codecs and broker under `forbid(unsafe_code)`.
 Proposed internal layout: a scalar implementation/oracle, a checked dispatch
 facade, portable NEON kernels, and optional architecture-specific kernels.

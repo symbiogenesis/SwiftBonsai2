@@ -37,6 +37,12 @@ PTQ stores the same 128-symbol scale group in 28 bytes rather than PQ2's 34:
 The code bytes use the pinned ceiling-scaled base-3 representation and its
 16-lane then 8-lane ordering. The tail contains a canonical zero unused trit.
 Conventional 256-group TQ1 cannot preserve both original 128-group scales.
+For arbitrary independent 128-trit blocks, `ceil(128 log2(3)) = 203` bits need
+26 whole code bytes; PTQ1 already meets that byte-aligned bound before its
+unchanged scale. Cross-block coding/correlations have different tradeoffs. See
+the [counting bound and pending Rust cache-storage work](inference-algorithms.md#compression-bound-and-deferred-experiments);
+physical FP16 KV and immutable checkpoint sharing are distinct from weight
+repacking and from this pinned native engine's existing FP16 cache allocation.
 The [native block definitions](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-common.h)
 and [codec](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-quants.c)
 define this layout. [Pq2Ptq1Codec.cs](../scripts/Pq2Ptq1Codec.cs) copies symbols

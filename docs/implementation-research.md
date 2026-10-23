@@ -2,6 +2,17 @@
 
 Work began October 22 and continued October 23, 2026. Each step was checked against primary sources before implementation. Later engine changes require their own literature search and sanity check.
 
+The October 23 [inference algorithm review](inference-algorithms.md) maps primary
+papers and current source to exact ternary TL/Vec-LUT kernels, chunkwise WY/UT
+GDN, hybrid page/checkpoint reuse and later suffix/SpecLA experiments. It also
+records unused prompt logits, repeated activation preparation and F32 backing
+for already-rounded FP16 KV as pending source-derived opportunities. The
+native/SIMD/accelerator plans carry the relevant tasks and numerical constraints.
+The review distinguishes implemented NEON/scratch work from proposals, applies
+the FlashAttention I/O and fixed-block packing bounds within their assumptions,
+and defers quality-changing approximations/trained components. It adds no
+implementation, benchmark evidence or promotion verdict.
+
 The October 23 [SIMD planning review](simd-plan.md) reads Davidoff's
 [2026 survey](https://shnatsel.github.io/state-of-simd-rust-2026/) alongside
 primary Rust and library documentation linked in the plan. Source inspection
