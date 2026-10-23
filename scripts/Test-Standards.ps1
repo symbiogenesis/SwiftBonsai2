@@ -58,13 +58,19 @@ $scratch = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('SwiftB
 if (-not [IO.Path]::IsPathFullyQualified($scratch) -or $scratch -match '%[^%]+%') { throw 'The system temp path must be expanded and absolute.' }
 $embeddedDirectory = Join-Path $scratch 'embedded-csharp'
 [IO.Directory]::CreateDirectory($embeddedDirectory) | Out-Null
-$files = @(Get-ChildItem -LiteralPath $repoRoot -File -Filter '*.psd1')
-foreach ($directory in @('scripts', 'tests', 'tools')) {
-    $path = Join-Path $repoRoot $directory
-    if (Test-Path -LiteralPath $path -PathType Container) {
-        $files += @(Get-ChildItem -LiteralPath $path -File -Recurse | Where-Object {
-            $_.Extension -in @('.ps1', '.psm1', '.psd1') -and $_.FullName -notmatch '[\\/](bin|obj|artifacts)[\\/]'
-        })
+$files = [Collections.Generic.List[IO.FileInfo]]::new()
+$directories = [Collections.Generic.Stack[string]]::new()
+$directories.Push($repoRoot)
+while ($directories.Count) {
+    foreach ($entry in (Get-ChildItem -LiteralPath $directories.Pop() -Force)) {
+        if ($entry.PSIsContainer) {
+            if ($entry.Name -notin @('.git', '.agents', '.codex', 'target', 'bin', 'obj', 'artifacts', 'node_modules', '.venv')) {
+                if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Do not hide repository source behind a directory link: $($entry.FullName)" }
+                $directories.Push($entry.FullName)
+            }
+        } elseif ($entry.Extension -in @('.ps1', '.psm1', '.psd1')) {
+            $files.Add($entry)
+        }
     }
 }
 $compilerOptions = @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0')
@@ -135,6 +141,11 @@ if ($diagnosticCount) { throw "PowerShell standards failed with $diagnosticCount
 
 $project = Join-Path $repoRoot 'tools/validation/CSharp.Strict.csproj'
 if (-not [IO.File]::Exists($project)) { throw 'The strict C# validation project is missing.' }
+# SDK selection follows the native working directory, which deliberately stays
+# outside the checkout. Carry the repository pin into this owned build lane.
+$sdkPin = Join-Path $repoRoot 'global.json'
+if (-not [IO.File]::Exists($sdkPin)) { throw 'The repository .NET SDK pin is missing.' }
+[IO.File]::Copy($sdkPin, (Join-Path $scratch 'global.json'), $false)
 $start = [Diagnostics.ProcessStartInfo]::new($DotNetPath)
 $start.WorkingDirectory = $scratch
 $start.UseShellExecute = $false

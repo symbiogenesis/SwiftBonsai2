@@ -35,7 +35,7 @@ function New-BonsaiServerPlan {
     param(
         [Parameter(Mandatory)][string]$DataDirectory,
         [ValidateRange(1024,65535)][int]$Port = 8080,
-        [Collections.IDictionary]$ServerProfile = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') | ConvertFrom-Json -DateKind String -AsHashtable)
+        [Alias('Profile')][Collections.IDictionary]$ServerProfile = (Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') | ConvertFrom-Json -DateKind String -AsHashtable)
     )
     Assert-BonsaiServerEnvironment
     # Reject UNC before filesystem probing; this plan promises local/offline paths.

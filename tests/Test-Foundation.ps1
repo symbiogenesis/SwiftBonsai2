@@ -198,7 +198,7 @@ if ($Case -in @('All','ServerPolicy')) {
     )) {
         $serverProfile = Get-Content -Raw -LiteralPath $profilePath | ConvertFrom-Json -DateKind String -AsHashtable
         $serverProfile[$mutation.Name] = $mutation.Value
-        Assert-Failure { New-BonsaiServerPlan -DataDirectory $data -ServerProfile $serverProfile } "Unsafe or mistyped profile accepted: $($mutation.Name)"
+        Assert-Failure { New-BonsaiServerPlan -DataDirectory $data -Profile $serverProfile } "Unsafe or mistyped profile accepted: $($mutation.Name)"
     }
     foreach ($path in @('relative','C:relative','C:\','\\server.invalid\share','//?/C:/Bonsai','//./C:/Bonsai', $repo)) {
         Assert-Failure { New-BonsaiServerPlan -DataDirectory $path } 'Server plan accepted a nonlocal or unsafe data path.'
