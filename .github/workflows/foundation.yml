@@ -48,8 +48,11 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-NativeRuntimeChecks-' + [guid]::NewGuid().ToString('N'))
           "NATIVE_RUNTIME_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          # The package registry enables all features, including experimental NEON.
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism-runtime -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
           cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --lib
+          cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --features experimental-neon --lib
+          cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --test simd simd_ 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'scalar-without-neon.log')
           & (Join-Path $env:CARGO_TARGET_DIR 'release/bonsai-prism-runtime.exe') --help
           'Native Rust token-level CPU reference checks passed. Full-model parity, broker integration and device qualification remain pending.' >> $env:GITHUB_STEP_SUMMARY
       - name: Retain native runtime check evidence
@@ -58,6 +61,38 @@ jobs:
         with:
           name: native-runtime-checks-${{ github.run_id }}
           path: ${{ env.NATIVE_RUNTIME_CHECK_EVIDENCE }}
+          if-no-files-found: error
+  runtime-scalar-fallback:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify non-ARM fallback with experimental feature enabled
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          rustup toolchain install 1.99.1-x86_64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
+          $identity = rustc +1.99.1-x86_64-pc-windows-msvc -vV
+          if ($identity -notcontains 'host: x86_64-pc-windows-msvc') { throw 'Expected x86-64 scalar fallback build.' }
+          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-ScalarFallback'
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-ScalarFallbackChecks-' + [guid]::NewGuid().ToString('N'))
+          "SCALAR_FALLBACK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism-runtime -Toolchain 1.99.1-x86_64-pc-windows-msvc -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -Build | ConvertTo-Json -Depth 8
+          cargo +1.99.1-x86_64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --features experimental-neon --lib
+          cargo +1.99.1-x86_64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --all-features --test simd simd_ 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'non-arm-fallback.log')
+          'Experimental NEON requests use the exact scalar fallback on x86-64; no target-device performance claim.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Retain scalar fallback evidence
+        if: always() && env.SCALAR_FALLBACK_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scalar-fallback-checks-${{ github.run_id }}
+          path: ${{ env.SCALAR_FALLBACK_EVIDENCE }}
           if-no-files-found: error
   prism:
     if: github.ref == 'refs/heads/main'
