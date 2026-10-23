@@ -66,10 +66,16 @@ $defaultArguments = @(Get-CpuCheckArgument -ModelPath $model)
 Assert-ArgumentValue -Arguments $defaultArguments -Name '--batch-size' -Value '256'
 Assert-ArgumentValue -Arguments $defaultArguments -Name '--ubatch-size' -Value '128'
 Assert-ArgumentValue -Arguments $defaultArguments -Name '--log-verbosity' -Value '2'
+Assert-ArgumentValue -Arguments $defaultArguments -Name '--system-prompt' -Value 'You are a helpful assistant.'
 $swiftArguments = @(Get-CpuCheckArgument -ModelPath $model -Profile swift-pq2-assessment)
 Assert-ArgumentValue -Arguments $swiftArguments -Name '--batch-size' -Value '128'
 Assert-ArgumentValue -Arguments $swiftArguments -Name '--ubatch-size' -Value '64'
 Assert-ArgumentValue -Arguments $swiftArguments -Name '--log-verbosity' -Value '3'
+# The pinned Swift template rejects system-only messages. Completion applies an
+# explicit system message before appending the user, causing an uncaught native
+# template exception. The synthetic Swift check must start with its user query.
+Assert ($swiftArguments -cnotcontains '--system-prompt') 'Swift completion would format a rejected system-only message.'
+Assert-ArgumentValue -Arguments $swiftArguments -Name '--prompt' -Value 'Reply with the word ready.'
 foreach ($arguments in @($defaultArguments, $swiftArguments)) {
     Assert-ArgumentValue -Arguments $arguments -Name '--model' -Value $model
     Assert-ArgumentValue -Arguments $arguments -Name '--ctx-size' -Value '8192'

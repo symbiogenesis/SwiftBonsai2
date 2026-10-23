@@ -75,15 +75,21 @@ function Get-CpuCheckArgument {
     )
     $policy = Get-CpuCheckPolicy -Profile $ProfileName
     $logVerbosity = if ($ProfileName -eq 'swift-pq2-assessment') { '3' } else { '2' }
-    @('--model', $ModelPath, '--ctx-size', [string]$policy.ContextTokens, '--parallel', '1',
+    $arguments = @('--model', $ModelPath, '--ctx-size', [string]$policy.ContextTokens, '--parallel', '1',
         '--cache-type-k', 'f16', '--cache-type-v', 'f16', '--gpu-layers', '0', '--device', 'none',
         '--no-kv-offload', '--no-op-offload', '--fit', 'off', '--threads', '4', '--threads-batch', '4',
         '--poll', '0', '--poll-batch', '0', '--batch-size', [string]$policy.BatchTokens,
         '--ubatch-size', [string]$policy.MicrobatchTokens,
         '--load-mode', 'mmap', '--no-repack', '--no-context-shift', '--offline', '--no-warmup',
         '--no-perf', '--log-verbosity', $logVerbosity, '--color', 'off', '--simple-io', '--no-display-prompt',
-        '--conversation', '--jinja', '--single-turn', '--n-predict', [string]$policy.TokenLimit,
-        '--system-prompt', 'You are a helpful assistant.', '--prompt', 'Reply with the word ready.')
+        '--conversation', '--jinja', '--single-turn', '--n-predict', [string]$policy.TokenLimit)
+    if ($ProfileName -eq 'reference-cpu') {
+        $arguments += @('--system-prompt', 'You are a helpful assistant.')
+    }
+    # Swift's template requires a user query. Completion formats an explicit
+    # system message on its own before appending the user, which throws. Start
+    # this synthetic conversation with the user; retain embedded default reasoning.
+    $arguments + @('--prompt', 'Reply with the word ready.')
 }
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
     [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
