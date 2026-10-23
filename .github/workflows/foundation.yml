@@ -49,6 +49,7 @@ jobs:
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-NativeRuntimeChecks-' + [guid]::NewGuid().ToString('N'))
           "NATIVE_RUNTIME_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism-runtime -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
+          cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --lib
           & (Join-Path $env:CARGO_TARGET_DIR 'release/bonsai-prism-runtime.exe') --help
           'Native Rust token-level CPU reference checks passed. Full-model parity, broker integration and device qualification remain pending.' >> $env:GITHUB_STEP_SUMMARY
       - name: Retain native runtime check evidence
@@ -493,6 +494,7 @@ jobs:
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-GgufChecks-' + [guid]::NewGuid().ToString('N'))
           "GGUF_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-gguf -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
+          cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-gguf --locked --offline --release --no-default-features --lib
           "BONSAI_GGUF_TOOL=$(Join-Path $env:CARGO_TARGET_DIR 'release/bonsai-gguf.exe')" >> $env:GITHUB_ENV
       - name: Retain GGUF Rust check evidence
         if: always() && env.GGUF_CHECK_EVIDENCE != ''
