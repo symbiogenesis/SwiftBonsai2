@@ -177,13 +177,16 @@ separate from storage sharing, allocation reuse and validated execution fusion.
 ## Required standard-profile qualification
 
 - [ ] **Mandatory TODO: establish that the model with the approved abliteration
-  LoRA has overall general performance on par with or better than the same
-  model without it.** The owner intends this LoRA to be standard, rather than
+  LoRA has decode tokens per second and output quality each on par with or
+  better than the same model without it.** The owner intends this LoRA to be standard, rather than
   an optional daily-profile feature. Acceptance requires the paired correctness,
   capability, creative quality, responsiveness and resource checks below on the
   target hardware through CI. Record predeclared parity tolerances and individual
   regressions; do not equate fewer refusals, successful loading or one faster
-  metric with overall parity. The no-LoRA configuration remains the required
+  metric with overall parity. Tokens per second and output quality are the two
+  primary acceptance criteria; memory, total tokens, retries and completed-work
+  time are supporting measurements and cannot mask regression in either primary
+  criterion. The no-LoRA configuration remains the required
   baseline/control. Until this gate passes, the current explicit development
   assessment switch does not certify or enable the intended standard profile.
 

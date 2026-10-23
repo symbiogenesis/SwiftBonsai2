@@ -32,8 +32,11 @@ reference below is retained for reproducibility.
   Run matched CI comparisons on the target Snapdragon with the exact model,
   representation, runtime, template, sampler, context and resource limits held
   fixed. Resolve adapter application/basis correctness first. Require overall
-  general capability, creative quality and responsiveness to be **on par with or
-  better than the no-LoRA baseline** before accepting the standard profile.
+  **decode tokens per second and output quality each to be on par with or better
+  than the no-LoRA baseline** before accepting the standard profile. Output
+  quality includes general capability and creative usefulness. These are the
+  primary performance criteria; lower total token use or fewer refusals cannot
+  substitute for a tokens-per-second or quality regression.
   Record prefill, first-token latency, decode throughput, tokens/time/retries to
   useful completed output, memory, power/thermals and failures. Predeclare
   workloads, quality rubric and parity tolerances; retain per-metric regressions
