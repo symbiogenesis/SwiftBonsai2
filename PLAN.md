@@ -246,6 +246,13 @@ Only write custom CPU kernels after profiling identifies the cost. Candidate wor
 
 ### Adreno Vulkan implementation
 
+**Current implementation is CPU-only.** The [Adreno GPU plan](docs/adreno-gpu-plan.md)
+turns M2 into G0–G5: native device inventory/build, exact-model correctness and
+placement, a bounded device CI screen, measured kernel/memory work, and profile
+promotion with rollback. Start with the pinned Prism backend; this bring-up does
+not wait for the Rust replacement. Rust R6 later reuses these contracts after
+CPU parity. No Adreno performance or optimal-use verdict is established.
+
 1. Enumerate actual Vulkan devices, API/features/extensions, subgroup behavior, allocation limits, and memory budgets using native tools.
 2. Compile host code and runtime libraries for ARM64, with a compatible shader toolchain. A working x64 executable under emulation does not qualify the native build.
 3. Check packed matmul, embeddings/output, FWHT/sign handling, normalization, RoPE, full attention, Gated Delta Net, and convolution/state updates.
@@ -795,7 +802,7 @@ Effort ranges below are planning estimates for one engineer after dependencies a
 | M1: CPU + authenticated direct local chat | 1–3 days for engine bring-up; isolation gaps scoped separately | Native matched engine, inference-only UI/launcher, key/origin/endpoint controls, focused regressions and inference-policy qualification | Correct bounded chat, cancellation, offline restart; restricted daily process policy passes or remains explicitly development-only |
 | M1a: chosen engine's creative/comfort qualification | 1–3 days after initial loading paths work | Scene packets/project bible, visible context/output budgets, bounded creative profile, polling/thread screen and sustained CI evidence | Useful prose/art collaboration with acceptable waits, heat, memory, and daily security on the selected model |
 | M1b: optional agent + containment qualification | 3–5 days if wanted and supported paths work | Native agent candidate, MXC broker/policy, bounded inference bridge, bypass checks | Successful reviewed task and enforced whole-agent boundary before enabling tools |
-| M2: Vulkan qualification | 2–5 days if existing kernels work | Native GPU build, placement audit, CI CPU/GPU comparison | Correct graph and demonstrated benefit, or documented no-go |
+| M2: Vulkan qualification | 2–5 days if existing kernels work | [Adreno G0–G5](docs/adreno-gpu-plan.md): native GPU build, exact-model/LoRA correctness, placement audit, paired device CI and tuning | Correct graph and demonstrated useful benefit within memory/comfort limits, or documented no-go; retain CPU rollback |
 | M3: cache and context qualification | 2–4 days | Hybrid-state tests, memory estimator, bounded reuse, accepted KV types | Fresh/reused continuations agree; selected contexts fit and retain quality |
 | M4: profiles and performance report | 2–4 days | Creative/daily/long/battery profiles, optional vision/accepted agent profiles, CI provenance, installation guide | Sustained creative-task and memory acceptance on settled main; containment acceptance for enabled tools |
 | M5: Hexagon execution and qualification | N0/N1 discovery about 2 days; scope port/tuning from gaps | [N0–N7](docs/hexagon-npu-plan.md): signed access, exact packed kernels/graph/state, phase placement, guarded profile, device report and rollback | Exact-model/state/LoRA correctness, bounded signed deployment and useful CI latency/energy benefit, or explicit no-go; all exits pending |

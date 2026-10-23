@@ -152,6 +152,10 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
 
 - [ ] **R6 — Optimize the Adreno path after CPU parity.** Implement the same
   packed types, transforms and full hybrid graph on a supported GPU backend.
+  Follow the [Adreno G0–G5 roadmap](adreno-gpu-plan.md), reusing the initial Prism
+  capability report, correctness fixtures and placement ledger. Initial Prism
+  M2 bring-up can proceed before the Rust replacement; Rust GPU acceptance
+  still requires its own implementation and evidence.
   Investigate persistent device state/scratch, fused kernels, fewer submissions,
   graph/command reuse and synchronization reduction. Qualify CPU/GPU placement
   separately for prefill and decode, including migration costs, shared-memory

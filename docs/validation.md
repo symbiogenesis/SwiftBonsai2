@@ -41,6 +41,15 @@ checks are allowed. All timing benchmarks remain CI-only; promotion requires
 paired target-device kernel and end-to-end evidence. These are planned gates,
 not checks already implemented or passed by the scalar runtime.
 
+Future Adreno work follows the [GPU G0–G5 roadmap](adreno-gpu-plan.md): native
+ARM64 capability/build evidence, exact-artifact kernel and whole-graph parity,
+explicit fallback/transfer placement, shared-memory admission, and paired
+target-device CI qualification. Include the approved LoRA, recurrent/KV state,
+cancellation/device-loss recovery and sustained creative/comfort behavior.
+Local builds and focused correctness checks are allowed; all benchmarks,
+timing-profile captures and full suites remain CI-only. These gates are pending;
+current builds and launch policies select CPU-only execution.
+
 Future Hexagon work follows [M5/N0–N7](hexagon-npu-plan.md): signed native
 access, exact packed arithmetic/transforms, per-operation placement, complete
 KV/recurrent-state recovery, host/shared/device memory accounting and guarded
