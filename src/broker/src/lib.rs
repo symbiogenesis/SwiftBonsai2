@@ -28,7 +28,7 @@ pub mod transport;
 
 use http::{HeaderMap, HeaderValue, Method, Version, request::Parts, uri::PathAndQuery};
 use serde::{Deserialize, Deserializer, Serialize, de};
-use std::{fmt, marker::PhantomData};
+use std::{borrow::Cow, fmt, marker::PhantomData};
 use subtle::ConstantTimeEq;
 
 /// Largest accepted client request body in bytes.
@@ -222,7 +222,7 @@ impl AuthorizedHead {
         }
         // Deserialize directly: maps/Value would silently erase duplicate keys.
         // Parser error strings can include private values; never propagate them.
-        let Object(chat): Object<ClientChat> =
+        let Object(chat): Object<ClientChat<'_>> =
             serde_json::from_slice(body).map_err(|_| Rejection::ChatSchema)?;
         if !valid_history(&chat.messages) {
             return Err(Rejection::ChatSchema);
@@ -258,9 +258,9 @@ impl AuthorizedHead {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ClientChat {
-    #[serde(deserialize_with = "deserialize_messages")]
-    messages: Vec<Message>,
+struct ClientChat<'a> {
+    #[serde(borrow, deserialize_with = "deserialize_messages")]
+    messages: Vec<Message<'a>>,
     #[serde(default = "default_cap")]
     max_completion_tokens: u32,
     #[serde(default = "default_stream")]
@@ -277,9 +277,12 @@ const fn default_stream() -> bool {
 /// Text only; strings resembling URLs remain plain text and are never fetched.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct Message {
+struct Message<'a> {
     role: Role,
-    content: String,
+    // JSON text without escapes can be borrowed until canonical serialization;
+    // escaped text still uses Serde's owned decoding without changing its bytes.
+    #[serde(borrow)]
+    content: Cow<'a, str>,
 }
 
 #[derive(Serialize, PartialEq, Eq)]
@@ -336,16 +339,37 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Object<T> {
 
 fn deserialize_messages<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<Vec<Message>, D::Error> {
-    Vec::<Object<Message>>::deserialize(deserializer).map(|messages| {
-        messages
-            .into_iter()
-            .map(|Object(message)| message)
-            .collect()
-    })
+) -> Result<Vec<Message<'de>>, D::Error> {
+    struct MessagesVisitor;
+
+    impl<'de> de::Visitor<'de> for MessagesVisitor {
+        type Value = Vec<Message<'de>>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a bounded array of message objects")
+        }
+
+        fn visit_seq<A: de::SeqAccess<'de>>(
+            self,
+            mut sequence: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut messages = Vec::new();
+            while let Some(Object(message)) = sequence.next_element::<Object<Message<'de>>>()? {
+                // Stop on the first excess message instead of allocating and
+                // parsing every remaining message in an oversized history.
+                if messages.len() == MAX_MESSAGES {
+                    return Err(de::Error::custom("too many messages"));
+                }
+                messages.push(message);
+            }
+            Ok(messages)
+        }
+    }
+
+    deserializer.deserialize_seq(MessagesVisitor)
 }
 
-fn valid_history(messages: &[Message]) -> bool {
+fn valid_history(messages: &[Message<'_>]) -> bool {
     if messages.is_empty() || messages.len() > MAX_MESSAGES {
         return false;
     }
@@ -429,8 +453,8 @@ impl AdmittedChat {
 }
 
 #[derive(Serialize)]
-struct BackendChat<'a> {
-    messages: &'a [Message],
+struct BackendChat<'a, 'b> {
+    messages: &'a [Message<'b>],
     max_completion_tokens: u32,
     stream: bool,
     n: u8,
@@ -444,4 +468,23 @@ struct BackendChat<'a> {
     presence_penalty: f32,
     frequency_penalty: f32,
     repeat_penalty: f32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ClientChat, Cow, Object};
+
+    #[test]
+    fn message_content_borrows_plain_text_and_decodes_escapes() -> Result<(), serde_json::Error> {
+        let Object(chat): Object<ClientChat<'_>> = serde_json::from_slice(
+            br#"{"messages":[{"role":"user","content":"plain text"},{"role":"assistant","content":"line\n\u96ea"}]}"#,
+        )?;
+        assert!(matches!(
+            chat.messages[0].content,
+            Cow::Borrowed("plain text")
+        ));
+        assert!(matches!(chat.messages[1].content, Cow::Owned(_)));
+        assert_eq!(chat.messages[1].content, "line\n雪");
+        Ok(())
+    }
 }

@@ -310,7 +310,9 @@ fn verify_installation<R: Read + Seek>(
     let mut installed_files = BTreeSet::new();
     let mut installed_directories = BTreeSet::new();
     enumerate_installation(root, root, &mut installed_files, &mut installed_directories)?;
-    if installed_files != expected_files.keys().cloned().collect()
+    // Both collections iterate sorted, unique names; compare them directly
+    // instead of cloning every expected path into a second tree.
+    if !installed_files.iter().eq(expected_files.keys())
         || installed_directories != expected_directories
     {
         return Err(ArtifactError::Installation);

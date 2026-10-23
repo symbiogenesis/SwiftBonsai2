@@ -380,6 +380,33 @@ fn rejects_invalid_history_and_assistant_prefill() {
 }
 
 #[test]
+fn message_limit_preserves_maximum_valid_histories() {
+    for count in [MAX_MESSAGES - 1, MAX_MESSAGES, MAX_MESSAGES + 1] {
+        let messages: Vec<_> = (0..count)
+            .map(|index| {
+                let role = if count % 2 == 0 && index == 0 {
+                    "system"
+                } else if index % 2 == count % 2 {
+                    "assistant"
+                } else {
+                    "user"
+                };
+                serde_json::json!({"role": role, "content": "quote: \"; newline:\n; snow: 雪"})
+            })
+            .collect();
+        let body = serde_json::to_vec(&serde_json::json!({"messages": messages})).unwrap();
+        if count > MAX_MESSAGES {
+            rejected_body(&body, Rejection::ChatSchema);
+        } else {
+            let admitted = prepare(&body).unwrap().admit(|_| Ok(1)).unwrap();
+            let canonical: serde_json::Value =
+                serde_json::from_slice(admitted.backend_body()).unwrap();
+            assert_eq!(canonical["messages"], serde_json::json!(messages));
+        }
+    }
+}
+
+#[test]
 fn exact_count_sees_identical_canonical_body_and_preserved_text() {
     let body = br#"{"messages":[{"role":"system","content":"Preserve my voice."},{"role":"user","content":"First draft"},{"role":"assistant","content":"A scene."},{"role":"user","content":"Revise.\nhttps://example.invalid is plain text."}],"max_completion_tokens":512,"stream":false}"#;
     let mut counted = Vec::new();
