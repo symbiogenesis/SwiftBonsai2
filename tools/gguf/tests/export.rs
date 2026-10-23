@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use bonsai_gguf::{CODEC_COMMIT, PRISM_DIALECT, Result, export_ptq1, inspect};
+use bonsai_gguf::{CODEC_COMMIT, PRISM_DIALECT, Result, VerifiedModel, export_ptq1, inspect};
 use sha2::{Digest, Sha256};
 
 struct Fixture {
@@ -131,6 +131,104 @@ fn convert(source: &Path, output: &Path, bytes: &[u8]) -> Result<serde_json::Val
         &sha(bytes),
         Duration::from_secs(30),
     )
+}
+
+#[test]
+fn inspection_cursor_preserves_offsets_and_hashes_across_metadata_paths() -> Result<()> {
+    let scratch = scratch()?;
+    let source = scratch.join("metadata.gguf");
+    let mut bytes = Vec::new();
+    u32_bytes(&mut bytes, 0x4655_4747);
+    u32_bytes(&mut bytes, 3);
+    u64_bytes(&mut bytes, 1);
+    u64_bytes(&mut bytes, 7);
+    string_metadata(&mut bytes, "general.architecture", "synthetic")?;
+
+    // Inspection skips these payloads while retained models read them.
+    let long_text = "x".repeat(65_537);
+    string_metadata(&mut bytes, "synthetic.description", &long_text)?;
+    let tokenizer_start = bytes.len();
+    string_metadata(&mut bytes, "tokenizer.chat_template", &long_text)?;
+
+    text(&mut bytes, "tokenizer.boolean_values")?;
+    u32_bytes(&mut bytes, 9);
+    u32_bytes(&mut bytes, 7);
+    u64_bytes(&mut bytes, 65_537);
+    bytes.extend((0..65_537).map(|index| u8::from(index % 2 != 0)));
+
+    text(&mut bytes, "tokenizer.numeric_values")?;
+    u32_bytes(&mut bytes, 9);
+    u32_bytes(&mut bytes, 4);
+    u64_bytes(&mut bytes, 4097);
+    for index in 0..4097 {
+        u32_bytes(&mut bytes, index);
+    }
+
+    text(&mut bytes, "tokenizer.strings")?;
+    u32_bytes(&mut bytes, 9);
+    u32_bytes(&mut bytes, 8);
+    u64_bytes(&mut bytes, 2);
+    text(&mut bytes, "first")?;
+    text(&mut bytes, "second")?;
+    let tokenizer_end = bytes.len();
+
+    text(&mut bytes, "synthetic.last")?;
+    u32_bytes(&mut bytes, 10);
+    u64_bytes(&mut bytes, 0x0123_4567_89ab_cdef);
+    let metadata_end = bytes.len();
+    tensor(&mut bytes, "synthetic.tensor", 1, 0, 0)?;
+    let descriptors_end = bytes.len();
+    let data_offset = aligned(descriptors_end);
+    bytes.resize(data_offset, 0);
+    bytes.extend([1, 2, 3, 4]);
+    fs::write(&source, &bytes)?;
+    let digest = sha(&bytes);
+    let report = inspect(
+        &source,
+        "Stock",
+        false,
+        u64::try_from(bytes.len())?,
+        &digest,
+    )?;
+    assert_eq!(report["MetadataEndOffset"], metadata_end);
+    assert_eq!(report["TensorDescriptorsEndOffset"], descriptors_end);
+    assert_eq!(report["TensorDataOffset"], data_offset);
+    assert_eq!(report["TokenizerMetadataRecords"], 4);
+    assert_eq!(
+        report["TokenizerMetadataBytes"],
+        tokenizer_end - tokenizer_start
+    );
+    assert_eq!(
+        report["TokenizerMetadataSha256"],
+        sha(&bytes[tokenizer_start..tokenizer_end])
+    );
+    assert_eq!(
+        report["EmbeddedTemplates"]["tokenizer.chat_template"]["Sha256"],
+        sha(long_text.as_bytes())
+    );
+    assert_eq!(
+        report["Scalars"]["synthetic.last"],
+        0x0123_4567_89ab_cdef_u64
+    );
+
+    let mut model = VerifiedModel::open(
+        &source,
+        "Stock",
+        u64::try_from(bytes.len())?,
+        &digest,
+        8 * 1024 * 1024,
+    )?;
+    let metadata = model.metadata();
+    assert_eq!(metadata["synthetic.description"], long_text);
+    assert_eq!(metadata["tokenizer.chat_template"], long_text);
+    assert_eq!(metadata["tokenizer.boolean_values"][65_536], false);
+    assert_eq!(metadata["tokenizer.numeric_values"][4096], 4096);
+    assert_eq!(metadata["tokenizer.strings"][1], "second");
+    assert_eq!(metadata["synthetic.last"], 0x0123_4567_89ab_cdef_u64);
+    assert_eq!(model.read_tensor(0, 4)?, [1, 2, 3, 4]);
+    drop(model);
+    fs::remove_dir_all(scratch)?;
+    Ok(())
 }
 
 #[test]

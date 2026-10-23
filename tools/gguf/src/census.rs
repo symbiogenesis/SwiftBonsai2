@@ -58,7 +58,7 @@ pub(crate) fn census(file: &mut File, inspection: &Inspection) -> Result<Value> 
     let mut unchanged_bytes = 0;
     let mut all_eligible = true;
     let mut tensors: Vec<_> = inspection.tensors.iter().collect();
-    tensors.sort_by_key(|tensor| tensor.offset);
+    tensors.sort_unstable_by_key(|tensor| tensor.offset);
     for tensor in tensors {
         if tensor.type_id != 142 {
             unchanged_bytes = add(unchanged_bytes, tensor.bytes)?;

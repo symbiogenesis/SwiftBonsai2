@@ -125,6 +125,9 @@ const fn width(type_id: u32) -> Option<u64> {
 
 struct Parser<'a> {
     file: &'a mut File,
+    // Reads and skips advance this cursor; hashing restores the file cursor.
+    // Tracking it avoids an OS position query for every scalar/limit check.
+    position: u64,
     file_bytes: u64,
     elements: u64,
     last_float: f64,
@@ -142,12 +145,12 @@ impl Parser<'_> {
         Ok(())
     }
 
-    fn position(&mut self) -> Result<u64> {
-        Ok(self.file.stream_position()?)
+    const fn position(&self) -> u64 {
+        self.position
     }
 
-    fn need(&mut self, bytes: u64) -> Result<()> {
-        let position = self.position()?;
+    fn need(&self, bytes: u64) -> Result<()> {
+        let position = self.position();
         if bytes > self.file_bytes.saturating_sub(position)
             || bytes > HEADER_LIMIT.saturating_sub(position)
         {
@@ -162,6 +165,7 @@ impl Parser<'_> {
         self.need(u64::try_from(N)?)?;
         let mut bytes = [0; N];
         self.file.read_exact(&mut bytes)?;
+        self.position = add(self.position, u64::try_from(N)?)?;
         Ok(bytes)
     }
 
@@ -184,12 +188,14 @@ impl Parser<'_> {
 
     fn read_text(&mut self, size: usize) -> Result<String> {
         self.file.read_exact(&mut self.buffer[..size])?;
+        self.position = add(self.position, u64::try_from(size)?)?;
         Ok(std::str::from_utf8(&self.buffer[..size])?.to_owned())
     }
 
     fn skip(&mut self, bytes: u64) -> Result<()> {
-        let position = add(self.position()?, bytes)?;
+        let position = add(self.position(), bytes)?;
         self.file.seek(SeekFrom::Start(position))?;
+        self.position = position;
         Ok(())
     }
 
@@ -232,6 +238,7 @@ impl Parser<'_> {
         while count > 0 {
             let size = usize::try_from(count.min(BUFFER_BYTES_U64))?;
             self.file.read_exact(&mut self.buffer[..size])?;
+            self.position = add(self.position, u64::try_from(size)?)?;
             if self.buffer[..size].iter().any(|value| *value > 1) {
                 return Err(bad("invalid boolean."));
             }
@@ -257,6 +264,7 @@ impl Parser<'_> {
                 bytes.try_reserve_exact(size)?;
                 bytes.resize(size, 0);
                 self.file.read_exact(&mut bytes)?;
+                self.position = add(self.position, u64::try_from(size)?)?;
                 return Ok(Some(Value::String(String::from_utf8(bytes)?)));
             }
             if retain && size <= BUFFER_BYTES_U64 {
@@ -316,7 +324,7 @@ impl Parser<'_> {
     }
 
     fn hash_record(&mut self, hash: &mut Sha256, start: u64, length: u64) -> Result<()> {
-        let restore = self.position()?;
+        let restore = self.position();
         self.file.seek(SeekFrom::Start(start))?;
         let result = (|| -> Result<()> {
             let mut remaining = length;
@@ -405,6 +413,7 @@ pub(crate) fn inspect_retained(
     let file_bytes = file.metadata()?.len();
     let mut parser = Parser {
         file,
+        position: 0,
         file_bytes,
         elements: 0,
         last_float: 0.0,
@@ -435,7 +444,7 @@ pub(crate) fn inspect_retained(
     let mut tokenizer_bytes = 0;
     let mut tokenizer_records = 0u64;
     for _ in 0..metadata_count {
-        let start = parser.position()?;
+        let start = parser.position();
         let key = parser.text(1024)?;
         // Include a conservative allowance for map/tree nodes, keys and JSON
         // scalar storage, in addition to arrays and string payloads below.
@@ -445,12 +454,12 @@ pub(crate) fn inspect_retained(
         }
         let type_id = parser.u32()?;
         if key == "general.file_type" {
-            file_type_position = Some(parser.position()?);
+            file_type_position = Some(parser.position());
         }
         let template =
             key == "tokenizer.chat_template" || key.starts_with("tokenizer.chat_template.");
         if template && type_id == 8 && memory_limit.is_none() {
-            let value_start = parser.position()?;
+            let value_start = parser.position();
             let size = parser.u64()?;
             if size > STRING_LIMIT {
                 return Err(bad("template exceeds inspection limit."));
@@ -518,13 +527,13 @@ pub(crate) fn inspect_retained(
             }
         }
         if key.starts_with("tokenizer.") {
-            let bytes = parser.position()? - start;
+            let bytes = parser.position() - start;
             parser.hash_record(&mut tokenizer_hash, start, bytes)?;
             tokenizer_bytes = add(tokenizer_bytes, bytes)?;
             tokenizer_records += 1;
         }
     }
-    let metadata_end = parser.position()?;
+    let metadata_end = parser.position();
     let architecture = scalars
         .get("general.architecture")
         .and_then(Value::as_str)
@@ -563,7 +572,7 @@ pub(crate) fn inspect_retained(
             elements = mul(elements, size)?;
             dimensions.push(size);
         }
-        let type_position = parser.position()?;
+        let type_position = parser.position();
         let type_id = parser.u32()?;
         let kind = kind(type_id, dialect == PRISM_DIALECT)
             .ok_or_else(|| bad(format!("unknown/unsupported tensor type ID {type_id}.")))?;
@@ -595,7 +604,7 @@ pub(crate) fn inspect_retained(
             type_position,
         });
     }
-    let descriptors_end = parser.position()?;
+    let descriptors_end = parser.position();
     let data_offset = if tensor_count > 0 {
         mul(
             add(descriptors_end, u64::from(alignment) - 1)? / u64::from(alignment),
@@ -608,7 +617,9 @@ pub(crate) fn inspect_retained(
         return Err(bad("tensor data start exceeds file length."));
     }
     let mut ordered: Vec<_> = tensors.iter().collect();
-    ordered.sort_by_key(|tensor| tensor.offset);
+    // Valid nonempty payloads have distinct offsets, so stable tie ordering
+    // cannot affect an accepted file. Sort without an extra scratch allocation.
+    ordered.sort_unstable_by_key(|tensor| tensor.offset);
     let mut previous_end = 0;
     for tensor in ordered {
         let end = add(tensor.offset, tensor.bytes)?;

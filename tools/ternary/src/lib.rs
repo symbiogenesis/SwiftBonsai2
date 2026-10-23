@@ -142,6 +142,48 @@ pub fn pack_ptq(source: &Pq2Block) -> Result<PtqBlock, Error> {
     Ok(result)
 }
 
+// Each packed byte represents five base-three digits. The final two bytes
+// represent four digits followed by zero. Store decoded digits and whether
+// encoding them again would reproduce the input, so unpacking does not need
+// a second full pass through pack_ptq to reject alternate encodings.
+#[derive(Clone, Copy)]
+struct PtqDigits {
+    digits: [u8; 5],
+    canonical_five: bool,
+    canonical_four: bool,
+}
+
+const fn ptq_digits() -> [PtqDigits; 256] {
+    let mut table = [PtqDigits {
+        digits: [0; 5],
+        canonical_five: false,
+        canonical_four: false,
+    }; 256];
+    let mut index = 0;
+    let mut byte = 0_u16;
+    while byte < 256 {
+        let mut fraction = byte;
+        let mut value = 0;
+        let mut digit = 0;
+        while digit < 5 {
+            fraction *= 3;
+            let trit = fraction >> 8;
+            // A trit is at most two, so its high byte is always zero.
+            table[index].digits[digit] = trit.to_le_bytes()[0];
+            value = value * 3 + trit;
+            fraction &= 255;
+            digit += 1;
+        }
+        table[index].canonical_five = (value * 256).div_ceil(243) == byte;
+        table[index].canonical_four = (value / 3 * 3 * 256).div_ceil(243) == byte;
+        byte += 1;
+        index += 1;
+    }
+    table
+}
+
+const PTQ_DIGITS: [PtqDigits; 256] = ptq_digits();
+
 /// Unpacks one native PTQ group to PQ2.
 ///
 /// Unlike the C++ reference, this boundary rejects alternate encodings that
@@ -154,30 +196,30 @@ pub fn unpack_ptq(source: &PtqBlock) -> Result<Pq2Block, Error> {
     check_scale(&source[26..])?;
     let mut result = [0; 34];
     result[..2].copy_from_slice(&source[26..]);
-    let powers = [1_u8, 3, 9, 27, 81];
     let mut position = 0;
     for width in [16, 8] {
         let start = position / 5;
-        for (n, power) in powers.iter().enumerate() {
-            for m in 0..width {
-                let q = source[start + m].wrapping_mul(*power);
-                let c = u8::try_from((u16::from(q) * 3) >> 8).map_err(|_| Error::SizeOverflow)?;
+        for m in 0..width {
+            let digits = &PTQ_DIGITS[usize::from(source[start + m])];
+            if !digits.canonical_five {
+                return Err(Error::NoncanonicalPtq);
+            }
+            for (n, c) in digits.digits.iter().enumerate() {
                 let index = position + n * width + m;
                 result[2 + index / 4] |= c << (2 * (index % 4));
             }
         }
         position += width * 5;
     }
-    for (n, power) in powers[..4].iter().enumerate() {
-        for h in 0..2 {
-            let q = source[24 + h].wrapping_mul(*power);
-            let c = u8::try_from((u16::from(q) * 3) >> 8).map_err(|_| Error::SizeOverflow)?;
+    for h in 0..2 {
+        let digits = &PTQ_DIGITS[usize::from(source[24 + h])];
+        if !digits.canonical_four {
+            return Err(Error::NoncanonicalPtq);
+        }
+        for (n, c) in digits.digits[..4].iter().enumerate() {
             let index = 120 + n * 2 + h;
             result[2 + index / 4] |= c << (2 * (index % 4));
         }
-    }
-    if pack_ptq(&result)? != *source {
-        return Err(Error::NoncanonicalPtq);
     }
     Ok(result)
 }

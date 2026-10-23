@@ -126,3 +126,35 @@ fn noncanonical_ptq_bytes_are_rejected() {
         assert_eq!(unpack_ptq(&bad), Err(Error::NoncanonicalPtq));
     }
 }
+
+#[test]
+fn every_ptq_byte_and_position_preserves_canonical_validation() {
+    let mut source = zeros(0x3c00);
+    source[2..].fill(0);
+    let baseline = pack_ptq(&source).unwrap();
+    for position in 0..26 {
+        let (values, multiplier) = if position < 24 { (243, 256) } else { (81, 768) };
+        for byte in 0..=255_u8 {
+            // Independently enumerate the unique serialized representatives
+            // of five trits, or four trits with an implicit trailing zero.
+            let canonical =
+                (0..values).any(|value: u32| (value * multiplier).div_ceil(243) == u32::from(byte));
+            let mut packed = baseline;
+            packed[position] = byte;
+            if canonical {
+                let decoded = unpack_ptq(&packed).unwrap();
+                assert_eq!(
+                    pack_ptq(&decoded).unwrap(),
+                    packed,
+                    "byte {byte}, position {position}"
+                );
+            } else {
+                assert_eq!(
+                    unpack_ptq(&packed),
+                    Err(Error::NoncanonicalPtq),
+                    "byte {byte}, position {position}"
+                );
+            }
+        }
+    }
+}

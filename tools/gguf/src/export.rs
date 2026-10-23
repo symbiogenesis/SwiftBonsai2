@@ -184,7 +184,7 @@ pub(super) fn export(
         return Err(bad("export metadata exceeds the source header."));
     }
     let mut ordered = inspection.tensors.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|tensor| tensor.offset);
+    ordered.sort_unstable_by_key(|tensor| tensor.offset);
     let mut offsets = Vec::with_capacity(ordered.len());
     let mut extent = 0;
     let mut blocks = 0;
