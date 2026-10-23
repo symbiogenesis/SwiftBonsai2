@@ -105,6 +105,8 @@ impl OwnedProcess {
     }
 
     /// Returns the observed peak job-wide committed bytes.
+    /// Windows may include denied allocation requests in this diagnostic counter;
+    /// it is not a measurement of successfully resident or accepted allocations.
     ///
     /// # Errors
     /// Returns failed Windows job-accounting operations.
