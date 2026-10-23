@@ -6,10 +6,10 @@ the Apache License, Version 2.0. See LICENSE.
 
 Third-party material retains its original license and attribution. This
 project includes Prism/ggml-derived codec and loader portions, including in
-tools/bitcos, tools/prism (including Apply-Overlay.ps1), src/prism-runtime,
-scripts/Pq2BitcosCodec.cs, scripts/Pq2Ptq1Codec.cs, and tests/PrismCodecProbe.cs.
+tools/ternary, tools/prism (including Apply-Overlay.ps1), src/prism-runtime,
+scripts/Pq2Ptq1Codec.cs, and tests/PrismCodecProbe.cs.
 Their upstream MIT terms are reproduced below and retained separately in
-tools/bitcos/PRISM-NOTICE.txt and tools/prism/PRISM-LICENSE.txt.
+tools/ternary/PRISM-NOTICE.txt and tools/prism/PRISM-LICENSE.txt.
 
 Upstream: https://github.com/PrismML-Eng/llama.cpp
 Codec reference: 73bfe6cc485554822f80c473a3c0c4f25e80f41b

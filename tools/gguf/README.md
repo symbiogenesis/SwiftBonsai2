@@ -1,7 +1,7 @@
 # GGUF tools
 
 `bonsai-gguf` owns bounded GGUF v3 inspection, Prism PQ2 census, and experimental
-weight-lossless PTQ1 export. It reuses the Rust PQ2/PTQ1 codecs in `tools/bitcos`.
+weight-lossless PTQ1 export. It reuses the Rust PQ2/PTQ1 codecs in `tools/ternary`.
 Every operation verifies the complete input artifact against an explicit byte
 length and SHA-256. On Windows the source handle denies writes and deletion
 through verification and use.

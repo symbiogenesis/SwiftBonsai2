@@ -56,7 +56,7 @@ dependency without a permissive option; its scope is the build tool. See its
 [license](https://github.com/mozilla/cbindgen/blob/v0.29.4/LICENSE) and Mozilla's
 [MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/) for distribution obligations.
 
-The native Rust reference reuses the existing local GGUF/BITCOS/Prism crates
+The native Rust reference reuses the existing local GGUF/ternary/Prism crates
 without adding any external package/version pair to that reviewed set. Its graph
 and scalar numerical code follow pinned Prism sources; the upstream MIT notice
 is retained in `src/prism-runtime/PRISM-LICENSE.txt` and the root `NOTICE`.

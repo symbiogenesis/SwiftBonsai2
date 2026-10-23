@@ -3,22 +3,17 @@
 **Research and implementation plan — October 22, 2026**
 
 **Current priority — October 23, 2026:** the owner explicitly prioritized Swift
-Bonsai 2 and BITCOS memory assessment. [The assessment](docs/swift-memory.md)
-pins and verifies the current 6.71 GiB PQ2 artifact and Prism's native ARM64 CPU
-package. Actual symbol census finds 32.76% zeros, no fourth symbols and finite
-nonzero scales; block-rounded BITCOS accounting suggests about 0.98 GiB less
-serialized data before new indexes/alignment. A reference block codec preserves
-exact source bytes in focused regressions. Swift's explicit 8K CPU check uses
-12 GiB service allowance plus the unchanged 4 GiB physical reserve and passes
-admission and completes the fixed 16-token decode after a template-compatible
-system-preamble repair. An exact current-weight PTQ1 exporter offers 1.173 GiB
-of payload savings; standalone compact BITCOS dots pass focused numerical
-parity. The verified current-weight PTQ export completes bounded native decode,
-including the separately pinned pretrained adapter. BITCOS's initial C++ ARM
-synthetic performance failed promotion even after a vector decoder improvement.
-The standalone implementation is now safe Rust with scalar computation; exact
-C++ byte/result comparisons passed before its C++ sources were removed. Rust
-SIMD and performance remain unqualified. New systems components default to Rust;
+Bonsai 2 memory assessment. [The assessment](docs/swift-memory.md) pins and
+verifies the current 6.71 GiB PQ2 artifact and Prism's native ARM64 CPU package.
+Actual symbol census finds 32.76% zeros, no fourth symbols and finite nonzero
+scales. Swift's explicit 8K CPU check uses a 12 GiB service allowance plus the
+unchanged 4 GiB physical reserve and completes its fixed 16-token decode after
+a template-compatible system-preamble repair. An exact current-weight PTQ1
+exporter saves 1.173 GiB of payload and completes bounded native decode,
+including the separately pinned pretrained adapter. The alternate packing
+experiment was [retired](docs/bitcos-retirement.md).
+
+New systems components default to Rust;
 replacement of the pinned native engine is now tracked in the
 [native Rust engine TODO](docs/native-rust-engine.md), milestone M7. The existing
 Rust LoRA storage component is retained as part of that work.
@@ -86,7 +81,6 @@ The owner also places strong weight on **short waits and comfortable sustained l
 | NPU | Time-boxed feasibility investigation | No demonstrated native Swift packed-weight path established here |
 | Speculation | Disabled initially; model-free prompt lookup first experiment | Copy-heavy revision may benefit without a second model; verification/rollback remain gates |
 | Additional CPU optimization | Profile first; consider WoS Porter and T-MAC-style lookup kernels | Target a demonstrated bottleneck in the selected model; Swift adapters remain separate work |
-| BITCOS | Gated lossless repacking/kernel experiment | Actual symbol census, native kernels, and end-to-end benefit required |
 | NoGraphicsAPI | Do not replace the ggml Vulkan backend with it | Vulkan-based graphics abstraction with narrower target requirements |
 | Performance evidence | Manually triggered self-hosted CI on this laptop | All benchmarks are CI-only under the working preferences |
 
@@ -163,7 +157,7 @@ Sample multiple outputs using a predeclared rubric; creative preference is not a
 
 [EQ-Bench Creative Writing][creative-bench] and its [longform benchmark][longform-bench] supply published scores, methodology, and samples for the upfront literature review, as well as ideas for later engine validation. Record the evaluated version and inspect existing samples. Judge/API settings and full-precision or hosted models differ from these exact quantized files; mark indirect evidence accordingly. An absent model entry is an evidence gap, not a requirement to run that benchmark before selecting a model.
 
-Once the literature decision is recorded, proceed with CPU-first engine bring-up, containment, and cache correctness for the selected model. Keep a reference implementation/profile for optimization comparisons. Defer model-specific NPU kernels, BITCOS, and lookup-kernel adapters until the engine's measured bottlenecks justify them.
+Once the literature decision is recorded, proceed with CPU-first engine bring-up, containment, and cache correctness for the selected model. Keep a reference implementation/profile for optimization comparisons. Defer model-specific NPU kernels and lookup-kernel adapters until the engine's measured bottlenecks justify them.
 
 ### Preserve the actual Swift release
 
@@ -632,42 +626,6 @@ The useful ideas are persistent allocations, reducing redundant binding/submissi
 
 Use a simple Amdahl bound to decide whether API work deserves attention. If serial submission/bookkeeping on the request's critical path occupies 5% of its duration, even eliminating it entirely gives at most `1 / 0.95 = 1.053x`; at 10%, the bound is `1.111x`. Do not estimate that fraction by summing CPU/GPU work that overlaps. These are illustrative calculations, not measurements. Improving packed kernels, memory traffic, cache reuse, or unnecessary model work is more promising when those dominate. Do not require graphics-only extensions for a compute optimization.
 
-### BITCOS: a worthwhile conditional compression experiment
-
-BITCOS stores a presence bitmap and signs only for nonzero ternary values: ideal symbol cost is `2 - z` bits/weight for zero fraction `z`. Published implementations/results are Intel AVX2/AVX-512 and Xe2, not Oryon/Adreno; the paper also reports a mobile CPU case that loses despite compression. It does not establish a ready-made Swift/Snapdragon integration. [BITCOS paper][bitcos-paper]
-
-For the **same exact group-128 weights**, retaining one FP16 scale per group, our derived planning comparison is:
-
-```text
-PQ2_0:                   2.125 bits/weight
-PTQ1_0:                  1.750 bits/weight
-BITCOS with same scales:  2.125 - z + delta bits/weight
-
-delta = actual offsets, padding, alignment, and indexing overhead
-```
-
-The existing block costs come from [Prism's format definitions][quant-blocks]. Ignoring `delta`, the following compares eligible packed tensors, **not whole model files, RAM use, or tokens/second**:
-
-| Actual zero fraction | Ideal BITCOS bits/weight | Bytes saved vs PQ2_0 | Bytes saved vs PTQ1_0 |
-| --- | ---: | ---: | ---: |
-| 30% | 1.825 | 14.1% | -4.3%: larger |
-| 40% | 1.725 | 18.8% | 1.4% |
-| 50% | 1.625 | 23.5% | 7.1% |
-
-BITCOS beats the dense-trit PTQ block cost when `z > 0.375 + delta`, with zero fraction `z` expressed from 0 to 1. It can reduce PQ2 bytes while still losing runtime to unpacking and indexing. Swift PQ2 and the published PTQ release have different merged weights, so this table is an encoding comparison on identical hypothetical data, not an apples-to-apples comparison of those two released artifacts.
-
-Proposed feasibility sequence:
-
-1. Census each eligible tensor of the pinned current Swift PQ2 file: encoded symbols, zeros, group structure, dimensions, and scales. Do not reuse a previous-generation Bonsai sparsity statistic.
-2. Prove the data is actually ternary. The [generic PQ2 decoder][prism-quant-codec] permits a fourth `+2` code. A strictly ternary converter must reject such data or use an explicitly designed lossless exception representation; never silently drop or remap it.
-3. Estimate **serialized and runtime** size with real tile offsets and padding. Separate archival compression from a layout that supports efficient random row/tile access.
-4. Write a reference lossless repacker and exhaustive block round-trip checks. Preserve scales, tensor ordering, rotations/signs, tokenizer, and model metadata. No pruning, changed activation quantization, retraining, or altered Swift weights in this experiment.
-5. Develop/qualify an ARM64 NEON fused unpack-and-dot kernel against the current native baseline. Decode directly into useful computation, not a persistent expanded weight copy.
-6. Consider an Adreno shader only after CPU feasibility and a GPU-specific access/subgroup design. An Intel instruction sequence is not a portable optimization, and BITCOS does not automatically enable NPU execution.
-7. Compare microkernels **and** end-to-end cold/warm prefill, decode, memory, energy, and prefix reuse in CI. Keep the original format/profile if improvement is inconclusive.
-
-This could be a lossless storage optimization, but different accumulation paths can still change floating-point rounding. Require exact decoded-weight parity plus dtype-appropriate logits/task validation. Unstructured zeros and compact storage do not by themselves activate hardware structured-sparsity acceleration or eliminate the arithmetic.
-
 ### Other high-value opportunities, in priority order
 
 | Priority | Candidate | Why investigate / constraint |
@@ -684,11 +642,10 @@ This could be a lossless storage optimization, but different accumulation paths 
 | P1 | Vulkan fused operations, persistent scratch, graph/command reuse | Reduce measured dispatch/intermediate-memory costs without an API rewrite |
 | P1 | Separate prefill/decode tuning and small contiguous device partitions | Different phases may favor different hardware; count migration/state-copy costs |
 | P1 | Model-free prompt lookup for copy-heavy revisions | No second model; still needs correct target sampling, hybrid rollback, and net CI benefit |
-| P2 | BITCOS | Only after actual sparsity, serialization overhead, and native kernel work justify it |
 | P2 | Embedding retrieval or an accepted model-based speculative path | Add a model only when simpler context selection/lookup does not meet the task; require compatibility and memory acceptance |
 | P3 | NPU ternary port / novel graphics abstraction | Substantial hardware-specific work; require evidence existing paths are the bottleneck |
 
-**T-MAC deserves specific attention.** Microsoft's [T-MAC][tmac] uses lookup-based low-bit matrix kernels and documents Windows ARM/Snapdragon X Elite work. It is more directly relevant to CPU kernel experiments than copying Intel-specific BITCOS assembly. Its older models/baselines do not predict Swift 27B performance. Port a narrow, verified kernel adapter into the pinned runtime rather than assuming the older engine integration understands Swift's custom packs, transforms, or recurrent graph.
+**T-MAC deserves specific attention.** Microsoft's [T-MAC][tmac] uses lookup-based low-bit matrix kernels and documents Windows ARM/Snapdragon X Elite work. Its documented target-platform work makes it relevant to CPU kernel experiments. Its older models/baselines do not predict Swift 27B performance. Port a narrow, verified kernel adapter into the pinned runtime rather than assuming the older engine integration understands Swift's custom packs, transforms, or recurrent graph.
 
 The related [T-MAN][tman] NPU demo documents Android Snapdragon 8 Gen 3 and slow prefill; it is research evidence, not Windows X Elite support. Keep approximate aggregation, activation quantization, and changes to group scales as separately labeled quality-changing experiments.
 
@@ -742,7 +699,7 @@ Use native `llama-bench` where appropriate plus a small repository-owned streami
 | CPU waiting / startup | Phase-specific threads and polling; cold/warm compiled-kernel cache; explicit idle-unload tradeoff |
 | Thermal | Short interactive bursts plus 15–30-minute sustained runs |
 | Harness / containment | Direct API, accepted agent workflow, cold/warm MXC worker; separate VM tier if qualified |
-| Experimental packing | Same current weights/layout control, actual BITCOS serialized size, native kernel, end-to-end results |
+| Runtime layout | Same current weights/layout control, actual serialized size, native kernel and end-to-end results |
 
 Avoid a full Cartesian sweep. Establish a small engine baseline for the selected model, then screen thread/batch choices and feasible device placements; qualify cache choices on the best implementation profiles. Keep backend/kernel comparisons on the same exact model artifact and settings. Attribute weight-version, packing, and sampler changes separately so they cannot be mistaken for an engine optimization. The upfront literature review has already settled model selection.
 
@@ -821,7 +778,7 @@ Effort ranges below are planning estimates for one engineer after dependencies a
 | M3: cache and context qualification | 2–4 days | Hybrid-state tests, memory estimator, bounded reuse, accepted KV types | Fresh/reused continuations agree; selected contexts fit and retain quality |
 | M4: profiles and performance report | 2–4 days | Creative/daily/long/battery profiles, optional vision/accepted agent profiles, CI provenance, installation guide | Sustained creative-task and memory acceptance on settled main; containment acceptance for enabled tools |
 | M5: NPU feasibility | About 2 days initially | Operation/packing/memory/signing gap report, including audited HTP prototype where relevant | Feasible bounded implementation or explicit deferral; no unsafe signing-policy workaround |
-| M6: R8 / lookup kernels / speculation / BITCOS | Separately estimated after feasibility | Narrow reviewed native-kernel patch or profile; model-free lookup before a second drafter | Decoded-weight and behavior correctness, native-platform support, and CI benefit justify maintenance cost |
+| M6: R8 / lookup kernels / speculation | Separately estimated after feasibility | Narrow reviewed native-kernel patch or profile; model-free lookup before a second drafter | Decoded-weight and behavior correctness, native-platform support, and CI benefit justify maintenance cost |
 | M7: native Rust Prism engine | Scope after R0/R1 profiling; no delivery estimate yet | [R0–R7 TODO](docs/native-rust-engine.md): audited techniques, reference graph, packed kernels, Rust runtime and Adreno path | Same-model correctness/quality/security and paired device CI acceptance; retain Prism fallback until each replacement profile qualifies |
 
 M0a -> M0 -> M1 -> M1a -> M2/M3 -> M4 is the main creative-chat delivery path: preflight source compatibility and choose the model from literature first, then build and qualify its inference engine, with independent work isolated appropriately. M1b is optional; agent automation is accepted only after it passes. M6 is also optional and may follow whichever CPU/cache bottleneck justifies it; a small existing-kernel backport need not wait for NPU research. Investigate M5 after the selected engine's CPU/GPU results expose realistic bottlenecks; do not make everyday usability depend on a speculative NPU port. A substantial custom ternary NPU backend is a multiweek project to scope after the feasibility report, not a two-day integration.
@@ -868,7 +825,7 @@ it does not configure a runner, dispatch benchmarks or promote a runtime.
 | Do LiteBox or NVX meet this host's boundary and architecture needs? | Exclude reviewed x86/shared-address-space or non-ARM paths from the default |
 | Would NoGraphicsAPI improve actual inference? | Existing Vulkan path first; measure submission fraction before considering any port |
 | Do R8 ARM sources or an HTP prototype imply a proven X Elite improvement? | Exact artifact/graph and device correctness, pinned diff/license review, repack/rollback accounting, then CI; no borrowed x86/X2 speed claims |
-| Are actual PQ2 symbols strictly ternary, and is BITCOS smaller/faster? | Per-tensor census, exact round-trip, overhead-aware size, native kernels, CI; reject unsupported symbols |
+| Does a runtime layout preserve current PQ2 weights and improve execution? | Per-tensor census, exact round-trip, overhead-aware size, native kernels and CI; reject unsupported symbols |
 | Is speculative decoding actually compatible and beneficial? | Exact tensors/drafter identity, rollback tests, cache tests, CI end-to-end gain |
 | Can the result be reproduced after an upstream update? | Pin all artifacts, retain baseline profile, qualify upgrades deliberately |
 | Would a Rust rewrite inherit other engines' speedups or trust claims? | M7/R0–R7: audit provenance, preserve arithmetic, profile the critical path and require same-device CI; 2× is a goal, 3–5× is conditional upside |
@@ -896,7 +853,7 @@ Sources were checked on October 22, 2026. Moving branch documentation is researc
 - [OpenCode releases][opencode-changelog], [provider integration][opencode-provider], and [security boundary][opencode-security]; [Goose Windows build][goose-windows].
 - [MXC][mxc-readme], [OS support][mxc-os-support], [Rust V1 API][mxc-api], [schema][mxc-schema], and [networking contract][mxc-network].
 - [LiteBox][litebox-readme], its [Windows userland platform][litebox-platform], [NVX architecture exclusions][nvx-non-goals], and [Windows Sandbox][windows-sandbox].
-- [NoGraphicsAPI requirements][nographics-readme], [BITCOS paper][bitcos-paper], [Prism codec][prism-quant-codec], [T-MAC][tmac], and [T-MAN][tman].
+- [NoGraphicsAPI requirements][nographics-readme], [Prism codec][prism-quant-codec], [T-MAC][tmac], and [T-MAN][tman].
 
 [swift-page]: https://ukisai.com/swift-bonsai-2
 [swift-model]: https://huggingface.co/ukisai/Swift-Bonsai-2-GGUF
@@ -959,7 +916,6 @@ Sources were checked on October 22, 2026. Moving branch documentation is researc
 [nvx-non-goals]: https://github.com/microsoft/nvx/blob/dev/doc/design/1.2-non-goals.md
 [windows-sandbox]: https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/
 [nographics-readme]: https://github.com/sebbbi/NoGraphicsAPI
-[bitcos-paper]: https://arxiv.org/html/2609.16338v1
 [prism-quant-codec]: https://github.com/PrismML-Eng/llama.cpp/blob/prism/ggml/src/ggml-quants.c
 [tmac]: https://github.com/microsoft/T-MAC
 [tman]: https://github.com/microsoft/T-MAC/tree/main/t-man

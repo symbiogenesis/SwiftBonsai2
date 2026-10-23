@@ -1,7 +1,7 @@
 # Initial model choice
 
 **Priority update, October 23:** the owner subsequently prioritized Swift Bonsai 2
-for memory feasibility and BITCOS assessment. See [the new assessment](swift-memory.md).
+for memory feasibility. See [the new assessment](swift-memory.md).
 This document retains the earlier Qwen literature decision and its limitations;
 it does not override that later direction or establish Swift creative quality.
 

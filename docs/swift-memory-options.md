@@ -2,7 +2,7 @@
 
 This October 23, 2026 source audit uses the current Swift PQ2 artifact pinned in
 [the assessment lock](../config/swift-assessment.lock.json), the actual
-[symbol census](../config/swift.bitcos-census.json), and Prism commit
+[symbol census](../config/swift.pq2-census.json), and Prism commit
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`. It describes allocation ceilings and
 implementation choices, not measured peak RAM or throughput. Runtime and device
 qualification remain governed by [the assessment](swift-memory.md).
@@ -20,14 +20,11 @@ symbols into Prism's existing PTQ1 format**. This preserves this artifact's
 merged weights and scale bits; it does not select the publisher's older PTQ
 checkpoint. Native ARM PTQ kernels already exist, but their activation rounding
 differs from the PQ2 route, so native output correctness still needs separate
-qualification. BITCOS remains useful as an experiment; at this model's measured
-zero fraction, fixed PTQ blocks are smaller than the proposed byte-padded
-BITCOS blocks.
+qualification. The alternate packing experiment was [retired](bitcos-retirement.md).
 
 | Option | Current state | Quantified scope | Recommended next action |
 | --- | --- | ---: | --- |
 | Current-symbol PQ2 → PTQ1 | Complete verified export and bounded native decode pass | 1,259,520,000 fewer weight bytes, **1.1730 GiB** | Qualify native PTQ output quality and performance; keep selection explicit. |
-| BITCOS with signs rounded per 128 weights | Safe Rust codec/scalar prototype; no runtime integration | 1,047,829,322 fewer bytes, **0.9759 GiB**, before new indexes/container overhead | Retain as alternate kernel experiment; qualify SIMD/performance separately. |
 | mmap and no repack | Already selected by the Swift CPU profile | Avoids a separate complete private weight copy; no new saving to count twice | Preserve these choices and verify actual backend buffer types. |
 | Lower prefill microbatch | Already 64, versus the old Qwen profile's 128 | Graph-dependent; no defensible whole-graph byte saving yet | Consider an explicit 32-token variant only after a successful 64-token baseline. |
 | Avoid unnecessary output rows | Completion normally needs one sampled row | One F32 row is 993,280 bytes; 64 rows are 63,569,920 bytes | Inspect reserve/output logs before changing native output limits. |
@@ -55,10 +52,8 @@ counts are divisible by sixteen, preserving 32-byte alignment after conversion.
 The original non-tensor bytes equal its 11,120,992-byte data offset, with no
 inter-tensor or trailing gaps. A same-length header and tightly rebuilt tensor
 layout therefore account for **5,946,648,928 bytes total**. The final converter
-must verify its actual length and digest. This is 211,690,678 bytes below the
-byte-padded BITCOS accounting, even before adding BITCOS indices. Neither
-representation permits counting the old and new full weight buffers at once
-and still claiming its steady-state saving.
+must verify its actual length and digest. Counting the old and new full weight
+buffers at once would negate the claimed steady-state saving.
 
 The [ARM implementation](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-cpu/arch/arm/quants.c)
 decodes PTQ trits inside its dot product rather than retaining a whole expanded

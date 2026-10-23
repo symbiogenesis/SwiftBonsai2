@@ -294,7 +294,7 @@ into hosted Foundation CI. No model inference, performance workload or full
 local suite was run. The post-WSL admission check reported 21,596,512,256 bytes
 available against 23,622,320,128 required, with no model process started.
 
-## Owner-prioritized Swift and actual BITCOS census (October 23)
+## Owner-prioritized Swift and actual PQ2 census (October 23)
 
 The owner explicitly chose Swift Bonsai 2 for the memory work after the Qwen
 baseline's conservative 22 GiB admission remained above free RAM. The separate
@@ -316,13 +316,9 @@ policy regression preserves both this assessment and the original Qwen default.
 
 Full size/SHA verification and a streaming census of the actual Swift file found
 26,869,760,000 PQ2 codes across 402 tensors: 8,802,947,576 zeros (32.76154%), no
-fourth code and no zero/nonfinite scales. The unchanged-scale BITCOS size budget
-is 6,158,339,606 bytes with per-128-block sign-byte padding and retained other
-file bytes, excluding new container/index/alignment overhead. Exact size and
-eligibility evidence is in [the portable record](../config/swift.bitcos-census.json).
-A bounded reference codec proves byte-identical block reconstruction in focused
-tests, including sign boundaries, raw scale bits and canonical padding checks.
-It supplies no whole-model conversion, fused compute kernel or runtime savings.
+fourth code and no zero/nonfinite scales. The exact source census is retained in
+[the portable record](../config/swift.pq2-census.json). The current-weight PTQ1
+export below preserves source symbols and scales.
 Default stock GGUF interpretation remains unchanged; private type IDs require an
 explicit codec-pinned Prism dialect.
 
@@ -333,7 +329,7 @@ then exits with native fast-fail status `0xc0000409` before output. No watchdog
 failure was reported. A version-only owned-child probe succeeds, as does a
 separate model-free native backend/system-info probe. The precise failing call
 is unlocalized; asynchronous logs are not a call stack. No decode correctness,
-BITCOS RAM/speed result, full local suite or performance benchmark is claimed.
+runtime RAM/speed result, full local suite or performance benchmark is claimed.
 
 ## Evidence obtained
 
@@ -360,25 +356,13 @@ at 2.5 MiB and reviews initial graph reservation and rank-1 fusion as future
 engine changes. No training, weight merge, precision reduction or adapter
 modification is performed.
 
-The former standalone C++ BITCOS dots preserved source scales/Q8_K values and passed
-focused correctness plus independent review. The first hosted ARM64 synthetic
-comparison found severe unpacking overhead. A reviewed vector prefix/rank
-implementation improves it, but remains roughly 3.3× slower than the optimized
-PQ2 comparator on Cobalt 100. [Actual CI samples](../config/bitcos.synthetic-cobalt100.json)
-retain both revisions. This fails the requested speed condition; no BITCOS
-runtime is enabled. Benchmarks ran only in manually dispatched main CI.
-
-The standalone component has since moved to safe Rust with no dependencies or
-unsafe code. Its codecs, matrix offsets/payloads, round trips and scalar result
-bits matched a live strict ARM64 C++ comparison across 161 cases and 169 rows,
-including the original NEON and dot-product paths. The captured fixture and
-source hashes remain in `tools/bitcos/tests/fixtures`; the standalone C++
-sources, CMake builder and synthetic benchmark workflow were then removed.
-Additional Rust boundary checks reject noncanonical PTQ bytes and nonfinite
-activation scales. Rust is the default for new systems components. The pinned
-Prism engine/LoRA overlay remain separate native replacement work. Rust SIMD,
-throughput and end-to-end runtime qualification remain pending; the Cobalt 100
-records above measure only the retired C++ implementations.
+The alternate BITCOS experiment was removed after its size and hosted synthetic
+speed results failed to justify continued maintenance. The concise
+[retirement record](bitcos-retirement.md) retains the decision, qualifications
+and links to historical raw evidence. Shared safe Rust PQ2/PTQ1 packing and
+numerical utilities remain in `tools/ternary` for the exporter and native Rust
+runtime. The pinned Prism engine/LoRA overlay remain separate native replacement
+work; Rust SIMD, throughput and end-to-end runtime qualification remain pending.
 
 The first full export regression handoff exposed a PowerShell type collision
 between two tests sharing a process. Separate CI steps now load those assemblies
@@ -436,8 +420,8 @@ The migration keeps the existing bounded GGUF v3 report and pinned Prism dialect
 contract while moving parsing, PQ2 census and streamed PTQ1 serialization into
 `tools/gguf`. The PowerShell entry points retain lock selection, external-path
 policy and `ShouldProcess`. The exporter calls the existing safe Rust
-`bonsai-bitcos` packing routines and reconstructs every converted PQ2 block.
-The independent small C# block codecs remain; the duplicated C# GGUF parser and
+`bonsai-ternary` packing routines and reconstructs every converted PQ2 block.
+The independent small C# PTQ1 block codec remains; the duplicated C# GGUF parser and
 repacker are removed. Provisioning and process supervision remain in PowerShell.
 
 Reviewed the primary [SHA-256 incremental API](https://docs.rs/sha2/0.10.9/sha2/),

@@ -1,7 +1,7 @@
-# Swift Bonsai 2 memory and BITCOS assessment
+# Swift Bonsai 2 memory assessment
 
 On October 23, 2026 the owner explicitly prioritized **Swift Bonsai 2** for the
-memory work and BITCOS assessment. This supersedes the Qwen-first implementation
+memory work. This supersedes the Qwen-first implementation
 priority for this investigation. The existing Qwen lock/profile is retained for
 reproducibility; it does not silently become a compatible Swift launch profile.
 No local candidate benchmark informed this choice. Daily chat remains disabled.
@@ -23,31 +23,19 @@ must not be reused unchanged. Publisher package integrity and architecture check
 do not independently attest source-to-binary correspondence or model correctness.
 [Backend support](https://github.com/PrismML-Eng/Bonsai-demo/blob/main/BACKEND-SUPPORT.md).
 
-BITCOS is relevant to these ternary weights: it stores a presence bitmap plus
-signs only for nonzeros. With the same 16-bit scale per 128 weights, the ideal
-cost is `2.125 - z` bits/weight, versus PQ2's `2.125`, before indexes/alignment.
-Actual savings depend on this exact pack's zero fraction `z`; the paper's older
-Bonsai 27B census is not a Swift census. The released PQ2 codec can encode a
-fourth `+2` symbol, so a lossless three-symbol converter must inspect and reject
-unsupported data rather than trust the model's name. Copy scales without
-requantization and preserve tensor transforms, tokenizer and template.
-[BITCOS paper](https://arxiv.org/html/2609.16338v1).
-
-First steps are immutable provisioning, bounded metadata inspection and an actual
-streaming symbol census. Report lower-bound and block-rounded serialized sizes
-separately from unknown indexing overhead. A smaller archive alone does not
-reduce live weights if inference expands it into the original layout. A useful
-BITCOS runtime needs a qualified ARM64 unpack-and-dot path, exact weight parity
-and subsequent CI correctness/performance evidence. The paper's x86/Intel GPU
-results do not establish a Snapdragon speedup. No weights, sampler or KV precision
-will be silently changed to manufacture a memory result.
+The current-weight PTQ1 export is the supported lossless packing investigation.
+The [retirement record](bitcos-retirement.md) explains why the alternate BITCOS
+experiment was removed. A smaller archive alone does not establish reduced live
+RAM or faster inference. Preserve tensor transforms, tokenizer, template and raw
+scale bits; no weights, sampler or KV precision are silently changed to produce
+a memory result.
 
 ## Actual artifact census
 
 The complete file passed size/SHA-256 verification, then the inspector streamed
 its PQ2 payload through a 64 KiB buffer. [Metadata](../config/swift.metadata.json)
 records 851 tensors across PQ2/F32/BF16, 64 main blocks, no MTP block, and the
-embedded template/tokenizer identities. The [portable census](../config/swift.bitcos-census.json)
+embedded template/tokenizer identities. The [portable census](../config/swift.pq2-census.json)
 records 402 PQ2 tensors, 209,920,000 blocks and 26,869,760,000 symbols:
 
 | Symbol | Count |
@@ -60,32 +48,6 @@ records 402 PQ2 tensors, 209,920,000 blocks and 26,869,760,000 symbols:
 No zero or nonfinite scales were found. Under the conservative census rules all
 402 PQ2 tensors are eligible for three-symbol lossless repacking. These counts
 describe encoded symbols; the census never converts weights to floating point.
-
-| Layout accounting | Bytes | GiB |
-| --- | ---: | ---: |
-| Existing complete PQ2 file | 7,206,168,928 | 6.7113 |
-| Tensor-packed sign lower bound, retaining other bytes | 6,105,800,658 | 5.6865 |
-| Signs rounded to bytes within each 128-weight block | 6,158,339,606 | 5.7354 |
-
-The block-rounded candidate saves 1,047,829,322 bytes (0.9759 GiB, about 14.54%)
-before new indexing/alignment/container overhead. It retains the original scale
-bytes and existing non-PQ tensors/header allowance. This is a serialized-size
-estimate from actual data, not an existing converted GGUF or a RAM/speed result.
-
-`Pq2BitcosCodec` supplies a bounded reference proof for one block: two unchanged
-scale bytes, sixteen presence bytes and `ceil(nonzero/8)` sign bytes. Decoding
-recreates the exact original 34 bytes, including scale bits and code order.
-Focused regressions cover sparse/dense/sign boundaries, signed and subnormal
-scales, fourth-code rejection, truncation, excess bytes and noncanonical padding.
-The [standalone prototype](../tools/bitcos/README.md) now uses safe Rust for
-validation, exact packing and scalar dots, preserving PQ2's Q8_K inputs and
-group accumulation order. Exact byte/result comparisons against the former
-C++ scalar and ARM64 NEON paths passed before the standalone C++ sources were
-removed. A retained immutable fixture supplies ongoing regression evidence.
-A row index adds up to about 21 MB under the documented width condition,
-retaining about 0.956 GiB of estimated savings. It has no ggml/runtime
-integration. Full Rust correctness runs in CI; SIMD and Rust performance remain
-unqualified. Historical C++ timings do not establish Rust or Snapdragon speed.
 
 ## Existing ternary packing alternative
 
@@ -102,8 +64,7 @@ bytes (1.1730 GiB). Its [portable export receipt](../config/swift.ptq1-export.js
 records SHA-256 `e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5`
 and verification of all 209,920,000 converted blocks using 258,720 buffer bytes.
 This uses the current merged weights, not the older
-published PTQ checkpoint. PTQ1 and BITCOS are alternative encodings; their
-savings are not additive. At Swift's measured zero fraction PTQ1 is smaller.
+published PTQ checkpoint.
 The native PTQ backend uses Q8_0 activations while PQ2 uses Q8_K, so equal
 weights do not prove equal logits, output or speed. An explicit development
 `-UseRepackedPtq1` switch selects only this exact derived artifact and retains
@@ -177,24 +138,3 @@ before appending the user, and Swift's template raises `No user query found in
 messages.` The Swift-only assessment now omits that system preamble and retains
 its embedded template/default reasoning. Qwen reference arguments are unchanged.
 No engine, template, model weights or global system setting was patched.
-
-## ARM prototype performance gate
-
-The first [hosted comparison](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/39985113979)
-tested `b41b466` on Cobalt 100 ARM64 with MSVC 19.51.36260.0 and DOTPROD.
-The initial scalar-cursor/nibble-LUT BITCOS decoder was about 7.2× slower than
-the optimized PQ2 comparator in the hot-footprint case and 10.3× slower in the
-44.6 MB PQ2-footprint case, despite smaller weights. This fails promotion.
-These are single-thread synthetic kernels, not Snapdragon/end-to-end results;
-the footprint name does not establish cache misses. The adapted PTQ/Q8_K
-comparator is not Prism's released PTQ/Q8_0 backend. No runtime change follows
-from these numbers.
-
-The [vector-rank follow-up](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/39986261941)
-tested `49693a5` with the same settings. BITCOS median time fell from 4,531,300
-to 2,024,700 ns in the hot case and from 266,135,900 to 87,101,700 ns in the
-larger-footprint case. It remains about 3.24× / 3.36× slower than that run's PQ2
-comparator, so it still fails promotion. [Portable measurements](../config/bitcos.synthetic-cobalt100.json)
-retain all three samples and exact tested revisions. Full-model bandwidth,
-multithreading and Snapdragon behavior remain unmeasured; the current evidence
-does not justify enabling this kernel in the runtime.
