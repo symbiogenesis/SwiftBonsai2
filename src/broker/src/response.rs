@@ -14,22 +14,31 @@ use tokio::{
     time::{Instant, timeout_at},
 };
 
+/// Largest accepted decoded backend response body in bytes.
 pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+/// Fixed payload buffer size for bounded JSON reads and SSE frames.
 pub const RESPONSE_BUFFER_BYTES: usize = 8 * 1024;
+/// Maximum elapsed time for writing and flushing one group of response bytes.
 pub const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
-const CHUNK_PREFIX_BYTES: usize = 2 * std::mem::size_of::<usize>() + 2;
+const CHUNK_PREFIX_BYTES: usize = 2 * size_of::<usize>() + 2;
 
 const COMMON_HEADERS: &str =
     "Connection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n";
 
 /// Value-free errors: no upstream header, body, prompt or I/O diagnostic escapes.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResponseError {
+    /// The supervisor or client-write deadline has expired.
     Deadline,
+    /// The backend status, encoding or content type is unsupported.
     BackendMetadata,
+    /// The supplied decoded backend body failed while being read.
     BackendIo,
+    /// The client stream failed while writing, flushing or shutting down.
     ClientIo,
+    /// The decoded backend body exceeds the fixed response cap.
     BodyLimit,
+    /// A nonstreaming response is not a UTF-8 JSON object.
     JsonSyntax,
 }
 
@@ -44,12 +53,17 @@ pub enum ResponseError {
 /// JSON is buffered within a fixed cap and checked for object syntax before any
 /// write. SSE bytes are streamed unchanged with chunked HTTP framing; clean EOF
 /// finishes the HTTP body but does not prove successful generation or valid SSE.
-/// No [DONE] event is invented. Model text still requires safe client rendering.
+/// No `[DONE]` event is invented. Model text still requires safe client rendering.
 ///
 /// All errors/cancellation drop both endpoints without graceful shutdown. Never
 /// retry or append another response after an error: writes may be partial. The
 /// future supervisor must monitor real client disconnects and cancel this future
-/// while it awaits backend data; AsyncWrite alone cannot detect that disconnect.
+/// while it awaits backend data; [`AsyncWrite`] alone cannot detect that disconnect.
+///
+/// # Errors
+/// Returns [`ResponseError`] for an expired deadline, invalid response metadata,
+/// body limit, JSON syntax failure or backend/client I/O failure. Client writes
+/// may already be partial; callers must close the endpoints without retrying.
 pub async fn send_chat_response<W, R>(
     mut client: W,
     backend: Response<R>,

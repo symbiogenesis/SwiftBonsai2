@@ -16,3 +16,50 @@ tokio = { version = "=1.50.0", features = ["io-util", "time"] }
 
 [dev-dependencies]
 tokio = { version = "=1.50.0", features = ["rt", "test-util"] }
+
+# Bounds must fail visibly in optimized builds rather than wrap silently.
+[profile.release]
+overflow-checks = true
+debug-assertions = true
+
+[profile.test]
+overflow-checks = true
+debug-assertions = true
+
+# Package lints apply to the library, integration tests, and future binaries.
+[lints.rust]
+warnings = "deny"
+unsafe_code = "forbid"
+non_ascii_idents = "forbid"
+rust_2018_idioms = { level = "deny", priority = -1 }
+rust_2024_compatibility = { level = "deny", priority = -1 }
+future_incompatible = { level = "deny", priority = -1 }
+elided_lifetimes_in_paths = "deny"
+explicit_outlives_requirements = "deny"
+missing_docs = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+unused_lifetimes = "deny"
+unused_qualifications = "deny"
+unused_must_use = "deny"
+
+[lints.rustdoc]
+all = { level = "deny", priority = -1 }
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+as_conversions = "deny"
+dbg_macro = "deny"
+exit = "deny"
+mem_forget = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+undocumented_unsafe_blocks = "deny"

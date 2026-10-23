@@ -1,3 +1,9 @@
+//! Regression coverage for bounded response framing and endpoint ownership.
+#![expect(
+    clippy::unwrap_used,
+    reason = "test setup and successful-operation assertions must panic on failure"
+)]
+
 use bonsai_broker::{
     AdmittedChat, RequestPolicy,
     response::{
@@ -149,6 +155,10 @@ struct WriteState {
     dropped: bool,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent fault-injection switches exercise each I/O failure mode"
+)]
 struct Client {
     state: Rc<RefCell<WriteState>>,
     fragment: usize,
@@ -370,9 +380,14 @@ fn json_is_validated_then_sent_unchanged_with_fresh_headers_and_partial_writes()
                 .headers_mut()
                 .insert(name, HeaderValue::from_static(value));
         }
-        send_chat_response(client, backend, &admitted(false), deadline())
-            .await
-            .unwrap();
+        Box::pin(send_chat_response(
+            client,
+            backend,
+            &admitted(false),
+            deadline(),
+        ))
+        .await
+        .unwrap();
         assert_closed(&client_state, &backend_state);
         let state = client_state.borrow();
         let (headers, actual, _) = wire_parts(&state.bytes);
@@ -444,7 +459,13 @@ fn backend_status_media_type_and_compression_fail_before_any_io() {
                     _ => unreachable!(),
                 }
                 assert!(matches!(
-                    send_chat_response(client, backend, &admitted(stream), deadline()).await,
+                    Box::pin(send_chat_response(
+                        client,
+                        backend,
+                        &admitted(stream),
+                        deadline()
+                    ))
+                    .await,
                     Err(ResponseError::BackendMetadata)
                 ));
                 assert_closed(&client_state, &backend_state);
@@ -471,9 +492,14 @@ fn validated_media_types_accept_case_and_optional_utf8_charset() {
             backend
                 .headers_mut()
                 .insert("content-type", HeaderValue::from_static(media));
-            send_chat_response(client, backend, &admitted(stream), deadline())
-                .await
-                .unwrap();
+            Box::pin(send_chat_response(
+                client,
+                backend,
+                &admitted(stream),
+                deadline(),
+            ))
+            .await
+            .unwrap();
             let state = state.borrow();
             let (headers, _, _) = wire_parts(&state.bytes);
             assert_headers(&headers, stream, 2);
@@ -502,12 +528,12 @@ fn json_requires_one_complete_object_and_never_sends_invalid_bytes() {
             let client = Client::new(usize::MAX);
             let client_state = client.state.clone();
             assert!(matches!(
-                send_chat_response(
+                Box::pin(send_chat_response(
                     client,
                     response(backend, false),
                     &admitted(false),
                     deadline()
-                )
+                ))
                 .await,
                 Err(ResponseError::JsonSyntax)
             ));
@@ -528,12 +554,12 @@ fn exact_four_mib_json_and_sse_bodies_succeed() {
             let backend_state = backend.state.clone();
             let client = Client::new(usize::MAX);
             let client_state = client.state.clone();
-            send_chat_response(
+            Box::pin(send_chat_response(
                 client,
                 response(backend, stream),
                 &admitted(stream),
                 deadline(),
-            )
+            ))
             .await
             .unwrap();
             assert_closed(&client_state, &backend_state);
@@ -563,12 +589,12 @@ fn cap_plus_one_probe_rejects_json_and_sse_without_forwarding_excess() {
             let client = Client::new(usize::MAX);
             let client_state = client.state.clone();
             assert!(matches!(
-                send_chat_response(
+                Box::pin(send_chat_response(
                     client,
                     response(backend, stream),
                     &admitted(stream),
                     deadline()
-                )
+                ))
                 .await,
                 Err(ResponseError::BodyLimit)
             ));
@@ -606,9 +632,14 @@ fn fragmented_sse_is_flushed_in_bounded_chunks_without_inventing_events() {
             let backend_state = backend.state.clone();
             let client = Client::new(3);
             let client_state = client.state.clone();
-            send_chat_response(client, response(backend, true), &admitted(true), deadline())
-                .await
-                .unwrap();
+            Box::pin(send_chat_response(
+                client,
+                response(backend, true),
+                &admitted(true),
+                deadline(),
+            ))
+            .await
+            .unwrap();
             let state = client_state.borrow();
             let (headers, actual, head_length) = wire_parts(&state.bytes);
             assert_headers(&headers, true, body.len());
@@ -638,12 +669,12 @@ fn decoded_backend_truncation_is_an_error_even_after_valid_payload() {
             let client = Client::new(usize::MAX);
             let client_state = client.state.clone();
             assert!(matches!(
-                send_chat_response(
+                Box::pin(send_chat_response(
                     client,
                     response(backend, stream),
                     &admitted(stream),
                     deadline()
-                )
+                ))
                 .await,
                 Err(ResponseError::BackendIo)
             ));
@@ -672,8 +703,13 @@ fn zero_writes_write_errors_and_flush_errors_drop_both_streams() {
             client.fail_flush = failure == 2;
             let client_state = client.state.clone();
             assert!(matches!(
-                send_chat_response(client, response(backend, true), &admitted(true), deadline())
-                    .await,
+                Box::pin(send_chat_response(
+                    client,
+                    response(backend, true),
+                    &admitted(true),
+                    deadline()
+                ))
+                .await,
                 Err(ResponseError::ClientIo)
             ));
             assert_closed(&client_state, &backend_state);
@@ -694,12 +730,12 @@ fn stalled_header_flush_uses_client_or_supervisor_deadline() {
             let client_state = client.state.clone();
             let start = Instant::now();
             assert!(matches!(
-                send_chat_response(
+                Box::pin(send_chat_response(
                     client,
                     response(backend, true),
                     &admitted(true),
                     start + bound
-                )
+                ))
                 .await,
                 Err(ResponseError::Deadline)
             ));
@@ -721,7 +757,13 @@ fn partial_chunk_writes_share_one_deadline_instead_of_resetting_it() {
         let client_state = client.state.clone();
         let start = Instant::now();
         assert!(matches!(
-            send_chat_response(client, response(backend, true), &admitted(true), deadline()).await,
+            Box::pin(send_chat_response(
+                client,
+                response(backend, true),
+                &admitted(true),
+                deadline()
+            ))
+            .await,
             Err(ResponseError::Deadline)
         ));
         assert_eq!(Instant::now() - start, CLIENT_WRITE_TIMEOUT);
@@ -740,7 +782,13 @@ fn stalled_shutdown_is_bounded_and_releases_both_streams() {
         let client_state = client.state.clone();
         let start = Instant::now();
         assert!(matches!(
-            send_chat_response(client, response(backend, true), &admitted(true), deadline()).await,
+            Box::pin(send_chat_response(
+                client,
+                response(backend, true),
+                &admitted(true),
+                deadline()
+            ))
+            .await,
             Err(ResponseError::Deadline)
         ));
         assert_eq!(Instant::now() - start, CLIENT_WRITE_TIMEOUT);
@@ -765,12 +813,12 @@ fn backend_reads_use_one_absolute_supervisor_deadline() {
             let client_state = client.state.clone();
             let start = Instant::now();
             assert!(matches!(
-                send_chat_response(
+                Box::pin(send_chat_response(
                     client,
                     response(backend, false),
                     &admitted(false),
                     start + Duration::from_secs(2)
-                )
+                ))
                 .await,
                 Err(ResponseError::Deadline)
             ));
@@ -791,12 +839,12 @@ fn expired_deadline_rejects_immediately_ready_input_before_any_io() {
             let client = Client::new(usize::MAX);
             let client_state = client.state.clone();
             assert!(matches!(
-                send_chat_response(
+                Box::pin(send_chat_response(
                     client,
                     response(backend, stream),
                     &admitted(stream),
                     Instant::now()
-                )
+                ))
                 .await,
                 Err(ResponseError::Deadline)
             ));
@@ -818,12 +866,12 @@ fn a_backend_read_becoming_ready_at_expiry_still_fails_closed() {
         let client_state = client.state.clone();
         let start = Instant::now();
         assert!(matches!(
-            send_chat_response(
+            Box::pin(send_chat_response(
                 client,
                 response(backend, false),
                 &admitted(false),
                 start + Duration::from_secs(2)
-            )
+            ))
             .await,
             Err(ResponseError::Deadline)
         ));
@@ -847,12 +895,12 @@ fn cancellation_during_backend_read_or_client_flush_drops_owned_streams() {
             assert!(
                 timeout(
                     Duration::from_millis(1),
-                    send_chat_response(
+                    Box::pin(send_chat_response(
                         client,
                         response(backend, true),
                         &admitted(true),
                         deadline()
-                    ),
+                    )),
                 )
                 .await
                 .is_err()

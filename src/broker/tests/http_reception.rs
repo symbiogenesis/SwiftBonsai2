@@ -1,3 +1,9 @@
+//! Regression coverage for bounded HTTP request reception and cancellation.
+#![expect(
+    clippy::unwrap_used,
+    reason = "test setup and successful-operation assertions must panic on failure"
+)]
+
 use bonsai_broker::{
     MAX_BODY_BYTES, MAX_HEADER_BYTES, MAX_HEADERS, Rejection, RequestPolicy,
     reception::{HEADER_TIMEOUT, INTAKE_TIMEOUT, ReceiveError, receive_chat},
@@ -98,6 +104,10 @@ impl Drop for ProbeRead {
     }
 }
 
+#[expect(
+    clippy::future_not_send,
+    reason = "owned Rc fixture is polled on the deterministic current-thread runtime"
+)]
 async fn rejected(bytes: Vec<u8>, expected: ReceiveError) {
     let stream = ProbeRead::new(bytes, usize::MAX);
     let dropped = stream.dropped.clone();

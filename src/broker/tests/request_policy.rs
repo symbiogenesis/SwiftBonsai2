@@ -1,3 +1,9 @@
+//! Regression coverage for strict request parsing and context admission.
+#![expect(
+    clippy::unwrap_used,
+    reason = "test setup and successful-operation assertions must panic on failure"
+)]
+
 use bonsai_broker::{
     CONTEXT_TOKENS, MAX_BODY_BYTES, MAX_COMPLETION_TOKENS, MAX_HEADER_BYTES, MAX_HEADERS,
     MAX_MESSAGES, PendingChat, Rejection, RequestPolicy, TEMPLATE_MARGIN_TOKENS,
@@ -346,7 +352,7 @@ fn rejects_invalid_history_and_assistant_prefill() {
             Rejection::ChatSchema,
         );
     }
-    let messages: Vec<_> = (0..MAX_MESSAGES + 1)
+    let messages: Vec<_> = (0..=MAX_MESSAGES)
         .map(|i| {
             let role = if i % 2 == 0 { "user" } else { "assistant" };
             serde_json::json!({"role": role, "content": "x"})
@@ -392,7 +398,8 @@ fn exact_count_sees_identical_canonical_body_and_preserved_text() {
 
 #[test]
 fn context_admission_fails_closed_at_boundary_and_overflow() {
-    let exact = CONTEXT_TOKENS - MAX_COMPLETION_TOKENS as usize - TEMPLATE_MARGIN_TOKENS;
+    let exact =
+        CONTEXT_TOKENS - usize::try_from(MAX_COMPLETION_TOKENS).unwrap() - TEMPLATE_MARGIN_TOKENS;
     assert!(prepare(CHAT).unwrap().admit(|_| Ok(exact)).is_ok());
     for count in [exact + 1, usize::MAX] {
         assert!(matches!(

@@ -1,3 +1,9 @@
+//! Regression coverage for private backend HTTP exchanges and body decoding.
+#![expect(
+    clippy::unwrap_used,
+    reason = "test setup and successful-operation assertions must panic on failure"
+)]
+
 use bonsai_broker::{
     AdmittedChat, MAX_HEADER_BYTES, MAX_HEADERS, PendingChat, Rejection, RequestPolicy,
     backend::{BackendError, BackendPolicy, count_and_admit, request_chat},
@@ -116,6 +122,10 @@ struct State {
 
 // Owned, non-Send full-duplex fixture. All data and stalls are deterministic;
 // no socket, listener, background task or native process is needed.
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent fault-injection switches exercise each I/O failure mode"
+)]
 struct Stream {
     input: Vec<u8>,
     position: usize,
@@ -964,7 +974,7 @@ fn truncated_wire_stream_cannot_produce_successful_downstream_terminal_framing()
         let client = Stream::new(Vec::new(), usize::MAX);
         let client_state = client.state.clone();
         assert!(matches!(
-            send_chat_response(client, response, &chat, deadline()).await,
+            Box::pin(send_chat_response(client, response, &chat, deadline())).await,
             Err(ResponseError::BackendIo)
         ));
         assert!(backend_state.borrow().dropped);

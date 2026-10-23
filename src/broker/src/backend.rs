@@ -26,23 +26,37 @@ use tokio::{
     time::{Instant, Sleep, sleep_until, timeout_at},
 };
 
+/// Maximum time allowed for writing one backend request.
 pub const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Largest accepted token-counter response body in bytes.
 pub const MAX_COUNT_BYTES: usize = 4096;
+/// Largest accepted chunk-size line in bytes, including its CRLF.
 pub const MAX_CHUNK_LINE_BYTES: usize = 32;
+/// Largest accumulated chunk framing metadata in bytes for one response.
 pub const MAX_CHUNK_METADATA_BYTES: usize = 64 * 1024;
 
 /// Contains no private header, body, credential or native I/O diagnostic.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackendError {
+    /// The private backend port or credential format is invalid.
     Configuration,
+    /// The absolute exchange or write deadline has expired.
     Deadline,
+    /// The supplied stream failed while exchanging HTTP headers or request data.
     Io,
+    /// The backend response exceeded the header count or byte limit.
     HeadLimit,
+    /// The backend response has invalid HTTP/1.1 header syntax.
     WireSyntax,
+    /// The response status, content type or encoding is unsupported.
     Metadata,
+    /// The response uses unsupported or ambiguous HTTP body framing.
     Framing,
+    /// The body is oversized, truncated or fails while being read.
     Body,
+    /// The token-counter response does not match the bounded strict schema.
     CountSchema,
+    /// The existing request policy rejected the counted prompt.
     Admission(Rejection),
 }
 
@@ -54,6 +68,10 @@ pub struct BackendPolicy {
 }
 
 impl BackendPolicy {
+    /// Configure the private backend endpoint and its separate credential.
+    ///
+    /// # Errors
+    /// Returns [`BackendError::Configuration`] for a privileged port or invalid key.
     pub fn new(port: u16, key: &str) -> Result<Self, BackendError> {
         if port < 1024
             || key.len() != 64
@@ -71,7 +89,12 @@ impl BackendPolicy {
 }
 
 /// Count the exact canonical body, then apply the existing context admission.
+///
 /// Ownership closes the supplied connection on failure, completion or cancellation.
+///
+/// # Errors
+/// Returns [`BackendError`] for an expired deadline, stream failure, invalid
+/// HTTP response, token-count schema mismatch or rejected context admission.
 pub async fn count_and_admit<S>(
     stream: S,
     pending: PendingChat,
@@ -131,9 +154,14 @@ struct Count {
     object: String,
 }
 
-/// Send the admitted bytes unchanged to the sole generation route. The returned
-/// owned decoder is suitable for response::send_chat_response, including errors
+/// Send the admitted bytes unchanged to the sole generation route.
+///
+/// The returned owned decoder is suitable for [`crate::response::send_chat_response`], including errors
 /// on incomplete framing. It enforces the same absolute body deadline itself.
+///
+/// # Errors
+/// Returns [`BackendError`] for an expired deadline, stream failure, invalid
+/// HTTP response metadata or unsupported body framing.
 pub async fn request_chat<S>(
     stream: S,
     chat: &AdmittedChat,
@@ -274,7 +302,7 @@ fn parse_head(raw: &[u8], streaming: bool) -> Result<(Response<()>, Framing), Ba
             let length = bytes
                 .iter()
                 .try_fold(0usize, |n, b| {
-                    n.checked_mul(10)?.checked_add((b - b'0') as usize)
+                    n.checked_mul(10)?.checked_add(usize::from(b - b'0'))
                 })
                 .ok_or(BackendError::Framing)?;
             if length > MAX_RESPONSE_BYTES {
@@ -309,6 +337,7 @@ enum Framing {
 }
 
 /// A bounded owned HTTP body decoder; raw socket EOF is never framed completion.
+///
 /// Errors are sticky and close the underlying stream immediately. Framed EOF
 /// does not wait for socket EOF; surplus is discarded on Drop, never reused.
 /// Chunk extensions/trailers are deliberately unsupported for the pinned server.
@@ -330,6 +359,11 @@ impl<S> BackendBody<S> {
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
+    // Keep the complete framing state machine visible in one audit boundary.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one bounded HTTP framing state machine"
+    )]
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -350,10 +384,11 @@ impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
             match this.framing {
                 Framing::Length(0) | Framing::Complete => return Poll::Ready(Ok(())),
                 Framing::Length(remaining) | Framing::Data(remaining) => {
-                    let reader = this.reader.as_mut().expect("live decoder owns reader");
-                    let available = match ready!(Pin::new(&mut *reader).poll_fill_buf(cx)) {
-                        Ok(bytes) => bytes,
-                        Err(_) => return this.fail(io::ErrorKind::Other),
+                    let Some(reader) = this.reader.as_mut() else {
+                        return this.fail(io::ErrorKind::InvalidData);
+                    };
+                    let Ok(available) = ready!(Pin::new(&mut *reader).poll_fill_buf(cx)) else {
+                        return this.fail(io::ErrorKind::Other);
                     };
                     if Instant::now() >= this.deadline {
                         return this.fail(io::ErrorKind::TimedOut);
@@ -374,10 +409,11 @@ impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
                 }
                 _ => {}
             }
-            let reader = this.reader.as_mut().expect("live decoder owns reader");
-            let available = match ready!(Pin::new(&mut *reader).poll_fill_buf(cx)) {
-                Ok(bytes) => bytes,
-                Err(_) => return this.fail(io::ErrorKind::Other),
+            let Some(reader) = this.reader.as_mut() else {
+                return this.fail(io::ErrorKind::InvalidData);
+            };
+            let Ok(available) = ready!(Pin::new(&mut *reader).poll_fill_buf(cx)) else {
+                return this.fail(io::ErrorKind::Other);
             };
             if Instant::now() >= this.deadline {
                 return this.fail(io::ErrorKind::TimedOut);
@@ -426,7 +462,7 @@ impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
                     };
                     let Some(value) = value
                         .checked_mul(16)
-                        .and_then(|n| n.checked_add(digit as usize))
+                        .and_then(|n| n.checked_add(usize::from(digit)))
                     else {
                         return this.fail(io::ErrorKind::InvalidData);
                     };

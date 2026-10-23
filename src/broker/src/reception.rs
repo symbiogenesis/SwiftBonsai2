@@ -12,18 +12,27 @@ use tokio::{
     time::{Instant, timeout_at},
 };
 
+/// Maximum elapsed time for receiving and authorizing the request headers.
 pub const HEADER_TIMEOUT: Duration = Duration::from_secs(5);
+/// Maximum elapsed time for receiving and validating the complete request.
 pub const INTAKE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Value-free errors: no raw headers, credential, body or I/O diagnostic escapes.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReceiveError {
+    /// The header, intake or supervisor deadline has expired.
     Deadline,
+    /// The supplied stream failed during reception.
     Io,
+    /// The stream ended before the complete request arrived.
     Incomplete,
+    /// The header block exceeded the byte or header-count limit.
     HeadLimit,
+    /// The request has unsupported HTTP/1.1 wire syntax.
     WireSyntax,
+    /// Bytes beyond the declared body arrived with the headers.
     SurplusBytes,
+    /// The parsed request was rejected by the request policy.
     Policy(Rejection),
 }
 
@@ -48,10 +57,14 @@ impl<R> ReceivedChat<R> {
 /// the stream. At most 16 KiB (including line/whitespace) is read before head
 /// authorization; this fixed buffer also receives bodies that fit beside the
 /// head. A separate body of at most 1 MiB is allocated only after authorization.
-/// Duplicate headers reach RequestPolicy unchanged in multiplicity. No chunked
+/// Duplicate headers reach [`RequestPolicy`] unchanged in multiplicity. No chunked
 /// decoding, trailing requests, connection reuse, listener or production token
 /// counter is provided.
 /// Later surplus bytes are left unread and must be discarded when closing.
+///
+/// # Errors
+/// Returns [`ReceiveError`] for an expired deadline, stream failure, incomplete
+/// or oversized headers/body, invalid wire syntax, surplus bytes or policy rejection.
 pub async fn receive_chat<R: AsyncRead + Unpin + 'static>(
     mut stream: R,
     policy: &RequestPolicy,
