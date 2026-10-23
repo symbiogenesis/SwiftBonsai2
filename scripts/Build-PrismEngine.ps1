@@ -7,6 +7,8 @@ Requires the exact source ZIP identified by tools/prism/source.lock.json. No
 downloads, tests, benchmarks, model loading, installation, or profile promotion.
 PrepareOnly returns the verified, patched source for a separate CI build. Probe
 builds the focused real-ggml alias test; Engine builds completion and server.
+Parallel defaults to two compiler jobs; CI can explicitly choose a bounded budget.
+CompilerLauncher optionally enables a compiler cache with the Ninja generator.
 #>
 [CmdletBinding()]
 [OutputType([Collections.IDictionary])]
@@ -15,6 +17,8 @@ param(
     [string]$CMakePath,
     [ValidateSet('Probe','Engine','All')][string]$BuildMode = 'Probe',
     [ValidateSet('Ninja','Visual Studio 18 2026','Visual Studio 17 2022')][string]$Generator = 'Ninja',
+    [ValidateRange(1,12)][int]$Parallel = 2,
+    [string]$CompilerLauncher,
     [switch]$PrepareOnly
 )
 Set-StrictMode -Version Latest
@@ -52,6 +56,8 @@ $receipt = [ordered]@{
     ProbeSourceDirectory = $overlay
     BuildMode = $BuildMode
     Generator = $Generator
+    ParallelJobs = $Parallel
+    CompilerLauncher = $null
     Binaries = @()
     BuildConfigurations = @()
     Status = 'prepared'
@@ -62,6 +68,20 @@ if (-not $PrepareOnly) {
     if (-not $CMakePath) { $CMakePath = (Get-Command -Name cmake -CommandType Application -ErrorAction Stop).Source }
     if (-not [IO.Path]::IsPathFullyQualified($CMakePath) -or $CMakePath -match '%[^%]+%' -or -not [IO.File]::Exists($CMakePath)) { throw 'CMakePath must name an existing expanded absolute executable.' }
     if ($Generator -ne 'Ninja' -and -not $IsWindows) { throw 'Visual Studio generators require Windows.' }
+    if ($CompilerLauncher) {
+        if ($Generator -ne 'Ninja') { throw 'CompilerLauncher requires the Ninja generator.' }
+        if (-not [IO.Path]::IsPathFullyQualified($CompilerLauncher) -or $CompilerLauncher -match '%[^%]+%' -or
+            $CompilerLauncher.Contains(';') -or -not [IO.File]::Exists($CompilerLauncher)) {
+            throw 'CompilerLauncher must name one existing expanded absolute executable without CMake list separators.'
+        }
+        $CompilerLauncher = [IO.Path]::GetFullPath($CompilerLauncher)
+        $receipt.CompilerLauncher = [ordered]@{
+            Path = $CompilerLauncher
+            Sha256 = (Get-FileHash -LiteralPath $CompilerLauncher -Algorithm SHA256).Hash.ToLowerInvariant()
+            CacheBaseDirectory = $scratch
+        }
+        [IO.File]::WriteAllText((Join-Path $scratch 'build-receipt.json'), ($receipt | ConvertTo-Json -Depth 7))
+    }
     $script:prismCommandNumber = 0
     function Invoke-PrismBuildCommand {
         [CmdletBinding()]
@@ -72,6 +92,10 @@ if (-not $PrepareOnly) {
         $start.WorkingDirectory = $scratch
         $start.UseShellExecute = $false; $start.CreateNoWindow = $true
         $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
+        # Each build still uses fresh verified sources. ccache can normalize the
+        # random lane prefix while retaining its compiler/header/option checks.
+        # Preserve the inherited environment and change only this child setting.
+        if ($CompilerLauncher) { $start.Environment['CCACHE_BASEDIR'] = $scratch }
         foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
         $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
         try {
@@ -97,6 +121,10 @@ if (-not $PrepareOnly) {
     $receipt.CMakeVersion = Invoke-PrismBuildCommand -Arguments @('--version')
     $generatorArguments = @('-G', $Generator)
     if ($Generator -ne 'Ninja') { $generatorArguments += @('-A','ARM64','-T','ClangCL') }
+    if ($CompilerLauncher) {
+        # Use exactly one explicit launcher instead of ggml's auto-detected cache.
+        $generatorArguments += @('-DGGML_CCACHE=OFF', "-DCMAKE_C_COMPILER_LAUNCHER=$CompilerLauncher", "-DCMAKE_CXX_COMPILER_LAUNCHER=$CompilerLauncher")
+    }
     $modes = if ($BuildMode -eq 'All') { @('Probe','Engine') } else { @($BuildMode) }
     $binaries = [Collections.Generic.List[object]]::new()
     $configurations = [Collections.Generic.List[object]]::new()
@@ -119,7 +147,7 @@ if (-not $PrepareOnly) {
             $targets = @('llama-completion','llama-server')
         }
         $null = Invoke-PrismBuildCommand -Arguments $arguments
-        $null = Invoke-PrismBuildCommand -Arguments (@('--build',$build,'--config','Release','--parallel','2','--target') + $targets)
+        $null = Invoke-PrismBuildCommand -Arguments (@('--build',$build,'--config','Release','--parallel',[string]$Parallel,'--target') + $targets)
         $cache = Join-Path $build 'CMakeCache.txt'
         $configurations.Add([ordered]@{
             Mode = $mode
