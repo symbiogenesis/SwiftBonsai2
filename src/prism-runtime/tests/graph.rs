@@ -93,6 +93,89 @@ fn fixture(recurrent: bool) -> Model {
     }
 }
 
+fn hybrid_fixture() -> Model {
+    let mut model = fixture(false);
+    model
+        .metadata
+        .insert("qwen35.block_count".to_owned(), json!(2));
+    model.metadata.insert(
+        "qwen35.attention.recurrent_layers".to_owned(),
+        json!([false, true]),
+    );
+    for (name, mut tensor) in fixture(true).tensors {
+        if let Some(suffix) = name.strip_prefix("blk.0.") {
+            let name = format!("blk.1.{suffix}");
+            tensor.name.clone_from(&name);
+            model.tensors.insert(name, tensor);
+        }
+    }
+    model
+}
+
+#[test]
+fn reusable_logits_match_owned_evaluation_across_hybrid_restore_and_reset() -> Result<()> {
+    let mut owned = Qwen35::new(hybrid_fixture(), 16)?;
+    let mut reused = Qwen35::new(hybrid_fixture(), 16)?;
+    let mut logits = Vec::with_capacity(8);
+    let allocation = logits.as_ptr();
+    for token in [0, 1, 1] {
+        reused.evaluate_into(token, &mut logits)?;
+        assert_eq!(logits, owned.evaluate(token)?);
+        assert_eq!(logits.as_ptr(), allocation);
+    }
+    let checkpoint = reused.checkpoint()?;
+    let owned_checkpoint = owned.checkpoint()?;
+    let expected = owned.evaluate(0)?;
+    assert_eq!(reused.evaluate(0)?, expected);
+    reused.evaluate_into(1, &mut logits)?;
+    logits.fill(f32::NAN);
+    reused.restore(&checkpoint)?;
+    owned.restore(&owned_checkpoint)?;
+    reused.evaluate_into(0, &mut logits)?;
+    assert_eq!(logits, owned.evaluate(0)?);
+    assert_eq!(logits, expected);
+    assert_eq!(logits.as_ptr(), allocation);
+    reused.reset()?;
+    let mut fresh = Qwen35::new(hybrid_fixture(), 16)?;
+    reused.evaluate_into(1, &mut logits)?;
+    assert_eq!(logits, fresh.evaluate(1)?);
+    // The checkpoint owns its state even after scratch reuse and a full reset.
+    reused.restore(&checkpoint)?;
+    reused.evaluate_into(0, &mut logits)?;
+    assert_eq!(logits, expected);
+    Ok(())
+}
+
+#[test]
+fn reusable_logits_clear_on_rejection_and_preserve_hybrid_state() -> Result<()> {
+    let mut model = hybrid_fixture();
+    model.tensors.insert(
+        "output.weight".to_owned(),
+        weight("output.weight", &[2, 2], &[0.0, f32::MAX, 0.0, 0.0]),
+    );
+    let mut decoder = Qwen35::new(model, 3)?;
+    let mut logits = vec![f32::NAN; 8];
+    let allocation = logits.as_ptr();
+    decoder.evaluate_into(0, &mut logits)?;
+    let checkpoint = decoder.checkpoint()?;
+    // Token 1 overflows output projection after both layer deltas are staged.
+    assert!(decoder.evaluate_into(1, &mut logits).is_err());
+    assert_eq!(logits, Vec::<f32>::new());
+    assert_eq!(logits.as_ptr(), allocation);
+    decoder.evaluate_into(0, &mut logits)?;
+    let expected = logits.clone();
+    decoder.restore(&checkpoint)?;
+    decoder.evaluate_into(0, &mut logits)?;
+    assert_eq!(logits, expected);
+    assert!(decoder.evaluate_into(2, &mut logits).is_err());
+    assert_eq!(logits, Vec::<f32>::new());
+    decoder.evaluate_into(0, &mut logits)?;
+    assert!(decoder.evaluate_into(0, &mut logits).is_err());
+    assert_eq!(logits, Vec::<f32>::new());
+    assert_eq!(logits.as_ptr(), allocation);
+    Ok(())
+}
+
 #[test]
 #[allow(
     clippy::suboptimal_flops,

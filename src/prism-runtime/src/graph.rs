@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value};
 
-use crate::kernels::{matvec, rms_norm, round_f16, row, silu, softmax};
+use crate::kernels::{
+    MatvecScratch, matvec_into, rms_norm_into, round_f16, row, row_into, silu, softmax,
+};
 use crate::model::{Model, Tensor};
 use crate::{Decoder, Result, invalid};
 
@@ -117,6 +119,47 @@ enum LayerDelta {
         convolution: Vec<f32>,
         matrix: Vec<f32>,
     },
+}
+
+#[derive(Default)]
+struct ProjectionScratch {
+    transformed: Vec<f32>,
+    matvec: MatvecScratch,
+}
+
+#[derive(Default)]
+struct AttentionScratch {
+    joint_query: Vec<f32>,
+    query: Vec<f32>,
+    gate: Vec<f32>,
+    key_projection: Vec<f32>,
+    normalized: Vec<f32>,
+    attended: Vec<f32>,
+    scores: Vec<f32>,
+    frequencies: Vec<(f32, f32)>,
+    qkv: Vec<f32>,
+    beta: Vec<f32>,
+    alpha: Vec<f32>,
+    mixed: Vec<f32>,
+}
+
+#[derive(Default)]
+struct Workspace {
+    hidden: Vec<f32>,
+    normalized: Vec<f32>,
+    up: Vec<f32>,
+    gate: Vec<f32>,
+    attention: Vec<f32>,
+    projection: ProjectionScratch,
+    attention_scratch: AttentionScratch,
+    deltas: Vec<LayerDelta>,
+}
+
+struct Evaluation<'a> {
+    geometry: &'a Geometry,
+    transforms: &'a Transforms,
+    position: usize,
+    projection: &'a mut ProjectionScratch,
 }
 
 #[derive(Default)]
@@ -276,11 +319,19 @@ impl Transforms {
         })
     }
 
-    fn project(&self, weight: &Tensor, input: &[f32], geometry: &Geometry) -> Result<Vec<f32>> {
+    fn project_into(
+        &self,
+        weight: &Tensor,
+        input: &[f32],
+        geometry: &Geometry,
+        output: &mut Vec<f32>,
+        scratch: &mut ProjectionScratch,
+    ) -> Result<()> {
         if !self.weights.contains(&weight.name) {
-            return matvec(weight, input);
+            return matvec_into(weight, input, output, &mut scratch.matvec);
         }
-        let mut transformed = copy_values(input)?;
+        copy_into(input, &mut scratch.transformed)?;
+        let transformed = &mut scratch.transformed;
         if self.grouped_values && weight.name.ends_with(".ssm_out.weight") {
             let repetitions = geometry.ssm_values / geometry.ssm_keys;
             for key in 0..geometry.ssm_keys {
@@ -292,9 +343,9 @@ impl Transforms {
                 }
             }
         }
-        self.sign(&mut transformed);
-        self.rotate(&mut transformed)?;
-        matvec(weight, &transformed)
+        self.sign(transformed);
+        self.rotate(transformed)?;
+        matvec_into(weight, transformed, output, &mut scratch.matvec)
     }
 
     fn sign(&self, input: &mut [f32]) {
@@ -333,6 +384,7 @@ pub struct Qwen35 {
     transforms: Transforms,
     layers: Vec<Layer>,
     state: Vec<LayerState>,
+    workspace: Workspace,
     context_limit: usize,
     position: usize,
     vocabulary: usize,
@@ -605,6 +657,19 @@ impl Qwen35 {
                 },
             });
         }
+        let mut deltas = capacity(layer_count)?;
+        for state in &state {
+            deltas.push(match state {
+                LayerState::Full { .. } => LayerDelta::Full {
+                    key: Vec::new(),
+                    value: Vec::new(),
+                },
+                LayerState::Recurrent { .. } => LayerDelta::Recurrent {
+                    convolution: Vec::new(),
+                    matrix: Vec::new(),
+                },
+            });
+        }
         Ok(Self {
             provenance: Arc::new(()),
             identity: model.identity + ":qwen35-text-v1:nonflash-f16:kv-f16:gdn-f32",
@@ -615,91 +680,234 @@ impl Qwen35 {
             transforms,
             layers,
             state,
+            workspace: Workspace {
+                deltas,
+                ..Workspace::default()
+            },
             context_limit,
             position: 0,
             vocabulary,
         })
     }
 
-    fn project(&self, tensor: &Tensor, input: &[f32]) -> Result<Vec<f32>> {
-        self.transforms.project(tensor, input, &self.geometry)
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep validation and transactional graph operation order auditable together."
+    )]
+    fn evaluate_token_into(&mut self, token: u32, logits: &mut Vec<f32>) -> Result<()> {
+        let token = usize::try_from(token)?;
+        if token >= self.vocabulary || self.position >= self.context_limit {
+            return Err(invalid(
+                "token is outside the vocabulary or context is exhausted",
+            ));
+        }
+        let Workspace {
+            hidden,
+            normalized,
+            up,
+            gate,
+            attention,
+            projection,
+            attention_scratch,
+            deltas,
+        } = &mut self.workspace;
+        let mut evaluation = Evaluation {
+            geometry: &self.geometry,
+            transforms: &self.transforms,
+            position: self.position,
+            projection,
+        };
+        row_into(&self.embedding, token, hidden)?;
+        if self.transforms.inverse_embedding {
+            self.transforms.rotate(hidden)?;
+            self.transforms.sign(hidden);
+        }
+        for ((layer, state), delta) in self.layers.iter().zip(&self.state).zip(deltas.iter_mut()) {
+            rms_norm_into(hidden, &layer.norm, self.geometry.epsilon, normalized)?;
+            match (&layer.attention, state) {
+                (Attention::Full(weights), LayerState::Full { keys, values }) => {
+                    evaluation.full_attention(
+                        weights,
+                        normalized,
+                        keys,
+                        values,
+                        attention_scratch,
+                        delta,
+                        attention,
+                    )?;
+                }
+                (
+                    Attention::Recurrent(weights),
+                    LayerState::Recurrent {
+                        convolution,
+                        matrix,
+                    },
+                ) => evaluation.recurrent_attention(
+                    weights,
+                    normalized,
+                    convolution,
+                    matrix,
+                    attention_scratch,
+                    delta,
+                    attention,
+                )?,
+                _ => return Err(invalid("decoder layer/cache kind mismatch")),
+            }
+            add(hidden, attention);
+            rms_norm_into(hidden, &layer.post_norm, self.geometry.epsilon, normalized)?;
+            evaluation.project_into(&layer.up, normalized, up)?;
+            evaluation.project_into(&layer.gate, normalized, gate)?;
+            for (up, &gate) in up.iter_mut().zip(gate.iter()) {
+                *up *= silu(gate);
+            }
+            evaluation.project_into(&layer.down, up, attention)?;
+            add(hidden, attention);
+            finite(hidden, "decoder layer output")?;
+        }
+        rms_norm_into(hidden, &self.output_norm, self.geometry.epsilon, normalized)?;
+        evaluation.project_into(&self.output, normalized, logits)?;
+        finite(logits, "output logits")?;
+        // Reserve every append before changing numerical state. Deltas retain
+        // their allocations across tokens but never alias checkpoint storage.
+        let width = self.geometry.head * self.geometry.kv_heads;
+        for state in &mut self.state {
+            if let LayerState::Full { keys, values } = state {
+                keys.try_reserve_exact(width)?;
+                values.try_reserve_exact(width)?;
+            }
+        }
+        for (state, delta) in self.state.iter_mut().zip(deltas.iter_mut()) {
+            match (state, delta) {
+                (LayerState::Full { keys, values }, LayerDelta::Full { key, value }) => {
+                    keys.extend_from_slice(key);
+                    values.extend_from_slice(value);
+                }
+                (
+                    LayerState::Recurrent {
+                        convolution,
+                        matrix,
+                    },
+                    LayerDelta::Recurrent {
+                        convolution: new_convolution,
+                        matrix: new_matrix,
+                    },
+                ) => {
+                    std::mem::swap(convolution, new_convolution);
+                    std::mem::swap(matrix, new_matrix);
+                }
+                // Every kind was checked by the corresponding attention call.
+                _ => {}
+            }
+        }
+        self.position += 1;
+        Ok(())
+    }
+}
+
+impl Evaluation<'_> {
+    fn project_into(
+        &mut self,
+        tensor: &Tensor,
+        input: &[f32],
+        output: &mut Vec<f32>,
+    ) -> Result<()> {
+        self.transforms
+            .project_into(tensor, input, self.geometry, output, self.projection)
     }
 
     #[allow(
+        clippy::too_many_arguments,
         clippy::suboptimal_flops,
         clippy::cast_possible_truncation,
         clippy::as_conversions,
         reason = "Preserve scalar nonflash F16 matmul inputs and binary64 accumulation rounded to binary32."
     )]
     fn full_attention(
-        &self,
+        &mut self,
         layer: &FullAttention,
         input: &[f32],
         keys: &[f32],
         values: &[f32],
-    ) -> Result<(Vec<f32>, LayerDelta)> {
-        let g = &self.geometry;
-        let joint_query = self.project(&layer.query, input)?;
-        let mut query = capacity(g.head * g.heads)?;
-        let mut gate = capacity(g.head * g.heads)?;
-        for head in joint_query.chunks_exact(2 * g.head) {
-            query.extend(rms_norm(&head[..g.head], &layer.query_norm, g.epsilon)?);
-            gate.extend_from_slice(&head[g.head..]);
+        scratch: &mut AttentionScratch,
+        delta: &mut LayerDelta,
+        output: &mut Vec<f32>,
+    ) -> Result<()> {
+        let LayerDelta::Full { key, value } = delta else {
+            return Err(invalid("decoder full-attention delta kind mismatch"));
+        };
+        let g = self.geometry;
+        self.project_into(&layer.query, input, &mut scratch.joint_query)?;
+        prepare(&mut scratch.query, g.head * g.heads)?;
+        prepare(&mut scratch.gate, g.head * g.heads)?;
+        for head in scratch.joint_query.chunks_exact(2 * g.head) {
+            rms_norm_into(
+                &head[..g.head],
+                &layer.query_norm,
+                g.epsilon,
+                &mut scratch.normalized,
+            )?;
+            scratch.query.extend_from_slice(&scratch.normalized);
+            scratch.gate.extend_from_slice(&head[g.head..]);
         }
-        let key_projection = self.project(&layer.key, input)?;
-        let mut key = capacity(key_projection.len())?;
-        for head in key_projection.chunks_exact(g.head) {
-            key.extend(rms_norm(head, &layer.key_norm, g.epsilon)?);
+        self.project_into(&layer.key, input, &mut scratch.key_projection)?;
+        prepare(key, scratch.key_projection.len())?;
+        for head in scratch.key_projection.chunks_exact(g.head) {
+            rms_norm_into(head, &layer.key_norm, g.epsilon, &mut scratch.normalized)?;
+            key.extend_from_slice(&scratch.normalized);
         }
-        let mut value = self.project(&layer.value, input)?;
-        rope(&mut query, g, self.position)?;
-        rope(&mut key, g, self.position)?;
+        self.project_into(&layer.value, input, value)?;
+        rope(
+            &mut scratch.query,
+            g,
+            self.position,
+            &mut scratch.frequencies,
+        )?;
+        rope(key, g, self.position, &mut scratch.frequencies)?;
         // F16 K x Q converts the F32 query to F16 even with F32 precision.
-        for element in query
+        for element in scratch
+            .query
             .iter_mut()
             .chain(key.iter_mut())
             .chain(value.iter_mut())
         {
             *element = round_f16(*element);
         }
-        finite(&query, "binary16 attention query")?;
-        finite(&key, "binary16 key cache")?;
-        finite(&value, "binary16 value cache")?;
+        finite(&scratch.query, "binary16 attention query")?;
+        finite(key, "binary16 key cache")?;
+        finite(value, "binary16 value cache")?;
         let width = g.head * g.kv_heads;
-        let mut attended = zeros(g.head * g.heads)?;
+        zeros_into(g.head * g.heads, &mut scratch.attended)?;
         let scale = 1.0 / small_float(g.head)?.sqrt();
         for head in 0..g.heads {
             let kv_head = head / (g.heads / g.kv_heads);
             let offset = kv_head * g.head;
-            let q = &query[head * g.head..(head + 1) * g.head];
-            let mut scores = capacity(self.position + 1)?;
+            let q = &scratch.query[head * g.head..(head + 1) * g.head];
+            prepare(&mut scratch.scores, self.position + 1)?;
+            let scores = &mut scratch.scores;
             for past in keys.chunks_exact(width) {
                 scores.push(dot(q, &past[offset..offset + g.head]) * scale);
             }
             scores.push(dot(q, &key[offset..offset + g.head]) * scale);
-            softmax(&mut scores)?;
+            softmax(scores)?;
             // Nonflash V(F16) x softmax(F32) also converts its RHS to F16.
-            for probability in &mut scores {
+            for probability in scores.iter_mut() {
                 *probability = round_f16(*probability);
             }
-            let result = &mut attended[head * g.head..(head + 1) * g.head];
+            let result = &mut scratch.attended[head * g.head..(head + 1) * g.head];
             for (dimension, out) in result.iter_mut().enumerate() {
                 let past_sum = values
                     .chunks_exact(width)
-                    .zip(&scores)
+                    .zip(scores.iter())
                     .map(|(past, &probability)| f64::from(probability * past[offset + dimension]))
                     .sum::<f64>();
                 *out = (past_sum + f64::from(scores[self.position] * value[offset + dimension]))
                     as f32;
             }
         }
-        for (out, gate) in attended.iter_mut().zip(gate) {
+        for (out, &gate) in scratch.attended.iter_mut().zip(&scratch.gate) {
             *out *= sigmoid(gate);
         }
-        Ok((
-            self.project(&layer.output, &attended)?,
-            LayerDelta::Full { key, value },
-        ))
+        self.project_into(&layer.output, &scratch.attended, output)
     }
 
     #[allow(
@@ -711,20 +919,35 @@ impl Qwen35 {
         clippy::imprecise_flops,
         reason = "Match the pinned scalar GDN operations, including logf(1+expf(x))."
     )]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Separate immutable committed state from reusable transactional scratch."
+    )]
     fn recurrent_attention(
-        &self,
+        &mut self,
         layer: &RecurrentAttention,
         input: &[f32],
         history: &[f32],
         previous: &[f32],
-    ) -> Result<(Vec<f32>, LayerDelta)> {
-        let g = &self.geometry;
-        let qkv = self.project(&layer.qkv, input)?;
-        let gate = self.project(&layer.gate, input)?;
-        let beta = self.project(&layer.beta, input)?;
-        let alpha = self.project(&layer.alpha, input)?;
-        let mut convolution = copy_values(history)?;
-        let mut mixed = zeros(g.convolution_width())?;
+        scratch: &mut AttentionScratch,
+        delta: &mut LayerDelta,
+        output: &mut Vec<f32>,
+    ) -> Result<()> {
+        let LayerDelta::Recurrent {
+            convolution,
+            matrix,
+        } = delta
+        else {
+            return Err(invalid("decoder recurrent-attention delta kind mismatch"));
+        };
+        let g = self.geometry;
+        self.project_into(&layer.qkv, input, &mut scratch.qkv)?;
+        self.project_into(&layer.gate, input, &mut scratch.gate)?;
+        self.project_into(&layer.beta, input, &mut scratch.beta)?;
+        self.project_into(&layer.alpha, input, &mut scratch.alpha)?;
+        copy_into(history, convolution)?;
+        zeros_into(g.convolution_width(), &mut scratch.mixed)?;
+        let mixed = &mut scratch.mixed;
         for (channel, mixed_value) in mixed.iter_mut().enumerate() {
             let start = channel * (g.convolution - 1);
             let coefficients =
@@ -736,19 +959,19 @@ impl Qwen35 {
             {
                 sum += old * coefficient;
             }
-            sum += qkv[channel] * coefficients[g.convolution - 1];
+            sum += scratch.qkv[channel] * coefficients[g.convolution - 1];
             *mixed_value = silu(sum);
             if g.convolution > 1 {
                 convolution[start..start + g.convolution - 1].rotate_left(1);
-                convolution[start + g.convolution - 2] = qkv[channel];
+                convolution[start + g.convolution - 2] = scratch.qkv[channel];
             }
         }
         let key_width = g.key_width();
         for head in mixed[..2 * key_width].chunks_exact_mut(g.ssm_head) {
             l2_norm(head, g.epsilon);
         }
-        let mut matrix = copy_values(previous)?;
-        let mut attended = zeros(g.value_width())?;
+        copy_into(previous, matrix)?;
+        zeros_into(g.value_width(), &mut scratch.attended)?;
         let scale = 1.0 / small_float(g.ssm_head)?.sqrt();
         for head in 0..g.ssm_values {
             // ggml repeat tiles key groups; it does not repeat each key head contiguously.
@@ -758,20 +981,20 @@ impl Qwen35 {
                 &mixed[key_width + key_head * g.ssm_head..key_width + (key_head + 1) * g.ssm_head];
             let v =
                 &mixed[2 * key_width + head * g.ssm_head..2 * key_width + (head + 1) * g.ssm_head];
-            let activation = alpha[head] + layer.time_bias[head];
+            let activation = scratch.alpha[head] + layer.time_bias[head];
             let softplus = if activation > 20.0 {
                 activation
             } else {
                 (1.0 + activation.exp()).ln()
             };
             let decay = (softplus * layer.decay[head]).exp();
-            let update = sigmoid(beta[head]);
+            let update = sigmoid(scratch.beta[head]);
             let state =
                 &mut matrix[head * g.ssm_head * g.ssm_head..(head + 1) * g.ssm_head * g.ssm_head];
             for element in state.iter_mut() {
                 *element *= decay;
             }
-            let output = &mut attended[head * g.ssm_head..(head + 1) * g.ssm_head];
+            let output = &mut scratch.attended[head * g.ssm_head..(head + 1) * g.ssm_head];
             for ((state_row, &value), out) in state
                 .chunks_exact_mut(g.ssm_head)
                 .zip(v)
@@ -783,24 +1006,18 @@ impl Qwen35 {
                 }
                 *out = dot(state_row, q) * scale;
             }
-            let normalized = rms_norm(output, &layer.norm, g.epsilon)?;
-            for ((out, normalized), &z) in output
+            rms_norm_into(output, &layer.norm, g.epsilon, &mut scratch.normalized)?;
+            for ((out, &normalized), &z) in output
                 .iter_mut()
-                .zip(normalized)
-                .zip(&gate[head * g.ssm_head..(head + 1) * g.ssm_head])
+                .zip(&scratch.normalized)
+                .zip(&scratch.gate[head * g.ssm_head..(head + 1) * g.ssm_head])
             {
                 *out = normalized * silu(z);
             }
         }
-        finite(&matrix, "GDN state")?;
-        finite(&convolution, "convolution state")?;
-        Ok((
-            self.project(&layer.output, &attended)?,
-            LayerDelta::Recurrent {
-                convolution,
-                matrix,
-            },
-        ))
+        finite(matrix, "GDN state")?;
+        finite(convolution, "convolution state")?;
+        self.project_into(&layer.output, &scratch.attended, output)
     }
 }
 
@@ -836,82 +1053,19 @@ impl Decoder for Qwen35 {
     }
 
     fn evaluate(&mut self, token: u32) -> Result<Vec<f32>> {
-        let token = usize::try_from(token)?;
-        if token >= self.vocabulary || self.position >= self.context_limit {
-            return Err(invalid(
-                "token is outside the vocabulary or context is exhausted",
-            ));
-        }
-        let mut hidden = row(&self.embedding, token)?;
-        if self.transforms.inverse_embedding {
-            self.transforms.rotate(&mut hidden)?;
-            self.transforms.sign(&mut hidden);
-        }
-        let mut deltas = capacity(self.layers.len())?;
-        for (layer, state) in self.layers.iter().zip(&self.state) {
-            let normalized = rms_norm(&hidden, &layer.norm, self.geometry.epsilon)?;
-            let (attention, delta) = match (&layer.attention, state) {
-                (Attention::Full(weights), LayerState::Full { keys, values }) => {
-                    self.full_attention(weights, &normalized, keys, values)?
-                }
-                (
-                    Attention::Recurrent(weights),
-                    LayerState::Recurrent {
-                        convolution,
-                        matrix,
-                    },
-                ) => self.recurrent_attention(weights, &normalized, convolution, matrix)?,
-                _ => return Err(invalid("decoder layer/cache kind mismatch")),
-            };
-            add(&mut hidden, &attention);
-            let normalized = rms_norm(&hidden, &layer.post_norm, self.geometry.epsilon)?;
-            let mut up = self.project(&layer.up, &normalized)?;
-            let gate = self.project(&layer.gate, &normalized)?;
-            for (up, gate) in up.iter_mut().zip(gate) {
-                *up *= silu(gate);
-            }
-            add(&mut hidden, &self.project(&layer.down, &up)?);
-            finite(&hidden, "decoder layer output")?;
-            deltas.push(delta);
-        }
-        let normalized = rms_norm(&hidden, &self.output_norm, self.geometry.epsilon)?;
-        let logits = self.project(&self.output, &normalized)?;
-        finite(&logits, "output logits")?;
-        // Reserve every append before changing cache contents. Allocation failure
-        // leaves the logical decoder position and all numerical state unchanged.
-        let width = self.geometry.head * self.geometry.kv_heads;
-        for state in &mut self.state {
-            if let LayerState::Full { keys, values } = state {
-                keys.try_reserve_exact(width)?;
-                values.try_reserve_exact(width)?;
-            }
-        }
-        for (state, delta) in self.state.iter_mut().zip(deltas) {
-            match (state, delta) {
-                (LayerState::Full { keys, values }, LayerDelta::Full { key, value }) => {
-                    keys.extend(key);
-                    values.extend(value);
-                }
-                (
-                    LayerState::Recurrent {
-                        convolution,
-                        matrix,
-                    },
-                    LayerDelta::Recurrent {
-                        convolution: new_convolution,
-                        matrix: new_matrix,
-                    },
-                ) => {
-                    *convolution = new_convolution;
-                    *matrix = new_matrix;
-                }
-                _ => return Err(invalid("decoder state commit kind mismatch")),
-            }
-        }
-        self.position += 1;
+        let mut logits = Vec::new();
+        self.evaluate_into(token, &mut logits)?;
         Ok(logits)
     }
 
+    fn evaluate_into(&mut self, token: u32, logits: &mut Vec<f32>) -> Result<()> {
+        logits.clear();
+        let result = self.evaluate_token_into(token, logits);
+        if result.is_err() {
+            logits.clear();
+        }
+        result
+    }
     fn checkpoint_bytes(&self) -> usize {
         size_of::<Qwen35Checkpoint>()
             + self.identity.capacity()
@@ -1244,6 +1398,30 @@ fn zeros(count: usize) -> Result<Vec<f32>> {
     Ok(result)
 }
 
+fn prepare<T>(output: &mut Vec<T>, count: usize) -> Result<()> {
+    output.clear();
+    if count
+        .checked_mul(size_of::<T>())
+        .is_none_or(|bytes| bytes > MAX_STATE_BYTES)
+    {
+        return Err(invalid("decoder scratch exceeds allocation budget"));
+    }
+    output.try_reserve_exact(count)?;
+    Ok(())
+}
+
+fn zeros_into(count: usize, output: &mut Vec<f32>) -> Result<()> {
+    prepare(output, count)?;
+    output.resize(count, 0.0);
+    Ok(())
+}
+
+fn copy_into(input: &[f32], output: &mut Vec<f32>) -> Result<()> {
+    prepare(output, input.len())?;
+    output.extend_from_slice(input);
+    Ok(())
+}
+
 fn capacity<T>(count: usize) -> Result<Vec<T>> {
     if count
         .checked_mul(size_of::<T>())
@@ -1348,9 +1526,14 @@ fn add(target: &mut [f32], other: &[f32]) {
     clippy::suboptimal_flops,
     reason = "Preserve separate multiply/add rounding in the scalar RoPE reference."
 )]
-fn rope(input: &mut [f32], geometry: &Geometry, position: usize) -> Result<()> {
+fn rope(
+    input: &mut [f32],
+    geometry: &Geometry,
+    position: usize,
+    frequencies: &mut Vec<(f32, f32)>,
+) -> Result<()> {
     let theta_scale = geometry.rope_base.powf(-2.0 / small_float(geometry.rope)?);
-    let mut frequencies = capacity(geometry.rope / 2)?;
+    prepare(frequencies, geometry.rope / 2)?;
     let mut theta = position as f32;
     for index in 0..geometry.rope / 2 {
         // Text positions are [p,p,p,0]. Interleaved MRoPE falls back to the
@@ -1400,7 +1583,7 @@ mod tests {
         input[0] = 1.0;
         input[4] = 1.0;
         input[10] = 2.0;
-        rope(&mut input, &geometry, 3)?;
+        rope(&mut input, &geometry, 3, &mut Vec::new())?;
         // Sector four is outside the height section, so [p,p,p,0] selects 0.
         assert_eq!(input[4].to_bits(), 1.0_f32.to_bits());
         assert_eq!(input[10].to_bits(), 2.0_f32.to_bits());
