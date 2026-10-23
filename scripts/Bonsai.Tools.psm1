@@ -57,9 +57,12 @@ function Invoke-BonsaiTool {
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
     param([Parameter(Mandatory)][ValidateSet('credentials','memory','completion','qualification')][string]$Command,
-          [Parameter(Mandatory)][Collections.IDictionary]$Request, [string]$ToolPath,
+          [Collections.IDictionary]$Request = @{}, [string]$ToolPath,
           [ValidateRange(0,86400)][int]$TimeoutSeconds = 60)
     if (-not $ToolPath -and $env:BONSAI_TOOLS_PATH) { $ToolPath = $env:BONSAI_TOOLS_PATH }
+    # The supervisor owns each sample deadline; hashing precedes that deadline
+    # and paired captures can contain many ten-minute samples.
+    if ($Command -eq 'completion' -and -not $PSBoundParameters.ContainsKey('TimeoutSeconds')) { $TimeoutSeconds = 0 }
     $tool = Resolve-BonsaiRustTool -Name 'bonsai-tools' -ManifestRelativePath '../tools/bonsai/Cargo.toml' -ToolPath $ToolPath
     $scratch = Get-BonsaiToolScratch -Name 'bonsai-tools'
     $file = Get-Item -LiteralPath $tool
