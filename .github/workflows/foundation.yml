@@ -63,7 +63,7 @@ jobs:
           $archive = Join-Path $lane ("prism-source-$($lock.ArchiveSha256).zip")
           $null = Receive-LockedArtifact -Uri $lock.ArchiveUrl -Path $archive -Bytes $lock.ArchiveBytes -Sha256 $lock.ArchiveSha256 -TimeoutSeconds 600
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismOverlay.ps1') -SourceArchive $archive
-          $launcher = (Get-Command ccache -CommandType Application -ErrorAction Stop).Source
+          $launcher = (Get-Command ccache -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
           $parallel = [Math]::Min(4, [Environment]::ProcessorCount)
           ccache --zero-stats
           $result = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-PrismEngine.ps1') -SourceArchive $archive -BuildMode All -Generator Ninja -Parallel $parallel -CompilerLauncher $launcher
