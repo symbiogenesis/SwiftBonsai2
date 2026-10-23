@@ -20,7 +20,8 @@ tokio = { version = "=1.50.0", features = ["rt", "test-util"] }
 # Bounds must fail visibly in optimized builds rather than wrap silently.
 [profile.release]
 overflow-checks = true
-debug-assertions = true
+# subtle's debug assertions add secret-dependent branches; keep release defaults.
+debug-assertions = false
 
 [profile.test]
 overflow-checks = true
