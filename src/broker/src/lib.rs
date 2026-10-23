@@ -92,12 +92,7 @@ impl RequestPolicy {
     /// # Errors
     /// Returns [`Rejection::Configuration`] for a privileged port or invalid key.
     pub fn new(port: u16, key: &str) -> Result<Self, Rejection> {
-        if port < 1024
-            || key.len() != 64
-            || !key
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        {
+        if port < 1024 || !configuration::valid_key(key.as_bytes()) {
             return Err(Rejection::Configuration);
         }
         let authority = format!("127.0.0.1:{port}");

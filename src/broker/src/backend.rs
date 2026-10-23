@@ -5,7 +5,7 @@
 //! counting and generation, prevent bypass, and ensure Drop closes each stream.
 
 use crate::{
-    AdmittedChat, MAX_HEADER_BYTES, MAX_HEADERS, Object, PendingChat, Rejection,
+    AdmittedChat, MAX_HEADER_BYTES, MAX_HEADERS, Object, PendingChat, Rejection, configuration,
     response::{MAX_RESPONSE_BYTES, validate_metadata},
     singleton,
 };
@@ -72,12 +72,7 @@ impl BackendPolicy {
     /// # Errors
     /// Returns [`BackendError::Configuration`] for a privileged port or invalid key.
     pub fn new(port: u16, key: &str) -> Result<Self, BackendError> {
-        if port < 1024
-            || key.len() != 64
-            || !key
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        {
+        if port < 1024 || !configuration::valid_key(key.as_bytes()) {
             return Err(BackendError::Configuration);
         }
         Ok(Self {

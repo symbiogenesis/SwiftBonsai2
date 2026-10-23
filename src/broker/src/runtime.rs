@@ -231,9 +231,7 @@ fn read_key(path: &Path) -> Result<(File, String), ConfigurationError> {
         .read(&mut surplus)
         .map_err(|_| ConfigurationError::KeyFile)?
         != 0
-        || !bytes
-            .iter()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+        || !crate::configuration::valid_key(&bytes)
     {
         return Err(ConfigurationError::KeyFormat);
     }

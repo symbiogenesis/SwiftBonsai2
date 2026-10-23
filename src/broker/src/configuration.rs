@@ -15,3 +15,10 @@ pub(super) fn decimal_u16(value: Option<OsString>) -> Option<u16> {
     }
     value.parse().ok()
 }
+
+pub(super) fn valid_key(bytes: &[u8]) -> bool {
+    bytes.len() == 64
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+}
