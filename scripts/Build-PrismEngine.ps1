@@ -92,7 +92,8 @@ $rustReceipt = [ordered]@{
     Library = $rustLibrary
     LibrarySha256 = (Get-FileHash -LiteralPath $rustLibrary -Algorithm SHA256).Hash.ToLowerInvariant()
     ManifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
-    LockSha256 = (Get-FileHash -LiteralPath (Join-Path $overlay 'Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
+    WorkspaceManifestSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot '../Cargo.toml') -Algorithm SHA256).Hash.ToLowerInvariant()
+    LockSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot '../Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
 $source = Join-Path $scratch ('source/' + $lock.ArchiveRoot)
