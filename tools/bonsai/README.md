@@ -39,6 +39,9 @@ bonsai-tools qualification --request ABSOLUTE_JSON_PATH
 ```
 
 Requests are bounded JSON objects read through one retained read-only handle.
+Ordinary requests are capped at 16 MiB. Qualification envelopes allow 160 MiB to
+retain the legacy in-memory response limits even with JSON escaping; original
+evidence/review files retain their separate 16 MiB limit and require standard JSON.
 Success writes one JSON object to stdout; failures write diagnostics to stderr
 with a nonzero exit code. The bridge keeps native working directories and failed
 requests under system temp and preserves inherited Windows/profile environment
