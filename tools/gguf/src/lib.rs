@@ -6,19 +6,27 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "report")]
 mod census;
+#[cfg(feature = "report")]
 mod export;
 mod inspect;
+mod metadata;
 
-use std::fs::{self, File, OpenOptions};
+#[cfg(feature = "report")]
+use std::fs;
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+#[cfg(feature = "report")]
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[cfg(feature = "report")]
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 pub use inspect::TensorDescriptor;
+pub use metadata::{Metadata, MetadataArray, MetadataValue, MetadataValueRef};
 
 /// The only supported private GGUF tensor dialect.
 pub const PRISM_DIALECT: &str = "Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b";
@@ -125,7 +133,7 @@ impl VerifiedModel {
 
     /// Returns exact retained scalar, tokenizer, array and template metadata.
     #[must_use]
-    pub const fn metadata(&self) -> &serde_json::Map<String, Value> {
+    pub const fn metadata(&self) -> &Metadata {
         &self.inspection.metadata
     }
 
@@ -175,7 +183,7 @@ impl VerifiedModel {
 
     /// Consumes the verified reader and transfers its retained metadata.
     #[must_use]
-    pub fn into_metadata(self) -> serde_json::Map<String, Value> {
+    pub fn into_metadata(self) -> Metadata {
         self.inspection.metadata
     }
 }
@@ -185,6 +193,7 @@ impl VerifiedModel {
 /// # Errors
 /// Rejects identity mismatches, unsupported dialects, malformed or over-limit
 /// metadata/descriptors, invalid extents, and I/O failures.
+#[cfg(feature = "report")]
 pub fn inspect(
     path: &Path,
     dialect: &str,
@@ -219,6 +228,7 @@ pub fn inspect(
 /// # Errors
 /// Rejects artifact mismatches, invalid tensors/scales/symbols, deadlines outside
 /// one second through one hour, existing output paths, and filesystem failures.
+#[cfg(feature = "report")]
 pub fn export_ptq1(
     source: &Path,
     output: &Path,

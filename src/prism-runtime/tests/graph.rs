@@ -4,11 +4,23 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+#[cfg(feature = "cli")]
+use bonsai_gguf::MetadataValueRef;
+use bonsai_gguf::{MetadataArray, MetadataValue};
 use bonsai_prism_runtime::graph::Qwen35;
 use bonsai_prism_runtime::kernels::round_f16;
 use bonsai_prism_runtime::model::{Model, Tensor};
 use bonsai_prism_runtime::{Decoder, Result};
-use serde_json::{Value, json};
+#[cfg(feature = "cli")]
+use serde_json::Value;
+
+macro_rules! metadata {
+    ({ $($key:literal : $value:tt),* $(,)? }) => {
+        BTreeMap::from([$(($key.to_owned(), metadata!($value))),*])
+    };
+    ([$($value:expr),* $(,)?]) => { MetadataValue::from(vec![$($value),*]) };
+    ($value:expr) => { MetadataValue::from($value) };
+}
 
 fn weight(name: &str, dimensions: &[usize], values: &[f32]) -> Tensor {
     Tensor {
@@ -25,7 +37,7 @@ fn weight(name: &str, dimensions: &[usize], values: &[f32]) -> Tensor {
 }
 
 fn fixture(recurrent: bool) -> Model {
-    let metadata = json!({
+    let metadata = metadata!({
         "general.architecture": "qwen35",
         "qwen35.block_count": 1,
         "qwen35.context_length": 16,
@@ -88,7 +100,7 @@ fn fixture(recurrent: bool) -> Model {
         insert("blk.0.attn_k_norm.weight", &[2], &[1.0, 1.0]);
     }
     Model {
-        metadata: metadata.as_object().cloned().unwrap_or_default(),
+        metadata,
         tensors,
         identity: "graph-fixture".to_owned(),
     }
@@ -98,10 +110,10 @@ fn hybrid_fixture() -> Model {
     let mut model = fixture(false);
     model
         .metadata
-        .insert("qwen35.block_count".to_owned(), json!(2));
+        .insert("qwen35.block_count".to_owned(), metadata!(2));
     model.metadata.insert(
         "qwen35.attention.recurrent_layers".to_owned(),
-        json!([false, true]),
+        metadata!([false, true]),
     );
     for (name, mut tensor) in fixture(true).tensors {
         if let Some(suffix) = name.strip_prefix("blk.0.") {
@@ -117,10 +129,10 @@ fn two_full_layer_fixture() -> Model {
     let mut model = fixture(false);
     model
         .metadata
-        .insert("qwen35.block_count".to_owned(), json!(2));
+        .insert("qwen35.block_count".to_owned(), metadata!(2));
     model.metadata.insert(
         "qwen35.attention.recurrent_layers".to_owned(),
-        json!([false, false]),
+        metadata!([false, false]),
     );
     for (suffix, dimensions, values) in [
         (
@@ -378,13 +390,16 @@ fn invalid_tokens_context_and_weights_fail_without_advancing() -> Result<()> {
 #[test]
 fn malformed_and_unsupported_metadata_is_rejected() {
     for (key, value) in [
-        ("qwen35.full_attention_interval", json!(0)),
-        ("qwen35.ssm.group_count", json!(0)),
-        ("qwen35.rope.dimension_sections", json!([1, 1, 0, 0])),
-        ("qwen35.rope.dimension_sections", json!([u64::MAX, 1, 0, 0])),
-        ("qwen35.rope.scaling.type", json!("yarn")),
-        ("qwen35.attention.causal", json!(false)),
-        ("prism.hadamard.block_size", json!(2)),
+        ("qwen35.full_attention_interval", metadata!(0)),
+        ("qwen35.ssm.group_count", metadata!(0)),
+        ("qwen35.rope.dimension_sections", metadata!([1, 1, 0, 0])),
+        (
+            "qwen35.rope.dimension_sections",
+            metadata!([u64::MAX, 1, 0, 0]),
+        ),
+        ("qwen35.rope.scaling.type", metadata!("yarn")),
+        ("qwen35.attention.causal", metadata!(false)),
+        ("prism.hadamard.block_size", metadata!(2)),
     ] {
         let mut model = fixture(false);
         model.metadata.insert(key.to_owned(), value);
@@ -395,9 +410,9 @@ fn malformed_and_unsupported_metadata_is_rejected() {
 #[test]
 fn unsupported_rope_overrides_and_unconsumed_tensors_fail_closed() {
     for (key, value) in [
-        ("qwen35.rope.scale_linear", json!(2.0)),
-        ("qwen35.rope.scaling.alpha", json!(2.0)),
-        ("prism.hadamard.unknown_transform", json!(true)),
+        ("qwen35.rope.scale_linear", metadata!(2.0)),
+        ("qwen35.rope.scaling.alpha", metadata!(2.0)),
+        ("prism.hadamard.unknown_transform", metadata!(true)),
     ] {
         let mut model = fixture(false);
         model.metadata.insert(key.to_owned(), value);
@@ -433,18 +448,18 @@ fn hadamard_embedding_inverse_and_output_rotation_preserve_basis() -> Result<()>
         ),
     );
     for (key, value) in [
-        ("prism.hadamard.version", json!(1)),
-        ("prism.hadamard.block_size", json!(2)),
+        ("prism.hadamard.version", metadata!(1)),
+        ("prism.hadamard.block_size", metadata!(2)),
         (
             "prism.hadamard.transform",
-            json!("normalized-sylvester-walsh-hadamard"),
+            metadata!("normalized-sylvester-walsh-hadamard"),
         ),
-        ("prism.hadamard.axis", json!("input-last-dimension")),
-        ("prism.hadamard.sign_mode", json!("identity")),
-        ("prism.hadamard.weight_names", json!(["output.weight"])),
+        ("prism.hadamard.axis", metadata!("input-last-dimension")),
+        ("prism.hadamard.sign_mode", metadata!("identity")),
+        ("prism.hadamard.weight_names", metadata!(["output.weight"])),
         (
             "prism.hadamard.inverse_weight_names",
-            json!(["token_embd.weight"]),
+            metadata!(["token_embd.weight"]),
         ),
     ] {
         latent.metadata.insert(key.to_owned(), value);
@@ -464,17 +479,23 @@ fn hadamard_embedding_inverse_and_output_rotation_preserve_basis() -> Result<()>
 fn explicit_signs_require_complete_valid_widths() {
     let mut model = fixture(false);
     for (key, value) in [
-        ("prism.hadamard.version", json!(1)),
-        ("prism.hadamard.block_size", json!(2)),
+        ("prism.hadamard.version", metadata!(1)),
+        ("prism.hadamard.block_size", metadata!(2)),
         (
             "prism.hadamard.transform",
-            json!("normalized-sylvester-walsh-hadamard"),
+            metadata!("normalized-sylvester-walsh-hadamard"),
         ),
-        ("prism.hadamard.axis", json!("input-last-dimension")),
-        ("prism.hadamard.sign_mode", json!("explicit")),
-        ("prism.hadamard.weight_names", json!(["output.weight"])),
-        ("prism.hadamard.sign_widths", Value::Array(Vec::new())),
-        ("prism.hadamard.sign_values", Value::Array(Vec::new())),
+        ("prism.hadamard.axis", metadata!("input-last-dimension")),
+        ("prism.hadamard.sign_mode", metadata!("explicit")),
+        ("prism.hadamard.weight_names", metadata!(["output.weight"])),
+        (
+            "prism.hadamard.sign_widths",
+            MetadataValue::Array(MetadataArray::U64(Vec::new())),
+        ),
+        (
+            "prism.hadamard.sign_values",
+            MetadataValue::Array(MetadataArray::U64(Vec::new())),
+        ),
     ] {
         model.metadata.insert(key.to_owned(), value);
     }
@@ -493,24 +514,24 @@ fn tied_latent_embedding_with_explicit_signs_restores_primal_basis() -> Result<(
         weight("token_embd.weight", &[2, 2], &[-half, -half, half, -half]),
     );
     for (key, value) in [
-        ("prism.hadamard.version", json!(2)),
-        ("prism.hadamard.tied_output", json!(true)),
-        ("prism.hadamard.block_size", json!(2)),
+        ("prism.hadamard.version", metadata!(2)),
+        ("prism.hadamard.tied_output", metadata!(true)),
+        ("prism.hadamard.block_size", metadata!(2)),
         (
             "prism.hadamard.transform",
-            json!("normalized-sylvester-walsh-hadamard"),
+            metadata!("normalized-sylvester-walsh-hadamard"),
         ),
-        ("prism.hadamard.axis", json!("input-last-dimension")),
-        ("prism.hadamard.sign_mode", json!("explicit")),
-        ("prism.hadamard.sign_widths", json!([2])),
-        ("prism.hadamard.sign_values", json!([-1, 1])),
+        ("prism.hadamard.axis", metadata!("input-last-dimension")),
+        ("prism.hadamard.sign_mode", metadata!("explicit")),
+        ("prism.hadamard.sign_widths", metadata!([2])),
+        ("prism.hadamard.sign_values", metadata!([-1, 1])),
         (
             "prism.hadamard.weight_names",
-            json!(["blk.0.ffn_up.weight"]),
+            metadata!(["blk.0.ffn_up.weight"]),
         ),
         (
             "prism.hadamard.inverse_weight_names",
-            json!(["token_embd.weight"]),
+            metadata!(["token_embd.weight"]),
         ),
     ] {
         latent.metadata.insert(key.to_owned(), value);
@@ -531,13 +552,13 @@ fn grouped_gdn_value_rotation_matches_unfolded_output_weights() -> Result<()> {
     let mut model = fixture(true);
     model
         .metadata
-        .insert("qwen35.ssm.group_count".to_owned(), json!(2));
+        .insert("qwen35.ssm.group_count".to_owned(), metadata!(2));
     model
         .metadata
-        .insert("qwen35.ssm.time_step_rank".to_owned(), json!(4));
+        .insert("qwen35.ssm.time_step_rank".to_owned(), metadata!(4));
     model
         .metadata
-        .insert("qwen35.ssm.inner_size".to_owned(), json!(8));
+        .insert("qwen35.ssm.inner_size".to_owned(), metadata!(8));
     let qkv: Vec<f32> = (0..16)
         .flat_map(|index| {
             if index % 2 == 0 {
@@ -600,19 +621,19 @@ fn grouped_gdn_value_rotation_matches_unfolded_output_weights() -> Result<()> {
         weight("blk.0.ssm_out.weight", &[8, 2], &folded),
     );
     for (key, value) in [
-        ("prism.hadamard.version", json!(1)),
-        ("prism.hadamard.block_size", json!(2)),
+        ("prism.hadamard.version", metadata!(1)),
+        ("prism.hadamard.block_size", metadata!(2)),
         (
             "prism.hadamard.transform",
-            json!("normalized-sylvester-walsh-hadamard"),
+            metadata!("normalized-sylvester-walsh-hadamard"),
         ),
-        ("prism.hadamard.axis", json!("input-last-dimension")),
-        ("prism.hadamard.sign_mode", json!("identity")),
+        ("prism.hadamard.axis", metadata!("input-last-dimension")),
+        ("prism.hadamard.sign_mode", metadata!("identity")),
         (
             "prism.hadamard.weight_names",
-            json!(["blk.0.ssm_out.weight"]),
+            metadata!(["blk.0.ssm_out.weight"]),
         ),
-        ("prism.hadamard.gdn_v_grouped", json!(true)),
+        ("prism.hadamard.gdn_v_grouped", metadata!(true)),
     ] {
         latent.metadata.insert(key.to_owned(), value);
     }
@@ -628,38 +649,43 @@ fn grouped_gdn_value_rotation_matches_unfolded_output_weights() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "cli")]
 fn wire_text(output: &mut Vec<u8>, text: &str) -> Result<()> {
     output.extend(u64::try_from(text.len())?.to_le_bytes());
     output.extend(text.as_bytes());
     Ok(())
 }
 
-fn wire_value(value: &Value) -> Result<(u32, Vec<u8>)> {
+#[cfg(feature = "cli")]
+fn wire_value(value: MetadataValueRef<'_>) -> Result<(u32, Vec<u8>)> {
     let mut output = Vec::new();
     let kind = match value {
-        Value::Bool(value) => {
-            output.push(u8::from(*value));
+        MetadataValueRef::Bool(value) => {
+            output.push(u8::from(value));
             7
         }
-        Value::String(value) => {
+        MetadataValueRef::String(value) => {
             wire_text(&mut output, value)?;
             8
         }
-        Value::Number(value) => {
-            if let Some(value) = value.as_u64() {
-                output.extend(value.to_le_bytes());
-                10
-            } else {
-                output.extend(value.as_f64().ok_or("fixture number")?.to_le_bytes());
-                12
-            }
+        MetadataValueRef::Unsigned(value) => {
+            output.extend(value.to_le_bytes());
+            10
         }
-        Value::Array(values) => {
-            let first = values.first().ok_or("fixture array must be nonempty")?;
+        MetadataValueRef::Signed(value) => {
+            output.extend(value.to_le_bytes());
+            11
+        }
+        MetadataValueRef::Float(value) => {
+            output.extend(value.to_le_bytes());
+            12
+        }
+        MetadataValueRef::Array(values) => {
+            let first = values.get(0).ok_or("fixture array must be nonempty")?;
             let (kind, _) = wire_value(first)?;
             output.extend(kind.to_le_bytes());
             output.extend(u64::try_from(values.len())?.to_le_bytes());
-            for value in values {
+            for value in values.iter() {
                 let (item_kind, bytes) = wire_value(value)?;
                 if item_kind != kind {
                     return Err("fixture array types differ".into());
@@ -668,11 +694,11 @@ fn wire_value(value: &Value) -> Result<(u32, Vec<u8>)> {
             }
             9
         }
-        _ => return Err("unsupported fixture value".into()),
     };
     Ok((kind, output))
 }
 
+#[cfg(feature = "cli")]
 fn wire_model(model: &Model) -> Result<Vec<u8>> {
     let mut output = Vec::new();
     output.extend(0x4655_4747_u32.to_le_bytes());
@@ -681,7 +707,7 @@ fn wire_model(model: &Model) -> Result<Vec<u8>> {
     output.extend(u64::try_from(model.metadata.len())?.to_le_bytes());
     for (key, value) in &model.metadata {
         wire_text(&mut output, key)?;
-        let (kind, bytes) = wire_value(value)?;
+        let (kind, bytes) = wire_value(value.as_ref())?;
         output.extend(kind.to_le_bytes());
         output.extend(bytes);
     }
@@ -702,11 +728,13 @@ fn wire_model(model: &Model) -> Result<Vec<u8>> {
     Ok(output)
 }
 
+#[cfg(feature = "cli")]
 struct DriverArtifact {
     directory: std::path::PathBuf,
     path: std::path::PathBuf,
 }
 
+#[cfg(feature = "cli")]
 impl Drop for DriverArtifact {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
@@ -714,6 +742,7 @@ impl Drop for DriverArtifact {
     }
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn native_driver_executes_verified_synthetic_gguf_and_rejects_wrong_digest() -> Result<()> {
     use sha2::{Digest, Sha256};
@@ -776,9 +805,9 @@ fn native_driver_executes_verified_synthetic_gguf_and_rejects_wrong_digest() -> 
             assert_eq!(
                 records,
                 [
-                    json!({"token": 1}),
-                    json!({"token": 1}),
-                    json!({"finish_reason":"length","prompt_tokens":2,"generated_tokens":2,"reused_tokens":0})
+                    serde_json::json!({"token": 1}),
+                    serde_json::json!({"token": 1}),
+                    serde_json::json!({"finish_reason":"length","prompt_tokens":2,"generated_tokens":2,"reused_tokens":0})
                 ]
             );
         } else {

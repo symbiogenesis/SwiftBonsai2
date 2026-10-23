@@ -4,10 +4,16 @@
     reason = "Keep explicit internal visibility if the parent module is reorganized."
 )]
 
-use crate::{PRISM_DIALECT, Result, hash_range};
-use serde_json::{Map, Number, Value, json};
+#[cfg(feature = "report")]
+use crate::hash_range;
+use crate::{Metadata, MetadataArray, MetadataValue};
+use crate::{PRISM_DIALECT, Result};
+#[cfg(feature = "report")]
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashSet};
+#[cfg(feature = "report")]
+use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -38,20 +44,24 @@ pub struct TensorDescriptor {
     pub bytes: u64,
     /// Product of every tensor dimension.
     pub elements: u64,
+    #[cfg(feature = "report")]
     pub(crate) type_position: u64,
 }
 
 pub(crate) struct Inspection {
+    #[cfg(feature = "report")]
     pub report: Value,
     pub tensors: Vec<TensorDescriptor>,
+    #[cfg(feature = "report")]
     pub file_type_position: Option<u64>,
-    pub metadata: Map<String, Value>,
+    pub metadata: Metadata,
     pub retained_bytes: usize,
     pub data_offset: u64,
 }
 
 #[derive(Clone, Copy)]
 struct Kind {
+    #[cfg(feature = "report")]
     name: &'static str,
     block: u64,
     bytes: u64,
@@ -98,7 +108,14 @@ const fn kind(id: u32, prism: bool) -> Option<Kind> {
         143 if prism => ("PTQ1_0", 128, 28),
         _ => return None,
     };
-    Some(Kind { name, block, bytes })
+    #[cfg(not(feature = "report"))]
+    let _ = name;
+    Some(Kind {
+        #[cfg(feature = "report")]
+        name,
+        block,
+        bytes,
+    })
 }
 
 fn overflow() -> crate::Error {
@@ -130,7 +147,7 @@ struct Parser<'a> {
     position: u64,
     file_bytes: u64,
     elements: u64,
-    last_float: f64,
+    array_summary: Option<(u32, u64)>,
     buffer: Box<[u8]>,
     retain_budget: Option<usize>,
 }
@@ -199,38 +216,60 @@ impl Parser<'_> {
         Ok(())
     }
 
-    fn scalar(&mut self, type_id: u32) -> Result<Value> {
+    fn scalar(&mut self, type_id: u32) -> Result<MetadataValue> {
         Ok(match type_id {
-            0 => json!(self.read::<1>()?[0]),
-            1 => json!(i8::from_le_bytes(self.read()?)),
-            2 => json!(u16::from_le_bytes(self.read()?)),
-            3 => json!(i16::from_le_bytes(self.read()?)),
-            4 => json!(self.u32()?),
-            5 => json!(i32::from_le_bytes(self.read()?)),
-            6 => {
-                let value = f32::from_le_bytes(self.read()?);
-                if !value.is_finite() {
-                    return Err(bad("non-finite float metadata."));
-                }
-                self.last_float = f64::from(value);
-                Value::Number(value.to_string().parse()?)
-            }
-            7 => match self.read::<1>()?[0] {
-                0 => Value::Bool(false),
-                1 => Value::Bool(true),
-                _ => return Err(bad("invalid boolean.")),
-            },
-            10 => json!(self.u64()?),
-            11 => json!(i64::from_le_bytes(self.read()?)),
-            12 => {
-                let value = f64::from_le_bytes(self.read()?);
-                self.last_float = value;
-                Value::Number(
-                    Number::from_f64(value).ok_or_else(|| bad("non-finite float metadata."))?,
-                )
-            }
+            0 => MetadataValue::U8(self.read::<1>()?[0]),
+            1 => MetadataValue::I8(i8::from_le_bytes(self.read()?)),
+            2 => MetadataValue::U16(u16::from_le_bytes(self.read()?)),
+            3 => MetadataValue::I16(i16::from_le_bytes(self.read()?)),
+            4 => MetadataValue::U32(self.u32()?),
+            5 => MetadataValue::I32(i32::from_le_bytes(self.read()?)),
+            6 => MetadataValue::F32(self.f32()?),
+            7 => MetadataValue::Bool(self.boolean()?),
+            10 => MetadataValue::U64(self.u64()?),
+            11 => MetadataValue::I64(i64::from_le_bytes(self.read()?)),
+            12 => MetadataValue::F64(self.f64()?),
             _ => return Err(bad("unknown scalar type.")),
         })
+    }
+
+    fn f32(&mut self) -> Result<f32> {
+        let value = f32::from_le_bytes(self.read()?);
+        if !value.is_finite() {
+            return Err(bad("non-finite float metadata."));
+        }
+        Ok(value)
+    }
+
+    fn f64(&mut self) -> Result<f64> {
+        let value = f64::from_le_bytes(self.read()?);
+        if !value.is_finite() {
+            return Err(bad("non-finite float metadata."));
+        }
+        Ok(value)
+    }
+
+    fn boolean(&mut self) -> Result<bool> {
+        match self.read::<1>()?[0] {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(bad("invalid boolean.")),
+        }
+    }
+
+    fn array_values<T>(
+        &mut self,
+        count: u64,
+        mut read: impl FnMut(&mut Self) -> Result<T>,
+    ) -> Result<Vec<T>> {
+        let count = usize::try_from(count)?;
+        self.charge(count.checked_mul(size_of::<T>()).ok_or_else(overflow)?)?;
+        let mut values = Vec::new();
+        values.try_reserve_exact(count)?;
+        for _ in 0..count {
+            values.push(read(self)?);
+        }
+        Ok(values)
     }
 
     fn booleans(&mut self, mut count: u64) -> Result<()> {
@@ -247,7 +286,7 @@ impl Parser<'_> {
         Ok(())
     }
 
-    fn value(&mut self, type_id: u32, depth: u32, retain: bool) -> Result<Option<Value>> {
+    fn value(&mut self, type_id: u32, depth: u32, retain: bool) -> Result<Option<MetadataValue>> {
         if depth > 4 {
             return Err(bad("array nesting exceeds inspection limit."));
         }
@@ -265,10 +304,12 @@ impl Parser<'_> {
                 bytes.resize(size, 0);
                 self.file.read_exact(&mut bytes)?;
                 self.position = add(self.position, u64::try_from(size)?)?;
-                return Ok(Some(Value::String(String::from_utf8(bytes)?)));
+                return Ok(Some(MetadataValue::String(String::from_utf8(bytes)?)));
             }
             if retain && size <= BUFFER_BYTES_U64 {
-                return Ok(Some(Value::String(self.read_text(usize::try_from(size)?)?)));
+                return Ok(Some(MetadataValue::String(
+                    self.read_text(usize::try_from(size)?)?,
+                )));
             }
             self.skip(size)?;
             return Ok(None);
@@ -288,7 +329,9 @@ impl Parser<'_> {
         let keep = retain
             && (self.retain_budget.is_some()
                 || (count <= 4096 && item_type != 8 && item_type != 9));
-        let descriptor = || retain.then(|| json!({"ElementTypeId": item_type, "Count": count}));
+        if depth == 0 {
+            self.array_summary = Some((item_type, count));
+        }
         if let Some(width) = width(item_type)
             && !keep
             && item_type != 7
@@ -296,31 +339,72 @@ impl Parser<'_> {
             let bytes = mul(count, width)?;
             self.need(bytes)?;
             self.skip(bytes)?;
-            return Ok(descriptor());
+            return Ok(None);
         }
         if !keep && item_type == 7 {
             if count > 0 && depth == 4 {
                 return Err(bad("array nesting exceeds inspection limit."));
             }
             self.booleans(count)?;
-            return Ok(descriptor());
+            return Ok(None);
         }
-        let mut values = if keep {
-            let count = usize::try_from(count)?;
-            self.charge(count.checked_mul(size_of::<Value>()).ok_or_else(overflow)?)?;
-            let mut values = Vec::new();
-            values.try_reserve_exact(count)?;
-            Some(values)
-        } else {
-            None
-        };
-        for _ in 0..count {
-            let value = self.value(item_type, depth + 1, keep)?;
-            if let Some(values) = &mut values {
-                values.push(value.ok_or_else(|| bad("retained scalar cannot be null."))?);
+        if count > 0 && depth == 4 {
+            return Err(bad("array nesting exceeds inspection limit."));
+        }
+        if !keep {
+            for _ in 0..count {
+                self.value(item_type, depth + 1, false)?;
             }
+            return Ok(None);
         }
-        Ok(values.map(Value::Array).or_else(descriptor))
+        self.retained_array(item_type, count, depth)
+    }
+
+    fn retained_array(
+        &mut self,
+        item_type: u32,
+        count: u64,
+        depth: u32,
+    ) -> Result<Option<MetadataValue>> {
+        let values = match item_type {
+            0 => MetadataArray::U8(self.array_values(count, |parser| Ok(parser.read::<1>()?[0]))?),
+            1 => MetadataArray::I8(
+                self.array_values(count, |parser| Ok(i8::from_le_bytes(parser.read()?)))?,
+            ),
+            2 => MetadataArray::U16(
+                self.array_values(count, |parser| Ok(u16::from_le_bytes(parser.read()?)))?,
+            ),
+            3 => MetadataArray::I16(
+                self.array_values(count, |parser| Ok(i16::from_le_bytes(parser.read()?)))?,
+            ),
+            4 => MetadataArray::U32(self.array_values(count, Self::u32)?),
+            5 => MetadataArray::I32(
+                self.array_values(count, |parser| Ok(i32::from_le_bytes(parser.read()?)))?,
+            ),
+            6 => MetadataArray::F32(self.array_values(count, Self::f32)?),
+            7 => MetadataArray::Bool(self.array_values(count, Self::boolean)?),
+            10 => MetadataArray::U64(self.array_values(count, Self::u64)?),
+            11 => MetadataArray::I64(
+                self.array_values(count, |parser| Ok(i64::from_le_bytes(parser.read()?)))?,
+            ),
+            12 => MetadataArray::F64(self.array_values(count, Self::f64)?),
+            8 => {
+                MetadataArray::String(self.array_values(count, |parser| {
+                    match parser.value(8, depth + 1, true)? {
+                        Some(MetadataValue::String(value)) => Ok(value),
+                        _ => Err(bad("retained string is required.")),
+                    }
+                })?)
+            }
+            9 => MetadataArray::Array(self.array_values(count, |parser| {
+                match parser.value(9, depth + 1, true)? {
+                    Some(MetadataValue::Array(value)) => Ok(value),
+                    _ => Err(bad("retained array is required.")),
+                }
+            })?),
+            _ => return Err(bad("unknown array element type.")),
+        };
+        Ok(Some(MetadataValue::Array(values)))
     }
 
     fn hash_record(&mut self, hash: &mut Sha256, start: u64, length: u64) -> Result<()> {
@@ -341,6 +425,53 @@ impl Parser<'_> {
     }
 }
 
+#[cfg(feature = "report")]
+fn report_value(value: &MetadataValue) -> Result<Value> {
+    Ok(match value {
+        // Preserve the established JSON schema's shortest binary32 decimal,
+        // rather than exposing binary64's longer exact promotion.
+        MetadataValue::F32(value) => Value::Number(value.to_string().parse()?),
+        MetadataValue::Array(values) => report_array(values)?,
+        MetadataValue::U8(value) => json!(value),
+        MetadataValue::I8(value) => json!(value),
+        MetadataValue::U16(value) => json!(value),
+        MetadataValue::I16(value) => json!(value),
+        MetadataValue::U32(value) => json!(value),
+        MetadataValue::I32(value) => json!(value),
+        MetadataValue::Bool(value) => json!(value),
+        MetadataValue::String(value) => json!(value),
+        MetadataValue::U64(value) => json!(value),
+        MetadataValue::I64(value) => json!(value),
+        MetadataValue::F64(value) => json!(value),
+    })
+}
+
+#[cfg(feature = "report")]
+fn report_array(values: &MetadataArray) -> Result<Value> {
+    Ok(match values {
+        MetadataArray::F32(values) => Value::Array(
+            values
+                .iter()
+                .map(|value| Ok(Value::Number(value.to_string().parse()?)))
+                .collect::<Result<_>>()?,
+        ),
+        MetadataArray::Array(values) => {
+            Value::Array(values.iter().map(report_array).collect::<Result<_>>()?)
+        }
+        MetadataArray::U8(values) => json!(values),
+        MetadataArray::I8(values) => json!(values),
+        MetadataArray::U16(values) => json!(values),
+        MetadataArray::I16(values) => json!(values),
+        MetadataArray::U32(values) => json!(values),
+        MetadataArray::I32(values) => json!(values),
+        MetadataArray::Bool(values) => json!(values),
+        MetadataArray::String(values) => json!(values),
+        MetadataArray::U64(values) => json!(values),
+        MetadataArray::I64(values) => json!(values),
+        MetadataArray::F64(values) => json!(values),
+    })
+}
+
 // Match Convert.ToUInt64 for the architecture's count metadata, including its
 // accepted booleans, numeric strings and rounded finite floating point values.
 fn float_count(value: f64) -> Result<u64> {
@@ -354,14 +485,14 @@ fn float_count(value: f64) -> Result<u64> {
     Ok(format!("{rounded:.0}").parse()?)
 }
 
-fn count_value(value: Option<&Value>, original_float: Option<&f64>) -> Result<u64> {
-    if let Some(value) = original_float {
-        return float_count(*value);
-    }
+fn count_value(value: Option<&MetadataValue>) -> Result<u64> {
     let Some(value) = value else { return Ok(0) };
+    if let Some(value) = value.as_u64() {
+        return Ok(value);
+    }
     match value {
-        Value::Bool(value) => Ok(u64::from(*value)),
-        Value::String(value) => {
+        MetadataValue::Bool(value) => Ok(u64::from(*value)),
+        MetadataValue::String(value) => {
             let value = value.trim_matches([' ', '\t', '\r', '\n', '\x0b', '\x0c']);
             if value
                 .strip_prefix('-')
@@ -371,23 +502,18 @@ fn count_value(value: Option<&Value>, original_float: Option<&f64>) -> Result<u6
             }
             value.parse().map_err(Into::into)
         }
-        Value::Number(value) => {
-            if let Some(value) = value.as_u64() {
-                return Ok(value);
-            }
-            if value.is_i64() {
-                return Err(bad("architecture count cannot be negative."));
-            }
-            let value = value
-                .as_f64()
-                .ok_or_else(|| bad("invalid architecture count."))?;
-            float_count(value)
-        }
+        MetadataValue::F32(value) => float_count(f64::from(*value)),
+        MetadataValue::F64(value) => float_count(*value),
+        MetadataValue::I8(_)
+        | MetadataValue::I16(_)
+        | MetadataValue::I32(_)
+        | MetadataValue::I64(_) => Err(bad("architecture count cannot be negative.")),
         _ => Err(bad("invalid architecture count.")),
     }
 }
 
 // Keep validation and report assembly adjacent in serialized file order.
+#[cfg(feature = "report")]
 pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Inspection> {
     inspect_retained(file, path, dialect, None)
 }
@@ -416,7 +542,7 @@ pub(crate) fn inspect_retained(
         position: 0,
         file_bytes,
         elements: 0,
-        last_float: 0.0,
+        array_summary: None,
         buffer: vec![0; BUFFER_BYTES].into_boxed_slice(),
         retain_budget: memory_limit,
     };
@@ -432,13 +558,18 @@ pub(crate) fn inspect_retained(
         return Err(bad("tensor/KV count exceeds inspection limit."));
     }
     let mut keys = HashSet::new();
-    let mut scalars = Map::new();
-    let mut float_scalars = BTreeMap::new();
+    let mut scalars = Metadata::new();
+    #[cfg(feature = "report")]
+    let mut scalar_report = Map::new();
+    #[cfg(feature = "report")]
     let mut arrays = Map::new();
+    #[cfg(feature = "report")]
     let mut templates = Map::new();
+    #[cfg(feature = "report")]
     let mut special = Map::new();
-    let mut metadata = Map::new();
+    let mut metadata = Metadata::new();
     let mut alignment = 32u32;
+    #[cfg(feature = "report")]
     let mut file_type_position = None;
     let mut tokenizer_hash = Sha256::new();
     let mut tokenizer_bytes = 0;
@@ -446,13 +577,14 @@ pub(crate) fn inspect_retained(
     for _ in 0..metadata_count {
         let start = parser.position();
         let key = parser.text(1024)?;
-        // Include a conservative allowance for map/tree nodes, keys and JSON
-        // scalar storage, in addition to arrays and string payloads below.
+        // Covers tree nodes, duplicated validation keys and native value storage.
+        // Payload charges below are checked before reserving string/array space.
         parser.charge(key.len().checked_add(256).ok_or_else(overflow)?)?;
         if key.is_empty() || !keys.insert(key.clone()) {
             return Err(bad("empty or duplicate metadata key."));
         }
         let type_id = parser.u32()?;
+        #[cfg(feature = "report")]
         if key == "general.file_type" {
             file_type_position = Some(parser.position());
         }
@@ -466,29 +598,37 @@ pub(crate) fn inspect_retained(
             }
             parser.need(size)?;
             parser.skip(size)?;
-            let digest = hash_range(parser.file, add(value_start, 8)?, size)?;
-            templates.insert(key.clone(), json!({"Utf8Bytes": size, "Sha256": digest}));
+            #[cfg(feature = "report")]
+            {
+                let digest = hash_range(parser.file, add(value_start, 8)?, size)?;
+                templates.insert(key.clone(), json!({"Utf8Bytes": size, "Sha256": digest}));
+            }
+            #[cfg(not(feature = "report"))]
+            let _ = value_start;
         } else {
             let value = parser.value(type_id, 0, true)?;
-            if matches!(type_id, 6 | 12) {
-                // Count conversion must use the original binary value, while
-                // JSON preserves the source type's shortest decimal form.
-                float_scalars.insert(key.clone(), parser.last_float);
-            }
-            if type_id == 9 {
-                if memory_limit.is_none() {
-                    arrays.insert(
-                        key.clone(),
-                        value
-                            .clone()
-                            .ok_or_else(|| bad("retained array descriptor is required."))?,
-                    );
+            #[cfg(feature = "report")]
+            if memory_limit.is_none() {
+                if type_id == 9 {
+                    let report = if let Some(value) = &value {
+                        report_value(value)?
+                    } else {
+                        let (item_type, count) = parser
+                            .array_summary
+                            .ok_or_else(|| bad("array descriptor is required."))?;
+                        json!({"ElementTypeId": item_type, "Count": count})
+                    };
+                    arrays.insert(key.clone(), report);
+                } else if let Some(value) = &value {
+                    scalar_report.insert(key.clone(), report_value(value)?);
                 }
-            } else if let Some(value) = &value
-                && (memory_limit.is_none()
-                    || key == "general.architecture"
+            }
+            if memory_limit.is_none()
+                && type_id != 9
+                && (key == "general.architecture"
                     || key.ends_with(".block_count")
                     || key.ends_with(".nextn_predict_layers"))
+                && let Some(value) = &value
             {
                 scalars.insert(key.clone(), value.clone());
             }
@@ -496,12 +636,15 @@ pub(crate) fn inspect_retained(
                 if !matches!(type_id, 4 | 5 | 10 | 11) {
                     return Err(bad("special token ID must be an integer."));
                 }
+                #[cfg(feature = "report")]
                 if memory_limit.is_none() {
                     special.insert(
                         key.clone(),
-                        value
-                            .clone()
-                            .ok_or_else(|| bad("special token ID is required."))?,
+                        report_value(
+                            value
+                                .as_ref()
+                                .ok_or_else(|| bad("special token ID is required."))?,
+                        )?,
                     );
                 }
             }
@@ -512,7 +655,7 @@ pub(crate) fn inspect_retained(
                 alignment = u32::try_from(
                     value
                         .as_ref()
-                        .and_then(Value::as_u64)
+                        .and_then(MetadataValue::as_u64)
                         .ok_or_else(|| bad("general.alignment must be UINT32."))?,
                 )?;
                 if alignment == 0 || !alignment.is_power_of_two() || alignment > 1_048_576 {
@@ -533,10 +676,16 @@ pub(crate) fn inspect_retained(
             tokenizer_records += 1;
         }
     }
+    #[cfg(feature = "report")]
     let metadata_end = parser.position();
-    let architecture = scalars
+    let scalar_metadata = if memory_limit.is_some() {
+        &metadata
+    } else {
+        &scalars
+    };
+    let architecture = scalar_metadata
         .get("general.architecture")
-        .and_then(Value::as_str)
+        .and_then(MetadataValue::as_str)
         .filter(|arch| !arch.is_empty())
         .ok_or_else(|| bad("general.architecture string is required."))?
         .to_owned();
@@ -572,6 +721,7 @@ pub(crate) fn inspect_retained(
             elements = mul(elements, size)?;
             dimensions.push(size);
         }
+        #[cfg(feature = "report")]
         let type_position = parser.position();
         let type_id = parser.u32()?;
         let kind = kind(type_id, dialect == PRISM_DIALECT)
@@ -601,6 +751,7 @@ pub(crate) fn inspect_retained(
             offset,
             bytes,
             elements,
+            #[cfg(feature = "report")]
             type_position,
         });
     }
@@ -628,69 +779,84 @@ pub(crate) fn inspect_retained(
         }
         previous_end = end;
     }
-    let mut groups: BTreeMap<u32, (u64, u64, u64)> = BTreeMap::new();
-    for tensor in &tensors {
-        let group = groups.entry(tensor.type_id).or_default();
-        group.0 += 1;
-        group.1 = add(group.1, tensor.bytes)?;
-        group.2 = add(group.2, tensor.elements)?;
-    }
-    let mut histogram = Vec::with_capacity(groups.len());
-    for (type_id, (count, bytes, elements)) in groups {
-        let kind =
-            kind(type_id, dialect == PRISM_DIALECT).ok_or_else(|| bad("unknown tensor kind."))?;
-        histogram.push(json!({"TypeId": type_id, "Name": kind.name, "Count": count, "Bytes": bytes, "Elements": elements}));
-    }
     let block_key = format!("{architecture}.block_count");
     let nextn_key = format!("{architecture}.nextn_predict_layers");
-    let blocks = count_value(scalars.get(&block_key), float_scalars.get(&block_key))?;
-    let nextn = count_value(scalars.get(&nextn_key), float_scalars.get(&nextn_key))?;
+    let blocks = count_value(
+        scalar_metadata
+            .get(&block_key)
+            .filter(|value| value.as_array().is_none()),
+    )?;
+    let nextn = count_value(
+        scalar_metadata
+            .get(&nextn_key)
+            .filter(|value| value.as_array().is_none()),
+    )?;
     if nextn > blocks {
         return Err(bad("MTP block count exceeds block count."));
     }
-    let mtp: Vec<_> = tensors
-        .iter()
-        .filter(|tensor| {
-            if tensor.name.starts_with("nextn.") || tensor.name.contains(".nextn.") {
-                return true;
-            }
-            if nextn > 0
-                && let Some(rest) = tensor.name.strip_prefix("blk.")
-                && let Some((block, _)) = rest.split_once('.')
-                && !block.is_empty()
-                && block.bytes().all(|byte| byte.is_ascii_digit())
-                && let Ok(block) = block.parse::<u64>()
-            {
-                return block >= blocks - nextn && block < blocks;
-            }
-            false
-        })
-        .map(|tensor| tensor.name.clone())
-        .collect();
-    let report = if memory_limit.is_some() {
-        Value::Null
-    } else {
-        json!({
-            "SchemaVersion": 1, "Format": "GGUF", "Version": 3, "ByteOrder": "little", "ModelPath": path.to_string_lossy(),
-            "FileBytes": file_bytes, "Architecture": architecture, "Alignment": alignment, "MetadataCount": metadata_count,
-            "MetadataEndOffset": metadata_end, "TensorDescriptorsEndOffset": descriptors_end, "TensorDataOffset": data_offset,
-            "TensorCount": tensor_count, "TensorTypeHistogram": histogram, "Scalars": scalars, "Arrays": arrays,
-            "SpecialTokenIds": special, "EmbeddedTemplates": templates, "MtpTensorCount": mtp.len(), "MtpTensorNames": mtp,
-            "TokenizerMetadataSha256": crate::digest_hex(tokenizer_hash), "TokenizerMetadataBytes": tokenizer_bytes,
-            "TokenizerMetadataRecords": tokenizer_records,
-            "TokenizerDigestDefinition": "SHA-256 of complete raw serialized tokenizer.* KV records concatenated in file order, including chat templates",
-            "InspectionLimits": {"HeaderBytes": HEADER_LIMIT, "StringBytes": STRING_LIMIT, "ArrayElements": ARRAY_LIMIT,
-                "TotalArrayElements": TOTAL_ELEMENT_LIMIT, "ArrayNesting": 4, "MetadataRecords": 10_000, "Tensors": 100_000},
-            "TensorPayloadRead": false, "Dialect": dialect
-        })
+    #[cfg(feature = "report")]
+    let report = {
+        let mut groups: BTreeMap<u32, (u64, u64, u64)> = BTreeMap::new();
+        for tensor in &tensors {
+            let group = groups.entry(tensor.type_id).or_default();
+            group.0 += 1;
+            group.1 = add(group.1, tensor.bytes)?;
+            group.2 = add(group.2, tensor.elements)?;
+        }
+        let mut histogram = Vec::with_capacity(groups.len());
+        for (type_id, (count, bytes, elements)) in groups {
+            let kind = kind(type_id, dialect == PRISM_DIALECT)
+                .ok_or_else(|| bad("unknown tensor kind."))?;
+            histogram.push(json!({"TypeId": type_id, "Name": kind.name, "Count": count, "Bytes": bytes, "Elements": elements}));
+        }
+        let mtp: Vec<_> = tensors
+            .iter()
+            .filter(|tensor| {
+                if tensor.name.starts_with("nextn.") || tensor.name.contains(".nextn.") {
+                    return true;
+                }
+                if nextn > 0
+                    && let Some(rest) = tensor.name.strip_prefix("blk.")
+                    && let Some((block, _)) = rest.split_once('.')
+                    && !block.is_empty()
+                    && block.bytes().all(|byte| byte.is_ascii_digit())
+                    && let Ok(block) = block.parse::<u64>()
+                {
+                    return block >= blocks - nextn && block < blocks;
+                }
+                false
+            })
+            .map(|tensor| tensor.name.clone())
+            .collect();
+        if memory_limit.is_some() {
+            Value::Null
+        } else {
+            json!({
+                "SchemaVersion": 1, "Format": "GGUF", "Version": 3, "ByteOrder": "little", "ModelPath": path.to_string_lossy(),
+                "FileBytes": file_bytes, "Architecture": architecture, "Alignment": alignment, "MetadataCount": metadata_count,
+                "MetadataEndOffset": metadata_end, "TensorDescriptorsEndOffset": descriptors_end, "TensorDataOffset": data_offset,
+                "TensorCount": tensor_count, "TensorTypeHistogram": histogram, "Scalars": scalar_report, "Arrays": arrays,
+                "SpecialTokenIds": special, "EmbeddedTemplates": templates, "MtpTensorCount": mtp.len(), "MtpTensorNames": mtp,
+                "TokenizerMetadataSha256": crate::digest_hex(tokenizer_hash), "TokenizerMetadataBytes": tokenizer_bytes,
+                "TokenizerMetadataRecords": tokenizer_records,
+                "TokenizerDigestDefinition": "SHA-256 of complete raw serialized tokenizer.* KV records concatenated in file order, including chat templates",
+                "InspectionLimits": {"HeaderBytes": HEADER_LIMIT, "StringBytes": STRING_LIMIT, "ArrayElements": ARRAY_LIMIT,
+                    "TotalArrayElements": TOTAL_ELEMENT_LIMIT, "ArrayNesting": 4, "MetadataRecords": 10_000, "Tensors": 100_000},
+                "TensorPayloadRead": false, "Dialect": dialect
+            })
+        }
     };
+    #[cfg(not(feature = "report"))]
+    let _ = (path, tokenizer_hash, tokenizer_bytes, tokenizer_records);
     let retained_bytes = match (memory_limit, parser.retain_budget) {
         (Some(limit), Some(remaining)) => limit - remaining,
         _ => 0,
     };
     Ok(Inspection {
+        #[cfg(feature = "report")]
         report,
         tensors,
+        #[cfg(feature = "report")]
         file_type_position,
         metadata,
         retained_bytes,

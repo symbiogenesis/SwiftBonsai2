@@ -1,12 +1,17 @@
 #![forbid(unsafe_code)]
 //! Synthetic export checks with independent expected native wire bytes.
 
+#![cfg(feature = "report")]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use bonsai_gguf::{CODEC_COMMIT, PRISM_DIALECT, Result, VerifiedModel, export_ptq1, inspect};
+use bonsai_gguf::{
+    CODEC_COMMIT, MetadataArray, MetadataValue, PRISM_DIALECT, Result, VerifiedModel, export_ptq1,
+    inspect,
+};
 use sha2::{Digest, Sha256};
 
 struct Fixture {
@@ -137,6 +142,27 @@ fn convert(source: &Path, output: &Path, bytes: &[u8]) -> Result<serde_json::Val
     )
 }
 
+fn check_retained_metadata(metadata: &bonsai_gguf::Metadata, long_text: &str) {
+    assert_eq!(metadata["synthetic.description"].as_str(), Some(long_text));
+    assert_eq!(
+        metadata["tokenizer.chat_template"].as_str(),
+        Some(long_text)
+    );
+    assert!(
+        matches!(&metadata["tokenizer.boolean_values"], MetadataValue::Array(MetadataArray::Bool(values)) if !values[65_536])
+    );
+    assert!(
+        matches!(&metadata["tokenizer.numeric_values"], MetadataValue::Array(MetadataArray::U32(values)) if values[4096] == 4096)
+    );
+    assert!(
+        matches!(&metadata["tokenizer.strings"], MetadataValue::Array(MetadataArray::String(values)) if values[1] == "second")
+    );
+    assert_eq!(
+        metadata["synthetic.last"].as_u64(),
+        Some(0x0123_4567_89ab_cdef_u64)
+    );
+}
+
 #[test]
 fn inspection_cursor_preserves_offsets_and_hashes_across_metadata_paths() -> Result<()> {
     let scratch = scratch()?;
@@ -222,13 +248,7 @@ fn inspection_cursor_preserves_offsets_and_hashes_across_metadata_paths() -> Res
         &digest,
         8 * 1024 * 1024,
     )?;
-    let metadata = model.metadata();
-    assert_eq!(metadata["synthetic.description"], long_text);
-    assert_eq!(metadata["tokenizer.chat_template"], long_text);
-    assert_eq!(metadata["tokenizer.boolean_values"][65_536], false);
-    assert_eq!(metadata["tokenizer.numeric_values"][4096], 4096);
-    assert_eq!(metadata["tokenizer.strings"][1], "second");
-    assert_eq!(metadata["synthetic.last"], 0x0123_4567_89ab_cdef_u64);
+    check_retained_metadata(model.metadata(), &long_text);
     assert_eq!(model.read_tensor(0, 4)?, [1, 2, 3, 4]);
     drop(model);
     fs::remove_dir_all(scratch)?;

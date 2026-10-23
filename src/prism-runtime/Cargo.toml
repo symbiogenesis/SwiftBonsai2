@@ -10,13 +10,23 @@ repository.workspace = true
 keywords = ["inference", "ternary", "qwen35"]
 categories = ["science"]
 
+[features]
+default = ["cli"]
+cli = ["dep:serde_json"]
+
+[[bin]]
+name = "bonsai-prism-runtime"
+path = "src/main.rs"
+required-features = ["cli"]
+
 [dependencies]
 bonsai-ternary = { path = "../../tools/ternary" }
-bonsai-gguf = { path = "../../tools/gguf" }
+bonsai-gguf = { path = "../../tools/gguf", default-features = false }
 bonsai-prism = { path = "../../tools/prism" }
-serde_json.workspace = true
+serde_json = { workspace = true, optional = true }
 
 [dev-dependencies]
+serde_json.workspace = true
 sha2.workspace = true
 
 [lints]

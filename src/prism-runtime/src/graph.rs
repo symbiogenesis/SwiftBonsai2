@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use serde_json::{Map, Value};
+use bonsai_gguf::{Metadata, MetadataArray, MetadataValue, MetadataValueRef};
 
 use crate::kernels::{
     MatvecScratch, matvec_into, rms_norm_into, round_f16, row, row_into, silu, softmax,
@@ -214,7 +214,7 @@ impl Transforms {
             return Err(invalid("unsupported Hadamard transform or axis"));
         }
         let mut weights = BTreeSet::new();
-        for name in array(metadata, "prism.hadamard.weight_names")? {
+        for name in array(metadata, "prism.hadamard.weight_names")?.iter() {
             let name = name
                 .as_str()
                 .ok_or_else(|| invalid("Hadamard weight names must be strings"))?;
@@ -229,7 +229,7 @@ impl Transforms {
         }
         let mut inverse_embedding = false;
         if metadata.contains_key("prism.hadamard.inverse_weight_names") {
-            for name in array(metadata, "prism.hadamard.inverse_weight_names")? {
+            for name in array(metadata, "prism.hadamard.inverse_weight_names")?.iter() {
                 if name.as_str() != Some("token_embd.weight") || inverse_embedding {
                     return Err(invalid(
                         "only one token embedding inverse transform is supported",
@@ -258,16 +258,18 @@ impl Transforms {
                     return Err(invalid("explicit Hadamard sign widths must not be empty"));
                 }
                 let mut offset = 0_usize;
-                for width in widths {
-                    let width = json_usize(width, "Hadamard sign width")?;
+                for width in widths.iter() {
+                    let width = metadata_usize(width, "Hadamard sign width")?;
                     let end = offset
                         .checked_add(width)
                         .ok_or_else(|| invalid("sign length overflow"))?;
                     if width == 0 || width > MAX_WIDTH || width % block != 0 || end > values.len() {
                         return Err(invalid("invalid Hadamard sign width"));
                     }
-                    let vector = values[offset..end]
+                    let vector = values
                         .iter()
+                        .skip(offset)
+                        .take(width)
                         .map(|value| match value.as_i64() {
                             Some(-1) => Ok(-1.0),
                             Some(1) => Ok(1.0),
@@ -468,15 +470,15 @@ impl Qwen35 {
         let sections = array(metadata, "qwen35.rope.dimension_sections")?;
         if sections.len() != 4
             || sections.iter().try_fold(0_usize, |sum, value| {
-                checked_sum(sum, json_usize(value, "RoPE section")?)
+                checked_sum(sum, metadata_usize(value, "RoPE section")?)
             })? != geometry.rope / 2
         {
             return Err(invalid(
                 "RoPE sections must describe exactly half the rotated dimensions",
             ));
         }
-        for (destination, value) in geometry.rope_sections.iter_mut().zip(sections) {
-            *destination = json_usize(value, "RoPE section")?;
+        for (destination, value) in geometry.rope_sections.iter_mut().zip(sections.iter()) {
+            *destination = metadata_usize(value, "RoPE section")?;
         }
         let embedding = tensor(&model, "token_embd.weight", &[geometry.embedding, 0])?;
         let vocabulary = embedding.dimensions[1];
@@ -1131,7 +1133,7 @@ fn foldable(name: &str) -> bool {
         )
 }
 
-fn reject_unsupported(metadata: &Map<String, Value>) -> Result<()> {
+fn reject_unsupported(metadata: &Metadata) -> Result<()> {
     for key in metadata.keys() {
         if let Some(key) = key.strip_prefix("qwen35.")
             && !matches!(
@@ -1314,22 +1316,23 @@ fn flatten(tensor: &Tensor) -> Result<Vec<f32>> {
     Ok(values)
 }
 
-fn integer(metadata: &Map<String, Value>, key: &str) -> Result<usize> {
-    json_usize(
+fn integer(metadata: &Metadata, key: &str) -> Result<usize> {
+    metadata_usize(
         metadata
             .get(key)
-            .ok_or_else(|| invalid(format!("required metadata absent: {key}")))?,
+            .ok_or_else(|| invalid(format!("required metadata absent: {key}")))?
+            .as_ref(),
         key,
     )
 }
 
-fn optional_integer(metadata: &Map<String, Value>, key: &str, default: usize) -> Result<usize> {
+fn optional_integer(metadata: &Metadata, key: &str, default: usize) -> Result<usize> {
     metadata
         .get(key)
-        .map_or(Ok(default), |value| json_usize(value, key))
+        .map_or(Ok(default), |value| metadata_usize(value.as_ref(), key))
 }
 
-fn json_usize(value: &Value, name: &str) -> Result<usize> {
+fn metadata_usize(value: MetadataValueRef<'_>, name: &str) -> Result<usize> {
     usize::try_from(
         value
             .as_u64()
@@ -1338,7 +1341,7 @@ fn json_usize(value: &Value, name: &str) -> Result<usize> {
     .map_err(Into::into)
 }
 
-fn optional_bool(metadata: &Map<String, Value>, key: &str, default: bool) -> Result<bool> {
+fn optional_bool(metadata: &Metadata, key: &str, default: bool) -> Result<bool> {
     metadata.get(key).map_or(Ok(default), |value| {
         value
             .as_bool()
@@ -1346,18 +1349,17 @@ fn optional_bool(metadata: &Map<String, Value>, key: &str, default: bool) -> Res
     })
 }
 
-fn string<'a>(metadata: &'a Map<String, Value>, key: &str) -> Result<&'a str> {
+fn string<'a>(metadata: &'a Metadata, key: &str) -> Result<&'a str> {
     metadata
         .get(key)
-        .and_then(Value::as_str)
+        .and_then(MetadataValue::as_str)
         .ok_or_else(|| invalid(format!("metadata must be a string: {key}")))
 }
 
-fn array<'a>(metadata: &'a Map<String, Value>, key: &str) -> Result<&'a [Value]> {
+fn array<'a>(metadata: &'a Metadata, key: &str) -> Result<&'a MetadataArray> {
     metadata
         .get(key)
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
+        .and_then(MetadataValue::as_array)
         .ok_or_else(|| invalid(format!("metadata must be an array: {key}")))
 }
 
@@ -1366,10 +1368,10 @@ fn array<'a>(metadata: &'a Map<String, Value>, key: &str) -> Result<&'a [Value]>
     clippy::as_conversions,
     reason = "The pinned scalar numerical contract explicitly rounds this value to binary32."
 )]
-fn float(metadata: &Map<String, Value>, key: &str) -> Result<f32> {
+fn float(metadata: &Metadata, key: &str) -> Result<f32> {
     let value = metadata
         .get(key)
-        .and_then(Value::as_f64)
+        .and_then(MetadataValue::as_f64)
         .ok_or_else(|| invalid(format!("metadata must be numeric: {key}")))?;
     let result = value as f32;
     if !result.is_finite() {

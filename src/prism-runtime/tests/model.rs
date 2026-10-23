@@ -1,13 +1,14 @@
 #![forbid(unsafe_code)]
 //! Synthetic, focused checks of verified native model storage.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bonsai_gguf::{PRISM_DIALECT, VerifiedModel};
+use bonsai_gguf::{MetadataArray, MetadataValue, PRISM_DIALECT, VerifiedModel};
 use bonsai_prism_runtime::Result;
 use bonsai_prism_runtime::model::{Model, Tensor};
 use sha2::{Digest, Sha256};
@@ -181,10 +182,16 @@ fn retains_exact_tokenizer_arrays_templates_and_tensor_dimensions() -> Result<()
     )?;
     let model = fixture.load(BUDGET)?;
     assert_eq!(model.identity, sha(&fixture.bytes));
-    assert_eq!(model.metadata["tokenizer.ggml.tokens"][4099], "token4099");
-    assert_eq!(model.metadata["tokenizer.ggml.scores"][4099], 1.25);
-    assert_eq!(model.metadata["tokenizer.ggml.token_type"][4099], 1);
-    assert_eq!(model.metadata["tokenizer.ggml.bos_token_id"], 3);
+    assert!(matches!(&model.metadata["tokenizer.ggml.tokens"],
+        MetadataValue::Array(MetadataArray::String(values)) if values[4099] == "token4099"));
+    assert!(matches!(&model.metadata["tokenizer.ggml.scores"],
+        MetadataValue::Array(MetadataArray::F32(values)) if values[4099].to_bits() == 1.25_f32.to_bits()));
+    assert!(matches!(&model.metadata["tokenizer.ggml.token_type"],
+        MetadataValue::Array(MetadataArray::I32(values)) if values[4099] == 1));
+    assert_eq!(
+        model.metadata["tokenizer.ggml.bos_token_id"].as_u64(),
+        Some(3)
+    );
     assert_eq!(
         model.metadata["tokenizer.chat_template"]
             .as_str()
@@ -441,7 +448,7 @@ fn lora_b_sharing_preserves_layout_bytes_and_owner_lifetime() {
         data: Arc::from(vec![value; 8]),
     };
     let mut model = Model {
-        metadata: serde_json::Map::new(),
+        metadata: BTreeMap::new(),
         identity: String::new(),
         tensors: [
             ("a.lora_b".into(), tensor("a.lora_b", vec![1, 2], 1)),

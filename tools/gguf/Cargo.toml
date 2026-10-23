@@ -10,9 +10,18 @@ repository.workspace = true
 keywords = ["ternary", "quantization", "scalar"]
 categories = ["encoding", "science"]
 
+[features]
+default = ["report"]
+report = ["dep:serde_json", "dep:bonsai-ternary"]
+
+[[bin]]
+name = "bonsai-gguf"
+path = "src/main.rs"
+required-features = ["report"]
+
 [dependencies]
-bonsai-ternary = { path = "../ternary" }
-serde_json.workspace = true
+bonsai-ternary = { path = "../ternary", optional = true }
+serde_json = { workspace = true, optional = true }
 sha2.workspace = true
 
 [lints]

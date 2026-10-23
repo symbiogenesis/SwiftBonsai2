@@ -4,9 +4,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use bonsai_gguf::{PRISM_DIALECT, VerifiedModel};
+use bonsai_gguf::{Metadata, PRISM_DIALECT, VerifiedModel};
 use bonsai_prism::{Layout, Pool};
-use serde_json::{Map, Value};
 
 use crate::{Result, invalid};
 
@@ -27,7 +26,7 @@ pub struct Tensor {
 #[derive(Debug)]
 pub struct Model {
     /// Complete retained scalar, tokenizer, array and template metadata.
-    pub metadata: Map<String, Value>,
+    pub metadata: Metadata,
     /// Tensors indexed by their unique GGUF names.
     pub tensors: BTreeMap<String, Tensor>,
     /// Lowercase SHA-256 identity verified before parsing or loading tensors.
