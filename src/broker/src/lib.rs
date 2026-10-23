@@ -12,10 +12,19 @@
 //! Backend bypass prevention and daily OS isolation still require qualification.
 //! This library alone is not a qualified HTTP or process-isolation boundary.
 #![forbid(unsafe_code)]
+#![cfg_attr(
+    feature = "dependency-trial",
+    allow(
+        clippy::multiple_crate_versions,
+        reason = "opt-in JSON competitors require incompatible transitive hashbrown and syn versions"
+    )
+)]
 
 pub mod artifacts;
 pub mod backend;
 mod configuration;
+#[cfg(feature = "dependency-trial")]
+pub mod json_trial;
 pub mod launch_policy;
 #[cfg(windows)]
 pub mod launcher;
@@ -221,35 +230,51 @@ impl AuthorizedHead {
         // Parser error strings can include private values; never propagate them.
         let Object(chat): Object<ClientChat<'_>> =
             serde_json::from_slice(body).map_err(|_| Rejection::ChatSchema)?;
-        if !valid_history(&chat.messages) {
-            return Err(Rejection::ChatSchema);
-        }
-        if !(1..=MAX_COMPLETION_TOKENS).contains(&chat.max_completion_tokens) {
-            return Err(Rejection::CompletionLimit);
-        }
-        let max_completion_tokens = chat.max_completion_tokens;
-        let body = serde_json::to_vec(&BackendChat {
-            messages: &chat.messages,
-            max_completion_tokens,
-            stream: chat.stream,
-            n: 1,
-            cache_prompt: false,
-            n_cache_reuse: 0,
-            ignore_eos: false,
-            temperature: 1.0,
-            top_p: 0.95,
-            top_k: 20,
-            min_p: 0.0,
-            presence_penalty: 0.0,
-            frequency_penalty: 0.0,
-            repeat_penalty: 1.0,
-        })
-        .map_err(|_| Rejection::ChatSchema)?;
-        Ok(PendingChat {
-            body,
-            max_completion_tokens,
-            stream: chat.stream,
-        })
+        canonicalize_chat(&chat)
+    }
+}
+
+fn canonicalize_chat(chat: &ClientChat<'_>) -> Result<PendingChat, Rejection> {
+    if !valid_history(&chat.messages) {
+        return Err(Rejection::ChatSchema);
+    }
+    if !(1..=MAX_COMPLETION_TOKENS).contains(&chat.max_completion_tokens) {
+        return Err(Rejection::CompletionLimit);
+    }
+    let max_completion_tokens = chat.max_completion_tokens;
+    let body = serde_json::to_vec(&backend_chat(
+        &chat.messages,
+        max_completion_tokens,
+        chat.stream,
+    ))
+    .map_err(|_| Rejection::ChatSchema)?;
+    Ok(PendingChat {
+        body,
+        max_completion_tokens,
+        stream: chat.stream,
+    })
+}
+
+const fn backend_chat<'a, 'b>(
+    messages: &'a [Message<'b>],
+    max_completion_tokens: u32,
+    stream: bool,
+) -> BackendChat<'a, 'b> {
+    BackendChat {
+        messages,
+        max_completion_tokens,
+        stream,
+        n: 1,
+        cache_prompt: false,
+        n_cache_reuse: 0,
+        ignore_eos: false,
+        temperature: 1.0,
+        top_p: 0.95,
+        top_k: 20,
+        min_p: 0.0,
+        presence_penalty: 0.0,
+        frequency_penalty: 0.0,
+        repeat_penalty: 1.0,
     }
 }
 

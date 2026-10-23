@@ -10,6 +10,7 @@ members = [
     "tools/prism",
     "tools/rust-trial",
     "tools/bonsai",
+    "tools/dependency-trial",
 ]
 
 [workspace.package]
