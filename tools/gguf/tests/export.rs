@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bonsai_gguf::{CODEC_COMMIT, PRISM_DIALECT, Result, VerifiedModel, export_ptq1, inspect};
@@ -106,9 +107,11 @@ fn fixture(large_blocks: usize, file_type_tag: u32) -> Result<Fixture> {
 }
 
 fn scratch() -> Result<PathBuf> {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+    let sequence = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let path = std::env::temp_dir().join(format!(
-        "SwiftBonsai-GgufExport-{}-{nonce}",
+        "SwiftBonsai-GgufExport-{}-{nonce}-{sequence}",
         std::process::id()
     ));
     fs::create_dir(&path)?;
