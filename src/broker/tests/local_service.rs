@@ -24,12 +24,16 @@ const FRONT_KEY: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456
 const BACK_KEY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn run(test: impl Future<Output = ()>) {
+    run_with_timeout(test, Duration::from_secs(10));
+}
+
+fn run_with_timeout(test: impl Future<Output = ()>, limit: Duration) {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()
         .block_on(LocalSet::new().run_until(async {
-            timeout(Duration::from_secs(10), test).await.unwrap();
+            timeout(limit, test).await.unwrap();
         }));
 }
 
@@ -144,6 +148,7 @@ fn accepted_capacity_is_reserved_before_a_second_socket_or_body() {
     run(async {
         let backend = listener().await;
         let service = service(&backend, 0).await;
+        assert_eq!(service.capacity(), 1);
         let _client = TcpStream::connect(("127.0.0.1", service.port()))
             .await
             .unwrap();
@@ -154,11 +159,68 @@ fn accepted_capacity_is_reserved_before_a_second_socket_or_body() {
         ));
         drop(accepted);
         service.close();
+        assert_eq!(service.capacity(), 1);
         assert!(matches!(
             service.accept().await,
             Err(ServiceError::Gate(GateError::Closed))
         ));
     });
+}
+
+#[test]
+fn queued_socket_expires_without_reading_a_request_or_connecting_backend() {
+    run_with_timeout(
+        async {
+            let backend = listener().await;
+            let service = service(&backend, 1).await;
+            assert_eq!(service.capacity(), 2);
+            let worker = Arc::clone(&service);
+            let active = spawn_local(async move { worker.accept().await.unwrap().serve().await });
+            let mut first_client = TcpStream::connect(("127.0.0.1", service.port()))
+                .await
+                .unwrap();
+            send_request(&mut first_client, service.port()).await;
+            count(&backend).await;
+            let (mut generation, _) = backend.accept().await.unwrap();
+            read_request(&mut generation).await;
+
+            let mut queued_client = TcpStream::connect(("127.0.0.1", service.port()))
+                .await
+                .unwrap();
+            // No headers or body are supplied: queue expiry must independently
+            // close an accepted socket while a prior generation owns the slot.
+            let worker = Arc::clone(&service);
+            let (accepted_tx, accepted_rx) = oneshot::channel();
+            let queued = spawn_local(async move {
+                let accepted = worker.accept().await.unwrap();
+                accepted_tx.send(()).unwrap();
+                accepted.serve().await
+            });
+            accepted_rx.await.unwrap();
+            tokio::task::yield_now().await;
+            tokio::time::pause();
+            tokio::time::advance(bonsai_broker::service::QUEUE_TIMEOUT).await;
+            assert_eq!(
+                queued.await.unwrap(),
+                Err(ServiceError::Gate(GateError::Deadline))
+            );
+            tokio::time::resume();
+            let mut byte = [0];
+            assert_eq!(queued_client.read(&mut byte).await.unwrap(), 0);
+            assert!(
+                timeout(Duration::from_millis(20), backend.accept())
+                    .await
+                    .is_err()
+            );
+            service.close();
+            assert_eq!(
+                active.await.unwrap(),
+                Err(ServiceError::Gate(GateError::Closed))
+            );
+            assert_eq!(generation.read(&mut byte).await.unwrap(), 0);
+        },
+        bonsai_broker::service::QUEUE_TIMEOUT + Duration::from_secs(10),
+    );
 }
 
 #[test]

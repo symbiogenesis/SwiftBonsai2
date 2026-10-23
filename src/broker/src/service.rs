@@ -52,6 +52,7 @@ pub struct LocalChatService {
     backend: LoopbackBackend,
     gate: RequestGate,
     port: u16,
+    capacity: usize,
 }
 
 impl LocalChatService {
@@ -95,12 +96,21 @@ impl LocalChatService {
             backend,
             gate,
             port,
+            capacity: max_waiting + 1,
         })
     }
 
     /// Numeric frontend port, including an OS-assigned port after binding zero.
     pub const fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Immutable total reservation bound, including the one active request.
+    ///
+    /// Pending accepts and accepted handles share this bound. This is not a
+    /// count of currently available slots and does not change after shutdown.
+    pub const fn capacity(&self) -> usize {
+        self.capacity
     }
 
     /// Stop admission and wake queued, accepting and active operations.
