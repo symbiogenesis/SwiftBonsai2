@@ -139,8 +139,13 @@ source ZIP and run the native regression on every invocation. Use at most four
 compiler workers in hosted Prism CI, retaining two as the script default.
 Run standards separately from the complete correctness lane, cache the pinned
 PowerShell analyzer, and isolate manual dispatch concurrency from superseded
-pushes. These changes preserve every gate; CI timings after the change are
-needed to establish the actual speedup.
+pushes. These changes preserve every gate. The [populated-cache Prism job on
+45f81dc](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/39997978790/job/120566391977)
+reported 341/341 compiler cache hits, passed the native regression and completed
+in 46 seconds, compared with 311 seconds for the baseline job. These are observed
+hosted CI timings, without an inference-performance claim. Validation also
+exposed a marker-publication race in the lifecycle test: wait for the writer to
+release its marker handle within the existing deadline before reading it.
 
 Checked Rust's [Vec allocation contract](https://doc.rust-lang.org/std/vec/struct.Vec.html#method.with_capacity)
 and Tokio's [complete writes](https://docs.rs/tokio/1.50.0/tokio/io/trait.AsyncWriteExt.html#method.write_all).
