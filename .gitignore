@@ -1,5 +1,7 @@
 # Broker build outputs; diagnostic scratch belongs in system temp.
 /src/broker/target/
+/src/windows-process/target/
+/src/windows-credentials/target/
 /tools/bitcos/target/
 /tools/gguf/target/
 /tools/prism/target/

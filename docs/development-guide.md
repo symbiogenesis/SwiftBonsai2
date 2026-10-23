@@ -116,7 +116,7 @@ Use the existing native ARM64 Rust toolchain to build it. Run Cargo from a uniqu
 
 ## Explicit development broker
 
-The executable serves the bounded text-chat API against an **already running development backend**. It does not launch a model, establish the backend's identity, or enable the daily profile. It requires both `--development` and `--allow-unverified-key-files`: loading the files does not verify their Windows ACLs or ancestor ownership. The separate helper below creates protected owner/LocalSystem ACLs; same-user processes and a parent-directory owner can still access or replace credentials. Choose an existing local parent directory you control, outside Git.
+The `--development` mode serves the bounded text-chat API against an **already running development backend**. It does not launch a model, establish the backend's identity, or enable the daily profile. It requires both `--development` and `--allow-unverified-key-files`: loading the files does not verify their Windows ACLs or ancestor ownership. The separate helper below creates protected owner/LocalSystem ACLs; same-user processes and a parent-directory owner can still access or replace credentials. Choose an existing local parent directory you control, outside Git. The separate owned launch mode is described below.
 
 ```powershell
 $keys = ./scripts/New-DevelopmentKeys.ps1 -ParentDirectory $data
@@ -161,6 +161,11 @@ After building as above, use existing external data and evidence directories:
     --data-directory $data --evidence-parent ([IO.Path]::GetTempPath()) `
     --frontend-port 5173 --backend-port 8081 --max-waiting 2
 ```
+
+Append `--check-only` to verify the fixed policy and all installed artifacts
+without creating credentials, binding a listener or starting a process. It
+reports current memory admission separately, so integrity can be checked even
+when available RAM is below the launch threshold.
 
 The launcher performs no download. It verifies the complete pinned model and
 runtime ZIP, compares every installed runtime file to that archive, rejects

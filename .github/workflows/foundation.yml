@@ -194,9 +194,9 @@ jobs:
             ${{ env.CARGO_HOME }}/registry/cache
             ${{ env.CARGO_HOME }}/git/db
             ${{ env.CARGO_TARGET_DIR }}
-          key: broker-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs') }}
+          key: broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'src/windows-*/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs', 'src/windows-*/**') }}
           restore-keys: |
-            broker-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'rust-toolchain.toml') }}-
+            broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'src/windows-*/Cargo.toml', 'rust-toolchain.toml') }}-
       - name: Broker format, analyzer and full correctness suite
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -212,6 +212,17 @@ jobs:
           if ($LASTEXITCODE) { throw 'Broker documentation analyzer failed.' }
           cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --release --all-features
           if ($LASTEXITCODE) { throw 'Broker suite failed.' }
+          foreach ($crate in @('windows-process', 'windows-credentials')) {
+            $nativeManifest = Join-Path $env:GITHUB_WORKSPACE "src/$crate/Cargo.toml"
+            cargo +1.99.1-aarch64-pc-windows-msvc fmt --manifest-path $nativeManifest --check
+            if ($LASTEXITCODE) { throw "$crate formatting failed." }
+            cargo +1.99.1-aarch64-pc-windows-msvc clippy --manifest-path $nativeManifest --locked --release --all-targets --all-features -- -D warnings
+            if ($LASTEXITCODE) { throw "$crate analyzer failed." }
+            cargo +1.99.1-aarch64-pc-windows-msvc doc --manifest-path $nativeManifest --locked --no-deps --all-features
+            if ($LASTEXITCODE) { throw "$crate documentation failed." }
+            cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path $nativeManifest --locked --release --all-features
+            if ($LASTEXITCODE) { throw "$crate native correctness failed." }
+          }
   standards:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm

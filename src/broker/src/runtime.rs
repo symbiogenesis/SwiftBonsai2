@@ -20,7 +20,7 @@ use std::{
 
 /// Static help text contains neither keys nor local file paths.
 pub const USAGE: &str = concat!(
-    "Development only; no backend launcher or daily isolation.\n",
+    "External-backend development mode; daily isolation remains unqualified.\n",
     "Usage: bonsai-broker --development --allow-unverified-key-files\n",
     "  --frontend-port <0-or-1024..65535> --backend-port <1024..65535>\n",
     "  --frontend-key-file <absolute-path> --backend-key-file <absolute-path>\n",

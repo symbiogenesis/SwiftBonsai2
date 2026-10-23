@@ -1,7 +1,7 @@
 //! Fixed numeric-loopback backend connections for development integration.
 //!
-//! A TCP address and credential do not establish process identity or prevent
-//! direct backend access. The future launcher must own and isolate the backend.
+//! The Windows launcher can require an owned listener PID for each connection.
+//! Direct backend access and daily OS isolation remain separately unqualified.
 
 use crate::{
     backend::{BackendError, BackendPolicy},

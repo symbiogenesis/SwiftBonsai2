@@ -3,10 +3,10 @@
 The Rust library in `src/broker/` implements request admission, bounded
 reception, backend HTTP exchange/exact-count admission, response writing and
 explicit development orchestration with numeric-loopback transport. The
-executable is an opt-in development runner against an already supplied backend;
-it does not launch a model. Model launch remains disabled in the PowerShell
-preflight and reference profile. These are development components, not
-daily-service qualification.
+executable supports an opt-in runner against an already supplied backend and a
+separate explicit Windows launcher for the pinned reference CPU backend. Model
+launch remains disabled in the PowerShell preflight and daily reference profile.
+These are development components, not daily-service qualification.
 
 The policy accepts only HTTP/1.1 origin-form `POST /v1/chat/completions`, numeric
 Host `127.0.0.1:<port>`, and the exact `http://127.0.0.1:<port>` Origin when supplied.
@@ -325,7 +325,73 @@ replacement by the parent owner are outside its assurance. A partial directory
 may remain on setup failure; no automatic destructive cleanup is attempted.
 See the [development commands](development-guide.md#explicit-development-broker).
 
+## Owned Windows development launcher
+
+`--launch-development --allow-unisolated-backend` selects the separate
+`launcher::LaunchConfig` path. Both acknowledgements are required. The only
+accepted model/runtime is the compiled-in `reference-cpu` lock; users cannot
+substitute executables, model files, profile JSON or extra server arguments.
+Appending `--check-only` performs read-only policy/artifact verification and
+reports current memory admission without creating credentials or a process.
+The Rust launch policy checks the fixed profile and rejects inherited
+LLAMA/LLAMACPP/GGML/AIP/MTMD and model-endpoint/token overrides. Host Windows
+system and profile environment variables are preserved for the child.
+
+`artifacts::VerifiedArtifacts` size/hash-checks the complete pinned model and
+ZIP, validates archive paths and bounded expansion, compares the installed
+runtime tree with the verified archive, and validates ARM64 PE images. The
+Windows handles for artifacts and their ancestor directories deny write/delete
+access while the owner lives. This protects the verified files during use; it
+does not attest a restricted execution environment or a source-to-binary build.
+
+The broker stays safe Rust. `bonsai-windows-process` owns the narrowly audited
+Win32 process/Job calls and `bonsai-windows-credentials` owns RNG, security
+descriptors and protected creation. Their unsafe blocks document pointer,
+buffer, handle and lifetime obligations. Both crates expose owned safe APIs;
+their manifests and focused native regressions run in Foundation.
+
+The launcher creates a fresh protected evidence directory, distinct frontend
+and backend keys, and new technical stdout/stderr files. It requires 22 GiB
+available physical memory before launching the fixed 18 GiB reference service.
+The Job has kill-on-close, an 18 GiB committed-memory cap and one-process limit,
+without breakaway. Job-list and standard-handle-list attributes are applied
+at suspended process creation before any child code can run. The Job handle
+is noninheritable, so abrupt broker death also ends the backend. The process
+working directory is the absolute external protected evidence directory.
+
+No frontend listener opens before a ten-minute startup deadline, complete
+bounded HTTP health response, a protected-endpoint authentication check, and
+the Windows listener PID matching the owned process. The pinned `/health`
+endpoint is public, so readiness additionally requires `/v1/models` to reject
+a missing credential and accept the generated backend key. Each probe has a
+short absolute I/O timeout, bounded headers/body and strict response framing.
+Backend count/generation connections recheck the listener PID before and after
+connecting. PID observations complement pinned artifacts and the retained
+process handle; same-user/admin interference remains outside this development
+assurance.
+
+During startup and serving the launcher observes process exit, private bytes,
+working set and the 4 GiB available-physical-memory reserve. Serving additionally
+checks listener ownership. A guard failure closes admission and drains sockets.
+Every normal serving exit, including the generation-cancellation latch, kills
+the complete owned Job and waits up to ten seconds for it to become empty.
+Startup failures and owner drop also kill the Job. No automatic restart or
+admission reset is supplied. A Job commit limit does not cover every mapped
+resident model page, so the physical-memory watchdog remains necessary.
+
+The data/evidence paths must be existing external local directories with no
+reparse components. Credentials and diagnostic evidence remain retained for
+inspection; no recursive cleanup is attempted. Never share the whole evidence
+directory because it contains `frontend.key` and `backend.key`. The existing
+PowerShell CPU/LoRA checks retain their separate C# process helper and pins.
+
+This mode supplies ownership and resource limits for development. Restricted
+tokens, filesystem access, OS egress denial, prevention of same-user backend
+bypass, daily chat/UI and real-model quality/performance remain unqualified.
+The Swift assessment and approved LoRA are not silently substituted into the
+reference launch mode. See the [launch command](development-guide.md#owned-windows-development-backend).
+
 Dependencies, including httparse 1.10.1 and Tokio 1.50.0, are exact-pinned with a committed Cargo lockfile. Transport enables Tokio's net/sync features and the executable additionally enables runtime/signal support. Native ARM64 Rust
-1.98.0 is the initial checked toolchain. Local work may build and run focused
+1.99.1 is the checked toolchain. Local work may build and run focused
 regressions; the full broker suite runs only in the main-only Foundation workflow.
 See [pre-step research](implementation-research.md) for sources and sanity checks.

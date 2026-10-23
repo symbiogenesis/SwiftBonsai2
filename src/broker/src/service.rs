@@ -60,7 +60,7 @@ impl LocalChatService {
     ///
     /// Port zero requests an OS-assigned frontend port; other frontend ports
     /// and the backend port must be unprivileged. Keys are never generated or
-    /// logged here. The backend must already be owned by the future launcher.
+    /// logged here. The caller supplies an already running development backend.
     ///
     /// # Errors
     /// Returns a value-free [`ServiceError`] for invalid policy or bind failure.
