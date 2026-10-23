@@ -289,12 +289,24 @@ enum Role {
 impl<'de> Deserialize<'de> for Role {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         // A derived unit enum also accepts externally tagged objects in JSON.
-        match String::deserialize(deserializer)?.as_str() {
-            "system" => Ok(Self::System),
-            "user" => Ok(Self::User),
-            "assistant" => Ok(Self::Assistant),
-            _ => Err(de::Error::custom("unsupported role")),
+        struct RoleVisitor;
+        impl de::Visitor<'_> for RoleVisitor {
+            type Value = Role;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a role string")
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Role, E> {
+                match value {
+                    "system" => Ok(Role::System),
+                    "user" => Ok(Role::User),
+                    "assistant" => Ok(Role::Assistant),
+                    _ => Err(E::custom("unsupported role")),
+                }
+            }
         }
+        deserializer.deserialize_str(RoleVisitor)
     }
 }
 

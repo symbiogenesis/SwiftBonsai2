@@ -77,10 +77,10 @@ impl DevelopmentConfig {
                 Some("--development") if !development => development = true,
                 Some("--allow-unverified-key-files") if !unverified => unverified = true,
                 Some("--frontend-port") if frontend_port.is_none() => {
-                    frontend_port = Some(number(args.next(), u16::MAX)?);
+                    frontend_port = Some(number(args.next())?);
                 }
                 Some("--backend-port") if backend_port.is_none() => {
-                    backend_port = Some(number(args.next(), u16::MAX)?);
+                    backend_port = Some(number(args.next())?);
                 }
                 Some("--frontend-key-file") if frontend_key.is_none() => {
                     frontend_key = Some(key_path(args.next())?);
@@ -89,7 +89,7 @@ impl DevelopmentConfig {
                     backend_key = Some(key_path(args.next())?);
                 }
                 Some("--max-waiting") if max_waiting.is_none() => {
-                    let value = number(args.next(), u16::MAX)?;
+                    let value = number(args.next())?;
                     max_waiting = Some(usize::from(value));
                 }
                 _ => return Err(ConfigurationError::Arguments),
@@ -160,17 +160,13 @@ impl DevelopmentService {
     }
 }
 
-fn number(value: Option<OsString>, maximum: u16) -> Result<u16, ConfigurationError> {
+fn number(value: Option<OsString>) -> Result<u16, ConfigurationError> {
     let value = value.ok_or(ConfigurationError::Arguments)?;
     let value = value.to_str().ok_or(ConfigurationError::Arguments)?;
     if value.is_empty() || value.len() > 5 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(ConfigurationError::Arguments);
     }
-    value
-        .parse::<u16>()
-        .ok()
-        .filter(|value| *value <= maximum)
-        .ok_or(ConfigurationError::Arguments)
+    value.parse().map_err(|_| ConfigurationError::Arguments)
 }
 
 fn key_path(value: Option<OsString>) -> Result<PathBuf, ConfigurationError> {
