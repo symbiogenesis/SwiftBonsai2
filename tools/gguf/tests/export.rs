@@ -280,11 +280,8 @@ fn census_counts_raw_symbols_across_batches_and_disqualifies_invalid_scales() ->
     assert_eq!(census["ZeroScaleBlocks"], 1);
     assert_eq!(census["NonfiniteScaleBlocks"], 0);
     assert_eq!(census["LosslessThreeSymbolEligible"], false);
-    assert!(
-        census["BitcosCandidate"]
-            .get("TensorPackedPayloadBytesLowerBound")
-            .is_none()
-    );
+    assert_eq!(census["Scales"], 1929);
+    assert_eq!(census["ScaleBytes"], 1929 * 2);
     assert_eq!(census["PayloadBufferBytes"], 65_536);
     Ok(())
 }

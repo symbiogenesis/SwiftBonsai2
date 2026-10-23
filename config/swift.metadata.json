@@ -145,5 +145,5 @@
   "ArtifactVerification": "verified-size-and-sha256",
   "ModelRepository": "ukisai/Swift-Bonsai-2-GGUF",
   "ModelRevision": "a3bdac086bbb6b04d87d0108d18943b5f63868f7",
-  "CensusRecord": "swift.bitcos-census.json"
+  "CensusRecord": "swift.pq2-census.json"
 }

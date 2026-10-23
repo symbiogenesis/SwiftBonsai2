@@ -1,7 +1,7 @@
 #requires -Version 7.6
 <#
 .SYNOPSIS
-Focused synthetic regressions for pinned Prism PQ2 payload census and size estimates.
+Focused synthetic regressions for pinned Prism PQ2 payload census and ternary eligibility.
 #>
 [CmdletBinding()]
 [OutputType([void])]
@@ -103,15 +103,11 @@ $second = $census.Tensors[1]
 Assert ($report.TensorPayloadRead -and $census.TensorCount -eq 2) 'Actual payload census was not reported.'
 Assert ($first.CodeMinusOne -eq 1 -and $first.CodeZero -eq 253 -and $first.CodePlusOne -eq 2 -and $first.CodePlusTwo -eq 0) 'Low-first two-bit code census differs.'
 Assert ($first.LosslessThreeSymbolEligible -and $first.ZeroScaleBlocks -eq 0 -and $first.NonfiniteScaleBlocks -eq 0) 'Finite negative scale was incorrectly rejected.'
-Assert ($first.BitcosCandidate.TensorPackedPayloadBytesLowerBound -eq 37 -and $first.BitcosCandidate.Block128BytePaddedPayloadBytes -eq 38) 'Per-block sign padding or retained FP16 scales were miscounted.'
 Assert ($second.CodeMinusOne -eq 32 * $largeBlocks -and $second.CodeZero -eq 64 * $largeBlocks -and $second.CodePlusOne -eq 32 * $largeBlocks) 'Census lost symbols across the read boundary.'
 Assert ($census.SerializedBytesRead -eq $small.Length + $large.Length -and $census.UnchangedOtherTensorBytes -eq 32) 'Census scanned tensor padding or unrelated payloads.'
 Assert ($census.PayloadBufferBytes -eq 65536 -and $census.MaximumBlocksPerRead -eq 1927) 'Bounded payload buffer contract changed.'
 Assert ($census.Blocks -eq 2 + $largeBlocks -and $census.Scales -eq $census.Blocks) 'Block/scale counts differ.'
 Assert ($census.CodeMinusOne + $census.CodeZero + $census.CodePlusOne + $census.CodePlusTwo -eq 128 * $census.Blocks) 'Census symbols do not sum to validated tensor elements.'
-Assert (-not $census.BitcosCandidate.IncludesFormatOrIndexOverhead) 'Estimator mislabeled a byte budget as a complete format.'
-$retained = $fixture.Bytes.Length - $census.SerializedBytesRead
-Assert ($census.BitcosCandidate.WholeFileBytesLowerBoundWithExistingNonPq2Bytes -eq $retained + 37 + 26 * $largeBlocks) 'Whole-file estimate discarded other tensors/header/padding.'
 # Exercise every possible packed byte against an independent scalar-code count.
 $allCodes = [byte[]]::new(34 * 8)
 $expected = [long[]]::new(4)
@@ -127,7 +123,7 @@ $allPath = Join-Path $scratch 'all-packed-bytes.gguf'
 New-CensusFixture $allPath @(@{ Name = 'all.codes'; Type = 142; Elements = 1024; Payload = $allCodes }) | Out-Null
 $all = (Read-TestGguf $allPath $dialect $true).Pq2Census
 Assert ($all.CodeMinusOne -eq $expected[0] -and $all.CodeZero -eq $expected[1] -and $all.CodePlusOne -eq $expected[2] -and $all.CodePlusTwo -eq $expected[3]) 'Lookup census differs for a packed byte pattern.'
-Assert (-not $all.LosslessThreeSymbolEligible -and -not $all.BitcosCandidate.ContainsKey('TensorPackedPayloadBytesLowerBound')) 'Fourth symbols received a three-symbol candidate estimate.'
+Assert (-not $all.LosslessThreeSymbolEligible) 'Fourth symbols received three-symbol eligibility.'
 # Invalid scales remain raw-code zeros, never silently recoded decoded zeros.
 foreach ($scale in @(0,0x8000,0x7c00,0xfc00,0x7e00)) {
     $bytes = [byte[]]$fixture.Bytes.Clone()
