@@ -9,11 +9,15 @@ repository = "https://github.com/symbiogenesis/SwiftBonsai2"
 keywords = ["lora", "deduplication", "ggml"]
 categories = ["caching", "science"]
 
+[build-dependencies]
+cbindgen = { version = "=0.29.4", default-features = false }
+
 [lib]
 crate-type = ["rlib", "staticlib"]
 
 [features]
-native-tests = []
+engine-loader = []
+native-tests = ["engine-loader"]
 
 [[test]]
 name = "native"
