@@ -7,7 +7,7 @@ view creation and backend writes. The crate has no runtime dependencies.
 Pinned build dependency cbindgen 0.29.4 generates the C ABI from Rust into Cargo's
 external output directory. No native header is checked into the repository.
 The static library is linked into pinned Prism commit
-`73bfe6cc485554822f80c473a3c0c4f25e80f41b`.
+`b87ca7225456b06b0975b8239c66b5aecf07e37c`.
 
 Only ordinary CPU-buffer, contiguous F32 rank-one B vectors are eligible.
 Context, buffer type, dimensions, strides and all payload bytes must match.

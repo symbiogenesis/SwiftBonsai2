@@ -25,15 +25,15 @@
   },
   "runtime": {
     "repository": "https://github.com/ggml-org/llama.cpp.git",
-    "commit": "620d2225cc436ab0b001e3200e590e3b286ef9ab",
-    "release": "b11669",
+    "commit": "36e36e63a54fc8f85b95e9c499a022b597e478dd",
+    "release": "b11840",
     "license": "MIT",
     "asset": {
-      "filename": "llama-b11669-bin-win-cpu-arm64.zip",
-      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-win-cpu-arm64.zip",
-      "bytes": 12442177,
-      "sha256": "9cff39ffed17edcd03a7d876073f74d7b48cd43a1e5eafdd59ee094185ad871b",
-      "digestSource": "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/b11669"
+      "filename": "llama-b11840-bin-win-cpu-arm64.zip",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11840/llama-b11840-bin-win-cpu-arm64.zip",
+      "bytes": 12781980,
+      "sha256": "9bfdb90329cd190c8286e5e53ed74391f8455c7cf7a6370725817440dd7ff085",
+      "digestSource": "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/b11840"
     }
   },
   "fallback": {

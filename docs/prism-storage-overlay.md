@@ -32,10 +32,25 @@ native regression again verifies the exact allocation saving, tensor names,
 layouts and byte-identical matrix-operation output against pinned ARM64 ggml.
 
 The [source lock](../tools/prism/source.lock.json) pins Prism commit
-`73bfe6cc485554822f80c473a3c0c4f25e80f41b`, the complete 39,423,279-byte codeload
-ZIP SHA-256 `5ee8738706229e84e85db7051d7a40797c91e22a7ffa8f4bfb8fea4bf2cb0293`,
-and the before/after adapter-loader and CMake source hashes. The
-[overlay applicator](../tools/prism/Apply-Overlay.ps1) rejects drift, ambiguous
+`b87ca7225456b06b0975b8239c66b5aecf07e37c`, the complete 39,429,253-byte codeload
+ZIP SHA-256 `333ab1cc57bdb1be0b52f894fe8c6822eb7da667a239d7a587dce79283782e58`,
+and the before/after adapter-loader and CMake source hashes. This is the latest
+Prism default-branch source inspected on October 23, 2026, seven commits beyond
+the latest published assessment runtime, `73bfe6cc`. The additional source fixes
+include malformed UTF-8 sanitization, legacy Q2 row validation, empty JSON-schema
+unions, grammar cloning, and a CPU null-callback crash. The overlay insertion
+files and public ggml headers are unchanged across those seven commits.
+
+The assessment binary in [swift-assessment.lock.json](../config/swift-assessment.lock.json)
+remains the latest publisher release, `prism-b10787-73bfe6c`; it does not contain
+those seven source-only fixes. Building the candidate does not qualify or install
+a replacement. Prism also remains a divergent fork: its current source and
+ggml-org master `1a24df163920a4744a95373d178d790b72a9bb2f` have 178 Prism-only
+and 1,230 ggml-only commits since common ancestor `5ea87ddad22541a37053c7ba92b02ec1923617c6`,
+according to the [upstream comparison](https://github.com/ggml-org/llama.cpp/compare/b87ca7225456b06b0975b8239c66b5aecf07e37c...1a24df163920a4744a95373d178d790b72a9bb2f).
+The latest Prism source therefore does not include every ggml upstream fix.
+
+The [overlay applicator](../tools/prism/Apply-Overlay.ps1) rejects drift, ambiguous
 insertion points and repeat application before writing. The
 [build script](../scripts/Build-PrismEngine.ps1) requires that verified archive,
 extracts a fresh external lane, applies the overlay and records source,
