@@ -37,9 +37,14 @@ $sourceDirectory = Join-Path $crate 'src'
 $testsDirectory = Join-Path $crate 'tests'
 [void][IO.Directory]::CreateDirectory($sourceDirectory)
 [void][IO.Directory]::CreateDirectory($testsDirectory)
-foreach ($name in @('Cargo.toml', 'Cargo.lock')) {
-    [IO.File]::Copy((Join-Path $repoRoot ('tools/ternary/' + $name)), (Join-Path $crate $name))
-}
+[IO.File]::Copy((Join-Path $repoRoot 'tools/ternary/Cargo.toml'), (Join-Path $crate 'Cargo.toml'))
+# Retain inherited package/profile/lint policy in a minimal isolated workspace.
+# Its lock is generated offline; unrelated workspace packages are never copied,
+# mutated, compiled or executed by this finite catalog.
+$workspaceSource = Join-Path $repoRoot 'Cargo.toml'
+$workspace = [IO.File]::ReadAllText($workspaceSource)
+$workspace = [regex]::Replace($workspace, '(?s)^\[workspace\].*?(?=\[workspace\.package\])', "[workspace]`nresolver = `"3`"`nmembers = [`"ternary`"]`n`n")
+[IO.File]::WriteAllText((Join-Path $work 'Cargo.toml'), $workspace)
 $sourcePath = Join-Path $sourceDirectory 'lib.rs'
 [IO.File]::Copy((Join-Path $repoRoot 'tools/ternary/src/lib.rs'), $sourcePath)
 [IO.File]::Copy((Join-Path $repoRoot 'tools/ternary/tests/mutation_guards.rs'), (Join-Path $testsDirectory 'mutation_guards.rs'))
@@ -83,6 +88,9 @@ $receipt = [ordered]@{
     SchemaVersion = 1
     Case = $Case
     SourceSha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    WorkspaceSha256 = (Get-FileHash -LiteralPath $workspaceSource -Algorithm SHA256).Hash.ToLowerInvariant()
+    IsolatedWorkspaceSha256 = (Get-FileHash -LiteralPath (Join-Path $work 'Cargo.toml') -Algorithm SHA256).Hash.ToLowerInvariant()
+    LockSha256 = $null
     WorkingDirectory = $work
     BaselineCompileTimeoutSeconds = $BaselineCompileTimeoutSeconds
     CompileTimeoutSeconds = $CompileTimeoutSeconds
@@ -114,6 +122,13 @@ function Invoke-MutationPhase {
 }
 
 try {
+    $lockLog = Join-Path $evidence 'lockfile.log'
+    $lockResult = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList @('+1.99.1-aarch64-pc-windows-msvc',
+        'generate-lockfile', '--offline', '--manifest-path', (Join-Path $crate 'Cargo.toml')) `
+        -WorkingDirectory $work -TimeoutSeconds $BaselineCompileTimeoutSeconds -Environment $environment -LogPath $lockLog
+    $checks.Add([pscustomobject]@{ Name = 'lockfile'; ExitCode = $lockResult.ExitCode; Log = $lockLog })
+    if ($lockResult.ExitCode -ne 0) { throw 'The isolated mutation workspace lock could not be generated offline.' }
+    $receipt.LockSha256 = (Get-FileHash -LiteralPath (Join-Path $work 'Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
     foreach ($mutant in $selected) {
         $first = $original.IndexOf($mutant.Anchor, [StringComparison]::Ordinal)
         if ($first -lt 0 -or $original.IndexOf($mutant.Anchor, $first + 1, [StringComparison]::Ordinal) -ge 0) {
