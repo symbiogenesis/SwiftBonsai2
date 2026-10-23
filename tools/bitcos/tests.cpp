@@ -69,6 +69,17 @@ void dot() {
         }
     }
     const auto a = activations(1);
+    // Every sign-stream length (0..16 bytes), including all-zero/all-present
+    // bitmaps, and every byte-boundary rank. The second group reverses density
+    // so a cursor accidentally carried between groups is also detected.
+    for (unsigned count = 0; count <= 128; ++count) {
+        std::array<Pq2Block, 2> input{zeros(0xbc00), zeros(0x03ff)};
+        for (unsigned i = 0; i < count; ++i) set_code(input[0], (i * 37) % 128, i % 3 == 0 ? 0 : 2);
+        for (unsigned i = 0; i < 128 - count; ++i) set_code(input[1], (i * 71) % 128, i % 3 == 0 ? 2 : 0);
+        const auto packed = Matrix::pack(input, 1, 2);
+        const auto expected = dot_pq2_scalar(input, a);
+        exact(expected, packed.dot_neon(0, a)); exact(expected, packed.dot_scalar(0, a));
+    }
     for (unsigned i = 0; i < 256; ++i) for (const unsigned c : {0U, 2U}) {
         std::array<Pq2Block, 2> input{zeros(), zeros()}; set_code(input[i / 128], i % 128, c);
         const auto packed = Matrix::pack(input, 1, 2);

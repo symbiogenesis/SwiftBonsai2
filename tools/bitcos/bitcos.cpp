@@ -1,6 +1,7 @@
 #include "bitcos.h"
 #include <algorithm>
 #include <bit>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -39,38 +40,28 @@ unsigned present(const std::uint8_t* block) noexcept {
 #endif
 }
 std::size_t block_bytes(const std::uint8_t* block) noexcept { return 18 + (present(block) + 7U) / 8U; }
-constexpr auto make_lut() {
-    std::array<std::uint32_t, 256> result{};
-    for (unsigned mask = 0; mask < 16; ++mask) {
-        for (unsigned signs = 0; signs < 16; ++signs) {
-            unsigned rank = 0;
-            for (unsigned i = 0; i < 4; ++i) {
-                unsigned value = 0;
-                if ((mask & (1U << i)) != 0) value = (signs & (1U << rank++)) != 0 ? 1U : 255U;
-                result[mask * 16 + signs] |= value << (i * 8);
-            }
-        }
-    }
-    return result;
-}
-constexpr auto lut = make_lut();
-constexpr auto make_counts() {
-    std::array<unsigned, 16> counts{};
-    for (unsigned i = 0; i < 16; ++i) for (unsigned b = 0; b < 4; ++b) counts[i] += (i >> b) & 1U;
-    return counts;
-}
-constexpr auto nibble_counts = make_counts();
-// At most two guarded byte loads; no assumption of readable sentinel/padding.
-unsigned sign_window(const std::uint8_t* signs, unsigned bytes, unsigned cursor) noexcept {
-    const unsigned index = cursor / 8, shift = cursor % 8;
-    unsigned word = index < bytes ? signs[index] : 0;
-    if (shift > 4 && index + 1 < bytes) word |= static_cast<unsigned>(signs[index + 1]) << 8;
-    return (word >> shift) & 15U;
-}
 float scale_product(const std::uint8_t* block, const Q8KBlock& activation) noexcept {
     return half_to_float(scale_bits(block)) * activation.scale;
 }
 #if SWIFT_NEON
+// Load exactly n bytes (0..8), zero-extending the rest. Constant-size memcpy
+// avoids alignment/aliasing assumptions and does not read padding after a row.
+std::uint64_t load_sign_word(const std::uint8_t* source, unsigned n) noexcept {
+    std::uint64_t word = 0;
+    if (n == 8) { std::memcpy(&word, source, 8); return word; }
+    unsigned shift = 0;
+    if (n >= 4) {
+        std::uint32_t value; std::memcpy(&value, source, 4);
+        word = value; source += 4; n -= 4; shift = 32;
+    }
+    if (n >= 2) {
+        std::uint16_t value; std::memcpy(&value, source, 2);
+        word |= static_cast<std::uint64_t>(value) << shift;
+        source += 2; n -= 2; shift += 16;
+    }
+    if (n != 0) word |= static_cast<std::uint64_t>(*source) << shift;
+    return word;
+}
 int32x4_t dot16(int32x4_t sum, int8x16_t w, int8x16_t a) noexcept {
 #if BITCOS_DOTPROD
     return vdotq_s32(sum, w, a);
@@ -81,21 +72,38 @@ int32x4_t dot16(int32x4_t sum, int8x16_t w, int8x16_t a) noexcept {
 #endif
 }
 int32x4_t bitcos_dot_block(const std::uint8_t* block, const std::int8_t* activation, unsigned sign_bytes) noexcept {
+    const auto bitmap = vld1q_u8(block + 2);
+    const auto counts = vcntq_u8(bitmap);
+    const auto zero = vdupq_n_u8(0);
+    // Exclusive population prefix per bitmap byte; the maximum is 120, so
+    // uint8 arithmetic is exact. This is computed once for all 128 weights.
+    auto prefix = counts;
+    prefix = vaddq_u8(prefix, vextq_u8(zero, prefix, 15));
+    prefix = vaddq_u8(prefix, vextq_u8(zero, prefix, 14));
+    prefix = vaddq_u8(prefix, vextq_u8(zero, prefix, 12));
+    prefix = vaddq_u8(prefix, vextq_u8(zero, prefix, 8));
+    prefix = vsubq_u8(prefix, counts);
+    const auto low_signs = load_sign_word(block + 18, sign_bytes < 8 ? sign_bytes : 8);
+    const auto high_signs = sign_bytes > 8 ? load_sign_word(block + 26, sign_bytes - 8) : 0;
+    const auto signs = vcombine_u8(vcreate_u8(low_signs), vcreate_u8(high_signs));
+    const std::uint8_t byte_lanes[16] = {0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1};
+    const std::uint8_t lower_bits[16] = {0,1,3,7,15,31,63,127,0,1,3,7,15,31,63,127};
+    const std::uint8_t current_bit[16] = {1,2,4,8,16,32,64,128,1,2,4,8,16,32,64,128};
+    const auto lanes = vld1q_u8(byte_lanes), lower = vld1q_u8(lower_bits), bits = vld1q_u8(current_bit);
+    const auto one = vdupq_n_u8(1), seven = vdupq_n_u8(7);
     auto sum = vdupq_n_s32(0);
-    unsigned cursor = 0;
     for (unsigned group = 0; group < 8; ++group) {
-        std::uint32_t words[4];
-        for (unsigned nibble = 0; nibble < 4; ++nibble) {
-            const unsigned position = group * 16 + nibble * 4;
-            const unsigned mask = (block[2 + position / 8] >> (position % 8)) & 15U;
-            const unsigned signs = sign_window(block + 18, sign_bytes, cursor);
-            words[nibble] = lut[mask * 16 + signs];
-            cursor += nibble_counts[mask];
-        }
-        // Materialize only sixteen live int8 lanes; no expanded tensor or PQ2 copy.
-        const auto low = vcreate_u8(static_cast<std::uint64_t>(words[0]) | (static_cast<std::uint64_t>(words[1]) << 32));
-        const auto high = vcreate_u8(static_cast<std::uint64_t>(words[2]) | (static_cast<std::uint64_t>(words[3]) << 32));
-        sum = dot16(sum, vreinterpretq_s8_u8(vcombine_u8(low, high)), vld1q_s8(activation + group * 16));
+        const auto indices = vaddq_u8(lanes, vdupq_n_u8(static_cast<std::uint8_t>(group * 2)));
+        const auto bytes = vqtbl1q_u8(bitmap, indices);
+        // Each lane's rank is its byte prefix plus popcount of the bits below
+        // its position. Sixteen ranks/gathers are independent; no sign cursor
+        // or scalar lookup-table chain remains in the inner loop.
+        const auto rank = vaddq_u8(vqtbl1q_u8(prefix, indices), vcntq_u8(vandq_u8(bytes, lower)));
+        const auto sign_byte = vqtbl1q_u8(signs, vshrq_n_u8(rank, 3));
+        const auto shifts = vnegq_s8(vreinterpretq_s8_u8(vandq_u8(rank, seven)));
+        const auto positive = vandq_u8(vshlq_u8(sign_byte, shifts), one);
+        const auto weight = vandq_u8(vsubq_u8(vshlq_n_u8(positive, 1), one), vtstq_u8(bytes, bits));
+        sum = dot16(sum, vreinterpretq_s8_u8(weight), vld1q_s8(activation + group * 16));
     }
     return sum;
 }
