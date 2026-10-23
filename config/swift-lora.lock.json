@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "decision": "docs/swift-lora.md",
+  "adapter": {
+    "repository": "Continuum-AI-Corp/OrcaBonsai-27B-Uncensored",
+    "revision": "703028bb7fba03496e796b144839b161cf0f5409",
+    "path": "gguf/bonsai-abliterate-lora.gguf",
+    "filename": "bonsai-abliterate-lora.gguf",
+    "bytes": 9682464,
+    "sha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42",
+    "gitBlobSha1": "9787395dbf5a21d25461611d2db75514ce90cbbd",
+    "url": "https://raw.githubusercontent.com/Continuum-AI-Corp/OrcaBonsai-27B-Uncensored/703028bb7fba03496e796b144839b161cf0f5409/gguf/bonsai-abliterate-lora.gguf",
+    "digestSource": "https://github.com/Continuum-AI-Corp/OrcaBonsai-27B-Uncensored/blob/703028bb7fba03496e796b144839b161cf0f5409/README.md#gguf--llamacpp",
+    "license": "Apache-2.0"
+  },
+  "compatibility": {
+    "modelRepository": "ukisai/Swift-Bonsai-2-GGUF",
+    "modelRevision": "a3bdac086bbb6b04d87d0108d18943b5f63868f7",
+    "runtimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+    "architecture": "qwen35",
+    "rank": 1,
+    "loraAlpha": 1.0,
+    "tensorPairs": 129,
+    "authoringBasis": "unfolded; native graph applies the adapter to unrotated activations",
+    "publishedInferenceEvidence": "original Ternary Bonsai PTQ1 only; not Swift or PQ2",
+    "descriptorAudit": {
+      "recordedDate": "2026-10-23",
+      "modelTensorCount": 851,
+      "adapterTensorCount": 258,
+      "matchedTargetPairs": 129,
+      "allAdapterTensorsF32": true,
+      "allTargetNamesAndRank1ShapesMatch": true,
+      "qualification": "read-only GGUF metadata and descriptor audit; no inference"
+    },
+    "status": "unqualified-on-pinned-Swift-native-ARM64",
+    "trainingRequired": false,
+    "profileEnabled": false
+  }
+}
