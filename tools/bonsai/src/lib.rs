@@ -6,3 +6,9 @@ pub type Result<T> = std::result::Result<T, String>;
 
 /// Private credential creation through the existing audited Windows boundary.
 pub mod credentials;
+
+/// Bounded completion supervision with retained process and artifact ownership.
+pub mod completion;
+
+/// Fixed qualification plans, canonical identities, and offline gate scoring.
+pub mod qualification;

@@ -51,6 +51,11 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
     let request = read_request(Path::new(&arguments[2]))?;
     match arguments[0].to_str() {
         Some("credentials") => bonsai_tools::credentials::run(request),
+        Some("completion") => bonsai_tools::completion::run(request),
+        Some("memory") if request.as_object().is_some_and(serde_json::Map::is_empty) => {
+            bonsai_tools::completion::available_memory()
+        }
+        Some("qualification") => bonsai_tools::qualification::run(request),
         _ => Err("Unknown maintenance command.".into()),
     }
 }
