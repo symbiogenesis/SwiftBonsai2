@@ -1,11 +1,17 @@
-# Native Rust Prism engine TODO
+# Native Rust Prism engine
 
-Planned work, October 23, 2026. Every item below is outstanding. The goal is a
+Implementation status, October 23, 2026. The goal is a
 native Rust implementation of the targeted Swift/Bonsai inference path, using
 useful implementation techniques from Camelid, Orangu and other engines. The
 pinned Prism engine remains the comparison and fallback until replacement
 qualification passes. The existing Rust LoRA overlay is an implemented storage
-component, not a complete Rust inference engine.
+component. The experimental [native CPU reference](../src/prism-runtime/README.md)
+now implements bounded verified loading, packed scalar arithmetic, the Qwen35
+hybrid graph and transactional token generation. It accepts token IDs and greedy
+decoding; it has no C/C++ inference dependency. R2/R5 have implementation progress,
+but their complete parity and integration exits remain outstanding. Tokenizer,
+chat-template and stochastic-sampler parity, adapter forward execution, broker
+backend integration, optimized kernels and device qualification remain to do.
 
 ## Scope and performance goals
 

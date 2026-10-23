@@ -590,13 +590,20 @@ For an accepted OpenCL build supporting the documented program cache, set `GGML_
 
 ## 9. Speculative decoding and advanced optimization
 
-The [native Rust Prism engine TODO](docs/native-rust-engine.md) tracks
+The [native Rust Prism engine plan](docs/native-rust-engine.md) tracks
 implementation-only work separately: source/provenance review, CI profiling,
 scalar parity, packed SIMD, memory/tiling/fusion, serving/state integration,
 Adreno execution and promotion. Aim for about 2× throughput; 3–5× is conditional
 upside if major inefficiencies exist, not a measured result or acceptance
 promise. This lane preserves model/activation/cache precision and decoding
 semantics; speculation and approximate arithmetic remain separate experiments.
+
+An experimental [native CPU reference](src/prism-runtime/README.md) now implements
+verified Rust-owned model loading, scalar packed operations, the Qwen35 hybrid
+graph and bounded transactional token generation. It consumes token IDs and
+uses greedy decoding. The R2/R5 parity/integration exits and R0/R1 profiling,
+optimized execution and replacement qualification remain outstanding; the
+publisher runtime remains the assessment/fallback profile.
 
 Keep speculation off until ordinary execution, caching, and rollback are correct. The current [Bonsai speculative guide][speculation] says Bonsai 2 27B has no official DSpark drafter; previous-generation drafters and their speedups do not establish compatibility with Swift Bonsai 2.
 

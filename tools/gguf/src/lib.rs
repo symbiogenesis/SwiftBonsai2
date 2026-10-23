@@ -18,6 +18,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+pub use inspect::TensorDescriptor;
+
 /// The only supported private GGUF tensor dialect.
 pub const PRISM_DIALECT: &str = "Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b";
 /// Immutable Prism codec revision used by the private dialect.
@@ -87,6 +89,95 @@ fn verify(file: &mut File, expected_bytes: u64, expected_sha256: &str) -> Result
         return Err(bad("GGUF: artifact SHA-256 mismatch."));
     }
     Ok(())
+}
+
+/// A bounded model header and the exact file handle whose identity was checked.
+///
+/// Unlike the inspection report, this retains tokenizer strings and complete
+/// arrays. Header retention is charged conservatively against the supplied
+/// budget before allocating string/array payloads. Parsing additionally uses a
+/// fixed 64 KiB scratch buffer and bounded descriptor-validation bookkeeping.
+/// On Windows the handle denies concurrent writes and deletion for its lifetime.
+pub struct VerifiedModel {
+    file: File,
+    inspection: inspect::Inspection,
+}
+
+impl VerifiedModel {
+    /// Verifies file identity and parses the existing bounded GGUF v3 dialect.
+    ///
+    /// # Errors
+    /// Rejects identity mismatches, malformed metadata/descriptors, unsupported
+    /// dialects/encodings, invalid extents, allocation failures, and metadata
+    /// exceeding `memory_limit`. No tensor payload is retained by this operation.
+    pub fn open(
+        path: &Path,
+        dialect: &str,
+        expected_bytes: u64,
+        expected_sha256: &str,
+        memory_limit: usize,
+    ) -> Result<Self> {
+        let mut file = open_read(path)?;
+        verify(&mut file, expected_bytes, expected_sha256)?;
+        let inspection = inspect::inspect_retained(&mut file, path, dialect, Some(memory_limit))?;
+        Ok(Self { file, inspection })
+    }
+
+    /// Returns exact retained scalar, tokenizer, array and template metadata.
+    #[must_use]
+    pub const fn metadata(&self) -> &serde_json::Map<String, Value> {
+        &self.inspection.metadata
+    }
+
+    /// Returns validated tensor descriptors in file descriptor order.
+    #[must_use]
+    pub fn tensors(&self) -> &[TensorDescriptor] {
+        &self.inspection.tensors
+    }
+
+    /// Returns the conservative retained-header charge against the model budget.
+    #[must_use]
+    pub const fn retained_bytes(&self) -> usize {
+        self.inspection.retained_bytes
+    }
+
+    /// Reads one tensor from the verified handle within a caller's byte budget.
+    ///
+    /// `max_bytes` is the remaining payload budget, rather than a fresh budget
+    /// for every tensor. Callers retaining multiple tensors must subtract each
+    /// successful payload length before making another call.
+    ///
+    /// # Errors
+    /// Rejects missing tensors, payloads exceeding `max_bytes`, allocation
+    /// failures, checked-offset overflow, and truncated or unreadable payloads.
+    pub fn read_tensor(&mut self, index: usize, max_bytes: usize) -> Result<Vec<u8>> {
+        let tensor = self
+            .inspection
+            .tensors
+            .get(index)
+            .ok_or_else(|| bad("GGUF: tensor index is out of bounds."))?;
+        let length = usize::try_from(tensor.bytes)?;
+        if length > max_bytes {
+            return Err(bad("GGUF: tensor payload exceeds remaining memory budget."));
+        }
+        let offset = self
+            .inspection
+            .data_offset
+            .checked_add(tensor.offset)
+            .ok_or_else(|| bad("GGUF: tensor payload offset overflow."))?;
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(length)?;
+        bytes.resize(length, 0);
+        self.file.seek(SeekFrom::Start(offset))?;
+        self.file.read_exact(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    /// Consumes the verified reader and transfers its retained metadata.
+    #[must_use]
+    pub fn into_metadata(self) -> serde_json::Map<String, Value> {
+        self.inspection.metadata
+    }
 }
 
 /// Verifies an artifact and inspects metadata, optionally streaming PQ2 payloads.

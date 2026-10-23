@@ -16,6 +16,14 @@ audited Win32 boundaries with documented unsafe calls, RAII ownership and strict
 analyzers. The broker itself retains `forbid(unsafe_code)`. Existing C# process
 helpers remain in use by the independent CPU/LoRA qualification probes.
 
+The experimental [native Rust CPU reference](../src/prism-runtime/README.md)
+forbids unsafe code and links no C/C++ inference library. Its Windows ARM64
+Foundation lane checks formatting, Release Clippy/documentation, the complete
+synthetic correctness suite and the token-ID driver build. It does not download
+model weights or establish full-model parity, throughput, broker integration or
+daily security acceptance. Local validation remains limited to focused cases;
+all full suites and benchmarks run only in CI.
+
 Ordinary build tools, GGUF commands and version/help probes share
 `scripts/Bonsai.Native.psm1`. It passes literal argument arrays, reads stdout and
 stderr concurrently, inherits the environment with explicit child overrides,

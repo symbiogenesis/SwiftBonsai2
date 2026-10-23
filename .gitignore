@@ -2,6 +2,7 @@
 /src/broker/target/
 /src/windows-process/target/
 /src/windows-credentials/target/
+/src/prism-runtime/target/
 /tools/bitcos/target/
 /tools/gguf/target/
 /tools/prism/target/

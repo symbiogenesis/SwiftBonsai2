@@ -1,0 +1,578 @@
+//! Safe scalar kernels for the pinned Prism tensor dialect.
+//!
+//! The reference basis is PrismML-Eng/llama.cpp revision
+//! `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, `ggml/src/ggml-quants.c`
+//! (SHA256 `46dd353f30e7f1c42c7d82d88d91fad64dbe5d6e680b234de25355d9fb482d13`)
+//! and `ggml/src/ggml-cpu/quants.c`
+//! (SHA256 `b8dd3a7c7da1ff702908d5b71c7c7791eb11e2481f6ce3d0ca91e4705f33bb65`).
+//! These are scalar reference semantics, without a claim of SIMD bit parity.
+//! PQ2 uses signed `Q8_K` activations for rows divisible by 256, retaining the
+//! pinned `Q8_0` fallback for odd numbers of 128-element groups. PTQ1 uses
+//! `Q8_0` activations in groups of 32. Neither path expands a matrix to floats.
+
+use bonsai_bitcos::{Q8KBlock, half_to_float, unpack_ptq};
+
+use crate::model::Tensor;
+use crate::{Result, invalid};
+
+const F32: u32 = 0;
+const F16: u32 = 1;
+const Q4_0: u32 = 2;
+const Q8_0: u32 = 8;
+const BF16: u32 = 30;
+const PQ2: u32 = 142;
+const PTQ1: u32 = 143;
+
+fn layout(kind: u32) -> Result<(usize, usize)> {
+    match kind {
+        F32 => Ok((1, 4)),
+        F16 | BF16 => Ok((1, 2)),
+        Q4_0 => Ok((32, 18)),
+        Q8_0 => Ok((32, 34)),
+        PQ2 => Ok((128, 34)),
+        PTQ1 => Ok((128, 28)),
+        _ => Err(invalid(format!("unsupported runtime tensor type {kind}"))),
+    }
+}
+
+fn dimensions(tensor: &Tensor) -> Result<(usize, usize, usize)> {
+    let Some(&columns) = tensor.dimensions.first() else {
+        return Err(invalid("tensor requires at least one dimension"));
+    };
+    let rows = tensor.dimensions[1..]
+        .iter()
+        .try_fold(1_usize, |count, &dimension| count.checked_mul(dimension))
+        .ok_or_else(|| invalid("tensor row count overflow"))?;
+    let (group, bytes) = layout(tensor.kind)?;
+    if columns == 0 || rows == 0 || !columns.is_multiple_of(group) {
+        return Err(invalid(
+            "tensor dimensions do not contain complete nonempty blocks",
+        ));
+    }
+    let row_bytes = (columns / group)
+        .checked_mul(bytes)
+        .ok_or_else(|| invalid("tensor row byte length overflow"))?;
+    if row_bytes.checked_mul(rows) != Some(tensor.data.len()) {
+        return Err(invalid("tensor data length does not match its dimensions"));
+    }
+    Ok((columns, rows, row_bytes))
+}
+
+fn finite(value: f32) -> Result<f32> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(invalid("nonfinite tensor or activation value"))
+    }
+}
+
+fn scale(bytes: &[u8]) -> Result<f32> {
+    finite(half_to_float(u16::from_le_bytes([bytes[0], bytes[1]])))
+}
+
+fn allocated_collect<T>(values: impl ExactSizeIterator<Item = Result<T>>) -> Result<Vec<T>> {
+    let mut output = Vec::new();
+    output.try_reserve_exact(values.len())?;
+    for value in values {
+        output.push(value?);
+    }
+    Ok(output)
+}
+
+fn pq2_values(block: &[u8]) -> [i16; 128] {
+    std::array::from_fn(|index| i16::from((block[2 + index / 4] >> (2 * (index % 4))) & 3) - 1)
+}
+
+fn ptq1_values(block: &[u8]) -> Result<[i16; 128]> {
+    let mut packed = <[u8; 28]>::try_from(block)?;
+    // The codec validates a nonzero scale. Scale zero is valid in a native
+    // tensor, so validate the trit bytes with a neutral scale, independently.
+    packed[26..].copy_from_slice(&0x3c00_u16.to_le_bytes());
+    Ok(pq2_values(&unpack_ptq(&packed)?))
+}
+
+/// Validates a supported tensor without retaining decoded rows or matrices.
+///
+/// # Errors
+/// Rejects unsupported kinds, malformed dimensions and byte extents, nonfinite
+/// scalar values or scales, and noncanonical PTQ1 trit encodings.
+pub fn validate_tensor(tensor: &Tensor) -> Result<()> {
+    dimensions(tensor)?;
+    match tensor.kind {
+        F32 => {
+            for chunk in tensor.data.as_chunks::<4>().0 {
+                finite(f32::from_le_bytes(*chunk))?;
+            }
+        }
+        F16 | BF16 => {
+            for chunk in tensor.data.as_chunks::<2>().0 {
+                let bits = u16::from_le_bytes(*chunk);
+                finite(if tensor.kind == F16 {
+                    half_to_float(bits)
+                } else {
+                    f32::from_bits(u32::from(bits) << 16)
+                })?;
+            }
+        }
+        PTQ1 => {
+            for block in tensor.data.as_chunks::<28>().0 {
+                scale(&block[26..])?;
+                ptq1_values(block)?;
+            }
+        }
+        _ => {
+            let (_, block_bytes) = layout(tensor.kind)?;
+            for block in tensor.data.chunks_exact(block_bytes) {
+                scale(block)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Decodes a single contiguous row, including row zero of a vector tensor.
+///
+/// Only the selected row is expanded; the packed tensor remains immutable.
+///
+/// # Errors
+/// Rejects unsupported kinds, incomplete blocks, invalid PTQ1 encodings,
+/// nonfinite values, malformed byte extents, and an out-of-range row.
+pub fn row(tensor: &Tensor, index: usize) -> Result<Vec<f32>> {
+    let (columns, rows, row_bytes) = dimensions(tensor)?;
+    if index >= rows {
+        return Err(invalid("tensor row index out of bounds"));
+    }
+    let bytes = &tensor.data[index * row_bytes..(index + 1) * row_bytes];
+    let mut output = Vec::new();
+    output.try_reserve_exact(columns)?;
+    match tensor.kind {
+        F32 => {
+            for chunk in bytes.as_chunks::<4>().0 {
+                output.push(finite(f32::from_le_bytes(*chunk))?);
+            }
+        }
+        F16 | BF16 => {
+            for chunk in bytes.as_chunks::<2>().0 {
+                let bits = u16::from_le_bytes(*chunk);
+                output.push(finite(if tensor.kind == F16 {
+                    half_to_float(bits)
+                } else {
+                    f32::from_bits(u32::from(bits) << 16)
+                })?);
+            }
+        }
+        PQ2 | PTQ1 => {
+            let (_, block_bytes) = layout(tensor.kind)?;
+            for block in bytes.chunks_exact(block_bytes) {
+                let (values, d) = if tensor.kind == PQ2 {
+                    (pq2_values(block), scale(block)?)
+                } else {
+                    (ptq1_values(block)?, scale(&block[26..])?)
+                };
+                output.extend(values.map(|value| f32::from(value) * d));
+            }
+        }
+        Q4_0 => {
+            for block in bytes.as_chunks::<18>().0 {
+                let d = scale(block)?;
+                for shift in [0, 4] {
+                    output.extend(
+                        block[2..]
+                            .iter()
+                            .map(|&byte| f32::from(i16::from((byte >> shift) & 15) - 8) * d),
+                    );
+                }
+            }
+        }
+        Q8_0 => {
+            for block in bytes.as_chunks::<34>().0 {
+                let d = scale(block)?;
+                output.extend(
+                    block[2..]
+                        .iter()
+                        .map(|&byte| f32::from(i8::from_ne_bytes([byte])) * d),
+                );
+            }
+        }
+        _ => return Err(invalid("unsupported row decoder")),
+    }
+    Ok(output)
+}
+
+// Bounded casts implement the native float quantizers, with checked finite
+// inputs and an explicit integer range check before conversion.
+#[allow(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "The finite rounded activation is range checked before conversion to i8."
+)]
+fn quantized(value: f32) -> Result<i8> {
+    if value.is_finite() && (-127.0..=127.0).contains(&value) {
+        Ok(value as i8)
+    } else {
+        Err(invalid(
+            "activation quantization exceeded its finite i8 range",
+        ))
+    }
+}
+
+fn q8k(input: &[f32]) -> Result<Vec<Q8KBlock>> {
+    if !input.len().is_multiple_of(256) {
+        return Err(invalid(
+            "Q8_K activations require a multiple of 256 columns",
+        ));
+    }
+    allocated_collect(input.as_chunks::<256>().0.iter().map(|chunk| {
+        let mut maximum = 0.0_f32;
+        for &value in chunk {
+            finite(value)?;
+            if value.abs() > maximum.abs() {
+                maximum = value;
+            }
+        }
+        let mut block = Q8KBlock {
+            scale: 0.0,
+            values: [0; 256],
+            sums: [0; 16],
+        };
+        if maximum == 0.0 {
+            return Ok(block);
+        }
+        let inverse_scale = -127.0 / maximum;
+        if !inverse_scale.is_finite() {
+            return Err(invalid("Q8_K activation scale overflow"));
+        }
+        block.scale = 1.0 / inverse_scale;
+        for (target, &value) in block.values.iter_mut().zip(chunk) {
+            // nearest_int in the pinned C reference is ties-to-even.
+            *target = quantized((value * inverse_scale).round_ties_even().min(127.0))?;
+        }
+        for (sum, values) in block.sums.iter_mut().zip(block.values.as_chunks::<16>().0) {
+            *sum = values.iter().map(|&value| i16::from(value)).sum();
+        }
+        Ok(block)
+    }))
+}
+
+struct Q8Block {
+    scale: f32,
+    values: [i8; 32],
+}
+
+fn q8(input: &[f32]) -> Result<Vec<Q8Block>> {
+    if !input.len().is_multiple_of(32) {
+        return Err(invalid("Q8_0 activations require a multiple of 32 columns"));
+    }
+    allocated_collect(input.as_chunks::<32>().0.iter().map(|chunk| {
+        let mut maximum = 0.0_f32;
+        for &value in chunk {
+            maximum = maximum.max(finite(value)?.abs());
+        }
+        let d = maximum / 127.0;
+        let inverse_scale = if d == 0.0 { 0.0 } else { 1.0 / d };
+        let mut block = Q8Block {
+            scale: round_f16(d),
+            values: [0; 32],
+        };
+        finite(block.scale)?;
+        for (target, &value) in block.values.iter_mut().zip(chunk) {
+            *target = quantized((value * inverse_scale).round())?;
+        }
+        Ok(block)
+    }))
+}
+
+#[allow(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "Bounded dot sums and power-of-two transform lengths are exactly representable."
+)]
+const fn integer_float(value: i32) -> f32 {
+    // Packed dot sums and power-of-two Hadamard lengths are exactly
+    // representable in f32 for the supported dimensions.
+    value as f32
+}
+
+fn dot_integer(weights: &[i16], activations: &[i8]) -> f32 {
+    integer_float(
+        weights
+            .iter()
+            .zip(activations)
+            .map(|(&weight, &activation)| i32::from(weight) * i32::from(activation))
+            .sum(),
+    )
+}
+
+#[allow(
+    clippy::suboptimal_flops,
+    reason = "Preserve scalar reference multiply-then-add rounding."
+)]
+fn dot_pq2(bytes: &[u8], input: &[Q8KBlock]) -> Result<f32> {
+    let mut output = 0.0;
+    for (index, block) in bytes.as_chunks::<34>().0.iter().enumerate() {
+        let activation = &input[index / 2];
+        let start = (index % 2) * 128;
+        output += (scale(block)? * activation.scale)
+            * dot_integer(&pq2_values(block), &activation.values[start..start + 128]);
+    }
+    finite(output)
+}
+
+#[allow(
+    clippy::suboptimal_flops,
+    reason = "Preserve scalar reference multiply-then-add rounding."
+)]
+fn dot_q8_groups(kind: u32, bytes: &[u8], input: &[Q8Block]) -> Result<f32> {
+    let (_, block_bytes) = layout(kind)?;
+    let mut output = 0.0;
+    for (index, block) in bytes.chunks_exact(block_bytes).enumerate() {
+        let (weights, d) = if kind == PQ2 {
+            (pq2_values(block), scale(block)?)
+        } else {
+            (ptq1_values(block)?, scale(&block[26..])?)
+        };
+        let mut sum = 0.0;
+        for (values, activation) in weights
+            .as_chunks::<32>()
+            .0
+            .iter()
+            .zip(&input[index * 4..index * 4 + 4])
+        {
+            sum += activation.scale * dot_integer(values, &activation.values);
+        }
+        output += d * sum;
+    }
+    finite(output)
+}
+
+#[allow(
+    clippy::suboptimal_flops,
+    reason = "Preserve scalar reference multiply-then-add rounding."
+)]
+fn dot_legacy(kind: u32, bytes: &[u8], input: &[Q8Block]) -> Result<f32> {
+    let (_, block_bytes) = layout(kind)?;
+    let mut output = 0.0;
+    for (block, activation) in bytes.chunks_exact(block_bytes).zip(input) {
+        let values: [i16; 32] = std::array::from_fn(|index| {
+            if kind == Q4_0 {
+                i16::from((block[2 + index % 16] >> (4 * (index / 16))) & 15) - 8
+            } else {
+                i16::from(i8::from_ne_bytes([block[2 + index]]))
+            }
+        });
+        output += (scale(block)? * activation.scale) * dot_integer(&values, &activation.values);
+    }
+    finite(output)
+}
+
+#[allow(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "The scalar reference rounds the accumulated binary64 sum to binary32."
+)]
+fn float_dot(weights: &[f32], input: &[f32]) -> f32 {
+    // The non-SIMD ggml reference sums rounded f32 products in f64.
+    weights
+        .iter()
+        .zip(input)
+        .map(|(&a, &b)| f64::from(a * b))
+        .sum::<f64>() as f32
+}
+
+/// Multiplies packed rows by one activation vector in the stored tensor basis.
+///
+/// Floating tensors use their native activation precision. PQ2 uses `Q8_K`
+/// for rows divisible by 256, otherwise the pinned `Q8_0` fallback. PTQ1 and
+/// the supported legacy Q kinds use `Q8_0`. Activations are quantized once per
+/// call and reused for every row. No matrix-sized decoded copy exists.
+///
+/// # Errors
+/// Rejects malformed tensors, unsupported kinds, nonfinite values, invalid PTQ1
+/// encodings, input dimension mismatches, and incomplete activation groups.
+pub fn matvec(tensor: &Tensor, input: &[f32]) -> Result<Vec<f32>> {
+    let (columns, _, row_bytes) = dimensions(tensor)?;
+    if input.len() != columns || input.iter().any(|value| !value.is_finite()) {
+        return Err(invalid(
+            "matvec requires a matching finite activation vector",
+        ));
+    }
+    match tensor.kind {
+        PQ2 if columns.is_multiple_of(256) => {
+            let activations = q8k(input)?;
+            allocated_collect(
+                tensor
+                    .data
+                    .chunks_exact(row_bytes)
+                    .map(|bytes| dot_pq2(bytes, &activations)),
+            )
+        }
+        PQ2 | PTQ1 | Q4_0 | Q8_0 => {
+            let activations = q8(input)?;
+            allocated_collect(tensor.data.chunks_exact(row_bytes).map(|bytes| {
+                if matches!(tensor.kind, PQ2 | PTQ1) {
+                    dot_q8_groups(tensor.kind, bytes, &activations)
+                } else {
+                    dot_legacy(tensor.kind, bytes, &activations)
+                }
+            }))
+        }
+        _ => {
+            let activations = allocated_collect(input.iter().map(|&value| {
+                Ok(match tensor.kind {
+                    F16 => round_f16(value),
+                    BF16 => round_bf16(value),
+                    _ => value,
+                })
+            }))?;
+            allocated_collect(
+                tensor
+                    .data
+                    .chunks_exact(row_bytes)
+                    .enumerate()
+                    .map(|(index, _)| finite(float_dot(&row(tensor, index)?, &activations))),
+            )
+        }
+    }
+}
+
+#[allow(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "The converted binary16 sign and magnitude occupy at most sixteen bits."
+)]
+fn half_bits(value: f32) -> u16 {
+    // Port of ggml_compute_fp32_to_fp16; the shift/add path rounds ties to
+    // even via native f32 arithmetic and includes subnormals and signed zero.
+    let mut base = (value.abs() * f32::from_bits(0x7780_0000)) * f32::from_bits(0x0880_0000);
+    let bits = value.to_bits();
+    let doubled = bits.wrapping_add(bits);
+    let exponent_bias = (doubled & 0xff00_0000).max(0x7100_0000);
+    base += f32::from_bits((exponent_bias >> 1) + 0x0780_0000);
+    let rounded = base.to_bits();
+    let magnitude = if doubled > 0xff00_0000 {
+        0x7e00
+    } else {
+        ((rounded >> 13) & 0x7c00) + (rounded & 0x0fff)
+    };
+    ((bits >> 16) & 0x8000 | magnitude) as u16
+}
+
+/// Rounds to IEEE binary16, returning its exactly expanded binary32 value.
+/// Signed zero, infinities, subnormals, and ties-to-even are preserved.
+#[must_use]
+pub fn round_f16(value: f32) -> f32 {
+    half_to_float(half_bits(value))
+}
+
+const fn round_bf16(value: f32) -> f32 {
+    let bits = value.to_bits();
+    if value.is_nan() {
+        f32::from_bits((bits & 0xffff_0000) | 0x0040_0000)
+    } else {
+        f32::from_bits(bits.wrapping_add(0x7fff + ((bits >> 16) & 1)) & 0xffff_0000)
+    }
+}
+
+/// Applies the `SiLU` activation to one value.
+#[must_use]
+pub fn silu(value: f32) -> f32 {
+    value / (1.0 + (-value).exp())
+}
+
+/// Normalizes a nonempty vector using the ggml scalar RMS accumulation order.
+///
+/// # Errors
+/// Rejects unequal or empty vectors, nonfinite inputs, negative epsilon, and
+/// a normalization whose scale is not finite and positive.
+#[allow(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "The scalar normalization contract rounds the binary64 mean to binary32."
+)]
+pub fn rms_norm(input: &[f32], weight: &[f32], epsilon: f32) -> Result<Vec<f32>> {
+    if input.is_empty() || input.len() != weight.len() || !epsilon.is_finite() || epsilon < 0.0 {
+        return Err(invalid(
+            "RMS normalization requires equal nonempty vectors and nonnegative epsilon",
+        ));
+    }
+    let count = u32::try_from(input.len())?;
+    let mut sum = 0.0_f64;
+    for (&value, &w) in input.iter().zip(weight) {
+        finite(value)?;
+        finite(w)?;
+        sum += f64::from(value * value);
+    }
+    let mean = (sum / f64::from(count)) as f32;
+    let scale = 1.0 / (mean + epsilon).sqrt();
+    if !scale.is_finite() || scale <= 0.0 {
+        return Err(invalid("RMS normalization produced an invalid scale"));
+    }
+    allocated_collect(
+        input
+            .iter()
+            .zip(weight)
+            .map(|(&value, &w)| finite(value * scale * w)),
+    )
+}
+
+/// Applies a normalized Sylvester Hadamard transform to one contiguous block.
+///
+/// # Errors
+/// Rejects zero or non-power-of-two block lengths and nonfinite input/output.
+pub fn hadamard(values: &mut [f32]) -> Result<()> {
+    if !values.len().is_power_of_two() || values.iter().any(|value| !value.is_finite()) {
+        return Err(invalid("Hadamard requires a finite power-of-two block"));
+    }
+    let count = u32::try_from(values.len())?;
+    let mut half = 1;
+    while half < values.len() {
+        for block in values.chunks_exact_mut(half * 2) {
+            for index in 0..half {
+                let left = block[index];
+                let right = block[index + half];
+                block[index] = left + right;
+                block[index + half] = left - right;
+            }
+        }
+        half *= 2;
+    }
+    let normalization = 1.0 / integer_float(i32::try_from(count)?).sqrt();
+    for value in values {
+        *value = finite(*value * normalization)?;
+    }
+    Ok(())
+}
+
+/// Replaces finite logits by their normalized, stable exponential weights.
+///
+/// Negative infinity is accepted as an attention mask. All-masked rows fail.
+///
+/// # Errors
+/// Rejects empty vectors, NaNs, positive infinity, and all-masked rows.
+#[allow(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    reason = "The scalar softmax contract rounds the binary64 inverse sum to binary32."
+)]
+pub fn softmax(values: &mut [f32]) -> Result<()> {
+    let maximum = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    if !maximum.is_finite()
+        || values
+            .iter()
+            .any(|value| value.is_nan() || *value == f32::INFINITY)
+    {
+        return Err(invalid(
+            "softmax requires at least one finite logit and no NaN or positive infinity",
+        ));
+    }
+    let mut total = 0.0_f64;
+    for value in &mut *values {
+        *value = (*value - maximum).exp();
+        total += f64::from(*value);
+    }
+    let inverse_sum = (1.0 / total) as f32;
+    for value in values {
+        *value *= inverse_sum;
+    }
+    Ok(())
+}

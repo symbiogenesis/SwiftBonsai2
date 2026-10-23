@@ -1,6 +1,7 @@
+// Keep the private contract explicit if the parent is reorganized later.
 #![allow(
     clippy::redundant_pub_crate,
-    reason = "Keep the private contract explicit if the parent is reorganized later"
+    reason = "Keep explicit internal visibility if the parent module is reorganized."
 )]
 
 use crate::{PRISM_DIALECT, Result, hash_range};
@@ -22,20 +23,31 @@ fn bad(message: impl Into<String>) -> crate::Error {
     crate::bad(format!("GGUF: {}", message.into()))
 }
 
+/// A validated tensor descriptor in GGUF/ggml dimension order.
 #[derive(Debug)]
-pub(crate) struct Tensor {
+pub struct TensorDescriptor {
+    /// Unique tensor name from the GGUF descriptor.
     pub name: String,
+    /// Nonzero extents, with the contiguous row dimension first.
+    pub dimensions: Vec<u64>,
+    /// GGUF tensor encoding ID, including explicitly pinned Prism IDs.
     pub type_id: u32,
+    /// Byte offset relative to the validated tensor data region.
     pub offset: u64,
+    /// Exact serialized payload length implied by dimensions and encoding.
     pub bytes: u64,
+    /// Product of every tensor dimension.
     pub elements: u64,
-    pub type_position: u64,
+    pub(crate) type_position: u64,
 }
 
 pub(crate) struct Inspection {
     pub report: Value,
-    pub tensors: Vec<Tensor>,
+    pub tensors: Vec<TensorDescriptor>,
     pub file_type_position: Option<u64>,
+    pub metadata: Map<String, Value>,
+    pub retained_bytes: usize,
+    pub data_offset: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -117,9 +129,19 @@ struct Parser<'a> {
     elements: u64,
     last_float: f64,
     buffer: Box<[u8]>,
+    retain_budget: Option<usize>,
 }
 
 impl Parser<'_> {
+    fn charge(&mut self, bytes: usize) -> Result<()> {
+        if let Some(remaining) = &mut self.retain_budget {
+            *remaining = remaining
+                .checked_sub(bytes)
+                .ok_or_else(|| bad("retained model metadata exceeds memory budget."))?;
+        }
+        Ok(())
+    }
+
     fn position(&mut self) -> Result<u64> {
         Ok(self.file.stream_position()?)
     }
@@ -228,6 +250,15 @@ impl Parser<'_> {
                 return Err(bad("string exceeds 8 MiB inspection limit."));
             }
             self.need(size)?;
+            if retain && self.retain_budget.is_some() {
+                let size = usize::try_from(size)?;
+                self.charge(size)?;
+                let mut bytes = Vec::new();
+                bytes.try_reserve_exact(size)?;
+                bytes.resize(size, 0);
+                self.file.read_exact(&mut bytes)?;
+                return Ok(Some(Value::String(String::from_utf8(bytes)?)));
+            }
             if retain && size <= BUFFER_BYTES_U64 {
                 return Ok(Some(Value::String(self.read_text(usize::try_from(size)?)?)));
             }
@@ -246,7 +277,9 @@ impl Parser<'_> {
             return Err(bad("array element limit exceeded."));
         }
         self.elements += count;
-        let keep = retain && count <= 4096 && item_type != 8 && item_type != 9;
+        let keep = retain
+            && (self.retain_budget.is_some()
+                || (count <= 4096 && item_type != 8 && item_type != 9));
         let descriptor = || retain.then(|| json!({"ElementTypeId": item_type, "Count": count}));
         if let Some(width) = width(item_type)
             && !keep
@@ -265,7 +298,11 @@ impl Parser<'_> {
             return Ok(descriptor());
         }
         let mut values = if keep {
-            Some(Vec::with_capacity(usize::try_from(count)?))
+            let count = usize::try_from(count)?;
+            self.charge(count.checked_mul(size_of::<Value>()).ok_or_else(overflow)?)?;
+            let mut values = Vec::new();
+            values.try_reserve_exact(count)?;
+            Some(values)
         } else {
             None
         };
@@ -342,11 +379,23 @@ fn count_value(value: Option<&Value>, original_float: Option<&f64>) -> Result<u6
     }
 }
 
+// Keep validation and report assembly adjacent in serialized file order.
+pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Inspection> {
+    inspect_retained(file, path, dialect, None)
+}
+
+// One parser serves inspection and execution; retention changes only what is
+// kept, never descriptor, format, identity, or extent validation.
 #[allow(
     clippy::too_many_lines,
-    reason = "Keep validation and report assembly adjacent in serialized file order"
+    reason = "Keep descriptor validation and report assembly together in serialized order."
 )]
-pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Inspection> {
+pub(crate) fn inspect_retained(
+    file: &mut File,
+    path: &Path,
+    dialect: &str,
+    memory_limit: Option<usize>,
+) -> Result<Inspection> {
     if dialect != "Stock" && dialect != PRISM_DIALECT {
         return Err(bad(
             "unknown dialect; use Stock or the explicitly pinned Prism dialect.",
@@ -360,6 +409,7 @@ pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Ins
         elements: 0,
         last_float: 0.0,
         buffer: vec![0; BUFFER_BYTES].into_boxed_slice(),
+        retain_budget: memory_limit,
     };
     if parser.u32()? != 0x4655_4747 {
         return Err(bad("invalid magic."));
@@ -378,6 +428,7 @@ pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Ins
     let mut arrays = Map::new();
     let mut templates = Map::new();
     let mut special = Map::new();
+    let mut metadata = Map::new();
     let mut alignment = 32u32;
     let mut file_type_position = None;
     let mut tokenizer_hash = Sha256::new();
@@ -386,6 +437,9 @@ pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Ins
     for _ in 0..metadata_count {
         let start = parser.position()?;
         let key = parser.text(1024)?;
+        // Include a conservative allowance for map/tree nodes, keys and JSON
+        // scalar storage, in addition to arrays and string payloads below.
+        parser.charge(key.len().checked_add(256).ok_or_else(overflow)?)?;
         if key.is_empty() || !keys.insert(key.clone()) {
             return Err(bad("empty or duplicate metadata key."));
         }
@@ -395,7 +449,7 @@ pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Ins
         }
         let template =
             key == "tokenizer.chat_template" || key.starts_with("tokenizer.chat_template.");
-        if template && type_id == 8 {
+        if template && type_id == 8 && memory_limit.is_none() {
             let value_start = parser.position()?;
             let size = parser.u64()?;
             if size > STRING_LIMIT {
@@ -413,25 +467,34 @@ pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Ins
                 float_scalars.insert(key.clone(), parser.last_float);
             }
             if type_id == 9 {
-                arrays.insert(
-                    key.clone(),
-                    value
-                        .clone()
-                        .ok_or_else(|| bad("retained array descriptor is required."))?,
-                );
-            } else if let Some(value) = &value {
+                if memory_limit.is_none() {
+                    arrays.insert(
+                        key.clone(),
+                        value
+                            .clone()
+                            .ok_or_else(|| bad("retained array descriptor is required."))?,
+                    );
+                }
+            } else if let Some(value) = &value
+                && (memory_limit.is_none()
+                    || key == "general.architecture"
+                    || key.ends_with(".block_count")
+                    || key.ends_with(".nextn_predict_layers"))
+            {
                 scalars.insert(key.clone(), value.clone());
             }
             if key.starts_with("tokenizer.") && key.ends_with("_token_id") {
                 if !matches!(type_id, 4 | 5 | 10 | 11) {
                     return Err(bad("special token ID must be an integer."));
                 }
-                special.insert(
-                    key.clone(),
-                    value
-                        .clone()
-                        .ok_or_else(|| bad("special token ID is required."))?,
-                );
+                if memory_limit.is_none() {
+                    special.insert(
+                        key.clone(),
+                        value
+                            .clone()
+                            .ok_or_else(|| bad("special token ID is required."))?,
+                    );
+                }
             }
             if key == "general.alignment" {
                 if type_id != 4 {
@@ -439,12 +502,19 @@ pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Ins
                 }
                 alignment = u32::try_from(
                     value
-                        .and_then(|value| value.as_u64())
+                        .as_ref()
+                        .and_then(Value::as_u64)
                         .ok_or_else(|| bad("general.alignment must be UINT32."))?,
                 )?;
                 if alignment == 0 || !alignment.is_power_of_two() || alignment > 1_048_576 {
                     return Err(bad("invalid/over-limit alignment."));
                 }
+            }
+            if memory_limit.is_some() {
+                metadata.insert(
+                    key.clone(),
+                    value.ok_or_else(|| bad("retained model metadata value is required."))?,
+                );
             }
         }
         if key.starts_with("tokenizer.") {
@@ -462,19 +532,27 @@ pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Ins
         .ok_or_else(|| bad("general.architecture string is required."))?
         .to_owned();
     let mut names = HashSet::new();
-    let mut tensors = Vec::with_capacity(usize::try_from(tensor_count)?);
+    let tensor_count = usize::try_from(tensor_count)?;
+    parser.charge(
+        tensor_count
+            .checked_mul(size_of::<TensorDescriptor>())
+            .ok_or_else(overflow)?,
+    )?;
+    let mut tensors = Vec::new();
+    tensors.try_reserve_exact(tensor_count)?;
     for _ in 0..tensor_count {
         let name = parser.text(1024)?;
         if name.is_empty() || !names.insert(name.clone()) {
             return Err(bad("empty or duplicate tensor name."));
         }
-        let dimensions = parser.u32()?;
-        if !(1..=4).contains(&dimensions) {
+        let dimension_count = parser.u32()?;
+        if !(1..=4).contains(&dimension_count) {
             return Err(bad("invalid tensor dimension count."));
         }
         let mut elements = 1;
         let mut first = 0;
-        for dimension in 0..dimensions {
+        let mut dimensions = Vec::with_capacity(usize::try_from(dimension_count)?);
+        for dimension in 0..dimension_count {
             let size = parser.u64()?;
             if size == 0 || i64::try_from(size).is_err() {
                 return Err(bad("invalid tensor dimension."));
@@ -483,6 +561,7 @@ pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Ins
                 first = size;
             }
             elements = mul(elements, size)?;
+            dimensions.push(size);
         }
         let type_position = parser.position()?;
         let type_id = parser.u32()?;
@@ -498,8 +577,17 @@ pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Ins
         if offset % u64::from(alignment) != 0 {
             return Err(bad("unaligned tensor offset."));
         }
-        tensors.push(Tensor {
+        parser.charge(
+            name.len()
+                // A native Model retains a map key and distinct tensor name.
+                .checked_mul(2)
+                .and_then(|bytes| bytes.checked_add(dimensions.len() * size_of::<u64>()))
+                .and_then(|bytes| bytes.checked_add(128))
+                .ok_or_else(overflow)?,
+        )?;
+        tensors.push(TensorDescriptor {
             name,
+            dimensions,
             type_id,
             offset,
             bytes,
@@ -568,22 +656,33 @@ pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Ins
         })
         .map(|tensor| tensor.name.clone())
         .collect();
-    let report = json!({
-        "SchemaVersion": 1, "Format": "GGUF", "Version": 3, "ByteOrder": "little", "ModelPath": path.to_string_lossy(),
-        "FileBytes": file_bytes, "Architecture": architecture, "Alignment": alignment, "MetadataCount": metadata_count,
-        "MetadataEndOffset": metadata_end, "TensorDescriptorsEndOffset": descriptors_end, "TensorDataOffset": data_offset,
-        "TensorCount": tensor_count, "TensorTypeHistogram": histogram, "Scalars": scalars, "Arrays": arrays,
-        "SpecialTokenIds": special, "EmbeddedTemplates": templates, "MtpTensorCount": mtp.len(), "MtpTensorNames": mtp,
-        "TokenizerMetadataSha256": crate::digest_hex(tokenizer_hash), "TokenizerMetadataBytes": tokenizer_bytes,
-        "TokenizerMetadataRecords": tokenizer_records,
-        "TokenizerDigestDefinition": "SHA-256 of complete raw serialized tokenizer.* KV records concatenated in file order, including chat templates",
-        "InspectionLimits": {"HeaderBytes": HEADER_LIMIT, "StringBytes": STRING_LIMIT, "ArrayElements": ARRAY_LIMIT,
-            "TotalArrayElements": TOTAL_ELEMENT_LIMIT, "ArrayNesting": 4, "MetadataRecords": 10_000, "Tensors": 100_000},
-        "TensorPayloadRead": false, "Dialect": dialect
-    });
+    let report = if memory_limit.is_some() {
+        Value::Null
+    } else {
+        json!({
+            "SchemaVersion": 1, "Format": "GGUF", "Version": 3, "ByteOrder": "little", "ModelPath": path.to_string_lossy(),
+            "FileBytes": file_bytes, "Architecture": architecture, "Alignment": alignment, "MetadataCount": metadata_count,
+            "MetadataEndOffset": metadata_end, "TensorDescriptorsEndOffset": descriptors_end, "TensorDataOffset": data_offset,
+            "TensorCount": tensor_count, "TensorTypeHistogram": histogram, "Scalars": scalars, "Arrays": arrays,
+            "SpecialTokenIds": special, "EmbeddedTemplates": templates, "MtpTensorCount": mtp.len(), "MtpTensorNames": mtp,
+            "TokenizerMetadataSha256": crate::digest_hex(tokenizer_hash), "TokenizerMetadataBytes": tokenizer_bytes,
+            "TokenizerMetadataRecords": tokenizer_records,
+            "TokenizerDigestDefinition": "SHA-256 of complete raw serialized tokenizer.* KV records concatenated in file order, including chat templates",
+            "InspectionLimits": {"HeaderBytes": HEADER_LIMIT, "StringBytes": STRING_LIMIT, "ArrayElements": ARRAY_LIMIT,
+                "TotalArrayElements": TOTAL_ELEMENT_LIMIT, "ArrayNesting": 4, "MetadataRecords": 10_000, "Tensors": 100_000},
+            "TensorPayloadRead": false, "Dialect": dialect
+        })
+    };
+    let retained_bytes = match (memory_limit, parser.retain_budget) {
+        (Some(limit), Some(remaining)) => limit - remaining,
+        _ => 0,
+    };
     Ok(Inspection {
         report,
         tensors,
         file_type_position,
+        metadata,
+        retained_bytes,
+        data_offset,
     })
 }

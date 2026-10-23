@@ -1,0 +1,1411 @@
+//! Bounded scalar Qwen3.5 text decoder with full attention and Gated Delta Net.
+//!
+//! The operation ordering follows Prism's `src/models/qwen35.cpp`. KV values
+//! round through IEEE binary16 on insertion; convolution and recurrent state
+//! remain binary32. This correctness path does not establish device parity.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
+use serde_json::{Map, Value};
+
+use crate::kernels::{matvec, rms_norm, round_f16, row, silu, softmax};
+use crate::model::{Model, Tensor};
+use crate::{Decoder, Result, invalid};
+
+const MAX_STATE_BYTES: usize = 4 * 1024 * 1024 * 1024;
+const MAX_WIDTH: usize = 1 << 20;
+const MAX_LAYERS: usize = 256;
+
+#[derive(Clone)]
+struct Geometry {
+    embedding: usize,
+    feed_forward: usize,
+    heads: usize,
+    kv_heads: usize,
+    head: usize,
+    rope: usize,
+    rope_sections: [usize; 4],
+    rope_base: f32,
+    epsilon: f32,
+    ssm_head: usize,
+    ssm_keys: usize,
+    ssm_values: usize,
+    convolution: usize,
+}
+
+impl Geometry {
+    const fn key_width(&self) -> usize {
+        self.ssm_head * self.ssm_keys
+    }
+
+    const fn value_width(&self) -> usize {
+        self.ssm_head * self.ssm_values
+    }
+
+    const fn convolution_width(&self) -> usize {
+        2 * self.key_width() + self.value_width()
+    }
+}
+
+struct FullAttention {
+    query: Tensor,
+    key: Tensor,
+    value: Tensor,
+    output: Tensor,
+    query_norm: Vec<f32>,
+    key_norm: Vec<f32>,
+}
+
+struct RecurrentAttention {
+    qkv: Tensor,
+    gate: Tensor,
+    beta: Tensor,
+    alpha: Tensor,
+    convolution: Vec<f32>,
+    time_bias: Vec<f32>,
+    decay: Vec<f32>,
+    norm: Vec<f32>,
+    output: Tensor,
+}
+
+enum Attention {
+    Full(FullAttention),
+    Recurrent(RecurrentAttention),
+}
+
+struct Layer {
+    norm: Vec<f32>,
+    post_norm: Vec<f32>,
+    attention: Attention,
+    up: Tensor,
+    gate: Tensor,
+    down: Tensor,
+}
+
+#[derive(Clone)]
+enum LayerState {
+    Full {
+        keys: Vec<f32>,
+        values: Vec<f32>,
+    },
+    Recurrent {
+        convolution: Vec<f32>,
+        matrix: Vec<f32>,
+    },
+}
+
+impl LayerState {
+    const fn bytes(&self) -> usize {
+        let (first, second) = match self {
+            Self::Full { keys, values } => (keys, values),
+            Self::Recurrent {
+                convolution,
+                matrix,
+            } => (convolution, matrix),
+        };
+        (first.capacity() + second.capacity()) * size_of::<f32>()
+    }
+}
+
+enum LayerDelta {
+    Full {
+        key: Vec<f32>,
+        value: Vec<f32>,
+    },
+    Recurrent {
+        convolution: Vec<f32>,
+        matrix: Vec<f32>,
+    },
+}
+
+#[derive(Default)]
+struct Transforms {
+    block: usize,
+    weights: BTreeSet<String>,
+    inverse_embedding: bool,
+    grouped_values: bool,
+    signs: BTreeMap<usize, Vec<f32>>,
+}
+
+impl Transforms {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep validation and graph operation order auditable together."
+    )]
+    fn read(model: &Model, geometry: &Geometry) -> Result<Self> {
+        let metadata = &model.metadata;
+        let Some(version) = metadata.get("prism.hadamard.version") else {
+            if metadata
+                .keys()
+                .any(|key| key.starts_with("prism.hadamard."))
+            {
+                return Err(invalid("Hadamard metadata requires prism.hadamard.version"));
+            }
+            return Ok(Self::default());
+        };
+        let version = version
+            .as_u64()
+            .ok_or_else(|| invalid("invalid Hadamard version"))?;
+        let tied = optional_bool(metadata, "prism.hadamard.tied_output", false)?;
+        if !matches!(version, 1 | 2) || (version == 2) != tied {
+            return Err(invalid(
+                "Hadamard version 2 requires tied_output; version 1 forbids it",
+            ));
+        }
+        if tied && model.tensors.contains_key("output.weight") {
+            return Err(invalid(
+                "Hadamard tied output requires output.weight to be absent",
+            ));
+        }
+        let block = integer(metadata, "prism.hadamard.block_size")?;
+        if !block.is_power_of_two() || block > 65_536 {
+            return Err(invalid(
+                "Hadamard block size must be a bounded power of two",
+            ));
+        }
+        if string(metadata, "prism.hadamard.transform")? != "normalized-sylvester-walsh-hadamard"
+            || string(metadata, "prism.hadamard.axis")? != "input-last-dimension"
+        {
+            return Err(invalid("unsupported Hadamard transform or axis"));
+        }
+        let mut weights = BTreeSet::new();
+        for name in array(metadata, "prism.hadamard.weight_names")? {
+            let name = name
+                .as_str()
+                .ok_or_else(|| invalid("Hadamard weight names must be strings"))?;
+            if !foldable(name) || !weights.insert(name.to_owned()) {
+                return Err(invalid(format!(
+                    "unsupported or duplicate Hadamard weight: {name}"
+                )));
+            }
+        }
+        if weights.is_empty() {
+            return Err(invalid("Hadamard weight_names must not be empty"));
+        }
+        let mut inverse_embedding = false;
+        if metadata.contains_key("prism.hadamard.inverse_weight_names") {
+            for name in array(metadata, "prism.hadamard.inverse_weight_names")? {
+                if name.as_str() != Some("token_embd.weight") || inverse_embedding {
+                    return Err(invalid(
+                        "only one token embedding inverse transform is supported",
+                    ));
+                }
+                inverse_embedding = true;
+            }
+        }
+        if tied {
+            if !inverse_embedding {
+                return Err(invalid(
+                    "Hadamard tied output requires inverse token embedding transform",
+                ));
+            }
+            weights.insert("token_embd.weight".to_owned());
+        } else if inverse_embedding && !model.tensors.contains_key("output.weight") {
+            return Err(invalid("latent tied output requires Hadamard version 2"));
+        }
+        let mut signs = BTreeMap::new();
+        match string(metadata, "prism.hadamard.sign_mode")? {
+            "identity" => {}
+            "explicit" => {
+                let widths = array(metadata, "prism.hadamard.sign_widths")?;
+                let values = array(metadata, "prism.hadamard.sign_values")?;
+                if widths.is_empty() {
+                    return Err(invalid("explicit Hadamard sign widths must not be empty"));
+                }
+                let mut offset = 0_usize;
+                for width in widths {
+                    let width = json_usize(width, "Hadamard sign width")?;
+                    let end = offset
+                        .checked_add(width)
+                        .ok_or_else(|| invalid("sign length overflow"))?;
+                    if width == 0 || width > MAX_WIDTH || width % block != 0 || end > values.len() {
+                        return Err(invalid("invalid Hadamard sign width"));
+                    }
+                    let vector = values[offset..end]
+                        .iter()
+                        .map(|value| match value.as_i64() {
+                            Some(-1) => Ok(-1.0),
+                            Some(1) => Ok(1.0),
+                            _ => Err(invalid("Hadamard signs must be +1 or -1")),
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    if signs.insert(width, vector).is_some() {
+                        return Err(invalid("duplicate Hadamard sign width"));
+                    }
+                    offset = end;
+                }
+                if offset != values.len() {
+                    return Err(invalid("Hadamard sign_values length mismatch"));
+                }
+            }
+            _ => return Err(invalid("unsupported Hadamard sign mode")),
+        }
+        for name in weights
+            .iter()
+            .map(String::as_str)
+            .chain(inverse_embedding.then_some("token_embd.weight"))
+        {
+            let tensor = model
+                .tensors
+                .get(name)
+                .ok_or_else(|| invalid(format!("Hadamard tensor absent: {name}")))?;
+            let width = tensor
+                .dimensions
+                .first()
+                .copied()
+                .ok_or_else(|| invalid("Hadamard tensor has no dimensions"))?;
+            if width % block != 0 || (!signs.is_empty() && !signs.contains_key(&width)) {
+                return Err(invalid(format!(
+                    "Hadamard width or signs do not match {name}"
+                )));
+            }
+        }
+        let grouped_values = optional_bool(metadata, "prism.hadamard.gdn_v_grouped", false)?;
+        if grouped_values && !geometry.ssm_values.is_multiple_of(geometry.ssm_keys) {
+            return Err(invalid(
+                "grouped GDN transform has incompatible head geometry",
+            ));
+        }
+        Ok(Self {
+            block,
+            weights,
+            inverse_embedding,
+            grouped_values,
+            signs,
+        })
+    }
+
+    fn project(&self, weight: &Tensor, input: &[f32], geometry: &Geometry) -> Result<Vec<f32>> {
+        if !self.weights.contains(&weight.name) {
+            return matvec(weight, input);
+        }
+        let mut transformed = copy_values(input)?;
+        if self.grouped_values && weight.name.ends_with(".ssm_out.weight") {
+            let repetitions = geometry.ssm_values / geometry.ssm_keys;
+            for key in 0..geometry.ssm_keys {
+                for repeat in 0..repetitions {
+                    let source = (repeat * geometry.ssm_keys + key) * geometry.ssm_head;
+                    let target = (key * repetitions + repeat) * geometry.ssm_head;
+                    transformed[target..target + geometry.ssm_head]
+                        .copy_from_slice(&input[source..source + geometry.ssm_head]);
+                }
+            }
+        }
+        self.sign(&mut transformed);
+        self.rotate(&mut transformed)?;
+        matvec(weight, &transformed)
+    }
+
+    fn sign(&self, input: &mut [f32]) {
+        if let Some(signs) = self.signs.get(&input.len()) {
+            for (value, sign) in input.iter_mut().zip(signs) {
+                *value *= sign;
+            }
+        }
+    }
+
+    fn rotate(&self, input: &mut [f32]) -> Result<()> {
+        for block in input.chunks_exact_mut(self.block) {
+            crate::kernels::hadamard(block)?;
+        }
+        Ok(())
+    }
+}
+
+/// Exact owned conversation state; tensor payloads are not copied.
+pub struct Qwen35Checkpoint {
+    provenance: Arc<()>,
+    identity: String,
+    context_limit: usize,
+    position: usize,
+    layers: Vec<LayerState>,
+}
+
+/// Native scalar decoder for the supported Qwen3.5 dense text graph.
+pub struct Qwen35 {
+    provenance: Arc<()>,
+    identity: String,
+    geometry: Geometry,
+    embedding: Tensor,
+    output: Tensor,
+    output_norm: Vec<f32>,
+    transforms: Transforms,
+    layers: Vec<Layer>,
+    state: Vec<LayerState>,
+    context_limit: usize,
+    position: usize,
+    vocabulary: usize,
+}
+
+impl Qwen35 {
+    /// Validates model contracts and cache bounds before allocating decoder state.
+    ///
+    /// # Errors
+    /// Returns an error for malformed tensors, unsupported graph variants, or
+    /// a context/state allocation beyond the scalar runtime's explicit bounds.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep validation and graph operation order auditable together."
+    )]
+    pub fn new(model: Model, context_limit: usize) -> Result<Self> {
+        let metadata = &model.metadata;
+        if string(metadata, "general.architecture")? != "qwen35" {
+            return Err(invalid(
+                "the native graph supports general.architecture=qwen35 only",
+            ));
+        }
+        reject_unsupported(metadata)?;
+        let block_count = integer(metadata, "qwen35.block_count")?;
+        let mtp = optional_integer(metadata, "qwen35.nextn_predict_layers", 0)?;
+        if block_count == 0 || block_count > MAX_LAYERS || mtp >= block_count {
+            return Err(invalid("invalid Qwen35 block or MTP count"));
+        }
+        let layer_count = block_count - mtp;
+        let train_context = integer(metadata, "qwen35.context_length")?;
+        if context_limit == 0 || context_limit > train_context || context_limit > 1_048_576 {
+            return Err(invalid(
+                "context limit must be positive and within the unscaled training context",
+            ));
+        }
+        let mut geometry = Geometry {
+            embedding: integer(metadata, "qwen35.embedding_length")?,
+            feed_forward: integer(metadata, "qwen35.feed_forward_length")?,
+            heads: integer(metadata, "qwen35.attention.head_count")?,
+            kv_heads: integer(metadata, "qwen35.attention.head_count_kv")?,
+            head: integer(metadata, "qwen35.attention.key_length")?,
+            rope: integer(metadata, "qwen35.rope.dimension_count")?,
+            rope_sections: [0; 4],
+            rope_base: float(metadata, "qwen35.rope.freq_base")?,
+            epsilon: float(metadata, "qwen35.attention.layer_norm_rms_epsilon")?,
+            ssm_head: integer(metadata, "qwen35.ssm.state_size")?,
+            ssm_keys: integer(metadata, "qwen35.ssm.group_count")?,
+            ssm_values: integer(metadata, "qwen35.ssm.time_step_rank")?,
+            convolution: integer(metadata, "qwen35.ssm.conv_kernel")?,
+        };
+        let sizes = [
+            geometry.embedding,
+            geometry.feed_forward,
+            geometry.heads,
+            geometry.kv_heads,
+            geometry.head,
+            geometry.rope,
+            geometry.ssm_head,
+            geometry.ssm_keys,
+            geometry.ssm_values,
+            geometry.convolution,
+        ];
+        if sizes.iter().any(|&value| value == 0 || value > 65_535)
+            || !geometry.heads.is_multiple_of(geometry.kv_heads)
+            || !geometry.ssm_values.is_multiple_of(geometry.ssm_keys)
+            || geometry.rope > geometry.head
+            || !geometry.rope.is_multiple_of(2)
+            || geometry.rope_base <= 0.0
+            || geometry.epsilon <= 0.0
+            || integer(metadata, "qwen35.attention.value_length")? != geometry.head
+            || integer(metadata, "qwen35.ssm.inner_size")? != geometry.value_width()
+            || geometry.convolution_width() > MAX_WIDTH
+            || geometry.convolution_width() * geometry.convolution > 16 * MAX_WIDTH
+            || geometry.heads * geometry.head > MAX_WIDTH
+        {
+            return Err(invalid(
+                "unsupported or invalid Qwen35 head, RoPE, normalization, or convolution geometry",
+            ));
+        }
+        let sections = array(metadata, "qwen35.rope.dimension_sections")?;
+        if sections.len() != 4
+            || sections.iter().try_fold(0_usize, |sum, value| {
+                checked_sum(sum, json_usize(value, "RoPE section")?)
+            })? != geometry.rope / 2
+        {
+            return Err(invalid(
+                "RoPE sections must describe exactly half the rotated dimensions",
+            ));
+        }
+        for (destination, value) in geometry.rope_sections.iter_mut().zip(sections) {
+            *destination = json_usize(value, "RoPE section")?;
+        }
+        let embedding = tensor(&model, "token_embd.weight", &[geometry.embedding, 0])?;
+        let vocabulary = embedding.dimensions[1];
+        if vocabulary == 0 || vocabulary > 2_097_152 {
+            return Err(invalid("vocabulary size exceeds decoder bounds"));
+        }
+        let output = if model.tensors.contains_key("output.weight") {
+            tensor(&model, "output.weight", &[geometry.embedding, vocabulary])?
+        } else {
+            embedding.clone()
+        };
+        let output_norm = vector(&model, "output_norm.weight", geometry.embedding)?;
+        let transforms = Transforms::read(&model, &geometry)?;
+        let full_interval = optional_integer(metadata, "qwen35.full_attention_interval", 4)?;
+        if full_interval == 0 {
+            return Err(invalid("full attention interval must be positive"));
+        }
+        let recurrent_flags = if metadata.contains_key("qwen35.attention.recurrent_layers") {
+            let flags = array(metadata, "qwen35.attention.recurrent_layers")?;
+            if flags.len() != block_count {
+                return Err(invalid("recurrent layer flags must cover all blocks"));
+            }
+            flags
+                .iter()
+                .map(|value| {
+                    value
+                        .as_bool()
+                        .ok_or_else(|| invalid("recurrent layer flags must be boolean"))
+                })
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            (0..block_count)
+                .map(|index| index < layer_count && (index + 1) % full_interval != 0)
+                .collect()
+        };
+        let mut state_elements = 0_usize;
+        for &recurrent in recurrent_flags.iter().take(layer_count) {
+            let elements = if recurrent {
+                checked_sum(
+                    checked_product(&[geometry.ssm_head, geometry.ssm_head, geometry.ssm_values])?,
+                    checked_product(&[geometry.convolution - 1, geometry.convolution_width()])?,
+                )?
+            } else {
+                checked_product(&[2, geometry.head, geometry.kv_heads, context_limit])?
+            };
+            state_elements = checked_sum(state_elements, elements)?;
+        }
+        if state_elements > MAX_STATE_BYTES / size_of::<f32>() {
+            return Err(invalid(
+                "KV and recurrent state exceed the native state budget",
+            ));
+        }
+        for tensor in model.tensors.values() {
+            crate::kernels::validate_tensor(tensor)?;
+        }
+        let mut layers = capacity(layer_count)?;
+        for (index, &recurrent) in recurrent_flags.iter().take(layer_count).enumerate() {
+            let prefix = format!("blk.{index}.");
+            let attention = if recurrent {
+                let channels = geometry.convolution_width();
+                let convolution = flatten(&tensor(
+                    &model,
+                    &format!("{prefix}ssm_conv1d.weight"),
+                    &[geometry.convolution, channels],
+                )?)?;
+                Attention::Recurrent(RecurrentAttention {
+                    qkv: tensor(
+                        &model,
+                        &format!("{prefix}attn_qkv.weight"),
+                        &[geometry.embedding, channels],
+                    )?,
+                    gate: tensor(
+                        &model,
+                        &format!("{prefix}attn_gate.weight"),
+                        &[geometry.embedding, geometry.value_width()],
+                    )?,
+                    beta: tensor(
+                        &model,
+                        &format!("{prefix}ssm_beta.weight"),
+                        &[geometry.embedding, geometry.ssm_values],
+                    )?,
+                    alpha: tensor(
+                        &model,
+                        &format!("{prefix}ssm_alpha.weight"),
+                        &[geometry.embedding, geometry.ssm_values],
+                    )?,
+                    convolution,
+                    time_bias: vector(
+                        &model,
+                        &format!("{prefix}ssm_dt.bias"),
+                        geometry.ssm_values,
+                    )?,
+                    decay: vector(&model, &format!("{prefix}ssm_a"), geometry.ssm_values)?,
+                    norm: vector(
+                        &model,
+                        &format!("{prefix}ssm_norm.weight"),
+                        geometry.ssm_head,
+                    )?,
+                    output: tensor(
+                        &model,
+                        &format!("{prefix}ssm_out.weight"),
+                        &[geometry.value_width(), geometry.embedding],
+                    )?,
+                })
+            } else {
+                Attention::Full(FullAttention {
+                    query: tensor(
+                        &model,
+                        &format!("{prefix}attn_q.weight"),
+                        &[geometry.embedding, geometry.head * geometry.heads * 2],
+                    )?,
+                    key: tensor(
+                        &model,
+                        &format!("{prefix}attn_k.weight"),
+                        &[geometry.embedding, geometry.head * geometry.kv_heads],
+                    )?,
+                    value: tensor(
+                        &model,
+                        &format!("{prefix}attn_v.weight"),
+                        &[geometry.embedding, geometry.head * geometry.kv_heads],
+                    )?,
+                    output: tensor(
+                        &model,
+                        &format!("{prefix}attn_output.weight"),
+                        &[geometry.head * geometry.heads, geometry.embedding],
+                    )?,
+                    query_norm: vector(
+                        &model,
+                        &format!("{prefix}attn_q_norm.weight"),
+                        geometry.head,
+                    )?,
+                    key_norm: vector(
+                        &model,
+                        &format!("{prefix}attn_k_norm.weight"),
+                        geometry.head,
+                    )?,
+                })
+            };
+            layers.push(Layer {
+                norm: vector(
+                    &model,
+                    &format!("{prefix}attn_norm.weight"),
+                    geometry.embedding,
+                )?,
+                post_norm: vector(
+                    &model,
+                    &format!("{prefix}post_attention_norm.weight"),
+                    geometry.embedding,
+                )?,
+                attention,
+                up: tensor(
+                    &model,
+                    &format!("{prefix}ffn_up.weight"),
+                    &[geometry.embedding, geometry.feed_forward],
+                )?,
+                gate: tensor(
+                    &model,
+                    &format!("{prefix}ffn_gate.weight"),
+                    &[geometry.embedding, geometry.feed_forward],
+                )?,
+                down: tensor(
+                    &model,
+                    &format!("{prefix}ffn_down.weight"),
+                    &[geometry.feed_forward, geometry.embedding],
+                )?,
+            });
+        }
+        reject_unconsumed_tensors(&model, &layers, block_count, mtp)?;
+        let mut state = capacity(layer_count)?;
+        for layer in &layers {
+            state.push(match &layer.attention {
+                Attention::Full(_) => LayerState::Full {
+                    keys: Vec::new(),
+                    values: Vec::new(),
+                },
+                Attention::Recurrent(_) => LayerState::Recurrent {
+                    convolution: zeros((geometry.convolution - 1) * geometry.convolution_width())?,
+                    matrix: zeros(geometry.ssm_head * geometry.ssm_head * geometry.ssm_values)?,
+                },
+            });
+        }
+        Ok(Self {
+            provenance: Arc::new(()),
+            identity: model.identity + ":qwen35-text-v1:nonflash-f16:kv-f16:gdn-f32",
+            geometry,
+            embedding,
+            output,
+            output_norm,
+            transforms,
+            layers,
+            state,
+            context_limit,
+            position: 0,
+            vocabulary,
+        })
+    }
+
+    fn project(&self, tensor: &Tensor, input: &[f32]) -> Result<Vec<f32>> {
+        self.transforms.project(tensor, input, &self.geometry)
+    }
+
+    #[allow(
+        clippy::suboptimal_flops,
+        clippy::cast_possible_truncation,
+        clippy::as_conversions,
+        reason = "Preserve scalar nonflash F16 matmul inputs and binary64 accumulation rounded to binary32."
+    )]
+    fn full_attention(
+        &self,
+        layer: &FullAttention,
+        input: &[f32],
+        keys: &[f32],
+        values: &[f32],
+    ) -> Result<(Vec<f32>, LayerDelta)> {
+        let g = &self.geometry;
+        let joint_query = self.project(&layer.query, input)?;
+        let mut query = capacity(g.head * g.heads)?;
+        let mut gate = capacity(g.head * g.heads)?;
+        for head in joint_query.chunks_exact(2 * g.head) {
+            query.extend(rms_norm(&head[..g.head], &layer.query_norm, g.epsilon)?);
+            gate.extend_from_slice(&head[g.head..]);
+        }
+        let key_projection = self.project(&layer.key, input)?;
+        let mut key = capacity(key_projection.len())?;
+        for head in key_projection.chunks_exact(g.head) {
+            key.extend(rms_norm(head, &layer.key_norm, g.epsilon)?);
+        }
+        let mut value = self.project(&layer.value, input)?;
+        rope(&mut query, g, self.position)?;
+        rope(&mut key, g, self.position)?;
+        // F16 K x Q converts the F32 query to F16 even with F32 precision.
+        for element in query
+            .iter_mut()
+            .chain(key.iter_mut())
+            .chain(value.iter_mut())
+        {
+            *element = round_f16(*element);
+        }
+        finite(&query, "binary16 attention query")?;
+        finite(&key, "binary16 key cache")?;
+        finite(&value, "binary16 value cache")?;
+        let width = g.head * g.kv_heads;
+        let mut attended = zeros(g.head * g.heads)?;
+        let scale = 1.0 / small_float(g.head)?.sqrt();
+        for head in 0..g.heads {
+            let kv_head = head / (g.heads / g.kv_heads);
+            let offset = kv_head * g.head;
+            let q = &query[head * g.head..(head + 1) * g.head];
+            let mut scores = capacity(self.position + 1)?;
+            for past in keys.chunks_exact(width) {
+                scores.push(dot(q, &past[offset..offset + g.head]) * scale);
+            }
+            scores.push(dot(q, &key[offset..offset + g.head]) * scale);
+            softmax(&mut scores)?;
+            // Nonflash V(F16) x softmax(F32) also converts its RHS to F16.
+            for probability in &mut scores {
+                *probability = round_f16(*probability);
+            }
+            let result = &mut attended[head * g.head..(head + 1) * g.head];
+            for (dimension, out) in result.iter_mut().enumerate() {
+                let past_sum = values
+                    .chunks_exact(width)
+                    .zip(&scores)
+                    .map(|(past, &probability)| f64::from(probability * past[offset + dimension]))
+                    .sum::<f64>();
+                *out = (past_sum + f64::from(scores[self.position] * value[offset + dimension]))
+                    as f32;
+            }
+        }
+        for (out, gate) in attended.iter_mut().zip(gate) {
+            *out *= sigmoid(gate);
+        }
+        Ok((
+            self.project(&layer.output, &attended)?,
+            LayerDelta::Full { key, value },
+        ))
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep validation and graph operation order auditable together."
+    )]
+    #[allow(
+        clippy::suboptimal_flops,
+        clippy::imprecise_flops,
+        reason = "Match the pinned scalar GDN operations, including logf(1+expf(x))."
+    )]
+    fn recurrent_attention(
+        &self,
+        layer: &RecurrentAttention,
+        input: &[f32],
+        history: &[f32],
+        previous: &[f32],
+    ) -> Result<(Vec<f32>, LayerDelta)> {
+        let g = &self.geometry;
+        let qkv = self.project(&layer.qkv, input)?;
+        let gate = self.project(&layer.gate, input)?;
+        let beta = self.project(&layer.beta, input)?;
+        let alpha = self.project(&layer.alpha, input)?;
+        let mut convolution = copy_values(history)?;
+        let mut mixed = zeros(g.convolution_width())?;
+        for (channel, mixed_value) in mixed.iter_mut().enumerate() {
+            let start = channel * (g.convolution - 1);
+            let coefficients =
+                &layer.convolution[channel * g.convolution..(channel + 1) * g.convolution];
+            let mut sum = 0.0;
+            for (old, coefficient) in history[start..start + g.convolution - 1]
+                .iter()
+                .zip(coefficients)
+            {
+                sum += old * coefficient;
+            }
+            sum += qkv[channel] * coefficients[g.convolution - 1];
+            *mixed_value = silu(sum);
+            if g.convolution > 1 {
+                convolution[start..start + g.convolution - 1].rotate_left(1);
+                convolution[start + g.convolution - 2] = qkv[channel];
+            }
+        }
+        let key_width = g.key_width();
+        for head in mixed[..2 * key_width].chunks_exact_mut(g.ssm_head) {
+            l2_norm(head, g.epsilon);
+        }
+        let mut matrix = copy_values(previous)?;
+        let mut attended = zeros(g.value_width())?;
+        let scale = 1.0 / small_float(g.ssm_head)?.sqrt();
+        for head in 0..g.ssm_values {
+            // ggml repeat tiles key groups; it does not repeat each key head contiguously.
+            let key_head = head % g.ssm_keys;
+            let q = &mixed[key_head * g.ssm_head..(key_head + 1) * g.ssm_head];
+            let k =
+                &mixed[key_width + key_head * g.ssm_head..key_width + (key_head + 1) * g.ssm_head];
+            let v =
+                &mixed[2 * key_width + head * g.ssm_head..2 * key_width + (head + 1) * g.ssm_head];
+            let activation = alpha[head] + layer.time_bias[head];
+            let softplus = if activation > 20.0 {
+                activation
+            } else {
+                (1.0 + activation.exp()).ln()
+            };
+            let decay = (softplus * layer.decay[head]).exp();
+            let update = sigmoid(beta[head]);
+            let state =
+                &mut matrix[head * g.ssm_head * g.ssm_head..(head + 1) * g.ssm_head * g.ssm_head];
+            for element in state.iter_mut() {
+                *element *= decay;
+            }
+            let output = &mut attended[head * g.ssm_head..(head + 1) * g.ssm_head];
+            for ((state_row, &value), out) in state
+                .chunks_exact_mut(g.ssm_head)
+                .zip(v)
+                .zip(output.iter_mut())
+            {
+                let delta = (value - dot(state_row, k)) * update;
+                for (element, &key) in state_row.iter_mut().zip(k) {
+                    *element += delta * key;
+                }
+                *out = dot(state_row, q) * scale;
+            }
+            let normalized = rms_norm(output, &layer.norm, g.epsilon)?;
+            for ((out, normalized), &z) in output
+                .iter_mut()
+                .zip(normalized)
+                .zip(&gate[head * g.ssm_head..(head + 1) * g.ssm_head])
+            {
+                *out = normalized * silu(z);
+            }
+        }
+        finite(&matrix, "GDN state")?;
+        finite(&convolution, "convolution state")?;
+        Ok((
+            self.project(&layer.output, &attended)?,
+            LayerDelta::Recurrent {
+                convolution,
+                matrix,
+            },
+        ))
+    }
+}
+
+impl Decoder for Qwen35 {
+    type Checkpoint = Qwen35Checkpoint;
+
+    fn identity(&self) -> &str {
+        &self.identity
+    }
+
+    fn vocab_size(&self) -> usize {
+        self.vocabulary
+    }
+
+    fn reset(&mut self) -> Result<()> {
+        for state in &mut self.state {
+            match state {
+                LayerState::Full { keys, values } => {
+                    keys.clear();
+                    values.clear();
+                }
+                LayerState::Recurrent {
+                    convolution,
+                    matrix,
+                } => {
+                    convolution.fill(0.0);
+                    matrix.fill(0.0);
+                }
+            }
+        }
+        self.position = 0;
+        Ok(())
+    }
+
+    fn evaluate(&mut self, token: u32) -> Result<Vec<f32>> {
+        let token = usize::try_from(token)?;
+        if token >= self.vocabulary || self.position >= self.context_limit {
+            return Err(invalid(
+                "token is outside the vocabulary or context is exhausted",
+            ));
+        }
+        let mut hidden = row(&self.embedding, token)?;
+        if self.transforms.inverse_embedding {
+            self.transforms.rotate(&mut hidden)?;
+            self.transforms.sign(&mut hidden);
+        }
+        let mut deltas = capacity(self.layers.len())?;
+        for (layer, state) in self.layers.iter().zip(&self.state) {
+            let normalized = rms_norm(&hidden, &layer.norm, self.geometry.epsilon)?;
+            let (attention, delta) = match (&layer.attention, state) {
+                (Attention::Full(weights), LayerState::Full { keys, values }) => {
+                    self.full_attention(weights, &normalized, keys, values)?
+                }
+                (
+                    Attention::Recurrent(weights),
+                    LayerState::Recurrent {
+                        convolution,
+                        matrix,
+                    },
+                ) => self.recurrent_attention(weights, &normalized, convolution, matrix)?,
+                _ => return Err(invalid("decoder layer/cache kind mismatch")),
+            };
+            add(&mut hidden, &attention);
+            let normalized = rms_norm(&hidden, &layer.post_norm, self.geometry.epsilon)?;
+            let mut up = self.project(&layer.up, &normalized)?;
+            let gate = self.project(&layer.gate, &normalized)?;
+            for (up, gate) in up.iter_mut().zip(gate) {
+                *up *= silu(gate);
+            }
+            add(&mut hidden, &self.project(&layer.down, &up)?);
+            finite(&hidden, "decoder layer output")?;
+            deltas.push(delta);
+        }
+        let normalized = rms_norm(&hidden, &self.output_norm, self.geometry.epsilon)?;
+        let logits = self.project(&self.output, &normalized)?;
+        finite(&logits, "output logits")?;
+        // Reserve every append before changing cache contents. Allocation failure
+        // leaves the logical decoder position and all numerical state unchanged.
+        let width = self.geometry.head * self.geometry.kv_heads;
+        for state in &mut self.state {
+            if let LayerState::Full { keys, values } = state {
+                keys.try_reserve_exact(width)?;
+                values.try_reserve_exact(width)?;
+            }
+        }
+        for (state, delta) in self.state.iter_mut().zip(deltas) {
+            match (state, delta) {
+                (LayerState::Full { keys, values }, LayerDelta::Full { key, value }) => {
+                    keys.extend(key);
+                    values.extend(value);
+                }
+                (
+                    LayerState::Recurrent {
+                        convolution,
+                        matrix,
+                    },
+                    LayerDelta::Recurrent {
+                        convolution: new_convolution,
+                        matrix: new_matrix,
+                    },
+                ) => {
+                    *convolution = new_convolution;
+                    *matrix = new_matrix;
+                }
+                _ => return Err(invalid("decoder state commit kind mismatch")),
+            }
+        }
+        self.position += 1;
+        Ok(logits)
+    }
+
+    fn checkpoint_bytes(&self) -> usize {
+        size_of::<Qwen35Checkpoint>()
+            + self.identity.capacity()
+            + self.state.capacity() * size_of::<LayerState>()
+            + self.state.iter().map(LayerState::bytes).sum::<usize>()
+    }
+
+    fn checkpoint(&self) -> Result<Self::Checkpoint> {
+        Ok(Qwen35Checkpoint {
+            provenance: self.provenance.clone(),
+            identity: copy_string(&self.identity)?,
+            context_limit: self.context_limit,
+            position: self.position,
+            layers: copy_state(&self.state)?,
+        })
+    }
+
+    fn restore(&mut self, checkpoint: &Self::Checkpoint) -> Result<()> {
+        if !Arc::ptr_eq(&checkpoint.provenance, &self.provenance)
+            || checkpoint.identity != self.identity
+            || checkpoint.context_limit != self.context_limit
+            || checkpoint.layers.len() != self.layers.len()
+            || checkpoint.position > self.context_limit
+        {
+            return Err(invalid(
+                "checkpoint belongs to a different model or context",
+            ));
+        }
+        self.state = copy_state(&checkpoint.layers)?;
+        self.position = checkpoint.position;
+        Ok(())
+    }
+}
+
+fn foldable(name: &str) -> bool {
+    if name == "output.weight" {
+        return true;
+    }
+    let Some(rest) = name.strip_prefix("blk.") else {
+        return false;
+    };
+    let Some((index, suffix)) = rest.split_once('.') else {
+        return false;
+    };
+    !index.is_empty()
+        && index.bytes().all(|byte| byte.is_ascii_digit())
+        && matches!(
+            suffix,
+            "attn_q.weight"
+                | "attn_k.weight"
+                | "attn_v.weight"
+                | "attn_qkv.weight"
+                | "attn_gate.weight"
+                | "attn_output.weight"
+                | "ffn_gate.weight"
+                | "ffn_up.weight"
+                | "ffn_down.weight"
+                | "ssm_out.weight"
+        )
+}
+
+fn reject_unsupported(metadata: &Map<String, Value>) -> Result<()> {
+    for key in metadata.keys() {
+        if let Some(key) = key.strip_prefix("qwen35.")
+            && !matches!(
+                key,
+                "block_count"
+                    | "nextn_predict_layers"
+                    | "context_length"
+                    | "embedding_length"
+                    | "feed_forward_length"
+                    | "attention.head_count"
+                    | "attention.head_count_kv"
+                    | "attention.key_length"
+                    | "attention.value_length"
+                    | "attention.layer_norm_rms_epsilon"
+                    | "attention.recurrent_layers"
+                    | "attention.causal"
+                    | "rope.dimension_count"
+                    | "rope.dimension_sections"
+                    | "rope.freq_base"
+                    | "rope.scaling.type"
+                    | "ssm.state_size"
+                    | "ssm.group_count"
+                    | "ssm.time_step_rank"
+                    | "ssm.inner_size"
+                    | "ssm.conv_kernel"
+                    | "full_attention_interval"
+                    | "expert_count"
+                    | "expert_used_count"
+            )
+        {
+            return Err(invalid(format!("unsupported Qwen35 metadata: {key}")));
+        }
+        if let Some(key) = key.strip_prefix("prism.hadamard.")
+            && !matches!(
+                key,
+                "version"
+                    | "tied_output"
+                    | "block_size"
+                    | "transform"
+                    | "axis"
+                    | "sign_mode"
+                    | "weight_names"
+                    | "inverse_weight_names"
+                    | "sign_widths"
+                    | "sign_values"
+                    | "gdn_v_grouped"
+            )
+        {
+            return Err(invalid(format!("unsupported Hadamard metadata: {key}")));
+        }
+    }
+    for key in ["qwen35.expert_count", "qwen35.expert_used_count"] {
+        if optional_integer(metadata, key, 0)? != 0 {
+            return Err(invalid("MoE graph is not supported"));
+        }
+    }
+    for key in [
+        "qwen35.rope.scaling.factor",
+        "qwen35.rope.scaling.attn_factor",
+        "qwen35.attention.scale",
+    ] {
+        if metadata.contains_key(key) {
+            return Err(invalid(format!("unsupported graph override: {key}")));
+        }
+    }
+    if let Some(scaling) = metadata.get("qwen35.rope.scaling.type")
+        && scaling.as_str() != Some("none")
+    {
+        return Err(invalid("scaled RoPE is not supported"));
+    }
+    if !optional_bool(metadata, "qwen35.attention.causal", true)? {
+        return Err(invalid("noncausal Qwen35 attention is not supported"));
+    }
+    Ok(())
+}
+
+fn reject_unconsumed_tensors(
+    model: &Model,
+    layers: &[Layer],
+    block_count: usize,
+    mtp: usize,
+) -> Result<()> {
+    let mut consumed: BTreeSet<String> =
+        ["token_embd.weight", "output.weight", "output_norm.weight"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+    for (index, layer) in layers.iter().enumerate() {
+        for suffix in [
+            "attn_norm.weight",
+            "post_attention_norm.weight",
+            "ffn_up.weight",
+            "ffn_gate.weight",
+            "ffn_down.weight",
+        ] {
+            consumed.insert(format!("blk.{index}.{suffix}"));
+        }
+        let attention: &[&str] = match &layer.attention {
+            Attention::Full(_) => &[
+                "attn_q.weight",
+                "attn_k.weight",
+                "attn_v.weight",
+                "attn_output.weight",
+                "attn_q_norm.weight",
+                "attn_k_norm.weight",
+            ],
+            Attention::Recurrent(_) => &[
+                "attn_qkv.weight",
+                "attn_gate.weight",
+                "ssm_beta.weight",
+                "ssm_alpha.weight",
+                "ssm_conv1d.weight",
+                "ssm_dt.bias",
+                "ssm_a",
+                "ssm_norm.weight",
+                "ssm_out.weight",
+            ],
+        };
+        for suffix in attention {
+            consumed.insert(format!("blk.{index}.{suffix}"));
+        }
+    }
+    for (name, tensor) in &model.tensors {
+        let mtp_tensor = mtp != 0
+            && (name.starts_with("nextn.")
+                || name.contains(".nextn.")
+                || name
+                    .strip_prefix("blk.")
+                    .and_then(|rest| rest.split_once('.'))
+                    .and_then(|(index, _)| index.parse::<usize>().ok())
+                    .is_some_and(|index| index >= layers.len() && index < block_count));
+        if tensor.name != *name || (!consumed.contains(name) && !mtp_tensor) {
+            return Err(invalid(format!("unsupported or unconsumed tensor: {name}")));
+        }
+    }
+    Ok(())
+}
+
+fn tensor(model: &Model, name: &str, shape: &[usize]) -> Result<Tensor> {
+    let tensor = model
+        .tensors
+        .get(name)
+        .ok_or_else(|| invalid(format!("required tensor absent: {name}")))?;
+    if tensor.name != name
+        || tensor.dimensions.len() != shape.len()
+        || tensor
+            .dimensions
+            .iter()
+            .zip(shape)
+            .any(|(&actual, &expected)| actual == 0 || (expected != 0 && actual != expected))
+    {
+        return Err(invalid(format!("tensor shape mismatch: {name}")));
+    }
+    // Validate the packed layout without expanding large weight payloads.
+    crate::kernels::validate_tensor(tensor)?;
+    Ok(tensor.clone())
+}
+
+fn vector(model: &Model, name: &str, width: usize) -> Result<Vec<f32>> {
+    let tensor = tensor(model, name, &[width])?;
+    if !matches!(tensor.kind, 0 | 1 | 30) {
+        return Err(invalid(format!(
+            "normalization/state tensor must be floating point: {name}"
+        )));
+    }
+    let result = row(&tensor, 0)?;
+    finite(&result, name)?;
+    Ok(result)
+}
+
+fn flatten(tensor: &Tensor) -> Result<Vec<f32>> {
+    if !matches!(tensor.kind, 0 | 1 | 30) {
+        return Err(invalid("convolution weights must be floating point"));
+    }
+    let mut values = Vec::new();
+    for index in 0..tensor.dimensions[1] {
+        values.extend(row(tensor, index)?);
+    }
+    finite(&values, &tensor.name)?;
+    Ok(values)
+}
+
+fn integer(metadata: &Map<String, Value>, key: &str) -> Result<usize> {
+    json_usize(
+        metadata
+            .get(key)
+            .ok_or_else(|| invalid(format!("required metadata absent: {key}")))?,
+        key,
+    )
+}
+
+fn optional_integer(metadata: &Map<String, Value>, key: &str, default: usize) -> Result<usize> {
+    metadata
+        .get(key)
+        .map_or(Ok(default), |value| json_usize(value, key))
+}
+
+fn json_usize(value: &Value, name: &str) -> Result<usize> {
+    usize::try_from(
+        value
+            .as_u64()
+            .ok_or_else(|| invalid(format!("metadata must be an unsigned integer: {name}")))?,
+    )
+    .map_err(Into::into)
+}
+
+fn optional_bool(metadata: &Map<String, Value>, key: &str, default: bool) -> Result<bool> {
+    metadata.get(key).map_or(Ok(default), |value| {
+        value
+            .as_bool()
+            .ok_or_else(|| invalid(format!("metadata must be boolean: {key}")))
+    })
+}
+
+fn string<'a>(metadata: &'a Map<String, Value>, key: &str) -> Result<&'a str> {
+    metadata
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| invalid(format!("metadata must be a string: {key}")))
+}
+
+fn array<'a>(metadata: &'a Map<String, Value>, key: &str) -> Result<&'a [Value]> {
+    metadata
+        .get(key)
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .ok_or_else(|| invalid(format!("metadata must be an array: {key}")))
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    reason = "The pinned scalar numerical contract explicitly rounds this value to binary32."
+)]
+fn float(metadata: &Map<String, Value>, key: &str) -> Result<f32> {
+    let value = metadata
+        .get(key)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| invalid(format!("metadata must be numeric: {key}")))?;
+    let result = value as f32;
+    if !result.is_finite() {
+        return Err(invalid(format!("nonfinite metadata: {key}")));
+    }
+    Ok(result)
+}
+
+fn checked_product(values: &[usize]) -> Result<usize> {
+    values.iter().try_fold(1_usize, |product, value| {
+        product
+            .checked_mul(*value)
+            .ok_or_else(|| invalid("decoder allocation size overflow"))
+    })
+}
+
+fn checked_sum(first: usize, second: usize) -> Result<usize> {
+    first
+        .checked_add(second)
+        .ok_or_else(|| invalid("decoder allocation size overflow"))
+}
+
+fn zeros(count: usize) -> Result<Vec<f32>> {
+    if count > MAX_STATE_BYTES / size_of::<f32>() {
+        return Err(invalid("decoder allocation exceeds state budget"));
+    }
+    let mut result = Vec::new();
+    result.try_reserve_exact(count)?;
+    result.resize(count, 0.0);
+    Ok(result)
+}
+
+fn capacity<T>(count: usize) -> Result<Vec<T>> {
+    if count
+        .checked_mul(size_of::<T>())
+        .is_none_or(|bytes| bytes > MAX_STATE_BYTES)
+    {
+        return Err(invalid("decoder vector exceeds allocation budget"));
+    }
+    let mut result = Vec::new();
+    result.try_reserve_exact(count)?;
+    Ok(result)
+}
+
+fn copy_values(values: &[f32]) -> Result<Vec<f32>> {
+    let mut result = capacity(values.len())?;
+    result.extend_from_slice(values);
+    Ok(result)
+}
+
+fn copy_string(value: &str) -> Result<String> {
+    let mut result = String::new();
+    result.try_reserve_exact(value.len())?;
+    result.push_str(value);
+    Ok(result)
+}
+
+fn copy_state(states: &[LayerState]) -> Result<Vec<LayerState>> {
+    let mut result = capacity(states.len())?;
+    for state in states {
+        result.push(match state {
+            LayerState::Full { keys, values } => LayerState::Full {
+                keys: copy_values(keys)?,
+                values: copy_values(values)?,
+            },
+            LayerState::Recurrent {
+                convolution,
+                matrix,
+            } => LayerState::Recurrent {
+                convolution: copy_values(convolution)?,
+                matrix: copy_values(matrix)?,
+            },
+        });
+    }
+    Ok(result)
+}
+
+fn small_float(value: usize) -> Result<f32> {
+    Ok(f32::from(u16::try_from(value)?))
+}
+
+fn finite(values: &[f32], operation: &str) -> Result<()> {
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(invalid(format!("nonfinite values in {operation}")));
+    }
+    Ok(())
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    reason = "The pinned scalar numerical contract explicitly rounds this value to binary32."
+)]
+fn dot(first: &[f32], second: &[f32]) -> f32 {
+    first
+        .iter()
+        .zip(second)
+        .map(|(&first, &second)| f64::from(first * second))
+        .sum::<f64>() as f32
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    reason = "The pinned scalar numerical contract explicitly rounds this value to binary32."
+)]
+fn l2_norm(input: &mut [f32], epsilon: f32) {
+    let squares = input
+        .iter()
+        .map(|&value| f64::from(value * value))
+        .sum::<f64>();
+    let scale = 1.0 / (squares as f32).sqrt().max(epsilon);
+    for value in input {
+        *value *= scale;
+    }
+}
+
+fn sigmoid(value: f32) -> f32 {
+    1.0 / (1.0 + (-value).exp())
+}
+
+fn add(target: &mut [f32], other: &[f32]) {
+    for (target, other) in target.iter_mut().zip(other) {
+        *target += other;
+    }
+}
+
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::as_conversions,
+    reason = "Bounded token positions are converted to the same binary32 RoPE input as Prism."
+)]
+#[allow(
+    clippy::suboptimal_flops,
+    reason = "Preserve separate multiply/add rounding in the scalar RoPE reference."
+)]
+fn rope(input: &mut [f32], geometry: &Geometry, position: usize) -> Result<()> {
+    let theta_scale = geometry.rope_base.powf(-2.0 / small_float(geometry.rope)?);
+    let mut frequencies = capacity(geometry.rope / 2)?;
+    let mut theta = position as f32;
+    for index in 0..geometry.rope / 2 {
+        // Text positions are [p,p,p,0]. Interleaved MRoPE falls back to the
+        // fourth (zero) position for sectors outside their declared section.
+        let angle = if index < 3 * geometry.rope_sections[index % 3] {
+            theta
+        } else {
+            0.0
+        };
+        frequencies.push((angle.cos(), angle.sin()));
+        theta *= theta_scale;
+    }
+    for head in input.chunks_exact_mut(geometry.head) {
+        for (index, &(cosine, sine)) in frequencies.iter().enumerate() {
+            let first = head[index];
+            let second = head[index + geometry.rope / 2];
+            head[index] = first * cosine - second * sine;
+            head[index + geometry.rope / 2] = first * sine + second * cosine;
+        }
+    }
+    finite(input, "RoPE output")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Geometry, rope};
+    use crate::Result;
+
+    #[test]
+    fn text_imrope_uses_zero_fourth_position_for_unbalanced_sections() -> Result<()> {
+        let geometry = Geometry {
+            embedding: 12,
+            feed_forward: 12,
+            heads: 1,
+            kv_heads: 1,
+            head: 12,
+            rope: 12,
+            rope_sections: [4, 1, 1, 0],
+            rope_base: 10_000.0,
+            epsilon: 0.000_001,
+            ssm_head: 1,
+            ssm_keys: 1,
+            ssm_values: 1,
+            convolution: 1,
+        };
+        let mut input = [0.0; 12];
+        input[0] = 1.0;
+        input[4] = 1.0;
+        input[10] = 2.0;
+        rope(&mut input, &geometry, 3)?;
+        // Sector four is outside the height section, so [p,p,p,0] selects 0.
+        assert_eq!(input[4].to_bits(), 1.0_f32.to_bits());
+        assert_eq!(input[10].to_bits(), 2.0_f32.to_bits());
+        assert!((input[0] - 3.0_f32.cos()).abs() < 0.000_001);
+        assert!((input[6] - 3.0_f32.sin()).abs() < 0.000_001);
+        Ok(())
+    }
+}
