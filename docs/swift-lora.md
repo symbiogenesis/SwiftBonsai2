@@ -174,7 +174,18 @@ the correction and is not a lossless overhead reduction. Merging a dense edit in
 the ternary base would also change its weights or storage assumptions. Keep those
 separate from storage sharing, allocation reuse and validated execution fusion.
 
-## Paired qualification on CI
+## Required standard-profile qualification
+
+- [ ] **Mandatory TODO: establish that the model with the approved abliteration
+  LoRA has overall general performance on par with or better than the same
+  model without it.** The owner intends this LoRA to be standard, rather than
+  an optional daily-profile feature. Acceptance requires the paired correctness,
+  capability, creative quality, responsiveness and resource checks below on the
+  target hardware through CI. Record predeclared parity tolerances and individual
+  regressions; do not equate fewer refusals, successful loading or one faster
+  metric with overall parity. The no-LoRA configuration remains the required
+  baseline/control. Until this gate passes, the current explicit development
+  assessment switch does not certify or enable the intended standard profile.
 
 Keep all benchmarks on CI. Pin model, adapter, runtime, template, sampler, context,
 batching, threads and deterministic seed; record the complete configuration.

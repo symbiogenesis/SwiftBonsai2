@@ -47,7 +47,9 @@ the fixed load/decode check after a Swift-only system-preamble repair;
 see [assessment evidence](docs/swift-memory.md). Finished-answer quality,
 performance and daily-service qualification remain pending.
 
-The approved pretrained OrcaRouter adapter is separately pinned. Provision it
+The approved pretrained OrcaRouter adapter is planned for the standard profile,
+with a [mandatory overall performance/quality comparison against no LoRA](docs/swift-lora.md#required-standard-profile-qualification)
+before acceptance. It is separately pinned. Provision it
 with `./scripts/Get-Adapter.ps1 -DataDirectory $data`, then explicitly request
 `./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -UseAbliterateLora`.
 The same fixed memory guards apply. Native loading/decode has passed; refusal

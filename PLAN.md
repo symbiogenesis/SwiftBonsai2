@@ -17,8 +17,9 @@ parity. The verified current-weight PTQ export completes bounded native decode,
 including the separately pinned pretrained adapter. BITCOS's initial ARM
 synthetic performance fails promotion even after a vector decoder improvement.
 Native optimized-model performance, creative/comfort and
-daily isolation qualification remain pending. No new training is planned;
-separately pretrained adapters are optional experiments. The earlier Qwen
+daily isolation qualification remain pending. No new training is planned.
+The approved abliteration LoRA is intended for the standard profile, with
+mandatory baseline performance and quality qualification before acceptance. The earlier Qwen
 reference below is retained for reproducibility.
 
 **Status — October 23, 2026:** implementation started. [M0a chooses Qwen3.8-27B UD-Q3_K_XL from literature](docs/model-selection.md), with Gemma 4 12B QAT as fallback. M0 inventory, pinned provisioning, full GGUF inspection and the native ARM64 CPU source build are implemented. The external model is size/SHA-256 verified; metadata confirms 866 tensors across 14 types and the expected template/dimensions. M1 now includes a nonlaunching fixed-policy model preflight, [bounded Rust HTTP admission/orchestration](docs/broker-policy.md), an explicit development broker executable with bounded shutdown/drain, and separate owner-private credential creation. Authentication, Host/Origin/raw routes, strict JSON and canonical sampling/output caps, exact-count admission, bounded framing, one active request with bounded waiting, absolute deadlines, frontend disconnect cancellation and fail-closed generation admission have focused synthetic coverage. The fixed CPU check uses atomic Windows Job ownership with kill-on-close, a job-wide committed-memory cap and one-process limit. Strict local builds/analyzers and focused native regressions pass. After the owner stopped WSL, available RAM rose to about 20.1 GiB; the unchanged 22 GiB admission requirement still refused model launch. No model launcher or UI is supplied, and daily chat remains disabled. CPU loading, integrated immutable backend ownership/identity and bypass prevention, real model tokenization/cancellation acknowledgement, restricted identity/filesystem/egress and creative/comfort qualification remain pending. A Job commit cap does not bound all resident mapped model bytes. No drivers, benchmarks, or inference-performance verdict changed. See [README.md](README.md) and [implementation evidence](docs/implementation-research.md). Values marked *proposed* or *estimated* remain design inputs to validate.
@@ -26,6 +27,20 @@ reference below is retained for reproducibility.
 **Model selection comes first, through literature searching only.** Choose the model up front using already-published, publicly accessible online benchmarks, evaluations, model documentation, and samples. Model selection will **not** be based on local benchmarking. Record sources, dates, exact model versions/quantizations, relevant settings, and evidence gaps, then document the choice before building the inference engine. The next phase is to **build, validate, and optimize the inference engine for that chosen model**. Engine correctness, creative-workflow checks, and latency, throughput, memory, energy, and thermal measurements remain in scope under the repository's CI rules; they validate and improve the implementation rather than serve as a candidate-model selection campaign.
 
 ## 1. Recommended direction
+
+- [ ] **Required: qualify the standard abliteration LoRA against the same model without it.**
+  Run matched CI comparisons on the target Snapdragon with the exact model,
+  representation, runtime, template, sampler, context and resource limits held
+  fixed. Resolve adapter application/basis correctness first. Require overall
+  general capability, creative quality and responsiveness to be **on par with or
+  better than the no-LoRA baseline** before accepting the standard profile.
+  Record prefill, first-token latency, decode throughput, tokens/time/retries to
+  useful completed output, memory, power/thermals and failures. Predeclare
+  workloads, quality rubric and parity tolerances; retain per-metric regressions
+  rather than hiding them in an aggregate score. Abliteration and this comparison
+  are part of standard-profile acceptance, not optional enhancements. Keep the
+  no-LoRA path as the control and diagnostic reference. Loading alone does not
+  complete this TODO. See [required qualification](docs/swift-lora.md#required-standard-profile-qualification).
 
 **Research current Swift Bonsai 2 PQ2_0 first**, alongside the alternatives in section 3, and choose the model from published online evidence before implementation. Its compact weights, inherited hybrid attention, and shorter-reasoning training make it a promising efficiency candidate, not an established creative-quality winner. Review published Swift/base Bonsai comparisons and relevant Gemma/Qwen results; document uncertainty where exact-pack creative or laptop evidence is missing. Then build the inference engine for the chosen model: use Prism ML's pinned llama.cpp fork for Swift/Bonsai or upstream llama.cpp for a selected conventional alternative. Keep the server's built-in web UI for direct chat and engine use. Treat coding agents as an optional later feature: evaluate **OpenCode** and qualify **MXC ProcessContainer** before enabling tools. Use a small Rust policy/launch broker where custom security-sensitive orchestration is needed; retain PowerShell for installation/build management. Establish CPU correctness first, qualify **Vulkan on the Adreno X1-85** next, and consider the documented OpenCL route where the selected model's quantization is supported. Select the CPU/GPU configuration using measurements from this laptop. Treat direct Hexagon NPU execution as a separate research milestone.
 
