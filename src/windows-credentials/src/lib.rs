@@ -51,8 +51,8 @@ impl PrivateCredentials {
             return Err(invalid("Credential parent must be an existing directory."));
         }
         let mut nonce = Secret::<16>::new();
-        native::random(&mut nonce.0)?;
-        let directory = parent.join(format!("SwiftBonsai-Keys-{}", hex(&nonce.0)));
+        native::random(&mut *nonce.0)?;
+        let directory = parent.join(format!("SwiftBonsai-Keys-{}", hex(&*nonce.0)));
         let security = native::Security::new(true)?;
         native::create_directory(&directory, &security)?;
         validate_external_path(&directory)?;
@@ -126,6 +126,7 @@ pub fn validate_external_path(path: &Path) -> io::Result<()> {
         .to_str()
         .ok_or_else(|| invalid("Path must be valid Unicode."))?;
     let normalized = spelling.replace('/', "\\");
+    let normalized = normalized.trim_end_matches('\\');
     let bytes = normalized.as_bytes();
     if bytes.len() <= 3
         || !bytes[0].is_ascii_alphabetic()
@@ -203,18 +204,18 @@ fn create_key(path: &Path, security: &native::Security) -> io::Result<(Secret<64
     let mut writer = native::create_file(path, security)?;
     security.verify(&writer)?;
     let mut random = Secret::<32>::new();
-    native::random(&mut random.0)?;
+    native::random(&mut *random.0)?;
     let mut secret = Secret::<64>::new();
     encode_hex(&random.0, &mut secret.0);
-    writer.write_all(&secret.0)?;
+    writer.write_all(&*secret.0)?;
     writer.sync_all()?;
     drop(writer);
     let mut reader = native::open_reader(path, false)?;
     security.verify(&reader)?;
     let mut actual = Secret::<64>::new();
-    reader.read_exact(&mut actual.0)?;
+    reader.read_exact(&mut *actual.0)?;
     let mut extra = Secret::<1>::new();
-    if actual.0 != secret.0 || reader.read(&mut extra.0)? != 0 {
+    if actual.0 != secret.0 || reader.read(&mut *extra.0)? != 0 {
         return Err(io::Error::other(
             "Credential content changed before publication.",
         ));
@@ -243,22 +244,24 @@ fn encode_hex(bytes: &[u8; 32], encoded: &mut [u8; 64]) {
     }
 }
 
-struct Secret<const N: usize>([u8; N]);
+// Populate only after allocating: moving an owner then moves a pointer rather
+// than leaving earlier copies of a populated secret in stack slots.
+struct Secret<const N: usize>(Box<[u8; N]>);
 
 impl<const N: usize> Secret<N> {
-    const fn new() -> Self {
-        Self([0; N])
+    fn new() -> Self {
+        Self(Box::new([0; N]))
     }
 
     fn as_hex(&self) -> &str {
         // Only encode_hex populates a published secret, so conversion cannot fail.
-        std::str::from_utf8(&self.0).unwrap_or_default()
+        std::str::from_utf8(&*self.0).unwrap_or_default()
     }
 }
 
 impl<const N: usize> Drop for Secret<N> {
     fn drop(&mut self) {
-        native::scrub(&mut self.0);
+        native::scrub(&mut *self.0);
     }
 }
 

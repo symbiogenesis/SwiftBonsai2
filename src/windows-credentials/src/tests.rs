@@ -50,7 +50,7 @@ fn credentials_have_protected_acls_distinct_keys_and_retained_readers() -> io::R
         // ReadAllText-style readers can open while retained handles are live.
         let mut on_disk = Secret::<64>::new();
         let mut reader = native::open_reader(path, false)?;
-        reader.read_exact(&mut on_disk.0)?;
+        reader.read_exact(&mut *on_disk.0)?;
         assert_eq!(
             on_disk.0.len(),
             usize::try_from(reader.metadata()?.len()).map_err(io::Error::other)?
@@ -93,6 +93,7 @@ fn protected_acl_precedes_bytes_and_create_new_never_overwrites() -> io::Result<
 #[test]
 fn path_validation_rejects_aliases_git_and_reparse_ancestors() -> io::Result<()> {
     let lane = test_lane("paths")?;
+    validate_external_path(Path::new(&format!("{}\\", lane.display())))?;
     validate_external_path(&lane.join("new-leaf"))?;
     validate_external_path(&lane.join("emoji-🦀"))?;
     for path in [
