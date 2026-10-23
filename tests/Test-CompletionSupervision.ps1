@@ -29,8 +29,8 @@ $marker = Join-Path $scratch 'child.json'
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$Marker, [Parameter(Mandatory)][string]$Mode)
 $ErrorActionPreference = 'Stop'
-@{ ProcessId = $PID; CreationTime = [Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToFileTimeUtc() } |
-    ConvertTo-Json | Set-Content -LiteralPath $Marker
+$identity = @{ ProcessId = $PID; CreationTime = [Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToFileTimeUtc() } | ConvertTo-Json
+[IO.File]::WriteAllText($Marker, $identity)
 if ($Mode -eq 'ExitCode') { [Console]::Out.Write('retained-failure-output'); exit 7 }
 Start-Sleep -Seconds 120
 '@ | Set-Content -LiteralPath $probe

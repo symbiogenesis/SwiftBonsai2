@@ -1,6 +1,8 @@
 //! Complete Windows Job supervision for bounded completion and synthetic probes.
 
 #[cfg(windows)]
+mod timing;
+#[cfg(windows)]
 mod windows;
 
 /// Runs one explicit bounded operation, retaining verified inputs and process ownership.

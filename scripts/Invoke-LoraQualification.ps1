@@ -111,15 +111,14 @@ function Read-PairedSample {
     if (-not [IO.File]::Exists($supervisionPath)) { return $null }
     $supervision = Get-Content -Raw -LiteralPath $supervisionPath | ConvertFrom-Json -DateKind String
     if ($supervision.Status -cne 'completed') { return $null }
-    $stdout = Join-Path $lane 'stdout.txt'; $stderr = Join-Path $lane 'stderr.txt'
+    $stdout = Join-Path $lane 'stdout.txt'
     $encoding = [Text.UTF8Encoding]::new($false, $true)
     # GetString preserves a leading U+FEFF if generated; ReadAllText would
     # consume its UTF-8 bytes as an encoding preamble and change the capture.
     $text = $encoding.GetString([IO.File]::ReadAllBytes($stdout))
     if ([string]::IsNullOrWhiteSpace($text)) { throw 'Paired native sample returned no captured response.' }
-    $logText = [IO.File]::ReadAllText($stderr, $encoding)
-    $timing = Read-BonsaiCompletionTiming $logText
-    $counts = Read-BonsaiCompletionTokenCount -Text $logText -Timing $timing
+    $timing = $supervision.Timing
+    $counts = $supervision.Counts
     $diagnostics = [ordered]@{ WallMilliseconds = $supervision.WallMilliseconds; PromptTokens = $timing.PromptTokens
         PromptMilliseconds = $timing.PromptMilliseconds; DecodeTokensPerSecond = $timing.DecodeTokensPerSecond
         EogMarkerObserved = $text.Contains(' [end of text]'); FirstTokenLatencyMilliseconds = $null

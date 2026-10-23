@@ -128,3 +128,69 @@ fn unknown_request_fields_and_changed_artifacts_cannot_start_children() -> Resul
     assert!(!lane.join("stdout.txt").exists());
     Ok(())
 }
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn malformed_first_capture_prevents_the_next_batch_sample() -> Result<()> {
+    const CHILD: &str = "BONSAI_SYNTHETIC_CI_FIXTURE";
+    if std::env::var_os(CHILD).is_none() {
+        // Supply CI identity only to this synthetic subprocess. It executes no
+        // model or performance workload, and preserves the inherited OS/profile.
+        let directory = std::env::temp_dir();
+        let status = Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "malformed_first_capture_prevents_the_next_batch_sample",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .env("GITHUB_ACTIONS", "true")
+            .env("GITHUB_REF", "refs/heads/main")
+            .env("GITHUB_REPOSITORY", "symbiogenesis/SwiftBonsai2")
+            .env("RUNNER_ARCH", "ARM64")
+            .env("GITHUB_RUN_ID", "1")
+            .env("RUNNER_NAME", "synthetic-completion-fixture")
+            .current_dir(directory)
+            .creation_flags(0x0800_0000)
+            .stdin(Stdio::null())
+            .status()?;
+        assert!(status.success());
+        return Ok(());
+    }
+    for (name, script, expected) in [
+        ("empty", "[Console]::Out.Write(' ')", "no captured response"),
+        (
+            "utf8",
+            "[Console]::OpenStandardOutput().Write([byte[]]@(255),0,1)",
+            "valid UTF-8",
+        ),
+        (
+            "timing",
+            "[Console]::Out.Write('response')",
+            "decode timing",
+        ),
+    ] {
+        let (lane, mut request) = fixture(name)?;
+        let first = lane.join("first");
+        let second = lane.join("second");
+        fs::create_dir(&first)?;
+        fs::create_dir(&second)?;
+        request["arguments"] = json!([]);
+        request["ciOnly"] = json!(true);
+        request["samples"] = json!([
+            {"id": "first", "evidenceDirectory": first,
+                "arguments": ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script]},
+            {"id": "second", "evidenceDirectory": second,
+                "arguments": ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[IO.File]::WriteAllText('next-started.txt','unexpected')"]},
+        ]);
+        let failure = bonsai_tools::completion::run(request)
+            .err()
+            .ok_or("Malformed capture was accepted.")?;
+        assert!(failure.contains(expected), "{failure}");
+        assert!(!lane.join("next-started.txt").exists());
+        assert!(!second.join("stdout.txt").exists());
+        let receipt: Value = serde_json::from_slice(&fs::read(first.join("supervision.json"))?)?;
+        assert_eq!(receipt["Status"], "failed");
+    }
+    Ok(())
+}

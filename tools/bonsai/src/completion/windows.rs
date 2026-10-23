@@ -334,7 +334,15 @@ fn supervise(
     if exit != 0 {
         return Err(format!("Native operation failed with exit code {exit}."));
     }
-    if request.require_nonempty_stdout {
+    if request.ci_only {
+        let text = read_capture(&spec.stdout)?;
+        if text.trim().is_empty() {
+            return Err("Paired native sample returned no captured response.".into());
+        }
+        let parsed = super::timing::parse(&read_capture(&spec.stderr)?)?;
+        receipt["Timing"] = parsed["Timing"].clone();
+        receipt["Counts"] = parsed["Counts"].clone();
+    } else if request.require_nonempty_stdout {
         let mut file = OpenOptions::new()
             .read(true)
             .share_mode(3)
@@ -349,6 +357,19 @@ fn supervise(
         }
     }
     Ok(())
+}
+
+fn read_capture(path: &Path) -> Result<String> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    String::from_utf8(bytes)
+        .map_err(|error| format!("Native captured output is not valid UTF-8: {error}"))
 }
 
 fn observe_memory(
