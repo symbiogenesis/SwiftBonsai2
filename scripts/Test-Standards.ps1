@@ -21,6 +21,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $settings = Join-Path $repoRoot 'PSScriptAnalyzerSettings.psd1'
 $requiredAnalyzerVersion = [version]'1.25.0'
+Write-Information -MessageData "PowerShell standards: loading PSScriptAnalyzer $requiredAnalyzerVersion." -InformationAction Continue
 if ($AnalyzerModulePath) {
     if (-not [IO.Path]::IsPathFullyQualified($AnalyzerModulePath) -or $AnalyzerModulePath -match '%[^%]+%') {
         throw 'AnalyzerModulePath must be an expanded absolute module manifest path.'
@@ -73,6 +74,7 @@ while ($directories.Count) {
         }
     }
 }
+Write-Information -MessageData "PowerShell standards: discovered $($files.Count) source files." -InformationAction Continue
 $compilerOptions = @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0')
 $embeddedCount = 0
 $diagnosticCount = 0
@@ -131,6 +133,7 @@ foreach ($file in ($files | Sort-Object -Property FullName -Unique)) {
             }
         }
     }
+    Write-Information -MessageData "PowerShell standards: analyzing $($file.FullName)." -InformationAction Continue
     $diagnostics = @(Invoke-ScriptAnalyzer -Path $file.FullName -Settings $settings -ErrorAction Stop)
     foreach ($diagnostic in $diagnostics) {
         Write-Information -MessageData ('{0}:{1}: {2} {3}: {4}' -f $file.FullName, $diagnostic.Line, $diagnostic.Severity, $diagnostic.RuleName, $diagnostic.Message) -InformationAction Continue
@@ -155,6 +158,7 @@ $start.RedirectStandardError = $true
 foreach ($argument in @('build', $project, '--configuration', 'Release', '--artifacts-path', (Join-Path $scratch 'artifacts'), "-p:EmbeddedSourcesDirectory=$embeddedDirectory", '--nologo')) {
     $start.ArgumentList.Add($argument)
 }
+Write-Information -MessageData 'C# standards: starting the strict Release build.' -InformationAction Continue
 $process = [Diagnostics.Process]::new()
 $process.StartInfo = $start
 try {

@@ -233,7 +233,42 @@ jobs:
           $tooling = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Standards-Tools'
           $analyzer = Join-Path $tooling 'PSScriptAnalyzer/1.25.0/PSScriptAnalyzer.psd1'
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Standards.ps1') -AnalyzerModulePath $analyzer
+  # Preserve the existing required check name: both parallel groups must pass.
   foundation:
+    if: always() && github.ref == 'refs/heads/main'
+    needs: [foundation-tests, lifecycle]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 2
+    steps:
+      - name: Require every Foundation test group
+        shell: bash
+        env:
+          FOUNDATION_RESULT: ${{ needs.foundation-tests.result }}
+          LIFECYCLE_RESULT: ${{ needs.lifecycle.result }}
+        run: |
+          if [[ "$FOUNDATION_RESULT" != success || "$LIFECYCLE_RESULT" != success ]]; then
+            echo "Foundation tests: $FOUNDATION_RESULT; lifecycle tests: $LIFECYCLE_RESULT"
+            exit 1
+          fi
+  lifecycle:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-11-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Install the process-lifecycle probe SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.4xx'
+      - name: Windows owned process lifecycle and resource limits
+        shell: pwsh
+        run: |
+          ./tests/Test-ProcessLifecycle.ps1 -Case Lifetime
+          ./tests/Test-ProcessLifecycle.ps1 -Case Limits
+          ./tests/Test-ProcessLifecycle.ps1 -Case LaunchContract
+  foundation-tests:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
     timeout-minutes: 15
@@ -241,7 +276,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - name: Install the process-lifecycle probe SDK
+      - name: Install the Foundation test SDK
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '10.0.4xx'
@@ -271,12 +306,6 @@ jobs:
         run: |
           ./tests/Test-DevelopmentKeys.ps1 -Case Creation
           ./tests/Test-DevelopmentKeys.ps1 -Case Paths
-      - name: Windows owned process lifecycle and resource limits
-        shell: pwsh
-        run: |
-          ./tests/Test-ProcessLifecycle.ps1 -Case Lifetime
-          ./tests/Test-ProcessLifecycle.ps1 -Case Limits
-          ./tests/Test-ProcessLifecycle.ps1 -Case LaunchContract
       - name: CPU admission diagnostics without model launch
         shell: pwsh
         run: |
