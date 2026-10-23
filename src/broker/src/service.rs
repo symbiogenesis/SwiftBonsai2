@@ -12,7 +12,7 @@ use crate::{
     transport::LoopbackBackend,
 };
 use std::{
-    future::{Future, poll_fn},
+    future::poll_fn,
     net::{Ipv4Addr, SocketAddrV4},
     pin::pin,
     sync::atomic::{AtomicBool, Ordering},

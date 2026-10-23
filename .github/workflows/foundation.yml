@@ -105,6 +105,7 @@ jobs:
           $nativeLibraries = @(Get-ChildItem -LiteralPath (Join-Path $result.EvidenceDirectory 'build-probe') -Recurse -File | Where-Object { $_.Name -in @('libggml.a','libggml-cpu.a','libggml-base.a') })
           $env:BONSAI_PRISM_NATIVE_LIB_DIR = @($nativeLibraries.DirectoryName | Sort-Object -Unique) -join [IO.Path]::PathSeparator
           cargo +1.99.1 clippy --manifest-path $manifest --locked --offline --release --all-targets --all-features -- -D warnings
+          cargo +1.99.1 doc --release --manifest-path $manifest --locked --offline --no-deps --all-features
           ccache --show-stats
           'Rust sharing policy and native regression passed; pinned engine compiled and linked to Rust. Model TPS/quality remains unqualified.' >> $env:GITHUB_STEP_SUMMARY
       - name: Retain source-build receipts and technical logs

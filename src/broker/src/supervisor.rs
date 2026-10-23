@@ -10,7 +10,7 @@ use crate::{
     reception::{ReceiveError, receive_chat},
     response::{ResponseError, send_chat_response},
 };
-use std::{future::Future, future::poll_fn, pin::pin, task::Poll, time::Duration};
+use std::{future::poll_fn, pin::pin, task::Poll, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, split},
     time::{Instant, sleep_until},

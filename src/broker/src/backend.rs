@@ -12,7 +12,6 @@ use crate::{
 use http::{HeaderName, HeaderValue, Response, Version};
 use serde::Deserialize;
 use std::{
-    future::Future,
     io,
     pin::Pin,
     task::{Context, Poll, ready},

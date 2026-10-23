@@ -12,7 +12,7 @@ use bonsai_broker::{
 use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
-    future::{Future, pending, poll_fn},
+    future::{pending, poll_fn},
     io,
     pin::{Pin, pin},
     rc::Rc,

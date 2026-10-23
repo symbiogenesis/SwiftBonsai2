@@ -3,7 +3,6 @@
 
 use std::ffi::{OsStr, c_void};
 use std::io;
-use std::mem::{size_of, size_of_val};
 use std::os::windows::ffi::OsStrExt as _;
 use std::os::windows::io::{AsRawHandle as _, FromRawHandle as _, OwnedHandle};
 use std::ptr::{self, null, null_mut};
@@ -43,7 +42,7 @@ use windows_sys::Win32::System::Threading::{
 
 use crate::{ProcessMemory, ProcessSpec, invalid};
 
-pub struct NativeProcess {
+pub(super) struct NativeProcess {
     // Drop order closes the Job before the root process handle.
     job: OwnedHandle,
     process: OwnedHandle,
@@ -51,7 +50,7 @@ pub struct NativeProcess {
 }
 
 impl NativeProcess {
-    pub fn start(spec: &ProcessSpec, mut command: Vec<u16>) -> io::Result<Self> {
+    pub(super) fn start(spec: &ProcessSpec, mut command: Vec<u16>) -> io::Result<Self> {
         let executable = wide(spec.executable.as_os_str());
         let directory = wide(spec.working_directory.as_os_str());
         // SAFETY: Null attributes/name request a new noninheritable unnamed Job.
@@ -124,11 +123,11 @@ impl NativeProcess {
         })
     }
 
-    pub const fn id(&self) -> u32 {
+    pub(super) const fn id(&self) -> u32 {
         self.id
     }
 
-    pub fn try_wait(&self) -> io::Result<Option<u32>> {
+    pub(super) fn try_wait(&self) -> io::Result<Option<u32>> {
         // SAFETY: The owned process handle remains live; zero timeout cannot block.
         match unsafe { WaitForSingleObject(self.process.as_raw_handle(), 0) } {
             WAIT_TIMEOUT => Ok(None),
@@ -143,7 +142,7 @@ impl NativeProcess {
         }
     }
 
-    pub fn stop(&self, timeout: Duration) -> io::Result<()> {
+    pub(super) fn stop(&self, timeout: Duration) -> io::Result<()> {
         if timeout.is_zero() {
             return Err(invalid("cleanup timeout must be positive"));
         }
@@ -179,7 +178,7 @@ impl NativeProcess {
         }
     }
 
-    pub fn peak_job_memory_bytes(&self) -> io::Result<usize> {
+    pub(super) fn peak_job_memory_bytes(&self) -> io::Result<usize> {
         let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         // SAFETY: The owned/live Job, information class, writable structure and
         // exact structure size agree; optional output size is null.
@@ -195,7 +194,7 @@ impl NativeProcess {
         Ok(limits.PeakJobMemoryUsed)
     }
 
-    pub fn memory_usage(&self) -> io::Result<ProcessMemory> {
+    pub(super) fn memory_usage(&self) -> io::Result<ProcessMemory> {
         let mut counters = PROCESS_MEMORY_COUNTERS_EX {
             cb: win_size::<PROCESS_MEMORY_COUNTERS_EX>(),
             ..Default::default()
@@ -216,7 +215,7 @@ impl NativeProcess {
     }
 }
 
-pub fn available_memory_bytes() -> io::Result<u64> {
+pub(super) fn available_memory_bytes() -> io::Result<u64> {
     let mut status = MEMORYSTATUSEX {
         dwLength: win_size::<MEMORYSTATUSEX>(),
         ..Default::default()
@@ -226,7 +225,7 @@ pub fn available_memory_bytes() -> io::Result<u64> {
     Ok(status.ullAvailPhys)
 }
 
-pub fn listener_process_id(port: u16) -> io::Result<Option<u32>> {
+pub(super) fn listener_process_id(port: u16) -> io::Result<Option<u32>> {
     let mut bytes = 0;
     // SAFETY: The documented size-query call uses null storage and a valid size
     // pointer; IPv4 and the PID-listener table class are compatible.
@@ -292,7 +291,7 @@ pub fn listener_process_id(port: u16) -> io::Result<Option<u32>> {
                     storage
                         .as_ptr()
                         .cast::<u8>()
-                        .add(4 + index * size_of::<MIB_TCPROW_OWNER_PID>())
+                        .wrapping_add(4 + index * size_of::<MIB_TCPROW_OWNER_PID>())
                         .cast::<MIB_TCPROW_OWNER_PID>(),
                 )
             };
@@ -361,7 +360,11 @@ fn wide(value: &OsStr) -> Vec<u16> {
 
 const fn win_size<T>() -> u32 {
     // All callers instantiate fixed Win32 structures, much smaller than u32::MAX.
-    #[allow(clippy::cast_possible_truncation, clippy::as_conversions)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::as_conversions,
+        reason = "Fixed Win32 structure sizes fit in their u32 byte-count fields."
+    )]
     {
         size_of::<T>() as u32
     }

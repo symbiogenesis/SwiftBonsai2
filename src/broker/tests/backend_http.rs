@@ -13,7 +13,6 @@ use http::{Request, Version};
 use std::{
     cell::RefCell,
     collections::BTreeMap,
-    future::Future,
     io,
     pin::Pin,
     rc::Rc,

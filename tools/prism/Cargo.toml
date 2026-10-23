@@ -37,6 +37,11 @@ debug-assertions = true
 warnings = "deny"
 unsafe_code = "deny"
 non_ascii_idents = "forbid"
+# Native-boundary unsafe allowances must never waive these safety checks.
+unsafe_op_in_unsafe_fn = "forbid"
+invalid_reference_casting = "forbid"
+static_mut_refs = "forbid"
+ffi_unwind_calls = "deny"
 rust_2018_idioms = { level = "deny", priority = -1 }
 rust_2024_compatibility = { level = "deny", priority = -1 }
 future_incompatible = { level = "deny", priority = -1 }
@@ -48,6 +53,11 @@ trivial_numeric_casts = "deny"
 unused_lifetimes = "deny"
 unused_qualifications = "deny"
 unused_must_use = "deny"
+unreachable_pub = "deny"
+redundant_imports = "deny"
+redundant_lifetimes = "deny"
+unused_import_braces = "deny"
+meta_variable_misuse = "deny"
 
 [lints.rustdoc]
 all = { level = "deny", priority = -1 }
@@ -69,3 +79,5 @@ unimplemented = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
+allow_attributes_without_reason = "deny"

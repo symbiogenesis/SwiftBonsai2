@@ -33,7 +33,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
-pub const REPARSE_ATTRIBUTE: u32 = FILE_ATTRIBUTE_REPARSE_POINT;
+pub(super) const REPARSE_ATTRIBUTE: u32 = FILE_ATTRIBUTE_REPARSE_POINT;
 
 struct Allocation(NonNull<c_void>);
 
@@ -57,10 +57,10 @@ impl Drop for Allocation {
     }
 }
 
-pub struct Security(Allocation);
+pub(super) struct Security(Allocation);
 
 impl Security {
-    pub fn new(directory: bool) -> io::Result<Self> {
+    pub(super) fn new(directory: bool) -> io::Result<Self> {
         let owner = current_sid()?;
         let inheritance = if directory { "OICI" } else { "" };
         let system = if owner == "S-1-5-18" {
@@ -95,7 +95,7 @@ impl Security {
         }
     }
 
-    pub fn verify(&self, file: &File) -> io::Result<()> {
+    pub(super) fn verify(&self, file: &File) -> io::Result<()> {
         let mut descriptor = ptr::null_mut();
         // SAFETY: file owns a live readable security handle; all optional outputs
         // are null and descriptor receives a separately allocated descriptor.
@@ -123,8 +123,10 @@ impl Security {
 
 fn current_sid() -> io::Result<String> {
     let mut raw_token = ptr::null_mut();
+    // SAFETY: This API has no preconditions and returns a borrowed pseudo handle.
+    let process = unsafe { GetCurrentProcess() };
     // SAFETY: the pseudo process handle is valid; raw_token is an output slot.
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut raw_token) } == 0 {
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &raw mut raw_token) } == 0 {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: OpenProcessToken succeeded and transfers ownership of this handle.
@@ -175,7 +177,7 @@ fn current_sid() -> io::Result<String> {
     let mut length = 0;
     // SAFETY: ConvertSidToStringSidW returns a NUL-terminated allocation; SID
     // strings are bounded by Windows' finite SID structure (well below 256).
-    while length < 256 && unsafe { *sid.add(length) } != 0 {
+    while length < 256 && unsafe { *sid.wrapping_add(length) } != 0 {
         length += 1;
     }
     if length == 256 {
@@ -279,7 +281,7 @@ fn wide(path: &Path) -> Vec<u16> {
     path.as_os_str().encode_wide().chain([0]).collect()
 }
 
-pub fn validate_local_drive(root: &Path) -> io::Result<()> {
+pub(super) fn validate_local_drive(root: &Path) -> io::Result<()> {
     let root = wide(root);
     // SAFETY: root is a live NUL-terminated absolute drive root.
     // DRIVE_REMOVABLE=2, DRIVE_FIXED=3, DRIVE_RAMDISK=6 (WinBase.h).
@@ -292,7 +294,7 @@ pub fn validate_local_drive(root: &Path) -> io::Result<()> {
     }
 }
 
-pub fn create_directory(path: &Path, security: &Security) -> io::Result<()> {
+pub(super) fn create_directory(path: &Path, security: &Security) -> io::Result<()> {
     let path = wide(path);
     let attributes = security.attributes();
     // SAFETY: both the NUL-terminated path and descriptor-backed attributes live
@@ -303,7 +305,7 @@ pub fn create_directory(path: &Path, security: &Security) -> io::Result<()> {
     Ok(())
 }
 
-pub fn create_file(path: &Path, security: &Security) -> io::Result<File> {
+pub(super) fn create_file(path: &Path, security: &Security) -> io::Result<File> {
     let path = wide(path);
     let attributes = security.attributes();
     // SAFETY: path and security descriptor live for this call; CREATE_NEW never
@@ -322,7 +324,7 @@ pub fn create_file(path: &Path, security: &Security) -> io::Result<File> {
     file_from_handle(handle)
 }
 
-pub fn open_reader(path: &Path, directory: bool) -> io::Result<File> {
+pub(super) fn open_reader(path: &Path, directory: bool) -> io::Result<File> {
     let path = wide(path);
     let flags = FILE_FLAG_OPEN_REPARSE_POINT
         | if directory {
@@ -361,7 +363,7 @@ fn file_from_handle(handle: *mut c_void) -> io::Result<File> {
     Ok(unsafe { File::from_raw_handle(handle) })
 }
 
-pub fn random(buffer: &mut [u8]) -> io::Result<()> {
+pub(super) fn random(buffer: &mut [u8]) -> io::Result<()> {
     let length = u32::try_from(buffer.len()).map_err(io::Error::other)?;
     // SAFETY: buffer is live writable storage of exactly length bytes. A null
     // algorithm handle is required for the system-preferred CSPRNG flag.
@@ -381,7 +383,7 @@ pub fn random(buffer: &mut [u8]) -> io::Result<()> {
     Ok(())
 }
 
-pub fn scrub(buffer: &mut [u8]) {
+pub(super) fn scrub(buffer: &mut [u8]) {
     for byte in buffer {
         // SAFETY: byte uniquely references valid writable storage. Volatile
         // stores plus the compiler fence prevent dead-store elimination.
@@ -391,7 +393,7 @@ pub fn scrub(buffer: &mut [u8]) {
 }
 
 #[cfg(test)]
-pub fn noninheritable(file: &File) -> io::Result<bool> {
+pub(super) fn noninheritable(file: &File) -> io::Result<bool> {
     use windows_sys::Win32::Foundation::{GetHandleInformation, HANDLE_FLAG_INHERIT};
     let mut flags = 0;
     // SAFETY: file owns a live handle; flags is a valid output slot.

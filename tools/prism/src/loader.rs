@@ -93,25 +93,25 @@ impl NativeLoader {
         gguf: *const c_void,
         source: *const c_void,
     ) -> Result<(), &'static [u8]> {
-        // SAFETY: The caller provides live ggml and gguf objects. Name storage
-        // is owned by the tensor and remains valid during the descriptor call.
-        let (name, size) = unsafe { (ggml_get_name(source), ggml_nbytes(source)) };
+        // SAFETY: The caller provides a live tensor. Its name storage remains
+        // valid during the descriptor call.
+        let name = unsafe { ggml_get_name(source) };
+        // SAFETY: The caller provides a live tensor with initialized metadata.
+        let size = unsafe { ggml_nbytes(source) };
         if name.is_null() {
             return Err(b"LoRA tensor has no name");
         }
-        // SAFETY: Name and descriptor validity are established above and by the
-        // caller. Only a validated index is passed to the offset function.
-        let (index, count) = unsafe { (gguf_find_tensor(gguf, name), gguf_get_n_tensors(gguf)) };
+        // SAFETY: Name and descriptor validity are established above and by the caller.
+        let index = unsafe { gguf_find_tensor(gguf, name) };
+        // SAFETY: The caller provides a live GGUF descriptor.
+        let count = unsafe { gguf_get_n_tensors(gguf) };
         if index < 0 || index >= count {
             return Err(b"LoRA tensor is missing from its GGUF descriptor");
         }
+        // SAFETY: The descriptor is live and has initialized metadata.
+        let data_offset = unsafe { gguf_get_data_offset(gguf) };
         // SAFETY: The descriptor is live and index is within its tensor count.
-        let (data_offset, tensor_offset) = unsafe {
-            (
-                gguf_get_data_offset(gguf),
-                gguf_get_tensor_offset(gguf, index),
-            )
-        };
+        let tensor_offset = unsafe { gguf_get_tensor_offset(gguf, index) };
         let offset = data_offset
             .checked_add(tensor_offset)
             .and_then(|value| u64::try_from(value).ok())
@@ -213,8 +213,11 @@ impl NativeLoader {
         if unsafe { ggml_is_view(destination) } {
             return Ok(());
         }
-        // SAFETY: Both source and destination are live initialized tensors.
-        if unsafe { ggml_nbytes(original) != ggml_nbytes(destination) } {
+        // SAFETY: The source is a live initialized tensor.
+        let original_size = unsafe { ggml_nbytes(original) };
+        // SAFETY: The destination is a live initialized tensor.
+        let destination_size = unsafe { ggml_nbytes(destination) };
+        if original_size != destination_size {
             return Err(b"LoRA source and destination payload sizes differ");
         }
         // SAFETY: The caller guarantees source and descriptor validity.
@@ -252,19 +255,18 @@ pub unsafe extern "C" fn bonsai_prism_loader_new(path: *const c_char) -> *mut Na
     let Some(loader) = NativeLoader::open(path) else {
         return ptr::null_mut();
     };
-    // SAFETY: The allocation requests the nonzero handle size and alignment;
-    // a successful allocation is initialized exactly once before publication.
-    unsafe {
-        #[allow(
-            clippy::cast_ptr_alignment,
-            reason = "Allocation requests handle alignment"
-        )]
-        let result = alloc(AllocationLayout::new::<NativeLoader>()).cast::<NativeLoader>();
-        if !result.is_null() {
-            result.write(loader);
-        }
-        result
+    #[allow(
+        clippy::cast_ptr_alignment,
+        reason = "Allocation requests handle alignment"
+    )]
+    // SAFETY: The allocation requests the nonzero handle size and alignment.
+    let result = unsafe { alloc(AllocationLayout::new::<NativeLoader>()) }.cast::<NativeLoader>();
+    if !result.is_null() {
+        // SAFETY: A successful allocation has the size and alignment for the
+        // handle and is initialized exactly once before publication.
+        unsafe { result.write(loader) };
     }
+    result
 }
 
 /// Frees the file handle, read buffer, and cache; null is accepted.

@@ -10,7 +10,6 @@ use bonsai_broker::{
 };
 use std::{
     cell::Cell,
-    future::Future,
     pin::Pin,
     rc::Rc,
     task::{Context, Poll},

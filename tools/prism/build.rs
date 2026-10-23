@@ -9,8 +9,8 @@ fn generate_header() -> Result<(), Box<dyn Error>> {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").ok_or("missing manifest path")?);
     let source = manifest.join("src/loader.rs");
     let configuration = manifest.join("cbindgen.toml");
-    println!("cargo:rerun-if-changed={}", source.display());
-    println!("cargo:rerun-if-changed={}", configuration.display());
+    println!("cargo::rerun-if-changed={}", source.display());
+    println!("cargo::rerun-if-changed={}", configuration.display());
     let mut generator = cbindgen::Builder::new()
         .with_src(source)
         .with_config(cbindgen::Config::from_file(configuration)?);
@@ -50,8 +50,8 @@ fn generate_header() -> Result<(), Box<dyn Error>> {
 
 fn main() -> Result<(), Box<dyn Error>> {
     generate_header()?;
-    println!("cargo:rerun-if-env-changed=BONSAI_PRISM_NATIVE_LIB_DIR");
-    println!("cargo:rerun-if-env-changed=BONSAI_PRISM_NATIVE_LINK_KIND");
+    println!("cargo::rerun-if-env-changed=BONSAI_PRISM_NATIVE_LIB_DIR");
+    println!("cargo::rerun-if-env-changed=BONSAI_PRISM_NATIVE_LINK_KIND");
     if env::var_os("CARGO_FEATURE_NATIVE_TESTS").is_none() {
         return Ok(());
     }
@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         {
             return Err("BONSAI_PRISM_NATIVE_LIB_DIR entries must be existing, expanded absolute directories".into());
         }
-        println!("cargo:rustc-link-search=native={}", directory.display());
+        println!("cargo::rustc-link-search=native={}", directory.display());
         found_directory = true;
     }
     if !found_directory {
@@ -77,16 +77,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("BONSAI_PRISM_NATIVE_LINK_KIND must be static or dylib".into());
     }
     for library in ["ggml", "ggml-cpu", "ggml-base"] {
-        println!("cargo:rustc-link-lib={kind}={library}");
+        println!("cargo::rustc-link-lib={kind}={library}");
     }
     if kind == "static" {
         match env::var("CARGO_CFG_TARGET_OS")?.as_str() {
             "linux" => {
                 for library in ["stdc++", "m", "dl", "pthread"] {
-                    println!("cargo:rustc-link-lib={library}");
+                    println!("cargo::rustc-link-lib={library}");
                 }
             }
-            "macos" => println!("cargo:rustc-link-lib=c++"),
+            "macos" => println!("cargo::rustc-link-lib=c++"),
             // MSVC-built ggml carries its runtime's default-library directives.
             "windows" => {}
             other => {

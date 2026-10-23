@@ -12,7 +12,7 @@ use bonsai_broker::{
 use std::{
     ffi::OsString,
     fs,
-    future::{Future, pending},
+    future::pending,
     io::ErrorKind,
     path::PathBuf,
     sync::Arc,

@@ -1,5 +1,7 @@
-// Keep the private contract explicit if the parent is reorganized later.
-#![allow(clippy::redundant_pub_crate)]
+#![allow(
+    clippy::redundant_pub_crate,
+    reason = "Keep the private contract explicit if the parent is reorganized later"
+)]
 
 use crate::inspect::Inspection;
 use crate::{CODEC_COMMIT, PRISM_DIALECT, Result};
@@ -48,8 +50,10 @@ fn candidate(
     Ok(result)
 }
 
-// Keep streaming totals adjacent to their report fields for auditability.
-#[allow(clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep streaming totals adjacent to their report fields for auditability"
+)]
 pub(crate) fn census(file: &mut File, inspection: &Inspection) -> Result<Value> {
     if inspection.report["Dialect"].as_str() != Some(PRISM_DIALECT) {
         return Err(bad(

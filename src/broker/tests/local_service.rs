@@ -11,7 +11,7 @@ use bonsai_broker::{
     supervisor::{BackendConnector, ServeError},
     transport::LoopbackBackend,
 };
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},

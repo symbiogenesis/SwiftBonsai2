@@ -5,12 +5,7 @@
 )]
 
 use bonsai_broker::scheduler::{GateError, MAX_WAITING, RequestGate};
-use std::{
-    future::{Future, poll_fn},
-    pin::pin,
-    task::Poll,
-    time::Duration,
-};
+use std::{future::poll_fn, pin::pin, task::Poll, time::Duration};
 use tokio::time::{Instant, advance};
 
 fn run(test: impl Future<Output = ()>) {

@@ -66,6 +66,23 @@ Save-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Repository PSGallery -Path
 
 The checker extracts every embedded C# helper and keeps build outputs/logs in a unique system-temp directory. The SDK baseline is stable 10.0.402 with patch roll-forward within 10.0.4xx. Rust commands run from external scratch must explicitly select `cargo +1.99.1-aarch64-pc-windows-msvc`, because a toolchain file is discovered from the working directory. Manifest lint settings apply to ordinary Cargo builds too. The native source builder explicitly requires C11/C++17 without language-extension fallback, MSVC conformance mode and SDL checks. The pinned external engine retains upstream warning handling: an actual strict warning audit found upstream MSVC C4244 in `llama-graph.cpp`; it is not claimed to meet the first-party warning policy. A different source-build configuration requires a fresh build lane or reviewed removal of the old owned build directory.
 
+Rust safety checks remain active inside the audited native boundaries: implicit
+unsafe operations in unsafe functions, invalid reference casts and references to
+mutable statics are forbidden independently of the scoped `unsafe_code`
+allowance. Calls through an unwinding FFI ABI are rejected. Clippy requires a
+separate documented block for each unsafe operation and an explicit `reason` on
+every lint allowance. These checks support
+review of the FFI contracts; they do not prove external code is memory-safe or
+cannot unwind. See the [compiler lint reference](https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html)
+and [Clippy unsafe-block rule](https://rust-lang.github.io/rust-clippy/stable/index.html#multiple_unsafe_ops_per_block).
+
+Unreachable public items, redundant imports/lifetimes, unnecessary import braces
+and malformed macro metavariables are rejected by ordinary Cargo builds. Internal
+native helpers use crate-scoped visibility. The root `rustfmt.toml` selects both
+the Rust 2024 language and formatting editions for Cargo and standalone rustfmt.
+Foundation also checks Prism's optional loader documentation with all features
+after the native library paths are configured.
+
 Analyzer exceptions are documented at their scope. PowerShell's UTF-8 BOM rule targets legacy Windows PowerShell and is excluded for this 7.6 baseline; its obsolete API compatibility profiles are not applied to .NET 10. Dynamic PowerShell output annotations support analysis and documentation rather than enforcing return types at runtime. No blanket Rust restriction group is enabled, since it contains mutually incompatible rules; selected safety restrictions are enforced explicitly.
 
 Use stable PowerShell and .NET features supported by the 7.6 baseline where they improve clarity or correctness. Artifact paths use the [array form of `Join-Path -ChildPath`](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/join-path?view=powershell-7.6), and configuration reads use [`ConvertFrom-Json -DateKind String`](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json?view=powershell-7.6) to preserve JSON strings exactly.

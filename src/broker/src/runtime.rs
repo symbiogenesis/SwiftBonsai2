@@ -11,7 +11,7 @@ use crate::{
 use std::{
     ffi::OsString,
     fs::{self, File, OpenOptions},
-    future::{Future, poll_fn},
+    future::poll_fn,
     io::Read,
     path::{Component, Path, PathBuf},
     pin::{Pin, pin},

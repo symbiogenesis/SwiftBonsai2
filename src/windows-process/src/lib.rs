@@ -12,7 +12,14 @@ use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 // All Win32 calls and their pointer/handle contracts are confined here.
-#[allow(unsafe_code)]
+#[allow(
+    unsafe_code,
+    reason = "Keep audited Win32 calls in this native boundary."
+)]
+#[expect(
+    clippy::redundant_pub_crate,
+    reason = "Explicit parent-only visibility keeps the audited boundary private."
+)]
 mod native;
 
 /// Explicit launch inputs; no shell or executable search path is used.

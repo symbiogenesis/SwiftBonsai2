@@ -131,7 +131,11 @@ fn new_output(path: &Path) -> Result<File> {
     clippy::too_many_lines,
     reason = "Keep the validated streamed serialization and its receipt in one operation."
 )]
-pub fn export(
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "The export helper is an internal operation behind the validated public API"
+)]
+pub(super) fn export(
     file: &mut File,
     output_path: &Path,
     inspection: &Inspection,

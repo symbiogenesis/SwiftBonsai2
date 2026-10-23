@@ -1,5 +1,7 @@
-// Keep the private contract explicit if the parent is reorganized later.
-#![allow(clippy::redundant_pub_crate)]
+#![allow(
+    clippy::redundant_pub_crate,
+    reason = "Keep the private contract explicit if the parent is reorganized later"
+)]
 
 use crate::{PRISM_DIALECT, Result, hash_range};
 use serde_json::{Map, Number, Value, json};
@@ -340,8 +342,10 @@ fn count_value(value: Option<&Value>, original_float: Option<&f64>) -> Result<u6
     }
 }
 
-// Keep validation and report assembly adjacent in serialized file order.
-#[allow(clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep validation and report assembly adjacent in serialized file order"
+)]
 pub(crate) fn inspect(file: &mut File, path: &Path, dialect: &str) -> Result<Inspection> {
     if dialect != "Stock" && dialect != PRISM_DIALECT {
         return Err(bad(

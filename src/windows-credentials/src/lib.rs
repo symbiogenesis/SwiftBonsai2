@@ -9,7 +9,14 @@ use std::io::{self, Read, Write};
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-#[allow(unsafe_code)]
+#[allow(
+    unsafe_code,
+    reason = "Keep audited Win32 calls in this native boundary."
+)]
+#[expect(
+    clippy::redundant_pub_crate,
+    reason = "Explicit parent-only visibility keeps the audited boundary private."
+)]
 mod native;
 
 /// Independent credentials with retained read handles and scrubbed secret memory.

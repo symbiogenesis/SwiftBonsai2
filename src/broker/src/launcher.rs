@@ -18,7 +18,7 @@ use bonsai_windows_process::{
 use std::{
     cell::Cell,
     ffi::OsString,
-    future::{Future, poll_fn},
+    future::poll_fn,
     io,
     net::{Ipv4Addr, SocketAddrV4},
     path::PathBuf,

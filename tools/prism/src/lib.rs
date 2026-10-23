@@ -7,7 +7,10 @@
 #![deny(unsafe_code)]
 
 #[cfg(feature = "engine-loader")]
-#[allow(unsafe_code)]
+#[allow(
+    unsafe_code,
+    reason = "The native loader implements the pinned ggml C ABI with explicit safety contracts"
+)]
 pub mod loader;
 mod pool;
 
