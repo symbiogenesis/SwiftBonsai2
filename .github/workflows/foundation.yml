@@ -17,10 +17,13 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - name: Parse repository PowerShell
+      - name: Check PowerShell baseline and parse repository scripts
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          if ($PSVersionTable.PSVersion -lt [version]'7.6' -or $PSVersionTable.PSVersion.PreReleaseLabel) {
+            throw 'Foundation requires stable PowerShell 7.6 or later on the runner.'
+          }
           Get-ChildItem scripts, tests -Recurse -File | Where-Object Extension -in '.ps1','.psm1' | ForEach-Object {
             $tokens = $null
             $parseErrors = $null

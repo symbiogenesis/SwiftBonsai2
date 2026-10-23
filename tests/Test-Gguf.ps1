@@ -1,4 +1,4 @@
-#requires -Version 7.4
+#requires -Version 7.6
 [CmdletBinding()]
 param([ValidateSet('All','Parser','Artifact')][string]$Case = 'All')
 Set-StrictMode -Version Latest
@@ -109,7 +109,7 @@ if ($Case -in @('All','Artifact')) {
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
     $output = Join-Path $scratch 'inspection.json'
     $report = & (Join-Path $repo 'scripts/Read-Gguf.ps1') -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -OutputPath $output
-    $saved = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
+    $saved = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json -DateKind String
     Assert ($saved.ArtifactVerification -eq 'verified-size-and-sha256' -and $saved.TensorCount -eq 3) 'Verified JSON report did not round-trip.'
     Expect-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 ('0' * 64) } 'Digest mismatch was accepted.'
     Expect-Failure { & (Join-Path $repo 'scripts/Read-Gguf.ps1') -ModelPath $path -ExpectedBytes $fixture.Bytes.Length -ExpectedSha256 $hash -OutputPath $output } 'Existing report was overwritten.'

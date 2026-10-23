@@ -1,4 +1,4 @@
-#requires -Version 7.4
+#requires -Version 7.6
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -36,7 +36,7 @@ function Resolve-ExternalPath {
 function Read-BonsaiLock {
     [CmdletBinding()]
     param([string]$Path = (Join-Path $PSScriptRoot '../config/runtime.lock.json'))
-    $lock = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable
+    $lock = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -DateKind String -AsHashtable
     if ($lock.schemaVersion -ne 1 -or $lock.model.revision -notmatch '^[a-f0-9]{40}$' -or
         $lock.model.repository -notmatch '^[\w.-]+/[\w.-]+$' -or
         $lock.runtime.commit -notmatch '^[a-f0-9]{40}$' -or

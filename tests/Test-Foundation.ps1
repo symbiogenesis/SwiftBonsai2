@@ -1,4 +1,4 @@
-#requires -Version 7.4
+#requires -Version 7.6
 [CmdletBinding()]
 param([ValidateSet('All','Download','Configuration','Paths','PE','Doctor','ServerPolicy')][string]$Case = 'All')
 Set-StrictMode -Version Latest
@@ -19,8 +19,8 @@ function Expect-Failure([scriptblock]$Action, [string]$Message) {
 
 if ($Case -in @('All','Configuration')) {
     $lock = Read-BonsaiLock
-    $profile = Get-Content -LiteralPath (Join-Path $repo 'config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json
-    $metadata = Get-Content -LiteralPath (Join-Path $repo 'config/model.metadata.json') -Raw | ConvertFrom-Json
+    $profile = Get-Content -LiteralPath (Join-Path $repo 'config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json -DateKind String
+    $metadata = Get-Content -LiteralPath (Join-Path $repo 'config/model.metadata.json') -Raw | ConvertFrom-Json -DateKind String
     Assert ($metadata.ModelRevision -eq $lock.model.revision -and $metadata.ArtifactSha256 -eq $lock.model.sha256 -and
         $metadata.FileBytes -eq $lock.model.bytes) 'Inspected metadata and model lock disagree.'
     Assert ((($metadata.TensorTypeHistogram | Measure-Object -Property Count -Sum).Sum) -eq $metadata.TensorCount) 'Tensor histogram does not reconcile.'
@@ -191,7 +191,7 @@ if ($Case -in @('All','ServerPolicy')) {
 if ($Case -in @('All','Doctor')) {
     $reportPath = Join-Path $scratch 'doctor.json'
     $report = & (Join-Path $repo 'scripts/Doctor.ps1') -DataPath $scratch -OutputPath $reportPath -PassThru
-    $saved = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+    $saved = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json -DateKind String
     Assert ($saved.SchemaVersion -eq 1 -and $report.Runtime.ProcessArchitecture) 'Doctor did not produce a versioned architecture report.'
     if ($null -ne $saved.Memory.UsablePhysicalBytes) { Assert ($saved.Memory.UsablePhysicalBytes -gt 0) 'Usable memory must be positive bytes.' }
     Expect-Failure { & (Join-Path $repo 'scripts/Doctor.ps1') -OutputPath $reportPath } 'Doctor overwrote an existing report.'

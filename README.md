@@ -6,7 +6,7 @@ Implemented: read-only host inventory, immutable artifact locks, resumable size/
 
 ## Inventory and provisioning
 
-Use native Windows ARM64 PowerShell 7.4 or later. Choose an absolute data directory outside all Git checkouts. Junctions and device paths are unsupported by provisioning. Run inventory first:
+Use native Windows ARM64 PowerShell 7.6 or later. Choose an absolute data directory outside all Git checkouts. Junctions and device paths are unsupported by provisioning. Run inventory first:
 
 ```powershell
 ./scripts/Doctor.ps1
@@ -75,6 +75,8 @@ $cmakePath = ($doctor.Tools | Where-Object Name -eq CMake).Path
 The script fetches only the pinned commit into `sources/<commit>/`, requires an exact clean checkout on reuse, and builds only the Release `llama-server` target under `builds/<commit>/cpu/`. It records compiler/configuration, hashes and version in an external build receipt. It enables Git long paths per command without changing global settings. It runs no test suite, inference, or benchmark. This initial build disables subprocess tools, accelerator backends, and automatic dependency/UI downloads. It has **no full embedded chat UI**; reviewed UI assets and M1 security/lifecycle qualification remain separate work.
 
 ## Validation
+
+Use stable PowerShell and .NET features supported by the 7.6 baseline where they improve clarity or correctness. Artifact paths use the [array form of `Join-Path -ChildPath`](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/join-path?view=powershell-7.6), and configuration reads use [`ConvertFrom-Json -DateKind String`](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/convertfrom-json?view=powershell-7.6) to preserve JSON strings exactly.
 
 One focused local correctness case is allowed, for example:
 

@@ -1,4 +1,4 @@
-#requires -Version 7.4
+#requires -Version 7.6
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$DataDirectory, [switch]$VerifyOnly)
 Set-StrictMode -Version Latest
@@ -7,7 +7,7 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
 $lock = Read-BonsaiLock
 $root = Resolve-ExternalPath $DataDirectory
 $model = $lock.model
-$path = Join-Path $root "models/$($model.revision)/$($model.filename)"
+$path = Join-Path $root -ChildPath 'models', $model.revision, $model.filename
 if ($VerifyOnly) { Test-LockedArtifact $path $model.bytes $model.sha256 }
 else {
     $uri = "https://huggingface.co/$($model.repository)/resolve/$($model.revision)/$($model.filename)"

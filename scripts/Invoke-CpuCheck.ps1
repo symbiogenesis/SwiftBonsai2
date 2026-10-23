@@ -1,4 +1,4 @@
-#requires -Version 7.4
+#requires -Version 7.6
 <#
 .SYNOPSIS
 Runs one synthetic, trusted-input CPU load/decode check; never enables chat serving.
@@ -53,7 +53,7 @@ namespace SwiftBonsai {
 '@
 }
 $lock = Read-BonsaiLock
-$profile = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json
+$profile = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json -DateKind String
 [long]$ceiling = $profile.serviceCeilingBytes
 if ($ceiling -ne 18GB) { throw 'Review this check before changing the reference service allowance.' }
 [long]$reserve = 4GB
@@ -73,7 +73,7 @@ if ($available -lt $report.RequiredAvailableBytes) {
 if ($CheckOnly -or $report.Status -ne 'admission-passed') { return [pscustomobject]$report }
 
 $runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -VerifyOnly
-$modelPath = Resolve-ExternalPath (Join-Path $data "models/$($lock.model.revision)/$($lock.model.filename)")
+$modelPath = Resolve-ExternalPath (Join-Path $data -ChildPath 'models', $lock.model.revision, $lock.model.filename)
 $executable = Resolve-ExternalPath (Join-Path ([IO.Path]::GetDirectoryName($runtime.ServerPath)) 'llama-completion.exe')
 Assert-Arm64PE $executable
 $guard = $process = $scratch = $stdout = $stderr = $null

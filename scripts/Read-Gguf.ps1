@@ -1,4 +1,4 @@
-#requires -Version 7.4
+#requires -Version 7.6
 <#
 .SYNOPSIS
 Verify a local artifact and inspect GGUF metadata and tensor descriptors without loading weights.

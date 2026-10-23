@@ -1,4 +1,4 @@
-#requires -Version 7.4
+#requires -Version 7.6
 <##
 Build the locked CPU engine on Windows ARM64; never runs inference or benchmarks.
 Sources checked before implementation:
@@ -43,7 +43,7 @@ foreach ($name in 'GitPath', 'CMakePath') {
 }
 $injected = Get-ChildItem Env: | Where-Object Name -Match '^(GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG.*)|CMAKE_.*|CC|CXX|CL|_CL_|LINK|CFLAGS|CXXFLAGS|LDFLAGS)$'
 if ($injected) { throw ('Build override environment is unsupported; no environment was changed: ' + ($injected.Name -join ', ')) }
-$lock = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/runtime.lock.json') | ConvertFrom-Json
+$lock = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/runtime.lock.json') | ConvertFrom-Json -DateKind String
 $commit = [string]$lock.runtime.commit
 $repository = [string]$lock.runtime.repository
 if ($commit -cnotmatch '^[0-9a-f]{40}$' -or $repository -cne 'https://github.com/ggml-org/llama.cpp.git') { throw 'Unsupported runtime lock identity.' }
@@ -73,10 +73,10 @@ function Invoke-Native([string]$Executable, [string[]]$Arguments, [int]$TimeoutS
 function Invoke-Git([string[]]$Arguments) { Invoke-Native $GitPath (@('-c', "core.hooksPath=$($emptyHooks.FullName)", '-c', 'submodule.recurse=false', '-c', 'core.longpaths=true') + $Arguments) }
 $gitVersion = Invoke-Git @('--version')
 $cmakeVersion = Invoke-Native $CMakePath @('--version')
-$capabilities = Invoke-Native $CMakePath @('-E', 'capabilities') | ConvertFrom-Json
+$capabilities = Invoke-Native $CMakePath @('-E', 'capabilities') | ConvertFrom-Json -DateKind String
 if ($Generator -notin $capabilities.generators.name) { throw "Installed CMake does not support $Generator." }
-$source = Join-Path $DataDirectory "sources/$commit"
-$build = Join-Path $DataDirectory "builds/$commit/cpu"
+$source = Join-Path $DataDirectory -ChildPath 'sources', $commit
+$build = Join-Path $DataDirectory -ChildPath 'builds', $commit, 'cpu'
 Assert-PlainPath $source; Assert-PlainPath $build
 if (-not (Test-Path -LiteralPath $source)) {
     if (-not $FetchSource) { throw 'Source is absent. Use -FetchSource to explicitly fetch the locked commit.' }
@@ -112,7 +112,7 @@ $cache = Get-Content -Raw -LiteralPath (Join-Path $build 'CMakeCache.txt')
 if ($cache -notmatch '(?m)^CMAKE_GENERATOR_PLATFORM:INTERNAL=ARM64\r?$' -or $cache -notmatch ('(?m)^CMAKE_GENERATOR:INTERNAL=' + [regex]::Escape($Generator) + '\r?$')) { throw 'Configured generator/platform mismatch.' }
 $null = Invoke-Native $CMakePath @('--build', $build, '--config', 'Release', '--target', 'llama-server', '--parallel', [string]$Parallel)
 if (Invoke-Git @('-C', $source, 'status', '--porcelain', '--untracked-files=all', '--ignored=matching')) { throw 'Build changed the source checkout; inspect it before reuse.' }
-$engine = Join-Path $build 'bin/Release/llama-server.exe'
+$engine = Join-Path $build -ChildPath 'bin', 'Release', 'llama-server.exe'
 $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($engine))
 try {
     if ($reader.ReadUInt16() -ne 0x5A4D -or $reader.BaseStream.Length -lt 64) { throw 'Output is not a PE executable.' }

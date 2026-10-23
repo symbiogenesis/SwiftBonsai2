@@ -1,9 +1,9 @@
-#Requires -Version 7.4
+#Requires -Version 7.6
 <#
 .SYNOPSIS
 Reports Windows host and toolchain facts without installing or configuring anything.
 .DESCRIPTION
-Run from PowerShell 7.4 or later. No model is loaded and no benchmark runs.
+Run from PowerShell 7.6 or later. No model is loaded and no benchmark runs.
 DataPath is optional and must be an existing absolute directory outside Git.
 OutputPath is optional, must be a new absolute file outside Git, and its parent
 must already exist. The JSON contains exact tool paths; review it before sharing.
@@ -31,7 +31,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-if (-not $IsWindows) { throw 'Doctor requires Windows and PowerShell 7.4 or later.' }
+if (-not $IsWindows) { throw 'Doctor requires Windows and PowerShell 7.6 or later.' }
 
 $issues = [System.Collections.Generic.List[string]]::new()
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))

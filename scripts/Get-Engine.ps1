@@ -1,4 +1,4 @@
-#requires -Version 7.4
+#requires -Version 7.6
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$DataDirectory, [switch]$VerifyOnly)
 Set-StrictMode -Version Latest
@@ -7,10 +7,10 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
 $lock = Read-BonsaiLock
 $root = Resolve-ExternalPath $DataDirectory
 $asset = $lock.runtime.asset
-$archivePath = Join-Path $root "downloads/$($asset.filename)"
+$archivePath = Join-Path $root -ChildPath 'downloads', $asset.filename
 if ($VerifyOnly) { Test-LockedArtifact $archivePath $asset.bytes $asset.sha256 }
 else { Receive-LockedArtifact -Uri $asset.url -Path $archivePath -Bytes $asset.bytes -Sha256 $asset.sha256 | Out-Null }
-$destination = Resolve-ExternalPath (Join-Path $root "runtime/$($lock.runtime.commit)")
+$destination = Resolve-ExternalPath (Join-Path $root -ChildPath 'runtime', $lock.runtime.commit)
 $archive = [IO.Compression.ZipFile]::OpenRead($archivePath)
 $staging = $null
 try {
