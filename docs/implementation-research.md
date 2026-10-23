@@ -126,9 +126,21 @@ Checked Cargo's [CI download-cache guidance](https://doc.rust-lang.org/cargo/gui
 the pinned [GitHub cache action](https://github.com/actions/cache/tree/caa296126883cff596d87d8935842f9db880ef25).
 Cache registry downloads/index, Git dependency objects and the external target
 directory, excluding credentials and duplicate extracted registry sources. Bind
-reuse to runner image, architecture, compiler and dependency/workflow identity;
+reuse to runner image, architecture, compiler and dependency/build-recipe identity;
 allow Cargo to decide which restored artifacts remain fresh. Always execute
 formatting, analyzers and correctness checks, including on an exact cache hit.
+
+The October 23 CI scheduling review used the [last successful Foundation run](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/39994714096):
+Prism's source/build step took 307 seconds; standards and the remaining Foundation
+checks ran serially. Following the [ccache directory guidance](https://ccache.dev/manual/latest.html#_compiling_in_different_directories),
+cache compiler objects with paths normalized relative to each fresh build lane,
+compiler-content checking and no relaxed correctness options. Reverify the pinned
+source ZIP and run the native regression on every invocation. Use at most four
+compiler workers in hosted Prism CI, retaining two as the script default.
+Run standards separately from the complete correctness lane, cache the pinned
+PowerShell analyzer, and isolate manual dispatch concurrency from superseded
+pushes. These changes preserve every gate; CI timings after the change are
+needed to establish the actual speedup.
 
 Checked Rust's [Vec allocation contract](https://doc.rust-lang.org/std/vec/struct.Vec.html#method.with_capacity)
 and Tokio's [complete writes](https://docs.rs/tokio/1.50.0/tokio/io/trait.AsyncWriteExt.html#method.write_all).

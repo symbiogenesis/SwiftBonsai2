@@ -6,8 +6,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: foundation-${{ github.ref }}
-  cancel-in-progress: false
+  group: foundation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 jobs:
   prism:
     if: github.ref == 'refs/heads/main'
@@ -17,12 +17,40 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+      - name: Select the native compiler cache identity
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not (Get-Command ccache -CommandType Application -ErrorAction SilentlyContinue)) {
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ccache
+          }
+          $compiler = clang++ --version | Out-String
+          $ccache = ccache --version | Out-String
+          $identity = "$env:ImageOS-$env:ImageVersion-$compiler-$ccache"
+          $digest = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($identity)))
+          "PRISM_CACHE_HOST=$digest" >> $env:GITHUB_ENV
+      - name: Reuse pinned source downloads and compiler objects
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/SwiftBonsai-PrismDownloads
+            ${{ runner.temp }}/SwiftBonsai-PrismCcache
+          key: prism-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-${{ hashFiles('tools/prism/**', 'scripts/Build-PrismEngine.ps1') }}
+          restore-keys: |
+            prism-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-
       - name: Verify pinned source and build the actual storage overlay and native regression
         shell: pwsh
         working-directory: ${{ runner.temp }}
         env:
           CC: clang
           CXX: clang++
+          CCACHE_DIR: ${{ runner.temp }}/SwiftBonsai-PrismCcache
+          CCACHE_MAXSIZE: 500M
+          CCACHE_COMPILERCHECK: content
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
@@ -30,16 +58,20 @@ jobs:
           if ([Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') { throw 'Expected native ARM64 source build.' }
           Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1') -Force
           $lock = Get-Content -Raw -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'tools/prism/source.lock.json') | ConvertFrom-Json
-          $lane = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-PrismSource-' + [guid]::NewGuid().ToString('N'))
+          $lane = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismDownloads'
           [IO.Directory]::CreateDirectory($lane) | Out-Null
-          $archive = Join-Path $lane 'prism-source.zip'
+          $archive = Join-Path $lane ("prism-source-$($lock.ArchiveSha256).zip")
           $null = Receive-LockedArtifact -Uri $lock.ArchiveUrl -Path $archive -Bytes $lock.ArchiveBytes -Sha256 $lock.ArchiveSha256 -TimeoutSeconds 600
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismOverlay.ps1') -SourceArchive $archive
-          $result = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-PrismEngine.ps1') -SourceArchive $archive -BuildMode All -Generator Ninja
+          $launcher = (Get-Command ccache -CommandType Application -ErrorAction Stop).Source
+          $parallel = [Math]::Min(4, [Environment]::ProcessorCount)
+          ccache --zero-stats
+          $result = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-PrismEngine.ps1') -SourceArchive $archive -BuildMode All -Generator Ninja -Parallel $parallel -CompilerLauncher $launcher
           $result | ConvertTo-Json -Depth 10
           "BONSAI_PRISM_EVIDENCE=$($result.EvidenceDirectory)" >> $env:GITHUB_ENV
           ctest --test-dir (Join-Path $result.EvidenceDirectory 'build-probe') --output-on-failure --timeout 60
           if ($LASTEXITCODE) { throw 'Native immutable B-sharing regression failed.' }
+          ccache --show-stats
           'Pinned overlaid engine compiled; native storage/allocation/arithmetic correctness passed. Model TPS/quality remains unqualified.' >> $env:GITHUB_STEP_SUMMARY
       - name: Retain source-build receipts and technical logs
         if: always() && env.BONSAI_PRISM_EVIDENCE != ''
@@ -59,6 +91,29 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+      - name: Identify the native build cache
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not $env:ImageOS -or -not $env:ImageVersion) { throw 'Hosted runner image identity is required for native build caching.' }
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1') -Force
+          $build = Resolve-ExternalPath (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Bitcos/build')
+          $source = [IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE 'tools/bitcos'))
+          $layout = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes("$source`n$build")))
+          "BITCOS_BUILD_DIRECTORY=$build" >> $env:GITHUB_ENV
+          "BITCOS_CACHE_LAYOUT=$layout" >> $env:GITHUB_ENV
+          "BITCOS_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
+          "BITCOS_CACHE_DOTPROD=$([Runtime.Intrinsics.Arm.Dp]::IsSupported)" >> $env:GITHUB_ENV
+      - name: Reuse matching CMake compiler discovery and intermediates
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ env.BITCOS_BUILD_DIRECTORY }}
+          # Shared with the synthetic comparison. Never skip configure/build,
+          # executable validation or correctness, including on exact cache hits.
+          key: bitcos-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BITCOS_CACHE_HOST }}-${{ env.BITCOS_CACHE_DOTPROD }}-${{ env.BITCOS_CACHE_LAYOUT }}-${{ hashFiles('tools/bitcos/**', 'scripts/Build-BitcosPrototype.ps1', 'scripts/Bonsai.Common.psm1') }}
       - name: Strict native ARM64 build and full synthetic correctness
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -66,7 +121,7 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          $receipt = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-BitcosPrototype.ps1')
+          $receipt = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-BitcosPrototype.ps1') -BuildDirectory $env:BITCOS_BUILD_DIRECTORY
           $receipt | ConvertTo-Json
           $start = [Diagnostics.ProcessStartInfo]::new($receipt.TestExecutable)
           $start.WorkingDirectory = $receipt.EvidenceDirectory
@@ -124,9 +179,9 @@ jobs:
             ${{ env.CARGO_HOME }}/registry/cache
             ${{ env.CARGO_HOME }}/git/db
             ${{ env.CARGO_TARGET_DIR }}
-          key: broker-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.98.0-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', '.github/workflows/foundation.yml') }}-${{ hashFiles('src/broker/**/*.rs') }}
+          key: broker-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.98.0-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs') }}
           restore-keys: |
-            broker-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.98.0-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', '.github/workflows/foundation.yml') }}-
+            broker-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.98.0-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'rust-toolchain.toml') }}-
       - name: Broker format, analyzer and full correctness suite
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -142,7 +197,7 @@ jobs:
           if ($LASTEXITCODE) { throw 'Broker documentation analyzer failed.' }
           cargo +1.98.0-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --release --all-features
           if ($LASTEXITCODE) { throw 'Broker suite failed.' }
-  foundation:
+  standards:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
     timeout-minutes: 15
@@ -154,6 +209,20 @@ jobs:
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: '10.0.4xx'
+      - name: Reuse the pinned PowerShell analyzer
+        id: analyzer-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/SwiftBonsai-Standards-Tools
+          key: psscriptanalyzer-v1-${{ runner.os }}-${{ runner.arch }}-1.25.0
+      - name: Save the pinned PowerShell analyzer on a cache miss
+        if: steps.analyzer-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          Save-Module -Name PSScriptAnalyzer -RequiredVersion 1.25.0 -Repository PSGallery -Path (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Standards-Tools') -Force
       - name: Enforce PowerShell and C# standards
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -164,10 +233,21 @@ jobs:
           if ($PSVersionTable.PSVersion -lt [version]'7.6' -or $PSVersionTable.PSVersion.PreReleaseLabel) {
             throw 'Foundation requires stable PowerShell 7.6 or later on the runner.'
           }
-          $tooling = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-Standards-Tools-' + [guid]::NewGuid().ToString('N'))
-          Save-Module -Name PSScriptAnalyzer -RequiredVersion 1.25.0 -Repository PSGallery -Path $tooling -Force
+          $tooling = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Standards-Tools'
           $analyzer = Join-Path $tooling 'PSScriptAnalyzer/1.25.0/PSScriptAnalyzer.psd1'
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Standards.ps1') -AnalyzerModulePath $analyzer
+  foundation:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Install the process-lifecycle probe SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.4xx'
       - name: Full foundation suite
         shell: pwsh
         run: ./tests/Test-Foundation.ps1 -Case All
