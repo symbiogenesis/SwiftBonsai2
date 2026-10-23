@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bonsai_gguf::{PRISM_DIALECT, VerifiedModel};
@@ -11,6 +12,7 @@ use bonsai_prism_runtime::model::{Model, Tensor};
 use sha2::{Digest, Sha256};
 
 const BUDGET: usize = 2 * 1024 * 1024;
+static NEXT_ARTIFACT: AtomicU64 = AtomicU64::new(0);
 
 struct Spec<'a> {
     name: &'a str,
@@ -28,8 +30,14 @@ struct Artifact {
 impl Artifact {
     fn new(tensors: &[Spec<'_>], tokenizer: bool) -> Result<Self> {
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        Self::with_timestamp(tensors, tokenizer, nonce)
+    }
+
+    fn with_timestamp(tensors: &[Spec<'_>], tokenizer: bool, nonce: u128) -> Result<Self> {
+        // Windows clock ticks can be shared by concurrent test fixtures.
+        let sequence = NEXT_ARTIFACT.fetch_add(1, Ordering::Relaxed);
         let root = std::env::temp_dir().join(format!(
-            "SwiftBonsai-NativeModel-{}-{nonce}",
+            "SwiftBonsai-NativeModel-{}-{nonce}-{sequence}",
             std::process::id()
         ));
         fs::create_dir(&root)?;
@@ -133,6 +141,27 @@ fn sha(bytes: &[u8]) -> String {
         .flat_map(|byte| [byte >> 4, byte & 15])
         .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
         .collect()
+}
+
+#[test]
+fn concurrent_artifacts_with_identical_timestamps_remain_independent() -> Result<()> {
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..8)
+            .map(|_| scope.spawn(|| Artifact::with_timestamp(&[], false, 0)))
+            .collect();
+        let mut artifacts = Vec::new();
+        for worker in workers {
+            artifacts.push(worker.join().map_err(|_| "fixture worker panicked")??);
+        }
+        for (index, artifact) in artifacts.iter().enumerate() {
+            fs::write(&artifact.path, index.to_string())?;
+        }
+        drop(artifacts.remove(0));
+        for (index, artifact) in artifacts.iter().enumerate() {
+            assert_eq!(fs::read_to_string(&artifact.path)?, (index + 1).to_string());
+        }
+        Ok(())
+    })
 }
 
 #[test]
