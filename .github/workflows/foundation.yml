@@ -196,7 +196,10 @@ jobs:
       - name: Reuse Rust build artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.TERNARY_TARGET_DIR }}
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ${{ env.TERNARY_TARGET_DIR }}
           key: ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
           restore-keys: |
             ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-1.99.1-
@@ -215,7 +218,10 @@ jobs:
           if ((Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant() -cne $provenance.fixtureSha256) { throw 'C++ reference fixture digest differs from provenance.' }
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-TernaryChecks-' + [guid]::NewGuid().ToString('N'))
           "TERNARY_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
-          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-ternary -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Offline | ConvertTo-Json -Depth 8
+          # Workspace resolution needs the shared index even for this package
+          # with no dependencies. Permit initial locked index resolution while
+          # compiling and testing only ternary; subsequent runs reuse the cache.
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-ternary -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests | ConvertTo-Json -Depth 8
           'Shared PQ2/PTQ codecs and FP16 conversion passed correctness checks and retained C++ reference parity.' >> $env:GITHUB_STEP_SUMMARY
       - name: Retain ternary Rust check evidence
         if: always() && env.TERNARY_CHECK_EVIDENCE != ''
