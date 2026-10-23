@@ -11,20 +11,9 @@ Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Gguf.TestSupport.psm1') -Force
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-GgufTests-' + [Guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)
-function Assert {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
-}
-function Assert-Failure {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([scriptblock]$Action, [string]$Message)
-    $failed = $false
-    try { & $Action | Out-Null } catch { $failed = $true }
-    Assert $failed $Message
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
+
+
 function Write-Text {
     [CmdletBinding()]
     [OutputType([void])]

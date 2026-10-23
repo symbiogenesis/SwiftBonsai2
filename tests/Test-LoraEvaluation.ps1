@@ -6,20 +6,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.LoraEvaluation.psm1') -Force
-function Assert {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
-}
-function Assert-Failure {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([scriptblock]$Action)
-    $failed = $false
-    try { & $Action | Out-Null } catch { $failed = $true }
-    Assert $failed 'Expected invalid evaluation input to fail.'
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
+
+
 if ($Case -in @('Timing', 'All')) {
     $log = @'
 main: number of tokens in prompt = 80

@@ -87,19 +87,9 @@ switch ($Mode) {
 }
 '@)
 
-function Assert {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw "$Message Evidence: $scratch" }
-}
-function Assert-Failure {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param([scriptblock]$Action, [string]$Message)
-    try { & $Action | Out-Null } catch { return $_.Exception.Message }
-    throw "$Message Evidence: $scratch"
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
+
+
 function Invoke-Probe {
     [CmdletBinding()]
     [OutputType([pscustomobject])]

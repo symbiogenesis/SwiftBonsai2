@@ -14,20 +14,9 @@ Import-Module (Join-Path $PSScriptRoot 'Gguf.TestSupport.psm1') -Force
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PtqExport-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($scratch)
 $dialect = 'Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b'
-function Assert {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
-}
-function Assert-Failure {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([scriptblock]$Action, [string]$Message)
-    $failed = $false
-    try { & $Action | Out-Null } catch { $failed = $true }
-    Assert $failed $Message
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
+
+
 function Write-Text {
     [CmdletBinding()]
     [OutputType([void])]

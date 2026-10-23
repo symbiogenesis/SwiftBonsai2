@@ -50,26 +50,15 @@ public static class PtqBatchProbe {
 }
 '@
 }
-function Assert {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
+
 function Assert-Block {
     [CmdletBinding()]
     [OutputType([void])]
     param([byte[]]$Actual, [byte[]]$Expected, [string]$Message)
     Assert ([Convert]::ToHexString($Actual) -ceq [Convert]::ToHexString($Expected)) $Message
 }
-function Assert-Failure {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([scriptblock]$Action, [string]$Message)
-    $failed = $false
-    try { & $Action | Out-Null } catch { $failed = $true }
-    Assert $failed $Message
-}
+
 $zeros = [byte[]]::new(34); [Array]::Fill[byte]($zeros, 0x55); $zeros[0] = 0; $zeros[1] = 0x3c
 $negative = [byte[]]::new(34); $negative[1] = 0x3c
 # Known native-format vectors establish scale position and ceil rather than

@@ -6,20 +6,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 
-function Assert {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
-}
-function Assert-Failure {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([scriptblock]$Action)
-    $failed = $false
-    try { & $Action | Out-Null } catch { $failed = $true }
-    Assert $failed 'Unsafe key storage was accepted.'
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
+
+
 
 $script = Join-Path $PSScriptRoot '../scripts/New-DevelopmentKeys.ps1'
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-KeyTests-' + [guid]::NewGuid().ToString('N'))

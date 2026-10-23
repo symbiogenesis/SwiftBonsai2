@@ -9,20 +9,9 @@ $PSNativeCommandUseErrorActionPreference = $true
 # Import only pure policy helpers. These cases never probe model files, start
 # native tools or model execution, query inventory, or write to the filesystem.
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Completion.psm1') -Force
-function Assert {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
-}
-function Assert-Failure {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([scriptblock]$Action, [string]$Message)
-    $failed = $false
-    try { & $Action | Out-Null } catch { $failed = $true }
-    Assert $failed $Message
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
+
+
 function Assert-ArgumentValue {
     [CmdletBinding()]
     [OutputType([void])]

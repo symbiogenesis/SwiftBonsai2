@@ -11,20 +11,9 @@ if ($Case -ne 'Parallelism') { throw 'Unsupported focused engine build case.' }
 # Import only the pure scheduling helpers. This focused check never fetches
 # engine sources, starts a native build, or changes the host's build environment.
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Build.psm1') -Force
-function Assert {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
-}
-function Assert-Failure {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([scriptblock]$Action, [string]$Message)
-    $failed = $false
-    try { & $Action | Out-Null } catch { $failed = $true }
-    Assert $failed $Message
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
+
+
 
 foreach ($scenario in @(
     @{ Cpus = 12; Bytes = 32GB; Jobs = 8 },

@@ -12,20 +12,9 @@ Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Force
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Tests-' + [Guid]::NewGuid().ToString('N'))
 $scratch = Resolve-ExternalPath $scratch
 [void][IO.Directory]::CreateDirectory($scratch)
-function Assert {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([bool]$Condition, [string]$Message)
-    if (-not $Condition) { throw $Message }
-}
-function Assert-Failure {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([scriptblock]$Action, [string]$Message)
-    $failed = $false
-    try { & $Action | Out-Null } catch { $failed = $true }
-    Assert $failed $Message
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
+
+
 
 if ($Case -in @('All','Configuration')) {
     $lock = Read-BonsaiLock
