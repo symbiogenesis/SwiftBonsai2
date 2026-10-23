@@ -7,9 +7,10 @@ Repository-owned Rust, PowerShell and C# enforce strict language standards in lo
 Rust is the default for repository-owned systems components. The broker, BITCOS,
 GGUF tooling and LoRA sharing policy forbid unsafe code. The LoRA overlay and
 its native regression are now Rust, with documented unsafe allowances confined
-to the C ABI adapter and native test bindings. The pinned external Prism/llama.cpp
-engine retains C/C++ tensor allocation calls that materialize Rust sharing
-decisions. See the [native boundary and build](../tools/prism/README.md).
+to the C ABI/native loader and test bindings. Rust owns metadata extraction,
+file I/O, bounds checks, tensor view creation and loading. The pinned external
+Prism/llama.cpp engine retains the native call sites; its C declarations are
+generated from Rust. See the [native boundary and build](../tools/prism/README.md).
 The separate `bonsai-windows-process` and `bonsai-windows-credentials` crates are
 audited Win32 boundaries with documented unsafe calls, RAII ownership and strict
 analyzers. The broker itself retains `forbid(unsafe_code)`. Existing C# process

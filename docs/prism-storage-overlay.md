@@ -22,10 +22,12 @@ and pool-limit fallback cases. This is an allocator/arithmetic correctness
 result, not a full-model performance or quality verdict.
 
 The sharing policy and regression are now implemented in the
-[Rust Prism crate](../tools/prism/README.md), with no third-party dependencies.
+[Rust Prism crate](../tools/prism/README.md), with no runtime dependencies.
 The policy forbids unsafe code; documented C ABI pointer handling and native
-test calls are confined to their boundary modules. The external pinned engine
-retains C++ tensor creation calls and the C ABI declarations. Rust's focused
+test calls are confined to their boundary modules. Rust also owns metadata
+extraction, one-handle file reads, bounds checks, tensor view creation and loading.
+The external engine retains only call sites and exception translation; cbindgen
+generates the C declarations from Rust outside the repository. Rust's focused
 native regression again verifies the exact allocation saving, tensor names,
 layouts and byte-identical matrix-operation output against pinned ARM64 ggml.
 
@@ -39,7 +41,8 @@ insertion points and repeat application before writing. The
 extracts a fresh external lane, applies the overlay and records source,
 compiler, configuration, Rust static library and binary identities. It never installs a runtime,
 launches a model or promotes a profile. `-PrepareOnly` performs source preparation
-without a compiler. The build route requires Clang for the full Prism ARM CPU
+without a C++ compiler; it still builds Rust and generates its declarations.
+The build route requires Clang for the full Prism ARM CPU
 sources; this laptop currently lacks the actual clang-cl compiler.
 
 Foundation CI builds the actual modified completion/server linked to Rust,

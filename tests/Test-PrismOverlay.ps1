@@ -3,8 +3,8 @@
 .SYNOPSIS
 Checks source pinning, deterministic overlay output, and rejection without edits.
 .DESCRIPTION
-Focused source-application checks only. Does not compile, execute native code,
-load a model, or benchmark. The real-ggml native regression is a separate CTest.
+Builds Rust and generates its C declarations, then checks source application.
+Does not run native tests, load a model, or benchmark.
 #>
 [CmdletBinding()]
 [OutputType([string])]
@@ -21,11 +21,11 @@ $header = Join-Path $result.SourceDirectory 'src/bonsai_prism.h'
 $cmake = Join-Path $result.SourceDirectory 'src/CMakeLists.txt'
 if ((Get-FileHash -LiteralPath $adapter -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lock.OverlaidAdapterSha256 -or
     (Get-FileHash -LiteralPath $cmake -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lock.OverlaidCMakeSha256 -or
-    (Get-FileHash -LiteralPath $header -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath (Join-Path $repo 'tools/prism/include/bonsai_prism.h') -Algorithm SHA256).Hash) {
+    (Get-FileHash -LiteralPath $header -Algorithm SHA256).Hash.ToLowerInvariant() -cne $result.Rust.HeaderSha256) {
     throw 'Overlay source output is not deterministic.'
 }
 $rejected = $false
-try { $null = & $overlay -SourceDirectory $result.SourceDirectory }
+try { $null = & $overlay -SourceDirectory $result.SourceDirectory -GeneratedHeader $result.Rust.GeneratedHeader }
 catch { $rejected = $_.Exception.Message -eq 'Pinned llama-adapter.cpp source hash mismatch.' }
 if (-not $rejected) { throw 'Repeat application was not rejected.' }
 if ((Get-FileHash -LiteralPath $adapter -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lock.OverlaidAdapterSha256 -or
@@ -36,7 +36,7 @@ $driftPath = Join-Path $fixture 'src/llama-adapter.cpp'
 [IO.File]::WriteAllText($driftPath, '// wrong source revision')
 $before = (Get-FileHash -LiteralPath $driftPath -Algorithm SHA256).Hash
 $rejected = $false
-try { $null = & $overlay -SourceDirectory $fixture }
+try { $null = & $overlay -SourceDirectory $fixture -GeneratedHeader $result.Rust.GeneratedHeader }
 catch { $rejected = $_.Exception.Message -eq 'Pinned llama-adapter.cpp source hash mismatch.' }
 if (-not $rejected -or (Get-FileHash -LiteralPath $driftPath -Algorithm SHA256).Hash -cne $before -or
     [IO.File]::Exists((Join-Path $fixture 'src/bonsai_prism.h'))) { throw 'Source drift rejection changed the fixture.' }

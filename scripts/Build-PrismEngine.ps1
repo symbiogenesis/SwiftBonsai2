@@ -5,8 +5,8 @@ Builds the pinned Prism storage overlay in a fresh external source/build lane.
 .DESCRIPTION
 Requires the exact source ZIP identified by tools/prism/source.lock.json. No
 downloads, tests, benchmarks, model loading, installation, or profile promotion.
-PrepareOnly returns the verified, patched source for a separate CI build. Probe
-builds ggml and the Rust native alias test; Engine builds completion and server.
+PrepareOnly builds Rust and its generated ABI header, then returns verified patched source.
+Probe builds ggml and the Rust native alias test; Engine builds completion and server.
 The pinned Rust toolchain builds the storage policy as a static library.
 Parallel defaults to two compiler jobs; CI can explicitly choose a bounded budget.
 CompilerLauncher optionally enables a compiler cache with the Ninja generator.
@@ -43,8 +43,76 @@ try {
     if ($archiveHash -cne $lock.ArchiveSha256) { throw 'Pinned Prism source ZIP hash mismatch.' }
     Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $scratch 'source')
 } finally { $guard.Dispose() }
+$script:prismCommandNumber = 0
+function Invoke-PrismBuildCommand {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([string[]]$Arguments, [string]$FilePath = $CMakePath, [Collections.IDictionary]$Environment)
+    $script:prismCommandNumber++
+    $start = [Diagnostics.ProcessStartInfo]::new($FilePath)
+    $start.WorkingDirectory = $scratch
+    $start.UseShellExecute = $false; $start.CreateNoWindow = $true
+    $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
+    # Each build still uses fresh verified sources. ccache can normalize the
+    # random lane prefix while retaining its compiler/header/option checks.
+    # Preserve the inherited environment and change only this child setting.
+    if ($CompilerLauncher) { $start.Environment['CCACHE_BASEDIR'] = $scratch }
+    if ($Environment) {
+        foreach ($key in $Environment.Keys) { $start.Environment[$key] = [string]$Environment[$key] }
+    }
+    foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
+    $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
+    try {
+        if (-not $process.Start()) { throw 'Prism build command failed to start.' }
+        $stdout = $process.StandardOutput.ReadToEndAsync(); $stderr = $process.StandardError.ReadToEndAsync()
+        $deadline = [Environment]::TickCount64 + 900000L
+        $timedOut = $false
+        while (-not $process.WaitForExit(1000)) {
+            if ([Environment]::TickCount64 -ge $deadline) {
+                $timedOut = $true
+                $process.Kill($true); $process.WaitForExit()
+                break
+            }
+        }
+        $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
+        $log = Join-Path $scratch ('command-{0:D2}.log' -f $script:prismCommandNumber)
+        [IO.File]::WriteAllText($log, $output)
+        if ($timedOut) { throw "Prism build command exceeded fifteen minutes; see $log" }
+        if ($process.ExitCode) { throw "Prism build failed; see $log" }
+        return $output.Trim()
+    } finally { $process.Dispose() }
+}
+
+$cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
+$manifest = Join-Path $overlay 'Cargo.toml'
+$rustBuild = Join-Path $scratch 'rust'
+# Opt-in native-test linking must never overwrite the policy archive used by
+# the engine or invalidate its already recorded hash.
+$rustNativeBuild = Join-Path $scratch 'rust-native'
+$rustVersion = Invoke-PrismBuildCommand -FilePath $cargo -Arguments @('+1.99.1','--version')
+$cargoOutput = Invoke-PrismBuildCommand -FilePath $cargo -Arguments @('+1.99.1','build','--locked','--offline','--release','--features','engine-loader','--message-format=json','--manifest-path',$manifest,'--target-dir',$rustBuild)
+$records = @($cargoOutput -split "`n" | Where-Object { $_.StartsWith('{') } | ConvertFrom-Json -DateKind String)
+$packages = @($records | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'bonsai_prism' } | Select-Object -ExpandProperty package_id -Unique)
+if ($packages.Count -ne 1) { throw 'Expected one Rust library package identity.' }
+$buildScripts = @($records | Where-Object { $_.reason -eq 'build-script-executed' -and $_.package_id -ceq $packages[0] })
+if ($buildScripts.Count -ne 1) { throw 'Expected one Rust header-generation build output.' }
+$generatedHeader = Join-Path $buildScripts[0].out_dir 'bonsai_prism.h'
+if (-not [IO.File]::Exists($generatedHeader)) { throw 'Rust did not generate its C ABI declarations.' }
+$libraryName = if ($IsWindows) { 'bonsai_prism.lib' } else { 'libbonsai_prism.a' }
+$rustLibrary = Join-Path $rustBuild ('release/' + $libraryName)
+if (-not [IO.File]::Exists($rustLibrary)) { throw 'The Rust static library was not produced.' }
+$rustReceipt = [ordered]@{
+    Version = $rustVersion
+    GeneratedHeader = $generatedHeader
+    HeaderSha256 = (Get-FileHash -LiteralPath $generatedHeader -Algorithm SHA256).Hash.ToLowerInvariant()
+    Library = $rustLibrary
+    LibrarySha256 = (Get-FileHash -LiteralPath $rustLibrary -Algorithm SHA256).Hash.ToLowerInvariant()
+    ManifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+    LockSha256 = (Get-FileHash -LiteralPath (Join-Path $overlay 'Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
 $source = Join-Path $scratch ('source/' + $lock.ArchiveRoot)
-$overlayReceipt = & (Join-Path $overlay 'Apply-Overlay.ps1') -SourceDirectory $source
+$overlayReceipt = & (Join-Path $overlay 'Apply-Overlay.ps1') -SourceDirectory $source -GeneratedHeader $generatedHeader
 $receipt = [ordered]@{
     SchemaVersion = 1
     RecordedAtUtc = [DateTime]::UtcNow.ToString('o')
@@ -59,7 +127,7 @@ $receipt = [ordered]@{
     Generator = $Generator
     ParallelJobs = $Parallel
     CompilerLauncher = $null
-    Rust = $null
+    Rust = $rustReceipt
     Binaries = @()
     BuildConfigurations = @()
     Status = 'prepared'
@@ -84,64 +152,7 @@ if (-not $PrepareOnly) {
         }
         [IO.File]::WriteAllText((Join-Path $scratch 'build-receipt.json'), ($receipt | ConvertTo-Json -Depth 7))
     }
-    $script:prismCommandNumber = 0
-    function Invoke-PrismBuildCommand {
-        [CmdletBinding()]
-        [OutputType([string])]
-        param([string[]]$Arguments, [string]$FilePath = $CMakePath, [Collections.IDictionary]$Environment)
-        $script:prismCommandNumber++
-        $start = [Diagnostics.ProcessStartInfo]::new($FilePath)
-        $start.WorkingDirectory = $scratch
-        $start.UseShellExecute = $false; $start.CreateNoWindow = $true
-        $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
-        # Each build still uses fresh verified sources. ccache can normalize the
-        # random lane prefix while retaining its compiler/header/option checks.
-        # Preserve the inherited environment and change only this child setting.
-        if ($CompilerLauncher) { $start.Environment['CCACHE_BASEDIR'] = $scratch }
-        if ($Environment) {
-            foreach ($key in $Environment.Keys) { $start.Environment[$key] = [string]$Environment[$key] }
-        }
-        foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
-        $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
-        try {
-            if (-not $process.Start()) { throw 'Prism build command failed to start.' }
-            $stdout = $process.StandardOutput.ReadToEndAsync(); $stderr = $process.StandardError.ReadToEndAsync()
-            $deadline = [Environment]::TickCount64 + 900000L
-            $timedOut = $false
-            while (-not $process.WaitForExit(1000)) {
-                if ([Environment]::TickCount64 -ge $deadline) {
-                    $timedOut = $true
-                    $process.Kill($true); $process.WaitForExit()
-                    break
-                }
-            }
-            $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
-            $log = Join-Path $scratch ('command-{0:D2}.log' -f $script:prismCommandNumber)
-            [IO.File]::WriteAllText($log, $output)
-            if ($timedOut) { throw "Prism build command exceeded fifteen minutes; see $log" }
-            if ($process.ExitCode) { throw "Prism build failed; see $log" }
-            return $output.Trim()
-        } finally { $process.Dispose() }
-    }
     $receipt.CMakeVersion = Invoke-PrismBuildCommand -Arguments @('--version')
-    $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
-    $manifest = Join-Path $overlay 'Cargo.toml'
-    $rustBuild = Join-Path $scratch 'rust'
-    # Opt-in native-test linking must never overwrite the policy archive used by
-    # the engine or invalidate its already recorded hash.
-    $rustNativeBuild = Join-Path $scratch 'rust-native'
-    $rustVersion = Invoke-PrismBuildCommand -FilePath $cargo -Arguments @('+1.99.1','--version')
-    $null = Invoke-PrismBuildCommand -FilePath $cargo -Arguments @('+1.99.1','build','--locked','--offline','--release','--manifest-path',$manifest,'--target-dir',$rustBuild)
-    $libraryName = if ($IsWindows) { 'bonsai_prism.lib' } else { 'libbonsai_prism.a' }
-    $rustLibrary = Join-Path $rustBuild ('release/' + $libraryName)
-    if (-not [IO.File]::Exists($rustLibrary)) { throw 'The Rust static library was not produced.' }
-    $receipt.Rust = [ordered]@{
-        Version = $rustVersion
-        Library = $rustLibrary
-        LibrarySha256 = (Get-FileHash -LiteralPath $rustLibrary -Algorithm SHA256).Hash.ToLowerInvariant()
-        ManifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
-        LockSha256 = (Get-FileHash -LiteralPath (Join-Path $overlay 'Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
-    }
     $generatorArguments = @('-G', $Generator)
     if ($Generator -ne 'Ninja') { $generatorArguments += @('-A','ARM64','-T','ClangCL') }
     if ($CompilerLauncher) {
@@ -159,7 +170,7 @@ if (-not $PrepareOnly) {
         } else {
             $arguments = @('-S',$source,'-B',$build) + $generatorArguments + @(
                 '-DCMAKE_BUILD_TYPE=Release','-DBUILD_SHARED_LIBS=OFF','-DFETCHCONTENT_FULLY_DISCONNECTED=ON',
-                '-DLLAMA_BUILD_NUMBER=0',"-DLLAMA_BUILD_COMMIT=$($lock.Commit)+swift-lora-b-share-rust-v2",
+                '-DLLAMA_BUILD_NUMBER=0',"-DLLAMA_BUILD_COMMIT=$($lock.Commit)+swift-lora-b-share-rust-v3",
                 "-DBONSAI_PRISM_LIBRARY=$rustLibrary",
                 '-DGGML_NATIVE=OFF','-DGGML_BACKEND_DL=OFF',
                 '-DGGML_CPU_ALL_VARIANTS=OFF','-DGGML_OPENMP=OFF','-DGGML_CUDA=OFF',

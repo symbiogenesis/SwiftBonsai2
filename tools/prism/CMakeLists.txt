@@ -21,4 +21,6 @@ enable_testing()
 if(BONSAI_PRISM_NATIVE_TEST)
   add_test(NAME prism-lora-storage-alias
     COMMAND "${BONSAI_PRISM_NATIVE_TEST}" --exact native_storage_and_math)
+  add_test(NAME prism-lora-loader-rejections
+    COMMAND "${BONSAI_PRISM_NATIVE_TEST}" --exact native_loader_rejects_invalid_reads_and_keeps_fallbacks)
 endif()
