@@ -4,11 +4,13 @@ Focused synthetic qualification scoring regressions; no model or benchmark runs.
 #>
 [CmdletBinding()]
 [OutputType([string])]
-param([Parameter(Mandatory)][ValidateSet('Scoring', 'Rejection', 'Json')][string]$Case)
+param([Parameter(Mandatory)][ValidateSet('Scoring', 'Rejection', 'Json', 'Compatibility')][string]$Case, [string]$ToolPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
-Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Qualification.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Qualification.psm1')
+$toolArguments = @{}
+if ($ToolPath) { $toolArguments.ToolPath = $ToolPath }
 
 function Assert {
     [CmdletBinding()]
@@ -24,6 +26,14 @@ function Assert-Failure {
     try { & $Action | Out-Null } catch { $failed = $true }
     Assert $failed $Message
 }
+function Assert-JsonEqual {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([object]$Actual, [object]$Expected, [string]$Message)
+    $actualNode = [Text.Json.Nodes.JsonNode]::Parse(($Actual | ConvertTo-Json -Depth 40))
+    $expectedNode = [Text.Json.Nodes.JsonNode]::Parse(($Expected | ConvertTo-Json -Depth 40))
+    Assert ([Text.Json.Nodes.JsonNode]::DeepEquals($actualNode, $expectedNode)) $Message
+}
 function Copy-Fixture {
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
@@ -35,11 +45,11 @@ function New-Fixture {
     [CmdletBinding()]
     [OutputType([hashtable])]
     param()
-    $plan = Get-BonsaiLoraQualificationPlan
+    $plan = Get-BonsaiLoraQualificationPlan @toolArguments
     $controls = Copy-Fixture $plan.Contract.controls
     $controls.weightRepresentation = 'PQ2_0'
     $controls.modelSha256 = $plan.Contract.representations.PQ2_0
-    $digest = Get-BonsaiLoraControlDigest $controls
+    $digest = Get-BonsaiLoraControlDigest @toolArguments $controls
     $proof = Get-BonsaiQualificationDigest -Text 'synthetic proof, not actual qualification'
     $samples = [Collections.Generic.List[object]]::new()
     $records = [Collections.Generic.List[object]]::new()
@@ -78,7 +88,20 @@ function New-Fixture {
     }
 }
 
-if ($Case -ceq 'Json') {
+if ($Case -ceq 'Compatibility') {
+    $golden = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/lora-qualification-v1.json') -Raw | ConvertFrom-Json -AsHashtable -DateKind String -Depth 40
+    Assert-JsonEqual (Get-BonsaiLoraQualificationPlan @toolArguments) $golden.plan 'The packaged plan differs from the frozen PowerShell contract.'
+    foreach ($vector in $golden.controlVectors) {
+        Assert ((Get-BonsaiLoraControlDigest @toolArguments $vector.controls) -ceq $vector.sha256) 'A legacy canonical control identity changed.'
+    }
+    foreach ($vector in $golden.textVectors) {
+        Assert ((Get-BonsaiQualificationDigest -Text $vector.text) -ceq $vector.sha256) 'Exact Unicode/newline text hashing changed.'
+    }
+    foreach ($scenario in $golden.scenarios) {
+        $result = Test-BonsaiLoraQualification @toolArguments -Evidence $scenario.evidence -Review $scenario.review
+        Assert-JsonEqual $result $scenario.expected "Frozen $($scenario.name) scoring changed."
+    }
+} elseif ($Case -ceq 'Json') {
     Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Common.psm1') -Force
     $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-QualificationJson-' + [guid]::NewGuid().ToString('N')))
     [void][IO.Directory]::CreateDirectory($scratch)
@@ -91,24 +114,24 @@ if ($Case -ceq 'Json') {
         [IO.File]::WriteAllText($paths[$name], $json[$name])
     }
     $command = Join-Path $PSScriptRoot '../scripts/Get-LoraQualification.ps1'
-    $result = & $command -EvidencePath $paths.Evidence -ReviewPath $paths.Review
+    $result = & $command @toolArguments -EvidencePath $paths.Evidence -ReviewPath $paths.Review
     Assert ($result.Status -ceq 'accepted') 'JSON object evidence and timestamp-preserving review did not pass.'
     foreach ($name in @('Evidence', 'Review')) {
         foreach ($root in @("[$($json[$name])]", "[[$($json[$name])]]", '[]', 'null', 'true', '"text"')) {
             [IO.File]::WriteAllText($paths[$name], $root)
-            Assert-Failure { & $command -EvidencePath $paths.Evidence -ReviewPath $paths.Review } "A non-object $name root was accepted."
+            Assert-Failure { & $command @toolArguments -EvidencePath $paths.Evidence -ReviewPath $paths.Review } "A non-object $name root was accepted."
         }
         [IO.File]::WriteAllText($paths[$name], $json[$name])
     }
 } elseif ($Case -ceq 'Scoring') {
     $fixture = New-Fixture
-    $result = Test-BonsaiLoraQualification -Evidence $fixture.Evidence -Review $fixture.Review
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $fixture.Evidence -Review $fixture.Review
     Assert ($result.Status -ceq 'accepted' -and $result.StandardProfileMayEnable -and $result.Gates.Throughput -ceq 'passed' -and $result.Gates.Quality -ceq 'passed') 'Matched synthetic evidence did not pass.'
     Assert ($result.Prompts.Count -eq 4 -and $result.Prompts[0].medianJobMemoryPremiumBytes -eq 560MB) 'A modest bounded adapter RAM premium was rejected or omitted.'
     $reordered = [ordered]@{}
     foreach ($key in @($fixture.Evidence.controls.Keys | Sort-Object -Descending)) { $reordered[$key] = $fixture.Evidence.controls[$key] }
-    Assert ((Get-BonsaiLoraControlDigest $reordered) -ceq (Get-BonsaiLoraControlDigest $fixture.Evidence.controls)) 'Control digests depend on JSON property order.'
-    $plan = Get-BonsaiLoraQualificationPlan
+    Assert ((Get-BonsaiLoraControlDigest @toolArguments $reordered) -ceq (Get-BonsaiLoraControlDigest @toolArguments $fixture.Evidence.controls)) 'Control digests depend on JSON property order.'
+    $plan = Get-BonsaiLoraQualificationPlan @toolArguments
     Assert ($plan.Schedule.Count -eq 24 -and $plan.Schedule[0].arm -ceq 'baseline' -and $plan.Schedule[2].arm -ceq 'adapter') 'The paired alternating schedule changed.'
     Assert ((Get-BonsaiQualificationDigest -Text "exact`n") -cne (Get-BonsaiQualificationDigest -Text 'exact')) 'Response hashing normalized captured newlines.'
 
@@ -118,18 +141,18 @@ if ($Case -ceq 'Json') {
     $pending.Evidence.nonzeroAdapterCheck.logitsChanged = $null
     $pending.Evidence.nonzeroAdapterCheck.evidenceSha256 = $null
     foreach ($check in $pending.Evidence.zeroScaleChecks) { $check.baselineLogitsSha256 = $null; $check.zeroScaleLogitsSha256 = $null }
-    $result = Test-BonsaiLoraQualification -Evidence $pending.Evidence
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $pending.Evidence
     Assert ($result.Status -ceq 'pending' -and -not $result.StandardProfileMayEnable -and $result.Gates.Quality -ceq 'pending' -and $result.Gates.Throughput -ceq 'passed') 'Missing native correctness evidence or quality review was accepted.'
-    $result = Test-BonsaiLoraQualification -Evidence $fixture.Evidence
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $fixture.Evidence
     Assert ($result.Status -ceq 'pending') 'Absent human quality reviews were accepted.'
     $incomplete = Copy-Fixture $fixture
     $incomplete.Review.reviews[0].answerComplete = $false
-    $result = Test-BonsaiLoraQualification -Evidence $incomplete.Evidence -Review $incomplete.Review
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $incomplete.Evidence -Review $incomplete.Review
     Assert ($result.Status -ceq 'pending' -and $result.Gates.Quality -ceq 'pending') 'A truncated answer was treated as qualified output.'
 
     $refusal = Copy-Fixture $fixture
     $refusal.Review.reviews[1].refused = $true
-    $result = Test-BonsaiLoraQualification -Evidence $refusal.Evidence -Review $refusal.Review
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $refusal.Evidence -Review $refusal.Review
     Assert ($result.Status -ceq 'rejected' -and $result.Gates.Quality -ceq 'failed' -and
         $result.Prompts[0].adapterReviewedRefusals -eq 1) 'An explicitly reviewed unwanted refusal passed on high numeric scores.'
 
@@ -142,7 +165,7 @@ if ($Case -ceq 'Json') {
             foreach ($dimension in @($record.scores.Keys)) { $record.scores[$dimension] = 4 }
         }
     }
-    $result = Test-BonsaiLoraQualification -Evidence $regression.Evidence -Review $regression.Review
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $regression.Evidence -Review $regression.Review
     Assert ($result.Status -ceq 'rejected' -and $result.Gates.Throughput -ceq 'failed' -and $result.Gates.Quality -ceq 'passed') 'Better quality or faster other prompts masked a throughput regression.'
 
     $regression = Copy-Fixture $fixture
@@ -151,31 +174,31 @@ if ($Case -ceq 'Json') {
         $sample = @($regression.Evidence.samples | Where-Object { $_.sampleId -ceq $record.sampleId })[0]
         if ($sample.arm -ceq 'adapter' -and $sample.promptId -ceq 'creative-scene') { $record.scores.creativeUsefulness = 2 }
     }
-    $result = Test-BonsaiLoraQualification -Evidence $regression.Evidence -Review $regression.Review
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $regression.Evidence -Review $regression.Review
     Assert ($result.Status -ceq 'rejected' -and $result.Gates.Throughput -ceq 'passed' -and $result.Gates.Quality -ceq 'failed') 'Better throughput masked weaker creative output.'
 
     $regression = Copy-Fixture $fixture
     foreach ($sample in $regression.Evidence.samples) { if ($sample.arm -ceq 'adapter') { $sample.peakJobMemoryBytes = 3GB } }
-    $result = Test-BonsaiLoraQualification -Evidence $regression.Evidence -Review $regression.Review
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $regression.Evidence -Review $regression.Review
     Assert ($result.Status -ceq 'rejected' -and $result.Gates.MemoryAllowance -ceq 'failed') 'Excessive adapter memory premium was accepted.'
     $regression = Copy-Fixture $fixture
     $regression.Evidence.samples[0].minimumAvailablePhysicalBytes = 4GB - 1
-    $result = Test-BonsaiLoraQualification -Evidence $regression.Evidence -Review $regression.Review
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $regression.Evidence -Review $regression.Review
     Assert ($result.Status -ceq 'rejected') 'Physical memory reserve violation was accepted.'
     $regression = Copy-Fixture $fixture
     $regression.Evidence.zeroScaleChecks[0].zeroScaleLogitsSha256 = Get-BonsaiQualificationDigest -Text 'different logits'
-    $result = Test-BonsaiLoraQualification -Evidence $regression.Evidence -Review $regression.Review
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $regression.Evidence -Review $regression.Review
     Assert ($result.Status -ceq 'rejected') 'Zero-scale numerical mismatch was accepted.'
     $regression = Copy-Fixture $fixture
     $regression.Evidence.nonzeroAdapterCheck.logitsChanged = $false
-    $result = Test-BonsaiLoraQualification -Evidence $regression.Evidence -Review $regression.Review
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $regression.Evidence -Review $regression.Review
     Assert ($result.Status -ceq 'rejected') 'An unapplied nonzero adapter was accepted.'
 } else {
     $fixture = New-Fixture
     foreach ($bad in @([double]::NaN, [double]::PositiveInfinity, 0, -1, '10000', $true)) {
         $invalid = Copy-Fixture $fixture
         $invalid.Evidence.samples[0].decodeMilliseconds = $bad
-        Assert-Failure { Test-BonsaiLoraQualification -Evidence $invalid.Evidence -Review $invalid.Review } 'Invalid timing metric was accepted.'
+        Assert-Failure { Test-BonsaiLoraQualification @toolArguments -Evidence $invalid.Evidence -Review $invalid.Review } 'Invalid timing metric was accepted.'
     }
     $mutations = @(
         { param([Collections.IDictionary]$item) $item.Evidence.samples[0].decodeTokens = 15 },
@@ -213,7 +236,7 @@ if ($Case -ceq 'Json') {
     foreach ($mutation in $mutations) {
         $invalid = Copy-Fixture $fixture
         & $mutation $invalid
-        Assert-Failure { Test-BonsaiLoraQualification -Evidence $invalid.Evidence -Review $invalid.Review } 'Malformed, mismatched, or forged-shape evidence was accepted.'
+        Assert-Failure { Test-BonsaiLoraQualification @toolArguments -Evidence $invalid.Evidence -Review $invalid.Review } 'Malformed, mismatched, or forged-shape evidence was accepted.'
     }
 }
 "Focused LoRA qualification $Case checks passed. Synthetic fixtures are not model qualification."
