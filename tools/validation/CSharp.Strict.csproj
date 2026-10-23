@@ -22,8 +22,6 @@
   <ItemGroup>
     <GlobalAnalyzerConfigFiles Include="CSharp.Strict.globalconfig" />
     <Compile Include="../../scripts/Pq2Ptq1Codec.cs" />
-    <Compile Include="../../scripts/Bonsai.Process.cs" />
-    <Compile Include="../../tests/ProcessLifecycleProbe.cs" />
     <Compile Include="../../tests/PrismCodecProbe.cs" />
     <EmbeddedCSharp Include="$(EmbeddedSourcesDirectory)/*.cs" Condition="'$(EmbeddedSourcesDirectory)' != ''" />
     <Compile Include="@(EmbeddedCSharp)" />
