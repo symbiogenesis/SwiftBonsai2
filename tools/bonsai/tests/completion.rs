@@ -1,4 +1,5 @@
 //! Focused synthetic supervision regressions; no model or benchmark is executed.
+#![forbid(unsafe_code)]
 #![cfg(windows)]
 
 use std::fs;
