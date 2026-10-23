@@ -6,7 +6,8 @@ Builds the pinned Prism storage overlay in a fresh external source/build lane.
 Requires the exact source ZIP identified by tools/prism/source.lock.json. No
 downloads, tests, benchmarks, model loading, installation, or profile promotion.
 PrepareOnly returns the verified, patched source for a separate CI build. Probe
-builds the focused real-ggml alias test; Engine builds completion and server.
+builds ggml and the Rust native alias test; Engine builds completion and server.
+The pinned Rust toolchain builds the storage policy as a static library.
 Parallel defaults to two compiler jobs; CI can explicitly choose a bounded budget.
 CompilerLauncher optionally enables a compiler cache with the Ninja generator.
 #>
@@ -58,6 +59,7 @@ $receipt = [ordered]@{
     Generator = $Generator
     ParallelJobs = $Parallel
     CompilerLauncher = $null
+    Rust = $null
     Binaries = @()
     BuildConfigurations = @()
     Status = 'prepared'
@@ -86,9 +88,9 @@ if (-not $PrepareOnly) {
     function Invoke-PrismBuildCommand {
         [CmdletBinding()]
         [OutputType([string])]
-        param([string[]]$Arguments)
+        param([string[]]$Arguments, [string]$FilePath = $CMakePath, [Collections.IDictionary]$Environment)
         $script:prismCommandNumber++
-        $start = [Diagnostics.ProcessStartInfo]::new($CMakePath)
+        $start = [Diagnostics.ProcessStartInfo]::new($FilePath)
         $start.WorkingDirectory = $scratch
         $start.UseShellExecute = $false; $start.CreateNoWindow = $true
         $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
@@ -96,6 +98,9 @@ if (-not $PrepareOnly) {
         # random lane prefix while retaining its compiler/header/option checks.
         # Preserve the inherited environment and change only this child setting.
         if ($CompilerLauncher) { $start.Environment['CCACHE_BASEDIR'] = $scratch }
+        if ($Environment) {
+            foreach ($key in $Environment.Keys) { $start.Environment[$key] = [string]$Environment[$key] }
+        }
         foreach ($argument in $Arguments) { $start.ArgumentList.Add($argument) }
         $process = [Diagnostics.Process]::new(); $process.StartInfo = $start
         try {
@@ -119,6 +124,21 @@ if (-not $PrepareOnly) {
         } finally { $process.Dispose() }
     }
     $receipt.CMakeVersion = Invoke-PrismBuildCommand -Arguments @('--version')
+    $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
+    $manifest = Join-Path $overlay 'Cargo.toml'
+    $rustBuild = Join-Path $scratch 'rust'
+    $rustVersion = Invoke-PrismBuildCommand -FilePath $cargo -Arguments @('+1.99.1','--version')
+    $null = Invoke-PrismBuildCommand -FilePath $cargo -Arguments @('+1.99.1','build','--locked','--offline','--release','--manifest-path',$manifest,'--target-dir',$rustBuild)
+    $libraryName = if ($IsWindows) { 'bonsai_prism.lib' } else { 'libbonsai_prism.a' }
+    $rustLibrary = Join-Path $rustBuild ('release/' + $libraryName)
+    if (-not [IO.File]::Exists($rustLibrary)) { throw 'The Rust static library was not produced.' }
+    $receipt.Rust = [ordered]@{
+        Version = $rustVersion
+        Library = $rustLibrary
+        LibrarySha256 = (Get-FileHash -LiteralPath $rustLibrary -Algorithm SHA256).Hash.ToLowerInvariant()
+        ManifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+        LockSha256 = (Get-FileHash -LiteralPath (Join-Path $overlay 'Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
     $generatorArguments = @('-G', $Generator)
     if ($Generator -ne 'Ninja') { $generatorArguments += @('-A','ARM64','-T','ClangCL') }
     if ($CompilerLauncher) {
@@ -132,11 +152,12 @@ if (-not $PrepareOnly) {
         $build = Join-Path $scratch ('build-' + $mode.ToLowerInvariant())
         if ($mode -eq 'Probe') {
             $arguments = @('-S',$overlay,'-B',$build) + $generatorArguments + @("-DPRISM_SOURCE_DIR=$source",'-DCMAKE_BUILD_TYPE=Release','-DFETCHCONTENT_FULLY_DISCONNECTED=ON')
-            $targets = @('prism-lora-share-tests')
+            $targets = @('ggml','ggml-cpu')
         } else {
             $arguments = @('-S',$source,'-B',$build) + $generatorArguments + @(
                 '-DCMAKE_BUILD_TYPE=Release','-DBUILD_SHARED_LIBS=OFF','-DFETCHCONTENT_FULLY_DISCONNECTED=ON',
-                '-DLLAMA_BUILD_NUMBER=0',"-DLLAMA_BUILD_COMMIT=$($lock.Commit)+swift-lora-b-share-v1",
+                '-DLLAMA_BUILD_NUMBER=0',"-DLLAMA_BUILD_COMMIT=$($lock.Commit)+swift-lora-b-share-rust-v2",
+                "-DBONSAI_PRISM_LIBRARY=$rustLibrary",
                 '-DGGML_NATIVE=OFF','-DGGML_BACKEND_DL=OFF',
                 '-DGGML_CPU_ALL_VARIANTS=OFF','-DGGML_OPENMP=OFF','-DGGML_CUDA=OFF',
                 '-DGGML_METAL=OFF','-DGGML_VULKAN=OFF','-DGGML_OPENCL=OFF','-DGGML_BLAS=OFF',
@@ -148,6 +169,23 @@ if (-not $PrepareOnly) {
         }
         $null = Invoke-PrismBuildCommand -Arguments $arguments
         $null = Invoke-PrismBuildCommand -Arguments (@('--build',$build,'--config','Release','--parallel',[string]$Parallel,'--target') + $targets)
+        if ($mode -eq 'Probe') {
+            $nativeLibraries = @(Get-ChildItem -LiteralPath $build -Recurse -File | Where-Object { $_.Name -in @('ggml.lib','ggml-cpu.lib','ggml-base.lib','libggml.a','libggml-cpu.a','libggml-base.a') })
+            if ($nativeLibraries.Count -ne 3) { throw 'Expected the three pinned ggml native libraries.' }
+            $libraryDirectories = @($nativeLibraries.DirectoryName | Sort-Object -Unique)
+            $nativeEnvironment = @{ BONSAI_PRISM_NATIVE_LIB_DIR = $libraryDirectories -join [IO.Path]::PathSeparator }
+            $cargoOutput = Invoke-PrismBuildCommand -FilePath $cargo -Environment $nativeEnvironment -Arguments @(
+                '+1.99.1','test','--locked','--offline','--release','--manifest-path',$manifest,'--target-dir',$rustBuild,
+                '--features','native-tests','--test','native','--no-run','--message-format=json')
+            $executables = @($cargoOutput -split "`n" | Where-Object { $_.StartsWith('{') } | ForEach-Object {
+                $record = $_ | ConvertFrom-Json -DateKind String
+                if ($record.reason -eq 'compiler-artifact' -and $record.target.name -eq 'native' -and $record.executable) { $record.executable }
+            })
+            if ($executables.Count -ne 1) { throw 'Expected one Rust native test executable.' }
+            $nativeTest = $executables[0]
+            $null = Invoke-PrismBuildCommand -Arguments ($arguments + @("-DBONSAI_PRISM_NATIVE_TEST=$nativeTest"))
+            $binaries.Add([ordered]@{ Target = 'prism-rust-native-test'; Path = $nativeTest; Sha256 = (Get-FileHash -LiteralPath $nativeTest -Algorithm SHA256).Hash.ToLowerInvariant() })
+        }
         $cache = Join-Path $build 'CMakeCache.txt'
         $configurations.Add([ordered]@{
             Mode = $mode
@@ -158,7 +196,7 @@ if (-not $PrepareOnly) {
             })
             Options = @(Get-Content -LiteralPath $cache | Where-Object { $_ -match '^(CMAKE_BUILD_TYPE|BUILD_SHARED_LIBS|FETCHCONTENT_FULLY_DISCONNECTED|GGML_\w+|LLAMA_\w+):BOOL=' })
         })
-        foreach ($target in $targets) {
+        foreach ($target in @($targets | Where-Object { $_ -like 'llama-*' })) {
             $extension = if ($IsWindows) { '.exe' } else { '' }
             $builtFiles = @(Get-ChildItem -LiteralPath $build -Recurse -File -Filter ($target + $extension))
             if ($builtFiles.Count -ne 1) { throw "Expected one built $target executable." }

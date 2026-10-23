@@ -1,6 +1,6 @@
 # Immutable LoRA B storage sharing
 
-The source overlay implements a lossless CPU allocation reduction for the
+The Rust source overlay implements a lossless CPU allocation reduction for the
 approved adapter. All 129 rank-one B tensors have identical F32 payloads.
 The loader now gives each target its own tensor metadata and name over a
 same-context view of one immutable allocation. It skips writes through aliases.
@@ -13,7 +13,7 @@ zero and NaN payload bits remain distinct. Candidate tensors are capped at
 Ineligible, unequal or uncached payloads retain independent allocations.
 Different adapter lifetimes and devices never share storage.
 
-The focused native regression compiled with strict ARM64 MSVC options against
+Before migration, the focused C++ native regression compiled with strict ARM64 MSVC options against
 the verified pinned publisher DLLs. It found exactly **2,621,440 fewer backend
 allocation bytes (2.5 MiB)** for 129 equal B vectors, preserved distinct names
 and layouts, and obtained byte-identical native matrix-operation outputs for
@@ -21,21 +21,30 @@ independent and shared storage. It also checked payload/layout/device/context
 and pool-limit fallback cases. This is an allocator/arithmetic correctness
 result, not a full-model performance or quality verdict.
 
+The sharing policy and regression are now implemented in the
+[Rust Prism crate](../tools/prism/README.md), with no third-party dependencies.
+The policy forbids unsafe code; documented C ABI pointer handling and native
+test calls are confined to their boundary modules. The external pinned engine
+retains C++ tensor creation calls and the C ABI declarations. Rust's focused
+native regression again verifies the exact allocation saving, tensor names,
+layouts and byte-identical matrix-operation output against pinned ARM64 ggml.
+
 The [source lock](../tools/prism/source.lock.json) pins Prism commit
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, the complete 39,423,279-byte codeload
 ZIP SHA-256 `5ee8738706229e84e85db7051d7a40797c91e22a7ffa8f4bfb8fea4bf2cb0293`,
-and the before/after adapter-loader source hashes. The
+and the before/after adapter-loader and CMake source hashes. The
 [overlay applicator](../tools/prism/Apply-Overlay.ps1) rejects drift, ambiguous
 insertion points and repeat application before writing. The
 [build script](../scripts/Build-PrismEngine.ps1) requires that verified archive,
 extracts a fresh external lane, applies the overlay and records source,
-compiler, configuration and binary identities. It never installs a runtime,
+compiler, configuration, Rust static library and binary identities. It never installs a runtime,
 launches a model or promotes a profile. `-PrepareOnly` performs source preparation
 without a compiler. The build route requires Clang for the full Prism ARM CPU
 sources; this laptop currently lacks the actual clang-cl compiler.
 
-Foundation CI builds the actual modified completion/server and real-ggml
-regression with Clang on hosted Ubuntu ARM64, then runs the correctness test.
+Foundation CI builds the actual modified completion/server linked to Rust,
+and builds the Rust regression against real ggml compiled with Clang on hosted
+Ubuntu ARM64, then runs the correctness test and strict Rust checks.
 That lane checks the modified loader translation unit as part of the engine;
 it does not certify a Windows binary or Snapdragon throughput. The publisher
 runtime remains the assessment executable until a separately verified Windows

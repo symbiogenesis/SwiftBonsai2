@@ -17,6 +17,15 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+      - name: Install native Rust for the storage policy and regression
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --no-self-update
+          rustc +1.99.1 -vV
       - name: Select the native compiler cache identity
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -42,7 +51,7 @@ jobs:
           key: prism-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-${{ hashFiles('tools/prism/**', 'scripts/Build-PrismEngine.ps1') }}
           restore-keys: |
             prism-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-
-      - name: Verify pinned source and build the actual storage overlay and native regression
+      - name: Check Rust and build the pinned engine with its Rust storage overlay
         shell: pwsh
         working-directory: ${{ runner.temp }}
         env:
@@ -56,6 +65,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           if ([Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') { throw 'Expected native ARM64 source build.' }
+          $manifest = Join-Path $env:GITHUB_WORKSPACE 'tools/prism/Cargo.toml'
+          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismRustChecks'
+          cargo +1.99.1 fmt --manifest-path $manifest --check
+          cargo +1.99.1 clippy --manifest-path $manifest --locked --offline --release --all-targets -- -D warnings
+          cargo +1.99.1 doc --manifest-path $manifest --locked --offline --no-deps
+          cargo +1.99.1 test --manifest-path $manifest --locked --offline --release
           Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1') -Force
           $lock = Get-Content -Raw -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'tools/prism/source.lock.json') | ConvertFrom-Json
           $lane = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismDownloads'
@@ -71,8 +86,11 @@ jobs:
           "BONSAI_PRISM_EVIDENCE=$($result.EvidenceDirectory)" >> $env:GITHUB_ENV
           ctest --test-dir (Join-Path $result.EvidenceDirectory 'build-probe') --output-on-failure --timeout 60
           if ($LASTEXITCODE) { throw 'Native immutable B-sharing regression failed.' }
+          $nativeLibraries = @(Get-ChildItem -LiteralPath (Join-Path $result.EvidenceDirectory 'build-probe') -Recurse -File | Where-Object { $_.Name -in @('libggml.a','libggml-cpu.a','libggml-base.a') })
+          $env:BONSAI_PRISM_NATIVE_LIB_DIR = @($nativeLibraries.DirectoryName | Sort-Object -Unique) -join [IO.Path]::PathSeparator
+          cargo +1.99.1 clippy --manifest-path $manifest --locked --offline --release --all-targets --all-features -- -D warnings
           ccache --show-stats
-          'Pinned overlaid engine compiled; native storage/allocation/arithmetic correctness passed. Model TPS/quality remains unqualified.' >> $env:GITHUB_STEP_SUMMARY
+          'Rust sharing policy and native regression passed; pinned engine compiled and linked to Rust. Model TPS/quality remains unqualified.' >> $env:GITHUB_STEP_SUMMARY
       - name: Retain source-build receipts and technical logs
         if: always() && env.BONSAI_PRISM_EVIDENCE != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

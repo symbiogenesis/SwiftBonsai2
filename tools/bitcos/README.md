@@ -6,9 +6,9 @@ Q8_K dot products. It has no dependencies, forbids unsafe code, and uses checked
 Release arithmetic, fallible allocation, and typed errors at public boundaries.
 It does not load a model, register a ggml type, or enable an inference profile.
 
-Rust is the default for new repository-owned systems components. The pinned
-external Prism/llama.cpp engine and its existing LoRA storage overlay remain
-separate migration work; their C/C++ trust boundary is unchanged.
+Rust is the default for repository-owned systems components. The LoRA sharing
+policy and native regression have also [moved to Rust](../prism/README.md).
+The pinned external Prism/llama.cpp engine retains its native C/C++ boundary.
 
 ## Representation
 
