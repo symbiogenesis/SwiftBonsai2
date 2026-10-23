@@ -1,0 +1,65 @@
+[package]
+name = "bonsai-windows-process"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+publish = false
+description = "Windows Job ownership and bounded native process lifecycle for Bonsai"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_SystemInformation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock"] }
+
+[features]
+test-probe = []
+
+[[bin]]
+name = "bonsai-process-test-probe"
+path = "tests/support/probe.rs"
+required-features = ["test-probe"]
+test = false
+doc = false
+
+[profile.release]
+overflow-checks = true
+debug-assertions = false
+
+[profile.test]
+overflow-checks = true
+debug-assertions = true
+
+[lints.rust]
+warnings = "deny"
+unsafe_code = "deny"
+non_ascii_idents = "forbid"
+rust_2018_idioms = { level = "deny", priority = -1 }
+rust_2024_compatibility = { level = "deny", priority = -1 }
+future_incompatible = { level = "deny", priority = -1 }
+elided_lifetimes_in_paths = "deny"
+explicit_outlives_requirements = "deny"
+missing_docs = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+unused_lifetimes = "deny"
+unused_qualifications = "deny"
+unused_must_use = "deny"
+
+[lints.rustdoc]
+all = { level = "deny", priority = -1 }
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+as_conversions = "deny"
+dbg_macro = "deny"
+exit = "deny"
+mem_forget = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+undocumented_unsafe_blocks = "deny"
