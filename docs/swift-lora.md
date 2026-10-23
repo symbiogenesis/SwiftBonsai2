@@ -105,6 +105,75 @@ The check establishes bounded loading/decoding only; it measures neither reliabl
 uncensoring nor accepted prose quality or performance. No inference benchmark was
 run locally.
 
+## Allocation-preserving optimization candidates
+
+The current check logs do not report compute-buffer allocations, so the roughly
+560 MiB counter difference has **not been attributed to a specific allocation**.
+Record allocator high-water marks, CPU workspace, persistent adapter buffers,
+and current/peak process commit around context creation, adapter activation,
+graph reservation and first decode before claiming to have recovered it.
+
+Two source observations constrain that diagnosis. The
+[existing graph allocator](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-alloc.c)
+already reuses suitable `SCALE`/`ADD` parent storage when it is owned, has the
+same layout, is at its last use, has no live views and is not a graph output.
+Forcing explicit in-place calls cannot be assumed to save additional memory.
+The [CPU matrix workspace calculation](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-cpu/ggml-cpu.c)
+does not need activation-type conversion for F32 factors multiplying F32 inputs.
+These adapter targets also produce only 5120 output channels: at the recorded
+64-token microbatch, one rank-1 projection temporary is 256 bytes and one expanded
+correction is 1.25 MiB. The embedding branch performs its rank-1 row lookup before
+the expansion; it does not construct a dense vocabulary-by-embedding correction.
+Do not multiply that per-site bound by 128 as though all corrections remain live;
+actual overlap and storage recycling are determined by the graph allocator.
+
+The following designs preserve the stored adapter and intended operator. None is
+implemented or accepted yet:
+
+1. **Reserve the configured graph once.**
+   [Common initialization](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/common/common.cpp)
+   loads adapter objects before creating the context, but activates them after
+   context creation. The [context](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/src/llama-context.cpp)
+   has already reserved a base-only graph; activation requests another reserve.
+   An internal initialization path receiving the initial adapter/scales map before
+   the constructor's first reserve could avoid this redundant work. Preserve
+   existing public initialization, scale-zero filtering, load-without-apply,
+   fit/no-allocation estimation and dynamic adapter changes. The current allocator
+   frees an old compute buffer before replacing it; double reservation alone
+   does not prove that two complete buffers coexist or explain the counter delta.
+   Startup allocation churn may affect peak accounting without establishing a
+   persistent steady-state increment.
+
+2. **Share identical immutable B storage.** A read-only payload audit found all
+   129 B tensors byte-identical, each F32 `[1,5120]`, with SHA-256
+   `1cdf553ae2623501140ec2e52c3dfa6a80d33fcfe6f91a6d3c4dcd5f887eeca0`.
+   During adapter loading, key candidates by backend buffer type/device, dtype,
+   exact shape/layout and content; confirm byte equality, then give each target
+   its own metadata view over one retained read-only B allocation. Do not alias
+   mutable tensors or across independent adapter lifetimes. This removes exactly
+   **2,621,440 bytes (2.5 MiB)** of duplicate payload for this artifact. It changes
+   no arithmetic and is a modest saving, not a solution to the larger diagnostic.
+
+3. **Fuse rank-1 accumulation without changing A's reduction.** Keep the existing
+   `t = mul_mat(A, original_cur)` node and backend dot-product order. A CPU-only
+   rank-1 accumulation operation can consume `res`, `B`, `t` and scale, replacing
+   the second matrix multiplication, scale and addition. Reuse `res` only when
+   the allocator proves last-use and view/output constraints; otherwise retain
+   a separate destination. This removes the expanded correction buffer and
+   intermediate traffic while preserving the small first projection. The same
+   pattern can consume the embedding's existing row lookup. Keep all F32
+   rounding stages and adapter application order; do not reassociate scale into
+   A/B or introduce a multiply-add contraction. Signed zero, subnormals and
+   compiler contraction make bit identity a test requirement, not a consequence
+   of the rank-1 algebra. Start with strict CPU reference/output comparisons,
+   then native ARM64 logits and deterministic generations in CI before making
+   quality or performance claims.
+
+Quantizing adapter factors, lowering rank, pruning sites or reducing scale changes
+the correction and is not a lossless overhead reduction. Merging a dense edit into
+the ternary base would also change its weights or storage assumptions. Keep those
+separate from storage sharing, allocation reuse and validated execution fusion.
+
 ## Paired qualification on CI
 
 Keep all benchmarks on CI. Pin model, adapter, runtime, template, sampler, context,

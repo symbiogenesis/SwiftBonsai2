@@ -42,6 +42,15 @@
       "baseWindowsReportedPeakJobMemoryBytes": 1487458304,
       "qualification": "root-reported fixed trusted-input native ARM64 check; Job commit diagnostic, not total RAM, a performance benchmark, or behavioral acceptance"
     },
+    "sharedBPayloadAudit": {
+      "recordedDate": "2026-10-23",
+      "tensorCount": 129,
+      "bytesPerTensor": 20480,
+      "allPayloadsByteIdentical": true,
+      "payloadSha256": "1cdf553ae2623501140ec2e52c3dfa6a80d33fcfe6f91a6d3c4dcd5f887eeca0",
+      "duplicatePayloadBytes": 2621440,
+      "qualification": "read-only payload audit; shared-buffer optimization is proposed, not implemented"
+    },
     "status": "unqualified-on-pinned-Swift-native-ARM64",
     "trainingRequired": false,
     "profileEnabled": false
