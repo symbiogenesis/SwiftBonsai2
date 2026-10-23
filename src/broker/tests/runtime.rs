@@ -97,6 +97,17 @@ async fn respond(stream: &mut TcpStream, body: &[u8]) {
     stream.write_all(body).await.unwrap();
 }
 
+async fn assert_client_closed(client: &mut TcpStream) {
+    assert!(match client.read(&mut [0]).await {
+        Ok(0) => true,
+        Err(error) => matches!(
+            error.kind(),
+            ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted
+        ),
+        Ok(_) => false,
+    });
+}
+
 #[test]
 fn shutdown_drains_active_and_waiting_requests_at_the_exact_capacity() {
     check(async {
@@ -130,8 +141,30 @@ fn shutdown_drains_active_and_waiting_requests_at_the_exact_capacity() {
         assert_eq!(report.failed, 3);
         assert_eq!(counting.read(&mut [0]).await.unwrap(), 0);
         for client in clients.iter_mut().take(3) {
-            assert_eq!(client.read(&mut [0]).await.unwrap(), 0);
+            assert_client_closed(client).await;
         }
+        assert!(matches!(
+            service.accept().await,
+            Err(ServiceError::Gate(GateError::Closed))
+        ));
+    });
+}
+
+#[test]
+fn dropping_the_runner_closes_admission_and_every_owned_socket() {
+    check(async {
+        let (backend, service) = setup(1).await;
+        let mut active_client = request(service.port()).await;
+        let mut waiting_client = request(service.port()).await;
+        let worker = Arc::clone(&service);
+        let running = spawn_local(async move { run(&worker, pending()).await });
+        let (mut counting, _) = backend.accept().await.unwrap();
+        backend_request(&mut counting).await;
+        running.abort();
+        assert!(running.await.unwrap_err().is_cancelled());
+        assert_eq!(counting.read(&mut [0]).await.unwrap(), 0);
+        assert_client_closed(&mut active_client).await;
+        assert_client_closed(&mut waiting_client).await;
         assert!(matches!(
             service.accept().await,
             Err(ServiceError::Gate(GateError::Closed))
