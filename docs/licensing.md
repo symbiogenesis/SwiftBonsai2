@@ -30,10 +30,10 @@ project currently has no such dependency. See the [MIT text](https://opensource.
 
 ## Reviewed dependencies
 
-Reviewed on October 23, 2026: all seven Cargo manifests and lockfiles, their
+Reviewed on October 23, 2026: the Cargo workspace manifests and shared lockfile, their
 resolved dependency metadata and cached package license files, the existing
 Prism notices, and the pinned runtime/model declarations. The Cargo graph
-contains 66 unique external package/version pairs, including build and
+contains 62 unique external package/version pairs, including optional build and
 platform-specific dependencies. Package licenses remain applicable regardless
 of the license selected for our original code.
 
@@ -43,11 +43,10 @@ of the license selected for our original code.
 | `tokio` 1.54.1 | MIT | Retain its copyright and permission notice. |
 | `subtle` 2.6.1 | BSD-3-Clause | Retain its copyright, conditions, and disclaimer in source and binary distributions; respect non-endorsement. |
 | `zip` 9.0.5 | MIT | Its enabled deflate dependency graph also has permissive options. |
-| `zopfli` | Apache-2.0 | Keep its license and applicable notices when included. |
 | `zlib-rs` | Zlib | Retain the notice in source distributions and identify altered source versions. |
 | `unicode-ident` | (MIT OR Apache-2.0) AND Unicode-3.0 | The Unicode-3.0 notice is required in addition to the chosen code license. |
 | `r-efi` | MIT OR Apache-2.0 OR LGPL-2.1-or-later | A permissive alternative is available; LGPL is not mandatory. |
-| `cbindgen` 0.29.4 | MPL-2.0 | Build dependency of `tools/prism`, used to generate ABI declarations; not linked into the application. Using this tool does not require our source or generated declarations to adopt MPL. Redistributing cbindgen itself or modified cbindgen source requires its own MPL compliance. |
+| `cbindgen` 0.29.4 | MPL-2.0 | Optional build dependency of `tools/prism`, enabled by `engine-loader` to generate ABI declarations; not linked into the application. Using this tool does not require our source or generated declarations to adopt MPL. Redistributing cbindgen itself or modified cbindgen source requires its own MPL compliance. |
 | Prism/ggml codec, loader and native reference portions | MIT | Preserve the upstream MIT notice; Apache-2.0 does not replace those terms. |
 
 The remaining resolved packages have permissive license alternatives. No

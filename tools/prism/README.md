@@ -4,8 +4,10 @@
 logic and native regression with Rust. The policy in `src/pool.rs` forbids unsafe
 code. `src/loader.rs` owns file reads, bounds checks, native metadata extraction,
 view creation and backend writes. The crate has no runtime dependencies.
-Pinned build dependency cbindgen 0.29.4 generates the C ABI from Rust into Cargo's
-external output directory. No native header is checked into the repository.
+The `engine-loader` feature enables pinned optional build dependency cbindgen
+0.29.4, which generates the C ABI from Rust into Cargo's external output
+directory. Ordinary safe-policy builds compile no external dependencies and
+generate no header. No native header is checked into the repository.
 The static library is linked into pinned Prism commit
 `b87ca7225456b06b0975b8239c66b5aecf07e37c`.
 
