@@ -672,3 +672,51 @@ pub fn softmax(values: &mut [f32]) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::{MatvecScratch, Tensor, matvec_into, q8_into, q8k_into};
+
+    #[test]
+    fn matvec_scratch_retains_quantized_and_floating_storage() -> crate::Result<()> {
+        let mut scratch = MatvecScratch::default();
+        q8k_into(&[127.0; 512], &mut scratch.q8k)?;
+        let wide_pointer = scratch.q8k.as_ptr();
+        q8k_into(&[0.0; 256], &mut scratch.q8k)?;
+        assert_eq!(scratch.q8k.len(), 1);
+        assert_eq!(scratch.q8k.as_ptr(), wide_pointer);
+        assert_eq!(scratch.q8k[0].values, [0; 256]);
+        q8_into(&[127.0; 128], &mut scratch.q8)?;
+        let legacy_pointer = scratch.q8.as_ptr();
+        q8_into(&[0.0; 32], &mut scratch.q8)?;
+        assert_eq!(scratch.q8.len(), 1);
+        assert_eq!(scratch.q8.as_ptr(), legacy_pointer);
+        assert_eq!(scratch.q8[0].values, [0; 32]);
+        let mut tensor = Tensor {
+            name: "scratch".to_owned(),
+            dimensions: vec![2, 2],
+            kind: super::F32,
+            data: Arc::from(
+                [1.0_f32, 2.0, 3.0, 4.0]
+                    .into_iter()
+                    .flat_map(f32::to_le_bytes)
+                    .collect::<Vec<_>>(),
+            ),
+        };
+        let mut output = Vec::new();
+        matvec_into(&tensor, &[1.0; 2], &mut output, &mut scratch)?;
+        let activation_pointer = scratch.activations.as_ptr();
+        let row_pointer = scratch.row.as_ptr();
+        tensor.dimensions = vec![1];
+        tensor.data = Arc::from(2.0_f32.to_le_bytes().as_slice());
+        matvec_into(&tensor, &[3.0], &mut output, &mut scratch)?;
+        assert_eq!(scratch.activations.len(), 1);
+        assert_eq!(scratch.row.len(), 1);
+        assert_eq!(scratch.activations.as_ptr(), activation_pointer);
+        assert_eq!(scratch.row.as_ptr(), row_pointer);
+        assert_eq!(output, [6.0]);
+        Ok(())
+    }
+}
