@@ -1,6 +1,6 @@
 #requires -Version 7.6
 [CmdletBinding()]
-param([ValidateSet('All','Parser','Artifact')][string]$Case = 'All')
+param([ValidateSet('All','Parser','Arrays','Artifact')][string]$Case = 'All')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($Case -eq 'All' -and $env:GITHUB_ACTIONS -ne 'true') { throw 'The full suite runs only in GitHub Actions. Select one focused -Case locally.' }
@@ -104,6 +104,73 @@ if ($Case -in @('All','Parser')) {
         [IO.File]::WriteAllBytes($badPath, $bytes)
         Expect-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } "Corrupt GGUF was accepted: $mutation"
     }
+}
+if ($Case -in @('All','Arrays')) {
+    function New-ArrayFixture([string]$Path, [uint32]$ElementType, [uint64]$Count, [scriptblock]$WriteValues) {
+        $memory = [IO.MemoryStream]::new()
+        $writer = [IO.BinaryWriter]::new($memory, [Text.Encoding]::UTF8, $true)
+        try {
+            $writer.Write([uint32]0x46554747); $writer.Write([uint32]3); $writer.Write([uint64]0); $writer.Write([uint64]2)
+            Write-Key $writer 'general.architecture' 8; Write-Text $writer 'synthetic'
+            $tokenizerStart = $memory.Position
+            Write-Key $writer 'tokenizer.test_array' 9; $writer.Write($ElementType); $writer.Write($Count)
+            $valuesStart = $memory.Position
+            & $WriteValues $writer
+            $writer.Flush()
+            $bytes = $memory.ToArray()
+            [IO.File]::WriteAllBytes($Path, $bytes)
+            $rawTokenizer = [byte[]]::new($bytes.Length - $tokenizerStart)
+            [Array]::Copy($bytes, $tokenizerStart, $rawTokenizer, 0, $rawTokenizer.Length)
+            return @{
+                Bytes = $bytes; ValuesStart = $valuesStart
+                TokenizerHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($rawTokenizer)).ToLowerInvariant()
+            }
+        } finally { $writer.Dispose(); $memory.Dispose() }
+    }
+    $arrayPath = Join-Path $scratch 'boolean-array.gguf'
+    $arrayFixture = New-ArrayFixture $arrayPath 7 131077 {
+        param($writer)
+        $flags = [byte[]]::new(131077)
+        $flags[0] = $flags[65536] = $flags[131076] = 1
+        $writer.Write($flags)
+    }
+    $arrayReport = [SwiftBonsai.GgufInspector]::Read($arrayPath)
+    Assert ($arrayReport.Arrays['tokenizer.test_array'].Count -eq 131077 -and
+        $arrayReport.Arrays['tokenizer.test_array'].ElementTypeId -eq 7) 'Large boolean array descriptor changed.'
+    Assert ($arrayReport.TokenizerMetadataSha256 -ceq $arrayFixture.TokenizerHash) 'Boolean validation changed the raw tokenizer digest.'
+    foreach ($offset in @(0,65536,131076)) {
+        $bytes = [byte[]]$arrayFixture.Bytes.Clone()
+        $bytes[$arrayFixture.ValuesStart + $offset] = 2
+        $badPath = Join-Path $scratch "boolean-array-invalid-$offset.gguf"
+        [IO.File]::WriteAllBytes($badPath, $bytes)
+        Expect-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } "Invalid boolean array value was accepted at $offset."
+    }
+    $badPath = Join-Path $scratch 'boolean-array-truncated.gguf'
+    [IO.File]::WriteAllBytes($badPath, $arrayFixture.Bytes[0..($arrayFixture.Bytes.Length - 2)])
+    Expect-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } 'Truncated boolean array was accepted.'
+    $nestedPath = Join-Path $scratch 'nested-array.gguf'
+    $nestedFixture = New-ArrayFixture $nestedPath 9 3 {
+        param($writer)
+        $writer.Write([uint32]4); $writer.Write([uint64]8192); $writer.Write([byte[]]::new(8192 * 4))
+        $writer.Write([uint32]7); $writer.Write([uint64]5000); $writer.Write([byte[]]::new(5000))
+        $writer.Write([uint32]9); $writer.Write([uint64]1)
+        $writer.Write([uint32]7); $writer.Write([uint64]1); $writer.Write([byte]1)
+    }
+    $nestedReport = [SwiftBonsai.GgufInspector]::Read($nestedPath)
+    Assert ($nestedReport.Arrays['tokenizer.test_array'].Count -eq 3 -and
+        $nestedReport.Arrays['tokenizer.test_array'].ElementTypeId -eq 9) 'Nested array descriptor changed.'
+    Assert ($nestedReport.TokenizerMetadataSha256 -ceq $nestedFixture.TokenizerHash) 'Nested array inspection changed the raw tokenizer digest.'
+    $nestedFixture.Bytes[$nestedFixture.Bytes.Length - 1] = 2
+    $badPath = Join-Path $scratch 'nested-array-invalid-boolean.gguf'
+    [IO.File]::WriteAllBytes($badPath, $nestedFixture.Bytes)
+    Expect-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } 'A discarded nested array bypassed boolean validation.'
+    $deepPath = Join-Path $scratch 'nested-array-depth.gguf'
+    New-ArrayFixture $deepPath 9 1 {
+        param($writer)
+        for ($i = 0; $i -lt 3; $i++) { $writer.Write([uint32]9); $writer.Write([uint64]1) }
+        $writer.Write([uint32]7); $writer.Write([uint64]1); $writer.Write([byte]1)
+    } | Out-Null
+    Expect-Failure { [SwiftBonsai.GgufInspector]::Read($deepPath) } 'Boolean array validation bypassed the existing nesting limit.'
 }
 if ($Case -in @('All','Artifact')) {
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash

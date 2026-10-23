@@ -590,7 +590,15 @@ fn cap_plus_one_probe_rejects_json_and_sse_without_forwarding_excess() {
 fn fragmented_sse_is_flushed_in_bounded_chunks_without_inventing_events() {
     run(async {
         assert_eq!(RESPONSE_BUFFER_BYTES, 8192);
-        for fragment in [1, 7, RESPONSE_BUFFER_BYTES, RESPONSE_BUFFER_BYTES * 2] {
+        for fragment in [
+            1,
+            15,
+            16,
+            255,
+            256,
+            RESPONSE_BUFFER_BYTES,
+            RESPONSE_BUFFER_BYTES * 2,
+        ] {
             let mut body = b": comment\r\ndata: {\"delta\":\"rain\"}\n\n".to_vec();
             body.extend(std::iter::repeat_n(b'x', RESPONSE_BUFFER_BYTES * 2 + 17));
             body.extend_from_slice(b"\n\ndata: \xff\n\n");

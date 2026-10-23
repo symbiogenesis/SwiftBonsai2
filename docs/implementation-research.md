@@ -112,6 +112,49 @@ closes its stream immediately on an error, keeps errors sticky, and requires
 the complete chunk terminator before exposing framed EOF. Tests include an
 end-to-end decoder/response-writer truncation case.
 
+## Build and allocation improvements (October 23)
+
+Before this pass, checked Microsoft's [shared MSBuild compiler scheduling](https://devblogs.microsoft.com/cppblog/improved-parallelism-in-msbuild/)
+and the pinned engine's [MultiToolTask configuration](https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/CMakeLists.txt).
+CMake project parallelism alone does not cap compiler workers. Apply the same
+bounded automatic budget to project and shared compiler scheduling, retaining
+explicit overrides and unconditional configuration/integrity checks. The budget
+is an engineering starting point, not a measured optimum.
+
+Checked Cargo's [CI download-cache guidance](https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci),
+[build artifacts](https://doc.rust-lang.org/cargo/reference/build-cache.html) and
+the pinned [GitHub cache action](https://github.com/actions/cache/tree/caa296126883cff596d87d8935842f9db880ef25).
+Cache registry downloads/index, Git dependency objects and the external target
+directory, excluding credentials and duplicate extracted registry sources. Bind
+reuse to runner image, architecture, compiler and dependency/workflow identity;
+allow Cargo to decide which restored artifacts remain fresh. Always execute
+formatting, analyzers and correctness checks, including on an exact cache hit.
+
+Checked Rust's [Vec allocation contract](https://doc.rust-lang.org/std/vec/struct.Vec.html#method.with_capacity)
+and Tokio's [complete writes](https://docs.rs/tokio/1.50.0/tokio/io/trait.AsyncWriteExt.html#method.write_all).
+Small received bodies can occupy the unused head-buffer tail; larger bodies keep
+the separate bounded allocation. Read SSE payload directly into a reusable wire
+frame to remove per-chunk heap formatting and separate framing writes. Start
+buffered JSON capacity at 8 KiB and grow within the existing cap. Preserve all
+absolute deadlines, cap-plus-one probes, flushes and terminal-framing rules.
+
+For GGUF metadata, preserve the pinned format's [boolean and array types](https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/ggml/include/gguf.h)
+and [.NET bounded stream reads](https://learn.microsoft.com/en-us/dotnet/api/system.io.stream.read).
+Validate every discarded boolean in chunks using the existing scratch buffer,
+and omit unreported nested descriptors. Depth/element/byte limits, strict values,
+artifact verification and raw tokenizer digests retain their original meaning.
+Focused regressions cover buffer/hex/chunk boundaries and malformed arrays;
+full suites remain in CI and no local benchmark is performed.
+
+Integrated validation passed on native ARM64: Release broker build, Release
+Clippy across all targets with warnings denied, formatting, the request-buffer
+boundary case, fragmented SSE across hexadecimal-size boundaries, exact 4 MiB
+and cap-plus-one JSON/SSE responses, and one deadline across partial writes.
+PowerShell parsing, the focused scheduling case and GGUF Arrays case passed.
+A tiny external two-target CMake/MSBuild compilation accepted the generated
+scheduling arguments; its temporary sources were removed and logs retained.
+This confirms build-path compatibility, not a full engine build or a speedup.
+
 ## Evidence obtained
 
 - Host inventory: native ARM64 Windows/PowerShell; **33,897,037,824 usable bytes** (31.57 GiB); Snapdragon X Elite X1E78100; Adreno X1-85 driver **31.0.128.0**; native CMake **4.3.1-msvc1** and MSVC **19.51.36260.0**. Presence does not qualify inference or GPU execution.

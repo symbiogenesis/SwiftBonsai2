@@ -5,6 +5,7 @@ Sources checked before implementation:
 https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/docs/build.md
 https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/ggml/src/ggml-cpu/CMakeLists.txt#L109
 https://cmake.org/cmake/help/latest/generator/Visual%20Studio%2018%202026.html
+https://devblogs.microsoft.com/cppblog/improved-parallelism-in-msbuild/
 MSVC ARM64 requires GGML_NATIVE=ON: upstream probes this host's supported ISA.
 Remote UI, TLS dependency fetching, OpenMP, subprocess tools and other backends are disabled.
 The resulting server has no full embedded chat UI; those assets need separate pinning.
@@ -15,12 +16,31 @@ param(
     [Parameter(Mandatory)][string]$GitPath,
     [Parameter(Mandatory)][string]$CMakePath,
     [ValidateSet('Visual Studio 18 2026', 'Visual Studio 17 2022')][string]$Generator = 'Visual Studio 18 2026',
-    [ValidateRange(1, 12)][int]$Parallel = 2,
+    # Zero chooses a bounded CPU/memory budget; 1..12 explicitly overrides it.
+    [ValidateRange(0, 12)][int]$Parallel = 0,
     [switch]$FetchSource
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') { throw 'Build in native ARM64 PowerShell on a Windows ARM64 host.' }
+function Resolve-BuildParallelism([int]$Requested, [int]$ProcessorCount, [long]$AvailableBytes) {
+    if ($Requested -lt 0 -or $Requested -gt 12 -or $ProcessorCount -lt 1 -or $AvailableBytes -lt -1) { throw 'Invalid build parallelism input.' }
+    if ($Requested -gt 0) { return $Requested }
+    # A starting budget, not a measured optimum: retain two CPU threads and 2 GiB
+    # for interactive work, then allow at most one compiler per remaining GiB.
+    $cpuBudget = [Math]::Min(8, [Math]::Max(1, $ProcessorCount - 2))
+    if ($AvailableBytes -eq -1) { return [Math]::Min(2, $cpuBudget) }
+    $memoryBudget = [Math]::Max(1.0, [Math]::Floor(($AvailableBytes - 2GB) / 1GB))
+    [int][Math]::Min([double]$cpuBudget, $memoryBudget)
+}
+function Get-EngineBuildArguments([string]$BuildDirectory, [int]$Jobs) {
+    if ($Jobs -lt 1 -or $Jobs -gt 12) { throw 'Build jobs must be between 1 and 12.' }
+    # CMake's --parallel limits MSBuild project workers. The pinned upstream
+    # enables MultiToolTask, whose compiler limit otherwise defaults to all CPUs.
+    # Share the same limit across projects instead of multiplying worker counts.
+    @('--build', $BuildDirectory, '--config', 'Release', '--target', 'llama-server', '--parallel', [string]$Jobs,
+        '--', '/p:UseMultiToolTask=true', '/p:EnforceProcessCountAcrossBuilds=true', "/p:CL_MPCount=$Jobs", "/p:MultiProcMaxCount=$Jobs")
+}
 function Full-Path([string]$Path) {
     if ($Path -match '%[^%]+%' -or $Path -notmatch '^[A-Za-z]:[\\/]' -or $Path.Substring(2).Contains(':') -or -not [IO.Path]::IsPathFullyQualified($Path)) { throw "Use an absolute local drive path without device syntax, streams or unresolved variables: $Path" }
     [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
@@ -43,6 +63,15 @@ foreach ($name in 'GitPath', 'CMakePath') {
 }
 $injected = Get-ChildItem Env: | Where-Object Name -Match '^(GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|CONFIG.*)|CMAKE_.*|CC|CXX|CL|_CL_|LINK|CFLAGS|CXXFLAGS|LDFLAGS)$'
 if ($injected) { throw ('Build override environment is unsupported; no environment was changed: ' + ($injected.Name -join ', ')) }
+$availableBytes = -1L
+if ($Parallel -eq 0) {
+    try {
+        $osMemory = Get-CimInstance -ClassName Win32_OperatingSystem -Property FreePhysicalMemory -ErrorAction Stop
+        if ($null -ne $osMemory.FreePhysicalMemory -and $osMemory.FreePhysicalMemory -ge 0) { $availableBytes = [long]$osMemory.FreePhysicalMemory * 1KB }
+    } catch { Write-Verbose 'Available memory query failed; automatic parallelism uses the conservative fallback.' }
+}
+$parallelJobs = Resolve-BuildParallelism $Parallel ([Environment]::ProcessorCount) $availableBytes
+Write-Output "Engine build parallel jobs: $parallelJobs (project and shared compiler limits)."
 $lock = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/runtime.lock.json') | ConvertFrom-Json -DateKind String
 $commit = [string]$lock.runtime.commit
 $repository = [string]$lock.runtime.repository
@@ -110,7 +139,7 @@ $configure = @('-S', $source, '-B', $build, '-G', $Generator, '-A', 'ARM64', "-D
 $null = Invoke-Native $CMakePath $configure
 $cache = Get-Content -Raw -LiteralPath (Join-Path $build 'CMakeCache.txt')
 if ($cache -notmatch '(?m)^CMAKE_GENERATOR_PLATFORM:INTERNAL=ARM64\r?$' -or $cache -notmatch ('(?m)^CMAKE_GENERATOR:INTERNAL=' + [regex]::Escape($Generator) + '\r?$')) { throw 'Configured generator/platform mismatch.' }
-$null = Invoke-Native $CMakePath @('--build', $build, '--config', 'Release', '--target', 'llama-server', '--parallel', [string]$Parallel)
+$null = Invoke-Native $CMakePath (Get-EngineBuildArguments $build $parallelJobs)
 if (Invoke-Git @('-C', $source, 'status', '--porcelain', '--untracked-files=all', '--ignored=matching')) { throw 'Build changed the source checkout; inspect it before reuse.' }
 $engine = Join-Path $build -ChildPath 'bin', 'Release', 'llama-server.exe'
 $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($engine))
@@ -125,7 +154,7 @@ $engineVersion = Invoke-Native $engine @('--version') 30
 $reportedCommit = [regex]::Match($engineVersion, '\bcommit ([a-f0-9]{7,40})\)').Groups[1].Value
 if (-not $reportedCommit -or -not $commit.StartsWith($reportedCommit)) { throw 'Engine version does not identify the locked commit.' }
 $compilerFiles = @(Get-ChildItem -Path (Join-Path $build 'CMakeFiles/*/CMakeCXXCompiler.cmake') | ForEach-Object { @{ path = $_.FullName; content = (Get-Content -Raw -LiteralPath $_.FullName) } })
-$receipt = [ordered]@{ schemaVersion = 1; builtUtc = [DateTime]::UtcNow.ToString('o'); configuration = $configuration; git = @{ path = $GitPath; version = $gitVersion }; cmake = @{ path = $CMakePath; version = $cmakeVersion }; compiler = $compilerFiles; engine = @{ path = $engine; sha256 = (Get-FileHash -LiteralPath $engine -Algorithm SHA256).Hash.ToLowerInvariant(); version = $engineVersion }; cacheSha256 = (Get-FileHash -LiteralPath (Join-Path $build 'CMakeCache.txt') -Algorithm SHA256).Hash.ToLowerInvariant(); logs = $scratch; qualification = 'build-and-version-only; inference, UI and performance unqualified' }
+$receipt = [ordered]@{ schemaVersion = 1; builtUtc = [DateTime]::UtcNow.ToString('o'); configuration = $configuration; scheduling = @{ requestedParallel = $Parallel; parallelJobs = $parallelJobs; availableMemoryBytes = $availableBytes }; git = @{ path = $GitPath; version = $gitVersion }; cmake = @{ path = $CMakePath; version = $cmakeVersion }; compiler = $compilerFiles; engine = @{ path = $engine; sha256 = (Get-FileHash -LiteralPath $engine -Algorithm SHA256).Hash.ToLowerInvariant(); version = $engineVersion }; cacheSha256 = (Get-FileHash -LiteralPath (Join-Path $build 'CMakeCache.txt') -Algorithm SHA256).Hash.ToLowerInvariant(); logs = $scratch; qualification = 'build-and-version-only; inference, UI and performance unqualified' }
 $receiptPath = Join-Path $build ('receipt-' + [guid]::NewGuid().ToString('N') + '.json')
 $receipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $receiptPath -Encoding utf8
 Write-Output "Built ARM64 CPU Release server: $engine"

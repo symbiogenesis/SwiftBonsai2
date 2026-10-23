@@ -17,6 +17,7 @@ use tokio::{
 pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 pub const RESPONSE_BUFFER_BYTES: usize = 8 * 1024;
 pub const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+const CHUNK_PREFIX_BYTES: usize = 2 * std::mem::size_of::<usize>() + 2;
 
 const COMMON_HEADERS: &str =
     "Connection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n";
@@ -67,23 +68,39 @@ where
             "HTTP/1.1 200 OK\r\n{COMMON_HEADERS}Content-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
         );
         write_group(&mut client, &[head.as_bytes()], supervisor_deadline, false).await?;
-        let mut buffer = [0u8; RESPONSE_BUFFER_BYTES];
+        // Read into the final wire frame: no per-chunk String allocation or
+        // separate writes for the size, payload and CRLF.
+        let mut buffer = [0u8; CHUNK_PREFIX_BYTES + RESPONSE_BUFFER_BYTES + 2];
         let mut sent = 0;
         loop {
             // At the cap, probe one byte to distinguish exact-limit EOF from
             // surplus without forwarding any byte beyond the limit.
-            let bound = buffer.len().min(MAX_RESPONSE_BYTES - sent + 1);
-            let count = read_before(&mut body, &mut buffer[..bound], supervisor_deadline).await?;
+            let bound = RESPONSE_BUFFER_BYTES.min(MAX_RESPONSE_BYTES - sent + 1);
+            let count = read_before(
+                &mut body,
+                &mut buffer[CHUNK_PREFIX_BYTES..CHUNK_PREFIX_BYTES + bound],
+                supervisor_deadline,
+            )
+            .await?;
             if count == 0 {
                 break;
             }
             if count > MAX_RESPONSE_BYTES - sent {
                 return Err(ResponseError::BodyLimit);
             }
-            let prefix = format!("{count:X}\r\n");
+            buffer[CHUNK_PREFIX_BYTES - 2..CHUNK_PREFIX_BYTES].copy_from_slice(b"\r\n");
+            let mut first = CHUNK_PREFIX_BYTES - 2;
+            let mut size = count;
+            while size != 0 {
+                first -= 1;
+                buffer[first] = b"0123456789ABCDEF"[size & 0xf];
+                size >>= 4;
+            }
+            let end = CHUNK_PREFIX_BYTES + count;
+            buffer[end..end + 2].copy_from_slice(b"\r\n");
             write_group(
                 &mut client,
-                &[prefix.as_bytes(), &buffer[..count], b"\r\n"],
+                &[&buffer[first..end + 2]],
                 supervisor_deadline,
                 false,
             )
@@ -139,7 +156,8 @@ async fn collect_json<R: AsyncRead + Unpin>(
     body: &mut R,
     deadline: Instant,
 ) -> Result<Vec<u8>, ResponseError> {
-    let mut bytes = Vec::with_capacity(MAX_RESPONSE_BYTES);
+    // Most responses are small; grow toward the same hard cap only as needed.
+    let mut bytes = Vec::with_capacity(RESPONSE_BUFFER_BYTES);
     let mut buffer = [0u8; RESPONSE_BUFFER_BYTES];
     loop {
         let bound = buffer.len().min(MAX_RESPONSE_BYTES - bytes.len() + 1);

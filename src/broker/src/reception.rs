@@ -46,10 +46,11 @@ impl<R> ReceivedChat<R> {
 ///
 /// Requires a Tokio time driver. Takes ownership so errors and cancellation drop
 /// the stream. At most 16 KiB (including line/whitespace) is read before head
-/// authorization; this fixed buffer can contain a coalesced body prefix. Only
-/// after authorization is a body of at most 1 MiB allocated. Duplicate headers
-/// reach RequestPolicy unchanged in multiplicity. No chunked decoding, trailing
-/// requests, connection reuse, listener or production token counter is provided.
+/// authorization; this fixed buffer also receives bodies that fit beside the
+/// head. A separate body of at most 1 MiB is allocated only after authorization.
+/// Duplicate headers reach RequestPolicy unchanged in multiplicity. No chunked
+/// decoding, trailing requests, connection reuse, listener or production token
+/// counter is provided.
 /// Later surplus bytes are left unread and must be discarded when closing.
 pub async fn receive_chat<R: AsyncRead + Unpin + 'static>(
     mut stream: R,
@@ -81,19 +82,33 @@ pub async fn receive_chat<R: AsyncRead + Unpin + 'static>(
     ensure_time(header_deadline)?;
 
     let length = authorized.length;
-    let prefix = &raw[head_end..used];
-    if prefix.len() > length {
+    let prefix_length = used - head_end;
+    if prefix_length > length {
         return Err(ReceiveError::SurplusBytes);
     }
-    let mut body = vec![0u8; length];
-    body[..prefix.len()].copy_from_slice(prefix);
-    let mut filled = prefix.len();
-    drop(raw);
-    while filled < length {
-        filled += read_before(&mut stream, &mut body[filled..], intake_deadline).await?;
-    }
-    ensure_time(intake_deadline)?;
-    let chat = authorized.prepare(&body).map_err(ReceiveError::Policy)?;
+    let chat = if length <= raw.len() - head_end {
+        // Reuse the head buffer for small bodies, even when fragmented across
+        // reads. Its coalesced prefix is already in place, so no body allocation
+        // or prefix copy is needed. Never read beyond the declared body.
+        let body_end = head_end + length;
+        while used < body_end {
+            used += read_before(&mut stream, &mut raw[used..body_end], intake_deadline).await?;
+        }
+        ensure_time(intake_deadline)?;
+        authorized
+            .prepare(&raw[head_end..body_end])
+            .map_err(ReceiveError::Policy)?
+    } else {
+        let mut body = vec![0u8; length];
+        body[..prefix_length].copy_from_slice(&raw[head_end..used]);
+        let mut filled = prefix_length;
+        drop(raw);
+        while filled < length {
+            filled += read_before(&mut stream, &mut body[filled..], intake_deadline).await?;
+        }
+        ensure_time(intake_deadline)?;
+        authorized.prepare(&body).map_err(ReceiveError::Policy)?
+    };
     ensure_time(intake_deadline)?;
     Ok(ReceivedChat { stream, chat })
 }

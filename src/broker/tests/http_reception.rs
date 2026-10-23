@@ -282,6 +282,37 @@ fn incomplete_and_surplus_bodies_close_the_stream() {
 }
 
 #[test]
+fn body_buffer_boundary_preserves_framing_with_fragmented_reads() {
+    run(async {
+        // Both lengths have the same Content-Length digit count. Exercise an
+        // exact fit in the head buffer and the separate-body allocation path.
+        let capacity = MAX_HEADER_BYTES - head(MAX_HEADER_BYTES, "").len();
+        for length in [capacity, capacity + 1] {
+            let mut body = CHAT.to_vec();
+            body.resize(length, b' ');
+            let mut bytes = wire(&body, "");
+            let request_length = bytes.len();
+            assert_eq!(request_length, MAX_HEADER_BYTES + length - capacity);
+            bytes.extend_from_slice(b"GET /admin HTTP/1.1\r\n\r\n");
+            // Split after the head, with and without a coalesced body prefix.
+            for chunk in [head(length, "").len(), head(length, "").len() + 11] {
+                let stream = ProbeRead::new(bytes.clone(), chunk);
+                let received = receive_chat(stream, &policy(), deadline()).await.unwrap();
+                let (stream, pending) = received.into_parts();
+                assert_eq!(stream.position, request_length);
+                let admitted = pending.admit(|_| Ok(100)).unwrap();
+                let forwarded: serde_json::Value =
+                    serde_json::from_slice(admitted.backend_body()).unwrap();
+                assert_eq!(
+                    forwarded["messages"][0]["content"],
+                    "Draft a scene.\nKeep the rain."
+                );
+            }
+        }
+    });
+}
+
+#[test]
 fn body_limit_and_schema_are_enforced_after_fragmented_reception() {
     run(async {
         let prefix = br#"{"messages":[{"role":"user","content":""#;

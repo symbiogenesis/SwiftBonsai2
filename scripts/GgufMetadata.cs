@@ -87,6 +87,20 @@ public sealed class GgufInspector : IDisposable {
             default: throw Bad("unknown scalar type.");
         }
     }
+    object ArrayDescriptor(bool retain, uint itemType, ulong count) {
+        // Only the outer retained record appears in the report. Nested skipped
+        // arrays still receive every validation, without allocating a descriptor.
+        return retain ? new Dictionary<string,object>{{"ElementTypeId",itemType},{"Count",count}} : null;
+    }
+    void SkipBooleans(ulong count) {
+        Need(count);
+        while(count>0) {
+            int n=file.Read(hashBuffer,0,(int)Math.Min((ulong)hashBuffer.Length,count));
+            if(n==0) throw Bad("truncated boolean array.");
+            for(int i=0;i<n;i++) if(hashBuffer[i]>1) throw Bad("invalid boolean.");
+            count-=(ulong)n;
+        }
+    }
     // Depth and aggregate counts cap both recursion and adversarial nested-array work.
     object Value(uint type, int depth, bool retain) {
         if(depth>4) throw Bad("array nesting exceeds inspection limit.");
@@ -103,14 +117,21 @@ public sealed class GgufInspector : IDisposable {
         bool keep=retain && count<=4096 && itemType!=8 && itemType!=9;
         if(width>0 && !keep && itemType!=7) {
             ulong bytes=checked(count*(ulong)width); Need(bytes); file.Position+=checked((long)bytes);
-            return new Dictionary<string,object>{{"ElementTypeId",itemType},{"Count",count}};
+            return ArrayDescriptor(retain,itemType,count);
+        }
+        if(!keep && itemType==7) {
+            // Validate every boolean, including values past each buffer boundary,
+            // without a recursive call and boxed object for each discarded value.
+            if(count>0 && depth==4) throw Bad("array nesting exceeds inspection limit.");
+            SkipBooleans(count);
+            return ArrayDescriptor(retain,itemType,count);
         }
         var values=keep ? new List<object>((int)count) : null;
         for(ulong i=0;i<count;i++) {
             object value=Value(itemType,depth+1,keep);
             if(keep) values.Add(value);
         }
-        return keep ? (object)values : new Dictionary<string,object>{{"ElementTypeId",itemType},{"Count",count}};
+        return keep ? (object)values : ArrayDescriptor(retain,itemType,count);
     }
     void HashRange(IncrementalHash hash, long start, long length) {
         long restore=file.Position;
