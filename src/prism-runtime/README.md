@@ -85,6 +85,14 @@ Synthetic numerical and storage-reuse tests do not measure full-model allocation
 counts, peak memory or speed. R4.2 still requires same-model prefill/decode
 allocation and memory qualification in CI when requested.
 
+KV backing vectors also grow geometrically up to the validated context size,
+reducing repeated prefix copies at the cost of unused reserved capacity between
+growth steps. Reset retains that storage. The conservative checkpoint estimate
+charges actual vector capacities, so tight checkpoint budgets can reject a
+rollback capture or retain fewer reusable prefixes as this reserve grows.
+RoPE frequency reuse lasts only for one evaluation attempt; it carries no
+position cache across reset, restoration or failed evaluation.
+
 ## Validation and remaining work
 
 Focused fixtures cover malformed/truncated/over-budget GGUFs, exact metadata,
