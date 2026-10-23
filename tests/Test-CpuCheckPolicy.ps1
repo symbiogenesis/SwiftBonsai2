@@ -62,6 +62,11 @@ $withAdapter = Get-CpuCheckPolicy -Profile swift-pq2-assessment -UseAbliterateLo
 Assert ($withAdapter.EstimatedAdapterBytes -eq 9682464 -and $withAdapter.EstimatedKnownSubtotalBytes -eq 7914039168 -and
     $withAdapter.ServiceCeilingBytes -eq 12GB -and $withAdapter.RequiredAvailableBytes -eq 16GB) 'Adapter allowance changed the fixed safety policy or omitted adapter bytes.'
 Assert ($swift.EstimatedAdapterBytes -eq 0 -and $reference.EstimatedAdapterBytes -eq 0) 'An adapter was silently enabled.'
+$ptq = Get-CpuCheckPolicy -Profile swift-pq2-assessment -UseRepackedPtq1
+Assert ($ptq.EstimatedWeightBytes -eq 5946648928 -and $ptq.EstimatedKnownSubtotalBytes -eq 6644836704 -and
+    $ptq.WeightRepresentation -ceq 'current-repacked-PTQ1_0' -and $ptq.RequiredAvailableBytes -eq 16GB) 'The derived PTQ assessment omitted source costs or changed admission.'
+Assert ($swift.WeightRepresentation -ceq 'PQ2_0') 'The source Swift representation silently changed.'
+Assert-Failure { Get-CpuCheckPolicy -UseRepackedPtq1 } 'Derived Swift PTQ was accepted for the reference model.'
 
 # Native ArgumentList must receive a model path as exactly one argument, even
 # when the path includes spaces or shell metacharacters.

@@ -138,11 +138,12 @@ jobs:
       - name: Reference PQ2 BITCOS block round trips
         shell: pwsh
         run: ./tests/Test-Pq2BitcosCodec.ps1
-      - name: Exact PQ2 to native PTQ1 weight export
+      - name: Exact PQ2 to native PTQ1 block packing
         shell: pwsh
-        run: |
-          ./tests/Test-Pq2Ptq1Codec.ps1
-          ./tests/Test-Ptq1Export.ps1 -Case All
+        run: ./tests/Test-Pq2Ptq1Codec.ps1
+      - name: Streamed native PTQ1 weight export in a fresh type-loading process
+        shell: pwsh
+        run: ./tests/Test-Ptq1Export.ps1 -Case All
       - name: Engine build scheduling correctness
         shell: pwsh
         run: ./tests/Test-EngineBuild.ps1 -Case Parallelism
@@ -174,6 +175,7 @@ jobs:
           $data = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime'
           $lockPath = Join-Path $env:GITHUB_WORKSPACE 'config/swift-assessment.lock.json'
           ./scripts/Get-Engine.ps1 -DataDirectory $data -LockPath $lockPath
+          ./tests/Test-PrismCodec.ps1 -DataDirectory $data
           ./scripts/Get-Adapter.ps1 -DataDirectory $data
           ./scripts/Get-Adapter.ps1 -DataDirectory $data -VerifyOnly
           $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -CheckOnly
@@ -182,6 +184,8 @@ jobs:
           $adapterCheck = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -UseAbliterateLora -CheckOnly
           if ($adapterCheck.ModelProcessStarted -or -not $adapterCheck.AdapterRequested -or $adapterCheck.EstimatedAdapterBytes -ne 9682464) { throw 'Invalid explicit adapter admission-only result.' }
           $adapterCheck | ConvertTo-Json
+          $ptqCheck = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -UseRepackedPtq1 -CheckOnly
+          if ($ptqCheck.ModelProcessStarted -or $ptqCheck.EstimatedWeightBytes -ne 5946648928 -or $ptqCheck.WeightRepresentation -cne 'current-repacked-PTQ1_0') { throw 'Invalid derived PTQ1 admission-only result.' }
       - name: Verify publisher ARM64 runtime and planned server switches
         shell: pwsh
         run: |

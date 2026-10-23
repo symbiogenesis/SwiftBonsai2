@@ -95,13 +95,18 @@ the original PQ2 bytes exactly; other tensor payloads and raw metadata remain
 unchanged except the file/tensor type and offsets. Native pinned PQ2/PTQ
 dequantizers also agree bit-for-bit on 853,760 synthetic values.
 
-The expected complete PTQ file is 5,946,648,928 bytes, saving 1,259,520,000
-bytes (1.1730 GiB). This uses the current merged weights, not the older
+The verified complete PTQ file is 5,946,648,928 bytes, saving 1,259,520,000
+bytes (1.1730 GiB). Its [portable export receipt](../config/swift.ptq1-export.json)
+records SHA-256 `e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5`
+and verification of all 209,920,000 converted blocks using 258,720 buffer bytes.
+This uses the current merged weights, not the older
 published PTQ checkpoint. PTQ1 and BITCOS are alternative encodings; their
 savings are not additive. At Swift's measured zero fraction PTQ1 is smaller.
 The native PTQ backend uses Q8_0 activations while PQ2 uses Q8_K, so equal
-weights do not prove equal logits, output or speed. No PTQ launch profile is
-enabled. See the [quantified allocation audit](swift-memory-options.md).
+weights do not prove equal logits, output or speed. An explicit development
+`-UseRepackedPtq1` switch selects only this exact derived artifact and retains
+the same memory allowance. Its bounded 16-token native decode passes. See the
+[quantified allocation audit](swift-memory-options.md).
 
 The owner excludes new training on this machine; compatible pretrained LoRAs
 may be qualified separately. They are behavior changes with additional runtime
@@ -125,6 +130,24 @@ $model = Join-Path $data -ChildPath 'models', $lock.model.revision, $lock.model.
 ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -CheckOnly
 ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment
 ```
+
+Run the optional export in a fresh native ARM64 PowerShell process, with the
+same external `$data` and source `$model` paths. This loads the complete exporter
+type set rather than the metadata-only inspector:
+
+```powershell
+# Optional exact current-weight export, published only after verification.
+$derived = Join-Path ([IO.Path]::GetDirectoryName($model)) 'Swift-Bonsai-2-current-repacked-PTQ1_0.gguf'
+./scripts/Export-SwiftPtq1.ps1 -ModelPath $model -OutputPath $derived
+./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -UseRepackedPtq1
+# Approved pretrained adapter; explicit and separately qualified.
+./scripts/Get-Adapter.ps1 -DataDirectory $data
+./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -UseRepackedPtq1 -UseAbliterateLora
+```
+
+The verified derived artifact passes bounded native decode both alone and with
+the approved adapter. These checks preserve the same 16-token limit; they do not
+qualify answer quality, reliable refusal changes, latency or throughput.
 
 The Swift-only CPU check uses 8K FP16 state, batch 128 / microbatch 64 and the
 same fixed synthetic prompt, 16-token limit and ten-minute timeout. Source-level
@@ -152,3 +175,15 @@ before appending the user, and Swift's template raises `No user query found in
 messages.` The Swift-only assessment now omits that system preamble and retains
 its embedded template/default reasoning. Qwen reference arguments are unchanged.
 No engine, template, model weights or global system setting was patched.
+
+## ARM prototype performance gate
+
+The first [hosted comparison](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/39985113979)
+tested `b41b466` on Cobalt 100 ARM64 with MSVC 19.51.36260.0 and DOTPROD.
+The initial scalar-cursor/nibble-LUT BITCOS decoder was about 7.2× slower than
+the optimized PQ2 comparator in the hot-footprint case and 10.3× slower in the
+44.6 MB PQ2-footprint case, despite smaller weights. This fails promotion.
+These are single-thread synthetic kernels, not Snapdragon/end-to-end results;
+the footprint name does not establish cache misses. The adapted PTQ/Q8_K
+comparator is not Prism's released PTQ/Q8_0 backend. No runtime change follows
+from these numbers. A separately tested vector decoder may be assessed next.

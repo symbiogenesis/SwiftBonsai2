@@ -13,7 +13,9 @@ exact source bytes in focused regressions. Swift's explicit 8K CPU check uses
 admission and completes the fixed 16-token decode after a template-compatible
 system-preamble repair. An exact current-weight PTQ1 exporter offers 1.173 GiB
 of payload savings; standalone compact ARM BITCOS dots pass focused numerical
-parity. Native optimized-model integration, performance, creative/comfort and
+parity. The verified current-weight PTQ export completes bounded native decode,
+including the separately pinned pretrained adapter. BITCOS's initial ARM
+synthetic performance fails promotion. Native optimized-model performance, creative/comfort and
 daily isolation qualification remain pending. No new training is planned;
 separately pretrained adapters are optional experiments. The earlier Qwen
 reference below is retained for reproducibility.

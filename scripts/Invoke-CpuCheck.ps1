@@ -24,6 +24,7 @@ param(
     [Parameter(Mandatory)][string]$DataDirectory,
     [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu',
     [switch]$UseAbliterateLora,
+    [switch]$UseRepackedPtq1,
     [switch]$CheckOnly
 )
 Set-StrictMode -Version Latest
@@ -34,9 +35,11 @@ function Get-CpuCheckPolicy {
     [OutputType([pscustomobject])]
     param(
         [Alias('Profile')][ValidateSet('reference-cpu', 'swift-pq2-assessment')][string]$ProfileName = 'reference-cpu',
-        [switch]$UseAbliterateLora
+        [switch]$UseAbliterateLora,
+        [switch]$UseRepackedPtq1
     )
     if ($UseAbliterateLora -and $ProfileName -ne 'swift-pq2-assessment') { throw 'The pinned adapter assessment requires the Swift profile.' }
+    if ($UseRepackedPtq1 -and $ProfileName -ne 'swift-pq2-assessment') { throw 'The current-weight PTQ1 export requires the Swift profile.' }
     [long]$ceiling = 18GB
     [long]$weights = 13146393504
     [long]$transforms = 0
@@ -58,6 +61,7 @@ function Get-CpuCheckPolicy {
     [long]$kv = 8192L * 16 * 4 * 256 * 2 * 2
     [long]$recurrent = 48L * 4 * (128 * 6144 + 3 * (6144 + 2 * 16 * 128))
     [long]$adapterBytes = if ($UseAbliterateLora) { 9682464 } else { 0 }
+    if ($UseRepackedPtq1) { $weights = 5946648928 }
     [long]$known = $weights + $kv + $recurrent + $transforms + $adapterBytes
     [pscustomobject]@{
         Name = $ProfileName; LockRelativePath = $lockPath
@@ -68,6 +72,7 @@ function Get-CpuCheckPolicy {
         EstimatedWeightBytes = $weights; EstimatedKvBytes = $kv
         EstimatedRecurrentBytes = $recurrent; EstimatedTransformBytes = $transforms
         EstimatedAdapterBytes = $adapterBytes
+        WeightRepresentation = if ($UseRepackedPtq1) { 'current-repacked-PTQ1_0' } elseif ($ProfileName -eq 'swift-pq2-assessment') { 'PQ2_0' } else { 'reference-mixed' }
         EstimatedTransformConstructionTemporaryBytes = $transformTemporary
         EstimatedKnownSubtotalBytes = $known; EstimatedRuntimeHeadroomBytes = $ceiling - $known
         EstimateScope = 'Whole file plus persistent caches/transforms; temporary construction, tokenizer, graph/scratch and allocation overhead use remaining allowance. Source arithmetic, not measured peak.'
@@ -138,14 +143,27 @@ namespace SwiftBonsai {
 }
 '@
 }
-$policy = Get-CpuCheckPolicy -Profile $ProfileName -UseAbliterateLora:$UseAbliterateLora
+$policy = Get-CpuCheckPolicy -Profile $ProfileName -UseAbliterateLora:$UseAbliterateLora -UseRepackedPtq1:$UseRepackedPtq1
 $lockPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $policy.LockRelativePath))
 $lock = Read-BonsaiLock -Path $lockPath
 if ($ProfileName -eq 'reference-cpu') {
     $serverProfile = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json -DateKind String
     if ($serverProfile.serviceCeilingBytes -ne $policy.ServiceCeilingBytes) { throw 'Review this check before changing the reference service allowance.' }
 }
-if ($lock.model.bytes -ne $policy.EstimatedWeightBytes) { throw 'Review this check before changing the assessment weight estimate.' }
+$artifactBytes = $lock.model.bytes
+$artifactSha256 = $lock.model.sha256
+$artifactFilename = $lock.model.filename
+if ($UseRepackedPtq1) {
+    $derived = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/swift.ptq1-export.json') | ConvertFrom-Json -DateKind String
+    if ($derived.SourceRevision -cne $lock.model.revision -or $derived.SourceSha256 -cne $lock.model.sha256 -or
+        $derived.SourceBytes -ne $lock.model.bytes -or $derived.CodecCommit -cne $lock.runtime.commit -or
+        $derived.OutputFilename -cne 'Swift-Bonsai-2-current-repacked-PTQ1_0.gguf' -or
+        $derived.OutputSha256 -cnotmatch '^[a-f0-9]{64}$' -or -not $derived.ExactPq2ReconstructionVerified) { throw 'Derived PTQ1 evidence differs from its pinned source/runtime.' }
+    $artifactBytes = $derived.OutputBytes
+    $artifactSha256 = $derived.OutputSha256
+    $artifactFilename = $derived.OutputFilename
+}
+if ($artifactBytes -ne $policy.EstimatedWeightBytes) { throw 'Review this check before changing the assessment weight estimate.' }
 $adapterLock = $adapterPath = $null
 if ($UseAbliterateLora) {
     $adapterLock = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/swift-lora.lock.json') | ConvertFrom-Json -DateKind String
@@ -165,6 +183,7 @@ $report = [ordered]@{
     EstimatedWeightBytes = $policy.EstimatedWeightBytes; EstimatedKvBytes = $policy.EstimatedKvBytes
     EstimatedRecurrentBytes = $policy.EstimatedRecurrentBytes; EstimatedTransformBytes = $policy.EstimatedTransformBytes
     EstimatedAdapterBytes = $policy.EstimatedAdapterBytes; AdapterRequested = $UseAbliterateLora.IsPresent
+    WeightRepresentation = $policy.WeightRepresentation; ArtifactSha256 = $artifactSha256
     EstimatedTransformConstructionTemporaryBytes = $policy.EstimatedTransformConstructionTemporaryBytes
     EstimatedKnownSubtotalBytes = $policy.EstimatedKnownSubtotalBytes
     EstimatedRuntimeHeadroomBytes = $policy.EstimatedRuntimeHeadroomBytes; EstimateScope = $policy.EstimateScope
@@ -186,7 +205,7 @@ if ($available -lt $report.RequiredAvailableBytes) {
 if ($CheckOnly -or $report.Status -ne 'admission-passed') { return [pscustomobject]$report }
 
 $runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly
-$modelPath = Resolve-ExternalPath (Join-Path $data -ChildPath 'models', $lock.model.revision, $lock.model.filename)
+$modelPath = Resolve-ExternalPath (Join-Path $data -ChildPath 'models', $lock.model.revision, $artifactFilename)
 if ($UseAbliterateLora) {
     $adapter = & (Join-Path $PSScriptRoot 'Get-Adapter.ps1') -DataDirectory $data -VerifyOnly
     $adapterPath = $adapter.AdapterPath
@@ -218,7 +237,7 @@ try {
     $guard = [IO.File]::Open($modelPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-CpuCheck-' + [Guid]::NewGuid().ToString('N')))
     [IO.Directory]::CreateDirectory($scratch) | Out-Null
-    Test-LockedArtifact $modelPath $lock.model.bytes $lock.model.sha256
+    Test-LockedArtifact $modelPath $artifactBytes $artifactSha256
     if ($UseAbliterateLora) {
         $adapterGuard = [IO.File]::Open($adapterPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
         Test-LockedArtifact $adapterPath $adapterLock.adapter.bytes $adapterLock.adapter.sha256

@@ -27,6 +27,7 @@
     <Compile Include="../../scripts/GgufPtq1Repacker.cs" />
     <Compile Include="../../scripts/Bonsai.Process.cs" />
     <Compile Include="../../tests/ProcessLifecycleProbe.cs" />
+    <Compile Include="../../tests/PrismCodecProbe.cs" />
     <EmbeddedCSharp Include="$(EmbeddedSourcesDirectory)/*.cs" Condition="'$(EmbeddedSourcesDirectory)' != ''" />
     <Compile Include="@(EmbeddedCSharp)" />
   </ItemGroup>
