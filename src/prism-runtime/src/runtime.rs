@@ -209,9 +209,12 @@ impl<D: Decoder> Runtime<D> {
             }
             Err(error) => {
                 self.faulted = true;
-                self.decoder.restore(&rollback.state)?;
+                let restored = self.decoder.restore(&rollback.state);
+                // The public history always describes the committed request,
+                // even if backend recovery fails and admission remains closed.
                 self.tokens = rollback.tokens;
                 self.logits = rollback.logits;
+                restored?;
                 self.faulted = false;
                 Err(error)
             }

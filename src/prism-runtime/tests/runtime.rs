@@ -129,6 +129,7 @@ fn restoration_failure_closes_admission_until_reset() -> Result<()> {
     let mut runtime = Runtime::new(decoder, LIMITS)?;
     let cancel = Cancellation::default();
     runtime.generate(&[1], &options(), &cancel, |_| Ok(()))?;
+    let committed = runtime.tokens().to_vec();
     restore_fail.set(true);
     assert!(
         runtime
@@ -138,11 +139,15 @@ fn restoration_failure_closes_admission_until_reset() -> Result<()> {
             .is_err()
     );
     assert!(runtime.is_faulted());
+    // A failed backend restoration closes admission, but the public token
+    // history must still describe the last successful transaction.
+    assert_eq!(runtime.tokens(), committed);
     assert!(
         runtime
             .generate(&[1], &options(), &cancel, |_| Ok(()))
             .is_err()
     );
+    assert_eq!(runtime.tokens(), committed);
     runtime.reset()?;
     assert_eq!(runtime.tokens(), &[0_u32; 0]);
     restore_fail.set(false);
