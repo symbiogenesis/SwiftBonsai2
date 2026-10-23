@@ -49,8 +49,8 @@ of the license selected for our original code.
 | `cbindgen` 0.29.4 | MPL-2.0 | Optional build dependency of `tools/prism`, enabled by `engine-loader` to generate ABI declarations; not linked into the application. Using this tool does not require our source or generated declarations to adopt MPL. Redistributing cbindgen itself or modified cbindgen source requires its own MPL compliance. |
 | Prism/ggml codec, loader and native reference portions | MIT | Preserve the upstream MIT notice; Apache-2.0 does not replace those terms. |
 
-The opt-in `tools/dependency-trial` adds Sonic (Apache-2.0), SIMD-JSON
-(Apache-2.0 OR MIT), smol (Apache-2.0 OR MIT), and Compio (MIT), plus their
+The opt-in `tools/dependency-trial` adds Sonic (Apache-2.0),
+smol (Apache-2.0 OR MIT), and Compio (MIT), plus their
 locked dependencies. These competitors are used only by the explicit trial;
 the broker's ordinary build does not enable the alternative JSON dependencies.
 The trial's resolved metadata has permissive license alternatives throughout.

@@ -10,14 +10,14 @@ Local builds, Release analyzers and focused correctness tests are allowed.
 The executable's `--check` mode performs differential correctness without timing;
 its JSON report explicitly records ineligible candidates.
 
-JSON candidates are the existing Serde JSON path, Sonic 0.5.10, SIMD-JSON 0.18.1
-including its immutable-input copy, and a bespoke streaming Serde visitor.
+JSON candidates are the existing Serde JSON path, Sonic 0.5.10,
+and a bespoke streaming Serde visitor.
 All use the production schema and canonical backend options. The bespoke path
 serializes each validated message immediately, avoiding the intermediate message
 vector while retaining the established JSON lexer and string handling. It does
 not introduce an independent general-purpose JSON parser or reusable global
-scratch. SIMD-JSON's pinned reader accepts a lone high surrogate; differential
-eligibility excludes it from strict-policy selection.
+scratch. [Rejected options and evidence](../../docs/dependency-choice.md) are
+recorded before their implementations and dependencies are removed.
 
 The timed corpus includes small plain/escaped input, 8/32/128-message histories,
 and a near-body-limit request. Each trial starts with immutable input and ends

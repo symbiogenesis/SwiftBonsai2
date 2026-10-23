@@ -1,8 +1,7 @@
 //! Opt-in dependency experiments over the production broker schema.
 //!
 //! These entry points include validation and canonical serialization. They do
-//! not authorize HTTP requests or bypass prompt token admission. The mutable
-//! input copy required by `simd-json` is deliberately included in its path.
+//! not authorize HTTP requests or bypass prompt token admission.
 
 use super::{
     AuthorizedHead, ClientChat, MAX_BODY_BYTES, MAX_COMPLETION_TOKENS, MAX_MESSAGES, Message,
@@ -19,20 +18,13 @@ pub enum Engine {
     SerdeJson,
     /// Sonic's reader with the production schema and canonical writer.
     Sonic,
-    /// SIMD-JSON's reader, including its input copy, with the canonical writer.
-    SimdJson,
     /// Schema-specific streaming transcoding over Serde's JSON lexer.
     BespokeSerde,
 }
 
 impl Engine {
     /// All candidates, in a stable reporting order.
-    pub const ALL: [Self; 4] = [
-        Self::SerdeJson,
-        Self::Sonic,
-        Self::SimdJson,
-        Self::BespokeSerde,
-    ];
+    pub const ALL: [Self; 3] = [Self::SerdeJson, Self::Sonic, Self::BespokeSerde];
 
     /// Stable name suitable for measurement artifacts.
     #[must_use]
@@ -40,7 +32,6 @@ impl Engine {
         match self {
             Self::SerdeJson => "serde-json",
             Self::Sonic => "sonic",
-            Self::SimdJson => "simd-json-copy",
             Self::BespokeSerde => "bespoke-serde",
         }
     }
@@ -74,8 +65,7 @@ impl Prepared {
 /// Validate and canonicalize one bounded request with the selected candidate.
 ///
 /// This deliberately starts from immutable input for every engine, matching
-/// the production reception interface. No benchmark may reuse SIMD-JSON's
-/// already modified input to omit its per-request ownership cost.
+/// the production reception interface.
 ///
 /// # Errors
 /// Returns the production value-free rejection for invalid size or schema,
@@ -89,12 +79,6 @@ pub fn prepare(body: &[u8], engine: Engine) -> Result<Prepared, Rejection> {
         Engine::Sonic => {
             let Object(chat): Object<ClientChat<'_>> =
                 sonic_rs::from_slice(body).map_err(|_| Rejection::ChatSchema)?;
-            canonicalize_chat(&chat)?
-        }
-        Engine::SimdJson => {
-            let mut mutable = body.to_vec();
-            let Object(chat): Object<ClientChat<'_>> =
-                simd_json::serde::from_slice(&mut mutable).map_err(|_| Rejection::ChatSchema)?;
             canonicalize_chat(&chat)?
         }
         Engine::BespokeSerde => prepare_bespoke(body)?,
@@ -221,9 +205,7 @@ mod tests {
 
     fn differential(body: &[u8]) {
         let expected = comparable(prepare(body, Engine::SerdeJson));
-        // SIMD-JSON is still screened by the executable, but its pinned reader
-        // accepts a lone high surrogate. It is not a strict-policy candidate.
-        for engine in [Engine::SerdeJson, Engine::Sonic, Engine::BespokeSerde] {
+        for engine in Engine::ALL {
             assert_eq!(
                 comparable(prepare(body, engine)),
                 expected,
@@ -232,16 +214,6 @@ mod tests {
                 body
             );
         }
-    }
-
-    #[test]
-    fn simd_candidate_is_ineligible_for_the_strict_unicode_contract() {
-        let body = br#"{"messages":[{"role":"user","content":"\ud800"}]}"#;
-        assert!(matches!(
-            prepare(body, Engine::SerdeJson),
-            Err(Rejection::ChatSchema)
-        ));
-        assert!(prepare(body, Engine::SimdJson).is_ok());
     }
 
     #[test]
