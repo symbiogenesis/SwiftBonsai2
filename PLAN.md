@@ -10,7 +10,7 @@
 
 **Research current Swift Bonsai 2 PQ2_0 first**, alongside the alternatives in section 3, and choose the model from published online evidence before implementation. Its compact weights, inherited hybrid attention, and shorter-reasoning training make it a promising efficiency candidate, not an established creative-quality winner. Review published Swift/base Bonsai comparisons and relevant Gemma/Qwen results; document uncertainty where exact-pack creative or laptop evidence is missing. Then build the inference engine for the chosen model: use Prism ML's pinned llama.cpp fork for Swift/Bonsai or upstream llama.cpp for a selected conventional alternative. Keep the server's built-in web UI for direct chat and engine use. Treat coding agents as an optional later feature: evaluate **OpenCode** and qualify **MXC ProcessContainer** before enabling tools. Use a small Rust policy/launch broker where custom security-sensitive orchestration is needed; retain PowerShell for installation/build management. Establish CPU correctness first, qualify **Vulkan on the Adreno X1-85** next, and consider the documented OpenCL route where the selected model's quantization is supported. Select the CPU/GPU configuration using measurements from this laptop. Treat direct Hexagon NPU execution as a separate research milestone.
 
-The objective is the fastest useful, correct local assistant within the laptop's memory and thermal limits. Simultaneous CPU, GPU, and NPU utilization is a candidate configuration, not an acceptance requirement: extra processors can introduce synchronization, shared-memory contention, and power competition.
+The objective is the best useful creative assistant that can run responsively and comfortably within this laptop's memory and thermal limits. Choose creative quality within those constraints; model branding, parameter count, compression ratio, and processor utilization are not objectives. Simultaneous CPU, GPU, and NPU utilization is a candidate configuration, not an acceptance requirement: extra processors can introduce synchronization, shared-memory contention, and power competition.
 
 The owner's primary uses are **creative writing and art**, ahead of coding. Prioritize prose quality, style and voice control, character/scene continuity, revision, brainstorming, art direction, and image-prompt composition. Image critique additionally requires a qualified vision path. Generating images is a separate model/pipeline decision; a text-generating LLM does not become an image generator by accepting images.
 
@@ -19,16 +19,16 @@ The owner also places strong weight on **short waits and comfortable sustained l
 | Decision | Initial choice | Reason |
 | --- | --- | --- |
 | Runtime | Upstream llama.cpp for conventional candidates; Prism fork for Swift; each pinned by full commit | Match the model architecture, tensor types, and backend to an explicit runtime |
-| Main model | Choose up front through the section 3 literature review | Use published evidence for creative usefulness, memory fit, responsiveness, and comfort, then build its engine |
+| Main model | Source-only compatibility preflight, then literature-based choice | Choose creative usefulness within support/memory constraints before building its engine; record a fallback decision |
 | Baseline | Native ARM64 CPU, FP16 KV, one conversation | Establish correctness with a simple execution path |
 | First accelerator | Native ARM64 Vulkan; OpenCL candidate for supported conventional types | Swift needs its released packed kernels and transforms; ordinary Q4_0 has an additional documented Adreno route |
-| Direct chat / engine inspection | llama-server's built-in web UI and loopback API | Lightweight path for correctness and direct chat |
+| Direct chat / engine inspection | Authenticated, inference-only built-in web UI and loopback API | Restrict browser origins, endpoints, and process access before daily use |
 | Full agent harness | Optional later: OpenCode native Windows ARM64 candidate; Aider fallback | Direct creative chat is the first delivery; qualify model behavior and containment before adding tools |
 | Tool/agent containment | MXC native ProcessContainer candidate | Explicit Windows ARM64 support; exact policy enforcement remains a gate |
 | Security-sensitive custom controller | Small Rust broker using MXC's SDK | Keep policy code small; contain unsafe/native components separately |
 | Cache policy | Model-specific KV/state accounting and bounded reuse | Qwen/Swift recurrent state and Gemma sliding-window attention require different estimators |
 | NPU | Time-boxed feasibility investigation | No demonstrated native Swift packed-weight path established here |
-| Speculation | Disabled initially | Bonsai 2 drafter and hybrid-state compatibility remain separate gates |
+| Speculation | Disabled initially; model-free prompt lookup first experiment | Copy-heavy revision may benefit without a second model; verification/rollback remain gates |
 | Additional CPU optimization | Profile first; consider WoS Porter and T-MAC-style lookup kernels | Target a demonstrated bottleneck in the selected model; Swift adapters remain separate work |
 | BITCOS | Gated lossless repacking/kernel experiment | Actual symbol census, native kernels, and end-to-end benefit required |
 | NoGraphicsAPI | Do not replace the ggml Vulkan backend with it | Vulkan-based graphics abstraction with narrower target requirements |
@@ -89,6 +89,10 @@ Swift combines three potentially complementary savings: ternary packing reduces 
 
 Complete model selection as an upfront literature-search gate. Compare existing public benchmarks, methodologies, and samples for the candidates, prioritizing creative writing and art assistance, then memory fit and relevant performance evidence. Record each source URL/date, benchmark and judge version, exact model/quantization, settings, and hardware where available. Distinguish independent evaluations from publisher reports and exact-pack results from indirect base-model evidence. Where evidence is missing or noncomparable, state the limitation and confidence in the recommendation. Produce a model-choice decision record before engine implementation; local model benchmarking is not an input to this decision.
 
+Before finalizing that choice, perform a **source-only compatibility preflight**: inspect published artifact/configuration metadata, the pinned ARM64 loader/backend and required graph operations, template controls, license terms, and a context-aware peak-memory estimate. Establish at least one credible native execution route without requiring custom kernels. This moves dependency discovery ahead of commitment; it does not involve downloading/running candidate weights or establish laptop performance. Prefer the strongest relevant creative evidence among feasible candidates, including a smaller model at a better-supported quantization when the evidence favors it. Record one literature-nominated fallback without downloading or keeping a second model resident.
+
+The model decision is documented and revisable. If exact-artifact support, correctness, memory fit, useful creative quality, or acceptable responsiveness/comfort cannot be achieved with bounded engineering, retain the failure evidence and reopen the literature review. Record the replacement as a new model-choice decision; do not turn the engine phase into an unreported local candidate-benchmark campaign or indefinitely fund an unsuitable choice. Define the practical limits and the first source/kernel investigation's stop condition in the decision record.
+
 After that decision, build the engine for the chosen model with one resident model, one active slot, **8K context initially, then 16K when needed**, FP16 KV, speculation off, and small bounded caches. Preserve its own template and recommended sampler. Engine validation may compare reference and optimized implementations/profiles, including paired creative samples where useful, and record regeneration/revision count, truncation, peak memory, time to useful prose, time to an **acceptable finished piece** including hidden reasoning, and sustained heat/fan behavior. Run performance and comparative quality workloads in self-hosted CI under section 10; these qualify the implementation of the already-selected model.
 
 The chosen engine's initial creative-workflow validation set should cover:
@@ -139,6 +143,8 @@ Create a separate manifest and correctness reference for every model before impl
 - Runtime commit, any local patch commits, compiler, build flags, binary architecture, and matching runtime libraries.
 - Driver versions, device capabilities, effective configuration, and calibration-file identity where applicable.
 
+Record where each expected digest came from and the publisher/repository trust decision. A digest computed only after downloading identifies those bytes; it does not independently authenticate their origin or make a model safe. Prefer authenticated publisher metadata and signed release provenance where available. Keep a last-known-good manifest and deliberately review security fixes before accepting a replacement pin. [Runtime security guidance][llama-security]
+
 Use actual GGUF metadata as the implementation authority. The marketing name Qwen3.8 and GGUF architecture `qwen35` are not by themselves a mismatch: the upstream [Qwen configuration][qwen-config] uses the Qwen3.5 architecture family.
 
 ### Candidate runtime pins and lightweight bring-up
@@ -174,7 +180,11 @@ For conventional models, the [upstream OpenCL guide][upstream-opencl] lists Q4_0
 
 Use a Release build with the selected revision's Windows ARM64 LLVM toolchain. Verify the PE architecture, dependency architectures, CPU features, and effective kernel dispatch. Inspect NEON/dot-product/i8mm support for the **actual** tensor shapes and packing in that revision; do not infer selected kernels from source-file names or assume extensions present on another ARM processor.
 
+Check OS-enabled instruction support as well as CPU capability. A July 2026 [community X Elite CPU guide][snapdragon-cpu-history] reports an illegal-instruction failure from native-target SVE selection and a working explicit NEON/dotprod/i8mm build. It concerns an older 8B pack, a different OS/toolchain snapshot, and includes stale format claims; use it to motivate a native loading regression and reviewed ISA flags, not a current speed forecast or a universal flag recipe. Review its PolyForm Noncommercial terms before copying material.
+
 Begin with a single resident model. Tune generation threads independently from prefill threads; screen **4, 6, and 8** first, restricted to discovered cores. Try 12 only if results justify more parallel work. More threads can lose on a shared-memory-bound decode path or increase sustained heat without a useful response-time improvement. Avoid realtime process priority and leave capacity for the UI and operating system. Compare the accepted CPU profiles with Vulkan on finished-response latency and sustained behavior; GPU detection or using more processors is not evidence of a better daily profile.
+
+Include synchronization waiting in that small screen: compare `--poll 0` and disabled batch polling with the pinned binary's defaults. Current fork documentation lists generation polling at 50; obtain exact accepted values from the chosen build. Record generation/prefill thread and polling settings separately. This is an energy/latency experiment, not a claim that a warm idle server continuously spins or that disabling polling always improves speed. Give the battery profile an explicit low-polling candidate. [Runtime options][server-docs]
 
 Only write custom CPU kernels after profiling identifies the cost. Candidate work includes packed dot products, decode into registers rather than persistent FP16 expansion, fused transforms, cache-friendly tiling, and projection fusion. Every optimized kernel needs a portable reference and adversarial shape/value checks.
 
@@ -217,6 +227,21 @@ An ONNX/QNN route requires an explicit exporter and graph/quantization validatio
 
 A separate small embedding model could eventually use the NPU for retrieval. That would accelerate an added application feature, not Swift decoding. A small NPU draft model is also conditional on tokenizer alignment, supported speculative verification, and correct hybrid-state rollback.
 
+### Snapdragon literature and GitHub check — October 22, 2026
+
+The quick follow-up search found a concrete ARM kernel lead and partial X Elite NPU work, **not a verified new Swift 27B/X Elite end-to-end speedup**. The most actionable changes are:
+
+| Primary finding | Evidence boundary | Action in this plan |
+| --- | --- | --- |
+| [ik_llama Prism R8 kernels][ik-prism-r8], followed by [PQ2 ARM NEON][ik-pq2-neon] and [PTQ ARM NEON][ik-ptq-neon], merged September 29, 2026 | Eight-row interleaving and ARM implementations exist; initial performance reports use Intel hardware, and the PTQ follow-up explicitly attributes its gains to AVX paths | Audit a narrow CPU backport before designing a new lookup adapter; do not replace the whole runtime or import the reported speedups |
+| [htp-llm][htp-llm] and its [ternary HTP branch][htp-ternary], checked at moving main/branch | Partial ternary codec/repacking/HVX work targets X Elite; DSP Hadamard is unfinished, golden correctness has not passed, and no speed result is established | Source-audit lead inside M5, with immutable pins and codec/transform parity required; keep CPU/Vulkan delivery independent |
+| [OpenCL program-binary cache][upstream-opencl], checked at moving master | Documented persistent compiled-kernel reuse; not evidence of ternary graph support or faster decode | Qualify a private cache for supported OpenCL profiles and record cold/warm startup separately |
+| [Qualcomm binary OpenCL kernels][adreno-x2-kernels], merged July 1, 2026 | The documented library targets X2-90/X2-85/X2-45 and selected non-ternary MoE formats | Exclude its advertised gains from this X1-85 plan unless explicit X1 support later appears |
+
+For the MIT-licensed R8 experiment, retain notices and start the diff audit at merge `b25a013d0293cfddfa31b39f2dfbb02721cc3422`, PQ2 follow-up `e44285e561f5da288a1cbee0ab37033194218c6d`, and NEON implementation `1f6e2b92e0fd6c3dbf08d9c1d022af3b90927d08`. Check whether equivalent kernels are already in the selected Prism pin before adding work. Q8_K128 activation packing and architecture-side Hadamard handling require numerical/graph validation; repacking weights alone does not prove equivalent model behavior. Verify exact decoded weights, activation quantization, scales, signs/rotations, awkward shapes, creative regressions, and peak repack residency before CI timing. [License][ik-license]
+
+The HTP prototype is a useful gap map, not a deployable accelerator. Inspect its deliberate rejection of unfinished Hadamard-hinted matmul, scale/layout compatibility with the pinned Prism codecs, large-shape HMX failures, and signing requirements before reuse. Do not adopt its test-signing/custom-certificate procedure as ordinary setup, infer that every GenieX route requires static QAIRT conversion, or treat a successful basic NPU session as Bonsai correctness. Revisit these sources only when entering their engineering lane; the quick survey is not an exhaustive literature review or a model-selection verdict.
+
 ## 5. Engine, agent harness, and execution isolation
 
 ### Keep the native engine upstream-based
@@ -224,7 +249,7 @@ A separate small embedding model could eventually use the NPU for retrieval. Tha
 Use the selected runtime's **llama-server plus its built-in web UI** for direct creative chat and engine inspection; Swift/Bonsai use the matching Prism distribution. It provides a browser interface, streaming API, monitoring, and structured-output support without requiring a second model loader. It is not by itself a complete coding-agent harness or a security boundary. The Prism runtime is MIT-licensed; Swift weights carry Apache-2.0 terms and retained notices. Inventory every alternate model/runtime's terms under its own manifest. [Server documentation][server-docs] · [Runtime license][runtime-license] · [Swift model][swift-model]
 
 ```text
-Direct browser UI ---------> Native ARM64 llama-server (matched runtime)
+Authenticated browser UI --> Inference-only ARM64 llama-server
                                       |
                              ggml CPU / Vulkan / NPU (gated)
                                       ^
@@ -253,6 +278,22 @@ The manager should:
 - Keep private prompts out of routine logs; retain technical configuration and error details separately.
 
 Bind inference to `127.0.0.1` initially. Preserve an offline path once artifacts exist, without automatic cloud fallback or surprise model downloads. The sandbox accesses inference only through a qualified, narrowly scoped bridge; its loopback behavior must be established rather than assumed. Keep model-generated commands inside the execution boundary, with bounded tool output and visible file diffs.
+
+### Direct-chat security baseline
+
+The daily profile must be authenticated and inference-only. Bind only to numeric loopback; require an unpredictable owner-private bearer key for inference, private state, and administrative requests. Supply it through the pinned runtime's key-file support rather than URLs, command history, or logs. Qualify built-in UI authentication, streaming, cancellation, and offline restart. Loopback scopes network reachability; it does not authenticate a browser page or another local process.
+
+Set the UI's exact allowed scheme/host/port origin and validate Host and Origin on applicable requests. Reject wildcard or `null` browser origins and unexpected Host values; authentication still applies to clients without Origin. Check unauthenticated requests, hostile origins, preflights, and alternate loopback/IPv6 exposure. CORS alone is not request authorization. Use native enforcement where supported; otherwise a small local guard may validate requests and stream bytes without retokenizing, copying weights, or entering the per-token compute path. If the guard supplies required controls, keep its backend credential private and prevent untrusted callers from bypassing it through raw backend routes; qualify the complete path. Do not claim controls that the pinned implementation cannot enforce.
+
+Current server documentation exposes optional host tools/MCP and separate authentication/CORS settings. Therefore the launcher must enforce a fixed inference profile: `--no-agent`, UI MCP proxy off, no built-in host tools, and no server-hosted MCP definitions. Reject equivalent inherited `LLAMA_ARG_*`, UI, or extra-argument overrides while preserving Windows system/profile variables. Model function-call parsing for a contained client remains distinct from enabling host execution inside llama-server. Disable router/dynamic loading, arbitrary static-file roots, RPC, and unnecessary slot/config/metrics administration; allow only routes required by the qualified UI, streaming API, and minimal readiness check. Obtain actual flags from the pinned binary; do not invent unsupported negative switches. [Native server options][server-docs]
+
+Enforce bounded request bytes, prompt/completion tokens, image dimensions/decoded bytes, duration, queue length, and concurrency before expensive work. Cancel abandoned generation. Vision initially accepts explicit local uploads; deny server-side remote-media fetching by default. A later fetcher needs a separate egress policy covering private/loopback/link-local destinations, DNS changes, redirects, and download/decode limits. Render model text as untrusted content: qualify Markdown/HTML sanitization and prohibit scripts or automatic external image/resource loads. These are project acceptance requirements, not assumptions about native defaults.
+
+### Inference process, private data, and updates
+
+Model/media parsers and accelerator libraries remain outside the tool sandbox. Require a qualified restricted process token/identity or containment policy for the daily inference service: non-administrator execution, read-only approved runtime/model access, bounded private writable cache/temp directories, no unrelated credentials/projects, and network egress denied after provisioning. Establish permissions during setup so daily offline use needs no elevation. Verify accelerator access, mmap, restart, and actual denied file/network operations. Standard-user execution and same-user ACLs alone do not establish parser isolation. A trusted-input development profile may establish initial CPU correctness with its reduced assurance explicit; it must not be promoted as the isolated daily profile. Keep an unsupported device policy experimental rather than silently widening access. [Runtime security guidance][llama-security]
+
+Keep conversations, artwork, KV/state snapshots, keys, and diagnostics outside Git with access limited to the owner, the intended service identity, and required OS principals. Disable prompt/body logging, bound retention, provide explicit history/state deletion, and exclude personal content from CI artifacts. Separate online artifact provisioning from offline inference: use approved publishers and immutable revisions, verify expected hashes/provenance, and never execute model-supplied installation commands or remote custom code automatically. Review security fixes for the runtime, parsers, broker, agents, and drivers; qualify replacement pins and retain a rollback manifest. No security change here authorizes changes to boot security, signing policy, or global profile directories.
 
 ### Agent harness selection
 
@@ -288,7 +329,7 @@ These projects occupy different layers. Choose one appropriate boundary and add 
 
 Sources: [MXC backend matrix][mxc-readme], [LiteBox Windows runner][litebox-runner], [LiteBox Windows memory boundary][litebox-platform], and [NVX non-goals][nvx-non-goals]. LiteBox also states it is still working toward a stable release. MXC marks several VM backends experimental; its `microvm` backend naming does not establish integration with the separate NVX repository. [LiteBox status][litebox-readme]
 
-**Proposed implementation:** use MXC's Rust SDK in a small broker that owns sandbox creation and capability grants. Put the agent and every executable child in the boundary. Keep native accelerator inference outside it, under a separate restricted identity/process policy where compatible. Do not pass GPU/NPU device access to tool workers.
+**Proposed implementation:** use MXC's Rust SDK in a small broker that owns sandbox creation and capability grants. Put the agent and every executable child in the boundary. Keep native accelerator inference outside the tool worker under the qualified inference-service policy above. Do not pass GPU/NPU device access to tool workers or expose the broker's administrative capability through the inference bridge.
 
 Host qualification must record the MXC revision, exact OS build, requested policy, chosen backend/tier, native assets, and unsupported capabilities. Use the current V1 request-aware capability APIs and actual containment checks. `available_backends()` alone is not proof of enforcement. [MXC Rust API][mxc-api]
 
@@ -418,11 +459,19 @@ Choose quantized KV for measured total-request benefit or necessary context capa
 
 Begin with one active slot and no automatic context shifting. If the request will exceed capacity, offer a larger validated profile or an explicit conversation summary/truncation action. Rebuild state from the resulting prompt. Recurrent memory must not be edited as though arbitrary KV rows can simply be deleted.
 
+### Writing context and author-owned project memory
+
+Begin with explicit **scene packets**: the relevant outline, author-approved character/world facts, desired voice/viewpoint, the current scene, and a few relevant source excerpts. Keep stable instructions first and variable excerpts after the reusable prefix. Count the rendered prompt and reserve output space: an 8K context with a 4K completion allowance leaves less than 4K for instructions, history, sources, and template overhead. Offer visible draft/revise/outline output presets; shorten a completion budget only as an explicit behavior choice. Do not resend a whole manuscript or grow context by default when a focused packet answers the brief.
+
+Original manuscripts and an author-edited project bible remain authoritative. Generated summaries are versioned suggestions with chapter/excerpt references; surface contradictions and require acceptance before changing canon. Preserve original text and reviewable edits independently of volatile inference state. Start with manual excerpt selection or simple local lexical search; add embeddings only when relevance/continuity failures justify another model and index. Evaluate omitted facts, conflicting canon, voice drift, and source relevance. Imported text is task data and cannot grant tools or change security policy. Rebuild model state after an accepted context change.
+
 ## 7. Memory and storage budgets
 
 With agent/tool containment added, use a provisional **18 GiB inference-service ceiling**, about **2 GiB for an ordinary tool worker**, **0.5 GiB for the controller/client**, and roughly **8 GiB for Windows and other applications**: 28.5 GiB combined. The reserve is about **3.1 GiB only if the reported usable figure means 31.6 GiB** (as Windows commonly labels it). Literal decimal 31.6 GB is about 29.43 GiB, leaving only about 0.93 GiB. M0 must record actual usable bytes and reduce admissions if needed; do not rely on an unverified 3 GiB reserve. These are admission-policy budgets, not discovered or guaranteed OS enforcement limits. A compiler-heavy task or VM may require shrinking/unloading inference rather than admitting both at their normal maxima.
 
 For the primary creative-chat delivery, the optional tool worker need not be resident. Keep the same conservative inference ceiling until actual Windows/application use is known. Budget any vision projector and image preprocessing explicitly; future image generation shares this physical RAM and may require unloading the language model.
+
+The ceiling is a maximum, not a residency target. Before launch and large requests, reconcile available RAM, system commit, device budgets, and other active applications against the requested peak. Keep a visible safety reserve and reject or offer a smaller validated context/cache profile when current headroom is insufficient; an idle image editor can become memory-intensive during an operation. Do not force a second model or a larger context to consume unused RAM. Keep a model warm during active work, with an explicit idle-unload/manual-release option for battery use or an art pipeline; unloading trades later startup time for released residency and is not assumed to save power by itself.
 
 The conventional-model candidates fit **on paper**, with one active sequence, no drafter/MTP allocation, limited reuse, and no persistent expanded/duplicate weight copy:
 
@@ -466,7 +515,7 @@ All settings here are **candidates**, not known optima. The launcher must obtain
 | `daily` | 16K initially; promote 32K after validation / 1 | FP16 initially; Q8 candidate; 8 checkpoints, 1 GiB prompt cache | Best validated CPU/Vulkan placement | General interactive use |
 | `creative` | Chosen model: 8K initially, then 16K as needed / 1 | FP16 initially; for Swift, propose 2 checkpoints and 256 MiB prompt cache; qualify Q8 if useful | CPU 4/6/8-thread screen, then accepted CPU/Vulkan profile; qualified thinking-off/moderate effort and sampler, explicitly shown | First engine profile for drafting, revision, art direction; useful prose, short waits, and acceptable sustained heat |
 | `long-context` | 64K first; larger only after acceptance / 1 | Q8 candidate; Q4 separately experimental | Best supported placement within budget | Documents and extended reasoning |
-| `battery` | 8K–16K / 1 | Bounded reuse, no speculation | Selected by energy/task and responsiveness | Lower power use |
+| `battery` | 8K–16K / 1 | Bounded reuse, no speculation | Screen zero/low CPU polling and phase-specific threads; choose by energy/task and responsiveness | Lower power use |
 | `npu-experimental` | Explicitly bounded / 1 | Backend-specific validated state path | Only after NPU gate | Research, never silent default |
 
 Initial batch/microbatch candidates are 256/64 for bring-up and 512/128 for qualification. Increase only with memory evidence; prefill and decoding have different bottlenecks. Explicitly set one slot rather than inheriting an automatic concurrency default.
@@ -474,6 +523,8 @@ Initial batch/microbatch candidates are 256/64 for bring-up and 512/128 for qual
 Qualify the smaller-cache **`creative` profile for the model chosen in the upfront literature review first**. If Swift is chosen, the eight-checkpoint/1 GiB `daily` settings are a later reuse candidate, not the initial comfort-oriented default. Conventional Qwen3.8 can also start with two checkpoints and 256 MiB prompt cache; Gemma requires its own non-recurrent cache policy. Keep the model warm during active use where residency is comfortable. Vision gets a separately admitted variant with its exact projector and image budget; long-form writing gets an explicit longer-context profile only after continuity, memory, and sustained-operation acceptance. Do not force a lower reasoning mode unless the exact template supports it and creative checks pass; unsupported `low` can behave near `xhigh` on base Bonsai.
 
 Retain GPU kernel/shader caches supported by the chosen backend and invalidate them on relevant source/toolchain/device changes. Separate cold startup, warm model, and warm prompt-cache results. Do not count shader compilation as steady-state decode or hide it from startup measurements.
+
+For an accepted OpenCL build supporting the documented program cache, set `GGML_OPENCL_KERNEL_CACHE_DIR` only in the child environment to an absolute private bounded cache directory; never redirect `LOCALAPPDATA`. Validate hit/miss behavior and invalidation by source/options/device/driver/platform identity, and report recompilation when the cache is unavailable. Keep writable cache contents out of runtime/model installation directories. This improves a candidate startup path, not the model's established decode rate. [OpenCL cache documentation][upstream-opencl]
 
 ## 9. Speculative decoding and advanced optimization
 
@@ -483,13 +534,14 @@ The default `bonsai2` demo deliberately runs without speculation even if a draft
 
 Possible later experiments, in this order:
 
-1. Confirm whether the exact Swift GGUF contains usable MTP/NextN tensors; base configuration alone is insufficient.
-2. Qualify runtime/backend support and checkpoint/rollback semantics for each rejected draft.
-3. Consider a compatible small external drafter only if tokenization and verification are sound.
-4. Measure accepted tokens per verification, draft cost, target cost, state-copy cost, peak memory, and total latency together.
-5. Recheck prefix-cache behavior and cross-request state after enabling the speculative path.
+1. Qualify target verification, supported sampling, and checkpoint/rollback semantics for each rejected draft.
+2. Try **model-free prompt lookup/ngram speculation** for copy-heavy revision before adding a draft model. Current runtime sources expose `ngram-*` paths that propose existing text without another weight pack. Begin with short drafts; check the pinned implementation rather than assuming current branch options are released. [Lookup approach][prompt-lookup] · [Fork implementation][speculative-source]
+3. Confirm whether the exact Swift GGUF contains usable MTP/NextN tensors; base configuration alone is insufficient.
+4. Consider a compatible small external drafter only if tokenization and verification are sound.
+5. Measure accepted tokens per verification, proposal/target cost, recurrent checkpoint/replay cost, peak memory, and finished-task latency together. Prompt lookup has no second model but can still lose to target verification and state copies.
+6. Recheck prefix-cache behavior and cross-request state after enabling the speculative path.
 
-Preserve target sampling semantics where the algorithm claims exactness. Early-exit/approximate methods require a separately labeled quality-changing profile. A second model sharing the same memory bandwidth can slow the laptop even when its draft-token acceptance looks good.
+Preserve target sampling semantics where the algorithm claims exactness; a greedy-only path cannot silently replace the creative sampler. Prompt lookup is most plausible when much of supplied prose is retained, not as a promised benefit for free invention. It still requires hybrid-state restoration after rejection. Early-exit/approximate methods require a separately labeled quality-changing profile. A second model sharing the same memory bandwidth can slow the laptop even when its draft-token acceptance looks good.
 
 Other potential work belongs behind profiles: packed CPU kernels, Vulkan fusion, graph reuse, persistent buffers, and carefully selected prefill/decode placement. Do not simultaneously vary packing, sampling, context, and device assignment and attribute the result to one optimization.
 
@@ -497,9 +549,11 @@ Other potential work belongs behind profiles: packed CPU kernels, Vulkan fusion,
 
 **Do not replace the ggml Vulkan backend with NoGraphicsAPI for this project.** Its current Vulkan path is a C++20 abstraction built on Vulkan, targeting x86-64; the utility math requires AVX2/FMA. Its feature contract includes Vulkan 1.4, descriptor heaps, mesh shaders, and untyped shader pointers. This is a narrower target than generic Vulkan compute and is not a documented Windows ARM64/Adreno inference backend. It also leaves GPU allocation lifetimes and synchronization with the application. [Project requirements][nographics-readme]
 
+This is a compatibility/engineering decision, not a measured claim that wrappers are inherently slow. The implementation passes a root GPU address without copying the root structure; some fallback commands resolve addresses to backing buffers. Its public interface intentionally omits native operations, and non-Apple ARM builds are unsupported. Extending it or adding native Vulkan escape hatches could expose more functionality, but would not establish performance parity or improve the model's kernels. Reconsider only after a supported ARM64/device path and same-workload CI comparison show no material performance/energy regression; no such result is established here. [Native mapping][nographics-vulkan] · [API limits][nographics-limits] · [Build targets][nographics-build]
+
 The useful ideas are persistent allocations, reducing redundant binding/submission work, and keeping data resident. Investigate those inside the existing backend if profiles show CPU submission overhead. A wrapper does not supply Swift packed kernels, Gated Delta Net, KV management, or model scheduling, and an ARM64 port would add maintenance before establishing a benefit.
 
-Use a simple Amdahl bound to decide whether API work deserves attention. If submission/bookkeeping occupies 5% of a request, even eliminating it entirely gives at most `1 / 0.95 = 1.053x`; at 10%, the bound is `1.111x`. These are illustrative calculations, not measurements. Improving packed kernels, memory traffic, cache reuse, or unnecessary model work is more promising when those dominate. Do not require graphics-only extensions for a compute optimization.
+Use a simple Amdahl bound to decide whether API work deserves attention. If serial submission/bookkeeping on the request's critical path occupies 5% of its duration, even eliminating it entirely gives at most `1 / 0.95 = 1.053x`; at 10%, the bound is `1.111x`. Do not estimate that fraction by summing CPU/GPU work that overlaps. These are illustrative calculations, not measurements. Improving packed kernels, memory traffic, cache reuse, or unnecessary model work is more promising when those dominate. Do not require graphics-only extensions for a compute optimization.
 
 ### BITCOS: a worthwhile conditional compression experiment
 
@@ -544,12 +598,16 @@ This could be a lossless storage optimization, but different accumulation paths 
 | P0 | Creative model choice and supported reasoning/sampling budgets | Improve usable prose and collaboration before optimizing one model's packed kernels; count revisions and hidden reasoning |
 | P0 | Stable minimal system/tool prefixes; bounded tool output; relevant file selection | Reduce prefill, context pressure, and agent retries without changing the engine |
 | P0 | Warm resident model, valid hybrid prefix reuse, bounded checkpoints | Avoid repeated loading/prefill while respecting memory and state correctness |
+| P0 | Scene packets, author-owned canon, visible prompt/output budgets | Reduce unnecessary context while preserving source facts, voice, and reviewable revisions |
+| P1 | Thread/polling profiles and persistent compiled-kernel caches | Cheap existing controls for comfort and startup; qualify phase-specific tradeoffs |
 | P1 | Actual ARM packed SIMD dispatch and runtime tiling/repacking | Improve the selected weights' execution before adding a new model format |
+| P1 | Reviewed ik_llama Prism-format R8 ARM NEON backport if missing | Concrete existing PQ2/PTQ source lead before inventing an adapter; validate activation/transform semantics |
 | P1 | T-MAC-style ARM lookup kernels | Existing Windows/ARM work; adapt exact Swift quantization and graph semantics |
 | P1 | Vulkan fused operations, persistent scratch, graph/command reuse | Reduce measured dispatch/intermediate-memory costs without an API rewrite |
 | P1 | Separate prefill/decode tuning and small contiguous device partitions | Different phases may favor different hardware; count migration/state-copy costs |
+| P1 | Model-free prompt lookup for copy-heavy revisions | No second model; still needs correct target sampling, hybrid rollback, and net CI benefit |
 | P2 | BITCOS | Only after actual sparsity, serialization overhead, and native kernel work justify it |
-| P2 | Retrieval with a small NPU model, or an accepted speculative path | Task-level benefit; needs separate model, compatibility, and memory acceptance |
+| P2 | Embedding retrieval or an accepted model-based speculative path | Add a model only when simpler context selection/lookup does not meet the task; require compatibility and memory acceptance |
 | P3 | NPU ternary port / novel graphics abstraction | Substantial hardware-specific work; require evidence existing paths are the bottleneck |
 
 **T-MAC deserves specific attention.** Microsoft's [T-MAC][tmac] uses lookup-based low-bit matrix kernels and documents Windows ARM/Snapdragon X Elite work. It is more directly relevant to CPU kernel experiments than copying Intel-specific BITCOS assembly. Its older models/baselines do not predict Swift 27B performance. Port a narrow, verified kernel adapter into the pinned runtime rather than assuming the older engine integration understands Swift's custom packs, transforms, or recurrent graph.
@@ -568,7 +626,9 @@ Local builds, analyzer checks, and **focused correctness tests** are allowed. Fu
 
 To measure this laptop, create a manually triggered self-hosted CI workflow on the Yoga, labeled for Windows ARM64 and this hardware. Running that job through CI preserves the benchmark-location rule while testing the real device. Generic hosted runners cannot supply its Adreno/NPU/thermal evidence.
 
-The repository currently has no remote configured. Remote/runner setup is an implementation prerequisite for hosted workflows and laptop benchmark publication; no workflow dispatch is part of this planning delivery. Keep the runner available only to trusted code, with inference caches and credentials scoped appropriately.
+The owner requested this planning update remain local. No remote publication, runner setup, or workflow dispatch is required for this Markdown revision. CPU implementation, local builds, and focused correctness checks can proceed before CI exists; performance promotion and full-suite acceptance wait for approved CI setup rather than moving those workloads outside CI.
+
+If CI is later configured, allow the laptop runner only manually approved, reviewed `main` revisions and workflows. Never execute untrusted pull-request/fork code or attacker-controlled checkout commands/inputs, including through `pull_request_target`. Use a dedicated non-administrator account without personal manuscripts, live chat/state caches, or reusable cloud/Git credentials; give workflow tokens minimal read-only permissions unless a specific job needs more. Pin third-party actions to full commits, review dependencies as executable code, serialize GPU/NPU workloads, use explicit private scratch/artifact lanes, and stop the runner when unused. Runner registration alone is not cleanup or isolation. Benchmark fixtures use synthetic or expressly approved content and their own inference instance. [Self-hosted runner security][actions-security]
 
 ### Focused local correctness checks
 
@@ -578,6 +638,8 @@ The repository currently has no remote configured. Remote/runner setup is an imp
 - Compare the same request with fresh prefill versus prefix reuse, including recurrent-state restoration after an edited turn.
 - Check one targeted long-prompt regression or backend failure at a time when its change requires it.
 - For sandbox/broker changes, exercise the specific denied access, subprocess, network, or timeout path being changed. Full containment suites and all latency measurements remain in CI.
+- For direct-chat security changes, check missing/wrong keys, unexpected Host/Origin, disabled host-tools/MCP/admin routes, request limits, safe rendering, and offline restart. Verify inherited environment variables cannot re-enable a forbidden capability.
+- For inference-policy changes, check denied unrelated-file/credential/network access while approved model mmap, private cache writes, device access, streaming, and cancellation still work. Do not infer the boundary from a successful launch.
 
 Numerical comparisons use explicit dtype-appropriate tolerances. Greedy token agreement is useful but insufficient; small floating-point changes can alter a sampled sequence. Compare selected logits, finite outputs, and task correctness. New quantized cache/weight representations need quality evaluation, not a demand for bit-identical output.
 
@@ -591,6 +653,7 @@ Use native `llama-bench` where appropriate plus a small repository-owned streami
 | --- | --- |
 | Model / creative quality | The artifact chosen up front from literature; compare its reference and optimized runtime/profile outputs for quality regressions |
 | Creative workflow | Scene drafting, voice/style changes, constrained revision, multi-chapter continuity, art direction/image prompts; grounded image critique only after vision qualification |
+| Project context | Scene packets versus admitted longer context; author-approved facts, omitted/conflicting canon, summary provenance, and source relevance |
 | Prompt size | 512, 2K, 8K, 16K; then 32K/64K for accepted profiles |
 | Output | Fixed-length 128/512-token performance cases; separate natural task completions |
 | Cache | Fresh process, warm model/no reusable prompt, repeated prefix, edited prefix, conversation switch |
@@ -598,6 +661,7 @@ Use native `llama-bench` where appropriate plus a small repository-owned streami
 | KV | FP16; accepted Q8; experimental Q4 with exact calibration provenance |
 | Concurrency | One active request first; two only as a separate throughput experiment |
 | Power | Plugged-in performance and a separately recorded battery profile |
+| CPU waiting / startup | Phase-specific threads and polling; cold/warm compiled-kernel cache; explicit idle-unload tradeoff |
 | Thermal | Short interactive bursts plus 15–30-minute sustained runs |
 | Harness / containment | Direct API, accepted agent workflow, cold/warm MXC worker; separate VM tier if qualified |
 | Experimental packing | Same current weights/layout control, actual BITCOS serialized size, native kernel, end-to-end results |
@@ -620,12 +684,14 @@ Use held-out creative briefs, instruction-following/revision, long-form continui
 
 Promote a configuration only when:
 
-1. Focused state/streaming/cancellation checks and the required CI suites pass.
+1. Focused state/streaming/cancellation/security checks and the required CI suites pass. A daily profile enforces the direct-chat authentication, endpoint, privacy, and restricted inference-process contract; an explicitly trusted development profile is not a substitute for that acceptance.
 2. It stays within memory budgets without sustained paging or eviction and remains responsive through the sustained workload, with heat/fan behavior acceptable to the owner. Record temperature, throttling, power, and energy per acceptable finished piece where telemetry is valid; mark missing readings unavailable. Do not infer a thermal pass from small weights or a short burst.
 3. It has no unresolved critical task failure and its quality difference is within a predeclared evaluation tolerance. For creative work, use the owner's paired preferences and explicit voice/continuity/revision rubric; faster text is not a win if it takes more revisions or misses the brief. Report uncertainty when sample size cannot establish a preference.
 4. For same-model performance optimizations, paired CI measurements establish a useful improvement: use **10% lower end-to-end latency** as an initial target, or a documented capacity/energy benefit without unacceptable interactive regression. For creative behavior profiles of the chosen model, owner-preferred prose/continuity can justify slower generation only within accepted interactive-latency, memory, and sustained heat/energy limits. Report that quality/speed/comfort tradeoff. These are engine/profile promotion criteria; model choice was completed through literature before implementation.
 5. The manifest and effective profile reproduce the outcome on the settled `main` revision.
 6. An agent profile enforces its declared filesystem/network/process boundary, contains all execution paths, and fails closed. A successful model response alone does not qualify the sandbox or the agent.
+
+Keep a short promotion record with the exact model/runtime/profile, creative strengths/limitations, useful-context and output limits, observed interactive/sustained behavior, enforced security boundary, evidence links, and rollback profile. Owner-facing status should expose actionable limits and fallback reasons without surfacing compiler/kernel settings in normal creative work. Stop research lanes that cannot demonstrate a plausible end-to-end benefit within their agreed scope; additional engineering is a separate decision.
 
 Choose among a small Pareto set: fastest interactive, best long-context capacity, and most efficient battery behavior. No finite tuning pass proves a global optimum. A source-supported accelerator without correct device results remains experimental; an NPU no-go decision can still leave a complete, useful CPU/GPU product.
 
@@ -639,6 +705,7 @@ README.md                         installation and daily use
 config/runtime.lock.json          runtime/model/toolchain identities
 config/profiles/*.json            explicit validated settings
 config/policies/*.json            versioned MXC requests and capability limits
+config/security/*.json            inference launch, route/origin, and process policies
 src/broker/                       small Rust policy, launch, and inference bridge
 scripts/Doctor.ps1                native tools/devices/memory/dependency report
 scripts/Get-Model.ps1             pinned resumable download and hash verification
@@ -651,11 +718,12 @@ tools/evaluation/                 API runner, task definitions, result schema
 .github/workflows/                build/test plus manual laptop performance jobs
 docs/results/                     concise reports linking retained CI evidence
 docs/model-selection.md           upfront literature sources, comparisons, model choice, confidence
+docs/writing-workflow.md          scene packets, canon, summaries, context/output budgets
 ```
 
 Keep third-party source at pinned revisions without copying an untracked engine into the repository. Model packs and personal conversation caches stay outside Git. Build outputs use documented artifact lanes; disposable diagnostics live in temp. A tool should fail clearly if a required native component is absent rather than installing arbitrary replacements.
 
-Give every delegated worker a dedicated worktree, retain useful evidence, integrate session changes into local `main`, validate the settled revision, and remove eligible session worktrees/branches. Preserve other sessions' work. For this repository, remote publication is required **only when instructed**; when publishing, publish only `main`. The owner's separate mandatory-publication rules for VerifiedOS and JetDatabaseWriter do not create a universal requirement for this project.
+Give every delegated worker a dedicated worktree, retain useful evidence, integrate session changes into local `main`, validate the settled revision, and remove eligible session worktrees/branches. Preserve other sessions' work. This planning revision is explicitly **local-only** at the owner's request. Follow the owner's applicable publication instructions for subsequent work; when remote publication is authorized or required, publish only `main`, never work branches or publication tags.
 
 ## 12. Delivery milestones and stop/go decisions
 
@@ -663,20 +731,20 @@ Effort ranges below are planning estimates for one engineer after dependencies a
 
 | Milestone | Approximate effort | Concrete output | Exit condition |
 | --- | --- | --- | --- |
-| M0a: upfront literature search and model choice | 0.5–1 day | Published benchmark/methodology/sample review; source dates, exact-pack distinctions, confidence and gaps; model-choice decision record | One model chosen before engine implementation, using literature rather than local model benchmarking |
+| M0a: compatibility preflight and literature model choice | 0.5–1 day | Source-only ARM64/format/graph/memory preflight; published creative benchmark/sample review; decision with confidence, fallback, and reopen/stop conditions | One feasible model chosen before engine implementation, using literature rather than local model benchmarking |
 | M0: inventory and reproducibility | 0.5–1 day | Device report, GGUF metadata, immutable manifests, toolchain/CI design | Exact architecture and dependency gaps known |
-| M1: CPU + direct local chat | 1–3 days | Native engine for the chosen model and matching runtime, web UI, launcher, focused regressions | Correct bounded chat, cancellation, offline restart |
-| M1a: chosen engine's creative/comfort qualification | 1–3 days after initial loading paths work | Bounded creative profile, reference/optimized engine comparisons, paired samples where useful, sustained CI evidence | Useful prose/art collaboration with acceptable waits, heat, and memory on the selected model |
+| M1: CPU + authenticated direct local chat | 1–3 days for engine bring-up; isolation gaps scoped separately | Native matched engine, inference-only UI/launcher, key/origin/endpoint controls, focused regressions and inference-policy qualification | Correct bounded chat, cancellation, offline restart; restricted daily process policy passes or remains explicitly development-only |
+| M1a: chosen engine's creative/comfort qualification | 1–3 days after initial loading paths work | Scene packets/project bible, visible context/output budgets, bounded creative profile, polling/thread screen and sustained CI evidence | Useful prose/art collaboration with acceptable waits, heat, memory, and daily security on the selected model |
 | M1b: optional agent + containment qualification | 3–5 days if wanted and supported paths work | Native agent candidate, MXC broker/policy, bounded inference bridge, bypass checks | Successful reviewed task and enforced whole-agent boundary before enabling tools |
 | M2: Vulkan qualification | 2–5 days if existing kernels work | Native GPU build, placement audit, CI CPU/GPU comparison | Correct graph and demonstrated benefit, or documented no-go |
 | M3: cache and context qualification | 2–4 days | Hybrid-state tests, memory estimator, bounded reuse, accepted KV types | Fresh/reused continuations agree; selected contexts fit and retain quality |
 | M4: profiles and performance report | 2–4 days | Creative/daily/long/battery profiles, optional vision/accepted agent profiles, CI provenance, installation guide | Sustained creative-task and memory acceptance on settled main; containment acceptance for enabled tools |
-| M5: NPU feasibility | About 2 days initially | Operation/packing/memory gap report and decision | Feasible bounded implementation or explicit deferral |
-| M6: lookup kernels / BITCOS / speculation | Separately estimated after feasibility | Focused patch or experimental profile | Same-weight correctness, native-platform support, and CI benefit justify maintenance cost |
+| M5: NPU feasibility | About 2 days initially | Operation/packing/memory/signing gap report, including audited HTP prototype where relevant | Feasible bounded implementation or explicit deferral; no unsafe signing-policy workaround |
+| M6: R8 / lookup kernels / speculation / BITCOS | Separately estimated after feasibility | Narrow reviewed native-kernel patch or profile; model-free lookup before a second drafter | Decoded-weight and behavior correctness, native-platform support, and CI benefit justify maintenance cost |
 
-M0a -> M0 -> M1 -> M1a -> M2/M3 -> M4 is the main creative-chat delivery path: choose the model from literature first, then build and qualify its inference engine, with independent work isolated appropriately. M1b is an optional branch; agent automation is accepted only after it passes. Investigate M5 after the selected engine's CPU/GPU results expose realistic bottlenecks; do not make everyday usability depend on a speculative NPU port. A substantial custom ternary NPU backend is a multiweek project to scope after the feasibility report, not a two-day integration.
+M0a -> M0 -> M1 -> M1a -> M2/M3 -> M4 is the main creative-chat delivery path: preflight source compatibility and choose the model from literature first, then build and qualify its inference engine, with independent work isolated appropriately. M1b is optional; agent automation is accepted only after it passes. M6 is also optional and may follow whichever CPU/cache bottleneck justifies it; a small existing-kernel backport need not wait for NPU research. Investigate M5 after the selected engine's CPU/GPU results expose realistic bottlenecks; do not make everyday usability depend on a speculative NPU port. A substantial custom ternary NPU backend is a multiweek project to scope after the feasibility report, not a two-day integration.
 
-The first step is **M0a: finish the literature search and choose the model**. Then proceed directly to **M0 plus M1, followed by M1a**: pin that model and its matching runtime, inspect native capabilities, build the engine, establish an honest CPU reference, and make the local UI usable. Qualify its 8K–16K creative profile for useful output, short waits, and sustained comfort. Continue CPU/GPU, cache, and performance work on that engine; the build phase is not a prerequisite for deciding which model to use.
+The first step is **M0a: finish the source-only preflight and literature model choice**. Then proceed directly to **M0 plus M1, followed by M1a**: pin the model and matching runtime, inspect native capabilities, establish an honest CPU reference, and make authenticated local chat usable. Qualify its 8K–16K creative profile with scene packets, short waits, sustained comfort, and the daily security contract. Continue CPU/GPU, cache, and justified kernel work on that engine; the build phase is not a prerequisite for model choice. Reopen the literature decision if its documented stop conditions are reached.
 
 ## 13. Risk register and explicit open questions
 
@@ -684,6 +752,7 @@ The first step is **M0a: finish the literature search and choose the model**. Th
 | --- | --- |
 | Does a math/coding benchmark or newer base imply better creative prose? | Upfront literature review of published creative results and samples; distinguish exact quantized artifacts from base-model evidence and record gaps |
 | Does Swift's shorter-thinking objective help fiction or art direction? | Seek published current-Swift/base comparisons relevant to creative work; missing evidence remains uncertainty in the upfront choice |
+| Is the initial model choice feasible or becoming a sunk-cost commitment? | Source-only compatibility/memory preflight, literature fallback, and explicit reopen/engineering stop conditions |
 | Does conventional Qwen3.8 Q3 fit the service ceiling with useful context? | Start 16K, few checkpoints and small cache; inspect peak copies/scratch; qualify longer context or Q8 KV separately |
 | Is image input actually enabled and grounded? | Pin matching projector/preprocessor, budget image tokens/allocations, and validate observed details before recommending critique |
 | Is image generation being confused with text or image understanding? | Separate image-model pipeline and shared-memory scheduling decision |
@@ -695,6 +764,7 @@ The first step is **M0a: finish the literature search and choose the model**. Th
 | Can custom ternary weights execute efficiently on Hexagon? | Time-boxed format/operator/memory investigation; separate port decision |
 | Does the smaller PTQ release alter quality? | Consult published evidence during model selection and attribute it as a different Swift version; later engine experiments must keep version changes distinct |
 | Does prefix reuse restore incorrect recurrent state? | Fresh-prefill comparison after edits, cancellation, eviction, and slot switching |
+| Does context selection or a generated summary damage story canon? | Author-owned bible/originals, sourced versioned summaries, contradiction checks, and explicit acceptance of changes |
 | Do checkpoint/rollback copies overwhelm RAM? | Separate caps, actual allocation accounting, one sequence initially |
 | Does Q8/Q4 KV impair long-context reasoning or retrieval? | Held-out task evaluation with exact calibration and runtime identity |
 | Does an accelerator win briefly but throttle or stall Windows? | Sustained device CI and responsiveness/memory criteria |
@@ -702,9 +772,13 @@ The first step is **M0a: finish the literature search and choose the model**. Th
 | Are coding/tools reliable enough to recommend? | Separate client task acceptance; start with reviewable small edits |
 | Is a memory-safe client mistaken for a memory-safe whole stack? | Document native runtime/driver/FFI trust boundaries; isolate processes and keep broker code small |
 | Does an execution path bypass MXC? | Contain the whole agent and descendants; test plugins, hooks, direct filesystem/network calls, and failed launches |
+| Can direct chat or native server tools bypass the agent boundary? | Authenticated exact-origin inference-only profile; reject host-tools/MCP/router and environment overrides; negative route tests |
+| Can a model/media parser read unrelated data outside the tool worker? | Qualified restricted inference process, trusted artifacts, private caches, bounded uploads, denied egress, and security updates |
+| Can a self-hosted benchmark job compromise the personal laptop? | Reviewed manual main-only workflows, dedicated account, pinned dependencies, no personal data/credentials, and no untrusted PR inputs |
 | Does Windows ARM64 availability imply every policy is supported? | Probe exact request/backend/tier and verify enforcement; no permissive fallback |
 | Do LiteBox or NVX meet this host's boundary and architecture needs? | Exclude reviewed x86/shared-address-space or non-ARM paths from the default |
 | Would NoGraphicsAPI improve actual inference? | Existing Vulkan path first; measure submission fraction before considering any port |
+| Do R8 ARM sources or an HTP prototype imply a proven X Elite improvement? | Exact artifact/graph and device correctness, pinned diff/license review, repack/rollback accounting, then CI; no borrowed x86/X2 speed claims |
 | Are actual PQ2 symbols strictly ternary, and is BITCOS smaller/faster? | Per-tensor census, exact round-trip, overhead-aware size, native kernels, CI; reject unsupported symbols |
 | Is speculative decoding actually compatible and beneficial? | Exact tensors/drafter identity, rollback tests, cache tests, CI end-to-end gain |
 | Can the result be reproduced after an upstream update? | Pin all artifacts, retain baseline profile, qualify upgrades deliberately |
@@ -722,8 +796,12 @@ Sources were checked on October 22, 2026. Moving branch documentation is researc
 - [Windows ARM64 OpenCL guide][opencl-guide] and [Snapdragon/Hexagon guide][snapdragon-guide].
 - [Upstream OpenCL support][upstream-opencl], [Qwen MoE graph][upstream-qwenmoe], [Gemma graph][upstream-gemma], and [Bonsai demo setup][demo-setup].
 - [Qualcomm WoS Porter][wos-porter], [GenieX SDK][geniex-sdk], [model/quantization guide][geniex-models], [signed Windows release][geniex-release], and [historical community Adreno report][adreno-history].
+- [Historical X Elite CPU/ISA report][snapdragon-cpu-history]; [Prism R8 kernels][ik-prism-r8], [PQ2 ARM NEON follow-up][ik-pq2-neon], [PTQ ARM NEON follow-up][ik-ptq-neon], and [license][ik-license].
+- [X Elite HTP prototype][htp-llm] and [unfinished ternary branch][htp-ternary]; [X2-specific OpenCL binary kernels][adreno-x2-kernels]. These are scoped research leads, not certified X1 performance.
 - [llama-server interface/options][server-docs], [Qwen35 graph][qwen-implementation], and [recurrent allocation implementation][recurrent-implementation].
 - [Prompt reuse/checkpoints][prompt-cache], [experimental KV4][kv-cache], and [speculative compatibility][speculation].
+- [Model-free prompt lookup][prompt-lookup] and [fork speculative implementation][speculative-source].
+- [Inference runtime security guidance][llama-security] and [self-hosted runner security][actions-security].
 - [Aider local API connection][aider-api] and [lm-evaluation-harness local API adapters][lm-eval-api].
 - [OpenCode releases][opencode-changelog], [provider integration][opencode-provider], and [security boundary][opencode-security]; [Goose Windows build][goose-windows].
 - [MXC][mxc-readme], [OS support][mxc-os-support], [Rust V1 API][mxc-api], [schema][mxc-schema], and [networking contract][mxc-network].
@@ -795,3 +873,18 @@ Sources were checked on October 22, 2026. Moving branch documentation is researc
 [prism-quant-codec]: https://github.com/PrismML-Eng/llama.cpp/blob/prism/ggml/src/ggml-quants.c
 [tmac]: https://github.com/microsoft/T-MAC
 [tman]: https://github.com/microsoft/T-MAC/tree/main/t-man
+[snapdragon-cpu-history]: https://github.com/LucRoot/Windows_ARM64_bonsai_snapdragon_cpu
+[ik-prism-r8]: https://github.com/ikawrakow/ik_llama.cpp/pull/2550
+[ik-pq2-neon]: https://github.com/ikawrakow/ik_llama.cpp/pull/2561
+[ik-ptq-neon]: https://github.com/ikawrakow/ik_llama.cpp/pull/2564
+[ik-license]: https://github.com/ikawrakow/ik_llama.cpp/blob/main/LICENSE
+[htp-llm]: https://github.com/aakar-mutha/htp-llm
+[htp-ternary]: https://github.com/aakar-mutha/llama.cpp/tree/ternary-bonsai-htp
+[adreno-x2-kernels]: https://github.com/ggml-org/llama.cpp/pull/23042
+[prompt-lookup]: https://github.com/ggml-org/llama.cpp/blob/master/examples/lookup/README.md
+[speculative-source]: https://github.com/PrismML-Eng/llama.cpp/blob/prism/common/speculative.cpp
+[llama-security]: https://github.com/ggml-org/llama.cpp/security
+[actions-security]: https://docs.github.com/en/actions/reference/security/secure-use#hardening-for-self-hosted-runners
+[nographics-vulkan]: https://github.com/sebbbi/NoGraphicsAPI/blob/main/docs/vulkan-support.md
+[nographics-limits]: https://github.com/sebbbi/NoGraphicsAPI/blob/main/docs/no-graphics-api-comparison.md
+[nographics-build]: https://github.com/sebbbi/NoGraphicsAPI/blob/main/docs/building.md
