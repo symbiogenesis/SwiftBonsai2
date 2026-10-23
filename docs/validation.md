@@ -162,6 +162,50 @@ One focused local correctness case is allowed, for example:
 ./tests/Test-Foundation.ps1 -Case Download
 ```
 
+### Fast synthetic regressions and mutation checks
+
+Broker unit tests enumerate all 1,093 role histories through six messages against
+a fixed accepted corpus. Small policy fixtures check exact header count/byte
+limits, every credential position, escaped duplicate keys, equivalent JSON
+encodings and completion-dependent context boundaries, including valid controls.
+They use no model files or network access.
+
+The scheduler's deterministic simulations compare the real gate with an
+independent queue/ownership model over 144 seeded histories and 18,432 generated
+operations. Scripted histories also exercise reservation order versus first
+polling order, cancellation, expiry at the exact deadline, delayed polling after
+handoff and permanent shutdown. Tokio time is paused; failures include replayable
+seeds and operation traces. The in-memory supervisor regressions vary every
+individual split of client, token-count and generation frames, reject truncated
+replies and verify cancellation and incomplete SSE output across the components.
+These tests create no sockets, model processes or wall-clock sleeps.
+
+The [mutation checker](../scripts/Test-Mutations.ps1) changes six specific codec
+guards in an external temporary copy: zero/nonfinite scales, reserved symbols,
+five-trit aliases, four-trit tail canonicality and packed rounding. Each exact
+guard test must pass on the original source. Each mutant must compile and fail
+its named assertion test; a surviving mutant, compiler error, timeout or unrelated
+test failure fails the check. This finite catalog establishes sensitivity to
+those faults, rather than a whole-program mutation score. The source is restored
+between mutants, the checkout is never modified, and JSON results plus logs are
+retained with source hashes and bounded compile/test deadlines. No additional
+test dependency or tool installation is required.
+
+For a focused local mutation check, run from the checkout:
+
+```powershell
+$evidence = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Mutations-' + [guid]::NewGuid().ToString('N'))
+./scripts/Test-Mutations.ps1 -Case ZeroScale -EvidenceDirectory $evidence
+```
+
+For focused Rust checks, use the external working/target directory convention
+above and select `--lib tests::every_short_role_history_matches_the_accepted_language -- --exact`,
+`--test policy_boundaries`, `--test scheduler_simulation`, or `--test fragmentation`.
+Foundation's existing broker suite discovers these tests automatically. Its
+ternary lane runs the codec guards and all six mutations, retaining mutation
+receipts and logs even on failure. Compilation is separate from test execution;
+these correctness checks make no inference-performance or benchmark claim.
+
 The full suite runs only in the main-only [Foundation workflow](../.github/workflows/foundation.yml), on hosted ARM64 Windows. It checks configuration, unsafe paths, synthetic HTTP failures/resumption, PE rejection, inventory, strict server policy, and the pinned runtime package plus planned switches. Separate native Rust jobs run formatting, Clippy, documentation and full broker/ternary-codec/GGUF correctness, including immutable C++ reference parity. It downloads no model weights and runs no inference benchmark. Test scratch/evidence stays in unique system-temp directories.
 
 Foundation reuses Cargo downloads and compiled artifacts across runs, with cache identities bound to the runner image, architecture, Rust version and build inputs. All checks still run after restoration. The broker reuses its head buffer for small request bodies, frames streamed chunks in one reusable buffer, and grows JSON storage from 8 KiB as needed within the existing 4 MiB cap. GGUF inspection validates discarded boolean arrays in chunks and skips unused nested descriptors. These changes remove redundant work; no measured speedup or inference-performance result is claimed.

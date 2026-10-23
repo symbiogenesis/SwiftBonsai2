@@ -472,7 +472,39 @@ struct BackendChat<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ClientChat, Cow, Object};
+    use super::{ClientChat, Cow, Message, Object, Role, valid_history};
+
+    #[test]
+    fn every_short_role_history_matches_the_accepted_language() {
+        // The complete accepted corpus through six messages, including the
+        // optional system preamble. Enumerating other words catches misplaced
+        // system messages, repeated speakers and assistant-prefill acceptance.
+        let accepted = ["u", "su", "uau", "suau", "uauau", "suauau"];
+        for length in 0..=6 {
+            for mut word in 0..3_usize.pow(length) {
+                let mut spelling = String::new();
+                let mut messages = Vec::new();
+                for _ in 0..length {
+                    let (letter, role) = match word % 3 {
+                        0 => ('s', Role::System),
+                        1 => ('u', Role::User),
+                        _ => ('a', Role::Assistant),
+                    };
+                    word /= 3;
+                    spelling.push(letter);
+                    messages.push(Message {
+                        role,
+                        content: Cow::Borrowed(""),
+                    });
+                }
+                assert_eq!(
+                    valid_history(&messages),
+                    accepted.contains(&spelling.as_str()),
+                    "history {spelling:?}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn message_content_borrows_plain_text_and_decodes_escapes() -> Result<(), serde_json::Error> {

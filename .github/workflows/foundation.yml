@@ -210,6 +210,26 @@ jobs:
           cargo +1.99.1-aarch64-pc-windows-msvc doc --release --manifest-path $manifest --locked --offline --no-deps --all-features
           cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --offline --release --all-features
           'Shared PQ2/PTQ codecs and FP16 conversion passed correctness checks and retained C++ reference parity.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Kill the bounded codec mutation catalog
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-Mutations-' + [guid]::NewGuid().ToString('N'))
+          "MUTATION_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Mutations.ps1') -EvidenceDirectory $evidence
+          'All six compile-valid codec mutants were killed by their exact assertion tests; this is a bounded catalog, not a whole-program mutation score.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Retain mutation results and compiler/test logs
+        if: ${{ always() && env.MUTATION_EVIDENCE != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codec-mutations
+          path: |
+            ${{ env.MUTATION_EVIDENCE }}/mutation-results.json
+            ${{ env.MUTATION_EVIDENCE }}/*.log
+          if-no-files-found: error
   broker:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
