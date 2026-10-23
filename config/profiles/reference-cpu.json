@@ -20,5 +20,5 @@
   "estimatedRuntimeHeadroomBytes": 5487195232,
   "estimateScope": "Source-level admission estimate; excludes observed runtime overhead. Not OS-enforced or measured.",
   "launchEnabled": false,
-  "remainingGates": ["full GGUF metadata and tokenizer/template identity", "CPU load and bounded generation", "process lifecycle and authentication", "daily process/route/origin isolation", "self-hosted creative/comfort qualification"]
+  "remainingGates": ["CPU load and bounded generation when memory admission passes", "process lifecycle and authentication", "daily process/route/origin isolation", "self-hosted creative/comfort qualification"]
 }

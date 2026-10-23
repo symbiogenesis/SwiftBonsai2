@@ -46,7 +46,8 @@
   },
   "qualification": {
     "sourceCompatibility": "passed",
-    "modelDownload": "not-performed",
+    "modelDownload": "size-and-sha256-verified-2026-10-23",
+    "fullGgufInspection": "verified-config/model.metadata.json",
     "cpuLoading": "pending",
     "dailySecurity": "pending",
     "devicePerformance": "pending-self-hosted-ci"

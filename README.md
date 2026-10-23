@@ -2,7 +2,7 @@
 
 The first implementation selects **Qwen3.8-27B UD-Q3_K_XL** from published creative-writing evidence. [The decision](docs/model-selection.md) records the artifact, ARM64 compatibility, memory estimate, limitations, fallback, and stop conditions. The repository name is retained from the original Swift-first research plan.
 
-Implemented: read-only host inventory, immutable artifact locks, resumable size/hash-verified model provisioning, verified native ARM64 CPU runtime installation, a pinned source-build script, an explicit 8K reference configuration, and foundation CI. **Chat launch is not enabled.** CPU loading, complete GGUF inspection, authenticated lifecycle, daily isolation, and creative/comfort qualification remain ahead. The reference configuration is an unqualified development candidate.
+Implemented: read-only host inventory, immutable artifact locks, resumable size/hash-verified provisioning, native ARM64 CPU runtime installation/source builds, full GGUF metadata inspection, a guarded synthetic CPU check, an explicit 8K reference configuration, and foundation CI. The chosen model/runtime are provisioned under the owner's selected `%LOCALAPPDATA%\SwiftBonsai2` directory; the complete artifact metadata is recorded in [model.metadata.json](config/model.metadata.json). **Chat launch is not enabled.** CPU loading, authenticated lifecycle, daily isolation, and creative/comfort qualification remain ahead. The reference configuration is an unqualified development candidate.
 
 ## Inventory and provisioning
 
@@ -19,18 +19,32 @@ Doctor reports OS-usable bytes, process/OS architecture, CPU, graphics driver, s
 After choosing storage, provision only the locked artifacts:
 
 ```powershell
-$data = 'D:\BonsaiData' # Replace with your chosen absolute directory
+$data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2' # Owner-selected location
 ./scripts/Get-Engine.ps1 -DataDirectory $data
 ./scripts/Get-Model.ps1 -DataDirectory $data
 
 # Offline integrity checks; Get-Engine also runs a bounded --version probe
 ./scripts/Get-Engine.ps1 -DataDirectory $data -VerifyOnly
 ./scripts/Get-Model.ps1 -DataDirectory $data -VerifyOnly
+./scripts/Read-Gguf.ps1 -ModelPath (Join-Path $data 'models/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-Q3_K_XL.gguf')
 ```
 
 The model is approximately 13.15 GB; the CPU runtime archive is approximately 12.44 MB. Provisioning never fetches the fallback, a projector, or full-precision weights. Model bytes live under `models/<revision>/`, the archive under `downloads/`, and its runtime under `runtime/<commit>/`. Runtime installation checks every file against the verified archive, native PE architecture, and reported build identity. Publisher metadata supplies expected digests; these do not independently attest the source-to-binary build.
 
 Interrupted downloads retain one `.partial` file and resume against the immutable URL. If the server ignores Range, the download restarts. Incorrect size/hash fails before the final filename is published; inspect and remove an invalid partial before retrying. A failed extraction retains a unique staging directory for inspection. Scripts never silently substitute another model/runtime. Verified artifacts do not establish parser isolation or inference correctness.
+
+`Read-Gguf.ps1` verifies the complete file size/SHA-256 before reading bounded metadata and tensor descriptors. It reports tensor types, actual architecture dimensions, MTP tensors, special token IDs, a raw tokenizer-record digest, and embedded-template UTF-8 digests. It skips tensor payloads. Its optional `-OutputPath` must name a new JSON file outside Git. The inspector deliberately supports little-endian GGUF v3 within documented limits; it is not a general validator for every GGUF extension.
+
+## First CPU loading check
+
+```powershell
+./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -CheckOnly
+./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data
+```
+
+This fixed synthetic check uses the in-process `llama-completion` executable, a 16-token limit, 8K FP16 state, CPU-only placement, no reusable prompt cache, and a ten-minute safety timeout. It preserves the embedded template's default thinking behavior. The pinned completion path does not reliably forward thinking-control kwargs, and modern `llama-cli` starts a local server; neither is used to claim a qualified thinking-disabled chat profile.
+
+Before launch, the check requires 22 GiB currently available physical RAM: the complete 18 GiB service allowance plus a conservative 4 GiB reserve. It then watches current process working set/private bytes against 18 GiB and available physical memory against the 4 GiB floor. It fails closed rather than closing other applications. These volatile admission/watchdog readings are not peak measurements, OS-enforced limits, or performance acceptance. On October 23 the host had about 8 GiB available, so the check refused to start; CPU load/decode remains pending. Failure logs stay in unique system-temp directories. A trusted-input development check does not qualify daily process isolation.
 
 ## Build the CPU server from source
 

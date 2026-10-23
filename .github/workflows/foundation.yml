@@ -30,6 +30,16 @@ jobs:
       - name: Full foundation suite
         shell: pwsh
         run: ./tests/Test-Foundation.ps1 -Case All
+      - name: Full GGUF inspector suite
+        shell: pwsh
+        run: ./tests/Test-Gguf.ps1 -Case All
+      - name: CPU admission diagnostics without model launch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime') -CheckOnly
+          if ($result.ModelProcessStarted -or $result.AvailablePhysicalBytesAtAdmission -le 0) { throw 'Invalid admission-only result.' }
+          $result | ConvertTo-Json
       - name: Verify publisher ARM64 runtime and offline recheck
         shell: pwsh
         run: |

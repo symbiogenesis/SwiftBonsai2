@@ -20,6 +20,11 @@ function Expect-Failure([scriptblock]$Action, [string]$Message) {
 if ($Case -in @('All','Configuration')) {
     $lock = Read-BonsaiLock
     $profile = Get-Content -LiteralPath (Join-Path $repo 'config/profiles/reference-cpu.json') -Raw | ConvertFrom-Json
+    $metadata = Get-Content -LiteralPath (Join-Path $repo 'config/model.metadata.json') -Raw | ConvertFrom-Json
+    Assert ($metadata.ModelRevision -eq $lock.model.revision -and $metadata.ArtifactSha256 -eq $lock.model.sha256 -and
+        $metadata.FileBytes -eq $lock.model.bytes) 'Inspected metadata and model lock disagree.'
+    Assert ((($metadata.TensorTypeHistogram | Measure-Object -Property Count -Sum).Sum) -eq $metadata.TensorCount) 'Tensor histogram does not reconcile.'
+    Assert (-not $metadata.TensorPayloadRead) 'Metadata inspection must not load tensor payloads.'
     Assert (-not $profile.launchEnabled) 'An unqualified profile must not enable launch.'
     Assert ($profile.estimatedWeightBytes -eq $lock.model.bytes) 'Weight estimate differs from artifact pin.'
     Assert (($profile.estimatedWeightBytes + $profile.estimatedKvBytes + $profile.estimatedRecurrentBytes +

@@ -1,0 +1,231 @@
+{
+  "SchemaVersion": 1,
+  "Format": "GGUF",
+  "Version": 3,
+  "ByteOrder": "little",
+  "FileBytes": 13146393504,
+  "Architecture": "qwen35",
+  "Alignment": 32,
+  "MetadataCount": 50,
+  "MetadataEndOffset": 10945379,
+  "TensorDescriptorsEndOffset": 10996621,
+  "TensorDataOffset": 10996640,
+  "TensorCount": 866,
+  "TensorTypeHistogram": [
+    {
+      "TypeId": 0,
+      "Name": "F32",
+      "Count": 360,
+      "Bytes": 10686464,
+      "Elements": 2671616
+    },
+    {
+      "TypeId": 8,
+      "Name": "Q8_0",
+      "Count": 98,
+      "Bytes": 36208640,
+      "Elements": 34078720
+    },
+    {
+      "TypeId": 10,
+      "Name": "Q2_K",
+      "Count": 3,
+      "Bytes": 61931520,
+      "Elements": 188743680
+    },
+    {
+      "TypeId": 11,
+      "Name": "Q3_K",
+      "Count": 12,
+      "Bytes": 868454400,
+      "Elements": 2021130240
+    },
+    {
+      "TypeId": 12,
+      "Name": "Q4_K",
+      "Count": 36,
+      "Bytes": 642908160,
+      "Elements": 1142947840
+    },
+    {
+      "TypeId": 13,
+      "Name": "Q5_K",
+      "Count": 26,
+      "Bytes": 1173258240,
+      "Elements": 1706557440
+    },
+    {
+      "TypeId": 14,
+      "Name": "Q6_K",
+      "Count": 7,
+      "Bytes": 344064000,
+      "Elements": 419430400
+    },
+    {
+      "TypeId": 16,
+      "Name": "IQ2_XXS",
+      "Count": 2,
+      "Bytes": 45957120,
+      "Elements": 178257920
+    },
+    {
+      "TypeId": 17,
+      "Name": "IQ2_XS",
+      "Count": 4,
+      "Bytes": 103055360,
+      "Elements": 356515840
+    },
+    {
+      "TypeId": 18,
+      "Name": "IQ3_XXS",
+      "Count": 34,
+      "Bytes": 901160960,
+      "Elements": 2354053120
+    },
+    {
+      "TypeId": 20,
+      "Name": "IQ4_NL",
+      "Count": 2,
+      "Bytes": 38338560,
+      "Elements": 68157440
+    },
+    {
+      "TypeId": 21,
+      "Name": "IQ3_S",
+      "Count": 111,
+      "Bytes": 3527884800,
+      "Elements": 8210350080
+    },
+    {
+      "TypeId": 22,
+      "Name": "IQ2_S",
+      "Count": 15,
+      "Bytes": 409763840,
+      "Elements": 1279262720
+    },
+    {
+      "TypeId": 23,
+      "Name": "IQ4_XS",
+      "Count": 156,
+      "Bytes": 4971724800,
+      "Elements": 9358540800
+    }
+  ],
+  "Scalars": {
+    "general.architecture": "qwen35",
+    "general.type": "model",
+    "general.sampling.top_k": 20,
+    "general.sampling.top_p": 0.95,
+    "general.sampling.temp": 1.0,
+    "general.name": "Qwen3.8-27B",
+    "general.basename": "Qwen3.8-27B",
+    "general.description": "Renewal of the beloved Qwen model, delivering unmatched intelligence density.",
+    "general.quantized_by": "Unsloth",
+    "general.size_label": "27B",
+    "general.license": "apache-2.0",
+    "general.repo_url": "https://huggingface.co/unsloth",
+    "general.base_model.count": 1,
+    "general.base_model.0.name": "Qwen3.8 27B",
+    "general.base_model.0.organization": "Qwen",
+    "general.base_model.0.repo_url": "https://huggingface.co/Qwen/Qwen3.8-27B",
+    "qwen35.block_count": 65,
+    "qwen35.context_length": 262144,
+    "qwen35.embedding_length": 5120,
+    "qwen35.feed_forward_length": 17408,
+    "qwen35.attention.head_count": 24,
+    "qwen35.attention.head_count_kv": 4,
+    "qwen35.rope.freq_base": 10000000.0,
+    "qwen35.attention.layer_norm_rms_epsilon": 1E-06,
+    "qwen35.attention.key_length": 256,
+    "qwen35.attention.value_length": 256,
+    "qwen35.nextn_predict_layers": 1,
+    "qwen35.ssm.conv_kernel": 4,
+    "qwen35.ssm.state_size": 128,
+    "qwen35.ssm.group_count": 16,
+    "qwen35.ssm.time_step_rank": 48,
+    "qwen35.ssm.inner_size": 6144,
+    "qwen35.full_attention_interval": 4,
+    "qwen35.rope.dimension_count": 64,
+    "tokenizer.ggml.model": "gpt2",
+    "tokenizer.ggml.pre": "qwen35",
+    "tokenizer.ggml.eos_token_id": 248046,
+    "tokenizer.ggml.padding_token_id": 248055,
+    "tokenizer.ggml.bos_token_id": 248044,
+    "general.quantization_version": 2,
+    "general.file_type": 13,
+    "quantize.imatrix.file": "Qwen3.8-27B-GGUF/imatrix_unsloth.gguf",
+    "quantize.imatrix.entries_count": 496,
+    "quantize.imatrix.chunks_count": 1251
+  },
+  "Arrays": {
+    "general.tags": {
+      "ElementTypeId": 8,
+      "Count": 1
+    },
+    "qwen35.rope.dimension_sections": [
+      11,
+      11,
+      10,
+      0
+    ],
+    "tokenizer.ggml.tokens": {
+      "ElementTypeId": 8,
+      "Count": 248320
+    },
+    "tokenizer.ggml.token_type": {
+      "ElementTypeId": 5,
+      "Count": 248320
+    },
+    "tokenizer.ggml.merges": {
+      "ElementTypeId": 8,
+      "Count": 247587
+    }
+  },
+  "SpecialTokenIds": {
+    "tokenizer.ggml.eos_token_id": 248046,
+    "tokenizer.ggml.padding_token_id": 248055,
+    "tokenizer.ggml.bos_token_id": 248044
+  },
+  "EmbeddedTemplates": {
+    "tokenizer.chat_template": {
+      "Utf8Bytes": 9993,
+      "Sha256": "12827f24b742ea4e80cdc12dbcf9622227056b9f797252a3149263d4f9aaadce"
+    }
+  },
+  "MtpTensorCount": 15,
+  "MtpTensorNames": [
+    "blk.64.attn_k.weight",
+    "blk.64.attn_k_norm.weight",
+    "blk.64.attn_norm.weight",
+    "blk.64.attn_output.weight",
+    "blk.64.attn_q.weight",
+    "blk.64.attn_q_norm.weight",
+    "blk.64.attn_v.weight",
+    "blk.64.ffn_down.weight",
+    "blk.64.ffn_gate.weight",
+    "blk.64.ffn_up.weight",
+    "blk.64.nextn.eh_proj.weight",
+    "blk.64.nextn.enorm.weight",
+    "blk.64.nextn.hnorm.weight",
+    "blk.64.nextn.shared_head_norm.weight",
+    "blk.64.post_attention_norm.weight"
+  ],
+  "TokenizerMetadataSha256": "bd1c801db2b097d3b2b1d5510994ef6b43192f019cb90d435f22e3316f97b325",
+  "TokenizerMetadataBytes": 10943402,
+  "TokenizerMetadataRecords": 9,
+  "TokenizerDigestDefinition": "SHA-256 of complete raw serialized tokenizer.* KV records concatenated in file order, including chat templates",
+  "InspectionLimits": {
+    "HeaderBytes": 268435456,
+    "StringBytes": 8388608,
+    "ArrayElements": 2097152,
+    "TotalArrayElements": 8388608,
+    "ArrayNesting": 4,
+    "MetadataRecords": 10000,
+    "Tensors": 100000
+  },
+  "TensorPayloadRead": false,
+  "ArtifactSha256": "8c2a45ff85e7674ca185ec8eb6cdeab0e617ed9d8018caed0b64380eb2a67a5e",
+  "ArtifactVerification": "verified-size-and-sha256",
+  "ModelRepository": "unsloth/Qwen3.8-27B-GGUF",
+  "ModelRevision": "4ca720788d1e01f1bff70c033e0d0028fd02e502"
+}
