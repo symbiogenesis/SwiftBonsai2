@@ -1,10 +1,11 @@
-# M1 request admission and bounded HTTP I/O
+# M1 request admission, bounded HTTP I/O and development orchestration
 
 The Rust library in `src/broker/` implements request admission, bounded
-reception, backend HTTP exchange/exact-count admission and response writing on
-supplied streams. It has no listener, socket connector or process launcher.
-Chat remains disabled. These are
-policy/I/O components, not daily-service qualification.
+reception, backend HTTP exchange/exact-count admission, response writing and
+explicit development orchestration with numeric-loopback transport. It has no
+executable, process launcher, key generation or automatic startup. Chat launch
+remains disabled in the PowerShell preflight and reference profile. These are
+development components, not daily-service qualification.
 
 The policy accepts only HTTP/1.1 origin-form `POST /v1/chat/completions`, numeric
 Host `127.0.0.1:<port>`, and the exact `http://127.0.0.1:<port>` Origin when supplied.
@@ -219,14 +220,77 @@ monitor real frontend disconnects to cancel generation. Supplied streams and
 synthetic count responses cannot establish those properties or qualify actual
 model tokenization.
 
-Before any listener is enabled, integrate and qualify the reception/response adapters, private
-backend credential and bypass prevention, the supplied-stream transport, single-slot
-bounded queue, total deadlines, streaming cancellation, owned process lifecycle,
-memory limits and restricted inference identity/filesystem/egress. Offline UI
-assets and creative/comfort qualification follow. These controls remain pending
-in the existing PowerShell preflight.
+## Development orchestration and loopback transport
 
-Dependencies, including httparse 1.10.1 and Tokio 1.50.0, are exact-pinned with a committed Cargo lockfile. The response adapter adds no dependency. Native ARM64 Rust
+`scheduler::RequestGate::new(max_waiting)` permits one active operation plus
+zero through eight waiting reservations. `reserve()` is nonblocking and holds
+capacity before any socket acceptance or body allocation. `Reservation::enter`
+waits fairly for the active slot under an absolute deadline; FIFO begins when
+that future is first polled, not when reservation handles are created. Dropping
+reservations, queued futures or active guards releases their permits. `close()`
+permanently refuses admission and wakes all queue/shutdown waiters. The active
+guard alone does not cancel work; the service integrates that signal below.
+
+`supervisor::serve_chat` receives one owned stream, splits its read/write sides,
+and runs counting, context admission, generation and response forwarding with
+the same connector and immutable canonical body. No generation connection is
+attempted after a rejected count. A single absolute deadline covers the whole
+operation and is shortened to ten minutes from entry. Header, intake, connect
+and write limits may shorten it further; progress never refreshes the total.
+The generic supervisor supports local/non-Send streams and spawns no task.
+
+After reception, a one-byte client read races the entire backend pipeline.
+EOF, read failure or additional input wins over simultaneous backend progress
+and drops both endpoints. A TCP write-half-close is deliberately treated as
+abandonment: clients must keep their sending side open until the response ends.
+This policy rejects pipelining; it does not distinguish full departure from a
+half-close or detect a silently unreachable peer before TCP reports it. Outer
+future cancellation also drops owned streams. No second response or automatic
+retry is attempted after failure.
+
+`transport::LoopbackBackend` owns one immutable `SocketAddrV4` and private HTTP
+policy. It connects only to numeric `127.0.0.1`, with no DNS, redirects or retry,
+and a five-second connect limit shortened by the total deadline. The private
+credential authenticates requests to a server; it does not authenticate that
+server's process or prove its model/template identity.
+
+`service::LocalChatService::bind(frontend_port, frontend_key, backend_port,
+backend_key, max_waiting)` explicitly opens a development listener on numeric
+IPv4 loopback. Frontend port zero permits OS assignment. Other ports must be
+unprivileged; ports and credentials must be distinct. Every input is validated
+before binding; no key/file/process/UI is created. `accept()` reserves capacity
+before socket acceptance; pending accepts and returned unpolled handles count
+toward the bound. The OS TCP backlog is separate. Full capacity returns a
+value-free error immediately; callers must avoid busy retry loops. This API
+does not spawn an unbounded accept/task loop.
+
+`AcceptedChat::serve()` allows thirty seconds from acceptance to acquire the
+active slot, with queue time included in the ten-minute total. Shutdown races
+accepting and active work; queued entries wake through the gate. `close()`
+leaves the listener bound until the service itself is dropped. All operations
+must still be polled for asynchronous cleanup; dropping them closes their
+sockets and releases reservations synchronously.
+
+Once a generation connection is attempted, failed delivery, disconnect,
+deadline or external cancellation permanently closes the service's admission
+gate before the active permit is released. Clean framed response completion
+disarms this guard. The latch prevents the next request following an
+unacknowledged cancellation; it does not prove the old model task stopped.
+There is no automatic reset/restart. A future launcher must establish a stopped
+or freshly owned backend before recreating the service. Failures before a
+generation attempt release their slots without this latch.
+
+Real loopback regressions exercise synthetic counting/generation, private
+headers, capacity, disconnect, caller cancellation and shutdown. Supplied
+stream regressions cover FIFO, queue expiry, total deadlines and malformed
+counts. These establish broker behavior, not model execution or daily security.
+Before enabling daily chat, qualify immutable owned backend identity, bypass
+prevention, real tokenization, cancellation acknowledgement/process termination,
+OS memory limits and restricted inference identity/filesystem/egress. Offline
+UI assets and creative/comfort qualification follow. The existing PowerShell
+preflight retains these gates and does not call these development APIs.
+
+Dependencies, including httparse 1.10.1 and Tokio 1.50.0, are exact-pinned with a committed Cargo lockfile. Transport enables Tokio's net/sync features and locks their six additional transitive packages. Native ARM64 Rust
 1.98.0 is the initial checked toolchain. Local work may build and run focused
 regressions; the full broker suite runs only in the main-only Foundation workflow.
 See [pre-step research](implementation-research.md) for sources and sanity checks.

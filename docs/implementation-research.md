@@ -155,6 +155,52 @@ A tiny external two-target CMake/MSBuild compilation accepted the generated
 scheduling arguments; its temporary sources were removed and logs retained.
 This confirms build-path compatibility, not a full engine build or a speedup.
 
+## Development orchestration and numeric loopback integration (October 23)
+
+Before implementation, reviewed Tokio 1.50's [fair semaphore and close contract](https://docs.rs/tokio/1.50.0/tokio/sync/struct.Semaphore.html),
+[Notify waiter registration](https://docs.rs/tokio/1.50.0/tokio/sync/struct.Notify.html),
+[absolute timeout behavior](https://docs.rs/tokio/1.50.0/tokio/time/fn.timeout_at.html),
+[stream splitting](https://docs.rs/tokio/1.50.0/tokio/io/fn.split.html),
+[cancel-safe reads and EOF](https://docs.rs/tokio/1.50.0/tokio/io/trait.AsyncReadExt.html#method.read),
+[TCP connections](https://docs.rs/tokio/1.50.0/tokio/net/struct.TcpStream.html)
+and [listener ownership](https://docs.rs/tokio/1.50.0/tokio/net/struct.TcpListener.html).
+Immediately ready operations can finish after a Tokio timeout, so explicit
+expiry checks accompany all new boundaries. A semaphore limits total reserved
+connections before accept and one active operation; fair waiting starts when
+the acquisition future is polled. Notify registration precedes the durable
+closed-state check to avoid losing a shutdown wakeup.
+
+The supervisor joins the existing adapters with the same canonical request,
+private endpoint/policy and absolute deadline. A one-byte read races backend
+work using safe pinned [poll_fn](https://doc.rust-lang.org/std/future/fn.poll_fn.html).
+EOF, read failure or extra input cancels owned I/O. Treat write-half-close as
+abandonment explicitly; TCP cannot distinguish it from full departure using
+EOF alone. Numeric IPv4 addresses avoid DNS and alternate-address fallback.
+No executable, model process, key generation, UI or automatic startup is added.
+
+Independent research checked Microsoft's [SO_REUSEADDR/SO_EXCLUSIVEADDRUSE security discussion](https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse)
+and the pinned runtime's [socket defaults](https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/vendor/cpp-httplib/httplib.cpp)
+and [server cancellation path](https://github.com/ggml-org/llama.cpp/blob/620d2225cc436ab0b001e3200e590e3b286ef9ab/tools/server/server-context.cpp).
+Fixed loopback metadata and a bearer credential do not authenticate backend
+process identity or prevent replacement/bypass. Socket closure alone does not
+acknowledge model-slot cancellation. Therefore interrupted generation closes
+the entire development service gate before releasing its active permit,
+including when the caller drops the future. No automatic reset/restart is
+provided. A future launcher must qualify exclusive ownership or an authenticated
+channel, restricted process policy and backend termination/cancellation before
+daily launch. Existing launch-disabled gates are retained.
+
+Release build, all-target/all-feature Release Clippy, formatting and rustdoc
+pass on native ARM64 with locked offline dependencies. Focused supplied-stream
+tests cover canonical flow, rejected counts, EOF/surplus cancellation, absolute
+deadlines, FIFO, queue expiry, guard cancellation and shutdown. Selected real
+loopback checks cover identical count/generation bodies and private headers,
+disconnect, external caller cancellation and active shutdown. Independent review
+found no blocking defect and independently passed the caller-cancellation case.
+The full broker suite, including the new socket cases, remains in the main-only
+Foundation CI workflow. No model execution, benchmark, full local suite, driver
+change or process-isolation verdict is implied.
+
 ## Evidence obtained
 
 - Host inventory: native ARM64 Windows/PowerShell; **33,897,037,824 usable bytes** (31.57 GiB); Snapdragon X Elite X1E78100; Adreno X1-85 driver **31.0.128.0**; native CMake **4.3.1-msvc1** and MSVC **19.51.36260.0**. Presence does not qualify inference or GPU execution.

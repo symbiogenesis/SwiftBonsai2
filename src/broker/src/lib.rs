@@ -1,16 +1,24 @@
-//! M1 request policy and bounded HTTP I/O. No listener, model process or logging.
+//! M1 request policy, bounded HTTP I/O and explicit development orchestration.
 //!
 //! `reception` bounds one supplied stream while preserving header multiplicity.
 //! `response` frames a bounded, already HTTP-decoded backend response.
 //! `backend` sends canonical requests and decodes HTTP on supplied private streams.
-//! The future supervisor must generate a private random credential, use a separate
-//! backend key, prevent bypass, and enforce concurrency, deadlines and cancellation.
+//! `scheduler` bounds reservations and a single active request; `supervisor`
+//! joins reception, exact counting, generation and disconnect cancellation.
+//! `service` can explicitly bind a numeric loopback listener for development.
+//! No executable, model launcher, key generation or logging is supplied.
+//! The future launcher must generate separate private random credentials,
+//! own/identify the backend, prevent bypass and qualify OS process isolation.
 //! This library alone is not a qualified HTTP or process-isolation boundary.
 #![forbid(unsafe_code)]
 
 pub mod backend;
 pub mod reception;
 pub mod response;
+pub mod scheduler;
+pub mod service;
+pub mod supervisor;
+pub mod transport;
 
 use http::{HeaderMap, HeaderValue, Method, Version, request::Parts, uri::PathAndQuery};
 use serde::{Deserialize, Deserializer, Serialize, de};
