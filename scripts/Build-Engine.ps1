@@ -11,6 +11,7 @@ Remote UI, TLS dependency fetching, OpenMP, subprocess tools and other backends 
 The resulting server has no full embedded chat UI; those assets need separate pinning.
 ##>
 [CmdletBinding()]
+[OutputType([string])]
 param(
     [Parameter(Mandatory)][string]$DataDirectory,
     [Parameter(Mandatory)][string]$GitPath,
@@ -22,8 +23,12 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') { throw 'Build in native ARM64 PowerShell on a Windows ARM64 host.' }
-function Resolve-BuildParallelism([int]$Requested, [int]$ProcessorCount, [long]$AvailableBytes) {
+function Resolve-BuildParallelism {
+    [CmdletBinding()]
+    [OutputType([int])]
+    param([int]$Requested, [int]$ProcessorCount, [long]$AvailableBytes)
     if ($Requested -lt 0 -or $Requested -gt 12 -or $ProcessorCount -lt 1 -or $AvailableBytes -lt -1) { throw 'Invalid build parallelism input.' }
     if ($Requested -gt 0) { return $Requested }
     # A starting budget, not a measured optimum: retain two CPU threads and 2 GiB
@@ -33,7 +38,10 @@ function Resolve-BuildParallelism([int]$Requested, [int]$ProcessorCount, [long]$
     $memoryBudget = [Math]::Max(1.0, [Math]::Floor(($AvailableBytes - 2GB) / 1GB))
     [int][Math]::Min([double]$cpuBudget, $memoryBudget)
 }
-function Get-EngineBuildArguments([string]$BuildDirectory, [int]$Jobs) {
+function Get-EngineBuildArgument {
+    [CmdletBinding()]
+    [OutputType([string], [array])]
+    param([string]$BuildDirectory, [int]$Jobs)
     if ($Jobs -lt 1 -or $Jobs -gt 12) { throw 'Build jobs must be between 1 and 12.' }
     # CMake's --parallel limits MSBuild project workers. The pinned upstream
     # enables MultiToolTask, whose compiler limit otherwise defaults to all CPUs.
@@ -41,23 +49,29 @@ function Get-EngineBuildArguments([string]$BuildDirectory, [int]$Jobs) {
     @('--build', $BuildDirectory, '--config', 'Release', '--target', 'llama-server', '--parallel', [string]$Jobs,
         '--', '/p:UseMultiToolTask=true', '/p:EnforceProcessCountAcrossBuilds=true', "/p:CL_MPCount=$Jobs", "/p:MultiProcMaxCount=$Jobs")
 }
-function Full-Path([string]$Path) {
+function Resolve-BuildPath {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([string]$Path)
     if ($Path -match '%[^%]+%' -or $Path -notmatch '^[A-Za-z]:[\\/]' -or $Path.Substring(2).Contains(':') -or -not [IO.Path]::IsPathFullyQualified($Path)) { throw "Use an absolute local drive path without device syntax, streams or unresolved variables: $Path" }
     [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
 }
-function Assert-PlainPath([string]$Path) {
+function Assert-PlainPath {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([string]$Path)
     for ($item = $Path; $item; $item = [IO.Path]::GetDirectoryName($item)) {
         if ((Test-Path -LiteralPath $item) -and ((Get-Item -Force -LiteralPath $item).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Reparse paths are unsupported: $item" }
     }
 }
-$DataDirectory = Full-Path $DataDirectory
+$DataDirectory = Resolve-BuildPath $DataDirectory
 if ($DataDirectory -eq [IO.Path]::GetPathRoot($DataDirectory).TrimEnd('\')) { throw 'Choose a dedicated data directory, not a drive root.' }
 Assert-PlainPath $DataDirectory
 for ($item = $DataDirectory; $item; $item = [IO.Path]::GetDirectoryName($item)) {
     if ((Split-Path $item -Leaf) -eq '.git' -or (Test-Path -LiteralPath (Join-Path $item '.git'))) { throw 'DataDirectory must be outside Git checkouts and Git metadata.' }
 }
 foreach ($name in 'GitPath', 'CMakePath') {
-    $path = Full-Path (Get-Variable $name -ValueOnly)
+    $path = Resolve-BuildPath (Get-Variable $name -ValueOnly)
     if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or [IO.Path]::GetExtension($path) -ne '.exe') { throw "$name must name an existing executable." }
     Set-Variable $name $path
 }
@@ -70,7 +84,7 @@ if ($Parallel -eq 0) {
         if ($null -ne $osMemory.FreePhysicalMemory -and $osMemory.FreePhysicalMemory -ge 0) { $availableBytes = [long]$osMemory.FreePhysicalMemory * 1KB }
     } catch { Write-Verbose 'Available memory query failed; automatic parallelism uses the conservative fallback.' }
 }
-$parallelJobs = Resolve-BuildParallelism $Parallel ([Environment]::ProcessorCount) $availableBytes
+$parallelJobs = Resolve-BuildParallelism -Requested $Parallel -ProcessorCount ([Environment]::ProcessorCount) -AvailableBytes $availableBytes
 Write-Output "Engine build parallel jobs: $parallelJobs (project and shared compiler limits)."
 $lock = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/runtime.lock.json') | ConvertFrom-Json -DateKind String
 $commit = [string]$lock.runtime.commit
@@ -80,7 +94,10 @@ $scratch = Join-Path ([IO.Path]::GetTempPath()) ('swiftbonsai-build-' + [guid]::
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $emptyHooks = New-Item -ItemType Directory -Path (Join-Path $scratch 'empty-hooks')
 $script:commandNumber = 0
-function Invoke-Native([string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds = 3600) {
+function Invoke-Native {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds = 3600)
     $script:commandNumber++
     $info = [Diagnostics.ProcessStartInfo]::new($Executable)
     $info.WorkingDirectory = $scratch
@@ -99,7 +116,12 @@ function Invoke-Native([string]$Executable, [string[]]$Arguments, [int]$TimeoutS
         $output.Trim()
     } finally { $process.Dispose() }
 }
-function Invoke-Git([string[]]$Arguments) { Invoke-Native $GitPath (@('-c', "core.hooksPath=$($emptyHooks.FullName)", '-c', 'submodule.recurse=false', '-c', 'core.longpaths=true') + $Arguments) }
+function Invoke-Git {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([string[]]$Arguments)
+    Invoke-Native $GitPath (@('-c', "core.hooksPath=$($emptyHooks.FullName)", '-c', 'submodule.recurse=false', '-c', 'core.longpaths=true') + $Arguments)
+}
 $gitVersion = Invoke-Git @('--version')
 $cmakeVersion = Invoke-Native $CMakePath @('--version')
 $capabilities = Invoke-Native $CMakePath @('-E', 'capabilities') | ConvertFrom-Json -DateKind String
@@ -115,10 +137,17 @@ if (-not (Test-Path -LiteralPath $source)) {
     $null = Invoke-Git @('-C', $source, 'checkout', '--quiet', '--detach', $commit)
 }
 if (-not (Test-Path -LiteralPath (Join-Path $source '.git') -PathType Container)) { throw 'Existing source must be a dedicated Git clone; it will not be overwritten.' }
-if ((Full-Path (Invoke-Git @('-C', $source, 'rev-parse', '--show-toplevel'))) -ne $source -or (Invoke-Git @('-C', $source, 'rev-parse', 'HEAD')) -cne $commit) { throw 'Existing source is not the exact locked checkout.' }
+if ((Resolve-BuildPath (Invoke-Git @('-C', $source, 'rev-parse', '--show-toplevel'))) -ne $source -or (Invoke-Git @('-C', $source, 'rev-parse', 'HEAD')) -cne $commit) { throw 'Existing source is not the exact locked checkout.' }
 if (Invoke-Git @('-C', $source, 'status', '--porcelain', '--untracked-files=all', '--ignored=matching')) { throw 'Existing source contains changes or extra files; it will not be modified.' }
 # Only the server target is built. LLAMA_BUILD_TOOLS=ON is required to define it.
 $options = @('GGML_CPU=ON', 'GGML_NATIVE=ON', 'GGML_BACKEND_DL=OFF', 'GGML_CPU_ALL_VARIANTS=OFF',
+    'CMAKE_C_STANDARD=11', 'CMAKE_C_STANDARD_REQUIRED=ON', 'CMAKE_C_EXTENSIONS=OFF',
+    'CMAKE_CXX_STANDARD=17', 'CMAKE_CXX_STANDARD_REQUIRED=ON', 'CMAKE_CXX_EXTENSIONS=OFF',
+    # The immutable upstream source currently emits MSVC C4244 in llama-graph.cpp.
+    # Keep its diagnostics visible; first-party warning-as-error policies apply
+    # to repository-owned Rust, PowerShell and C#, not this external dependency.
+    'CMAKE_COMPILE_WARNING_AS_ERROR=OFF', 'LLAMA_ALL_WARNINGS=ON', 'LLAMA_FATAL_WARNINGS=OFF',
+    'CMAKE_CXX_FLAGS_INIT=/permissive- /sdl', 'CMAKE_C_FLAGS_INIT=/sdl',
     'GGML_OPENMP=OFF', 'GGML_OPENMP_FETCH=OFF', 'GGML_CPU_KLEIDIAI=OFF', 'GGML_BLAS=OFF', 'GGML_LLAMAFILE=OFF',
     'GGML_CUDA=OFF', 'GGML_HIP=OFF', 'GGML_MUSA=OFF', 'GGML_CANN=OFF', 'GGML_VULKAN=OFF', 'GGML_OPENCL=OFF', 'GGML_HEXAGON=OFF', 'GGML_RPC=OFF',
     'GGML_SYCL=OFF', 'GGML_METAL=OFF', 'GGML_OPENVINO=OFF', 'GGML_WEBGPU=OFF', 'GGML_BUILD_TESTS=OFF',
@@ -139,7 +168,7 @@ $configure = @('-S', $source, '-B', $build, '-G', $Generator, '-A', 'ARM64', "-D
 $null = Invoke-Native $CMakePath $configure
 $cache = Get-Content -Raw -LiteralPath (Join-Path $build 'CMakeCache.txt')
 if ($cache -notmatch '(?m)^CMAKE_GENERATOR_PLATFORM:INTERNAL=ARM64\r?$' -or $cache -notmatch ('(?m)^CMAKE_GENERATOR:INTERNAL=' + [regex]::Escape($Generator) + '\r?$')) { throw 'Configured generator/platform mismatch.' }
-$null = Invoke-Native $CMakePath (Get-EngineBuildArguments $build $parallelJobs)
+$null = Invoke-Native $CMakePath (Get-EngineBuildArgument $build $parallelJobs)
 if (Invoke-Git @('-C', $source, 'status', '--porcelain', '--untracked-files=all', '--ignored=matching')) { throw 'Build changed the source checkout; inspect it before reuse.' }
 $engine = Join-Path $build -ChildPath 'bin', 'Release', 'llama-server.exe'
 $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($engine))
@@ -150,7 +179,7 @@ try {
     $reader.BaseStream.Position = $offset
     if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0xAA64) { throw 'Output is not native ARM64 PE.' }
 } finally { $reader.Dispose() }
-$engineVersion = Invoke-Native $engine @('--version') 30
+$engineVersion = Invoke-Native -Executable $engine -Arguments @('--version') -TimeoutSeconds 30
 $reportedCommit = [regex]::Match($engineVersion, '\bcommit ([a-f0-9]{7,40})\)').Groups[1].Value
 if (-not $reportedCommit -or -not $commit.StartsWith($reportedCommit)) { throw 'Engine version does not identify the locked commit.' }
 $compilerFiles = @(Get-ChildItem -Path (Join-Path $build 'CMakeFiles/*/CMakeCXXCompiler.cmake') | ForEach-Object { @{ path = $_.FullName; content = (Get-Content -Raw -LiteralPath $_.FullName) } })

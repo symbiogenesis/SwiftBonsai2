@@ -79,7 +79,7 @@ if ($Case -in @('All','PE')) {
 if ($Case -in @('All','Download')) {
     # Synthetic HTTP responses exercise resumption and hostile transport behavior without network access.
     if (-not ('SwiftBonsai.Tests.BonsaiTestHandler' -as [type])) {
-        Add-Type -TypeDefinition @'
+        Add-Type -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0') -TypeDefinition @'
 #nullable enable
 using System;
 using System.Net;

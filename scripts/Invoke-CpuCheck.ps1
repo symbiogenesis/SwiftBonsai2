@@ -30,7 +30,7 @@ $data = Resolve-ExternalPath $DataDirectory
 $overrides = @(Get-ChildItem Env: | Where-Object Name -Match '^(LLAMA_|LLAMACPP_|GGML_|HF_TOKEN$|HF_ENDPOINT$|MODEL_ENDPOINT$)')
 if ($overrides.Count) { throw ('Inherited model/backend overrides are unsupported: ' + ($overrides.Name -join ', ')) }
 if (-not ('SwiftBonsai.PhysicalMemory' -as [type])) {
-    Add-Type -TypeDefinition @'
+    Add-Type -CompilerOptions @('/nullable:enable', '/checked+', '/unsafe-', '/warn:9999', '/warnaserror+', '/langversion:14.0') -TypeDefinition @'
 #nullable enable
 using System.ComponentModel;
 using System.Runtime.InteropServices;

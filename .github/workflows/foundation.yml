@@ -21,6 +21,7 @@ jobs:
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
+          Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           rustup toolchain install 1.98.0-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
           if ($LASTEXITCODE) { throw 'Rust toolchain installation failed.' }
@@ -31,6 +32,7 @@ jobs:
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
+          Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
           $target = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Broker'
@@ -60,13 +62,16 @@ jobs:
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
+          Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $manifest = Join-Path $env:GITHUB_WORKSPACE 'src/broker/Cargo.toml'
           cargo +1.98.0-aarch64-pc-windows-msvc fmt --manifest-path $manifest --check
           if ($LASTEXITCODE) { throw 'Broker formatting failed.' }
-          cargo +1.98.0-aarch64-pc-windows-msvc clippy --manifest-path $manifest --locked --all-targets -- -D warnings
+          cargo +1.98.0-aarch64-pc-windows-msvc clippy --manifest-path $manifest --locked --release --all-targets --all-features -- -D warnings
           if ($LASTEXITCODE) { throw 'Broker analyzer failed.' }
-          cargo +1.98.0-aarch64-pc-windows-msvc test --manifest-path $manifest --locked
+          cargo +1.98.0-aarch64-pc-windows-msvc doc --manifest-path $manifest --locked --no-deps --all-features
+          if ($LASTEXITCODE) { throw 'Broker documentation analyzer failed.' }
+          cargo +1.98.0-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --release --all-features
           if ($LASTEXITCODE) { throw 'Broker suite failed.' }
   foundation:
     if: github.ref == 'refs/heads/main'
@@ -76,19 +81,24 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - name: Check PowerShell baseline and parse repository scripts
+      - name: Install the C# analyzer SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.4xx'
+      - name: Enforce PowerShell and C# standards
         shell: pwsh
+        working-directory: ${{ runner.temp }}
         run: |
+          Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           if ($PSVersionTable.PSVersion -lt [version]'7.6' -or $PSVersionTable.PSVersion.PreReleaseLabel) {
             throw 'Foundation requires stable PowerShell 7.6 or later on the runner.'
           }
-          Get-ChildItem scripts, tests -Recurse -File | Where-Object Extension -in '.ps1','.psm1' | ForEach-Object {
-            $tokens = $null
-            $parseErrors = $null
-            [Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
-            if ($parseErrors.Count) { throw ($parseErrors.Message -join [Environment]::NewLine) }
-          }
+          $tooling = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-Standards-Tools-' + [guid]::NewGuid().ToString('N'))
+          Save-Module -Name PSScriptAnalyzer -RequiredVersion 1.25.0 -Repository PSGallery -Path $tooling -Force
+          $analyzer = Join-Path $tooling 'PSScriptAnalyzer/1.25.0/PSScriptAnalyzer.psd1'
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Standards.ps1') -AnalyzerModulePath $analyzer
       - name: Full foundation suite
         shell: pwsh
         run: ./tests/Test-Foundation.ps1 -Case All
@@ -101,6 +111,7 @@ jobs:
       - name: CPU admission diagnostics without model launch
         shell: pwsh
         run: |
+          Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime') -CheckOnly
           if ($result.ModelProcessStarted -or $result.AvailablePhysicalBytesAtAdmission -le 0) { throw 'Invalid admission-only result.' }
@@ -108,6 +119,7 @@ jobs:
       - name: Verify publisher ARM64 runtime and planned server switches
         shell: pwsh
         run: |
+          Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $data = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime'
           ./scripts/Get-Engine.ps1 -DataDirectory $data
