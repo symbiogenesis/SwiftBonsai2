@@ -7,15 +7,11 @@ publish.workspace = true
 license.workspace = true
 description = "Bounded development chat transport and request supervision for the Bonsai broker"
 
-[features]
-dependency-trial = ["dep:sonic-rs"]
-
 [dependencies]
 http = "=1.5.0"
 httparse = "=1.10.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-sonic-rs = { version = "=0.5.10", optional = true }
 sha2.workspace = true
 subtle = "=2.6.1"
 tokio = { workspace = true, features = ["io-util", "net", "rt", "signal", "sync", "time"] }

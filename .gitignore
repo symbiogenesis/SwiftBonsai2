@@ -7,7 +7,6 @@
 /tools/gguf/target/
 /tools/prism/target/
 /tools/rust-trial/target/
-/tools/dependency-trial/target/
 # Normal IDE-generated outputs for the analyzer project. Scripted validation
 # continues to keep its builds and diagnostic evidence in external temp lanes.
 /tools/validation/bin/
