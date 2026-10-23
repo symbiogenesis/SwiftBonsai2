@@ -5,7 +5,7 @@
 //! the connection. No background task or borrowed stream is retained here.
 
 use crate::{AuthorizedHead, MAX_HEADER_BYTES, MAX_HEADERS, PendingChat, Rejection, RequestPolicy};
-use http::{HeaderName, HeaderValue, Request, Version};
+use http::{HeaderName, HeaderValue, Method, Request, Version, uri::PathAndQuery};
 use std::time::Duration;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
@@ -16,6 +16,7 @@ use tokio::{
 pub const HEADER_TIMEOUT: Duration = Duration::from_secs(5);
 /// Maximum elapsed time for receiving and validating the complete request.
 pub const INTAKE_TIMEOUT: Duration = Duration::from_secs(30);
+const CHAT_ROUTE: PathAndQuery = PathAndQuery::from_static("/v1/chat/completions");
 
 /// Value-free errors: no raw headers, credential, body or I/O diagnostic escapes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,12 +176,12 @@ fn parse_head(policy: &RequestPolicy, raw: &[u8]) -> Result<AuthorizedHead, Rece
     }
     // http::Uri can discard a fragment. Check the original target before any
     // normalization so an unsupported wire route cannot become the allowed one.
-    if parsed.method != Some("POST") || parsed.path != Some("/v1/chat/completions") {
+    if parsed.method != Some("POST") || parsed.path != Some(CHAT_ROUTE.as_str()) {
         return Err(ReceiveError::Policy(Rejection::Route));
     }
     let mut request = Request::builder()
-        .method(parsed.method.ok_or(ReceiveError::WireSyntax)?)
-        .uri(parsed.path.ok_or(ReceiveError::WireSyntax)?)
+        .method(Method::POST)
+        .uri(CHAT_ROUTE)
         .version(Version::HTTP_11)
         .body(())
         .map_err(|_| ReceiveError::WireSyntax)?;
