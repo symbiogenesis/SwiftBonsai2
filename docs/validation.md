@@ -41,11 +41,12 @@ packed scale bytes and native PQ2's fourth symbol, while rejecting nonfinite
 scales and noncanonical PTQ1. The export codec keeps its stricter finite nonzero,
 ternary-only conversion contract.
 
-The first optional CPU SIMD implementation follows the [S0–S6 plan](simd-plan.md).
-Three exact integer regressions check all packed byte values/positions, each
-lane/code including activation -128 and deterministic unaligned blocks. Four
-matvec regressions check bitwise outputs, scale/quantization extremes, ordered
-block sums, scalar fallback on ARM64, malformed inputs and storage recovery.
+The optional CPU SIMD implementation follows the [S0–S6 plan](simd-plan.md).
+Exact PQ2/PTQ1 integer regressions check all packed byte values/positions, each
+lane/code including activation -128, deterministic unaligned blocks and the
+immutable C++ packed-byte fixture. Matvec regressions check bitwise outputs,
+scale/quantization extremes, ordered block sums, odd-group PQ2, PTQ1's independent
+Q8_0 scales, scalar fallback, malformed inputs and storage recovery.
 Native Release Clippy/rustdoc, CLI/no-CLI builds and assembly inspection pass.
 The runtime retains `forbid(unsafe_code)`; the optional core Fearless SIMD
 dependency owns its internal intrinsic boundary. Scalar remains the default.
@@ -56,8 +57,9 @@ ARM64 target or use x86 emulation for the laptop's kernel.
 
 Local builds, disassembly and focused correctness checks are allowed. All timing
 benchmarks remain CI-only; promotion requires paired target-device kernel and
-end-to-end evidence. S0 profiling, fuller dispatch diagnostics, PTQ1/optional ISA
-work, later floating-reduction tolerances and S6 promotion remain pending.
+end-to-end evidence. S0 profiling, fuller dispatch diagnostics, broader per-path
+memory evidence, optional ISA work, later floating-reduction tolerances and S6
+promotion remain pending.
 
 Future Adreno work follows the [GPU G0–G5 roadmap](adreno-gpu-plan.md): native
 ARM64 capability/build evidence, exact-artifact kernel and whole-graph parity,

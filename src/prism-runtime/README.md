@@ -18,7 +18,7 @@ The crate contains:
   and PTQ1's distinct Q8_0 activation quantization. No persistent expanded float
   matrix is created. Float accumulation and SIMD reduction order can differ from
   the publisher CPU implementation; no bit-identical full-model claim is made.
-- An opt-in baseline NEON PQ2 integer kernel using safe core Fearless SIMD APIs.
+- Opt-in baseline NEON PQ2/PTQ1 integer kernels using safe core Fearless SIMD APIs.
   Scalar remains the default on ARM64 and other targets. Exact synthetic
   differential checks preserve scalar quantization and floating block order;
   target-device speed and whole-model parity remain unqualified.
@@ -114,9 +114,10 @@ work: compile with `--features experimental-neon`, then explicitly request
 `MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon)` when calling
 `matvec_into`. `selected_backend()` reports the actual per-call selection.
 Eligibility requires native Windows ARM64 MSVC with ambient baseline NEON and
-PQ2 rows whose column count is a multiple of 256. Other formats, odd-group PQ2,
-feature-disabled builds and other targets use scalar. Scalar runs natively on
-ARM64 as well; it does not imply x86 emulation. Compilation alone does not
+complete PQ2 or PTQ1 rows. PQ2 retains its Q8_K path for rows divisible by 256;
+odd-group PQ2 and PTQ1 retain four independent Q8_0 scales per 128 weights.
+Other formats, feature-disabled builds and other targets use scalar. Scalar runs
+natively on ARM64 as well; it does not imply x86 emulation. Compilation alone does not
 enable NEON: `matvec`, the Qwen35 graph and the token driver still use scalar
 defaults. No CLI switch or daily profile is promoted by this kernel experiment.
 
@@ -124,12 +125,14 @@ The safe core-only `fearless_simd` 1.1.0 dependency is target-specific and
 optional; no local unsafe allowance or procedural macro is added. Packed
 unpack/dot consumes immutable bytes directly, keeps the original scalar
 quantizer and ordered scale operations, and creates no expanded matrix.
-Three focused raw-integer tests and four bitwise matvec/fallback/error tests
-cover the first path. Strict native Release checks and assembly inspection pass;
-see the plan for compiler/source identities and limitations. The feature also
-works with `--no-default-features --lib`. Separate PTQ1 qualification, optional
-ISA detection, fuller dispatch diagnostics, profiling and S6 promotion remain
-pending. No throughput or whole-model parity benefit is established.
+Raw-integer and bitwise matvec/fallback/error tests cover PQ2 and PTQ1, including
+the immutable C++ packed-byte fixture. PTQ1 decodes directly without an expanded
+PQ2 block and validates canonical bytes even at zero scale. Strict native Release
+checks pass; the earlier PQ2 assembly inspection is recorded separately in the
+plan with compiler/source identities and limitations. The feature also
+works with `--no-default-features --lib`. Broader per-path memory qualification,
+optional ISA detection, fuller dispatch diagnostics, profiling and S6 promotion
+remain pending. No throughput or whole-model parity benefit is established.
 
 Focused fixtures cover malformed/truncated/over-budget GGUFs, exact metadata,
 immutable B sharing, native activation rounding and packed dot results, synthetic

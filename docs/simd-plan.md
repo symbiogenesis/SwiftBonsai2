@@ -2,9 +2,10 @@
 
 Implementation status, October 23, 2026. This expands R3 and the CPU part of R4
 in the [native engine roadmap](native-rust-engine.md). S1 has selected a safe
-implementation route; an opt-in baseline NEON PQ2 kernel and focused exact
-regressions are implemented. Scalar remains the default. S0 profiling, the
-remaining S2 diagnostics, PTQ1/optional-ISA work and S6 promotion remain pending.
+implementation route; opt-in baseline NEON PQ2 and PTQ1 kernels and focused exact
+regressions are implemented, including odd-group PQ2. Scalar remains the default.
+S0 profiling, the remaining S2 diagnostics, broader S3 memory qualification,
+optional-ISA work and S6 promotion remain pending.
 The publisher Prism engine remains the assessment/fallback path. No throughput
 or whole-model parity improvement is claimed.
 
@@ -20,8 +21,10 @@ default. `selected_backend()` reports the actual per-call backend. Detailed
 fallback reasons and build-identity logging remain future diagnostics work.
 
 Eligibility requires `aarch64-pc-windows-msvc`, the compiled feature and ambient
-baseline `neon`. Only PQ2 rows whose column count is a multiple of 256 use this
-kernel. PTQ1, odd-group PQ2, other formats and other targets fall back to scalar.
+baseline `neon`. Complete PQ2 and PTQ1 rows use their respective packed kernels;
+PQ2 rows divisible by 256 retain Q8_K activations, and odd-group PQ2 and PTQ1
+retain four independent Q8_0 groups per 128 weights. Other formats and other
+targets fall back to scalar.
 Scalar executes natively on ARM64 too; it does not mean x86 emulation. There is
 no optional-ISA detector, feature override, global target flag, model layout
 change or persistent decoded-weight copy. Selection happens once per matrix
@@ -36,6 +39,13 @@ original scalar implementation remains the independent matvec oracle; malformed
 scales still fail even with zero activations. Arrays and safe slice loads bound
 every read, including unaligned inputs.
 
+The PTQ1 path decodes the stored stride-16, stride-8 and stride-2 fractional
+base-three digits directly into vector lanes. It checks canonical bytes even
+when the stored scale is zero, without creating an intermediate PQ2 block.
+Four separate integer sums preserve the original Q8_0 scale boundaries and
+ordered floating additions. Each ternary sum has absolute magnitude at most
+4,096; each odd-group PQ2 sum is bounded by 8,192, including activation -128.
+
 Native local checks use Rust **1.99.1**, compiler commit
 `58cf8f9c35b355199727627d07ae34a4e2846d67`, LLVM **23.1.1**, the repository's
 Release profile and no custom target flags. Strict Clippy/rustdoc and CLI/no-CLI
@@ -46,6 +56,15 @@ bitwise finite outputs and signed-zero scales, quantization ties/extremes,
 order-sensitive cancellation, fallback/reuse and failure clearing/recovery.
 The differential cases also pass with the feature disabled. These checks run no
 benchmark or full local suite.
+
+The S3 extension adds four raw PTQ1 checks: every byte at every serialized
+offset, each lane/code with extreme activations, 4,096 unaligned random blocks
+and the immutable C++ codec fixture's 161 cases/169 rows. Three additional matvec
+checks cover PTQ1 and odd-group PQ2 at 128/256/384-column boundaries, bitwise
+outputs, ordered scale sums, malformed encodings and recovery with retained
+scratch. Captured C++ weight bytes establish serialized-layout parity; they do
+not provide new native floating-operation or full-model measurements. Broader
+per-path memory qualification and target-device performance remain pending.
 
 Release assembly inspection of both the isolated block and integrated row
 function finds baseline `ushr`/`and`/`zip`, signed `smull`/`smull2`, widening
@@ -262,6 +281,10 @@ attention's negative-infinity mask and all-masked-row rejection.
   real stored byte offsets, rows of 128/256/384 columns and multiple rows. Compare
   each format against its own scalar activation path and immutable C++ fixtures.
   Exit with independent parity and memory evidence for each path.
+  Direct PTQ1 decoding and odd-group PQ2 are implemented with focused exact
+  scalar comparisons, immutable C++ byte-fixture checks and retained-scratch
+  recovery. Broader per-path memory evidence remains pending; this does not
+  complete production or performance qualification.
 - [ ] **S4 — Evaluate optional dotprod, then i8mm (R3/R4).** Audit Windows
   detection first. Compare widening NEON, dot-product and eligible tile kernels
   with the same representation; count unpacking, scale and dispatch costs.
