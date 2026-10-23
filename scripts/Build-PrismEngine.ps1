@@ -127,6 +127,9 @@ if (-not $PrepareOnly) {
     $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
     $manifest = Join-Path $overlay 'Cargo.toml'
     $rustBuild = Join-Path $scratch 'rust'
+    # Opt-in native-test linking must never overwrite the policy archive used by
+    # the engine or invalidate its already recorded hash.
+    $rustNativeBuild = Join-Path $scratch 'rust-native'
     $rustVersion = Invoke-PrismBuildCommand -FilePath $cargo -Arguments @('+1.99.1','--version')
     $null = Invoke-PrismBuildCommand -FilePath $cargo -Arguments @('+1.99.1','build','--locked','--offline','--release','--manifest-path',$manifest,'--target-dir',$rustBuild)
     $libraryName = if ($IsWindows) { 'bonsai_prism.lib' } else { 'libbonsai_prism.a' }
@@ -175,7 +178,7 @@ if (-not $PrepareOnly) {
             $libraryDirectories = @($nativeLibraries.DirectoryName | Sort-Object -Unique)
             $nativeEnvironment = @{ BONSAI_PRISM_NATIVE_LIB_DIR = $libraryDirectories -join [IO.Path]::PathSeparator }
             $cargoOutput = Invoke-PrismBuildCommand -FilePath $cargo -Environment $nativeEnvironment -Arguments @(
-                '+1.99.1','test','--locked','--offline','--release','--manifest-path',$manifest,'--target-dir',$rustBuild,
+                '+1.99.1','test','--locked','--offline','--release','--manifest-path',$manifest,'--target-dir',$rustNativeBuild,
                 '--features','native-tests','--test','native','--no-run','--message-format=json')
             $executables = @($cargoOutput -split "`n" | Where-Object { $_.StartsWith('{') } | ForEach-Object {
                 $record = $_ | ConvertFrom-Json -DateKind String
