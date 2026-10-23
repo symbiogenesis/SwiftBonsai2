@@ -2,9 +2,12 @@
 
 use std::env;
 use std::error::Error;
+#[cfg(feature = "engine-loader")]
 use std::fs;
+#[cfg(feature = "engine-loader")]
 use std::path::PathBuf;
 
+#[cfg(feature = "engine-loader")]
 fn generate_header() -> Result<(), Box<dyn Error>> {
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").ok_or("missing manifest path")?);
     let source = manifest.join("src/loader.rs");
@@ -49,6 +52,7 @@ fn generate_header() -> Result<(), Box<dyn Error>> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    #[cfg(feature = "engine-loader")]
     generate_header()?;
     println!("cargo::rerun-if-env-changed=BONSAI_PRISM_NATIVE_LIB_DIR");
     println!("cargo::rerun-if-env-changed=BONSAI_PRISM_NATIVE_LINK_KIND");

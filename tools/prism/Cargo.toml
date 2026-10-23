@@ -11,13 +11,13 @@ keywords = ["lora", "deduplication", "ggml"]
 categories = ["caching", "science"]
 
 [build-dependencies]
-cbindgen = { version = "=0.29.4", default-features = false }
+cbindgen = { version = "=0.29.4", default-features = false, optional = true }
 
 [lib]
 crate-type = ["rlib", "staticlib"]
 
 [features]
-engine-loader = []
+engine-loader = ["dep:cbindgen"]
 native-tests = ["engine-loader"]
 
 [[test]]
