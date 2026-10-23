@@ -4,19 +4,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
-
-$script:GgufScratch = $null
-
-function Get-BonsaiGgufScratch {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param()
-    if (-not $script:GgufScratch) {
-        $script:GgufScratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Gguf-' + [guid]::NewGuid().ToString('N')))
-        [void][IO.Directory]::CreateDirectory($script:GgufScratch)
-    }
-    return $script:GgufScratch
-}
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
 
 function Invoke-BonsaiGgufProcess {
     [CmdletBinding()]
@@ -44,26 +32,7 @@ function Resolve-GgufTool {
     [CmdletBinding()]
     [OutputType([string])]
     param([string]$GgufToolPath)
-    $scratch = Get-BonsaiGgufScratch
-    if ($GgufToolPath) {
-        if (-not [IO.Path]::IsPathFullyQualified($GgufToolPath) -or $GgufToolPath -match '%[^%]+%' -or
-            -not [IO.File]::Exists($GgufToolPath)) {
-            throw 'GgufToolPath must name an existing expanded absolute executable.'
-        }
-        $tool = [IO.Path]::GetFullPath($GgufToolPath)
-    } else {
-        $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
-        $manifest = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tools/gguf/Cargo.toml'))
-        $target = Join-Path $scratch 'target'
-        # Always ask Cargo to check source freshness; the session target preserves
-        # incremental work without trusting a stale cached executable.
-        $buildArguments = @('+1.99.1-aarch64-pc-windows-msvc', 'build', '--locked', '--release', '--manifest-path', $manifest, '--target-dir', $target)
-        $log = Join-Path $scratch ('cargo-build-' + [guid]::NewGuid().ToString('N') + '.log')
-        $null = Invoke-BonsaiGgufProcess -Executable $cargo -ArgumentList $buildArguments -WorkingDirectory $scratch -LogPath $log
-        $tool = Join-Path $target 'release/bonsai-gguf.exe'
-        if (-not [IO.File]::Exists($tool)) { throw "The GGUF build did not produce its executable. Build log: $log" }
-    }
-    return $tool
+    return Resolve-BonsaiRustTool -Name 'bonsai-gguf' -ManifestRelativePath '../tools/gguf/Cargo.toml' -ToolPath $GgufToolPath
 }
 
 function Invoke-GgufTool {
@@ -78,7 +47,7 @@ function Invoke-GgufTool {
         [string]$GgufToolPath
     )
     $tool = Resolve-GgufTool -GgufToolPath $GgufToolPath
-    $scratch = Get-BonsaiGgufScratch
+    $scratch = Get-BonsaiToolScratch -Name 'bonsai-gguf'
     $json = Invoke-BonsaiGgufProcess -Executable $tool -ArgumentList $Arguments -WorkingDirectory $scratch
     $result = ConvertFrom-Json -InputObject $json -Depth 30 -AsHashtable -NoEnumerate -DateKind String
     if ($result -isnot [Collections.IDictionary]) { throw 'The GGUF tool did not return a JSON object.' }
