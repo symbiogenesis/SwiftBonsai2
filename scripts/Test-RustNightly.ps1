@@ -6,6 +6,7 @@ Compares pinned stable and nightly Rust without changing the default toolchain.
 Compatibility runs formatting, Release Clippy and documentation. FullTests adds
 complete correctness suites only in main-branch GitHub Actions. Probe compiles
 small language fixtures using stable and four modes of the same nightly binary.
+PackageGroup partitions compatibility by shared dependencies for parallel CI.
 Logs, compiler identities and receipts remain in external evidence directories.
 This command runs no benchmarks and makes no inference-performance claim.
 #>
@@ -16,6 +17,7 @@ param(
     [string]$Toolchain,
     [string]$TargetDirectory,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
+    [ValidateSet('All', 'Runtime', 'Broker')][string]$PackageGroup = 'All',
     [ValidateSet('Polonius', 'NextSolver', 'All')][string]$ProbeCase = 'All',
     [switch]$FullTests
 )
@@ -45,6 +47,8 @@ $identities = [Collections.Generic.List[object]]::new()
 $receipt = [ordered]@{
     SchemaVersion = 1
     Mode = $Mode
+    PackageGroup = $PackageGroup
+    Packages = @()
     ProbeCase = $ProbeCase
     FullTests = [bool]$FullTests
     Revision = $env:GITHUB_SHA
@@ -107,6 +111,9 @@ try {
     if ($Mode -eq 'Probe' -and $ProbeCase -eq 'All' -and -not $FullTests) {
         throw 'The complete probe selection requires hosted -FullTests; select one ProbeCase locally.'
     }
+    if ($Mode -eq 'Probe' -and $PackageGroup -ne 'All') {
+        throw 'PackageGroup applies only to Compatibility.'
+    }
     foreach ($name in @('RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'RUSTDOCFLAGS', 'CARGO_ENCODED_RUSTDOCFLAGS',
         'RUSTC', 'RUSTDOC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'CARGO_BUILD_RUSTFLAGS', 'CARGO_BUILD_TARGET')) {
         if ([Environment]::GetEnvironmentVariable($name)) { throw "Remove the compiler override before this controlled comparison: $name" }
@@ -130,8 +137,15 @@ try {
         }
         [void][IO.Directory]::CreateDirectory($target)
         $environment = @{ CARGO_TARGET_DIR = $target; TEMP = $workingDirectory; TMP = $workingDirectory }
-        $packages = @('tools/ternary', 'tools/gguf', 'tools/prism', 'src/windows-process',
-            'src/windows-credentials', 'src/broker', 'src/prism-runtime', 'tools/rust-trial')
+        # Keep path dependencies in one target lane rather than recompiling them
+        # on one runner per package. Both groups retain every existing check.
+        $packageGroups = [ordered]@{
+            Runtime = @('tools/ternary', 'tools/gguf', 'tools/prism', 'src/prism-runtime', 'tools/rust-trial')
+            Broker = @('src/windows-process', 'src/windows-credentials', 'src/broker')
+        }
+        $packages = if ($PackageGroup -eq 'All') { @($packageGroups.Values | ForEach-Object { $_ }) }
+            else { $packageGroups[$PackageGroup] }
+        $receipt.Packages = @($packages)
         $phases = @('fmt', 'clippy', 'doc')
         if ($FullTests) { $phases += 'test' }
         foreach ($package in $packages) {

@@ -100,6 +100,18 @@ Clippy, documentation and complete correctness suites for both toolchains. Prism
 loader APIs are compiled, while native linking and engine regression remain in
 Foundation. Trial targets and logs use separate external storage.
 
+Stable and nightly checks run concurrently across two package groups. Runtime
+keeps ternary, GGUF, Prism, the CPU reference and the borrowed-logits trial
+together; Broker keeps the Windows boundary crates with the broker. Each group
+reuses one compiler-specific target directory, and a separate job runs the full
+compiler acceptance matrix. The final `compatibility` check requires all four
+compiler/group jobs and the probes to succeed, including artifact retention.
+Every formatting, Release Clippy/documentation and complete correctness check
+still runs. Build-cache fallback can reuse unchanged dependencies after lockfile
+changes while retaining compiler, runner-image and group isolation. Superseded
+manual trials are cancelled. Local compatibility-only builds may select
+`-PackageGroup Runtime` or `-PackageGroup Broker`; `All` remains the default.
+
 The compiler probes compare all four trait-solver/Polonius combinations using
 the same nightly binary, with stable as an additional baseline. Positive and
 invalid-alias controls distinguish intended acceptance from broken compilation;

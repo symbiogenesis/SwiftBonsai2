@@ -68,6 +68,16 @@ compiler matrix run only in hosted CI with `-Mode Probe -FullTests`; do not cove
 the full suite by batching filtered local runs. No benchmark is part of this
 experiment.
 
+The hosted compatibility checks use four parallel lanes: stable and nightly,
+each checking the Runtime and Broker package groups. Runtime contains ternary,
+GGUF, Prism, the CPU reference and this crate; Broker contains the Windows
+boundary crates and broker. Shared dependencies stay in the same compiler/group
+target cache. Compiler probes run independently, and the final `compatibility`
+check requires every lane to succeed. `-Mode Compatibility -PackageGroup Runtime`
+or `Broker` selects formatting, Release Clippy and documentation locally; omitting
+the group checks all packages. Complete correctness suites still require hosted
+`-FullTests`, and receipts identify their selected group and package paths.
+
 The exact prototype regression names are:
 
 - `tests::borrowed_outputs_match_reference_and_invalidate`
