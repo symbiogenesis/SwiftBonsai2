@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Buffers.Binary;
 using System.IO;
 using System.Numerics;
 
@@ -24,7 +25,7 @@ public static class Pq2BitcosCodec {
     private const int PrefixBytes = 18;
     private static InvalidDataException Bad(string message) { return new InvalidDataException("PQ2/BITCOS reference block: " + message); }
     private static void ValidateScale(ReadOnlySpan<byte> source) {
-        int scale=source[0] | (source[1]<<8);
+        int scale=BinaryPrimitives.ReadUInt16LittleEndian(source);
         if((scale&0x7fff)==0) throw Bad("zero scale is outside conservative census eligibility.");
         if((scale&0x7c00)==0x7c00) throw Bad("nonfinite scale is outside conservative census eligibility.");
     }

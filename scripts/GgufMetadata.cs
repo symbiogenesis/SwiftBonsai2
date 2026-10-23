@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -76,17 +77,22 @@ public sealed partial class GgufInspector : IDisposable {
         ulong size=U64();
         if (size>(ulong)limit) throw Bad("name/string exceeds inspection limit.");
         Need(size);
-        return utf8.GetString(reader.ReadBytes((int)size));
+        return ReadText((int)size);
     }
-    private static int Width(uint type) {
-        switch(type) {
-            case 0: case 1: case 7: return 1;
-            case 2: case 3: return 2;
-            case 4: case 5: case 6: return 4;
-            case 10: case 11: case 12: return 8;
-            default: return 0;
-        }
+    private string ReadText(int size) {
+        // Names and retained strings fit the shared buffer. Decode directly
+        // from its span instead of allocating a byte array for every string.
+        Span<byte> bytes=hashBuffer.AsSpan(0,size);
+        file.ReadExactly(bytes);
+        return utf8.GetString(bytes);
     }
+    private static int Width(uint type) => type switch {
+        0 or 1 or 7 => 1,
+        2 or 3 => 2,
+        4 or 5 or 6 => 4,
+        10 or 11 or 12 => 8,
+        _ => 0
+    };
     private object Scalar(uint type) {
         int width=Width(type); if(width==0) throw Bad("unknown scalar type."); Need((ulong)width);
         switch(type) {
@@ -108,9 +114,9 @@ public sealed partial class GgufInspector : IDisposable {
     private void SkipBooleans(ulong count) {
         Need(count);
         while(count>0) {
-            int n=file.Read(hashBuffer,0,(int)Math.Min((ulong)hashBuffer.Length,count));
+            int n=file.Read(hashBuffer.AsSpan(0,(int)Math.Min((ulong)hashBuffer.Length,count)));
             if(n==0) throw Bad("truncated boolean array.");
-            for(int i=0;i<n;i++) if(hashBuffer[i]>1) throw Bad("invalid boolean.");
+            if(hashBuffer.AsSpan(0,n).ContainsAnyExceptInRange((byte)0,(byte)1)) throw Bad("invalid boolean.");
             count-=(ulong)n;
         }
     }
@@ -119,7 +125,7 @@ public sealed partial class GgufInspector : IDisposable {
         if(depth>4) throw Bad("array nesting exceeds inspection limit.");
         if(type==8) {
             ulong size=U64(); if(size>StringLimit) throw Bad("string exceeds 8 MiB inspection limit."); Need(size);
-            if(retain && size<=65536) return utf8.GetString(reader.ReadBytes((int)size));
+            if(retain && size<=(ulong)hashBuffer.Length) return ReadText((int)size);
             file.Position+=checked((long)size); return null;
         }
         if(type!=9) return Scalar(type);
@@ -151,8 +157,8 @@ public sealed partial class GgufInspector : IDisposable {
         long restore=file.Position;
         file.Position=start;
         while(length>0) {
-            int n=file.Read(hashBuffer,0,(int)Math.Min(hashBuffer.Length,length));
-            if(n==0) throw Bad("truncated hash region."); hash.AppendData(hashBuffer,0,n); length-=n;
+            int n=file.Read(hashBuffer.AsSpan(0,(int)Math.Min(hashBuffer.Length,length)));
+            if(n==0) throw Bad("truncated hash region."); hash.AppendData(hashBuffer.AsSpan(0,n)); length-=n;
         }
         file.Position=restore;
     }
@@ -204,7 +210,7 @@ public sealed partial class GgufInspector : IDisposable {
                 file.ReadExactly(hashBuffer.AsSpan(0,bytes));
                 for(int block=0;block<batch;block++) {
                     int start=block*Pq2BlockBytes;
-                    int scale=hashBuffer[start] | (hashBuffer[start+1]<<8);
+                    int scale=BinaryPrimitives.ReadUInt16LittleEndian(hashBuffer.AsSpan(start,2));
                     if((scale&0x7fff)==0) zeroScales++;
                     else if((scale&0x7c00)==0x7c00) nonfiniteScales++;
                     uint blockCodeCounts=0;

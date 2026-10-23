@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Buffers.Binary;
 using System.IO;
 
 namespace SwiftBonsai {
@@ -22,7 +23,7 @@ public static class Pq2Ptq1Codec {
     private const int Ptq1Bytes = 28;
     private static InvalidDataException Bad(string message) { return new InvalidDataException("PQ2/PTQ1 block: " + message); }
     private static void ValidateScale(ReadOnlySpan<byte> scale) {
-        int bits=scale[0] | (scale[1]<<8);
+        int bits=BinaryPrimitives.ReadUInt16LittleEndian(scale);
         if((bits&0x7fff)==0 || (bits&0x7c00)==0x7c00) throw Bad("scale must be finite and nonzero under conservative census eligibility.");
     }
     private static int Code(ReadOnlySpan<byte> source, int position) { return (source[2+position/4]>>(2*(position%4)))&3; }

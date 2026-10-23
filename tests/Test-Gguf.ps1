@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([void])]
-param([ValidateSet('All','Parser','Arrays','Artifact')][string]$Case = 'All')
+param([ValidateSet('All','Parser','Strings','Arrays','Artifact')][string]$Case = 'All')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -127,6 +127,64 @@ if ($Case -in @('All','Parser')) {
         [IO.File]::WriteAllBytes($badPath, $bytes)
         Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } "Corrupt GGUF was accepted: $mutation"
     }
+}
+if ($Case -in @('All','Strings')) {
+    function New-StringFixture {
+        [CmdletBinding(SupportsShouldProcess)]
+        [OutputType([hashtable])]
+        param([string]$Path, [string]$Value, [string]$Key = 'tokenizer.test_string')
+        if (-not $PSCmdlet.ShouldProcess($Path, 'Create synthetic GGUF string fixture')) { return }
+        $memory = [IO.MemoryStream]::new()
+        $writer = [IO.BinaryWriter]::new($memory, [Text.Encoding]::UTF8, $true)
+        try {
+            $writer.Write([uint32]0x46554747); $writer.Write([uint32]3); $writer.Write([uint64]0); $writer.Write([uint64]2)
+            Write-Key -Writer $writer -Key 'general.architecture' -Type 8; Write-Text $writer 'synthetic'
+            $tokenizerStart = $memory.Position
+            Write-Key -Writer $writer -Key $Key -Type 8
+            $valueStart = $memory.Position + 8
+            Write-Text $writer $Value
+            $writer.Flush()
+            $bytes = $memory.ToArray()
+            [IO.File]::WriteAllBytes($Path, $bytes)
+            $rawTokenizer = [byte[]]::new($bytes.Length - $tokenizerStart)
+            [Array]::Copy($bytes, $tokenizerStart, $rawTokenizer, 0, $rawTokenizer.Length)
+            return @{
+                Bytes = $bytes; KeyStart = $tokenizerStart + 8; ValueStart = $valueStart
+                TokenizerHash = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($rawTokenizer))
+            }
+        } finally { $writer.Dispose(); $memory.Dispose() }
+    }
+    foreach ($size in @(0,1,1024,65535,65536,65537)) {
+        # End each nontrivial string with a four-byte Unicode character. This
+        # reaches the exact byte limit without assuming UTF-16 length is bytes.
+        $value = if ($size -lt 4) { 'a' * $size } else { ('a' * ($size - 4)) + '🍀' }
+        $stringPath = Join-Path $scratch "string-$size.gguf"
+        $stringFixture = New-StringFixture -Path $stringPath -Value $value
+        $stringReport = [SwiftBonsai.GgufInspector]::Read($stringPath)
+        if ($size -le 65536) {
+            Assert ($stringReport.Scalars['tokenizer.test_string'] -ceq $value) "Retained UTF-8 string changed at $size bytes."
+        } else {
+            Assert (-not $stringReport.Scalars.ContainsKey('tokenizer.test_string')) 'Over-limit retained string was materialized.'
+        }
+        Assert ($stringReport.TokenizerMetadataSha256 -ceq $stringFixture.TokenizerHash) "String buffer reuse changed tokenizer digest at $size bytes."
+    }
+    $key = 'tokenizer.' + ('a' * 1014)
+    $keyPath = Join-Path $scratch 'long-key.gguf'
+    $stringFixture = New-StringFixture -Path $keyPath -Value 'λ' -Key $key
+    Assert ([SwiftBonsai.GgufInspector]::Read($keyPath).Scalars[$key] -ceq 'λ') 'The 1024-byte metadata key was not decoded exactly.'
+    foreach ($part in @('Key','Value')) {
+        $bytes = [byte[]]$stringFixture.Bytes.Clone()
+        $bytes[$stringFixture["${part}Start"]] = 255
+        $badPath = Join-Path $scratch "invalid-utf8-$part.gguf"
+        [IO.File]::WriteAllBytes($badPath, $bytes)
+        Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } "Invalid UTF-8 in $part was accepted."
+    }
+    $badPath = Join-Path $scratch 'truncated-string.gguf'
+    [IO.File]::WriteAllBytes($badPath, $stringFixture.Bytes[0..($stringFixture.Bytes.Length - 2)])
+    Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } 'A truncated UTF-8 string was accepted.'
+    $badPath = Join-Path $scratch 'over-limit-key.gguf'
+    New-StringFixture -Path $badPath -Value 'test' -Key ($key + 'a') | Out-Null
+    Assert-Failure { [SwiftBonsai.GgufInspector]::Read($badPath) } 'An over-limit metadata key was accepted.'
 }
 if ($Case -in @('All','Arrays')) {
     function New-ArrayFixture {
