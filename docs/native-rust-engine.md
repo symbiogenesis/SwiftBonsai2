@@ -94,13 +94,18 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
   rank-one fusion must preserve its arithmetic contract. Exit with incremental
   same-workload CI results rather than combined hypothetical multipliers.
 
-  - [ ] **R4.1 — Integrate reusable decoder logits and graph scratch.** Use the
-    [borrowed-logits prototype](../tools/rust-trial/README.md) to guide a bounded,
-    stable-compatible output-buffer or borrowed-view API in the production
-    `Decoder`/`Qwen35` path. Finish consuming each view before the next mutation;
-    cover cache invalidation, evaluation failure and cancellation without
-    exposing stale logits. Preserve numerical contracts, immutable tensor
-    sharing and independently owned rollback checkpoints.
+  - [x] **R4.1 — Integrate reusable decoder logits and graph scratch.**
+    `Decoder::evaluate_into` replaces a caller-owned logits buffer on stable
+    Rust; the owned `evaluate` interface remains compatible. `Runtime` retains
+    its output allocation across token steps, prefix restoration and reset,
+    validates every output, and restores independently owned logits/state after
+    failed evaluation or cancellation. `Qwen35` retains graph workspace and
+    kernel activation storage outside checkpoints, computing into reusable
+    per-layer deltas before committing state. Focused synthetic regressions
+    cover numerical fixtures, storage reuse, invalid output, cancellation and
+    recovery. Immutable tensor payloads and owned checkpoint isolation remain
+    unchanged. This implements storage reuse, without qualifying a full-model
+    allocation, memory or throughput benefit.
   - [ ] **R4.2 — Qualify the production allocation benefit.** Compare the owned
     output baseline with reusable logits/scratch using the same model and
     workload. Record allocation counts/bytes and peak memory for prefill and
@@ -128,6 +133,8 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
     Keep stable as the default until a production benefit and compatibility
     evidence justify migration; the existing reusable-buffer prototype already
     works on stable and does not remove checkpoint ownership requirements.
+    The production caller-owned output API also works on stable and encounters
+    neither limitation, so it requires no nightly migration or solver change.
 
 - [ ] **R6 — Optimize the Adreno path after CPU parity.** Implement the same
   packed types, transforms and full hybrid graph on a supported GPU backend.

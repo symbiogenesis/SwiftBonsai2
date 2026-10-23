@@ -29,6 +29,14 @@ The crate contains:
   edited prompts, reset and rollback after failed evaluation or stream delivery.
   Failed rollback closes admission until reset succeeds. Streamed tokens are
   provisional until the request returns successfully.
+- Reusable caller-owned logits through `Decoder::evaluate_into`, with the owned
+  `evaluate` API retained for compatibility. The Qwen35 graph retains bounded
+  workspace, per-layer state deltas and quantized activation scratch; the runtime
+  consumes logits before the next mutation and validates their shape/finiteness.
+  Reset and prefix restoration invalidate prior output without discarding the
+  reusable workspace. Checkpoints still own independent committed state/logits;
+  scratch never substitutes for a rollback snapshot. Errors clear direct output,
+  and runtime cancellation/failure restores the prior committed conversation.
 
 The graph/quantizer reference is Prism commit
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.
@@ -68,6 +76,14 @@ overhead need additional headroom. It is not an OS process limit. Graph state ha
 its own checked bound; `--checkpoint-bytes` bounds all saved snapshots including
 the in-flight rollback state. Hardware/process admission remains the caller's
 responsibility until the broker ownership integration is qualified.
+
+Graph workspace now retains its high-water allocations across evaluations rather
+than releasing temporary vectors after each token. This can remove repeated
+allocation while retaining more idle memory. The graph's geometry/context bounds
+still apply; the retained-model and checkpoint budgets do not cover workspace.
+Synthetic numerical and storage-reuse tests do not measure full-model allocation
+counts, peak memory or speed. R4.2 still requires same-model prefill/decode
+allocation and memory qualification in CI when requested.
 
 ## Validation and remaining work
 

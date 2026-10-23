@@ -637,7 +637,7 @@ Use a simple Amdahl bound to decide whether API work deserves attention. If seri
 | P1 | Thread/polling profiles and persistent compiled-kernel caches | Cheap existing controls for comfort and startup; qualify phase-specific tradeoffs |
 | P1 | Actual ARM packed SIMD dispatch and runtime tiling/repacking | Improve the selected weights' execution before adding a new model format |
 | P1 | Native Rust Prism implementation, borrowing audited Camelid/Orangu techniques | Follow M7/R0–R7; profile first, preserve numerical contracts, prove kernel benefit and qualify the full Windows ARM64 runtime |
-| P1 | Reusable Rust logits/scratch and explicit lending interfaces | Follow [R4.1/R4.2 and R5.1](docs/native-rust-engine.md#ordered-work): integrate production buffer reuse, qualify allocation/memory benefit, and require a concrete API benefit before changing the stable compiler baseline |
+| P1 | Qualify reusable Rust logits/scratch and assess lending interfaces | [R4.1](docs/native-rust-engine.md#ordered-work) implements stable caller-owned logits and retained graph/kernel workspace; R4.2 still requires same-model allocation/memory qualification, and R5.1 requires a concrete API benefit before changing the stable compiler baseline |
 | P1 | Reviewed ik_llama Prism-format R8 ARM NEON backport if missing | Concrete existing PQ2/PTQ source lead before inventing an adapter; validate activation/transform semantics |
 | P1 | T-MAC-style ARM lookup kernels | Existing Windows/ARM work; adapt exact Swift quantization and graph semantics |
 | P1 | Vulkan fused operations, persistent scratch, graph/command reuse | Reduce measured dispatch/intermediate-memory costs without an API rewrite |

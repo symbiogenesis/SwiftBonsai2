@@ -24,6 +24,15 @@ model weights or establish full-model parity, throughput, broker integration or
 daily security acceptance. Local validation remains limited to focused cases;
 all full suites and benchmarks run only in CI.
 
+The native decoder's stable `evaluate_into` path reuses caller-owned logits and
+retained graph/kernel workspace. Focused correctness cases check numerical
+fixtures, output storage reuse, checkpoint independence, malformed outputs and
+rollback after evaluation failure or cancellation. These are synthetic ownership
+and correctness checks, not allocation profiling or model performance evidence.
+The existing Foundation native-runtime lane includes them in its complete suite;
+same-model prefill/decode allocation counts/bytes and peak-memory qualification
+remain separate R4.2 work and run only in CI when requested.
+
 Ordinary build tools, GGUF commands and version/help probes share
 `scripts/Bonsai.Native.psm1`. It passes literal argument arrays, reads stdout and
 stderr concurrently, inherits the environment with explicit child overrides,
