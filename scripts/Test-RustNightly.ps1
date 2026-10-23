@@ -26,6 +26,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Rust.psm1')
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $configuration = Get-Content -LiteralPath (Join-Path $repoRoot 'config/rust-nightly-trial.json') -Raw |
@@ -124,7 +125,6 @@ try {
         }
     }
     $rustc = (Get-Command -Name rustc -CommandType Application -ErrorAction Stop).Source
-    $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
     if ($Mode -eq 'Compatibility') {
         if ($Toolchain -cne $configuration.StableToolchain -and $Toolchain -cne $configuration.NightlyToolchain) {
             throw 'Compatibility must select a toolchain from the trial configuration.'
@@ -136,38 +136,21 @@ try {
             throw 'Cargo targets must be separate from uploaded evidence.'
         }
         [void][IO.Directory]::CreateDirectory($target)
-        $environment = @{ CARGO_TARGET_DIR = $target; TEMP = $workingDirectory; TMP = $workingDirectory }
         # Keep path dependencies in one target lane rather than recompiling them
-        # on one runner per package. Both groups retain every existing check.
-        $packageGroups = [ordered]@{
-            Runtime = @('tools/ternary', 'tools/gguf', 'tools/prism', 'src/prism-runtime', 'tools/rust-trial')
-            Broker = @('src/windows-process', 'src/windows-credentials', 'src/broker')
-        }
-        $packages = if ($PackageGroup -eq 'All') { @($packageGroups.Values | ForEach-Object { $_ }) }
-            else { $packageGroups[$PackageGroup] }
-        $receipt.Packages = @($packages)
-        $phases = @('fmt', 'clippy', 'doc')
-        if ($FullTests) { $phases += 'test' }
-        foreach ($package in $packages) {
-            $manifest = Join-Path $repoRoot ($package + '/Cargo.toml')
-            foreach ($phase in $phases) {
-                $arguments = @(('+' + $Toolchain), $phase, '--manifest-path', $manifest)
-                if ($phase -eq 'fmt') { $arguments += '--check' }
-                else {
-                    $arguments += @('--locked', '--release')
-                    # The pinned native engine's linked regressions remain in Foundation.
-                    if ($package -eq 'tools/prism') {
-                        if ($phase -ne 'test') { $arguments += @('--features', 'engine-loader') }
-                    } else { $arguments += '--all-features' }
-                    if ($phase -eq 'clippy') { $arguments += @('--all-targets', '--', '-D', 'warnings') }
-                    elseif ($phase -eq 'doc') { $arguments += '--no-deps' }
-                }
-                $name = $package.Replace('/', '-') + '-' + $phase
-                $result = Invoke-TrialTool -Name $name -Executable $cargo -Arguments $arguments -Environment $environment
-                Write-Information -MessageData "$name exit $($result.ExitCode)" -InformationAction Continue
+        # on one runner per package. Foundation and this trial share one registry
+        # and phase runner, including Prism's native-linking feature exception.
+        $receipt.Packages = @(Get-BonsaiRustPackage -Group $PackageGroup | ForEach-Object { $_.Manifest })
+        $checkEvidence = Join-Path $evidence 'packages'
+        $receipt['PackageChecksReceipt'] = Join-Path $checkEvidence 'rust-checks.json'
+        try {
+            $null = Invoke-BonsaiRustCheck -Group $PackageGroup -Toolchain $Toolchain -TargetDirectory $target `
+                -EvidenceDirectory $checkEvidence -CheckProfile Compatibility -FullTests:$FullTests
+        } finally {
+            if ([IO.File]::Exists($receipt.PackageChecksReceipt)) {
+                $packageReceipt = Get-Content -LiteralPath $receipt.PackageChecksReceipt -Raw | ConvertFrom-Json -DateKind String -NoEnumerate
+                foreach ($check in $packageReceipt.Checks) { $records.Add($check) }
             }
         }
-        if ($records.Where({ -not $_.Passed }).Count) { throw 'Compatibility checks failed; inspect the recorded command logs.' }
     } else {
         Get-TrialCompilerIdentity -SelectedToolchain $configuration.StableToolchain
         Get-TrialCompilerIdentity -SelectedToolchain $configuration.NightlyToolchain

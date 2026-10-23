@@ -71,18 +71,18 @@ jobs:
             ${{ env.CARGO_HOME }}/registry/index
             ${{ env.CARGO_HOME }}/registry/cache
             ${{ env.CARGO_HOME }}/git/db
-          key: rust-trial-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock', 'tools/prism/source.lock.json') }}
+          key: rust-trial-downloads-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'tools/prism/source.lock.json') }}
           restore-keys: |
             rust-trial-downloads-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: Reuse compiler and group build artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.RUST_TRIAL_TARGET }}
-          key: rust-trial-targets-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.toolchain }}-${{ matrix.group }}-${{ env.RUST_TRIAL_CACHE_HOST }}-${{ env.RUST_TRIAL_IDENTITY }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'tools/prism/source.lock.json', 'rust-toolchain.toml', 'config/rust-nightly-trial.json') }}-${{ hashFiles('src/**/*.rs', 'tools/**/*.rs', 'scripts/Test-RustNightly.ps1', 'scripts/Bonsai.Native.psm1', 'scripts/Bonsai.Common.psm1', 'rustfmt.toml', '.github/workflows/rust-nightly.yml') }}
+          key: rust-trial-targets-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.toolchain }}-${{ matrix.group }}-${{ env.RUST_TRIAL_CACHE_HOST }}-${{ env.RUST_TRIAL_IDENTITY }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', '**/Cargo.toml', 'tools/prism/source.lock.json', 'rust-toolchain.toml', 'config/rust-nightly-trial.json') }}-${{ hashFiles('src/**/*.rs', 'tools/**/*.rs', 'scripts/Test-RustNightly.ps1', 'scripts/Test-Rust.ps1', 'scripts/Bonsai.Rust.psm1', 'config/rust-packages.psd1', 'scripts/Bonsai.Native.psm1', 'scripts/Bonsai.Common.psm1', 'rustfmt.toml', '.github/workflows/rust-nightly.yml') }}
           # Cargo validates fingerprints after either restore. Lockfile/config
           # changes can reuse unchanged dependencies without sharing compilers.
           restore-keys: |
-            rust-trial-targets-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.toolchain }}-${{ matrix.group }}-${{ env.RUST_TRIAL_CACHE_HOST }}-${{ env.RUST_TRIAL_IDENTITY }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml', 'tools/prism/source.lock.json', 'rust-toolchain.toml', 'config/rust-nightly-trial.json') }}-
+            rust-trial-targets-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.toolchain }}-${{ matrix.group }}-${{ env.RUST_TRIAL_CACHE_HOST }}-${{ env.RUST_TRIAL_IDENTITY }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', '**/Cargo.toml', 'tools/prism/source.lock.json', 'rust-toolchain.toml', 'config/rust-nightly-trial.json') }}-
             rust-trial-targets-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.toolchain }}-${{ matrix.group }}-${{ env.RUST_TRIAL_CACHE_HOST }}-${{ env.RUST_TRIAL_IDENTITY }}-
       - name: Formatting, Release analyzers, documentation and complete correctness suites
         id: checks

@@ -36,7 +36,7 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ${{ env.CARGO_TARGET_DIR }}
-          key: native-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NATIVE_RUNTIME_CACHE_HOST }}-1.99.1-${{ hashFiles('src/prism-runtime/**', 'tools/prism/**', 'tools/gguf/**', 'tools/ternary/**', 'rust-toolchain.toml') }}
+          key: native-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NATIVE_RUNTIME_CACHE_HOST }}-1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/prism-runtime/**', 'tools/prism/**', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
           restore-keys: |
             native-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NATIVE_RUNTIME_CACHE_HOST }}-1.99.1-
       - name: Native CPU reference format, analyzers and complete correctness suite
@@ -46,14 +46,18 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          $manifest = Join-Path $env:GITHUB_WORKSPACE 'src/prism-runtime/Cargo.toml'
-          cargo +1.99.1-aarch64-pc-windows-msvc fmt --manifest-path $manifest --check
-          cargo +1.99.1-aarch64-pc-windows-msvc clippy --manifest-path $manifest --locked --release --all-targets --all-features -- -D warnings
-          cargo +1.99.1-aarch64-pc-windows-msvc doc --manifest-path $manifest --locked --release --no-deps --all-features
-          cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --release --all-features
-          cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path $manifest --locked --release
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-NativeRuntimeChecks-' + [guid]::NewGuid().ToString('N'))
+          "NATIVE_RUNTIME_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism-runtime -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
           & (Join-Path $env:CARGO_TARGET_DIR 'release/bonsai-prism-runtime.exe') --help
           'Native Rust token-level CPU reference checks passed. Full-model parity, broker integration and device qualification remain pending.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Retain native runtime check evidence
+        if: always() && env.NATIVE_RUNTIME_CHECK_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-runtime-checks-${{ github.run_id }}
+          path: ${{ env.NATIVE_RUNTIME_CHECK_EVIDENCE }}
+          if-no-files-found: error
   prism:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
@@ -107,7 +111,7 @@ jobs:
             ~/.cargo/git/db
             ${{ runner.temp }}/SwiftBonsai-PrismRustChecks
             ${{ runner.temp }}/SwiftBonsai-PrismRustBuild
-          key: prism-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-1.99.1-${{ hashFiles('tools/prism/**', 'scripts/Build-PrismEngine.ps1', 'rust-toolchain.toml') }}
+          key: prism-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/prism/**', 'scripts/Build-PrismEngine.ps1', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
           restore-keys: |
             prism-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-1.99.1-
       - name: Check Rust and build the pinned engine with its Rust storage overlay
@@ -127,10 +131,9 @@ jobs:
           $manifest = Join-Path $env:GITHUB_WORKSPACE 'tools/prism/Cargo.toml'
           $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismRustChecks'
           cargo +1.99.1 fetch --manifest-path $manifest --locked
-          cargo +1.99.1 fmt --manifest-path $manifest --check
-          cargo +1.99.1 clippy --manifest-path $manifest --locked --offline --release --all-targets -- -D warnings
-          cargo +1.99.1 doc --release --manifest-path $manifest --locked --offline --no-deps
-          cargo +1.99.1 test --manifest-path $manifest --locked --offline --release
+          $checks = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-PrismChecks-' + [guid]::NewGuid().ToString('N'))
+          "PRISM_CHECK_EVIDENCE=$checks" >> $env:GITHUB_ENV
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism -Toolchain 1.99.1 -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory (Join-Path $checks 'policy') -FullTests -Offline | ConvertTo-Json -Depth 8
           Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1') -Force
           $lock = Get-Content -Raw -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'tools/prism/source.lock.json') | ConvertFrom-Json
           $lane = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismDownloads'
@@ -149,8 +152,7 @@ jobs:
           if ($LASTEXITCODE) { throw 'Native immutable B-sharing regression failed.' }
           $nativeLibraries = @(Get-ChildItem -LiteralPath (Join-Path $result.EvidenceDirectory 'build-probe') -Recurse -File | Where-Object { $_.Name -in @('libggml.a','libggml-cpu.a','libggml-base.a') })
           $env:BONSAI_PRISM_NATIVE_LIB_DIR = @($nativeLibraries.DirectoryName | Sort-Object -Unique) -join [IO.Path]::PathSeparator
-          cargo +1.99.1 clippy --manifest-path $manifest --locked --offline --release --all-targets --all-features -- -D warnings
-          cargo +1.99.1 doc --release --manifest-path $manifest --locked --offline --no-deps --all-features
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism -Toolchain 1.99.1 -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory (Join-Path $checks 'native') -CheckProfile Native -Phase clippy,doc -Offline | ConvertTo-Json -Depth 8
           ccache --show-stats
           'Rust sharing policy and native regression passed; pinned engine compiled and linked to Rust. Model TPS/quality remains unqualified.' >> $env:GITHUB_STEP_SUMMARY
       - name: Retain source-build receipts and technical logs
@@ -162,6 +164,13 @@ jobs:
             ${{ env.BONSAI_PRISM_EVIDENCE }}/build-receipt.json
             ${{ env.BONSAI_PRISM_EVIDENCE }}/command-*.log
             ${{ env.BONSAI_PRISM_EVIDENCE }}/build-probe/Testing/Temporary/LastTest.log
+          if-no-files-found: error
+      - name: Retain Prism Rust check evidence
+        if: always() && env.PRISM_CHECK_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: prism-rust-checks-${{ github.run_id }}
+          path: ${{ env.PRISM_CHECK_EVIDENCE }}
           if-no-files-found: error
   ternary:
     if: github.ref == 'refs/heads/main'
@@ -188,7 +197,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.TERNARY_TARGET_DIR }}
-          key: ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-1.99.1-${{ hashFiles('tools/ternary/**', 'rust-toolchain.toml') }}
+          key: ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
           restore-keys: |
             ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-1.99.1-
       - name: PQ2 and PTQ codecs, FP16 reference parity and Rust analyzers
@@ -200,16 +209,21 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          $manifest = Join-Path $env:GITHUB_WORKSPACE 'tools/ternary/Cargo.toml'
           $fixtures = Join-Path $env:GITHUB_WORKSPACE 'tools/ternary/tests/fixtures'
           $provenance = Get-Content -Raw -LiteralPath (Join-Path $fixtures 'provenance.json') | ConvertFrom-Json -DateKind String
           $fixture = Join-Path $fixtures 'ptq-reference.bin'
           if ((Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant() -cne $provenance.fixtureSha256) { throw 'C++ reference fixture digest differs from provenance.' }
-          cargo +1.99.1-aarch64-pc-windows-msvc fmt --manifest-path $manifest --check
-          cargo +1.99.1-aarch64-pc-windows-msvc clippy --manifest-path $manifest --locked --offline --release --all-targets --all-features -- -D warnings
-          cargo +1.99.1-aarch64-pc-windows-msvc doc --release --manifest-path $manifest --locked --offline --no-deps --all-features
-          cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --offline --release --all-features
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-TernaryChecks-' + [guid]::NewGuid().ToString('N'))
+          "TERNARY_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-ternary -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Offline | ConvertTo-Json -Depth 8
           'Shared PQ2/PTQ codecs and FP16 conversion passed correctness checks and retained C++ reference parity.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Retain ternary Rust check evidence
+        if: always() && env.TERNARY_CHECK_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ternary-checks-${{ github.run_id }}
+          path: ${{ env.TERNARY_CHECK_EVIDENCE }}
+          if-no-files-found: error
       - name: Kill the bounded codec mutation catalog
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -276,35 +290,31 @@ jobs:
             ${{ env.CARGO_HOME }}/registry/cache
             ${{ env.CARGO_HOME }}/git/db
             ${{ env.CARGO_TARGET_DIR }}
-          key: broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'src/windows-*/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs', 'src/windows-*/**') }}
+          key: broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs', 'src/windows-*/**', 'tools/bonsai/**', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1') }}
           restore-keys: |
-            broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('src/broker/Cargo.lock', 'src/broker/Cargo.toml', 'src/windows-*/Cargo.toml', 'rust-toolchain.toml') }}-
+            broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
       - name: Broker format, analyzer and full correctness suite
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
-          $manifest = Join-Path $env:GITHUB_WORKSPACE 'src/broker/Cargo.toml'
-          cargo +1.99.1-aarch64-pc-windows-msvc fmt --manifest-path $manifest --check
-          if ($LASTEXITCODE) { throw 'Broker formatting failed.' }
-          cargo +1.99.1-aarch64-pc-windows-msvc clippy --manifest-path $manifest --locked --release --all-targets --all-features -- -D warnings
-          if ($LASTEXITCODE) { throw 'Broker analyzer failed.' }
-          cargo +1.99.1-aarch64-pc-windows-msvc doc --release --manifest-path $manifest --locked --no-deps --all-features
-          if ($LASTEXITCODE) { throw 'Broker documentation analyzer failed.' }
-          cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --release --all-features
-          if ($LASTEXITCODE) { throw 'Broker suite failed.' }
-          foreach ($crate in @('windows-process', 'windows-credentials')) {
-            $nativeManifest = Join-Path $env:GITHUB_WORKSPACE "src/$crate/Cargo.toml"
-            cargo +1.99.1-aarch64-pc-windows-msvc fmt --manifest-path $nativeManifest --check
-            if ($LASTEXITCODE) { throw "$crate formatting failed." }
-            cargo +1.99.1-aarch64-pc-windows-msvc clippy --manifest-path $nativeManifest --locked --release --all-targets --all-features -- -D warnings
-            if ($LASTEXITCODE) { throw "$crate analyzer failed." }
-            cargo +1.99.1-aarch64-pc-windows-msvc doc --release --manifest-path $nativeManifest --locked --no-deps --all-features
-            if ($LASTEXITCODE) { throw "$crate documentation failed." }
-            cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path $nativeManifest --locked --release --all-features
-            if ($LASTEXITCODE) { throw "$crate native correctness failed." }
-          }
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-BrokerChecks-' + [guid]::NewGuid().ToString('N'))
+          "BROKER_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Group Broker -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
+      - name: Retain broker and packaged tool check evidence
+        if: always() && env.BROKER_CHECK_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: broker-checks-${{ github.run_id }}
+          path: ${{ env.BROKER_CHECK_EVIDENCE }}
+          if-no-files-found: error
+      - name: Package the native Windows ARM64 maintenance CLI
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bonsai-tools-windows-arm64-${{ github.sha }}
+          path: ${{ env.CARGO_TARGET_DIR }}/release/bonsai-tools.exe
+          if-no-files-found: error
   standards:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
@@ -372,6 +382,8 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.4xx'
+      - name: Build packaged maintenance tools once for lifecycle checks
+        uses: ./.github/actions/bonsai-tools
       - name: Windows owned process lifecycle and resource limits
         shell: pwsh
         run: |
@@ -390,6 +402,8 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.4xx'
+      - name: Build packaged maintenance tools once for script checks
+        uses: ./.github/actions/bonsai-tools
       - name: Full foundation suite
         shell: pwsh
         run: ./tests/Test-Foundation.ps1 -Case All
@@ -402,6 +416,9 @@ jobs:
       - name: Engine build scheduling correctness
         shell: pwsh
         run: ./tests/Test-EngineBuild.ps1 -Case Parallelism
+      - name: Rust check feature isolation and local-suite policy
+        shell: pwsh
+        run: ./tests/Test-RustTooling.ps1
       - name: Development credential creation and path policy
         shell: pwsh
         run: |
@@ -457,7 +474,7 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             ${{ env.CARGO_TARGET_DIR }}
-          key: gguf-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GGUF_CACHE_HOST }}-1.99.1-${{ hashFiles('tools/gguf/**', 'tools/ternary/**', 'rust-toolchain.toml') }}
+          key: gguf-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GGUF_CACHE_HOST }}-1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
           restore-keys: |
             gguf-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GGUF_CACHE_HOST }}-1.99.1-
       - name: Build and check the Rust GGUF CLI
@@ -467,18 +484,17 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          $manifest = Join-Path $env:GITHUB_WORKSPACE 'tools/gguf/Cargo.toml'
-          cargo +1.99.1-aarch64-pc-windows-msvc fmt --manifest-path $manifest --check
-          if ($LASTEXITCODE) { throw 'GGUF formatting failed.' }
-          cargo +1.99.1-aarch64-pc-windows-msvc clippy --manifest-path $manifest --locked --release --all-targets -- -D warnings
-          if ($LASTEXITCODE) { throw 'GGUF analyzer failed.' }
-          cargo +1.99.1-aarch64-pc-windows-msvc doc --release --manifest-path $manifest --locked --no-deps
-          if ($LASTEXITCODE) { throw 'GGUF documentation analyzer failed.' }
-          cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path $manifest --locked --release
-          if ($LASTEXITCODE) { throw 'GGUF suite failed.' }
-          cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path $manifest --locked --release
-          if ($LASTEXITCODE) { throw 'GGUF CLI build failed.' }
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-GgufChecks-' + [guid]::NewGuid().ToString('N'))
+          "GGUF_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-gguf -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
           "BONSAI_GGUF_TOOL=$(Join-Path $env:CARGO_TARGET_DIR 'release/bonsai-gguf.exe')" >> $env:GITHUB_ENV
+      - name: Retain GGUF Rust check evidence
+        if: always() && env.GGUF_CHECK_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gguf-checks-${{ github.run_id }}
+          path: ${{ env.GGUF_CHECK_EVIDENCE }}
+          if-no-files-found: error
       - name: Full GGUF inspector suite
         shell: pwsh
         run: ./tests/Test-Gguf.ps1 -Case All
@@ -499,6 +515,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Build packaged maintenance tools once for policy checks
+        uses: ./.github/actions/bonsai-tools
       - name: Swift assessment policy and pinned ARM64 runtime
         shell: pwsh
         run: |
