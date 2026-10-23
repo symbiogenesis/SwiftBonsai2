@@ -94,6 +94,20 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
   rank-one fusion must preserve its arithmetic contract. Exit with incremental
   same-workload CI results rather than combined hypothetical multipliers.
 
+  - [ ] **R4.1 — Integrate reusable decoder logits and graph scratch.** Use the
+    [borrowed-logits prototype](../tools/rust-trial/README.md) to guide a bounded,
+    stable-compatible output-buffer or borrowed-view API in the production
+    `Decoder`/`Qwen35` path. Finish consuming each view before the next mutation;
+    cover cache invalidation, evaluation failure and cancellation without
+    exposing stale logits. Preserve numerical contracts, immutable tensor
+    sharing and independently owned rollback checkpoints.
+  - [ ] **R4.2 — Qualify the production allocation benefit.** Compare the owned
+    output baseline with reusable logits/scratch using the same model and
+    workload. Record allocation counts/bytes and peak memory for prefill and
+    decode; check logits, generated tokens, prefix restoration and failure
+    recovery. Run performance measurements only in CI when requested. Synthetic
+    address/capacity reuse is not evidence of a full-model memory or speed gain.
+
 - [ ] **R5 — Implement and qualify the complete Rust runtime.** Add bounded
   conversation state, cache/checkpoint ownership, exact prefix restoration,
   streaming, cancellation, edited turns, slot reset and failure recovery. Keep
@@ -105,6 +119,15 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
   focused regressions and full CI correctness/security coverage. The accepted
   Rust path must have no C/C++ inference-library dependency; necessary driver
   interfaces and device shaders remain explicit boundaries.
+
+  - [ ] **R5.1 — Reassess solver requirements against a concrete lending API.**
+    Apply the pinned [nightly trial](../tools/rust-trial/README.md) when a real
+    tensor-cache, streaming-reader or backend-output interface encounters a
+    conditional-borrow or higher-ranked associated-type limitation. Record the
+    stable alternative and the safe-code simplification or capability gained.
+    Keep stable as the default until a production benefit and compatibility
+    evidence justify migration; the existing reusable-buffer prototype already
+    works on stable and does not remove checkpoint ownership requirements.
 
 - [ ] **R6 — Optimize the Adreno path after CPU parity.** Implement the same
   packed types, transforms and full hybrid graph on a supported GPU backend.
