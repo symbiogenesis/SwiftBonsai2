@@ -4,8 +4,10 @@
 //! supply its total request deadline, and use an owned stream whose Drop closes
 //! the connection. No background task or borrowed stream is retained here.
 
-use crate::{AuthorizedHead, MAX_HEADER_BYTES, MAX_HEADERS, PendingChat, Rejection, RequestPolicy};
-use http::{HeaderName, HeaderValue, Method, Request, Version, uri::PathAndQuery};
+use crate::{
+    AuthorizedHead, MAX_HEADER_BYTES, MAX_HEADERS, PendingChat, Rejection, RequestPolicy, wire,
+};
+use http::{Method, Request, Version, uri::PathAndQuery};
 use std::time::Duration;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
@@ -155,13 +157,7 @@ fn ensure_time(deadline: Instant) -> Result<(), ReceiveError> {
 
 fn parse_head(policy: &RequestPolicy, raw: &[u8]) -> Result<AuthorizedHead, ReceiveError> {
     // httparse permits leading blank lines and bare LF. This adapter does not.
-    if raw.starts_with(b"\r\n")
-        || raw.iter().enumerate().any(|(i, byte)| match byte {
-            b'\r' => raw.get(i + 1) != Some(&b'\n'),
-            b'\n' => i == 0 || raw[i - 1] != b'\r',
-            _ => false,
-        })
-    {
+    if raw.starts_with(b"\r\n") || !wire::valid_line_endings(raw) {
         return Err(ReceiveError::WireSyntax);
     }
     let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
@@ -185,13 +181,8 @@ fn parse_head(policy: &RequestPolicy, raw: &[u8]) -> Result<AuthorizedHead, Rece
         .version(Version::HTTP_11)
         .body(())
         .map_err(|_| ReceiveError::WireSyntax)?;
-    for header in parsed.headers {
-        let name =
-            HeaderName::from_bytes(header.name.as_bytes()).map_err(|_| ReceiveError::WireSyntax)?;
-        let value = HeaderValue::from_bytes(header.value).map_err(|_| ReceiveError::WireSyntax)?;
-        // insert() would hide duplicate critical headers, including identical CL.
-        request.headers_mut().append(name, value);
-    }
+    wire::append_headers(request.headers_mut(), parsed.headers)
+        .map_err(|()| ReceiveError::WireSyntax)?;
     policy
         .check_head(&request.into_parts().0)
         .map_err(ReceiveError::Policy)

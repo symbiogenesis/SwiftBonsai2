@@ -7,9 +7,9 @@
 use crate::{
     AdmittedChat, MAX_HEADER_BYTES, MAX_HEADERS, Object, PendingChat, Rejection, configuration,
     response::{MAX_RESPONSE_BYTES, validate_metadata},
-    singleton,
+    singleton, wire,
 };
-use http::{HeaderName, HeaderValue, Response, Version};
+use http::{Response, Version};
 use serde::Deserialize;
 use std::{
     io,
@@ -243,13 +243,7 @@ where
 }
 
 fn parse_head(raw: &[u8], streaming: bool) -> Result<(Response<()>, Framing), BackendError> {
-    if !raw.starts_with(b"HTTP/1.1 ")
-        || raw.iter().enumerate().any(|(i, byte)| match byte {
-            b'\r' => raw.get(i + 1) != Some(&b'\n'),
-            b'\n' => i == 0 || raw[i - 1] != b'\r',
-            _ => false,
-        })
-    {
+    if !raw.starts_with(b"HTTP/1.1 ") || !wire::valid_line_endings(raw) {
         return Err(BackendError::WireSyntax);
     }
     let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
@@ -267,12 +261,8 @@ fn parse_head(raw: &[u8], streaming: bool) -> Result<(Response<()>, Framing), Ba
         .status(200)
         .body(())
         .map_err(|_| BackendError::Metadata)?;
-    for header in parsed.headers {
-        let name =
-            HeaderName::from_bytes(header.name.as_bytes()).map_err(|_| BackendError::WireSyntax)?;
-        let value = HeaderValue::from_bytes(header.value).map_err(|_| BackendError::WireSyntax)?;
-        response.headers_mut().append(name, value);
-    }
+    wire::append_headers(response.headers_mut(), parsed.headers)
+        .map_err(|()| BackendError::WireSyntax)?;
     validate_metadata(&response, streaming).map_err(|_| BackendError::Metadata)?;
     let headers = response.headers();
     if headers.contains_key("trailer") || headers.contains_key("upgrade") {

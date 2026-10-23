@@ -26,6 +26,7 @@ pub mod scheduler;
 pub mod service;
 pub mod supervisor;
 pub mod transport;
+mod wire;
 
 use http::{HeaderMap, HeaderValue, Method, Version, request::Parts, uri::PathAndQuery};
 use serde::{Deserialize, Deserializer, Serialize, de};
