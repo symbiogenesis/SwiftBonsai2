@@ -67,6 +67,9 @@ switch ($Case) {
             Assert ($entry.LegacyReferenceRequired -is [bool] -and $entry.LegacyReferenceRequired -eq ($required.RequiredReferencePassedIds -ccontains $entry.Id)) 'Migration inventory lost a required reference control.'
             Assert ($entry.Needs -is [array] -and $entry.Needs.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($entry.AssertionsToPort)) 'Migration scope and prerequisites must remain explicit.'
         }
+        Assert ($migration.Target.Platform -ceq 'Windows ARM64' -and $migration.Target.Hardware -ceq 'Snapdragon X Elite') 'Migration acceptance must retain the selected target.'
+        Assert ($migration.Target.ExcludedSources.Count -eq 1 -and $migration.Target.ExcludedSources[0].Id -ceq 'tests/test-rset-release.cpp') 'Only the explicitly excluded Apple wired-memory source is outside the target.'
+        Assert ($migrationIds.Contains($migration.Target.ExcludedSources[0].Id) -and $real.AdapterIds -cnotcontains $migration.Target.ExcludedSources[0].Id) 'The excluded source must remain in inventory and cannot become a passing adapter.'
         $sourceRoot = Join-Path $scratch 'source'
         [void][IO.Directory]::CreateDirectory((Join-Path $sourceRoot 'tests/nested'))
         foreach ($id in $ids) {

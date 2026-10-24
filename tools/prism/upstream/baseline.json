@@ -1,7 +1,7 @@
 {
   "SchemaVersion": 1,
   "UpstreamCommit": "b87ca7225456b06b0975b8239c66b5aecf07e37c",
-  "CatalogSha256": "fc6efc6a705d21d4037a1dcff676381a89ef30985af122e5de319cd13cf615b3",
+  "CatalogSha256": "94abed6565496ce0a0f2f721e340f32ac93ee9a800554b916a7f5b89aaf118ff",
   "Measure": "upstream-source-files",
   "Total": 71,
   "MinimumPassed": 1,
@@ -58,6 +58,7 @@
       "ReportSha256": "3368fd51550c3b4e8f08296186341e5a62e8c5fd5e9ff8cb94ecd0f6f8c56bbf",
       "Pq2FixtureSha256": "279cac324e1382b93650dcfe3b4e2a1a80c346e7c481ba8ef966f47f6f7b1621",
       "Ptq1FixtureSha256": "db47bed002bb2ac699dbe8cc324ba4607cbf4cc12982081f1059b0cce6980036"
-    }
+    },
+    "SafeRustMigration": "Eight source contracts have Rust-owned assertions: PQ2 shapes, PTQ1 mapping, Unicode, MTP bounds, Jinja default groups, MTMD helpers, grammar parser and reasoning budget. MinimumPassed and every RequiredPassedId/RequiredReferencePassedId are preserved. Native acceptance targets Windows ARM64; Apple wired-memory is excluded and never counted as passed."
   }
 }

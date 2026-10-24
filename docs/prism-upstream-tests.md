@@ -15,25 +15,26 @@ read as an assertion-level pass rate or full-model qualification.
 
 ## What runs
 
-The raw C++ lane builds and runs 17 original, model-free correctness executables:
+The raw C++ lane builds and runs 12 original, model-free correctness executables:
 allocation and batch handling, col2im, dfly fusion, GGUF, grammar
-integration/parser, Jinja, llama grammar, logging, MoE reduction, MTP batching,
-PTQ1 CUDA-dot host logic, quantization functions, reasoning budgets, RoPE and
-Unicode. The allowlist is explicit in
+integration/parser, llama grammar, logging, MoE reduction,
+PTQ1 CUDA-dot host logic, quantization functions, reasoning budgets and RoPE. The allowlist is explicit in
 [Invoke-PrismCppSuite.ps1](../scripts/Invoke-PrismCppSuite.ps1). Model downloaders,
 Python environment tests and embedded benchmarks need separate lanes; they
 remain visible in the inventory. A C++ control failure fails CI independently of
 the Rust coverage floor.
 
-The requested retirement covers **all 71 catalog sources**, including model,
-platform and benchmark cases. It is not complete. The 17 original C++ controls
+The migration inventories **all 71 catalog sources**, including model and
+benchmark cases. Acceptance targets **Snapdragon X Elite on Windows ARM64**.
+The Apple-only wired-memory source is explicitly outside that target and never
+counts as a pass. Retirement is not complete. The 12 original C++ controls
 remain required until their equivalent safe Rust tests have passed against
 pinned Prism. Unported sources remain visible as unsupported.
 The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Two source contracts currently have safe Rust adapters in
+Eight source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
 - `test-pq2-row-shapes.cpp`: a committed input-only corpus preserves the
@@ -48,12 +49,35 @@ Two source contracts currently have safe Rust adapters in
   the original CPU traversal. It compares all 2,560,000 positions against each
   engine's production decoder. Rejection of any input is red, including
   encodings that the Rust decoder intentionally does not admit.
+- `test-unicode.cpp`: the exact original regex, input and two-piece expected
+  vector are checked against production `unicode_regex_split`.
+- `test-mtp-catchup-batch.cpp`: all six first-decode bounds assertions,
+  including negative catch-up and zero-batch rejection, target the production
+  speculative-decoding helper.
+- `test-jinja.cpp`: all 19 default groups, including 278 literal renders,
+  stateful hash properties, statistics, capabilities, string parts and all
+  1,122 crash-resistance fuzz calls. Rust generates the inputs and checks the
+  results. The Windows random stream was independently matched against MSVC;
+  expected strings come from the original source. The optional Python mode is
+  an upstream diagnostic cross-check, outside its default correctness suite.
+- `test-mtmd-impl.cpp`: all five tiling cases and 12 temporal-grouping cases,
+  with both group-size and mutated remaining-part assertions (29 in total).
+- `test-grammar-parser.cpp`: all 23 variants, including six rejected grammars,
+  ordered symbol IDs and flattened element types/values (274 original checks).
+- `test-reasoning-budget.cpp`: all 71 original conditions for basic sequences,
+  cloning, forcing, end matching and UTF-8 boundaries. Raw candidate float bits
+  preserve finite-logit checks. Static transport traces preserve the original
+  analysis break and may add an unobserved accept on a completed sampler before
+  freeing it; no extra assertion coverage is claimed.
+
+The Rust runtime has no equivalent generic regex, MTP, Jinja, MTMD or grammar APIs.
+Those target results explicitly fail rather than testing substitute helpers.
 
 For each port, the same safe Rust inputs and assertions run against pinned Prism
 first, then against the Rust runtime. A native process bridge performs bounded
-serialization and calls production ggml functions. It imports no test sources
+serialization and calls production Prism functions. It imports no test sources
 and contains no random generators, expected outputs, reference arithmetic,
-tolerances or test assertions. The C++ exporters and two original C++ test
+tolerances or test assertions. The C++ exporters and all eight ported C++ test
 executables are no longer built by this adapter lane.
 
 No benchmark or model inference is run by this lane. The original sampling test
@@ -75,9 +99,10 @@ The initial [hosted Foundation run](https://github.com/symbiogenesis/SwiftBonsai
 passed on revision `afe66d881b8828183b9ffe7ef3119463b5d58bc2`. All **19 selected
 C++ controls** passed (17 original suites plus the two paired adapter controls).
 Their IDs are recorded in the baseline, so none can disappear from later runs.
-The two paired reference results now come from safe Rust assertions calling
-the engine through the process bridge; the other 17 still run original C++.
-The other 52 source files have no executed C++ control in this lane.
+The eight ported reference results now come from safe Rust assertions calling
+the engine through the process bridge; the other 12 still run original C++.
+That initial run left 52 sources without an executed C++ control. The MTMD
+Rust port adds another upstream control; it is separate from the original 19.
 
 [baseline.json](../tools/prism/upstream/baseline.json) holds the recorded minimum
 green count and every required green source ID. `RequiredReferencePassedIds`
@@ -87,7 +112,7 @@ minimum green ratio. The exact catalog digest and upstream revision bind the
 baseline to the denominator. Each run:
 
 1. Verifies that the source inventory is complete and unchanged.
-2. Requires both implemented adapters to emit one Rust and one C++ result.
+2. Requires all implemented adapters to emit one Rust and one C++ result.
 3. Expands every remaining catalog file to `unsupported` for Rust.
 4. Counts `fail`, `skip` and `unsupported` as red; only `pass` is green.
 5. Requires every previously green ID to remain green, as well as the minimum
@@ -104,16 +129,7 @@ The job summary shows the full inventory with independent Rust and C++ statuses.
 Git history records changes to the approved baseline; Actions artifacts retain
 per-run observations under the repository's normal artifact retention policy.
 
-CI caches C/C++ compiler objects separately from Cargo builds. The native cache
-is scoped to the runner image, compiler and ccache identity; source contents and
-compiler options still determine each object hit. Both builds normalize paths
-under their common evidence root so a fresh extraction can reuse those objects.
-Every run still verifies and extracts the pinned archive, configures fresh build
-trees, executes the 17 unported controls and runs both safe Rust ports against
-both engines.
-`ccache.log` retains hit/miss statistics with the other evidence. Release builds
-explicitly retain assertions. A focused adapter builds only the production
-bridge and the safe Rust harness.
+The Windows ARM64 lane caches the pinned archive and Cargo artifacts. Native production libraries are configured and built afresh with ClangCL. The receipt records configure arguments, executable hashes and verified ARM64 PE machine values. Every run verifies and extracts the archive, runs all eight safe Rust ports against pinned Prism first and the Rust runtime second, and retains all 12 unported controls.
 
 ## Growing the baseline
 
@@ -130,8 +146,10 @@ Record the tested revision and run URL in `Provenance`. CI never rewrites the
 baseline. Keep every existing required green ID. Review upstream pin changes
 and any exception explicitly instead of deleting difficult cases.
 
-Retire the remaining C++ importer only after all 71 sources have Rust-owned
-equivalents and their upstream validation evidence is retained. Model tests need
+Retire the remaining C++ importer only after the Windows-applicable sources have
+Rust-owned equivalents and their upstream validation evidence is retained.
+Keep the full 71-source provenance inventory, including the explicit Apple
+exclusion. Model tests need
 their actual model/vocabulary/reference assets; platform tests need the relevant
 host; embedded benchmarks need CI execution lanes. Missing prerequisites and
 unsupported Rust features are red outcomes. Current-weight Swift artifacts
@@ -156,5 +174,4 @@ absolute paths outside Git:
 ```
 
 The x64 C++ control can run under Windows ARM64 emulation; this is correctness
-evidence and makes no target-device performance claim. Hosted execution uses
-Linux ARM64. For Linux or a configured compiler environment, use `Ninja`.
+evidence and makes no target-device performance claim. Hosted acceptance uses native Windows ARM64. For Linux or a configured compiler environment, use `Ninja`.

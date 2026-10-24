@@ -56,10 +56,10 @@ if ((Get-FileHash -LiteralPath (Join-Path $source 'src/CMakeLists.txt') -Algorit
 $targets = @(
     'test-alloc', 'test-batch-alloc', 'test-col2im-1d',
     'test-dfly-fusion', 'test-gguf', 'test-grammar-integration',
-    'test-grammar-parser', 'test-jinja', 'test-llama-grammar', 'test-log',
-    'test-moe-weighted-reduce', 'test-mtp-catchup-batch',
-    'test-ptq1_0-cuda-dot', 'test-quantize-fns', 'test-reasoning-budget',
-    'test-rope', 'test-unicode'
+    'test-llama-grammar', 'test-log',
+    'test-moe-weighted-reduce',
+    'test-ptq1_0-cuda-dot', 'test-quantize-fns',
+    'test-rope'
 )
 if ($Case) {
     if ($targets -cnotcontains $Case) { throw 'Case must name exactly one allowlisted original C++ suite.' }

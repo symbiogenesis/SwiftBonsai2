@@ -292,6 +292,12 @@
   "TestCMakeSourceSha256": "6e98c7ef99797bd07514931fb175df6c8d30fb373349c57448ffee6b5ca9b75e",
   "AdapterIds": [
     "tests/test-pq2-row-shapes.cpp",
-    "tests/test-ptq1_0-element-map.cpp"
+    "tests/test-ptq1_0-element-map.cpp",
+    "tests/test-mtp-catchup-batch.cpp",
+    "tests/test-unicode.cpp",
+    "tests/test-jinja.cpp",
+    "tests/test-mtmd-impl.cpp",
+    "tests/test-grammar-parser.cpp",
+    "tests/test-reasoning-budget.cpp"
   ]
 }

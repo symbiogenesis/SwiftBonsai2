@@ -14,7 +14,7 @@ param(
     [Parameter(Mandatory)][string]$SourceArchive,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [Parameter(Mandatory)][string]$TargetDirectory,
-    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap')][string]$Case = 'All',
+    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget')][string]$Case = 'All',
     [string]$CMakePath,
     [ValidateSet('Ninja', 'Visual Studio 18 2026', 'Visual Studio 17 2022')][string]$Generator = 'Ninja',
     [ValidateSet('ARM64', 'x64')][string]$NativePlatform = 'ARM64',
@@ -66,6 +66,7 @@ $receipt = [ordered]@{
     Selection = $Case
     Generator = $Generator
     NativePlatform = $NativePlatform
+    NativeToolset = if ($Generator -ne 'Ninja' -and $NativePlatform -eq 'ARM64') { 'ClangCL' } else { $null }
     CompilerLauncher = $CompilerLauncher
     ParallelJobs = $Parallel
     Status = 'building'
@@ -89,17 +90,57 @@ function Invoke-UpstreamCommand {
     if ($result.ExitCode -ne 0) { throw "Prism import command failed with exit $($result.ExitCode); see $log" }
     return $result
 }
-$build = Join-Path $evidence 'build'
 $compilerEnvironment = @{}
 $generatorArguments = @('-G', $Generator)
-if ($Generator -ne 'Ninja') { $generatorArguments += @('-A', $NativePlatform) }
+if ($Generator -ne 'Ninja') {
+    $generatorArguments += @('-A', $NativePlatform)
+    if ($NativePlatform -eq 'ARM64') { $generatorArguments += @('-T', 'ClangCL') }
+}
 if ($CompilerLauncher) {
     $generatorArguments += @("-DCMAKE_C_COMPILER_LAUNCHER=$CompilerLauncher", "-DCMAKE_CXX_COMPILER_LAUNCHER=$CompilerLauncher")
     $compilerEnvironment['CCACHE_BASEDIR'] = $evidence
 }
-$null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments (@('-S', $upstream, '-B', $build, "-DPRISM_SOURCE_DIR=$source", '-DCMAKE_BUILD_TYPE=Release') + $generatorArguments)
-$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap') } else { @($Case) }
-$null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments @('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target', 'prism-upstream-bridge')
+$adapters = @{
+    Pq2RowShapes = @{ Name = 'test-pq2-row-shapes'; Family = 'ggml' }
+    Ptq1ElementMap = @{ Name = 'test-ptq1_0-element-map'; Family = 'ggml' }
+    Unicode = @{ Name = 'test-unicode'; Family = 'common' }
+    MtpCatchupBatch = @{ Name = 'test-mtp-catchup-batch'; Family = 'common' }
+    Jinja = @{ Name = 'test-jinja'; Family = 'common' }
+    MtmdImpl = @{ Name = 'test-mtmd-impl'; Family = 'common' }
+    GrammarParser = @{ Name = 'test-grammar-parser'; Family = 'common' }
+    ReasoningBudget = @{ Name = 'test-reasoning-budget'; Family = 'common' }
+}
+$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget') } else { @($Case) }
+$bridgeFamilies = @{
+    ggml = @{ Source = $upstream; Target = 'prism-upstream-bridge'; Option = '--bridge' }
+    common = @{ Source = (Join-Path $upstream 'common'); Target = 'prism-upstream-common-bridge'; Option = '--common-bridge' }
+}
+$bridges = @{}
+$nativeBuilds = [Collections.Generic.List[object]]::new()
+$extension = if ($IsWindows) { '.exe' } else { '' }
+foreach ($family in @($selected | ForEach-Object { $adapters[$_].Family } | Select-Object -Unique)) {
+    $definition = $bridgeFamilies[$family]
+    $build = Join-Path $evidence ("build-$family")
+    $configureArguments = @('-S', $definition.Source, '-B', $build, "-DPRISM_SOURCE_DIR=$source", '-DCMAKE_BUILD_TYPE=Release',
+        '-DLLAMA_BUILD_NUMBER=0', "-DLLAMA_BUILD_COMMIT=$($lock.Commit)") + $generatorArguments
+    $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments $configureArguments
+    $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments @('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target', $definition.Target)
+    $executables = @(Get-ChildItem -LiteralPath $build -Recurse -File -Filter ($definition.Target + $extension))
+    if ($executables.Count -ne 1) { throw "Expected exactly one $family production-call bridge." }
+    $bridges[$family] = $executables[0].FullName
+    if ($IsWindows -and $NativePlatform -eq 'ARM64') { Assert-Arm64PE -Path $bridges[$family] }
+    $nativeBuilds.Add([ordered]@{
+        Family = $family
+        ConfigureArguments = $configureArguments
+        Target = $definition.Target
+        CacheSha256 = (Get-FileHash -LiteralPath (Join-Path $build 'CMakeCache.txt') -Algorithm SHA256).Hash.ToLowerInvariant()
+        Executable = $bridges[$family]
+        ExecutableSha256 = (Get-FileHash -LiteralPath $bridges[$family] -Algorithm SHA256).Hash.ToLowerInvariant()
+        VerifiedPeMachine = if ($IsWindows -and $NativePlatform -eq 'ARM64') { '0xAA64' } else { $null }
+    })
+}
+$receipt.NativeBuilds = $nativeBuilds.ToArray()
+[IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 10))
 $compiled = Invoke-UpstreamCommand -Executable $cargo -Arguments @("+$Toolchain", 'build', '--manifest-path', (Join-Path $repo 'Cargo.toml'), '--package', 'bonsai-prism-runtime', '--example', 'upstream_prism', '--locked', '--offline', '--release', '--target-dir', $target, '--message-format=json')
 $executables = @($compiled.StandardOutput -split "`n" | Where-Object { $_.StartsWith('{') } | ForEach-Object {
     $record = $_ | ConvertFrom-Json -AsHashtable
@@ -107,22 +148,25 @@ $executables = @($compiled.StandardOutput -split "`n" | Where-Object { $_.Starts
 })
 if ($executables.Count -ne 1) { throw 'Expected exactly one compiled shared-assertion Rust harness.' }
 $harness = $executables[0]
-$extension = if ($IsWindows) { '.exe' } else { '' }
-$bridges = @(Get-ChildItem -LiteralPath $build -Recurse -File -Filter ('prism-upstream-bridge' + $extension))
-if ($bridges.Count -ne 1) { throw 'Expected exactly one native production-call bridge.' }
+if ($IsWindows -and $NativePlatform -eq 'ARM64') { Assert-Arm64PE -Path $harness }
+$receipt.HarnessExecutable = $harness
+$receipt.HarnessSha256 = (Get-FileHash -LiteralPath $harness -Algorithm SHA256).Hash.ToLowerInvariant()
+$receipt.HarnessVerifiedPeMachine = if ($IsWindows -and $NativePlatform -eq 'ARM64') { '0xAA64' } else { $null }
 $referenceCases = [Collections.Generic.List[object]]::new()
 $rustCases = [Collections.Generic.List[object]]::new()
 # Rust owns each selected test's inputs, reference calculations and assertions.
 # The native bridge dispatches production engine calls without importing tests.
 foreach ($selection in $selected) {
-    $caseName = if ($selection -eq 'Pq2RowShapes') { 'test-pq2-row-shapes' } else { 'test-ptq1_0-element-map' }
+    $adapter = $adapters[$selection]
+    $caseName = $adapter.Name
     foreach ($engine in @('cpp', 'rust')) {
         $output = Join-Path $evidence "$caseName-$engine.json"
         $arguments = @('--target', $engine, '--case', $caseName, '--output', $output)
         if ($engine -eq 'cpp') {
-            $arguments += @('--bridge', $bridges[0].FullName, '--evidence-directory', (Join-Path $evidence "$caseName-bridge"))
+            $arguments += @($bridgeFamilies[$adapter.Family].Option, $bridges[$adapter.Family], '--evidence-directory', (Join-Path $evidence "$caseName-bridge"))
         }
-        $null = Invoke-UpstreamCommand -Executable $harness -Arguments $arguments -TimeoutSeconds 120
+        $timeout = if ($selection -eq 'Jinja') { 300 } else { 120 }
+        $null = Invoke-UpstreamCommand -Executable $harness -Arguments $arguments -TimeoutSeconds $timeout
         $result = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json -AsHashtable
         if ($result.SchemaVersion -ne 1 -or $result.UpstreamCommit -cne $lock.Commit -or $result.Target -cne $engine -or
             @($result.Cases).Count -ne 1 -or $result.Cases[0].Id -cne "tests/$caseName.cpp") {

@@ -398,7 +398,7 @@
       ],
       "AssertionsToPort": "Exact compiled grammar rules/stacks/character classes/ranges and valid-invalid grammar expectations.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-jinja.cpp",
@@ -410,7 +410,7 @@
       ],
       "AssertionsToPort": "All whitespace/conditionals/loops/expressions/set/filters/literals/comments/macros/namespaces/tests/string-array-object methods/hash/stats/caps/string-parts/fuzzing; same literal expectations; preserve separate Python comparison lane.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-json-schema-to-grammar.cpp",
@@ -544,7 +544,7 @@
       ],
       "AssertionsToPort": "5 LFM2 should_tile geometries including ties-to-even720;12 temporal groups with images/video/audio/text/mismatched sizes and n_merge1; remaining bitmap part count.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-mtp-catchup-batch.cpp",
@@ -555,7 +555,7 @@
       ],
       "AssertionsToPort": "Six exact boundary predicates (32/31/1 true;32/32/1 false;32/30/2 true;32/32/2 false;0/0/0 false;32/-1/1 false).",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-opt.cpp",
@@ -676,7 +676,7 @@
       ],
       "AssertionsToPort": "All counting/forcing/end-match/manual-force/boundary tests; clone mid-count and mid-force; exact UTF-8 boundary predicate cases and state transitions.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-recurrent-state-rollback.cpp",
@@ -860,7 +860,7 @@
       ],
       "AssertionsToPort": "Exact regex [~][A-Za-z]+ or optional-space symbols or whitespace splits input space-tilde-foo into [space-tilde,foo].",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     }
   ],
   "ExternalPrerequisites": [
@@ -871,5 +871,15 @@
     "No immutable remote metadata revisions/digests for gguf-model-data and quant-type-selection; bundled .schema snapshots are expected output only.",
     "No Apple runner or selected >3GB wired model specified for rset-release; Linux/Windows cannot execute original memory contract.",
     "LLguidance is disabled by current CMake wrapper; enabling requires dependency and build lane."
-  ]
+  ],
+  "Target": {
+    "Platform": "Windows ARM64",
+    "Hardware": "Snapdragon X Elite",
+    "ExcludedSources": [
+      {
+        "Id": "tests/test-rset-release.cpp",
+        "Reason": "Apple wired-memory behavior is outside the requested Windows ARM64 target."
+      }
+    ]
+  }
 }

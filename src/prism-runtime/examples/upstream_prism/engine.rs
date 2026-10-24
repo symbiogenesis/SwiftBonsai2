@@ -8,6 +8,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bonsai_prism_runtime::kernels::{matvec, row};
 use bonsai_prism_runtime::model::Tensor;
+use serde_json::Value;
 
 use super::fixture::Fixture;
 use super::{Result, invalid};
@@ -46,6 +47,7 @@ pub(super) enum Output {
 pub(super) struct Engine {
     target: Target,
     bridge: Option<PathBuf>,
+    common_bridge: Option<PathBuf>,
     evidence_directory: Option<PathBuf>,
 }
 
@@ -53,12 +55,13 @@ impl Engine {
     pub(super) fn new(
         target: Target,
         bridge: Option<PathBuf>,
+        common_bridge: Option<PathBuf>,
         evidence_directory: Option<PathBuf>,
     ) -> Result<Self> {
-        if let Some(path) = &bridge
-            && (!path.is_absolute() || !path.is_file())
-        {
-            return Err(invalid("native bridge must be an existing absolute file"));
+        for path in [&bridge, &common_bridge].into_iter().flatten() {
+            if !path.is_absolute() || !path.is_file() {
+                return Err(invalid("native bridge must be an existing absolute file"));
+            }
         }
         if let Some(path) = &evidence_directory {
             if !path.is_absolute() {
@@ -69,6 +72,7 @@ impl Engine {
         Ok(Self {
             target,
             bridge,
+            common_bridge,
             evidence_directory,
         })
     }
@@ -85,6 +89,38 @@ impl Engine {
             .bridge
             .as_ref()
             .ok_or_else(|| invalid("native bridge path is missing"))?;
+        decode_response(
+            &self.exchange(bridge, name, &encode_requests(requests)?, "bin")?,
+            requests,
+        )
+    }
+
+    // None denotes a missing Rust production API. The suite must report that
+    // as a failed contract, never substitute a test-only implementation.
+    pub(super) fn execute_common(&self, name: &str, request: &Value) -> Result<Option<Value>> {
+        if matches!(self.target, Target::Rust) {
+            return Ok(None);
+        }
+        let bridge = self
+            .common_bridge
+            .as_ref()
+            .ok_or_else(|| invalid("native common bridge path is missing"))?;
+        let request = serde_json::to_vec(request)?;
+        if request.len() > 1024 * 1024 {
+            return Err(invalid("common bridge request exceeds size bound"));
+        }
+        Ok(Some(serde_json::from_slice(
+            &self.exchange(bridge, name, &request, "json")?,
+        )?))
+    }
+
+    fn exchange(
+        &self,
+        bridge: &Path,
+        name: &str,
+        request: &[u8],
+        extension: &str,
+    ) -> Result<Vec<u8>> {
         let evidence = self
             .evidence_directory
             .as_ref()
@@ -92,14 +128,14 @@ impl Engine {
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let directory = evidence.join(format!("{name}-{}-{nonce}", std::process::id()));
         fs::create_dir(&directory)?;
-        let input = directory.join("request.bin");
-        let output = directory.join("response.bin");
-        fs::write(&input, encode_requests(requests)?)?;
+        let input = directory.join(format!("request.{extension}"));
+        let output = directory.join(format!("response.{extension}"));
+        fs::write(&input, request)?;
         run_bridge(bridge, &directory, &input, &output)?;
         if fs::metadata(&output)?.len() > MAX_RESPONSE_BYTES {
             return Err(invalid("native bridge response exceeds size bound"));
         }
-        decode_response(&fs::read(output)?, requests)
+        Ok(fs::read(output)?)
     }
 }
 
