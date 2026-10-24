@@ -287,7 +287,7 @@
       ],
       "AssertionsToPort": "Load valid bounds and conditioning-off; reject omitted min/max NaN/Inf equal/reversed bounds before tensors; missing variant directory is blocked not upstream skip-as-pass. Every rejected load must capture log text mentioning log_snr or log-SNR, proving the intended metadata guard rather than unrelated load failure.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-dspark-loop.cpp",

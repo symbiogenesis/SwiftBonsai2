@@ -6,9 +6,12 @@ targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Both results are retained for each source; every
 upstream reference failure fails the final gate.
 
-The current ports preserve fifty-five source contracts from
+The current ports preserve fifty-six source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
+- DSpark log-SNR metadata retains all eight checkpoint variants and fourteen
+  original loader/log predicates. A safe Rust writer reproduces every original
+  input file byte for byte, using a pinned input-only tensor corpus.
 - GGUF metadata helper coverage includes all 34 original predicates in safe
   Rust. Quantization selection calls production APIs for eleven models and all
   363 original expected schema sections. Inputs and expected schemas remain

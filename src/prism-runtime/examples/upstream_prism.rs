@@ -52,6 +52,10 @@ mod codec_assertions;
 mod common;
 #[path = "upstream_prism/double_float.rs"]
 mod double_float;
+#[path = "upstream_prism/dspark_inputs.rs"]
+mod dspark_inputs;
+#[path = "upstream_prism/dspark_logsnr.rs"]
+mod dspark_logsnr;
 #[path = "upstream_prism/engine.rs"]
 mod engine;
 #[path = "upstream_prism/engine_codec.rs"]
@@ -150,6 +154,12 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-dspark-logsnr-meta",
+        "tests/test-dspark-logsnr-meta.cpp",
+        Bridge::Common,
+        dspark_logsnr::run,
+    ),
     register(
         "test-gguf-model-data",
         "tests/test-gguf-model-data.cpp",

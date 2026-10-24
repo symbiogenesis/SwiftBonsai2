@@ -31,9 +31,14 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Fifty-five source contracts currently have safe Rust adapters in
+Fifty-six source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-dspark-logsnr-meta.cpp`: all eight generated checkpoint variants and
+  fourteen original loader predicates, including required error-log checks.
+  Safe Rust writes every GGUF byte; an input-only tensor corpus preserves the
+  pinned companion generator's exact NumPy data. All eight generated files were
+  independently verified byte for byte against that generator.
 - `test-gguf-model-data.cpp` and `test-quant-type-selection.cpp`: the complete
   GGUF test helper is rewritten in safe Rust, including progressive prefixes,
   cache handling, shard merging and binary metadata parsing. The helper's 34
