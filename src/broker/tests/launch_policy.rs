@@ -47,6 +47,27 @@ fn pinned_plan_uses_independent_tokens_and_fixed_memory_budget() {
     assert!(plan.arguments.iter().any(|arg| arg == "--offline"));
     assert!(plan.arguments.iter().any(|arg| arg == "--no-ui"));
     assert!(plan.arguments.iter().any(|arg| arg == "--no-agent"));
+    for expected in [
+        ["--reasoning", "on"],
+        ["--reasoning-effort", "xhigh"],
+        ["--reasoning-budget", "-1"],
+        ["--presence-penalty", "0.0"],
+        ["--frequency-penalty", "0.0"],
+        ["--repeat-penalty", "1.0"],
+        ["--ctx-size", "8192"],
+        ["--n-predict", "4096"],
+        ["--cache-type-k", "f16"],
+        ["--cache-type-v", "f16"],
+    ] {
+        assert!(plan.arguments.windows(2).any(|pair| pair == expected));
+    }
+    assert!(!plan.arguments.iter().any(|arg| arg == "--system-prompt"));
+    assert!(
+        !plan
+            .arguments
+            .iter()
+            .any(|arg| arg == "--reasoning-max-tokens-floor")
+    );
     assert!(LaunchPlan::reference(&data, 80, &key).is_err());
     assert!(LaunchPlan::reference(&PathBuf::from("relative"), 49152, &key).is_err());
 }

@@ -268,7 +268,11 @@ fn typed_schema_rejects_aliases_controls_tools_and_media() {
         r#""model":"other""#,
         r#""tools":[]"#,
         r#""chat_template_kwargs":{"enable_thinking":false}"#,
+        r#""chat_template_kwargs":{"enable_thinking":true,"reasoning_effort":"xhigh"}"#,
+        r#""chat_template_kwargs":{"preserve_thinking":false}"#,
         r#""reasoning_effort":"none""#,
+        r#""reasoning_budget_tokens":0"#,
+        r#""thinking_budget_tokens":0"#,
         r#""cache_prompt":true"#,
         r#""temperature":0"#,
         r#""grammar":"root ::= \"x\"""#,
@@ -436,7 +440,60 @@ fn exact_count_sees_identical_canonical_body_and_preserved_text() {
     assert_eq!(canonical["frequency_penalty"], 0.0);
     assert_eq!(canonical["repeat_penalty"], 1.0);
     assert!(canonical.get("authorization").is_none());
-    assert!(canonical.get("chat_template_kwargs").is_none());
+    assert_eq!(
+        canonical["chat_template_kwargs"],
+        serde_json::json!({
+            "enable_thinking": true,
+            "reasoning_effort": "xhigh",
+            "preserve_thinking": true,
+        })
+    );
+}
+
+#[test]
+fn assistant_reasoning_is_preserved_in_exact_count_and_generation() {
+    for reasoning in ["Check the chronology.\nThe snow falls first: 雪", ""] {
+        let messages = serde_json::json!([
+            {"role": "user", "content": "Draft a scene."},
+            {"role": "assistant", "content": "The snow fell.", "reasoning_content": reasoning},
+            {"role": "user", "content": "Continue the scene."},
+        ]);
+        let body = serde_json::to_vec(&serde_json::json!({"messages": messages})).unwrap();
+        let mut counted = Vec::new();
+        let admitted = prepare(&body)
+            .unwrap()
+            .admit(|canonical| {
+                counted = canonical.to_vec();
+                let counted: serde_json::Value = serde_json::from_slice(canonical).unwrap();
+                assert_eq!(counted["messages"][1]["reasoning_content"], reasoning);
+                Ok(100)
+            })
+            .unwrap();
+        assert_eq!(counted, admitted.backend_body());
+        let generated: serde_json::Value = serde_json::from_slice(admitted.backend_body()).unwrap();
+        assert_eq!(generated["messages"], messages);
+        assert_eq!(generated["chat_template_kwargs"]["preserve_thinking"], true);
+    }
+}
+
+#[test]
+fn reasoning_history_rejects_null_types_duplicates_and_nonassistant_roles() {
+    for reasoning in ["null", "false", "0", "[]", "{}"] {
+        let body = format!(
+            r#"{{"messages":[{{"role":"user","content":"hi"}},{{"role":"assistant","content":"answer","reasoning_content":{reasoning}}},{{"role":"user","content":"continue"}}]}}"#
+        );
+        rejected_body(body.as_bytes(), Rejection::ChatSchema);
+    }
+    for messages in [
+        r#"[{"role":"user","content":"hi","reasoning_content":""}]"#,
+        r#"[{"role":"system","content":"hi","reasoning_content":""},{"role":"user","content":"hi"}]"#,
+        r#"[{"role":"user","content":"hi"},{"role":"assistant","content":"answer","reasoning_content":"a","reasoning_content":"b"},{"role":"user","content":"continue"}]"#,
+    ] {
+        rejected_body(
+            format!(r#"{{"messages":{messages}}}"#).as_bytes(),
+            Rejection::ChatSchema,
+        );
+    }
 }
 
 #[test]

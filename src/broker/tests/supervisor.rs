@@ -302,6 +302,19 @@ fn canonical_count_and_generation_share_body_and_drop_streams() {
         let counted_body = count_wire.split_once("\r\n\r\n").unwrap().1;
         let generated_body = generation_wire.split_once("\r\n\r\n").unwrap().1;
         assert_eq!(counted_body, generated_body);
+        let generated: serde_json::Value = serde_json::from_str(generated_body).unwrap();
+        let original_request = String::from_utf8(request(false)).unwrap();
+        let original: serde_json::Value =
+            serde_json::from_str(original_request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        assert_eq!(generated["messages"], original["messages"]);
+        assert_eq!(
+            generated["chat_template_kwargs"],
+            serde_json::json!({
+                "enable_thinking": true,
+                "reasoning_effort": "xhigh",
+                "preserve_thinking": true,
+            })
+        );
         assert!(generated_body.contains("\"cache_prompt\":false"));
         assert!(generated_body.contains("\"temperature\":1.0"));
         assert!(!generation_wire.contains(CLIENT_KEY));

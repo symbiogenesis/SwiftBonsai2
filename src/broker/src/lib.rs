@@ -243,6 +243,11 @@ impl AuthorizedHead {
             presence_penalty: 0.0,
             frequency_penalty: 0.0,
             repeat_penalty: 1.0,
+            chat_template_kwargs: ChatTemplateKwargs {
+                enable_thinking: true,
+                reasoning_effort: "xhigh",
+                preserve_thinking: true,
+            },
         })
         .map_err(|_| Rejection::ChatSchema)?;
         Ok(PendingChat {
@@ -280,6 +285,20 @@ struct Message<'a> {
     // escaped text still uses Serde's owned decoding without changing its bytes.
     #[serde(borrow)]
     content: Cow<'a, str>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_reasoning_content",
+        skip_serializing_if = "Option::is_none"
+    )]
+    reasoning_content: Option<String>,
+}
+
+fn deserialize_reasoning_content<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    // An absent field defaults to None; a present field must be text, even when
+    // empty. Deserializing Option directly would also accept an unsupported null.
+    String::deserialize(deserializer).map(Some)
 }
 
 #[derive(Serialize, PartialEq, Eq)]
@@ -367,7 +386,12 @@ fn deserialize_messages<'de, D: Deserializer<'de>>(
 }
 
 fn valid_history(messages: &[Message<'_>]) -> bool {
-    if messages.is_empty() || messages.len() > MAX_MESSAGES {
+    if messages.is_empty()
+        || messages.len() > MAX_MESSAGES
+        || messages
+            .iter()
+            .any(|message| message.reasoning_content.is_some() && message.role != Role::Assistant)
+    {
         return false;
     }
     let turns = if messages[0].role == Role::System {
@@ -397,8 +421,8 @@ pub struct PendingChat {
 impl PendingChat {
     /// The trusted counter must send these exact canonical bytes to the pinned
     /// runtime's internal `/v1/chat/completions/input_tokens` endpoint. Generation
-    /// must use the same immutable model/runtime/template and default thinking
-    /// mode. [`backend::count_and_admit`] implements the supplied-stream exchange;
+    /// must use the same immutable model/runtime/template and explicit thinking
+    /// settings. [`backend::count_and_admit`] implements the supplied-stream exchange;
     /// bytes/characters are never tokens. The supervisor must prevent identity drift.
     ///
     /// # Errors
@@ -465,6 +489,14 @@ struct BackendChat<'a, 'b> {
     presence_penalty: f32,
     frequency_penalty: f32,
     repeat_penalty: f32,
+    chat_template_kwargs: ChatTemplateKwargs,
+}
+
+#[derive(Serialize)]
+struct ChatTemplateKwargs {
+    enable_thinking: bool,
+    reasoning_effort: &'static str,
+    preserve_thinking: bool,
 }
 
 #[cfg(test)]
@@ -492,6 +524,7 @@ mod tests {
                     messages.push(Message {
                         role,
                         content: Cow::Borrowed(""),
+                        reasoning_content: None,
                     });
                 }
                 assert_eq!(
