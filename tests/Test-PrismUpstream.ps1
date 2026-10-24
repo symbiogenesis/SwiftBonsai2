@@ -23,13 +23,20 @@ param(
     [ValidateRange(1, 12)][int]$Parallel = 2,
     [ValidateRange(1, 12)][int]$CaseParallel = 2,
     [string]$NativeBuildDirectory,
-    [switch]$DeferBackend
+    [switch]$DeferBackend,
+    [switch]$PrepareBackendToolsOnly
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 if ($Case -eq 'All' -and ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main')) {
     throw 'The complete Prism catalog runs only in GitHub Actions on main; select one named local adapter.'
+}
+if ($PrepareBackendToolsOnly -and ($Case -cne 'BackendOps' -or $DeferBackend -or
+    $env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main' -or
+    -not $IsWindows -or $NativePlatform -cne 'ARM64' -or
+    [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne [Runtime.InteropServices.Architecture]::Arm64)) {
+    throw 'Backend tool preparation requires exact Case BackendOps without DeferBackend on native Windows ARM64 main GitHub Actions.'
 }
 if ($DeferBackend -and $Case -cne 'All') { throw 'Only the complete CI catalog can defer its backend source to checked shards.' }
 $repo = Split-Path $PSScriptRoot -Parent
@@ -363,11 +370,20 @@ if ($IsWindows -and $NativePlatform -eq 'ARM64') { Assert-Arm64PE -Path $harness
 $receipt.HarnessExecutable = $harness
 $receipt.HarnessSha256 = (Get-FileHash -LiteralPath $harness -Algorithm SHA256).Hash.ToLowerInvariant()
 $receipt.HarnessVerifiedPeMachine = if ($IsWindows -and $NativePlatform -eq 'ARM64') { '0xAA64' } else { $null }
-if ($DeferBackend) {
+if ($DeferBackend -or $PrepareBackendToolsOnly) {
     Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackendBundle.psm1')
     $receipt.BackendBundleDirectory = Join-Path $evidence 'backend-tools'
     $receipt.BackendBundle = New-BonsaiPrismBackendBundle -Receipt $receipt -Directory $receipt.BackendBundleDirectory
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
+}
+if ($PrepareBackendToolsOnly) {
+    $receipt.Status = 'backend-tools-ready'
+    $receipt.Measure = 'backend-tools-preparation'
+    $receipt.FullSourceGate = $false
+    $receipt.SourceCount = 0
+    $receipt.Validation = 'Verified build tools only; no source workload, correctness verdict or benchmark measurement was produced.'
+    [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
+    return $receipt
 }
 $caseWork = [Collections.Generic.List[object]]::new()
 # Rust owns each selected test's inputs, reference calculations and assertions.

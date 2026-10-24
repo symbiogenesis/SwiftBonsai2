@@ -27,6 +27,10 @@ A Rust-owned reference failure still fails CI independently of the runtime floor
 The manual [focused reference workflow](../.github/workflows/prism-focused.yml)
 runs one selected source on Windows ARM64 for diagnostics. Its result does not
 replace Foundation's complete source and backend gates.
+The `BackendPlan` choice instead prepares revision-bound tools and plans
+partition 0 of 16 for both targets and all four modes. It produces no source
+verdict or benchmark measurement; this short diagnostic checks backend planning
+without first running the ordinary source catalog.
 
 The migration inventories **all 71 catalog sources**, including model and
 benchmark cases. Acceptance targets **Snapdragon X Elite on Windows ARM64**.
