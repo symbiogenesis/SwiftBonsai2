@@ -28,6 +28,16 @@ struct TypeTraits {
 const _: () = assert!(size_of::<TypeTraits>() == 56);
 const _: () = assert!(std::mem::offset_of!(TypeTraits, to_float) == 40);
 
+// Native block_pq2_0 and block_ptq1_0 contain a uint16_t ggml_half. Rust's
+// byte arrays (including the frozen corpus) have no corresponding alignment
+// guarantee, so establish it with owned copies before passing them to C.
+#[repr(C, align(2))]
+struct NativeBlock<const N: usize>([u8; N]);
+
+const _: () = assert!(align_of::<NativeBlock<34>>() == align_of::<u16>());
+const _: () = assert!(size_of::<NativeBlock<34>>() == 34);
+const _: () = assert!(size_of::<NativeBlock<28>>() == 28);
+
 struct Library(HMODULE);
 
 impl Drop for Library {
@@ -110,14 +120,18 @@ pub(super) fn run(runtime: &Path) -> Result<usize, String> {
     let pq2 = decoder(get_traits, 142, c"pq2_0", 34)?;
     let ptq1 = decoder(get_traits, 143, c"ptq1_0", 28)?;
     super::vectors::check_vectors(|source, packed| {
+        let source = NativeBlock(*source);
+        let packed = NativeBlock(*packed);
         let mut original = [0.0; 128];
         let mut repacked = [0.0; 128];
         // SAFETY: the reviewed PQ2 decoder reads exactly one 34-byte block
-        // and writes exactly 128 FP32 elements into the disjoint live arrays.
-        unsafe { pq2(source.as_ptr().cast(), original.as_mut_ptr(), 128) };
+        // aligned for its uint16_t scale and writes exactly 128 FP32 elements
+        // into the disjoint live destination array.
+        unsafe { pq2(source.0.as_ptr().cast(), original.as_mut_ptr(), 128) };
         // SAFETY: the reviewed PTQ1 decoder reads exactly one 28-byte block
-        // and writes exactly 128 FP32 elements into the disjoint live arrays.
-        unsafe { ptq1(packed.as_ptr().cast(), repacked.as_mut_ptr(), 128) };
+        // aligned for its uint16_t scale and writes exactly 128 FP32 elements
+        // into the disjoint live destination array.
+        unsafe { ptq1(packed.0.as_ptr().cast(), repacked.as_mut_ptr(), 128) };
         Ok((original, repacked))
     })
 }

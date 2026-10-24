@@ -88,7 +88,11 @@ it to become empty; dropping ownership also covers abrupt parent death.
 
 The maintenance tool reuses this boundary for CPU/LoRA checks; the broker uses
 it for its development backend. The former production C# launcher is removed.
-Independent small C# codec/probe references remain in tests.
+Codec validation now exercises the production Rust codec against the pinned
+released native DLL in a separate supervised probe. Independent base-3 expected
+bytes, frozen FP32 scale bits and the captured C++ fixture remain its oracles;
+the retired C# codec is not needed. The small embedded C# HTTP test handler
+remains separately checked by the strict .NET analyzer build.
 
 The Job commit cap does not bound all resident file-backed mappings or device
 memory. Physical-memory watchdogs remain necessary, and a reported Job peak can

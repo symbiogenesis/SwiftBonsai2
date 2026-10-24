@@ -48,6 +48,19 @@ mod tests {
     use super::{assemble, decode};
 
     #[test]
+    fn response_digest_keeps_empty_and_trailing_newline_identities() {
+        let empty = assemble(String::new(), &json!({}));
+        assert_eq!(
+            empty["Sha256"],
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_ne!(
+            assemble("answer\n".into(), &json!({}))["Sha256"],
+            assemble("answer".into(), &json!({}))["Sha256"]
+        );
+    }
+
+    #[test]
     fn strict_decode_preserves_bom_unicode_and_all_trailing_newlines() -> crate::Result<()> {
         let text = "\u{feff}caf\u{e9} \u{1f331} [end of text]\r\n\n";
         let captured = assemble(decode(text.as_bytes().to_vec())?, &json!({}));

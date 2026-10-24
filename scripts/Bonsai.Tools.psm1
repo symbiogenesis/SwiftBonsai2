@@ -71,8 +71,8 @@ function Invoke-BonsaiTool {
         $probe = Invoke-BonsaiNativeProcess -Executable $tool -ArgumentList @('--version') -WorkingDirectory $scratch -TimeoutSeconds 10
         if ($probe.ExitCode -ne 0) { throw 'The maintenance tool version probe failed.' }
         $version = $probe.StandardOutput | ConvertFrom-Json -AsHashtable -NoEnumerate -DateKind String
-        if ($version -isnot [Collections.IDictionary] -or $version.Name -cne 'bonsai-tools' -or $version.Version -cne '0.1.0' -or $version.ProtocolVersion -ne 1) {
-            throw 'Use a compatible bonsai-tools executable (version 0.1.0, protocol 1).'
+        if ($version -isnot [Collections.IDictionary] -or $version.Name -cne 'bonsai-tools' -or $version.Version -cne '0.1.0' -or $version.ProtocolVersion -ne 2) {
+            throw 'Use a compatible bonsai-tools executable (version 0.1.0, protocol 2).'
         }
         $script:CheckedTools[$identity] = $true
     }

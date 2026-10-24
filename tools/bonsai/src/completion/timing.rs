@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(parsed["Counts"]["PromptTokenCount"], 80);
         assert_eq!(
             parsed["Timing"]["DecodeTokensPerSecond"],
-            127000.0 / 1000.25
+            127_000.0 / 1000.25
         );
         assert_ne!(parsed["Timing"]["DecodeTokensPerSecond"], 126.97);
         Ok(())

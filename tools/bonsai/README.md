@@ -25,6 +25,10 @@ dependencies. GGUF wrappers share the resolver through `-GgufToolPath`.
 Key creation with `-WhatIf` creates nothing and resolves no executable. Planning
 may resolve the maintenance tool but never starts inference.
 
+These wrappers require `bonsai-tools` version 0.1.0, protocol 2. Protocol 2 adds
+the completed capture records consumed by paired evaluation; older binaries are
+rejected during the version handshake before a sample can start.
+
 ## Command boundary
 
 ```text
@@ -48,6 +52,13 @@ child Job lifetime. It checks parent PID/creation time/liveness, physical/proces
 memory, deadlines and caller-specific output limits. LoRA batches share
 verification across samples. Restricted tokens, filesystem/egress isolation and
 daily-service security remain unqualified.
+
+Completed CI samples publish a single `capture.json` containing exact response
+text, its UTF-8 SHA-256 and diagnostics. Rust decodes stdout strictly and retains
+leading U+FEFF and trailing newlines. `diagnostics.json` remains available for
+inspection; the completed `supervision.json` is published after the capture
+records. PowerShell joins these records without rereading native stdout. Failed
+and incomplete samples never contribute completed response records to scoring.
 
 Qualification scoring reads bounded original evidence/reviews directly.
 [Committed fixtures](../../tests/fixtures/lora-qualification-v1.json) bind control

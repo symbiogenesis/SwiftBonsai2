@@ -3,6 +3,7 @@
     # workspace feature in each lane. '*' means all features for one package.
     Packages = @(
         @{ Name = 'bonsai-ternary'; Manifest = 'tools/ternary/Cargo.toml'; Group = 'Runtime'; Features = @('*') }
+        @{ Name = 'bonsai-codec-probe'; Manifest = 'tools/codec-probe/Cargo.toml'; Group = 'Runtime'; Features = @('*') }
         @{ Name = 'bonsai-gguf'; Manifest = 'tools/gguf/Cargo.toml'; Group = 'Runtime'; Features = @('*') }
         @{ Name = 'bonsai-prism'; Manifest = 'tools/prism/Cargo.toml'; Group = 'Runtime'; Features = @(); CompatibilityCompileFeatures = @('engine-loader'); NativeFeatures = @('*') }
         @{ Name = 'bonsai-prism-runtime'; Manifest = 'src/prism-runtime/Cargo.toml'; Group = 'Runtime'; Features = @('*') }

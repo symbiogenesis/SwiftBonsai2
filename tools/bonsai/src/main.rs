@@ -45,7 +45,7 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     if arguments.len() == 1 && arguments[0] == "--version" {
         return Ok(serde_json::json!({
-            "Name": "bonsai-tools", "Version": env!("CARGO_PKG_VERSION"), "ProtocolVersion": 1
+            "Name": "bonsai-tools", "Version": env!("CARGO_PKG_VERSION"), "ProtocolVersion": 2
         }));
     }
     if arguments.len() != 3 || arguments[1] != "--request" {

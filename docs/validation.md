@@ -26,7 +26,10 @@ GGUF tools, maintenance tool and native CPU reference forbid unsafe code. Unsafe
 operations are confined to documented Win32 boundaries in `bonsai-windows-process`
 and `bonsai-windows-credentials`, plus Prism's C ABI/loader and native test bindings.
 The sharing policy remains safe Rust; the external Prism/llama.cpp engine remains
-C/C++. See the [Prism boundary](../tools/prism/README.md#native-boundary).
+C/C++. The separate [released codec probe](../tools/codec-probe/README.md) confines
+dynamic DLL loading and codec calls to a reviewed native boundary. The C# build
+now checks only the embedded HTTP transport test helper. See the
+[Prism boundary](../tools/prism/README.md#native-boundary).
 
 Scoped unsafe allowances do not waive checks for unsafe operations in unsafe
 functions, invalid reference casts or mutable-static references. Unwinding FFI
@@ -120,7 +123,7 @@ succeed, including artifact retention; skipped jobs are rejected.
 | --- | --- |
 | Standards and scripts | PowerShell/C# analyzers, configuration/path policy, provisioning recovery and exclusive hard-link publication, native invocation, engine build policy and installed runtime/help verification. |
 | Broker and Windows boundaries | Strict admission/framing, exact-count context bounds, response limits, deterministic scheduling/fragmentation/cancellation, synthetic loopback service, protected credentials and Job lifecycle/abrupt-parent-death regressions. |
-| GGUF and ternary | Bounded metadata/census/export, exact codec bytes and binary16 conversions, immutable C++ fixture parity and all six guard mutations. |
+| GGUF and ternary | Bounded metadata/census/export, independent base-3 expected bytes, binary16 conversions, immutable C++ fixture parity, released native DLL FP32 parity and all six guard mutations. |
 | Native CPU reference | Formatting, Release Clippy/rustdoc, complete synthetic correctness suite, token-ID driver, packed SIMD/scalar parity, no-CLI/feature-disabled builds and non-ARM scalar fallback. |
 | Prism overlay | Source drift/repeat rejection, Rust policy/FFI checks, native allocator/math regression and actual engine linkage on Linux ARM64. |
 

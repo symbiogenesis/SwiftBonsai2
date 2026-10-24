@@ -34,14 +34,4 @@ function Get-BonsaiLoraEvaluationArgument {
     $arguments + @('--prompt', $Prompt)
 }
 
-function Get-BonsaiResponseDigest {
-    <# .SYNOPSIS
-    Hashes exact captured UTF-8 response text without trimming or normalization.
-    #>
-    [CmdletBinding()]
-    [OutputType([string])]
-    param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
-    [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Text)))
-}
-
-Microsoft.PowerShell.Core\Export-ModuleMember -Function Get-BonsaiLoraEvaluationArgument, Get-BonsaiResponseDigest
+Microsoft.PowerShell.Core\Export-ModuleMember -Function Get-BonsaiLoraEvaluationArgument

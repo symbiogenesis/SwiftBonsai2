@@ -21,6 +21,12 @@ bytes/positions, all symbol bytes/nonzero counts, malformed encodings, binary16
 edges and activation ABI. The [native C++ fixture](tests/fixtures/README.md) adds
 161 captured codec cases and 26 binary16 cases.
 
+Independent base-3 expectations check all 5,994 lane words against exact symbol
+positions, so a matching encoder/decoder permutation cannot pass by round trip
+alone. The separate [released native probe](../codec-probe/README.md) compares
+production Rust packing against the pinned native PQ2/PTQ1 decoders without
+adding unsafe code to this crate.
+
 From the repository root, run a build and one focused parity check in external
 working/target directories:
 

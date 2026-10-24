@@ -48,6 +48,12 @@ from creation to a one-process, kill-on-close Windows Job, with a ten-minute
 deadline and bounded diagnostics. Uploaded artifacts include controls, exact
 stdout, logs, arguments, counters and failures; they exclude model/adapter files.
 
+The Rust supervisor owns timing parsing, strict UTF-8 response decoding, exact
+response hashes and diagnostics. Each completed sample has one `capture.json`
+record, alongside raw stdout and `diagnostics.json`; its completed supervision
+receipt is written last. PowerShell assembles paired evidence from those records,
+including completed samples retained before a later batch failure.
+
 The pinned `--lora-scaled` parser splits every colon in `FNAME:SCALE`. A relative
 filename in the verified working directory avoids Windows drive-colon parsing.
 Scale zero loads the adapter but omits its active graph branch. Sources:

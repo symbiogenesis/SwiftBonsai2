@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([string])]
-param([Parameter(Mandatory)][ValidateSet('Digest', 'Arguments', 'All')][string]$Case)
+param([Parameter(Mandatory)][ValidateSet('Arguments', 'All')][string]$Case)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -9,10 +9,6 @@ Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.LoraEvaluation.psm1') 
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 
 
-if ($Case -in @('Digest', 'All')) {
-    Assert ((Get-BonsaiResponseDigest '') -ceq 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855') 'UTF-8 digest changed.'
-    Assert ((Get-BonsaiResponseDigest "answer`n") -cne (Get-BonsaiResponseDigest 'answer')) 'Response digest dropped trailing bytes.'
-}
 if ($Case -in @('Arguments', 'All')) {
     foreach ($arm in @('baseline', 'zero', 'adapter')) {
         $argsForArm = @(Get-BonsaiLoraEvaluationArgument -ModelPath 'C:\model & data\base.gguf' -AdapterPath 'bonsai-abliterate-lora.gguf' -Arm $arm -Prompt 'Write a short scene.')

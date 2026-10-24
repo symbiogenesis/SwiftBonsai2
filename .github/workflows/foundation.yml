@@ -479,7 +479,7 @@ jobs:
           $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime') -CheckOnly
           if ($result.ModelProcessStarted -or $result.AvailablePhysicalBytesAtAdmission -le 0) { throw 'Invalid admission-only result.' }
           $result | ConvertTo-Json
-      - name: Mandatory standard LoRA scorer and native capture parser correctness
+      - name: Mandatory standard LoRA scorer and capture argument contracts
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
@@ -550,9 +550,6 @@ jobs:
       - name: Pinned Prism PQ2 census regression
         shell: pwsh
         run: ./tests/Test-Pq2Census.ps1
-      - name: Exact PQ2 to native PTQ1 block packing
-        shell: pwsh
-        run: ./tests/Test-Pq2Ptq1Codec.ps1
       - name: Streamed Rust PTQ1 weight export
         shell: pwsh
         run: ./tests/Test-Ptq1Export.ps1 -Case All
@@ -566,6 +563,21 @@ jobs:
           persist-credentials: false
       - name: Build packaged maintenance tools once for policy checks
         uses: ./.github/actions/bonsai-tools
+      - name: Build and check the released native codec probe
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-CodecProbeChecks-' + [guid]::NewGuid().ToString('N'))
+          "CODEC_PROBE_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          $corpus = Join-Path $env:GITHUB_WORKSPACE 'tools/codec-probe/tests/fixtures/random-pq2.bin'
+          if ((Get-FileHash -LiteralPath $corpus -Algorithm SHA256).Hash.ToLowerInvariant() -cne '0f0405ee9d335b5cb42df4c2ac95c1adb6bf272fb6380f1c9ba890e7c725b64f') { throw 'Preserved native codec corpus digest changed.' }
+          rustup component add --toolchain nightly-2026-10-22-aarch64-pc-windows-msvc rustfmt clippy
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-codec-probe -TargetDirectory $env:BONSAI_TOOLS_TARGET -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
+          "BONSAI_CODEC_PROBE_PATH=$(Join-Path $env:BONSAI_TOOLS_TARGET 'release/bonsai-codec-probe.exe')" >> $env:GITHUB_ENV
+          "CODEC_PROBE_NATIVE_EVIDENCE=$(Join-Path $env:RUNNER_TEMP ('SwiftBonsai-NativeCodec-' + [guid]::NewGuid().ToString('N')))" >> $env:GITHUB_ENV
       - name: Swift assessment policy and pinned ARM64 runtime
         shell: pwsh
         run: |
@@ -576,7 +588,7 @@ jobs:
           $data = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime'
           $lockPath = Join-Path $env:GITHUB_WORKSPACE 'config/swift-assessment.lock.json'
           ./scripts/Get-Engine.ps1 -DataDirectory $data -LockPath $lockPath
-          ./tests/Test-PrismCodec.ps1 -DataDirectory $data
+          ./tests/Test-PrismCodec.ps1 -DataDirectory $data -ProbeToolPath $env:BONSAI_CODEC_PROBE_PATH -EvidenceDirectory $env:CODEC_PROBE_NATIVE_EVIDENCE
           ./scripts/Get-Adapter.ps1 -DataDirectory $data
           ./scripts/Get-Adapter.ps1 -DataDirectory $data -VerifyOnly
           $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -CheckOnly
@@ -599,3 +611,13 @@ jobs:
               $plan.RuntimeHelpVerification -notlike 'all-planned-switches-advertised*' -or
               $plan.ArtifactVerification -notlike '*model-not-checked') { throw 'Invalid runtime-only preflight result.' }
           $plan | Select-Object Status, ArtifactVerification, RuntimeHelpVerification | ConvertTo-Json
+      - name: Retain released codec probe and native parity evidence
+        if: always() && env.CODEC_PROBE_CHECK_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codec-probe-${{ github.sha }}
+          path: |
+            ${{ env.CODEC_PROBE_CHECK_EVIDENCE }}
+            ${{ env.CODEC_PROBE_NATIVE_EVIDENCE }}
+            ${{ env.BONSAI_CODEC_PROBE_PATH }}
+          if-no-files-found: error
