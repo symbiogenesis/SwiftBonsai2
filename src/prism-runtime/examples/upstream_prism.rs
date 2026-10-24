@@ -42,6 +42,8 @@ mod sampling;
 #[path = "upstream_prism/tokenizer.rs"]
 mod tokenizer;
 
+#[path = "upstream_prism/backend_sampler.rs"]
+mod backend_sampler;
 #[path = "upstream_prism/barrier.rs"]
 mod barrier;
 #[path = "upstream_prism/batch_allocator.rs"]
@@ -168,6 +170,12 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-backend-sampler",
+        "tests/test-backend-sampler.cpp",
+        Bridge::Common,
+        backend_sampler::run,
+    ),
     register(
         "test-dspark-forward",
         "tests/test-dspark-forward.cpp",
@@ -764,6 +772,7 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
         Some("gbnf-validator") => return validator::diagnostic(engine, &value),
         Some("dspark-loop-options") => return dspark_loop::diagnostic(engine, &value),
         Some("dspark-forward-options") => return dspark_forward::diagnostic(engine, &value),
+        Some("backend-sampler-options") => return backend_sampler::diagnostic(engine, &value),
         Some("dspark-real-options") => {
             llama_grammar::exact_fields(&value, &["Kind", "Options"])?;
             return dspark_real::run_with_options(

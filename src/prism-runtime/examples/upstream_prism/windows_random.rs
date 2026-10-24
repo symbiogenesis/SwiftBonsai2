@@ -70,6 +70,17 @@ impl Random {
         ((self.next() >> 8) as f32) * (1.0 / 16_777_216.0)
     }
 
+    /// Reproduces MSVC's two-draw, 53-bit canonical double distribution.
+    #[allow(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        clippy::suboptimal_flops,
+        reason = "The 53-bit integer is exact in binary64; separate multiply/add preserve the source distribution's rounding."
+    )]
+    pub(super) fn uniform_f64(&mut self, low: f64, high: f64) -> f64 {
+        let bits = u64::from(self.next() >> 11) + (u64::from(self.next()) << 21);
+        ((bits as f64) * (1.0 / 9_007_199_254_740_992.0)) * (high - low) + low
+    }
     /// Reproduces the source `uniform_real_distribution<float>` evaluation order.
     #[allow(
         clippy::suboptimal_flops,

@@ -6,9 +6,13 @@ targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Both results are retained for each source; every
 upstream reference failure fails the final gate.
 
-The current ports preserve sixty source contracts from
+The current ports preserve sixty-one source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
+- Backend sampling retains all19 original scenarios, complete penalties/filter
+  comparisons, multi-output transactions and CPU-suffix observers. Callback
+  decisions and source predicates belong to Rust; native callbacks only relay
+  raw events. Safe Rust reproduces the original MSVC double RNG exactly.
 - DSpark forward retains all six Windows CPU modes and their runtime/prefix
   grids, A/B checks, replays, capture atomicity and rejection contracts. Tier2
   preserves diagnostic-only numeric differences against independent Rust math.

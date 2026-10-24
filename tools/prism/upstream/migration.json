@@ -131,7 +131,7 @@
       ],
       "AssertionsToPort": "All enabled sampling tests: greedy/top-k/temp/temp-ext/min-p/top-p/dist/logit-bias/penalties; mixed CPU/backend; multi-sequence and multi-output transactions/limits; state and selected token/probability parity.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-barrier.cpp",

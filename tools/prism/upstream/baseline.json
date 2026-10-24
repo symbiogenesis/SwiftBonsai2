@@ -1,7 +1,7 @@
 {
   "SchemaVersion": 1,
   "UpstreamCommit": "b87ca7225456b06b0975b8239c66b5aecf07e37c",
-  "CatalogSha256": "abcde3bd2db481e1a6f8caa36bdbc5babc54fce9fb838f10f1a90250d6316e7c",
+  "CatalogSha256": "0cbe7f5eed1cd548408ac9127f4454bbc7bcba99d0535735ae7dd21440223550",
   "Measure": "upstream-source-files",
   "Total": 71,
   "MinimumPassed": 1,
@@ -59,7 +59,7 @@
       "Pq2FixtureSha256": "279cac324e1382b93650dcfe3b4e2a1a80c346e7c481ba8ef966f47f6f7b1621",
       "Ptq1FixtureSha256": "db47bed002bb2ac699dbe8cc324ba4607cbf4cc12982081f1059b0cce6980036"
     },
-    "SafeRustMigration": "Sixty source contracts have Rust-owned assertions. MinimumPassed and every RequiredPassedId/RequiredReferencePassedId are preserved. Native acceptance targets Windows ARM64; Apple wired-memory is excluded and never counted as passed. Benchmarks have separate CI-only workload reports outside the correctness denominator. MTMD chunk tests explicitly call the public upstream opaque fixture factory; Rust owns requests and predicates.",
+    "SafeRustMigration": "Sixty-one source contracts have Rust-owned assertions. MinimumPassed and every RequiredPassedId/RequiredReferencePassedId are preserved. Native acceptance targets Windows ARM64; Apple wired-memory is excluded and never counted as passed. Benchmarks have separate CI-only workload reports outside the correctness denominator. MTMD chunk tests explicitly call the public upstream opaque fixture factory; Rust owns requests and predicates.",
     "WindowsArm64": {
       "ProjectRevision": "2daa94c3fd0c7dde84b05609b61cde43ec18e105",
       "RunUrl": "https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40120815419",

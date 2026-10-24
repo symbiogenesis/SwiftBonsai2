@@ -38,9 +38,14 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Sixty source contracts currently have safe Rust adapters in
+Sixty-one source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-backend-sampler.cpp`: all 19 source scenarios, penalties/filter matrices,
+  CDF comparisons, multi-output transactions and CPU-suffix callback contracts.
+  Generic native callbacks report observations to Rust, which owns acceptance
+  decisions, counters and tolerances. The original MSVC double RNG is reproduced
+  in safe Rust and independently matched for 3,000 draws and float narrowings.
 - `test-dspark-forward.cpp`: all six Windows CPU modes, including scalar/head
   oracles, SNR/output A/B, runtime/prefix grids, replay, capture atomicity and
   negative-prefix contracts. Tier2 uses the independent Rust reference and
