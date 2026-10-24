@@ -35,7 +35,7 @@ inline void validate_expr(const json & expression, const std::set<std::string> &
     fields(expression, {"Op", "Args"}); string(expression.at("Op"), 128);
     const auto op = expression.at("Op").get<std::string>(); const auto & args = expression.at("Args");
     require(args.is_array() && args.size() <= 64, "PEG Args must be an array of at most 64 values");
-    static const std::set<std::string> zero = {"eps","start","end","any","space","rest","double_quoted_string","single_quoted_string","quoted_string","json","json_object","json_string","json_array","json_number","json_bool","json_null","python_value","python_dict","python_string","python_array","python_number","python_bool","python_null","marker"};
+    static const std::set<std::string> zero = {"eps","start","end","any","space","rest","double_quoted_string","single_quoted_string","json","python_value","marker"};
     const auto arity = [&](std::size_t low, std::size_t high) { require(args.size() >= low && args.size() <= high, "PEG argument count mismatch"); };
     const auto child = [&](std::size_t index) { validate_expr(args.at(index), locals, depth+1, count); };
     if (zero.count(op)) arity(0,0);
@@ -82,9 +82,9 @@ inline common_peg_parser expr(common_peg_parser_builder & p,const json & express
     if(expression.contains("Ref")) return common_peg_parser(locals.at(expression.at("Ref").get<std::string>()),p);
     const auto op=expression.at("Op").get<std::string>(); const auto & a=expression.at("Args");
     if(op=="eps") return p.eps(); if(op=="start") return p.start(); if(op=="end") return p.end(); if(op=="any") return p.any(); if(op=="space") return p.space(); if(op=="rest") return p.rest();
-    if(op=="double_quoted_string") return p.double_quoted_string(); if(op=="single_quoted_string") return p.single_quoted_string(); if(op=="quoted_string") return p.quoted_string();
-    if(op=="json") return p.json(); if(op=="json_object") return p.json_object(); if(op=="json_string") return p.json_string(); if(op=="json_array") return p.json_array(); if(op=="json_number") return p.json_number(); if(op=="json_bool") return p.json_bool(); if(op=="json_null") return p.json_null();
-    if(op=="python_value") return p.python_value(); if(op=="python_dict") return p.python_dict(); if(op=="python_string") return p.python_string(); if(op=="python_array") return p.python_array(); if(op=="python_number") return p.python_number(); if(op=="python_bool") return p.python_bool(); if(op=="python_null") return p.python_null(); if(op=="marker") return p.marker();
+    if(op=="double_quoted_string") return p.double_quoted_string(); if(op=="single_quoted_string") return p.single_quoted_string();
+    if(op=="json") return p.json();
+    if(op=="python_value") return p.python_value(); if(op=="marker") return p.marker();
     if(op=="literal") return p.literal(a[0].get<std::string>()); if(op=="ref") return p.ref(a[0].get<std::string>()); if(op=="until") return p.until(a[0].get<std::string>());
     if(op=="chars") return p.chars(a[0].get<std::string>(),a.size()>1?a[1].get<int>():1,a.size()>2?a[2].get<int>():-1);
     if(op=="string_content") return p.string_content(static_cast<char>(a[0].get<int>()));
