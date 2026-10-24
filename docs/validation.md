@@ -13,6 +13,14 @@ approximate a complete suite by batching local filters.
 | PowerShell 7.6+ | Latest strict mode, terminating errors including native-command failures, typed parameters, advanced functions and explicit output contracts. PSScriptAnalyzer 1.25.0 defaults plus selected safety rules reject every unsuppressed diagnostic. |
 | C# 14 / .NET 10 | Nullable checking, checked arithmetic, unsafe compilation disabled and warnings as errors for every Add-Type invocation. A separate Release build checks .NET analyzers, internal helpers, XML API documentation and selected style diagnostics. |
 
+The nightly pin is temporary. Move to beta at the earliest release that promotes
+both the next trait solver and Polonius, then to stable as soon as both reach
+stable. Verify the borrowing/solver fixtures, alias-rejection control and actual
+broker/runtime checks before switching; update the compiler pin, scripts and CI
+together. Continued use of nightly requires an actual remaining compiler need.
+Track the [next-solver stabilization](https://github.com/rust-lang/rust/pull/164209)
+and [Polonius promotion](https://github.com/rust-lang/goals/issues/118) as upgrade signals.
+
 Rust is the default for repository-owned systems components. The broker, codecs,
 GGUF tools, maintenance tool and native CPU reference forbid unsafe code. Unsafe
 operations are confined to documented Win32 boundaries in `bonsai-windows-process`
