@@ -12,12 +12,12 @@ promotion gates. Pin implementation sources/licenses during R0 before reuse.
 | Task | Current state | Remaining work |
 | --- | --- | --- |
 | R4.3: prompt ingestion | `Decoder::ingest`/Qwen35 skip output-only work for intermediate uncached prompt tokens; final tokens and prefix hits retain logits | Full-model correctness/performance qualification; retain computed-state checks, cancellation and rollback |
-| R4.4: activation preparation | Sibling projections can repeat sign/Hadamard work and quantization | Share only matching input, basis/signs/permutation, width and quantizer; check logits and recovery |
+| R4.4: activation preparation | Compatible sibling projections share scoped preparation, including transforms and quantization | Qualify full-model allocation and performance benefit; retain input, basis/permutation and quantizer compatibility checks |
 | R4.5: KV storage | Full-attention state retains exact binary16 bits in `Vec<u16>` and widens on reads; GDN/convolution stays FP32 | Qualify process-memory/throughput benefit; retain capacity-based mixed-state accounting |
 | R3 / S3: packed decode | NEON PQ2/PTQ1 and odd-group PQ2 have exact synthetic scalar comparisons | Compare exact ternary LUTs under unchanged quantizers/scales and generic PQ2 semantics |
-| R4.6 / S5: prefill | Graph/decoder still process tokens sequentially | Add bounded block scheduling, then compare tiled matmul, Vec-LUT and chunkwise GDN |
-| R5.2: checkpoints | KV/convolution/GDN snapshots deep-copy state | Share immutable KV pages and mutable tails while keeping exact recurrent snapshots and ownership budgets |
-| M6: speculation | Native decoder is greedy-only with no block verifier | Qualify verification/sampling before suffix proposals and compact recurrent recovery; keep separate from ordinary decoding |
+| R4.6 / S5: prefill | Bounded 1–256-token block scheduling retains sequential graph arithmetic and whole-request rollback | Compare tiled matmul, Vec-LUT and chunkwise GDN under causal/state and numerical gates |
+| R5.2: checkpoints | Snapshots share sealed immutable KV pages and copy mutable tails plus complete convolution/GDN state | Qualify full-model process-memory benefit while retaining conservative snapshot budgets |
+| M6: speculation | Native decoder supports greedy and explicit seeded reference sampling, without a block verifier | Qualify Prism sampler/RNG parity and verification before suffix proposals and compact recurrent recovery; keep separate from ordinary decoding |
 
 Source map: [runtime](../src/prism-runtime/src/runtime.rs),
 [decoder API](../src/prism-runtime/src/lib.rs),

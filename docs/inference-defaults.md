@@ -40,7 +40,9 @@ only, and accepted only on assistant turns.
 The fixed paired LoRA qualification deliberately keeps its separately recorded
 greedy sampler and template defaults. Changing its controls would change the
 experiment; it does not inherit the interactive sampler. The token-level native
-Rust reference still supports greedy decoding only and is not the chat backend.
+Rust reference defaults to greedy decoding and also offers explicit seeded
+reference sampling. Its independent SplitMix64 contract does not establish Prism
+sampler/RNG parity; it is not the chat backend.
 
 ## What the benchmarks establish
 
