@@ -19,10 +19,119 @@ use crate::{Decoder, Result, invalid};
 
 /// Maximum admitted live KV/recurrent element payload, also the default budget.
 ///
-/// This excludes model storage, scratch, checkpoints and allocator overhead.
+/// This excludes model storage, scratch, checkpoints, page-table/Arc metadata
+/// and allocator overhead.
 pub const MAX_STATE_BYTES: usize = 4 * 1024 * 1024 * 1024;
 const MAX_WIDTH: usize = 1 << 20;
 const MAX_LAYERS: usize = 256;
+const KV_PAGE_TOKENS: usize = 64;
+
+/// Completed pages never mutate. Checkpoints share them and independently copy
+/// only the bounded tail; appending and restoring never copy a sealed payload.
+struct KvCache {
+    pages: Vec<Arc<Vec<u16>>>,
+    tail: Vec<u16>,
+    width: usize,
+    page_elements: usize,
+    maximum: usize,
+    len: usize,
+}
+
+impl KvCache {
+    fn new(width: usize, context: usize) -> Result<Self> {
+        let maximum = checked_product(&[width, context])?;
+        if width == 0
+            || context == 0
+            || checked_product(&[maximum, size_of::<u16>()])? > MAX_STATE_BYTES
+        {
+            return Err(invalid("invalid paged KV cache bounds"));
+        }
+        Ok(Self {
+            pages: Vec::new(),
+            tail: Vec::new(),
+            width,
+            page_elements: checked_product(&[width, context.min(KV_PAGE_TOKENS)])?,
+            maximum,
+            len: 0,
+        })
+    }
+
+    fn tokens(&self) -> impl Iterator<Item = &[u16]> {
+        self.pages
+            .iter()
+            .flat_map(|page| page.chunks_exact(self.width))
+            .chain(self.tail.chunks_exact(self.width))
+    }
+
+    // Reserve every fallible payload/table growth before any token commits.
+    // Sealing moves the tail allocation into an Arc; there is no payload COW
+    // or second page-sized allocation, even while snapshots retain old pages.
+    // The standard Arc constructor still allocates its fixed-size header.
+    fn reserve_append(&mut self) -> Result<()> {
+        let next = checked_sum(self.len, self.width)?;
+        if next > self.maximum {
+            return Err(invalid("KV cache append exceeds context bound"));
+        }
+        let required = checked_sum(self.tail.len(), self.width)?;
+        let remaining = self.maximum - (self.len - self.tail.len());
+        let limit = self.page_elements.min(remaining);
+        if required > self.tail.capacity() {
+            let target = self
+                .tail
+                .capacity()
+                .saturating_mul(2)
+                .min(limit)
+                .max(required);
+            self.tail.try_reserve_exact(target - self.tail.len())?;
+        }
+        if required == self.page_elements || next == self.maximum {
+            self.pages.try_reserve_exact(1)?;
+        }
+        Ok(())
+    }
+
+    fn append(&mut self, values: &[f32]) {
+        debug_assert_eq!(values.len(), self.width);
+        self.tail.extend(values.iter().copied().map(half_bits));
+        self.len += self.width;
+        if self.tail.len() == self.page_elements || self.len == self.maximum {
+            self.pages.push(Arc::new(std::mem::take(&mut self.tail)));
+        }
+    }
+
+    fn copy(&self) -> Result<Self> {
+        let mut pages = capacity(self.pages.len())?;
+        pages.extend(self.pages.iter().map(Arc::clone));
+        Ok(Self {
+            pages,
+            tail: copy_values(&self.tail)?,
+            width: self.width,
+            page_elements: self.page_elements,
+            maximum: self.maximum,
+            len: self.len,
+        })
+    }
+
+    fn clear(&mut self) {
+        self.pages.clear();
+        self.tail.clear();
+        self.len = 0;
+    }
+
+    fn bytes(&self) -> usize {
+        self.pages.capacity() * size_of::<Arc<Vec<u16>>>()
+            + self.tail.capacity() * size_of::<u16>()
+            + self
+                .pages
+                .iter()
+                .map(|page| {
+                    page.capacity() * size_of::<u16>()
+                        + size_of::<Vec<u16>>()
+                        + 2 * size_of::<usize>()
+                })
+                .sum::<usize>()
+    }
+}
 
 #[derive(Clone)]
 struct Geometry {
@@ -90,11 +199,10 @@ struct Layer {
     down: Tensor,
 }
 
-#[derive(Clone)]
 enum LayerState {
     Full {
-        keys: Vec<u16>,
-        values: Vec<u16>,
+        keys: KvCache,
+        values: KvCache,
     },
     Recurrent {
         convolution: Vec<f32>,
@@ -103,9 +211,9 @@ enum LayerState {
 }
 
 impl LayerState {
-    const fn bytes(&self) -> usize {
+    fn bytes(&self) -> usize {
         match self {
-            Self::Full { keys, values } => (keys.capacity() + values.capacity()) * size_of::<u16>(),
+            Self::Full { keys, values } => keys.bytes() + values.bytes(),
             Self::Recurrent {
                 convolution,
                 matrix,
@@ -444,7 +552,8 @@ impl Transforms {
     }
 }
 
-/// Exact owned conversation state; tensor payloads are not copied.
+/// Exact conversation state with shared immutable KV pages and an owned tail.
+/// Convolution and recurrent payloads are copied exactly, without F16 rounding.
 pub struct Qwen35Checkpoint {
     provenance: Arc<()>,
     identity: String,
@@ -503,10 +612,14 @@ impl Qwen35 {
     /// Creates a decoder within an explicit maximum live-state payload budget.
     ///
     /// Admission charges full-context FP16 K/V plus F32 convolution/recurrent
-    /// elements before allocating decoder state. KV allocation remains lazy.
-    /// The budget excludes model storage, graph scratch, checkpoints and
-    /// allocator overhead; it does not bound process memory. Kernel selection
-    /// follows [`Self::with_backend`].
+    /// elements before allocating decoder state. KV allocation remains lazy;
+    /// completed pages hold up to 64 tokens and never copy their payload when
+    /// sealed or restored. Checkpoints share those immutable pages and copy the
+    /// bounded tail plus exact F32 recurrent state. Snapshot admission charges
+    /// each referenced page in full, conservatively overcounting shared pages.
+    /// The live-state budget excludes model storage, graph scratch, checkpoints,
+    /// page-table/Arc metadata and allocator overhead; it does not bound process
+    /// memory. Kernel selection follows [`Self::with_backend`].
     ///
     /// # Errors
     /// Rejects zero budgets, budgets above [`MAX_STATE_BYTES`], a graph whose
@@ -777,8 +890,8 @@ impl Qwen35 {
         for layer in &layers {
             state.push(match &layer.attention {
                 Attention::Full(_) => LayerState::Full {
-                    keys: Vec::new(),
-                    values: Vec::new(),
+                    keys: KvCache::new(geometry.head * geometry.kv_heads, context_limit)?,
+                    values: KvCache::new(geometry.head * geometry.kv_heads, context_limit)?,
                 },
                 Attention::Recurrent(_) => LayerState::Recurrent {
                     convolution: zeros((geometry.convolution - 1) * geometry.convolution_width())?,
@@ -925,18 +1038,17 @@ impl Qwen35 {
         }
         // Reserve every append before changing numerical state. Deltas retain
         // their allocations across tokens but never alias checkpoint storage.
-        let width = self.geometry.head * self.geometry.kv_heads;
         for state in &mut self.state {
             if let LayerState::Full { keys, values } = state {
-                reserve_cache_append(keys, width, self.context_limit)?;
-                reserve_cache_append(values, width, self.context_limit)?;
+                keys.reserve_append()?;
+                values.reserve_append()?;
             }
         }
         for (state, delta) in self.state.iter_mut().zip(deltas.iter_mut()) {
             match (state, delta) {
                 (LayerState::Full { keys, values }, LayerDelta::Full { key, value }) => {
-                    keys.extend(key.iter().copied().map(half_bits));
-                    values.extend(value.iter().copied().map(half_bits));
+                    keys.append(key);
+                    values.append(value);
                 }
                 (
                     LayerState::Recurrent {
@@ -992,8 +1104,8 @@ impl Evaluation<'_> {
         &mut self,
         layer: &FullAttention,
         input: &[f32],
-        keys: &[u16],
-        values: &[u16],
+        keys: &KvCache,
+        values: &KvCache,
         scratch: &mut AttentionScratch,
         delta: &mut LayerDelta,
         output: &mut Vec<f32>,
@@ -1045,7 +1157,6 @@ impl Evaluation<'_> {
         finite(&scratch.query, "binary16 attention query")?;
         finite(key, "binary16 key cache")?;
         finite(value, "binary16 value cache")?;
-        let width = g.head * g.kv_heads;
         zeros_into(g.head * g.heads, &mut scratch.attended)?;
         let scale = 1.0 / small_float(g.head)?.sqrt();
         for head in 0..g.heads {
@@ -1054,7 +1165,7 @@ impl Evaluation<'_> {
             let q = &scratch.query[head * g.head..(head + 1) * g.head];
             prepare(&mut scratch.scores, self.position + 1)?;
             let scores = &mut scratch.scores;
-            for past in keys.chunks_exact(width) {
+            for past in keys.tokens() {
                 scores.push(dot_f16(q, &past[offset..offset + g.head]) * scale);
             }
             scores.push(dot(q, &key[offset..offset + g.head]) * scale);
@@ -1066,7 +1177,7 @@ impl Evaluation<'_> {
             let result = &mut scratch.attended[head * g.head..(head + 1) * g.head];
             for (dimension, out) in result.iter_mut().enumerate() {
                 let past_sum = values
-                    .chunks_exact(width)
+                    .tokens()
                     .zip(scores.iter())
                     .map(|(past, &probability)| {
                         f64::from(probability * half_to_float(past[offset + dimension]))
@@ -1248,6 +1359,12 @@ impl Decoder for Qwen35 {
         self.evaluate_token_into(token, None)
     }
     fn checkpoint_bytes(&self) -> usize {
+        // Deliberately charge each referenced page in full for every snapshot,
+        // including its Arc header and page table. Runtime admission therefore
+        // overcounts shared pages rather than undercounting unique pages or
+        // retained recurrent snapshots. Tails are private: subsequent append
+        // needs no payload COW. Allocator overhead and graph scratch remain
+        // outside this element/metadata storage bound, as for live state.
         size_of::<Qwen35Checkpoint>()
             + self.identity.capacity()
             + self.state.capacity() * size_of::<LayerState>()
@@ -1615,29 +1732,6 @@ fn capacity<T>(count: usize) -> Result<Vec<T>> {
     Ok(result)
 }
 
-fn reserve_cache_append(cache: &mut Vec<u16>, width: usize, context: usize) -> Result<()> {
-    let required = checked_sum(cache.len(), width)?;
-    let maximum = checked_product(&[width, context])?;
-    if checked_product(&[maximum, size_of::<u16>()])? > MAX_STATE_BYTES {
-        return Err(invalid("KV cache exceeds state budget"));
-    }
-    if required > maximum {
-        return Err(invalid("KV cache append exceeds context bound"));
-    }
-    if required > cache.capacity() {
-        // Exact per-token growth can repeatedly copy the entire prefix.
-        // Double only up to the already validated context allocation bound.
-        // Snapshot accounting continues to charge the actual Vec capacities.
-        let capacity = cache
-            .capacity()
-            .saturating_mul(2)
-            .min(maximum)
-            .max(required);
-        cache.try_reserve_exact(capacity - cache.len())?;
-    }
-    Ok(())
-}
-
 fn copy_values<T: Copy>(values: &[T]) -> Result<Vec<T>> {
     let mut result = capacity(values.len())?;
     result.extend_from_slice(values);
@@ -1656,8 +1750,8 @@ fn copy_state(states: &[LayerState]) -> Result<Vec<LayerState>> {
     for state in states {
         result.push(match state {
             LayerState::Full { keys, values } => LayerState::Full {
-                keys: copy_values(keys)?,
-                values: copy_values(values)?,
+                keys: keys.copy()?,
+                values: values.copy()?,
             },
             LayerState::Recurrent {
                 convolution,
@@ -1785,8 +1879,8 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        Geometry, LayerState, MAX_STATE_BYTES, ProjectionScratch, Transforms, copy_state, dot,
-        dot_f16, half_bits, half_to_float, reserve_cache_append, rope, rope_frequencies,
+        Geometry, KV_PAGE_TOKENS, KvCache, LayerState, MAX_STATE_BYTES, ProjectionScratch,
+        Transforms, copy_state, dot, dot_f16, half_bits, half_to_float, rope, rope_frequencies,
     };
     use crate::Result;
     use crate::model::Tensor;
@@ -1976,8 +2070,8 @@ mod tests {
                         values: actual_values,
                     },
                 ) => {
-                    assert_eq!(keys, actual_keys);
-                    assert_eq!(values, actual_values);
+                    assert!(keys.tokens().eq(actual_keys.tokens()));
+                    assert!(values.tokens().eq(actual_values.tokens()));
                 }
                 (
                     LayerState::Recurrent {
@@ -2041,28 +2135,46 @@ mod tests {
     }
 
     #[test]
-    fn packed_cache_copy_owns_bits_and_charges_physical_capacity() -> Result<()> {
+    fn paged_cache_copy_shares_only_sealed_payload_and_copies_exact_recurrent_bits() -> Result<()> {
         let bits = [0x8000, 0x0001, 0x03ff, 0x0400, 0x7bff, 0xfbff];
-        let mut keys = Vec::with_capacity(16);
-        keys.extend_from_slice(&bits);
-        let mut values = Vec::with_capacity(8);
-        values.extend_from_slice(&bits);
-        let cache_bytes = (keys.capacity() + values.capacity()) * size_of::<u16>();
+        let values = bits.map(half_to_float);
+        let mut cache = KvCache::new(bits.len(), 3 * KV_PAGE_TOKENS)?;
+        for _ in 0..=KV_PAGE_TOKENS {
+            cache.reserve_append()?;
+            cache.append(&values);
+        }
+        assert_eq!(cache.pages.len(), 1);
+        assert_eq!(cache.tail, bits);
         let mut states = vec![
-            LayerState::Full { keys, values },
+            LayerState::Full {
+                keys: cache.copy()?,
+                values: cache,
+            },
             LayerState::Recurrent {
                 convolution: vec![-0.0, f32::from_bits(1)],
                 matrix: vec![f32::MIN_POSITIVE, f32::MAX],
             },
         ];
-        assert_eq!(states[0].bytes(), cache_bytes);
-        assert_eq!(states[1].bytes(), 4 * size_of::<f32>());
         let checkpoint = copy_state(&states)?;
-        let expected = states.clone();
+        let expected = copy_state(&states)?;
         assert_state_bits_eq(&states, &checkpoint);
-        if let LayerState::Full { keys, values } = &mut states[0] {
-            keys[0] = 0;
-            values[1] = 0;
+        if let (
+            LayerState::Full { keys, values },
+            LayerState::Full {
+                keys: saved_keys,
+                values: saved_values,
+            },
+        ) = (&mut states[0], &checkpoint[0])
+        {
+            assert!(Arc::ptr_eq(&keys.pages[0], &saved_keys.pages[0]));
+            assert!(Arc::ptr_eq(&values.pages[0], &saved_values.pages[0]));
+            assert_ne!(keys.tail.as_ptr(), saved_keys.tail.as_ptr());
+            assert_ne!(values.tail.as_ptr(), saved_values.tail.as_ptr());
+            // Each snapshot charges all shared payloads conservatively.
+            assert_eq!(keys.bytes(), saved_keys.bytes());
+            assert!(keys.bytes() >= (KV_PAGE_TOKENS + 1) * bits.len() * size_of::<u16>());
+            keys.tail[0] = 0;
+            values.tail[1] = 0;
             keys.clear();
         }
         if let LayerState::Recurrent {
@@ -2110,33 +2222,94 @@ mod tests {
     }
 
     #[test]
-    fn kv_cache_growth_is_geometric_bounded_and_keeps_the_prefix() -> Result<()> {
-        let mut cache = Vec::new();
-        let mut growths = 0;
-        let width = 3;
-        let context = 33;
-        for position in 0..context {
-            let old_capacity = cache.capacity();
-            reserve_cache_append(&mut cache, width, context)?;
-            growths += usize::from(cache.capacity() != old_capacity);
-            assert!(cache.capacity() <= width * context);
-            assert_eq!(cache, vec![0x3c00; position * width]);
-            cache.extend_from_slice(&[0x3c00; 3]);
+    fn paged_cache_iteration_keeps_flat_f16_dot_and_weighted_sum_order() -> Result<()> {
+        let mut cache = KvCache::new(3, 3 * KV_PAGE_TOKENS)?;
+        let mut flat = Vec::new();
+        for position in 0..=2 * KV_PAGE_TOKENS {
+            let values = match position % 3 {
+                0 => [65_504.0, -0.0, 1.0],
+                1 => [0.000_061_035_156, 0.5, -65_504.0],
+                _ => [-65_504.0, -0.25, 0.000_061_035_156],
+            };
+            cache.reserve_append()?;
+            cache.append(&values);
+            flat.extend(values.map(half_bits));
         }
-        // Thirty-three appends require at most seven allocation growths,
-        // including the final non-power-of-two context cap.
-        assert!(growths <= 7);
-        assert!(reserve_cache_append(&mut cache, width, context).is_err());
-        assert_eq!(cache.len(), width * context);
-        let mut oversized = Vec::with_capacity(width * (context + 1));
-        oversized.resize(width * context, 0x3c00);
-        assert!(reserve_cache_append(&mut oversized, width, context).is_err());
-        let capacity = cache.capacity();
+        let query = [1.000_000_1, -0.5, 0.25];
+        assert!(
+            cache
+                .tokens()
+                .map(|token| dot_f16(&query, token).to_bits())
+                .eq(flat
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|token| dot_f16(&query, token).to_bits()))
+        );
+        for dimension in 0..3 {
+            let weighted = |token: &[u16], index: usize| {
+                let probability = [0.5, -0.25, 0.125][index % 3];
+                f64::from(probability * half_to_float(token[dimension]))
+            };
+            let paged = cache
+                .tokens()
+                .enumerate()
+                .map(|(index, token)| weighted(token, index))
+                .sum::<f64>();
+            let contiguous = flat
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .enumerate()
+                .map(|(index, token)| weighted(token, index))
+                .sum::<f64>();
+            assert_eq!(paged.to_bits(), contiguous.to_bits());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn paged_cache_growth_seals_without_payload_copy_and_remains_context_bounded() -> Result<()> {
+        let width = 3;
+        let context = 2 * KV_PAGE_TOKENS + 5;
+        let mut cache = KvCache::new(width, context)?;
+        for position in 0..context {
+            cache.reserve_append()?;
+            let prepared_pointer = cache.tail.as_ptr();
+            cache.append(&[1.0; 3]);
+            assert_eq!(cache.len, (position + 1) * width);
+            assert_eq!(cache.tokens().count(), position + 1);
+            assert!(cache.tokens().all(|token| token == [0x3c00; 3]));
+            assert!(cache.tail.capacity() <= width * KV_PAGE_TOKENS);
+            let allocated = cache
+                .pages
+                .iter()
+                .map(|page| page.capacity())
+                .sum::<usize>()
+                + cache.tail.capacity();
+            assert!(allocated <= width * context);
+            if cache.tail.is_empty() {
+                let sealed = cache
+                    .pages
+                    .last()
+                    .ok_or_else(|| crate::invalid("missing sealed page"))?;
+                assert_eq!(sealed.as_ptr(), prepared_pointer);
+            }
+        }
+        let saved = cache.copy()?;
+        assert!(cache.reserve_append().is_err());
+        assert!(cache.tokens().eq(saved.tokens()));
+        assert_eq!(cache.pages.len(), 3);
+        assert_eq!(cache.pages[2].len(), 5 * width);
+        assert_eq!(cache.tail, Vec::<u16>::new());
         cache.clear();
-        reserve_cache_append(&mut cache, width, context)?;
-        assert_eq!(cache.capacity(), capacity);
-        assert!(reserve_cache_append(&mut cache, usize::MAX, 2).is_err());
-        assert!(reserve_cache_append(&mut cache, 1, MAX_STATE_BYTES).is_err());
+        cache.reserve_append()?;
+        cache.append(&[-1.0; 3]);
+        assert_eq!(cache.tokens().collect::<Vec<_>>(), vec![&[0xbc00; 3][..]]);
+        assert!(saved.tokens().all(|token| token == [0x3c00; 3]));
+        assert!(KvCache::new(usize::MAX, 2).is_err());
+        assert!(KvCache::new(1, MAX_STATE_BYTES).is_err());
+        assert!(KvCache::new(0, 1).is_err());
         Ok(())
     }
 }

@@ -10,6 +10,7 @@ use bonsai_gguf::{MetadataArray, MetadataValue};
 use bonsai_prism_runtime::graph::Qwen35;
 use bonsai_prism_runtime::kernels::{MatvecBackend, MatvecFallbackReason, round_f16};
 use bonsai_prism_runtime::model::{Model, Tensor};
+use bonsai_prism_runtime::runtime::{Cancellation, Generation, Limits, Runtime};
 use bonsai_prism_runtime::{Decoder, Result};
 #[cfg(feature = "cli")]
 use serde_json::Value;
@@ -122,6 +123,15 @@ fn hybrid_fixture() -> Model {
             model.tensors.insert(name, tensor);
         }
     }
+    model
+}
+
+fn paged_hybrid_fixture() -> Model {
+    let mut model = hybrid_fixture();
+    model.metadata.insert(
+        "qwen35.context_length".to_owned(),
+        MetadataValue::from(192_u64),
+    );
     model
 }
 
@@ -784,6 +794,127 @@ fn full_attention_checkpoint_bytes_charge_binary16_capacity_and_restore_prefix()
     decoder.reset()?;
     decoder.restore(&checkpoint)?;
     assert_eq!(decoder.evaluate(1)?, expected);
+    Ok(())
+}
+
+#[test]
+fn paged_hybrid_checkpoints_restore_exact_logits_on_both_sides_of_seals() -> Result<()> {
+    let bits = |logits: Vec<f32>| logits.into_iter().map(f32::to_bits).collect::<Vec<_>>();
+    let mut decoder = Qwen35::new(paged_hybrid_fixture(), 192)?;
+    let mut checkpoints = Vec::new();
+    for position in 0..130 {
+        if [63, 64, 65, 127, 128, 129].contains(&position) {
+            checkpoints.push((position, decoder.checkpoint()?));
+        }
+        decoder.ingest(u32::try_from(position % 2)?)?;
+    }
+    // Later appends, a rejected token and reset cannot mutate saved pages,
+    // copied tails, convolution histories or recurrent matrices.
+    assert!(decoder.evaluate(2).is_err());
+    decoder.reset()?;
+    for (position, checkpoint) in checkpoints {
+        let mut fresh = Qwen35::new(paged_hybrid_fixture(), 192)?;
+        for index in 0..position {
+            fresh.ingest(u32::try_from(index % 2)?)?;
+        }
+        decoder.restore(&checkpoint)?;
+        for token in [1, 1, 0, 1] {
+            assert_eq!(bits(decoder.evaluate(token)?), bits(fresh.evaluate(token)?));
+        }
+        // A second restoration still yields the exact original prefix after
+        // the first continuation crossed a different seal boundary.
+        decoder.restore(&checkpoint)?;
+        fresh.reset()?;
+        for index in 0..position {
+            fresh.ingest(u32::try_from(index % 2)?)?;
+        }
+        assert_eq!(bits(decoder.evaluate(0)?), bits(fresh.evaluate(0)?));
+    }
+    Ok(())
+}
+
+#[test]
+fn paged_hybrid_runtime_reuses_edited_prefix_and_rolls_back_across_seals() -> Result<()> {
+    let limits = Limits {
+        context_tokens: 192,
+        checkpoints: 4,
+        checkpoint_bytes: 1_048_576,
+    };
+    let mut runtime = Runtime::new(Qwen35::new(paged_hybrid_fixture(), 192)?, limits)?;
+    let cancellation = Cancellation::default();
+    let stop = Generation {
+        max_tokens: 1,
+        stop_tokens: vec![0, 1],
+    };
+    let prefix: Vec<u32> = [0, 1].into_iter().cycle().take(65).collect();
+    runtime.generate(&prefix, &stop, &cancellation, |_| Ok(()))?;
+    let mut longer = prefix.clone();
+    longer.extend([1, 0].into_iter().cycle().take(65));
+    runtime.generate(&longer, &stop, &cancellation, |_| Ok(()))?;
+    assert_eq!(runtime.tokens(), longer);
+    let mut edited = prefix.clone();
+    edited.extend([0, 0, 1, 1].into_iter().cycle().take(66));
+    // The failure occurs after restoring the saved 65-token prefix and
+    // creating another sealed page. Its rollback retains the 130-token state.
+    let generate = Generation {
+        max_tokens: 1,
+        stop_tokens: Vec::new(),
+    };
+    assert!(
+        runtime
+            .generate(&edited, &generate, &cancellation, |_| {
+                Err(std::io::Error::other("synthetic consumer failure").into())
+            })
+            .is_err()
+    );
+    assert_eq!(runtime.tokens(), longer);
+    assert!(!runtime.is_faulted());
+    let mut emitted = Vec::new();
+    let completion = runtime.generate(&edited, &generate, &cancellation, |token| {
+        emitted.push(token);
+        Ok(())
+    })?;
+    assert_eq!(completion.reused_tokens, prefix.len());
+    let mut fresh = Runtime::new(Qwen35::new(paged_hybrid_fixture(), 192)?, limits)?;
+    let mut expected = Vec::new();
+    fresh.generate(&edited, &generate, &cancellation, |token| {
+        expected.push(token);
+        Ok(())
+    })?;
+    assert_eq!(emitted, expected);
+    assert_eq!(runtime.tokens(), fresh.tokens());
+    Ok(())
+}
+
+#[test]
+fn paged_hybrid_checkpoint_budget_rejection_preserves_state_and_reset_recovers() -> Result<()> {
+    let decoder = Qwen35::new(paged_hybrid_fixture(), 192)?;
+    let limits = Limits {
+        context_tokens: 192,
+        checkpoints: 4,
+        checkpoint_bytes: decoder.checkpoint_bytes() + 512,
+    };
+    let mut runtime = Runtime::new(decoder, limits)?;
+    let cancellation = Cancellation::default();
+    let stop = Generation {
+        max_tokens: 1,
+        stop_tokens: vec![0, 1],
+    };
+    let prefix: Vec<u32> = [0, 1].into_iter().cycle().take(65).collect();
+    runtime.generate(&prefix, &stop, &cancellation, |_| Ok(()))?;
+    // The optional save cannot fit. The next request cannot admit even its
+    // mandatory rollback, so it must leave the committed prefix untouched.
+    assert_eq!(runtime.checkpoint_count(), 0);
+    assert!(
+        runtime
+            .generate(&[0], &stop, &cancellation, |_| Ok(()))
+            .is_err()
+    );
+    assert_eq!(runtime.tokens(), prefix);
+    assert!(!runtime.is_faulted());
+    runtime.reset()?;
+    runtime.generate(&[1], &stop, &cancellation, |_| Ok(()))?;
+    assert_eq!(runtime.tokens(), [1]);
     Ok(())
 }
 
