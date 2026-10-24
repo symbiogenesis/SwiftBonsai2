@@ -26,6 +26,7 @@ pub(super) struct Session {
     sequence: usize,
     total_actions: usize,
     stopped: bool,
+    timeout: Duration,
 }
 
 fn read_observation(path: &Path) -> Result<Value> {
@@ -63,14 +64,14 @@ fn publish_actions(path: &Path, actions: &[Value]) -> Result<()> {
     Ok(())
 }
 
-fn checkpoint(directory: &Path, sequence: usize) -> (PathBuf, PathBuf, Value) {
+fn checkpoint(directory: &Path, sequence: usize, timeout: Duration) -> (PathBuf, PathBuf, Value) {
     let output = directory.join(format!("checkpoint-{sequence:06}.json"));
     let next = directory.join(format!("actions-{:06}.json", sequence + 1));
     let action = json!({
         "Op":"checkpoint",
         "OutputFile":output,
         "NextFile":next,
-        "TimeoutMilliseconds":60_000
+        "TimeoutMilliseconds":timeout.as_millis().min(3_600_000)
     });
     (output, next, action)
 }
@@ -91,7 +92,7 @@ impl Session {
     }
 
     fn wait_checkpoint(&mut self) -> Result<Option<Vec<Value>>> {
-        let deadline = Instant::now() + Duration::from_secs(95);
+        let deadline = Instant::now() + self.timeout + Duration::from_secs(5);
         loop {
             if self.output.try_exists()? {
                 let value = read_observation(&self.output)?;
@@ -144,7 +145,7 @@ impl Session {
             return Err(invalid("backend explicit action extent exceeds its bound"));
         }
         self.sequence += 1;
-        let (output, next, action) = checkpoint(&self.directory, self.sequence);
+        let (output, next, action) = checkpoint(&self.directory, self.sequence, self.timeout);
         actions.push(action);
         publish_actions(&self.next, &actions)?;
         self.output = output;
@@ -235,7 +236,19 @@ pub(super) fn with_session<T>(
             "backend session directory must exist and be absolute",
         ));
     }
-    let (output, next, action) = checkpoint(directory, 0);
+    let timeout = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+        && std::env::var("GITHUB_REF").as_deref() == Ok("refs/heads/main")
+    {
+        Duration::from_secs(3600)
+    } else {
+        Duration::from_secs(60)
+    };
+    let process_timeout = if timeout > Duration::from_secs(60) {
+        timeout
+    } else {
+        Duration::from_secs(90)
+    };
+    let (output, next, action) = checkpoint(directory, 0, timeout);
     let request = json!({
         "SchemaVersion":1,
         "Operations":[{
@@ -248,7 +261,8 @@ pub(super) fn with_session<T>(
     std::thread::scope(|scope| {
         let (sender, receiver) = mpsc::channel();
         let worker = scope.spawn(move || {
-            let outcome = engine.execute_common("backend-session", &request);
+            let outcome =
+                engine.execute_common_with_timeout("backend-session", &request, process_timeout);
             let _ = sender.send(outcome);
         });
         let mut session = Session {
@@ -260,6 +274,7 @@ pub(super) fn with_session<T>(
             sequence: 0,
             total_actions: 1,
             stopped: false,
+            timeout,
         };
         let ready = session.wait_checkpoint();
         let result = match ready {

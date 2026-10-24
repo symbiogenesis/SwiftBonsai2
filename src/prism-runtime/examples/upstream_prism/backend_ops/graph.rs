@@ -411,7 +411,7 @@ impl<'a> Plan<'a> {
 
     pub(super) fn observe_scalar(&mut self, id: u32) -> Result<Value> {
         if !self.scalars.contains_key(&id) {
-            self.push(json!({"Op":"scalar","Scalar":id}));
+            self.push(json!({"Op":"scalar","Scalar":id,"Release":true}));
             let _ = self.flush()?;
         }
         self.scalars

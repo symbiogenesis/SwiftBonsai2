@@ -256,6 +256,7 @@ impl<'a> Interpreter<'a> {
             kind = format!("std::array<{kind},{count}>");
             value.unwrap_or_else(|| Value::array(Vec::new()))
         };
+        let value = if kind.contains('&') { value } else { value.copy_value() };
         let value = value.coerce(&kind).map_err(invalid)?;
         Ok((kind, value))
     }
@@ -466,7 +467,7 @@ impl<'a> Interpreter<'a> {
 
     fn write(&mut self, destination: Destination, value: Value) -> Result<()> {
         match destination {
-            Destination::Local(place) => place.set(value).map_err(invalid),
+            Destination::Local(place) => place.set(value.copy_value()).map_err(invalid),
             Destination::Native {
                 object,
                 name,

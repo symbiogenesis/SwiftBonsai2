@@ -64,3 +64,26 @@ pub(super) fn plan_partition(
 pub(super) fn aggregate_plans(plans: &[serde_json::Value]) -> super::Result<serde_json::Value> {
     planner::aggregate(plans)
 }
+
+#[path = "backend_ops/driver.rs"]
+mod driver;
+#[path = "backend_ops/evaluate.rs"]
+mod evaluate;
+#[path = "backend_ops/gradient.rs"]
+mod gradient;
+
+pub(super) fn run_partition(
+    engine: &super::engine::Engine,
+    index: usize,
+    count: usize,
+    mode: &str,
+    plan: &serde_json::Value,
+) -> super::Result<serde_json::Value> {
+    driver::run(engine, index, count, prepare::Mode::parse(mode)?, plan)
+}
+pub(super) fn aggregate_partitions(
+    reports: &[serde_json::Value],
+    plan: &serde_json::Value,
+) -> super::Result<serde_json::Value> {
+    driver::aggregate(reports, plan)
+}

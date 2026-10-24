@@ -43,7 +43,7 @@ pub(super) fn partition(index: usize, count: usize) -> Result<()> {
     Ok(())
 }
 
-fn receipt(
+pub(super) fn receipt(
     host: &Production<'_, '_>,
     prepared: &Prepared,
     geometry: &Geometry,
