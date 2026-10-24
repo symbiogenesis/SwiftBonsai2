@@ -247,7 +247,7 @@ pub(super) fn load() -> Result<(&'static Program, &'static Geometries), String> 
                 .iter()
                 .map(|class| class.methods.len())
                 .sum::<usize>()
-                != 328
+                != 440
             || program.helpers.len() != 7
             || geometries
                 .eval
