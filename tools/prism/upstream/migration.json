@@ -387,7 +387,7 @@
       ],
       "AssertionsToPort": "All grammar/JSON-schema accepted and rejected strings via llguidance token masks/state; backend comparison. Build disabled is blocked not pass.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-grammar-parser.cpp",
@@ -867,8 +867,7 @@
     "No project lock yet pins LoRA mini-model fixture repository archive/content; upstream provides its commit.",
     "No project lock pins dspark GGUF/ref.bin/ref.json or compatible target/drafter pair. Tiny metadata generator is bundled and can be ported.",
     "No pinned HuggingFace tokenizer directories for Python comparison; archive has vocab GGUFs but no models/tokenizers directory.",
-    "No immutable remote metadata revisions/digests for gguf-model-data and quant-type-selection; bundled .schema snapshots are expected output only.",
-    "LLguidance is disabled by current CMake wrapper; enabling requires dependency and build lane."
+    "No immutable remote metadata revisions/digests for gguf-model-data and quant-type-selection; bundled .schema snapshots are expected output only."
   ],
   "Target": {
     "Platform": "Windows ARM64",

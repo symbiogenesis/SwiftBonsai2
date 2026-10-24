@@ -316,6 +316,7 @@
     "tests/test-gguf-model-data.cpp",
     "tests/test-gguf.cpp",
     "tests/test-grammar-integration.cpp",
+    "tests/test-grammar-llguidance.cpp",
     "tests/test-grammar-parser.cpp",
     "tests/test-jinja.cpp",
     "tests/test-json-schema-to-grammar.cpp",

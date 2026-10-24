@@ -23,6 +23,25 @@ set(FETCHCONTENT_FULLY_DISCONNECTED ON CACHE BOOL "" FORCE)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "" FORCE)
 add_subdirectory("${PRISM_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/prism")
 
+# Consume a separately pinned/verified production LLGuidance build. This enables
+# the pristine common/llguidance.cpp feature branch without network build steps.
+if(DEFINED PRISM_LLGUIDANCE_LIBRARY OR DEFINED PRISM_LLGUIDANCE_INCLUDE_DIR)
+  if(NOT IS_ABSOLUTE "${PRISM_LLGUIDANCE_LIBRARY}" OR
+      NOT EXISTS "${PRISM_LLGUIDANCE_LIBRARY}" OR
+      NOT IS_ABSOLUTE "${PRISM_LLGUIDANCE_INCLUDE_DIR}" OR
+      NOT EXISTS "${PRISM_LLGUIDANCE_INCLUDE_DIR}/llguidance.h")
+    message(FATAL_ERROR "Supply both absolute verified LLGuidance library and header paths")
+  endif()
+  add_library(prism-llguidance STATIC IMPORTED)
+  set_target_properties(prism-llguidance PROPERTIES IMPORTED_LOCATION "${PRISM_LLGUIDANCE_LIBRARY}")
+  target_compile_definitions(llama-common PUBLIC LLAMA_USE_LLGUIDANCE)
+  target_include_directories(llama-common PRIVATE "${PRISM_LLGUIDANCE_INCLUDE_DIR}")
+  target_link_libraries(llama-common PRIVATE prism-llguidance)
+  if(WIN32)
+    target_link_libraries(llama-common PRIVATE ws2_32 userenv ntdll bcrypt synchronization)
+  endif()
+endif()
+
 # The production server-context library also supplies the chat conversion APIs.
 # Mirror its source list without enabling the HTTP executable or UI generation.
 find_package(Threads REQUIRED)
@@ -39,7 +58,7 @@ if(MSVC)
   target_compile_options(prism-upstream-server-context PRIVATE /utf-8)
 endif()
 
-add_executable(prism-upstream-common-bridge bridge.cpp jinja.hpp mtmd.hpp grammar_parser.hpp reasoning_budget.hpp tensor_graph.hpp grammar.hpp codec.hpp peg.hpp concurrency.hpp arena_graph.hpp batch_allocator.hpp allocation.hpp mtmd_chunks.hpp sampling.hpp gguf.hpp chat_templates.hpp chat_parser.hpp chat_auto.hpp vocab.hpp vocab_session.hpp model_runtime.hpp json_schema.hpp chat_analysis.hpp public_c_abi.c public_c_abi.h arg_parser.hpp model_resolution.hpp chat.hpp generated_model.hpp optimizer.hpp quantization.hpp dspark.hpp threadpool.hpp backend_ops.hpp dspark_runtime.hpp)
+add_executable(prism-upstream-common-bridge bridge.cpp jinja.hpp mtmd.hpp grammar_parser.hpp reasoning_budget.hpp tensor_graph.hpp grammar.hpp codec.hpp peg.hpp concurrency.hpp arena_graph.hpp batch_allocator.hpp allocation.hpp mtmd_chunks.hpp sampling.hpp gguf.hpp chat_templates.hpp chat_parser.hpp chat_auto.hpp vocab.hpp vocab_session.hpp model_runtime.hpp json_schema.hpp chat_analysis.hpp public_c_abi.c public_c_abi.h arg_parser.hpp model_resolution.hpp chat.hpp generated_model.hpp optimizer.hpp quantization.hpp dspark.hpp threadpool.hpp backend_ops.hpp dspark_runtime.hpp llguidance.hpp)
 target_include_directories(prism-upstream-common-bridge PRIVATE "${PRISM_SOURCE_DIR}/src" "${PRISM_SOURCE_DIR}" "${PRISM_SOURCE_DIR}/ggml/src")
 target_link_libraries(prism-upstream-common-bridge PRIVATE llama-common mtmd prism-upstream-server-context)
 

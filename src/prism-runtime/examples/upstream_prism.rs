@@ -78,6 +78,8 @@ mod json_schema;
 mod kv_mean_center;
 #[path = "upstream_prism/llama_grammar.rs"]
 mod llama_grammar;
+#[path = "upstream_prism/llguidance.rs"]
+mod llguidance;
 #[path = "upstream_prism/logging.rs"]
 mod logging;
 #[path = "upstream_prism/moe_reduce.rs"]
@@ -154,6 +156,12 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-grammar-llguidance",
+        "tests/test-grammar-llguidance.cpp",
+        Bridge::Common,
+        llguidance::run,
+    ),
     register(
         "test-dspark-logsnr-meta",
         "tests/test-dspark-logsnr-meta.cpp",
