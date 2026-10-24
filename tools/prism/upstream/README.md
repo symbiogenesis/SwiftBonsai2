@@ -127,6 +127,13 @@ The runtime's vector API runs once for each original activation column,
 preserving the complete `M*N` comparison. This tests numerical compatibility,
 without claiming batched execution or throughput equivalence.
 
+The metadata fixture lock pins eleven model selections at immutable publisher
+revisions. GGUF inputs are bounded raw prefixes, downloaded with exact HTTP
+range, size and SHA-256 checks. Raw API listings are an input-only corpus because
+their activity fields change even at revision URLs. No header input is derived
+from expected schemas. The lock explicitly records the upstream Nemotron
+repository-name correction. Assets are materialized only in external evidence.
+
 From a verified, unmodified source extraction, configure this directory with
 CMake and `-DPRISM_SOURCE_DIR=<absolute upstream path>`, then build the
 `prism-upstream-bridge` target. Run the safe Rust suite with:
