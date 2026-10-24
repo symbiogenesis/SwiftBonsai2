@@ -308,7 +308,7 @@ fn streamed_export_matches_independent_wire_bytes_across_batch_boundary() -> Res
     assert_eq!(report["ConvertedTensorCount"], 2);
     assert_eq!(report["OutputBytes"], u64::try_from(converted.len())?);
     assert_eq!(report["OutputSha256"], sha(&converted));
-    assert_eq!(report["WorkingBufferBytes"], 258_720);
+    assert_eq!(report["WorkingBufferBytes"], 193_202);
     assert_eq!(report["ExactPq2ReconstructionVerified"], true);
     assert_eq!(report["NonPq2TensorBytesCopiedVerbatim"], true);
     let inspected = inspect(
