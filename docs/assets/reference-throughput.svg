@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="334" viewBox="0 0 800 334" role="img" aria-labelledby="title desc">
+  <title id="title">Published base Bonsai 2 generation speed</title>
+  <desc id="desc">PQ2 weights, tokens per second, higher is faster. Apple M5 Pro with Metal: 28.1. RTX 4090: 81.2. RTX 5090: 129.9. Publisher llama-bench TG128 results, batch 1, depth 0, no vision. These are not Swift or Snapdragon measurements. The axis starts at zero.</desc>
+  <rect width="800" height="334" rx="16" fill="#f7faf9"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="28" y="38" font-size="21" font-weight="700" fill="#163c32">Generation speed · published hardware reference</text>
+    <text x="28" y="63" font-size="14" fill="#52685f">Base Bonsai 2 · PQ2 · tokens/second · higher is faster</text>
+    <g stroke="#dce6e1" stroke-width="1">
+      <path d="M232 86V262 M377.7 86V262 M523.4 86V262 M669.1 86V262"/>
+    </g>
+    <g font-size="15" fill="#283e35">
+      <text x="28" y="122">Apple M5 Pro / Metal</text>
+      <text x="28" y="182">RTX 4090</text>
+      <text x="28" y="242">RTX 5090</text>
+    </g>
+    <g fill="#248365">
+      <rect x="232" y="100" width="102.36" height="32" rx="5"/>
+      <rect x="232" y="160" width="295.8" height="32" rx="5"/>
+      <rect x="232" y="220" width="473.21" height="32" rx="5"/>
+    </g>
+    <g font-size="16" font-weight="700" fill="#163c32">
+      <text x="345" y="122">28.1</text>
+      <text x="539" y="182">81.2</text>
+      <text x="716" y="242">129.9</text>
+    </g>
+    <g font-size="12" fill="#63746c" text-anchor="middle">
+      <text x="232" y="280">0</text><text x="377.7" y="280">40</text>
+      <text x="523.4" y="280">80</text><text x="669.1" y="280">120</text>
+    </g>
+    <text x="28" y="313" font-size="12" fill="#52685f">Source: Prism ML · llama-bench TG128 · not a Swift / Snapdragon forecast</text>
+  </g>
+</svg>

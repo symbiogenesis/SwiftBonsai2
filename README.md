@@ -55,25 +55,30 @@ See the [Swift memory assessment](docs/swift-memory.md) and
 
 ### Response speed
 
-Smaller packed weights may speed up generation when
-[memory bandwidth is the bottleneck](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf#cross-platform-throughput).
-This is an expectation to test: unpacking costs and runtime kernels can offset
-the saving. **Snapdragon tokens/second and a direct speed comparison with
-Qwen3.8 have not been measured.**
+Compact weights can reduce memory traffic, but response speed also depends on
+the hardware, runtime and prompt length. **Swift's Snapdragon tokens/second have
+not been measured yet.** For context, these are Prism's published results for
+the **base Bonsai 2 model**, using PQ2 weights on other hardware:
 
-Swift has passed a bounded 16-token CPU decode check. Sustained response speed
-and GPU/NPU acceleration remain to be qualified.
+![Base Bonsai 2 PQ2 generation speed: Apple M5 Pro 28.1, RTX 4090 81.2 and RTX 5090 129.9 tokens per second.](docs/assets/reference-throughput.svg)
+
+[Source: Prism throughput benchmarks](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf#cross-platform-throughput).
+These are reference points, not a Swift or Snapdragon speed forecast. Thinking
+time and long prompts also affect how soon a useful answer arrives.
 
 ### Answer quality
 
-[Prism's published evaluation](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf#benchmarks)
-gives the base Bonsai 2 model an average of **84.78**, versus **86.32** for
-full-precision Qwen3.8-27B across 14 thinking-mode benchmarks. These results
-concern the base model, not Swift or the Q3 pack above.
+Prism reports **84.78** for base Bonsai 2 versus **86.32** for full-precision
+Qwen3.8-27B across 14 thinking-mode benchmarks. The chart shows how that compares
+with conventional compressed versions of the same Qwen base:
 
-Creative-writing quality and instruction following still need evaluation on
-this project's exact build. [Swift's publisher](https://ukisai.com/swift-bonsai-2#research-status-and-limitations)
-describes its general-purpose behavior as uneven.
+![Published benchmark averages: Qwen FP16 86.32, Qwen Q4 85.18, base Bonsai 2 84.78 and Qwen IQ2 72.59, on a zero-to-100 scale.](docs/assets/answer-quality.svg)
+
+[Source: Prism benchmark results](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf#benchmarks).
+These scores cover **base Bonsai, not Swift**, and do not measure creative-writing
+quality. Swift's own publisher reports [uneven general-purpose behavior](https://ukisai.com/swift-bonsai-2#research-status-and-limitations).
+Expect an experimental writing partner; prose quality on this build still needs
+evaluation. See [benchmark context and current limits](docs/performance-expectations.md).
 
 ## Documentation
 

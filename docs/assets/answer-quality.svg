@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="386" viewBox="0 0 800 386" role="img" aria-labelledby="title desc">
+  <title id="title">Published answer-quality benchmark comparison</title>
+  <desc id="desc">Average across 14 thinking-mode benchmarks, higher is better. Qwen3.8-27B FP16: 86.32. Qwen UD-Q4_K_XL: 85.18. Base Bonsai 2: 84.78. Qwen IQ2_XXS: 72.59. Publisher EvalScope and vLLM results on H100, including vision. Base Bonsai is not Swift. Scores do not measure creative writing. The axis starts at zero and ends at 100.</desc>
+  <rect width="800" height="386" rx="16" fill="#f7faf9"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="28" y="38" font-size="21" font-weight="700" fill="#163c32">Answer quality · published benchmark average</text>
+    <text x="28" y="63" font-size="14" fill="#52685f">Qwen3.8-27B family · 14 thinking-mode benchmarks · higher is better</text>
+    <g stroke="#dce6e1" stroke-width="1">
+      <path d="M232 86V316 M352 86V316 M472 86V316 M592 86V316 M712 86V316"/>
+    </g>
+    <g font-size="15" fill="#283e35">
+      <text x="28" y="122">Qwen · FP16</text>
+      <text x="28" y="182">Qwen · UD-Q4_K_XL</text>
+      <text x="28" y="242" font-weight="700">Base Bonsai 2</text>
+      <text x="28" y="302">Qwen · IQ2_XXS</text>
+    </g>
+    <g fill="#82978e">
+      <rect x="232" y="100" width="414.336" height="32" rx="5"/>
+      <rect x="232" y="160" width="408.864" height="32" rx="5"/>
+      <rect x="232" y="280" width="348.432" height="32" rx="5"/>
+    </g>
+    <rect x="232" y="220" width="406.944" height="32" rx="5" fill="#248365"/>
+    <g font-size="16" font-weight="700" fill="#163c32">
+      <text x="657" y="122">86.32</text><text x="652" y="182">85.18</text>
+      <text x="650" y="242">84.78</text><text x="592" y="302">72.59</text>
+    </g>
+    <g font-size="12" fill="#63746c" text-anchor="middle">
+      <text x="232" y="336">0</text><text x="352" y="336">25</text>
+      <text x="472" y="336">50</text><text x="592" y="336">75</text><text x="712" y="336">100</text>
+    </g>
+    <text x="28" y="367" font-size="12" fill="#52685f">Source: Prism ML · base-model scores, not Swift or creative-writing results</text>
+  </g>
+</svg>
