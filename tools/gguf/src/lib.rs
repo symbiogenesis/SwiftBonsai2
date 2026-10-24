@@ -104,7 +104,10 @@ fn verify(file: &mut File, expected_bytes: u64, expected_sha256: &str) -> Result
 /// Unlike the inspection report, this retains tokenizer strings and complete
 /// arrays. Header retention is charged conservatively against the supplied
 /// budget before allocating string/array payloads. Parsing additionally uses a
-/// fixed 64 KiB scratch buffer and bounded descriptor-validation bookkeeping.
+/// fixed 64 KiB input buffer and bounded descriptor-validation bookkeeping.
+/// Buffered reads can include bytes beyond the header; no tensor payload is
+/// materialized or retained by header parsing. Later payload reads seek to
+/// their validated absolute offsets through the same verified file handle.
 /// On Windows the handle denies concurrent writes and deletion for its lifetime.
 pub struct VerifiedModel {
     file: File,
