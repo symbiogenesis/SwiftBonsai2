@@ -82,6 +82,9 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   results. The 1,530 original performance workloads remain a separate requested
   CI measurement. CPU selection is explicit; source random-device seeds become
   logged reproducible Rust seeds.
+  Bounded summaries retain each case's identity and full-result hash. Complete
+  metrics and input receipts remain in the uploaded case receipts; aggregation
+  preserves the ordered digest of those full results.
 - `test-tokenizers-repo.sh`: all six publisher vocabulary/input/output triples
   in the complete compatible 2026-05-22 repository snapshot,
   with every corpus attempted even after a failure. The existing Rust corpus

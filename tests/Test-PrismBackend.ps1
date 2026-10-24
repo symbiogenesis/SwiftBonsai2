@@ -137,9 +137,11 @@ $combined = @{}
 $ordinaryReceiptPath = Resolve-ExternalPath (Join-Path $OrdinaryEvidenceDirectory 'receipt.json')
 if ((Get-Item -LiteralPath $ordinaryReceiptPath).Length -gt 1MB) { throw 'Ordinary source receipt exceeds1MiB.' }
 $ordinaryReceipt = Get-Content -LiteralPath $ordinaryReceiptPath -Raw | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
+$ordinaryCommon = @($ordinaryReceipt.NativeBuilds | Where-Object { $_.Family -ceq 'common' })
 if ($ordinaryReceipt.ProjectRevision -cne $env:GITHUB_SHA -or $ordinaryReceipt.Status -cne 'awaiting-backend' -or
     $ordinaryReceipt.DeferredSource -cne 'tests/test-backend-ops.cpp' -or
-    $ordinaryReceipt.HarnessSha256 -cne $bundle.HarnessSha256) { throw 'Ordinary results are not the matching deferred source handoff.' }
+    $ordinaryReceipt.HarnessSha256 -cne $bundle.HarnessSha256 -or $ordinaryCommon.Count -ne 1 -or
+    $ordinaryCommon[0].ExecutableSha256 -cne $bundle.CommonBridgeSha256) { throw 'Ordinary results are not the matching deferred source handoff.' }
 foreach ($target in @('cpp','rust')) {
     $path = Resolve-ExternalPath (Join-Path $OrdinaryEvidenceDirectory "$target-results.json")
     if ((Get-Item -LiteralPath $path).Length -gt 128MB) { throw 'Ordinary source result exceeds128MiB.' }

@@ -17,8 +17,88 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+const ITEM_FORMAT_VERSION: u32 = 1;
+const MAX_ITEM_BYTES: usize = 1024;
+
 fn successful(status: &Json, mode: Mode) -> bool {
     matches!(status.as_str(), Some("pass" | "skip")) || (mode == Mode::Perf && status == "measured")
+}
+
+fn sha256_text(value: &Json) -> bool {
+    value.as_str().is_some_and(|value| {
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
+fn validate_compact(row: &Json) -> Result<()> {
+    const FIELDS: [&str; 8] = [
+        "Index",
+        "Class",
+        "ArgumentsSha256",
+        "Status",
+        "CrtOffset",
+        "CrtDraws",
+        "ResultSha256",
+        "CaseReceipt",
+    ];
+    let object = row
+        .as_object()
+        .ok_or_else(|| invalid("backend compact result is not an object"))?;
+    let receipt = row["CaseReceipt"].as_str().and_then(|path| {
+        let (directory, file) = path.split_once('/')?;
+        (directory.starts_with("backend-")
+            && directory.len() <= 128
+            && directory
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            && file == "case-receipt.json")
+            .then_some(path)
+    });
+    if object.len() != FIELDS.len()
+        || FIELDS.iter().any(|field| !object.contains_key(*field))
+        || row["Index"].as_u64().is_none()
+        || row["CrtOffset"].as_u64().is_none()
+        || row["CrtDraws"].as_u64().is_none()
+        || !row["Class"].as_str().is_some_and(|name| {
+            !name.is_empty()
+                && name.len() <= 128
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        })
+        || !sha256_text(&row["ArgumentsSha256"])
+        || !sha256_text(&row["ResultSha256"])
+        || !matches!(
+            row["Status"].as_str(),
+            Some("pass" | "skip" | "measured" | "fail" | "error")
+        )
+        || receipt.is_none()
+        || serde_json::to_vec(row)?.len() > MAX_ITEM_BYTES
+    {
+        return Err(invalid(
+            "backend compact result schema, digest or bound differs",
+        ));
+    }
+    Ok(())
+}
+
+fn compact_result(row: &Json, directory: &Path) -> Result<Json> {
+    let directory = directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| invalid("backend case directory name is not UTF-8"))?;
+    let compact = json!({
+        "Index":row["Index"], "Class":row["Class"],
+        "ArgumentsSha256":row["ArgumentsSha256"], "Status":row["Status"],
+        "CrtOffset":row["CrtOffset"], "CrtDraws":row["CrtDraws"],
+        "ResultSha256":planner::hash(&serde_json::to_vec(row)?),
+        "CaseReceipt":format!("{directory}/case-receipt.json")
+    });
+    validate_compact(&compact)?;
+    Ok(compact)
 }
 
 pub(super) fn cleanup(directory: &Path) -> Result<()> {
@@ -165,7 +245,7 @@ pub(super) fn run(
             Ok(Some(value)) => value,
             Ok(None) => {
                 return Ok(
-                    json!({"SchemaVersion":1,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Partition":{"Index":index,"Count":count},"Status":"unsupported","Reason":"unsupported production API: backend graph execution, allocation and comparison","PlanSha256":plan["PlanSha256"],"ExpectedGeometries":geometries.len(),"Items":items}),
+                    json!({"SchemaVersion":1,"ItemFormatVersion":ITEM_FORMAT_VERSION,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Partition":{"Index":index,"Count":count},"Status":"unsupported","Reason":"unsupported production API: backend graph execution, allocation and comparison","PlanSha256":plan["PlanSha256"],"ExpectedGeometries":geometries.len(),"Items":items}),
                 );
             }
             Err(error) => {
@@ -188,11 +268,11 @@ pub(super) fn run(
                 serde_json::to_vec_pretty(&observed)?,
             )?;
         }
-        items.push(observed);
+        items.push(compact_result(&observed, &directory)?);
     }
     let passed = items.iter().all(|item| successful(&item["Status"], mode));
     Ok(
-        json!({"SchemaVersion":1,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Partition":{"Index":index,"Count":count},"Status":if passed{"pass"}else{"fail"},"PlanSha256":plan["PlanSha256"],"ExpectedGeometries":geometries.len(),"Items":items}),
+        json!({"SchemaVersion":1,"ItemFormatVersion":ITEM_FORMAT_VERSION,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Partition":{"Index":index,"Count":count},"Status":if passed{"pass"}else{"fail"},"PlanSha256":plan["PlanSha256"],"ExpectedGeometries":geometries.len(),"Items":items}),
     )
 }
 
@@ -224,6 +304,7 @@ pub(super) fn aggregate(reports: &[Json], plan: &Json) -> Result<Json> {
     let mut passed = true;
     for report in reports {
         if report["SchemaVersion"] != 1
+            || report["ItemFormatVersion"] != ITEM_FORMAT_VERSION
             || report["SourceId"] != "test-backend-ops"
             || report["SourceSha256"] != SOURCE_SHA256
             || report["GeometrySha256"] != geometry_hash
@@ -263,15 +344,15 @@ pub(super) fn aggregate(reports: &[Json], plan: &Json) -> Result<Json> {
             ));
         }
         for (row, &expected_index) in selected.iter().zip(&expected) {
+            validate_compact(row)?;
             if row["Index"] != expected_index
                 || row["Class"] != geometries[expected_index].class
                 || row["ArgumentsSha256"] != rows[expected_index]["ArgumentsSha256"]
                 || row["CrtOffset"] != rows[expected_index]["CrtOffset"]
                 || row["CrtDraws"] != rows[expected_index]["CrtDraws"]
-                || !matches!(
-                    row["Status"].as_str(),
-                    Some("pass" | "skip" | "measured" | "fail" | "error")
-                )
+                || !row["CaseReceipt"].as_str().is_some_and(|path| {
+                    path.starts_with(&format!("backend-{}-run-{expected_index:05}-", mode.name()))
+                })
             {
                 return Err(invalid(
                     "backend result geometry identity/order or input-stream receipt differs",
@@ -310,9 +391,140 @@ pub(super) fn aggregate(reports: &[Json], plan: &Json) -> Result<Json> {
             Some("error") => error_count += 1,
             _ => return Err(invalid("backend result status unknown")),
         }
-        digests.push(planner::hash(&serde_json::to_vec(&row)?));
+        digests.push(
+            row["ResultSha256"]
+                .as_str()
+                .ok_or_else(|| invalid("backend full result digest missing"))?
+                .to_owned(),
+        );
     }
     Ok(
-        json!({"SchemaVersion":1,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Status":if passed{"pass"}else{"fail"},"PlanSha256":plan["PlanSha256"],"Filter":plan["Filter"],"Seed":plan["Seed"],"ExpectedGeometries":geometries.len(),"CompletedGeometries":digests.len(),"PassedGeometries":pass_count,"OriginalSkippedGeometries":skip_count,"FailedGeometries":fail_count,"ErrorGeometries":error_count,"OrderedResultSha256":planner::hash(&serde_json::to_vec(&digests)?),"TotalCrtDraws":plan["TotalCrtDraws"]}),
+        json!({"SchemaVersion":1,"ItemFormatVersion":ITEM_FORMAT_VERSION,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Status":if passed{"pass"}else{"fail"},"PlanSha256":plan["PlanSha256"],"Filter":plan["Filter"],"Seed":plan["Seed"],"ExpectedGeometries":geometries.len(),"CompletedGeometries":digests.len(),"PassedGeometries":pass_count,"OriginalSkippedGeometries":skip_count,"FailedGeometries":fail_count,"ErrorGeometries":error_count,"OrderedResultSha256":planner::hash(&serde_json::to_vec(&digests)?),"TotalCrtDraws":plan["TotalCrtDraws"]}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_receipt_binds_full_metrics_and_retention_with_bounded_schema() -> Result<()> {
+        let mut full = json!({
+            "Index":0,"Class":"test_mul_mat","ArgumentsSha256":"a".repeat(64),
+            "Status":"measured","CrtOffset":17,"CrtDraws":23,
+            "ComparisonPairs":[{"Details":"x".repeat(65_536)}],
+            "InputAndOutputReceipts":[{"Sha256":"b".repeat(64)}],
+            "MeasuredMicroseconds":1_000_007,
+            "ArtifactRetention":{"ReceiptSha256":"c".repeat(64)}
+        });
+        let directory = Path::new("backend-perf-run-00000-1-1");
+        let compact = compact_result(&full, directory)?;
+        assert_eq!(
+            compact["ResultSha256"],
+            planner::hash(&serde_json::to_vec(&full)?)
+        );
+        let persisted: Json = serde_json::from_slice(&serde_json::to_vec_pretty(&full)?)?;
+        assert_eq!(
+            compact["ResultSha256"],
+            planner::hash(&serde_json::to_vec(&persisted)?)
+        );
+        assert_eq!(persisted["MeasuredMicroseconds"], 1_000_007);
+        assert_eq!(
+            persisted["ComparisonPairs"][0]["Details"],
+            "x".repeat(65_536)
+        );
+        assert!(serde_json::to_vec(&compact)?.len() <= MAX_ITEM_BYTES);
+        let source_count = planner::extent(Mode::Eval)?.1.len();
+        assert!(MAX_ITEM_BYTES * source_count < 32 * 1024 * 1024);
+        assert!(6 * source_count.div_ceil(16) * MAX_ITEM_BYTES < 16 * 1024 * 1024);
+        full["ArtifactRetention"]["ReceiptSha256"] = json!("d".repeat(64));
+        assert_ne!(
+            compact_result(&full, directory)?["ResultSha256"],
+            compact["ResultSha256"]
+        );
+        for (field, value) in [
+            ("ResultSha256", json!("A".repeat(64))),
+            ("ArgumentsSha256", json!("a".repeat(63))),
+            ("CaseReceipt", json!("../case-receipt.json")),
+            ("Class", json!("x".repeat(129))),
+            ("Status", json!("unknown")),
+            ("CrtDraws", json!(-1)),
+            ("UnexpectedFullMetric", json!("x".repeat(65_536))),
+        ] {
+            let mut invalid = compact.clone();
+            invalid[field] = value;
+            assert!(validate_compact(&invalid).is_err());
+        }
+        Ok(())
+    }
+
+    struct Synthetic {
+        plan: Json,
+        reports: Vec<Json>,
+        ordered_sha256: String,
+    }
+
+    fn synthetic(mode: Mode) -> Result<Synthetic> {
+        let (_, geometries, geometry_hash) = planner::extent(mode)?;
+        let mut rows = Vec::with_capacity(geometries.len());
+        let mut items = [Vec::new(), Vec::new()];
+        let mut digests = Vec::with_capacity(geometries.len());
+        let mut offset = 0_u64;
+        for (index, geometry) in geometries.iter().enumerate() {
+            let arguments = planner::arguments_hash(geometry)?;
+            let draws = u64::try_from(index % 7)?;
+            rows.push(json!({"Index":index,"Class":geometry.class,"ArgumentsSha256":arguments,"CrtOffset":offset,"CrtDraws":draws}));
+            let status = match index {
+                0 if mode == Mode::Perf => "measured",
+                0 => "pass",
+                1 => "fail",
+                2 => "error",
+                _ => "skip",
+            };
+            let full = json!({"Index":index,"Class":geometry.class,"ArgumentsSha256":arguments,"CrtOffset":offset,"CrtDraws":draws,"Status":status,"SyntheticMetadataOnly":true,"FullMetrics":{"MeasuredMicroseconds":17,"InputAndOutputReceipts":["input-only synthetic hash"]}});
+            digests.push(planner::hash(&serde_json::to_vec(&full)?));
+            let directory = format!("backend-{}-run-{index:05}-1-1", mode.name());
+            items[index % 2].push(compact_result(&full, Path::new(&directory))?);
+            offset += draws;
+        }
+        let mut plan = json!({"SchemaVersion":1,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Seed":1,"Status":"planned-complete","ExpectedGeometries":geometries.len(),"Filter":null,"Threads":1,"Items":rows,"TotalCrtDraws":offset});
+        plan["PlanSha256"] = json!(planner::hash(&serde_json::to_vec(&plan)?));
+        let reports = items.into_iter().enumerate().map(|(index, items)| {
+            json!({"SchemaVersion":1,"ItemFormatVersion":ITEM_FORMAT_VERSION,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Partition":{"Index":index,"Count":2},"Status":"fail","PlanSha256":plan["PlanSha256"],"ExpectedGeometries":geometries.len(),"Items":items})
+        }).collect();
+        Ok(Synthetic {
+            plan,
+            reports,
+            ordered_sha256: planner::hash(&serde_json::to_vec(&digests)?),
+        })
+    }
+
+    #[test]
+    fn compact_aggregation_preserves_source_counts_order_and_full_result_digest() -> Result<()> {
+        for mode in [Mode::Eval, Mode::Perf] {
+            let mut fixture = synthetic(mode)?;
+            let count = planner::extent(mode)?.1.len();
+            let aggregate = aggregate(&fixture.reports, &fixture.plan)?;
+            assert_eq!(aggregate["Status"], "fail");
+            assert_eq!(aggregate["CompletedGeometries"], count);
+            assert_eq!(aggregate["PassedGeometries"], 1);
+            assert_eq!(aggregate["OriginalSkippedGeometries"], count - 3);
+            assert_eq!(aggregate["FailedGeometries"], 1);
+            assert_eq!(aggregate["ErrorGeometries"], 1);
+            assert_eq!(aggregate["OrderedResultSha256"], fixture.ordered_sha256);
+            fixture.reports[0]["ItemFormatVersion"] = json!(0);
+            assert!(super::aggregate(&fixture.reports, &fixture.plan).is_err());
+            fixture.reports[0]["ItemFormatVersion"] = json!(ITEM_FORMAT_VERSION);
+            let row = fixture.reports[0]["Items"][0].clone();
+            fixture.reports[0]["Items"][0]["Index"] = json!(2);
+            assert!(super::aggregate(&fixture.reports, &fixture.plan).is_err());
+            fixture.reports[0]["Items"][0] = row;
+            let _ = fixture.reports[0]["Items"]
+                .as_array_mut()
+                .ok_or_else(|| invalid("synthetic compact items missing"))?
+                .pop();
+            assert!(super::aggregate(&fixture.reports, &fixture.plan).is_err());
+        }
+        Ok(())
+    }
 }
