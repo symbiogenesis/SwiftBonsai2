@@ -52,6 +52,10 @@ fn letters_marks_and_single_unicode_numbers_follow_pinned_categories() -> Result
     assert_eq!(splitter.split("\u{301}\u{342}A")?, ["\u{301}\u{342}A"]);
     assert_eq!(splitter.split("\u{903}\u{20dd}A")?, ["\u{903}\u{20dd}A"]);
     assert_eq!(splitter.split("🦀字 !é")?, ["🦀字", " !", "é"]);
+    // U+1C89 is unassigned in the pinned table, although later Unicode versions
+    // classify it as a Cyrillic letter. Platform Unicode upgrades cannot alter
+    // the runtime's token boundaries.
+    assert_eq!(splitter.split("A\u{1c89}!")?, ["A", "\u{1c89}!"]);
     Ok(())
 }
 
