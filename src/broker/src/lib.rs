@@ -287,18 +287,24 @@ struct Message<'a> {
     content: Cow<'a, str>,
     #[serde(
         default,
+        borrow,
         deserialize_with = "deserialize_reasoning_content",
         skip_serializing_if = "Option::is_none"
     )]
-    reasoning_content: Option<String>,
+    reasoning_content: Option<Cow<'a, str>>,
 }
 
 fn deserialize_reasoning_content<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<Option<String>, D::Error> {
+) -> Result<Option<Cow<'de, str>>, D::Error> {
     // An absent field defaults to None; a present field must be text, even when
     // empty. Deserializing Option directly would also accept an unsupported null.
-    String::deserialize(deserializer).map(Some)
+    // The derived wrapper enables Serde's borrowing support for Cow while
+    // retaining owned decoding for escaped JSON strings.
+    #[derive(Deserialize)]
+    struct Text<'a>(#[serde(borrow)] Cow<'a, str>);
+
+    Text::deserialize(deserializer).map(|Text(text)| Some(text))
 }
 
 #[derive(Serialize, PartialEq, Eq)]
@@ -547,6 +553,26 @@ mod tests {
         ));
         assert!(matches!(chat.messages[1].content, Cow::Owned(_)));
         assert_eq!(chat.messages[1].content, "line\n雪");
+        Ok(())
+    }
+
+    #[test]
+    fn message_reasoning_borrows_plain_text_and_decodes_escapes() -> Result<(), serde_json::Error> {
+        let Object(chat): Object<ClientChat<'_>> = serde_json::from_slice(
+            br#"{"messages":[{"role":"assistant","content":"","reasoning_content":"plain text"},{"role":"assistant","content":"","reasoning_content":"line\n\u96ea"}]}"#,
+        )?;
+        assert!(matches!(
+            chat.messages[0].reasoning_content,
+            Some(Cow::Borrowed("plain text"))
+        ));
+        assert!(matches!(
+            chat.messages[1].reasoning_content,
+            Some(Cow::Owned(_))
+        ));
+        assert_eq!(
+            chat.messages[1].reasoning_content.as_deref(),
+            Some("line\n雪")
+        );
         Ok(())
     }
 }

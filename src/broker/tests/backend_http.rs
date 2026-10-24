@@ -350,6 +350,22 @@ fn exact_count_and_generation_use_identical_canonical_bytes_and_private_headers(
 }
 
 #[test]
+fn exact_count_accepts_an_escaped_object_tag() {
+    run(async {
+        let count = br#"{"input_tokens":100,"object":"response.\u0069nput_tokens"}"#;
+        let chat = count_and_admit(
+            Stream::new(length_response(count, false), 1),
+            pending(false),
+            &policy(),
+            deadline(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(chat.backend_body(), admitted(false).backend_body());
+    });
+}
+
+#[test]
 fn fragmented_framed_bodies_finish_without_waiting_for_peer_eof() {
     run(async {
         for fragment in [1, 2, 7, MAX_HEADER_BYTES] {
