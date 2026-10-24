@@ -186,6 +186,11 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   the source responses; the child invokes the production resolver. Accepted
   Windows sockets use blocking I/O with five-second read and write deadlines,
   so a client may connect before sending its HTTP header.
+- Save/load state and thread safety preserve their complete live model scopes.
+  Main CI allows 600 and 1,800 seconds respectively (660 and 1,860 seconds for
+  their outer processes). Hosted ARM64 traces reached the ordinary 240-second
+  lifetime while making valid decode progress. The 90-second operation deadline
+  and all transport bounds remain in effect.
 - `test-kv-mean-center.cpp`: all three generated-model groups and original
   numeric predicates. Rust supplies GGUF metadata, Windows random inputs and
   tensor bytes through bounded file callbacks to production model construction.

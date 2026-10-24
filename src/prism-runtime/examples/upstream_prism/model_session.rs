@@ -28,6 +28,8 @@ const MAX_CALLBACKS: usize = 65536;
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(90);
 const SESSION_TIMEOUT: Duration = Duration::from_secs(240);
 const REAL_EVAL_SESSION_TIMEOUT: Duration = Duration::from_mins(15);
+const SAVE_LOAD_SESSION_TIMEOUT: Duration = Duration::from_mins(10);
+const THREAD_SAFETY_SESSION_TIMEOUT: Duration = Duration::from_mins(30);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 const QUANTIZATION_OPERATION_TIMEOUT: Duration = Duration::from_secs(3600);
 const QUANTIZATION_SESSION_TIMEOUT: Duration = Duration::from_hours(4);
@@ -48,6 +50,12 @@ fn session_timeout(name: &str, quantization: bool, main_ci: bool) -> Duration {
         // Keep every per-operation and transport bound while allowing the
         // complete source schedule to finish on the hosted reference runner.
         ("dspark-real-eval", false, true) => REAL_EVAL_SESSION_TIMEOUT,
+        // These sources retain one live model/state or all concurrent contexts.
+        // Hosted ARM64 reached 240s after 10 of the final 16 save/load decodes;
+        // the eight thread workers had generated only 20-25 of 128 tokens each.
+        // Keep both complete schedules and the ordinary per-operation bounds.
+        ("tests/test-save-load-state.cpp", false, true) => SAVE_LOAD_SESSION_TIMEOUT,
+        ("tests/test-thread-safety.cpp", false, true) => THREAD_SAFETY_SESSION_TIMEOUT,
         _ => SESSION_TIMEOUT,
     }
 }
@@ -679,11 +687,55 @@ mod quantization_deadline_tests {
     }
 
     #[test]
-    fn complete_real_eval_lifetime_is_scoped_to_main_ci() -> Result<()> {
+    fn complete_source_lifetimes_are_scoped_to_main_ci() -> Result<()> {
         for (name, quantization, main_ci, expected) in [
             ("dspark-real-eval", false, true, REAL_EVAL_SESSION_TIMEOUT),
             ("dspark-real-eval", false, false, SESSION_TIMEOUT),
             ("dspark-forward", false, true, SESSION_TIMEOUT),
+            (
+                "tests/test-save-load-state.cpp",
+                false,
+                true,
+                SAVE_LOAD_SESSION_TIMEOUT,
+            ),
+            (
+                "tests/test-thread-safety.cpp",
+                false,
+                true,
+                THREAD_SAFETY_SESSION_TIMEOUT,
+            ),
+            (
+                "tests/test-save-load-state.cpp",
+                false,
+                false,
+                SESSION_TIMEOUT,
+            ),
+            (
+                "tests/test-thread-safety.cpp",
+                false,
+                false,
+                SESSION_TIMEOUT,
+            ),
+            (
+                "tests/test-save-load-state.cpp",
+                true,
+                true,
+                SESSION_TIMEOUT,
+            ),
+            ("tests/test-thread-safety.cpp", true, true, SESSION_TIMEOUT),
+            ("test-save-load-state", false, true, SESSION_TIMEOUT),
+            (
+                "tests/test-save-load-state.cpp-extra",
+                false,
+                true,
+                SESSION_TIMEOUT,
+            ),
+            (
+                "tests/test-state-restore-fragmented.cpp",
+                false,
+                true,
+                SESSION_TIMEOUT,
+            ),
             ("ordinary", false, true, SESSION_TIMEOUT),
             ("quantize-stats", true, true, QUANTIZATION_SESSION_TIMEOUT),
             ("quantize-stats", true, false, SESSION_TIMEOUT),
