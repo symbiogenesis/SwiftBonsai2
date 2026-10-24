@@ -21,6 +21,7 @@ param(
     [ValidateSet('ARM64', 'x64')][string]$NativePlatform = 'ARM64',
     [ValidateRange(1,12)][int]$Parallel = 2,
     [string]$CompilerLauncher,
+    [string]$CompilerCacheBaseDirectory,
     [string]$Case,
     [switch]$BuildOnly
 )
@@ -87,6 +88,15 @@ if ($CompilerLauncher) {
         throw 'CompilerLauncher requires Ninja and one existing expanded absolute executable without CMake list separators.'
     }
 }
+if ($CompilerCacheBaseDirectory) {
+    if (-not $CompilerLauncher) { throw 'CompilerCacheBaseDirectory requires CompilerLauncher.' }
+    $cacheBase = Resolve-ExternalPath $CompilerCacheBaseDirectory
+    $prefix = $cacheBase.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    if (-not $source.StartsWith($prefix, $comparison) -or -not $evidence.StartsWith($prefix, $comparison)) {
+        throw 'CompilerCacheBaseDirectory must contain both the verified source and evidence directories.'
+    }
+} else { $cacheBase = $evidence }
 [void][IO.Directory]::CreateDirectory($evidence)
 $build = Join-Path $evidence 'build'
 $wrapper = Join-Path $overlay 'upstream/reference'
@@ -100,7 +110,9 @@ if ($Generator -ne 'Ninja') {
 $environment = @{}
 if ($CompilerLauncher) {
     $configure += @("-DCMAKE_C_COMPILER_LAUNCHER=$CompilerLauncher", "-DCMAKE_CXX_COMPILER_LAUNCHER=$CompilerLauncher")
-    $environment['CCACHE_BASEDIR'] = $evidence
+    # The caller's source is outside raw-cpp. Normalize their common parent so
+    # a fresh extraction's GUID does not become part of every compiler key.
+    $environment['CCACHE_BASEDIR'] = $cacheBase
 }
 $receiptPath = Join-Path $evidence 'build-receipt.json'
 $receipt = [ordered]@{
@@ -111,6 +123,7 @@ $receipt = [ordered]@{
     EvidenceDirectory = $evidence
     ConfigureArguments = $configure
     ParallelJobs = $Parallel
+    CompilerCacheBaseDirectory = if ($CompilerLauncher) { $cacheBase } else { $null }
     Targets = $targets
     TestArguments = @{ 'test-gguf' = @('12345') }
     AssertionsEnabled = $true

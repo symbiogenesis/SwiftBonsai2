@@ -19,6 +19,7 @@ param(
     [ValidateSet('Ninja', 'Visual Studio 18 2026', 'Visual Studio 17 2022')][string]$Generator = 'Ninja',
     [ValidateSet('ARM64', 'x64')][string]$NativePlatform = 'ARM64',
     [string]$Toolchain = 'nightly-2026-10-22',
+    [string]$CompilerLauncher,
     [ValidateRange(1, 12)][int]$Parallel = 2
 )
 Set-StrictMode -Version Latest
@@ -34,6 +35,11 @@ Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBaseline.psm1')
 $archive = Resolve-ExternalPath $SourceArchive
 $evidence = Resolve-ExternalPath $EvidenceDirectory
 $target = Resolve-ExternalPath $TargetDirectory
+if ($CompilerLauncher -and ($Generator -ne 'Ninja' -or
+    -not [IO.Path]::IsPathFullyQualified($CompilerLauncher) -or $CompilerLauncher -match '%[^%]+%' -or
+    $CompilerLauncher.Contains(';') -or -not [IO.File]::Exists($CompilerLauncher))) {
+    throw 'CompilerLauncher requires Ninja and one existing expanded absolute executable without CMake list separators.'
+}
 if (Test-Path -LiteralPath $evidence) { throw 'Use a fresh evidence directory for each Prism import.' }
 [void][IO.Directory]::CreateDirectory($evidence)
 $lock = Get-Content -LiteralPath (Join-Path $repo 'tools/prism/source.lock.json') -Raw | ConvertFrom-Json -AsHashtable
@@ -60,6 +66,8 @@ $receipt = [ordered]@{
     Selection = $Case
     Generator = $Generator
     NativePlatform = $NativePlatform
+    CompilerLauncher = $CompilerLauncher
+    ParallelJobs = $Parallel
     Status = 'building'
 }
 $receiptPath = Join-Path $evidence 'receipt.json'
@@ -77,15 +85,25 @@ function Invoke-UpstreamCommand {
     param([string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds = 900)
     $script:upstreamCommandNumber++
     $log = Join-Path $evidence ('command-{0:D2}.log' -f $script:upstreamCommandNumber)
-    $result = Invoke-BonsaiNativeProcess -Executable $Executable -ArgumentList $Arguments -WorkingDirectory $evidence -TimeoutSeconds $TimeoutSeconds -LogPath $log
+    $result = Invoke-BonsaiNativeProcess -Executable $Executable -ArgumentList $Arguments -WorkingDirectory $evidence -TimeoutSeconds $TimeoutSeconds -Environment $compilerEnvironment -LogPath $log
     if ($result.ExitCode -ne 0) { throw "Prism import command failed with exit $($result.ExitCode); see $log" }
     return $result
 }
 $build = Join-Path $evidence 'build'
+$compilerEnvironment = @{}
 $generatorArguments = @('-G', $Generator)
 if ($Generator -ne 'Ninja') { $generatorArguments += @('-A', $NativePlatform) }
+if ($CompilerLauncher) {
+    $generatorArguments += @("-DCMAKE_C_COMPILER_LAUNCHER=$CompilerLauncher", "-DCMAKE_CXX_COMPILER_LAUNCHER=$CompilerLauncher")
+    $compilerEnvironment['CCACHE_BASEDIR'] = $evidence
+}
 $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments (@('-S', $upstream, '-B', $build, "-DPRISM_SOURCE_DIR=$source", '-DCMAKE_BUILD_TYPE=Release') + $generatorArguments)
-$null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments @('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel)
+$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap') } else { @($Case) }
+$adapterTargets = @(foreach ($selection in $selected) {
+    if ($selection -eq 'Pq2RowShapes') { 'prism-upstream-pq2-row-shapes'; 'prism-upstream-pq2-fixtures' }
+    else { 'prism-upstream-ptq1-element-map'; 'prism-upstream-ptq1-fixtures' }
+})
+$null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments (@('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target') + $adapterTargets)
 $compiled = Invoke-UpstreamCommand -Executable $cargo -Arguments @("+$Toolchain", 'build', '--manifest-path', (Join-Path $repo 'Cargo.toml'), '--package', 'bonsai-prism-runtime', '--example', 'upstream_prism', '--locked', '--offline', '--release', '--target-dir', $target, '--message-format=json')
 $executables = @($compiled.StandardOutput -split "`n" | Where-Object { $_.StartsWith('{') } | ForEach-Object {
     $record = $_ | ConvertFrom-Json -AsHashtable
@@ -97,7 +115,6 @@ $referenceCases = [Collections.Generic.List[object]]::new()
 $rustCases = [Collections.Generic.List[object]]::new()
 # Adapter commands below are intentionally explicit: upstream includes model
 # downloaders and benchmarks that cannot be safely selected by a filename glob.
-$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap') } else { @($Case) }
 foreach ($selection in $selected) {
     $caseName = if ($selection -eq 'Pq2RowShapes') { 'test-pq2-row-shapes' } else { 'test-ptq1_0-element-map' }
     $binaryName = if ($selection -eq 'Pq2RowShapes') { 'prism-upstream-pq2-row-shapes' } else { 'prism-upstream-ptq1-element-map' }
@@ -125,7 +142,9 @@ foreach ($selection in $selected) {
     }
 }
 if ($Case -eq 'All') {
-    $raw = & (Join-Path $repo 'scripts/Invoke-PrismCppSuite.ps1') -SourceDirectory $source -EvidenceDirectory (Join-Path $evidence 'raw-cpp') -CMakePath $CMakePath -Generator $Generator -NativePlatform $NativePlatform -Parallel $Parallel
+    $cacheArguments = @{}
+    if ($CompilerLauncher) { $cacheArguments = @{ CompilerLauncher = $CompilerLauncher; CompilerCacheBaseDirectory = $evidence } }
+    $raw = & (Join-Path $repo 'scripts/Invoke-PrismCppSuite.ps1') -SourceDirectory $source -EvidenceDirectory (Join-Path $evidence 'raw-cpp') -CMakePath $CMakePath -Generator $Generator -NativePlatform $NativePlatform -Parallel $Parallel @cacheArguments
     if (@($raw.ReferenceResults.Cases).Count -ne @($raw.Targets).Count) { throw 'The raw C++ importer lost an expected result.' }
     foreach ($name in $raw.Targets) {
         if (@($raw.ReferenceResults.Cases | Where-Object { $_.Id -ceq "tests/$name.cpp" }).Count -ne 1) {

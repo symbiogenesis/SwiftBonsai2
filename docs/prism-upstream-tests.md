@@ -85,6 +85,15 @@ The job summary shows the full inventory with independent Rust and C++ statuses.
 Git history records changes to the approved baseline; Actions artifacts retain
 per-run observations under the repository's normal artifact retention policy.
 
+CI caches C/C++ compiler objects separately from Cargo builds. The native cache
+is scoped to the runner image, compiler and ccache identity; source contents and
+compiler options still determine each object hit. Both builds normalize paths
+under their common evidence root so a fresh extraction can reuse those objects.
+Every run still verifies and extracts the pinned archive, configures fresh build
+trees, regenerates fixtures and executes all 19 controls and both Rust adapters.
+`ccache.log` retains hit/miss statistics with the other evidence. Release builds
+explicitly retain assertions. A focused adapter builds only its own two targets.
+
 ## Growing the baseline
 
 Add an adapter using the original inputs, assertions and tolerances. Prove the
