@@ -89,6 +89,76 @@ fn ranked_top_k_breaks_equal_logits_by_ascending_token_id() -> Result<()> {
 }
 
 #[test]
+fn bounded_top_k_matches_a_full_sort_across_rank_and_probability_boundaries() -> Result<()> {
+    let logits: Vec<f32> = (0..257)
+        .map(|index| match (index * 73 % 257) % 7 {
+            0 => -0.0,
+            1 => 0.0,
+            2 => -3.0,
+            3 => 2.0,
+            4 => 1.0,
+            5 => -1.0,
+            _ => 3.0,
+        })
+        .collect();
+    let mut ranked: Vec<_> = logits.iter().enumerate().collect();
+    ranked.sort_unstable_by(|(left_token, left), (right_token, right)| {
+        right
+            .partial_cmp(left)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left_token.cmp(right_token))
+    });
+    for top_k in [1, 2, 20, 37, 128, 256, 257, 258] {
+        let prefix = &ranked[..top_k.min(ranked.len())];
+        let prefix_logits: Vec<_> = prefix.iter().map(|(_, logit)| **logit).collect();
+        for temperature in [0.25, 1.0, 4.0] {
+            for top_p in [f32::from_bits(1), 0.5, 0.95, 1.0] {
+                let options = Sampling {
+                    temperature,
+                    top_k,
+                    top_p,
+                };
+                let mut sampler = ReferenceSampler::new(options, u64::MAX)?;
+                let mut reference = ReferenceSampler::new(
+                    Sampling {
+                        top_k: 0,
+                        ..options
+                    },
+                    u64::MAX,
+                )?;
+                for _ in 0..32 {
+                    let selected = usize::try_from(reference.sample(&prefix_logits)?)?;
+                    assert_eq!(
+                        usize::try_from(sampler.sample(&logits)?)?,
+                        prefix[selected].0,
+                        "top_k={top_k}, temperature={temperature}, top_p={top_p}"
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn bounded_top_k_validates_discarded_logits_without_consuming_a_draw() -> Result<()> {
+    let options = Sampling {
+        top_k: 2,
+        ..UNFILTERED
+    };
+    let mut sampler = ReferenceSampler::new(options, 0)?;
+    let mut control = sampler.clone();
+    for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let mut logits = [0.0; 64];
+        logits[0] = 10.0;
+        logits[63] = invalid;
+        assert!(sampler.sample(&logits).is_err());
+        assert_eq!(sampler.sample(&[0.0; 64])?, control.sample(&[0.0; 64])?);
+    }
+    Ok(())
+}
+
+#[test]
 fn top_p_retains_the_crossing_token_and_renormalizes_its_prefix() -> Result<()> {
     let logits = [0.0; 4];
     assert_eq!(
