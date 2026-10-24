@@ -399,6 +399,9 @@ before configuring production libraries with ClangCL. Rust inputs and results
 are fresh. Receipts record compiler arguments, binary hashes and ARM64 PE
 identities. The ordinary source results are combined with every checked backend
 partition by the final unified source gate; no deferred result counts as passed.
+If an ordinary source fails after the verified backend tools have been built,
+backend partitions can still retain independent results. Missing tools prevent
+their execution; a failed ordinary job still fails final Foundation acceptance.
 
 ## Growing the baseline
 

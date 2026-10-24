@@ -274,6 +274,8 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
     timeout-minutes: 330
+    outputs:
+      backend-tools-artifact-id: ${{ steps.backend-tools.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -360,11 +362,13 @@ jobs:
           }
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -SourceArchive $archive -EvidenceDirectory $evidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -NativeBuildDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamNative') -Generator 'Visual Studio 18 2026' -NativePlatform ARM64 -Toolchain nightly-2026-10-22-aarch64-pc-windows-msvc -Parallel 4 -CaseParallel 2 -DeferBackend | ConvertTo-Json -Depth 12
       - name: Publish revision-bound native backend shard tools
+        id: backend-tools
+        if: always() && !cancelled() && env.PRISM_UPSTREAM_EVIDENCE != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: prism-backend-tools
           path: ${{ env.PRISM_UPSTREAM_EVIDENCE }}/backend-tools
-          if-no-files-found: error
+          if-no-files-found: warn
       - name: Publish ordinary source results for the complete gate
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -433,7 +437,7 @@ jobs:
           # level so packaging it does not extend the correctness critical path.
           compression-level: 1
   prism-backend-plan:
-    if: github.ref == 'refs/heads/main'
+    if: always() && !cancelled() && github.ref == 'refs/heads/main' && needs.prism-upstream.outputs.backend-tools-artifact-id != ''
     needs: prism-upstream
     runs-on: windows-11-arm
     timeout-minutes: 120
@@ -477,7 +481,7 @@ jobs:
           if-no-files-found: error
           compression-level: 1
   prism-backend-join-plan:
-    if: github.ref == 'refs/heads/main'
+    if: always() && !cancelled() && github.ref == 'refs/heads/main' && needs.prism-backend-plan.result == 'success'
     needs: prism-backend-plan
     runs-on: windows-11-arm
     timeout-minutes: 20
@@ -508,7 +512,7 @@ jobs:
           if-no-files-found: error
           compression-level: 1
   prism-backend-run:
-    if: github.ref == 'refs/heads/main'
+    if: always() && !cancelled() && github.ref == 'refs/heads/main' && needs.prism-backend-join-plan.result == 'success'
     needs: prism-backend-join-plan
     runs-on: windows-11-arm
     timeout-minutes: 330
