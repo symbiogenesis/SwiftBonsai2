@@ -26,9 +26,10 @@ A Rust-owned reference failure still fails CI independently of the runtime floor
 The migration inventories **all 71 catalog sources**, including model and
 benchmark cases. Acceptance targets **Snapdragon X Elite on Windows ARM64**.
 The Apple-only wired-memory source is explicitly outside that target and never
-counts as a pass. Porting all catalog sources is not complete. Every previously passing source
+counts as a pass. Every Windows-applicable source now has a safe Rust adapter. Passing reference
+qualification is tracked separately. Every previously passing source
 remains required after replacement with safe Rust assertions against pinned Prism.
-Unported sources remain visible as unsupported.
+The Apple-only source remains visible as unsupported and outside the selected target.
 
 The pinned C++ saver advertises DSpark support but omits required metadata and
 global tensors. A focused load/save/reload reproduction confirms that its saved
@@ -42,9 +43,21 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Sixty-seven source contracts currently have safe Rust adapters in
+Seventy Windows-applicable source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-tokenizer-0.py`, `test-tokenizer-0.sh` and `test-tokenizer-random.py`:
+  independent safe Rust HF/SentencePiece references, all 26 original families,
+  five default exhaustive schedules and seven optional generator families.
+  All 122 input files are immutable and hash checked. Thirteen original
+  vocabularies remain unchanged; safe Rust constructs the thirteen missing
+  fixtures from original publisher inputs. Exact original configurations are
+  verified even when supplied by public byte-identical mirrors or reconstruction.
+  The file helpers retain caller-supplied inputs; acceptance uses an explicitly
+  selected pinned source text. These original scripts have zero numerical
+  assertions and non-failing mismatch diagnostics. Reports preserve that verdict
+  and expose `StrictReferenceMatch` separately. Stateless process rotation keeps
+  the complete schedules within bounded transport limits.
 - `test-quantize-perf.cpp`: all five original operation schedules, eligible
   types, sizes, alignment and iteration options. This benchmark-only source has
   zero numerical assertions; passing means the workload completed. The source's
@@ -349,7 +362,11 @@ The job summary shows the full inventory with independent Rust and C++ statuses.
 Git history records changes to the approved baseline; Actions artifacts retain
 per-run observations under the repository's normal artifact retention policy.
 
-The Windows ARM64 lane caches the pinned archive and Cargo artifacts. Native production libraries are configured and built afresh with ClangCL. The receipt records configure arguments, executable hashes and verified ARM64 PE machine values. Every run verifies and extracts the archive, runs all eight safe Rust ports against pinned Prism first and the Rust runtime second, and retains all 12 unported controls.
+The Windows ARM64 lane verifies the archive and cached source/adapter bytes
+before configuring production libraries with ClangCL. Rust inputs and results
+are fresh. Receipts record compiler arguments, binary hashes and ARM64 PE
+identities. The ordinary source results are combined with every checked backend
+partition by the final unified source gate; no deferred result counts as passed.
 
 ## Growing the baseline
 
@@ -366,8 +383,8 @@ Record the tested revision and run URL in `Provenance`. CI never rewrites the
 baseline. Keep every existing required green ID. Review upstream pin changes
 and any exception explicitly instead of deleting difficult cases.
 
-Retire the remaining C++ importer only after the Windows-applicable sources have
-Rust-owned equivalents and their upstream validation evidence is retained.
+The original C++ importer is retired; retain every Rust-owned source contract
+and its upstream validation evidence.
 Keep the full 71-source provenance inventory, including the explicit Apple
 exclusion. Model tests need
 their actual model/vocabulary/reference assets; platform tests need the relevant

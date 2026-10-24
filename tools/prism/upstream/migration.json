@@ -784,7 +784,7 @@
       ],
       "AssertionsToPort": "Generate authoritative token IDs to .tok with timing log; Rust port needs pinned tokenizer reference data or safe Rust reference tokenizer; merely relabeling llama tokens as reference is circular.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-tokenizer-0.sh",
@@ -797,7 +797,7 @@
       ],
       "AssertionsToPort": "Coordinate Python/native token-file diff and show mismatch; old script only prints mismatch without nonzero exit so Rust migration should make correctness explicit with retained semantics notes.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-tokenizer-1-bpe.cpp",
@@ -835,7 +835,7 @@
       ],
       "AssertionsToPort": "Original deterministic edge generators for whitespace/Unicode/added token strips; match tokenization/detokenization vs independent AutoTokenizer; preserve currently enabled generator set and disabled generators as explicit optional work.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-tokenizers-repo.sh",

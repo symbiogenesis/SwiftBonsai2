@@ -5,6 +5,10 @@
 
 #![forbid(unsafe_code)]
 #![allow(
+    clippy::multiple_crate_versions,
+    reason = "The pinned independent HF tokenizer reference requires syn2 via derive_builder; workspace serde derives require syn3."
+)]
+#![allow(
     clippy::redundant_pub_crate,
     reason = "Sibling modules share adapters explicitly; unreachable_pub rejects unrestricted pub."
 )]
@@ -41,8 +45,22 @@ mod mtmd_chunks;
 mod sampling;
 #[path = "upstream_prism/tokenizer.rs"]
 mod tokenizer;
+#[path = "upstream_prism/tokenizer_files.rs"]
+mod tokenizer_files;
+#[path = "upstream_prism/tokenizer_generators.rs"]
+mod tokenizer_generators;
+#[path = "upstream_prism/tokenizer_inputs.rs"]
+mod tokenizer_inputs;
+#[path = "upstream_prism/tokenizer_random.rs"]
+mod tokenizer_random;
+#[path = "upstream_prism/tokenizer_reference.rs"]
+mod tokenizer_reference;
 #[path = "upstream_prism/tokenizer_repository.rs"]
 mod tokenizer_repository;
+#[path = "upstream_prism/tokenizer_session.rs"]
+mod tokenizer_session;
+#[path = "upstream_prism/tokenizer_vocab.rs"]
+mod tokenizer_vocab;
 
 #[path = "upstream_prism/backend_ops.rs"]
 mod backend_ops;
@@ -194,6 +212,24 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-tokenizer-0-python",
+        "tests/test-tokenizer-0.py",
+        Bridge::Independent,
+        tokenizer_files::run_python,
+    ),
+    register(
+        "test-tokenizer-0-shell",
+        "tests/test-tokenizer-0.sh",
+        Bridge::Common,
+        tokenizer_files::run_shell,
+    ),
+    register(
+        "test-tokenizer-random",
+        "tests/test-tokenizer-random.py",
+        Bridge::Common,
+        tokenizer_random::run,
+    ),
     register(
         "test-quantize-perf",
         "tests/test-quantize-perf.cpp",
@@ -875,6 +911,8 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
         Some("dspark-forward-options") => dspark_forward::diagnostic(engine, &value),
         Some("export-graph-options") => export_graph::diagnostic(engine, &value),
         Some("backend-sampler-options") => backend_sampler::diagnostic(engine, &value),
+        Some("tokenizer-file-options") => tokenizer_files::diagnostic(engine, &value),
+        Some("tokenizer-random-options") => tokenizer_random::diagnostic(engine, &value),
         Some("quantize-perf-options" | "quantize-stats-options") => {
             quantization_diagnostic(engine, &value)
         }

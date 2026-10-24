@@ -354,8 +354,11 @@
     "tests/test-state-restore-fragmented.cpp",
     "tests/test-thread-safety.cpp",
     "tests/test-tokenizer-0.cpp",
+    "tests/test-tokenizer-0.py",
+    "tests/test-tokenizer-0.sh",
     "tests/test-tokenizer-1-bpe.cpp",
     "tests/test-tokenizer-1-spm.cpp",
+    "tests/test-tokenizer-random.py",
     "tests/test-tokenizers-repo.sh",
     "tests/test-unicode.cpp"
   ]

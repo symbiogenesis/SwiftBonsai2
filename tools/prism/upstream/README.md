@@ -6,7 +6,7 @@ targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Both results are retained for each source; every
 upstream reference failure fails the final gate.
 
-The current ports preserve sixty-seven source contracts from
+The current ports preserve all seventy Windows-applicable source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
 - Backend sampling retains all19 original scenarios, complete penalties/filter
@@ -196,7 +196,7 @@ correctness threshold.
 
 Reports preserve `SchemaVersion: 1`, `UpstreamCommit`, `Target`, and `Cases`
 containing `Id`, `Status` and `Detail`. Measured conformance failures are data for
-the baseline gate; infrastructure failures exit nonzero. Unported sources remain
+the baseline gate; infrastructure failures exit nonzero. The excluded Apple source remains
 unsupported in the 71-source denominator.
 
 Native acceptance targets Windows ARM64 for Snapdragon X Elite. The Apple-only

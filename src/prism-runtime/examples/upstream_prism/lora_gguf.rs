@@ -147,3 +147,28 @@ pub(super) fn write(
     output.flush()?;
     Ok(u64::try_from(header.len())? + offset)
 }
+
+/// Write a bounded vocabulary-only test input, without tensors or model weights.
+pub(super) fn write_vocabulary(path: &Path, metadata: &Metadata) -> Result<u64> {
+    if !path.is_absolute() || metadata.0.len() > 256 {
+        return Err(invalid("vocabulary GGUF path/metadata count outside bound"));
+    }
+    let mut header = b"GGUF".to_vec();
+    header.extend_from_slice(&3_u32.to_le_bytes());
+    header.extend_from_slice(&0_u64.to_le_bytes());
+    header.extend_from_slice(&u64::try_from(metadata.0.len())?.to_le_bytes());
+    for (name, (kind, bytes)) in &metadata.0 {
+        string(&mut header, name)?;
+        header.extend_from_slice(&kind.to_le_bytes());
+        header.extend_from_slice(bytes);
+        if header.len() > 32 * 1024 * 1024 {
+            return Err(invalid("vocabulary GGUF metadata exceeds32MiB"));
+        }
+    }
+    let aligned = usize::try_from(pad(u64::try_from(header.len())?)?)?;
+    header.resize(aligned, 0);
+    let mut output = OpenOptions::new().write(true).create_new(true).open(path)?;
+    output.write_all(&header)?;
+    output.flush()?;
+    Ok(u64::try_from(header.len())?)
+}
