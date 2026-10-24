@@ -43,6 +43,9 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
 regex = "=1.13.1"
+# Independent Rust tokenizer references; native regex and C++ training are disabled.
+tokenizers = { version = "=0.22.2", default-features = false, features = ["fancy-regex"] }
+sentencepiece-rs = { version = "=0.2.2", default-features = false }
 
 [[example]]
 name = "upstream_prism"

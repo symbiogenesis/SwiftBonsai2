@@ -1,0 +1,522 @@
+//! Independent Hugging Face 4.57.6 wrapper semantics over safe Rust tokenizers.
+//!
+//! Inputs are immutable publisher tokenizer files. No production token observations
+//! are used by this reference. `BaiChuan`'s original custom slow class is transcribed
+//! separately because its publisher does not provide a fast tokenizer JSON.
+use super::tokenizer_generators::Vocabulary;
+use super::{Result, invalid};
+use sentencepiece_rs::SentencePieceProcessor;
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
+use tokenizers::{AddedToken, Tokenizer};
+
+const SPECIAL_KEYS: [&str; 7] = [
+    "bos_token",
+    "eos_token",
+    "unk_token",
+    "sep_token",
+    "pad_token",
+    "cls_token",
+    "mask_token",
+];
+enum Backend {
+    Fast(Box<Tokenizer>),
+    BaiChuan(Box<SentencePieceProcessor>),
+}
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent upstream tokenizer configuration flags"
+)]
+pub(super) struct Reference {
+    backend: Backend,
+    specials: Vec<String>,
+    special_ids: BTreeSet<u32>,
+    added_ids: Vec<u32>,
+    bos: Option<String>,
+    eos: Option<String>,
+    bos_id: Option<u32>,
+    eos_id: Option<u32>,
+    add_bos: bool,
+    add_eos: bool,
+    manual_boundaries: bool,
+    cleanup: bool,
+    boundary_properties: (Option<bool>, Option<bool>),
+    pub(super) class: String,
+    pub(super) source_correction: Option<&'static str>,
+}
+fn read_json(path: &Path) -> Result<Value> {
+    let bytes = std::fs::read(path)?;
+    if bytes.len() > 32 * 1024 * 1024 {
+        return Err(invalid("HF tokenizer JSON exceeds 32 MiB"));
+    }
+    Ok(serde_json::from_slice(&bytes)?)
+}
+fn token_content(value: &Value) -> Option<&str> {
+    value
+        .as_str()
+        .or_else(|| value.get("content").and_then(Value::as_str))
+}
+fn defaults(class: &str) -> Vec<(&'static str, &'static str)> {
+    if class.starts_with("Bert") {
+        vec![
+            ("unk_token", "[UNK]"),
+            ("sep_token", "[SEP]"),
+            ("pad_token", "[PAD]"),
+            ("cls_token", "[CLS]"),
+            ("mask_token", "[MASK]"),
+        ]
+    } else if class.starts_with("Roberta") {
+        vec![
+            ("bos_token", "<s>"),
+            ("eos_token", "</s>"),
+            ("unk_token", "<unk>"),
+            ("sep_token", "</s>"),
+            ("pad_token", "<pad>"),
+            ("cls_token", "<s>"),
+            ("mask_token", "<mask>"),
+        ]
+    } else if class.starts_with("Gemma") {
+        vec![
+            ("bos_token", "<bos>"),
+            ("eos_token", "<eos>"),
+            ("unk_token", "<unk>"),
+            ("pad_token", "<pad>"),
+        ]
+    } else if class.starts_with("Llama") || class == "BaiChuanTokenizer" {
+        vec![
+            ("bos_token", "<s>"),
+            ("eos_token", "</s>"),
+            ("unk_token", "<unk>"),
+        ]
+    } else if class.starts_with("Bloom") {
+        vec![
+            ("bos_token", "<s>"),
+            ("eos_token", "</s>"),
+            ("unk_token", "<unk>"),
+            ("pad_token", "<pad>"),
+        ]
+    } else if class.starts_with("GPT2")
+        || class.starts_with("GPTNeoX")
+        || class.starts_with("CodeGen")
+    {
+        vec![
+            ("bos_token", "<|endoftext|>"),
+            ("eos_token", "<|endoftext|>"),
+            ("unk_token", "<|endoftext|>"),
+        ]
+    } else {
+        Vec::new()
+    }
+}
+fn added_token(value: &Value, special: bool) -> Result<AddedToken> {
+    let content = token_content(value).ok_or_else(|| invalid("HF added token has no content"))?;
+    let mut token = AddedToken::from(content, special);
+    for (key, field) in [
+        ("single_word", &mut token.single_word),
+        ("lstrip", &mut token.lstrip),
+        ("rstrip", &mut token.rstrip),
+        ("normalized", &mut token.normalized),
+    ] {
+        if let Some(value) = value.get(key) {
+            *field = value
+                .as_bool()
+                .ok_or_else(|| invalid("HF added-token flag is not boolean"))?;
+        }
+    }
+    token.special = value
+        .get("special")
+        .and_then(Value::as_bool)
+        .unwrap_or(special)
+        || special;
+    Ok(token)
+}
+impl Reference {
+    #[allow(
+        clippy::too_many_lines,
+        clippy::similar_names,
+        clippy::collapsible_if,
+        reason = "The upstream wrapper initialization has ordered configuration overlays"
+    )]
+    pub(super) fn open(directory: &Path) -> Result<Self> {
+        let config = read_json(&directory.join("tokenizer_config.json"))?;
+        let class = config
+            .get("tokenizer_class")
+            .and_then(Value::as_str)
+            .unwrap_or("PreTrainedTokenizerFast")
+            .to_owned();
+        let mut named: BTreeMap<String, Value> = defaults(&class)
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), Value::from(value)))
+            .collect();
+        let special_map = directory.join("special_tokens_map.json");
+        if special_map.is_file() {
+            for (key, value) in read_json(&special_map)?
+                .as_object()
+                .ok_or_else(|| invalid("HF special map is not an object"))?
+            {
+                named.insert(key.clone(), value.clone());
+            }
+        }
+        for key in SPECIAL_KEYS
+            .into_iter()
+            .chain(["additional_special_tokens"])
+        {
+            if let Some(value) = config.get(key) {
+                named.insert(key.to_owned(), value.clone());
+            }
+        }
+        let mut specials = Vec::new();
+        for key in SPECIAL_KEYS {
+            if let Some(value) = named.get(key).and_then(token_content) {
+                if !specials.iter().any(|token| token == value) {
+                    specials.push(value.to_owned());
+                }
+            }
+        }
+        if let Some(values) = named
+            .get("additional_special_tokens")
+            .and_then(Value::as_array)
+        {
+            for value in values {
+                let text = token_content(value)
+                    .ok_or_else(|| invalid("HF additional special token invalid"))?;
+                if !specials.iter().any(|token| token == text) {
+                    specials.push(text.to_owned());
+                }
+            }
+        }
+        let bos = named
+            .get("bos_token")
+            .and_then(token_content)
+            .map(str::to_owned);
+        let eos = named
+            .get("eos_token")
+            .and_then(token_content)
+            .map(str::to_owned);
+        let manual_boundaries = class.starts_with("Llama")
+            || class.starts_with("Gemma")
+            || class == "BaiChuanTokenizer";
+        let add_bos = config
+            .get("add_bos_token")
+            .and_then(Value::as_bool)
+            .unwrap_or(manual_boundaries);
+        let add_eos = config
+            .get("add_eos_token")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let (backend, added_ids) = if class == "BaiChuanTokenizer" {
+            let processor = SentencePieceProcessor::open(directory.join("tokenizer.model"))?;
+            let mut ids = specials
+                .iter()
+                .map(|text| u32::try_from(processor.model().piece_to_id(text)).map_err(Into::into))
+                .collect::<Result<Vec<_>>>()?;
+            ids.sort_unstable();
+            (Backend::BaiChuan(Box::new(processor)), ids)
+        } else {
+            let mut json = read_json(&directory.join("tokenizer.json"))?;
+            // PreTrainedTokenizerFast only patches a top-level pre-tokenizer's flag.
+            if let (Some(prefix), Some(pre)) = (
+                config.get("add_prefix_space").and_then(Value::as_bool),
+                json.get_mut("pre_tokenizer").and_then(Value::as_object_mut),
+            ) {
+                if pre.contains_key("add_prefix_space") {
+                    pre.insert("add_prefix_space".to_owned(), Value::Bool(prefix));
+                }
+            }
+            let mut tokenizer = Tokenizer::from_bytes(serde_json::to_vec(&json)?)?;
+            tokenizer.with_padding(None);
+            tokenizer.with_truncation(None)?;
+            let mut descriptions = BTreeMap::new();
+            if let Some(values) = config
+                .get("added_tokens_decoder")
+                .and_then(Value::as_object)
+            {
+                for (id, value) in values {
+                    descriptions.insert(id.parse::<u32>()?, value.clone());
+                }
+            }
+            let legacy = directory.join("added_tokens.json");
+            if legacy.is_file() {
+                for (content, id) in read_json(&legacy)?
+                    .as_object()
+                    .ok_or_else(|| invalid("HF legacy added tokens invalid"))?
+                {
+                    let id = u32::try_from(
+                        id.as_u64()
+                            .ok_or_else(|| invalid("HF added-token ID invalid"))?,
+                    )?;
+                    descriptions
+                        .entry(id)
+                        .or_insert_with(|| Value::from(content.clone()));
+                }
+            }
+            for (id, value) in &descriptions {
+                let content = token_content(value)
+                    .ok_or_else(|| invalid("HF added-token content missing"))?;
+                tokenizer.add_tokens(&[added_token(
+                    value,
+                    specials.iter().any(|token| token == content),
+                )?]);
+                if tokenizer.token_to_id(content) != Some(*id) {
+                    return Err(invalid(
+                        "HF added-token ID differs from publisher descriptor",
+                    ));
+                }
+            }
+            let encoder = tokenizer
+                .get_added_tokens_decoder()
+                .into_values()
+                .map(|token| token.content)
+                .collect::<BTreeSet<_>>();
+            for token in &specials {
+                if !encoder.contains(token) {
+                    tokenizer.add_special_tokens(&[AddedToken::from(token.as_str(), true)]);
+                }
+            }
+            let mut ids = tokenizer
+                .get_added_tokens_decoder()
+                .into_keys()
+                .collect::<Vec<_>>();
+            ids.sort_unstable();
+            (Backend::Fast(Box::new(tokenizer)), ids)
+        };
+        let mut reference = Self {
+            backend, specials, special_ids: BTreeSet::new(), added_ids, bos, eos,
+            bos_id: None, eos_id: None, add_bos, add_eos, manual_boundaries,
+            boundary_properties: (config.get("add_bos_token").and_then(Value::as_bool).or_else(|| manual_boundaries.then_some(add_bos)), config.get("add_eos_token").and_then(Value::as_bool).or_else(|| manual_boundaries.then_some(add_eos))),
+            cleanup: config.get("clean_up_tokenization_spaces").and_then(Value::as_bool).unwrap_or(false),
+            source_correction: (class == "BaiChuanTokenizer").then_some("Original AutoTokenizer needs publisher remote Python; its slow SentencePiece wrapper is transcribed in safe Rust"), class,
+        };
+        reference.bos_id = reference
+            .bos
+            .as_deref()
+            .and_then(|text| reference.token_id(text));
+        reference.eos_id = reference
+            .eos
+            .as_deref()
+            .and_then(|text| reference.token_id(text));
+        reference.special_ids = reference
+            .specials
+            .iter()
+            .filter_map(|text| reference.token_id(text))
+            .collect();
+        if let Backend::Fast(tokenizer) = &reference.backend {
+            reference.special_ids = tokenizer
+                .get_added_tokens_decoder()
+                .into_iter()
+                .filter_map(|(id, token)| token.special.then_some(id))
+                .collect();
+        }
+        if (add_bos && reference.bos_id.is_none()) || (add_eos && reference.eos_id.is_none()) {
+            return Err(invalid("HF configured BOS/EOS token has no vocabulary ID"));
+        }
+        Ok(reference)
+    }
+    pub(super) fn token_id(&self, text: &str) -> Option<u32> {
+        match &self.backend {
+            Backend::Fast(tokenizer) => tokenizer.token_to_id(text),
+            Backend::BaiChuan(processor) => processor
+                .model()
+                .pieces()
+                .iter()
+                .position(|piece| piece.piece == text)
+                .and_then(|id| u32::try_from(id).ok()),
+        }
+    }
+    pub(super) fn encode(&self, text: &str, special: bool) -> Result<Vec<u32>> {
+        let mut ids = match &self.backend {
+            Backend::Fast(tokenizer) => tokenizer
+                .encode(text, special && !self.manual_boundaries)?
+                .get_ids()
+                .to_vec(),
+            Backend::BaiChuan(processor) => {
+                let mut ids = Vec::new();
+                let mut rest = text;
+                while !rest.is_empty() {
+                    let found = self
+                        .specials
+                        .iter()
+                        .filter_map(|token| rest.find(token).map(|offset| (offset, token)))
+                        .min_by(|(a, x), (b, y)| a.cmp(b).then_with(|| y.len().cmp(&x.len())));
+                    let Some((offset, token)) = found else {
+                        ids.extend(
+                            processor
+                                .encode_to_ids(rest)?
+                                .into_iter()
+                                .map(u32::try_from)
+                                .collect::<std::result::Result<Vec<_>, _>>()?,
+                        );
+                        break;
+                    };
+                    ids.extend(
+                        processor
+                            .encode_to_ids(&rest[..offset])?
+                            .into_iter()
+                            .map(u32::try_from)
+                            .collect::<std::result::Result<Vec<_>, _>>()?,
+                    );
+                    ids.push(
+                        self.token_id(token)
+                            .ok_or_else(|| invalid("BaiChuan special token has no ID"))?,
+                    );
+                    rest = &rest[offset + token.len()..];
+                }
+                ids
+            }
+        };
+        if special && self.manual_boundaries {
+            if self.add_bos {
+                ids.insert(0, self.bos_id.ok_or_else(|| invalid("HF BOS ID missing"))?);
+            }
+            if self.add_eos {
+                ids.push(self.eos_id.ok_or_else(|| invalid("HF EOS ID missing"))?);
+            }
+        }
+        Ok(ids)
+    }
+    pub(super) fn decode(&self, ids: &[u32], skip_special: bool) -> Result<String> {
+        let mut text = match &self.backend {
+            Backend::Fast(tokenizer) => {
+                // Python's release backend returns an empty string here; an explicit
+                // guard also avoids its BPEDecoder's empty-input usize subtraction.
+                if ids.iter().all(|id| {
+                    tokenizer.id_to_token(*id).is_none()
+                        || (skip_special && self.special_ids.contains(id))
+                }) {
+                    String::new()
+                } else {
+                    tokenizer.decode(ids, skip_special)?
+                }
+            }
+            Backend::BaiChuan(processor) => {
+                let mut text = String::new();
+                let mut current = Vec::<String>::new();
+                let mut previous_special = false;
+                let mut index = 0;
+                for id in ids {
+                    if skip_special && self.special_ids.contains(id) {
+                        continue;
+                    }
+                    let piece = processor.model().id_to_piece(usize::try_from(*id)?)?;
+                    if self.special_ids.contains(id) {
+                        if !previous_special && index != 0 {
+                            text.push(' ');
+                        }
+                        text.push_str(&processor.decode(&current)?);
+                        text.push_str(piece);
+                        current.clear();
+                        previous_special = true;
+                    } else {
+                        current.push(piece.to_owned());
+                        previous_special = false;
+                    }
+                    index += 1;
+                }
+                text.push_str(&processor.decode(&current)?);
+                text
+            }
+        };
+        if self.cleanup {
+            for (from, to) in [
+                (" .", "."),
+                (" ?", "?"),
+                (" !", "!"),
+                (" ,", ","),
+                (" ' ", "'"),
+                (" n't", "n't"),
+                (" 'm", "'m"),
+                (" 's", "'s"),
+                (" 've", "'ve"),
+                (" 're", "'re"),
+            ] {
+                text = text.replace(from, to);
+            }
+        }
+        Ok(text)
+    }
+    pub(super) fn vocabulary(&self) -> Result<Vocabulary> {
+        // Groundtruth checks this only for the random harness, never the file script.
+        let probe = self.encode("a", true)?;
+        if !(1..=3).contains(&probe.len()) {
+            return Err(invalid("Original HF encode(a) length predicate failed"));
+        }
+        let mut ids = match &self.backend {
+            Backend::Fast(tokenizer) => tokenizer.get_vocab(true).into_values().collect::<Vec<_>>(),
+            Backend::BaiChuan(processor) => (0..processor.model().pieces().len())
+                .map(u32::try_from)
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+        };
+        ids.sort_unstable();
+        let mut words = ids
+            .into_iter()
+            .map(|id| self.decode(&[id], true))
+            .collect::<Result<Vec<_>>>()?;
+        words.sort();
+        let added = self
+            .added_ids
+            .iter()
+            .map(|id| self.decode(&[*id], false))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Vocabulary {
+            words,
+            added,
+            special: self.specials.clone(),
+            bos: self.bos.clone(),
+            eos: self.eos.clone(),
+            add_bos: self
+                .boundary_properties
+                .0
+                .unwrap_or_else(|| probe.len() > 1 && probe.first().copied() == self.bos_id),
+            add_eos: self
+                .boundary_properties
+                .1
+                .unwrap_or_else(|| probe.len() > 1 && probe.last().copied() == self.eos_id),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn focused_hf_wrapper_configuration_guard() -> Result<()> {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "SwiftBonsai-HfReference-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&directory)?;
+        let test = (|| -> Result<()> {
+            let json = json!({"version":"1.0","truncation":null,"padding":null,"added_tokens":[{"id":4,"content":".","single_word":false,"lstrip":false,"rstrip":false,"normalized":true,"special":false}],"normalizer":null,"pre_tokenizer":{"type":"Whitespace"},"post_processor":null,"decoder":{"type":"WordPiece","prefix":"##","cleanup":false},"model":{"type":"WordLevel","vocab":{"<unk>":0,"a":1,"<s>":2,"</s>":3,".":4},"unk_token":"<unk>"}});
+            std::fs::write(directory.join("tokenizer.json"), serde_json::to_vec(&json)?)?;
+            std::fs::write(
+                directory.join("tokenizer_config.json"),
+                serde_json::to_vec(
+                    &json!({"tokenizer_class":"LlamaTokenizer","mask_token":".","add_bos_token":true,"add_eos_token":false,"clean_up_tokenization_spaces":true,"added_tokens_decoder":{"2":{"content":"<s>","normalized":false,"special":true},"3":{"content":"</s>","normalized":false,"special":true},"0":{"content":"<unk>","normalized":false,"special":true}}}),
+                )?,
+            )?;
+            let reference = Reference::open(&directory)?;
+            assert_eq!(reference.encode("a", true)?, [2, 1]);
+            assert_eq!(reference.encode("a", false)?, [1]);
+            assert_eq!(reference.decode(&[2, 1, 4], false)?, "<s> a.");
+            assert_eq!(reference.decode(&[2, 1, 4], true)?, "a.");
+            assert_eq!(reference.decode(&[2, 3], true)?, "");
+            // A legacy configured name does not override an existing non-special backend added token.
+            assert_eq!(reference.decode(&[4], true)?, ".");
+            let vocab = reference.vocabulary()?;
+            assert!(vocab.add_bos);
+            assert!(!vocab.add_eos);
+            assert_eq!(vocab.words.iter().filter(|word| word.is_empty()).count(), 3);
+            Ok(())
+        })();
+        for name in ["tokenizer.json", "tokenizer_config.json"] {
+            std::fs::remove_file(directory.join(name))?;
+        }
+        std::fs::remove_dir(&directory)?;
+        test
+    }
+}
