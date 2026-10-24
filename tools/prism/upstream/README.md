@@ -6,9 +6,13 @@ targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Both results are retained for each source; every
 upstream reference failure fails the final gate.
 
-The current ports preserve fifty-two source contracts from
+The current ports preserve fifty-three source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
+- The barrier source retains all three graph/threadpool schedules. It has zero
+  output assertions; reports distinguish workload completion and additional API
+  guards from numerical coverage. All its executions, including named cases,
+  are CI-only because the original source measures timings.
 - Architecture coverage retains every source variant and backend/export phase;
   Rust generates the small model inputs and records capability skips. Recurrent
   rollback creates its own three fixtures and retains every replay/fork schedule.

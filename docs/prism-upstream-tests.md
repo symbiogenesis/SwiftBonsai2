@@ -31,9 +31,14 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Fifty-two source contracts currently have safe Rust adapters in
+Fifty-three source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-barrier.cpp`: all three CPU threadpool schedules, including the
+  2,000-node graph, 10,000 changing-thread iterations and 1,000 two-graph
+  iterations. The source has zero numerical output assertions. Its workload
+  completion, additional API success guards and timings are reported explicitly;
+  every execution of this timed source is restricted to CI.
 - `test-llama-archs.cpp`: all 151 source variants, the production architecture
   inventory and capability skips, backend comparisons, and model export/load
   roundtrips. Rust creates metadata and tensor weights, retains the original
@@ -189,7 +194,8 @@ tolerances or test assertions. The C++ exporters and original test executables
 are no longer built. A separate C17 production ABI adapter proves public-header
 compilation without retaining the original empty C test main.
 
-Correctness runs include the pinned model-lifecycle workloads and execute no benchmarks. Foundation's
+Catalog runs include the pinned model-lifecycle workloads and the CI-only
+barrier timing source. Foundation's
 manual `prism_benchmarks` input executes separately reported benchmark workloads
 after correctness. PEG serialization retains all 100 deserializations. Its
 reported wall time includes native process transport and does not qualify native

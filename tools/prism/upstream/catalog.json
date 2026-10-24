@@ -300,6 +300,7 @@
     "tests/test-alloc.cpp",
     "tests/test-arg-parser.cpp",
     "tests/test-autorelease.cpp",
+    "tests/test-barrier.cpp",
     "tests/test-batch-alloc.cpp",
     "tests/test-c.c",
     "tests/test-chat-analysis.cpp",

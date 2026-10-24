@@ -40,6 +40,8 @@ mod sampling;
 #[path = "upstream_prism/tokenizer.rs"]
 mod tokenizer;
 
+#[path = "upstream_prism/barrier.rs"]
+mod barrier;
 #[path = "upstream_prism/batch_allocator.rs"]
 mod batch_allocator;
 #[path = "upstream_prism/codec_assertions.rs"]
@@ -144,6 +146,12 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-barrier",
+        "tests/test-barrier.cpp",
+        Bridge::Common,
+        barrier::run,
+    ),
     register(
         "test-llama-archs",
         "tests/test-llama-archs.cpp",
