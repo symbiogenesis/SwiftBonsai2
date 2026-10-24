@@ -44,6 +44,9 @@ impl FixtureServer {
                         if !peer.ip().is_loopback() {
                             return Err(invalid("nonloopback fixture peer"));
                         }
+                        // WinSock accepts inherit the listener's nonblocking
+                        // mode. Request I/O uses the bounded blocking deadlines.
+                        stream.set_nonblocking(false)?;
                         stream.set_read_timeout(Some(Duration::from_secs(5)))?;
                         stream.set_write_timeout(Some(Duration::from_secs(5)))?;
                         serve(&mut stream, &shared, &commit)?;
@@ -212,6 +215,28 @@ fn serve(stream: &mut TcpStream, state: &Mutex<State>, commit: &str) -> Result<(
 #[cfg(test)]
 mod focused_guards {
     use super::*;
+    #[test]
+    fn delayed_http_header_does_not_terminate_fixture() -> Result<()> {
+        let server = FixtureServer::start("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")?;
+        server.replace(BTreeMap::from([(
+            "probe/repo".into(),
+            vec!["input.gguf".into()],
+        )]))?;
+        let mut stream = TcpStream::connect(server.address)?;
+        stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+        // A client may connect before it has sent its request. The fixture
+        // must wait within its read deadline and keep serving later clients.
+        std::thread::sleep(Duration::from_millis(100));
+        stream.write_all(b"GET /api/models/probe/repo/refs HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")?;
+        let mut response = String::new();
+        stream.take(8192).read_to_string(&mut response)?;
+        assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(response.contains("targetCommit"));
+        let requests = server.finish()?;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0]["Status"], 200);
+        Ok(())
+    }
     #[test]
     fn bounded_loopback_transport_serves_custom_fixture() -> Result<()> {
         let server = FixtureServer::start("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")?;

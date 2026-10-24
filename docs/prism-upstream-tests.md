@@ -183,7 +183,9 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   Windows, as in the source.
 - `test-model-resolution.cpp`: all 14 cases, 94 deterministic reorderings and
   13 assembly cases. A bounded Rust loopback server and private cache provide
-  the source responses; the child invokes the production resolver.
+  the source responses; the child invokes the production resolver. Accepted
+  Windows sockets use blocking I/O with five-second read and write deadlines,
+  so a client may connect before sending its HTTP header.
 - `test-kv-mean-center.cpp`: all three generated-model groups and original
   numeric predicates. Rust supplies GGUF metadata, Windows random inputs and
   tensor bytes through bounded file callbacks to production model construction.
