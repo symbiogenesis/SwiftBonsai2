@@ -3,7 +3,8 @@
 [Foundation](../.github/workflows/foundation.yml) imports tests from the exact
 Prism archive in [source.lock.json](../tools/prism/source.lock.json), verifies its
 length and SHA-256, and extracts it into fresh external storage. The reference
-build uses the unmodified engine sources. No engine source or build tree is
+build verifies the archive and records the explicit production saver correction
+described below. No engine source or build tree is
 vendored here.
 The upstream MIT terms remain in [PRISM-LICENSE.txt](../tools/prism/PRISM-LICENSE.txt).
 
@@ -31,9 +32,12 @@ Unported sources remain visible as unsupported.
 
 The pinned C++ saver advertises DSpark support but omits required metadata and
 global tensors. A focused load/save/reload reproduction confirms that its saved
-model cannot reload. The reference build retains this upstream defect. All
-architecture save/load assertions remain required, and the resulting reference
-failure fails the gate.
+model cannot reload. The reference applies an explicit, hash-verified
+[production saver correction](../tools/prism/upstream/patches/dspark-saver.patch)
+to an external copy of that translation unit. The immutable archive stays
+unchanged, and receipts identify the patch and resulting source. All architecture
+save/load assertions remain required; this reference is qualified with the
+recorded production correction.
 The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
