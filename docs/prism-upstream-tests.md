@@ -31,9 +31,17 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Fifty-three source contracts currently have safe Rust adapters in
+Fifty-five source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-gguf-model-data.cpp` and `test-quant-type-selection.cpp`: the complete
+  GGUF test helper is rewritten in safe Rust, including progressive prefixes,
+  cache handling, shard merging and binary metadata parsing. The helper's 34
+  predicates are target independent. Production quantization selection compares
+  all eleven models and 363 untouched expected schema sections. Raw publisher
+  inputs are independently pinned; the broken Nemotron repository and schema
+  paths have explicit corrections. Schema generation is a separate, explicitly
+  confirmed CI diagnostic that writes only external evidence.
 - `test-barrier.cpp`: all three CPU threadpool schedules, including the
   2,000-node graph, 10,000 changing-thread iterations and 1,000 two-graph
   iterations. The source has zero numerical output assertions. Its workload

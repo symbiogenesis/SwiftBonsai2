@@ -6,9 +6,13 @@ targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Both results are retained for each source; every
 upstream reference failure fails the final gate.
 
-The current ports preserve fifty-three source contracts from
+The current ports preserve fifty-five source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
+- GGUF metadata helper coverage includes all 34 original predicates in safe
+  Rust. Quantization selection calls production APIs for eleven models and all
+  363 original expected schema sections. Inputs and expected schemas remain
+  independent; source fixture-name corrections are reported explicitly.
 - The barrier source retains all three graph/threadpool schedules. It has zero
   output assertions; reports distinguish workload completion and additional API
   guards from numerical coverage. All its executions, including named cases,

@@ -27,6 +27,8 @@ mod chat_peg;
 mod chat_template;
 #[path = "upstream_prism/gguf.rs"]
 mod gguf;
+#[path = "upstream_prism/gguf_model_data.rs"]
+mod gguf_model_data;
 #[path = "upstream_prism/model_lifecycle.rs"]
 mod model_lifecycle;
 #[path = "upstream_prism/model_resolution.rs"]
@@ -90,6 +92,8 @@ mod pq2;
 mod ptq1;
 #[path = "upstream_prism/public_c.rs"]
 mod public_c;
+#[path = "upstream_prism/quant_selection.rs"]
+mod quant_selection;
 #[path = "upstream_prism/reasoning_budget.rs"]
 mod reasoning_budget;
 #[path = "upstream_prism/recurrent_rollback.rs"]
@@ -146,6 +150,18 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-gguf-model-data",
+        "tests/test-gguf-model-data.cpp",
+        Bridge::Independent,
+        quant_selection::run_metadata,
+    ),
+    register(
+        "test-quant-type-selection",
+        "tests/test-quant-type-selection.cpp",
+        Bridge::Common,
+        quant_selection::run_quantization,
+    ),
     register(
         "test-barrier",
         "tests/test-barrier.cpp",
@@ -652,6 +668,17 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
     }
     let value: Value = serde_json::from_slice(&fs::read(config)?)?;
     match value["Kind"].as_str() {
+        Some("quant-schema-generate") => {
+            llama_grammar::exact_fields(&value, &["Kind", "Confirmed"])?;
+            let confirmed = value["Confirmed"]
+                .as_bool()
+                .ok_or_else(|| invalid("quantization generation confirmation must be boolean"))?;
+            return quant_selection::generate(
+                engine,
+                &engine.evidence_path("quantization-generated-schemas")?,
+                confirmed,
+            );
+        }
         Some("architecture-options") => {
             llama_grammar::exact_fields(
                 &value,

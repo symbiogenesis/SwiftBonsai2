@@ -352,7 +352,7 @@
       ],
       "AssertionsToPort": "Exact architecture/dimensions/tensor counts and known names/shapes; repeat fetch cache semantics; split model and array-valued head counts. Network failure/skip cannot count pass.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-gguf.cpp",
@@ -628,7 +628,7 @@
       ],
       "AssertionsToPort": "For every model and ftype compare default/per-tensor selected quant type against pinned schema; all overrides; --generate is reference generation not passing test. Need freeze remote metadata revisions/digests.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-quantize-fns.cpp",
