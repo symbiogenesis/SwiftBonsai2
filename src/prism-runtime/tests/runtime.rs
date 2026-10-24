@@ -2,8 +2,8 @@
 //! Recurrent-state ownership regressions independent of a model artifact.
 
 use bonsai_prism_runtime::{
-    Decoder, Result,
-    runtime::{Cancellation, Finish, Generation, Limits, Runtime, greedy},
+    Decoder, MAX_PREFILL_BLOCK_TOKENS, Result,
+    runtime::{Cancellation, Finish, Generation, Limits, Prefill, Runtime, greedy},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -523,6 +523,7 @@ struct StateOnly {
     inner: Reusing,
     operations: Rc<RefCell<Vec<Operation>>>,
     fault: Rc<Cell<IngestFault>>,
+    fault_token: Rc<Cell<Option<u32>>>,
 }
 
 impl Decoder for StateOnly {
@@ -558,7 +559,12 @@ impl Decoder for StateOnly {
     fn ingest(&mut self, token: u32) -> Result<()> {
         self.operations.borrow_mut().push(Operation::Ingest(token));
         self.inner.inner.tokens.push(token);
-        match self.fault.replace(IngestFault::None) {
+        let fault = if self.fault_token.get().is_none_or(|target| target == token) {
+            self.fault.replace(IngestFault::None)
+        } else {
+            IngestFault::None
+        };
+        match fault {
             IngestFault::None => {}
             IngestFault::Failure => {
                 return Err(std::io::Error::other("ingestion failed after state mutation").into());
@@ -580,6 +586,7 @@ fn state_only() -> StateOnly {
         },
         operations: Rc::new(RefCell::new(Vec::new())),
         fault: Rc::new(Cell::new(IngestFault::None)),
+        fault_token: Rc::new(Cell::new(None)),
     }
 }
 
@@ -814,5 +821,385 @@ fn deadline_generation_retains_cancellation_precedence_and_stream_rollback() -> 
     assert!(!runtime.is_faulted());
     runtime.generate(&[1, 1], &options(), &Cancellation::default(), |_| Ok(()))?;
     assert_eq!(runtime.tokens(), &[1, 1, 2]);
+    Ok(())
+}
+
+struct Scheduled {
+    inner: StateOnly,
+    blocks: Vec<Vec<u32>>,
+}
+
+impl Decoder for Scheduled {
+    type Checkpoint = Vec<u32>;
+
+    fn identity(&self) -> &str {
+        self.inner.identity()
+    }
+    fn vocab_size(&self) -> usize {
+        self.inner.vocab_size()
+    }
+    fn checkpoint_bytes(&self) -> usize {
+        self.inner.checkpoint_bytes()
+    }
+    fn reset(&mut self) -> Result<()> {
+        self.inner.reset()
+    }
+    fn checkpoint(&self) -> Result<Self::Checkpoint> {
+        self.inner.checkpoint()
+    }
+    fn restore(&mut self, checkpoint: &Self::Checkpoint) -> Result<()> {
+        self.inner.restore(checkpoint)
+    }
+    fn evaluate(&mut self, token: u32) -> Result<Vec<f32>> {
+        self.inner.evaluate(token)
+    }
+    fn evaluate_into(&mut self, token: u32, output: &mut Vec<f32>) -> Result<()> {
+        self.inner.evaluate_into(token, output)
+    }
+    fn ingest(&mut self, token: u32) -> Result<()> {
+        self.inner.ingest(token)
+    }
+    fn ingest_block(&mut self, tokens: &[u32], check: &dyn Fn() -> Result<()>) -> Result<()> {
+        self.blocks.push(tokens.to_vec());
+        // Exercise the actual trait fallback, including checks within a block.
+        self.inner.ingest_block(tokens, check)
+    }
+}
+
+fn scheduled() -> Scheduled {
+    Scheduled {
+        inner: state_only(),
+        blocks: Vec::new(),
+    }
+}
+
+#[test]
+fn bounded_prefill_schedules_causal_blocks_and_tails_with_exact_output_parity() -> Result<()> {
+    let limits = Limits {
+        context_tokens: 1024,
+        checkpoint_bytes: 65_536,
+        ..LIMITS
+    };
+    let generation = Generation {
+        max_tokens: 3,
+        stop_tokens: vec![],
+    };
+    for length in [1, 2, 3, 4, 5, 8, 9, 255, 256, 257, 258, 514] {
+        let prompt = (0..length)
+            .map(|index| u32::try_from(index % 7 + 1))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut reference = Runtime::new(state_only(), limits)?;
+        let cancellation = Cancellation::default();
+        let mut expected = Vec::new();
+        let completion = reference.generate(&prompt, &generation, &cancellation, |token| {
+            expected.push(token);
+            Ok(())
+        })?;
+        for block_tokens in [1, 2, 3, 4, MAX_PREFILL_BLOCK_TOKENS] {
+            let mut runtime = Runtime::new(scheduled(), limits)?;
+            let mut actual = Vec::new();
+            assert_eq!(
+                runtime.generate_with_prefill(
+                    &prompt,
+                    &generation,
+                    Prefill { block_tokens },
+                    &cancellation,
+                    |token| {
+                        actual.push(token);
+                        Ok(())
+                    },
+                )?,
+                completion
+            );
+            assert_eq!(actual, expected);
+            assert_eq!(runtime.tokens(), reference.tokens());
+            assert_eq!(
+                *runtime.decoder().inner.operations.borrow(),
+                *reference.decoder().operations.borrow()
+            );
+            assert_eq!(
+                runtime.decoder().blocks,
+                prompt[..prompt.len() - 1]
+                    .chunks(block_tokens)
+                    .map(<[u32]>::to_vec)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn bounded_prefill_schedules_only_uncached_tokens_after_exact_prefix_restore() -> Result<()> {
+    let mut runtime = Runtime::new(scheduled(), LIMITS)?;
+    let cancellation = Cancellation::default();
+    let prefill = Prefill { block_tokens: 2 };
+    runtime.generate_with_prefill(&[1], &options(), prefill, &cancellation, |_| Ok(()))?;
+    let extended = runtime.generate_with_prefill(
+        &[1, 1, 2, 3, 4, 5],
+        &options(),
+        prefill,
+        &cancellation,
+        |_| Ok(()),
+    )?;
+    assert_eq!(extended.reused_tokens, 2);
+    assert_eq!(runtime.decoder().blocks, [vec![2, 3], vec![4]]);
+    let edited = runtime.generate_with_prefill(
+        &[1, 1, 6, 7, 2, 3],
+        &options(),
+        prefill,
+        &cancellation,
+        |_| Ok(()),
+    )?;
+    assert_eq!(edited.reused_tokens, 2);
+    assert_eq!(runtime.tokens(), &[1, 1, 6, 7, 2, 3, 4]);
+    assert_eq!(
+        runtime.decoder().blocks,
+        [vec![2, 3], vec![4], vec![6, 7], vec![2]]
+    );
+    let committed = runtime.tokens().to_vec();
+    let cached = runtime.generate_with_prefill(
+        &committed,
+        &options(),
+        prefill,
+        &cancellation,
+        |_| Ok(()),
+    )?;
+    assert_eq!(cached.reused_tokens, committed.len());
+    assert_eq!(runtime.decoder().blocks.len(), 4);
+    assert_eq!(runtime.tokens().last(), Some(&0));
+    Ok(())
+}
+
+#[test]
+fn bounded_prefill_partial_first_and_later_blocks_roll_back_and_recover() -> Result<()> {
+    for failure in [IngestFault::Failure, IngestFault::Cancel] {
+        for failed_token in [3, 7] {
+            let decoder = scheduled();
+            let fault = decoder.inner.fault.clone();
+            let fault_token = decoder.inner.fault_token.clone();
+            let cancellation = decoder.inner.inner.cancellation.clone();
+            let operations = decoder.inner.operations.clone();
+            let mut runtime = Runtime::new(decoder, LIMITS)?;
+            let prefill = Prefill { block_tokens: 2 };
+            runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+            operations.borrow_mut().clear();
+            fault_token.set(Some(failed_token));
+            fault.set(failure);
+            assert!(
+                runtime
+                    .generate_with_prefill(
+                        &[2, 3, 4, 5, 6, 7, 0],
+                        &options(),
+                        prefill,
+                        &cancellation,
+                        |_| Err(std::io::Error::other("partial prefill must not emit").into()),
+                    )
+                    .is_err()
+            );
+            assert_eq!(
+                *operations.borrow(),
+                (2..=failed_token)
+                    .map(Operation::Ingest)
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(runtime.tokens(), &[1, 1]);
+            assert_eq!(runtime.decoder().inner.inner.inner.tokens, [1, 1]);
+            assert!(!runtime.is_faulted());
+            let recovered = runtime.generate_with_prefill(
+                &[1, 1],
+                &options(),
+                prefill,
+                &Cancellation::default(),
+                |_| Ok(()),
+            )?;
+            assert_eq!(recovered.reused_tokens, 2);
+            assert_eq!(runtime.tokens(), &[1, 1, 2]);
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn bounded_prefill_invalid_sizes_reject_before_capture_or_decoder_mutation() -> Result<()> {
+    let decoder = scheduled();
+    let checkpoint_fail = decoder.inner.inner.inner.checkpoint_fail.clone();
+    let operations = decoder.inner.operations.clone();
+    let mut runtime = Runtime::new(decoder, LIMITS)?;
+    let cancellation = Cancellation::default();
+    runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+    operations.borrow_mut().clear();
+    checkpoint_fail.set(true);
+    let checkpoints = runtime.checkpoint_count();
+    for block_tokens in [0, MAX_PREFILL_BLOCK_TOKENS + 1, usize::MAX] {
+        for prompt in [&[2, 3][..], &[1, 1][..]] {
+            assert!(
+                runtime
+                    .generate_with_prefill(
+                        prompt,
+                        &options(),
+                        Prefill { block_tokens },
+                        &cancellation,
+                        |_| Ok(()),
+                    )
+                    .is_err()
+            );
+            assert!(
+                runtime
+                    .generate_until_with_prefill(
+                        prompt,
+                        &options(),
+                        Prefill { block_tokens },
+                        &cancellation,
+                        Instant::now() + Duration::from_secs(60),
+                        |_| Ok(()),
+                    )
+                    .is_err()
+            );
+            assert!(checkpoint_fail.get());
+            assert_eq!(runtime.tokens(), &[1, 1]);
+            assert_eq!(runtime.decoder().inner.inner.inner.tokens, [1, 1]);
+            assert!(operations.borrow().is_empty());
+            assert_eq!(runtime.decoder().blocks, Vec::<Vec<u32>>::new());
+            assert_eq!(runtime.checkpoint_count(), checkpoints);
+            assert!(!runtime.is_faulted());
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn bounded_prefill_fallback_validates_blocks_before_ingestion_and_checks_each_token() -> Result<()>
+{
+    let mut decoder = decoder();
+    let checks = Cell::new(0);
+    let check = || {
+        checks.set(checks.get() + 1);
+        Ok(())
+    };
+    for block in [vec![], vec![1; MAX_PREFILL_BLOCK_TOKENS + 1], vec![1, 8]] {
+        assert!(decoder.ingest_block(&block, &check).is_err());
+        assert_eq!(decoder.tokens, [0_u32; 0]);
+        assert_eq!(decoder.steps.get(), 0);
+        assert_eq!(checks.get(), 0);
+    }
+    let block = vec![1; MAX_PREFILL_BLOCK_TOKENS];
+    decoder.ingest_block(&block, &check)?;
+    assert_eq!(decoder.tokens, block);
+    assert_eq!(decoder.steps.get(), MAX_PREFILL_BLOCK_TOKENS);
+    assert_eq!(checks.get(), 2 * MAX_PREFILL_BLOCK_TOKENS);
+    Ok(())
+}
+
+#[test]
+fn bounded_prefill_final_logits_and_stream_failure_restore_every_completed_block() -> Result<()> {
+    for callback_failure in [false, true] {
+        let decoder = scheduled();
+        let output_fault = decoder.inner.inner.fault.clone();
+        let mut runtime = Runtime::new(decoder, LIMITS)?;
+        let cancellation = Cancellation::default();
+        let prefill = Prefill { block_tokens: 2 };
+        runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+        if !callback_failure {
+            output_fault.set(OutputFault::WrongSize);
+        }
+        let mut emitted = Vec::new();
+        assert!(
+            runtime
+                .generate_with_prefill(
+                    &[2, 3, 4, 5, 6, 7],
+                    &options(),
+                    prefill,
+                    &cancellation,
+                    |token| {
+                        emitted.push(token);
+                        Err(std::io::Error::other("disconnected block-prefill consumer").into())
+                    },
+                )
+                .is_err()
+        );
+        assert_eq!(emitted.len(), usize::from(callback_failure));
+        assert_eq!(runtime.decoder().blocks, [vec![2, 3], vec![4, 5], vec![6]]);
+        assert_eq!(runtime.tokens(), &[1, 1]);
+        assert_eq!(runtime.decoder().inner.inner.inner.tokens, [1, 1]);
+        assert!(!runtime.is_faulted());
+        let recovered =
+            runtime
+                .generate_with_prefill(&[1, 1], &options(), prefill, &cancellation, |_| Ok(()))?;
+        assert_eq!(recovered.reused_tokens, 2);
+        assert_eq!(runtime.tokens(), &[1, 1, 2]);
+    }
+    Ok(())
+}
+
+#[test]
+fn bounded_prefill_failed_restore_latches_admission_until_reset() -> Result<()> {
+    let decoder = scheduled();
+    let fault = decoder.inner.fault.clone();
+    let fault_token = decoder.inner.fault_token.clone();
+    let restore_fail = decoder.inner.inner.inner.restore_fail.clone();
+    let mut runtime = Runtime::new(decoder, LIMITS)?;
+    let cancellation = Cancellation::default();
+    let prefill = Prefill { block_tokens: 2 };
+    runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+    fault.set(IngestFault::Failure);
+    fault_token.set(Some(3));
+    restore_fail.set(true);
+    assert!(
+        runtime
+            .generate_with_prefill(
+                &[2, 3, 4, 5],
+                &options(),
+                prefill,
+                &cancellation,
+                |_| Ok(()),
+            )
+            .is_err()
+    );
+    assert!(runtime.is_faulted());
+    assert_eq!(runtime.tokens(), &[1, 1]);
+    assert_eq!(runtime.decoder().blocks, [vec![2, 3]]);
+    assert!(
+        runtime
+            .generate_with_prefill(&[1, 1], &options(), prefill, &cancellation, |_| Ok(()),)
+            .is_err()
+    );
+    assert_eq!(runtime.decoder().blocks, [vec![2, 3]]);
+    restore_fail.set(false);
+    runtime.reset()?;
+    assert!(!runtime.is_faulted());
+    runtime.generate_with_prefill(&[4, 5, 6], &options(), prefill, &cancellation, |_| Ok(()))?;
+    assert_eq!(runtime.tokens(), &[4, 5, 6, 7]);
+    Ok(())
+}
+
+#[test]
+fn bounded_prefill_final_prompt_logits_can_stop_without_evaluating_a_generated_token() -> Result<()>
+{
+    let mut runtime = Runtime::new(scheduled(), LIMITS)?;
+    let stop = Generation {
+        max_tokens: 3,
+        stop_tokens: vec![1],
+    };
+    let completion = runtime.generate_until_with_prefill(
+        &[2, 3, 4],
+        &stop,
+        Prefill { block_tokens: 2 },
+        &Cancellation::default(),
+        Instant::now() + Duration::from_secs(60),
+        |_| Err(std::io::Error::other("stop token must not emit").into()),
+    )?;
+    assert_eq!(completion.finish, Finish::Stop);
+    assert_eq!(completion.generated_tokens, 0);
+    assert_eq!(runtime.tokens(), &[2, 3, 4]);
+    assert_eq!(runtime.decoder().blocks, [vec![2, 3]]);
+    assert_eq!(
+        *runtime.decoder().inner.operations.borrow(),
+        [
+            Operation::Ingest(2),
+            Operation::Ingest(3),
+            Operation::Evaluate(4)
+        ]
+    );
     Ok(())
 }

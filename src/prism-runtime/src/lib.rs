@@ -16,6 +16,10 @@ pub type Error = Box<dyn std::error::Error + Send + Sync>;
 /// A checked native runtime operation.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Maximum number of state-only prompt tokens admitted in one prefill block.
+/// This bounds scheduling granularity, without implying a batched graph kernel.
+pub const MAX_PREFILL_BLOCK_TOKENS: usize = 256;
+
 pub(crate) fn invalid(message: impl Into<String>) -> Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, message.into()).into()
 }
@@ -91,6 +95,40 @@ pub trait Decoder {
         self.evaluate_into(token, &mut logits)?;
         if logits.len() != self.vocab_size() || logits.iter().any(|value| !value.is_finite()) {
             return Err(invalid("native decoder returned invalid logits"));
+        }
+        Ok(())
+    }
+    /// Include a bounded, nonempty causal prompt block without retaining logits.
+    ///
+    /// The reference implementation calls [`Self::ingest`] in original token
+    /// order, preserving its exact numerical operations. It checks `check`
+    /// before and after every token, including the last, so cancellation and
+    /// request deadlines remain cooperative at token boundaries. This method
+    /// establishes a scheduling boundary; it does not implement tiled matmul,
+    /// parallel attention or chunkwise recurrent kernels.
+    ///
+    /// Overrides must preserve complete state/position equivalence to sequential
+    /// ingestion, honor checks between tokens and reject empty, oversized or
+    /// invalid-token blocks before changing decoder state. An error may leave a
+    /// partial block in the decoder; the owning runtime restores the whole
+    /// request checkpoint before allowing reuse.
+    ///
+    /// # Errors
+    /// Rejects blocks beyond [`MAX_PREFILL_BLOCK_TOKENS`], invalid tokens,
+    /// cancellation/deadline checks, and any underlying ingestion error.
+    fn ingest_block(&mut self, tokens: &[u32], check: &dyn Fn() -> Result<()>) -> Result<()> {
+        if tokens.is_empty()
+            || tokens.len() > MAX_PREFILL_BLOCK_TOKENS
+            || tokens.iter().any(|&token| {
+                usize::try_from(token).map_or(true, |value| value >= self.vocab_size())
+            })
+        {
+            return Err(invalid("invalid native prefill block bounds or tokens"));
+        }
+        for &token in tokens {
+            check()?;
+            self.ingest(token)?;
+            check()?;
         }
         Ok(())
     }

@@ -1,6 +1,6 @@
 //! Transactional token generation, bounded snapshots and exact edited-prefix reuse.
 
-use crate::{Decoder, Result, invalid};
+use crate::{Decoder, MAX_PREFILL_BLOCK_TOKENS, Result, invalid};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -54,6 +54,26 @@ pub struct Generation {
     pub max_tokens: usize,
     /// Exact token IDs that finish generation without entering conversation state.
     pub stop_tokens: Vec<u32>,
+}
+
+/// Bounded scheduling for intermediate, uncached prompt tokens.
+///
+/// Blocks execute causally through [`Decoder::ingest_block`]; the reference
+/// fallback retains exact sequential arithmetic. The final prompt token always
+/// computes logits separately. This does not select optimized graph kernels or
+/// change decode scheduling. Existing generation methods use one-token blocks.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Prefill {
+    /// Maximum state-only tokens per block, from one through
+    /// [`MAX_PREFILL_BLOCK_TOKENS`]. Invalid sizes reject the request before any
+    /// decoder operation or checkpoint eviction.
+    pub block_tokens: usize,
+}
+
+impl Default for Prefill {
+    fn default() -> Self {
+        Self { block_tokens: 1 }
+    }
 }
 
 /// Why a successfully completed request stopped.
@@ -197,7 +217,27 @@ impl<D: Decoder> Runtime<D> {
         cancellation: &Cancellation,
         emit: impl FnMut(u32) -> Result<()>,
     ) -> Result<Completion> {
-        self.generate_checked(prompt, options, &|| cancellation.check(), emit)
+        self.generate_with_prefill(prompt, options, Prefill::default(), cancellation, emit)
+    }
+
+    /// Generate with bounded, causal scheduling of uncached prompt blocks.
+    ///
+    /// The entire request, including all completed and partial blocks, shares
+    /// one rollback checkpoint. Cancellation is checked between tokens inside
+    /// each block. There is no intermediate commit or background work.
+    ///
+    /// # Errors
+    /// Returns the errors of [`Self::generate`], and rejects an invalid prefill
+    /// block size before capturing a checkpoint or changing decoder state.
+    pub fn generate_with_prefill(
+        &mut self,
+        prompt: &[u32],
+        options: &Generation,
+        prefill: Prefill,
+        cancellation: &Cancellation,
+        emit: impl FnMut(u32) -> Result<()>,
+    ) -> Result<Completion> {
+        self.generate_checked(prompt, options, prefill, &|| cancellation.check(), emit)
     }
 
     /// Generate synchronously before an absolute monotonic request deadline.
@@ -221,9 +261,38 @@ impl<D: Decoder> Runtime<D> {
         deadline: Instant,
         emit: impl FnMut(u32) -> Result<()>,
     ) -> Result<Completion> {
+        self.generate_until_with_prefill(
+            prompt,
+            options,
+            Prefill::default(),
+            cancellation,
+            deadline,
+            emit,
+        )
+    }
+
+    /// Generate bounded causal prompt blocks before a monotonic deadline.
+    ///
+    /// Deadline and cancellation checks occur between tokens within blocks,
+    /// with the same whole-request rollback and provisional output contract as
+    /// [`Self::generate_until`]. Recovery may finish after the deadline.
+    ///
+    /// # Errors
+    /// Returns the errors of [`Self::generate_until`] and rejects invalid
+    /// prefill block sizes before any decoder operation.
+    pub fn generate_until_with_prefill(
+        &mut self,
+        prompt: &[u32],
+        options: &Generation,
+        prefill: Prefill,
+        cancellation: &Cancellation,
+        deadline: Instant,
+        emit: impl FnMut(u32) -> Result<()>,
+    ) -> Result<Completion> {
         self.generate_checked(
             prompt,
             options,
+            prefill,
             &|| check_deadline(cancellation, deadline, Instant::now()),
             emit,
         )
@@ -233,6 +302,7 @@ impl<D: Decoder> Runtime<D> {
         &mut self,
         prompt: &[u32],
         options: &Generation,
+        prefill: Prefill,
         check: &impl Fn() -> Result<()>,
         mut emit: impl FnMut(u32) -> Result<()>,
     ) -> Result<Completion> {
@@ -242,12 +312,12 @@ impl<D: Decoder> Runtime<D> {
             ));
         }
         check()?;
-        self.validate_request(prompt, options)?;
+        self.validate_request(prompt, options, prefill)?;
         check()?;
         let rollback = self.capture(0, check)?;
         let result = (|| {
             check()?;
-            let completion = self.generate_inner(prompt, options, check, &mut emit)?;
+            let completion = self.generate_inner(prompt, options, prefill, check, &mut emit)?;
             check()?;
             // A failed optional capture still permits success, but deadline
             // expiry during capture must roll back the completed generation.
@@ -288,13 +358,20 @@ impl<D: Decoder> Runtime<D> {
         }
     }
 
-    fn validate_request(&self, prompt: &[u32], options: &Generation) -> Result<()> {
+    fn validate_request(
+        &self,
+        prompt: &[u32],
+        options: &Generation,
+        prefill: Prefill,
+    ) -> Result<()> {
         let length = prompt
             .len()
             .checked_add(options.max_tokens)
             .ok_or_else(|| invalid("native context length overflow"))?;
         if prompt.is_empty()
             || options.max_tokens == 0
+            || prefill.block_tokens == 0
+            || prefill.block_tokens > MAX_PREFILL_BLOCK_TOKENS
             || length > self.limits.context_tokens
             || options.stop_tokens.len() > 256
             || prompt.iter().chain(&options.stop_tokens).any(|&token| {
@@ -302,7 +379,7 @@ impl<D: Decoder> Runtime<D> {
             })
         {
             return Err(invalid(
-                "invalid tokens or native context/generation bounds",
+                "invalid tokens or native context/generation/prefill bounds",
             ));
         }
         Ok(())
@@ -408,16 +485,16 @@ impl<D: Decoder> Runtime<D> {
         Ok(())
     }
 
-    fn ingest(&mut self, token: u32, check: &impl Fn() -> Result<()>) -> Result<()> {
+    fn ingest_block(&mut self, tokens: &[u32], check: &impl Fn() -> Result<()>) -> Result<()> {
         check()?;
-        self.tokens.try_reserve(1)?;
+        self.tokens.try_reserve(tokens.len())?;
         // Preserve the reusable allocation, but invalidate logits for the old
         // prefix before advancing state without producing a new distribution.
         self.logits.clear();
         check()?;
-        self.decoder.ingest(token)?;
+        self.decoder.ingest_block(tokens, check)?;
         check()?;
-        self.tokens.push(token);
+        self.tokens.extend_from_slice(tokens);
         Ok(())
     }
 
@@ -425,6 +502,7 @@ impl<D: Decoder> Runtime<D> {
         &mut self,
         prompt: &[u32],
         options: &Generation,
+        prefill: Prefill,
         check: &impl Fn() -> Result<()>,
         emit: &mut impl FnMut(u32) -> Result<()>,
     ) -> Result<Completion> {
@@ -432,8 +510,8 @@ impl<D: Decoder> Runtime<D> {
         let reused = self.prepare(prompt, check)?;
         check()?;
         if let Some((&last, prefix)) = prompt[reused..].split_last() {
-            for &token in prefix {
-                self.ingest(token, check)?;
+            for block in prefix.chunks(prefill.block_tokens) {
+                self.ingest_block(block, check)?;
             }
             self.evaluate(last, check)?;
         }
@@ -660,11 +738,13 @@ mod deadline_tests {
         ] {
             let (mut runtime, clock) = seeded()?;
             clock.expire_on.set(Some(operation));
-            assert_timeout(
-                runtime.generate_checked(&[2, 3], &OPTIONS, &|| clock.check(), |_| {
-                    Err(invalid("expired decoder output must not emit"))
-                }),
-            )?;
+            assert_timeout(runtime.generate_checked(
+                &[2, 3],
+                &OPTIONS,
+                Prefill::default(),
+                &|| clock.check(),
+                |_| Err(invalid("expired decoder output must not emit")),
+            ))?;
             assert!(clock.operations.borrow().contains(&operation));
             assert_eq!(clock.operations.borrow().last(), Some(&Operation::Restore));
             assert_eq!(runtime.tokens(), &[1, 1]);
@@ -680,11 +760,13 @@ mod deadline_tests {
         runtime.generate(&[1, 1, 2], &OPTIONS, &Cancellation::default(), |_| Ok(()))?;
         clock.operations.borrow_mut().clear();
         clock.expire_on.set(Some(Operation::Restore));
-        assert_timeout(
-            runtime.generate_checked(&[1, 1, 3], &OPTIONS, &|| clock.check(), |_| {
-                Err(invalid("expired prefix restore must not emit"))
-            }),
-        )?;
+        assert_timeout(runtime.generate_checked(
+            &[1, 1, 3],
+            &OPTIONS,
+            Prefill::default(),
+            &|| clock.check(),
+            |_| Err(invalid("expired prefix restore must not emit")),
+        ))?;
         assert_eq!(
             *clock.operations.borrow(),
             [
@@ -706,6 +788,7 @@ mod deadline_tests {
             assert_timeout(runtime.generate_checked(
                 &[2, 3],
                 &OPTIONS,
+                Prefill::default(),
                 &|| clock.check(),
                 |token| {
                     emitted.push(token);
@@ -731,7 +814,13 @@ mod deadline_tests {
         let (mut runtime, clock) = seeded()?;
         clock.restore_fail.set(true);
         clock.expire_on.set(Some(Operation::Ingest(2)));
-        let result = runtime.generate_checked(&[2, 3], &OPTIONS, &|| clock.check(), |_| Ok(()));
+        let result = runtime.generate_checked(
+            &[2, 3],
+            &OPTIONS,
+            Prefill::default(),
+            &|| clock.check(),
+            |_| Ok(()),
+        );
         let Err(error) = result else {
             return Err(invalid(
                 "failed deadline restoration unexpectedly completed",
@@ -756,6 +845,32 @@ mod deadline_tests {
         runtime.generate(&[3], &OPTIONS, &Cancellation::default(), |_| Ok(()))?;
         assert_eq!(runtime.tokens(), &[3, 3]);
         assert!(!runtime.is_faulted());
+        Ok(())
+    }
+
+    #[test]
+    fn deadline_prefill_expiry_inside_blocks_restores_the_whole_request() -> Result<()> {
+        for operation in [
+            Operation::Ingest(3),
+            Operation::Ingest(7),
+            Operation::Evaluate(0),
+        ] {
+            let (mut runtime, clock) = seeded()?;
+            clock.expire_on.set(Some(operation));
+            assert_timeout(runtime.generate_checked(
+                &[2, 3, 4, 5, 6, 7, 0],
+                &OPTIONS,
+                Prefill { block_tokens: 2 },
+                &|| clock.check(),
+                |_| Err(invalid("expired prefill must not emit")),
+            ))?;
+            assert!(clock.operations.borrow().contains(&operation));
+            assert_eq!(clock.operations.borrow().last(), Some(&Operation::Restore));
+            assert_eq!(runtime.tokens(), &[1, 1]);
+            assert_eq!(runtime.decoder().tokens, [1, 1]);
+            assert!(!runtime.is_faulted());
+            assert_continues(&mut runtime)?;
+        }
         Ok(())
     }
 }
