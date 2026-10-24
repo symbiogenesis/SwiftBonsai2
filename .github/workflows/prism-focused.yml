@@ -17,6 +17,10 @@ on:
           - TokenizerPython
           - TokenizerShell
           - TokenizerRandom
+          - BackendSampler
+          - ModelResolution
+          - SaveLoadState
+          - ThreadSafety
 permissions:
   contents: read
 env:
