@@ -6,10 +6,12 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bpe;
 pub mod graph;
 pub mod kernels;
 pub mod model;
 pub mod runtime;
+pub mod sampling;
 pub mod special_tokens;
 pub mod vocabulary;
 

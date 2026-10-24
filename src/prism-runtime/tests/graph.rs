@@ -1699,6 +1699,86 @@ fn native_driver_streams_verified_vocabulary_bytes_and_text() -> Result<()> {
 
 #[cfg(feature = "cli")]
 #[test]
+fn native_driver_reference_sampling_matches_seeded_runtime_and_reports_configuration() -> Result<()>
+{
+    use bonsai_prism_runtime::sampling::{ReferenceSampler, Sampling};
+
+    let artifact = DriverArtifact::new(&text_driver_fixture(0))?;
+    for seed in [0, 42] {
+        let options = Sampling {
+            temperature: 1.0,
+            top_k: 0,
+            top_p: 1.0,
+        };
+        let mut sampler = ReferenceSampler::new(options, seed)?;
+        let mut runtime = Runtime::new(
+            Qwen35::new(text_driver_fixture(0), 16)?,
+            Limits {
+                context_tokens: 16,
+                checkpoints: 0,
+                checkpoint_bytes: 1_048_576,
+            },
+        )?;
+        let mut expected_tokens = Vec::new();
+        let completion = runtime.generate_sampled(
+            &[0, 1],
+            &Generation {
+                max_tokens: 6,
+                stop_tokens: vec![0],
+            },
+            Prefill { block_tokens: 4 },
+            &Cancellation::default(),
+            &mut sampler,
+            |token| {
+                expected_tokens.push(token);
+                Ok(())
+            },
+        )?;
+        let run = || {
+            artifact
+                .command(6, true)
+                .args([
+                    "--sampling",
+                    "reference",
+                    "--seed",
+                    &seed.to_string(),
+                    "--temperature",
+                    "1",
+                    "--top-k",
+                    "0",
+                    "--top-p",
+                    "1",
+                    "--prefill-block-tokens",
+                    "4",
+                    "--timeout-seconds",
+                    "60",
+                ])
+                .output()
+        };
+        let records = driver_records(run()?)?;
+        assert_eq!(records, driver_records(run()?)?);
+        assert_eq!(records.len(), expected_tokens.len() + 1);
+        for (record, token) in records.iter().zip(&expected_tokens) {
+            assert_eq!(record["token"], *token);
+        }
+        let final_record = records.last().ok_or("missing driver completion")?;
+        assert_eq!(
+            final_record["generated_tokens"],
+            completion.generated_tokens
+        );
+        assert_eq!(
+            final_record["sampling"],
+            serde_json::json!({
+                "mode": "reference", "rng": "splitmix64", "seed": seed,
+                "temperature": 1.0, "top_k": 0, "top_p": 1.0,
+            })
+        );
+    }
+    Ok(())
+}
+
+#[cfg(feature = "cli")]
+#[test]
 fn native_driver_stops_on_model_ids_and_additive_deduplicated_user_ids() -> Result<()> {
     for (eos, other_stop, user_stops) in [
         (1, None, None),

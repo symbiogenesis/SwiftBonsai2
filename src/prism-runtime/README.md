@@ -26,6 +26,10 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   operations and rollback after evaluation or delivery failure. Streamed tokens
   are provisional until success. Failed restore preserves the public committed
   token prefix and closes admission until reset succeeds.
+- Explicit seeded reference sampling with temperature, top-k and top-p, stable
+  token-ID tie breaking and a documented SplitMix64 draw. Caller-owned samplers
+  participate in request rollback, including cancellation, timeout and failed
+  delivery. Greedy remains the default; Prism RNG and stochastic parity remain open.
 - `Runtime::generate_until` accepts an absolute monotonic deadline and rolls
   back expiry through the same transaction. Checks surround decoder operations
   and stream callbacks; synchronous work must return before expiry is detected,
@@ -64,6 +68,9 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
 - Bounded `gpt2`/`qwen35` output vocabulary and optional incremental text rendering.
   Exact token bytes remain available across UTF-8 token boundaries; control-token
   spellings remain literal. This does not implement input tokenization or templates.
+- Ranked byte-pair merges for already pretokenized GPT-2 byte pieces. The bounded
+  merge core emits only normal IDs and preserves supplied piece boundaries; the
+  Qwen35 regex pretokenizer, special-token input policy and chat templates remain open.
 
 The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.
@@ -125,8 +132,27 @@ already streamed tokens are provisional and no success record follows.
 Optional `--prefill-block-tokens <1..256>` selects the reference block boundary;
 the default is one. `prefill_block_tokens` records the selected size. This changes
 scheduling boundaries while retaining sequential graph operations.
-The driver does not tokenize, implement stochastic sampling, launch the broker
-or promote a profile.
+Optional `--sampling reference --seed <u64>` selects experimental stochastic
+sampling. `--temperature`, `--top-k` and `--top-p` default to 1, 20 and 0.95;
+top-k zero retains the full vocabulary, and top-p must be in `(0, 1]`.
+All sampling controls require that explicit mode. The completion's `sampling`
+object records the mode, effective options, seed and RNG. The reference draws
+the upper 32 SplitMix64 bits after ranking, temperature, top-k and nucleus
+selection; it does not reproduce Prism's C++ RNG or establish stochastic parity.
+Greedy remains the default and records only its mode. Model stops still apply.
+
+Library callers can pass an independently cloneable `Sampler` through
+`Runtime::generate_sampled` or `generate_sampled_until`. Any returned error
+restores the sampler alongside graph state, even when decoder recovery fails.
+Successful stop-token draws advance the sampler without emitting the stop.
+Shared mutable state and external side effects are outside this recovery contract.
+The driver does not tokenize input, launch the broker or promote a profile.
+
+`Bpe::from_metadata` validates normal vocabulary pieces and ranked merge rules.
+`encode_piece` accepts one already pretokenized byte slice; `encode_pieces`
+preserves caller-supplied boundaries. Neither API finds Qwen35 regex boundaries,
+recognizes special input tokens, inserts BOS/EOS or renders a chat template.
+Using it directly on arbitrary text does not establish tokenizer parity.
 
 ## Memory and ownership
 
@@ -135,6 +161,11 @@ headroom for parser/conversion scratch, graph workspace, active state, checkpoin
 optional decoded-vocabulary/output storage and allocator overhead. Text mode admits
 at most 1,000,000 vocabulary entries, 64 MiB of decoded piece bytes and 1 MiB per
 piece; the entry table and output buffers are additional bounded storage.
+Reference sampling admits at most 1,048,576 finite logits and allocates bounded
+candidate scratch per draw. BPE admits at most 1,000,000 merge rules and 64 MiB
+serialized merge bytes, 64 KiB per pretokenized piece, and 1 MiB/65,536 pieces
+per multi-piece request. Vocabulary validation, lookup tables and heap/node/output
+scratch add storage outside model/state/checkpoint budgets.
 Optional `--state-bytes` sets the admitted maximum
 live KV/convolution/recurrent element payload, from 1 byte through the default
 4 GiB. `Qwen35::with_state_budget` exposes the same bound to library callers.
@@ -207,7 +238,7 @@ cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --locked --offline --rele
 ```
 
 The [R0–R7 roadmap](../../docs/native-rust-engine.md) still requires profiling,
-full-model logits/states/tokens, tokenizer/template and stochastic RNG parity,
+full-model logits/states/tokens, complete tokenizer/template and Prism sampler/RNG parity,
 adapter execution, broker/OS ownership, broader SIMD/Adreno support and device
 correctness/TPS/quality/security acceptance. Full suites and every benchmark
 remain CI-only under [validation policy](../../docs/validation.md).

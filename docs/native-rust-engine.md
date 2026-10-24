@@ -1,7 +1,7 @@
 # Native Rust Prism engine
 
 The experimental [Rust CPU reference](../src/prism-runtime/README.md) implements
-verified loading, the Qwen35 hybrid graph and transactional greedy generation
+verified loading, the Qwen35 hybrid graph and transactional token generation
 from token IDs, without a C/C++ inference library. Eligible Windows ARM64
 PQ2/PTQ1 operations use baseline NEON automatically; scalar remains the reference
 and fallback. **Full-model parity, broker integration and device qualification
@@ -60,6 +60,20 @@ task time separately, accounting for bandwidth and the measured critical path.
     original bytes remain available. Synthetic mapping, boundary, malformed-input
     and serialized-model checks cover this output path. Input tokenization,
     chat templates and full-model tokenizer parity remain open R2 work.
+
+  - [x] **R2.3 — Add an explicit seeded reference sampler.** Bounded
+    temperature/top-k/top-p selection, stable token-ID ties and documented RNG
+    draws have focused golden/boundary coverage. Explicit driver selection
+    reports effective settings and seed. Greedy remains the default; invalid
+    options reject before model loading. A serialized-model test checks wiring.
+    This reference contract is separate from required Prism sampler/RNG parity.
+  - [x] **R2.4 — Implement the bounded byte-pair merge core.** Normal GPT-2 byte
+    vocabulary and ordered merge rules are validated. Already pretokenized pieces
+    encode by rank with leftmost ties, bounded heap work and exact byte fallback.
+    Focused checks cover byte preservation, supplied boundaries, overlapping
+    merges, malformed metadata and input/output limits.
+    Qwen35 regex splitting, special input tokens, templates and full-model
+    tokenizer parity remain separate R2 exits.
 
 - [ ] **R3 — Qualify packed CPU kernels.** Follow [SIMD S0–S4/S6](simd-plan.md).
   Baseline NEON PQ2/PTQ1, automatic selection, scalar forcing and focused exact
@@ -139,6 +153,13 @@ task time separately, accounting for bandwidth and the measured critical path.
     referenced page per snapshot, including page tables, private tail capacity
     and recurrent storage, without relying on sharing to meet the bound.
     Full-model process-memory benefit remains R4.2.
+
+  - [x] **R5.3 — Roll back caller-owned sampling state.** Independently
+    cloneable samplers participate in generation transactions. Focused
+    deterministic tests verify sampling-state restoration on
+    admission, sampling, decoder, cancellation, deadline or delivery errors,
+    including failed graph recovery. Successful stop draws advance sampling
+    state without entering conversation history; existing greedy APIs remain.
 
 - [ ] **R6 — Add Adreno after CPU parity.** Follow [G0–G5](adreno-gpu-plan.md),
   implementing the same packed types, transforms and complete hybrid graph.

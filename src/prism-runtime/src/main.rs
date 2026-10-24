@@ -7,6 +7,7 @@ use bonsai_prism_runtime::{
     kernels::{MatvecBackend, MatvecDiagnostics, MatvecFallbackReason, MatvecStatistics},
     model::Model,
     runtime::{Cancellation, Finish, Generation, Limits, Prefill, Runtime},
+    sampling::{Greedy, ReferenceSampler, Sampler, Sampling},
     special_tokens::SpecialTokens,
     vocabulary::Vocabulary,
 };
@@ -27,6 +28,8 @@ Usage: bonsai-prism-runtime --model <absolute-gguf-path> --bytes <u64>\n\
   [--timeout-seconds <1..3600>] [--output <tokens|text>]\n\
   [--state-bytes <usize>]\n\
   [--prefill-block-tokens <1..256>]\n\
+  [--sampling <greedy|reference>] [--seed <u64>]\n\
+  [--temperature <positive-f32>] [--top-k <0..1048576>] [--top-p <0..1>]\n\
 State budget defaults to 4 GiB for live KV/recurrent element payload only;\n\
 model storage, graph scratch, checkpoints and allocator overhead are separate.\n\
 Timeout covers generation after loading. Checks are cooperative between operations;\n\
@@ -37,7 +40,11 @@ Selection is per matrix operation; backend_requested reports only the request.\n
 backend_last_operation records just the latest projection, including scalar fallback.\n\
 backend_statistics counts all attempted matrix work, including provisional work.\n\
 Prefill blocks default to one token and preserve sequential reference arithmetic.\n\
-Input is token IDs; decoding is greedy. Output is one JSON object per line.\n\
+Input is token IDs; decoding defaults to greedy. Output is one JSON object per line.\n\
+Reference sampling is experimental, requires --seed, and uses temperature, top-k,\n\
+then top-p with SplitMix64. Defaults are 1, 20 and 0.95; top-k 0 retains all IDs.\n\
+Top-p must be greater than zero. Sampling controls require --sampling reference.\n\
+This reference RNG/sampler does not establish Prism sampling or quality parity.\n\
 Model-declared EOS/EOT/EOM always stop generation; --stop-tokens adds IDs.\n\
 Text output adds lossless token bytes and incremental UTF-8 text (invalid bytes\n\
 display as replacement characters). Control token spellings remain visible.\n";
@@ -56,6 +63,53 @@ struct Arguments {
     timeout: Option<Duration>,
     prefill: Prefill,
     text_output: bool,
+    sampling: SamplingMode,
+}
+
+#[derive(Clone, Copy)]
+enum SamplingMode {
+    Greedy,
+    Reference { options: Sampling, seed: u64 },
+}
+
+impl SamplingMode {
+    fn sampler(self) -> Result<DriverSampler> {
+        match self {
+            Self::Greedy => Ok(DriverSampler::Greedy(Greedy)),
+            Self::Reference { options, seed } => Ok(DriverSampler::Reference(
+                ReferenceSampler::new(options, seed)?,
+            )),
+        }
+    }
+
+    fn record(self) -> serde_json::Value {
+        match self {
+            Self::Greedy => json!({"mode": "greedy"}),
+            Self::Reference { options, seed } => json!({
+                "mode": "reference",
+                "rng": "splitmix64",
+                "seed": seed,
+                "temperature": options.temperature,
+                "top_k": options.top_k,
+                "top_p": options.top_p,
+            }),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum DriverSampler {
+    Greedy(Greedy),
+    Reference(ReferenceSampler),
+}
+
+impl Sampler for DriverSampler {
+    fn sample(&mut self, logits: &[f32]) -> Result<u32> {
+        match self {
+            Self::Greedy(sampler) => sampler.sample(logits),
+            Self::Reference(sampler) => sampler.sample(logits),
+        }
+    }
 }
 
 fn bad(message: &'static str) -> bonsai_prism_runtime::Error {
@@ -82,6 +136,11 @@ fn option_values(arguments: impl IntoIterator<Item = String>) -> Result<BTreeMap
                 | "--state-bytes"
                 | "--prefill-block-tokens"
                 | "--output"
+                | "--sampling"
+                | "--seed"
+                | "--temperature"
+                | "--top-k"
+                | "--top-p"
         ) || values.contains_key(&key)
         {
             return Err(bad("unknown or repeated option"));
@@ -157,6 +216,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         "text" => true,
         _ => return Err(bad("output must be tokens or text")),
     };
+    let sampling = sampling_options(&mut values)?;
     Ok(Arguments {
         path,
         bytes,
@@ -174,7 +234,64 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         timeout,
         prefill,
         text_output,
+        sampling,
     })
+}
+
+fn sampling_options(values: &mut BTreeMap<String, String>) -> Result<SamplingMode> {
+    match values.remove("--sampling").as_deref().unwrap_or("greedy") {
+        "greedy" => {
+            if ["--seed", "--temperature", "--top-k", "--top-p"]
+                .iter()
+                .any(|key| values.contains_key(*key))
+            {
+                return Err(bad("sampling controls require --sampling reference"));
+            }
+            Ok(SamplingMode::Greedy)
+        }
+        "reference" => {
+            let seed = values
+                .remove("--seed")
+                .ok_or_else(|| bad("reference sampling requires an explicit seed"))?;
+            if seed.is_empty() || !seed.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(bad("seed must be an unsigned decimal integer"));
+            }
+            let seed = seed.parse::<u64>()?;
+            let defaults = Sampling::default();
+            let temperature = values
+                .remove("--temperature")
+                .map(|value| value.parse::<f32>())
+                .transpose()?
+                .unwrap_or(defaults.temperature);
+            let top_k = values
+                .remove("--top-k")
+                .map(|value| {
+                    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                        return Err(bad("top-k must be an unsigned decimal integer"));
+                    }
+                    Ok(value.parse::<usize>()?)
+                })
+                .transpose()?
+                .unwrap_or(defaults.top_k);
+            let top_p = values
+                .remove("--top-p")
+                .map(|value| value.parse::<f32>())
+                .transpose()?
+                .unwrap_or(defaults.top_p);
+            let sampling = SamplingMode::Reference {
+                options: Sampling {
+                    temperature,
+                    top_k,
+                    top_p,
+                },
+                seed,
+            };
+            // Reject configuration errors before model hashing or graph allocation.
+            let _validated = sampling.sampler()?;
+            Ok(sampling)
+        }
+        _ => Err(bad("sampling must be greedy or reference")),
+    }
 }
 
 fn prefill_options(value: Option<&str>) -> Result<Prefill> {
@@ -314,6 +431,7 @@ fn load_decoder(arguments: &Arguments) -> Result<(Qwen35, Generation, Option<Voc
 }
 
 fn execute(arguments: &Arguments) -> Result<()> {
+    let mut sampler = arguments.sampling.sampler()?;
     let (decoder, generation, vocabulary) = load_decoder(arguments)?;
     let backend_requested = backend_name(decoder.requested_backend());
     let mut runtime = Runtime::new(
@@ -348,20 +466,22 @@ fn execute(arguments: &Arguments) -> Result<()> {
         let deadline = Instant::now()
             .checked_add(timeout)
             .ok_or_else(|| bad("generation deadline exceeds monotonic clock bounds"))?;
-        runtime.generate_until_with_prefill(
+        runtime.generate_sampled_until(
             &arguments.tokens,
             &generation,
             arguments.prefill,
             &cancellation,
             deadline,
+            &mut sampler,
             emit,
         )?
     } else {
-        runtime.generate_with_prefill(
+        runtime.generate_sampled(
             &arguments.tokens,
             &generation,
             arguments.prefill,
             &cancellation,
+            &mut sampler,
             emit,
         )?
     };
@@ -374,6 +494,7 @@ fn execute(arguments: &Arguments) -> Result<()> {
         "state_budget_bytes": arguments.state_bytes,
         "prefill_block_tokens": arguments.prefill.block_tokens,
         "stop_tokens": generation.stop_tokens,
+        "sampling": arguments.sampling.record(),
         "backend_last_operation": backend_record(runtime.decoder().backend_diagnostics()),
         "backend_statistics": statistics_record(runtime.decoder().backend_statistics()),
     });
@@ -449,8 +570,8 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        Duration, Generation, MAX_STATE_BYTES, MatvecBackend, Result, Utf8Output, bad,
-        generation_options, parse,
+        Duration, Generation, MAX_STATE_BYTES, MatvecBackend, Result, SamplingMode, Utf8Output,
+        bad, generation_options, parse,
     };
 
     fn arguments() -> Vec<String> {
@@ -485,6 +606,77 @@ mod tests {
             .ok_or_else(|| bad("missing test argument"))?;
         arguments[position + 1] = value.to_owned();
         Ok(())
+    }
+
+    #[test]
+    fn cli_sampling_requires_explicit_mode_and_seed_and_records_effective_options() -> Result<()> {
+        assert!(matches!(parse(arguments())?.sampling, SamplingMode::Greedy));
+        let mut input = arguments();
+        input.extend(["--sampling", "reference", "--seed", "42"].map(str::to_owned));
+        let mode = parse(input)?.sampling;
+        assert_eq!(mode.record()["mode"], "reference");
+        assert_eq!(mode.record()["rng"], "splitmix64");
+        assert_eq!(mode.record()["seed"], 42);
+        assert_eq!(mode.record()["temperature"], 1.0);
+        assert_eq!(mode.record()["top_k"], 20);
+        assert_eq!(mode.record()["top_p"], serde_json::json!(0.95_f32));
+        let mut input = arguments();
+        input.extend(
+            [
+                "--sampling",
+                "reference",
+                "--seed",
+                "18446744073709551615",
+                "--temperature",
+                "0.7",
+                "--top-k",
+                "0",
+                "--top-p",
+                "1",
+            ]
+            .map(str::to_owned),
+        );
+        let mode = parse(input)?.sampling;
+        assert_eq!(mode.record()["seed"], u64::MAX);
+        assert_eq!(mode.record()["temperature"], serde_json::json!(0.7_f32));
+        assert_eq!(mode.record()["top_k"], 0);
+        assert_eq!(mode.record()["top_p"], 1.0);
+        Ok(())
+    }
+
+    #[test]
+    fn cli_sampling_rejects_inactive_controls_and_invalid_configuration_before_loading() {
+        for tail in [
+            vec!["--sampling", "reference"],
+            vec!["--sampling", "Reference", "--seed", "1"],
+            vec!["--seed", "1"],
+            vec!["--sampling", "greedy", "--temperature", "1"],
+            vec!["--sampling", "greedy", "--top-k", "1"],
+            vec!["--sampling", "greedy", "--top-p", "1"],
+            vec!["--sampling", "reference", "--seed", "-1"],
+            vec!["--sampling", "reference", "--seed", "+1"],
+            vec!["--sampling", "reference", "--seed", "18446744073709551616"],
+            vec!["--sampling", "reference", "--seed", "1", "--seed", "2"],
+        ] {
+            let mut input = arguments();
+            input.extend(tail.into_iter().map(str::to_owned));
+            assert!(parse(input).is_err());
+        }
+        for (key, value) in [
+            ("--temperature", "0"),
+            ("--temperature", "NaN"),
+            ("--temperature", "inf"),
+            ("--top-k", "1048577"),
+            ("--top-k", "+1"),
+            ("--top-k", "-1"),
+            ("--top-p", "0"),
+            ("--top-p", "1.01"),
+            ("--top-p", "NaN"),
+        ] {
+            let mut input = arguments();
+            input.extend(["--sampling", "reference", "--seed", "1", key, value].map(str::to_owned));
+            assert!(parse(input).is_err(), "accepted invalid {key}");
+        }
     }
 
     #[test]
