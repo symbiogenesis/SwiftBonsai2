@@ -246,7 +246,9 @@ so checkout timestamps do not force unchanged adapter sources to compile again.
 Native cache fallback keys retain the exact source and compiler identity while
 allowing orchestration changes. Fresh extraction, source verification, CMake
 configuration and every correctness check still run. Evidence uses faster
-compression without dropping request/response files.
+compression without dropping request/response files. The pinned grammar dependency
+also compiles from a stable source mirror verified against each fresh archive
+extraction, keeping its Cargo inputs and CMake header include paths reusable.
 
 Seven library or binary roots with no unit tests disable their empty unit-test
 harnesses. Their ordinary builds, Clippy coverage, integration tests and doctests
