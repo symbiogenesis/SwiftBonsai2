@@ -6,7 +6,7 @@ targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Both results are retained for each source; every
 upstream reference failure fails the final gate.
 
-The current ports preserve sixty-one source contracts from
+The current ports preserve sixty-four source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
 - Backend sampling retains all19 original scenarios, complete penalties/filter
@@ -152,9 +152,12 @@ and original source files are no longer compiled as tests. The original importer
 and replay build were removed after all33 Rust-owned contracts, including GGUF,
 passed [native Windows ARM64 CI](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40120815419).
 
-The reference build uses unmodified upstream sources. The pinned saver omits
-DSpark metadata and global tensors, so its save/load roundtrip fails. Every
-original test predicate remains required; this reference failure fails the gate.
+The immutable source archive is unchanged. The pinned saver omits
+DSpark metadata and global tensors. The reference applies the explicit,
+hash-verified production saver correction in `reference-patches.lock.json`.
+Its39 added lines preserve the metadata and sixteen tensors. Only a verified
+external translation unit is substituted; the archive and every original test
+predicate remain unchanged. Receipts identify this corrected reference variant.
 
 The runtime's vector API runs once for each original activation column,
 preserving the complete `M*N` comparison. This tests numerical compatibility,
