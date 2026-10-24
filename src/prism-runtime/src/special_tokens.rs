@@ -7,7 +7,7 @@
 
 use bonsai_gguf::{Metadata, MetadataValue};
 
-use crate::{Result, invalid};
+use crate::{Result, invalid, runtime::Generation};
 
 const EOS: &str = "tokenizer.ggml.eos_token_id";
 const BOS: &str = "tokenizer.ggml.bos_token_id";
@@ -142,6 +142,45 @@ impl SpecialTokens {
     #[must_use]
     pub fn stop_tokens(&self) -> &[u32] {
         &self.stops[..self.stop_count]
+    }
+
+    /// Build bounded generation options from model and caller stop declarations.
+    ///
+    /// Stops retain EOS, EOT, EOM order, followed by distinct caller IDs in their
+    /// original order. BOS/EOS insertion flags do not change the stop policy.
+    /// The caller's slice is unchanged. This helper does not insert input tokens
+    /// or apply a chat template, and raw [`Generation`] construction remains
+    /// available for callers that intentionally choose their own stop policy.
+    ///
+    /// `max_tokens` must be from one through 262,143: the runtime's maximum
+    /// 262,144-token context must also contain a nonempty prompt. The runtime
+    /// still validates the actual prompt and its configured context capacity.
+    /// These vocabulary bounds must match the runtime's decoder vocabulary.
+    ///
+    /// # Errors
+    /// Rejects a zero or excessive generation bound, an out-of-vocabulary caller
+    /// ID, more than 256 distinct combined stops, or an allocation failure.
+    pub fn generation(&self, max_tokens: usize, caller_stops: &[u32]) -> Result<Generation> {
+        if max_tokens == 0 || max_tokens >= 262_144 {
+            return Err(invalid("invalid native generation token bound"));
+        }
+        let mut stop_tokens = Vec::new();
+        stop_tokens.try_reserve_exact(256)?;
+        for &token in self.stop_tokens().iter().chain(caller_stops) {
+            if usize::try_from(token).map_or(true, |token| token >= self.vocab_size) {
+                return Err(invalid("generation stop is outside the decoder vocabulary"));
+            }
+            if !stop_tokens.contains(&token) {
+                if stop_tokens.len() == 256 {
+                    return Err(invalid("generation requires at most 256 distinct stops"));
+                }
+                stop_tokens.push(token);
+            }
+        }
+        Ok(Generation {
+            max_tokens,
+            stop_tokens,
+        })
     }
 }
 

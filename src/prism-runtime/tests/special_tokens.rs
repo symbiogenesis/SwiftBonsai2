@@ -144,3 +144,76 @@ fn insertion_flags_require_exact_bool_and_enabled_bos_requires_its_id() -> Resul
     assert_eq!(tokens.stop_tokens(), &[7]);
     Ok(())
 }
+
+#[test]
+fn generation_merges_model_and_caller_stops_without_changing_inputs() -> Result<()> {
+    let mut metadata = metadata();
+    metadata.insert(EOT.to_owned(), MetadataValue::U32(1));
+    metadata.insert(EOM.to_owned(), MetadataValue::U32(2));
+    let tokens = SpecialTokens::from_metadata(&metadata, 8)?;
+    let caller_stops = [2, 0, 7, 3, 1, 0];
+    let generation = tokens.generation(8, &caller_stops)?;
+    assert_eq!(generation.max_tokens, 8);
+    assert_eq!(generation.stop_tokens, [7, 1, 2, 0, 3]);
+    assert_eq!(caller_stops, [2, 0, 7, 3, 1, 0]);
+    assert_eq!(tokens.stop_tokens(), [7, 1, 2]);
+    assert_eq!(tokens.generation(1, &[])?.stop_tokens, [7, 1, 2]);
+    Ok(())
+}
+
+#[test]
+fn generation_requires_a_positive_bound_that_leaves_room_for_a_prompt() -> Result<()> {
+    let tokens = SpecialTokens::from_metadata(&metadata(), 8)?;
+    for limit in [1, 262_143] {
+        assert_eq!(tokens.generation(limit, &[])?.max_tokens, limit);
+    }
+    for limit in [0, 262_144, usize::MAX] {
+        assert!(tokens.generation(limit, &[]).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn generation_checks_each_caller_id_against_the_model_vocabulary() -> Result<()> {
+    let tokens = SpecialTokens::from_metadata(&metadata(), 8)?;
+    assert_eq!(tokens.generation(1, &[0, 7])?.stop_tokens, [7, 0]);
+    for token in [8, u32::MAX] {
+        assert!(tokens.generation(1, &[0, token, 7]).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn generation_limits_distinct_combined_stops_after_deduplication() -> Result<()> {
+    let mut metadata = metadata();
+    metadata.insert(EOT.to_owned(), MetadataValue::U32(256));
+    metadata.insert(EOM.to_owned(), MetadataValue::U32(256));
+    let tokens = SpecialTokens::from_metadata(&metadata, 257)?;
+    let caller_stops: Vec<u32> = (0..255).collect();
+    let generation = tokens.generation(1, &caller_stops)?;
+    assert_eq!(generation.stop_tokens.len(), 256);
+    assert_eq!(&generation.stop_tokens[..3], [7, 256, 0]);
+    assert_eq!(generation.stop_tokens.last(), Some(&254));
+    let too_many: Vec<u32> = (0..256).collect();
+    assert!(tokens.generation(1, &too_many).is_err());
+    assert_eq!(tokens.generation(1, &[256; 1_024])?.stop_tokens, [7, 256]);
+    Ok(())
+}
+
+#[test]
+fn generation_stop_policy_is_independent_of_special_input_insertion_flags() -> Result<()> {
+    for flag in [None, Some(false), Some(true)] {
+        let mut metadata = metadata();
+        metadata.insert(BOS.to_owned(), MetadataValue::U32(0));
+        metadata.insert(PADDING.to_owned(), MetadataValue::U32(3));
+        metadata.insert(EOT.to_owned(), MetadataValue::U32(1));
+        metadata.insert(EOM.to_owned(), MetadataValue::U32(2));
+        if let Some(flag) = flag {
+            metadata.insert(ADD_BOS.to_owned(), MetadataValue::Bool(flag));
+            metadata.insert(ADD_EOS.to_owned(), MetadataValue::Bool(flag));
+        }
+        let tokens = SpecialTokens::from_metadata(&metadata, 8)?;
+        assert_eq!(tokens.generation(1, &[6])?.stop_tokens, [7, 1, 2, 6]);
+    }
+    Ok(())
+}
