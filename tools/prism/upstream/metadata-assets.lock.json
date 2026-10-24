@@ -292,11 +292,11 @@
       },
       "Files": [
         {
-          "Path": "metadata/ggml-org_Qwen3.6-27B-GGUF--Q8_0/dflash-Qwen3.6-27B-Q8_0.gguf.prefix",
-          "Url": "https://huggingface.co/ggml-org/Qwen3.6-27B-GGUF/resolve/1132d03976d88e30a09ab0ddbf1531d5e1b46e7c/dflash-Qwen3.6-27B-Q8_0.gguf",
+          "Path": "metadata/ggml-org_Qwen3.6-27B-GGUF--Q8_0/Qwen3.6-27B-Q8_0.gguf.prefix",
+          "Url": "https://huggingface.co/ggml-org/Qwen3.6-27B-GGUF/resolve/1132d03976d88e30a09ab0ddbf1531d5e1b46e7c/Qwen3.6-27B-Q8_0.gguf",
           "Bytes": 16777216,
-          "Sha256": "5d3a0f9c64911b7b40c2e3d59a3f3a5b0303a9b11cf083d97bbc7f62fc13c144",
-          "Filename": "dflash-Qwen3.6-27B-Q8_0.gguf",
+          "Sha256": "3b27e30a411bb39a56eaeaf09594798cd1522a4ae058373b7438b9f649aa5b6e",
+          "Filename": "Qwen3.6-27B-Q8_0.gguf",
           "Status": 206,
           "RangeBytes": 16777216
         }

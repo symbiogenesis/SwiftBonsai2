@@ -29,6 +29,7 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
 type Callback = fn(f32) -> bool;
 pub(super) type TensorData = dyn Fn(&Value) -> Result<Value> + Send + Sync;
+pub(super) type SamplerEvent = dyn Fn(&Value) -> Result<Value> + Send + Sync;
 type Response = std::result::Result<Reply, String>;
 
 pub(super) struct Reply {
@@ -41,6 +42,7 @@ struct Pending {
     sender: mpsc::SyncSender<Response>,
     progress: Option<Callback>,
     tensor_data: Option<Arc<TensorData>>,
+    sampler_event: Option<Arc<SamplerEvent>>,
     callback_error: Option<String>,
     observations: Vec<(u32, bool)>,
     started: Instant,
@@ -162,6 +164,17 @@ impl Client {
         progress: Option<Callback>,
         tensor_data: Option<Arc<TensorData>>,
     ) -> Result<Reply> {
+        self.call_with_event_handlers(worker, operation, progress, tensor_data, None)
+    }
+
+    pub(super) fn call_with_event_handlers(
+        &self,
+        worker: u32,
+        operation: Value,
+        progress: Option<Callback>,
+        tensor_data: Option<Arc<TensorData>>,
+        sampler_event: Option<Arc<SamplerEvent>>,
+    ) -> Result<Reply> {
         self.state.check()?;
         if worker >= 16 || lock(&self.state.closing_at).is_some() {
             return Err(invalid(
@@ -185,6 +198,7 @@ impl Client {
                 sender,
                 progress,
                 tensor_data,
+                sampler_event,
                 callback_error: None,
                 observations: Vec::new(),
                 started: Instant::now(),
@@ -237,7 +251,10 @@ fn callback(state: &State, value: &Value, seen: &mut HashSet<u64>) -> Result<()>
     }
     let request_id = unsigned(value, "RequestId")?;
     if value.get("TensorSpec").is_some() {
-        return tensor_callback(state, value, id, request_id);
+        return object_callback(state, value, id, request_id, "TensorSpec");
+    }
+    if value.get("SamplerEvent").is_some() {
+        return object_callback(state, value, id, request_id, "SamplerEvent");
     }
     exact_keys(value, &["CallbackId", "RequestId", "ProgressBits"])?;
     let bits = u32::try_from(unsigned(value, "ProgressBits")?)?;
@@ -255,16 +272,29 @@ fn callback(state: &State, value: &Value, seen: &mut HashSet<u64>) -> Result<()>
     state.write(&json!({"CallbackId":id,"Return":decision}))
 }
 
-fn tensor_callback(state: &State, value: &Value, id: u64, request_id: u64) -> Result<()> {
-    exact_keys(value, &["CallbackId", "RequestId", "TensorSpec"])?;
+fn object_callback(
+    state: &State,
+    value: &Value,
+    id: u64,
+    request_id: u64,
+    field: &str,
+) -> Result<()> {
+    exact_keys(value, &["CallbackId", "RequestId", field])?;
     let function = lock(&state.pending)
         .get(&request_id)
-        .and_then(|request| request.tensor_data.clone())
-        .ok_or_else(|| invalid("native tensor callback has no pending Rust handler"))?;
-    let observation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        function(&value["TensorSpec"])
-    }))
-    .map_err(|_| invalid("Rust tensor callback panicked"))?;
+        .and_then(|request| match field {
+            "TensorSpec" => request.tensor_data.clone(),
+            "SamplerEvent" => request.sampler_event.clone(),
+            _ => None,
+        })
+        .ok_or_else(|| {
+            invalid(format!(
+                "native {field} callback has no pending Rust handler"
+            ))
+        })?;
+    let observation =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| function(&value[field])))
+            .map_err(|_| invalid(format!("Rust {field} callback panicked")))?;
     match observation {
         Ok(result) => {
             let mut reply = json!({"CallbackId":id,"Result":null});
@@ -275,7 +305,7 @@ fn tensor_callback(state: &State, value: &Value, id: u64, request_id: u64) -> Re
             let error: String = error.to_string().chars().take(4096).collect();
             lock(&state.pending)
                 .get_mut(&request_id)
-                .ok_or_else(|| invalid("native tensor callback request disappeared"))?
+                .ok_or_else(|| invalid("native callback request disappeared"))?
                 .callback_error = Some(error.clone());
             // Let production cancel and release partial model state. The final
             // native response is still correlated, then rejected with this cause.

@@ -4,10 +4,12 @@
 #include "common.h"
 #include "arg.h"
 #include "sampling.h"
+#include "chat.h"
 #include "vocab_session.hpp"
 #include "model_resolution.hpp"
 #include "generated_model.hpp"
 #include "dspark_runtime.hpp"
+#include "llguidance.hpp"
 #include "llama-model-saver.h"
 #include "ggml-cpu.h"
 #include <nlohmann/json.hpp>
@@ -72,7 +74,7 @@ struct lane{
 class session{
     FILE*wire;
     struct logger_state{ggml_log_callback original=nullptr;void*data=nullptr;ggml_log_level minimum=GGML_LOG_LEVEL_ERROR;bool active=false;}logger;
-    table<parameters>params;table<model>models;table<context>contexts;table<sampler>samplers;table<batch>batches;table<blob>blobs;table<temporary_file>files;table<checkpoint>checkpoints;prism_dspark_runtime::state dspark_runtime;
+    table<parameters>params;table<model>models;table<context>contexts;table<sampler>samplers;table<batch>batches;table<blob>blobs;table<temporary_file>files;table<checkpoint>checkpoints;prism_dspark_runtime::state dspark_runtime;prism_llguidance::state llguidance;
     std::atomic<std::uint64_t>next_handle{1},next_callback{1};std::atomic<std::size_t>inflight{0};
     std::mutex output_mutex,callback_mutex;std::condition_variable callback_ready;std::map<std::uint64_t,json>callback_returns;std::map<std::uint64_t,bool>pending_callbacks;bool stopping=false;
     std::map<std::uint32_t,std::unique_ptr<lane>>workers;
@@ -93,6 +95,7 @@ public:
     json execute(std::uint64_t request,std::uint32_t worker,const json&o){
         require(o.is_object()&&o.contains("Op"),"model operation Op required");const auto op=text(o.at("Op"),64);
         if(op=="log-minimum"){fields(o,{"Op","Level"});auto level=integer(o.at("Level"),1,5);if(!logger.active){llama_log_get(&logger.original,&logger.data);logger.active=true;}logger.minimum=static_cast<ggml_log_level>(level);llama_log_set([](ggml_log_level severity,const char*message,void*opaque){auto&state=*static_cast<logger_state*>(opaque);state.original(severity>=state.minimum?severity:GGML_LOG_LEVEL_DEBUG,message,state.data);},&logger);return nullptr;}
+        if(prism_llguidance::handles(op))return llguidance.execute(o,worker,[&](const json&v){return mod(v,worker);});
         if(prism_dspark_runtime::handles(op))return dspark_runtime.execute(o,worker,[this,worker](const json&v){return ctx(v,worker);},[this,worker](const json&v){return mod(v,worker);},[this,worker](const json&v){return bat(v,worker);});
         if(prism_model_resolution::handles(op))return prism_model_resolution::execute(o);
         if(prism_generated_model::handles(op)){std::shared_ptr<context>owned;if(op!="kv-center-write")owned=ctx(o.at("Context"),worker);return prism_generated_model::execute(o,owned?owned->value:nullptr);}
@@ -140,6 +143,14 @@ public:
             fields(o,{"Op","Model","Params","Overrides"});auto m=mod(o.at("Model"),worker);auto p=o.at("Params").is_null()?llama_context_default_params():common_context_params_to_llama(param(o.at("Params"),worker)->value);auto value=std::make_shared<context>();value->parent=m;const auto&overrides=o.at("Overrides");require(overrides.is_object()&&overrides.size()<=15,"context overrides exceed bound");
             for(auto it=overrides.begin();it!=overrides.end();++it){auto key=it.key();if(key=="TraceId"){require(worker==0,"trace configuration requires native worker0");value->trace=dspark_runtime.trace_handle(it.value());p.cb_eval=prism_dspark_runtime::trace::callback;p.cb_eval_user_data=value->trace.get();}else if(key=="NoPerf"){require(it.value().is_boolean(),"NoPerf must be boolean");p.no_perf=it.value().get<bool>();}else if(key=="OutputsMax")p.n_outputs_max=static_cast<std::uint32_t>(number(it.value(),4096));else if(key=="OutputsPerSequence")p.n_outputs_max_per_seq=static_cast<std::uint32_t>(number(it.value(),4096));else if(key=="Context")p.n_ctx=static_cast<std::uint32_t>(number(it.value(),4096));else if(key=="Sequences")p.n_seq_max=static_cast<std::uint32_t>(integer(it.value(),1,16));else if(key=="Unified"){require(it.value().is_boolean(),"Unified must be boolean");p.kv_unified=it.value().get<bool>();}else if(key=="Batch")p.n_batch=static_cast<std::uint32_t>(integer(it.value(),1,4096));else if(key=="MicroBatch")p.n_ubatch=static_cast<std::uint32_t>(integer(it.value(),1,4096));else if(key=="Threads")p.n_threads=integer(it.value(),1,256);else if(key=="ThreadsBatch")p.n_threads_batch=integer(it.value(),1,256);else if(key=="TypeK")p.type_k=static_cast<ggml_type>(integer(it.value(),0,GGML_TYPE_COUNT-1));else if(key=="FlashAttention")p.flash_attn_type=static_cast<llama_flash_attn_type>(integer(it.value(),-1,1));else if(key=="RecurrentSnapshots")p.n_rs_seq=static_cast<std::uint32_t>(number(it.value(),64));else if(key=="MeanCenterPath"){value->mean_center_path=prism_generated_model::name(it.value());p.path_kv_mean_center=value->mean_center_path.c_str();}else throw std::runtime_error("unknown context override");}
             value->value=llama_init_from_model(m->value,p);return json{{"Context",value->value?json(add(contexts,worker,value)):json(nullptr)}};
+        }
+        if(op=="model-chat-render"){
+            fields(o,{"Op","Model","Messages","EnableThinking","AddGeneration"});
+            require(o.at("Messages").is_array()&&o.at("Messages").size()<=256&&o.at("EnableThinking").is_boolean()&&o.at("AddGeneration").is_boolean(),"model chat render extent/flags invalid");
+            auto m=mod(o.at("Model"),worker);auto templates=common_chat_templates_init(m->value,"");common_chat_templates_inputs inputs;
+            inputs.enable_thinking=o.at("EnableThinking").get<bool>();inputs.add_generation_prompt=o.at("AddGeneration").get<bool>();
+            std::size_t supplied=0;for(const auto&message:o.at("Messages")){fields(message,{"role","content"});common_chat_msg v;v.role=text(message.at("role"),128);v.content=text(message.at("content"),1024*1024);supplied+=v.role.size()+v.content.size();require(supplied<=1024*1024,"model chat messages exceed1MiB");inputs.messages.push_back(std::move(v));}
+            return json{{"Prompt",common_chat_templates_apply(templates.get(),inputs).prompt}};
         }
         if(op=="vocab"){fields(o,{"Op","Model"});auto m=mod(o.at("Model"),worker);const auto*v=llama_model_get_vocab(m->value);return json{{"Count",llama_vocab_n_tokens(v)},{"Bos",llama_vocab_bos(v)},{"Type",static_cast<int>(llama_vocab_type(v))}};}
         if(op=="tokenize"){fields(o,{"Op","Context","Text","Special"});require(o.at("Special").is_boolean(),"tokenization Special must be boolean");auto c=ctx(o.at("Context"),worker);return json{{"Tokens",common_tokenize(c->value,text(o.at("Text")),o.at("Special").get<bool>())}};}

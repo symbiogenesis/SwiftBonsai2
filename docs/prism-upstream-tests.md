@@ -27,13 +27,18 @@ The Apple-only wired-memory source is explicitly outside that target and never
 counts as a pass. Porting all catalog sources is not complete. Every previously passing source
 remains required after replacement with safe Rust assertions against pinned Prism.
 Unported sources remain visible as unsupported.
+
 The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Fifty-six source contracts currently have safe Rust adapters in
+Fifty-seven source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-grammar-llguidance.cpp`: all 42 grammar/schema groups, 344 literal
+  predicates, and every token/EOS sampler-chain check. Rust owns candidate
+  construction and matching decisions. The reference links the exact production
+  LLGuidance commit pinned by upstream, with its unchanged Cargo lock.
 - `test-dspark-logsnr-meta.cpp`: all eight generated checkpoint variants and
   fourteen original loader predicates, including required error-log checks.
   Safe Rust writes every GGUF byte; an input-only tensor corpus preserves the

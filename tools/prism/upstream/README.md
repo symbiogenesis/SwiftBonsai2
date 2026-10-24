@@ -6,9 +6,12 @@ targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Both results are retained for each source; every
 upstream reference failure fails the final gate.
 
-The current ports preserve fifty-six source contracts from
+The current ports preserve fifty-seven source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
+- LLGuidance retains 42 grammar/schema groups, 344 literal predicates and all
+  dynamic token/EOS chain checks. Its reference enables the pinned production
+  dependency rather than accepting the source's disabled-feature skip.
 - DSpark log-SNR metadata retains all eight checkpoint variants and fourteen
   original loader/log predicates. A safe Rust writer reproduces every original
   input file byte for byte, using a pinned input-only tensor corpus.
