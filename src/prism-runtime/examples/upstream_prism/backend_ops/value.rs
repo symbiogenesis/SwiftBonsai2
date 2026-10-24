@@ -221,6 +221,7 @@ pub(super) enum Value {
         index: usize,
     },
     Reference(Place),
+    Address(Place),
     Handle(Handle),
     NativeInteger {
         kind: Kind,
@@ -234,6 +235,12 @@ pub(super) enum Value {
         minimum: Number,
         maximum: Number,
         real: bool,
+    },
+    BackendDevice(u32),
+    BackendRegistry(u32),
+    TensorBytes {
+        tensor: u32,
+        field: String,
     },
     This,
 }
@@ -253,7 +260,7 @@ impl Value {
             Self::Null => Ok(false),
             Self::Bool(value) => Ok(*value),
             Self::Number(value) => Ok(value.truth()),
-            Self::Handle(_) | Self::Pointer { .. } => Ok(true),
+            Self::Handle(_) | Self::Pointer { .. } | Self::Address(_) => Ok(true),
             Self::Reference(place) => place.get()?.truth(),
             Self::NativeInteger { .. } => {
                 Err("production metadata must be observed before source control flow".into())
@@ -279,6 +286,7 @@ impl Value {
 
     pub(super) fn len(&self) -> Result<usize, String> {
         match self {
+            Self::Address(_) => Ok(1),
             Self::Bytes(bytes) => Ok(bytes.len()),
             Self::Array(values) => Ok(values.borrow().len()),
             Self::Buffer(buffer) => Ok(buffer.borrow().len()),
@@ -293,6 +301,7 @@ impl Value {
 
     pub(super) fn index(&self, index: usize) -> Result<Self, String> {
         match self {
+            Self::Address(place) if index == 0 => place.get(),
             Self::Bytes(bytes) => bytes
                 .get(index)
                 .map(|&byte| Self::Number(Number::I32(i32::from(byte))))
@@ -323,6 +332,7 @@ impl Value {
 
     pub(super) fn place(&self, index: usize) -> Result<Place, String> {
         match self {
+            Self::Address(place) if index == 0 => Ok(place.clone()),
             Self::Array(values) if index < values.borrow().len() => {
                 Ok(Place::Array(Rc::clone(values), index))
             }
@@ -345,10 +355,24 @@ impl Value {
     pub(super) fn bytes(&self, count: usize) -> Result<Vec<u8>, String> {
         let (value, offset) = match self {
             Self::Pointer { value, index } => (value.as_ref(), *index),
-            Self::Reference(place) => return place.get()?.bytes(count),
+            Self::Reference(place) | Self::Address(place) => return place.get()?.bytes(count),
             value => (value, 0),
         };
         match value {
+            Self::Number(number) => {
+                let bytes = match number {
+                    Number::I32(value) => value.to_le_bytes().to_vec(),
+                    Number::U32(value) => value.to_le_bytes().to_vec(),
+                    Number::I64(value) => value.to_le_bytes().to_vec(),
+                    Number::U64(value) => value.to_le_bytes().to_vec(),
+                    Number::F32(value) => value.to_le_bytes().to_vec(),
+                    Number::F64(value) => value.to_le_bytes().to_vec(),
+                };
+                bytes
+                    .get(..count)
+                    .map(<[u8]>::to_vec)
+                    .ok_or_else(|| "source scalar byte read exceeds extent".into())
+            }
             Self::Bytes(bytes) => bytes
                 .get(offset..offset + count)
                 .map(<[u8]>::to_vec)
@@ -419,9 +443,21 @@ impl Value {
             }
             return Ok(Self::Buffer(Rc::new(RefCell::new(buffer))));
         }
+        if kind.contains('*') && matches!(self, Self::Bytes(_)) {
+            return Ok(Self::Pointer {
+                value: Box::new(self),
+                index: 0,
+            });
+        }
         if kind == "auto" || kind.contains('*') || kind.contains('&') || clean.starts_with("std::")
         {
             return Ok(self);
+        }
+        if let Self::NativeInteger { argument, .. } = &self {
+            return Ok(Self::NativeInteger {
+                kind: Kind::from_type(&clean),
+                argument: argument.clone(),
+            });
         }
         if clean == "bool" {
             return self.truth().map(Self::Bool);

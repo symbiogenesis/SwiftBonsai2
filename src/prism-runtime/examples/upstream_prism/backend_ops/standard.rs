@@ -69,6 +69,9 @@ pub(super) fn zero(kind: &str) -> Value {
 
 pub(super) fn cast(value: Value, kind: &str) -> Result<Value> {
     if kind.contains('*') {
+        if matches!(value, Value::TensorBytes { .. }) {
+            return Ok(value);
+        }
         return Ok(match value {
             Value::Null => Value::Null,
             value => Value::Pointer {
@@ -639,7 +642,7 @@ fn iterator_call(name: &str, arguments: &[Value]) -> Result<Value> {
     reason = "The finite library dispatch records every source library operation in one reviewable match."
 )]
 pub(super) fn call(
-    runtime: &Interpreter<'_>,
+    runtime: &mut Interpreter<'_>,
     name: &str,
     arguments: &[Value],
 ) -> Result<Option<Value>> {
@@ -649,6 +652,7 @@ pub(super) fn call(
     let value = match name {
         "GGML_UNUSED" | "printf" => Value::Null,
         "GGML_ASSERT" => {
+            let _ = runtime.host.call("source-assert", arguments)?;
             if !arg(arguments, 0)?.truth().map_err(invalid)? {
                 return Err(invalid(format!(
                     "original source assertion failed in {}",

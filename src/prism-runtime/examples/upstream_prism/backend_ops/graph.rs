@@ -64,7 +64,10 @@ fn scalar(value: &Json) -> Result<Value> {
             } else {
                 value
                     .as_str()
-                    .map(|value| Value::Bytes(value.as_bytes().to_vec()))
+                    .map(|value| Value::Pointer {
+                        value: Box::new(Value::Bytes(value.as_bytes().to_vec())),
+                        index: 0,
+                    })
                     .ok_or_else(|| invalid("backend String observation differs"))
             };
         }
@@ -379,7 +382,9 @@ impl<'a> Plan<'a> {
                 )
             }
         };
-        self.tensors.clear();
+        if intrinsic.result == "void" || matches!(value, Value::Handle(Handle::Tensor(_))) {
+            self.tensors.clear();
+        }
         self.push(json!({"Op":"call","Function":name,"Arguments":arguments,"Result":result}));
         Ok(value)
     }

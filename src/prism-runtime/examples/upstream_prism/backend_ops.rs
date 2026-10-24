@@ -42,3 +42,8 @@ mod graph;
 mod interpreter;
 #[path = "backend_ops/standard.rs"]
 mod standard;
+
+#[path = "backend_ops/host.rs"]
+mod host;
+#[path = "backend_ops/inputs.rs"]
+mod inputs;

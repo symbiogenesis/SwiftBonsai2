@@ -347,6 +347,18 @@ impl<'a> Interpreter<'a> {
         {
             return self.invoke(method, arguments, None);
         }
+        if name == "build_graph" && arguments.len() == 2 {
+            return self.call("build_graph", arguments[..1].to_vec());
+        }
+        if name == "max_err" {
+            return self.call("max_nmse_err", arguments);
+        }
+        if name == "max_nmse_err" && arguments.len() == 1 {
+            return self.call("max_nmse_err", Vec::new());
+        }
+        if name == "op_desc" {
+            return self.call("ggml_op_desc", arguments);
+        }
         if let Some(value) = super::standard::call(self, name, &arguments)? {
             return Ok(value);
         }
@@ -477,7 +489,7 @@ impl<'a> Interpreter<'a> {
                     value: Box::new(Value::Buffer(buffer)),
                     index,
                 }),
-                Place::Variable(cell) => Ok(Value::Reference(Place::Variable(cell))),
+                Place::Variable(cell) => Ok(Value::Address(Place::Variable(cell))),
             };
         }
         let value = self.eval(expression)?;
@@ -523,6 +535,21 @@ impl<'a> Interpreter<'a> {
     pub(super) fn binary_value(&mut self, op: &str, a: Value, b: Value) -> Result<Value> {
         let a = self.forced(a)?;
         let b = self.forced(b)?;
+        if matches!(
+            (&a, &b),
+            (
+                Value::Handle(super::value::Handle::Tensor(_)),
+                Value::Handle(super::value::Handle::Tensor(_))
+            )
+        ) && matches!(op, "==" | "!=")
+        {
+            let value = self
+                .host
+                .call("pointer-equal", &[a, b])?
+                .ok_or_else(|| invalid("source tensor identity observation missing"))?;
+            let equal = value.truth().map_err(invalid)?;
+            return Ok(Value::Bool(if op == "==" { equal } else { !equal }));
+        }
         if let Some(value) = super::standard::binary(op, &a, &b)? {
             return Ok(value);
         }
