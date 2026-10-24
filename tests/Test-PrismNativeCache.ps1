@@ -33,4 +33,9 @@ Assert-Failure { Initialize-BonsaiPrismNativeSource -SourceDirectory $source -Bu
 [IO.File]::Delete($kernel)
 Assert-Failure { Initialize-BonsaiPrismNativeSource -SourceDirectory $source -BuildDirectory $cache } 'An incomplete cached tree was accepted.'
 Assert-Failure { Initialize-BonsaiPrismNativeSource -SourceDirectory $source -BuildDirectory (Join-Path $source 'cache') } 'Overlapping source and cache paths were accepted.'
+$orphaned = Join-Path $scratch 'orphaned-native'
+[void][IO.Directory]::CreateDirectory((Join-Path $orphaned 'build-ggml'))
+[IO.File]::WriteAllText((Join-Path $orphaned 'build-ggml/kernel.obj'), 'stale native output')
+Assert-Failure { Initialize-BonsaiPrismNativeSource -SourceDirectory $source -BuildDirectory $orphaned } 'Native outputs without their verified source tree were accepted.'
+Assert (-not [IO.Directory]::Exists((Join-Path $orphaned 'source'))) 'Orphaned native outputs were rehydrated with old source timestamps.'
 Write-Output "Prism native cache source identity and timestamp checks passed. Evidence: $scratch"

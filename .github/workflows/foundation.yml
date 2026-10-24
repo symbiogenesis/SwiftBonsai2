@@ -405,6 +405,7 @@ jobs:
           path: |
             ${{ env.PRISM_UPSTREAM_EVIDENCE }}/*.json
             ${{ env.PRISM_UPSTREAM_EVIDENCE }}/*.log
+            ${{ env.PRISM_UPSTREAM_EVIDENCE }}/native-*/**
             ${{ env.PRISM_UPSTREAM_EVIDENCE }}/*-bridge/**
           if-no-files-found: error
   ternary:

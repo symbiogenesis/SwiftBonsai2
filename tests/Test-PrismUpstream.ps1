@@ -214,14 +214,18 @@ foreach ($family in @($selected | ForEach-Object { $adapters[$_].Family } | Sele
     $null = Resolve-ExternalPath $build
     $configureArguments = @('-S', $definition.Source, '-B', $build, "-DPRISM_SOURCE_DIR=$nativeSource", '-DCMAKE_BUILD_TYPE=Release',
         '-DLLAMA_BUILD_NUMBER=0', "-DLLAMA_BUILD_COMMIT=$($lock.Commit)") + $generatorArguments
-    $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments $configureArguments
-    $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments @('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target', $definition.Target)
-    if ($NativeBuildDirectory) {
-        $diagnostics = Join-Path $evidence ("native-$family")
-        [void][IO.Directory]::CreateDirectory($diagnostics)
-        [IO.File]::Copy((Join-Path $build 'CMakeCache.txt'), (Join-Path $diagnostics 'CMakeCache.txt'), $false)
-        $configureLog = Join-Path $build 'CMakeFiles/CMakeConfigureLog.yaml'
-        if ([IO.File]::Exists($configureLog)) { [IO.File]::Copy($configureLog, (Join-Path $diagnostics 'CMakeConfigureLog.yaml'), $false) }
+    try {
+        $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments $configureArguments
+        $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments @('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target', $definition.Target)
+    } finally {
+        if ($NativeBuildDirectory) {
+            $diagnostics = Join-Path $evidence ("native-$family")
+            [void][IO.Directory]::CreateDirectory($diagnostics)
+            foreach ($diagnostic in @('CMakeCache.txt', 'CMakeFiles/CMakeConfigureLog.yaml')) {
+                $path = Join-Path $build $diagnostic
+                if ([IO.File]::Exists($path)) { [IO.File]::Copy($path, (Join-Path $diagnostics ([IO.Path]::GetFileName($path))), $false) }
+            }
+        }
     }
     $executables = @(Get-ChildItem -LiteralPath $build -Recurse -File -Filter ($definition.Target + $extension))
     if ($executables.Count -ne 1) { throw "Expected exactly one $family production-call bridge." }

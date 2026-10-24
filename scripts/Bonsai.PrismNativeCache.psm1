@@ -34,6 +34,9 @@ function Initialize-BonsaiPrismNativeSource {
     }
     if (-not [IO.Directory]::Exists($cached)) {
         if (Test-Path -LiteralPath $cached) { throw 'The cached Prism source path is not a directory.' }
+        if ([IO.Directory]::Exists($build) -and @(Get-ChildItem -LiteralPath $build -Force).Count) {
+            throw 'Native build outputs exist without their verified source tree; use a fresh native build cache.'
+        }
         if (-not $PSCmdlet.ShouldProcess($cached, 'Copy freshly verified Prism sources for native build reuse')) { return }
         [void][IO.Directory]::CreateDirectory($cached)
         foreach ($entry in $sourceEntries) {
