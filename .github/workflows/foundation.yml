@@ -467,6 +467,12 @@ jobs:
             ${{ env.BACKEND_STAGE }}/*.json
             ${{ env.BACKEND_STAGE }}/**/phase-record.json
             ${{ env.BACKEND_STAGE }}/**/transport-failure.json
+            ${{ env.BACKEND_STAGE }}/**/case-receipt.json
+            ${{ env.BACKEND_STAGE }}/**/retention-receipt.json
+            ${{ env.BACKEND_STAGE }}/**/input-state.json
+            ${{ env.BACKEND_STAGE }}/**/checkpoint-*.json
+            ${{ env.BACKEND_STAGE }}/**/actions-*.json
+            ${{ env.BACKEND_STAGE }}/**/*.bin
             ${{ env.BACKEND_STAGE }}/**/*.log
           if-no-files-found: error
           compression-level: 1
@@ -540,6 +546,12 @@ jobs:
             ${{ env.BACKEND_STAGE }}/*.json
             ${{ env.BACKEND_STAGE }}/**/phase-record.json
             ${{ env.BACKEND_STAGE }}/**/transport-failure.json
+            ${{ env.BACKEND_STAGE }}/**/case-receipt.json
+            ${{ env.BACKEND_STAGE }}/**/retention-receipt.json
+            ${{ env.BACKEND_STAGE }}/**/input-state.json
+            ${{ env.BACKEND_STAGE }}/**/checkpoint-*.json
+            ${{ env.BACKEND_STAGE }}/**/actions-*.json
+            ${{ env.BACKEND_STAGE }}/**/*.bin
             ${{ env.BACKEND_STAGE }}/**/*.log
           if-no-files-found: error
           compression-level: 1
