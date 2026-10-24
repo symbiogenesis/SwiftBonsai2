@@ -105,7 +105,7 @@
       ],
       "AssertionsToPort": "Load/create/free context and model and backend entirely inside a worker thread then clean process exit; timeout is failure.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-backend-ops.cpp",
@@ -166,7 +166,7 @@
       ],
       "AssertionsToPort": "Empty executable is a C public-header/link smoke check; port to explicit ABI/schema availability assertion or record compile-only coverage; no behavioral suite to invent.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-chat-analysis.cpp",
@@ -178,7 +178,7 @@
       ],
       "AssertionsToPort": "Manual analysis tool has no automated correctness assertions; Rust diagnostic equivalent should preserve template selection/render differences and fail missing assets; do not label diagnostic output full engine parity.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-chat-auto-parser.cpp",
@@ -423,7 +423,7 @@
       ],
       "AssertionsToPort": "All literal schema->grammar status and output strings; invalid/unsupported regexp degradation; expectation parseability; identical table against Python reference; Python skip remains explicit.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-kv-mean-center.cpp",
@@ -497,7 +497,7 @@
       ],
       "AssertionsToPort": "Original callback returns progress>0.50 and load must return null; preserve actual callback predicate and observed progress behavior instead of reinterpreting intended cancellation point.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-model-resolution.cpp",
@@ -735,7 +735,7 @@
       ],
       "AssertionsToPort": "State bytes/file save-load and continuation tokens/logits equivalence; sequence copy/restore branches and original failure paths.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-state-restore-fragmented.cpp",
@@ -747,7 +747,7 @@
       ],
       "AssertionsToPort": "Create fragmented KV cache and restore state with exact logits/token equivalence; preserve noncontiguous sequence setup.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-thread-safety.cpp",
@@ -760,7 +760,7 @@
       ],
       "AssertionsToPort": "Concurrent model/context decode sampling and cleanup with deterministic expected relationship and no crashes; original prompt The meaning of life is.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-tokenizer-0.cpp",
@@ -810,7 +810,7 @@
       ],
       "AssertionsToPort": "All vocabulary token detokenize/tokenize roundtrips and applicable Unicode codepoints below0x110000 with surrogate/undefined exclusions and U+2581 exception; ignore-merges single token behavior.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-tokenizer-1-spm.cpp",
@@ -822,7 +822,7 @@
       ],
       "AssertionsToPort": "All vocabulary token and Unicode codepoint roundtrips with original exclusions/U+2581 exception; threaded traversal; ensure vocab type SPM.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-tokenizer-random.py",
@@ -864,12 +864,10 @@
     }
   ],
   "ExternalPrerequisites": [
-    "No approved project lock pins stories15M fixture; upstream does provide exact SHA256 and download URL.",
-    "No approved project lock pins LoRA mini-model fixture repository archive/content; upstream provides its commit.",
+    "No project lock yet pins LoRA mini-model fixture repository archive/content; upstream provides its commit.",
     "No project lock pins dspark GGUF/ref.bin/ref.json or compatible target/drafter pair. Tiny metadata generator is bundled and can be ported.",
     "No pinned HuggingFace tokenizer directories for Python comparison; archive has vocab GGUFs but no models/tokenizers directory.",
     "No immutable remote metadata revisions/digests for gguf-model-data and quant-type-selection; bundled .schema snapshots are expected output only.",
-    "No Apple runner or selected >3GB wired model specified for rset-release; Linux/Windows cannot execute original memory contract.",
     "LLguidance is disabled by current CMake wrapper; enabling requires dependency and build lane."
   ],
   "Target": {

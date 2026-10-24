@@ -50,6 +50,12 @@ pub(super) struct Engine {
     common_bridge: Option<PathBuf>,
     evidence_directory: Option<PathBuf>,
     source_directory: Option<PathBuf>,
+    asset_directory: Option<PathBuf>,
+}
+
+pub(super) struct ModelSessionSpec {
+    pub(super) executable: PathBuf,
+    pub(super) evidence_directory: PathBuf,
 }
 
 impl Engine {
@@ -59,6 +65,7 @@ impl Engine {
         common_bridge: Option<PathBuf>,
         evidence_directory: Option<PathBuf>,
         source_directory: Option<PathBuf>,
+        asset_directory: Option<PathBuf>,
     ) -> Result<Self> {
         for path in [&bridge, &common_bridge].into_iter().flatten() {
             if !path.is_absolute() || !path.is_file() {
@@ -77,6 +84,7 @@ impl Engine {
             common_bridge,
             evidence_directory,
             source_directory,
+            asset_directory,
         };
         if engine.source_directory.is_some() {
             let root = engine.source_path("")?;
@@ -86,10 +94,34 @@ impl Engine {
                 ));
             }
         }
+        if engine.asset_directory.is_some() {
+            let root = engine.asset_path("")?;
+            if !root.is_absolute() || !root.is_dir() {
+                return Err(invalid(
+                    "model asset directory must be an existing absolute directory",
+                ));
+            }
+        }
         Ok(engine)
     }
 
     pub(super) fn source_path(&self, relative: &str) -> Result<PathBuf> {
+        Self::relative_path(
+            self.source_directory.as_deref(),
+            relative,
+            "--source-directory",
+        )
+    }
+
+    pub(super) fn asset_path(&self, relative: &str) -> Result<PathBuf> {
+        Self::relative_path(
+            self.asset_directory.as_deref(),
+            relative,
+            "--asset-directory",
+        )
+    }
+
+    fn relative_path(root: Option<&Path>, relative: &str, option: &str) -> Result<PathBuf> {
         let path = Path::new(relative);
         if path
             .components()
@@ -99,11 +131,51 @@ impl Engine {
                 "upstream asset path must contain only relative normal components",
             ));
         }
-        Ok(self
-            .source_directory
-            .as_ref()
-            .ok_or_else(|| invalid("selected source requires --source-directory"))?
+        Ok(root
+            .ok_or_else(|| invalid(format!("selected source requires {option}")))?
             .join(path))
+    }
+
+    pub(super) fn evidence_path(&self, name: &str) -> Result<PathBuf> {
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err(invalid("invalid native evidence name"));
+        }
+        let evidence = self
+            .evidence_directory
+            .as_ref()
+            .ok_or_else(|| invalid("native bridge evidence directory is missing"))?;
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let directory = evidence.join(format!("{name}-{}-{nonce}", std::process::id()));
+        fs::create_dir(&directory)?;
+        Ok(directory)
+    }
+
+    pub(super) fn model_session_spec(&self, name: &str) -> Result<Option<ModelSessionSpec>> {
+        if matches!(self.target, Target::Rust) {
+            return Ok(None);
+        }
+        Ok(Some(ModelSessionSpec {
+            executable: self
+                .common_bridge
+                .clone()
+                .ok_or_else(|| invalid("native common bridge path is missing"))?,
+            evidence_directory: self.evidence_path(
+                &name
+                    .chars()
+                    .map(|character| {
+                        if character.is_ascii_alphanumeric() {
+                            character
+                        } else {
+                            '-'
+                        }
+                    })
+                    .collect::<String>(),
+            )?,
+        }))
     }
 
     pub(super) fn execute(&self, name: &str, requests: &[Request]) -> Result<Vec<Output>> {
@@ -157,13 +229,7 @@ impl Engine {
         request: &[u8],
         extension: &str,
     ) -> Result<Vec<u8>> {
-        let evidence = self
-            .evidence_directory
-            .as_ref()
-            .ok_or_else(|| invalid("native bridge evidence directory is missing"))?;
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-        let directory = evidence.join(format!("{name}-{}-{nonce}", std::process::id()));
-        fs::create_dir(&directory)?;
+        let directory = self.evidence_path(name)?;
         let input = directory.join(format!("request.{extension}"));
         let output = directory.join(format!("response.{extension}"));
         fs::write(&input, request)?;

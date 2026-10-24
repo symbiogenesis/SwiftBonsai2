@@ -11,6 +11,8 @@
 
 #[path = "upstream_prism/allocation.rs"]
 mod allocation;
+#[path = "upstream_prism/chat_analysis.rs"]
+mod chat_analysis;
 #[path = "upstream_prism/chat_auto.rs"]
 mod chat_auto;
 #[path = "upstream_prism/chat_peg.rs"]
@@ -19,6 +21,10 @@ mod chat_peg;
 mod chat_template;
 #[path = "upstream_prism/gguf.rs"]
 mod gguf;
+#[path = "upstream_prism/model_lifecycle.rs"]
+mod model_lifecycle;
+#[path = "upstream_prism/model_session.rs"]
+mod model_session;
 #[path = "upstream_prism/mtmd_chunks.rs"]
 mod mtmd_chunks;
 #[path = "upstream_prism/sampling.rs"]
@@ -44,6 +50,8 @@ mod grammar_integration;
 mod grammar_parser;
 #[path = "upstream_prism/jinja.rs"]
 mod jinja;
+#[path = "upstream_prism/json_schema.rs"]
+mod json_schema;
 #[path = "upstream_prism/llama_grammar.rs"]
 mod llama_grammar;
 #[path = "upstream_prism/logging.rs"]
@@ -60,8 +68,14 @@ mod peg;
 mod pq2;
 #[path = "upstream_prism/ptq1.rs"]
 mod ptq1;
+#[path = "upstream_prism/public_c.rs"]
+mod public_c;
 #[path = "upstream_prism/reasoning_budget.rs"]
 mod reasoning_budget;
+#[path = "upstream_prism/schema_python.rs"]
+mod schema_python;
+#[path = "upstream_prism/tokenizer_roundtrip.rs"]
+mod tokenizer_roundtrip;
 
 use std::env;
 use std::fs;
@@ -105,6 +119,61 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-chat-analysis",
+        "tests/test-chat-analysis.cpp",
+        Bridge::Common,
+        chat_analysis::run,
+    ),
+    register("test-c", "tests/test-c.c", Bridge::Common, public_c::run),
+    register(
+        "test-tokenizer-1-spm",
+        "tests/test-tokenizer-1-spm.cpp",
+        Bridge::Common,
+        tokenizer_roundtrip::run_spm,
+    ),
+    register(
+        "test-tokenizer-1-bpe",
+        "tests/test-tokenizer-1-bpe.cpp",
+        Bridge::Common,
+        tokenizer_roundtrip::run_bpe,
+    ),
+    register(
+        "test-json-schema-to-grammar",
+        "tests/test-json-schema-to-grammar.cpp",
+        Bridge::Common,
+        json_schema::run,
+    ),
+    register(
+        "test-autorelease",
+        "tests/test-autorelease.cpp",
+        Bridge::Common,
+        |engine| model_lifecycle::run(engine, "tests/test-autorelease.cpp"),
+    ),
+    register(
+        "test-model-load-cancel",
+        "tests/test-model-load-cancel.cpp",
+        Bridge::Common,
+        |engine| model_lifecycle::run(engine, "tests/test-model-load-cancel.cpp"),
+    ),
+    register(
+        "test-save-load-state",
+        "tests/test-save-load-state.cpp",
+        Bridge::Common,
+        |engine| model_lifecycle::run(engine, "tests/test-save-load-state.cpp"),
+    ),
+    register(
+        "test-state-restore-fragmented",
+        "tests/test-state-restore-fragmented.cpp",
+        Bridge::Common,
+        |engine| model_lifecycle::run(engine, "tests/test-state-restore-fragmented.cpp"),
+    ),
+    register(
+        "test-thread-safety",
+        "tests/test-thread-safety.cpp",
+        Bridge::Common,
+        |engine| model_lifecycle::run(engine, "tests/test-thread-safety.cpp"),
+    ),
     register(
         "test-chat-auto-parser",
         "tests/test-chat-auto-parser.cpp",
@@ -340,6 +409,7 @@ struct Options {
     common_bridge: Option<PathBuf>,
     evidence_directory: Option<PathBuf>,
     source_directory: Option<PathBuf>,
+    asset_directory: Option<PathBuf>,
     output: PathBuf,
 }
 
@@ -364,6 +434,7 @@ fn options() -> Result<Options> {
     let mut common_bridge = None;
     let mut evidence_directory = None;
     let mut source_directory = None;
+    let mut asset_directory = None;
     let mut output = None;
     let mut arguments = env::args_os().skip(1);
     while let Some(argument) = arguments.next() {
@@ -413,6 +484,9 @@ fn options() -> Result<Options> {
             Some("--source-directory") if source_directory.is_none() => {
                 source_directory = Some(absolute_path(value, "--source-directory")?);
             }
+            Some("--asset-directory") if asset_directory.is_none() => {
+                asset_directory = Some(absolute_path(value, "--asset-directory")?);
+            }
             Some("--output") if output.is_none() => {
                 output = Some(absolute_path(value, "--output")?);
             }
@@ -428,6 +502,7 @@ fn options() -> Result<Options> {
         common_bridge,
         evidence_directory,
         source_directory,
+        asset_directory,
         output: output.ok_or_else(|| invalid("--output is required"))?,
     };
     options.validate()?;
@@ -518,6 +593,7 @@ fn main() -> Result<()> {
         options.common_bridge,
         options.evidence_directory,
         options.source_directory,
+        options.asset_directory,
     )?;
     let cases = if let Some(config) = &options.diagnostic {
         vec![diagnostic(&engine, config)?]

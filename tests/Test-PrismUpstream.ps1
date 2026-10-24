@@ -14,7 +14,7 @@ param(
     [Parameter(Mandatory)][string]$SourceArchive,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [Parameter(Mandatory)][string]$TargetDirectory,
-    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0')][string]$Case = 'All',
+    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')][string]$Case = 'All',
     [string]$CMakePath,
     [ValidateSet('Ninja', 'Visual Studio 18 2026', 'Visual Studio 17 2022')][string]$Generator = 'Ninja',
     [ValidateSet('ARM64', 'x64')][string]$NativePlatform = 'ARM64',
@@ -62,6 +62,8 @@ $receipt = [ordered]@{
     RecordedAtUtc = [DateTime]::UtcNow.ToString('o')
     Platform = [Runtime.InteropServices.RuntimeInformation]::OSDescription
     Architecture = [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+    ProcessorIdentifier = $env:PROCESSOR_IDENTIFIER
+    LogicalProcessors = [Environment]::ProcessorCount
     Toolchain = $Toolchain
     Selection = $Case
     Generator = $Generator
@@ -135,8 +137,42 @@ $adapters = @{
     Gguf = @{ Name = 'test-gguf'; Family = 'common' }
     ChatAuto = @{ Name = 'test-chat-auto-parser'; Family = 'common' }
     Tokenizer0 = @{ Name = 'test-tokenizer-0'; Family = 'common' }
+    JsonSchema = @{ Name = 'test-json-schema-to-grammar'; Family = 'common' }
+    ChatAnalysis = @{ Name = 'test-chat-analysis'; Family = 'common' }
+    PublicC = @{ Name = 'test-c'; Id = 'tests/test-c.c'; Family = 'common' }
+    TokenizerSpm = @{ Name = 'test-tokenizer-1-spm'; Family = 'common' }
+    TokenizerBpe = @{ Name = 'test-tokenizer-1-bpe'; Family = 'common' }
+    Autorelease = @{ Name = 'test-autorelease'; Family = 'common' }
+    ModelLoadCancel = @{ Name = 'test-model-load-cancel'; Family = 'common' }
+    SaveLoadState = @{ Name = 'test-save-load-state'; Family = 'common' }
+    StateRestoreFragmented = @{ Name = 'test-state-restore-fragmented'; Family = 'common' }
+    ThreadSafety = @{ Name = 'test-thread-safety'; Family = 'common' }
 }
-$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0') } else { @($Case) }
+$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety') } else { @($Case) }
+$modelSelections = @('Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')
+$assetDirectory = $null
+if (@($selected | Where-Object { $_ -in $modelSelections }).Count) {
+    $assetDirectory = Join-Path $evidence 'model-assets'
+    $modelLock = Get-Content -LiteralPath (Join-Path $upstream 'model-assets.lock.json') -Raw | ConvertFrom-Json -AsHashtable
+    if ($modelLock.SchemaVersion -ne 1 -or $modelLock.Assets.Count -ne 1) { throw 'Unexpected model asset lock schema.' }
+    $modelReceipts = [Collections.Generic.List[object]]::new()
+    foreach ($asset in $modelLock.Assets) {
+        if ($asset.Path -cne 'tinyllamas/stories15M-q4_0.gguf' -or
+            $asset.Url -notlike 'https://huggingface.co/*' -or $asset.Sha256 -cnotmatch '^[0-9a-f]{64}$') {
+            throw 'Unexpected or unpinned model asset.'
+        }
+        $destination = Join-Path $assetDirectory $asset.Path
+        [void][IO.Directory]::CreateDirectory((Split-Path $destination -Parent))
+        Invoke-WebRequest -Uri $asset.Url -OutFile $destination -TimeoutSec 180
+        $modelGuard = [IO.FileStream]::new($destination, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        try {
+            $digest = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($modelGuard))
+            if ($modelGuard.Length -ne $asset.Bytes -or $digest -cne $asset.Sha256) { throw 'Model asset differs from immutable byte identity.' }
+            $modelReceipts.Add(@{ Path = $destination; Bytes = $modelGuard.Length; Sha256 = $digest; Url = $asset.Url })
+        } finally { $modelGuard.Dispose() }
+    }
+    $receipt.ModelAssets = $modelReceipts.ToArray()
+}
 $bridgeFamilies = @{
     ggml = @{ Source = $upstream; Target = 'prism-upstream-bridge'; Option = '--bridge' }
     common = @{ Source = (Join-Path $upstream 'common'); Target = 'prism-upstream-common-bridge'; Option = '--common-bridge' }
@@ -188,11 +224,13 @@ foreach ($selection in $selected) {
     $caseId = if ($adapter.ContainsKey('Id')) { $adapter.Id } else { "tests/$caseName.cpp" }
     foreach ($engine in @('cpp', 'rust')) {
         $output = Join-Path $evidence "$caseName-$engine.json"
-        $arguments = @('--target', $engine, '--case', $caseId, '--source-directory', $source, '--output', $output)
+        $arguments = @('--target', $engine, '--case', $caseId, '--source-directory', $source, '--output', $output,
+            '--evidence-directory', (Join-Path $evidence "$caseName-$engine-bridge"))
+        if ($assetDirectory) { $arguments += @('--asset-directory', $assetDirectory) }
         if ($engine -eq 'cpp') {
-            $arguments += @($bridgeFamilies[$adapter.Family].Option, $bridges[$adapter.Family], '--evidence-directory', (Join-Path $evidence "$caseName-bridge"))
+            $arguments += @($bridgeFamilies[$adapter.Family].Option, $bridges[$adapter.Family])
         }
-        $timeout = if ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0')) { 300 } else { 120 }
+        $timeout = if ($selection -eq 'TokenizerBpe') { 2100 } elseif ($selection -eq 'TokenizerSpm') { 600 } elseif ($selection -in $modelSelections) { 360 } elseif ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')) { 300 } else { 120 }
         $null = Invoke-UpstreamCommand -Executable $harness -Arguments $arguments -TimeoutSeconds $timeout
         $result = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json -AsHashtable
         if ($result.SchemaVersion -ne 1 -or $result.UpstreamCommit -cne $lock.Commit -or $result.Target -cne $engine -or
@@ -204,24 +242,6 @@ foreach ($selection in $selected) {
             if ($result.Cases[0].Status -cne 'pass') { throw "Rust assertions failed on pinned Prism for $caseName; see $output" }
         }
         else { $rustCases.Add($result.Cases[0]) }
-    }
-}
-if ($Case -eq 'All') {
-    $cacheArguments = @{}
-    if ($CompilerLauncher) { $cacheArguments = @{ CompilerLauncher = $CompilerLauncher; CompilerCacheBaseDirectory = $evidence } }
-    $raw = & (Join-Path $repo 'scripts/Invoke-PrismCppSuite.ps1') -SourceDirectory $source -EvidenceDirectory (Join-Path $evidence 'raw-cpp') -CMakePath $CMakePath -Generator $Generator -NativePlatform $NativePlatform -Parallel $Parallel @cacheArguments
-    if (@($raw.ReferenceResults.Cases).Count -ne @($raw.Targets).Count) { throw 'The raw C++ importer lost an expected result.' }
-    foreach ($name in $raw.Targets) {
-        if (@($raw.ReferenceResults.Cases | Where-Object { $_.Id -ceq "tests/$name.cpp" }).Count -ne 1) {
-            throw 'The raw C++ importer returned a missing or duplicate suite identity.'
-        }
-    }
-    foreach ($result in $raw.ReferenceResults.Cases) {
-        if (@($referenceCases | Where-Object { $_.Id -ceq $result.Id }).Count -gt 0) {
-            # Keep the original GGUF replay until its Rust replacement has
-            # passed hosted acceptance; a duplicate source is counted once.
-            if ($result.Status -cne 'pass') { throw "Retained original control failed for $($result.Id)." }
-        } else { $referenceCases.Add($result) }
     }
 }
 $reference = @{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = $referenceCases.ToArray() }

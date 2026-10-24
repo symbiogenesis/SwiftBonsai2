@@ -15,26 +15,46 @@ read as an assertion-level pass rate or full-model qualification.
 
 ## What runs
 
-The raw C++ lane retains one original GGUF execution as a temporary qualification
-replay while its Rust replacement receives hosted acceptance. The allowlist is explicit in
-[Invoke-PrismCppSuite.ps1](../scripts/Invoke-PrismCppSuite.ps1). Model downloaders,
-Python environment tests and embedded benchmarks need separate lanes; they
-remain visible in the inventory. A C++ control failure fails CI independently of
-the Rust coverage floor.
+All original C++ test executables and fixture exporters are retired. Their
+importer and replay build were removed after Windows ARM64 CI proved the safe
+Rust replacements for every previously required C++ control. Native builds
+disable upstream tests and expose production operations through bounded bridges.
+A Rust-owned reference failure still fails CI independently of the runtime floor.
 
 The migration inventories **all 71 catalog sources**, including model and
 benchmark cases. Acceptance targets **Snapdragon X Elite on Windows ARM64**.
 The Apple-only wired-memory source is explicitly outside that target and never
-counts as a pass. Retirement is not complete. Every previously passing source
+counts as a pass. Porting all catalog sources is not complete. Every previously passing source
 remains required after replacement with safe Rust assertions against pinned Prism.
 Unported sources remain visible as unsupported.
 The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Thirty-three source contracts currently have safe Rust adapters in
+Forty-three source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- Both tokenizer roundtrip sources traverse every token and the entire original
+  Unicode domain in two SPM and eight BPE fixtures, including fixtures upstream
+  comments out for runtime. Per fixture this retains 456,703 Unicode calls and
+  456,702 equality predicates, source exceptions, worker strides and shared stop.
+- `test-c.c`: the empty C main is retired. A C17 adapter includes the actual
+  public header and exposes raw ABI layouts to seven additional Rust guards.
+  The original contract is compile-only with zero behavioral assertions.
+- `test-chat-analysis.cpp`: the full 37-template diagnostic, all paired render
+  probes and undefined-variable analysis. Original accepted exceptions and zero
+  correctness assertions are explicit; additional Rust diff guards are separate.
+- Five model-lifecycle sources preserve cancellation, same-thread destruction,
+  state-file continuation, sequence isolation and host/device state copies,
+  fragmented-cache restoration, and concurrent model/context decoding. Their
+  TinyStories fixture has pinned length and SHA-256 in
+  [model-assets.lock.json](../tools/prism/upstream/model-assets.lock.json).
+  Rust verifies its bytes before each schedule and controls individual native
+  operations and progress callbacks through a bounded persistent process.
+- `test-json-schema-to-grammar.cpp`: all 269 mandatory conditions and the
+  original optional independent Python path, which adds 156 conditions when
+  available. Python availability and skips are reported explicitly. Production
+  Python conversion remains upstream code; inputs and comparisons are Rust.
 - `test-tokenizer-0.cpp`: all 694 independent token-vector predicates across
   fifteen bundled vocabularies. Rust preserves Windows text input, map ordering,
   shared-context hardware workers and the original worker-zero comparisons.
@@ -124,18 +144,17 @@ For each port, the same safe Rust inputs and assertions run against pinned Prism
 first, then against the Rust runtime. A native process bridge performs bounded
 serialization and calls production Prism functions. It imports no test sources
 and contains no random generators, expected outputs, reference arithmetic,
-tolerances or test assertions. The C++ exporters and ported test executables
-are no longer built, apart from the temporary original GGUF replay. Its verdict
-is checked independently and its duplicate source identity is counted once.
+tolerances or test assertions. The C++ exporters and original test executables
+are no longer built. A separate C17 production ABI adapter proves public-header
+compilation without retaining the original empty C test main.
 
-Ordinary correctness runs execute no benchmark or model inference. Foundation's
+Correctness runs include the pinned model-lifecycle workloads and execute no benchmarks. Foundation's
 manual `prism_benchmarks` input executes separately reported benchmark workloads
 after correctness. PEG serialization retains all 100 deserializations. Its
 reported wall time includes native process transport and does not qualify native
 kernel performance or affect the correctness denominator. Sampling retains five
 32-iteration workloads; chat PEG retains complete/incremental parse workloads.
 Their reports state which native dispatch and metadata handling is timed.
-The argument parser test makes a live HTTP request, so it is also excluded.
 The GGUF test uses its supported explicit seed `12345` for repeatable inputs.
 
 ## Floor and retained evidence
@@ -151,9 +170,9 @@ The initial [hosted Foundation run](https://github.com/symbiogenesis/SwiftBonsai
 passed on revision `afe66d881b8828183b9ffe7ef3119463b5d58bc2`. All **19 selected
 C++ controls** passed (17 original suites plus the two paired adapter controls).
 Their IDs are recorded in the baseline, so none can disappear from later runs.
-The thirty-three ported reference results now come from safe Rust assertions calling
-the engine through the process bridge. The original GGUF qualification replay is
-retained temporarily and is counted once alongside its Rust replacement.
+The ported reference results now come from safe Rust assertions calling
+the engine through the process bridge. The original GGUF qualification replay
+was retired after its replacement passed native acceptance.
 That initial run left 52 sources without an executed C++ control. The MTMD
 Rust port adds another upstream control; it is separate from the original 19.
 
@@ -169,6 +188,12 @@ passed on `18d2c18`: all 25 ports registered at that revision and two original
 controls passed. Rust recorded one passing source, 24 failed ports and 46
 unsupported sources. The baseline retains the original green source and all 19
 required reference identities independently of these increasing port counts.
+
+[Windows ARM64 run 40120815419](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40120815419)
+passed on `2daa94c`: all33 Rust-owned source contracts passed on upstream,
+including all694 tokenizer predicates and the complete GGUF replacement.
+Rust recorded one passing source,32 failed ports and38 unsupported sources.
+This provided the final evidence needed to retire the original C++ replay.
 
 [baseline.json](../tools/prism/upstream/baseline.json) holds the recorded minimum
 green count and every required green source ID. `RequiredReferencePassedIds`

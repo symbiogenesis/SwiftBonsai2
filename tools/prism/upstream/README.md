@@ -5,9 +5,25 @@ safe Rust (`#![forbid(unsafe_code)]`). It uses the same test code with two
 targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Upstream runs first and must pass before Rust is tested.
 
-The current ports preserve thirty-three source contracts from
+The current ports preserve forty-three source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
+- Both tokenizer roundtrip sources retain every vocabulary token and the entire
+  source Unicode domain across two SPM and eight BPE fixtures, including the
+  commented slow fixtures. Rust owns exclusions, exceptions, worker strides,
+  stop policy and comparisons; native batches contain supplied inputs only.
+- `tests/test-c.c`: compile-only C17 public-header coverage via raw native ABI
+  observations and additional Rust layout guards; no C test main remains.
+- `tests/test-chat-analysis.cpp`: all37 diagnostic templates and render/stat
+  probes; source-accepted exceptions and zero source assertions are explicit.
+- Five model-lifecycle sources use the externally stored, hash-pinned
+  TinyStories fixture: cancellation, worker-thread destruction, state-file and
+  sequence restoration, fragmented cache, and concurrent contexts. Rust owns
+  every request, callback decision and comparison. The persistent native
+  session only dispatches production operations on bounded worker lanes.
+- `tests/test-json-schema-to-grammar.cpp`: all 269 mandatory conditions,
+  plus 156 independent Python comparisons when the original availability
+  rules enable them; skip status remains visible.
 - `tests/test-tokenizer-0.cpp`: all 694 independent token-vector predicates
   across the fifteen bundled vocabulary fixtures, including shared-context
   hardware workers and the original worker-zero comparisons. Fixtures remain
@@ -86,11 +102,11 @@ Unicode, MTP, Jinja, MTMD and grammar use a [common bridge](common/PROTOCOL.md).
 The Rust runtime has no equivalent production APIs; their Rust results fail.
 
 The native bridge contains only serialization, input validation and production
-ggml calls. It does not include upstream test sources or contain generators,
+Prism calls. It does not include upstream test sources or contain generators,
 references, expected values, assertions or tolerances. The C++ fixture exporters
-and ported source files are no longer compiled as tests, except for a temporary
-original GGUF replay in `reference/`. That replay remains until its replacement
-passes hosted acceptance. Duplicate source identities are counted once.
+and original source files are no longer compiled as tests. The original importer
+and replay build were removed after all33 Rust-owned contracts, including GGUF,
+passed [native Windows ARM64 CI](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40120815419).
 
 The runtime's vector API runs once for each original activation column,
 preserving the complete `M*N` comparison. This tests numerical compatibility,

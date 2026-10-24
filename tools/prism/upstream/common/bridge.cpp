@@ -28,6 +28,10 @@
 #include "chat_parser.hpp"
 #include "chat_auto.hpp"
 #include "vocab.hpp"
+#include "model_runtime.hpp"
+#include "json_schema.hpp"
+#include "chat_analysis.hpp"
+#include "public_c_abi.h"
 #include <nlohmann/json.hpp>
 
 #include <cstdint>
@@ -109,7 +113,9 @@ void validate_operation(const wire_json & operation) {
     require(operation.is_object() && operation.contains("Kind") && operation.at("Kind").is_string(),
             "operation Kind must be a string");
     const auto & kind = operation.at("Kind").get_ref<const std::string &>();
-    if (kind == "unicode-regex-split") {
+    if (kind == "public-c-abi") {
+        require_keys(operation, {"Kind"});
+    } else if (kind == "unicode-regex-split") {
         require_keys(operation, {"Kind", "Text", "Expressions", "ByteEncoding"});
         require(operation.at("Text").is_string() &&
                 operation.at("Text").get_ref<const std::string &>().size() <= max_text_bytes,
@@ -165,6 +171,10 @@ void validate_operation(const wire_json & operation) {
         prism_chat_auto::validate(operation);
     } else if (prism_vocab::handles(kind)) {
         prism_vocab::validate(operation);
+    } else if (prism_json_schema::handles(kind)) {
+        prism_json_schema::validate(operation);
+    } else if (prism_chat_analysis::handles(kind)) {
+        prism_chat_analysis::validate(operation);
     } else {
         throw std::runtime_error("unknown operation Kind");
     }
@@ -172,6 +182,14 @@ void validate_operation(const wire_json & operation) {
 
 wire_json execute(const wire_json & operation) {
     const auto & kind = operation.at("Kind").get_ref<const std::string &>();
+    if (kind == "public-c-abi") {
+        const auto value = prism_public_c_abi_observe();
+        return wire_json{{"ModelParams", {{"Size", value.model_params_size}, {"Alignment", value.model_params_alignment}}},
+                {"ContextParams", {{"Size", value.context_params_size}, {"Alignment", value.context_params_alignment}}},
+                {"Batch", {{"Size", value.batch_size}, {"Alignment", value.batch_alignment}}},
+                {"TokenSize", value.token_size}, {"PositionSize", value.position_size},
+                {"SequenceIdSize", value.sequence_id_size}, {"CStandard", value.c_standard}};
+    }
     if (prism_jinja::handles(kind)) {
         return prism_jinja::execute(operation);
     }
@@ -229,6 +247,12 @@ wire_json execute(const wire_json & operation) {
     if (prism_vocab::handles(kind)) {
         return prism_vocab::execute(operation);
     }
+    if (prism_json_schema::handles(kind)) {
+        return prism_json_schema::execute(operation);
+    }
+    if (prism_chat_analysis::handles(kind)) {
+        return prism_chat_analysis::execute(operation);
+    }
     if (kind == "unicode-regex-split") {
         const auto pieces = unicode_regex_split(operation.at("Text").get<std::string>(),
                 operation.at("Expressions").get<std::vector<std::string>>(),
@@ -243,6 +267,9 @@ wire_json execute(const wire_json & operation) {
 
 int main(int argc, char ** argv) {
     try {
+        if (argc == 2 && std::strcmp(argv[1], "--model-session") == 0) {
+            return prism_model_runtime::serve();
+        }
         require(argc == 5 && std::strcmp(argv[1], "--input") == 0 && std::strcmp(argv[3], "--output") == 0,
                 "usage: prism-upstream-common-bridge --input ABSOLUTE_PATH --output ABSOLUTE_PATH");
         const std::filesystem::path input_path(argv[2]), output_path(argv[4]);

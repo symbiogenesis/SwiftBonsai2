@@ -323,6 +323,16 @@
     "tests/test-chat-peg-parser.cpp",
     "tests/test-gguf.cpp",
     "tests/test-chat-auto-parser.cpp",
-    "tests/test-tokenizer-0.cpp"
+    "tests/test-tokenizer-0.cpp",
+    "tests/test-json-schema-to-grammar.cpp",
+    "tests/test-autorelease.cpp",
+    "tests/test-model-load-cancel.cpp",
+    "tests/test-save-load-state.cpp",
+    "tests/test-state-restore-fragmented.cpp",
+    "tests/test-thread-safety.cpp",
+    "tests/test-chat-analysis.cpp",
+    "tests/test-c.c",
+    "tests/test-tokenizer-1-spm.cpp",
+    "tests/test-tokenizer-1-bpe.cpp"
   ]
 }

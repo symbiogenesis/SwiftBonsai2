@@ -1,0 +1,114 @@
+{
+  "Sources": [
+    {
+      "Source": "tests/test-tokenizer-1-spm.cpp",
+      "Sha256": "87ca4367b6acd9ddf1e3fc694f2ae02b569070eb66faa5f88068f81aaed35bfb"
+    },
+    {
+      "Source": "tests/test-tokenizer-1-bpe.cpp",
+      "Sha256": "2de134d10ff27590c714cfa70a75beb07be4dbeb971f78f2d9969ed0daaee36a"
+    }
+  ],
+  "Vocabularies": [
+    {
+      "Name": "llama-spm",
+      "ExpectedType": 1,
+      "IgnoreMerges": false,
+      "TokenMetadataCount": 32000,
+      "RawTokenBytes": 210919,
+      "MaxRawTokenBytes": 48,
+      "Length": 723869,
+      "Sha256": "16c3724582d59aa8bf84711894e833f916ee46a31d80e21312759c48bf8d0e69"
+    },
+    {
+      "Name": "baichuan",
+      "ExpectedType": 1,
+      "IgnoreMerges": false,
+      "TokenMetadataCount": 64000,
+      "RawTokenBytes": 316144,
+      "MaxRawTokenBytes": 27,
+      "Length": 1340998,
+      "Sha256": "4f5b955697f3bd3108070b1d5936c7eb9fc542b81c6932e59abddec75bca1963"
+    },
+    {
+      "Name": "aquila",
+      "ExpectedType": 2,
+      "IgnoreMerges": false,
+      "TokenMetadataCount": 100008,
+      "RawTokenBytes": 1163775,
+      "MaxRawTokenBytes": 1024,
+      "Length": 4825676,
+      "Sha256": "7c53c3c516ac67c7ca12977b9690fdea3d2ef13bbaed6378f98191a13ef5ca00"
+    },
+    {
+      "Name": "falcon",
+      "ExpectedType": 2,
+      "IgnoreMerges": false,
+      "TokenMetadataCount": 65024,
+      "RawTokenBytes": 462041,
+      "MaxRawTokenBytes": 130,
+      "Length": 2287728,
+      "Sha256": "9f0bf8b0733680398b72e652e90f260f43782f326e75545fc0e49611a5ba35ad"
+    },
+    {
+      "Name": "gpt-2",
+      "ExpectedType": 2,
+      "IgnoreMerges": false,
+      "TokenMetadataCount": 50257,
+      "RawTokenBytes": 356735,
+      "MaxRawTokenBytes": 256,
+      "Length": 1766807,
+      "Sha256": "cedc56ca6e2e89f63e781696d1fd76b4b1d49e6720dee86463e915f6e90016ac"
+    },
+    {
+      "Name": "gpt-neox",
+      "ExpectedType": 2,
+      "IgnoreMerges": false,
+      "TokenMetadataCount": 50432,
+      "RawTokenBytes": 358831,
+      "MaxRawTokenBytes": 1024,
+      "Length": 1771431,
+      "Sha256": "ae593a7f9b8bb174ed4f5019e41530463e4dac7aa06e42dee8aa650d2bdac53d"
+    },
+    {
+      "Name": "llama-bpe",
+      "ExpectedType": 2,
+      "IgnoreMerges": true,
+      "TokenMetadataCount": 128256,
+      "RawTokenBytes": 1073445,
+      "MaxRawTokenBytes": 256,
+      "Length": 7818140,
+      "Sha256": "97272e430d53bc7688f52d5e0ad8ea8f163ede9f1bbd1694feaa504797d5d96e"
+    },
+    {
+      "Name": "mpt",
+      "ExpectedType": 2,
+      "IgnoreMerges": false,
+      "TokenMetadataCount": 50432,
+      "RawTokenBytes": 358831,
+      "MaxRawTokenBytes": 1024,
+      "Length": 1771393,
+      "Sha256": "59dc382612866d1fc6c11ea531318d327598f3412d9c8f8600607cdf3030898f"
+    },
+    {
+      "Name": "refact",
+      "ExpectedType": 2,
+      "IgnoreMerges": false,
+      "TokenMetadataCount": 49216,
+      "RawTokenBytes": 345288,
+      "MaxRawTokenBytes": 512,
+      "Length": 1720710,
+      "Sha256": "ac3ceda902fed91ccf74312b305d9b86c37e4f8e35fa9cc6ef3ce34fca7d4678"
+    },
+    {
+      "Name": "starcoder",
+      "ExpectedType": 2,
+      "IgnoreMerges": false,
+      "TokenMetadataCount": 49152,
+      "RawTokenBytes": 344855,
+      "MaxRawTokenBytes": 512,
+      "Length": 1719346,
+      "Sha256": "fedb892b4e1bd3c1f2fcdae356440b14fb458f4264d586e5c987ed93df4e174d"
+    }
+  ]
+}

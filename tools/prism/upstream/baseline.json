@@ -1,7 +1,7 @@
 {
   "SchemaVersion": 1,
   "UpstreamCommit": "b87ca7225456b06b0975b8239c66b5aecf07e37c",
-  "CatalogSha256": "c41947a5fdb985766a2120499bca1d6afffb6314517dd3a2e1bb0391caeb6186",
+  "CatalogSha256": "6c7a68bee0a79e729c395ded17175da5a8de4c7450771a6ae1267d6ff9ce6288",
   "Measure": "upstream-source-files",
   "Total": 71,
   "MinimumPassed": 1,
@@ -59,24 +59,29 @@
       "Pq2FixtureSha256": "279cac324e1382b93650dcfe3b4e2a1a80c346e7c481ba8ef966f47f6f7b1621",
       "Ptq1FixtureSha256": "db47bed002bb2ac699dbe8cc324ba4607cbf4cc12982081f1059b0cce6980036"
     },
-    "SafeRustMigration": "Thirty-three source contracts have Rust-owned assertions. MinimumPassed and every RequiredPassedId/RequiredReferencePassedId are preserved. Native acceptance targets Windows ARM64; Apple wired-memory is excluded and never counted as passed. Benchmarks have separate CI-only workload reports outside the correctness denominator. MTMD chunk tests explicitly call the public upstream opaque fixture factory; Rust owns requests and predicates.",
+    "SafeRustMigration": "Forty-three source contracts have Rust-owned assertions. MinimumPassed and every RequiredPassedId/RequiredReferencePassedId are preserved. Native acceptance targets Windows ARM64; Apple wired-memory is excluded and never counted as passed. Benchmarks have separate CI-only workload reports outside the correctness denominator. MTMD chunk tests explicitly call the public upstream opaque fixture factory; Rust owns requests and predicates.",
     "WindowsArm64": {
-      "ProjectRevision": "18d2c18aaa8357583731f8f78364a9fcd57dc61b",
-      "RunUrl": "https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40118410264",
-      "Verdict": "Foundation passed; all25 ported upstream contracts and2originalcontrols passed",
+      "ProjectRevision": "2daa94c3fd0c7dde84b05609b61cde43ec18e105",
+      "RunUrl": "https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40120815419",
+      "Verdict": "Foundation passed; all33 Rust-owned upstream contracts passed and original GGUF qualification replay passed",
       "Platform": "Microsoft Windows 10.0.26200",
       "Architecture": "Arm64",
       "NativeToolset": "ClangCL",
       "VerifiedPeMachine": "0xAA64",
-      "TestedCatalogSha256": "bd56bc1f2b509095361a34f3f8364399903cff4a83f535cabc57f826d53c1753",
+      "TestedCatalogSha256": "c41947a5fdb985766a2120499bca1d6afffb6314517dd3a2e1bb0391caeb6186",
       "RustPassed": 1,
-      "RustFailed": 24,
-      "RustUnsupported": 46,
+      "RustFailed": 32,
+      "RustUnsupported": 38,
       "TotalSources": 71,
-      "CppPassed": 27,
-      "CppUnsupported": 44,
-      "ReportSha256": "e4c05fd4ca5a8830b05cbad6c8e8d599b64da5b6f749bfd90badb492526b48a7",
-      "ReceiptSha256": "d0b3be16d0ade139dc911fd2150d0e120cddcb259b9ec901857e1e9f6cefce50"
+      "CppPassed": 33,
+      "CppUnsupported": 38,
+      "ReportSha256": "892c106c1678b26241437ef3fdd3dfd7e0455e112f78c816848b1ee9824762ec",
+      "ReceiptSha256": "f126f16859fe086f4b7d10fd1a64c19be647547a80afcf64ebfbd4942df37a68"
+    },
+    "OriginalCppRetirement": {
+      "QualificationRun": "https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40120815419",
+      "Reason": "All19 required original reference identities have complete safe Rust replacements proven against native Windows ARM64 upstream; the final original GGUF replay can be removed.",
+      "QualificationRevision": "2daa94c3fd0c7dde84b05609b61cde43ec18e105"
     }
   }
 }
