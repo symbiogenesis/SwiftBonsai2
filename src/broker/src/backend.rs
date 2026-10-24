@@ -330,19 +330,36 @@ pub struct BackendBody<S> {
 }
 
 impl<S> BackendBody<S> {
-    fn fail(&mut self, kind: io::ErrorKind) -> Poll<io::Result<()>> {
+    fn fail<T>(&mut self, kind: io::ErrorKind) -> Poll<io::Result<T>> {
         self.framing = Framing::Failed;
         self.reader = None;
         Poll::Ready(Err(io::Error::new(kind, "backend body rejected")))
     }
 }
 
+impl<S: AsyncRead + Unpin> BackendBody<S> {
+    // Polonius lets success lend the reader's buffer while disjoint failure
+    // branches tear down its owner through fail().
+    fn poll_available(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+        let Some(reader) = self.reader.as_mut() else {
+            return self.fail(io::ErrorKind::InvalidData);
+        };
+        let Ok(available) = ready!(Pin::new(reader).poll_fill_buf(cx)) else {
+            return self.fail(io::ErrorKind::Other);
+        };
+        // A ready read may cross the deadline after the state-machine check.
+        if Instant::now() >= self.deadline {
+            return self.fail(io::ErrorKind::TimedOut);
+        }
+        if available.is_empty() {
+            return self.fail(io::ErrorKind::UnexpectedEof);
+        }
+        Poll::Ready(Ok(available))
+    }
+}
+
 impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
     // Keep the complete framing state machine visible in one audit boundary.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one bounded HTTP framing state machine"
-    )]
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -363,20 +380,12 @@ impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
             match this.framing {
                 Framing::Length(0) | Framing::Complete => return Poll::Ready(Ok(())),
                 Framing::Length(remaining) | Framing::Data(remaining) => {
+                    let available = ready!(this.poll_available(cx))?;
+                    let count = available.len().min(remaining).min(output.remaining());
+                    output.put_slice(&available[..count]);
                     let Some(reader) = this.reader.as_mut() else {
                         return this.fail(io::ErrorKind::InvalidData);
                     };
-                    let Ok(available) = ready!(Pin::new(&mut *reader).poll_fill_buf(cx)) else {
-                        return this.fail(io::ErrorKind::Other);
-                    };
-                    if Instant::now() >= this.deadline {
-                        return this.fail(io::ErrorKind::TimedOut);
-                    }
-                    if available.is_empty() {
-                        return this.fail(io::ErrorKind::UnexpectedEof);
-                    }
-                    let count = available.len().min(remaining).min(output.remaining());
-                    output.put_slice(&available[..count]);
                     Pin::new(reader).consume(count);
                     this.remaining_budget -= count;
                     this.framing = match this.framing {
@@ -388,17 +397,9 @@ impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
                 }
                 _ => {}
             }
+            let byte = ready!(this.poll_available(cx))?[0];
             let Some(reader) = this.reader.as_mut() else {
                 return this.fail(io::ErrorKind::InvalidData);
-            };
-            let Ok(available) = ready!(Pin::new(&mut *reader).poll_fill_buf(cx)) else {
-                return this.fail(io::ErrorKind::Other);
-            };
-            if Instant::now() >= this.deadline {
-                return this.fail(io::ErrorKind::TimedOut);
-            }
-            let Some(&byte) = available.first() else {
-                return this.fail(io::ErrorKind::UnexpectedEof);
             };
             Pin::new(reader).consume(1);
             this.metadata_bytes += 1;

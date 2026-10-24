@@ -441,13 +441,15 @@ impl<D: Decoder> Runtime<D> {
             .map(|(index, _)| index);
         if let Some(index) = best {
             let snapshot = &self.checkpoints[index];
-            let tokens = copy(&snapshot.tokens)?;
+            self.tokens
+                .try_reserve_exact(snapshot.tokens.len().saturating_sub(self.tokens.len()))?;
             self.logits.clear();
             self.logits.try_reserve_exact(snapshot.logits.len())?;
             check()?;
             self.decoder.restore(&snapshot.state)?;
             check()?;
-            self.tokens = tokens;
+            self.tokens.clear();
+            self.tokens.extend_from_slice(&snapshot.tokens);
             self.logits.extend_from_slice(&snapshot.logits);
         } else {
             check()?;

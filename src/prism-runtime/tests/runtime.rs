@@ -136,6 +136,26 @@ fn edited_turns_restore_complete_recurrent_prefix_and_failed_stream_rolls_back()
 }
 
 #[test]
+fn edited_prefix_restoration_reuses_conversation_token_storage() -> Result<()> {
+    let mut runtime = Runtime::new(decoder(), LIMITS)?;
+    let token_storage = runtime.tokens().as_ptr();
+    let cancellation = Cancellation::default();
+    for (prompt, reused) in [
+        (&[1][..], 0),
+        (&[1, 1, 2], 2),
+        (&[1, 1, 3], 2),
+        (&[1, 1, 2, 4, 1], 4),
+    ] {
+        let completion = runtime.generate(prompt, &options(), &cancellation, |_| Ok(()))?;
+        assert_eq!(runtime.tokens().as_ptr(), token_storage);
+        assert_eq!(&runtime.tokens()[..prompt.len()], prompt);
+        assert_eq!(completion.reused_tokens, reused);
+    }
+    assert_eq!(runtime.tokens(), &[1, 1, 2, 4, 1, 1]);
+    Ok(())
+}
+
+#[test]
 fn restoration_failure_closes_admission_until_reset() -> Result<()> {
     let decoder = decoder();
     let restore_fail = decoder.restore_fail.clone();

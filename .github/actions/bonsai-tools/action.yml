@@ -10,8 +10,8 @@ runs:
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'
         $PSNativeCommandUseErrorActionPreference = $true
-        rustup toolchain install 1.99.1-aarch64-pc-windows-msvc --profile minimal --no-self-update
-        $identity = rustc +1.99.1-aarch64-pc-windows-msvc -vV
+        rustup toolchain install nightly-2026-10-22-aarch64-pc-windows-msvc --profile minimal --no-self-update
+        $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
         if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
         "BONSAI_TOOLS_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
         "BONSAI_TOOLS_TARGET=$(Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PackagedTools')" >> $env:GITHUB_ENV
@@ -23,9 +23,9 @@ runs:
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ${{ env.BONSAI_TOOLS_TARGET }}
-        key: bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/bonsai/**', 'src/windows-*/**', 'config/**/*.json', 'rust-toolchain.toml') }}
+        key: bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/bonsai/**', 'src/windows-*/**', 'config/**/*.json', 'rust-toolchain.toml') }}
         restore-keys: |
-          bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-1.99.1-
+          bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-
     - name: Build the packaged CLI and select it for script invocations
       shell: pwsh
       working-directory: ${{ runner.temp }}

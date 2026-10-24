@@ -131,6 +131,7 @@ struct Stream {
     position: usize,
     fragment: usize,
     stall_after_input: bool,
+    fail_read_after_input: bool,
     read_delay: Option<Duration>,
     read_timer: Option<Pin<Box<Sleep>>>,
     write_fragment: usize,
@@ -151,6 +152,7 @@ impl Stream {
             position: 0,
             fragment,
             stall_after_input: false,
+            fail_read_after_input: false,
             read_delay: None,
             read_timer: None,
             write_fragment: usize::MAX,
@@ -185,6 +187,9 @@ impl AsyncRead for Stream {
                 return Poll::Pending;
             }
             self.read_timer = None;
+        }
+        if self.position == self.input.len() && self.fail_read_after_input {
+            return Poll::Ready(Err(io::ErrorKind::ConnectionReset.into()));
         }
         if self.position == self.input.len() && self.stall_after_input {
             return Poll::Pending;
@@ -605,6 +610,33 @@ fn raw_response_head_syntax_and_bounds_are_enforced() {
             .await,
             Err(BackendError::HeadLimit)
         ));
+    });
+}
+
+#[test]
+fn body_read_errors_close_the_stream_immediately_and_remain_sticky() {
+    run(async {
+        for input in [
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1\r\n\r\n"
+                .to_vec(),
+            chunked_response(b"", false),
+            chunked_response(b"1\r\n", false),
+        ] {
+            let mut backend = Stream::new(input, usize::MAX);
+            backend.fail_read_after_input = true;
+            let state = backend.state.clone();
+            let mut body = request_chat(backend, &admitted(false), &policy(), deadline())
+                .await
+                .unwrap()
+                .into_body();
+            let error = body.read(&mut [0]).await.unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::Other);
+            assert!(state.borrow().dropped);
+            let polls = state.borrow().read_polls;
+            let error = body.read(&mut [0]).await.unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+            assert_eq!(state.borrow().read_polls, polls);
+        }
     });
 }
 

@@ -9,7 +9,7 @@ approximate a complete suite by batching local filters.
 
 | Language | Enforced policy |
 | --- | --- |
-| Rust 1.99.1 / edition 2024 | Warnings, missing API documentation, unchecked casts, production unwrap/expect/panic and Clippy all/pedantic/nursery/cargo findings are rejected. Release arithmetic overflow checks are enabled; Release debug assertions remain disabled for the constant-time dependency's contract. |
+| Rust nightly-2026-10-22 / edition 2024 | The next trait solver and Polonius Alpha are enabled by this compiler's defaults. Warnings, missing API documentation, unchecked casts, production unwrap/expect/panic and Clippy all/pedantic/nursery/cargo findings are rejected. Release arithmetic overflow checks are enabled; Release debug assertions remain disabled for the constant-time dependency's contract. |
 | PowerShell 7.6+ | Latest strict mode, terminating errors including native-command failures, typed parameters, advanced functions and explicit output contracts. PSScriptAnalyzer 1.25.0 defaults plus selected safety rules reject every unsuppressed diagnostic. |
 | C# 14 / .NET 10 | Nullable checking, checked arithmetic, unsafe compilation disabled and warnings as errors for every Add-Type invocation. A separate Release build checks .NET analyzers, internal helpers, XML API documentation and selected style diagnostics. |
 
@@ -81,7 +81,7 @@ $previous = [Environment]::CurrentDirectory
 Push-Location $scratch
 try {
     [Environment]::CurrentDirectory = $scratch
-    cargo +1.99.1-aarch64-pc-windows-msvc test --locked --offline --release --manifest-path (Join-Path $repo 'src/broker/Cargo.toml') --target-dir (Join-Path $scratch 'target') --test http_reception wire_duplicates_and_framing_cannot_be_normalized_away -- --exact
+    cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --locked --offline --release --manifest-path (Join-Path $repo 'src/broker/Cargo.toml') --target-dir (Join-Path $scratch 'target') --test http_reception wire_duplicates_and_framing_cannot_be_normalized_away -- --exact
     if ($LASTEXITCODE) { throw 'Focused broker regression failed.' }
 } finally {
     [Environment]::CurrentDirectory = $previous
@@ -123,13 +123,14 @@ Scratch/evidence remains external. Select the published maintenance executable
 from the exact evaluated main revision via `BONSAI_TOOLS_PATH` or `-ToolPath`;
 version/protocol checking is not source-to-binary attestation.
 
-The manual main-only [nightly trial](../.github/workflows/rust-nightly.yml) compares
-stable with the nightly pinned in [configuration](../config/rust-nightly-trial.json).
-Four compiler/package-group lanes run formatting, Release analyzers/documentation
-and full correctness suites; separate probes isolate trait-solver/Polonius modes.
+The manual main-only [nightly checks](../.github/workflows/rust-nightly.yml) use
+the production nightly pinned in [configuration](../config/rust-nightly-trial.json).
+Runtime/Broker lanes run formatting, Release analyzers/documentation and full
+correctness suites; separate probes isolate trait-solver/Polonius modes and
+retain stable 1.99.1 as a control for standalone fixtures only.
 Prism loader APIs compile there, while native linking remains in Foundation.
 The final `compatibility` check requires all lanes and probes, including retained
-receipts. Stable remains the production baseline. See the [trial guide](../tools/rust-trial/README.md)
+receipts. The workspace requires the pinned nightly. See the [trial guide](../tools/rust-trial/README.md)
 for focused local comparisons.
 
 ## Acceptance limits

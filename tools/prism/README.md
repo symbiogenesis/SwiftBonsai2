@@ -44,7 +44,7 @@ denies unsafe code and the policy forbids it.
 
 ## Build and checks
 
-Use PowerShell 7.6, pinned stable Rust and a Clang-compatible CMake environment
+Use PowerShell 7.6, pinned nightly Rust and a Clang-compatible CMake environment
 for the external engine. Download and verify the ZIP in `source.lock.json` into
 external storage. From the checkout, capture the repository path and use an
 external native working directory for dependency fetches:
@@ -57,7 +57,7 @@ $previous = [Environment]::CurrentDirectory
 Push-Location $scratch
 try {
     [Environment]::CurrentDirectory = $scratch
-    cargo +1.99.1 fetch --locked --manifest-path (Join-Path $repo 'tools/prism/Cargo.toml')
+    cargo +nightly-2026-10-22 fetch --locked --manifest-path (Join-Path $repo 'tools/prism/Cargo.toml')
     if ($LASTEXITCODE) { throw 'Prism dependency fetch failed.' }
     $result = & (Join-Path $repo 'scripts/Build-PrismEngine.ps1') -SourceArchive $absoluteZip -BuildMode All
     ctest --test-dir (Join-Path $result.EvidenceDirectory 'build-probe') -C Release -R '^prism-lora-storage-alias$' --output-on-failure
@@ -79,7 +79,7 @@ Visual Studio generators select ClangCL on Windows.
 For a focused policy check, use the external working-directory convention above:
 
 ```powershell
-cargo +1.99.1 test --locked --offline --release --manifest-path <repo>/tools/prism/Cargo.toml --target-dir <temp>/build --test policy pool_policy_preserves_existing_cpp_cases -- --exact
+cargo +nightly-2026-10-22 test --locked --offline --release --manifest-path <repo>/tools/prism/Cargo.toml --target-dir <temp>/build --test policy pool_policy_preserves_existing_cpp_cases -- --exact
 ```
 
 Native tests require `--features native-tests --test native` and absolute ggml

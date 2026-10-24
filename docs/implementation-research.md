@@ -127,8 +127,10 @@ parity does not automatically establish floating-reduction or full-model parity.
 The [SIMD plan](simd-plan.md) defines dispatch and numerical gates; the
 [algorithm map](inference-algorithms.md) covers lookup kernels, block prefill,
 Gated DeltaNet and hybrid checkpoints. The
-[nightly trial](../tools/rust-trial/README.md) remains separate from stable
-production builds; caller-owned reusable logits already work on stable Rust.
+[pinned nightly](../rust-toolchain.toml) enables Polonius branch-sensitive
+lending in the broker. The [compiler probes](../tools/rust-trial/README.md)
+retain stable as an isolated control; caller-owned reusable logits themselves
+already work on stable Rust.
 
 Release overflow checks remain enabled, while debug assertions remain disabled
 to preserve the pinned constant-time dependency's release contract. See

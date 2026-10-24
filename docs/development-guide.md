@@ -158,7 +158,7 @@ $previous = [Environment]::CurrentDirectory
 Push-Location $scratch
 try {
     [Environment]::CurrentDirectory = $scratch
-    cargo +1.99.1-aarch64-pc-windows-msvc build --locked --release --manifest-path (Join-Path $repo 'src/broker/Cargo.toml') --target-dir (Join-Path $scratch 'build')
+    cargo +nightly-2026-10-22-aarch64-pc-windows-msvc build --locked --release --manifest-path (Join-Path $repo 'src/broker/Cargo.toml') --target-dir (Join-Path $scratch 'build')
     if ($LASTEXITCODE) { throw 'Broker build failed.' }
 } finally {
     [Environment]::CurrentDirectory = $previous

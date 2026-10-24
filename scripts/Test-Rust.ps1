@@ -12,7 +12,7 @@ main-branch GitHub Actions. No toolchain installation or benchmark is performed.
 param(
     [string[]]$Package = @(),
     [ValidateSet('All', 'Runtime', 'Broker')][string]$Group = 'All',
-    [string]$Toolchain = '1.99.1-aarch64-pc-windows-msvc',
+    [string]$Toolchain = 'nightly-2026-10-22-aarch64-pc-windows-msvc',
     [Parameter(Mandatory)][string]$TargetDirectory,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [ValidateSet('Foundation', 'Compatibility', 'Native')][string]$CheckProfile = 'Foundation',

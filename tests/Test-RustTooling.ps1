@@ -1,7 +1,7 @@
 #requires -Version 7.6
 <#
 .SYNOPSIS
-Checks Rust feature isolation and rejection of local complete-suite execution.
+Checks Rust feature isolation, production toolchains and local-suite rejection.
 .DESCRIPTION
 Imports pure package/argument policy and exercises early rejection paths only.
 No compiler, test suite, benchmark, model or native tool is started.
@@ -13,6 +13,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Rust.psm1') -Force
+$configuration = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/rust-nightly-trial.json') -Raw |
+    ConvertFrom-Json -DateKind String -NoEnumerate
 
 $prism = Get-BonsaiRustPackage -Name bonsai-prism
 foreach ($phase in @('clippy', 'doc', 'build')) {
@@ -28,6 +30,9 @@ if ('--features' -cin $arguments -or '--all-features' -cin $arguments) {
 $arguments = @(Get-BonsaiRustArgument -Package $prism -Phase clippy -CheckProfile Native)
 if ('--all-features' -cnotin $arguments) { throw 'The configured native lane omitted its full feature audit.' }
 $arguments = @(Get-BonsaiRustArgument -Package $prism -Phase fmt -CheckProfile Native)
+if ($arguments[0] -cne ('+' + $configuration.NightlyToolchain)) {
+    throw 'Default Rust commands must select the configured production nightly.'
+}
 if ('--package' -cnotin $arguments -or 'bonsai-prism' -cnotin $arguments -or '--all' -cin $arguments) {
     throw 'Formatting expanded beyond the selected package.'
 }
@@ -46,8 +51,17 @@ try {
         }
         if (-not $rejected) { throw 'A local complete-suite selection bypassed its CI guard.' }
     }
+    $rejected = $false
+    try {
+        $null = & (Join-Path $PSScriptRoot '../scripts/Test-RustNightly.ps1') -Mode Compatibility `
+            -Toolchain $configuration.StableToolchain -TargetDirectory (Join-Path $scratch 'target') `
+            -EvidenceDirectory (Join-Path $scratch 'evidence')
+    } catch {
+        $rejected = $_.Exception.Message -ceq 'Compatibility requires the pinned production nightly; stable is an isolated probe control.'
+    }
+    if (-not $rejected) { throw 'Workspace compatibility accepted the stable probe compiler.' }
     if ([IO.Directory]::Exists($scratch)) { throw 'A rejected suite selection created scratch or build outputs.' }
 } finally {
     $env:GITHUB_ACTIONS = $previousActions
 }
-Write-Output 'Rust feature isolation and local-suite rejection checks passed without starting native tools.'
+Write-Output 'Rust feature isolation, production-toolchain and local-suite policy checks passed without starting native tools.'

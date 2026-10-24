@@ -34,9 +34,9 @@ $previous = [Environment]::CurrentDirectory
 Push-Location $scratch
 try {
     [Environment]::CurrentDirectory = $scratch
-    cargo +1.99.1-aarch64-pc-windows-msvc build --locked --offline --release --manifest-path $manifest --target-dir $target
+    cargo +nightly-2026-10-22-aarch64-pc-windows-msvc build --locked --offline --release --manifest-path $manifest --target-dir $target
     if ($LASTEXITCODE) { throw 'Ternary build failed.' }
-    cargo +1.99.1-aarch64-pc-windows-msvc test --locked --offline --release --manifest-path $manifest --target-dir $target --test cpp_reference cpp_reference_ptq_parity -- --exact
+    cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --locked --offline --release --manifest-path $manifest --target-dir $target --test cpp_reference cpp_reference_ptq_parity -- --exact
     if ($LASTEXITCODE) { throw 'C++ codec parity failed.' }
 } finally {
     [Environment]::CurrentDirectory = $previous

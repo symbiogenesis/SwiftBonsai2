@@ -1,9 +1,9 @@
 # Rust compiler trial
 
-This dependency-free crate compares the stable baseline with the nightly pinned
-in [configuration](../../config/rust-nightly-trial.json). It explores borrowed
-logits independently of production decoder, numerical and checkpoint contracts.
-Stable remains the production toolchain.
+This dependency-free crate compares standalone compiler capabilities using stable
+1.99.1 and the nightly pinned in [configuration](../../config/rust-nightly-trial.json).
+The workspace uses nightly-2026-10-22, whose defaults enable the next trait solver
+and Polonius Alpha. Stable is retained only as a compiler-probe control.
 
 ## Stable storage reuse
 
@@ -16,7 +16,27 @@ The synthetic regressions compare an owned numerical reference, cache hits,
 invalidation, empty vocabulary and unchanged storage address/capacity. They
 establish storage ownership/reuse, not allocation profiles, model parity or speed.
 The token-only cache key is not a production decoder's sequence state. This
-interface works on stable; nightly is needed only for the fixtures below.
+interface works on stable; changing it to return a cached borrow before refilling
+would introduce a nightly dependency without simplifying its current logic.
+
+## Production pattern audit
+
+The audit found one useful Polonius refactor in the broker's
+[`BackendBody`](../../src/broker/src/backend.rs). Its shared `poll_available`
+helper lends buffered bytes on success and closes the reader on I/O failure,
+EOF or deadline expiry. Polonius tracks the successful borrow separately from
+the failure branches that mutate the owner. This centralizes checks previously
+duplicated in payload and chunk-framing paths. The stable alternative is the
+previous inline implementation; no throughput improvement is claimed.
+
+The native runtime's `Decoder::evaluate_into` and scoped `PreparedMatvec` already
+reuse output and activation storage without new solver behavior. Saved-prefix
+restoration now also retains the runtime's token allocation; that optimization
+is expressible on stable. Checkpoints still own complete independent state.
+
+No current production trait bound needs the next solver's higher-ranked
+associated-view normalization. `next_solver.rs` below keeps that capability
+covered for future backend interfaces, without introducing an unused abstraction.
 
 ## Compiler capability fixtures
 
@@ -35,9 +55,9 @@ The examples follow Rust's [Polonius Alpha](https://blog.rust-lang.org/2026/08/0
 and [next solver](https://blog.rust-lang.org/2026/08/21/enabling-next-solver-on-nightly/)
 announcements. Controls distinguish compiler acceptance from broken invocation or
 invalid aliasing. The hosted matrix isolates all four component combinations on
-one nightly binary, with stable as another baseline. These are compiler
-assertions, not evidence that production code requires nightly or that an
-accelerator interface exists.
+one nightly binary, with stable as another baseline. These fixtures establish
+compiler capabilities; the broker helper is the current production Polonius use.
+Neither establishes an accelerator interface or inference performance.
 
 ## Validation
 
@@ -57,7 +77,7 @@ This trial includes no benchmarks. Exact prototype regression names are:
 - `tests::repeated_outputs_reuse_storage`
 
 The manual main-only [workflow](../../.github/workflows/rust-nightly.yml) checks
-stable/nightly across Runtime/Broker groups in four parallel lanes. Runtime holds
+the pinned nightly across Runtime/Broker groups in two parallel lanes. Runtime holds
 ternary, GGUF, Prism, the CPU reference and this trial; Broker holds Windows
 boundaries, broker and maintenance tools. Compiler/group targets remain separate.
 Independent probes and every lane must pass the final `compatibility` check,

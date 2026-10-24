@@ -65,6 +65,6 @@ Windows 11 Enterprise build 26200, using
 `-Znext-solver=globally -Zpolonius=next -C target-cpu=native` for all candidates.
 
 This is Windows ARM64 evidence, not Snapdragon inference evidence or a
-stable-versus-nightly comparison. It supplies no reason to change the
-[stable compiler baseline](../rust-toolchain.toml). Reconsider lending/solver
-features only for a concrete API need.
+stable-versus-nightly comparison. The subsequent promotion of the
+[pinned nightly](../rust-toolchain.toml) enables branch-sensitive lending in
+the broker; this dependency comparison does not establish a compiler speedup.

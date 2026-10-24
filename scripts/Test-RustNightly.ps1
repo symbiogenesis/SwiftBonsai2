@@ -1,10 +1,11 @@
 #requires -Version 7.6
 <#
 .SYNOPSIS
-Compares pinned stable and nightly Rust without changing the default toolchain.
+Validates the production nightly and compares isolated compiler behavior.
 .DESCRIPTION
-Compatibility runs formatting, Release Clippy and documentation. FullTests adds
-complete correctness suites only in main-branch GitHub Actions. Probe compiles
+Compatibility uses the pinned production nightly for formatting, Release Clippy
+and documentation. FullTests adds complete correctness suites only in
+main-branch GitHub Actions. Probe compiles
 small language fixtures using stable and four modes of the same nightly binary.
 PackageGroup partitions compatibility by shared dependencies for parallel CI.
 Logs, compiler identities and receipts remain in external evidence directories.
@@ -35,6 +36,12 @@ if ($configuration.SchemaVersion -ne 1 -or
     $configuration.StableToolchain -cne '1.99.1-aarch64-pc-windows-msvc' -or
     $configuration.NightlyToolchain -notmatch '^nightly-\d{4}-\d{2}-\d{2}-aarch64-pc-windows-msvc$') {
     throw 'The trial requires the stable baseline and a date-pinned Windows ARM64 nightly.'
+}
+if ($Mode -eq 'Compatibility') {
+    if (-not $Toolchain) { $Toolchain = $configuration.NightlyToolchain }
+    if ($Toolchain -cne $configuration.NightlyToolchain) {
+        throw 'Compatibility requires the pinned production nightly; stable is an isolated probe control.'
+    }
 }
 $evidence = Resolve-ExternalPath -Path $EvidenceDirectory
 if (Test-Path -LiteralPath $evidence) { throw 'Use a new evidence directory for each trial invocation.' }
@@ -126,9 +133,6 @@ try {
     }
     $rustc = (Get-Command -Name rustc -CommandType Application -ErrorAction Stop).Source
     if ($Mode -eq 'Compatibility') {
-        if ($Toolchain -cne $configuration.StableToolchain -and $Toolchain -cne $configuration.NightlyToolchain) {
-            throw 'Compatibility must select a toolchain from the trial configuration.'
-        }
         Get-TrialCompilerIdentity -SelectedToolchain $Toolchain
         $target = Resolve-ExternalPath -Path $TargetDirectory
         if ($target.StartsWith($evidence + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or $target -eq $evidence -or

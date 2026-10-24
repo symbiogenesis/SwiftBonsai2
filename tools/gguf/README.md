@@ -57,7 +57,7 @@ $previous = [Environment]::CurrentDirectory
 Push-Location $scratch
 try {
     [Environment]::CurrentDirectory = $scratch
-    cargo +1.99.1-aarch64-pc-windows-msvc build --locked --release --manifest-path $manifest --target-dir (Join-Path $scratch 'target')
+    cargo +nightly-2026-10-22-aarch64-pc-windows-msvc build --locked --release --manifest-path $manifest --target-dir (Join-Path $scratch 'target')
     if ($LASTEXITCODE) { throw 'GGUF build failed.' }
 } finally {
     [Environment]::CurrentDirectory = $previous

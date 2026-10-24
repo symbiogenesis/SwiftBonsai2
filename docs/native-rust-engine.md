@@ -60,7 +60,7 @@ task time separately, accounting for bandwidth and the measured critical path.
   sharing, tensor metadata, adapter basis and forward arithmetic. Changes to
   reductions/FMA require separate numerical qualification; see [SIMD S5](simd-plan.md#delivery-sequence-and-exits).
 
-  - [x] **R4.1 — Reuse logits and graph scratch.** Stable `Decoder::evaluate_into`
+  - [x] **R4.1 — Reuse logits and graph scratch.** `Decoder::evaluate_into`
     reuses caller-owned output; Qwen35 retains graph/kernel workspace and stages
     state deltas before commit. Checkpoints own independent state/logits.
     Synthetic fixtures cover output validation, reuse, cancellation and rollback.
@@ -105,11 +105,17 @@ task time separately, accounting for bandwidth and the measured critical path.
   focused regressions and full CI correctness/security coverage, without a C/C++
   inference-library dependency.
 
-  - [ ] **R5.1 — Reassess borrowing only for a concrete interface limitation.**
-    The production reusable-output API works on stable. Use the [nightly trial](../tools/rust-trial/README.md)
-    only when a real lending/cache/stream interface demonstrates a limitation;
-    record the stable alternative, production benefit and compatibility evidence
-    before considering migration. Checkpoint ownership still applies.
+  - [x] **R5.1 — Audit borrowing against the pinned nightly.** The decoder's
+    reusable output and scoped `PreparedMatvec` guard already express their
+    ownership without new solver behavior. Keep these interfaces and complete
+    checkpoint ownership. Prefix restoration now retains the runtime's token
+    allocation, an optimization also expressible on stable. In the broker,
+    Polonius permits one helper to lend buffered bytes on success and close the
+    owned reader on failure, centralizing duplicate I/O/deadline/EOF checks.
+    The [compiler probes](../tools/rust-trial/README.md) retain higher-ranked
+    associated-view normalization as a next-solver capability; no current
+    production backend needs that abstraction. Reassess when a concrete new
+    backend or stream interface requires it.
   - [x] **R5.2 — Share immutable KV checkpoint pages.** Sealed 64-token FP16
     pages are shared immutably; the mutable tail and exact convolution/recurrent
     state are copied. Page-boundary and edited-prefix regressions prove snapshot

@@ -23,7 +23,7 @@ $test = switch ($Case) {
     'LaunchContract' { 'argv_environment_and_native_cwd' }
 }
 $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
-$arguments = @('+1.99.1-aarch64-pc-windows-msvc', 'test', '--locked', '--offline', '--release',
+$arguments = @('+nightly-2026-10-22-aarch64-pc-windows-msvc', 'test', '--locked', '--offline', '--release',
     '--manifest-path', (Join-Path $repo 'src/windows-process/Cargo.toml'), '--target-dir', (Join-Path $scratch 'target'),
     '--features', 'test-probe', '--test', 'ownership', $test, '--', '--exact')
 $result = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -TimeoutSeconds 300 -LogPath (Join-Path $scratch 'test.log')

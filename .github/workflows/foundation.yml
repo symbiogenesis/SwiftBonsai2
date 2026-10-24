@@ -24,8 +24,8 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          rustup toolchain install 1.99.1-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
-          $identity = rustc +1.99.1-aarch64-pc-windows-msvc -vV
+          rustup toolchain install nightly-2026-10-22-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
+          $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
           if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
           "NATIVE_RUNTIME_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
           "CARGO_TARGET_DIR=$(Join-Path $env:RUNNER_TEMP 'SwiftBonsai-NativeRuntime')" >> $env:GITHUB_ENV
@@ -36,9 +36,9 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ${{ env.CARGO_TARGET_DIR }}
-          key: native-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NATIVE_RUNTIME_CACHE_HOST }}-1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/prism-runtime/**', 'tools/prism/**', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
+          key: native-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NATIVE_RUNTIME_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/prism-runtime/**', 'tools/prism/**', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
           restore-keys: |
-            native-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NATIVE_RUNTIME_CACHE_HOST }}-1.99.1-
+            native-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NATIVE_RUNTIME_CACHE_HOST }}-nightly-2026-10-22-
       - name: Native CPU reference format, analyzers and complete correctness suite
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -50,11 +50,11 @@ jobs:
           "NATIVE_RUNTIME_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           # The package registry audits all features; also exercise ordinary defaults below.
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism-runtime -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
-          cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --test simd simd_default_selects_available_kernel_and_explicit_scalar_overrides -- --exact 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'default-backend.log')
-          cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --lib
-          cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --features experimental-neon --lib
-          cargo +1.99.1-aarch64-pc-windows-msvc clippy --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --all-targets -- -D warnings
-          cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --test simd simd_ 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'scalar-without-neon.log')
+          cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --test simd simd_default_selects_available_kernel_and_explicit_scalar_overrides -- --exact 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'default-backend.log')
+          cargo +nightly-2026-10-22-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --lib
+          cargo +nightly-2026-10-22-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --features experimental-neon --lib
+          cargo +nightly-2026-10-22-aarch64-pc-windows-msvc clippy --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --all-targets -- -D warnings
+          cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --test simd simd_ 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'scalar-without-neon.log')
           & (Join-Path $env:CARGO_TARGET_DIR 'release/bonsai-prism-runtime.exe') --help
           'Native Rust token-level CPU reference checks passed. Full-model parity, broker integration and device qualification remain pending.' >> $env:GITHUB_STEP_SUMMARY
       - name: Retain native runtime check evidence
@@ -79,16 +79,16 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          rustup toolchain install 1.99.1-x86_64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
-          $identity = rustc +1.99.1-x86_64-pc-windows-msvc -vV
+          rustup toolchain install nightly-2026-10-22-x86_64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
+          $identity = rustc +nightly-2026-10-22-x86_64-pc-windows-msvc -vV
           if ($identity -notcontains 'host: x86_64-pc-windows-msvc') { throw 'Expected x86-64 scalar fallback build.' }
           $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-ScalarFallback'
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-ScalarFallbackChecks-' + [guid]::NewGuid().ToString('N'))
           "SCALAR_FALLBACK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
-          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism-runtime -Toolchain 1.99.1-x86_64-pc-windows-msvc -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -Build | ConvertTo-Json -Depth 8
-          cargo +1.99.1-x86_64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --test simd simd_default_selects_available_kernel_and_explicit_scalar_overrides -- --exact 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'default-backend.log')
-          cargo +1.99.1-x86_64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --features experimental-neon --lib
-          cargo +1.99.1-x86_64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --all-features --test simd simd_ 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'non-arm-fallback.log')
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism-runtime -Toolchain nightly-2026-10-22-x86_64-pc-windows-msvc -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -Build | ConvertTo-Json -Depth 8
+          cargo +nightly-2026-10-22-x86_64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --test simd simd_default_selects_available_kernel_and_explicit_scalar_overrides -- --exact 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'default-backend.log')
+          cargo +nightly-2026-10-22-x86_64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --features experimental-neon --lib
+          cargo +nightly-2026-10-22-x86_64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --all-features --test simd simd_ 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'non-arm-fallback.log')
           'Automatic and explicit NEON requests use the exact scalar fallback on x86-64; no target-device performance claim.' >> $env:GITHUB_STEP_SUMMARY
       - name: Retain scalar fallback evidence
         if: always() && env.SCALAR_FALLBACK_EVIDENCE != ''
@@ -112,8 +112,8 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          rustup toolchain install 1.99.1 --profile minimal --component rustfmt,clippy --no-self-update
-          rustc +1.99.1 -vV
+          rustup toolchain install nightly-2026-10-22 --profile minimal --component rustfmt,clippy --no-self-update
+          rustc +nightly-2026-10-22 -vV
       - name: Select the native compiler cache identity
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -150,9 +150,9 @@ jobs:
             ~/.cargo/git/db
             ${{ runner.temp }}/SwiftBonsai-PrismRustChecks
             ${{ runner.temp }}/SwiftBonsai-PrismRustBuild
-          key: prism-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/prism/**', 'scripts/Build-PrismEngine.ps1', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
+          key: prism-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/prism/**', 'scripts/Build-PrismEngine.ps1', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
           restore-keys: |
-            prism-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-1.99.1-
+            prism-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-nightly-2026-10-22-
       - name: Check Rust and build the pinned engine with its Rust storage overlay
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -169,10 +169,10 @@ jobs:
           if ([Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') { throw 'Expected native ARM64 source build.' }
           $manifest = Join-Path $env:GITHUB_WORKSPACE 'tools/prism/Cargo.toml'
           $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismRustChecks'
-          cargo +1.99.1 fetch --manifest-path $manifest --locked
+          cargo +nightly-2026-10-22 fetch --manifest-path $manifest --locked
           $checks = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-PrismChecks-' + [guid]::NewGuid().ToString('N'))
           "PRISM_CHECK_EVIDENCE=$checks" >> $env:GITHUB_ENV
-          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism -Toolchain 1.99.1 -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory (Join-Path $checks 'policy') -FullTests -Offline | ConvertTo-Json -Depth 8
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism -Toolchain nightly-2026-10-22 -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory (Join-Path $checks 'policy') -FullTests -Offline | ConvertTo-Json -Depth 8
           Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1') -Force
           $lock = Get-Content -Raw -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'tools/prism/source.lock.json') | ConvertFrom-Json
           $lane = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismDownloads'
@@ -191,7 +191,7 @@ jobs:
           if ($LASTEXITCODE) { throw 'Native immutable B-sharing regression failed.' }
           $nativeLibraries = @(Get-ChildItem -LiteralPath (Join-Path $result.EvidenceDirectory 'build-probe') -Recurse -File | Where-Object { $_.Name -in @('libggml.a','libggml-cpu.a','libggml-base.a') })
           $env:BONSAI_PRISM_NATIVE_LIB_DIR = @($nativeLibraries.DirectoryName | Sort-Object -Unique) -join [IO.Path]::PathSeparator
-          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism -Toolchain 1.99.1 -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory (Join-Path $checks 'native') -CheckProfile Native -Phase clippy,doc -Offline | ConvertTo-Json -Depth 8
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism -Toolchain nightly-2026-10-22 -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory (Join-Path $checks 'native') -CheckProfile Native -Phase clippy,doc -Offline | ConvertTo-Json -Depth 8
           ccache --show-stats
           'Rust sharing policy and native regression passed; pinned engine compiled and linked to Rust. Model TPS/quality remains unqualified.' >> $env:GITHUB_STEP_SUMMARY
       - name: Retain source-build receipts and technical logs
@@ -226,8 +226,8 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          rustup toolchain install 1.99.1-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
-          $identity = rustc +1.99.1-aarch64-pc-windows-msvc -vV
+          rustup toolchain install nightly-2026-10-22-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
+          $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
           if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
           $identity
           "TERNARY_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
@@ -239,9 +239,9 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ${{ env.TERNARY_TARGET_DIR }}
-          key: ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
+          key: ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
           restore-keys: |
-            ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-1.99.1-
+            ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-nightly-2026-10-22-
       - name: PQ2 and PTQ codecs, FP16 reference parity and Rust analyzers
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -303,9 +303,9 @@ jobs:
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
-          rustup toolchain install 1.99.1-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
+          rustup toolchain install nightly-2026-10-22-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
           if ($LASTEXITCODE) { throw 'Rust toolchain installation failed.' }
-          $identity = rustc +1.99.1-aarch64-pc-windows-msvc -vV
+          $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
           if ($LASTEXITCODE -or $identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
           $identity
       - name: Select external Cargo cache paths
@@ -335,9 +335,9 @@ jobs:
             ${{ env.CARGO_HOME }}/registry/cache
             ${{ env.CARGO_HOME }}/git/db
             ${{ env.CARGO_TARGET_DIR }}
-          key: broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs', 'src/windows-*/**', 'tools/bonsai/**', 'config/**/*.json', 'tests/fixtures/lora-qualification-v1.json', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1') }}
+          key: broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs', 'src/windows-*/**', 'tools/bonsai/**', 'config/**/*.json', 'tests/fixtures/lora-qualification-v1.json', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1') }}
           restore-keys: |
-            broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rust1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
+            broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
       - name: Broker format, analyzer and full correctness suite
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -509,8 +509,8 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          rustup toolchain install 1.99.1-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
-          $identity = rustc +1.99.1-aarch64-pc-windows-msvc -vV
+          rustup toolchain install nightly-2026-10-22-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
+          $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
           if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
           "GGUF_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
           "CARGO_TARGET_DIR=$(Join-Path $env:RUNNER_TEMP 'SwiftBonsai-GgufRust')" >> $env:GITHUB_ENV
@@ -522,9 +522,9 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             ${{ env.CARGO_TARGET_DIR }}
-          key: gguf-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GGUF_CACHE_HOST }}-1.99.1-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
+          key: gguf-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GGUF_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'scripts/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
           restore-keys: |
-            gguf-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GGUF_CACHE_HOST }}-1.99.1-
+            gguf-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GGUF_CACHE_HOST }}-nightly-2026-10-22-
       - name: Build and check the Rust GGUF CLI
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -535,7 +535,7 @@ jobs:
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-GgufChecks-' + [guid]::NewGuid().ToString('N'))
           "GGUF_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-gguf -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
-          cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-gguf --locked --offline --release --no-default-features --lib
+          cargo +nightly-2026-10-22-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-gguf --locked --offline --release --no-default-features --lib
           "BONSAI_GGUF_TOOL=$(Join-Path $env:CARGO_TARGET_DIR 'release/bonsai-gguf.exe')" >> $env:GITHUB_ENV
       - name: Retain GGUF Rust check evidence
         if: always() && env.GGUF_CHECK_EVIDENCE != ''

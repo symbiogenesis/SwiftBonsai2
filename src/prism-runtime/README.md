@@ -30,7 +30,7 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   back expiry through the same transaction. Checks surround decoder operations
   and stream callbacks; synchronous work must return before expiry is detected,
   and rollback itself must complete before the method returns.
-- Stable `Decoder::evaluate_into` reuses caller-owned logits; `evaluate` remains
+- `Decoder::evaluate_into` reuses caller-owned logits; `evaluate` remains
   available. Qwen35 retains bounded graph/kernel scratch and stages per-layer
   state deltas. Outputs are shape/finiteness checked; errors clear direct output.
   Checkpoints own independent committed state/logits, never scratch aliases.
@@ -76,8 +76,8 @@ Default features are `cli` (JSON token driver) and `experimental-neon`.
 | `--no-default-features --lib` | Scalar-only library |
 | `--no-default-features --features cli` | Scalar-only token driver |
 
-Use Rust 1.99.1 and an absolute manifest/target path from a unique system-temp
-working directory. After fetching locked dependencies:
+Use the pinned Rust nightly-2026-10-22 and an absolute manifest/target path from
+a unique system-temp working directory. After fetching locked dependencies:
 
 ```powershell
 $repo = 'C:\Users\symbi\source\repos\SwiftBonsai2'
@@ -85,7 +85,7 @@ $lane = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Native-' + [guid]::Ne
 [IO.Directory]::CreateDirectory($lane) | Out-Null
 Push-Location $lane
 try {
-    cargo +1.99.1-aarch64-pc-windows-msvc build --locked --offline --release `
+    cargo +nightly-2026-10-22-aarch64-pc-windows-msvc build --locked --offline --release `
         --manifest-path (Join-Path $repo 'src/prism-runtime/Cargo.toml') `
         --target-dir (Join-Path $lane 'build')
     & (Join-Path $lane 'build/release/bonsai-prism-runtime.exe') --help
@@ -179,7 +179,7 @@ load the full model. Locally run focused named regressions, from the same extern
 working directory convention, for example:
 
 ```powershell
-cargo +1.99.1-aarch64-pc-windows-msvc test --locked --offline --release `
+cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --locked --offline --release `
     --manifest-path <repo>/src/prism-runtime/Cargo.toml --target-dir <temp>/build `
     --test runtime edited_turns_restore_complete_recurrent_prefix_and_failed_stream_rolls_back -- --exact
 ```
