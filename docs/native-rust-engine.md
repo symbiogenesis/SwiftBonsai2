@@ -256,6 +256,22 @@ task time separately, accounting for bandwidth and the measured critical path.
     malformed and mixed request shapes, overflow and recovery after rejection.
     This completes the worker operation; broker wiring remains separate R5 work.
 
+  - [x] **R5.11 — Reuse verified output pieces without graph loading.**
+    `TextOutputSession` verifies one complete artifact, builds its bounded output
+    vocabulary, then releases model metadata and the file handle. Borrowed
+    lossless bytes and declared control status compose with independent
+    caller-owned UTF-8 display streams. Focused checks cover artifact release,
+    identity/metadata rejection, split UTF-8, controls, independent streams and
+    failure preservation. Generation and full-model parity remain separate exits.
+
+  - [x] **R5.12 — Check the persistent worker's client boundary.** A bounded
+    synchronous `TokenClient` pins readiness identity and every fixed policy
+    field before text count/encode exchanges. Response shape, correlation,
+    counts and vocabulary IDs are checked; protocol and transport faults close
+    admission, while rejected input remains recoverable. Focused fault checks
+    and actual-worker/output-session composition cover the boundary. Callers
+    still own process lifetime, I/O deadlines, cancellation and broker wiring.
+
 - [ ] **R6 — Add Adreno after CPU parity.** Follow [G0–G5](adreno-gpu-plan.md),
   implementing the same packed types, transforms and complete hybrid graph.
   Reuse Prism capability reports/fixtures, but qualify Rust GPU coverage and

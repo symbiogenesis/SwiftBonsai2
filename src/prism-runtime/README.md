@@ -84,10 +84,16 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
 - Public `text_output::Utf8Output` renders bounded caller-owned byte chunks,
   retains at most three incomplete UTF-8 bytes, and resets abandoned output
   before a new request. The token driver uses this same decoder.
+- Reusable `text_session::TextOutputSession` verifies one output vocabulary,
+  releases model metadata and the file handle, and supplies borrowed lossless
+  pieces and declared control status to independent caller-owned display streams.
 - A persistent `bonsai-token-worker` verifies one tokenizer artifact at startup,
   flushes readiness and serves bounded JSONL count/encode requests without graph
   allocation or subsequent artifact I/O. Text and exact raw-ID operations share
   its fixed context/output budget; parsing and insertion apply only to text.
+- A bounded synchronous `token_client::TokenClient` checks worker readiness
+  against pinned identity/policy before text count/encode exchanges. Strict
+  framing, response schemas and correlation fail closed after transport faults.
 - Library callers share the driver's bounded UTF-8 prompt reader and checked
   model-plus-caller generation-stop policy.
 
@@ -216,6 +222,16 @@ raw-ID requests. The CLI's existing raw-ID mode remains metadata-only and does
 not require BPE or pretokenizer support. Persistent broker transport and template
 rendering remain separate work.
 
+Service callers can similarly load `text_session::TextOutputSession` once with
+an independently pinned artifact length/hash and metadata budget. `piece(id)`
+borrows exact bytes; `is_control(id)` reports the declared type without choosing
+stop or display policy. The session retains no weights, graph, model handle or
+request state. Its vocabulary has separate count/per-piece/decoded-byte bounds;
+the metadata budget does not bound process memory. Feed each request's pieces
+to its own `Utf8Output`, preserving original bytes for lossless output, finishing
+on success and resetting abandoned output on cancellation. Neither session
+construction nor these synthetic checks establish full-model parity.
+
 The default `cli` feature also builds `bonsai-token-worker`; `--help` lists its
 startup contract. Every setting is required: absolute `--model`, verified
 `--bytes`/`--sha256`, `--memory-bytes`, `--context`, `--reserved-output-tokens`,
@@ -243,8 +259,8 @@ ID against the verified vocabulary and preserve the exact sequence, including
 duplicates, boundary IDs and empty arrays. They apply no parsing or insertion;
 their count still reserves the complete startup output allowance. `text` and
 `token_ids` are exclusive and must match the selected operation.
-IDs are correlation values;
-the worker retains no global ID registry. Duplicate/unknown fields and malformed
+IDs are correlation values; the worker retains no global ID registry.
+Duplicate/unknown fields and malformed
 frames return `invalid_request` with a null ID; encoding/context rejection returns
 `rejected_input` with the parsed ID. These failures preserve the session for later
 requests and expose no prompt text or underlying diagnostics.
@@ -255,6 +271,20 @@ and transport/allocation errors terminate the worker without draining input;
 discard incomplete output and restart. The synchronous transport has no deadline
 or cancellation protocol. Readiness establishes a verified tokenizer, not a
 rendered chat template, broker endpoint, inference backend or daily-service gate.
+
+With `cli` enabled, `token_client::TokenClient::connect` accepts caller-owned
+buffered input/output and an `ExpectedWorker`: independently pinned lowercase
+model SHA-256, vocabulary size, exact `WorkerConfig` and a separate response-frame
+bound. Readiness must match every identity/policy field before requests are sent.
+`count(text)` returns the checked count; `encode(text)` returns checked ordered
+IDs and fixed context/output accounting. The client admits text requests only.
+Request and response bounds each range from 1 byte through 1 MiB; an encoded
+response can exceed its request size, so choose the response budget explicitly.
+Malformed, oversized, uncorrelated or inconsistent responses and transport errors
+disable the client. Local request-size rejection sends nothing, and a correlated
+`rejected_input` leaves the connection reusable. Errors contain static diagnostics.
+The caller owns transport deadlines, cancellation, process lifetime and shutdown;
+`into_parts` returns its streams without claiming a faulted connection is reusable.
 
 `prompt_input::read_prompt` is the driver's public file/stream reader. It preserves
 valid UTF-8 exactly, consumes at most 1 MiB plus one overflow byte and rejects

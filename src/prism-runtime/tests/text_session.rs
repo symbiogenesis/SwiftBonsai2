@@ -197,7 +197,7 @@ fn session_preserves_split_utf8_control_spellings_and_arbitrary_bytes() -> Resul
     display.push_str(output.finish());
     assert_eq!(raw, b" hello\xce\xbb<stop><stop>\xce\xbb\0\xff\xce");
     assert_eq!(display, String::from_utf8_lossy(&raw));
-    assert_eq!(output.pending_bytes(), []);
+    assert_eq!(output.pending_bytes(), [0_u8; 0]);
     Ok(())
 }
 

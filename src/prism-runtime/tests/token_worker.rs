@@ -12,6 +12,9 @@ mod worker {
 
     use bonsai_prism_runtime::Result;
     use bonsai_prism_runtime::special_input::SpecialInputPolicy;
+    use bonsai_prism_runtime::text_output::Utf8Output;
+    use bonsai_prism_runtime::text_session::TextOutputSession;
+    use bonsai_prism_runtime::token_client::{ExpectedWorker, TokenClient};
     use bonsai_prism_runtime::token_worker::{MAX_WORKER_FRAME_BYTES, WorkerConfig, serve};
     use bonsai_prism_runtime::tokenization::{
         SpecialTokenInsertion, TextTokenizationPolicy, TokenBudget, TokenizationSession,
@@ -235,6 +238,59 @@ mod worker {
             json!({"type": "encoded", "id": 9, "prompt_token_count": 0, "token_ids": []})
         );
         assert_eq!(output.len(), 4);
+        Ok(())
+    }
+
+    #[test]
+    fn verified_service_boundaries_compose_after_artifact_release() -> Result<()> {
+        let fixture = Artifact::new(260)?;
+        let tokenizer = load(&fixture)?;
+        let output = TextOutputSession::load(
+            &fixture.path,
+            u64::try_from(fixture.bytes.len())?,
+            &fixture.hash(),
+            HEADER_BUDGET,
+        )?;
+        fs::remove_file(&fixture.path)?;
+        let requests = b"{\"id\":0,\"op\":\"count\",\"text\":\"ab\"}\n{\"id\":1,\"op\":\"encode\",\"text\":\"ab<stop>\"}\n";
+        let mut responses = Vec::new();
+        serve(
+            &tokenizer,
+            config(),
+            &mut Cursor::new(requests),
+            &mut responses,
+        )?;
+        let hash = fixture.hash();
+        let mut sent = Vec::new();
+        let mut client = TokenClient::connect(
+            BufReader::with_capacity(1, responses.as_slice()),
+            &mut sent,
+            ExpectedWorker {
+                model_sha256: &hash,
+                vocab_size: 260,
+                config: config(),
+                max_response_frame_bytes: 1024,
+            },
+        )?;
+        assert_eq!(client.count("ab")?, 1);
+        let encoded = client.encode("ab<stop>")?;
+        assert_eq!(encoded.token_ids, [256, 258]);
+        assert_eq!(encoded.context, 4);
+        assert_eq!(encoded.reserved_output_tokens, 1);
+        assert_eq!(output.identity(), hash);
+        let mut lossless = Vec::new();
+        let mut display = Utf8Output::new();
+        let mut text = String::new();
+        for id in encoded.token_ids {
+            let piece = output.piece(id)?;
+            lossless.extend_from_slice(piece);
+            text.push_str(&display.push(piece)?);
+        }
+        text.push_str(display.finish());
+        assert_eq!(lossless, b"ab<stop>");
+        assert_eq!(text, "ab<stop>");
+        let _ = client.into_parts();
+        assert_eq!(sent, requests);
         Ok(())
     }
 
