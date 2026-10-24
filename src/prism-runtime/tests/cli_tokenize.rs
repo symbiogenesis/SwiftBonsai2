@@ -4,8 +4,9 @@
 #[cfg(feature = "cli")]
 mod driver {
     use std::fs;
+    use std::io::Write;
     use std::path::PathBuf;
-    use std::process::{Command, Output};
+    use std::process::{Command, Output, Stdio};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -157,12 +158,29 @@ mod driver {
             assert!(result.stdout.ends_with(b"\n"));
             Ok(serde_json::from_slice(&result.stdout)?)
         }
+
+        fn run_stdin(&self, arguments: &[String], input: &[u8]) -> Result<Output> {
+            let mut child = Command::new(env!("CARGO_BIN_EXE_bonsai-prism-runtime"))
+                .args(arguments)
+                .current_dir(&self.root)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?;
+            child
+                .stdin
+                .take()
+                .ok_or("missing child stdin")?
+                .write_all(input)?;
+            Ok(child.wait_with_output()?)
+        }
     }
 
     impl Drop for Artifact {
         fn drop(&mut self) {
             // Only the exact file and directory created by this fixture are removed.
             let _ = fs::remove_file(&self.path);
+            let _ = fs::remove_file(self.root.join("prompt-input.bin"));
             let _ = fs::remove_dir(&self.root);
         }
     }
@@ -302,6 +320,94 @@ mod driver {
         let mut arguments = fixture.arguments();
         arguments.extend(["--prompt", "ab"].map(str::to_owned));
         assert!(rejected(&fixture, &arguments)?.contains("vocabulary"));
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_driver_prompt_file_and_stdin_match_exact_inline_text() -> Result<()> {
+        let fixture = Artifact::new(260)?;
+        let text = "\u{feff}ab\r\n\u{1f331}<stop>\n";
+        let mut arguments = fixture.arguments();
+        replace(&mut arguments, "--context", "64")?;
+        arguments.extend(
+            [
+                "--prompt",
+                text,
+                "--special-input",
+                "parse",
+                "--insert-special",
+                "model",
+            ]
+            .map(str::to_owned),
+        );
+        let inline = fixture.record(&arguments)?;
+        let path = fixture.root.join("prompt-input.bin");
+        fs::write(&path, text)?;
+        let index = arguments
+            .iter()
+            .position(|key| key == "--prompt")
+            .ok_or("missing prompt")?;
+        arguments[index] = "--prompt-file".to_owned();
+        arguments[index + 1] = path.to_string_lossy().into_owned();
+        assert_eq!(fixture.record(&arguments)?, inline);
+        arguments[index + 1] = "-".to_owned();
+        let output = fixture.run_stdin(&arguments, text.as_bytes())?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stderr, Vec::<u8>::new());
+        assert_eq!(serde_json::from_slice::<Value>(&output.stdout)?, inline);
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_driver_prompt_files_reject_empty_invalid_and_oversized_input() -> Result<()> {
+        let fixture = Artifact::new(260)?;
+        let path = fixture.root.join("prompt-input.bin");
+        let mut arguments = fixture.arguments();
+        arguments.extend([
+            "--prompt-file".to_owned(),
+            path.to_string_lossy().into_owned(),
+        ]);
+        for bytes in [Vec::new(), vec![0xff], vec![b'a'; 1_048_577]] {
+            fs::write(&path, bytes)?;
+            assert!(!rejected(&fixture, &arguments)?.contains("prompt-input.bin"));
+        }
+        replace(&mut arguments, "--prompt-file", "relative.txt")?;
+        assert!(rejected(&fixture, &arguments)?.contains("must be absolute"));
+        replace(&mut arguments, "--prompt-file", "-")?;
+        let output = fixture.run_stdin(&arguments, &[0xff])?;
+        assert!(!output.status.success());
+        assert_eq!(output.stdout, Vec::<u8>::new());
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_driver_raw_ids_keep_metadata_only_contract_with_unsupported_text_tokenizer()
+    -> Result<()> {
+        let mut fixture = Artifact::new(260)?;
+        let offset = fixture
+            .bytes
+            .windows(6)
+            .position(|bytes| bytes == b"qwen35")
+            .ok_or("missing pretokenizer fixture")?;
+        fixture.bytes[offset..offset + 6].copy_from_slice(b"broken");
+        fs::write(&fixture.path, &fixture.bytes)?;
+        let mut arguments = fixture.arguments();
+        arguments.extend(["--tokens", "0,258,259"].map(str::to_owned));
+        assert_eq!(
+            fixture.record(&arguments)?["token_ids"],
+            json!([0, 258, 259])
+        );
+        let index = arguments
+            .iter()
+            .position(|key| key == "--tokens")
+            .ok_or("missing input")?;
+        arguments[index] = "--prompt".to_owned();
+        arguments[index + 1] = "ab".to_owned();
+        assert!(rejected(&fixture, &arguments)?.contains("tokenizer.ggml.pre"));
         Ok(())
     }
 }

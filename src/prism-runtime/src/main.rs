@@ -10,13 +10,17 @@ use bonsai_prism_runtime::{
     sampling::{Greedy, ReferenceSampler, Sampler, Sampling},
     special_input::SpecialInputPolicy,
     special_tokens::SpecialTokens,
+    text_output::Utf8Output,
+    tokenization::{
+        SpecialTokenInsertion, TextTokenizationPolicy, TokenBudget, TokenizationSession,
+    },
     tokenizer::Tokenizer,
     vocabulary::Vocabulary,
 };
 use serde_json::json;
 use std::{
     collections::BTreeMap,
-    io::Write,
+    io::{Read, Write},
     path::PathBuf,
     process::ExitCode,
     time::{Duration, Instant},
@@ -27,7 +31,7 @@ Usage: bonsai-prism-runtime --model <absolute-gguf-path> --bytes <u64>\n\
   --sha256 <64-hex> --memory-bytes <usize> --context <1..262144>\n\
   [--mode <generate|tokenize>]\n\
   [--checkpoint-bytes <usize>] [--max-tokens <usize>]\n\
-  (--tokens <id,id,...> | --prompt <utf8-text>)\n\
+  (--tokens <id,id,...> | --prompt <utf8-text> | --prompt-file <absolute-path|->)\n\
   [--special-input <literal|parse>] [--insert-special <none|model>]\n\
   [--stop-tokens <id,id,...>] [--backend <auto|scalar|neon>]\n\
   [--timeout-seconds <1..3600>] [--output <tokens|text>]\n\
@@ -54,8 +58,9 @@ backend_statistics counts all attempted matrix work, including provisional work.
 Prefill blocks default to one token and preserve sequential reference arithmetic.\n\
 Input is exact token IDs or bounded plain text; no chat template is applied.\n\
 Text BOS/EOS insertion defaults to none; model explicitly follows insertion flags.\n\
-Special input spellings stay literal by default; --special-input requires --prompt.\n\
-The insert-special option also requires --prompt, including an explicit none.\n\
+Special input spellings stay literal by default; special-input and insert-special\n\
+require text input. Prompt files and stdin (-) contain bounded exact UTF-8;\n\
+newlines and a UTF-8 BOM are preserved. Input is read before model verification.\n\
 Text input is experimental; full-model tokenizer parity remains unqualified.\n\
 Decoding defaults to greedy. Output is one JSON object per line.\n\
 Reference sampling is experimental, requires --seed, and uses temperature, top-k,\n\
@@ -174,6 +179,7 @@ fn option_values(arguments: impl IntoIterator<Item = String>) -> Result<BTreeMap
                 | "--max-tokens"
                 | "--tokens"
                 | "--prompt"
+                | "--prompt-file"
                 | "--special-input"
                 | "--insert-special"
                 | "--stop-tokens"
@@ -274,8 +280,6 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
     {
         return Err(bad("invalid artifact identity or native resource bounds"));
     }
-    let (tokens, prompt, special_input) = input_options(&mut values, context - max_tokens)?;
-    let insert_special = insertion_options(&mut values, prompt.is_some())?;
     let stop_tokens = values
         .remove("--stop-tokens")
         .map(|text| token_ids(&text, 256))
@@ -307,6 +311,10 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         _ => return Err(bad("output must be tokens or text")),
     };
     let sampling = sampling_options(&mut values)?;
+    // Validate all non-input options before a possible blocking stdin read.
+    let text_input = values.contains_key("--prompt") || values.contains_key("--prompt-file");
+    let insert_special = insertion_options(&mut values, text_input)?;
+    let (tokens, prompt, special_input) = input_options(&mut values, context - max_tokens)?;
     if !values.is_empty() {
         return Err(bad("incompatible option"));
     }
@@ -341,7 +349,7 @@ fn insertion_options(
 ) -> Result<InsertSpecial> {
     let insertion = values.remove("--insert-special");
     if insertion.is_some() && !text_input {
-        return Err(bad("special token insertion requires --prompt"));
+        return Err(bad("special token insertion requires text input"));
     }
     match insertion.as_deref().unwrap_or("none") {
         "none" => Ok(InsertSpecial::None),
@@ -356,30 +364,60 @@ fn input_options(
 ) -> Result<(Vec<u32>, Option<String>, SpecialInputPolicy)> {
     let tokens = values.remove("--tokens");
     let prompt = values.remove("--prompt");
+    let prompt_file = values.remove("--prompt-file");
     let policy = values.remove("--special-input");
-    match (tokens, prompt) {
-        (Some(tokens), None) if policy.is_none() => Ok((
+    match (tokens, prompt, prompt_file) {
+        (Some(tokens), None, None) if policy.is_none() => Ok((
             token_ids(&tokens, max_tokens)?,
             None,
             SpecialInputPolicy::Literal,
         )),
-        (None, Some(prompt)) => {
-            if prompt.is_empty() || prompt.len() > bonsai_prism_runtime::bpe::MAX_BPE_INPUT_BYTES {
-                return Err(bad(
-                    "text prompt must contain 1 through 1048576 UTF-8 bytes",
-                ));
-            }
+        (None, prompt, prompt_file) if prompt.is_some() != prompt_file.is_some() => {
             let policy = match policy.as_deref().unwrap_or("literal") {
                 "literal" => SpecialInputPolicy::Literal,
                 "parse" => SpecialInputPolicy::Parse,
                 _ => return Err(bad("special input must be literal or parse")),
             };
+            let prompt = if let Some(prompt) = prompt {
+                prompt
+            } else {
+                let source = prompt_file.ok_or_else(|| bad("missing text input source"))?;
+                if source == "-" {
+                    read_prompt(&mut std::io::stdin().lock())?
+                } else {
+                    let path = PathBuf::from(source);
+                    if !path.is_absolute() {
+                        return Err(bad("prompt file path must be absolute or - for stdin"));
+                    }
+                    read_prompt(&mut std::fs::File::open(path)?)?
+                }
+            };
+            if prompt.is_empty() || prompt.len() > bonsai_prism_runtime::bpe::MAX_BPE_INPUT_BYTES {
+                return Err(bad(
+                    "text prompt must contain 1 through 1048576 UTF-8 bytes",
+                ));
+            }
             Ok((Vec::new(), Some(prompt), policy))
         }
         _ => Err(bad(
-            "provide exactly one of --tokens or --prompt; special input policy requires --prompt",
+            "provide exactly one of --tokens, --prompt or --prompt-file; special input policy requires text input",
         )),
     }
+}
+
+fn read_prompt(reader: &mut impl Read) -> Result<String> {
+    let limit = bonsai_prism_runtime::bpe::MAX_BPE_INPUT_BYTES;
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(limit + 1)?;
+    reader
+        .take(u64::try_from(limit)? + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.is_empty() || bytes.len() > limit {
+        return Err(bad(
+            "text prompt must contain 1 through 1048576 UTF-8 bytes",
+        ));
+    }
+    Ok(String::from_utf8(bytes)?)
 }
 
 fn sampling_options(values: &mut BTreeMap<String, String>) -> Result<SamplingMode> {
@@ -495,54 +533,6 @@ fn generation_options(options: &Generation, model_stops: &[u32]) -> Result<Gener
         max_tokens: options.max_tokens,
         stop_tokens,
     })
-}
-
-#[derive(Default)]
-struct Utf8Output {
-    // Only an incomplete UTF-8 suffix survives each push (at most three bytes).
-    pending: Vec<u8>,
-}
-
-impl Utf8Output {
-    fn push(&mut self, bytes: &[u8]) -> Result<String> {
-        self.pending.try_reserve(bytes.len())?;
-        self.pending.extend_from_slice(bytes);
-        let mut output = String::new();
-        let mut consumed = 0;
-        while consumed < self.pending.len() {
-            match std::str::from_utf8(&self.pending[consumed..]) {
-                Ok(text) => {
-                    output.try_reserve(text.len())?;
-                    output.push_str(text);
-                    consumed = self.pending.len();
-                }
-                Err(error) => {
-                    let valid_end = consumed + error.valid_up_to();
-                    let text = std::str::from_utf8(&self.pending[consumed..valid_end])?;
-                    output.try_reserve(text.len() + 3)?;
-                    output.push_str(text);
-                    consumed = valid_end;
-                    if let Some(invalid_bytes) = error.error_len() {
-                        output.push('\u{fffd}');
-                        consumed += invalid_bytes;
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-        self.pending.drain(..consumed);
-        Ok(output)
-    }
-
-    fn finish(&mut self) -> &'static str {
-        if self.pending.is_empty() {
-            ""
-        } else {
-            self.pending.clear();
-            "\u{fffd}"
-        }
-    }
 }
 
 struct Loaded {
@@ -696,31 +686,45 @@ fn execute(arguments: &Arguments) -> Result<()> {
 }
 
 fn tokenize_record(arguments: &Arguments) -> Result<serde_json::Value> {
-    let model = ModelMetadata::load(
-        &arguments.path,
-        arguments.bytes,
-        &arguments.sha256,
-        arguments.memory,
-    )?;
-    // Validate declared special IDs/flags even without insertion. Raw token IDs
-    // remain exact caller input without tokenizer parsing or insertion.
-    let special_tokens = SpecialTokens::from_metadata(&model.metadata, model.vocab_size)?;
-    let tokens =
+    let (tokens, identity) =
         if let Some(prompt) = &arguments.prompt {
-            encode_prompt(
-                arguments,
+            let session = TokenizationSession::load(
+                &arguments.path,
+                arguments.bytes,
+                &arguments.sha256,
+                arguments.memory,
+            )?;
+            let result = session.encode(
                 prompt,
-                &model.metadata,
-                model.vocab_size,
-                &special_tokens,
-            )?
+                TextTokenizationPolicy {
+                    special_input: arguments.special_input,
+                    insert_special: match arguments.insert_special {
+                        InsertSpecial::None => SpecialTokenInsertion::None,
+                        InsertSpecial::Model => SpecialTokenInsertion::Model,
+                    },
+                    budget: TokenBudget {
+                        context: arguments.context,
+                        reserved_output_tokens: arguments.generation.max_tokens,
+                    },
+                },
+            )?;
+            (result.token_ids, session.identity().to_owned())
         } else {
+            // Preserve raw-ID mode's metadata-only contract: unlike a text session,
+            // it does not require a supported pretokenizer or BPE merge metadata.
+            let model = ModelMetadata::load(
+                &arguments.path,
+                arguments.bytes,
+                &arguments.sha256,
+                arguments.memory,
+            )?;
+            let _special_tokens = SpecialTokens::from_metadata(&model.metadata, model.vocab_size)?;
             if arguments.tokens.iter().any(|&token| {
                 usize::try_from(token).map_or(true, |token| token >= model.vocab_size)
             }) {
                 return Err(bad("input token is outside the model vocabulary"));
             }
-            arguments.tokens.clone()
+            (arguments.tokens.clone(), model.identity)
         };
     Ok(json!({
         "mode": "tokenize",
@@ -732,7 +736,7 @@ fn tokenize_record(arguments: &Arguments) -> Result<serde_json::Value> {
             SpecialInputPolicy::Parse => "parse",
         }),
         "insert_special": arguments.insert_special.name(),
-        "artifact": { "bytes": arguments.bytes, "sha256": model.identity },
+        "artifact": { "bytes": arguments.bytes, "sha256": identity },
         "context": arguments.context,
         "reserved_output_tokens": arguments.generation.max_tokens,
     }))
@@ -822,7 +826,7 @@ fn main() -> ExitCode {
 mod tests {
     use super::{
         Duration, Generation, InsertSpecial, MAX_STATE_BYTES, MatvecBackend, Mode, Result,
-        SamplingMode, SpecialInputPolicy, Utf8Output, bad, generation_options, parse,
+        SamplingMode, SpecialInputPolicy, Utf8Output, bad, generation_options, parse, read_prompt,
     };
 
     fn arguments() -> Vec<String> {
@@ -868,6 +872,43 @@ mod tests {
         }
         input.extend(["--mode", "tokenize"].map(str::to_owned));
         input
+    }
+
+    #[test]
+    fn cli_prompt_reader_preserves_exact_utf8_and_bounds_reads() -> Result<()> {
+        let text = "\u{feff}private\r\n\u{1f331}\n";
+        assert_eq!(read_prompt(&mut text.as_bytes())?, text);
+        for bytes in [Vec::new(), vec![0xff], vec![0xe2, 0x82]] {
+            assert!(read_prompt(&mut bytes.as_slice()).is_err());
+        }
+        let limit = bonsai_prism_runtime::bpe::MAX_BPE_INPUT_BYTES;
+        assert_eq!(read_prompt(&mut vec![b'a'; limit].as_slice())?.len(), limit);
+        let mut oversized = std::io::Cursor::new(vec![b'a'; limit + 100]);
+        assert!(read_prompt(&mut oversized).is_err());
+        assert_eq!(oversized.position(), u64::try_from(limit)? + 1);
+        Ok(())
+    }
+
+    #[test]
+    fn cli_prompt_file_options_reject_before_reading_stdin() -> Result<()> {
+        for pair in [
+            ("--backend", "invalid"),
+            ("--insert-special", "invalid"),
+            ("--special-input", "invalid"),
+            ("--prompt", "private prompt sentinel"),
+            ("--tokens", "1"),
+        ] {
+            let mut input = arguments();
+            let index = input
+                .iter()
+                .position(|key| key == "--tokens")
+                .ok_or("missing input")?;
+            input[index] = "--prompt-file".to_owned();
+            input[index + 1] = "-".to_owned();
+            input.extend(<[&str; 2]>::from(pair).map(str::to_owned));
+            assert!(parse(input).is_err());
+        }
+        Ok(())
     }
 
     #[test]
@@ -1141,17 +1182,17 @@ mod tests {
             for split in 0..=bytes.len() {
                 let mut output = Utf8Output::default();
                 let mut rendered = output.push(&bytes[..split])?;
-                assert!(output.pending.len() <= 3);
+                assert!(output.pending_bytes().len() <= 3);
                 rendered.push_str(&output.push(&bytes[split..])?);
                 rendered.push_str(output.finish());
                 assert_eq!(rendered, text);
-                assert_eq!(output.pending, Vec::<u8>::new());
+                assert_eq!(output.pending_bytes(), [0_u8; 0]);
             }
             let mut output = Utf8Output::default();
             let mut rendered = String::new();
             for byte in bytes {
                 rendered.push_str(&output.push(&[*byte])?);
-                assert!(output.pending.len() <= 3);
+                assert!(output.pending_bytes().len() <= 3);
             }
             rendered.push_str(output.finish());
             assert_eq!(rendered, text);

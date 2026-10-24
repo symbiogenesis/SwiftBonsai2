@@ -15,6 +15,8 @@ pub mod runtime;
 pub mod sampling;
 pub mod special_input;
 pub mod special_tokens;
+pub mod text_output;
+pub mod tokenization;
 pub mod tokenizer;
 pub mod vocabulary;
 

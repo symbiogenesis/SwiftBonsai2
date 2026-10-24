@@ -77,6 +77,13 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   parity remain open.
 - Verified tokenization-only mode returns exact prompt IDs and counts from
   bounded metadata without retaining weights or constructing the graph.
+- Reusable `TokenizationSession` verifies the artifact once, retains its
+  tokenizer and special declarations, and shares explicit context/output
+  accounting across text and checked raw-ID requests. Metadata and the artifact
+  handle are released after construction; requests require no model file I/O.
+- Public `text_output::Utf8Output` renders bounded caller-owned byte chunks,
+  retains at most three incomplete UTF-8 bytes, and resets abandoned output
+  before a new request. The token driver uses this same decoder.
 
 The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.
@@ -117,8 +124,14 @@ form and a generation limit. It validates
 identity syntax, positive bounds, prompt-plus-generation capacity and the
 256-stop-token limit before model I/O; vocabulary checks follow verified loading.
 Supply `--tokens <id,id,...>` from the reference tokenizer, or use experimental
-`--prompt <text>` for plain UTF-8 encoding. The two input options are mutually
-exclusive. `--special-input literal|parse` is available only with text input;
+`--prompt <text>` for plain UTF-8 encoding. `--prompt-file <absolute-path>` reads
+exact UTF-8 from a file, and `--prompt-file -` reads stdin through EOF. These
+three input options are mutually exclusive. File/stdin input keeps prompt bodies
+out of process arguments. It preserves every byte, including CR/LF and a UTF-8
+BOM; empty, malformed UTF-8 and inputs larger than 1 MiB reject before model
+verification. Other option validation precedes stdin reading; input reads have
+no timeout. The generation timeout still begins after model loading.
+`--special-input literal|parse` is available only with text input;
 literal is the default. Text encoding applies no chat template or BOS/EOS
 insertion by default, even if insertion flags are present in metadata. Supply
 explicitly formatted text when control tokens are intended. `--insert-special model` opts
@@ -169,7 +182,8 @@ The driver does not render chat templates, launch the broker or promote a profil
 
 Use `--mode tokenize` to inspect exact input IDs/count without graph allocation.
 This mode requires `--model`, `--bytes`, `--sha256`, `--memory-bytes`, `--context`
-and exactly one nonempty `--prompt`/`--tokens`. Optional `--max-tokens` reserves that
+and exactly one nonempty `--prompt`, `--prompt-file` or `--tokens` input.
+Optional `--max-tokens` reserves that
 many context slots for future output; its default is zero. Text input uses the
 same special-token and insertion policies as generation. Generation-only options,
 including `--checkpoint-bytes`, are rejected. A single JSON record reports
@@ -178,6 +192,18 @@ policies and artifact identity. Length/SHA-256 verification still reads the
 whole file, but the command retains only bounded metadata and never loads tensor
 payloads or executes inference. The metadata budget excludes tokenizer scratch
 and output buffers; this is not process-memory admission or broker integration.
+
+Library callers can retain `tokenization::TokenizationSession` across requests.
+`TextTokenizationPolicy` makes literal/parse handling, boundary insertion and
+`TokenBudget { context, reserved_output_tokens }` explicit. `encode` returns
+exact `token_ids` and their prompt/context/output accounting; `check_tokens`
+validates raw IDs with the same budget and never inserts tokens. The session
+builds its tokenizer and special declarations from the same verified artifact,
+then releases the metadata and file handle. Invalid requests leave it reusable.
+Session construction requires a supported complete tokenizer even for later
+raw-ID requests. The CLI's existing raw-ID mode remains metadata-only and does
+not require BPE or pretokenizer support. Persistent broker transport and template
+rendering remain separate work.
 
 `Bpe::from_metadata` validates normal vocabulary pieces and ranked merge rules.
 `encode_piece` accepts one already pretokenized byte slice; `encode_pieces`

@@ -200,6 +200,30 @@ task time separately, accounting for bandwidth and the measured critical path.
     metadata-only and context-bound checks cover this command. Persistent broker
     count/completion/readiness integration remains open.
 
+  - [x] **R5.5 — Reuse verified tokenization and exact accounting.** A library
+    session verifies an artifact once, builds matching tokenizer/special-token
+    declarations, then releases the metadata and file handle. Explicit text
+    policies and checked raw IDs share prompt/context/output accounting; failed
+    requests leave the session reusable. The text-tokenization command uses this
+    path while raw-ID mode preserves its metadata-only contract. Focused
+    verified-artifact, repeated-request and reservation checks cover this piece;
+    persistent broker transport and chat-template rendering remain open.
+
+  - [x] **R5.6 — Share incremental token text output with service callers.** The
+    public decoder and token driver use the same bounded UTF-8 display path.
+    At most three incomplete bytes survive a push; finish flushes truncation,
+    and reset discards provisional suffixes after cancellation. Failed pushes
+    preserve prior state. Focused byte-partition checks match standard lossy
+    decoding while vocabulary callers retain original lossless token bytes.
+
+  - [x] **R5.7 — Read bounded text prompts outside process arguments.** The
+    driver accepts an absolute UTF-8 prompt file or stdin through an explicit
+    `--prompt-file` option. Reads stop at the 1 MiB limit plus one overflow byte;
+    malformed/empty input rejects before model verification. Newlines and BOM
+    are preserved, input forms are exclusive, and text policies/accounting match
+    inline prompts. Focused parser, reader and serialized-driver checks cover
+    the contract. Stdin reads remain synchronous and have no input deadline.
+
 - [ ] **R6 — Add Adreno after CPU parity.** Follow [G0–G5](adreno-gpu-plan.md),
   implementing the same packed types, transforms and complete hybrid graph.
   Reuse Prism capability reports/fixtures, but qualify Rust GPU coverage and
