@@ -4,15 +4,17 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.PrismNativeCache.psm1')
 
 function Initialize-BonsaiPrismGrammarDependency {
     <#
     .SYNOPSIS
     Builds the pinned production grammar dependency in verified external storage.
     .DESCRIPTION
-    Verifies the archive, extracts a fresh source tree, and builds only the
-    LLGuidance production package with its unchanged Cargo.lock. It inherits the
-    host environment and runs no dependency tests, source tests or benchmarks.
+    Verifies the archive and freshly extracted sources against a stable source
+    mirror, then builds only the LLGuidance production package with its unchanged
+    Cargo.lock. Stable paths and timestamps preserve Cargo and native header
+    reuse. It inherits the host environment and runs no tests or benchmarks.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Explicit Prism test setup authorizes this bounded external dependency build.')]
     [CmdletBinding()]
@@ -42,8 +44,9 @@ function Initialize-BonsaiPrismGrammarDependency {
     }
     $archive = Receive-LockedArtifact -Uri $lock.ArchiveUrl -Path (Join-Path $root "$commit.zip") `
         -Bytes $lock.ArchiveBytes -Sha256 $lock.ArchiveSha256
-    # A fresh extraction prevents an altered cached source tree from being used.
-    # Cargo's registry and external target directories remain reusable caches.
+    # Retain fresh byte-verified source evidence for every invocation. Compilation
+    # uses a separately verified mirror so fresh paths do not invalidate Cargo
+    # fingerprints or CMake's production-header dependency paths.
     $invocation = Resolve-ExternalPath (Join-Path $root ('build-' + [Guid]::NewGuid().ToString('N')))
     [void][IO.Directory]::CreateDirectory($invocation)
     $stage = Join-Path $invocation 'source'
@@ -74,13 +77,17 @@ function Initialize-BonsaiPrismGrammarDependency {
             }
         }
     } finally { $zip.Dispose() }
-    $source = Join-Path $stage $lock.ArchiveRoot
-    $cargoLock = Join-Path $source 'Cargo.lock'
-    $license = Join-Path $source 'LICENSE'
+    $freshSource = Join-Path $stage $lock.ArchiveRoot
+    $cargoLock = Join-Path $freshSource 'Cargo.lock'
+    $license = Join-Path $freshSource 'LICENSE'
     if ((Get-FileHash -LiteralPath $cargoLock -Algorithm SHA256).Hash -ine $lock.CargoLockSha256 -or
         (Get-FileHash -LiteralPath $license -Algorithm SHA256).Hash -ine $lock.LicenseSha256) {
         throw 'Extracted grammar lock or license digest differs.'
     }
+    # The verified subtree is separate from the archive, per-invocation evidence
+    # and target directories. Every mirrored source byte is checked before use.
+    $source = Initialize-BonsaiPrismNativeSource -SourceDirectory $freshSource -BuildDirectory (Join-Path $root 'verified')
+    $cargoLock = Join-Path $source 'Cargo.lock'
     $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
     $version = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList @("+$Toolchain", '--version') `
         -WorkingDirectory $invocation -TimeoutSeconds 120 -LogPath (Join-Path $invocation 'cargo-version.log')
@@ -107,7 +114,7 @@ function Initialize-BonsaiPrismGrammarDependency {
     $evidence = [ordered]@{
         SchemaVersion=1; Commit=$commit; Archive=$archive; ArchiveSha256=$lock.ArchiveSha256
         CargoLockSha256=$lock.CargoLockSha256; Toolchain=$Toolchain; TargetTriple=$TargetTriple
-        CargoVersion=$version.StandardOutput.Trim(); SourceDirectory=$source; Library=$library
+        CargoVersion=$version.StandardOutput.Trim(); SourceDirectory=$source; FreshSourceDirectory=$freshSource; Library=$library
         LibraryBytes=(Get-Item -LiteralPath $library).Length
         LibrarySha256=(Get-FileHash -LiteralPath $library -Algorithm SHA256).Hash.ToLowerInvariant()
         Header=$header; HeaderSha256=(Get-FileHash -LiteralPath $header -Algorithm SHA256).Hash.ToLowerInvariant()

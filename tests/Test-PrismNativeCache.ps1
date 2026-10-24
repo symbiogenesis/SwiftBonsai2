@@ -38,6 +38,21 @@ $orphaned = Join-Path $scratch 'orphaned-native'
 [IO.File]::WriteAllText((Join-Path $orphaned 'build-ggml/kernel.obj'), 'stale native output')
 Assert-Failure { Initialize-BonsaiPrismNativeSource -SourceDirectory $source -BuildDirectory $orphaned } 'Native outputs without their verified source tree were accepted.'
 Assert (-not [IO.Directory]::Exists((Join-Path $orphaned 'source'))) 'Orphaned native outputs were rehydrated with old source timestamps.'
+# Grammar dependency extraction paths change on every invocation. Cargo must see
+# the same verified source path and header timestamps across those extractions.
+$grammarCache = Join-Path $scratch 'grammar/verified'
+$stableGrammar = Initialize-BonsaiPrismNativeSource -SourceDirectory $source -BuildDirectory $grammarCache
+$stableGrammarKernel = Join-Path $stableGrammar 'nested/kernel.cpp'
+$stableGrammarTimestamp = [IO.File]::GetLastWriteTimeUtc($stableGrammarKernel)
+$nextExtraction = Join-Path $scratch 'next-extraction'
+[void][IO.Directory]::CreateDirectory((Join-Path $nextExtraction 'nested'))
+[IO.File]::Copy((Join-Path $source 'CMakeLists.txt'), (Join-Path $nextExtraction 'CMakeLists.txt'), $false)
+[IO.File]::Copy((Join-Path $source 'nested/kernel.cpp'), (Join-Path $nextExtraction 'nested/kernel.cpp'), $false)
+[IO.File]::SetLastWriteTimeUtc((Join-Path $nextExtraction 'nested/kernel.cpp'), $stableGrammarTimestamp.AddHours(2))
+Assert ((Initialize-BonsaiPrismNativeSource -SourceDirectory $nextExtraction -BuildDirectory $grammarCache) -ceq $stableGrammar) 'A fresh extraction changed the verified grammar source path.'
+Assert ([IO.File]::GetLastWriteTimeUtc($stableGrammarKernel) -eq $stableGrammarTimestamp) 'A fresh extraction changed a verified grammar header timestamp.'
+[IO.File]::WriteAllText($stableGrammarKernel, 'modified grammar source')
+Assert-Failure { Initialize-BonsaiPrismNativeSource -SourceDirectory $nextExtraction -BuildDirectory $grammarCache } 'A fresh extraction accepted altered grammar mirror bytes.'
 $adapter = Join-Path $scratch 'checkout-adapter'
 [void][IO.Directory]::CreateDirectory((Join-Path $adapter 'common'))
 [IO.File]::WriteAllText((Join-Path $adapter 'CMakeLists.txt'), 'adapter build configuration')
