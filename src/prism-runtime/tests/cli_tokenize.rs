@@ -1,0 +1,304 @@
+#![forbid(unsafe_code)]
+#![cfg(feature = "cli")]
+//! Focused serialized-artifact checks of the metadata-only tokenization driver.
+
+use std::fs;
+use std::path::PathBuf;
+use std::process::{Command, Output};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use bonsai_prism_runtime::Result;
+use bonsai_prism_runtime::model::Model;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+
+const HEADER_BUDGET: usize = 128 * 1024;
+static NEXT_ARTIFACT: AtomicU64 = AtomicU64::new(0);
+
+struct Artifact {
+    root: PathBuf,
+    path: PathBuf,
+    bytes: Vec<u8>,
+}
+
+impl Artifact {
+    fn new(vocab_size: u64) -> Result<Self> {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let sequence = NEXT_ARTIFACT.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "SwiftBonsai-TokenizeDriver-{}-{nonce}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir(&root)?;
+        let path = root.join("model.gguf");
+        let mut bytes = Vec::new();
+        u32_bytes(&mut bytes, 0x4655_4747);
+        u32_bytes(&mut bytes, 3);
+        u64_bytes(&mut bytes, 1);
+        u64_bytes(&mut bytes, 10);
+        string_metadata(
+            &mut bytes,
+            "general.architecture",
+            "unsupported-for-generation",
+        )?;
+        string_metadata(&mut bytes, "tokenizer.ggml.model", "gpt2")?;
+        string_metadata(&mut bytes, "tokenizer.ggml.pre", "qwen35")?;
+        text(&mut bytes, "tokenizer.ggml.tokens")?;
+        u32_bytes(&mut bytes, 9);
+        u32_bytes(&mut bytes, 8);
+        u64_bytes(&mut bytes, 260);
+        let mut next = 256_u32;
+        for byte in u8::MIN..=u8::MAX {
+            let scalar = if (b'!'..=b'~').contains(&byte)
+                || (0xa1..=0xac).contains(&byte)
+                || (0xae..=0xff).contains(&byte)
+            {
+                u32::from(byte)
+            } else {
+                let scalar = next;
+                next += 1;
+                scalar
+            };
+            let character = char::from_u32(scalar).ok_or("invalid fixture byte alphabet")?;
+            text(&mut bytes, &character.to_string())?;
+        }
+        for token in ["ab", "a!", "<stop>", "<tag>"] {
+            text(&mut bytes, token)?;
+        }
+        text(&mut bytes, "tokenizer.ggml.token_type")?;
+        u32_bytes(&mut bytes, 9);
+        u32_bytes(&mut bytes, 5);
+        u64_bytes(&mut bytes, 260);
+        for _ in 0..258 {
+            bytes.extend(1_i32.to_le_bytes());
+        }
+        for kind in [3_i32, 4] {
+            bytes.extend(kind.to_le_bytes());
+        }
+        text(&mut bytes, "tokenizer.ggml.merges")?;
+        u32_bytes(&mut bytes, 9);
+        u32_bytes(&mut bytes, 8);
+        u64_bytes(&mut bytes, 2);
+        text(&mut bytes, "a b")?;
+        text(&mut bytes, "a !")?;
+        for (key, token) in [
+            ("tokenizer.ggml.eos_token_id", 258),
+            ("tokenizer.ggml.bos_token_id", 259),
+        ] {
+            text(&mut bytes, key)?;
+            u32_bytes(&mut bytes, 4);
+            u32_bytes(&mut bytes, token);
+        }
+        for key in [
+            "tokenizer.ggml.add_bos_token",
+            "tokenizer.ggml.add_eos_token",
+        ] {
+            text(&mut bytes, key)?;
+            u32_bytes(&mut bytes, 7);
+            bytes.push(1);
+        }
+        text(&mut bytes, "token_embd.weight")?;
+        u32_bytes(&mut bytes, 2);
+        u64_bytes(&mut bytes, 1024);
+        u64_bytes(&mut bytes, vocab_size);
+        u32_bytes(&mut bytes, 0);
+        u64_bytes(&mut bytes, 0);
+        let data_offset = bytes.len().div_ceil(32) * 32;
+        let payload_bytes = usize::try_from(vocab_size)? * 1024 * 4;
+        bytes.resize(data_offset + payload_bytes, 0);
+        bytes[data_offset..data_offset + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+        fs::write(&path, &bytes)?;
+        Ok(Self { root, path, bytes })
+    }
+
+    fn hash(&self) -> String {
+        Sha256::digest(&self.bytes)
+            .into_iter()
+            .flat_map(|byte| [byte >> 4, byte & 15])
+            .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
+            .collect()
+    }
+
+    fn arguments(&self) -> Vec<String> {
+        vec![
+            "--model".into(),
+            self.path.to_string_lossy().into_owned(),
+            "--bytes".into(),
+            self.bytes.len().to_string(),
+            "--sha256".into(),
+            self.hash(),
+            "--memory-bytes".into(),
+            HEADER_BUDGET.to_string(),
+            "--context".into(),
+            "4".into(),
+            "--mode".into(),
+            "tokenize".into(),
+        ]
+    }
+
+    fn run(&self, arguments: &[String]) -> Result<Output> {
+        Ok(Command::new(env!("CARGO_BIN_EXE_bonsai-prism-runtime"))
+            .args(arguments)
+            .current_dir(&self.root)
+            .output()?)
+    }
+
+    fn record(&self, arguments: &[String]) -> Result<Value> {
+        let result = self.run(arguments)?;
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stderr, [0_u8; 0]);
+        assert_eq!(std::str::from_utf8(&result.stdout)?.lines().count(), 1);
+        assert!(result.stdout.ends_with(b"\n"));
+        Ok(serde_json::from_slice(&result.stdout)?)
+    }
+}
+
+impl Drop for Artifact {
+    fn drop(&mut self) {
+        // Only the exact file and directory created by this fixture are removed.
+        let _ = fs::remove_file(&self.path);
+        let _ = fs::remove_dir(&self.root);
+    }
+}
+
+fn u32_bytes(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend(value.to_le_bytes());
+}
+
+fn u64_bytes(bytes: &mut Vec<u8>, value: u64) {
+    bytes.extend(value.to_le_bytes());
+}
+
+fn text(bytes: &mut Vec<u8>, value: &str) -> Result<()> {
+    u64_bytes(bytes, u64::try_from(value.len())?);
+    bytes.extend(value.as_bytes());
+    Ok(())
+}
+
+fn string_metadata(bytes: &mut Vec<u8>, key: &str, value: &str) -> Result<()> {
+    text(bytes, key)?;
+    u32_bytes(bytes, 8);
+    text(bytes, value)
+}
+
+fn replace(arguments: &mut [String], key: &str, value: &str) -> Result<()> {
+    let index = arguments
+        .iter()
+        .position(|argument| argument == key)
+        .ok_or("missing fixture option")?;
+    value.clone_into(&mut arguments[index + 1]);
+    Ok(())
+}
+
+fn rejected(fixture: &Artifact, arguments: &[String]) -> Result<String> {
+    let result = fixture.run(arguments)?;
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty(), "failure emitted a partial record");
+    Ok(String::from_utf8(result.stderr)?)
+}
+
+#[test]
+fn tokenize_driver_counts_text_without_materializing_weights_or_constructing_graph() -> Result<()> {
+    let fixture = Artifact::new(260)?;
+    assert!(fixture.bytes.len() > HEADER_BUDGET);
+    let mut arguments = fixture.arguments();
+    arguments.extend(["--prompt", "ab a!"].map(str::to_owned));
+    let record = fixture.record(&arguments)?;
+    assert_eq!(record["mode"], "tokenize");
+    assert_eq!(record["input_mode"], "text");
+    assert_eq!(record["token_ids"], json!([256, 32, 97, 33]));
+    assert_eq!(record["token_count"], 4);
+    assert_eq!(record["special_input"], "literal");
+    assert_eq!(record["insert_special"], "none");
+    assert_eq!(
+        record["artifact"],
+        json!({"bytes": fixture.bytes.len(), "sha256": fixture.hash()})
+    );
+    assert_eq!(record["context"], 4);
+    assert_eq!(record["reserved_output_tokens"], 0);
+    assert!(record.get("generated_tokens").is_none());
+    let error = Model::load(
+        &fixture.path,
+        u64::try_from(fixture.bytes.len())?,
+        &fixture.hash(),
+        2 * 1024 * 1024,
+    )
+    .err()
+    .ok_or("invalid executable payload was accepted")?;
+    assert!(
+        error
+            .to_string()
+            .contains("nonfinite executable tensor payload")
+    );
+    replace(&mut arguments, "--mode", "generate")?;
+    arguments.extend(["--checkpoint-bytes", "4096", "--max-tokens", "1"].map(str::to_owned));
+    assert!(
+        rejected(&fixture, &arguments)?
+            .contains("model tensor payloads exceed remaining memory budget")
+    );
+    Ok(())
+}
+
+#[test]
+fn tokenize_driver_keeps_raw_ids_and_special_input_policies_explicit() -> Result<()> {
+    let fixture = Artifact::new(260)?;
+    let mut arguments = fixture.arguments();
+    arguments.extend(["--tokens", "0,258,259", "--max-tokens", "1"].map(str::to_owned));
+    let record = fixture.record(&arguments)?;
+    assert_eq!(record["input_mode"], "tokens");
+    assert_eq!(record["token_ids"], json!([0, 258, 259]));
+    assert_eq!(record["token_count"], 3);
+    assert_eq!(record["special_input"], Value::Null);
+    assert_eq!(record["reserved_output_tokens"], 1);
+    replace(&mut arguments, "--tokens", "260")?;
+    assert!(rejected(&fixture, &arguments)?.contains("outside the model vocabulary"));
+    let mut arguments = fixture.arguments();
+    replace(&mut arguments, "--context", "16")?;
+    arguments.extend(["--prompt", "<stop>"].map(str::to_owned));
+    let literal = fixture.record(&arguments)?;
+    assert_eq!(literal["special_input"], "literal");
+    assert_ne!(literal["token_ids"], json!([258]));
+    arguments.extend(["--special-input", "parse"].map(str::to_owned));
+    let parsed = fixture.record(&arguments)?;
+    assert_eq!(parsed["special_input"], "parse");
+    assert_eq!(parsed["token_ids"], json!([258]));
+    assert_eq!(parsed["token_count"], 1);
+    arguments.extend(["--insert-special", "model"].map(str::to_owned));
+    let inserted = fixture.record(&arguments)?;
+    assert_eq!(inserted["insert_special"], "model");
+    assert_eq!(inserted["token_ids"], json!([259, 258, 258]));
+    assert_eq!(inserted["token_count"], 3);
+    replace(&mut arguments, "--context", "2")?;
+    assert!(rejected(&fixture, &arguments)?.contains("token limit"));
+    Ok(())
+}
+
+#[test]
+fn tokenize_driver_fails_atomically_for_context_identity_and_header_bounds() -> Result<()> {
+    let fixture = Artifact::new(260)?;
+    let mut arguments = fixture.arguments();
+    arguments.extend(["--prompt", "ab a!", "--max-tokens", "1"].map(str::to_owned));
+    assert!(rejected(&fixture, &arguments)?.contains("token limit"));
+    let mut arguments = fixture.arguments();
+    arguments.extend(["--prompt", "private prompt sentinel"].map(str::to_owned));
+    for (key, value) in [
+        ("--bytes", (fixture.bytes.len() + 1).to_string()),
+        ("--sha256", "ab".repeat(32)),
+        ("--memory-bytes", "1".to_owned()),
+    ] {
+        let mut invalid = arguments.clone();
+        replace(&mut invalid, key, &value)?;
+        let error = rejected(&fixture, &invalid)?;
+        assert!(!error.contains("private prompt sentinel"));
+    }
+    let fixture = Artifact::new(261)?;
+    let mut arguments = fixture.arguments();
+    arguments.extend(["--prompt", "ab"].map(str::to_owned));
+    assert!(rejected(&fixture, &arguments)?.contains("vocabulary"));
+    Ok(())
+}

@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use bonsai_gguf::{MetadataArray, MetadataValue, PRISM_DIALECT, VerifiedModel};
 use bonsai_prism_runtime::Result;
-use bonsai_prism_runtime::model::{Model, Tensor};
+use bonsai_prism_runtime::model::{Model, ModelMetadata, Tensor};
 use sha2::{Digest, Sha256};
 
 const BUDGET: usize = 2 * 1024 * 1024;
@@ -143,6 +143,94 @@ fn sha(bytes: &[u8]) -> String {
         .flat_map(|byte| [byte >> 4, byte & 15])
         .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
         .collect()
+}
+
+#[test]
+fn metadata_only_loader_preserves_identity_and_skips_executable_storage() -> Result<()> {
+    let fixture = Artifact::new(
+        &[
+            Spec {
+                name: "token_embd.weight",
+                dimensions: &[1024, 3],
+                kind: 24,
+                data: vec![0; 3072],
+            },
+            Spec {
+                name: "not_executable",
+                dimensions: &[1],
+                kind: 0,
+                data: f32::NAN.to_le_bytes().to_vec(),
+            },
+        ],
+        false,
+    )?;
+    let reader = VerifiedModel::open(
+        &fixture.path,
+        PRISM_DIALECT,
+        u64::try_from(fixture.bytes.len())?,
+        &sha(&fixture.bytes),
+        BUDGET,
+    )?;
+    let header_budget = reader.retained_bytes();
+    drop(reader);
+    let model = ModelMetadata::load(
+        &fixture.path,
+        u64::try_from(fixture.bytes.len())?,
+        &sha(&fixture.bytes).to_uppercase(),
+        header_budget,
+    )?;
+    assert_eq!(model.identity, sha(&fixture.bytes));
+    assert_eq!(model.vocab_size, 3);
+    assert_eq!(
+        model.metadata["general.architecture"].as_str(),
+        Some("synthetic")
+    );
+    assert!(fixture.load(BUDGET).is_err());
+    assert!(
+        ModelMetadata::load(
+            &fixture.path,
+            u64::try_from(fixture.bytes.len())?,
+            &sha(&fixture.bytes),
+            header_budget - 1,
+        )
+        .is_err()
+    );
+    for (bytes, hash) in [
+        (u64::try_from(fixture.bytes.len())? + 1, sha(&fixture.bytes)),
+        (u64::try_from(fixture.bytes.len())?, "ab".repeat(32)),
+    ] {
+        assert!(ModelMetadata::load(&fixture.path, bytes, &hash, BUDGET).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn metadata_only_loader_requires_a_rank_two_embedding_descriptor() -> Result<()> {
+    for (name, dimensions) in [
+        ("other", &[1, 3][..]),
+        ("token_embd.weight", &[3][..]),
+        ("token_embd.weight", &[1, 1, 3][..]),
+    ] {
+        let fixture = Artifact::new(
+            &[Spec {
+                name,
+                dimensions,
+                kind: 24,
+                data: vec![0; 3],
+            }],
+            false,
+        )?;
+        assert!(
+            ModelMetadata::load(
+                &fixture.path,
+                u64::try_from(fixture.bytes.len())?,
+                &sha(&fixture.bytes),
+                BUDGET,
+            )
+            .is_err()
+        );
+    }
+    Ok(())
 }
 
 #[test]

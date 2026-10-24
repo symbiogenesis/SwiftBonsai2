@@ -5,7 +5,7 @@ use bonsai_prism_runtime::{
     MAX_PREFILL_BLOCK_TOKENS, Result,
     graph::{MAX_STATE_BYTES, Qwen35},
     kernels::{MatvecBackend, MatvecDiagnostics, MatvecFallbackReason, MatvecStatistics},
-    model::Model,
+    model::{Model, ModelMetadata},
     runtime::{Cancellation, Finish, Generation, Limits, Prefill, Runtime},
     sampling::{Greedy, ReferenceSampler, Sampler, Sampling},
     special_input::SpecialInputPolicy,
@@ -25,15 +25,23 @@ use std::{
 const USAGE: &str = "Native CPU reference; full-model parity and performance are unqualified.\n\
 Usage: bonsai-prism-runtime --model <absolute-gguf-path> --bytes <u64>\n\
   --sha256 <64-hex> --memory-bytes <usize> --context <1..262144>\n\
-  --checkpoint-bytes <usize> --max-tokens <usize>\n\
+  [--mode <generate|tokenize>]\n\
+  [--checkpoint-bytes <usize>] [--max-tokens <usize>]\n\
   (--tokens <id,id,...> | --prompt <utf8-text>)\n\
-  [--special-input <literal|parse>]\n\
+  [--special-input <literal|parse>] [--insert-special <none|model>]\n\
   [--stop-tokens <id,id,...>] [--backend <auto|scalar|neon>]\n\
   [--timeout-seconds <1..3600>] [--output <tokens|text>]\n\
   [--state-bytes <usize>]\n\
   [--prefill-block-tokens <1..256>]\n\
   [--sampling <greedy|reference>] [--seed <u64>]\n\
   [--temperature <positive-f32>] [--top-k <0..1048576>] [--top-p <0..1>]\n\
+Mode defaults to generate, which requires checkpoint-bytes and positive max-tokens.\n\
+Tokenize verifies the artifact and bounded metadata without loading weights or\n\
+constructing a graph, then emits one JSON record with exact input IDs and count.\n\
+Its optional max-tokens reserves context for output (default zero); generation-only\n\
+checkpoint, stop, backend, timeout, output, state, prefill and sampling options reject.\n\
+The memory budget covers retained metadata only in tokenize mode; tokenizer\n\
+storage and input/output obey their separate fixed resource bounds.\n\
 State budget defaults to 4 GiB for live KV/recurrent element payload only;\n\
 model storage, graph scratch, checkpoints and allocator overhead are separate.\n\
 Timeout covers generation after loading. Checks are cooperative between operations;\n\
@@ -44,8 +52,10 @@ Selection is per matrix operation; backend_requested reports only the request.\n
 backend_last_operation records just the latest projection, including scalar fallback.\n\
 backend_statistics counts all attempted matrix work, including provisional work.\n\
 Prefill blocks default to one token and preserve sequential reference arithmetic.\n\
-Input is exact token IDs or bounded plain text; no chat template or BOS/EOS is inserted.\n\
+Input is exact token IDs or bounded plain text; no chat template is applied.\n\
+Text BOS/EOS insertion defaults to none; model explicitly follows insertion flags.\n\
 Special input spellings stay literal by default; --special-input requires --prompt.\n\
+The insert-special option also requires --prompt, including an explicit none.\n\
 Text input is experimental; full-model tokenizer parity remains unqualified.\n\
 Decoding defaults to greedy. Output is one JSON object per line.\n\
 Reference sampling is experimental, requires --seed, and uses temperature, top-k,\n\
@@ -57,6 +67,7 @@ Text output adds lossless token bytes and incremental UTF-8 text (invalid bytes\
 display as replacement characters). Control token spellings remain visible.\n";
 
 struct Arguments {
+    mode: Mode,
     path: PathBuf,
     bytes: u64,
     sha256: String,
@@ -68,11 +79,33 @@ struct Arguments {
     tokens: Vec<u32>,
     prompt: Option<String>,
     special_input: SpecialInputPolicy,
+    insert_special: InsertSpecial,
     backend: MatvecBackend,
     timeout: Option<Duration>,
     prefill: Prefill,
     text_output: bool,
     sampling: SamplingMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Mode {
+    Generate,
+    Tokenize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InsertSpecial {
+    None,
+    Model,
+}
+
+impl InsertSpecial {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Model => "model",
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -132,6 +165,7 @@ fn option_values(arguments: impl IntoIterator<Item = String>) -> Result<BTreeMap
         if !matches!(
             key.as_str(),
             "--model"
+                | "--mode"
                 | "--bytes"
                 | "--sha256"
                 | "--memory-bytes"
@@ -141,6 +175,7 @@ fn option_values(arguments: impl IntoIterator<Item = String>) -> Result<BTreeMap
                 | "--tokens"
                 | "--prompt"
                 | "--special-input"
+                | "--insert-special"
                 | "--stop-tokens"
                 | "--backend"
                 | "--timeout-seconds"
@@ -165,8 +200,40 @@ fn option_values(arguments: impl IntoIterator<Item = String>) -> Result<BTreeMap
     Ok(values)
 }
 
+fn mode_options(values: &mut BTreeMap<String, String>) -> Result<Mode> {
+    let mode = match values.remove("--mode").as_deref().unwrap_or("generate") {
+        "generate" => Mode::Generate,
+        "tokenize" => Mode::Tokenize,
+        _ => return Err(bad("mode must be generate or tokenize")),
+    };
+    if mode == Mode::Tokenize
+        && [
+            "--checkpoint-bytes",
+            "--stop-tokens",
+            "--backend",
+            "--timeout-seconds",
+            "--output",
+            "--state-bytes",
+            "--prefill-block-tokens",
+            "--sampling",
+            "--seed",
+            "--temperature",
+            "--top-k",
+            "--top-p",
+        ]
+        .iter()
+        .any(|key| values.contains_key(*key))
+    {
+        return Err(bad(
+            "generation-only option is incompatible with tokenize mode",
+        ));
+    }
+    Ok(mode)
+}
+
 fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
     let mut values = option_values(arguments)?;
+    let mode = mode_options(&mut values)?;
     let mut required = |key: &str| {
         values
             .remove(key)
@@ -180,8 +247,20 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
     let sha256 = required("--sha256")?;
     let memory = required("--memory-bytes")?.parse::<usize>()?;
     let context = required("--context")?.parse::<usize>()?;
-    let checkpoint_bytes = required("--checkpoint-bytes")?.parse::<usize>()?;
-    let max_tokens = required("--max-tokens")?.parse::<usize>()?;
+    let (checkpoint_bytes, max_tokens) = match mode {
+        Mode::Generate => (
+            required("--checkpoint-bytes")?.parse::<usize>()?,
+            required("--max-tokens")?.parse::<usize>()?,
+        ),
+        Mode::Tokenize => (
+            0,
+            values
+                .remove("--max-tokens")
+                .map(|value| value.parse::<usize>())
+                .transpose()?
+                .unwrap_or(0),
+        ),
+    };
     // Reject model-independent errors before opening/hashing a multi-GiB file
     // or allocating model and graph storage. Vocabulary checks still require
     // the verified model and remain the runtime's responsibility.
@@ -190,13 +269,13 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         || !sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
         || memory == 0
         || !(1..=262_144).contains(&context)
-        || checkpoint_bytes == 0
-        || max_tokens == 0
+        || (mode == Mode::Generate && (checkpoint_bytes == 0 || max_tokens == 0))
         || max_tokens >= context
     {
         return Err(bad("invalid artifact identity or native resource bounds"));
     }
     let (tokens, prompt, special_input) = input_options(&mut values, context - max_tokens)?;
+    let insert_special = insertion_options(&mut values, prompt.is_some())?;
     let stop_tokens = values
         .remove("--stop-tokens")
         .map(|text| token_ids(&text, 256))
@@ -228,7 +307,11 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         _ => return Err(bad("output must be tokens or text")),
     };
     let sampling = sampling_options(&mut values)?;
+    if !values.is_empty() {
+        return Err(bad("incompatible option"));
+    }
     Ok(Arguments {
+        mode,
         path,
         bytes,
         sha256,
@@ -243,12 +326,28 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         tokens,
         prompt,
         special_input,
+        insert_special,
         backend,
         timeout,
         prefill,
         text_output,
         sampling,
     })
+}
+
+fn insertion_options(
+    values: &mut BTreeMap<String, String>,
+    text_input: bool,
+) -> Result<InsertSpecial> {
+    let insertion = values.remove("--insert-special");
+    if insertion.is_some() && !text_input {
+        return Err(bad("special token insertion requires --prompt"));
+    }
+    match insertion.as_deref().unwrap_or("none") {
+        "none" => Ok(InsertSpecial::None),
+        "model" => Ok(InsertSpecial::Model),
+        _ => Err(bad("special token insertion must be none or model")),
+    }
 }
 
 fn input_options(
@@ -470,10 +569,12 @@ fn load_decoder(arguments: &Arguments) -> Result<Loaded> {
     let special_tokens = SpecialTokens::from_metadata(&model.metadata, vocab_size)?;
     let generation = generation_options(&arguments.generation, special_tokens.stop_tokens())?;
     let tokens = if let Some(prompt) = &arguments.prompt {
-        Tokenizer::from_metadata(&model.metadata, vocab_size)?.encode(
+        encode_prompt(
+            arguments,
             prompt,
-            arguments.context - arguments.generation.max_tokens,
-            arguments.special_input,
+            &model.metadata,
+            vocab_size,
+            &special_tokens,
         )?
     } else {
         arguments.tokens.clone()
@@ -497,6 +598,14 @@ fn load_decoder(arguments: &Arguments) -> Result<Loaded> {
 }
 
 fn execute(arguments: &Arguments) -> Result<()> {
+    if arguments.mode == Mode::Tokenize {
+        let record = tokenize_record(arguments)?;
+        let mut output = std::io::stdout().lock();
+        serde_json::to_writer(&mut output, &record)?;
+        output.write_all(b"\n")?;
+        output.flush()?;
+        return Ok(());
+    }
     let mut sampler = arguments.sampling.sampler()?;
     let Loaded {
         decoder,
@@ -574,6 +683,7 @@ fn execute(arguments: &Arguments) -> Result<()> {
     }
     if arguments.prompt.is_some() {
         completion["input_mode"] = json!("text");
+        completion["insert_special"] = json!(arguments.insert_special.name());
         completion["special_input"] = json!(match arguments.special_input {
             SpecialInputPolicy::Literal => "literal",
             SpecialInputPolicy::Parse => "parse",
@@ -583,6 +693,69 @@ fn execute(arguments: &Arguments) -> Result<()> {
     output.write_all(b"\n")?;
     output.flush()?;
     Ok(())
+}
+
+fn tokenize_record(arguments: &Arguments) -> Result<serde_json::Value> {
+    let model = ModelMetadata::load(
+        &arguments.path,
+        arguments.bytes,
+        &arguments.sha256,
+        arguments.memory,
+    )?;
+    // Validate declared special IDs/flags even without insertion. Raw token IDs
+    // remain exact caller input without tokenizer parsing or insertion.
+    let special_tokens = SpecialTokens::from_metadata(&model.metadata, model.vocab_size)?;
+    let tokens =
+        if let Some(prompt) = &arguments.prompt {
+            encode_prompt(
+                arguments,
+                prompt,
+                &model.metadata,
+                model.vocab_size,
+                &special_tokens,
+            )?
+        } else {
+            if arguments.tokens.iter().any(|&token| {
+                usize::try_from(token).map_or(true, |token| token >= model.vocab_size)
+            }) {
+                return Err(bad("input token is outside the model vocabulary"));
+            }
+            arguments.tokens.clone()
+        };
+    Ok(json!({
+        "mode": "tokenize",
+        "input_mode": if arguments.prompt.is_some() { "text" } else { "tokens" },
+        "token_count": tokens.len(),
+        "token_ids": tokens,
+        "special_input": arguments.prompt.as_ref().map(|_| match arguments.special_input {
+            SpecialInputPolicy::Literal => "literal",
+            SpecialInputPolicy::Parse => "parse",
+        }),
+        "insert_special": arguments.insert_special.name(),
+        "artifact": { "bytes": arguments.bytes, "sha256": model.identity },
+        "context": arguments.context,
+        "reserved_output_tokens": arguments.generation.max_tokens,
+    }))
+}
+
+fn encode_prompt(
+    arguments: &Arguments,
+    prompt: &str,
+    metadata: &bonsai_gguf::Metadata,
+    vocab_size: usize,
+    special_tokens: &SpecialTokens,
+) -> Result<Vec<u32>> {
+    let tokenizer = Tokenizer::from_metadata(metadata, vocab_size)?;
+    let limit = arguments.context - arguments.generation.max_tokens;
+    match arguments.insert_special {
+        InsertSpecial::None => tokenizer.encode(prompt, limit, arguments.special_input),
+        InsertSpecial::Model => tokenizer.encode_with_special_tokens(
+            prompt,
+            limit,
+            arguments.special_input,
+            special_tokens,
+        ),
+    }
 }
 
 const fn backend_name(backend: MatvecBackend) -> &'static str {
@@ -648,8 +821,8 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        Duration, Generation, MAX_STATE_BYTES, MatvecBackend, Result, SamplingMode,
-        SpecialInputPolicy, Utf8Output, bad, generation_options, parse,
+        Duration, Generation, InsertSpecial, MAX_STATE_BYTES, MatvecBackend, Mode, Result,
+        SamplingMode, SpecialInputPolicy, Utf8Output, bad, generation_options, parse,
     };
 
     fn arguments() -> Vec<String> {
@@ -683,6 +856,132 @@ mod tests {
             .position(|argument| argument == key)
             .ok_or_else(|| bad("missing test argument"))?;
         arguments[position + 1] = value.to_owned();
+        Ok(())
+    }
+
+    fn tokenize_arguments() -> Vec<String> {
+        let mut input = arguments();
+        for key in ["--checkpoint-bytes", "--max-tokens"] {
+            if let Some(index) = input.iter().position(|value| value == key) {
+                input.drain(index..=index + 1);
+            }
+        }
+        input.extend(["--mode", "tokenize"].map(str::to_owned));
+        input
+    }
+
+    #[test]
+    fn cli_mode_defaults_to_generation_and_accepts_explicit_selection() -> Result<()> {
+        assert_eq!(parse(arguments())?.mode, Mode::Generate);
+        let mut input = arguments();
+        input.extend(["--mode", "generate"].map(str::to_owned));
+        assert_eq!(parse(input)?.mode, Mode::Generate);
+        let parsed = parse(tokenize_arguments())?;
+        assert_eq!(parsed.mode, Mode::Tokenize);
+        assert_eq!(parsed.generation.max_tokens, 0);
+        assert_eq!(parsed.checkpoint_bytes, 0);
+        for tail in [
+            vec!["--mode"],
+            vec!["--mode", ""],
+            vec!["--mode", "Tokenize"],
+            vec!["--mode", "unknown"],
+            vec!["--mode", "generate", "--mode", "tokenize"],
+        ] {
+            let mut input = arguments();
+            input.extend(tail.into_iter().map(str::to_owned));
+            assert!(parse(input).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn cli_tokenize_reserves_optional_output_and_accepts_full_input_context() -> Result<()> {
+        let mut input = tokenize_arguments();
+        replace(&mut input, "--tokens", "0,1,2,3,4,5,6,7")?;
+        assert_eq!(parse(input.clone())?.tokens.len(), 8);
+        input.extend(["--max-tokens", "0"].map(str::to_owned));
+        assert_eq!(parse(input.clone())?.tokens.len(), 8);
+        for reserve in ["1", "8", "9", "18446744073709551616"] {
+            replace(&mut input, "--max-tokens", reserve)?;
+            assert!(parse(input.clone()).is_err());
+        }
+        replace(&mut input, "--tokens", "0,1")?;
+        replace(&mut input, "--max-tokens", "6")?;
+        assert_eq!(parse(input.clone())?.generation.max_tokens, 6);
+        replace(&mut input, "--max-tokens", "7")?;
+        assert!(parse(input).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn cli_tokenize_rejects_generation_controls_before_model_loading() {
+        for (key, value) in [
+            ("--checkpoint-bytes", "4096"),
+            ("--stop-tokens", "1"),
+            ("--backend", "auto"),
+            ("--timeout-seconds", "1"),
+            ("--output", "tokens"),
+            ("--state-bytes", "4096"),
+            ("--prefill-block-tokens", "1"),
+            ("--sampling", "greedy"),
+            ("--seed", "0"),
+            ("--temperature", "1"),
+            ("--top-k", "20"),
+            ("--top-p", "0.95"),
+            ("--unknown", "value"),
+        ] {
+            let mut input = tokenize_arguments();
+            input.extend([key, value].map(str::to_owned));
+            assert!(parse(input).is_err(), "accepted incompatible {key}");
+        }
+    }
+
+    #[test]
+    fn cli_special_insertion_is_explicit_and_requires_text_in_both_modes() -> Result<()> {
+        for mode in ["generate", "tokenize"] {
+            for option in ["none", "model"] {
+                let mut input = if mode == "generate" {
+                    arguments()
+                } else {
+                    tokenize_arguments()
+                };
+                input.extend(["--insert-special", option].map(str::to_owned));
+                assert!(parse(input.clone()).is_err());
+                let index = input
+                    .iter()
+                    .position(|value| value == "--tokens")
+                    .ok_or("missing fixture input")?;
+                input[index] = "--prompt".to_owned();
+                input[index + 1] = "ab".to_owned();
+                assert_eq!(
+                    parse(input)?.insert_special,
+                    if option == "model" {
+                        InsertSpecial::Model
+                    } else {
+                        InsertSpecial::None
+                    }
+                );
+            }
+        }
+        let mut input = arguments();
+        let index = input
+            .iter()
+            .position(|value| value == "--tokens")
+            .ok_or("missing fixture input")?;
+        input[index] = "--prompt".to_owned();
+        input[index + 1] = "ab".to_owned();
+        assert_eq!(parse(input.clone())?.insert_special, InsertSpecial::None);
+        for tail in [
+            vec!["--insert-special"],
+            vec!["--insert-special", ""],
+            vec!["--insert-special", "Model"],
+            vec!["--insert-special", "invalid"],
+            vec!["--insert-special", "none", "--insert-special", "model"],
+        ] {
+            let mut invalid = input.clone();
+            invalid.extend(tail.into_iter().map(str::to_owned));
+            assert!(parse(invalid).is_err());
+        }
         Ok(())
     }
 

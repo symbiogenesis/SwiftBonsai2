@@ -33,6 +33,64 @@ pub struct Model {
     pub identity: String,
 }
 
+/// Verified, bounded GGUF metadata for tokenization without executable weights.
+///
+/// The embedding descriptor supplies the vocabulary size, but no tensor payload
+/// is materialized or checked for executable values. This is not graph or
+/// inference validation; unsupported graph architectures and executable tensor
+/// encodings can still provide a usable tokenizer.
+#[derive(Debug)]
+pub struct ModelMetadata {
+    /// Complete retained scalar, tokenizer, array and template metadata.
+    pub metadata: Metadata,
+    /// Vocabulary extent from the rank-two `token_embd.weight` descriptor.
+    pub vocab_size: usize,
+    /// Lowercase SHA-256 identity verified before parsing the model header.
+    pub identity: String,
+}
+
+impl ModelMetadata {
+    /// Verifies the complete artifact and retains only its bounded GGUF header.
+    ///
+    /// Hashing streams through the complete file, then the same verified handle
+    /// parses metadata and validates tensor descriptors. `memory_limit` bounds
+    /// conservative retained-header storage, excluding bounded parser scratch
+    /// and subsequent tokenizer allocations. No call reads a tensor payload
+    /// into storage, constructs a graph, or establishes inference validity.
+    ///
+    /// # Errors
+    /// Rejects identity mismatches, malformed or over-budget GGUF headers,
+    /// unsupported dialect encodings, a missing/rank-mismatched token embedding,
+    /// a vocabulary extent outside `usize`, allocation failures and I/O errors.
+    pub fn load(
+        path: &Path,
+        expected_bytes: u64,
+        expected_sha256: &str,
+        memory_limit: usize,
+    ) -> Result<Self> {
+        let reader = VerifiedModel::open(
+            path,
+            PRISM_DIALECT,
+            expected_bytes,
+            expected_sha256,
+            memory_limit,
+        )?;
+        let vocab_size = reader
+            .tensors()
+            .iter()
+            .find(|tensor| tensor.name == "token_embd.weight")
+            .filter(|tensor| tensor.dimensions.len() == 2)
+            .and_then(|tensor| tensor.dimensions.get(1))
+            .copied()
+            .ok_or_else(|| invalid("missing token embedding vocabulary dimension"))?;
+        Ok(Self {
+            metadata: reader.into_metadata(),
+            vocab_size: usize::try_from(vocab_size)?,
+            identity: expected_sha256.to_ascii_lowercase(),
+        })
+    }
+}
+
 impl Model {
     /// Loads the explicitly pinned Prism GGUF dialect within a retained budget.
     ///
