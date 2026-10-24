@@ -15,6 +15,7 @@ struct Recurrent {
     steps: Rc<Cell<usize>>,
     fail: Rc<Cell<bool>>,
     restore_fail: Rc<Cell<bool>>,
+    checkpoint_fail: Rc<Cell<bool>>,
 }
 
 impl Decoder for Recurrent {
@@ -45,6 +46,9 @@ impl Decoder for Recurrent {
         Ok(logits)
     }
     fn checkpoint(&self) -> Result<Self::Checkpoint> {
+        if self.checkpoint_fail.replace(false) {
+            return Err(std::io::Error::other("injected checkpoint allocation failure").into());
+        }
         Ok(self.tokens.clone())
     }
     fn restore(&mut self, checkpoint: &Self::Checkpoint) -> Result<()> {
@@ -62,6 +66,7 @@ fn decoder() -> Recurrent {
         steps: Rc::new(Cell::new(0)),
         fail: Rc::new(Cell::new(false)),
         restore_fail: Rc::new(Cell::new(false)),
+        checkpoint_fail: Rc::new(Cell::new(false)),
     }
 }
 
@@ -222,6 +227,75 @@ fn snapshot_budget_rejects_before_mutating_a_committed_conversation() -> Result<
     );
     assert_eq!(steps.get(), 0);
     assert_eq!(runtime.tokens(), &[0_u32; 0]);
+    Ok(())
+}
+
+#[test]
+fn failed_optional_checkpoint_preserves_a_full_prefix_cache() -> Result<()> {
+    let decoder = decoder();
+    let checkpoint_fail = decoder.checkpoint_fail.clone();
+    let mut runtime = Runtime::new(
+        decoder,
+        Limits {
+            checkpoints: 1,
+            ..LIMITS
+        },
+    )?;
+    let cancellation = Cancellation::default();
+    runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+    assert_eq!(runtime.checkpoint_count(), 1);
+
+    runtime.generate(&[1, 1, 2], &options(), &cancellation, |_| {
+        // The rollback checkpoint already exists. Fail only the optional
+        // replacement captured after the request has completed successfully.
+        checkpoint_fail.set(true);
+        Ok(())
+    })?;
+    assert_eq!(runtime.tokens(), &[1, 1, 2, 4]);
+    assert_eq!(runtime.checkpoint_count(), 1);
+    assert!(!runtime.is_faulted());
+
+    let edited = runtime.generate(&[1, 1, 3], &options(), &cancellation, |_| Ok(()))?;
+    assert_eq!(edited.reused_tokens, 2);
+    assert_eq!(runtime.tokens(), &[1, 1, 3, 5]);
+    assert_eq!(runtime.checkpoint_count(), 1);
+    Ok(())
+}
+
+#[test]
+fn oversized_optional_checkpoint_preserves_an_older_prefix() -> Result<()> {
+    let decoder = decoder();
+    let checkpoint_fail = decoder.checkpoint_fail.clone();
+    // Each snapshot owns three Vec headers and a byte count, plus two copies
+    // of its token IDs and eight logits. Allow the long rollback and the small
+    // saved prefix together, but not the medium rollback and a long replacement.
+    let snapshot_metadata = 3 * size_of::<Vec<u32>>() + size_of::<usize>();
+    let mut runtime = Runtime::new(
+        decoder,
+        Limits {
+            checkpoints: 1,
+            checkpoint_bytes: 2 * snapshot_metadata + 340,
+            ..LIMITS
+        },
+    )?;
+    let cancellation = Cancellation::default();
+    runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+    runtime.generate(&[1; 9], &options(), &cancellation, |_| {
+        // Keep the small prefix while establishing a larger committed state.
+        checkpoint_fail.set(true);
+        Ok(())
+    })?;
+    assert_eq!(runtime.tokens().len(), 10);
+    assert_eq!(runtime.checkpoint_count(), 1);
+
+    runtime.generate(&[1; 28], &options(), &cancellation, |_| Ok(()))?;
+    assert_eq!(runtime.tokens().len(), 29);
+    assert_eq!(runtime.checkpoint_count(), 1);
+
+    let edited = runtime.generate(&[1, 1, 3], &options(), &cancellation, |_| Ok(()))?;
+    assert_eq!(edited.reused_tokens, 2);
+    assert_eq!(runtime.tokens(), &[1, 1, 3, 5]);
+    assert_eq!(runtime.checkpoint_count(), 1);
     Ok(())
 }
 

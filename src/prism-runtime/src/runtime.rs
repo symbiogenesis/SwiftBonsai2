@@ -197,13 +197,15 @@ impl<D: Decoder> Runtime<D> {
             Ok(completion) => {
                 // Snapshots are an optional reuse optimization. A budget miss
                 // does not invalidate an otherwise completed generation.
-                if self.limits.checkpoints != 0 {
+                if self.limits.checkpoints != 0
+                    && let Ok(snapshot) = self.capture(rollback.bytes)
+                {
+                    // Count pressure alone must not discard a usable prefix
+                    // when its optional replacement could not be captured.
                     if self.checkpoints.len() == self.limits.checkpoints {
                         self.checkpoints.remove(0);
                     }
-                    if let Ok(snapshot) = self.capture(rollback.bytes) {
-                        self.checkpoints.push(snapshot);
-                    }
+                    self.checkpoints.push(snapshot);
                 }
                 Ok(completion)
             }
