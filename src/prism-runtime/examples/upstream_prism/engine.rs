@@ -1,0 +1,300 @@
+//! Production operation adapters; inputs and assertions remain in Rust.
+
+use std::fs::{self, File};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use bonsai_prism_runtime::kernels::{matvec, row};
+use bonsai_prism_runtime::model::Tensor;
+
+use super::fixture::Fixture;
+use super::{Result, invalid};
+
+const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_LOG_BYTES: u64 = 1024 * 1024;
+// Leave the supervising runner time to collect evidence and reap the harness.
+const BRIDGE_TIMEOUT: Duration = Duration::from_secs(90);
+
+#[derive(Clone, Copy)]
+pub(super) enum Target {
+    Cpp,
+    Rust,
+}
+
+pub(super) struct Pq2Input {
+    pub(super) k: usize,
+    pub(super) m: usize,
+    pub(super) n: usize,
+    pub(super) packed: Vec<u8>,
+    pub(super) activations: Vec<f32>,
+}
+
+pub(super) enum Request {
+    Pq2(Pq2Input),
+    Ptq1(Vec<[u8; 28]>),
+}
+
+type Outcome = std::result::Result<Vec<f32>, String>;
+
+pub(super) enum Output {
+    Pq2(Outcome),
+    Ptq1(Vec<Outcome>),
+}
+
+pub(super) struct Engine {
+    target: Target,
+    bridge: Option<PathBuf>,
+    evidence_directory: Option<PathBuf>,
+}
+
+impl Engine {
+    pub(super) fn new(
+        target: Target,
+        bridge: Option<PathBuf>,
+        evidence_directory: Option<PathBuf>,
+    ) -> Result<Self> {
+        if let Some(path) = &bridge
+            && (!path.is_absolute() || !path.is_file())
+        {
+            return Err(invalid("native bridge must be an existing absolute file"));
+        }
+        if let Some(path) = &evidence_directory {
+            if !path.is_absolute() {
+                return Err(invalid("bridge evidence directory must be absolute"));
+            }
+            fs::create_dir_all(path)?;
+        }
+        Ok(Self {
+            target,
+            bridge,
+            evidence_directory,
+        })
+    }
+
+    pub(super) fn execute(&self, name: &str, requests: &[Request]) -> Result<Vec<Output>> {
+        match self.target {
+            Target::Cpp => self.cpp(name, requests),
+            Target::Rust => Ok(requests.iter().map(rust_operation).collect()),
+        }
+    }
+
+    fn cpp(&self, name: &str, requests: &[Request]) -> Result<Vec<Output>> {
+        let bridge = self
+            .bridge
+            .as_ref()
+            .ok_or_else(|| invalid("native bridge path is missing"))?;
+        let evidence = self
+            .evidence_directory
+            .as_ref()
+            .ok_or_else(|| invalid("native bridge evidence directory is missing"))?;
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let directory = evidence.join(format!("{name}-{}-{nonce}", std::process::id()));
+        fs::create_dir(&directory)?;
+        let input = directory.join("request.bin");
+        let output = directory.join("response.bin");
+        fs::write(&input, encode_requests(requests)?)?;
+        run_bridge(bridge, &directory, &input, &output)?;
+        if fs::metadata(&output)?.len() > MAX_RESPONSE_BYTES {
+            return Err(invalid("native bridge response exceeds size bound"));
+        }
+        decode_response(&fs::read(output)?, requests)
+    }
+}
+
+fn rust_operation(request: &Request) -> Output {
+    match request {
+        Request::Pq2(input) => {
+            let tensor = Tensor {
+                name: "upstream-pq2-weights".to_owned(),
+                kind: 142,
+                dimensions: vec![input.k, input.m],
+                data: Arc::from(input.packed.clone()),
+            };
+            // The runtime CPU API takes one activation column per call.
+            // Preserve all upstream N columns and the original output order.
+            let mut values = Vec::with_capacity(input.m * input.n);
+            for activation in input.activations.chunks_exact(input.k) {
+                match matvec(&tensor, activation) {
+                    Ok(column) => values.extend(column),
+                    Err(error) => return Output::Pq2(Err(error.to_string())),
+                }
+            }
+            Output::Pq2(Ok(values))
+        }
+        Request::Ptq1(blocks) => Output::Ptq1(
+            blocks
+                .iter()
+                .map(|packed| {
+                    row(
+                        &Tensor {
+                            name: "upstream-ptq1-block".to_owned(),
+                            kind: 143,
+                            dimensions: vec![128],
+                            data: Arc::from(*packed),
+                        },
+                        0,
+                    )
+                    .map_err(|error| error.to_string())
+                })
+                .collect(),
+        ),
+    }
+}
+
+fn push_u32(bytes: &mut Vec<u8>, value: usize) -> Result<()> {
+    bytes.extend(u32::try_from(value)?.to_le_bytes());
+    Ok(())
+}
+
+fn encode_requests(requests: &[Request]) -> Result<Vec<u8>> {
+    let mut bytes = b"BSPREQ1\n".to_vec();
+    push_u32(&mut bytes, requests.len())?;
+    for request in requests {
+        match request {
+            Request::Pq2(input) => {
+                for value in [
+                    1,
+                    input.k,
+                    input.m,
+                    input.n,
+                    input.packed.len(),
+                    input.activations.len(),
+                ] {
+                    push_u32(&mut bytes, value)?;
+                }
+                bytes.extend(&input.packed);
+                for value in &input.activations {
+                    bytes.extend(value.to_le_bytes());
+                }
+            }
+            Request::Ptq1(blocks) => {
+                for value in [2, 128, blocks.len(), 0, blocks.len() * 28, 0] {
+                    push_u32(&mut bytes, value)?;
+                }
+                for block in blocks {
+                    bytes.extend(block);
+                }
+            }
+        }
+    }
+    Ok(bytes)
+}
+
+fn decode_response(bytes: &[u8], requests: &[Request]) -> Result<Vec<Output>> {
+    let mut fixture = Fixture::new(bytes, *b"BSPRES1\n")?;
+    if usize::try_from(fixture.u32()?)? != requests.len() {
+        return Err(invalid("native bridge response request count mismatch"));
+    }
+    let mut outputs = Vec::with_capacity(requests.len());
+    for request in requests {
+        let expected = match request {
+            Request::Pq2(input) => input.m * input.n,
+            Request::Ptq1(blocks) => blocks.len() * 128,
+        };
+        if usize::try_from(fixture.u32()?)? != expected {
+            return Err(invalid("native bridge response element count mismatch"));
+        }
+        let values = fixture.floats(expected)?;
+        outputs.push(match request {
+            Request::Pq2(_) => Output::Pq2(Ok(values)),
+            Request::Ptq1(_) => Output::Ptq1(
+                values
+                    .as_chunks::<128>()
+                    .0
+                    .iter()
+                    .map(|block| Ok(block.to_vec()))
+                    .collect(),
+            ),
+        });
+    }
+    fixture.finish()?;
+    Ok(outputs)
+}
+
+fn run_bridge(bridge: &Path, directory: &Path, input: &Path, output: &Path) -> Result<()> {
+    let stdout_path = directory.join("stdout.log");
+    let stderr_path = directory.join("stderr.log");
+    let stdout = File::create(&stdout_path)?;
+    let stderr = File::create(&stderr_path)?;
+    let mut child = Command::new(bridge)
+        .args([
+            "--input".as_ref(),
+            input.as_os_str(),
+            "--output".as_ref(),
+            output.as_os_str(),
+        ])
+        .current_dir(directory)
+        .stdin(Stdio::null())
+        .stdout(stdout)
+        .stderr(stderr)
+        .spawn()?;
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if exceeded_limits(started, &stdout_path, &stderr_path, output) {
+                    return Err(invalid(format!(
+                        "native bridge exceeded time/output bound; evidence: {}",
+                        directory.display()
+                    )));
+                }
+                if !status.success() {
+                    return Err(invalid(format!(
+                        "native bridge exited {status}; evidence: {}",
+                        directory.display()
+                    )));
+                }
+                return Ok(());
+            }
+            Ok(None) => {}
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error.into());
+            }
+        }
+        if exceeded_limits(started, &stdout_path, &stderr_path, output) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(invalid(format!(
+                "native bridge exceeded time/output bound; evidence: {}",
+                directory.display()
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn exceeded_limits(started: Instant, stdout: &Path, stderr: &Path, output: &Path) -> bool {
+    started.elapsed() > BRIDGE_TIMEOUT
+        || [stdout, stderr]
+            .iter()
+            .any(|path| fs::metadata(path).is_ok_and(|metadata| metadata.len() > MAX_LOG_BYTES))
+        || fs::metadata(output).is_ok_and(|metadata| metadata.len() > MAX_RESPONSE_BYTES)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_wrong_bridge_counts_nonfinite_and_trailing_values() {
+        let requests = [Request::Ptq1(vec![[0; 28]])];
+        let mut response = b"BSPRES1\n".to_vec();
+        response.extend(0_u32.to_le_bytes());
+        assert!(decode_response(&response, &requests).is_err());
+        response[8..].copy_from_slice(&1_u32.to_le_bytes());
+        response.extend(127_u32.to_le_bytes());
+        assert!(decode_response(&response, &requests).is_err());
+        response[12..].copy_from_slice(&128_u32.to_le_bytes());
+        response.extend(vec![0; 128 * 4]);
+        assert!(decode_response(&response, &requests).is_ok());
+        response.extend(0_u32.to_le_bytes());
+        assert!(decode_response(&response, &requests).is_err());
+        response.truncate(16 + 128 * 4);
+        response[16..20].copy_from_slice(&f32::INFINITY.to_le_bytes());
+        assert!(decode_response(&response, &requests).is_err());
+    }
+}

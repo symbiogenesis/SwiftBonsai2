@@ -1,9 +1,9 @@
 #requires -Version 7.6
 <#
 .SYNOPSIS
-Imports the pinned Prism tests and compares shared assertions on C++ and Rust.
+Runs safe Rust assertions against pinned Prism and the Rust runtime.
 .DESCRIPTION
-All source, build, fixture and result files remain in fresh external evidence.
+All source, build, request and result files remain in fresh external evidence.
 The full catalog runs only in main-branch GitHub Actions. A named adapter may
 run locally. Expected Rust conformance failures are data; compiler, reference,
 timeout, malformed-report and baseline regressions fail the check.
@@ -99,11 +99,7 @@ if ($CompilerLauncher) {
 }
 $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments (@('-S', $upstream, '-B', $build, "-DPRISM_SOURCE_DIR=$source", '-DCMAKE_BUILD_TYPE=Release') + $generatorArguments)
 $selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap') } else { @($Case) }
-$adapterTargets = @(foreach ($selection in $selected) {
-    if ($selection -eq 'Pq2RowShapes') { 'prism-upstream-pq2-row-shapes'; 'prism-upstream-pq2-fixtures' }
-    else { 'prism-upstream-ptq1-element-map'; 'prism-upstream-ptq1-fixtures' }
-})
-$null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments (@('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target') + $adapterTargets)
+$null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments @('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target', 'prism-upstream-bridge')
 $compiled = Invoke-UpstreamCommand -Executable $cargo -Arguments @("+$Toolchain", 'build', '--manifest-path', (Join-Path $repo 'Cargo.toml'), '--package', 'bonsai-prism-runtime', '--example', 'upstream_prism', '--locked', '--offline', '--release', '--target-dir', $target, '--message-format=json')
 $executables = @($compiled.StandardOutput -split "`n" | Where-Object { $_.StartsWith('{') } | ForEach-Object {
     $record = $_ | ConvertFrom-Json -AsHashtable
@@ -111,33 +107,31 @@ $executables = @($compiled.StandardOutput -split "`n" | Where-Object { $_.Starts
 })
 if ($executables.Count -ne 1) { throw 'Expected exactly one compiled shared-assertion Rust harness.' }
 $harness = $executables[0]
+$extension = if ($IsWindows) { '.exe' } else { '' }
+$bridges = @(Get-ChildItem -LiteralPath $build -Recurse -File -Filter ('prism-upstream-bridge' + $extension))
+if ($bridges.Count -ne 1) { throw 'Expected exactly one native production-call bridge.' }
 $referenceCases = [Collections.Generic.List[object]]::new()
 $rustCases = [Collections.Generic.List[object]]::new()
-# Adapter commands below are intentionally explicit: upstream includes model
-# downloaders and benchmarks that cannot be safely selected by a filename glob.
+# Rust owns each selected test's inputs, reference calculations and assertions.
+# The native bridge dispatches production engine calls without importing tests.
 foreach ($selection in $selected) {
     $caseName = if ($selection -eq 'Pq2RowShapes') { 'test-pq2-row-shapes' } else { 'test-ptq1_0-element-map' }
-    $binaryName = if ($selection -eq 'Pq2RowShapes') { 'prism-upstream-pq2-row-shapes' } else { 'prism-upstream-ptq1-element-map' }
-    $extension = if ($IsWindows) { '.exe' } else { '' }
-    $binaries = @(Get-ChildItem -LiteralPath $build -Recurse -File -Filter ($binaryName + $extension))
-    if ($binaries.Count -ne 1) { throw "Expected exactly one native $binaryName executable." }
-    $null = Invoke-UpstreamCommand -Executable $binaries[0].FullName -Arguments @() -TimeoutSeconds 120
-    $fixtureName = if ($selection -eq 'Pq2RowShapes') { 'pq2' } else { 'ptq1' }
-    $fixture = Join-Path $evidence "$fixtureName-fixtures.bin"
-    $exporters = @(Get-ChildItem -LiteralPath $build -Recurse -File -Filter ("prism-upstream-$fixtureName-fixtures" + $extension))
-    if ($exporters.Count -ne 1) { throw 'Expected exactly one shared-fixture exporter.' }
-    $null = Invoke-UpstreamCommand -Executable $exporters[0].FullName -Arguments @($fixture) -TimeoutSeconds 120
     foreach ($engine in @('cpp', 'rust')) {
         $output = Join-Path $evidence "$caseName-$engine.json"
         $arguments = @('--target', $engine, '--case', $caseName, '--output', $output)
-        $arguments += @("--$fixtureName-fixtures", $fixture)
+        if ($engine -eq 'cpp') {
+            $arguments += @('--bridge', $bridges[0].FullName, '--evidence-directory', (Join-Path $evidence "$caseName-bridge"))
+        }
         $null = Invoke-UpstreamCommand -Executable $harness -Arguments $arguments -TimeoutSeconds 120
         $result = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json -AsHashtable
         if ($result.SchemaVersion -ne 1 -or $result.UpstreamCommit -cne $lock.Commit -or $result.Target -cne $engine -or
             @($result.Cases).Count -ne 1 -or $result.Cases[0].Id -cne "tests/$caseName.cpp") {
             throw 'Shared assertion harness returned an unexpected case identity.'
         }
-        if ($engine -eq 'cpp') { $referenceCases.Add($result.Cases[0]) }
+        if ($engine -eq 'cpp') {
+            $referenceCases.Add($result.Cases[0])
+            if ($result.Cases[0].Status -cne 'pass') { throw "Rust assertions failed on pinned Prism for $caseName; see $output" }
+        }
         else { $rustCases.Add($result.Cases[0]) }
     }
 }

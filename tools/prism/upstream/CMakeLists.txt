@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(BonsaiPrismUpstreamTests LANGUAGES C CXX)
+project(BonsaiPrismUpstreamAdapter LANGUAGES C CXX)
 
 if(NOT DEFINED PRISM_SOURCE_DIR)
   message(FATAL_ERROR "PRISM_SOURCE_DIR must name the verified, unmodified pinned Prism source")
@@ -24,15 +24,7 @@ set(GGML_BLAS OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 add_subdirectory("${PRISM_SOURCE_DIR}/ggml" "${CMAKE_CURRENT_BINARY_DIR}/ggml")
 
-# Build the original test mains directly; no assertions or fixture cases change.
-add_executable(prism-upstream-pq2-row-shapes "${PRISM_SOURCE_DIR}/tests/test-pq2-row-shapes.cpp")
-target_link_libraries(prism-upstream-pq2-row-shapes PRIVATE ggml ggml-cpu)
-add_executable(prism-upstream-ptq1-element-map "${PRISM_SOURCE_DIR}/tests/test-ptq1_0-element-map.cpp")
-
-# These exporters share the original source's helpers. The Rust adapter applies
-# the same assertions to C++ outputs before it retargets them to our runtime.
-add_executable(prism-upstream-pq2-fixtures pq2-fixtures.cpp)
-target_include_directories(prism-upstream-pq2-fixtures PRIVATE "${PRISM_SOURCE_DIR}/tests")
-target_link_libraries(prism-upstream-pq2-fixtures PRIVATE ggml ggml-cpu)
-add_executable(prism-upstream-ptq1-fixtures ptq1-fixtures.cpp)
-target_include_directories(prism-upstream-ptq1-fixtures PRIVATE "${PRISM_SOURCE_DIR}/tests")
+# This process is an adapter to production ggml only. The safe Rust suite owns
+# case generation, independent references and pass/fail decisions.
+add_executable(prism-upstream-bridge bridge.cpp)
+target_link_libraries(prism-upstream-bridge PRIVATE ggml ggml-cpu)

@@ -1,9 +1,9 @@
-# Pinned Prism test baseline
+# Safe Rust Prism conformance migration
 
 [Foundation](../.github/workflows/foundation.yml) imports tests from the exact
 Prism archive in [source.lock.json](../tools/prism/source.lock.json), verifies its
 length and SHA-256, and extracts it into fresh external storage. The upstream
-sources are used unchanged. No engine sources or build trees are vendored here.
+engine sources are used unchanged. No engine sources or build trees are vendored here.
 The upstream MIT terms remain in [PRISM-LICENSE.txt](../tools/prism/PRISM-LICENSE.txt).
 
 The [catalog](../tools/prism/upstream/catalog.json) records all **71** recursive
@@ -25,19 +25,36 @@ Python environment tests and embedded benchmarks need separate lanes; they
 remain visible in the inventory. A C++ control failure fails CI independently of
 the Rust coverage floor.
 
-Two source contracts currently have Rust adapters in
+The requested retirement covers **all 71 catalog sources**, including model,
+platform and benchmark cases. It is not complete. The 17 original C++ controls
+remain required until their equivalent safe Rust tests have passed against
+pinned Prism. Unported sources remain visible as unsupported.
+The [migration inventory](../tools/prism/upstream/migration.json) lists every
+source's assertions and prerequisites, bound to its pinned digest. Its port flags
+must match the executable adapter list; they are not test verdicts.
+
+Two source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
-- `test-pq2-row-shapes.cpp`: the original C++ suite runs first. Exporters then
-  capture its generated packed weights, activations, dequantized reference and
-  C++ matrix output for all 15 original shapes. The same Rust assertions first
-  validate the C++ outputs, then retarget to the production Rust matrix kernel.
-  The original relative-RMS threshold is preserved.
-- `test-ptq1_0-element-map.cpp`: exporters preserve the original LCG inputs and
-  both original element traversals across 20,000 blocks. The Rust harness first
-  checks the C++ outputs, then checks the production Rust decoder on the same
-  bytes. Rejection of an upstream input is a red result, including encodings
-  that the Rust decoder intentionally does not admit.
+- `test-pq2-row-shapes.cpp`: a committed input-only corpus preserves the
+  original generated packed weights and activations for all 15 shapes. Rust
+  independently decodes the packed weights, calculates reference products and
+  checks the original relative-RMS threshold. The corpus contains no expected
+  outputs; its provenance identifies the original archive and source digests.
+  This path exercises pre-existing encoded weights; per-run quantizer checks
+  remain in the retained `test-quantize-fns.cpp` control.
+- `test-ptq1_0-element-map.cpp`: Rust generates the original seed-12345 LCG
+  inputs across all 20,000 arbitrary-byte blocks, and independently computes
+  the original CPU traversal. It compares all 2,560,000 positions against each
+  engine's production decoder. Rejection of any input is red, including
+  encodings that the Rust decoder intentionally does not admit.
+
+For each port, the same safe Rust inputs and assertions run against pinned Prism
+first, then against the Rust runtime. A native process bridge performs bounded
+serialization and calls production ggml functions. It imports no test sources
+and contains no random generators, expected outputs, reference arithmetic,
+tolerances or test assertions. The C++ exporters and two original C++ test
+executables are no longer built by this adapter lane.
 
 No benchmark or model inference is run by this lane. The original sampling test
 includes a benchmark in its default main, so it is deliberately absent from the
@@ -58,6 +75,8 @@ The initial [hosted Foundation run](https://github.com/symbiogenesis/SwiftBonsai
 passed on revision `afe66d881b8828183b9ffe7ef3119463b5d58bc2`. All **19 selected
 C++ controls** passed (17 original suites plus the two paired adapter controls).
 Their IDs are recorded in the baseline, so none can disappear from later runs.
+The two paired reference results now come from safe Rust assertions calling
+the engine through the process bridge; the other 17 still run original C++.
 The other 52 source files have no executed C++ control in this lane.
 
 [baseline.json](../tools/prism/upstream/baseline.json) holds the recorded minimum
@@ -80,7 +99,7 @@ Rust conformance failures are recorded and tolerated only within the committed
 floor. C++ reference failures always fail the gate.
 
 Every run uploads `report.json`, `gate.json`, the exact source/runtime receipt,
-separate C++ and Rust results, shared binary fixtures and compiler/test logs.
+separate C++ and Rust results, bridge requests/responses and compiler/test logs.
 The job summary shows the full inventory with independent Rust and C++ statuses.
 Git history records changes to the approved baseline; Actions artifacts retain
 per-run observations under the repository's normal artifact retention policy.
@@ -90,13 +109,17 @@ is scoped to the runner image, compiler and ccache identity; source contents and
 compiler options still determine each object hit. Both builds normalize paths
 under their common evidence root so a fresh extraction can reuse those objects.
 Every run still verifies and extracts the pinned archive, configures fresh build
-trees, regenerates fixtures and executes all 19 controls and both Rust adapters.
+trees, executes the 17 unported controls and runs both safe Rust ports against
+both engines.
 `ccache.log` retains hit/miss statistics with the other evidence. Release builds
-explicitly retain assertions. A focused adapter builds only its own two targets.
+explicitly retain assertions. A focused adapter builds only the production
+bridge and the safe Rust harness.
 
 ## Growing the baseline
 
-Add an adapter using the original inputs, assertions and tolerances. Prove the
+Add an adapter using the original inputs, assertions and tolerances. Keep input
+generation, reference calculations and assertions in safe Rust; extend the
+native bridge only with production calls and serialization. Prove the
 shared assertions on pinned C++ before applying them to Rust. Add its stable ID
 to `AdapterIds`, so it cannot disappear into the unsupported backlog. Update
 catalog identity and baseline binding together when this changes the catalog.
@@ -106,6 +129,13 @@ After a complete hosted run, review its retained report and increase
 Record the tested revision and run URL in `Provenance`. CI never rewrites the
 baseline. Keep every existing required green ID. Review upstream pin changes
 and any exception explicitly instead of deleting difficult cases.
+
+Retire the remaining C++ importer only after all 71 sources have Rust-owned
+equivalents and their upstream validation evidence is retained. Model tests need
+their actual model/vocabulary/reference assets; platform tests need the relevant
+host; embedded benchmarks need CI execution lanes. Missing prerequisites and
+unsupported Rust features are red outcomes. Current-weight Swift artifacts
+cannot substitute for unrelated upstream model fixtures.
 
 ## Focused local checks
 

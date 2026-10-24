@@ -336,7 +336,7 @@ jobs:
           key: prism-upstream-rust-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/prism/upstream/**', 'src/prism-runtime/**', 'tools/ternary/**', 'tools/gguf/**') }}-content-v1
           restore-keys: |
             prism-upstream-rust-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_CACHE_HOST }}-nightly-2026-10-22-
-      - name: Import original C++ tests, retarget assertions and enforce the baseline
+      - name: Run safe Rust conformance on upstream and Rust, retaining unported controls
         shell: pwsh
         working-directory: ${{ runner.temp }}
         env:
@@ -399,7 +399,7 @@ jobs:
             ${{ env.PRISM_UPSTREAM_EVIDENCE }}/*.log
             ${{ env.PRISM_UPSTREAM_EVIDENCE }}/raw-cpp/*.json
             ${{ env.PRISM_UPSTREAM_EVIDENCE }}/raw-cpp/*.log
-            ${{ env.PRISM_UPSTREAM_EVIDENCE }}/*-fixtures.bin
+            ${{ env.PRISM_UPSTREAM_EVIDENCE }}/*-bridge/**
           if-no-files-found: error
   ternary:
     if: github.ref == 'refs/heads/main'

@@ -40,5 +40,9 @@ fearless_simd = { version = "=1.1.0", optional = true }
 serde_json.workspace = true
 sha2.workspace = true
 
+[[example]]
+name = "upstream_prism"
+test = true
+
 [lints]
 workspace = true

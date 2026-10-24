@@ -54,6 +54,19 @@ switch ($Case) {
         Assert (@($real.Cases | Where-Object { $_.Id -ceq 'tests/test-tokenizer-0.cpp' }).Count -eq 1) 'C++ tokenizer ID is absent.'
         Assert (@($real.Cases | Where-Object { $_.Id -ceq 'tests/test-tokenizer-0.py' }).Count -eq 1) 'Python tokenizer ID must remain separate.'
         Assert (@($real.Cases | Where-Object { $_.Id -ceq 'tests/peg-parser/test-unicode.cpp' }).Count -eq 1) 'Nested parser source was omitted.'
+        $migration = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../tools/prism/upstream/migration.json') | ConvertFrom-Json -AsHashtable
+        $required = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../tools/prism/upstream/baseline.json') | ConvertFrom-Json -AsHashtable
+        Assert ($migration.SchemaVersion -eq 1 -and $migration.UpstreamCommit -ceq $real.UpstreamCommit -and
+            $migration.Total -eq $real.Cases.Count -and $migration.Cases.Count -eq $real.Cases.Count) 'Migration inventory must cover the exact pinned catalog.'
+        $migrationIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($entry in $migration.Cases) {
+            Assert ($migrationIds.Add($entry.Id)) 'Migration inventory contains a duplicate source.'
+            $original = @($real.Cases | Where-Object { $_.Id -ceq $entry.Id -and $_.SourceSha256 -ceq $entry.SourceSha256 })
+            Assert ($original.Count -eq 1) 'Migration source identity or digest drifted.'
+            Assert ($entry.SafeRustPort -is [bool] -and $entry.SafeRustPort -eq ($real.AdapterIds -ccontains $entry.Id)) 'Migration port status must match the executable adapters.'
+            Assert ($entry.LegacyReferenceRequired -is [bool] -and $entry.LegacyReferenceRequired -eq ($required.RequiredReferencePassedIds -ccontains $entry.Id)) 'Migration inventory lost a required reference control.'
+            Assert ($entry.Needs -is [array] -and $entry.Needs.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($entry.AssertionsToPort)) 'Migration scope and prerequisites must remain explicit.'
+        }
         $sourceRoot = Join-Path $scratch 'source'
         [void][IO.Directory]::CreateDirectory((Join-Path $sourceRoot 'tests/nested'))
         foreach ($id in $ids) {
