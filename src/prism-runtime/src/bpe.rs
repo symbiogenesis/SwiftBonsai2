@@ -169,11 +169,24 @@ impl Bpe {
     /// Rejects oversized pieces, bytes missing normal single-byte vocabulary
     /// tokens, final outputs above `max_tokens`, and allocation failures.
     pub fn encode_piece(&self, bytes: &[u8], max_tokens: usize) -> Result<Vec<u32>> {
+        let mut output = Vec::new();
+        self.encode_piece_into(bytes, max_tokens, &mut output)?;
+        Ok(output)
+    }
+
+    // Append only after the complete piece passes validation. Callers composing
+    // pieces can share output storage without allocating and copying each result.
+    pub(crate) fn encode_piece_into(
+        &self,
+        bytes: &[u8],
+        max_tokens: usize,
+        output: &mut Vec<u32>,
+    ) -> Result<()> {
         if bytes.len() > MAX_BPE_PIECE_BYTES {
             return Err(invalid("BPE input piece exceeds byte limit"));
         }
         if bytes.is_empty() {
-            return Ok(Vec::new());
+            return Ok(());
         }
         if max_tokens == 0 {
             return Err(invalid("BPE output exceeds token limit"));
@@ -228,14 +241,13 @@ impl Bpe {
         if remaining > max_tokens {
             return Err(invalid("BPE output exceeds token limit"));
         }
-        let mut output = Vec::new();
         output.try_reserve_exact(remaining)?;
         let mut current = Some(0);
         while let Some(index) = current {
             output.push(nodes[index].token);
             current = nodes[index].next;
         }
-        Ok(output)
+        Ok(())
     }
 
     /// Encodes supplied pretokenizer boundaries without merging across pieces.
@@ -264,8 +276,7 @@ impl Bpe {
         let mut output = Vec::new();
         output.try_reserve_exact(total_bytes.min(max_tokens))?;
         for piece in pieces {
-            let encoded = self.encode_piece(piece, max_tokens - output.len())?;
-            output.extend_from_slice(&encoded);
+            self.encode_piece_into(piece, max_tokens - output.len(), &mut output)?;
         }
         Ok(output)
     }

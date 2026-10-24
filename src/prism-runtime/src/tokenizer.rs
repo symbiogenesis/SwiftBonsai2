@@ -81,10 +81,11 @@ impl Tokenizer {
                     let pieces = self.pretokenizer.split(text)?;
                     charge_pieces(&mut piece_count, pieces.len())?;
                     for piece in pieces {
-                        let encoded = self
-                            .bpe
-                            .encode_piece(piece.as_bytes(), max_tokens - output.len())?;
-                        output.extend_from_slice(&encoded);
+                        self.bpe.encode_piece_into(
+                            piece.as_bytes(),
+                            max_tokens - output.len(),
+                            &mut output,
+                        )?;
                     }
                 }
             }

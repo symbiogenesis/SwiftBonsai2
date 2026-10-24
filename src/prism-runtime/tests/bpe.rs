@@ -120,6 +120,20 @@ fn pretokenizer_boundaries_are_never_crossed() -> Result<()> {
 }
 
 #[test]
+fn merged_pieces_share_the_aggregate_token_allowance() -> Result<()> {
+    let values = metadata(&[("a", 1), ("b", 1), ("ab", 1)], &["a b"]);
+    let bpe = Bpe::from_metadata(&values, 3)?;
+    let pieces: &[&[u8]] = &[b"", b"ab", b"a", b"", b"b", b"ab", b""];
+    assert_eq!(bpe.encode_pieces(pieces, 4)?, [2, 0, 1, 2]);
+    assert!(bpe.encode_pieces(pieces, 3).is_err());
+    // A failed request leaves subsequent encodings independent.
+    assert_eq!(bpe.encode_pieces(pieces, usize::MAX)?, [2, 0, 1, 2]);
+    assert!(bpe.encode_pieces(&[b"ab", b"x"], 4).is_err());
+    assert_eq!(bpe.encode_pieces(&[b"ab", b""], 1)?, [2]);
+    Ok(())
+}
+
+#[test]
 fn all_bytes_and_unicode_round_trip_without_merges() -> Result<()> {
     let values = complete_metadata()?;
     let vocabulary = Vocabulary::from_metadata(&values, 256)?;
