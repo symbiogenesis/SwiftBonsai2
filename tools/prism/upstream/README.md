@@ -154,10 +154,13 @@ and replay build were removed after all33 Rust-owned contracts, including GGUF,
 passed [native Windows ARM64 CI](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40120815419).
 
 The immutable source archive is unchanged. The pinned saver omits
-DSpark metadata and global tensors. The reference applies the explicit,
-hash-verified production saver correction in `reference-patches.lock.json`.
-Its39 added lines preserve the metadata and sixteen tensors. Only a verified
-external translation unit is substituted; the archive and every original test
+DSpark metadata and global tensors. The reference applies explicit,
+hash-verified production corrections in `reference-patches.lock.json`.
+The saver correction preserves the metadata and sixteen tensors. The Llama 3
+correction disables inherited punctuation cleanup for its three canonical
+metadata names, preserving decoded token bytes and the original single-token
+roundtrip assertion. Only verified external translation units are substituted;
+the archive and every original test
 predicate remain unchanged. Receipts identify this corrected reference variant.
 
 The runtime's vector API runs once for each original activation column,

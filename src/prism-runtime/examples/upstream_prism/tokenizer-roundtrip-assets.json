@@ -1,14 +1,23 @@
 {
-  "InputSelectionVersion": 2,
-  "DefaultBpeAcceptance": ["aquila", "gpt-2", "gpt-neox", "mpt", "refact", "starcoder", "qwen2"],
-  "OriginalBpeDiagnostics": ["falcon", "llama-bpe"],
+  "InputSelectionVersion": 3,
+  "DefaultBpeAcceptance": ["aquila", "gpt-2", "gpt-neox", "llama-bpe", "mpt", "refact", "starcoder"],
+  "OriginalBpeDiagnostics": ["falcon"],
+  "ProductionCorrection": {
+    "RelativeSource": "src/llama-vocab.cpp",
+    "PatchPath": "tools/prism/upstream/patches/llama3-cleanup.patch",
+    "BeforeSha256": "32b8b7ac4a023bc6367eb7832e56e988ab7373a676ddcca4977665f78932ab88",
+    "AfterSha256": "ecb6ffd1b5248384b96360acbb47bd3a6b8f8aebb547dade3b9429d8c00ff6e2",
+    "CanonicalPatchSha256": "b52f1cceb6a36f9f511503c2e550a9b18a718c4b10272dbdf64cbfae8ae5fd01",
+    "Scope": ["llama3", "llama-v3", "llama-bpe"],
+    "Reason": "Canonical Meta Llama3 tiktoken decoding preserves punctuation spaces; disable destructive cleanup only for its three metadata aliases. All input bytes, merges, regexes and source predicates remain unchanged."
+  },
   "InputSelectionPolicy": {
     "SourceParameters": "The original source accepts a vocabulary path and optional --ignore-merges; its eight CMake examples are commented out, not an exhaustive mandatory input list.",
-    "Acceptance": "Six compatible original inputs plus the unchanged bundled qwen2 vocabulary with --ignore-merges exercise every original predicate and flag branch. Full source qualification remains required in hosted CI.",
-    "Qwen2Provenance": "Same pinned upstream archive, models/ggml-vocab-qwen2.gguf. GGUF model=gpt2, pre=qwen2; all256 encoded base bytes present. Pinned production qwen2 branch disables clean_spaces. No metadata, token, merge or production-code change.",
+    "Acceptance": "Six compatible original false-flag inputs plus the original unchanged llama-bpe vocabulary with --ignore-merges and the explicit production cleanup correction exercise every original predicate and flag branch. Full source qualification remains required in hosted CI.",
     "FalconDiagnostic": "Original input and false flag retained. Its vocabulary has no representation for byte04, so the unconditional full-Unicode equality assertion is unsatisfiable for that input.",
-    "LlamaBpeDiagnostic": "Original input and true flag retained. Production cleanup changes raw token24268 from space-!-$ to !-$, which retokenizes into two tokens, violating the original cardinality predicate.",
-    "PreviousHostedEvidence": "40131582460/test-tokenizer-1-bpe-cpp.json; diagnostics retain actual failure status and SourceCount0, never an expected-failure pass."
+    "LlamaBpeRestoration": "Original input and true flag restored after correcting the independently proven production decoder defect. The unpatched engine changes raw token24268 from space-!-$ to !-$; canonical Meta/tiktoken decoding preserves the space.",
+    "RejectedQwen2Profile": "Version2 incorrectly paired ordinary Qwen2 BPE with the source --ignore-merges assertion. Hosted40135284111 failed normal token77150 fullwidth10, correctly split by the published one-numeric-codepoint regex. No Qwen2 production change is justified; its speculative extra asset is removed.",
+    "PreviousHostedEvidence": "40131582460 original Falcon/Llama failures; 40135284111 six complete original false-flag passes and incompatible Qwen2 true-flag failure. Diagnostics retain actual failure status and SourceCount0, never an expected-failure pass."
   },
   "Sources": [
     {
@@ -120,16 +129,6 @@
       "MaxRawTokenBytes": 512,
       "Length": 1719346,
       "Sha256": "fedb892b4e1bd3c1f2fcdae356440b14fb458f4264d586e5c987ed93df4e174d"
-    },
-    {
-      "Name": "qwen2",
-      "ExpectedType": 2,
-      "IgnoreMerges": true,
-      "TokenMetadataCount": 151936,
-      "RawTokenBytes": 1372708,
-      "MaxRawTokenBytes": 256,
-      "Length": 5928681,
-      "Sha256": "44c2f46b715f585c6ab513970e8a006bfa5badd6108560054921cf598d154d8c"
     }
   ]
 }

@@ -97,9 +97,9 @@
       }
     ],
     "ReferenceProductionFix": {
-      "Qualification": "Focused reproduction and patched build validation; native Windows ARM64 acceptance pending",
+      "Qualification": "Focused reproductions and patched build validation; complete corrected-reference qualification remains pending hosted CI",
       "Variant": "pinned-upstream-with-documented-production-fixes",
-      "Reason": "DSpark saver omits required/optional metadata and16 global tensors; every test predicate remains required.",
+      "Reason": "DSpark saver omits required/optional metadata and 16 global tensors. Canonical Llama 3 decoding inherits punctuation cleanup contrary to its publisher's byte-preserving decoding contract. Both explicit production corrections preserve every test predicate.",
       "Lock": "reference-patches.lock.json"
     }
   }

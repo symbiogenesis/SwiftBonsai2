@@ -3,7 +3,7 @@
 [Foundation](../.github/workflows/foundation.yml) imports tests from the exact
 Prism archive in [source.lock.json](../tools/prism/source.lock.json), verifies its
 length and SHA-256, and extracts it into fresh external storage. The reference
-build verifies the archive and records the explicit production saver correction
+build verifies the archive and records the explicit production corrections
 described below. No engine source or build tree is
 vendored here.
 The upstream MIT terms remain in [PRISM-LICENSE.txt](../tools/prism/PRISM-LICENSE.txt).
@@ -44,6 +44,13 @@ to an external copy of that translation unit. The immutable archive stays
 unchanged, and receipts identify the patch and resulting source. All architecture
 save/load assertions remain required; this reference is qualified with the
 recorded production correction.
+The original Llama-BPE roundtrip also exposes inherited punctuation cleanup:
+token 24268 decodes from ` !$` to `!$`, then retokenizes into two tokens. The
+explicit [Llama 3 decoding correction](../tools/prism/upstream/patches/llama3-cleanup.patch)
+preserves bytes for the canonical `llama3`, `llama-v3` and `llama-bpe` metadata
+names, following the publisher's tokenizer. Other pretokenizer aliases retain
+their behavior. Both fixes use verified external translation units, and every
+original assertion remains required.
 The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
@@ -188,7 +195,8 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
 - Both tokenizer roundtrip sources traverse every token and the entire original
   Unicode domain in two SPM and seven explicitly selected BPE fixtures. The
   [versioned acceptance inputs](../tools/prism/upstream/BPE-ACCEPTANCE.md)
-  preserve both optional-flag branches; the original named variants remain
+  preserve both optional-flag branches, including the corrected original
+  Llama-BPE input with `--ignore-merges`; other named variants remain
   available as diagnostics with their actual verdicts. Per fixture this retains 456,703 Unicode calls and
   456,702 equality predicates, source exceptions, worker strides and shared stop.
   The BPE rewrite restores the source's intended invalid-UTF-8 skip with safe

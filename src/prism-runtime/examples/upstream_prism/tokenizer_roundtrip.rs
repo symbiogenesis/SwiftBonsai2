@@ -31,7 +31,7 @@ const BATCH: usize = 512;
 const UNICODE_LIMIT: u32 = 0x0011_0000;
 const UNICODE_CALLS: usize = 456_703;
 const UNICODE_PREDICATES: usize = 456_702;
-const NAMES: [&str; 11] = [
+const NAMES: [&str; 10] = [
     "llama-spm",
     "baichuan",
     "aquila",
@@ -42,18 +42,17 @@ const NAMES: [&str; 11] = [
     "mpt",
     "refact",
     "starcoder",
-    "qwen2",
 ];
 const DEFAULT_BPE: [&str; 7] = [
     "aquila",
     "gpt-2",
     "gpt-neox",
+    "llama-bpe",
     "mpt",
     "refact",
     "starcoder",
-    "qwen2",
 ];
-const ORIGINAL_BPE_DIAGNOSTICS: [&str; 2] = ["falcon", "llama-bpe"];
+const ORIGINAL_BPE_DIAGNOSTICS: [&str; 1] = ["falcon"];
 
 fn text<'a>(value: &'a Value, name: &str) -> Result<&'a str> {
     field(value, name)?
@@ -81,13 +80,12 @@ fn manifest() -> Result<Value> {
     for (index, (asset, name)) in assets.iter().zip(NAMES).enumerate() {
         if text(asset, "Name")? != name
             || uint(asset, "ExpectedType")? != if index < 2 { 1 } else { 2 }
-            || field(asset, "IgnoreMerges")?.as_bool()
-                != Some(matches!(name, "llama-bpe" | "qwen2"))
+            || field(asset, "IgnoreMerges")?.as_bool() != Some(name == "llama-bpe")
         {
             return Err(invalid("roundtrip documented fixture variant mismatch"));
         }
     }
-    if uint(&value, "InputSelectionVersion")? != 2 {
+    if uint(&value, "InputSelectionVersion")? != 3 {
         return Err(invalid("BPE acceptance input selection version differs"));
     }
     for (key, expected) in [
@@ -787,7 +785,7 @@ fn run_source(engine: &Engine, bpe: bool) -> Result<Value> {
     if observations.len() != if bpe { DEFAULT_BPE.len() } else { 2 } {
         return Err(invalid("roundtrip full fixture variant count mismatch"));
     }
-    let receipt = json!({"Vocabularies":observations,"UnicodeDomainCallsPerVocabulary":UNICODE_CALLS,"UnicodePredicatesPerVocabulary":UNICODE_PREDICATES,"BatchSize":BATCH,"InputSelectionVersion":manifest["InputSelectionVersion"],"DefaultBpeAcceptance":manifest["DefaultBpeAcceptance"],"OriginalBpeDiagnostics":manifest["OriginalBpeDiagnostics"],"InputSelectionPolicy":manifest["InputSelectionPolicy"],"SourceCorrection":if bpe{Some("Approved restoration of intended invalid-UTF8 skip: strict Rust validity before retokenization, because pinned unicode_cpts_from_utf8 replaces invalid bytes instead of throwing") }else{None},"StopPolicy":"Rust checks shared stop before batches and each returned-item assertion; speculative pure operations in an in-flight batch are ignored after failure"});
+    let receipt = json!({"Vocabularies":observations,"UnicodeDomainCallsPerVocabulary":UNICODE_CALLS,"UnicodePredicatesPerVocabulary":UNICODE_PREDICATES,"BatchSize":BATCH,"InputSelectionVersion":manifest["InputSelectionVersion"],"DefaultBpeAcceptance":manifest["DefaultBpeAcceptance"],"OriginalBpeDiagnostics":manifest["OriginalBpeDiagnostics"],"InputSelectionPolicy":manifest["InputSelectionPolicy"],"ProductionCorrection":bpe.then_some(&manifest["ProductionCorrection"]),"SourceCorrection":if bpe{Some("Approved restoration of intended invalid-UTF8 skip: strict Rust validity before retokenization, because pinned unicode_cpts_from_utf8 replaces invalid bytes instead of throwing") }else{None},"StopPolicy":"Rust checks shared stop before batches and each returned-item assertion; speculative pure operations in an in-flight batch are ignored after failure"});
     Ok(result(id, passed, receipt.to_string()))
 }
 
@@ -857,15 +855,18 @@ mod tests {
     fn explicit_acceptance_keeps_original_diagnostics_out_of_source_count() -> super::Result<()> {
         let fixture = super::manifest()?;
         let assets = super::array(&fixture, "Vocabularies")?;
-        let qwen = assets
+        let llama = assets
             .iter()
-            .find(|a| a["Name"] == "qwen2")
-            .ok_or_else(|| super::invalid("Qwen2 input missing"))?;
-        if qwen["IgnoreMerges"] != true
-            || qwen["TokenMetadataCount"] != 151_936
-            || qwen["Sha256"] != "44c2f46b715f585c6ab513970e8a006bfa5badd6108560054921cf598d154d8c"
+            .find(|a| a["Name"] == "llama-bpe")
+            .ok_or_else(|| super::invalid("Original Llama-BPE input missing"))?;
+        if llama["IgnoreMerges"] != true
+            || llama["TokenMetadataCount"] != 128_256
+            || llama["Sha256"] != "97272e430d53bc7688f52d5e0ad8ea8f163ede9f1bbd1694feaa504797d5d96e"
             || super::DEFAULT_BPE.contains(&"falcon")
-            || super::DEFAULT_BPE.contains(&"llama-bpe")
+            || !super::DEFAULT_BPE.contains(&"llama-bpe")
+            || assets.iter().any(|a| a["Name"] == "qwen2")
+            || fixture["ProductionCorrection"]["CanonicalPatchSha256"]
+                != "b52f1cceb6a36f9f511503c2e550a9b18a718c4b10272dbdf64cbfae8ae5fd01"
         {
             return Err(super::invalid("explicit BPE acceptance selection changed"));
         }
@@ -878,7 +879,7 @@ mod tests {
                 failures: vec!["independent failing-source receipt guard".into()],
                 ..super::Counts::default()
             };
-            let output = super::diagnostic_output(asset, Some(&counts), 2)?;
+            let output = super::diagnostic_output(asset, Some(&counts), 3)?;
             if output["Status"] != "fail"
                 || output["SourceCount"] != 0
                 || output["SourceId"] != super::BPE_ID

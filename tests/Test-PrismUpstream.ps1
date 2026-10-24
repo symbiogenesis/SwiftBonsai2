@@ -298,7 +298,14 @@ foreach ($family in @($selected | ForEach-Object { $adapters[$_].Family } | Sele
     $configureArguments = @('-S', $definition.Source, '-B', $build, "-DPRISM_SOURCE_DIR=$nativeSource", '-DCMAKE_BUILD_TYPE=Release',
         '-DLLAMA_BUILD_NUMBER=0', "-DLLAMA_BUILD_COMMIT=$($lock.Commit)") + $generatorArguments
     if ($family -eq 'common' -and $referencePatch) {
-        $configureArguments += "-DPRISM_PATCHED_SAVER=$($referencePatch.Path)"
+        foreach ($patch in $referencePatch.Patches) {
+            $setting = switch -CaseSensitive ($patch.RelativeSource) {
+                'src/llama-model-saver.cpp' { 'PRISM_PATCHED_SAVER' }
+                'src/llama-vocab.cpp' { 'PRISM_PATCHED_VOCAB' }
+                default { throw 'Unexpected verified production source substitution.' }
+            }
+            $configureArguments += "-D$setting=$($patch.Path)"
+        }
     }
     if ($family -eq 'common' -and $grammarDependency) {
         $configureArguments += @("-DPRISM_LLGUIDANCE_LIBRARY=$($grammarDependency.Library)", "-DPRISM_LLGUIDANCE_INCLUDE_DIR=$($grammarDependency.IncludeDirectory)")

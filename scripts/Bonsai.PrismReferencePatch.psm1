@@ -7,7 +7,7 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 function Initialize-BonsaiPrismReferencePatch {
     <#
     .SYNOPSIS
-    Creates an explicit, byte-verified production source fix outside the original tree.
+    Creates explicit, byte-verified production fixes outside the original tree.
     #>
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([hashtable])]
@@ -21,61 +21,97 @@ function Initialize-BonsaiPrismReferencePatch {
         throw 'Production source substitutions must remain outside the verified source tree.'
     }
     $lock = Get-Content -LiteralPath (Join-Path $Repository 'tools/prism/upstream/reference-patches.lock.json') -Raw | ConvertFrom-Json -AsHashtable
-    if ($lock.SchemaVersion -ne 1 -or $lock.SourceCommit -cne 'b87ca7225456b06b0975b8239c66b5aecf07e37c' -or
-        $lock.Patch.RelativeSource -cne 'src/llama-model-saver.cpp' -or
-        $lock.Patch.PatchPath -cne 'tools/prism/upstream/patches/dspark-saver.patch') {
+    if (($lock.SchemaVersion -isnot [int] -and $lock.SchemaVersion -isnot [long]) -or $lock.SchemaVersion -ne 2 -or
+        $lock.SourceCommit -isnot [string] -or $lock.SourceCommit -cne 'b87ca7225456b06b0975b8239c66b5aecf07e37c' -or
+        $lock.Variant -isnot [string] -or
+        $lock.Variant -cne 'pinned-upstream-with-documented-production-fixes' -or
+        $lock.Patches -isnot [array] -or $lock.Patches.Count -ne 2) {
         throw 'Unexpected reference patch identity.'
     }
-    $original = Join-Path $source $lock.Patch.RelativeSource
-    $before = (Get-FileHash -LiteralPath $original -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($before -cne $lock.Patch.BeforeSha256) { throw 'Reference patch input differs from its exact upstream pin.' }
-    $patch = [IO.File]::ReadAllText((Join-Path $Repository $lock.Patch.PatchPath)).Replace("`r`n", "`n")
-    $patchHash = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($patch)))
-    if ($patchHash -cne $lock.Patch.CanonicalPatchSha256) { throw 'Reference patch content differs from its explicit pin.' }
-    $lines = $patch.Split("`n")
-    if ($lines.Count -lt 4 -or $lines[0] -cne '--- a/src/llama-model-saver.cpp' -or
-        $lines[1] -cne '+++ b/src/llama-model-saver.cpp' -or $lines[2] -cne '@@ -347,1 +347,22 @@') {
-        throw 'Only the reviewed two-hunk reference patch is accepted.'
-    }
-    $originalLines = [IO.File]::ReadAllText($original).Replace("`r`n", "`n").Split("`n")
-    $result = [Collections.Generic.List[string]]::new()
-    $oldIndex = 0
-    $patchIndex = 2
-    foreach ($hunk in @(@{ Header='@@ -347,1 +347,22 @@'; Start=346; Count=22 }, @{ Header='@@ -444,1 +465,19 @@'; Start=443; Count=19 })) {
-        if ($lines[$patchIndex] -cne $hunk.Header) { throw 'Reference patch hunk identity differs.' }
-        while ($oldIndex -lt $hunk.Start) { $result.Add($originalLines[$oldIndex]); $oldIndex++ }
-        $patchIndex++
-        $oldCount = 0
-        $newCount = 0
-        while ($patchIndex -lt $lines.Count -and -not $lines[$patchIndex].StartsWith('@@', [StringComparison]::Ordinal)) {
-            $line = $lines[$patchIndex]
-            if ($patchIndex -eq $lines.Count - 1 -and $line.Length -eq 0) { break }
-            if ($line.Length -lt 1 -or $line[0] -cnotin @(' ', '+', '-')) { throw 'Invalid reference patch hunk line.' }
-            $value = $line.Substring(1)
-            if ($line[0] -ne '+') {
-                if ($oldIndex -ge $originalLines.Count -or $originalLines[$oldIndex] -cne $value) { throw 'Reference patch context differs.' }
-                $oldIndex++
-                $oldCount++
-            }
-            if ($line[0] -ne '-') { $result.Add($value); $newCount++ }
-            $patchIndex++
+    $identities = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
+    $identities.Add('src/llama-model-saver.cpp', 'tools/prism/upstream/patches/dspark-saver.patch')
+    $identities.Add('src/llama-vocab.cpp', 'tools/prism/upstream/patches/llama3-cleanup.patch')
+    $prepared = [Collections.Generic.List[object]]::new()
+    $newline = [string][char]10
+    $crlf = [string][char]13 + $newline
+    foreach ($entry in $lock.Patches) {
+        if ($entry.RelativeSource -isnot [string] -or $entry.PatchPath -isnot [string] -or
+            -not $identities.ContainsKey($entry.RelativeSource) -or
+            $entry.PatchPath -cne $identities[$entry.RelativeSource]) {
+            throw 'Unexpected or duplicate reference patch source.'
         }
-        if ($oldCount -ne 1 -or $newCount -ne $hunk.Count) { throw 'Reference patch extent differs.' }
+        [void]$identities.Remove($entry.RelativeSource)
+        foreach ($field in @('BeforeSha256', 'AfterSha256', 'CanonicalPatchSha256')) {
+            if ($entry[$field] -isnot [string] -or $entry[$field] -cnotmatch '^[0-9a-f]{64}$') {
+                throw 'Reference patch digest must be a lowercase SHA-256 string.'
+            }
+        }
+        $original = Join-Path $source $entry.RelativeSource
+        $before = (Get-FileHash -LiteralPath $original -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($before -cne $entry.BeforeSha256) { throw 'Reference patch input differs from its exact upstream pin.' }
+        $patch = [IO.File]::ReadAllText((Join-Path $Repository $entry.PatchPath)).Replace($crlf, $newline)
+        $patchHash = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($patch)))
+        if ($patchHash -cne $entry.CanonicalPatchSha256) { throw 'Reference patch content differs from its explicit pin.' }
+        $lines = $patch.Split($newline)
+        if ($lines.Count -lt 4 -or $lines[0] -cne ('--- a/' + $entry.RelativeSource) -or
+            $lines[1] -cne ('+++ b/' + $entry.RelativeSource) -or $lines[-1].Length -ne 0) {
+            throw 'Reference patch file identity or final newline differs.'
+        }
+        $originalLines = [IO.File]::ReadAllText($original).Replace($crlf, $newline).Split($newline)
+        $result = [Collections.Generic.List[string]]::new()
+        $oldIndex = 0
+        $patchIndex = 2
+        $hunks = 0
+        while ($patchIndex -lt $lines.Count - 1) {
+            $header = [regex]::Match($lines[$patchIndex], '^@@ -([1-9][0-9]*),([0-9]+) \+([1-9][0-9]*),([0-9]+) @@(?: .*)?$')
+            if (-not $header.Success) { throw 'Invalid reference patch hunk header.' }
+            $start = [int]$header.Groups[1].Value - 1
+            $expectedOld = [int]$header.Groups[2].Value
+            $newStart = [int]$header.Groups[3].Value - 1
+            $expectedNew = [int]$header.Groups[4].Value
+            if ($start -lt $oldIndex -or $start -ge $originalLines.Count) { throw 'Reference patch hunk order or extent differs.' }
+            while ($oldIndex -lt $start) { $result.Add($originalLines[$oldIndex]); $oldIndex++ }
+            if ($result.Count -ne $newStart) { throw 'Reference patch new hunk position differs.' }
+            $patchIndex++
+            $oldCount = 0
+            $newCount = 0
+            while ($patchIndex -lt $lines.Count - 1 -and -not $lines[$patchIndex].StartsWith('@@', [StringComparison]::Ordinal)) {
+                $line = $lines[$patchIndex]
+                if ($line.Length -lt 1 -or $line[0] -cnotin @(' ', '+', '-')) { throw 'Invalid reference patch hunk line.' }
+                $value = $line.Substring(1)
+                if ($line[0] -ne '+') {
+                    if ($oldIndex -ge $originalLines.Count -or $originalLines[$oldIndex] -cne $value) { throw 'Reference patch context differs.' }
+                    $oldIndex++
+                    $oldCount++
+                }
+                if ($line[0] -ne '-') { $result.Add($value); $newCount++ }
+                $patchIndex++
+            }
+            if ($oldCount -ne $expectedOld -or $newCount -ne $expectedNew) { throw 'Reference patch hunk extent differs.' }
+            $hunks++
+        }
+        if ($hunks -eq 0) { throw 'Reference patch has no hunks.' }
+        for ($i = $oldIndex; $i -lt $originalLines.Count; $i++) { $result.Add($originalLines[$i]) }
+        $bytes = [Text.Encoding]::UTF8.GetBytes($result -join $newline)
+        $after = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($bytes))
+        if ($after -cne $entry.AfterSha256) { throw 'Patched production source differs from its reviewed byte identity.' }
+        $destination = Join-Path $output ([IO.Path]::GetFileName($entry.RelativeSource))
+        $prepared.Add(@{
+            Bytes=$bytes
+            Receipt=@{ Path=$destination; RelativeSource=$entry.RelativeSource; BeforeSha256=$before; AfterSha256=$after; CanonicalPatchSha256=$patchHash }
+        })
     }
-    if ($patchIndex -ne $lines.Count - 1 -or $lines[$patchIndex].Length -ne 0) { throw 'Unexpected reference patch suffix.' }
-    for ($i = $oldIndex; $i -lt $originalLines.Count; $i++) { $result.Add($originalLines[$i]) }
-    $bytes = [Text.Encoding]::UTF8.GetBytes($result -join "`n")
-    $after = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData($bytes))
-    if ($after -cne $lock.Patch.AfterSha256) { throw 'Patched production source differs from its reviewed byte identity.' }
-    $destination = Join-Path $output 'llama-model-saver.cpp'
-    if (Test-Path -LiteralPath $destination) {
-        Test-LockedArtifact -Path $destination -Bytes $bytes.Length -Sha256 $after
-    } else {
-        if (-not $PSCmdlet.ShouldProcess($destination, 'Write verified production saver fix outside the unchanged source tree')) { return }
-        [void][IO.Directory]::CreateDirectory($output)
-        [IO.File]::WriteAllBytes($destination, $bytes)
+    foreach ($item in $prepared) {
+        $destination = $item.Receipt.Path
+        if (Test-Path -LiteralPath $destination) {
+            Test-LockedArtifact -Path $destination -Bytes $item.Bytes.Length -Sha256 $item.Receipt.AfterSha256
+        } else {
+            if (-not $PSCmdlet.ShouldProcess($destination, 'Write verified production fix outside the unchanged source tree')) { return }
+            [void][IO.Directory]::CreateDirectory($output)
+            [IO.File]::WriteAllBytes($destination, $item.Bytes)
+        }
     }
-    return @{ Variant=$lock.Variant; Path=$destination; RelativeSource=$lock.Patch.RelativeSource; BeforeSha256=$before; AfterSha256=$after; CanonicalPatchSha256=$patchHash }
+    return @{ Variant=$lock.Variant; Patches=@($prepared | ForEach-Object { $_.Receipt }) }
 }
 
 Export-ModuleMember -Function Initialize-BonsaiPrismReferencePatch
