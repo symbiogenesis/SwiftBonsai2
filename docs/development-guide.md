@@ -15,8 +15,8 @@ No new training is required.
 
 The repository provides inventory, verified provisioning, source builds, GGUF
 inspection, bounded CPU checks, a strict Rust broker and an explicit Windows
-launcher for the Qwen reference backend. The experimental [native Rust CPU
-reference](../src/prism-runtime/README.md) is separate from that launcher.
+launcher for the Qwen reference or Swift assessment backend. The experimental
+[native Rust CPU reference](../src/prism-runtime/README.md) is separate from that launcher.
 [Adreno](adreno-gpu-plan.md) and [Hexagon](hexagon-npu-plan.md) integration remain
 planned. Current launch policies select CPU execution.
 
@@ -222,8 +222,17 @@ try {
 Append `--check-only` for read-only artifact/policy verification and memory
 admission reporting, without credentials, a listener or a process.
 
+The default selection remains `reference-cpu`. Pass
+`--profile swift-pq2-assessment` to select Swift's separately pinned Prism runtime
+and original PQ2 model, provisioned with `config/swift-assessment.lock.json`.
+That selection fixes batch/microbatch to 128/64, a 12 GiB Job cap and 16 GiB
+available-RAM admission including the 4 GiB reserve. Derived PTQ1 and adapters
+are unavailable through this launcher. Profile names are exact; arbitrary
+models, runtimes and inference overrides remain rejected.
+
 The launcher retains verified model/runtime handles, creates fresh protected
-credentials/evidence and applies the 18 GiB Job cap plus 4 GiB physical reserve.
+credentials/evidence and applies the selected Job cap plus 4 GiB physical reserve
+(18 GiB/22 GiB available RAM for the default reference).
 The frontend opens only after health/authentication checks and listener-PID
 verification. Backend connections recheck that PID. Ctrl-C, backend exit, guard
 failure, startup failure or closed generation admission stops the whole Job;

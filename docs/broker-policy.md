@@ -2,7 +2,8 @@
 
 `src/broker/` implements authenticated text-chat admission, bounded HTTP I/O,
 exact-count context admission, single-slot scheduling and a development runner.
-A separate explicit Windows launcher owns the pinned Qwen reference backend.
+A separate explicit Windows launcher owns the pinned Qwen reference or Swift
+assessment backend.
 The PowerShell preflight and daily profile remain launch-disabled. Development
 controls do not establish daily security or real-model qualification.
 
@@ -250,10 +251,13 @@ See [commands](development-guide.md#explicit-development-broker).
 ## Owned Windows development launcher
 
 `--launch-development --allow-unisolated-backend` selects `launcher::LaunchConfig`.
-Only compiled-in `reference-cpu` pins and fixed arguments are accepted; arbitrary
-executables, models, profile JSON and overrides are rejected. `--check-only`
+Only compiled-in pins and fixed arguments are accepted: `reference-cpu` is the
+default, and `--profile swift-pq2-assessment` explicitly selects Swift's separate
+model/runtime lock. Arbitrary executables, models, profile JSON and overrides
+are rejected. Swift uses the original PQ2 weights without an adapter or PTQ1
+substitution. `--check-only`
 verifies policy/artifacts and reports memory admission without credentials or a
-process. Swift/LoRA assessment contracts remain separate. Inherited
+process. Neither selection establishes real-model service qualification. Inherited
 LLAMA/LLAMACPP/GGML/AIP/MTMD and model-endpoint/token overrides are rejected;
 Windows/profile environment variables are preserved.
 
@@ -265,9 +269,11 @@ This does not attest source-to-binary builds or restricted execution.
 Safe broker code delegates Win32 ownership to the audited
 `bonsai-windows-process` and protected credential creation to
 `bonsai-windows-credentials`. A fresh protected evidence directory contains two
-keys and new stdout/stderr files. Launch requires 22 GiB available RAM for the
-18 GiB service and 4 GiB reserve. Suspended process creation atomically applies
-Job/standard-handle attributes: kill-on-close, 18 GiB job-wide commit cap,
+keys and new stdout/stderr files. The reference requires 22 GiB available RAM
+for its 18 GiB service; Swift requires 16 GiB for its 12 GiB service. Both retain
+a 4 GiB physical reserve. Swift fixes batch/microbatch at 128/64; the reference
+retains 256/128. Suspended process creation atomically applies
+Job/standard-handle attributes: kill-on-close, the selected job-wide commit cap,
 one-process limit, no breakaway and noninheritable Job handle. The absolute
 external evidence directory is the process working directory.
 
