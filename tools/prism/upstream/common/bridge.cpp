@@ -35,6 +35,8 @@
 #include "chat.hpp"
 #include "optimizer.hpp"
 #include "quantization.hpp"
+#include "dspark.hpp"
+#include "threadpool.hpp"
 #include "public_c_abi.h"
 #include <nlohmann/json.hpp>
 
@@ -190,6 +192,10 @@ void validate_operation(const wire_json & operation) {
         prism_optimizer::validate(operation);
     } else if (prism_quantization::handles(kind)) {
         prism_quantization::validate(operation);
+    } else if (kind == "cpu-threadpool") {
+        prism_threadpool::validate(operation);
+    } else if (prism_dspark::handles(kind)) {
+        prism_dspark::validate(operation);
     } else {
         throw std::runtime_error("unknown operation Kind");
     }
@@ -283,6 +289,12 @@ wire_json execute(const wire_json & operation) {
     }
     if (prism_quantization::handles(kind)) {
         return prism_quantization::execute(operation);
+    }
+    if (kind == "cpu-threadpool") {
+        return prism_threadpool::execute(operation);
+    }
+    if (prism_dspark::handles(kind)) {
+        return prism_dspark::execute(operation);
     }
     if (kind == "unicode-regex-split") {
         const auto pieces = unicode_regex_split(operation.at("Text").get<std::string>(),
