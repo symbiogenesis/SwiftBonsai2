@@ -1,4 +1,4 @@
-//! Explicit Windows development launch of the pinned reference CPU backend.
+//! Explicit Windows development launch of a compiled, pinned CPU backend.
 //!
 //! This owns lifetime, credentials, artifact handles and resource monitoring.
 //! It does not establish a restricted token, filesystem boundary or denied
@@ -6,7 +6,7 @@
 
 use crate::{
     artifacts::VerifiedArtifacts,
-    launch_policy::LaunchPlan,
+    launch_policy::{LaunchPlan, LaunchProfile},
     runtime::{RunExit, RunReport, run},
     scheduler::MAX_WAITING,
     service::{LocalChatService, bound_loopback_socket},
@@ -34,13 +34,15 @@ use tokio::{
 
 /// Explicit acknowledgement is required even though the backend is owned.
 pub const LAUNCH_USAGE: &str = concat!(
-    "Windows reference-cpu development launcher (daily isolation unqualified).\n",
+    "Windows CPU development launcher (daily isolation unqualified).\n",
     "bonsai-broker --launch-development --allow-unisolated-backend\n",
     "  --data-directory <existing-external-directory>\n",
     "  --evidence-parent <existing-external-directory>\n",
     "  --frontend-port <0-or-1024..65535> --backend-port <1024..65535>\n",
+    "  [--profile <reference-cpu|swift-pq2-assessment>]\n",
     "  [--max-waiting <0..8>] [--check-only]\n",
-    "Only the compiled-in reference model/runtime pins and fixed CPU policy are accepted.\n",
+    "Default: reference-cpu. Only compiled model/runtime pins and fixed CPU policies are accepted.\n",
+    "Swift selects original PQ2 weights without an adapter; daily use remains unqualified.\n",
     "Creates fresh protected credentials; prints paths, never key values.\n",
 );
 
@@ -86,6 +88,7 @@ pub struct LaunchConfig {
     backend_port: u16,
     max_waiting: usize,
     check_only: bool,
+    profile: LaunchProfile,
 }
 
 /// Offline verification result; checking never creates credentials or a process.
@@ -104,6 +107,7 @@ impl LaunchConfig {
         let mut args = args.into_iter();
         let (mut launch, mut unisolated) = (false, false);
         let mut check_only = false;
+        let mut profile = None;
         let (mut data, mut evidence_parent) = (None, None);
         let (mut frontend_port, mut backend_port, mut max_waiting) = (None, None, None);
         while let Some(argument) = args.next() {
@@ -111,6 +115,13 @@ impl LaunchConfig {
                 Some("--launch-development") if !launch => launch = true,
                 Some("--allow-unisolated-backend") if !unisolated => unisolated = true,
                 Some("--check-only") if !check_only => check_only = true,
+                Some("--profile") if profile.is_none() => {
+                    profile = Some(
+                        args.next()
+                            .and_then(|value| value.to_str().and_then(|name| name.parse().ok()))
+                            .ok_or(LaunchError::Arguments)?,
+                    );
+                }
                 Some("--data-directory") if data.is_none() => {
                     data = Some(PathBuf::from(args.next().ok_or(LaunchError::Arguments)?));
                 }
@@ -149,6 +160,7 @@ impl LaunchConfig {
             backend_port,
             max_waiting,
             check_only,
+            profile: profile.unwrap_or_default(),
         })
     }
 
@@ -158,6 +170,12 @@ impl LaunchConfig {
         self.check_only
     }
 
+    /// Compiled profile selected by the exact CLI name, defaulting to the reference.
+    #[must_use]
+    pub const fn profile(&self) -> LaunchProfile {
+        self.profile
+    }
+
     /// Verify the fixed policy and complete artifacts without creating state.
     ///
     /// # Errors
@@ -165,21 +183,31 @@ impl LaunchConfig {
     /// in the result rather than preventing this read-only verification.
     pub fn check(&self) -> Result<LaunchCheck, LaunchError> {
         self.validate_paths()?;
-        let plan = LaunchPlan::reference(
+        let plan = LaunchPlan::for_profile(
             &self.data,
             self.backend_port,
             &self.evidence_parent.join("not-created.key"),
+            self.profile,
         )
         .map_err(|_| LaunchError::Policy)?;
-        let artifacts =
-            VerifiedArtifacts::verify(&self.data).map_err(|_| LaunchError::Artifacts)?;
-        if artifacts.executable() != plan.executable {
-            return Err(LaunchError::Artifacts);
-        }
+        let _artifacts = self.verify_artifacts(&plan)?;
         Ok(LaunchCheck {
             memory_admitted: available_memory_bytes().map_err(|_| LaunchError::Memory)?
                 >= plan.required_available_bytes,
         })
+    }
+
+    fn verify_artifacts(&self, plan: &LaunchPlan) -> Result<VerifiedArtifacts, LaunchError> {
+        let artifacts = VerifiedArtifacts::verify_for_profile(&self.data, self.profile)
+            .map_err(|_| LaunchError::Artifacts)?;
+        if artifacts.executable() != plan.executable
+            || artifacts.model() != plan.model_path
+            || artifacts.runtime_directory() != plan.runtime_directory
+            || artifacts.archive_path() != plan.archive_path
+        {
+            return Err(LaunchError::Artifacts);
+        }
+        Ok(artifacts)
     }
 
     fn validate_paths(&self) -> Result<(), LaunchError> {
@@ -219,21 +247,23 @@ impl LaunchConfig {
         self.validate_paths()?;
         // Resolve policy before creating secrets or loading any native code.
         let pending_key = self.evidence_parent.join("not-created.key");
-        let preliminary = LaunchPlan::reference(&self.data, self.backend_port, &pending_key)
-            .map_err(|_| LaunchError::Policy)?;
+        let preliminary =
+            LaunchPlan::for_profile(&self.data, self.backend_port, &pending_key, self.profile)
+                .map_err(|_| LaunchError::Policy)?;
         admit(preliminary.required_available_bytes)?;
-        let artifacts =
-            VerifiedArtifacts::verify(&self.data).map_err(|_| LaunchError::Artifacts)?;
-        if artifacts.executable() != preliminary.executable {
-            return Err(LaunchError::Artifacts);
-        }
+        let artifacts = self.verify_artifacts(&preliminary)?;
         if poll_fn(|cx| Poll::Ready(shutdown.as_mut().poll(cx).is_ready())).await {
             return Err(LaunchError::Cancelled);
         }
         let credentials = PrivateCredentials::create(&self.evidence_parent)
             .map_err(|_| LaunchError::Credentials)?;
-        let plan = LaunchPlan::reference(&self.data, self.backend_port, credentials.backend_path())
-            .map_err(|_| LaunchError::Policy)?;
+        let plan = LaunchPlan::for_profile(
+            &self.data,
+            self.backend_port,
+            credentials.backend_path(),
+            self.profile,
+        )
+        .map_err(|_| LaunchError::Policy)?;
         validate_external_path(&plan.executable).map_err(|_| LaunchError::Path)?;
         // Reserve only as a collision check; PID checks close the release/bind
         // race without ever trusting a pre-existing server on the selected port.
@@ -564,7 +594,7 @@ mod lifecycle_tests;
 
 #[cfg(test)]
 mod tests {
-    use super::{LaunchConfig, LaunchError, validate_health};
+    use super::{LaunchConfig, LaunchError, LaunchProfile, validate_health};
     use std::ffi::OsString;
 
     fn arguments() -> Vec<OsString> {
@@ -613,6 +643,66 @@ mod tests {
             LaunchConfig::parse(collision).err(),
             Some(LaunchError::Arguments)
         );
+    }
+
+    #[test]
+    fn profiles_are_explicit_exact_unique_and_default_to_reference() {
+        let default = LaunchConfig::parse(arguments());
+        assert_eq!(
+            default.map(|config| config.profile()),
+            Ok(LaunchProfile::ReferenceCpu)
+        );
+        for profile in [
+            LaunchProfile::ReferenceCpu,
+            LaunchProfile::SwiftPq2Assessment,
+        ] {
+            let mut args = arguments();
+            args.extend([OsString::from("--profile"), OsString::from(profile.name())]);
+            assert_eq!(
+                LaunchConfig::parse(args).map(|config| config.profile()),
+                Ok(profile)
+            );
+        }
+        for extra in [
+            vec!["--profile"],
+            vec!["--profile", ""],
+            vec!["--profile", "Swift-pq2-assessment"],
+            vec!["--profile", "swift-ptq1-assessment"],
+            vec!["--profile", "C:\\ExternalProfile.json"],
+            vec![
+                "--profile",
+                "swift-pq2-assessment",
+                "--profile",
+                "reference-cpu",
+            ],
+            vec![
+                "--profile",
+                "swift-pq2-assessment",
+                "--lora",
+                "C:\\Adapter.gguf",
+            ],
+            vec!["--profile", "swift-pq2-assessment", "--use-repacked-ptq1"],
+            vec![
+                "--profile",
+                "swift-pq2-assessment",
+                "--model",
+                "C:\\Other.gguf",
+            ],
+            vec![
+                "--profile",
+                "swift-pq2-assessment",
+                "--runtime",
+                "C:\\Other.exe",
+            ],
+            vec!["--profile", "swift-pq2-assessment", "--batch-size", "256"],
+        ] {
+            let mut args = arguments();
+            args.extend(extra.into_iter().map(OsString::from));
+            assert_eq!(
+                LaunchConfig::parse(args).err(),
+                Some(LaunchError::Arguments)
+            );
+        }
     }
 
     fn response(body: &str) -> Vec<u8> {

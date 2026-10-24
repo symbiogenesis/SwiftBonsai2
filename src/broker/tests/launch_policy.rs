@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 //! Fixed launch arguments and environment-policy regressions; no real model starts.
 use bonsai_broker::launch_policy::{
-    LaunchPlan, MEMORY_LIMIT_BYTES, PolicyError, REQUIRED_AVAILABLE_BYTES, validate_environment,
+    LaunchPlan, LaunchProfile, MEMORY_LIMIT_BYTES, PolicyError, REQUIRED_AVAILABLE_BYTES,
+    validate_environment,
 };
 use std::{ffi::OsString, path::PathBuf};
 
@@ -23,6 +24,73 @@ fn inherited_overrides_are_case_insensitive_and_value_free() {
         );
     }
     assert!(validate_environment([OsString::from("PATH"), OsString::from("HF_HOME")]).is_ok());
+}
+
+#[test]
+fn swift_plan_selects_only_pinned_pq2_runtime_and_assessment_limits() {
+    let data = std::env::temp_dir().join("Bonsai Swift policy unused data");
+    let key = std::env::temp_dir()
+        .join("Bonsai Swift policy unused key")
+        .join("backend.key");
+    let plan = LaunchPlan::for_profile(&data, 49152, &key, LaunchProfile::SwiftPq2Assessment);
+    assert!(plan.is_ok());
+    let Ok(plan) = plan else {
+        return;
+    };
+    assert_eq!(plan.memory_limit_bytes, 12 * 1024 * 1024 * 1024);
+    assert_eq!(plan.required_available_bytes, 16 * 1024 * 1024 * 1024);
+    assert_eq!(
+        plan.model_path,
+        data.join("models")
+            .join("a3bdac086bbb6b04d87d0108d18943b5f63868f7")
+            .join("Swift-Bonsai-2-PQ2_0.gguf")
+    );
+    assert_eq!(
+        plan.runtime_directory,
+        data.join("runtime")
+            .join("73bfe6cc485554822f80c473a3c0c4f25e80f41b")
+    );
+    assert_eq!(
+        plan.archive_path,
+        data.join("downloads")
+            .join("llama-prism-b10787-73bfe6c-bin-win-cpu-arm64.zip")
+    );
+    assert_eq!(
+        plan.executable,
+        plan.runtime_directory.join("llama-server.exe")
+    );
+    let pairs: Vec<_> = plan.arguments.windows(2).collect();
+    for pair in [
+        ["--batch-size", "128"],
+        ["--ubatch-size", "64"],
+        ["--ctx-size", "8192"],
+        ["--parallel", "1"],
+        ["--cache-type-k", "f16"],
+        ["--cache-type-v", "f16"],
+        ["--gpu-layers", "0"],
+        ["--device", "none"],
+    ] {
+        assert!(
+            pairs
+                .iter()
+                .any(|actual| actual[0] == pair[0] && actual[1] == pair[1])
+        );
+    }
+    for required in [
+        "--offline",
+        "--no-ui",
+        "--no-agent",
+        "--no-ui-mcp-proxy",
+        "--no-repack",
+        "--no-mmproj",
+        "--api-key-file",
+    ] {
+        assert!(plan.arguments.iter().any(|argument| argument == required));
+    }
+    for forbidden in ["--lora", "--lora-scaled", "--model-url", "--hf-repo"] {
+        assert!(!plan.arguments.iter().any(|argument| argument == forbidden));
+    }
+    assert!(LaunchPlan::for_profile(&data, 80, &key, LaunchProfile::SwiftPq2Assessment).is_err());
 }
 
 #[test]

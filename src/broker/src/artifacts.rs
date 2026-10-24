@@ -3,7 +3,7 @@
 //! Retain [`VerifiedArtifacts`] until the child has exited: Windows read handles
 //! deny file writes and deletion while the artifacts are in use.
 
-use crate::launch_policy::{is_redirect, reviewed_pins, validate_external_path};
+use crate::launch_policy::{LaunchProfile, is_redirect, reviewed_pins, validate_external_path};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -76,10 +76,18 @@ impl VerifiedArtifacts {
     /// # Errors
     /// Rejects policy/path drift, changed artifacts, ZIP hazards and installation drift.
     pub fn verify(data: &Path) -> Result<Self, ArtifactError> {
+        Self::verify_for_profile(data, LaunchProfile::ReferenceCpu)
+    }
+
+    /// Verify the artifacts of one compiled profile, retaining their read handles.
+    ///
+    /// # Errors
+    /// Rejects policy/path drift, changed artifacts, ZIP hazards and installation drift.
+    pub fn verify_for_profile(data: &Path, profile: LaunchProfile) -> Result<Self, ArtifactError> {
         if !cfg!(windows) {
             return Err(ArtifactError::Configuration);
         }
-        let pins = reviewed_pins().map_err(|_| ArtifactError::Configuration)?;
+        let pins = reviewed_pins(profile).map_err(|_| ArtifactError::Configuration)?;
         let archive_path = data.join("downloads").join(&pins.runtime.asset.filename);
         let runtime_directory = data.join("runtime").join(&pins.runtime.commit);
         let model = data
@@ -443,6 +451,64 @@ fn check_arm64(file: &mut (impl Read + Seek)) -> Result<(), ArtifactError> {
 mod tests {
     use super::*;
     use std::io::{Cursor, Write};
+
+    #[cfg(windows)]
+    #[test]
+    fn profile_verification_opens_only_its_locked_archive() -> std::io::Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(std::io::Error::other)?
+            .as_nanos();
+        let parent = std::env::temp_dir();
+        let data = parent.join(format!(
+            "Bonsai-artifact-profile-{}-{stamp}",
+            std::process::id()
+        ));
+        fs::create_dir(&data)?;
+        fs::create_dir(data.join("downloads"))?;
+        for profile in [
+            LaunchProfile::ReferenceCpu,
+            LaunchProfile::SwiftPq2Assessment,
+        ] {
+            let pins = reviewed_pins(profile).map_err(std::io::Error::other)?;
+            fs::create_dir_all(data.join("runtime").join(&pins.runtime.commit))?;
+            fs::create_dir_all(data.join("models").join(&pins.model.revision))?;
+        }
+        for selected in [
+            LaunchProfile::ReferenceCpu,
+            LaunchProfile::SwiftPq2Assessment,
+        ] {
+            let pins = reviewed_pins(selected).map_err(std::io::Error::other)?;
+            let archive = data.join("downloads").join(&pins.runtime.asset.filename);
+            fs::write(&archive, b"")?;
+            for candidate in [
+                LaunchProfile::ReferenceCpu,
+                LaunchProfile::SwiftPq2Assessment,
+            ] {
+                let expected = if candidate == selected {
+                    ArtifactError::Identity
+                } else {
+                    ArtifactError::Path
+                };
+                assert_eq!(
+                    VerifiedArtifacts::verify_for_profile(&data, candidate).err(),
+                    Some(expected)
+                );
+            }
+            assert_eq!(
+                VerifiedArtifacts::verify(&data).err(),
+                Some(if selected == LaunchProfile::ReferenceCpu {
+                    ArtifactError::Identity
+                } else {
+                    ArtifactError::Path
+                })
+            );
+            fs::remove_file(&archive)?;
+        }
+        assert_eq!(data.parent(), Some(parent.as_path()));
+        fs::remove_dir_all(data)?;
+        Ok(())
+    }
     #[test]
     fn names_reject_windows_aliases_and_redirects() {
         for name in [

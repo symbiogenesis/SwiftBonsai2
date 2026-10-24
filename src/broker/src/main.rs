@@ -66,12 +66,13 @@ fn launched(args: Vec<OsString>) -> ExitCode {
     let Ok(configuration) = LaunchConfig::parse(args) else {
         return failure(LAUNCH_USAGE.as_bytes());
     };
+    let profile_name = configuration.profile().name();
     if configuration.is_check_only() {
         return match configuration.check() {
             Ok(check) => {
                 let message = format!(
-                    "Pinned artifacts and reference launch policy verified. Current memory admission: {}. No credentials or process created.\n",
-                    check.memory_admitted
+                    "Pinned artifacts and {profile_name} launch policy verified. Current memory admission: {}. No credentials or process created.\n",
+                    check.memory_admitted,
                 );
                 if std::io::stdout().write_all(message.as_bytes()).is_ok() {
                     ExitCode::SUCCESS
@@ -100,7 +101,7 @@ fn launched(args: Vec<OsString>) -> ExitCode {
             }
         };
         let notice = format!(
-            "DEVELOPMENT ONLY: owned backend ready; listening on http://127.0.0.1:{}.\nProtected credentials and technical evidence: {}\nFilesystem, token and egress isolation remain unqualified. Ctrl-C stops the complete owned Job.\n",
+            "DEVELOPMENT ONLY: owned {profile_name} backend ready; listening on http://127.0.0.1:{}.\nProtected credentials and technical evidence: {}\nFilesystem, token and egress isolation remain unqualified. Ctrl-C stops the complete owned Job.\n",
             owner.port(), owner.evidence_directory().display()
         );
         if std::io::stdout().write_all(notice.as_bytes()).is_err() {

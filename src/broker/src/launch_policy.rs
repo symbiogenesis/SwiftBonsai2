@@ -1,4 +1,4 @@
-//! Fixed development-only backend policy; configuration is compiled into the broker.
+//! Reviewed development-only backend policies compiled into the broker.
 //!
 //! This plan is not permission to launch and does not qualify the daily profile.
 
@@ -11,10 +11,59 @@ use std::{
 
 const LOCK_JSON: &str = include_str!("../../../config/runtime.lock.json");
 const PROFILE_JSON: &str = include_str!("../../../config/profiles/reference-cpu.json");
+const SWIFT_LOCK_JSON: &str = include_str!("../../../config/swift-assessment.lock.json");
 /// Fixed process memory ceiling: 18 GiB.
 pub const MEMORY_LIMIT_BYTES: usize = 19_327_352_832;
 /// Required available physical memory including a 4 GiB host reserve.
 pub const REQUIRED_AVAILABLE_BYTES: u64 = 23_622_320_128;
+
+/// The only reviewed development model/runtime selections. Neither qualifies daily use.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LaunchProfile {
+    /// Default Qwen reference; its compiled JSON profile remains launch-disabled.
+    #[default]
+    ReferenceCpu,
+    /// Explicit Swift PQ2 assessment, without derived weights or an adapter.
+    SwiftPq2Assessment,
+}
+impl LaunchProfile {
+    /// Exact command-line name of the compiled selection.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ReferenceCpu => "reference-cpu",
+            Self::SwiftPq2Assessment => "swift-pq2-assessment",
+        }
+    }
+
+    /// Job-wide committed-memory ceiling; the physical reserve is additional.
+    #[must_use]
+    pub const fn memory_limit_bytes(self) -> usize {
+        match self {
+            Self::ReferenceCpu => MEMORY_LIMIT_BYTES,
+            Self::SwiftPq2Assessment => 12 * 1024 * 1024 * 1024,
+        }
+    }
+
+    /// Physical admission threshold, including a separate 4 GiB host reserve.
+    #[must_use]
+    pub const fn required_available_bytes(self) -> u64 {
+        match self {
+            Self::ReferenceCpu => REQUIRED_AVAILABLE_BYTES,
+            Self::SwiftPq2Assessment => 16 * 1024 * 1024 * 1024,
+        }
+    }
+}
+impl std::str::FromStr for LaunchProfile {
+    type Err = PolicyError;
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        match name {
+            "reference-cpu" => Ok(Self::ReferenceCpu),
+            "swift-pq2-assessment" => Ok(Self::SwiftPq2Assessment),
+            _ => Err(PolicyError::Configuration),
+        }
+    }
+}
 
 /// A value-free policy failure; inherited environment values are never retained.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,8 +137,21 @@ impl LaunchPlan {
     /// # Errors
     /// Rejects invalid paths, ports, inherited overrides or compiled policy drift.
     pub fn reference(data: &Path, backend_port: u16, key_file: &Path) -> Result<Self, PolicyError> {
+        Self::for_profile(data, backend_port, key_file, LaunchProfile::ReferenceCpu)
+    }
+
+    /// Build one compiled development plan; no model, runtime or argument overrides exist.
+    ///
+    /// # Errors
+    /// Rejects invalid paths, ports, inherited overrides or compiled policy drift.
+    pub fn for_profile(
+        data: &Path,
+        backend_port: u16,
+        key_file: &Path,
+        profile: LaunchProfile,
+    ) -> Result<Self, PolicyError> {
         validate_environment(std::env::vars_os().map(|(name, _)| name))?;
-        let pins = reviewed_pins()?;
+        let pins = reviewed_pins(profile)?;
         validate_external_path(data)?;
         validate_external_path(key_file)?;
         if backend_port < 1024 {
@@ -118,6 +180,11 @@ impl LaunchPlan {
             "--cors-origins".into(),
             format!("http://127.0.0.1:{backend_port}").into(),
         ];
+        let (batch, microbatch) = match profile {
+            LaunchProfile::ReferenceCpu => ("256", "128"),
+            LaunchProfile::SwiftPq2Assessment => ("128", "64"),
+        };
+        arguments.extend(["--batch-size", batch, "--ubatch-size", microbatch].map(OsString::from));
         arguments.extend(FIXED_ARGUMENTS.iter().map(OsString::from));
         Ok(Self {
             executable,
@@ -126,8 +193,8 @@ impl LaunchPlan {
             archive_path,
             runtime_directory,
             key_file: key_file.to_path_buf(),
-            required_available_bytes: REQUIRED_AVAILABLE_BYTES,
-            memory_limit_bytes: MEMORY_LIMIT_BYTES,
+            required_available_bytes: profile.required_available_bytes(),
+            memory_limit_bytes: profile.memory_limit_bytes(),
         })
     }
 }
@@ -147,10 +214,6 @@ const FIXED_ARGUMENTS: &[&str] = &[
     "8192",
     "--parallel",
     "1",
-    "--batch-size",
-    "256",
-    "--ubatch-size",
-    "128",
     "--cache-type-k",
     "f16",
     "--cache-type-v",
@@ -299,10 +362,117 @@ impl<T> std::ops::Deref for super::Object<T> {
     }
 }
 
-pub(crate) fn reviewed_pins() -> Result<Pins, PolicyError> {
-    let pins = parse_pins(LOCK_JSON)?;
-    validate_profile(PROFILE_JSON)?;
-    Ok(pins)
+pub(crate) struct ReviewedPins {
+    pub(crate) model: ModelArtifact,
+    pub(crate) runtime: super::Object<RuntimePin>,
+}
+pub(crate) struct ModelArtifact {
+    pub(crate) revision: String,
+    pub(crate) filename: String,
+    pub(crate) bytes: u64,
+    pub(crate) sha256: String,
+}
+
+pub(crate) fn reviewed_pins(profile: LaunchProfile) -> Result<ReviewedPins, PolicyError> {
+    match profile {
+        LaunchProfile::ReferenceCpu => {
+            let pins = parse_pins(LOCK_JSON)?;
+            validate_profile(PROFILE_JSON)?;
+            Ok(ReviewedPins {
+                model: ModelArtifact {
+                    revision: pins.model.0.revision,
+                    filename: pins.model.0.filename,
+                    bytes: pins.model.0.bytes,
+                    sha256: pins.model.0.sha256,
+                },
+                runtime: pins.runtime,
+            })
+        }
+        LaunchProfile::SwiftPq2Assessment => parse_swift_pins(SWIFT_LOCK_JSON),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SwiftPins {
+    schema_version: u8,
+    decision: String,
+    model: super::Object<SwiftModelPin>,
+    runtime: super::Object<RuntimePin>,
+    qualification: super::Object<SwiftQualification>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SwiftModelPin {
+    repository: String,
+    revision: String,
+    filename: String,
+    bytes: u64,
+    sha256: String,
+    digest_source: String,
+    license: String,
+    architecture: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SwiftQualification {
+    purpose: String,
+    model_download: String,
+    full_gguf_inspection: String,
+    ternary_symbol_census: String,
+    cpu_loading: String,
+    daily_security: String,
+    device_performance: String,
+}
+
+fn parse_swift_pins(input: &str) -> Result<ReviewedPins, PolicyError> {
+    let super::Object(pins): super::Object<SwiftPins> =
+        serde_json::from_str(input).map_err(|_| PolicyError::Configuration)?;
+    let m = &pins.model;
+    let r = &pins.runtime;
+    let q = &pins.qualification;
+    if pins.schema_version != 1
+        || pins.decision != "docs/swift-memory.md"
+        || m.repository != "ukisai/Swift-Bonsai-2-GGUF"
+        || m.revision != "a3bdac086bbb6b04d87d0108d18943b5f63868f7"
+        || m.filename != "Swift-Bonsai-2-PQ2_0.gguf"
+        || m.bytes != 7_206_168_928
+        || m.sha256 != "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5"
+        || m.digest_source
+            != "https://huggingface.co/api/models/ukisai/Swift-Bonsai-2-GGUF/revision/a3bdac086bbb6b04d87d0108d18943b5f63868f7?blobs=true"
+        || m.license != "Apache-2.0"
+        || m.architecture != "qwen35"
+        || r.repository != "https://github.com/PrismML-Eng/llama.cpp.git"
+        || r.commit != "73bfe6cc485554822f80c473a3c0c4f25e80f41b"
+        || r.release != "prism-b10787-73bfe6c"
+        || r.license != "MIT"
+        || r.asset.filename != "llama-prism-b10787-73bfe6c-bin-win-cpu-arm64.zip"
+        || r.asset.bytes != 12_412_126
+        || r.asset.sha256 != "cc808b33d35c72a3bd5c69a0d609d422426feb9dce23868e77992b6c33b8ddb3"
+        || r.asset.url
+            != "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10787-73bfe6c/llama-prism-b10787-73bfe6c-bin-win-cpu-arm64.zip"
+        || r.asset.digest_source
+            != "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/tags/prism-b10787-73bfe6c"
+        || q.purpose != "owner-prioritized Swift memory and exact ternary repacking assessment"
+        || q.model_download != "verified-size-and-sha256-2026-10-23"
+        || q.full_gguf_inspection != "config/swift.metadata.json"
+        || q.ternary_symbol_census != "config/swift.pq2-census.json"
+        || q.cpu_loading
+            != "bounded-16-token-native-decode-completed; PQ2/current-repacked-PTQ1 with and without approved adapter; quality and TPS unqualified"
+        || q.daily_security != "not-qualified"
+        || q.device_performance != "pending-self-hosted-ci"
+    {
+        return Err(PolicyError::Configuration);
+    }
+    Ok(ReviewedPins {
+        model: ModelArtifact {
+            revision: pins.model.0.revision,
+            filename: pins.model.0.filename,
+            bytes: pins.model.0.bytes,
+            sha256: pins.model.0.sha256,
+        },
+        runtime: pins.runtime,
+    })
 }
 
 fn parse_pins(input: &str) -> Result<Pins, PolicyError> {
@@ -489,7 +659,8 @@ mod tests {
     use super::*;
     #[test]
     fn compiled_configuration_is_reviewed() {
-        assert!(reviewed_pins().is_ok());
+        assert!(reviewed_pins(LaunchProfile::ReferenceCpu).is_ok());
+        assert!(reviewed_pins(LaunchProfile::SwiftPq2Assessment).is_ok());
         assert!(validate_profile(PROFILE_JSON).is_ok());
     }
     #[test]
@@ -522,5 +693,38 @@ mod tests {
             assert_ne!(changed, LOCK_JSON, "lock mutation must change the fixture");
             assert!(parse_pins(&changed).is_err());
         }
+    }
+
+    #[test]
+    fn swift_lock_drift_and_shapes_fail_closed() {
+        for changed in [
+            SWIFT_LOCK_JSON.replace("7206168928", "7206168929"),
+            SWIFT_LOCK_JSON.replace("12412126", "12412127"),
+            SWIFT_LOCK_JSON.replace("PQ2_0.gguf", "PTQ1_0.gguf"),
+            SWIFT_LOCK_JSON.replace("ukisai/Swift-Bonsai-2-GGUF", "other/Swift-Bonsai-2-GGUF"),
+            SWIFT_LOCK_JSON.replace("not-qualified", "passed"),
+            SWIFT_LOCK_JSON.replace(
+                "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+                "36e36e63a54fc8f85b95e9c499a022b597e478dd",
+            ),
+            SWIFT_LOCK_JSON.replace("\"bytes\": 7206168928", "\"bytes\": \"7206168928\""),
+            SWIFT_LOCK_JSON.replace("\"bytes\": 7206168928", "\"bytes\": 7206168928.0"),
+            SWIFT_LOCK_JSON.replace(
+                "\"schemaVersion\": 1",
+                "\"schemaVersion\": 1, \"schemaVersion\": 1",
+            ),
+            SWIFT_LOCK_JSON.replace("\"model\": {", "\"model\": {\"lora\": \"arbitrary\","),
+            SWIFT_LOCK_JSON.replace("\"runtime\": {", "\"runtime\": {\"arguments\": [],"),
+            SWIFT_LOCK_JSON.replace(
+                "\"qualification\": {",
+                "\"qualification\": {\"unknown\": true,",
+            ),
+            LOCK_JSON.to_owned(),
+            "[]".to_owned(),
+        ] {
+            assert_ne!(changed, SWIFT_LOCK_JSON, "mutation must change the fixture");
+            assert!(parse_swift_pins(&changed).is_err());
+        }
+        assert!(parse_pins(SWIFT_LOCK_JSON).is_err());
     }
 }
