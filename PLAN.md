@@ -224,6 +224,9 @@ vocabulary and output reservation. A reusable verified output session releases
 the model file and supplies lossless pieces to independent display streams.
 The bounded synchronous worker client pins readiness and checks text count/encode
 responses, correlation and recovery without owning process or I/O deadlines.
+Its raw-ID operations also validate local vocabulary/context bounds and exact
+returned sequences. The driver and library accept bounded JSON token arrays
+from files or stdin, keeping long raw prompts outside process arguments.
 Their focused correctness checks do not establish chat-template parity,
 broker integration or daily-service acceptance.
 Tiled prefill kernels, full-model allocation,

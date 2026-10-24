@@ -272,6 +272,19 @@ task time separately, accounting for bandwidth and the measured critical path.
     and actual-worker/output-session composition cover the boundary. Callers
     still own process lifetime, I/O deadlines, cancellation and broker wiring.
 
+  - [x] **R5.13 — Complete checked raw-ID worker client operations.** The
+    reusable client exposes raw count/encode, validates vocabulary and full
+    context/output reservation before transport, and checks returned counts and
+    exact sequences. Focused fault and actual-worker checks cover bounded
+    framing, correlation and recovery without text parsing or insertion.
+
+  - [x] **R5.14 — Read bounded token-ID files and stdin.** The driver and public
+    `token_input::read_tokens` accept strict JSON token arrays outside process
+    arguments. Independent byte/token bounds, private failures and pre-read
+    option checks preserve exact raw-ID accounting without text insertion.
+    Focused reader and serialized-driver checks cover file/stdin parity,
+    malformed/empty driver input and rejection before artifact loading.
+
 - [ ] **R6 — Add Adreno after CPU parity.** Follow [G0–G5](adreno-gpu-plan.md),
   implementing the same packed types, transforms and complete hybrid graph.
   Reuse Prism capability reports/fixtures, but qualify Rust GPU coverage and

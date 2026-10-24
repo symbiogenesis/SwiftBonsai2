@@ -92,10 +92,10 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   allocation or subsequent artifact I/O. Text and exact raw-ID operations share
   its fixed context/output budget; parsing and insertion apply only to text.
 - A bounded synchronous `token_client::TokenClient` checks worker readiness
-  against pinned identity/policy before text count/encode exchanges. Strict
-  framing, response schemas and correlation fail closed after transport faults.
-- Library callers share the driver's bounded UTF-8 prompt reader and checked
-  model-plus-caller generation-stop policy.
+  against pinned identity/policy before text or raw-ID count/encode exchanges.
+  Strict framing, response schemas and correlation fail closed after transport faults.
+- Library callers share the driver's bounded UTF-8 prompt and JSON token-array
+  readers and checked model-plus-caller generation-stop policy.
 
 The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.
@@ -138,11 +138,20 @@ identity syntax, positive bounds, prompt-plus-generation capacity and the
 Supply `--tokens <id,id,...>` from the reference tokenizer, or use experimental
 `--prompt <text>` for plain UTF-8 encoding. `--prompt-file <absolute-path>` reads
 exact UTF-8 from a file, and `--prompt-file -` reads stdin through EOF. These
-three input options are mutually exclusive. File/stdin input keeps prompt bodies
-out of process arguments. It preserves every byte, including CR/LF and a UTF-8
-BOM; empty, malformed UTF-8 and inputs larger than 1 MiB reject before model
-verification. Other option validation precedes stdin reading; input reads have
-no timeout. The generation timeout still begins after model loading.
+input options and `--tokens-file <absolute-path|->` are mutually exclusive.
+Token files contain one strict JSON array of unsigned 32-bit IDs, for example
+`[42,17,42]`. Whitespace is allowed; comments, trailing JSON, negative/fractional
+IDs and values above `4294967295` reject. The driver requires a nonempty array
+within the prompt allowance and preserves exact order and duplicates. A token
+file has the same 1 MiB byte bound, including whitespace, and no text parsing or
+BOS/EOS insertion applies. The byte bound is independent of the token allowance;
+a sequence that fits the context can still exceed the JSON byte bound.
+Vocabulary validation follows verified model loading.
+File/stdin input keeps prompt bodies out of process arguments. Text prompts
+preserve every byte, including CR/LF and a UTF-8 BOM; empty, malformed UTF-8 and
+inputs larger than 1 MiB reject before model verification. Other option
+validation precedes stdin reading; input reads have no timeout. The generation
+timeout still begins after model loading.
 `--special-input literal|parse` is available only with text input;
 literal is the default. Text encoding applies no chat template or BOS/EOS
 insertion by default, even if insertion flags are present in metadata. Supply
@@ -199,9 +208,9 @@ The driver does not render chat templates, launch the broker or promote a profil
 
 Use `--mode tokenize` to inspect exact input IDs/count without graph allocation.
 This mode requires `--model`, `--bytes`, `--sha256`, `--memory-bytes`, `--context`
-and exactly one nonempty `--prompt`, `--prompt-file` or `--tokens` input.
-Optional `--max-tokens` reserves that
-many context slots for future output; its default is zero. Text input uses the
+and exactly one nonempty `--prompt`, `--prompt-file`, `--tokens` or `--tokens-file`
+input. Optional `--max-tokens` reserves that many context slots for future output;
+its default is zero. Text input uses the
 same special-token and insertion policies as generation. Generation-only options,
 including `--checkpoint-bytes`, are rejected. A single JSON record reports
 `token_ids`, `token_count`, `context`, `reserved_output_tokens`, effective input
@@ -277,7 +286,12 @@ buffered input/output and an `ExpectedWorker`: independently pinned lowercase
 model SHA-256, vocabulary size, exact `WorkerConfig` and a separate response-frame
 bound. Readiness must match every identity/policy field before requests are sent.
 `count(text)` returns the checked count; `encode(text)` returns checked ordered
-IDs and fixed context/output accounting. The client admits text requests only.
+IDs and fixed context/output accounting. `count_tokens(ids)` and
+`encode_tokens(ids)` preserve raw sequences, including empty input, independently
+of the pinned text parsing/insertion policy. Invalid vocabulary IDs or an exceeded
+prompt allowance reject locally before writing or consuming a correlation ID.
+Raw counts must equal the submitted length, and raw encode replies must match
+every submitted ID in order; a mismatch permanently disables the client.
 Request and response bounds each range from 1 byte through 1 MiB; an encoded
 response can exceed its request size, so choose the response budget explicitly.
 Malformed, oversized, uncorrelated or inconsistent responses and transport errors
@@ -292,6 +306,12 @@ empty, oversized or malformed input without returning partial text. I/O errors
 retain their kind with sanitized messages and return immediately, including
 interruption. Callers own input deadlines and must rewind or replace a failed
 stream before retrying a whole prompt.
+
+`token_input::read_tokens` similarly reads one strict JSON array with an explicit
+token limit and the independent 1 MiB byte bound. It consumes at most one overflow
+byte, uses checked unsigned decimal parsing and returns no partial sequence on
+failure. The library accepts an empty array; the driver requires a nonempty
+prompt. Neither reading path supplies cancellation or an input deadline.
 
 `Bpe::from_metadata` validates normal vocabulary pieces and ranked merge rules.
 `encode_piece` accepts one already pretokenized byte slice; `encode_pieces`
