@@ -239,6 +239,88 @@ mod worker {
     }
 
     #[test]
+    fn raw_ids_preserve_exact_order_without_text_policy_or_insertion() -> Result<()> {
+        let fixture = Artifact::new(260)?;
+        let session = load(&fixture)?;
+        fs::remove_file(&fixture.path)?;
+        let mut options = config();
+        options.text_policy.insert_special = SpecialTokenInsertion::Model;
+        let output = run(
+            &session,
+            options,
+            b"{\"id\":1,\"op\":\"encode_tokens\",\"token_ids\":[258,0,259]}\n{\"id\":2,\"op\":\"count_tokens\",\"token_ids\":[258,0,259]}\n{\"id\":3,\"op\":\"encode_tokens\",\"token_ids\":[]}\n{\"id\":4,\"op\":\"encode\",\"text\":\"ab\"}\n",
+        )?;
+        assert_eq!(output.len(), 5);
+        assert_eq!(
+            output[1],
+            json!({"type": "encoded", "id": 1, "prompt_token_count": 3, "token_ids": [258, 0, 259]})
+        );
+        assert_eq!(
+            output[2],
+            json!({"type": "count", "id": 2, "prompt_token_count": 3})
+        );
+        assert_eq!(
+            output[3],
+            json!({"type": "encoded", "id": 3, "prompt_token_count": 0, "token_ids": []})
+        );
+        assert_eq!(output[4]["token_ids"], json!([259, 256, 258]));
+        Ok(())
+    }
+
+    #[test]
+    fn raw_ids_reject_vocabulary_and_context_overflow_then_recover() -> Result<()> {
+        let fixture = Artifact::new(260)?;
+        let output = run(
+            &load(&fixture)?,
+            config(),
+            b"{\"id\":1,\"op\":\"count_tokens\",\"token_ids\":[260]}\n{\"id\":2,\"op\":\"encode_tokens\",\"token_ids\":[0,1,2,3]}\n{\"id\":3,\"op\":\"encode_tokens\",\"token_ids\":[4294967295]}\n{\"id\":4,\"op\":\"encode_tokens\",\"token_ids\":[259,259,0]}\n",
+        )?;
+        for (id, record) in output.iter().enumerate().take(4).skip(1) {
+            assert_eq!(
+                record,
+                &json!({"type": "error", "id": id, "code": "rejected_input"})
+            );
+        }
+        assert_eq!(output[4]["token_ids"], json!([259, 259, 0]));
+        Ok(())
+    }
+
+    #[test]
+    fn raw_ids_require_exclusive_strict_operation_shapes() -> Result<()> {
+        let fixture = Artifact::new(260)?;
+        let invalid = [
+            r#"{"id":1,"op":"count_tokens","text":"private-prompt"}"#,
+            r#"{"id":1,"op":"encode_tokens","token_ids":[],"text":"private-prompt"}"#,
+            r#"{"id":1,"op":"count","token_ids":[]}"#,
+            r#"{"id":1,"op":"count","text":"private-prompt","token_ids":[]}"#,
+            r#"{"id":1,"op":"encode_tokens","token_ids":[-1]}"#,
+            r#"{"id":1,"op":"encode_tokens","token_ids":[1.5]}"#,
+            r#"{"id":1,"op":"encode_tokens","token_ids":[4294967296]}"#,
+            r#"{"id":1,"op":"encode_tokens","token_ids":["1"]}"#,
+            r#"{"id":1,"op":"encode_tokens","token_ids":null}"#,
+            r#"{"id":1,"op":"encode_tokens","token_ids":[],"token_ids":[1]}"#,
+            r#"{"id":1,"id":2,"op":"count_tokens","token_ids":[]}"#,
+            r#"{"id":1,"op":"count_tokens","op":"encode_tokens","token_ids":[]}"#,
+            r#"{"id":1,"op":"count_tokens","token_ids":[],"context":99}"#,
+        ];
+        let mut input = invalid.join("\n");
+        input.push_str("\n{\"id\":2,\"op\":\"count_tokens\",\"token_ids\":[0]}\n");
+        let output = run(&load(&fixture)?, config(), input.as_bytes())?;
+        assert_eq!(output.len(), invalid.len() + 2);
+        for record in &output[1..=invalid.len()] {
+            assert_eq!(
+                record,
+                &json!({"type": "error", "id": null, "code": "invalid_request"})
+            );
+        }
+        assert_eq!(
+            output[invalid.len() + 1],
+            json!({"type": "count", "id": 2, "prompt_token_count": 1})
+        );
+        Ok(())
+    }
+
+    #[test]
     fn fixed_policy_and_reservation_reject_overflow_then_recover() -> Result<()> {
         let fixture = Artifact::new(260)?;
         let session = load(&fixture)?;
@@ -453,6 +535,30 @@ mod worker {
             .ok_or("missing child stdin")?
             .write_all(input)?;
         Ok(child.wait_with_output()?)
+    }
+
+    #[test]
+    fn raw_ids_binary_uses_the_same_verified_budget_and_response_schema() -> Result<()> {
+        let fixture = Artifact::new(260)?;
+        let output = child(
+            &fixture,
+            &arguments(&fixture),
+            b"{\"id\":0,\"op\":\"count_tokens\",\"token_ids\":[0,1,2,3]}\n{\"id\":1,\"op\":\"encode_tokens\",\"token_ids\":[259,0,258]}\n",
+        )?;
+        assert!(output.status.success());
+        assert_eq!(output.stderr, [0_u8; 0]);
+        let output = records(&output.stdout)?;
+        assert_eq!(output.len(), 3);
+        assert_eq!(output[0]["model_sha256"], fixture.hash());
+        assert_eq!(
+            output[1],
+            json!({"type": "error", "id": 0, "code": "rejected_input"})
+        );
+        assert_eq!(
+            output[2],
+            json!({"type": "encoded", "id": 1, "prompt_token_count": 3, "token_ids": [259, 0, 258]})
+        );
+        Ok(())
     }
 
     #[test]

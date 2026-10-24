@@ -248,6 +248,14 @@ task time separately, accounting for bandwidth and the measured critical path.
     Focused exact-limit, short-read, infinite-input and privacy checks cover
     this synchronous boundary; callers still own cancellation and input deadlines.
 
+  - [x] **R5.10 — Count and validate exact token IDs through the worker.**
+    Strict `count_tokens` and `encode_tokens` requests reuse the verified
+    session's vocabulary and complete context/output accounting. Raw sequences
+    retain order and duplicates without text parsing or BOS/EOS insertion.
+    Focused protocol and executable regressions cover empty/boundary input,
+    malformed and mixed request shapes, overflow and recovery after rejection.
+    This completes the worker operation; broker wiring remains separate R5 work.
+
 - [ ] **R6 — Add Adreno after CPU parity.** Follow [G0–G5](adreno-gpu-plan.md),
   implementing the same packed types, transforms and complete hybrid graph.
   Reuse Prism capability reports/fixtures, but qualify Rust GPU coverage and

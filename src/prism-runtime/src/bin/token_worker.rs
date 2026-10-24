@@ -22,7 +22,7 @@ struct Startup {
     worker: WorkerConfig,
 }
 
-const USAGE: &[u8] = b"Usage: bonsai-token-worker --model <absolute-path> --bytes <u64> --sha256 <hex64> --memory-bytes <usize> --context <1..262144> --reserved-output-tokens <usize> --special-input <literal|parse> --insert-special <none|model> --max-frame-bytes <1..1048576>\n\nAll options are required exactly once. Output reservation must be less than context.\nArtifact verification and tokenizer setup precede a flushed readiness JSON record.\nJSONL requests: {\"id\":1,\"op\":\"count\",\"text\":\"complete prompt\"}\nUse op=encode to include exact token IDs. Request errors are private and recoverable.\nEvery frame requires LF. Oversized frames or transport I/O errors terminate the worker.\nUse --help alone to show this usage.\n";
+const USAGE: &[u8] = b"Usage: bonsai-token-worker --model <absolute-path> --bytes <u64> --sha256 <hex64> --memory-bytes <usize> --context <1..262144> --reserved-output-tokens <usize> --special-input <literal|parse> --insert-special <none|model> --max-frame-bytes <1..1048576>\n\nAll options are required exactly once. Output reservation must be less than context.\nArtifact verification and tokenizer setup precede a flushed readiness JSON record.\nJSONL requests: {\"id\":1,\"op\":\"count\",\"text\":\"complete prompt\"}\nUse op=encode to include exact token IDs. Raw IDs use count_tokens or encode_tokens\nwith token_ids instead of text; no parsing or insertion applies to raw IDs.\nRequest errors are private and recoverable. Every frame requires LF.\nOversized frames or transport I/O errors terminate the worker.\nUse --help alone to show this usage.\n";
 
 fn invalid_options() -> Error {
     io::Error::new(io::ErrorKind::InvalidInput, "invalid token worker options").into()

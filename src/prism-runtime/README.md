@@ -86,7 +86,8 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   before a new request. The token driver uses this same decoder.
 - A persistent `bonsai-token-worker` verifies one tokenizer artifact at startup,
   flushes readiness and serves bounded JSONL count/encode requests without graph
-  allocation or subsequent artifact I/O. Its fixed text/context policy is explicit.
+  allocation or subsequent artifact I/O. Text and exact raw-ID operations share
+  its fixed context/output budget; parsing and insertion apply only to text.
 - Library callers share the driver's bounded UTF-8 prompt reader and checked
   model-plus-caller generation-stop policy.
 
@@ -231,11 +232,18 @@ object with exactly these fields:
 ```json
 {"id":1,"op":"count","text":"Draft a scene."}
 {"id":2,"op":"encode","text":"Draft a scene."}
+{"id":3,"op":"count_tokens","token_ids":[42,17]}
+{"id":4,"op":"encode_tokens","token_ids":[42,17]}
 ```
 
 Responses carry the request ID and exact `prompt_token_count`; `type: "encoded"`
 also returns ordered `token_ids`, while `type: "count"` omits them. Empty text
-follows the library's counting/insertion contract. IDs are correlation values;
+follows the library's counting/insertion contract. Raw operations validate every
+ID against the verified vocabulary and preserve the exact sequence, including
+duplicates, boundary IDs and empty arrays. They apply no parsing or insertion;
+their count still reserves the complete startup output allowance. `text` and
+`token_ids` are exclusive and must match the selected operation.
+IDs are correlation values;
 the worker retains no global ID registry. Duplicate/unknown fields and malformed
 frames return `invalid_request` with a null ID; encoding/context rejection returns
 `rejected_input` with the parsed ID. These failures preserve the session for later

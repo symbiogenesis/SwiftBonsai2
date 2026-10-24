@@ -3,8 +3,10 @@
 //! [`serve`] takes an already verified [`TokenizationSession`], emits and flushes
 //! one readiness record, then processes requests serially without reopening the
 //! artifact. The session retains no weights, graph or artifact handle. Each
-//! request has exactly `id` (a JSON u64), `op` (`count` or `encode`) and `text`
-//! (a UTF-8 string). Policies and context accounting are fixed at startup.
+//! text request has exactly `id` (a JSON u64), `op` (`count` or `encode`) and
+//! `text` (a UTF-8 string). Raw-ID requests use `count_tokens` or `encode_tokens`
+//! and `token_ids` instead of `text`. Raw IDs preserve order and receive no
+//! parsing or boundary insertion. Context accounting is fixed at startup.
 //!
 //! Duplicate and unknown fields, invalid UTF-8/JSON, blank lines and invalid
 //! request shapes produce `invalid_request` with a null ID. Tokenizer or context
@@ -59,18 +61,23 @@ impl WorkerConfig {
 
 // Intentionally no Debug: requests own caller-provided prompt text.
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Request {
-    id: u64,
-    op: Operation,
-    text: String,
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+enum Request {
+    Count { id: u64, text: String },
+    Encode { id: u64, text: String },
+    CountTokens { id: u64, token_ids: Vec<u32> },
+    EncodeTokens { id: u64, token_ids: Vec<u32> },
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Operation {
-    Count,
-    Encode,
+impl Request {
+    const fn id(&self) -> u64 {
+        match *self {
+            Self::Count { id, .. }
+            | Self::Encode { id, .. }
+            | Self::CountTokens { id, .. }
+            | Self::EncodeTokens { id, .. } => id,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -106,7 +113,10 @@ enum Response<'a> {
 /// Readiness reports `bonsai-token-worker-v1`, the verified lowercase SHA-256,
 /// vocabulary size and every fixed transport/text/context option. Input buffering
 /// retains at most `max_frame_bytes` bytes plus the caller's bounded reader buffer.
-/// Decoded text is bounded by its frame and token output by the prompt allowance.
+/// Decoded text and raw-ID arrays are bounded by their frame; admitted token
+/// output is bounded by the prompt allowance. Raw IDs must each be in the
+/// verified vocabulary, including on count-only requests. The text parsing and
+/// insertion policies never apply to raw IDs, including empty input.
 /// The underlying tokenizer's additional piece/work bounds still apply; these
 /// are resource contracts, not a process resident-memory or CPU-time guarantee.
 /// The worker never emits prompts, tokenizer diagnostics or generated text.
@@ -162,23 +172,31 @@ pub fn serve(
             write_invalid_request(output)?;
             continue;
         };
-        let Ok(result) = session.encode(&request.text, config.text_policy) else {
+        let result = match &request {
+            Request::Count { text, .. } | Request::Encode { text, .. } => {
+                session.encode(text, config.text_policy)
+            }
+            Request::CountTokens { token_ids, .. } | Request::EncodeTokens { token_ids, .. } => {
+                session.check_tokens(token_ids, config.text_policy.budget)
+            }
+        };
+        let Ok(result) = result else {
             write_record(
                 output,
                 &Response::Error {
-                    id: Some(request.id),
+                    id: Some(request.id()),
                     code: "rejected_input",
                 },
             )?;
             continue;
         };
-        let response = match request.op {
-            Operation::Count => Response::Count {
-                id: request.id,
+        let response = match request {
+            Request::Count { id, .. } | Request::CountTokens { id, .. } => Response::Count {
+                id,
                 prompt_token_count: result.prompt_token_count(),
             },
-            Operation::Encode => Response::Encoded {
-                id: request.id,
+            Request::Encode { id, .. } | Request::EncodeTokens { id, .. } => Response::Encoded {
+                id,
                 prompt_token_count: result.prompt_token_count(),
                 token_ids: &result.token_ids,
             },
