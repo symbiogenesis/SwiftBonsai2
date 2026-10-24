@@ -75,10 +75,14 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   results. The 1,530 original performance workloads remain a separate requested
   CI measurement. CPU selection is explicit; source random-device seeds become
   logged reproducible Rust seeds.
-- `test-tokenizers-repo.sh`: all eleven publisher vocabulary/input/output triples,
+- `test-tokenizers-repo.sh`: all six publisher vocabulary/input/output triples
+  in the complete compatible 2026-05-22 repository snapshot,
   with every corpus attempted even after a failure. The existing Rust corpus
   predicates are shared with `test-tokenizer-0.cpp`; immutable provisioning
   replaces the source shell script's mutable repository update.
+  The source accepts a repository argument; this pin keeps every independent
+  reference token unchanged. Later publisher additions include tokenizers absent
+  from the pinned fork and are outside this selected input revision.
 - `test-lora-conversion-inference.sh`: all three original Gemma, Llama and
   Phi models, all nine base/hot/merged output-prefix predicates, and the same
   greedy 50-token schedules. Safe Rust converts the 28 pinned original inputs;

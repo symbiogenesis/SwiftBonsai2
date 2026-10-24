@@ -7,7 +7,7 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 function Save-BonsaiPrismTokenizerRepository {
     <#
     .SYNOPSIS
-    Materializes all eleven original external vocabulary/corpus triples.
+    Materializes every vocabulary/corpus triple in the compatible publisher snapshot.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Explicit Prism setup writes only hash-verified external input artifacts.')]
     [CmdletBinding()]
@@ -17,9 +17,9 @@ function Save-BonsaiPrismTokenizerRepository {
     $root = Resolve-ExternalPath $Directory
     $lockPath = Join-Path $Repository 'src/prism-runtime/examples/upstream_prism/tokenizer-repository-assets.json'
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json -AsHashtable
-    $revision = '5160d4e134084aea7d5cf615b95bb84e1739285a'
+    $revision = 'cee4b7a68518c579bb758fca46bb149cd109348e'
     if ($lock.Repository -cne 'ggml-org/vocabs' -or $lock.Revision -cne $revision -or
-        $lock.AssetPrefix -cne 'tokenizer-repository/' -or $lock.Files.Count -ne 33) {
+        $lock.AssetPrefix -cne 'tokenizer-repository/' -or $lock.Files.Count -ne 18) {
         throw 'The tokenizer corpus repository lock differs from its source identity.'
     }
     $paths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -35,19 +35,19 @@ function Save-BonsaiPrismTokenizerRepository {
             throw 'An external tokenizer corpus input has an invalid or unpinned identity.'
         }
         $total += $entry.Bytes
-        if ($total -gt 61141284) { throw 'External tokenizer corpus extent exceeds its lock.' }
+        if ($total -gt 23804987) { throw 'External tokenizer corpus extent exceeds its lock.' }
         $path = Resolve-ExternalPath (Join-Path $root ($lock.AssetPrefix + $relative))
         $null = Receive-LockedArtifact -Uri $entry.Url -Path $path -Bytes $entry.Bytes -Sha256 $entry.Sha256 -TimeoutSeconds 600
         $receipts.Add(@{ Path=$path; Bytes=$entry.Bytes; Sha256=$entry.Sha256; Url=$entry.Url })
     }
-    if ($total -ne 61141284) { throw 'External tokenizer corpus extent is incomplete.' }
+    if ($total -ne 23804987) { throw 'External tokenizer corpus extent is incomplete.' }
     foreach ($relative in $paths) {
         if ($relative.EndsWith('.gguf', [StringComparison]::Ordinal) -and
             (-not $paths.Contains($relative + '.inp') -or -not $paths.Contains($relative + '.out'))) {
             throw 'An external vocabulary has no complete input/output corpus.'
         }
     }
-    return @{ Revision=$revision; TotalBytes=$total; Files=$receipts.ToArray(); CorpusCount=11 }
+    return @{ Revision=$revision; TotalBytes=$total; Files=$receipts.ToArray(); CorpusCount=6 }
 }
 
 function Save-BonsaiPrismTokenizerReference {

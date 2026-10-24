@@ -28,12 +28,12 @@ fn relative(value: &Value) -> Result<&str> {
 pub(super) fn run(engine: &Engine) -> Result<Value> {
     let outcome = (|| -> Result<Value> {
         let lock: Value = serde_json::from_str(include_str!("tokenizer-repository-assets.json"))?;
-        if lock["Revision"] != "5160d4e134084aea7d5cf615b95bb84e1739285a" {
+        if lock["Revision"] != "cee4b7a68518c579bb758fca46bb149cd109348e" {
             return Err(invalid("external corpus revision differs"));
         }
         let files = lock["Files"]
             .as_array()
-            .filter(|v| v.len() == 33)
+            .filter(|v| v.len() == 18)
             .ok_or_else(|| invalid("external corpus fixture lock incomplete"))?;
         let mut paths = BTreeMap::<String, PathBuf>::new();
         for entry in files {
@@ -89,11 +89,11 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
                 .ok_or_else(|| invalid("corpus predicate count overflow"))?;
             receipts.push(corpus);
         }
-        if receipts.len() != 11 || !ignored.is_empty() {
+        if receipts.len() != 6 || !ignored.is_empty() {
             return Err(invalid("pinned external repository enumeration differs"));
         }
         Ok(
-            json!({"Revision":lock["Revision"],"Repository":lock["Repository"],"CorpusCount":receipts.len(),"SourceTokenPredicates":predicates,"Corpora":receipts,"IgnoredMissingCorpus":ignored,"TestExecutable":"safe-rust-tokenizer-corpus","SourceCorrection":"Immutable repository asset provisioning replaces mutable git clone/pull; all eleven pinned GGUF triples retained","PlatformExclusions":["s390x endian conversion branch does not apply to Windows ARM64"]}),
+            json!({"Revision":lock["Revision"],"Repository":lock["Repository"],"InputSelection":lock["InputSelection"],"CorpusCount":receipts.len(),"SourceTokenPredicates":predicates,"Corpora":receipts,"IgnoredMissingCorpus":ignored,"TestExecutable":"safe-rust-tokenizer-corpus","SourceCorrection":"Immutable repository asset provisioning replaces mutable git clone/pull; every triple in the compatible publisher snapshot is retained","PlatformExclusions":["s390x endian conversion branch does not apply to Windows ARM64"]}),
         )
     })();
     match outcome {
