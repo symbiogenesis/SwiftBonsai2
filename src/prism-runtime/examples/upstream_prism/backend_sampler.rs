@@ -17,6 +17,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+#[path = "backend_sampler_input.rs"]
+mod input;
+
 const ID: &str = "tests/test-backend-sampler.cpp";
 const SOURCE_SHA: &str = "93711ee1d33e6a8a7b30973732c5dc1faee5a4cb742177eb0133bba1800271d8";
 const NAMES: [&str; 19] = [
@@ -1630,12 +1633,27 @@ pub(super) fn run_with_options(engine: &Engine, options: &Options) -> Result<Val
             "unknown backend sampler test selection",
         )?;
     }
+    let (path, model_input) = if let Some(path) = &options.model {
+        verify(
+            path.is_absolute() && path.is_file(),
+            "backend sampler model must be an absolute regular file",
+        )?;
+        (path.clone(), json!({"Kind":"CallerSelectedModel"}))
+    } else {
+        input::create(
+            &engine.asset_path("tinyllamas/stories15M-q4_0.gguf")?,
+            &engine.evidence_path("backend-sampler-input")?,
+        )?
+    };
     let Some(session) = ModelSession::open(engine, "backend-sampler")? else {
-        return Ok(result(
+        let mut output = result(
             ID,
             false,
             "production model/context/backend sampling APIs are unavailable".into(),
-        ));
+        );
+        output["ModelInput"] = model_input;
+        output["Model"] = json!(path);
+        return Ok(output);
     };
     let observers = Arc::new(Mutex::new(BTreeMap::new()));
     let events = callback_state(Arc::clone(&observers));
@@ -1653,25 +1671,6 @@ pub(super) fn run_with_options(engine: &Engine, options: &Options) -> Result<Val
         checks: 0,
         diagnostics: Vec::new(),
     };
-    let path = if let Some(path) = &options.model {
-        verify(
-            path.is_absolute() && path.is_file(),
-            "backend sampler model must be an absolute regular file",
-        )?;
-        path.clone()
-    } else {
-        engine.asset_path("tinyllamas/stories15M-q4_0.gguf")?
-    };
-    if options.model.is_none() {
-        use sha2::{Digest, Sha256};
-        let bytes = fs::read(&path)?;
-        verify(
-            bytes.len() == 19_077_344
-                && hex(&Sha256::digest(&bytes))
-                    == "66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739",
-            "backend sampler default model differs from immutable asset",
-        )?;
-    }
     run.null(json!({"Op":"backend-init"}))?;
     let mut overrides = json!({});
     if device != "auto" {
@@ -1750,6 +1749,7 @@ pub(super) fn run_with_options(engine: &Engine, options: &Options) -> Result<Val
     output["SourceSha256"] = json!(SOURCE_SHA);
     output["DefaultScenarios"] = json!(19);
     output["Model"] = json!(path);
+    output["ModelInput"] = model_input;
     Ok(output)
 }
 #[cfg(test)]

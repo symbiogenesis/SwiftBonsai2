@@ -124,6 +124,14 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   Generic native callbacks report observations to Rust, which owns acceptance
   decisions, counters and tolerances. The original MSVC double RNG is reproduced
   in safe Rust and independently matched for 3,000 draws and float narrowings.
+  Its default input is a Rust-generated F32 Llama with the first 4,096 vocabulary
+  entries from the locked model. This covers the source's fixed token 3,834.
+  Fixed seed 12,345 and ordinary fan-in initialization produce pinned model
+  bytes; receipts retain metadata and all 21 tensor hashes for both targets.
+  The earlier stories15M input fails the unchanged bias-10/seed-88 condition
+  with both production CPU and backend sampling. The generated input retains
+  that condition and every original schedule; caller-selected models remain
+  available for diagnostics.
 - `test-dspark-forward.cpp`: all six Windows CPU modes, including scalar/head
   oracles, SNR/output A/B, runtime/prefix grids, replay, capture atomicity and
   negative-prefix contracts. Tier2 uses the independent Rust reference and
