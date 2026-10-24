@@ -288,7 +288,11 @@ impl<'a> Interpreter<'a> {
         } else {
             value
         };
-        let value = if kind.contains('&') {
+        let value = if clean == "std::string" {
+            let value = self.forced(value)?;
+            super::standard::call(self, "std::string", &[value])?
+                .ok_or_else(|| invalid("source string constructor unavailable"))?
+        } else if kind.contains('&') {
             value
         } else {
             value.copy_value()
@@ -1089,6 +1093,116 @@ mod tests {
                 .number()
                 .map_err(invalid)?,
             Number::I64(256)
+        );
+        Ok(())
+    }
+    struct DeferredName {
+        observed: Rc<std::cell::Cell<u32>>,
+    }
+    impl Host for DeferredName {
+        fn call(&mut self, name: &str, arguments: &[Value]) -> Result<Option<Value>> {
+            LanguageOnly.call(name, arguments)
+        }
+        fn member(&mut self, value: &Value, name: &str) -> Result<Option<Value>> {
+            LanguageOnly.member(value, name)
+        }
+        fn write(
+            &mut self,
+            value: &Value,
+            name: &str,
+            index: Option<usize>,
+            replacement: Value,
+        ) -> Result<()> {
+            LanguageOnly.write(value, name, index, replacement)
+        }
+        fn force(&mut self, value: Value) -> Result<Value> {
+            if let Value::NativeInteger { argument, .. } = value {
+                if argument != json!({"Scalar":1}) {
+                    return Err(invalid("non-string initializer must remain deferred"));
+                }
+                self.observed.set(self.observed.get() + 1);
+                Ok(Value::Pointer {
+                    value: Box::new(Value::Bytes(b"--scale\0suffix".to_vec())),
+                    index: 2,
+                })
+            } else {
+                Ok(value)
+            }
+        }
+    }
+
+    #[test]
+    fn owning_source_string_copies_deferred_c_string_without_forcing_pointers() -> Result<()> {
+        let (program, _) = super::super::program::load().map_err(invalid)?;
+        let observed = Rc::new(std::cell::Cell::new(0));
+        let mut host = DeferredName {
+            observed: Rc::clone(&observed),
+        };
+        let mut runtime = Interpreter::new(program, "test_dsv4_hc", &mut host)?;
+        let method = runtime
+            .class
+            .methods
+            .iter()
+            .find(|method| method.name == "initialize_tensors")
+            .ok_or_else(|| invalid("actual named source initializer missing"))?;
+        let Some(Statement::For { body, .. }) = method.statements.first() else {
+            return Err(invalid("actual named source loop missing"));
+        };
+        let Some(Statement::Declare { kind, .. }) = body.first() else {
+            return Err(invalid("actual native-name declaration missing"));
+        };
+        assert_eq!(kind, "conststd::string");
+        let (_, name) = runtime.declaration_value(
+            kind,
+            &[],
+            Some(Value::NativeInteger {
+                kind: super::super::number::Kind::I32,
+                argument: json!({"Scalar":1}),
+            }),
+        )?;
+        assert!(
+            runtime
+                .binary_value("==", name.clone(), Value::Bytes(b"scale".to_vec()))?
+                .truth()
+                .map_err(invalid)?
+        );
+        assert!(matches!(name, Value::Bytes(_)));
+        assert_eq!(observed.get(), 1);
+        for kind in ["constint64_t", "constchar*", "std::string*"] {
+            let (_, value) = runtime.declaration_value(
+                kind,
+                &[],
+                Some(Value::NativeInteger {
+                    kind: super::super::number::Kind::I32,
+                    argument: json!({"Scalar":2}),
+                }),
+            )?;
+            assert!(matches!(value, Value::NativeInteger { .. }));
+        }
+        assert_eq!(observed.get(), 1);
+        let buffer = Value::array(vec![Value::Number(Number::I32(65))])
+            .coerce("std::array<char,1>")
+            .map_err(invalid)?;
+        let (_, pointer) = runtime.declaration_value(
+            "constchar*",
+            &[],
+            Some(Value::Pointer {
+                value: Box::new(buffer.clone()),
+                index: 0,
+            }),
+        )?;
+        pointer
+            .place(0)
+            .map_err(invalid)?
+            .set(Value::Number(Number::I32(66)))
+            .map_err(invalid)?;
+        assert_eq!(
+            buffer
+                .index(0)
+                .map_err(invalid)?
+                .number()
+                .map_err(invalid)?,
+            Number::I32(66)
         );
         Ok(())
     }
