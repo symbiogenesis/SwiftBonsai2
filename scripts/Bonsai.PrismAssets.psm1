@@ -1,6 +1,7 @@
 #requires -Version 7.6
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 
 function Save-BonsaiPrismMetadataAsset {
