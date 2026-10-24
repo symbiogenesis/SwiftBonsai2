@@ -485,14 +485,27 @@ mod driver {
         fs::write(&fixture.path, &fixture.bytes)?;
         let mut arguments = fixture.arguments();
         arguments.extend(["--tokens", "0,258,259"].map(str::to_owned));
-        assert_eq!(
-            fixture.record(&arguments)?["token_ids"],
-            json!([0, 258, 259])
-        );
+        let inline = fixture.record(&arguments)?;
+        assert_eq!(inline["token_ids"], json!([0, 258, 259]));
         let index = arguments
             .iter()
             .position(|key| key == "--tokens")
             .ok_or("missing input")?;
+        let path = fixture.root.join("token-input.json");
+        let serialized = b"[0,258,259]";
+        fs::write(&path, serialized)?;
+        arguments[index] = "--tokens-file".to_owned();
+        arguments[index + 1] = path.to_string_lossy().into_owned();
+        assert_eq!(fixture.record(&arguments)?, inline);
+        arguments[index + 1] = "-".to_owned();
+        let output = fixture.run_stdin(&arguments, serialized)?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(output.stderr, Vec::<u8>::new());
+        assert_eq!(serde_json::from_slice::<Value>(&output.stdout)?, inline);
         arguments[index] = "--prompt".to_owned();
         arguments[index + 1] = "ab".to_owned();
         assert!(rejected(&fixture, &arguments)?.contains("tokenizer.ggml.pre"));
