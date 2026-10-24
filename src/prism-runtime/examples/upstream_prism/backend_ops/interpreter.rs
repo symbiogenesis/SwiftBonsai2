@@ -178,7 +178,23 @@ impl<'a> Interpreter<'a> {
             }
             self.construct(base, arguments)?;
         }
-        for field in &class.fields {
+        self.construct_fields(class, &class.fields)?;
+        match self.statements(&class.constructor.statements)? {
+            Flow::Next => Ok(()),
+            _ => Err(invalid("unexpected source constructor control flow")),
+        }
+    }
+
+    fn construct_fields(&mut self, class: &'a Class, fields: &[Statement]) -> Result<()> {
+        for field in fields {
+            match field {
+                Statement::Empty => continue,
+                Statement::Declarations { body } => {
+                    self.construct_fields(class, body)?;
+                    continue;
+                }
+                _ => {}
+            }
             let Statement::Declare {
                 name,
                 kind,
@@ -204,10 +220,7 @@ impl<'a> Interpreter<'a> {
             let (kind, value) = self.declaration_value(kind, dimensions, replacement)?;
             self.fields.insert(name.clone(), variable(kind, value));
         }
-        match self.statements(&class.constructor.statements)? {
-            Flow::Next => Ok(()),
-            _ => Err(invalid("unexpected source constructor control flow")),
-        }
+        Ok(())
     }
 
     pub(super) fn resolved_type(&self, kind: &str) -> Result<String> {
@@ -941,6 +954,46 @@ mod tests {
                 .map_err(invalid)?,
             Number::I64(6)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn grouped_and_empty_constructor_fields_preserve_member_initialization_order() -> Result<()> {
+        let class: Class = serde_json::from_value(json!({
+            "Name":"grouped_fields", "Base":"",
+            "Fields":[
+                {"k":"empty"},
+                {"k":"decls","body":[
+                    {"k":"decl","name":"a","type":"int","dimensions":[],"value":{"k":"literal","value":99}},
+                    {"k":"decls","body":[
+                        {"k":"empty"},
+                        {"k":"decl","name":"b","type":"int","dimensions":[],"value":null}
+                    ]}
+                ]},
+                {"k":"decl","name":"c","type":"int","dimensions":[],"value":{"k":"binary","op":"+","left":{"k":"id","name":"b"},"right":{"k":"literal","value":2}}},
+                {"k":"empty"},
+                {"k":"decl","name":"d","type":"int","dimensions":[],"value":{"k":"binary","op":"+","left":{"k":"id","name":"c"},"right":{"k":"literal","value":3}}}
+            ],
+            "Constructor":{
+                "Parameters":[{"Name":"seed","Type":"int","Default":null}],
+                "Initializers":[
+                    {"Name":"b","Arguments":[{"k":"binary","op":"+","left":{"k":"id","name":"a"},"right":{"k":"literal","value":1}}]},
+                    {"Name":"a","Arguments":[{"k":"id","name":"seed"}]}
+                ],
+                "Statements":[]
+            },
+            "Methods":[]
+        }))?;
+        let (program, _) = super::super::program::load().map_err(invalid)?;
+        let mut host = LanguageOnly;
+        let mut runtime = Interpreter::new(program, "test_soft_max", &mut host)?;
+        runtime.construct(&class, vec![Value::Number(Number::I32(11))])?;
+        for (name, expected) in [("a", 11), ("b", 12), ("c", 14), ("d", 17)] {
+            assert_eq!(
+                runtime.value(name)?.number().map_err(invalid)?,
+                Number::I32(expected)
+            );
+        }
         Ok(())
     }
 }
