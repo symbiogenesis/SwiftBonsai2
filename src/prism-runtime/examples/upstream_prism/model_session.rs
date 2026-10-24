@@ -28,6 +28,16 @@ const MAX_CALLBACKS: usize = 65536;
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(90);
 const SESSION_TIMEOUT: Duration = Duration::from_secs(240);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+const QUANTIZATION_OPERATION_TIMEOUT: Duration = Duration::from_secs(3600);
+const QUANTIZATION_SESSION_TIMEOUT: Duration = Duration::from_hours(4);
+
+fn operation_timeout(quantization: bool, operation: &Value) -> Duration {
+    if quantization && operation.get("Op").and_then(Value::as_str) == Some("qb-trace") {
+        QUANTIZATION_OPERATION_TIMEOUT
+    } else {
+        OPERATION_TIMEOUT
+    }
+}
 
 type Callback = fn(f32) -> bool;
 pub(super) type TensorData = dyn Fn(&Value) -> Result<Value> + Send + Sync;
@@ -48,6 +58,7 @@ struct Pending {
     callback_error: Option<String>,
     observations: Vec<(u32, bool)>,
     started: Instant,
+    timeout: Duration,
 }
 
 struct Writer {
@@ -65,6 +76,8 @@ struct State {
     closing_at: Mutex<Option<Instant>>,
     done: AtomicBool,
     started: Instant,
+    session_timeout: Duration,
+    quantization: bool,
 }
 
 // All transport mutations are short and contain no user callbacks. A poisoned
@@ -97,7 +110,7 @@ impl State {
         if let Some(error) = &*lock(&self.fatal) {
             return Err(invalid(error.clone()));
         }
-        if self.started.elapsed() >= SESSION_TIMEOUT {
+        if self.started.elapsed() >= self.session_timeout {
             return Err(invalid("native session exceeded its lifetime"));
         }
         Ok(())
@@ -132,10 +145,13 @@ impl State {
         while !self.done.load(Ordering::Acquire) {
             let expired_operation = lock(&self.pending)
                 .values()
-                .any(|request| request.started.elapsed() >= OPERATION_TIMEOUT);
+                .any(|request| request.started.elapsed() >= request.timeout);
             let expired_shutdown =
                 lock(&self.closing_at).is_some_and(|started| started.elapsed() >= SHUTDOWN_TIMEOUT);
-            if self.started.elapsed() >= SESSION_TIMEOUT || expired_operation || expired_shutdown {
+            if self.started.elapsed() >= self.session_timeout
+                || expired_operation
+                || expired_shutdown
+            {
                 self.fail("native session operation, shutdown or lifetime timeout");
                 return;
             }
@@ -190,6 +206,7 @@ impl Client {
             return Err(invalid("native session request count exceeds bound"));
         }
         let (sender, receiver) = mpsc::sync_channel(1);
+        let timeout = operation_timeout(self.state.quantization, &operation);
         let mut pending = lock(&self.state.pending);
         if lock(&self.state.closing_at).is_some() {
             return Err(invalid("native session is closing"));
@@ -204,6 +221,7 @@ impl Client {
                 callback_error: None,
                 observations: Vec::new(),
                 started: Instant::now(),
+                timeout,
             },
         );
         drop(pending);
@@ -214,7 +232,7 @@ impl Client {
                 .fail(format!("native session request failed: {error}"));
             return Err(error);
         }
-        match receiver.recv_timeout(OPERATION_TIMEOUT) {
+        match receiver.recv_timeout(timeout) {
             Ok(Ok(reply)) => Ok(reply),
             Ok(Err(error)) => Err(invalid(error)),
             Err(error) => {
@@ -413,13 +431,34 @@ impl ModelSession {
         &self.directory
     }
     pub(super) fn open(engine: &Engine, name: &str) -> Result<Option<Self>> {
+        if name == "quantize-stats" {
+            return Self::open_quantization(engine);
+        }
         Self::open_with_environment(engine, name, &[])
+    }
+
+    /// Only the complete statistics source on main CI has a longer lifetime.
+    /// Its caller-supplied chunk continuations retain the loaded model; other
+    /// operations, ordinary sessions and every transport bound stay unchanged.
+    pub(super) fn open_quantization(engine: &Engine) -> Result<Option<Self>> {
+        let quantization = std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+            && std::env::var("GITHUB_REF").as_deref() == Ok("refs/heads/main");
+        Self::open_scoped(engine, "quantize-stats", &[], quantization)
     }
 
     pub(super) fn open_with_environment(
         engine: &Engine,
         name: &str,
         environment: &[(String, String)],
+    ) -> Result<Option<Self>> {
+        Self::open_scoped(engine, name, environment, false)
+    }
+
+    fn open_scoped(
+        engine: &Engine,
+        name: &str,
+        environment: &[(String, String)],
+        quantization: bool,
     ) -> Result<Option<Self>> {
         let Some(spec) = engine.model_session_spec(name)? else {
             return Ok(None);
@@ -458,6 +497,12 @@ impl ModelSession {
             closing_at: Mutex::new(None),
             done: AtomicBool::new(false),
             started: Instant::now(),
+            session_timeout: if quantization {
+                QUANTIZATION_SESSION_TIMEOUT
+            } else {
+                SESSION_TIMEOUT
+            },
+            quantization,
         });
         let mut readers = Vec::new();
         let output_state = Arc::clone(&state);
@@ -538,6 +583,7 @@ impl ModelSession {
             serde_json::to_vec_pretty(&json!({
             "SchemaVersion":1,"ExitCode":status.code(),"Requests":self.state.next_id.load(Ordering::Relaxed) - 1,
                 "ElapsedMilliseconds":self.state.started.elapsed().as_millis(),"Error":fatal,
+                "QuantizationScope":self.state.quantization,"SessionTimeoutSeconds":self.state.session_timeout.as_secs(),
             }))?,
         )?;
         if let Some(error) = fatal {
@@ -595,5 +641,26 @@ impl Drop for ModelSession {
             let _ = lock(&self.state.child).wait();
             let _ = self.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod quantization_deadline_tests {
+    use super::*;
+
+    #[test]
+    fn only_scoped_codec_trace_receives_long_deadline() -> Result<()> {
+        for (scope, op, expected) in [
+            (false, "qb-trace", OPERATION_TIMEOUT),
+            (true, "qb-trace", QUANTIZATION_OPERATION_TIMEOUT),
+            (true, "qb-call", OPERATION_TIMEOUT),
+            (true, "model-load", OPERATION_TIMEOUT),
+            (false, "decode", OPERATION_TIMEOUT),
+        ] {
+            if operation_timeout(scope, &json!({"Op":op})) != expected {
+                return Err(invalid("quantization deadline escaped its exact scope"));
+            }
+        }
+        Ok(())
     }
 }
