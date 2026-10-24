@@ -176,6 +176,38 @@ fn prepared_floating_precision_and_failures_preserve_output_contract() -> TestRe
 }
 
 #[test]
+fn preparation_rejects_activation_precision_overflow_and_recovers() -> TestResult {
+    let mut scratch = MatvecScratch::default();
+    let mut output = vec![99.0];
+    for (kind, maximum, overflow) in [
+        (1, 65_504.0, 65_520.0),
+        (30, f32::from_bits(0x7f7f_0000), f32::MAX),
+    ] {
+        let weights = tensor(kind, vec![1], 0_u16.to_le_bytes().to_vec());
+        for input in [overflow, -overflow] {
+            // Finite F32 inputs may become infinite in the tensor's activation
+            // precision. The preparation itself must reject that conversion.
+            assert!(scratch.prepare(&weights, &[input]).is_err());
+            assert!(matvec_into(&weights, &[input], &mut output, &mut scratch).is_err());
+            assert_eq!(output, [0.0; 0]);
+            assert_eq!(scratch.selected_backend(), MatvecBackend::Scalar);
+        }
+        for input in [maximum, -maximum, 0.0, -0.0] {
+            scratch
+                .prepare(&weights, &[input])?
+                .matvec_into(&weights, &mut output)?;
+            assert_eq!(output, [0.0]);
+        }
+    }
+    let weights = tensor(0, vec![1], 0_f32.to_le_bytes().to_vec());
+    scratch
+        .prepare(&weights, &[f32::MAX])?
+        .matvec_into(&weights, &mut output)?;
+    assert_eq!(output, [0.0]);
+    Ok(())
+}
+
+#[test]
 fn pq2_matvec_uses_q8k_ties_even_and_per_half_scales() -> TestResult {
     let first = pq2(0x3c00, &[(1, 2), (2, 2), (3, 2)]);
     let second = pq2(0x3800, &[(0, 0)]);

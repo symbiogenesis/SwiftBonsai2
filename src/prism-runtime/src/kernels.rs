@@ -584,7 +584,8 @@ impl MatvecScratch {
     ///
     /// # Errors
     /// Rejects malformed tensor dimensions, unsupported kinds, mismatched or
-    /// nonfinite input, quantization errors, and failed scratch allocation.
+    /// nonfinite input, activation precision overflow, quantization errors, and
+    /// failed scratch allocation.
     pub fn prepare<'a>(
         &'a mut self,
         tensor: &Tensor,
@@ -603,7 +604,7 @@ impl MatvecScratch {
             ActivationContract::Q8 => q8_into(input, &mut self.q8)?,
             _ => collect_into(
                 input.iter().map(|&value| {
-                    Ok(match contract {
+                    finite(match contract {
                         ActivationContract::F16 => round_f16(value),
                         ActivationContract::BF16 => round_bf16(value),
                         _ => value,
