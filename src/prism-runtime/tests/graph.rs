@@ -1474,6 +1474,9 @@ fn wire_model(model: &Model) -> Result<Vec<u8>> {
 }
 
 #[cfg(feature = "cli")]
+static NEXT_DRIVER_ARTIFACT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[cfg(feature = "cli")]
 struct DriverArtifact {
     directory: std::path::PathBuf,
     path: std::path::PathBuf,
@@ -1488,8 +1491,9 @@ impl DriverArtifact {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let sequence = NEXT_DRIVER_ARTIFACT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let directory = std::env::temp_dir().join(format!(
-            "Bonsai-NativeDriver-{}-{nonce}",
+            "Bonsai-NativeDriver-{}-{nonce}-{sequence}",
             std::process::id()
         ));
         std::fs::create_dir(&directory)?;
@@ -1734,6 +1738,7 @@ fn native_driver_text_prompt_matches_exact_ids_and_reserves_complete_output() ->
             .ok_or("completion is not an object")?;
         object.remove("input_mode");
         object.remove("special_input");
+        object.remove("insert_special");
         assert_eq!(actual, expected);
         if special_policy.is_some() {
             let rejected = artifact
@@ -1755,6 +1760,88 @@ fn native_driver_text_prompt_matches_exact_ids_and_reserves_complete_output() ->
             if !succeeds {
                 assert_eq!(result.stdout, Vec::<u8>::new());
             }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "cli")]
+#[test]
+fn native_driver_declared_insertion_matches_exact_ids_and_tokenization_count() -> Result<()> {
+    let mut model = text_driver_fixture(1);
+    model.metadata.insert(
+        "tokenizer.ggml.bos_token_id".to_owned(),
+        MetadataValue::U32(1),
+    );
+    for key in [
+        "tokenizer.ggml.add_bos_token",
+        "tokenizer.ggml.add_eos_token",
+    ] {
+        model.metadata.insert(key.to_owned(), true.into());
+    }
+    model.metadata.insert(
+        "tokenizer.ggml.merges".to_owned(),
+        Vec::<String>::new().into(),
+    );
+    let artifact = DriverArtifact::new(&model)?;
+    let expected = driver_records(
+        artifact
+            .command_input(2, true, "--tokens", "1,0,0,1")
+            .output()?,
+    )?;
+    let mut actual = driver_records(
+        artifact
+            .command_input(2, true, "--prompt", "aa")
+            .args(["--insert-special", "model"])
+            .output()?,
+    )?;
+    let completion = actual.last_mut().ok_or("missing insertion completion")?;
+    assert_eq!(completion["prompt_tokens"], 4);
+    assert_eq!(completion["insert_special"], "model");
+    let object = completion.as_object_mut().ok_or("invalid completion")?;
+    for key in ["input_mode", "special_input", "insert_special"] {
+        object.remove(key);
+    }
+    assert_eq!(actual, expected);
+
+    let counted = std::process::Command::new(env!("CARGO_BIN_EXE_bonsai-prism-runtime"))
+        .current_dir(&artifact.directory)
+        .arg("--model")
+        .arg(&artifact.path)
+        .args([
+            "--mode",
+            "tokenize",
+            "--bytes",
+            &artifact.bytes.to_string(),
+            "--sha256",
+            &artifact.digest,
+            "--memory-bytes",
+            "8388608",
+            "--context",
+            "16",
+            "--max-tokens",
+            "2",
+            "--prompt",
+            "aa",
+            "--insert-special",
+            "model",
+        ])
+        .output()?;
+    let records = driver_records(counted)?;
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["token_ids"], serde_json::json!([1, 0, 0, 1]));
+    assert_eq!(records[0]["token_count"], 4);
+    assert_eq!(records[0]["reserved_output_tokens"], 2);
+    assert_eq!(records[0]["insert_special"], "model");
+
+    for (length, succeeds) in [(12, true), (13, false)] {
+        let output = artifact
+            .command_input(2, true, "--prompt", &"a".repeat(length))
+            .args(["--insert-special", "model"])
+            .output()?;
+        assert_eq!(output.status.success(), succeeds);
+        if !succeeds {
+            assert_eq!(output.stdout, Vec::<u8>::new());
         }
     }
     Ok(())

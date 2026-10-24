@@ -87,7 +87,7 @@ task time separately, accounting for bandwidth and the measured critical path.
   - [x] **R2.6 — Recognize special input tokens explicitly.** Validated control
     and user-defined spellings use bounded earliest-start/longest-match scanning.
     Literal and parse modes are explicit; ambiguous spellings reject, and no
-    BOS/EOS is inserted. Overlap-oracle, Unicode and resource-bound regressions
+    BOS/EOS is inserted by recognition. Overlap-oracle, Unicode and resource-bound regressions
     cover recognition independently of ordinary text tokenization.
   - [x] **R2.7 — Connect bounded text encoding to the driver.** `Tokenizer`
     composes special handling, pinned boundaries and ranked BPE with whole-input
@@ -95,7 +95,16 @@ task time separately, accounting for bandwidth and the measured critical path.
     `--tokens`, keeps special spellings literal unless explicitly enabled, and
     reserves the complete requested output allowance before graph execution.
     Serialized-model checks compare text prompts with exact token-ID input.
-    Chat templates, automatic BOS/EOS insertion and full-model parity remain open.
+    Chat templates and full-model parity remain open; R2.8 adds explicit insertion.
+
+  - [x] **R2.8 — Apply declared BOS/EOS insertion explicitly.** The opt-in text
+    encoder honors verified `add_bos_token`/`add_eos_token` flags and charges
+    inserted IDs against the complete prompt allowance. Absent/false flags add
+    nothing; enabled boundaries are inserted even when the input already has
+    them. Existing raw encoding and token-ID input retain their exact semantics.
+    The driver exposes `--insert-special none|model`, defaulting to none.
+    Focused flag, empty-input, boundary and serialized-driver checks cover the
+    contract; chat templates and full-model tokenizer parity remain open.
 
 - [ ] **R3 — Qualify packed CPU kernels.** Follow [SIMD S0–S4/S6](simd-plan.md).
   Baseline NEON PQ2/PTQ1, automatic selection, scalar forcing and focused exact
@@ -182,6 +191,14 @@ task time separately, accounting for bandwidth and the measured critical path.
     admission, sampling, decoder, cancellation, deadline or delivery errors,
     including failed graph recovery. Successful stop draws advance sampling
     state without entering conversation history; existing greedy APIs remain.
+
+  - [x] **R5.4 — Expose verified tokenization without graph allocation.** The
+    driver's explicit `--mode tokenize` verifies artifact length/SHA-256 and
+    bounded metadata, then returns exact prompt IDs/count and the reserved
+    output allowance. It retains no weight payload and constructs no decoder;
+    full-file hashing still reads the artifact. Focused malformed-identity,
+    metadata-only and context-bound checks cover this command. Persistent broker
+    count/completion/readiness integration remains open.
 
 - [ ] **R6 — Add Adreno after CPU parity.** Follow [G0–G5](adreno-gpu-plan.md),
   implementing the same packed types, transforms and complete hybrid graph.

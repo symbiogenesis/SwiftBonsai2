@@ -71,9 +71,12 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
 - Ranked byte-pair merges for already pretokenized GPT-2 byte pieces. The bounded
   merge core emits only normal IDs and preserves supplied piece boundaries.
 - Bounded plain-text input with the pinned Prism Qwen35 scanner and Unicode
-  tables, explicit literal/parse special-token handling and ranked BPE. Input
-  never receives an implicit chat template or BOS/EOS insertion. Full-model
-  tokenizer parity remains open.
+  tables, explicit literal/parse special-token handling and ranked BPE. Optional
+  model-declared BOS/EOS insertion is explicit and shares the prompt token bound.
+  Raw encoding remains the default. Chat templates and full-model tokenizer
+  parity remain open.
+- Verified tokenization-only mode returns exact prompt IDs and counts from
+  bounded metadata without retaining weights or constructing the graph.
 
 The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.
@@ -108,23 +111,28 @@ try {
 } finally { Pop-Location }
 ```
 
-The driver requires an absolute model path, expected length/SHA-256, retained-model,
-context/checkpoint budgets, one input form and generation limit. It validates
+Generation (the default `--mode generate`) requires an absolute model path,
+expected length/SHA-256, retained-model and context/checkpoint budgets, one input
+form and a generation limit. It validates
 identity syntax, positive bounds, prompt-plus-generation capacity and the
 256-stop-token limit before model I/O; vocabulary checks follow verified loading.
 Supply `--tokens <id,id,...>` from the reference tokenizer, or use experimental
 `--prompt <text>` for plain UTF-8 encoding. The two input options are mutually
 exclusive. `--special-input literal|parse` is available only with text input;
 literal is the default. Text encoding applies no chat template or BOS/EOS
-insertion, even if insertion flags are present in metadata. Supply explicitly
-formatted text when control tokens are intended. Text input records
+insertion by default, even if insertion flags are present in metadata. Supply
+explicitly formatted text when control tokens are intended. `--insert-special model` opts
+text input into the verified model's BOS/EOS insertion flags; `none` is the
+default. Only true flags insert IDs. Insertion does not suppress existing
+boundary IDs, and all inserted IDs consume the prompt allowance. Token-ID input
+rejects this option and remains exact. Text input records
 `input_mode: "text"` and the effective `special_input` policy in the completion.
 Its exact encoded count must leave the entire output allowance in the context;
 overflow rejects before graph execution. The verified model must
 declare a valid EOS ID; its EOS and optional EOT/EOM IDs always stop generation.
 `--stop-tokens` adds IDs to that set, deduplicated under a combined 256-ID bound.
 Stops are neither emitted nor committed to the conversation. BOS/padding IDs and
-insertion flags are validated without modifying the supplied prompt.
+insertion flags are validated; supplied token-ID prompts remain unchanged.
 
 Output defaults to one JSON token object per line followed by accounting, which
 includes the effective `stop_tokens`. Optional `--output text` adds `bytes`,
@@ -159,13 +167,27 @@ Successful stop-token draws advance the sampler without emitting the stop.
 Shared mutable state and external side effects are outside this recovery contract.
 The driver does not render chat templates, launch the broker or promote a profile.
 
+Use `--mode tokenize` to inspect exact input IDs/count without graph allocation.
+This mode requires `--model`, `--bytes`, `--sha256`, `--memory-bytes`, `--context`
+and exactly one nonempty `--prompt`/`--tokens`. Optional `--max-tokens` reserves that
+many context slots for future output; its default is zero. Text input uses the
+same special-token and insertion policies as generation. Generation-only options,
+including `--checkpoint-bytes`, are rejected. A single JSON record reports
+`token_ids`, `token_count`, `context`, `reserved_output_tokens`, effective input
+policies and artifact identity. Length/SHA-256 verification still reads the
+whole file, but the command retains only bounded metadata and never loads tensor
+payloads or executes inference. The metadata budget excludes tokenizer scratch
+and output buffers; this is not process-memory admission or broker integration.
+
 `Bpe::from_metadata` validates normal vocabulary pieces and ranked merge rules.
 `encode_piece` accepts one already pretokenized byte slice; `encode_pieces`
 preserves caller-supplied boundaries. Neither API finds Qwen35 regex boundaries,
 recognizes special input tokens, inserts BOS/EOS or renders a chat template.
 `Tokenizer::encode` composes those boundaries and the special-input policy for
-plain text. Using the merge core directly on arbitrary text does not establish
-tokenizer parity.
+plain text. `encode_with_special_tokens` additionally applies a validated
+`SpecialTokens` contract with the same vocabulary size and explicit insertion
+flags; the caller must supply metadata from the same model. Using the merge core
+directly on arbitrary text does not establish tokenizer parity.
 
 ## Memory and ownership
 

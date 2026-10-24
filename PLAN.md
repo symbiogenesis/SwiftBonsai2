@@ -209,8 +209,11 @@ The token driver honors declared model stops, emits lossless token bytes with
 incremental UTF-8 text, and offers explicit seeded reference sampling with
 transactional sampler recovery. Bounded plain-text input composes pinned Qwen35
 Unicode boundaries, explicit special-token recognition and ranked byte-pair
-merges. Chat templates, automatic BOS/EOS insertion, full-model tokenizer parity
-and Prism sampler/RNG parity remain open.
+merges. Explicit opt-in BOS/EOS insertion honors declared flags within the prompt
+allowance; raw text and token IDs keep their existing defaults. A verified
+tokenization-only command returns IDs/count without weight retention or graph
+allocation. Chat templates, full-model tokenizer parity, persistent broker count
+integration and Prism sampler/RNG parity remain open.
 Tiled prefill kernels, full-model allocation,
 parity and performance qualification remain open.
 
