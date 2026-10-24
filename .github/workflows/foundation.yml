@@ -358,7 +358,7 @@ jobs:
           foreach ($case in @('Catalog', 'Ratchet', 'Evidence')) {
             & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBaseline.ps1') -Case $case
           }
-          $launcher = (Get-Command ccache -CommandType Application -ErrorAction Stop).Source
+          $launcher = (Get-Command ccache -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
           ccache --zero-stats
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -SourceArchive $archive -EvidenceDirectory $evidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -CompilerLauncher $launcher -Parallel 4 | ConvertTo-Json -Depth 12
       - name: Retain native compiler cache statistics
@@ -366,6 +366,7 @@ jobs:
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
+          [void][IO.Directory]::CreateDirectory($env:PRISM_UPSTREAM_EVIDENCE)
           ccache --show-stats --verbose | Tee-Object -FilePath (Join-Path $env:PRISM_UPSTREAM_EVIDENCE 'ccache.log')
       - name: Summarize imported Prism coverage
         if: always() && env.PRISM_UPSTREAM_EVIDENCE != ''
