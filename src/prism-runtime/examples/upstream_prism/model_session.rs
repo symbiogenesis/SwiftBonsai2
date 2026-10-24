@@ -21,7 +21,9 @@ use super::{Result, invalid};
 const MAX_FRAME: u64 = 16 * 1024 * 1024;
 const MAX_STREAM: u64 = 64 * 1024 * 1024;
 const MAX_STDERR: u64 = 1024 * 1024;
-const MAX_REQUESTS: u64 = 8192;
+// Real-eval retains one model/speculation scope across all24 source prompts;
+// its default96-token AR and verify schedules require at most~33k primitives.
+const MAX_REQUESTS: u64 = 65536;
 const MAX_CALLBACKS: usize = 65536;
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(90);
 const SESSION_TIMEOUT: Duration = Duration::from_secs(240);

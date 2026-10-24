@@ -42,9 +42,17 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Fifty-seven source contracts currently have safe Rust adapters in
+Fifty-eight source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-dspark-real-eval.cpp`: all 24 literal prompts, separate plain AR and
+  speculative schedules, exact output parity, cache rollback refusals, category
+  and conditional-depth rollups. Optional teacher forcing retains split/same-path
+  modes, finite-logit checks and ordered KLD calculations. Routine CI uses a small
+  Rust-generated compatible pair; caller-supplied pairs and JSONL remain explicit
+  diagnostics. Timings include bridge dispatch and qualify workload completion,
+  with no publisher model quality or Snapdragon throughput claim. Every execution
+  is CI-only because the source includes benchmark timings.
 - `test-grammar-llguidance.cpp`: all 42 grammar/schema groups, 344 literal
   predicates, and every token/EOS sampler-chain check. Rust owns candidate
   construction and matching decisions. The reference links the exact production

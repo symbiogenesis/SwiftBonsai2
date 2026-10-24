@@ -379,6 +379,13 @@ Inline actions are capped at65,536. External action arrays are capped at128MiB,5
 
 `model-load-observe` and the persistent DSpark operations expose production model loading/logging, context staging/capture, tensor observations, samplers and speculation primitives. Their inputs, source schedules, environment choices and all predicates remain Rust-owned. The persistent provider retains production owners and callback data for their required lifetimes; compilation or malformed-request probes do not establish model or source coverage.
 
+The persistent session accepts at most65,536 requests so the complete24-prompt
+real-evaluation source can retain its model and speculative state across prompts.
+The16MiB frame,64MiB stream,90-second operation and240-second session limits remain
+unchanged. `context-logits` accepts row indices from-1 through2047, including the
+production API's last-row selector. `model-chat-render` applies the loaded model's
+own production template to supplied messages and explicit thinking/generation flags.
+
 The persistent `llg-*` operations construct production LLGuidance, distribution and chain samplers and retain caller-owned candidate vectors. Candidate files supply exact little-endian IDs/logits/probabilities; updates may replace only logits or IDs/logits while retaining the original probability fields. Explicit patches, active-view metadata, apply probes, reset, accept and free operations return raw observations. Rust owns tokenization order, full-vector initialization, one-hot inputs, negative-logit decisions and EOS fallback. No native matching helper or grammar/schema test vectors are compiled. Candidates are capped at1,048,576 entries, files at12MiB and live sampler/candidate tables at64 entries each, within the existing model-session request and lifetime bounds.
 
 `llg-available` reports the actual `LLAMA_USE_LLGUIDANCE` feature definition. A complete source contract requires it to be true; disabled builds cannot count as passing coverage. The build consumes separately verified absolute `PRISM_LLGUIDANCE_LIBRARY` and `PRISM_LLGUIDANCE_INCLUDE_DIR` paths, enabling the pristine production common source without upstream network build steps. `Initialize-BonsaiPrismGrammarDependency` verifies the locked source archive, extracts fresh source and invokes only the pinned production Cargo package with `--locked` for the explicit target triple. All dependency sources, targets, temporary files and receipts remain external to Git worktrees.

@@ -313,7 +313,7 @@
       ],
       "AssertionsToPort": "Target-layer/meta compatibility; generated token/lossless greedy parity; block accept bookkeeping; optional row oracle; shared head/sparse/Markov switches. Keep diagnostic throughput/perf modes CI-only.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-export-graph-ops.cpp",

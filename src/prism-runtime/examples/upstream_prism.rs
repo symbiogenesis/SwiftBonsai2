@@ -56,6 +56,12 @@ mod double_float;
 mod dspark_inputs;
 #[path = "upstream_prism/dspark_logsnr.rs"]
 mod dspark_logsnr;
+#[path = "upstream_prism/dspark_pair.rs"]
+mod dspark_pair;
+#[path = "upstream_prism/dspark_real.rs"]
+mod dspark_real;
+#[path = "upstream_prism/dspark_real_inputs.rs"]
+mod dspark_real_inputs;
 #[path = "upstream_prism/engine.rs"]
 mod engine;
 #[path = "upstream_prism/engine_codec.rs"]
@@ -156,6 +162,12 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-dspark-real-eval",
+        "tests/test-dspark-real-eval.cpp",
+        Bridge::Common,
+        dspark_real::run,
+    ),
     register(
         "test-grammar-llguidance",
         "tests/test-grammar-llguidance.cpp",
@@ -732,6 +744,13 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
             return architectures::run_with_options(engine, &options);
         }
         Some("gbnf-validator") => return validator::diagnostic(engine, &value),
+        Some("dspark-real-options") => {
+            llama_grammar::exact_fields(&value, &["Kind", "Options"])?;
+            return dspark_real::run_with_options(
+                engine,
+                &serde_json::from_value(value["Options"].clone())?,
+            );
+        }
         Some("chat-options") => {
             llama_grammar::exact_fields(&value, &["Kind", "Filter", "ForceReconstruction"])?;
             let filter = if value["Filter"].is_null() {

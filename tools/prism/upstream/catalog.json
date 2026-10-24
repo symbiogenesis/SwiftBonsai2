@@ -312,6 +312,7 @@
     "tests/test-dfly-fusion.cpp",
     "tests/test-double-float.cpp",
     "tests/test-dspark-logsnr-meta.cpp",
+    "tests/test-dspark-real-eval.cpp",
     "tests/test-gbnf-validator.cpp",
     "tests/test-gguf-model-data.cpp",
     "tests/test-gguf.cpp",
