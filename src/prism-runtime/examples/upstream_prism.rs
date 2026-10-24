@@ -56,12 +56,16 @@ mod double_float;
 mod dspark_inputs;
 #[path = "upstream_prism/dspark_logsnr.rs"]
 mod dspark_logsnr;
+#[path = "upstream_prism/dspark_loop.rs"]
+mod dspark_loop;
 #[path = "upstream_prism/dspark_pair.rs"]
 mod dspark_pair;
 #[path = "upstream_prism/dspark_real.rs"]
 mod dspark_real;
 #[path = "upstream_prism/dspark_real_inputs.rs"]
 mod dspark_real_inputs;
+#[path = "upstream_prism/dspark_reference.rs"]
+mod dspark_reference;
 #[path = "upstream_prism/engine.rs"]
 mod engine;
 #[path = "upstream_prism/engine_codec.rs"]
@@ -162,6 +166,12 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-dspark-loop",
+        "tests/test-dspark-loop.cpp",
+        Bridge::Common,
+        dspark_loop::run,
+    ),
     register(
         "test-dspark-real-eval",
         "tests/test-dspark-real-eval.cpp",
@@ -744,6 +754,7 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
             return architectures::run_with_options(engine, &options);
         }
         Some("gbnf-validator") => return validator::diagnostic(engine, &value),
+        Some("dspark-loop-options") => return dspark_loop::diagnostic(engine, &value),
         Some("dspark-real-options") => {
             llama_grammar::exact_fields(&value, &["Kind", "Options"])?;
             return dspark_real::run_with_options(

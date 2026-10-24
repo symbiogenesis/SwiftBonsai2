@@ -300,7 +300,7 @@
       ],
       "AssertionsToPort": "Exact repeated draft/accept schedule; cache/reset/start bookkeeping; metadata dimensions/vocab/mask; supplied draft results versus JSON at every round; backend Markov branches.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-dspark-real-eval.cpp",

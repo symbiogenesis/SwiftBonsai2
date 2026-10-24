@@ -42,9 +42,14 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Fifty-eight source contracts currently have safe Rust adapters in
+Fifty-nine source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-dspark-loop.cpp`: the full seven-entry acceptance cycle, 49 exact token
+  comparisons and 95 original primitive predicates. Safe Rust computes the tiny
+  fixture's independent reference before opening the production session, using
+  pinned published DeepSpec equations and no recorded engine outputs. External
+  model/reference pairs remain available as typed diagnostics.
 - `test-dspark-real-eval.cpp`: all 24 literal prompts, separate plain AR and
   speculative schedules, exact output parity, cache rollback refusals, category
   and conditional-depth rollups. Optional teacher forcing retains split/same-path
