@@ -316,6 +316,7 @@
     "tests/test-dspark-logsnr-meta.cpp",
     "tests/test-dspark-loop.cpp",
     "tests/test-dspark-real-eval.cpp",
+    "tests/test-export-graph-ops.cpp",
     "tests/test-gbnf-validator.cpp",
     "tests/test-gguf-model-data.cpp",
     "tests/test-gguf.cpp",

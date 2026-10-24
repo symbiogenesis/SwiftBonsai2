@@ -326,7 +326,7 @@
       ],
       "AssertionsToPort": "Export prompt-processing and token-generation operation signatures to tests.txt; original is generator not assertion suite; Rust equivalent should assert reserve success and deterministic serialized signatures.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-gbnf-validator.cpp",

@@ -14,7 +14,7 @@ param(
     [Parameter(Mandatory)][string]$SourceArchive,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [Parameter(Mandatory)][string]$TargetDirectory,
-    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'LlGuidance', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'Barrier', 'BackendSampler', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')][string]$Case = 'All',
+    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'LlGuidance', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'Barrier', 'BackendSampler', 'ExportGraph', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')][string]$Case = 'All',
     [string]$CMakePath,
     [ValidateSet('Ninja', 'Visual Studio 18 2026', 'Visual Studio 17 2022')][string]$Generator = 'Ninja',
     [ValidateSet('ARM64', 'x64')][string]$NativePlatform = 'ARM64',
@@ -159,6 +159,7 @@ $adapters = @{
     Allocator = @{ Name = 'test-alloc'; Family = 'common' }
     Barrier = @{ Name = 'test-barrier'; Family = 'common' }
     BackendSampler = @{ Name = 'test-backend-sampler'; Family = 'common' }
+    ExportGraph = @{ Name = 'test-export-graph-ops'; Family = 'common' }
     ChatTemplate = @{ Name = 'test-chat-template'; Family = 'common' }
     MtmdCApi = @{ Name = 'test-mtmd-c-api'; Id = 'tests/test-mtmd-c-api.c'; Family = 'common' }
     Sampling = @{ Name = 'test-sampling'; Family = 'common' }
@@ -192,8 +193,8 @@ $adapters = @{
     StateRestoreFragmented = @{ Name = 'test-state-restore-fragmented'; Family = 'common' }
     ThreadSafety = @{ Name = 'test-thread-safety'; Family = 'common' }
 }
-$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'LlGuidance', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'Barrier', 'BackendSampler', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety') } else { @($Case) }
-$modelSelections = @('BackendSampler', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')
+$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'LlGuidance', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'Barrier', 'BackendSampler', 'ExportGraph', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety') } else { @($Case) }
+$modelSelections = @('ExportGraph', 'BackendSampler', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')
 $assetDirectory = $null
 if (@($selected | Where-Object { $_ -in $modelSelections }).Count) {
     $assetDirectory = Join-Path $evidence 'model-assets'
@@ -217,7 +218,7 @@ if (@($selected | Where-Object { $_ -in $modelSelections }).Count) {
     }
     $receipt.ModelAssets = $modelReceipts.ToArray()
 }
-if (@($selected | Where-Object { $_ -in @('GgufMetadata', 'QuantSelection') }).Count) {
+if (@($selected | Where-Object { $_ -in @('GgufMetadata', 'QuantSelection', 'ExportGraph') }).Count) {
     Import-Module (Join-Path $repo 'scripts/Bonsai.PrismAssets.psm1')
     if (-not $assetDirectory) { $assetDirectory = Join-Path $evidence 'model-assets' }
     $receipt.MetadataAssets = Save-BonsaiPrismMetadataAsset -Repository $repo -Directory $assetDirectory
@@ -305,7 +306,7 @@ foreach ($selection in $selected) {
         if ($engine -eq 'cpp' -and $adapter.Family -ne 'independent') {
             $arguments += @($bridgeFamilies[$adapter.Family].Option, $bridges[$adapter.Family])
         }
-        $timeout = if ($selection -eq 'DsparkForward') { 1800 } elseif ($selection -eq 'DsparkRealEval') { 600 } elseif ($selection -eq 'LlGuidance') { 1800 } elseif ($selection -eq 'Barrier') { 360 } elseif ($selection -eq 'Architectures') { 1800 } elseif ($selection -eq 'RecurrentRollback') { 600 } elseif ($selection -in @('KvMeanCenter','Optimizer')) { 600 } elseif ($selection -eq 'Chat') { 1200 } elseif ($selection -eq 'ModelResolution') { 360 } elseif ($selection -eq 'DoubleFloat') { 900 } elseif ($selection -eq 'TokenizerBpe') { 2100 } elseif ($selection -eq 'TokenizerSpm') { 600 } elseif ($selection -in $modelSelections) { 360 } elseif ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')) { 300 } else { 120 }
+        $timeout = if ($selection -eq 'ExportGraph') { 600 } elseif ($selection -eq 'DsparkForward') { 1800 } elseif ($selection -eq 'DsparkRealEval') { 600 } elseif ($selection -eq 'LlGuidance') { 1800 } elseif ($selection -eq 'Barrier') { 360 } elseif ($selection -eq 'Architectures') { 1800 } elseif ($selection -eq 'RecurrentRollback') { 600 } elseif ($selection -in @('KvMeanCenter','Optimizer')) { 600 } elseif ($selection -eq 'Chat') { 1200 } elseif ($selection -eq 'ModelResolution') { 360 } elseif ($selection -eq 'DoubleFloat') { 900 } elseif ($selection -eq 'TokenizerBpe') { 2100 } elseif ($selection -eq 'TokenizerSpm') { 600 } elseif ($selection -in $modelSelections) { 360 } elseif ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')) { 300 } else { 120 }
         $commands.Add([pscustomobject]@{
             Target = $engine; Arguments = $arguments; OutputPath = $output
             LogPath = Join-Path $evidence "$caseName-$engine.log"

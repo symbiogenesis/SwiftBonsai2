@@ -76,6 +76,8 @@ mod engine;
 mod engine_codec;
 #[path = "upstream_prism/engine_vocab.rs"]
 mod engine_vocab;
+#[path = "upstream_prism/export_graph.rs"]
+mod export_graph;
 #[path = "upstream_prism/fixture.rs"]
 mod fixture;
 #[path = "upstream_prism/generated_inputs.rs"]
@@ -175,6 +177,12 @@ const CASES: &[Case] = &[
         "tests/test-backend-sampler.cpp",
         Bridge::Common,
         backend_sampler::run,
+    ),
+    register(
+        "test-export-graph-ops",
+        "tests/test-export-graph-ops.cpp",
+        Bridge::Common,
+        export_graph::run,
     ),
     register(
         "test-dspark-forward",
@@ -772,6 +780,7 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
         Some("gbnf-validator") => return validator::diagnostic(engine, &value),
         Some("dspark-loop-options") => return dspark_loop::diagnostic(engine, &value),
         Some("dspark-forward-options") => return dspark_forward::diagnostic(engine, &value),
+        Some("export-graph-options") => return export_graph::diagnostic(engine, &value),
         Some("backend-sampler-options") => return backend_sampler::diagnostic(engine, &value),
         Some("dspark-real-options") => {
             llama_grammar::exact_fields(&value, &["Kind", "Options"])?;

@@ -38,9 +38,14 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Sixty-one source contracts currently have safe Rust adapters in
+Sixty-two source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-export-graph-ops.cpp`: both local-model and pinned HF metadata paths, all
+  prompt/token-generation reserve calls, structural set ordering and first-name
+  retention, and original text export. Rust owns metadata reconstruction and
+  graph filtering; the bridge only exposes production reserve observations.
+  The source has zero numerical output assertions.
 - `test-backend-sampler.cpp`: all 19 source scenarios, penalties/filter matrices,
   CDF comparisons, multi-output transactions and CPU-suffix callback contracts.
   Generic native callbacks report observations to Rust, which owns acceptance

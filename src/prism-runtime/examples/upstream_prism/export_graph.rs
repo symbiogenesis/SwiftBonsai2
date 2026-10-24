@@ -309,7 +309,7 @@ fn one(engine: &Engine, options: &Options, label: &str) -> Result<Value> {
         arguments.extend(options.arguments.clone());
         let value = call(
             &client,
-            json!({"Op":"params","Initial":{},"Arguments":arguments}),
+            json!({"Op":"params","Initial":{},"Arguments":arguments,"Example":"export-graph-ops"}),
         )?;
         if value["Parsed"] != true {
             return Err(invalid("source export arguments rejected"));
