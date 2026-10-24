@@ -98,6 +98,16 @@ mod llama_grammar;
 mod llguidance;
 #[path = "upstream_prism/logging.rs"]
 mod logging;
+#[path = "upstream_prism/lora_conversion.rs"]
+mod lora_conversion;
+#[path = "upstream_prism/lora_convert.rs"]
+mod lora_convert;
+#[path = "upstream_prism/lora_gguf.rs"]
+mod lora_gguf;
+#[path = "upstream_prism/lora_inputs.rs"]
+mod lora_inputs;
+#[path = "upstream_prism/lora_vocab.rs"]
+mod lora_vocab;
 #[path = "upstream_prism/moe_reduce.rs"]
 mod moe_reduce;
 #[path = "upstream_prism/mtmd.rs"]
@@ -172,6 +182,12 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-lora-conversion-inference",
+        "tests/test-lora-conversion-inference.sh",
+        Bridge::Common,
+        lora_conversion::run,
+    ),
     register(
         "test-backend-sampler",
         "tests/test-backend-sampler.cpp",

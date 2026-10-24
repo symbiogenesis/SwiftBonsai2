@@ -178,6 +178,38 @@ impl Engine {
         }))
     }
 
+    pub(super) fn production_tool(&self, name: &str) -> Result<Option<PathBuf>> {
+        if name != "llama-export-lora" {
+            return Err(invalid("unknown production tool"));
+        }
+        if matches!(self.target, Target::Rust) {
+            return Ok(None);
+        }
+        let bridge = fs::canonicalize(
+            self.common_bridge
+                .as_ref()
+                .ok_or_else(|| invalid("native common bridge missing"))?,
+        )?;
+        let directory = bridge
+            .parent()
+            .ok_or_else(|| invalid("native bridge has no parent"))?;
+        let file = directory.join(if cfg!(windows) {
+            "llama-export-lora.exe"
+        } else {
+            "llama-export-lora"
+        });
+        if !file.is_file() {
+            return Err(invalid("verified production tool was not provisioned"));
+        }
+        let file = fs::canonicalize(file)?;
+        if file.parent() != Some(directory) {
+            return Err(invalid(
+                "production tool escaped the verified bridge directory",
+            ));
+        }
+        Ok(Some(file))
+    }
+
     pub(super) fn execute(&self, name: &str, requests: &[Request]) -> Result<Vec<Output>> {
         match self.target {
             Target::Cpp => self.cpp(name, requests),

@@ -485,7 +485,7 @@
       ],
       "AssertionsToPort": "Convert base and LoRA F32; merge; greedy seed42 50-token base/hot/merged generation; compare whitespace-trimmed expected text prefixes for all3 architectures; retain merged/hot relation. Safe Rust conversion must replace Python logic if all test code must be Rust.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-model-load-cancel.cpp",

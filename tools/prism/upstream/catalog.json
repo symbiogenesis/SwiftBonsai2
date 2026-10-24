@@ -329,6 +329,7 @@
     "tests/test-llama-archs.cpp",
     "tests/test-llama-grammar.cpp",
     "tests/test-log.cpp",
+    "tests/test-lora-conversion-inference.sh",
     "tests/test-model-load-cancel.cpp",
     "tests/test-model-resolution.cpp",
     "tests/test-moe-weighted-reduce.cpp",

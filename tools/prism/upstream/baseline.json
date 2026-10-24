@@ -1,7 +1,7 @@
 {
   "SchemaVersion": 1,
   "UpstreamCommit": "b87ca7225456b06b0975b8239c66b5aecf07e37c",
-  "CatalogSha256": "08334a7b0f2cd89ac4495d64c2cb749f4c014fcca9646d8c9097f9473f4f6487",
+  "CatalogSha256": "481c33875a92d1b7ef58db97177aca43f4ae4e6a3b279428faae60329973fcda",
   "Measure": "upstream-source-files",
   "Total": 71,
   "MinimumPassed": 1,
