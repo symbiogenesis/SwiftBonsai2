@@ -111,23 +111,13 @@ function Read-PairedSample {
     if (-not [IO.File]::Exists($supervisionPath)) { return $null }
     $supervision = Get-Content -Raw -LiteralPath $supervisionPath | ConvertFrom-Json -DateKind String
     if ($supervision.Status -cne 'completed') { return $null }
-    $stdout = Join-Path $lane 'stdout.txt'
-    $encoding = [Text.UTF8Encoding]::new($false, $true)
-    # GetString preserves a leading U+FEFF if generated; ReadAllText would
-    # consume its UTF-8 bytes as an encoding preamble and change the capture.
-    $text = $encoding.GetString([IO.File]::ReadAllBytes($stdout))
-    if ([string]::IsNullOrWhiteSpace($text)) { throw 'Paired native sample returned no captured response.' }
-    $timing = $supervision.Timing
-    $counts = $supervision.Counts
-    $diagnostics = [ordered]@{ WallMilliseconds = $supervision.WallMilliseconds; PromptTokens = $timing.PromptTokens
-        PromptMilliseconds = $timing.PromptMilliseconds; DecodeTokensPerSecond = $timing.DecodeTokensPerSecond
-        EogMarkerObserved = $text.Contains(' [end of text]'); FirstTokenLatencyMilliseconds = $null
-        PromptTokenCount = $counts.PromptTokenCount; SamplerAcceptedTokens = $counts.SamplerAcceptedTokens
-        GeneratedSampledTokens = $counts.GeneratedSampledTokens
-        LogitsAvailable = $false; ResponseScope = 'Exact native stdout including reasoning, end marker and trailing newlines' }
-    $diagnostics | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $lane 'diagnostics.json') -Encoding utf8
-    return [pscustomobject]@{ Text = $text; Sha256 = Get-BonsaiResponseDigest $text; Diagnostics = $diagnostics
-        Timing = $timing; PeakJobMemoryBytes = [long]$supervision.PeakJobMemoryBytes; MinimumAvailablePhysicalBytes = [long]$supervision.MinimumAvailablePhysicalBytes }
+    # The completed receipt is published only after Rust has durably saved the
+    # exact UTF-8 response identity and diagnostics. Failed/missing lanes remain
+    # unavailable during partial-batch recovery, even if they have raw stdout.
+    $captured = Get-Content -Raw -LiteralPath (Join-Path $lane 'capture.json') | ConvertFrom-Json -DateKind String
+    if ($captured.SchemaVersion -ne 1) { throw 'Unsupported paired native capture schema.' }
+    return [pscustomobject]@{ Text = $captured.Text; Sha256 = $captured.Sha256; Diagnostics = $captured.Diagnostics
+        Timing = $supervision.Timing; PeakJobMemoryBytes = [long]$supervision.PeakJobMemoryBytes; MinimumAvailablePhysicalBytes = [long]$supervision.MinimumAvailablePhysicalBytes }
 
 }
 try {

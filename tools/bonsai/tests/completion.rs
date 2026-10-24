@@ -86,6 +86,7 @@ fn batch_preserves_outputs_and_retains_verified_inputs() -> Result<()> {
             serde_json::from_slice(&fs::read(lane.join(id).join("supervision.json"))?)?;
         assert_eq!(receipt["Status"], "completed");
         assert_eq!(receipt["ExitCode"], 0);
+        assert!(!lane.join(id).join("capture.json").exists());
     }
     Ok(())
 }
@@ -131,19 +132,14 @@ fn unknown_request_fields_and_changed_artifacts_cannot_start_children() -> Resul
 }
 
 #[cfg(target_arch = "aarch64")]
-#[test]
-fn malformed_first_capture_prevents_the_next_batch_sample() -> Result<()> {
+fn synthetic_ci_child(name: &str) -> Result<bool> {
     const CHILD: &str = "BONSAI_SYNTHETIC_CI_FIXTURE";
     if std::env::var_os(CHILD).is_none() {
         // Supply CI identity only to this synthetic subprocess. It executes no
         // model or performance workload, and preserves the inherited OS/profile.
         let directory = std::env::temp_dir();
         let status = Command::new(std::env::current_exe()?)
-            .args([
-                "--exact",
-                "malformed_first_capture_prevents_the_next_batch_sample",
-                "--nocapture",
-            ])
+            .args(["--exact", name, "--nocapture"])
             .env(CHILD, "1")
             .env("GITHUB_ACTIONS", "true")
             .env("GITHUB_REF", "refs/heads/main")
@@ -156,6 +152,15 @@ fn malformed_first_capture_prevents_the_next_batch_sample() -> Result<()> {
             .stdin(Stdio::null())
             .status()?;
         assert!(status.success());
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn malformed_first_capture_prevents_the_next_batch_sample() -> Result<()> {
+    if !synthetic_ci_child("malformed_first_capture_prevents_the_next_batch_sample")? {
         return Ok(());
     }
     for (name, script, expected) in [
@@ -192,6 +197,118 @@ fn malformed_first_capture_prevents_the_next_batch_sample() -> Result<()> {
         assert!(!second.join("stdout.txt").exists());
         let receipt: Value = serde_json::from_slice(&fs::read(first.join("supervision.json"))?)?;
         assert_eq!(receipt["Status"], "failed");
+        assert!(!first.join("capture.json").exists());
     }
+    Ok(())
+}
+
+#[cfg(target_arch = "aarch64")]
+fn exact_capture_script(text: &str) -> String {
+    const LOG: &str = "main: number of tokens in prompt = 15\ncommon_perf_print: prompt eval time = 100.5 ms / 15 tokens ( 6.7 ms per token, 149.25 tokens per second)\ncommon_perf_print: eval time = 200.0 ms / 3 runs ( 66.7 ms per token, 15 tokens per second)\ncommon_perf_print: samplers time = 0.50 ms / 19 tokens\n";
+    let bytes = text
+        .bytes()
+        .map(|byte| byte.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "$bytes = [byte[]]@({bytes}); [Console]::OpenStandardOutput().Write($bytes,0,$bytes.Length); [Console]::Error.Write('{LOG}')"
+    )
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn completed_capture_survives_failed_and_missing_batch_samples() -> Result<()> {
+    if !synthetic_ci_child("completed_capture_survives_failed_and_missing_batch_samples")? {
+        return Ok(());
+    }
+    let (lane, mut request) = fixture("capture-recovery")?;
+    let text = "\u{feff}caf\u{e9} \u{1f331} [end of text]\r\n\n";
+    let mut samples = Vec::new();
+    for (id, script) in [
+        ("first", exact_capture_script(text)),
+        (
+            "failed",
+            "[Console]::Out.Write('partial-response'); exit 7".into(),
+        ),
+        (
+            "missing",
+            "[IO.File]::WriteAllText('next-started.txt','unexpected')".into(),
+        ),
+    ] {
+        let evidence = lane.join(id);
+        fs::create_dir(&evidence)?;
+        samples.push(json!({"id": id, "evidenceDirectory": evidence,
+            "arguments": ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script]}));
+    }
+    request["arguments"] = json!([]);
+    request["ciOnly"] = json!(true);
+    request["samples"] = json!(samples);
+    let failure = bonsai_tools::completion::run(request)
+        .err()
+        .ok_or("Failed batch was accepted.")?;
+    assert!(failure.contains("exit code 7"), "{failure}");
+    let first = lane.join("first");
+    assert_eq!(fs::read(first.join("stdout.txt"))?, text.as_bytes());
+    let captured: Value = serde_json::from_slice(&fs::read(first.join("capture.json"))?)?;
+    let supervision: Value = serde_json::from_slice(&fs::read(first.join("supervision.json"))?)?;
+    let diagnostics: Value = serde_json::from_slice(&fs::read(first.join("diagnostics.json"))?)?;
+    assert_eq!(supervision["Status"], "completed");
+    assert_eq!(captured["SchemaVersion"], 1);
+    assert_eq!(captured["Text"], text);
+    assert_eq!(
+        captured["Sha256"],
+        "df83f021218f20b60f48cbb5306a794f327336012fd749567bd1a8094531a0c1"
+    );
+    assert_eq!(captured["Diagnostics"], diagnostics);
+    assert_eq!(
+        diagnostics["WallMilliseconds"],
+        supervision["WallMilliseconds"]
+    );
+    assert_eq!(diagnostics["PromptTokens"], 15);
+    assert_eq!(diagnostics["PromptMilliseconds"], 100.5);
+    assert_eq!(diagnostics["DecodeTokensPerSecond"], 15.0);
+    assert_eq!(diagnostics["EogMarkerObserved"], true);
+    assert_eq!(diagnostics["GeneratedSampledTokens"], 4);
+    assert_eq!(diagnostics["LogitsAvailable"], false);
+    assert!(supervision.get("Text").is_none());
+    let failed = lane.join("failed");
+    let receipt: Value = serde_json::from_slice(&fs::read(failed.join("supervision.json"))?)?;
+    assert_eq!(receipt["Status"], "failed");
+    assert_eq!(fs::read(failed.join("stdout.txt"))?, b"partial-response");
+    assert!(!failed.join("capture.json").exists());
+    let batch: Value = serde_json::from_slice(&fs::read(lane.join("supervision.json"))?)?;
+    assert_eq!(batch["Status"], "failed");
+    assert_eq!(batch["Samples"].as_array().map(Vec::len), Some(2));
+    assert_eq!(batch["Samples"][0]["Status"], "completed");
+    assert!(batch["Samples"][0].get("Text").is_none());
+    for file in ["supervision.json", "stdout.txt", "capture.json"] {
+        assert!(!lane.join("missing").join(file).exists());
+    }
+    assert!(!lane.join("next-started.txt").exists());
+    Ok(())
+}
+
+#[cfg(target_arch = "aarch64")]
+#[test]
+fn capture_write_failure_cannot_publish_a_completed_sample() -> Result<()> {
+    if !synthetic_ci_child("capture_write_failure_cannot_publish_a_completed_sample")? {
+        return Ok(());
+    }
+    let (lane, mut request) = fixture("capture-write")?;
+    let diagnostics = lane.join("diagnostics.json");
+    fs::write(&diagnostics, b"retained-evidence")?;
+    request["arguments"] = json!([
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        exact_capture_script("response\n")
+    ]);
+    request["ciOnly"] = json!(true);
+    assert!(bonsai_tools::completion::run(request).is_err());
+    assert!(lane.join("capture.json").exists());
+    assert_eq!(fs::read(diagnostics)?, b"retained-evidence");
+    let receipt: Value = serde_json::from_slice(&fs::read(lane.join("supervision.json"))?)?;
+    assert_eq!(receipt["Status"], "failed");
     Ok(())
 }

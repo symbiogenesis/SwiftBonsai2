@@ -1,6 +1,8 @@
 //! Complete Windows Job supervision for bounded completion and synthetic probes.
 
 #[cfg(windows)]
+mod capture;
+#[cfg(windows)]
 mod timing;
 #[cfg(windows)]
 mod windows;
@@ -9,6 +11,8 @@ mod windows;
 ///
 /// The request is a versioned JSON object. Native stdout and stderr remain in
 /// external evidence files; the returned object contains accounting only.
+/// Successful CI-only samples additionally publish a strict UTF-8 capture record
+/// and diagnostics before their completed supervision receipt becomes visible.
 ///
 /// # Errors
 /// Rejects malformed requests, unsafe paths, changed artifacts, caller death,

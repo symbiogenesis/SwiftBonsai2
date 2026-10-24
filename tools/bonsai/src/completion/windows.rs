@@ -296,7 +296,18 @@ fn execute_one(
         receipt["CancellationFailure"] = json!(error);
         return result.and(Err(error));
     }
-    result
+    if let Some(text) = result? {
+        let captured = super::capture::assemble(text, receipt);
+        // Publish both durable sidecars before the caller can publish a
+        // completed supervision receipt. Failed writes leave a failed sample;
+        // recovery never consumes a sidecar without that completion marker.
+        save(&evidence_directory.join("capture.json"), &captured)?;
+        save(
+            &evidence_directory.join("diagnostics.json"),
+            &captured["Diagnostics"],
+        )?;
+    }
+    Ok(())
 }
 
 fn supervise(
@@ -306,7 +317,7 @@ fn supervise(
     parent: &ParentProcess,
     start: Instant,
     receipt: &mut Value,
-) -> Result<()> {
+) -> Result<Option<String>> {
     let mut minimum = receipt["MinimumAvailablePhysicalBytes"]
         .as_u64()
         .ok_or("Missing admission memory observation.")?;
@@ -342,7 +353,9 @@ fn supervise(
         let parsed = super::timing::parse(&read_capture(&spec.stderr)?)?;
         receipt["Timing"] = parsed["Timing"].clone();
         receipt["Counts"] = parsed["Counts"].clone();
-    } else if request.require_nonempty_stdout {
+        return Ok(Some(text));
+    }
+    if request.require_nonempty_stdout {
         let mut file = OpenOptions::new()
             .read(true)
             .share_mode(3)
@@ -356,7 +369,7 @@ fn supervise(
             return Err("Native operation returned no captured response.".into());
         }
     }
-    Ok(())
+    Ok(None)
 }
 
 fn read_capture(path: &Path) -> Result<String> {
@@ -368,8 +381,7 @@ fn read_capture(path: &Path) -> Result<String> {
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)
         .map_err(|error| error.to_string())?;
-    String::from_utf8(bytes)
-        .map_err(|error| format!("Native captured output is not valid UTF-8: {error}"))
+    super::capture::decode(bytes)
 }
 
 fn observe_memory(
