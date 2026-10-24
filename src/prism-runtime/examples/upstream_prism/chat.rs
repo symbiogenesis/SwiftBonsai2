@@ -84,6 +84,39 @@ fn bytes(v: &Value) -> Result<Vec<u8>> {
     }
     byte_array(field(v, "Bytes")?)
 }
+fn validate_template_kwargs(value: &Value) -> Result<()> {
+    if let Some(encoded) = value.get("ParametersJson") {
+        validate_template_kwargs(&serde_json::from_str::<Value>(
+            encoded
+                .as_str()
+                .ok_or_else(|| invalid("chat ParametersJson must be a string"))?,
+        )?)?;
+    }
+    if let Some(kwargs) = value.get("chat_template_kwargs") {
+        let kwargs = kwargs
+            .as_object()
+            .ok_or_else(|| invalid("chat template kwargs must be an object"))?;
+        if kwargs.values().any(|value| !value.is_string()) {
+            return Err(invalid(
+                "chat template kwargs must preserve the source map<string,string> values",
+            ));
+        }
+    }
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                validate_template_kwargs(value)?;
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                validate_template_kwargs(value)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
 fn fixture() -> Result<Value> {
     let v: Value = serde_json::from_str(CASES)?;
     let cases = array(&v, "Cases")?;
@@ -117,6 +150,7 @@ fn fixture() -> Result<Value> {
             return Err(invalid("chat group order mismatch"));
         }
     }
+    validate_template_kwargs(&v)?;
     Ok(v)
 }
 fn exchange(engine: &Engine, operation: &Value) -> Result<Option<Value>> {
@@ -1093,6 +1127,13 @@ mod tests {
     #[test]
     fn source_chat_helper_guards_preserve_bytes_and_json_order() -> Result<()> {
         let _ = fixture()?;
+        validate_template_kwargs(
+            &json!({"chat_template_kwargs":{"drop_thinking":"false","thinking":"true"}}),
+        )?;
+        assert!(
+            validate_template_kwargs(&json!({"chat_template_kwargs":{"drop_thinking":false}}))
+                .is_err()
+        );
         assert_eq!(safe_prefix_len(&[0xeb, 0x82]), 0);
         assert_eq!(safe_prefix_len(&[0xeb, 0x82, 0xac]), 3);
         assert_eq!(safe_prefix_len(&[b'x', 0xeb, 0x82]), 1);

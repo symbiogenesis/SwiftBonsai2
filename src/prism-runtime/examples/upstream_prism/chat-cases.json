@@ -66949,7 +66949,7 @@
           "Actions": [
             {
               "Kind": "apply",
-              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"user\",\"content\":\"Question 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A2\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":false}}"
+              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"user\",\"content\":\"Question 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A2\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":\"false\"}}"
             }
           ]
         },
@@ -66959,7 +66959,7 @@
           "Actions": [
             {
               "Kind": "apply",
-              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"user\",\"content\":\"Question 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A2\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":true}}"
+              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"user\",\"content\":\"Question 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A2\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":\"true\"}}"
             }
           ]
         },
@@ -66969,7 +66969,7 @@
           "Actions": [
             {
               "Kind": "apply",
-              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":true}}"
+              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":\"true\"}}"
             }
           ]
         },
@@ -66979,7 +66979,7 @@
           "Actions": [
             {
               "Kind": "apply",
-              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":false}}"
+              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":\"false\"}}"
             }
           ]
         },
@@ -66989,7 +66989,7 @@
           "Actions": [
             {
               "Kind": "apply",
-              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"user\",\"content\":\"Question 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"\",\"content_parts\":[],\"tool_calls\":[{\"name\":\"special_function\",\"arguments\":\"{\\\"arg1\\\": 1}\",\"id\":\"\"}],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"tool\",\"content\":\"result\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"special_function\",\"tool_call_id\":\"0\"},{\"role\":\"assistant\",\"content\":\"Answer 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A2\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":true}}"
+              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"user\",\"content\":\"Question 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"\",\"content_parts\":[],\"tool_calls\":[{\"name\":\"special_function\",\"arguments\":\"{\\\"arg1\\\": 1}\",\"id\":\"\"}],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"tool\",\"content\":\"result\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"special_function\",\"tool_call_id\":\"0\"},{\"role\":\"assistant\",\"content\":\"Answer 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A2\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":\"true\"}}"
             }
           ]
         },
@@ -66999,7 +66999,7 @@
           "Actions": [
             {
               "Kind": "apply",
-              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"user\",\"content\":\"Question 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"\",\"content_parts\":[],\"tool_calls\":[{\"name\":\"special_function\",\"arguments\":\"{\\\"arg1\\\": 1}\",\"id\":\"\"}],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"tool\",\"content\":\"result\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"special_function\",\"tool_call_id\":\"0\"},{\"role\":\"assistant\",\"content\":\"Answer 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A2\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":false}}"
+              "ParametersJson": "{\"messages\":[{\"role\":\"user\",\"content\":\"Question 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"Answer 1\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A1\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"user\",\"content\":\"Question 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"assistant\",\"content\":\"\",\"content_parts\":[],\"tool_calls\":[{\"name\":\"special_function\",\"arguments\":\"{\\\"arg1\\\": 1}\",\"id\":\"\"}],\"reasoning_content\":\"\",\"tool_name\":\"\",\"tool_call_id\":\"\"},{\"role\":\"tool\",\"content\":\"result\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"\",\"tool_name\":\"special_function\",\"tool_call_id\":\"0\"},{\"role\":\"assistant\",\"content\":\"Answer 2\",\"content_parts\":[],\"tool_calls\":[],\"reasoning_content\":\"thinking A2\",\"tool_name\":\"\",\"tool_call_id\":\"\"}],\"add_generation_prompt\":false,\"chat_template_kwargs\":{\"thinking\":\"true\",\"drop_thinking\":\"false\"}}"
             }
           ]
         }
