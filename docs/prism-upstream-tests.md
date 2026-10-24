@@ -21,6 +21,8 @@ All original C++ test executables and fixture exporters are retired. Their
 importer and replay build were removed after Windows ARM64 CI proved the safe
 Rust replacements for every previously required C++ control. Native builds
 disable upstream tests and expose production operations through bounded bridges.
+The Windows bridge preserves synchronous exceptions from public C ABI calls;
+this is required to observe the original negative-input rejection checks.
 A Rust-owned reference failure still fails CI independently of the runtime floor.
 The manual [focused reference workflow](../.github/workflows/prism-focused.yml)
 runs one selected source on Windows ARM64 for diagnostics. Its result does not

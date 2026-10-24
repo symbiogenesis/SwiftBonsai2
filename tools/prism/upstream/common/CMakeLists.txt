@@ -61,6 +61,12 @@ endif()
 add_executable(prism-upstream-common-bridge bridge.cpp jinja.hpp mtmd.hpp grammar_parser.hpp reasoning_budget.hpp tensor_graph.hpp grammar.hpp codec.hpp peg.hpp concurrency.hpp arena_graph.hpp batch_allocator.hpp allocation.hpp mtmd_chunks.hpp sampling.hpp gguf.hpp chat_templates.hpp chat_parser.hpp chat_auto.hpp vocab.hpp vocab_session.hpp model_runtime.hpp json_schema.hpp chat_analysis.hpp public_c_abi.c public_c_abi.h arg_parser.hpp model_resolution.hpp chat.hpp generated_model.hpp optimizer.hpp quantization.hpp dspark.hpp threadpool.hpp backend_ops.hpp dspark_runtime.hpp llguidance.hpp backend_sampler.hpp context_graph.hpp codec_buffers.hpp)
 target_include_directories(prism-upstream-common-bridge PRIVATE "${PRISM_SOURCE_DIR}/src" "${PRISM_SOURCE_DIR}" "${PRISM_SOURCE_DIR}/ggml/src")
 target_link_libraries(prism-upstream-common-bridge PRIVATE llama-common mtmd prism-upstream-server-context)
+# The pinned public C ABI intentionally throws for source-tested invalid inputs.
+# Preserve those C++ exception observations instead of assuming extern C is no-throw.
+if(MSVC)
+  target_compile_options(prism-upstream-common-bridge PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:/EHs> $<$<COMPILE_LANGUAGE:CXX>:/EHc->)
+endif()
 
 set_source_files_properties(public_c_abi.c PROPERTIES LANGUAGE C)
 set_target_properties(prism-upstream-common-bridge PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
