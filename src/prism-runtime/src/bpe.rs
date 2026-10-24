@@ -10,7 +10,7 @@ use std::collections::{BinaryHeap, HashMap};
 
 use bonsai_gguf::{Metadata, MetadataArray};
 
-use crate::vocabulary::{MAX_PIECE_BYTES, Vocabulary};
+use crate::vocabulary::{MAX_PIECE_BYTES, ValidatedVocabulary, decode_character};
 use crate::{Result, invalid};
 
 /// Maximum number of ordered merge rules admitted from metadata.
@@ -67,15 +67,24 @@ impl Bpe {
     /// cannot participate in ordinary byte encoding, even with matching text.
     /// Metadata bounds are checked before allocating merge storage. Retained
     /// storage is a 256-entry byte table and at most [`MAX_BPE_MERGES`] rules.
-    /// Construction additionally uses the bounded [`Vocabulary`] allocation, a
-    /// borrowed normal-token lookup table, and one concatenated rule string of
-    /// at most `2 * MAX_PIECE_BYTES` UTF-8 bytes (the alphabet uses at most two
-    /// UTF-8 bytes per decoded byte).
+    /// Construction validates all vocabulary pieces without decoding them into
+    /// retained storage. It uses a borrowed normal-token lookup table and one
+    /// concatenated rule string of at most `2 * MAX_PIECE_BYTES` UTF-8 bytes
+    /// (the alphabet uses at most two UTF-8 bytes per decoded byte).
     ///
     /// # Errors
     /// Rejects invalid vocabulary metadata, malformed or missing merges, missing
     /// normal operands/results, duplicates, resource limits and allocation errors.
     pub fn from_metadata(metadata: &Metadata, vocab_size: usize) -> Result<Self> {
+        Self::from_metadata_with_vocabulary(metadata, vocab_size).map(|(bpe, _)| bpe)
+    }
+
+    // Composed tokenizers reuse this checked view for special spellings, while
+    // preserving merge bounds before vocabulary validation and merge allocation.
+    pub(crate) fn from_metadata_with_vocabulary(
+        metadata: &Metadata,
+        vocab_size: usize,
+    ) -> Result<(Self, ValidatedVocabulary<'_>)> {
         let Some(MetadataArray::String(rules)) = metadata
             .get("tokenizer.ggml.merges")
             .and_then(|value| value.as_array())
@@ -95,32 +104,21 @@ impl Bpe {
                 .filter(|&length| length <= MAX_BPE_MERGE_BYTES)
                 .ok_or_else(|| invalid("BPE merges exceed serialized byte limit"))?;
         }
-        let vocabulary = Vocabulary::from_metadata(metadata, vocab_size)?;
-        let Some(MetadataArray::String(tokens)) = metadata
-            .get("tokenizer.ggml.tokens")
-            .and_then(|value| value.as_array())
-        else {
-            return Err(invalid("BPE requires a STRING token array"));
-        };
-        let Some(MetadataArray::I32(types)) = metadata
-            .get("tokenizer.ggml.token_type")
-            .and_then(|value| value.as_array())
-        else {
-            return Err(invalid("BPE requires an INT32 token type array"));
-        };
+        let vocabulary = ValidatedVocabulary::from_metadata(metadata, vocab_size)?;
         let mut normal = HashMap::new();
-        normal.try_reserve(vocab_size)?;
+        normal.try_reserve(vocabulary.len())?;
         let mut bytes = [None; 256];
-        for (index, (token, &kind)) in tokens.iter().zip(types).enumerate() {
+        for (index, (token, kind)) in vocabulary.entries().enumerate() {
             if kind != 1 {
                 continue;
             }
             let id = u32::try_from(index)?;
-            if normal.insert(token.as_str(), id).is_some() {
+            if normal.insert(token, id).is_some() {
                 return Err(invalid("BPE has duplicate normal vocabulary pieces"));
             }
-            if let [byte] = vocabulary.piece(id)? {
-                bytes[usize::from(*byte)] = Some(id);
+            let mut characters = token.chars();
+            if let (Some(character), None) = (characters.next(), characters.next()) {
+                bytes[usize::from(decode_character(character)?)] = Some(id);
             }
         }
         let mut merges = HashMap::new();
@@ -153,13 +151,14 @@ impl Bpe {
                 return Err(invalid("BPE has duplicate merge pairs"));
             }
         }
-        Ok(Self { bytes, merges })
+        Ok((Self { bytes, merges }, vocabulary))
     }
 
     /// Encodes one **already pretokenized** byte piece using ranked merges.
     ///
     /// No special tokens are recognized or inserted. Arbitrary UTF-8 and binary
-    /// bytes are preserved; callers can recover the bytes with [`Vocabulary`].
+    /// bytes are preserved; callers can recover the bytes with
+    /// [`Vocabulary`](crate::vocabulary::Vocabulary).
     /// The 64 KiB piece bound limits work to fewer than `3 * bytes.len()` heap
     /// insertions and `O(n log n)` comparisons, including stale candidates.
     /// Scratch allocations reserve for at most `n` nodes, `3 * n` candidates and

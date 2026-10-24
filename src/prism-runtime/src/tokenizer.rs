@@ -36,11 +36,12 @@ impl Tokenizer {
     /// Rejects malformed or unsupported tokenizer metadata, inconsistent graph
     /// vocabulary size, resource limits and allocation failures.
     pub fn from_metadata(metadata: &Metadata, vocab_size: usize) -> Result<Self> {
+        let (bpe, vocabulary) = Bpe::from_metadata_with_vocabulary(metadata, vocab_size)?;
         Ok(Self {
             vocab_size,
-            bpe: Bpe::from_metadata(metadata, vocab_size)?,
+            bpe,
             pretokenizer: Qwen35PreTokenizer::from_metadata(metadata)?,
-            specials: SpecialInput::from_metadata(metadata, vocab_size)?,
+            specials: SpecialInput::from_vocabulary(&vocabulary)?,
         })
     }
 
