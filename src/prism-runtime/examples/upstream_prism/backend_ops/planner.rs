@@ -101,6 +101,11 @@ pub(super) fn plan(
                 json!({"SchemaVersion":1,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Seed":1,"Partition":{"Index":index,"Count":count},"Status":"unsupported","Reason":"unsupported production API: generic backend graph, support and metadata observations","ExpectedGeometries":geometries.len(),"Items":items}),
             );
         };
+        std::fs::write(
+            directory.join("case-receipt.json"),
+            serde_json::to_vec_pretty(&observed)?,
+        )?;
+        super::driver::cleanup(&directory)?;
         items.push(observed);
     }
     Ok(

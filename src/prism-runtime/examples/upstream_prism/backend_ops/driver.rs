@@ -72,52 +72,61 @@ fn one(
             threads,
             mode.code(),
         );
-        let mut prepared = prepare(&mut host, geometry, mode, filter)?;
-        let observed = planner::receipt(&host, &prepared, geometry, index)?;
-        for name in [
-            "Index",
-            "Class",
-            "ArgumentsSha256",
-            "ShouldInitialize",
-            "CrtDraws",
-            "Supported",
-            "SkipReason",
-            "Operation",
-            "Variables",
-            "ReferenceAvailable",
-            "MetadataSha256",
-        ] {
-            if observed[name] != row[name] {
-                return Err(invalid(format!(
-                    "backend execution preparation differs from source plan at {name}"
-                )));
-            }
-        }
-        let mut result = if prepared.initialize {
-            evaluate::allocate(&mut host, &mut prepared, geometry, mode, offset)?;
-            match mode {
-                Mode::Eval => evaluate::evaluate(&mut host, &mut prepared, geometry)?,
-                Mode::Grad => gradient::evaluate(&mut host, &mut prepared, geometry)?,
-                Mode::Perf => performance::evaluate(&mut host, &mut prepared, geometry)?,
-                Mode::Support => {
-                    return Err(invalid("source support mode cannot initialize tensors"));
+        let observed: Result<Json> = (|| {
+            let mut prepared = prepare(&mut host, geometry, mode, filter)?;
+            let observed = planner::receipt(&host, &prepared, geometry, index)?;
+            for name in [
+                "Index",
+                "Class",
+                "ArgumentsSha256",
+                "ShouldInitialize",
+                "CrtDraws",
+                "Supported",
+                "SkipReason",
+                "Operation",
+                "Variables",
+                "ReferenceAvailable",
+                "MetadataSha256",
+            ] {
+                if observed[name] != row[name] {
+                    return Err(invalid(format!(
+                        "backend execution preparation differs from source plan at {name}"
+                    )));
                 }
             }
-        } else {
-            json!({"Status":if prepared.skip.is_some(){"skip"}else{"pass"},"Supported":prepared.supported,"SkipReason":prepared.skip})
-        };
-        result["Index"] = json!(index);
-        result["Class"] = json!(geometry.class);
-        result["ArgumentsSha256"] = json!(planner::arguments_hash(geometry)?);
-        result["Operation"] = json!(prepared.operation);
-        result["Variables"] = json!(prepared.variables);
-        result["CrtOffset"] = json!(offset);
-        result["CrtDraws"] = json!(prepared.crt_draws);
-        result["Supported"] = json!(prepared.supported);
-        result["SourceAssertions"] = json!(host.assertions);
-        result["RandomDeviceSeeds"] = json!(host.inputs.ledger.seeds);
-        result["InputAndOutputReceipts"] = json!(host.inputs.receipts);
-        Ok(result)
+            let mut result = if prepared.initialize {
+                evaluate::allocate(&mut host, &mut prepared, geometry, mode, offset)?;
+                match mode {
+                    Mode::Eval => evaluate::evaluate(&mut host, &mut prepared, geometry)?,
+                    Mode::Grad => gradient::evaluate(&mut host, &mut prepared, geometry)?,
+                    Mode::Perf => performance::evaluate(&mut host, &mut prepared, geometry)?,
+                    Mode::Support => {
+                        return Err(invalid("source support mode cannot initialize tensors"));
+                    }
+                }
+            } else {
+                json!({"Status":if prepared.skip.is_some(){"skip"}else{"pass"},"Supported":prepared.supported,"SkipReason":prepared.skip})
+            };
+            result["Index"] = json!(index);
+            result["Class"] = json!(geometry.class);
+            result["ArgumentsSha256"] = json!(planner::arguments_hash(geometry)?);
+            result["Operation"] = json!(prepared.operation);
+            result["Variables"] = json!(prepared.variables);
+            result["CrtOffset"] = json!(offset);
+            result["CrtDraws"] = json!(prepared.crt_draws);
+            result["Supported"] = json!(prepared.supported);
+            result["SourceAssertions"] = json!(host.assertions);
+            result["RandomDeviceSeeds"] = json!(host.inputs.ledger.seeds);
+            result["InputAndOutputReceipts"] = json!(host.inputs.receipts);
+            Ok(result)
+        })();
+        fs::write(
+            directory.join("input-state.json"),
+            serde_json::to_vec_pretty(
+                &json!({"SchemaVersion":1,"GeometryIndex":index,"RandomDeviceAlgorithm":"SplitMix64 low32; initial state is GeometryIndex","RandomDeviceSeeds":host.inputs.ledger.seeds,"InputAndOutputReceipts":host.inputs.receipts,"CrtOffset":offset,"CrtDraws":host.crt.draws}),
+            )?,
+        )?;
+        observed
     })
 }
 
@@ -135,6 +144,7 @@ pub(super) fn run(
     let rows = planner::validate(plan, mode)?;
     let (_, geometries, geometry_hash) = planner::extent(mode)?;
     let mut items = Vec::new();
+    let mut retention = super::retention::Budget::default();
     for (case_index, geometry) in geometries
         .iter()
         .enumerate()
@@ -151,7 +161,7 @@ pub(super) fn run(
             plan,
             &directory,
         );
-        let observed = match observed {
+        let mut observed = match observed {
             Ok(Some(value)) => value,
             Ok(None) => {
                 return Ok(
@@ -171,6 +181,12 @@ pub(super) fn run(
             Some("pass" | "skip" | "measured")
         ) {
             cleanup(&directory)?;
+        } else {
+            observed["ArtifactRetention"] = retention.failure(&directory)?;
+            fs::write(
+                directory.join("case-receipt.json"),
+                serde_json::to_vec_pretty(&observed)?,
+            )?;
         }
         items.push(observed);
     }

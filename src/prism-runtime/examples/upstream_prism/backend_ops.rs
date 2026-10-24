@@ -53,6 +53,9 @@ mod planner;
 #[path = "backend_ops/prepare.rs"]
 mod prepare;
 
+#[path = "backend_ops/retention.rs"]
+mod retention;
+
 #[path = "backend_ops/driver.rs"]
 mod driver;
 #[path = "backend_ops/evaluate.rs"]

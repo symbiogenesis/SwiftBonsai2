@@ -300,6 +300,7 @@ fn options(engine: &Engine, request: &Json) -> Result<Json> {
     let threads = std::thread::available_parallelism()?.get();
     let mut offset = 0_u64;
     let mut items = Vec::new();
+    let mut retention = super::retention::Budget::default();
     let mut passed = true;
     for (case_index, geometry) in geometries.iter().enumerate() {
         let directory = engine.evidence_path(&format!(
@@ -352,7 +353,7 @@ fn options(engine: &Engine, request: &Json) -> Result<Json> {
             result["InputAndOutputReceipts"] = json!(host.inputs.receipts);
             Ok(result)
         })?;
-        let Some(observed) = observed else {
+        let Some(mut observed) = observed else {
             return Ok(
                 json!({"Status":"unsupported","Reason":"unsupported production API: generic backend diagnostic graph execution","CorrectnessSourceCount":0,"Items":items}),
             );
@@ -374,6 +375,12 @@ fn options(engine: &Engine, request: &Json) -> Result<Json> {
             Some("pass" | "skip" | "measured")
         ) {
             driver::cleanup(&directory)?;
+        } else {
+            observed["ArtifactRetention"] = retention.failure(&directory)?;
+            std::fs::write(
+                directory.join("case-receipt.json"),
+                serde_json::to_vec_pretty(&observed)?,
+            )?;
         }
         if observed["Status"] == "unsupported-diagnostic" {
             items.push(observed);
