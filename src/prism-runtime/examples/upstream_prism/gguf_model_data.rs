@@ -706,7 +706,42 @@ impl Provider for Frozen<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_meta;
+    use super::{Result, array, detect_filename, field, invalid, parse_meta};
+
+    #[test]
+    fn frozen_listings_select_shards_present_in_the_immutable_lock() -> Result<()> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest: serde_json::Value = serde_json::from_slice(include_bytes!(
+            "../../../../tools/prism/upstream/metadata-assets.lock.json"
+        ))?;
+        let models = array(&manifest, "Models")?;
+        assert_eq!(models.len(), 11);
+        for model in models {
+            let text = |record, key| -> Result<&str> {
+                field(record, key)?
+                    .as_str()
+                    .ok_or_else(|| invalid("frozen model identity must be text"))
+            };
+            let repo = text(model, "Repo")?;
+            let quant = text(model, "Quant")?;
+            let api = field(model, "Api")?;
+            let listing = std::fs::read(root.join(text(api, "CorpusPath")?))?;
+            let (filename, _) = detect_filename(&listing, quant)?
+                .ok_or_else(|| invalid(format!("frozen listing selects no GGUF: {repo}")))?;
+            assert!(
+                array(model, "Files")?
+                    .iter()
+                    .any(|file| file["Filename"] == filename),
+                "source-selected GGUF missing from immutable lock: {repo}/{filename}"
+            );
+            if repo == "ggml-org/Qwen3.6-27B-GGUF" {
+                // std::string/std::sort orders uppercase Qwen before lowercase
+                // dflash. Both real files occur in this unmodified API corpus.
+                assert_eq!(filename, "Qwen3.6-27B-Q8_0.gguf");
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn truncated_raw_descriptor_never_becomes_a_model() {
