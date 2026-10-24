@@ -191,7 +191,13 @@ impl Engine {
             .as_ref()
             .ok_or_else(|| invalid("native bridge path is missing"))?;
         decode_response(
-            &self.exchange(bridge, name, &encode_requests(requests)?, "bin")?,
+            &self.exchange(
+                bridge,
+                name,
+                &encode_requests(requests)?,
+                "bin",
+                BRIDGE_TIMEOUT,
+            )?,
             requests,
         )
     }
@@ -199,6 +205,29 @@ impl Engine {
     // None denotes a missing Rust production API. The suite must report that
     // as a failed contract, never substitute a test-only implementation.
     pub(super) fn execute_common(&self, name: &str, request: &Value) -> Result<Option<Value>> {
+        self.execute_common_with_timeout(name, request, BRIDGE_TIMEOUT)
+    }
+
+    pub(super) fn execute_common_with_timeout(
+        &self,
+        name: &str,
+        request: &Value,
+        timeout: Duration,
+    ) -> Result<Option<Value>> {
+        if timeout.is_zero() || timeout > Duration::from_secs(3600) {
+            return Err(invalid(
+                "common bridge timeout must be positive and at most one hour",
+            ));
+        }
+        if timeout > BRIDGE_TIMEOUT
+            && (request["Kind"] != "backend-graph"
+                || std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
+                || std::env::var("GITHUB_REF").as_deref() != Ok("refs/heads/main"))
+        {
+            return Err(invalid(
+                "extended graph-controller deadlines require the main CI backend lane",
+            ));
+        }
         if matches!(self.target, Target::Rust) {
             return super::engine_vocab::execute(request);
         }
@@ -211,7 +240,7 @@ impl Engine {
             return Err(invalid("common bridge request exceeds size bound"));
         }
         Ok(Some(serde_json::from_slice(
-            &self.exchange(bridge, name, &request, "json")?,
+            &self.exchange(bridge, name, &request, "json", timeout)?,
         )?))
     }
 
@@ -228,12 +257,13 @@ impl Engine {
         name: &str,
         request: &[u8],
         extension: &str,
+        timeout: Duration,
     ) -> Result<Vec<u8>> {
         let directory = self.evidence_path(name)?;
         let input = directory.join(format!("request.{extension}"));
         let output = directory.join(format!("response.{extension}"));
         fs::write(&input, request)?;
-        run_bridge(bridge, &directory, &input, &output)?;
+        run_bridge(bridge, &directory, &input, &output, timeout)?;
         if fs::metadata(&output)?.len() > MAX_RESPONSE_BYTES {
             return Err(invalid("native bridge response exceeds size bound"));
         }
@@ -351,7 +381,13 @@ fn decode_response(bytes: &[u8], requests: &[Request]) -> Result<Vec<Output>> {
     Ok(outputs)
 }
 
-fn run_bridge(bridge: &Path, directory: &Path, input: &Path, output: &Path) -> Result<()> {
+fn run_bridge(
+    bridge: &Path,
+    directory: &Path,
+    input: &Path,
+    output: &Path,
+    timeout: Duration,
+) -> Result<()> {
     let stdout_path = directory.join("stdout.log");
     let stderr_path = directory.join("stderr.log");
     let stdout = File::create(&stdout_path)?;
@@ -373,7 +409,7 @@ fn run_bridge(bridge: &Path, directory: &Path, input: &Path, output: &Path) -> R
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                if exceeded_limits(started, &stdout_path, &stderr_path, output) {
+                if exceeded_limits(started, timeout, &stdout_path, &stderr_path, output) {
                     return Err(invalid(format!(
                         "native bridge exceeded time/output bound; evidence: {}",
                         directory.display()
@@ -394,7 +430,7 @@ fn run_bridge(bridge: &Path, directory: &Path, input: &Path, output: &Path) -> R
                 return Err(error.into());
             }
         }
-        if exceeded_limits(started, &stdout_path, &stderr_path, output) {
+        if exceeded_limits(started, timeout, &stdout_path, &stderr_path, output) {
             let _ = child.kill();
             let _ = child.wait();
             return Err(invalid(format!(
@@ -409,8 +445,14 @@ fn run_bridge(bridge: &Path, directory: &Path, input: &Path, output: &Path) -> R
     }
 }
 
-fn exceeded_limits(started: Instant, stdout: &Path, stderr: &Path, output: &Path) -> bool {
-    started.elapsed() > BRIDGE_TIMEOUT
+fn exceeded_limits(
+    started: Instant,
+    timeout: Duration,
+    stdout: &Path,
+    stderr: &Path,
+    output: &Path,
+) -> bool {
+    started.elapsed() > timeout
         || [stdout, stderr]
             .iter()
             .any(|path| fs::metadata(path).is_ok_and(|metadata| metadata.len() > MAX_LOG_BYTES))
