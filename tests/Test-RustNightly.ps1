@@ -7,7 +7,8 @@ Compatibility uses the pinned production nightly for formatting, Release Clippy
 and documentation. FullTests adds complete correctness suites only in
 main-branch GitHub Actions. Probe compiles
 small language fixtures using stable and four modes of the same nightly binary.
-PackageGroup partitions compatibility by shared dependencies for parallel CI.
+PackageGroup and Package partition compatibility for parallel CI while retaining
+each package's registered feature selection.
 Logs, compiler identities and receipts remain in external evidence directories.
 This command runs no benchmarks and makes no inference-performance claim.
 #>
@@ -19,6 +20,7 @@ param(
     [string]$TargetDirectory,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [ValidateSet('All', 'Runtime', 'Broker')][string]$PackageGroup = 'All',
+    [ValidateNotNullOrEmpty()][string[]]$Package = @(),
     [ValidateSet('Polonius', 'NextSolver', 'All')][string]$ProbeCase = 'All',
     [switch]$FullTests
 )
@@ -43,6 +45,13 @@ if ($Mode -eq 'Compatibility') {
         throw 'Compatibility requires the pinned production nightly; stable is an isolated probe control.'
     }
 }
+if ($FullTests -and ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main')) {
+    throw 'Complete suites run only in GitHub Actions on main.'
+}
+if ($Mode -eq 'Probe' -and ($PackageGroup -ne 'All' -or $Package.Count)) {
+    throw 'PackageGroup and Package apply only to Compatibility.'
+}
+$selectedPackages = @(if ($Mode -eq 'Compatibility') { Get-BonsaiRustPackage -Group $PackageGroup -Name $Package })
 $evidence = Resolve-ExternalPath -Path $EvidenceDirectory
 if (Test-Path -LiteralPath $evidence) { throw 'Use a new evidence directory for each trial invocation.' }
 [void][IO.Directory]::CreateDirectory($evidence)
@@ -56,7 +65,7 @@ $receipt = [ordered]@{
     SchemaVersion = 1
     Mode = $Mode
     PackageGroup = $PackageGroup
-    Packages = @()
+    Packages = @($selectedPackages | ForEach-Object { $_.Manifest })
     ProbeCase = $ProbeCase
     FullTests = [bool]$FullTests
     Revision = $env:GITHUB_SHA
@@ -113,14 +122,8 @@ function Get-TrialCompilerIdentity {
 }
 
 try {
-    if ($FullTests -and ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main')) {
-        throw 'Complete suites run only in GitHub Actions on main.'
-    }
     if ($Mode -eq 'Probe' -and $ProbeCase -eq 'All' -and -not $FullTests) {
         throw 'The complete probe selection requires hosted -FullTests; select one ProbeCase locally.'
-    }
-    if ($Mode -eq 'Probe' -and $PackageGroup -ne 'All') {
-        throw 'PackageGroup applies only to Compatibility.'
     }
     foreach ($name in @('RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'RUSTDOCFLAGS', 'CARGO_ENCODED_RUSTDOCFLAGS',
         'RUSTC', 'RUSTDOC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER', 'CARGO_BUILD_RUSTFLAGS', 'CARGO_BUILD_TARGET')) {
@@ -143,11 +146,10 @@ try {
         # Keep path dependencies in one target lane rather than recompiling them
         # on one runner per package. Foundation and this trial share one registry
         # and phase runner, including Prism's native-linking feature exception.
-        $receipt.Packages = @(Get-BonsaiRustPackage -Group $PackageGroup | ForEach-Object { $_.Manifest })
         $checkEvidence = Join-Path $evidence 'packages'
         $receipt['PackageChecksReceipt'] = Join-Path $checkEvidence 'rust-checks.json'
         try {
-            $null = Invoke-BonsaiRustCheck -Group $PackageGroup -Toolchain $Toolchain -TargetDirectory $target `
+            $null = Invoke-BonsaiRustCheck -Group $PackageGroup -Package $Package -Toolchain $Toolchain -TargetDirectory $target `
                 -EvidenceDirectory $checkEvidence -CheckProfile Compatibility -FullTests:$FullTests
         } finally {
             if ([IO.File]::Exists($receipt.PackageChecksReceipt)) {

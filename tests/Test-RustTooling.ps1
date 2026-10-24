@@ -60,7 +60,32 @@ try {
         $rejected = $_.Exception.Message -ceq 'Compatibility requires the pinned production nightly; stable is an isolated probe control.'
     }
     if (-not $rejected) { throw 'Workspace compatibility accepted the stable probe compiler.' }
-    if ([IO.Directory]::Exists($scratch)) { throw 'A rejected suite selection created scratch or build outputs.' }
+    foreach ($selection in @(
+        @{ Arguments = @{ Mode = 'Compatibility'; PackageGroup = 'Runtime'; Package = @('bonsai-broker') }; Error = 'Unknown Rust package in group Runtime: bonsai-broker' }
+        @{ Arguments = @{ Mode = 'Compatibility'; PackageGroup = 'Broker'; Package = @('bonsai-missing') }; Error = 'Unknown Rust package in group Broker: bonsai-missing' }
+        @{ Arguments = @{ Mode = 'Probe'; ProbeCase = 'Polonius'; Package = @('bonsai-rust-trial') }; Error = 'PackageGroup and Package apply only to Compatibility.' }
+        @{ Arguments = @{ Mode = 'Probe'; ProbeCase = 'Polonius'; PackageGroup = 'Runtime' }; Error = 'PackageGroup and Package apply only to Compatibility.' }
+        @{ Arguments = @{ Mode = 'Compatibility'; PackageGroup = 'Runtime'; Package = @('bonsai-prism-runtime'); FullTests = $true }; Error = 'Complete suites run only in GitHub Actions on main.' }
+    )) {
+        $rejected = $false
+        try {
+            $arguments = $selection.Arguments
+            $null = & (Join-Path $PSScriptRoot 'Test-RustNightly.ps1') @arguments `
+                -TargetDirectory (Join-Path $scratch 'target') -EvidenceDirectory (Join-Path $scratch 'evidence')
+        } catch {
+            $rejected = $_.Exception.Message -ceq $selection.Error
+        }
+        if (-not $rejected) { throw 'Nightly package selection bypassed its group, probe or local-suite policy.' }
+    }
+    $rejected = $false
+    try {
+        $null = & (Join-Path $PSScriptRoot 'Test-RustNightly.ps1') -Mode Compatibility -Package @() `
+            -TargetDirectory (Join-Path $scratch 'target') -EvidenceDirectory (Join-Path $scratch 'evidence')
+    } catch {
+        $rejected = $_.FullyQualifiedErrorId -like 'ParameterArgumentValidationError*'
+    }
+    if (-not $rejected) { throw 'An empty explicit nightly package selection expanded to a complete group.' }
+    if ([IO.Directory]::Exists($scratch)) { throw 'A rejected suite or package selection created scratch or build outputs.' }
 } finally {
     $env:GITHUB_ACTIONS = $previousActions
 }
