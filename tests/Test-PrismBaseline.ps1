@@ -24,7 +24,7 @@ $catalog = [ordered]@{
 }
 $baseline = [ordered]@{
     SchemaVersion = 1; UpstreamCommit = $commit; Measure = 'upstream-source-files'; Total = 3
-    MinimumPassed = 1; RequiredPassedIds = @($ids[0])
+    MinimumPassed = 1; RequiredPassedIds = @($ids[0]); RequiredReferencePassedIds = @($ids[0], $ids[2])
 }
 $catalog | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $catalogPath -Encoding utf8
 $catalog = Import-BonsaiPrismCatalog -Path $catalogPath
@@ -91,6 +91,16 @@ switch ($Case) {
         $gate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath
         Assert ($gate.Passed -and $gate.Summary.Total -eq 3 -and $gate.Summary.Passed -eq 1 -and $gate.Summary.Unsupported -eq 2) 'Sparse adapters must retain unported entries as red.'
         Assert ($gate.Summary.GreenRatio -eq (1 / 3)) 'The denominator must include all upstream files.'
+        $reducedReference = New-TestResult -Ids @($ids[0], $ids[1]) -Statuses @('pass', 'pass')
+        $reducedReport = New-BonsaiPrismReport -Catalog $catalog -TargetResults $target -ReferenceResults $reducedReference
+        $reducedGate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $reducedReport -BaselinePath $baselinePath
+        Assert (-not $reducedGate.Passed -and $reducedGate.Summary.Passed -eq 1) 'Removing a C++ reference-only control must fail even when Rust coverage is unchanged.'
+        Assert (@($reducedGate.Issues | Where-Object { $_ -like 'Previously passing C++ reference regressed:*' }).Count -eq 1) 'Missing previous C++ green coverage must have a separate diagnostic.'
+        foreach ($status in @('fail', 'skip', 'unsupported')) {
+            $redReference = New-TestResult -Ids $ids -Statuses @('pass', 'pass', $status)
+            $redReport = New-BonsaiPrismReport -Catalog $catalog -TargetResults $target -ReferenceResults $redReference
+            Assert (-not (Test-BonsaiPrismBaseline -Catalog $catalog -Report $redReport -BaselinePath $baselinePath).Passed) "Previously passing C++ reference status $status bypassed the reference floor."
+        }
         $target = New-TestResult -Ids @($ids[0], $ids[1]) -Statuses @('fail', 'pass')
         $report = New-BonsaiPrismReport -Catalog $catalog -TargetResults $target -ReferenceResults $reference
         $gate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath
@@ -152,6 +162,16 @@ switch ($Case) {
         $baseline | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $baselinePath -Encoding utf8
         Assert-Failure { Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath } 'An altered denominator was accepted.'
         $baseline.Total = 3
+        $baseline.RequiredReferencePassedIds = @($ids[0], $ids[0])
+        $baseline | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $baselinePath -Encoding utf8
+        Assert-Failure { Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath } 'Duplicate baseline C++ reference green IDs were accepted.'
+        $baseline.RequiredReferencePassedIds = @('tests/test-unknown.cpp')
+        $baseline | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $baselinePath -Encoding utf8
+        Assert-Failure { Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath } 'Unknown baseline C++ reference green IDs were accepted.'
+        $baseline.RequiredReferencePassedIds = $ids[0]
+        $baseline | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $baselinePath -Encoding utf8
+        Assert-Failure { Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath } 'A scalar C++ reference baseline ID list was accepted.'
+        $baseline.RequiredReferencePassedIds = @($ids[0], $ids[2])
         $baseline.CatalogSha256 = '0' * 64
         $baseline | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $baselinePath -Encoding utf8
         Assert-Failure { Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath } 'Baseline policy for a different catalog was accepted.'

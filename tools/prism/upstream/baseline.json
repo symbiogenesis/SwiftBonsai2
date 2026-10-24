@@ -8,6 +8,10 @@
   "RequiredPassedIds": [
     "tests/test-pq2-row-shapes.cpp"
   ],
+  "RequiredReferencePassedIds": [
+    "tests/test-pq2-row-shapes.cpp",
+    "tests/test-ptq1_0-element-map.cpp"
+  ],
   "Provenance": {
     "Status": "focused-local-baseline-measured-hosted-confirmation-pending",
     "MeasuredOn": "2026-10-24",
@@ -22,6 +26,6 @@
       "tests/test-ptq1_0-element-map.cpp"
     ],
     "KnownRedReason": "The original random-byte PTQ1 element-map source passes its C++ control, while Rust rejects noncanonical blocks. Target rejection is retained as a failed source suite, rather than dropping cases or narrowing the original input domain.",
-    "Explanation": "Minimum 1/71 preserves each measured Rust green source. Unported, skipped and failed source suites remain in the denominator. Hosted CI independently rebuilds both C++ controls and repeats these paired assertions. Baseline policy is never automatically rewritten by CI."
+    "Explanation": "Minimum 1/71 preserves each measured Rust green source. The two independently measured C++ reference sources must remain passing even when the Rust source is red. Unported, skipped and failed source suites remain in the denominator. Hosted CI independently rebuilds both C++ controls and repeats these paired assertions. Baseline policy is never automatically rewritten by CI."
   }
 }

@@ -199,7 +199,7 @@ function New-BonsaiPrismReport {
 
 function Test-BonsaiPrismBaseline {
     <# .SYNOPSIS
-    Requires the recorded green IDs and the exact minimum rational green ratio.
+    Requires the recorded target/reference green IDs and minimum target ratio.
     .DESCRIPTION
     Baselines are checked-in policy and are never updated by this function.
     Malformed evidence throws; measured regressions return Passed=false and
@@ -233,14 +233,15 @@ function Test-BonsaiPrismBaseline {
     }
     if ($seen.Count -ne $catalogIndex.Count) { throw 'Full report is missing catalog cases.' }
     $baseline = Get-Content -LiteralPath $BaselinePath -Raw | ConvertFrom-Json -AsHashtable -DateKind String
-    Assert-PrismObject -Value $baseline -Required @('SchemaVersion', 'UpstreamCommit', 'CatalogSha256', 'Measure', 'Total', 'MinimumPassed', 'RequiredPassedIds') -Context 'Baseline'
+    Assert-PrismObject -Value $baseline -Required @('SchemaVersion', 'UpstreamCommit', 'CatalogSha256', 'Measure', 'Total', 'MinimumPassed', 'RequiredPassedIds', 'RequiredReferencePassedIds') -Context 'Baseline'
     Assert-PrismInteger -Value $baseline.SchemaVersion -Context 'Baseline.SchemaVersion' -Minimum 1
     Assert-PrismInteger -Value $baseline.Total -Context 'Baseline.Total' -Minimum 1
     Assert-PrismInteger -Value $baseline.MinimumPassed -Context 'Baseline.MinimumPassed'
     if ($baseline.SchemaVersion -ne 1 -or $baseline.UpstreamCommit -isnot [string] -or $baseline.UpstreamCommit -cne $Catalog.UpstreamCommit -or
         $baseline.CatalogSha256 -isnot [string] -or $baseline.CatalogSha256 -cne $catalogDigest -or
         $baseline.Measure -isnot [string] -or $baseline.Measure -cne $Catalog.Measure -or $baseline.Total -ne $catalogIndex.Count -or
-        $baseline.MinimumPassed -gt $baseline.Total -or $baseline.RequiredPassedIds -isnot [array]) {
+        $baseline.MinimumPassed -gt $baseline.Total -or $baseline.RequiredPassedIds -isnot [array] -or
+        $baseline.RequiredReferencePassedIds -isnot [array]) {
         throw 'Baseline does not match the catalog or has an invalid minimum.'
     }
     $required = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -248,11 +249,23 @@ function Test-BonsaiPrismBaseline {
         if ($id -isnot [string] -or -not $catalogIndex.ContainsKey($id) -or -not $required.Add($id)) { throw 'Baseline has an unknown or duplicate green ID.' }
     }
     if ($required.Count -ne $baseline.MinimumPassed) { throw 'Baseline minimum must record every measured green ID.' }
+    $requiredReferences = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($id in $baseline.RequiredReferencePassedIds) {
+        if ($id -isnot [string] -or -not $catalogIndex.ContainsKey($id) -or -not $requiredReferences.Add($id)) {
+            throw 'Baseline has an unknown or duplicate C++ reference green ID.'
+        }
+    }
     $summary = Get-PrismReportSummary -Cases $Report.Cases
     $issues = [Collections.Generic.List[string]]::new()
     foreach ($id in $required) {
         $current = @($Report.Cases | Where-Object { $_.Id -ceq $id })[0]
         if ($current.Status -cne 'pass') { $issues.Add("Previously green case regressed: $id ($($current.Status)).") }
+    }
+    foreach ($id in $requiredReferences) {
+        $current = @($Report.Cases | Where-Object { $_.Id -ceq $id })[0]
+        if ($current.ReferenceStatus -cne 'pass') {
+            $issues.Add("Previously passing C++ reference regressed: $id ($($current.ReferenceStatus)).")
+        }
     }
     if ([long]$summary.Passed * $baseline.Total -lt [long]$baseline.MinimumPassed * $summary.Total) {
         $issues.Add("Green ratio fell below $($baseline.MinimumPassed)/$($baseline.Total): $($summary.Passed)/$($summary.Total).")
