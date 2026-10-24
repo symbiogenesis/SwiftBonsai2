@@ -124,6 +124,18 @@ pub(super) fn size_of(runtime: &Interpreter<'_>, arguments: &[Expression]) -> Re
             let value = runtime.value(name)?;
             match value {
                 Value::Buffer(buffer) => buffer.borrow().bytes.len(),
+                Value::Number(_) => {
+                    let cell = runtime
+                        .cell(name)
+                        .ok_or_else(|| invalid("source sizeof variable declaration missing"))?;
+                    let kind = cell
+                        .borrow()
+                        .kind
+                        .replace("constexpr", "")
+                        .replace("const", "")
+                        .replace("static", "");
+                    Element::parse(&kind).map_err(invalid)?.bytes()
+                }
                 _ => {
                     return Err(invalid(
                         "source sizeof variable has no complete scalar-array type",
@@ -963,6 +975,39 @@ mod tests {
         ] {
             assert!(matches!(zero(kind), Value::Null));
         }
+        Ok(())
+    }
+    #[test]
+    fn named_source_scalar_sizeof_uses_declared_width() -> Result<()> {
+        let (program, _) = super::super::program::load().map_err(invalid)?;
+        let mut host = LanguageOnly;
+        let mut runtime = Interpreter::new(program, "test_gdn_replay_chain", &mut host)?;
+        let argument = [Expression::Id { name: "x".into() }];
+        for (kind, value, expected) in [
+            ("constint32_t", Number::I32(3), 4),
+            ("constint64_t", Number::I64(3), 8),
+            ("char", Number::I32(3), 1),
+        ] {
+            runtime.scopes[0].insert(
+                "x".into(),
+                super::super::value::variable(kind.into(), Value::Number(value)),
+            );
+            assert_eq!(
+                size_of(&runtime, &argument)?.number().map_err(invalid)?,
+                Number::U64(expected)
+            );
+        }
+        let array = Value::array(vec![Value::Number(Number::I32(3)); 2])
+            .coerce("std::array<int32_t,2>")
+            .map_err(invalid)?;
+        runtime.scopes[0].insert(
+            "x".into(),
+            super::super::value::variable("std::array<int32_t,2>".into(), array),
+        );
+        assert_eq!(
+            size_of(&runtime, &argument)?.number().map_err(invalid)?,
+            Number::U64(8)
+        );
         Ok(())
     }
 }
