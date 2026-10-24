@@ -85,8 +85,12 @@ Metadata inspection skips tensor payloads; census and export read them.
 `llama-completion`, a 16-token cap, 8K context, FP16 K/V, F32 recurrent/convolution
 state, no prompt-cache reuse and a ten-minute deadline. Swift uses batch
 128/microbatch 64. The embedded template's
-default thinking behavior is preserved; this is not a qualified thinking-disabled
-chat profile. Modern `llama-cli` starts a server and is not used here.
+thinking behavior is requested explicitly with `--reasoning on` and
+`--reasoning-effort xhigh`, alongside the publisher sampler. No extra system
+persona is injected. This is not a finished-answer quality check; see
+[inference defaults](inference-defaults.md) for the pinned completion renderer's
+template-argument limitation. Modern `llama-cli` starts a server and is not used
+here.
 
 | Profile | Service allowance | Required available RAM, including 4 GiB reserve |
 | --- | --- | --- |

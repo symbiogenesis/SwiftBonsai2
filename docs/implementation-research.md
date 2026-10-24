@@ -21,7 +21,10 @@ delivery work. Implementation chronology and individual check runs live in Git.
 
 Swift's completion check omits the system-only preamble that its template
 rejects. This is a Swift-specific compatibility repair; it does not replace the
-embedded template or qualify a thinking-disabled chat profile. The
+embedded template or qualify a thinking-disabled chat profile. CPU checks and
+development chat now request the verified templates' thinking-on/`xhigh`
+defaults explicitly. See [inference defaults](inference-defaults.md) for the
+sampler, prompt/harness decisions and benchmark limits. The
 [Swift assessment](swift-memory.md) owns the reproducible commands and budgets.
 
 ## Provisioning and file integrity

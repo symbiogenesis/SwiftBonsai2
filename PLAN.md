@@ -62,9 +62,13 @@ with every qualification result. Publisher hashes identify approved bytes;
 they do not establish parser isolation or source-to-binary provenance.
 
 Swift's reference sampler is temperature 1, top-p 0.95, top-k 20, min-p 0,
-repetition penalty 1 and presence penalty 0. Preserve the exact template's
-thinking behavior. A thinking-off or shorter-output creative profile needs
-separate quality qualification. See [development commands](docs/development-guide.md).
+repetition penalty 1 and presence/frequency penalties 0. CPU checks and the
+development server request thinking on and `xhigh` explicitly, preserving the
+verified templates' defaults. Keep FP16 K/V, native RoPE and exact token
+reservation. No extra system persona or mandatory revision loop is injected.
+A thinking-off or shorter-output creative profile needs separate quality
+qualification. See [inference defaults and evidence](docs/inference-defaults.md)
+and [development commands](docs/development-guide.md).
 
 ## 4. Backend delivery
 

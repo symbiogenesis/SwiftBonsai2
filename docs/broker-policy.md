@@ -55,6 +55,11 @@ The entire public JSON schema is:
 are rejected at every schema level. An optional first system message may precede
 alternating user/assistant turns ending on user. Content must be a string. Ending
 on user avoids the pinned runtime's automatic assistant-prefill behavior.
+Assistant messages may also contain a string `reasoning_content` to replay
+previous reasoning returned by the backend. Present null/non-string values and
+reasoning fields on user/system messages are rejected. Omitted reasoning stays
+omitted; supplied reasoning is preserved and counted within the same body and
+context bounds.
 
 Model selection, token-cap aliases, tools, media, template/thinking/sampling
 controls, LoRA, slots and timing overrides are unsupported. URLs in strings stay
@@ -63,8 +68,14 @@ plain text; the broker fetches no remote content.
 Input is rebuilt as immutable canonical backend JSON with one completion,
 cache reuse disabled, EOS honored and the reference sampler: temperature 1,
 top-p .95, top-k 20, min-p 0, presence/frequency penalties 0, repetition penalty 1.
-The embedded template's default thinking behavior is preserved. The completion
-cap includes reasoning and does not promise that many visible prose tokens.
+The canonical body explicitly requests `enable_thinking: true` and
+`reasoning_effort: "xhigh"` and `preserve_thinking: true` through
+`chat_template_kwargs`, matching the pinned template's defaults. Counting and
+generation receive those same settings. The
+launcher also fixes thinking on, effort `xhigh` and no separate reasoning cutoff
+(`--reasoning-budget -1`); the total completion cap still includes reasoning and
+does not promise that many visible prose tokens. See
+[inference defaults and evidence](inference-defaults.md).
 Public headers, credentials and original JSON are never forwarded.
 
 `check_head -> prepare -> admit` retains a pending request until a trusted counter

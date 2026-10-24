@@ -106,6 +106,7 @@ evaluation. See [benchmark context and current limits](docs/performance-expectat
 | [Model and memory research](docs/swift-memory.md) | The current Swift assessment and experiments |
 | [Inference algorithms](docs/inference-algorithms.md) | LUT/prefill/cache opportunities, mathematical limits, and experimental boundaries |
 | [Implementation decisions](docs/implementation-research.md) | Design rationale and evidence limits |
+| [Inference defaults](docs/inference-defaults.md) | Sampling, thinking, prompt/harness and cache choices backed by published evidence |
 
 ---
 
