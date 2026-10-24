@@ -118,7 +118,7 @@
       ],
       "AssertionsToPort": "Port full 535KB operation and geometry matrix with per-op reference/error tolerances; gradient mode; explicit device unsupported reporting; keep perf mode CI-only.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-backend-sampler.cpp",

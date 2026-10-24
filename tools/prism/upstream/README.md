@@ -6,7 +6,7 @@ targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Both results are retained for each source; every
 upstream reference failure fails the final gate.
 
-The current ports preserve sixty-four source contracts from
+The current ports preserve sixty-five source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
 - Backend sampling retains all19 original scenarios, complete penalties/filter

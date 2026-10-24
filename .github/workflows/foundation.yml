@@ -358,7 +358,22 @@ jobs:
           foreach ($case in @('Catalog', 'Ratchet', 'Evidence')) {
             & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBaseline.ps1') -Case $case
           }
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -SourceArchive $archive -EvidenceDirectory $evidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -NativeBuildDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamNative') -Generator 'Visual Studio 18 2026' -NativePlatform ARM64 -Toolchain nightly-2026-10-22-aarch64-pc-windows-msvc -Parallel 4 -CaseParallel 2 | ConvertTo-Json -Depth 12
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -SourceArchive $archive -EvidenceDirectory $evidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -NativeBuildDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamNative') -Generator 'Visual Studio 18 2026' -NativePlatform ARM64 -Toolchain nightly-2026-10-22-aarch64-pc-windows-msvc -Parallel 4 -CaseParallel 2 -DeferBackend | ConvertTo-Json -Depth 12
+      - name: Publish revision-bound native backend shard tools
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: prism-backend-tools
+          path: ${{ env.PRISM_UPSTREAM_EVIDENCE }}/backend-tools
+          if-no-files-found: error
+      - name: Publish ordinary source results for the complete gate
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: prism-ordinary-results
+          path: |
+            ${{ env.PRISM_UPSTREAM_EVIDENCE }}/cpp-results.json
+            ${{ env.PRISM_UPSTREAM_EVIDENCE }}/rust-results.json
+            ${{ env.PRISM_UPSTREAM_EVIDENCE }}/receipt.json
+          if-no-files-found: error
       - name: Run explicitly requested safe Rust benchmark workloads
         if: github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks
         shell: pwsh
@@ -369,7 +384,7 @@ jobs:
           Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Native.psm1')
           $receipt = Get-Content -LiteralPath (Join-Path $env:PRISM_UPSTREAM_EVIDENCE 'receipt.json') -Raw | ConvertFrom-Json
           $bridge = @($receipt.NativeBuilds | Where-Object { $_.Family -ceq 'common' })
-          if ($receipt.Status -cne 'complete' -or $bridge.Count -ne 1) { throw 'Benchmark requires the settled correctness build.' }
+          if ($receipt.Status -cnotin @('complete','awaiting-backend') -or $bridge.Count -ne 1) { throw 'Benchmark requires the settled reference build.' }
           foreach ($benchmark in @('peg-deserialize', 'sampling', 'chat-peg')) {
             foreach ($target in @('cpp', 'rust')) {
               $output = Join-Path $env:PRISM_UPSTREAM_EVIDENCE "$benchmark-$target-benchmark.json"
@@ -416,6 +431,156 @@ jobs:
           if-no-files-found: error
           # Keep the full numeric request/response evidence; use a faster zlib
           # level so packaging it does not extend the correctness critical path.
+          compression-level: 1
+  prism-backend-plan:
+    if: github.ref == 'refs/heads/main'
+    needs: prism-upstream
+    runs-on: windows-11-arm
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: prism-backend-tools
+          path: ${{ runner.temp }}/prism-backend-tools
+      - name: Plan every assigned source geometry on both targets
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          PARTITION: ${{ matrix.partition }}
+          RUN_BENCHMARKS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks }}
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP ('prism-backend-plan-' + $env:PARTITION)
+          "BACKEND_STAGE=$evidence" >> $env:GITHUB_ENV
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Plan -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory $evidence -Index ([int]$env:PARTITION) -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') | Out-Null
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && env.BACKEND_STAGE != ''
+        with:
+          name: prism-backend-plan-${{ matrix.partition }}
+          path: |
+            ${{ env.BACKEND_STAGE }}/*.json
+            ${{ env.BACKEND_STAGE }}/**/phase-record.json
+            ${{ env.BACKEND_STAGE }}/**/transport-failure.json
+            ${{ env.BACKEND_STAGE }}/**/*.log
+          if-no-files-found: error
+          compression-level: 1
+  prism-backend-join-plan:
+    if: github.ref == 'refs/heads/main'
+    needs: prism-backend-plan
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: prism-backend-tools
+          path: ${{ runner.temp }}/prism-backend-tools
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: prism-backend-plan-*
+          path: ${{ runner.temp }}/prism-backend-plans
+      - name: Prove complete plans and source-order random offsets
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          RUN_BENCHMARKS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks }}
+        run: |
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase JoinPlan -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans') -InputDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-plans') -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') | Out-Null
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: prism-backend-complete-plans
+          path: ${{ runner.temp }}/prism-backend-complete-plans
+          if-no-files-found: error
+          compression-level: 1
+  prism-backend-run:
+    if: github.ref == 'refs/heads/main'
+    needs: prism-backend-join-plan
+    runs-on: windows-11-arm
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: prism-backend-tools
+          path: ${{ runner.temp }}/prism-backend-tools
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: prism-backend-complete-plans
+          path: ${{ runner.temp }}/prism-backend-complete-plans
+      - name: Execute every assigned workload with its proven plan
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          PARTITION: ${{ matrix.partition }}
+          RUN_BENCHMARKS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks }}
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP ('prism-backend-run-' + $env:PARTITION)
+          "BACKEND_STAGE=$evidence" >> $env:GITHUB_ENV
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Run -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory $evidence -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -Index ([int]$env:PARTITION) -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') | Out-Null
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && env.BACKEND_STAGE != ''
+        with:
+          name: prism-backend-run-${{ matrix.partition }}
+          path: |
+            ${{ env.BACKEND_STAGE }}/*.json
+            ${{ env.BACKEND_STAGE }}/**/phase-record.json
+            ${{ env.BACKEND_STAGE }}/**/transport-failure.json
+            ${{ env.BACKEND_STAGE }}/**/*.log
+          if-no-files-found: error
+          compression-level: 1
+  prism-upstream-gate:
+    if: github.ref == 'refs/heads/main'
+    needs: [prism-upstream, prism-backend-run]
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: prism-backend-tools
+          path: ${{ runner.temp }}/prism-backend-tools
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: prism-backend-complete-plans
+          path: ${{ runner.temp }}/prism-backend-complete-plans
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: prism-ordinary-results
+          path: ${{ runner.temp }}/prism-ordinary-results
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: prism-backend-run-*
+          path: ${{ runner.temp }}/prism-backend-runs
+      - name: Require every source and every backend correctness geometry
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          RUN_BENCHMARKS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks }}
+        run: |
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Gate -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-upstream-gate') -InputDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-runs') -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -OrdinaryEvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-ordinary-results') -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') | ConvertTo-Json -Depth 12
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: prism-complete-source-gate
+          path: ${{ runner.temp }}/prism-upstream-gate
+          if-no-files-found: error
           compression-level: 1
   ternary:
     if: github.ref == 'refs/heads/main'
@@ -632,7 +797,7 @@ jobs:
   # Preserve the required check name and reject failure or skipping in any lane.
   foundation:
     if: always() && github.ref == 'refs/heads/main'
-    needs: [native-runtime, runtime-scalar-fallback, prism, prism-upstream, ternary, broker, standards, foundation-tests, lifecycle, gguf, runtime-policy]
+    needs: [native-runtime, runtime-scalar-fallback, prism, prism-upstream, prism-upstream-gate, ternary, broker, standards, foundation-tests, lifecycle, gguf, runtime-policy]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 2
     steps:

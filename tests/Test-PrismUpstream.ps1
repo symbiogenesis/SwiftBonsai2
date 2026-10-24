@@ -14,7 +14,7 @@ param(
     [Parameter(Mandatory)][string]$SourceArchive,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [Parameter(Mandatory)][string]$TargetDirectory,
-    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'LlGuidance', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'Barrier', 'BackendSampler', 'ExportGraph', 'LoraConversion', 'TokenizersRepo', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')][string]$Case = 'All',
+    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'LlGuidance', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'Barrier', 'BackendSampler', 'BackendOps', 'ExportGraph', 'LoraConversion', 'TokenizersRepo', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')][string]$Case = 'All',
     [string]$CMakePath,
     [ValidateSet('Ninja', 'Visual Studio 18 2026', 'Visual Studio 17 2022')][string]$Generator = 'Ninja',
     [ValidateSet('ARM64', 'x64')][string]$NativePlatform = 'ARM64',
@@ -22,7 +22,8 @@ param(
     [string]$CompilerLauncher,
     [ValidateRange(1, 12)][int]$Parallel = 2,
     [ValidateRange(1, 12)][int]$CaseParallel = 2,
-    [string]$NativeBuildDirectory
+    [string]$NativeBuildDirectory,
+    [switch]$DeferBackend
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -30,6 +31,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 if ($Case -eq 'All' -and ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main')) {
     throw 'The complete Prism catalog runs only in GitHub Actions on main; select one named local adapter.'
 }
+if ($DeferBackend -and $Case -cne 'All') { throw 'Only the complete CI catalog can defer its backend source to checked shards.' }
 $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.Native.psm1')
@@ -159,6 +161,7 @@ $adapters = @{
     Allocator = @{ Name = 'test-alloc'; Family = 'common' }
     Barrier = @{ Name = 'test-barrier'; Family = 'common' }
     BackendSampler = @{ Name = 'test-backend-sampler'; Family = 'common' }
+    BackendOps = @{ Name = 'test-backend-ops'; Family = 'common' }
     ExportGraph = @{ Name = 'test-export-graph-ops'; Family = 'common' }
     LoraConversion = @{ Name = 'test-lora-conversion-inference'; Id = 'tests/test-lora-conversion-inference.sh'; Family = 'common' }
     TokenizersRepo = @{ Name = 'test-tokenizers-repo'; Id = 'tests/test-tokenizers-repo.sh'; Family = 'common' }
@@ -195,7 +198,8 @@ $adapters = @{
     StateRestoreFragmented = @{ Name = 'test-state-restore-fragmented'; Family = 'common' }
     ThreadSafety = @{ Name = 'test-thread-safety'; Family = 'common' }
 }
-$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'LlGuidance', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'Barrier', 'BackendSampler', 'ExportGraph', 'LoraConversion', 'TokenizersRepo', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety') } else { @($Case) }
+$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'LlGuidance', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'Barrier', 'BackendSampler', 'BackendOps', 'ExportGraph', 'LoraConversion', 'TokenizersRepo', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety') } else { @($Case) }
+if ($DeferBackend) { $selected = @($selected | Where-Object { $_ -cne 'BackendOps' }) }
 $modelSelections = @('ExportGraph', 'BackendSampler', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')
 $assetDirectory = $null
 if (@($selected | Where-Object { $_ -in $modelSelections }).Count) {
@@ -327,6 +331,12 @@ if ($IsWindows -and $NativePlatform -eq 'ARM64') { Assert-Arm64PE -Path $harness
 $receipt.HarnessExecutable = $harness
 $receipt.HarnessSha256 = (Get-FileHash -LiteralPath $harness -Algorithm SHA256).Hash.ToLowerInvariant()
 $receipt.HarnessVerifiedPeMachine = if ($IsWindows -and $NativePlatform -eq 'ARM64') { '0xAA64' } else { $null }
+if ($DeferBackend) {
+    Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackendBundle.psm1')
+    $receipt.BackendBundleDirectory = Join-Path $evidence 'backend-tools'
+    $receipt.BackendBundle = New-BonsaiPrismBackendBundle -Receipt $receipt -Directory $receipt.BackendBundleDirectory
+    [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
+}
 $caseWork = [Collections.Generic.List[object]]::new()
 # Rust owns each selected test's inputs, reference calculations and assertions.
 # The native bridge dispatches production engine calls without importing tests.
@@ -343,7 +353,7 @@ foreach ($selection in $selected) {
         if ($engine -eq 'cpp' -and $adapter.Family -ne 'independent') {
             $arguments += @($bridgeFamilies[$adapter.Family].Option, $bridges[$adapter.Family])
         }
-        $timeout = if ($selection -eq 'TokenizersRepo') { 900 } elseif ($selection -eq 'LoraConversion') { 1800 } elseif ($selection -eq 'ExportGraph') { 600 } elseif ($selection -eq 'DsparkForward') { 1800 } elseif ($selection -eq 'DsparkRealEval') { 600 } elseif ($selection -eq 'LlGuidance') { 1800 } elseif ($selection -eq 'Barrier') { 360 } elseif ($selection -eq 'Architectures') { 1800 } elseif ($selection -eq 'RecurrentRollback') { 600 } elseif ($selection -in @('KvMeanCenter','Optimizer')) { 600 } elseif ($selection -eq 'Chat') { 1200 } elseif ($selection -eq 'ModelResolution') { 360 } elseif ($selection -eq 'DoubleFloat') { 900 } elseif ($selection -eq 'TokenizerBpe') { 2100 } elseif ($selection -eq 'TokenizerSpm') { 600 } elseif ($selection -in $modelSelections) { 360 } elseif ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')) { 300 } else { 120 }
+        $timeout = if ($selection -eq 'BackendOps') { 18000 } elseif ($selection -eq 'TokenizersRepo') { 900 } elseif ($selection -eq 'LoraConversion') { 1800 } elseif ($selection -eq 'ExportGraph') { 600 } elseif ($selection -eq 'DsparkForward') { 1800 } elseif ($selection -eq 'DsparkRealEval') { 600 } elseif ($selection -eq 'LlGuidance') { 1800 } elseif ($selection -eq 'Barrier') { 360 } elseif ($selection -eq 'Architectures') { 1800 } elseif ($selection -eq 'RecurrentRollback') { 600 } elseif ($selection -in @('KvMeanCenter','Optimizer')) { 600 } elseif ($selection -eq 'Chat') { 1200 } elseif ($selection -eq 'ModelResolution') { 360 } elseif ($selection -eq 'DoubleFloat') { 900 } elseif ($selection -eq 'TokenizerBpe') { 2100 } elseif ($selection -eq 'TokenizerSpm') { 600 } elseif ($selection -in $modelSelections) { 360 } elseif ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')) { 300 } else { 120 }
         $commands.Add([pscustomobject]@{
             Target = $engine; Arguments = $arguments; OutputPath = $output
             LogPath = Join-Path $evidence "$caseName-$engine.log"
@@ -359,7 +369,10 @@ $reference = @{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = @($com
 $rust = @{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = @($completed.Rust) }
 [IO.File]::WriteAllText((Join-Path $evidence 'cpp-results.json'), ($reference | ConvertTo-Json -Depth 10))
 [IO.File]::WriteAllText((Join-Path $evidence 'rust-results.json'), ($rust | ConvertTo-Json -Depth 10))
-if ($Case -eq 'All') {
+if ($DeferBackend) {
+    $receipt.DeferredSource = 'tests/test-backend-ops.cpp'
+    $receipt.Validation = 'Ordinary results are retained; the complete source gate runs after every backend partition is combined.'
+} elseif ($Case -eq 'All') {
     $report = New-BonsaiPrismReport -Catalog $catalog -TargetResults $rust -ReferenceResults $reference
     [IO.File]::WriteAllText((Join-Path $evidence 'report.json'), ($report | ConvertTo-Json -Depth 12))
     $gate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath (Join-Path $upstream 'baseline.json')
@@ -379,6 +392,6 @@ if ($Case -eq 'All') {
         throw 'The focused C++ reference contract failed; both target result files are retained.'
     }
 }
-$receipt.Status = 'complete'
+$receipt.Status = if ($DeferBackend) { 'awaiting-backend' } else { 'complete' }
 [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
 return $receipt

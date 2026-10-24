@@ -42,9 +42,17 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Sixty-four source contracts currently have safe Rust adapters in
+Sixty-five source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-backend-ops.cpp`: all 112 active CPU classes and 22,817 ordered
+  geometries in each of evaluation, gradient and support modes. Rust interprets
+  the complete pinned source program, builds inputs and computes every reference
+  and metric. Sixteen hosted partitions require complete plans and source-order
+  random offsets before execution. A final gate rejects missing or duplicate
+  results. The 1,530 original performance workloads remain a separate requested
+  CI measurement. CPU selection is explicit; source random-device seeds become
+  logged reproducible Rust seeds.
 - `test-tokenizers-repo.sh`: all eleven publisher vocabulary/input/output triples,
   with every corpus attempted even after a failure. The existing Rust corpus
   predicates are shared with `test-tokenizer-0.cpp`; immutable provisioning
