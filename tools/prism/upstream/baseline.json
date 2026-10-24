@@ -1,7 +1,7 @@
 {
   "SchemaVersion": 1,
   "UpstreamCommit": "b87ca7225456b06b0975b8239c66b5aecf07e37c",
-  "CatalogSha256": "94abed6565496ce0a0f2f721e340f32ac93ee9a800554b916a7f5b89aaf118ff",
+  "CatalogSha256": "bd56bc1f2b509095361a34f3f8364399903cff4a83f535cabc57f826d53c1753",
   "Measure": "upstream-source-files",
   "Total": 71,
   "MinimumPassed": 1,
@@ -59,6 +59,23 @@
       "Pq2FixtureSha256": "279cac324e1382b93650dcfe3b4e2a1a80c346e7c481ba8ef966f47f6f7b1621",
       "Ptq1FixtureSha256": "db47bed002bb2ac699dbe8cc324ba4607cbf4cc12982081f1059b0cce6980036"
     },
-    "SafeRustMigration": "Eight source contracts have Rust-owned assertions: PQ2 shapes, PTQ1 mapping, Unicode, MTP bounds, Jinja default groups, MTMD helpers, grammar parser and reasoning budget. MinimumPassed and every RequiredPassedId/RequiredReferencePassedId are preserved. Native acceptance targets Windows ARM64; Apple wired-memory is excluded and never counted as passed."
+    "SafeRustMigration": "Twenty-five source contracts have Rust-owned assertions. MinimumPassed and every RequiredPassedId/RequiredReferencePassedId are preserved. Native acceptance targets Windows ARM64; Apple wired-memory is excluded and never counted as passed. Benchmarks have separate CI-only workload reports outside the correctness denominator.",
+    "WindowsArm64": {
+      "ProjectRevision": "84ad97d5687f50e3bb86c257011045b17f4045c1",
+      "RunUrl": "https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40116792959",
+      "Verdict": "Foundation passed; all eight ported upstream contracts and 12 original controls passed",
+      "Platform": "Microsoft Windows 10.0.26200",
+      "Architecture": "Arm64",
+      "NativeToolset": "ClangCL",
+      "VerifiedPeMachine": "0xAA64",
+      "RustPassed": 1,
+      "RustFailed": 7,
+      "RustUnsupported": 63,
+      "TotalSources": 71,
+      "CppPassed": 20,
+      "CppUnsupported": 51,
+      "ReportSha256": "580cdad50f3085b0b25f0aaebe5574ad7decd886aadc3e8456d65ca8eac56ac4",
+      "ReceiptSha256": "2cecc0164fa3d9e42a5f594d588c1a6a92f98446d1a3cca0c3568556f193d6ff"
+    }
   }
 }

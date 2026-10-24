@@ -106,12 +106,19 @@ impl Engine {
             .as_ref()
             .ok_or_else(|| invalid("native common bridge path is missing"))?;
         let request = serde_json::to_vec(request)?;
-        if request.len() > 1024 * 1024 {
+        if request.len() > 16 * 1024 * 1024 {
             return Err(invalid("common bridge request exceeds size bound"));
         }
         Ok(Some(serde_json::from_slice(
             &self.exchange(bridge, name, &request, "json")?,
         )?))
+    }
+
+    pub(super) fn execute_codec(&self, name: &str, request: &Value) -> Result<Option<Value>> {
+        match self.target {
+            Target::Cpp => self.execute_common(name, request),
+            Target::Rust => super::engine_codec::execute(request),
+        }
     }
 
     fn exchange(

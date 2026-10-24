@@ -9,18 +9,36 @@
     reason = "Sibling modules share adapters explicitly; unreachable_pub rejects unrestricted pub."
 )]
 
+#[path = "upstream_prism/batch_allocator.rs"]
+mod batch_allocator;
+#[path = "upstream_prism/codec_assertions.rs"]
+mod codec_assertions;
 #[path = "upstream_prism/common.rs"]
 mod common;
 #[path = "upstream_prism/engine.rs"]
 mod engine;
+#[path = "upstream_prism/engine_codec.rs"]
+mod engine_codec;
 #[path = "upstream_prism/fixture.rs"]
 mod fixture;
+#[path = "upstream_prism/grammar_integration.rs"]
+mod grammar_integration;
 #[path = "upstream_prism/grammar_parser.rs"]
 mod grammar_parser;
 #[path = "upstream_prism/jinja.rs"]
 mod jinja;
+#[path = "upstream_prism/llama_grammar.rs"]
+mod llama_grammar;
+#[path = "upstream_prism/logging.rs"]
+mod logging;
+#[path = "upstream_prism/moe_reduce.rs"]
+mod moe_reduce;
 #[path = "upstream_prism/mtmd.rs"]
 mod mtmd;
+#[path = "upstream_prism/numerics.rs"]
+mod numerics;
+#[path = "upstream_prism/peg.rs"]
+mod peg;
 #[path = "upstream_prism/pq2.rs"]
 mod pq2;
 #[path = "upstream_prism/ptq1.rs"]
@@ -41,14 +59,203 @@ const PQ2_ID: &str = "tests/test-pq2-row-shapes.cpp";
 const PTQ1_ID: &str = "tests/test-ptq1_0-element-map.cpp";
 const UNICODE_ID: &str = "tests/test-unicode.cpp";
 const MTP_ID: &str = "tests/test-mtp-catchup-batch.cpp";
-const JINJA_ID: &str = "tests/test-jinja.cpp";
 const MTMD_ID: &str = "tests/test-mtmd-impl.cpp";
-const GRAMMAR_PARSER_ID: &str = "tests/test-grammar-parser.cpp";
-const REASONING_BUDGET_ID: &str = "tests/test-reasoning-budget.cpp";
+#[derive(Clone, Copy, PartialEq)]
+enum Bridge {
+    Ggml,
+    Common,
+}
 
+struct Case {
+    selector: &'static str,
+    id: &'static str,
+    bridge: Bridge,
+    run: fn(&Engine) -> Result<Value>,
+}
+
+const fn register(
+    selector: &'static str,
+    id: &'static str,
+    bridge: Bridge,
+    run: fn(&Engine) -> Result<Value>,
+) -> Case {
+    Case {
+        selector,
+        id,
+        bridge,
+        run,
+    }
+}
+
+const CASES: &[Case] = &[
+    register(
+        "peg-basic",
+        "tests/peg-parser/test-basic.cpp",
+        Bridge::Common,
+        peg::run_basic,
+    ),
+    register(
+        "peg-gbnf",
+        "tests/peg-parser/test-gbnf-generation.cpp",
+        Bridge::Common,
+        peg::run_gbnf,
+    ),
+    register(
+        "peg-json",
+        "tests/peg-parser/test-json-parser.cpp",
+        Bridge::Common,
+        peg::run_json,
+    ),
+    register(
+        "peg-serialization",
+        "tests/peg-parser/test-json-serialization.cpp",
+        Bridge::Common,
+        peg::run_serialization,
+    ),
+    register(
+        "peg-python-dict",
+        "tests/peg-parser/test-python-dict-parser.cpp",
+        Bridge::Common,
+        peg::run_python_dict,
+    ),
+    register(
+        "peg-unicode",
+        "tests/peg-parser/test-unicode.cpp",
+        Bridge::Common,
+        peg::run_unicode,
+    ),
+    register(
+        "test-peg-parser",
+        "tests/test-peg-parser.cpp",
+        Bridge::Common,
+        peg::run_all,
+    ),
+    register(
+        "test-batch-alloc",
+        "tests/test-batch-alloc.cpp",
+        Bridge::Common,
+        batch_allocator::run,
+    ),
+    register(
+        "test-pq2-row-shapes",
+        "tests/test-pq2-row-shapes.cpp",
+        Bridge::Ggml,
+        pq2::run,
+    ),
+    register(
+        "test-ptq1_0-element-map",
+        "tests/test-ptq1_0-element-map.cpp",
+        Bridge::Ggml,
+        ptq1::run,
+    ),
+    register(
+        "test-unicode",
+        "tests/test-unicode.cpp",
+        Bridge::Common,
+        common::run_unicode,
+    ),
+    register(
+        "test-mtp-catchup-batch",
+        "tests/test-mtp-catchup-batch.cpp",
+        Bridge::Common,
+        common::run_mtp,
+    ),
+    register(
+        "test-jinja",
+        "tests/test-jinja.cpp",
+        Bridge::Common,
+        jinja::run,
+    ),
+    register(
+        "test-mtmd-impl",
+        "tests/test-mtmd-impl.cpp",
+        Bridge::Common,
+        mtmd::run,
+    ),
+    register(
+        "test-grammar-parser",
+        "tests/test-grammar-parser.cpp",
+        Bridge::Common,
+        grammar_parser::run,
+    ),
+    register(
+        "test-reasoning-budget",
+        "tests/test-reasoning-budget.cpp",
+        Bridge::Common,
+        reasoning_budget::run,
+    ),
+    register(
+        "test-col2im-1d",
+        "tests/test-col2im-1d.cpp",
+        Bridge::Common,
+        numerics::run_col2im,
+    ),
+    register(
+        "test-dfly-fusion",
+        "tests/test-dfly-fusion.cpp",
+        Bridge::Common,
+        numerics::run_dfly,
+    ),
+    register(
+        "test-rope",
+        "tests/test-rope.cpp",
+        Bridge::Common,
+        numerics::run_rope,
+    ),
+    register(
+        "test-llama-grammar",
+        "tests/test-llama-grammar.cpp",
+        Bridge::Common,
+        llama_grammar::run,
+    ),
+    register(
+        "test-grammar-integration",
+        "tests/test-grammar-integration.cpp",
+        Bridge::Common,
+        grammar_integration::run,
+    ),
+    register(
+        "test-quantize-fns",
+        "tests/test-quantize-fns.cpp",
+        Bridge::Common,
+        codec_assertions::run_quantize,
+    ),
+    register(
+        "test-ptq1_0-cuda-dot",
+        "tests/test-ptq1_0-cuda-dot.cpp",
+        Bridge::Common,
+        codec_assertions::run_ptq_cuda,
+    ),
+    register(
+        "test-log",
+        "tests/test-log.cpp",
+        Bridge::Common,
+        logging::run,
+    ),
+    register(
+        "test-moe-weighted-reduce",
+        "tests/test-moe-weighted-reduce.cpp",
+        Bridge::Common,
+        moe_reduce::run,
+    ),
+];
+
+const BENCHMARKS: &[Case] = &[register(
+    "peg-deserialize",
+    "tests/peg-parser/test-json-serialization.cpp#deserialize",
+    Bridge::Common,
+    peg::benchmark_deserialization,
+)];
+
+fn selected(case: Option<&'static Case>) -> impl Iterator<Item = &'static Case> {
+    CASES
+        .iter()
+        .filter(move |candidate| case.is_none_or(|case| candidate.id == case.id))
+}
 struct Options {
     target: Target,
-    case: Option<String>,
+    case: Option<&'static Case>,
+    benchmark: Option<&'static Case>,
     bridge: Option<PathBuf>,
     common_bridge: Option<PathBuf>,
     evidence_directory: Option<PathBuf>,
@@ -70,6 +277,7 @@ fn absolute_path(value: std::ffi::OsString, option: &str) -> Result<PathBuf> {
 fn options() -> Result<Options> {
     let mut target = None;
     let mut case = None;
+    let mut benchmark = None;
     let mut bridge = None;
     let mut common_bridge = None;
     let mut evidence_directory = None;
@@ -88,19 +296,24 @@ fn options() -> Result<Options> {
                 });
             }
             Some("--case") if case.is_none() => {
-                case = Some(match value.to_str() {
-                    Some("test-pq2-row-shapes" | PQ2_ID) => PQ2_ID.to_owned(),
-                    Some("test-ptq1_0-element-map" | PTQ1_ID) => PTQ1_ID.to_owned(),
-                    Some("test-unicode" | UNICODE_ID) => UNICODE_ID.to_owned(),
-                    Some("test-mtp-catchup-batch" | MTP_ID) => MTP_ID.to_owned(),
-                    Some("test-jinja" | JINJA_ID) => JINJA_ID.to_owned(),
-                    Some("test-mtmd-impl" | MTMD_ID) => MTMD_ID.to_owned(),
-                    Some("test-grammar-parser" | GRAMMAR_PARSER_ID) => GRAMMAR_PARSER_ID.to_owned(),
-                    Some("test-reasoning-budget" | REASONING_BUDGET_ID) => {
-                        REASONING_BUDGET_ID.to_owned()
-                    }
-                    _ => return Err(invalid("unknown upstream test case")),
-                });
+                case = Some(
+                    CASES
+                        .iter()
+                        .find(|case| {
+                            value
+                                .to_str()
+                                .is_some_and(|value| value == case.selector || value == case.id)
+                        })
+                        .ok_or_else(|| invalid("unknown upstream test case"))?,
+                );
+            }
+            Some("--benchmark") if benchmark.is_none() => {
+                benchmark = Some(
+                    BENCHMARKS
+                        .iter()
+                        .find(|case| value.to_str() == Some(case.selector))
+                        .ok_or_else(|| invalid("unknown upstream benchmark"))?,
+                );
             }
             Some("--bridge") if bridge.is_none() => {
                 bridge = Some(absolute_path(value, "--bridge")?);
@@ -118,23 +331,27 @@ fn options() -> Result<Options> {
         }
     }
     let target = target.ok_or_else(|| invalid("--target is required"))?;
+    if benchmark.is_some()
+        && (case.is_some()
+            || env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
+            || env::var("GITHUB_REF").as_deref() != Ok("refs/heads/main"))
+    {
+        return Err(invalid(
+            "Select either --case or a CI-only --benchmark on main",
+        ));
+    }
     if matches!(target, Target::Cpp) {
         if evidence_directory.is_none() {
             return Err(invalid("--target cpp requires --evidence-directory"));
         }
-        if case
-            .as_deref()
-            .is_none_or(|case| matches!(case, PQ2_ID | PTQ1_ID))
+        if benchmark.is_none()
+            && selected(case).any(|case| case.bridge == Bridge::Ggml)
             && bridge.is_none()
         {
             return Err(invalid("selected C++ cases require --bridge"));
         }
-        if case.as_deref().is_none_or(|case| {
-            matches!(
-                case,
-                UNICODE_ID | MTP_ID | JINJA_ID | MTMD_ID | GRAMMAR_PARSER_ID | REASONING_BUDGET_ID
-            )
-        }) && common_bridge.is_none()
+        if (benchmark.is_some() || selected(case).any(|case| case.bridge == Bridge::Common))
+            && common_bridge.is_none()
         {
             return Err(invalid("selected C++ cases require --common-bridge"));
         }
@@ -142,6 +359,7 @@ fn options() -> Result<Options> {
     Ok(Options {
         target,
         case,
+        benchmark,
         bridge,
         common_bridge,
         evidence_directory,
@@ -161,48 +379,19 @@ fn main() -> Result<()> {
         options.common_bridge,
         options.evidence_directory,
     )?;
-    let mut cases = Vec::new();
-    if options.case.as_deref().is_none_or(|case| case == PQ2_ID) {
-        cases.push(pq2::run(&engine)?);
-    }
-    if options.case.as_deref().is_none_or(|case| case == PTQ1_ID) {
-        cases.push(ptq1::run(&engine)?);
-    }
-    if options
-        .case
-        .as_deref()
-        .is_none_or(|case| case == UNICODE_ID)
-    {
-        cases.push(common::run_unicode(&engine)?);
-    }
-    if options.case.as_deref().is_none_or(|case| case == MTP_ID) {
-        cases.push(common::run_mtp(&engine)?);
-    }
-    if options.case.as_deref().is_none_or(|case| case == JINJA_ID) {
-        cases.push(jinja::run(&engine)?);
-    }
-    if options.case.as_deref().is_none_or(|case| case == MTMD_ID) {
-        cases.push(mtmd::run(&engine)?);
-    }
-    if options
-        .case
-        .as_deref()
-        .is_none_or(|case| case == GRAMMAR_PARSER_ID)
-    {
-        cases.push(grammar_parser::run(&engine)?);
-    }
-    if options
-        .case
-        .as_deref()
-        .is_none_or(|case| case == REASONING_BUDGET_ID)
-    {
-        cases.push(reasoning_budget::run(&engine)?);
-    }
+    let cases = if let Some(benchmark) = options.benchmark {
+        vec![(benchmark.run)(&engine)?]
+    } else {
+        selected(options.case)
+            .map(|case| (case.run)(&engine))
+            .collect::<Result<Vec<_>>>()?
+    };
     let report = json!({
         "SchemaVersion": 1,
         "UpstreamCommit": UPSTREAM,
         "Target": match options.target { Target::Cpp => "cpp", Target::Rust => "rust" },
         "Cases": cases,
+        "Measure": if options.benchmark.is_some() { "benchmark-workloads" } else { "upstream-source-files" },
     });
     fs::write(options.output, serde_json::to_vec_pretty(&report)?)?;
     // Measured failures belong in the report. Nonzero exits indicate an

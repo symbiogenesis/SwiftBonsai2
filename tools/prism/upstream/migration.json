@@ -13,7 +13,7 @@
       ],
       "AssertionsToPort": "All character classes and escapes; optional/choice/sequence/repetition; recursive rules; markers; complete/partial/no-match semantics.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/peg-parser/test-gbnf-generation.cpp",
@@ -24,7 +24,7 @@
       ],
       "AssertionsToPort": "All literal expected grammars; operator precedence; delimiter/Unicode overlap; unreachable-rule pruning; triggers; silent/tagged/atomic wrappers.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/peg-parser/test-json-parser.cpp",
@@ -35,7 +35,7 @@
       ],
       "AssertionsToPort": "All mixed/nested JSON literals; partial object/array/escape need-more states; object-member success/partial/failure.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/peg-parser/test-json-serialization.cpp",
@@ -47,7 +47,7 @@
       ],
       "AssertionsToPort": "Compare parser result before/after JSON serialization; preserve separate deserialize benchmark without making its timings correctness expectations.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/peg-parser/test-python-dict-parser.cpp",
@@ -58,7 +58,7 @@
       ],
       "AssertionsToPort": "All quote/escape/Unicode/nesting/partial literals; Python True/False/None; reject JSON true/false/null; configurable flexible JSON-string rules.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/peg-parser/test-unicode.cpp",
@@ -69,7 +69,7 @@
       ],
       "AssertionsToPort": "All Unicode any/class/until/json-string cases including CJK/emoji; valid/incomplete/malformed UTF-8 and escaped strings.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-alloc.cpp",
@@ -155,7 +155,7 @@
       ],
       "AssertionsToPort": "Every init/split/keep-tail/mrope case table and exact batch positions/sequence IDs/output flags; preserve invalid-input outcomes.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-c.c",
@@ -238,7 +238,7 @@
       ],
       "AssertionsToPort": "11 original geometries with IC7; cropped overlap/gap/single-column outputs; NMSE <=1e-7 F32 and <=5e-4 F16/BF16; exact output shapes.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-dfly-fusion.cpp",
@@ -249,7 +249,7 @@
       ],
       "AssertionsToPort": "Non-square embd8 feat5 layer3 tokens4; independent weighted/base/RMS reference; full and layer1 slice abs error <1e-4; per-layer separation >1e-3.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-double-float.cpp",
@@ -375,7 +375,7 @@
       ],
       "AssertionsToPort": "All accepted/rejected strings; simple/complex grammar; clones; chars/quantifiers; missing root/reference/left recursion/root symbol; JSON schemas; preserve literal domain.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-grammar-llguidance.cpp",
@@ -459,7 +459,7 @@
       ],
       "AssertionsToPort": "Every original grammar stack/candidate rejection/accept and copied state expectation; retain unicode/invalid transitions.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-log.cpp",
@@ -471,7 +471,7 @@
       ],
       "AssertionsToPort": "8 worker threads x1000 mixed severity messages; concurrent timestamps/prefix toggles; join flush and explicit singleton free; hang/crash smoke behavior preserved.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-lora-conversion-inference.sh",
@@ -521,7 +521,7 @@
       ],
       "AssertionsToPort": "48 combinations layouts none/W-in-dst/X-in-dst xexperts2/4/8/15 xembd64/66 xtokens1/7; bitwise CPU reference; status and overlap/alias placement.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-mtmd-c-api.c",
@@ -579,7 +579,7 @@
       ],
       "AssertionsToPort": "This main only registers nested basic/unicode/json/gbnf/serialization/python-dict suites; share Rust cases and prove all registration groups execute without double-counting assertions; serialization includes benchmark.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-pq2-row-shapes.cpp",
@@ -603,7 +603,7 @@
       ],
       "AssertionsToPort": "5000 original seed99 blocks; scalar CUDA lane and HIP permutation/vector integer accumulators; per-quarter and scaled float reference thresholds; preserve all original checks despite no actual CUDA compilation.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-ptq1_0-element-map.cpp",
@@ -639,7 +639,7 @@
       ],
       "AssertionsToPort": "All enabled types quantization/reference/dot error thresholds; F32 dot; PQ2/PTQ1 exact packed dots 256 patterns x2 block counts each and power-of-two scales; retain type coverage.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-quantize-perf.cpp",
@@ -698,7 +698,7 @@
       ],
       "AssertionsToPort": "All5 modes with exact original shape/positions/sections; compose +100 then -67 equals +33; both relative L1 errors<1e-4.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-rset-release.cpp",

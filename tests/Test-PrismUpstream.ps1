@@ -14,7 +14,7 @@ param(
     [Parameter(Mandatory)][string]$SourceArchive,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [Parameter(Mandatory)][string]$TargetDirectory,
-    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget')][string]$Case = 'All',
+    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator')][string]$Case = 'All',
     [string]$CMakePath,
     [ValidateSet('Ninja', 'Visual Studio 18 2026', 'Visual Studio 17 2022')][string]$Generator = 'Ninja',
     [ValidateSet('ARM64', 'x64')][string]$NativePlatform = 'ARM64',
@@ -109,8 +109,25 @@ $adapters = @{
     MtmdImpl = @{ Name = 'test-mtmd-impl'; Family = 'common' }
     GrammarParser = @{ Name = 'test-grammar-parser'; Family = 'common' }
     ReasoningBudget = @{ Name = 'test-reasoning-budget'; Family = 'common' }
+    Col2im = @{ Name = 'test-col2im-1d'; Family = 'common' }
+    Dfly = @{ Name = 'test-dfly-fusion'; Family = 'common' }
+    Rope = @{ Name = 'test-rope'; Family = 'common' }
+    LlamaGrammar = @{ Name = 'test-llama-grammar'; Family = 'common' }
+    GrammarIntegration = @{ Name = 'test-grammar-integration'; Family = 'common' }
+    Quantize = @{ Name = 'test-quantize-fns'; Family = 'common' }
+    PtqCuda = @{ Name = 'test-ptq1_0-cuda-dot'; Family = 'common' }
+    Log = @{ Name = 'test-log'; Family = 'common' }
+    MoeReduce = @{ Name = 'test-moe-weighted-reduce'; Family = 'common' }
+    PegBasic = @{ Name = 'peg-basic'; Id = 'tests/peg-parser/test-basic.cpp'; Family = 'common' }
+    PegGbnf = @{ Name = 'peg-gbnf'; Id = 'tests/peg-parser/test-gbnf-generation.cpp'; Family = 'common' }
+    PegJson = @{ Name = 'peg-json'; Id = 'tests/peg-parser/test-json-parser.cpp'; Family = 'common' }
+    PegSerialization = @{ Name = 'peg-serialization'; Id = 'tests/peg-parser/test-json-serialization.cpp'; Family = 'common' }
+    PegPythonDict = @{ Name = 'peg-python-dict'; Id = 'tests/peg-parser/test-python-dict-parser.cpp'; Family = 'common' }
+    PegUnicode = @{ Name = 'peg-unicode'; Id = 'tests/peg-parser/test-unicode.cpp'; Family = 'common' }
+    PegParser = @{ Name = 'test-peg-parser'; Family = 'common' }
+    BatchAllocator = @{ Name = 'test-batch-alloc'; Family = 'common' }
 }
-$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget') } else { @($Case) }
+$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator') } else { @($Case) }
 $bridgeFamilies = @{
     ggml = @{ Source = $upstream; Target = 'prism-upstream-bridge'; Option = '--bridge' }
     common = @{ Source = (Join-Path $upstream 'common'); Target = 'prism-upstream-common-bridge'; Option = '--common-bridge' }
@@ -159,17 +176,18 @@ $rustCases = [Collections.Generic.List[object]]::new()
 foreach ($selection in $selected) {
     $adapter = $adapters[$selection]
     $caseName = $adapter.Name
+    $caseId = if ($adapter.ContainsKey('Id')) { $adapter.Id } else { "tests/$caseName.cpp" }
     foreach ($engine in @('cpp', 'rust')) {
         $output = Join-Path $evidence "$caseName-$engine.json"
-        $arguments = @('--target', $engine, '--case', $caseName, '--output', $output)
+        $arguments = @('--target', $engine, '--case', $caseId, '--output', $output)
         if ($engine -eq 'cpp') {
             $arguments += @($bridgeFamilies[$adapter.Family].Option, $bridges[$adapter.Family], '--evidence-directory', (Join-Path $evidence "$caseName-bridge"))
         }
-        $timeout = if ($selection -eq 'Jinja') { 300 } else { 120 }
+        $timeout = if ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda')) { 300 } else { 120 }
         $null = Invoke-UpstreamCommand -Executable $harness -Arguments $arguments -TimeoutSeconds $timeout
         $result = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json -AsHashtable
         if ($result.SchemaVersion -ne 1 -or $result.UpstreamCommit -cne $lock.Commit -or $result.Target -cne $engine -or
-            @($result.Cases).Count -ne 1 -or $result.Cases[0].Id -cne "tests/$caseName.cpp") {
+            @($result.Cases).Count -ne 1 -or $result.Cases[0].Id -cne $caseId) {
             throw 'Shared assertion harness returned an unexpected case identity.'
         }
         if ($engine -eq 'cpp') {

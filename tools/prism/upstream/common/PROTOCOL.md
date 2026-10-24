@@ -19,8 +19,8 @@ Input and output are bounded UTF-8 JSON files with this schema:
 Every operation is validated before any production API executes. Operation fields
 are exact; unknown fields, duplicate object keys, unknown kinds and incorrect
 types are rejected. `Batch`, `Catchup` and `Sequences` are signed 32-bit integers.
-JSON nesting is limited to eight levels. Request files are at most 1 MiB, response
-files at most 16 MiB, and operations number 1 through 128. Text is at most 65,536 UTF-8 bytes; there are 1 through 16
+JSON nesting is limited to 160 levels for declarative graph transport. Request and response files are at most
+16 MiB, and operations number 1 through 128. Text is at most 65,536 UTF-8 bytes; there are 1 through 16
 expressions, each at most 8,192 UTF-8 bytes. Paths must be absolute and distinct.
 
 The adapter forwards inputs directly to `unicode_regex_split` and
@@ -149,3 +149,169 @@ infinities and NaNs without JSON number conversions. The complete backing
 candidate vector is returned. Every state transition, clone, reset, forcing
 operation and end match comes from the production sampler API; the adapter has
 no test sequence generation, finite-count calculation or forcing assertions.
+
+## Generic tensor graphs
+
+`tensor-graph` takes exact fields `Kind`, `Threads` (1 through 16), `Nodes`
+(1 through 96) and `Outputs` (1 through 16 prior node indices). An input node is
+`{"Op":"input","Type":"F32"|"I32","Dimensions":[...],"DataHex":"..."}`.
+Dimensions number 1 through 4, each 1 through 8,192, with at most 2,097,152
+elements per tensor. Raw bytes are little-endian hex in ggml storage order and
+must match the shape and type exactly. F32 inputs must contain finite values.
+
+Other nodes take `Op` and `Inputs` (prior node indices), plus the exact operation
+parameters accepted in `tensor_graph.hpp`. Supported production operations are
+`cont`, `transpose`, `soft_max`, `permute`, `reshape`, `cast`, `mul_mat`, `add`,
+`mul`, `rms_norm`, `view_2d`, `conv_transpose_1d`, `col2im_1d`, `rope` and
+`rope_multi`. Cast outputs additionally support F16 and BF16. Shape, type,
+broadcast, view extent and operation parameter validity are checked before any
+ggml graph is constructed.
+
+The adapter allocates a 128 MiB ggml context, with a conservative cumulative
+storage estimate capped at 96 MiB, then executes the graph using the supplied
+thread count. The response is `{"Outputs":[{"Type":"...","Dimensions":[four
+padded dimensions],"DataHex":"..."}]}` in requested output order. Outputs must
+be contiguous, and their combined hex data is limited to 15 MiB. Inputs, graph
+specifications, random streams, reference calculations, tolerances and all
+pass/fail decisions remain in the Rust suite.
+
+## Generic stateful grammar operations
+
+`json-schema-to-grammar` takes exact fields `Kind`, `SchemaJson` (a JSON string
+of at most 256 KiB), `ForceGbnf` (boolean), and returns `GrammarText` directly from
+the production converter. Parsing the raw JSON text preserves property ordering.
+
+`grammar-trace` takes `Kind` and `Actions` (1 through 16,384). Each action has
+`Kind` and a `Grammar` handle from 0 through 31. Additional fields and results:
+
+| Action Kind | Additional fields | Trace event |
+| --- | --- | --- |
+| `init-text` | `GrammarText` (at most 256 KiB, no NUL), `Root` (1..4096 bytes, no NUL) | `Created`: boolean |
+| `init-rules` | `Rules`: arrays of `{Type,Value}` u32 elements, `StartRule`: index | `Created`: boolean |
+| `clone` | `Target`: unused grammar handle | `Created`: boolean |
+| `free` | none | `{}` |
+| `state` | none | `StackSizes`: array of actual lengths |
+| `save-stacks` | `StackHandle`: 0..63 | `{}` |
+| `restore-stacks` | `StackHandle`: saved for the same live grammar | `{}` |
+| `accept-token` | `Token`: i32, and exactly one of `Piece` string or `PieceBytes` byte array, at most 65,536 bytes | `ExceptionKind`: null, `runtime`, `standard` or `unknown`; `Message`: string; `StackSizes`: array |
+| `snapshot` | none | `Rules`, `RuleAddresses`, `ElementSize`, `Stacks` |
+| `reject-candidates` | `Stack`: current stack index; `Candidates`: array of `{Index,CodePoints,PartialUtf8:{Value,NRemain},Id}` | `Rejected`: same candidate fields |
+
+Rule arrays number 1 through 4,096, contain at most 65,536 elements combined,
+end with `END`, and use valid rule-reference indices. Element types range from
+0 through 9. Snapshots return actual rule values, rule data addresses, element
+size, and raw stack pointer addresses. They do not dereference stack pointers or
+calculate pointer ownership; those comparisons belong to Rust. Snapshot stacks
+contain at most 65,536 pointers combined, with at most 8,192 stacks.
+
+Candidate arrays contain at most 4,096 entries, each with 1 through 1,024 u32
+code points ending in zero, a u32 index, an i32 token ID, and partial UTF-8 state
+with u32 `Value` and `NRemain` from -1 through 3. Rejected code-point pointers are
+serialized as suffix arrays bounded by the original buffers. The Rust suite owns
+input text decoding, encoded token IDs, expected rejections and match decisions.
+Saved stacks copy only the production stack collection and are invalidated when
+their owning grammar is freed. Grammar handles are freed on every exit path.
+
+## Generic production codecs
+
+Codec byte transport uses lowercase hex containing little-endian packed blocks
+or IEEE binary32 values. Type IDs are the pinned production ggml enum values.
+Counts are positive, at most 8,192, and must consist of whole blocks for every
+participating type. Packed payloads are at most 1 MiB and must have the exact
+production block extent. Quantizer float inputs must be finite. Codec payloads
+receive native struct alignment before production calls.
+
+| Kind | Additional request fields | Response |
+| --- | --- | --- |
+| `codec-inventory` | none | `Types`: production metadata and function availability |
+| `codec-quantize` | `TypeId`, `Mode`: `cpu` or `reference`, `Count`, `DataHex`: F32 input | `DataHex`: packed output |
+| `codec-dequantize` | `TypeId`, `Count`, `DataHex`: packed input | `DataHex`: F32 output |
+| `codec-vec-dot` | `TypeId`, `Count`, `WeightsHex`, `ActivationsHex`: production vec-dot activation layout | `DataHex`: one F32 output |
+
+Inventory returns exact fields `TypeId`, `Name` (string or null), `BlockSize`,
+`TypeSize`, `HasFromFloatCpu`, `HasFromFloatRef`, `HasToFloat`, `HasVecDot`, and
+`VecDotType` for every enum slot, including unused slots. Availability and block
+alignment are checked before calling production CPU/reference quantizers,
+decoders or CPU vector-dot functions. CPU initialization and required quantizer
+table initialization use production APIs.
+
+These operations do not execute CUDA or another GPU backend. A Rust port of a
+CUDA-named source may compare its original host-side transcription against raw
+production CPU observations; that establishes host coverage and must not be
+reported as GPU execution. All input generation, independent transcription,
+reference algorithms, tolerances and pass/fail decisions remain in Rust.
+
+## Generic PEG builder and parse transport
+
+`peg-evaluate` takes exact fields `Kind`, `Graph`, `Inputs`, `GenerateGrammar`,
+`RoundTrip`. A graph is `{Statements:[{Let?:name,Expr:expression}],Root:expression}`.
+Expressions are `{Ref:localName}` or `{Op:method,Args:[arguments]}`. Method names
+and argument order follow the production PEG builder. `add`, `or`, `space-add`
+call its actual `+`, `|`, `<<` overloads; raw string operands retain the string
+overloads. `rule-lazy` takes a name, a nested graph body, and optional trigger
+boolean, invoking the production callback overload. Other supported methods are
+listed in `peg.hpp`; they include `marker`, JSON/Python value parsers, character
+classes, rules, tagging, repetition, delimiters and GBNF wrappers.
+
+Construction is in explicit statement and child-array order, with at most 4,096
+statements per graph, 16,384 expression nodes and 48 expression/graph nesting
+levels. Local names are at most 128 bytes. Strings are at most 65,536 bytes,
+parser/delimiter lists at most 1,024 entries and argument arrays at most 64 entries.
+`Inputs` contains at most 1,024 `{Bytes:[0..255],Flags:0..3}` descriptors, each at
+most 65,536 bytes. `GenerateGrammar` contains at most eight booleans passed as
+production trigger-only/lazy modes. `RoundTrip` is boolean.
+
+The result has exact fields `Results` (raw `{Type,Start,End}` parse results),
+`GrammarTexts`, `SerializedJson` (string or null), `RoundTripResults`. A requested
+round trip serializes the actual arena once, deserializes it with the production
+API and parses the same supplied inputs. Native code does not compare outcomes.
+`peg-serialize` takes `Kind`, `Graph` and returns `SerializedJson`.
+`peg-deserialize` takes `Kind`, `SerializedJson` (at most 8 MiB) and returns the
+production `Root` parser ID. Benchmark repetitions and timing belong to an
+explicit CI-only Rust benchmark entry, using these ordinary production operations.
+
+## Concurrent production logger
+
+`concurrent-log` takes exact fields `Kind`, `Workers`, `Finalize`. One through 32
+workers execute their supplied action arrays concurrently against the same
+production logger singleton. Worker arrays contain at most 16,384 actions, and
+all workers at most 65,536 combined. Actions are `emit` with exact `Level`
+(`info`, `warning`, `error`, `debug`) and `Text` (at most 1,024 bytes, no NUL), or
+`timestamps`/`prefix` with boolean `Value`. Each action also has its `Kind`.
+`Finalize` contains at most eight `flush`/`free` strings and must end with `free`.
+Workers join before finalization; captured worker exceptions fail the operation.
+The result is `Completed`, containing action completion counts per worker.
+Schedules and verdicts belong to Rust. This must be the final operation in a
+request because the production logger singleton cache is not reset after free.
+
+## CPU arena placement transport
+
+`cpu-buffer-info` takes only `Kind` and returns production CPU buffer `Alignment`.
+`cpu-arena-graph` takes `Kind`, `Graph`, `Forward`, `Allocation`. Graph is the
+existing tensor-graph descriptor, restricted to F32 input, multiply, add and 2-D
+views. Forward supplies explicit graph expansion indices. Allocation is null for
+the production context allocator, or `{BufferBytes,Offsets}` for manual placement;
+view offsets are null, deriving storage from their source. Offsets and extents
+must fit the supplied buffer and meet the actual backend alignment.
+The result is raw production `Status` and output `DataHex` values. Input creation,
+overlap layouts, operation ordering and result comparisons remain in Rust. CPU
+thread count comes from Graph; the pinned CPU backend defaults to four threads.
+
+## Generic batch allocator trace
+
+`batch-allocator` takes exact fields `Kind`, `PositionsPerEmbedding` (1 or 4),
+`Actions` (1 through 64). An init action supplies raw token or embedding arrays,
+optional positions/sequence IDs/logit flags, embedding width, sequence limit,
+output-all flag, and optional `{Sequence,Min,Max}` input memory ranges. Other
+actions call production `split-simple`, `split-equal`, `split-seq`, `split-reset`
+or `reserve` APIs. Exact action fields are declared in `batch_allocator.hpp`.
+Inputs are limited to 64 tokens, embedding width 8 and eight sequence IDs per
+token; negative IDs and an oversized sequence limit may reach production's own
+rejection paths. All requested array extents and scalar types are checked first.
+
+The response is `Actions`, containing raw initialization status, allocator state
+and ubatch observations in action order. Snapshots include every supplied/derived
+batch field, output IDs, used/output counts, sequence position ranges, ubatch
+counts, pointer presence and pointed-to content. The optional range-only memory
+adapter returns caller-supplied position ranges; unused methods throw. Native
+code has no original case selector, expected split table or allocator assertions.

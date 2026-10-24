@@ -6,6 +6,20 @@
 #include "mtmd.hpp"
 #include "grammar_parser.hpp"
 #include "reasoning_budget.hpp"
+#include "tensor_graph.hpp"
+#include "grammar.hpp"
+#include "codec.hpp"
+#include "peg.hpp"
+// MTMD publishes its own logging macros; the concurrency adapter uses common's.
+#undef LOG_DBG
+#undef LOG_TRC
+#undef LOG_INF
+#undef LOG_WRN
+#undef LOG_ERR
+#undef LOG_CNT
+#include "concurrency.hpp"
+#include "arena_graph.hpp"
+#include "batch_allocator.hpp"
 #include <nlohmann/json.hpp>
 
 #include <cstdint>
@@ -22,7 +36,7 @@
 
 namespace {
 using json = nlohmann::ordered_json;
-constexpr std::size_t max_file_bytes = 1024 * 1024;
+constexpr std::size_t max_file_bytes = 16 * 1024 * 1024;
 constexpr std::size_t max_response_bytes = 16 * 1024 * 1024;
 constexpr std::size_t max_operations = 128;
 constexpr std::size_t max_text_bytes = 64 * 1024;
@@ -59,7 +73,7 @@ std::int32_t integer(const json & value) {
 
 json read_request(const std::filesystem::path & path) {
     const auto size = std::filesystem::file_size(path);
-    require(size > 0 && size <= max_file_bytes, "request size must be 1 byte through 1 MiB");
+    require(size > 0 && size <= max_file_bytes, "request size must be 1 byte through 16 MiB");
     std::ifstream input(path, std::ios::binary);
     require(bool(input), "cannot open request file");
     std::string content(static_cast<std::size_t>(size), '\0');
@@ -68,7 +82,7 @@ json read_request(const std::filesystem::path & path) {
             "request size changed during read");
     std::vector<std::set<std::string>> object_keys;
     const auto callback = [&](int depth, json::parse_event_t event, json & parsed) {
-        require(depth <= 8, "JSON nesting exceeds limit");
+        require(depth <= 160, "JSON nesting exceeds limit");
         if (event == json::parse_event_t::object_start) {
             object_keys.emplace_back();
         } else if (event == json::parse_event_t::key) {
@@ -113,6 +127,20 @@ void validate_operation(const json & operation) {
         prism_grammar_parser::validate(operation);
     } else if (prism_reasoning_budget::handles(kind)) {
         prism_reasoning_budget::validate(operation);
+    } else if (prism_tensor_graph::handles(kind)) {
+        prism_tensor_graph::validate(operation);
+    } else if (prism_grammar::handles(kind)) {
+        prism_grammar::validate(operation);
+    } else if (prism_codec::handles(kind)) {
+        prism_codec::validate(operation);
+    } else if (prism_peg::handles(kind)) {
+        prism_peg::validate(operation);
+    } else if (kind == "concurrent-log") {
+        prism_concurrency::validate(operation);
+    } else if (prism_arena::handles(kind)) {
+        prism_arena::validate(operation);
+    } else if (prism_batch_allocator::handles(kind)) {
+        prism_batch_allocator::validate(operation);
     } else {
         throw std::runtime_error("unknown operation Kind");
     }
@@ -131,6 +159,27 @@ json execute(const json & operation) {
     }
     if (prism_reasoning_budget::handles(kind)) {
         return prism_reasoning_budget::execute(operation);
+    }
+    if (prism_tensor_graph::handles(kind)) {
+        return prism_tensor_graph::execute(operation);
+    }
+    if (prism_grammar::handles(kind)) {
+        return prism_grammar::execute(operation);
+    }
+    if (prism_codec::handles(kind)) {
+        return prism_codec::execute(operation);
+    }
+    if (prism_peg::handles(kind)) {
+        return prism_peg::execute(operation);
+    }
+    if (kind == "concurrent-log") {
+        return prism_concurrency::execute(operation);
+    }
+    if (prism_arena::handles(kind)) {
+        return prism_arena::execute(operation);
+    }
+    if (prism_batch_allocator::handles(kind)) {
+        return prism_batch_allocator::execute(operation);
     }
     if (kind == "unicode-regex-split") {
         const auto pieces = unicode_regex_split(operation.at("Text").get<std::string>(),
@@ -157,8 +206,11 @@ int main(int argc, char ** argv) {
         const auto & operations = request.at("Operations");
         require(operations.is_array() && !operations.empty() && operations.size() <= max_operations,
                 "Operations must contain 1 through 128 operations");
-        for (const auto & operation : operations) {
+        for (std::size_t index = 0; index < operations.size(); ++index) {
+            const auto & operation = operations[index];
             validate_operation(operation);
+            require(operation.at("Kind") != "concurrent-log" || index + 1 == operations.size(),
+                    "concurrent-log must be the final operation because it frees the logger singleton");
         }
         json results = json::array();
         for (const auto & operation : operations) {

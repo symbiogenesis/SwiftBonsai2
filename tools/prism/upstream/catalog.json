@@ -298,6 +298,23 @@
     "tests/test-jinja.cpp",
     "tests/test-mtmd-impl.cpp",
     "tests/test-grammar-parser.cpp",
-    "tests/test-reasoning-budget.cpp"
+    "tests/test-reasoning-budget.cpp",
+    "tests/test-col2im-1d.cpp",
+    "tests/test-dfly-fusion.cpp",
+    "tests/test-rope.cpp",
+    "tests/test-llama-grammar.cpp",
+    "tests/test-grammar-integration.cpp",
+    "tests/test-quantize-fns.cpp",
+    "tests/test-ptq1_0-cuda-dot.cpp",
+    "tests/test-log.cpp",
+    "tests/test-moe-weighted-reduce.cpp",
+    "tests/peg-parser/test-basic.cpp",
+    "tests/peg-parser/test-gbnf-generation.cpp",
+    "tests/peg-parser/test-json-parser.cpp",
+    "tests/peg-parser/test-json-serialization.cpp",
+    "tests/peg-parser/test-python-dict-parser.cpp",
+    "tests/peg-parser/test-unicode.cpp",
+    "tests/test-peg-parser.cpp",
+    "tests/test-batch-alloc.cpp"
   ]
 }
