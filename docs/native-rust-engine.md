@@ -45,6 +45,22 @@ task time separately, accounting for bandwidth and the measured critical path.
   exact weight/metadata fixtures, scalar parity and bounded full-model comparisons
   against Prism.
 
+  - [x] **R2.1 — Honor declared generation stop tokens.** The token driver
+    validates the verified model's EOS and optional EOT/EOM IDs against the graph
+    vocabulary, then combines them with additional caller stop IDs under the
+    existing 256-token bound. BOS/padding IDs and insertion flags are validated;
+    token-ID input remains exact and receives no automatic BOS/EOS insertion.
+    Declared stops terminate without emission or entry into conversation state.
+    Focused metadata and serialized-model driver regressions cover the contract.
+  - [x] **R2.2 — Detokenize generated GPT2-byte tokens.** A bounded vocabulary
+    validates retained `gpt2`/`qwen35` metadata and graph vocabulary size. Explicit
+    driver text output retains exact token bytes and incrementally renders UTF-8
+    across token boundaries, including literal control-token spellings. Invalid
+    or truncated UTF-8 uses replacement characters only in the display field;
+    original bytes remain available. Synthetic mapping, boundary, malformed-input
+    and serialized-model checks cover this output path. Input tokenization,
+    chat templates and full-model tokenizer parity remain open R2 work.
+
 - [ ] **R3 — Qualify packed CPU kernels.** Follow [SIMD S0–S4/S6](simd-plan.md).
   Baseline NEON PQ2/PTQ1, automatic selection, scalar forcing and focused exact
   regressions are implemented using safe core SIMD APIs. Profiling, fuller

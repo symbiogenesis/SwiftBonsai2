@@ -58,6 +58,12 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   allocation to keep the hard snapshot bound.
 - Failed decoder resets keep the public committed history and saved prefixes
   while closing admission. A successful reset clears them and restores admission.
+- Validated model-declared EOS/EOT/EOM stops, combined with additional caller
+  stops in the token driver. BOS/padding IDs and insertion flags are checked;
+  supplied prompt token IDs receive no automatic token insertion.
+- Bounded `gpt2`/`qwen35` output vocabulary and optional incremental text rendering.
+  Exact token bytes remain available across UTF-8 token boundaries; control-token
+  spellings remain literal. This does not implement input tokenization or templates.
 
 The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.
@@ -96,8 +102,21 @@ The driver requires an absolute model path, expected length/SHA-256, retained-mo
 context/checkpoint budgets, prompt token IDs and generation limit. It validates
 identity syntax, positive bounds, prompt-plus-generation capacity and the
 256-stop-token limit before model I/O; vocabulary checks follow verified loading.
-Supply exact stop IDs with `--stop-tokens` and token IDs from the reference
-tokenizer. Output is one JSON token object per line followed by accounting.
+Supply prompt token IDs from the reference tokenizer. The verified model must
+declare a valid EOS ID; its EOS and optional EOT/EOM IDs always stop generation.
+`--stop-tokens` adds IDs to that set, deduplicated under a combined 256-ID bound.
+Stops are neither emitted nor committed to the conversation. BOS/padding IDs and
+insertion flags are validated without modifying the supplied prompt.
+
+Output defaults to one JSON token object per line followed by accounting, which
+includes the effective `stop_tokens`. Optional `--output text` adds `bytes`,
+`text` and `special` to each token record. It requires matching `gpt2`/`qwen35`
+vocabulary metadata. `bytes` preserves the decoded token exactly; `text` buffers
+incomplete UTF-8 across records and displays invalid byte sequences as U+FFFD.
+Literal control-token spellings are retained and marked `special: true`.
+The final accounting record has a `text` field that flushes any truncated UTF-8
+suffix as U+FFFD; concatenate all `text` fields for display, or all token `bytes`
+for lossless output. These records remain provisional until final success.
 Optional `--timeout-seconds <1..3600>` bounds generation from immediately before
 the runtime request, including prefill, delivery and checkpoint work. Model
 verification/loading and graph construction precede that deadline. Omit the
@@ -112,8 +131,11 @@ or promote a profile.
 ## Memory and ownership
 
 `--memory-bytes` bounds retained model storage, not process memory. Allow additional
-headroom for parser/conversion scratch, graph workspace, active state, checkpoints
-and allocator overhead. Optional `--state-bytes` sets the admitted maximum
+headroom for parser/conversion scratch, graph workspace, active state, checkpoints,
+optional decoded-vocabulary/output storage and allocator overhead. Text mode admits
+at most 1,000,000 vocabulary entries, 64 MiB of decoded piece bytes and 1 MiB per
+piece; the entry table and output buffers are additional bounded storage.
+Optional `--state-bytes` sets the admitted maximum
 live KV/convolution/recurrent element payload, from 1 byte through the default
 4 GiB. `Qwen35::with_state_budget` exposes the same bound to library callers.
 Admission charges the complete configured context using FP16 K/V and F32

@@ -10,6 +10,8 @@ pub mod graph;
 pub mod kernels;
 pub mod model;
 pub mod runtime;
+pub mod special_tokens;
+pub mod vocabulary;
 
 /// A rejected model, numerical contract, resource limit, or I/O operation.
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

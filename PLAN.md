@@ -205,6 +205,8 @@ compatible sibling activation preparation, state-only intermediate prompt
 ingestion, physical FP16 KV and baseline packed NEON are implemented in the
 experimental Rust reference. Bounded sequential prefill scheduling, immutable KV
 checkpoint pages and cumulative backend diagnostics are also implemented.
+The token driver now honors declared model stops and can emit lossless token
+bytes with incremental UTF-8 text. Input tokenization and chat templates remain open.
 Tiled prefill kernels, full-model allocation,
 parity and performance qualification remain open.
 

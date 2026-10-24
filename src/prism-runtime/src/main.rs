@@ -7,6 +7,8 @@ use bonsai_prism_runtime::{
     kernels::{MatvecBackend, MatvecDiagnostics, MatvecFallbackReason, MatvecStatistics},
     model::Model,
     runtime::{Cancellation, Finish, Generation, Limits, Prefill, Runtime},
+    special_tokens::SpecialTokens,
+    vocabulary::Vocabulary,
 };
 use serde_json::json;
 use std::{
@@ -22,7 +24,7 @@ Usage: bonsai-prism-runtime --model <absolute-gguf-path> --bytes <u64>\n\
   --sha256 <64-hex> --memory-bytes <usize> --context <1..262144>\n\
   --checkpoint-bytes <usize> --max-tokens <usize> --tokens <id,id,...>\n\
   [--stop-tokens <id,id,...>] [--backend <auto|scalar|neon>]\n\
-  [--timeout-seconds <1..3600>]\n\
+  [--timeout-seconds <1..3600>] [--output <tokens|text>]\n\
   [--state-bytes <usize>]\n\
   [--prefill-block-tokens <1..256>]\n\
 State budget defaults to 4 GiB for live KV/recurrent element payload only;\n\
@@ -35,7 +37,10 @@ Selection is per matrix operation; backend_requested reports only the request.\n
 backend_last_operation records just the latest projection, including scalar fallback.\n\
 backend_statistics counts all attempted matrix work, including provisional work.\n\
 Prefill blocks default to one token and preserve sequential reference arithmetic.\n\
-Input is token IDs; decoding is greedy. Output is one JSON object per line.\n";
+Input is token IDs; decoding is greedy. Output is one JSON object per line.\n\
+Model-declared EOS/EOT/EOM always stop generation; --stop-tokens adds IDs.\n\
+Text output adds lossless token bytes and incremental UTF-8 text (invalid bytes\n\
+display as replacement characters). Control token spellings remain visible.\n";
 
 struct Arguments {
     path: PathBuf,
@@ -50,13 +55,14 @@ struct Arguments {
     backend: MatvecBackend,
     timeout: Option<Duration>,
     prefill: Prefill,
+    text_output: bool,
 }
 
 fn bad(message: &'static str) -> bonsai_prism_runtime::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidInput, message).into()
 }
 
-fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
+fn option_values(arguments: impl IntoIterator<Item = String>) -> Result<BTreeMap<String, String>> {
     let mut values = BTreeMap::new();
     let mut args = arguments.into_iter();
     while let Some(key) = args.next() {
@@ -75,6 +81,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
                 | "--timeout-seconds"
                 | "--state-bytes"
                 | "--prefill-block-tokens"
+                | "--output"
         ) || values.contains_key(&key)
         {
             return Err(bad("unknown or repeated option"));
@@ -85,6 +92,11 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         }
         values.insert(key, value);
     }
+    Ok(values)
+}
+
+fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
+    let mut values = option_values(arguments)?;
     let mut required = |key: &str| {
         values
             .remove(key)
@@ -140,6 +152,11 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         .map(timeout_seconds)
         .transpose()?;
     let prefill = prefill_options(values.remove("--prefill-block-tokens").as_deref())?;
+    let text_output = match values.remove("--output").as_deref().unwrap_or("tokens") {
+        "tokens" => false,
+        "text" => true,
+        _ => return Err(bad("output must be tokens or text")),
+    };
     Ok(Arguments {
         path,
         bytes,
@@ -156,6 +173,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         backend,
         timeout,
         prefill,
+        text_output,
     })
 }
 
@@ -201,19 +219,102 @@ fn token_ids(text: &str, limit: usize) -> Result<Vec<u32>> {
     Ok(result)
 }
 
-fn execute(arguments: &Arguments) -> Result<()> {
+fn generation_options(options: &Generation, model_stops: &[u32]) -> Result<Generation> {
+    let mut stop_tokens = Vec::new();
+    stop_tokens.try_reserve_exact(256)?;
+    for &token in model_stops.iter().chain(&options.stop_tokens) {
+        if !stop_tokens.contains(&token) {
+            if stop_tokens.len() == 256 {
+                return Err(bad("combined model and caller stop set exceeds 256 tokens"));
+            }
+            stop_tokens.push(token);
+        }
+    }
+    Ok(Generation {
+        max_tokens: options.max_tokens,
+        stop_tokens,
+    })
+}
+
+#[derive(Default)]
+struct Utf8Output {
+    // Only an incomplete UTF-8 suffix survives each push (at most three bytes).
+    pending: Vec<u8>,
+}
+
+impl Utf8Output {
+    fn push(&mut self, bytes: &[u8]) -> Result<String> {
+        self.pending.try_reserve(bytes.len())?;
+        self.pending.extend_from_slice(bytes);
+        let mut output = String::new();
+        let mut consumed = 0;
+        while consumed < self.pending.len() {
+            match std::str::from_utf8(&self.pending[consumed..]) {
+                Ok(text) => {
+                    output.try_reserve(text.len())?;
+                    output.push_str(text);
+                    consumed = self.pending.len();
+                }
+                Err(error) => {
+                    let valid_end = consumed + error.valid_up_to();
+                    let text = std::str::from_utf8(&self.pending[consumed..valid_end])?;
+                    output.try_reserve(text.len() + 3)?;
+                    output.push_str(text);
+                    consumed = valid_end;
+                    if let Some(invalid_bytes) = error.error_len() {
+                        output.push('\u{fffd}');
+                        consumed += invalid_bytes;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        self.pending.drain(..consumed);
+        Ok(output)
+    }
+
+    fn finish(&mut self) -> &'static str {
+        if self.pending.is_empty() {
+            ""
+        } else {
+            self.pending.clear();
+            "\u{fffd}"
+        }
+    }
+}
+
+fn load_decoder(arguments: &Arguments) -> Result<(Qwen35, Generation, Option<Vocabulary>)> {
     let model = Model::load(
         &arguments.path,
         arguments.bytes,
         &arguments.sha256,
         arguments.memory,
     )?;
+    let vocab_size = model
+        .tensors
+        .get("token_embd.weight")
+        .filter(|tensor| tensor.dimensions.len() == 2)
+        .and_then(|tensor| tensor.dimensions.get(1))
+        .copied()
+        .ok_or_else(|| bad("missing token embedding vocabulary dimension"))?;
+    let special_tokens = SpecialTokens::from_metadata(&model.metadata, vocab_size)?;
+    let generation = generation_options(&arguments.generation, special_tokens.stop_tokens())?;
+    let vocabulary = arguments
+        .text_output
+        .then(|| Vocabulary::from_metadata(&model.metadata, vocab_size))
+        .transpose()?;
     let decoder = Qwen35::with_state_budget(
         model,
         arguments.context,
         arguments.state_bytes,
         arguments.backend,
     )?;
+    Ok((decoder, generation, vocabulary))
+}
+
+fn execute(arguments: &Arguments) -> Result<()> {
+    let (decoder, generation, vocabulary) = load_decoder(arguments)?;
     let backend_requested = backend_name(decoder.requested_backend());
     let mut runtime = Runtime::new(
         decoder,
@@ -225,8 +326,20 @@ fn execute(arguments: &Arguments) -> Result<()> {
     )?;
     let mut output = std::io::stdout().lock();
     let cancellation = Cancellation::default();
+    let mut text_output = Utf8Output::default();
     let emit = |token| {
-        serde_json::to_writer(&mut output, &json!({"token": token}))?;
+        let record = if let Some(vocabulary) = &vocabulary {
+            let bytes = vocabulary.piece(token)?;
+            json!({
+                "token": token,
+                "bytes": bytes,
+                "text": text_output.push(bytes)?,
+                "special": vocabulary.is_control(token)?,
+            })
+        } else {
+            json!({"token": token})
+        };
+        serde_json::to_writer(&mut output, &record)?;
         output.write_all(b"\n")?;
         output.flush()?;
         Ok(())
@@ -237,7 +350,7 @@ fn execute(arguments: &Arguments) -> Result<()> {
             .ok_or_else(|| bad("generation deadline exceeds monotonic clock bounds"))?;
         runtime.generate_until_with_prefill(
             &arguments.tokens,
-            &arguments.generation,
+            &generation,
             arguments.prefill,
             &cancellation,
             deadline,
@@ -246,26 +359,28 @@ fn execute(arguments: &Arguments) -> Result<()> {
     } else {
         runtime.generate_with_prefill(
             &arguments.tokens,
-            &arguments.generation,
+            &generation,
             arguments.prefill,
             &cancellation,
             emit,
         )?
     };
-    serde_json::to_writer(
-        &mut output,
-        &json!({
-            "finish_reason": match result.finish { Finish::Stop => "stop", Finish::Length => "length" },
-            "prompt_tokens": result.prompt_tokens,
-            "generated_tokens": result.generated_tokens,
-            "reused_tokens": result.reused_tokens,
-            "backend_requested": backend_requested,
-            "state_budget_bytes": arguments.state_bytes,
-            "prefill_block_tokens": arguments.prefill.block_tokens,
-            "backend_last_operation": backend_record(runtime.decoder().backend_diagnostics()),
-            "backend_statistics": statistics_record(runtime.decoder().backend_statistics()),
-        }),
-    )?;
+    let mut completion = json!({
+        "finish_reason": match result.finish { Finish::Stop => "stop", Finish::Length => "length" },
+        "prompt_tokens": result.prompt_tokens,
+        "generated_tokens": result.generated_tokens,
+        "reused_tokens": result.reused_tokens,
+        "backend_requested": backend_requested,
+        "state_budget_bytes": arguments.state_bytes,
+        "prefill_block_tokens": arguments.prefill.block_tokens,
+        "stop_tokens": generation.stop_tokens,
+        "backend_last_operation": backend_record(runtime.decoder().backend_diagnostics()),
+        "backend_statistics": statistics_record(runtime.decoder().backend_statistics()),
+    });
+    if arguments.text_output {
+        completion["text"] = json!(text_output.finish());
+    }
+    serde_json::to_writer(&mut output, &completion)?;
     output.write_all(b"\n")?;
     output.flush()?;
     Ok(())
@@ -333,7 +448,10 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{Duration, MAX_STATE_BYTES, MatvecBackend, Result, bad, parse};
+    use super::{
+        Duration, Generation, MAX_STATE_BYTES, MatvecBackend, Result, Utf8Output, bad,
+        generation_options, parse,
+    };
 
     fn arguments() -> Vec<String> {
         [
@@ -366,6 +484,89 @@ mod tests {
             .position(|argument| argument == key)
             .ok_or_else(|| bad("missing test argument"))?;
         arguments[position + 1] = value.to_owned();
+        Ok(())
+    }
+
+    #[test]
+    fn cli_text_output_is_explicit_and_rejects_invalid_options() -> Result<()> {
+        assert!(!parse(arguments())?.text_output);
+        for (value, expected) in [("tokens", false), ("text", true)] {
+            let mut input = arguments();
+            input.extend(["--output".to_owned(), value.to_owned()]);
+            assert_eq!(parse(input)?.text_output, expected);
+        }
+        for tail in [
+            vec!["--output"],
+            vec!["--output", ""],
+            vec!["--output", "Text"],
+            vec!["--output", "text", "--output", "tokens"],
+        ] {
+            let mut input = arguments();
+            input.extend(tail.into_iter().map(str::to_owned));
+            assert!(parse(input).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn cli_stop_union_preserves_declared_stops_and_bounds_unique_ids() -> Result<()> {
+        let mut options = Generation {
+            max_tokens: 8,
+            stop_tokens: vec![2, 3, 2],
+        };
+        let merged = generation_options(&options, &[1, 2])?;
+        assert_eq!(merged.max_tokens, 8);
+        assert_eq!(merged.stop_tokens, [1, 2, 3]);
+        assert_eq!(options.stop_tokens, [2, 3, 2]);
+        options.stop_tokens = (0..256).collect();
+        assert_eq!(generation_options(&options, &[1])?.stop_tokens.len(), 256);
+        assert!(generation_options(&options, &[256]).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn cli_utf8_output_preserves_split_characters_and_bounds_pending_suffix() -> Result<()> {
+        for text in ["a café\n", "🌱 bonsai", "\0中文"] {
+            let bytes = text.as_bytes();
+            for split in 0..=bytes.len() {
+                let mut output = Utf8Output::default();
+                let mut rendered = output.push(&bytes[..split])?;
+                assert!(output.pending.len() <= 3);
+                rendered.push_str(&output.push(&bytes[split..])?);
+                rendered.push_str(output.finish());
+                assert_eq!(rendered, text);
+                assert_eq!(output.pending, Vec::<u8>::new());
+            }
+            let mut output = Utf8Output::default();
+            let mut rendered = String::new();
+            for byte in bytes {
+                rendered.push_str(&output.push(&[*byte])?);
+                assert!(output.pending.len() <= 3);
+            }
+            rendered.push_str(output.finish());
+            assert_eq!(rendered, text);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn cli_utf8_output_matches_lossy_rendering_for_invalid_and_truncated_bytes() -> Result<()> {
+        for bytes in [
+            &[0xff, b'a', 0xc3, b'b'][..],
+            &[0xf0, 0x9f, 0x8c][..],
+            &[0xed, 0xa0, 0x80][..],
+            &[0xc0, 0xaf][..],
+            &[0xe2, 0x82, b'!', 0x80][..],
+        ] {
+            for split in 0..=bytes.len() {
+                let mut output = Utf8Output::default();
+                let mut rendered = output.push(&bytes[..split])?;
+                rendered.push_str(&output.push(&bytes[split..])?);
+                rendered.push_str(output.finish());
+                assert_eq!(rendered, String::from_utf8_lossy(bytes));
+                assert_eq!(output.finish(), "");
+            }
+        }
         Ok(())
     }
 
