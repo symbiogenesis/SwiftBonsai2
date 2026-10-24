@@ -17,6 +17,7 @@ struct Recurrent {
     fail: Rc<Cell<bool>>,
     restore_fail: Rc<Cell<bool>>,
     checkpoint_fail: Rc<Cell<bool>>,
+    reset_fail: Rc<Cell<bool>>,
 }
 
 impl Decoder for Recurrent {
@@ -33,6 +34,11 @@ impl Decoder for Recurrent {
     }
     fn reset(&mut self) -> Result<()> {
         self.tokens.clear();
+        if self.reset_fail.get() {
+            return Err(
+                std::io::Error::other("injected reset failure after state mutation").into(),
+            );
+        }
         Ok(())
     }
     fn evaluate(&mut self, token: u32) -> Result<Vec<f32>> {
@@ -68,6 +74,7 @@ fn decoder() -> Recurrent {
         fail: Rc::new(Cell::new(false)),
         restore_fail: Rc::new(Cell::new(false)),
         checkpoint_fail: Rc::new(Cell::new(false)),
+        reset_fail: Rc::new(Cell::new(false)),
     }
 }
 
@@ -158,6 +165,48 @@ fn restoration_failure_closes_admission_until_reset() -> Result<()> {
     assert_eq!(runtime.tokens(), &[0_u32; 0]);
     restore_fail.set(false);
     runtime.generate(&[3], &options(), &cancel, |_| Ok(()))?;
+    assert_eq!(runtime.tokens(), &[3, 3]);
+    Ok(())
+}
+
+#[test]
+fn failed_reset_preserves_committed_history_and_latches_admission_until_success() -> Result<()> {
+    let decoder = decoder();
+    let reset_fail = decoder.reset_fail.clone();
+    let steps = decoder.steps.clone();
+    let mut runtime = Runtime::new(decoder, LIMITS)?;
+    let cancellation = Cancellation::default();
+    runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+    let committed = runtime.tokens().to_vec();
+    let checkpoints = runtime.checkpoint_count();
+    let completed_steps = steps.get();
+    assert_eq!(runtime.decoder().tokens, committed);
+
+    reset_fail.set(true);
+    for _ in 0..2 {
+        assert!(runtime.reset().is_err());
+        assert!(runtime.is_faulted());
+        assert_eq!(runtime.tokens(), committed);
+        assert_eq!(runtime.checkpoint_count(), checkpoints);
+        // A decoder may mutate before returning an error. Inspection exposes
+        // that provisional backend state without rewriting committed history.
+        assert_eq!(runtime.decoder().tokens, [0_u32; 0]);
+        assert!(
+            runtime
+                .generate(&[2], &options(), &cancellation, |_| Ok(()))
+                .is_err()
+        );
+        assert_eq!(steps.get(), completed_steps);
+    }
+
+    reset_fail.set(false);
+    runtime.reset()?;
+    assert!(!runtime.is_faulted());
+    assert_eq!(runtime.tokens(), &[0_u32; 0]);
+    assert_eq!(runtime.checkpoint_count(), 0);
+    assert_eq!(runtime.decoder().tokens, [0_u32; 0]);
+    let completion = runtime.generate(&[3], &options(), &cancellation, |_| Ok(()))?;
+    assert_eq!(completion.reused_tokens, 0);
     assert_eq!(runtime.tokens(), &[3, 3]);
     Ok(())
 }

@@ -142,7 +142,17 @@ impl<D: Decoder> Runtime<D> {
         &self.tokens
     }
 
-    /// Whether a failed backend restoration requires a successful reset.
+    /// Inspect the decoder's identity and diagnostics without changing ownership.
+    ///
+    /// Diagnostics describe the backend's latest operation, which may have been
+    /// provisional or failed. Consult [`Self::tokens`] for committed history and
+    /// [`Self::is_faulted`] before interpreting the backend as reusable state.
+    #[must_use]
+    pub const fn decoder(&self) -> &D {
+        &self.decoder
+    }
+
+    /// Whether failed backend restoration or reset requires a successful reset.
     #[must_use]
     pub const fn is_faulted(&self) -> bool {
         self.faulted
@@ -158,12 +168,14 @@ impl<D: Decoder> Runtime<D> {
     ///
     /// # Errors
     /// A reset failure leaves admission closed and returns the decoder error.
+    /// Committed history and saved prefixes are cleared only after success;
+    /// backend state remains unavailable until a subsequent reset succeeds.
     pub fn reset(&mut self) -> Result<()> {
         self.faulted = true;
+        self.decoder.reset()?;
         self.checkpoints.clear();
         self.tokens.clear();
         self.logits.clear();
-        self.decoder.reset()?;
         self.faulted = false;
         Ok(())
     }
