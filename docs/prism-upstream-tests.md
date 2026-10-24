@@ -22,6 +22,9 @@ importer and replay build were removed after Windows ARM64 CI proved the safe
 Rust replacements for every previously required C++ control. Native builds
 disable upstream tests and expose production operations through bounded bridges.
 A Rust-owned reference failure still fails CI independently of the runtime floor.
+The manual [focused reference workflow](../.github/workflows/prism-focused.yml)
+runs one selected source on Windows ARM64 for diagnostics. Its result does not
+replace Foundation's complete source and backend gates.
 
 The migration inventories **all 71 catalog sources**, including model and
 benchmark cases. Acceptance targets **Snapdragon X Elite on Windows ARM64**.
