@@ -104,7 +104,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main') { throw 'Focused reference diagnostics require main-branch GitHub Actions.' }
-          $allowed = @('Chat', 'DsparkForward', 'DsparkRealEval', 'TokenizerBpe', 'TokenizersRepo', 'QuantizeStats', 'QuantizePerf', 'TokenizerPython', 'TokenizerShell', 'TokenizerRandom')
+          $allowed = @('Chat', 'DsparkForward', 'DsparkRealEval', 'TokenizerBpe', 'TokenizersRepo', 'QuantizeStats', 'QuantizePerf', 'TokenizerPython', 'TokenizerShell', 'TokenizerRandom', 'BackendSampler', 'ModelResolution', 'SaveLoadState', 'ThreadSafety')
           if ($env:PRISM_FOCUSED_CASE -cnotin $allowed) { throw 'Select one supported focused source contract.' }
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-PrismFocused-' + [guid]::NewGuid().ToString('N'))
           [void][IO.Directory]::CreateDirectory($evidence)
