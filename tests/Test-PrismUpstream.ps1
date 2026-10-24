@@ -21,6 +21,7 @@ param(
     [string]$Toolchain = 'nightly-2026-10-22',
     [string]$CompilerLauncher,
     [ValidateRange(1, 12)][int]$Parallel = 2,
+    [ValidateRange(1, 12)][int]$CaseParallel = 2,
     [string]$NativeBuildDirectory
 )
 Set-StrictMode -Version Latest
@@ -34,6 +35,7 @@ Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.Native.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBaseline.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismNativeCache.psm1')
+Import-Module (Join-Path $repo 'scripts/Bonsai.PrismRunner.psm1')
 $archive = Resolve-ExternalPath $SourceArchive
 $evidence = Resolve-ExternalPath $EvidenceDirectory
 $target = Resolve-ExternalPath $TargetDirectory
@@ -69,6 +71,10 @@ if ($NativeBuildDirectory) {
     $nativeSource = Initialize-BonsaiPrismNativeSource -SourceDirectory $source -BuildDirectory $nativeBuildRoot
 }
 $upstream = Join-Path $repo 'tools/prism/upstream'
+$nativeAdapter = $upstream
+if ($NativeBuildDirectory) {
+    $nativeAdapter = Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $upstream -BuildDirectory $nativeBuildRoot
+}
 $catalog = Import-BonsaiPrismCatalog -Path (Join-Path $upstream 'catalog.json') -SourceDirectory $source
 $receipt = [ordered]@{
     SchemaVersion = 1
@@ -86,10 +92,12 @@ $receipt = [ordered]@{
     NativePlatform = $NativePlatform
     SourceDirectory = $source
     NativeSourceDirectory = $nativeSource
+    NativeAdapterDirectory = $nativeAdapter
     NativeBuildDirectory = $nativeBuildRoot
     NativeToolset = if ($Generator -ne 'Ninja' -and $NativePlatform -eq 'ARM64') { 'ClangCL' } else { $null }
     CompilerLauncher = $CompilerLauncher
     ParallelJobs = $Parallel
+    CaseParallelJobs = $CaseParallel
     Status = 'building'
 }
 $receiptPath = Join-Path $evidence 'receipt.json'
@@ -211,8 +219,8 @@ if (@($selected | Where-Object { $_ -in @('GgufMetadata', 'QuantSelection') }).C
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
 }
 $bridgeFamilies = @{
-    ggml = @{ Source = $upstream; Target = 'prism-upstream-bridge'; Option = '--bridge' }
-    common = @{ Source = (Join-Path $upstream 'common'); Target = 'prism-upstream-common-bridge'; Option = '--common-bridge' }
+    ggml = @{ Source = $nativeAdapter; Target = 'prism-upstream-bridge'; Option = '--bridge' }
+    common = @{ Source = (Join-Path $nativeAdapter 'common'); Target = 'prism-upstream-common-bridge'; Option = '--common-bridge' }
 }
 $bridges = @{}
 $nativeBuilds = [Collections.Generic.List[object]]::new()
@@ -264,14 +272,14 @@ if ($IsWindows -and $NativePlatform -eq 'ARM64') { Assert-Arm64PE -Path $harness
 $receipt.HarnessExecutable = $harness
 $receipt.HarnessSha256 = (Get-FileHash -LiteralPath $harness -Algorithm SHA256).Hash.ToLowerInvariant()
 $receipt.HarnessVerifiedPeMachine = if ($IsWindows -and $NativePlatform -eq 'ARM64') { '0xAA64' } else { $null }
-$referenceCases = [Collections.Generic.List[object]]::new()
-$rustCases = [Collections.Generic.List[object]]::new()
+$caseWork = [Collections.Generic.List[object]]::new()
 # Rust owns each selected test's inputs, reference calculations and assertions.
 # The native bridge dispatches production engine calls without importing tests.
 foreach ($selection in $selected) {
     $adapter = $adapters[$selection]
     $caseName = $adapter.Name
     $caseId = if ($adapter.ContainsKey('Id')) { $adapter.Id } else { "tests/$caseName.cpp" }
+    $commands = [Collections.Generic.List[object]]::new()
     foreach ($engine in @('cpp', 'rust')) {
         $output = Join-Path $evidence "$caseName-$engine.json"
         $arguments = @('--target', $engine, '--case', $caseId, '--source-directory', $source, '--output', $output,
@@ -281,20 +289,19 @@ foreach ($selection in $selected) {
             $arguments += @($bridgeFamilies[$adapter.Family].Option, $bridges[$adapter.Family])
         }
         $timeout = if ($selection -eq 'Barrier') { 360 } elseif ($selection -eq 'Architectures') { 1800 } elseif ($selection -eq 'RecurrentRollback') { 600 } elseif ($selection -in @('KvMeanCenter','Optimizer')) { 600 } elseif ($selection -eq 'Chat') { 1200 } elseif ($selection -eq 'ModelResolution') { 360 } elseif ($selection -eq 'DoubleFloat') { 900 } elseif ($selection -eq 'TokenizerBpe') { 2100 } elseif ($selection -eq 'TokenizerSpm') { 600 } elseif ($selection -in $modelSelections) { 360 } elseif ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')) { 300 } else { 120 }
-        $null = Invoke-UpstreamCommand -Executable $harness -Arguments $arguments -TimeoutSeconds $timeout
-        $result = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json -AsHashtable
-        if ($result.SchemaVersion -ne 1 -or $result.UpstreamCommit -cne $lock.Commit -or $result.Target -cne $engine -or
-            @($result.Cases).Count -ne 1 -or $result.Cases[0].Id -cne $caseId) {
-            throw 'Shared assertion harness returned an unexpected case identity.'
-        }
-        if ($engine -eq 'cpp') {
-            $referenceCases.Add($result.Cases[0])
-        }
-        else { $rustCases.Add($result.Cases[0]) }
+        $commands.Add([pscustomobject]@{
+            Target = $engine; Arguments = $arguments; OutputPath = $output
+            LogPath = Join-Path $evidence "$caseName-$engine.log"
+        })
     }
+    $caseWork.Add([pscustomobject]@{
+        Ordinal = $caseWork.Count; Id = $caseId; TimeoutSeconds = $timeout; Commands = $commands.ToArray()
+    })
 }
-$reference = @{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = $referenceCases.ToArray() }
-$rust = @{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = $rustCases.ToArray() }
+$completed = @(Invoke-BonsaiPrismCaseBatch -Cases $caseWork.ToArray() -Executable $harness -EvidenceDirectory $evidence -UpstreamCommit $lock.Commit -Environment $compilerEnvironment -Parallel $CaseParallel)
+$receipt.CaseRuns = @($completed | ForEach-Object { [ordered]@{ Id = $_.Id; Commands = $_.Commands } })
+$reference = @{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = @($completed.Reference) }
+$rust = @{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = @($completed.Rust) }
 [IO.File]::WriteAllText((Join-Path $evidence 'cpp-results.json'), ($reference | ConvertTo-Json -Depth 10))
 [IO.File]::WriteAllText((Join-Path $evidence 'rust-results.json'), ($rust | ConvertTo-Json -Depth 10))
 if ($Case -eq 'All') {

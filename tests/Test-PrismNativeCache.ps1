@@ -38,4 +38,29 @@ $orphaned = Join-Path $scratch 'orphaned-native'
 [IO.File]::WriteAllText((Join-Path $orphaned 'build-ggml/kernel.obj'), 'stale native output')
 Assert-Failure { Initialize-BonsaiPrismNativeSource -SourceDirectory $source -BuildDirectory $orphaned } 'Native outputs without their verified source tree were accepted.'
 Assert (-not [IO.Directory]::Exists((Join-Path $orphaned 'source'))) 'Orphaned native outputs were rehydrated with old source timestamps.'
-Write-Output "Prism native cache source identity and timestamp checks passed. Evidence: $scratch"
+$adapter = Join-Path $scratch 'checkout-adapter'
+[void][IO.Directory]::CreateDirectory((Join-Path $adapter 'common'))
+[IO.File]::WriteAllText((Join-Path $adapter 'CMakeLists.txt'), 'adapter build configuration')
+[IO.File]::WriteAllText((Join-Path $adapter 'common/bridge.cpp'), 'adapter production calls')
+[IO.File]::WriteAllText((Join-Path $adapter 'common/operations.hpp'), 'adapter production operations')
+[IO.File]::WriteAllText((Join-Path $adapter 'catalog.json'), 'non-native evidence policy')
+$cachedAdapter = Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $adapter -BuildDirectory $cache
+Assert (-not [IO.File]::Exists((Join-Path $cachedAdapter 'catalog.json'))) 'Native caches must not bind unrelated evidence policy files.'
+$bridge = Join-Path $cachedAdapter 'common/bridge.cpp'
+$bridgeTimestamp = [IO.File]::GetLastWriteTimeUtc($bridge)
+[IO.File]::SetLastWriteTimeUtc((Join-Path $adapter 'common/bridge.cpp'), $bridgeTimestamp.AddHours(1))
+Assert ((Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $adapter -BuildDirectory $cache) -ceq $cachedAdapter) 'A verified native adapter was not reusable.'
+Assert ([IO.File]::GetLastWriteTimeUtc($bridge) -eq $bridgeTimestamp) 'Fresh checkout timestamps invalidated the native bridge.'
+[IO.File]::WriteAllText((Join-Path $adapter 'catalog.json'), 'changed non-native evidence policy')
+[void](Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $adapter -BuildDirectory $cache)
+[IO.File]::WriteAllText($bridge, 'modified adapter production calls')
+Assert-Failure { Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $adapter -BuildDirectory $cache } 'A modified cached native adapter was accepted.'
+[IO.File]::Copy((Join-Path $adapter 'common/bridge.cpp'), $bridge, $true)
+$injected = Join-Path $cachedAdapter 'unlisted.json'
+[IO.File]::WriteAllText($injected, 'unlisted cache file')
+Assert-Failure { Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $adapter -BuildDirectory $cache } 'An unlisted cached adapter file was accepted.'
+[IO.File]::Delete($injected)
+[IO.File]::Delete($bridge)
+Assert-Failure { Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $adapter -BuildDirectory $cache } 'An incomplete native adapter cache was accepted.'
+Assert-Failure { Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $adapter -BuildDirectory (Join-Path $adapter 'cache') } 'Overlapping adapter and cache paths were accepted.'
+Write-Output "Prism native cache source and adapter identity/timestamp checks passed. Evidence: $scratch"

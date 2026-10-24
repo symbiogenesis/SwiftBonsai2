@@ -369,6 +369,7 @@ fn run_bridge(bridge: &Path, directory: &Path, input: &Path, output: &Path) -> R
         .stderr(stderr)
         .spawn()?;
     let started = Instant::now();
+    let mut poll_interval = Duration::from_millis(1);
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -401,7 +402,10 @@ fn run_bridge(bridge: &Path, directory: &Path, input: &Path, output: &Path) -> R
                 directory.display()
             )));
         }
-        std::thread::sleep(Duration::from_millis(20));
+        // Short production calls should not each pay a fixed 20 ms polling
+        // floor. Back off for long operations while retaining the same limits.
+        std::thread::sleep(poll_interval);
+        poll_interval = (poll_interval * 2).min(Duration::from_millis(20));
     }
 }
 
