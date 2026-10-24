@@ -14,7 +14,7 @@ fn exact_ids_empty_arrays_and_json_whitespace_are_preserved() -> Result<()> {
         [0, u32::MAX, 258, 258, 0]
     );
     for input in ["[]", " \t[ \r\n ]\n"] {
-        assert!(read_tokens(&mut input.as_bytes(), 1)?.is_empty());
+        assert_eq!(read_tokens(&mut input.as_bytes(), 1)?, Vec::<u32>::new());
     }
     let ids: Vec<_> = (0..MAX_TOKENIZATION_CONTEXT)
         .map(|index| u32::try_from(index % 3))
@@ -98,7 +98,7 @@ struct RepeatingReader {
 
 impl Read for RepeatingReader {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        assert!(!buffer.is_empty());
+        assert_ne!(buffer, [0_u8; 0]);
         let count = buffer.len().min(self.maximum_chunk);
         buffer[..count].fill(b' ');
         self.consumed += count;
@@ -150,7 +150,7 @@ fn short_reads_and_trait_object_readers_preserve_split_numbers() -> Result<()> {
         };
         let erased: &mut dyn Read = &mut reader;
         assert_eq!(read_tokens(erased, 4)?, [u32::MAX, 0, 258, 258]);
-        assert!(reader.bytes.is_empty());
+        assert_eq!(reader.bytes, [0_u8; 0]);
     }
     Ok(())
 }

@@ -412,11 +412,11 @@ mod driver {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(output.stderr.is_empty());
+        assert_eq!(output.stderr, Vec::<u8>::new());
         assert_eq!(serde_json::from_slice::<Value>(&output.stdout)?, inline);
         let output = fixture.run_stdin(&arguments, b"[260]")?;
         assert!(!output.status.success());
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout, Vec::<u8>::new());
         assert!(String::from_utf8(output.stderr)?.contains("outside the model vocabulary"));
         Ok(())
     }
@@ -458,7 +458,7 @@ mod driver {
             replace(&mut arguments, "--tokens-file", "-")?;
             let output = fixture.run_stdin(&arguments, &bytes)?;
             assert!(!output.status.success());
-            assert!(output.stdout.is_empty());
+            assert_eq!(output.stdout, Vec::<u8>::new());
             assert_eq!(String::from_utf8(output.stderr)?, error);
             replace(&mut arguments, "--tokens-file", &path.to_string_lossy())?;
         }
