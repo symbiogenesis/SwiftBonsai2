@@ -64,8 +64,7 @@ target_link_libraries(prism-upstream-common-bridge PRIVATE llama-common mtmd pri
 # The pinned public C ABI intentionally throws for source-tested invalid inputs.
 # Preserve those C++ exception observations instead of assuming extern C is no-throw.
 if(MSVC)
-  target_compile_options(prism-upstream-common-bridge PRIVATE
-    $<$<COMPILE_LANGUAGE:CXX>:/EHs> $<$<COMPILE_LANGUAGE:CXX>:/EHc->)
+  set_property(SOURCE bridge.cpp APPEND PROPERTY COMPILE_OPTIONS /EHs /EHc-)
 endif()
 
 set_source_files_properties(public_c_abi.c PROPERTIES LANGUAGE C)
