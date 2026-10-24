@@ -42,12 +42,11 @@ if(DEFINED PRISM_LLGUIDANCE_LIBRARY OR DEFINED PRISM_LLGUIDANCE_INCLUDE_DIR)
   endif()
 endif()
 
-# The production server-context library also supplies the chat conversion APIs.
-# Mirror its source list without enabling the HTTP executable or UI generation.
+# Only these two production units supply the chat conversion APIs used here.
+# Do not compile the server context, task, queue, transport or MCP machinery.
 find_package(Threads REQUIRED)
 set(PRISM_SERVER_CONTEXT_SOURCES
-  server-chat.cpp server-task.cpp server-queue.cpp server-common.cpp
-  server-context.cpp server-stream.cpp server-tools.cpp server-mcp.cpp server-schema.cpp)
+  server-chat.cpp server-common.cpp)
 list(TRANSFORM PRISM_SERVER_CONTEXT_SOURCES PREPEND "${PRISM_SOURCE_DIR}/tools/server/")
 add_library(prism-upstream-server-context STATIC ${PRISM_SERVER_CONTEXT_SOURCES})
 target_include_directories(prism-upstream-server-context PRIVATE
