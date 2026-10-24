@@ -174,6 +174,15 @@ succeed, including artifact retention; skipped jobs are rejected.
 Foundation downloads runtime/source packages but no model weights and runs no
 inference benchmark. Caches isolate compiler, runner image, architecture and
 package/native-linking lanes; every check still runs after cache restoration.
+Rust checks batch selected packages by their effective feature policy, rather
+than starting Cargo separately for every package and phase. Formatting covers
+exactly the selected packages in one invocation. Restricted Prism feature modes
+remain separate from all-feature packages because Cargo unifies selected
+package features. A full all-package selection uses seven Cargo invocations
+instead of 48; a Broker selection uses four instead of 24. Batched tests keep
+`--no-fail-fast` so a failing test binary does not prevent the remaining selected
+test binaries from running. Schema-2 receipts record each batch's packages,
+phase, elapsed time and result, including failures.
 Broker and maintenance packages run in parallel lanes, each with its own build
 cache and evidence. Both selections come from the package registry, and the
 aggregate gate requires both lanes. The x86-64 scalar fallback also reuses its
@@ -196,6 +205,31 @@ source trees; native-test artifacts remain separate. All overlay rejection,
 native build, analyzer and correctness checks still run. Nightly job summaries
 record the runner image and exact compiler/build cache hits so cold image
 transitions can be distinguished from warm runs.
+Script-only jobs can reuse an exact-source packaged maintenance executable
+without restoring a compiler or Cargo target tree. The cache includes a source
+identity receipt; selection verifies the executable digest and ARM64 PE machine.
+Jobs that compile native Rust probes still restore the compiler and build cache.
+The three focused Windows lifecycle selections share that job's external Cargo
+target directory instead of compiling three independent copies.
+
+The Windows upstream Prism lane also caches native bridge build trees with an
+exact source, compiler, generator and runner-image key. Each run verifies the
+archive and extracts fresh evidence, then compares every cached upstream source
+file's length and SHA-256 and the complete file inventory with that extraction.
+Unchanged native sources retain stable paths and timestamps; changed, extra or
+missing files reject reuse. CMake configuration and build still run, with cache
+and configuration diagnostics copied into the fresh evidence directory. See
+[CMake build trees](https://cmake.org/cmake/help/latest/manual/cmake.1.html) and
+[Actions cache matching](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching).
+
+The complete binary32 arithmetic proof still visits all 4,294,967,296 patterns.
+Bounded standard-library workers distribute its sign/exponent ranges and reduce
+counts and failures deterministically. Codec mutation checks run Cargo's emitted
+test executable directly after compilation; compilation failures cannot count as
+killed mutants. The PTQ1 export oracle compares the entire expected byte payload,
+including padding and gaps, in one native comparison. These changes add no test
+framework or worker-pool dependency. All exhaustive runs remain CI-only.
+
 Scratch/evidence remains external. Select the published maintenance executable
 from the exact evaluated main revision via `BONSAI_TOOLS_PATH` or `-ToolPath`;
 version/protocol checking is not source-to-binary attestation.

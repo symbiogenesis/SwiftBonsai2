@@ -14,6 +14,7 @@ param(
     [Parameter(Mandatory)][string]$SourceArchive,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [Parameter(Mandatory)][string]$TargetDirectory,
+    [string]$NativeBuildDirectory,
     [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')][string]$Case = 'All',
     [string]$CMakePath,
     [ValidateSet('Ninja', 'Visual Studio 18 2026', 'Visual Studio 17 2022')][string]$Generator = 'Ninja',
@@ -32,6 +33,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.Native.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBaseline.psm1')
+Import-Module (Join-Path $repo 'scripts/Bonsai.PrismNativeCache.psm1')
 $archive = Resolve-ExternalPath $SourceArchive
 $evidence = Resolve-ExternalPath $EvidenceDirectory
 $target = Resolve-ExternalPath $TargetDirectory
@@ -52,6 +54,20 @@ try {
     Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $evidence 'source')
 } finally { $guard.Dispose() }
 $source = Join-Path (Join-Path $evidence 'source') $lock.ArchiveRoot
+$nativeBuildRoot = $evidence
+$nativeSource = $source
+if ($NativeBuildDirectory) {
+    $nativeBuildRoot = Resolve-ExternalPath $NativeBuildDirectory
+    foreach ($other in @($evidence, $target)) {
+        $prefix = $other.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        $nativePrefix = $nativeBuildRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        if ($nativeBuildRoot -eq $other -or $nativeBuildRoot.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or
+            $other.StartsWith($nativePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Native build cache, Rust targets and uploaded evidence must use separate directories.'
+        }
+    }
+    $nativeSource = Initialize-BonsaiPrismNativeSource -SourceDirectory $source -BuildDirectory $nativeBuildRoot
+}
 $upstream = Join-Path $repo 'tools/prism/upstream'
 $catalog = Import-BonsaiPrismCatalog -Path (Join-Path $upstream 'catalog.json') -SourceDirectory $source
 $receipt = [ordered]@{
@@ -69,6 +85,8 @@ $receipt = [ordered]@{
     Generator = $Generator
     NativePlatform = $NativePlatform
     SourceDirectory = $source
+    NativeSourceDirectory = $nativeSource
+    NativeBuildDirectory = $nativeBuildRoot
     NativeToolset = if ($Generator -ne 'Ninja' -and $NativePlatform -eq 'ARM64') { 'ClangCL' } else { $null }
     CompilerLauncher = $CompilerLauncher
     ParallelJobs = $Parallel
@@ -192,11 +210,19 @@ $extension = if ($IsWindows) { '.exe' } else { '' }
 foreach ($family in @($selected | ForEach-Object { $adapters[$_].Family } | Select-Object -Unique)) {
     if ($family -eq 'independent') { continue }
     $definition = $bridgeFamilies[$family]
-    $build = Join-Path $evidence ("build-$family")
-    $configureArguments = @('-S', $definition.Source, '-B', $build, "-DPRISM_SOURCE_DIR=$source", '-DCMAKE_BUILD_TYPE=Release',
+    $build = Join-Path $nativeBuildRoot ("build-$family")
+    $null = Resolve-ExternalPath $build
+    $configureArguments = @('-S', $definition.Source, '-B', $build, "-DPRISM_SOURCE_DIR=$nativeSource", '-DCMAKE_BUILD_TYPE=Release',
         '-DLLAMA_BUILD_NUMBER=0', "-DLLAMA_BUILD_COMMIT=$($lock.Commit)") + $generatorArguments
     $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments $configureArguments
     $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments @('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target', $definition.Target)
+    if ($NativeBuildDirectory) {
+        $diagnostics = Join-Path $evidence ("native-$family")
+        [void][IO.Directory]::CreateDirectory($diagnostics)
+        [IO.File]::Copy((Join-Path $build 'CMakeCache.txt'), (Join-Path $diagnostics 'CMakeCache.txt'), $false)
+        $configureLog = Join-Path $build 'CMakeFiles/CMakeConfigureLog.yaml'
+        if ([IO.File]::Exists($configureLog)) { [IO.File]::Copy($configureLog, (Join-Path $diagnostics 'CMakeConfigureLog.yaml'), $false) }
+    }
     $executables = @(Get-ChildItem -LiteralPath $build -Recurse -File -Filter ($definition.Target + $extension))
     if ($executables.Count -ne 1) { throw "Expected exactly one $family production-call bridge." }
     $bridges[$family] = $executables[0].FullName
