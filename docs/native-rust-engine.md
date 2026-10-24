@@ -12,9 +12,10 @@ decoding; it has no C/C++ inference dependency. R2/R5 have implementation progre
 but their complete parity and integration exits remain outstanding. Tokenizer,
 chat-template and stochastic-sampler parity, adapter forward execution, broker
 backend integration, broader optimized kernels and device qualification remain
-to do. The first opt-in [baseline NEON PQ2 kernel](simd-plan.md) now passes exact
-synthetic integer/matvec checks through safe core SIMD APIs. Scalar remains the
-default; this does not complete R3 or establish target-device speed/parity.
+to do. The [baseline NEON PQ2/PTQ1 kernels](simd-plan.md) now pass exact
+synthetic integer/matvec checks through safe core SIMD APIs and are selected
+automatically on supported Windows ARM64 builds. Scalar remains the explicit
+reference and fallback; this does not complete R3 or establish target-device speed/parity.
 
 The separate [Hexagon NPU plan](hexagon-npu-plan.md) expands M5 into N0–N7.
 Its signed-access and compatibility discovery can run alongside this roadmap;
@@ -103,7 +104,7 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
   dimensions, zero/extreme values, scale bits and tail handling. Exit with
   focused correctness and CI microkernel plus end-to-end evidence before
   committing to the remaining optimized kernel inventory.
-  The first experimental PQ2 kernel, safe dependency route, explicit selection
+  The experimental PQ2/PTQ1 kernels, safe dependency route, automatic default selection
   and focused regressions are implemented. Profiling, complete diagnostics,
   other formats/ISAs and performance promotion remain pending; see S1/S2.
   Compare that control with [exact TL1_1/TL2_1 lookup techniques](inference-algorithms.md#exact-ternary-tables-for-decode)

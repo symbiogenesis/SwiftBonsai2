@@ -616,8 +616,9 @@ freeze format/numerical contracts, evaluate stable safe SIMD APIs, prove a fused
 PQ2 baseline NEON dot with scalar quantization, qualify PTQ1 separately, then
 consider independently detected dotprod/i8mm and measured graph/prefill targets.
 It retains the unsafe-code boundary, scalar fallback and CI-only performance
-gates. The first safe core-only NEON PQ2 kernel and exact synthetic regressions
-are implemented behind explicit library opt-in; scalar remains the default.
+gates. Safe core-only NEON PQ2/PTQ1 kernels and exact synthetic regressions
+are implemented and selected automatically on supported Windows ARM64 builds;
+scalar remains available as the explicit reference and unsupported-path fallback.
 Profiling, fuller diagnostics, remaining formats/ISAs and device promotion are
 pending; no SIMD throughput or whole-model parity gain is established.
 

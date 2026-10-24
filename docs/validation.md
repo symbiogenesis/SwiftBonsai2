@@ -41,7 +41,7 @@ packed scale bytes and native PQ2's fourth symbol, while rejecting nonfinite
 scales and noncanonical PTQ1. The export codec keeps its stricter finite nonzero,
 ternary-only conversion contract.
 
-The optional CPU SIMD implementation follows the [S0–S6 plan](simd-plan.md).
+The CPU SIMD implementation follows the [S0–S6 plan](simd-plan.md).
 Exact PQ2/PTQ1 integer regressions check all packed byte values/positions, each
 lane/code including activation -128, deterministic unaligned blocks and the
 immutable C++ packed-byte fixture. Matvec regressions check bitwise outputs,
@@ -49,7 +49,9 @@ scale/quantization extremes, ordered block sums, odd-group PQ2, PTQ1's independe
 Q8_0 scales, scalar fallback, malformed inputs and storage recovery.
 Native Release Clippy/rustdoc, CLI/no-CLI builds and assembly inspection pass.
 The runtime retains `forbid(unsafe_code)`; the optional core Fearless SIMD
-dependency owns its internal intrinsic boundary. Scalar remains the default.
+dependency owns its internal intrinsic boundary. Default builds automatically
+select baseline NEON for supported Windows ARM64 packed operations; explicit
+scalar requests, unsupported operations and feature-disabled builds use scalar.
 Foundation's all-feature native lane runs the complete suite, plus explicit
 feature-disabled fallback and no-CLI NEON builds; Windows x86-64 checks that the
 feature safely falls back on another architecture. This does not change the

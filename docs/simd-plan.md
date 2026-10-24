@@ -2,8 +2,9 @@
 
 Implementation status, October 23, 2026. This expands R3 and the CPU part of R4
 in the [native engine roadmap](native-rust-engine.md). S1 has selected a safe
-implementation route; opt-in baseline NEON PQ2 and PTQ1 kernels and focused exact
-regressions are implemented, including odd-group PQ2. Scalar remains the default.
+implementation route; baseline NEON PQ2 and PTQ1 kernels and focused exact
+regressions are implemented, including odd-group PQ2. Supported Windows ARM64
+builds select these kernels automatically by default, with scalar fallback.
 S0 profiling, the remaining S2 diagnostics, broader S3 memory qualification,
 optional-ISA work and S6 promotion remain pending.
 The publisher Prism engine remains the assessment/fallback path. No throughput
@@ -11,13 +12,15 @@ or whole-model parity improvement is claimed.
 
 ## First implementation and evidence
 
-The `experimental-neon` feature of `bonsai-prism-runtime` enables a target-only
+The default-enabled `experimental-neon` feature of `bonsai-prism-runtime` enables a target-only
 dependency on `fearless_simd` **1.1.0**. The selected core API compiles under the
 runtime's unchanged `forbid(unsafe_code)` without a procedural macro or a new
-unsafe boundary. A caller explicitly constructs
-`MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon)`; merely compiling
-the feature does not enable it. `matvec` and the Qwen35 graph still use the scalar
-default. `selected_backend()` reports the actual per-call backend. Detailed
+unsafe boundary. `MatvecBackend::Auto` is the default and selects NEON for
+eligible operations, including calls through `matvec`, the Qwen35 graph and the
+token driver. A caller can force the scalar reference with
+`MatvecScratch::with_backend(MatvecBackend::Scalar)`; the existing explicit
+`ExperimentalNeon` request remains supported. Feature-disabled builds retain
+scalar execution. `selected_backend()` reports the actual per-call backend. Detailed
 fallback reasons and build-identity logging remain future diagnostics work.
 
 Eligibility requires `aarch64-pc-windows-msvc`, the compiled feature and ambient
@@ -235,6 +238,12 @@ Tests inject absent/unknown capabilities to check selection without executing
 those instructions. Log requested/selected backend and fallback reason with
 format/shape and build identity, without tensor contents or private prompts.
 
+Semantics-preserving optimized paths should be selected automatically when their
+build, target, format and shape requirements are met. Keep scalar forcing and
+unsupported-path fallback. The current baseline NEON default follows this policy;
+its target-device speed remains to be measured. Future selection refinements
+should use paired evidence rather than assuming every vector path wins.
+
 ## Numerical acceptance
 
 S0 records acceptance before implementation. Keep two comparisons: optimized
@@ -281,7 +290,7 @@ attention's negative-infinity mask and all-masked-row rejection.
   scalar quantizer and per-block scale order. Add bounded load/tail behavior,
   scalar selection and dispatch diagnostics. Exit with focused exact differential
   checks and negative controls; it stays experimental until S6 evidence.
-  Kernel, explicit selection, actual-backend reporting and focused regressions
+  Kernel, automatic default and explicit selection, actual-backend reporting and focused regressions
   are implemented. Complete fallback/build diagnostics and qualification remain
   pending; this milestone is not a performance or production acceptance verdict.
 - [ ] **S3 — Add PTQ1 and PQ2 odd-group coverage (R3).** Fuse canonical trit decode
@@ -305,11 +314,12 @@ attention's negative-infinity mask and all-masked-row rejection.
   logical weights and basis. Qualify graph scheduling, recurrent causality,
   checkpoint independence and cancellation granularity. Keep each change in a
   separately attributable comparison.
-- [ ] **S6 — Qualify and record selection policy (R3/R7).** Run paired manual
+- [ ] **S6 — Qualify and refine selection policy (R3/R7).** Run paired manual
   main-only target-device CI with fixed model/adapter/workload and repeated
   interleaved trials. Publish the kernel and end-to-end evidence described below,
-  including regressions. Promote only successful format/shape/backend entries;
-  retain scalar forcing and a reproducible Prism fallback. A microkernel win
+  including regressions. Use the results to refine the automatic default's
+  format/shape/backend entries and record any exceptions; qualify only successful
+  entries. Retain scalar forcing and a reproducible Prism fallback. A microkernel win
   alone does not complete R3 or qualify the Rust replacement.
 
 S1/S2 synthetic correctness work can proceed before complete model parity.

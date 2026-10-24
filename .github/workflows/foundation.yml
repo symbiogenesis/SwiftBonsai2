@@ -48,8 +48,9 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-NativeRuntimeChecks-' + [guid]::NewGuid().ToString('N'))
           "NATIVE_RUNTIME_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
-          # The package registry enables all features, including experimental NEON.
+          # The package registry audits all features; also exercise ordinary defaults below.
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism-runtime -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
+          cargo +1.99.1-aarch64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --test simd simd_default_selects_available_kernel_and_explicit_scalar_overrides -- --exact 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'default-backend.log')
           cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --lib
           cargo +1.99.1-aarch64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --features experimental-neon --lib
           cargo +1.99.1-aarch64-pc-windows-msvc clippy --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --all-targets -- -D warnings
@@ -71,7 +72,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Verify non-ARM fallback with experimental feature enabled
+      - name: Verify non-ARM fallback with default and explicit feature builds
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
@@ -85,9 +86,10 @@ jobs:
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-ScalarFallbackChecks-' + [guid]::NewGuid().ToString('N'))
           "SCALAR_FALLBACK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-prism-runtime -Toolchain 1.99.1-x86_64-pc-windows-msvc -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -Build | ConvertTo-Json -Depth 8
+          cargo +1.99.1-x86_64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --test simd simd_default_selects_available_kernel_and_explicit_scalar_overrides -- --exact 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'default-backend.log')
           cargo +1.99.1-x86_64-pc-windows-msvc build --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --no-default-features --features experimental-neon --lib
           cargo +1.99.1-x86_64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --locked --offline --release --all-features --test simd simd_ 2>&1 | Tee-Object -FilePath (Join-Path $evidence 'non-arm-fallback.log')
-          'Experimental NEON requests use the exact scalar fallback on x86-64; no target-device performance claim.' >> $env:GITHUB_STEP_SUMMARY
+          'Automatic and explicit NEON requests use the exact scalar fallback on x86-64; no target-device performance claim.' >> $env:GITHUB_STEP_SUMMARY
       - name: Retain scalar fallback evidence
         if: always() && env.SCALAR_FALLBACK_EVIDENCE != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -400,7 +402,7 @@ jobs:
   # Preserve the required check name and reject failure or skipping in any lane.
   foundation:
     if: always() && github.ref == 'refs/heads/main'
-    needs: [native-runtime, prism, ternary, broker, standards, foundation-tests, lifecycle, gguf, runtime-policy]
+    needs: [native-runtime, runtime-scalar-fallback, prism, ternary, broker, standards, foundation-tests, lifecycle, gguf, runtime-policy]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 2
     steps:

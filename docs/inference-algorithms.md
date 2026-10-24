@@ -4,8 +4,9 @@ Research reviewed October 23, 2026. This extends the existing T-MAC/R8 leads in
 [the implementation plan](../PLAN.md#9-speculative-decoding-and-advanced-optimization)
 and maps published algorithms to the [native Rust engine roadmap](native-rust-engine.md).
 These are proposed implementation tasks and experiments, not enabled features
-or measured Snapdragon improvements. The opt-in baseline PQ2 NEON kernel is
-already implemented; scalar remains the default. Preserve the pinned Prism
+or measured Snapdragon improvements. Baseline PQ2/PTQ1 NEON kernels are
+already implemented and selected automatically on supported Windows ARM64;
+scalar remains the reference and fallback. Preserve the pinned Prism
 comparison/fallback, exact model/adapter identities and existing qualification.
 
 The source observations below were rechecked at repository revision

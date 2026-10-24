@@ -18,8 +18,8 @@ The crate contains:
   and PTQ1's distinct Q8_0 activation quantization. No persistent expanded float
   matrix is created. Float accumulation and SIMD reduction order can differ from
   the publisher CPU implementation; no bit-identical full-model claim is made.
-- Opt-in baseline NEON PQ2/PTQ1 integer kernels using safe core Fearless SIMD APIs.
-  Scalar remains the default on ARM64 and other targets. Exact synthetic
+- Automatic baseline NEON PQ2/PTQ1 integer kernels using safe core Fearless SIMD APIs
+  on supported Windows ARM64 builds, with scalar fallback. Exact synthetic
   differential checks preserve scalar quantization and floating block order;
   target-device speed and whole-model parity remain unqualified.
 - Embeddings, explicit Hadamard/sign transforms, RMS normalization, full causal
@@ -51,9 +51,13 @@ and hashes are recorded in `kernels.rs`; the MIT terms are retained in the root
 
 ## Build and use
 
-The default `cli` feature enables the JSON token driver shown below. Library
-consumers can disable default features, or build with `--no-default-features
---lib`, to omit JSON dependencies. The inference API uses native typed GGUF
+The default features enable the JSON token driver (`cli`) and packed NEON kernels
+(`experimental-neon`). Ordinary builds and calls automatically select NEON for
+supported Windows ARM64 packed operations. Library consumers can build with
+`--no-default-features --features experimental-neon --lib` to retain NEON without
+the JSON driver, or `--no-default-features --lib` for a scalar-only library.
+`--no-default-features --features cli` builds a scalar-only token driver.
+The inference API uses native typed GGUF
 metadata and compact arrays, and the safe Prism sharing policy needs no C-header
 generator. These feature choices do not change the model's numerical contract.
 
@@ -109,20 +113,21 @@ position cache across reset, restoration or failed evaluation.
 
 ## Validation and remaining work
 
-The [CPU SIMD plan](../../docs/simd-plan.md) records the first implemented S1/S2
-work: compile with `--features experimental-neon`, then explicitly request
-`MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon)` when calling
-`matvec_into`. `selected_backend()` reports the actual per-call selection.
+The [CPU SIMD plan](../../docs/simd-plan.md) records the implemented packed
+kernels. `MatvecBackend::Auto` is the default: `matvec`, the Qwen35 graph and the
+token driver select the available optimized path without a caller opt-in.
+`MatvecScratch::with_backend(MatvecBackend::Scalar)` forces the reference path;
+the existing `ExperimentalNeon` request remains supported.
+`selected_backend()` reports the actual per-call selection.
 Eligibility requires native Windows ARM64 MSVC with ambient baseline NEON and
 complete PQ2 or PTQ1 rows. PQ2 retains its Q8_K path for rows divisible by 256;
 odd-group PQ2 and PTQ1 retain four independent Q8_0 scales per 128 weights.
 Other formats, feature-disabled builds and other targets use scalar. Scalar runs
-natively on ARM64 as well; it does not imply x86 emulation. Compilation alone does not
-enable NEON: `matvec`, the Qwen35 graph and the token driver still use scalar
-defaults. No CLI switch or daily profile is promoted by this kernel experiment.
+natively on ARM64 as well; it does not imply x86 emulation. This kernel default
+does not qualify the native engine as a daily profile.
 
 The safe core-only `fearless_simd` 1.1.0 dependency is target-specific and
-optional; no local unsafe allowance or procedural macro is added. Packed
+enabled by default; no local unsafe allowance or procedural macro is added. Packed
 unpack/dot consumes immutable bytes directly, keeps the original scalar
 quantizer and ordered scale operations, and creates no expanded matrix.
 Raw-integer and bitwise matvec/fallback/error tests cover PQ2 and PTQ1, including
