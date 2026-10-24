@@ -47,3 +47,20 @@ mod standard;
 mod host;
 #[path = "backend_ops/inputs.rs"]
 mod inputs;
+
+#[path = "backend_ops/planner.rs"]
+mod planner;
+#[path = "backend_ops/prepare.rs"]
+mod prepare;
+
+pub(super) fn plan_partition(
+    engine: &super::engine::Engine,
+    index: usize,
+    count: usize,
+    mode: &str,
+) -> super::Result<serde_json::Value> {
+    planner::plan(engine, index, count, prepare::Mode::parse(mode)?, None)
+}
+pub(super) fn aggregate_plans(plans: &[serde_json::Value]) -> super::Result<serde_json::Value> {
+    planner::aggregate(plans)
+}
