@@ -4,7 +4,7 @@
 use super::super::{Result, invalid};
 use super::number::Number;
 use super::program::{Class, Expression, Geometry, Method, Parameter, Program, Statement};
-use super::value::{Cell, Lambda, Place, Scope, Value, variable};
+use super::value::{Cell, Element, Lambda, Place, Scope, Value, variable};
 use std::rc::Rc;
 
 /// Production observations and source helpers supplied by the case controller.
@@ -268,6 +268,25 @@ impl<'a> Interpreter<'a> {
             };
             kind = format!("std::array<{kind},{count}>");
             value.unwrap_or_else(|| Value::array(Vec::new()))
+        };
+        let clean = kind
+            .replace("constexpr", "")
+            .replace("const", "")
+            .replace("static", "");
+        let value = if (clean == "bool" || Element::parse(&clean).is_ok())
+            && let Value::Array(values) = &value
+        {
+            match values.borrow().as_slice() {
+                [] => super::standard::zero(&kind),
+                [value] => value.clone(),
+                _ => {
+                    return Err(invalid(
+                        "source scalar brace initializer has multiple values",
+                    ));
+                }
+            }
+        } else {
+            value
         };
         let value = if kind.contains('&') {
             value
@@ -994,6 +1013,83 @@ mod tests {
                 Number::I32(expected)
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn scalar_brace_initializers_keep_arrays_and_data_pointers_distinct() -> Result<()> {
+        let (program, geometries) = super::super::program::load().map_err(invalid)?;
+        let geometry = geometries
+            .eval
+            .iter()
+            .find(|geometry| geometry.class == "test_rope_set_rows")
+            .ok_or_else(|| invalid("original RoPE set-rows geometry missing"))?;
+        let mut host = LanguageOnly;
+        let mut runtime = Interpreter::new(program, &geometry.class, &mut host)?;
+        runtime.instantiate(geometry)?;
+        assert_eq!(
+            runtime.value("n_ctx")?.number().map_err(invalid)?,
+            Number::I32(512)
+        );
+        assert_eq!(
+            runtime.value("n_dims")?.number().map_err(invalid)?,
+            Number::I32(128)
+        );
+        let section = runtime.eval(&Expression::Binary {
+            op: "/".into(),
+            left: Box::new(id("n_dims")),
+            right: Box::new(literal(3)),
+        })?;
+        assert_eq!(section.number().map_err(invalid)?, Number::I32(42));
+        let one = || Value::array(vec![Value::Number(Number::I32(128))]);
+        let (_, scalar) = runtime.declaration_value("constint64_t", &[], Some(one()))?;
+        assert_eq!(scalar.number().map_err(invalid)?, Number::I64(128));
+        let (_, zero) = runtime.declaration_value("float", &[], Some(Value::array(Vec::new())))?;
+        assert_eq!(zero.number().map_err(invalid)?, Number::F32(0.0));
+        assert!(
+            runtime
+                .declaration_value(
+                    "int",
+                    &[],
+                    Some(Value::array(vec![
+                        Value::Number(Number::I32(1)),
+                        Value::Number(Number::I32(2))
+                    ]))
+                )
+                .is_err()
+        );
+        let (_, array) = runtime.declaration_value("std::array<int64_t,1>", &[], Some(one()))?;
+        assert_eq!(array.len().map_err(invalid)?, 1);
+        assert!(array.number().is_err());
+        let (_, c_array) =
+            runtime.declaration_value("int64_t", &[Some(literal(1))], Some(one()))?;
+        assert_eq!(c_array.len().map_err(invalid)?, 1);
+        assert!(c_array.number().is_err());
+        let (_, vector) = runtime.declaration_value("std::vector<int>", &[], Some(one()))?;
+        assert_eq!(vector.len().map_err(invalid)?, 1);
+        let (_, deduced) = runtime.declaration_value("auto", &[], Some(one()))?;
+        assert_eq!(deduced.len().map_err(invalid)?, 1);
+        let (_, pointer) = runtime.declaration_value(
+            "int64_t*",
+            &[],
+            Some(Value::Pointer {
+                value: Box::new(c_array.clone()),
+                index: 0,
+            }),
+        )?;
+        pointer
+            .place(0)
+            .map_err(invalid)?
+            .set(Value::Number(Number::I64(256)))
+            .map_err(invalid)?;
+        assert_eq!(
+            c_array
+                .index(0)
+                .map_err(invalid)?
+                .number()
+                .map_err(invalid)?,
+            Number::I64(256)
+        );
         Ok(())
     }
 }
