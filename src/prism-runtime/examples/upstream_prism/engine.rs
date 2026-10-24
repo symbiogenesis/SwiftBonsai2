@@ -219,8 +219,13 @@ impl Engine {
                 "common bridge timeout must be positive and at most one hour",
             ));
         }
+        let backend_request = request.as_object().is_some_and(|object| object.len() == 2)
+            && request["SchemaVersion"] == 1
+            && request["Operations"].as_array().is_some_and(|operations| {
+                operations.len() == 1 && operations[0]["Kind"] == "backend-graph"
+            });
         if timeout > BRIDGE_TIMEOUT
-            && (request["Kind"] != "backend-graph"
+            && (!backend_request
                 || std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
                 || std::env::var("GITHUB_REF").as_deref() != Ok("refs/heads/main"))
         {
