@@ -1,264 +1,143 @@
 # Native Rust Prism engine
 
-Implementation status, October 23, 2026. The goal is a
-native Rust implementation of the targeted Swift/Bonsai inference path, using
-useful implementation techniques from Camelid, Orangu and other engines. The
-pinned Prism engine remains the comparison and fallback until replacement
-qualification passes. The existing Rust LoRA overlay is an implemented storage
-component. The experimental [native CPU reference](../src/prism-runtime/README.md)
-now implements bounded verified loading, packed scalar arithmetic, the Qwen35
-hybrid graph and transactional token generation. It accepts token IDs and greedy
-decoding; it has no C/C++ inference dependency. R2/R5 have implementation progress,
-but their complete parity and integration exits remain outstanding. Tokenizer,
-chat-template and stochastic-sampler parity, adapter forward execution, broker
-backend integration, broader optimized kernels and device qualification remain
-to do. The [baseline NEON PQ2/PTQ1 kernels](simd-plan.md) now pass exact
-synthetic integer/matvec checks through safe core SIMD APIs and are selected
-automatically on supported Windows ARM64 builds. Scalar remains the explicit
-reference and fallback; this does not complete R3 or establish target-device speed/parity.
+The experimental [Rust CPU reference](../src/prism-runtime/README.md) implements
+verified loading, the Qwen35 hybrid graph and transactional greedy generation
+from token IDs, without a C/C++ inference library. Eligible Windows ARM64
+PQ2/PTQ1 operations use baseline NEON automatically; scalar remains the reference
+and fallback. **Full-model parity, broker integration and device qualification
+are pending.** Pinned Prism remains the comparison and fallback engine.
 
-The separate [Hexagon NPU plan](hexagon-npu-plan.md) expands M5 into N0–N7.
-Its signed-access and compatibility discovery can run alongside this roadmap;
-packed kernels, transform fixtures and hybrid-state contracts share the same
-reference work. External Prism/GenieX controls do not satisfy the native Rust
-replacement gate. A later Rust NPU path needs a safe ownership interface and
-audited driver boundary while preserving the no-C/C++-inference-library scope.
+## Scope
 
-## Scope and performance goals
+Preserve model weights, decoded scales, activation/cache precision, transforms,
+attention topology, sampler and ordinary decoding. Lossless layouts, SIMD,
+tiling, buffer reuse, fusion and scheduling are in scope. Floating-point
+reassociation needs declared numerical tolerances. Precision reduction,
+approximate attention, pruning, retraining and speculation are separate experiments.
 
-Keep the exact model weights, decoded scales, activation/cache precision,
-Hadamard transforms, attention topology, sampler and ordinary decoding method.
-Allow lossless layouts, SIMD, tiling, buffer reuse, operation fusion and better
-scheduling. Floating-point reassociation still needs declared numerical
-tolerances; unchanged algorithms do not guarantee bit-identical full-model
-output. Precision reduction, approximate attention, pruning, retraining and
-speculative decoding belong to separate experiments.
-
-The [algorithm research map](inference-algorithms.md) records the October 23
-paper/source review and concrete pending work below: exact ternary LUTs,
-Vec-LUT, state-only/batched prefill, chunkwise WY/UT GDN and shared hybrid
-checkpoints. It distinguishes mathematical equivalence from numerical parity,
-and keeps speculative recovery and approximate solvers in separate experiments.
-
-These are engineering estimates for end-to-end throughput, not measured
-Snapdragon results or mandatory speedup thresholds:
-
-| Scenario | Planning estimate |
-| --- | ---: |
-| Equivalent C++ to Rust translation | Approximately parity; regression is possible |
-| Tune a reasonably optimized implementation | 1.2–2× |
-| Strong hardware-specific implementation | 2–3× optimistic target |
-| Eliminate a severely inefficient existing path | 3–5× or more, conditional upside |
-
-Aim for roughly **2×**; treat **3–5×** as a stretch case requiring evidence of
-major baseline inefficiencies. Rust itself earns no assumed speedup, and gains
-from different projects cannot be multiplied together. Measure prompt processing,
-generation and total task time separately. Once necessary memory traffic
-saturates sustainable bandwidth, faster arithmetic alone offers little gain.
+The performance goal is roughly 2× end-to-end throughput, subject to profiling;
+3–5× is a stretch case requiring major baseline inefficiencies. Neither Rust nor
+another engine's results imply a speedup. Measure prefill, decode and completed
+task time separately, accounting for bandwidth and the measured critical path.
 
 ## Ordered work
 
-- [ ] **R0 — Audit reusable techniques and pin the comparison.** Review Camelid,
-  Orangu and relevant packed-kernel implementations at immutable revisions.
-  Record source paths, licenses, notices, hardware assumptions, known bugs and
-  correctness evidence before reusing code; independently implement techniques
-  when direct reuse is incompatible. Inventory the exact Swift artifact's
-  tensor types, dimensions, transforms and adapter contract. Keep PQ2 and the
-  verified current-weight PTQ1 export as distinct comparison lanes because their
-  activation arithmetic can differ. Preserve the earlier Qwen reference lane;
-  this work does not change model selection or silently substitute artifacts.
-  Exit with an implementation map and reproducible baseline identities.
+- [ ] **R0 — Pin the comparison and audit reusable techniques.** Record exact
+  model/adapter identities, tensor types, dimensions, transforms and adapter
+  contracts. Audit Camelid, Orangu and packed-kernel sources at immutable
+  revisions, including licenses, notices, hardware assumptions and correctness
+  evidence. Keep PQ2, verified current-weight PTQ1 and the earlier Qwen reference
+  as distinct lanes; lossless weights do not imply identical activation arithmetic.
+  Exit with a reproducible baseline and implementation map.
 
-- [ ] **R1 — Profile the native ARM64 baseline in CI.** Pin model/adapter hashes,
-  Prism commit, compiler/options, driver, context, batch sizes, sampler, threads
-  and power mode. Capture packed matrix operations, unpacking, Hadamard work,
-  recurrent/full-attention work, allocation/copy costs, synchronization and
-  actual memory traffic. Separate prefill from decode and distinguish cold load
-  from warm operation. Use Amdahl and bandwidth bounds to rank work on the
-  critical path rather than summing overlapping CPU/GPU time. Exit with the
-  first kernel target and a justified headroom estimate, not an assumed 2× win.
+- [ ] **R1 — Profile the ARM64 baseline in CI.** Pin runtime/compiler/options,
+  driver, context, batches, sampler, threads and power mode. Separate cold load,
+  prefill and decode. Attribute packed operations, transforms, hybrid graph work,
+  allocations/copies, synchronization and memory traffic to the critical path.
+  Exit with a first kernel target and an Amdahl/bandwidth headroom estimate.
 
-- [ ] **R2 — Build the Rust correctness reference and loader.** Reuse or factor
-  the existing bounded Rust GGUF and codec components instead of adding another
-  parser. Implement the selected artifact's complete tensor-type inventory,
-  quantized scales/symbols, Hadamard/sign/group transforms, embedding/output
-  handling, Qwen35 full attention and Gated Delta Net recurrent graph. Preserve
-  tokenizer, chat template, special/stop tokens, sampler and RNG behavior.
-  Reuse the LoRA sharing policy through Rust-owned storage; the current ggml
-  pointer bindings cannot serve as the replacement's tensor implementation.
-  Validate malformed/truncated inputs, allocation limits and unsupported
-  contracts before execution. Exit with exact decoded-weight/metadata fixtures,
-  scalar-operation parity and bounded full-model correctness against Prism.
+- [ ] **R2 — Complete the Rust correctness reference.** The bounded loader,
+  packed scalar operations and Qwen35 graph are implemented. Complete the selected
+  artifact's tensor inventory, tokenizer, chat template, special/stop tokens,
+  sampler/RNG and adapter forward path. Reuse bounded GGUF/codec components and
+  Rust-owned LoRA storage; ggml pointer bindings are not replacement tensors.
+  Retain malformed-input, allocation and unsupported-contract checks. Exit with
+  exact weight/metadata fixtures, scalar parity and bounded full-model comparisons
+  against Prism.
 
-- [ ] **R3 — Prove the hottest packed CPU kernel first.** Implement fused
-  unpack-and-dot using the detailed [SIMD plan](simd-plan.md), S0–S4 and S6.
-  Evaluate stable safe SIMD APIs before introducing a separate audited intrinsic
-  boundary; keep the runtime's unsafe-code prohibition. Begin with baseline NEON
-  integer unpack/dot and unchanged scalar quantization/scale ordering; qualify
-  PTQ1 and optional dotprod/i8mm independently. Preserve the
-  baseline's activation quantization and accumulation contract; avoid persistent
-  expanded weight copies unless a separately measured layout tradeoff wins.
-  Validate actual Oryon feature detection and instruction results, with a scalar
-  fallback. Do not assume another ARM board's i8mm support, big/little topology
-  or Linux affinity policy applies to Windows. Cover block edges, awkward
-  dimensions, zero/extreme values, scale bits and tail handling. Exit with
-  focused correctness and CI microkernel plus end-to-end evidence before
-  committing to the remaining optimized kernel inventory.
-  The experimental PQ2/PTQ1 kernels, safe dependency route, automatic default selection
-  and focused regressions are implemented. Profiling, complete diagnostics,
-  other formats/ISAs and performance promotion remain pending; see S1/S2.
-  Compare that control with [exact TL1_1/TL2_1 lookup techniques](inference-algorithms.md#exact-ternary-tables-for-decode)
-  only while preserving our activation quantizers, scale order and generic PQ2
-  fourth-symbol behavior. Ordinary INT8 table quantization is not an exact swap.
+- [ ] **R3 — Qualify packed CPU kernels.** Follow [SIMD S0–S4/S6](simd-plan.md).
+  Baseline NEON PQ2/PTQ1, automatic selection, scalar forcing and focused exact
+  regressions are implemented using safe core SIMD APIs. Profiling, fuller
+  diagnostics, per-path memory evidence, optional ISAs and performance acceptance
+  remain open. Preserve quantizers, scale order, generic PQ2's fourth symbol,
+  tails and malformed-input rejection. Compare [exact ternary LUTs](inference-algorithms.md#exact-ternary-tables-for-decode)
+  under the same contract; INT8 table quantization is a separate approximation.
+  Exit with focused correctness plus target-device kernel and end-to-end CI evidence.
 
-- [ ] **R4 — Optimize CPU memory and prompt processing.** Add phase-specific
-  tiling, lossless packing/interleaving, reusable scratch, persistent thread
-  pools and fused operations where R1/R3 show benefit. Preserve accumulation
-  precision, account for rounding changes, and measure repacking time, peak
-  copies and resident bytes. Carry forward immutable LoRA B payload sharing,
-  distinct tensor metadata and the existing allocation/math regression. Qualify
-  adapter loading/basis and forward execution with the unchanged artifact;
-  rank-one fusion must preserve its arithmetic contract. Exit with incremental
-  same-workload CI results rather than combined hypothetical multipliers.
-  [SIMD S5](simd-plan.md#delivery-sequence-and-exits) details later transforms,
-  quantizers, floating reductions and prefill tiles; changing the reduction or
-  FMA contract needs separate numerical qualification before performance capture.
+- [ ] **R4 — Optimize memory and prompt processing.** Use R1/R3 evidence to
+  select tiling, lossless packing, scratch reuse, persistent workers and fusion.
+  Count repacking, retained copies and peak memory. Preserve immutable LoRA B
+  sharing, tensor metadata, adapter basis and forward arithmetic. Changes to
+  reductions/FMA require separate numerical qualification; see [SIMD S5](simd-plan.md#delivery-sequence-and-exits).
 
-  - [x] **R4.1 — Integrate reusable decoder logits and graph scratch.**
-    `Decoder::evaluate_into` replaces a caller-owned logits buffer on stable
-    Rust; the owned `evaluate` interface remains compatible. `Runtime` retains
-    its output allocation across token steps, prefix restoration and reset,
-    validates every output, and restores independently owned logits/state after
-    failed evaluation or cancellation. `Qwen35` retains graph workspace and
-    kernel activation storage outside checkpoints, computing into reusable
-    per-layer deltas before committing state. Focused synthetic regressions
-    cover numerical fixtures, storage reuse, invalid output, cancellation and
-    recovery. Immutable tensor payloads and owned checkpoint isolation remain
-    unchanged. This implements storage reuse, without qualifying a full-model
-    allocation, memory or throughput benefit.
-  - [ ] **R4.2 — Qualify the production allocation benefit.** Compare the owned
-    output baseline with reusable logits/scratch using the same model and
-    workload. Record allocation counts/bytes and peak memory for prefill and
-    decode; check logits, generated tokens, prefix restoration and failure
-    recovery. Run performance measurements only in CI when requested. Synthetic
-    address/capacity reuse is not evidence of a full-model memory or speed gain.
+  - [x] **R4.1 — Reuse logits and graph scratch.** Stable `Decoder::evaluate_into`
+    reuses caller-owned output; Qwen35 retains graph/kernel workspace and stages
+    state deltas before commit. Checkpoints own independent state/logits.
+    Synthetic fixtures cover output validation, reuse, cancellation and rollback.
+  - [ ] **R4.2 — Qualify allocation and memory benefit.** Compare owned-output
+    and reusable-storage paths with the same model/workload. Capture prefill/decode
+    allocations, peak memory, logits/tokens, prefix restoration and failure recovery.
+    Synthetic capacity reuse does not establish process-memory or throughput gains.
+  - [x] **R4.3 — Ingest intermediate prompt tokens without logits.** Qwen35
+    skips output-only normalization/projection while validating computed state.
+    Final uncached prompt tokens and decode steps produce logits; exact prefix
+    hits reuse saved output. The compatibility fallback still validates logits.
+  - [ ] **R4.4 — Share compatible activation preparation.** Reuse transforms and
+    packed activations only when input, basis/permutation, width and Q8_K/Q8_0
+    contracts match. Reusable storage alone does not remove repeated computation.
+  - [x] **R4.5 — Store already-rounded KV as FP16.** Full-attention caches retain
+    exact binary16 bits in `u16` vectors and widen before unchanged scalar products.
+    Convolution/GDN state stays FP32; state/checkpoint budgets charge actual
+    mixed-size capacities. Only KV element payload is halved; device gains remain open.
+  - [ ] **R4.6 — Add bounded block prefill.** Prove causal/state scheduling,
+    atomic commit and cancellation before comparing [Vec-LUT and chunkwise WY/UT GDN](inference-algorithms.md#chunkwise-gated-deltanet-prefill).
+    Declare numerical tolerances and qualify prefill separately from decode.
 
-  - [x] **R4.3 — Add state-only prompt ingestion.** `Decoder::ingest` preserves
-    the existing single-token API with a validated compatibility fallback.
-    Qwen35 omits final output normalization/projection for intermediate uncached
-    prompt tokens while retaining hidden, attention and recurrent-state checks.
-    Runtime computes logits for the final uncached prompt token and all decode
-    steps; exact prefix hits retain their saved logits. Focused regressions
-    cover hybrid continuation/restoration, skipped-output validation, scheduling,
-    cancellation and request rollback. Same-model performance remains unqualified.
-  - [ ] **R4.4 — Share compatible activation preparation.** Reuse sign/Hadamard
-    transforms and packed activations across sibling projections only where
-    input, basis/permutation and Q8_K/Q8_0 contracts match. Storage reuse alone
-    does not complete this task.
-  - [x] **R4.5 — Store already-rounded KV physically as FP16.** Full-attention
-    caches retain binary16 bits in `u16` vectors, widening before each unchanged
-    scalar multiplication. Convolution/GDN state and staged graph deltas remain
-    FP32. State admission and checkpoint accounting charge the mixed element
-    sizes and actual retained capacities. Focused packed-bit, pinned-logit and
-    snapshot regressions preserve rounding and restoration. The halving applies
-    to KV element payload; process-memory and throughput qualification remain open.
-  - [ ] **R4.6 — Add bounded block prefill and qualify its algorithms.** Establish
-    causal/state scheduling, atomic commit and cancellation before comparing
-    [Vec-LUT and chunkwise WY/UT GDN](inference-algorithms.md#chunkwise-gated-deltanet-prefill).
-    Keep scalar decode and declared numerical tolerances; prefill throughput
-    requires its own target-device CI evidence.
+- [ ] **R5 — Complete runtime and broker integration.** Bounded conversation
+  ownership, checkpoints, prefix restoration, streaming, cancellation, reset and
+  rollback are implemented at token level. Integrate broker count/completion/
+  readiness, authentication, Host/Origin/routes, process ownership and resource
+  admission. Retain strict Rust standards; keep OS/device or future unsafe SIMD
+  calls behind audited safe boundaries. Exit with native Windows ARM64 builds,
+  focused regressions and full CI correctness/security coverage, without a C/C++
+  inference-library dependency.
 
-- [ ] **R5 — Implement and qualify the complete Rust runtime.** Add bounded
-  conversation state, cache/checkpoint ownership, exact prefix restoration,
-  streaming, cancellation, edited turns, slot reset and failure recovery. Keep
-  unsafe SIMD and OS/device calls in small documented boundaries with safe
-  interfaces, runtime self-checks and reviewed fallbacks. Apply the existing
-  strict Rust standards and dependency/provenance review. Integrate the broker's
-  count/completion/readiness contract, authentication, Host/Origin/route policy,
-  process ownership and memory limits. Exit with native Windows ARM64 builds,
-  focused regressions and full CI correctness/security coverage. The accepted
-  Rust path must have no C/C++ inference-library dependency; necessary driver
-  interfaces and device shaders remain explicit boundaries.
+  - [ ] **R5.1 — Reassess borrowing only for a concrete interface limitation.**
+    The production reusable-output API works on stable. Use the [nightly trial](../tools/rust-trial/README.md)
+    only when a real lending/cache/stream interface demonstrates a limitation;
+    record the stable alternative, production benefit and compatibility evidence
+    before considering migration. Checkpoint ownership still applies.
+  - [ ] **R5.2 — Share immutable KV checkpoint pages.** Copy the mutable tail and
+    keep exact convolution/recurrent snapshots. Follow [hybrid reuse boundaries](inference-algorithms.md#hybrid-cache-reuse-and-speculative-state),
+    prove snapshot isolation and edited-prefix recovery, and budget unique pages,
+    worst-case copy-on-write and retained recurrent state.
 
-  - [ ] **R5.1 — Reassess solver requirements against a concrete lending API.**
-    Apply the pinned [nightly trial](../tools/rust-trial/README.md) when a real
-    tensor-cache, streaming-reader or backend-output interface encounters a
-    conditional-borrow or higher-ranked associated-type limitation. Record the
-    stable alternative and the safe-code simplification or capability gained.
-    Keep stable as the default until a production benefit and compatibility
-    evidence justify migration; the existing reusable-buffer prototype already
-    works on stable and does not remove checkpoint ownership requirements.
-    The production caller-owned output API also works on stable and encounters
-    neither limitation, so it requires no nightly migration or solver change.
+- [ ] **R6 — Add Adreno after CPU parity.** Follow [G0–G5](adreno-gpu-plan.md),
+  implementing the same packed types, transforms and complete hybrid graph.
+  Reuse Prism capability reports/fixtures, but qualify Rust GPU coverage and
+  safety separately. Evaluate resident state/scratch, fusion, submission reuse
+  and phase-specific placement, including migration and shared-memory costs.
+  Preserve [attention rounding constraints](inference-algorithms.md#attention-locality-and-the-io-bound).
+  Exit with correct whole-model ARM64/Adreno execution and target-device CI benefit.
+  [Hexagon N0/N1 discovery](hexagon-npu-plan.md) can proceed independently; neither
+  accelerator bypasses R5 ownership or R7 qualification.
 
-  - [ ] **R5.2 — Share immutable KV checkpoint pages.** Copy only a mutable tail
-    while separately retaining exact convolution/recurrent snapshots. Follow
-    [hybrid component reuse boundaries](inference-algorithms.md#hybrid-cache-reuse-and-speculative-state),
-    prove snapshot isolation and edited-prefix recovery, and budget unique
-    physical pages plus worst-case copy-on-write and retained GDN state.
+- [ ] **R7 — Qualify each replacement profile.** Run paired, repeated/interleaved
+  target-laptop CI comparisons with fixed artifacts/workloads and predeclared
+  numerical/performance tolerances. Retain startup/repack, prefill, first-token,
+  decode, completed-task, memory, energy, thermal, failure and sustained results.
+  Compare logits/recurrent state, deterministic streams where applicable and
+  creative quality. Require the [standard LoRA TPS/quality gates](swift-lora.md#required-standard-profile-qualification)
+  within Rust, plus Prism/Rust comparisons at the same adapter setting. Accept no
+  material correctness, quality, security or resource regression. Publish limits
+  and verdict, promote only qualified profiles and retain reproducible Prism
+  fallback. Retire old build/overlay/FFI paths only after replacement verification.
 
-- [ ] **R6 — Optimize the Adreno path after CPU parity.** Implement the same
-  packed types, transforms and full hybrid graph on a supported GPU backend.
-  Follow the [Adreno G0–G5 roadmap](adreno-gpu-plan.md), reusing the initial Prism
-  capability report, correctness fixtures and placement ledger. Initial Prism
-  M2 bring-up can proceed before the Rust replacement; Rust GPU acceptance
-  still requires its own implementation and evidence.
-  Investigate persistent device state/scratch, fused kernels, fewer submissions,
-  graph/command reuse and synchronization reduction. Qualify CPU/GPU placement
-  separately for prefill and decode, including migration costs, shared-memory
-  contention and partial fallback. Check optimized kernels against reference
-  calculations before enabling them. Exit with correct whole-model Windows
-  ARM64/Adreno execution and CI benefit; another board's Vulkan result or an
-  untested DX12 backend is insufficient. Coordinate phase-specific placement
-  and shared-memory accounting with [M5/N3–N6](hexagon-npu-plan.md); Hexagon
-  kernels and state must pass their own exits before heterogeneous comparisons.
-  NPU discovery does not depend on completing R6, and neither accelerator path
-  bypasses R5 ownership or R7 replacement qualification.
-  Apply the [attention locality and FP16 probability constraints](inference-algorithms.md#attention-locality-and-the-io-bound)
-  when adding tiled/Flash attention; online softmax is not automatically
-  equivalent to the scalar nonflash reference's intermediate rounding.
+R0/R1 scope the first kernel experiment; synthetic R3 work can precede complete
+R2 graph parity. R2/R3 precede broader optimization, R4/R5 establish the CPU
+replacement, and R7 qualifies each CPU or accelerator profile. Failed experiments
+should narrow the next target while retaining useful evidence.
 
-- [ ] **R7 — Qualify replacement and retire the old path deliberately.** Run
-  paired CI comparisons on the target laptop, with fixed workloads, repeated
-  interleaved trials, predeclared tolerances and retained provenance/results.
-  Record cold startup/repacking, prefill, first-token latency, steady decode,
-  useful completed-task time, peak/resident memory, energy, thermals, failures
-  and sustained behavior. Compare selected logits/recurrent states with declared
-  tolerances, deterministic token streams where applicable, and creative output
-  quality. Preserve the mandatory [standard LoRA TPS and quality gates](swift-lora.md#required-standard-profile-qualification)
-  against the same Rust engine without LoRA, as well as Prism/Rust comparisons
-  at the same adapter setting. Require no material correctness, quality,
-  security or resource regression; declare per-metric performance acceptance
-  before capture instead of treating the 2× goal as evidence. Publish the
-  verdict and limitations, promote only the qualified profile, and retain a
-  reproducible Prism fallback. Remove obsolete build/overlay/FFI paths only
-  after their replacement is verified, retaining useful fixtures and notices.
+## Research and validation
 
-R0/R1 lead to a scoped kernel experiment; the first R3 kernel can be compared
-through the existing Prism reference harness before the complete R2 scalar graph
-is ready. R2/R3 precede broader optimization.
-R4/R5 establish the CPU replacement, R6 adds the accelerator, and R7 qualifies
-each proposed profile. A failed speed experiment should narrow the next task,
-not trigger numerical shortcuts or disable the working baseline. Record Rust
-consistency/maintenance benefits separately if throughput remains near parity.
+The [algorithm map](inference-algorithms.md) covers exact LUTs, block prefill,
+chunkwise GDN and checkpoint sharing. Audit sources during R0 before reuse.
+[Orangu's reported gains](https://mnemosyne-systems.github.io/orangu/doc/server.html#scope)
+on CIX P1/Mali use [different activation/repacking choices](https://mnemosyne-systems.github.io/orangu/doc/server-internals.html);
+[Camelid's published gains](https://github.com/timtoole02/Camelid/blob/main/docs/BONSAI2.md)
+include speculation. Neither is an unchanged-arithmetic Snapdragon forecast.
 
-## Evidence and validation boundaries
-
-Orangu's maintainers report Bonsai 2 PQ2 generation at 3.9 versus Prism's
-0.79 tokens/s on a CIX P1/Mali board, about 4.9×. Its fast path uses int8
-activation quantization; PTQ1 additionally repacks into PQ2 at roughly 21% more
-packed bytes. Those results are implementation leads, not unchanged-arithmetic
-controls or Snapdragon forecasts. [Measurements](https://mnemosyne-systems.github.io/orangu/doc/server.html#scope)
-and [kernel details](https://mnemosyne-systems.github.io/orangu/doc/server-internals.html).
-
-Camelid's published CPU gains of 1.18–2.70× concern speculative decoding and are
-excluded from this work's performance budget. Audit its packed execution,
-transform validation and correctness fixtures separately. [Bonsai 2 implementation and measurements](https://github.com/timtoole02/Camelid/blob/main/docs/BONSAI2.md).
-
-Sources reviewed October 23, 2026; moving documentation must be pinned and
-rechecked during R0. Neither Rust nor another project's tests establish this
-engine's dependability or security. Use the [existing validation policy](validation.md):
-local builds/analyzers and focused correctness checks are allowed; full suites
-and every benchmark, including single-kernel or smoke runs, remain CI-only.
-Target-device performance needs reviewed, manual main-only self-hosted CI;
-generic hosted ARM64 runners do not provide Snapdragon/Adreno acceptance.
+Follow [validation policy](validation.md): local builds, analyzers, assembly
+inspection and focused correctness checks are allowed. Full suites and every
+benchmark remain CI-only. Device promotion needs reviewed manual main-only CI
+on the target laptop; generic hosted ARM64 establishes no device-performance verdict.

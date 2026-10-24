@@ -1,292 +1,216 @@
 # Hexagon NPU execution plan
 
-Planning decision, October 23, 2026. This expands M5 in [PLAN.md](../PLAN.md)
-into an implementation and qualification sequence for the Snapdragon X Elite
-X1E-78-100. All N0–N7 exits below are pending. The current engine builds and
-launch policies use CPU execution; the [native Rust reference](../src/prism-runtime/README.md)
-still uses scalar kernels. This document enables no backend, installs no SDK or
-driver, and establishes no NPU performance result.
+This expands [M5](../PLAN.md) for Snapdragon X Elite X1E-78-100. **All N0–N7
+exits are pending.** Current builds/launch policies use CPU execution, including
+scalar/NEON in the [Rust reference](../src/prism-runtime/README.md). No NPU
+performance or deployment qualification is established.
 
-## Objective and scope
+## Scope and route selection
 
-Use Hexagon where it improves useful completed-response latency or energy within
-the laptop's memory, quality and sustained-comfort limits. Select among measured
-CPU, Adreno and Hexagon configurations for the same Swift artifact. Maximum NPU
-utilization, advertised TOPS and simultaneous use of all processors are not
-acceptance criteria. Retain a reproducible CPU fallback and qualify each profile
-independently; a finite tuning pass cannot prove a global optimum.
+Qualify Hexagon only where it improves completed-response latency or energy
+within memory, quality and sustained-comfort limits. Compare the same Swift
+artifact against CPU and qualified Adreno profiles. Retain CPU fallback; device
+utilization/TOPS and simultaneous CPU/GPU/NPU use are not acceptance criteria.
 
-Keep the exact Swift weights, tokenizer/template, sampler, transforms, attention
-topology and declared activation/cache precision. Pin PQ2 through the
-[assessment lock](../config/swift-assessment.lock.json) and identify the verified
-current-weight PTQ1 export separately. PQ2 uses Q8_K activation arithmetic and
-PTQ1 uses Q8_0; lossless weight conversion does not make their execution
-contracts identical. Use the [SIMD numerical contracts](simd-plan.md) and
-[native engine roadmap](native-rust-engine.md) as the common CPU/NPU oracle work.
-Use pinned Prism as the whole-model oracle until the Rust parity exits pass;
-the experimental Rust graph is not an accepted whole-model substitute.
-Requantization, approximate arithmetic, training and speculative decoding remain
-separate experiments, with separate quality and memory decisions.
+Preserve weights, tokenizer/template, sampler, transforms, attention and declared
+activation/cache precision. Pin PQ2 through the [assessment lock](../config/swift-assessment.lock.json)
+and identify [current-weight PTQ1](swift-memory.md) separately. PQ2's Q8_K (or
+odd-group Q8_0) and PTQ1's Q8_0 arithmetic need independent qualification. Use
+[SIMD contracts](simd-plan.md) for operation fixtures and pinned Prism as the
+whole-model oracle until [Rust parity](native-rust-engine.md) passes. Requantization,
+approximation, training and speculation remain separate experiments.
 
-Start N0/N1 alongside the established bounded CPU work; neither requires the
-complete Vulkan qualification or Rust replacement first. N2 onward needs a
-trusted oracle for the operation being moved. Continue usable CPU/Adreno delivery
-while closing NPU gaps. Budget approximately two engineering days for discovery
-only, then estimate the kernel/graph port from its actual gaps. A substantial
-ternary port can take weeks; the discovery budget is not its delivery estimate.
-N0–N4 prototypes already require bounded owned-process lifetimes, deadlines,
-memory supervision and safe device-buffer teardown. N5 adds the production
-broker/profile integration; early experiments do not bypass those safeguards.
+N0/N1 can proceed alongside CPU work without waiting for Vulkan or Rust replacement.
+Budget about two engineering days for discovery, then estimate the actual port.
+N2 onward requires a trusted operation oracle. Every prototype already needs
+bounded process lifetime, deadlines, memory supervision and safe device teardown;
+N5 adds production broker integration.
 
-## Runtime routes and evidence
-
-| Route | Planned role | Gate before relying on it |
+| Route | Role | Required proof |
 | --- | --- | --- |
-| Prism/ggml Hexagon backend | First source-audit and Swift packed-kernel prototype route; preserve the pinned Prism graph | Exact PQ2/PTQ1, transforms, hybrid operations, adapter path and signed deployment must work together |
-| GenieX `llama_cpp` plugin | Supported Windows device-access control and possible conventional-GGUF reference | Pin plugin/package, exact format and actual placement; generic GGUF loading is insufficient |
-| GenieX `qairt` or ONNX Runtime GenAI/QNN | Alternative compiled-model route if discovery establishes a concrete advantage | Explicit faithful export, chipset-specific package, quantization/shape/cache contract and full memory accounting |
-| Native Rust device boundary | Later integration with M7 after the chosen kernel/graph contract passes | Safe Rust ownership API, audited driver boundary and the existing no-C/C++-inference-library replacement requirement |
+| Prism/ggml Hexagon | First source audit/packed-kernel prototype; retain pinned graph | PQ2/PTQ1, transforms, hybrid graph, adapter and signed deployment together |
+| GenieX `llama_cpp` | Device-access control/possible conventional-GGUF reference | Exact plugin/package, supported format and actual placement |
+| GenieX `qairt` or ONNX Runtime GenAI/QNN | Conditional compiled-model route | Faithful export, chipset package, precision/shapes/cache and bounded memory |
+| Native Rust device boundary | Later M7 integration | Safe ownership API, audited driver boundary and no C/C++ inference-library dependency |
 
-Qualcomm documents separate [GGUF and QAIRT plugins][geniex-sdk] and recommends
-`Q4_0` for its [GGUF NPU route][geniex-models]. Neither establishes support for
-Swift PQ2/PTQ1. A small supported-type operator fixture is the preferred access
-control; use a separately pinned small conventional model only if needed.
-It validates that runtime/device combination, never Swift support or a new model
-choice. Do not provision a second large model or keep a control model resident
-with Swift. GenieX/Prism controls remain external reference engines; wrapping
-them in Rust does not satisfy M7's inference-library replacement requirement.
+Qualcomm's [GGUF/QAIRT plugins][geniex-sdk] and [Q4_0 recommendation][geniex-models]
+do not establish Swift PQ2/PTQ1 support. Prefer a small supported-type operator
+fixture for device access; use a separately pinned small model only if necessary.
+It cannot qualify Swift or change model selection. Do not provision another large
+model or keep the control resident with Swift. Wrapping external engines in Rust
+does not satisfy replacement requirements.
 
-The [GenieX v0.8.0 release][geniex-signed] reports a Microsoft-signed HTP catalog
-for its bundled llama.cpp revision. Custom DSP kernels change that identity;
-establish a supported signing/distribution route for the resulting binaries.
-The [upstream Windows guide][hexagon-windows] also describes test-signing.
-Changing Secure Boot, boot policy, driver signing or certificate trust requires
-a separate explicit owner decision and is outside ordinary setup. A missing
-signed deployment route is a recorded blocker, not permission to weaken policy.
+[GenieX v0.8.0][geniex-signed] reports a signed HTP catalog for its bundled revision;
+custom DSP binaries need their own supported signing/distribution route. The
+[upstream Windows guide][hexagon-windows] also describes test-signing. Changes to
+Secure Boot, boot/signing policy or certificate trust require a separate owner
+decision. Missing signed deployment is a blocker.
 
-[ONNX Runtime GenAI's QNN guide][qnn-genai] requires a prepared model package;
-enabling a provider cannot execute the existing GGUF directly. Converting 27B
-weights to one byte each is roughly 27 GB before scales, state, activations and
-duplicate buffers; two bytes each is roughly 54 GB. These are order-of-magnitude
-storage calculations, not feasible 32 GB deployment budgets. Retain efficient
-packed execution or demonstrate a bounded alternative before undertaking export.
+[ONNX Runtime GenAI/QNN][qnn-genai] requires a prepared model package, not a GGUF
+provider switch. Expanding 27B weights to one/two bytes each costs roughly
+27/54 GB before scales, state and duplicate buffers. Demonstrate packed execution
+or another bounded representation before exporting for a 32 GB device.
 
 ## Delivery sequence and exits
 
-| Stage | Concrete output | Exit condition |
-| --- | --- | --- |
-| N0 — Native access and reproducibility | Host/runtime/signing manifest and bounded supported-type device check | Native Windows ARM64 execution on the actual Hexagon is proved, with a deployable signed route or an explicit blocker |
-| N1 — Exact Swift compatibility | Per-operation/tensor/shape placement matrix and scoped port decision | Every unsupported operation, numerical contract, memory limit and fallback boundary has an owner and proposed treatment |
-| N2 — Packed kernels and transforms | PQ2 kernel first, PTQ1 separately, with golden fixtures and bounded scratch | Codec, activation, scale/transform and operator correctness pass before timing |
-| N3 — Hybrid graph and resident state | Executable contiguous graph regions, state ownership and memory ledger | Whole-model numerical/state correctness and bounded cancellation/recovery pass for the proposed placement |
-| N4 — Phase placement and tuning | Small measured CPU/Adreno/Hexagon comparison with bottleneck traces | At least one placement has a reproducible useful benefit, or an explicit no-go identifies the limiting cost |
-| N5 — Broker and resource integration | Separate named experimental profile, guarded loader and lifecycle/fallback policy | Existing authentication, exact count, process ownership and resource contracts pass with the device boundary |
-| N6 — Device qualification | Paired correctness, quality, latency, memory and sustained-energy report | Required CI gates and predeclared per-metric criteria pass on settled main |
-| N7 — Profile promotion and upkeep | Reproducible accepted profile, rollback and upgrade checklist | Only the qualified configuration becomes selectable for daily use; remaining gaps stay visible |
+| Stage | Output and exit |
+| --- | --- |
+| N0 — Native access | Host/runtime/signing manifest and bounded device fixture; prove native ARM64 Hexagon execution and a signed deployable route, or record the blocker |
+| N1 — Swift compatibility | Per-operation/type/shape placement matrix; assign treatment for every numerical, memory and fallback gap |
+| N2 — Packed kernels/transforms | PQ2 first, PTQ1 separately; codec, activation, scale/transform and operator fixtures pass before timing |
+| N3 — Hybrid graph/state | Contiguous graph regions, ownership and memory ledger; whole-model state correctness plus bounded cancellation/recovery pass |
+| N4 — Placement/tuning | Small CPU/Adreno/Hexagon screen with traces; demonstrate reproducible useful benefit or no-go |
+| N5 — Broker/resources | Versioned experimental profile and guarded lifecycle/fallback; preserve authentication, exact count, process and resource contracts |
+| N6 — Device qualification | Paired quality/correctness/latency/memory/energy evidence; required CI and predeclared metric criteria pass on settled main |
+| N7 — Promotion/upkeep | Qualified selectable profile, rollback and upgrade checklist; unresolved gaps remain explicit |
 
 ### N0/N1: Inventory and compatibility
 
-- [ ] Record native host/device architecture, installed driver/firmware identities
-  where observable, Hexagon architecture, SDK/compiler versions, host DLL and
-  DSP library hashes, catalog signatures, ABI compatibility, redistribution
-  terms and exact source commits. Recheck moving documentation against those
-  pins. Preserve inherited Windows system/profile environment variables; use
-  explicit absolute temporary working/output directories for diagnostics.
-- [ ] Run a bounded supported-type correctness fixture with placement evidence.
-  Inspect backend dispatch and device traces to distinguish Hexagon execution
-  from CPU fallback. Device enumeration, a successful model load or an NPU
-  utilization percentage alone does not establish placement. Keep timing and
-  profiling captures in CI, including single-operator experiments.
-- [ ] Build a matrix from the exact captured Swift graph: operation, tensor
-  type, dimensions/strides, activation/cache precision, transformation/basis,
-  supported backend, fallback and resident/scratch bytes. Include embeddings,
-  PQ2/PTQ1 and floating projections, Hadamard/sign operations, normalization,
-  RoPE, full attention, Gated Delta Net/convolution, gated feed-forward, output
-  projection, adapter operations and the configured cache/checkpoint path.
-  Check both single-token decode and prefill shapes. Generic Q2/Q4/Q8 support
-  is not proof of PQ2/PTQ1 support or complete graph coverage.
-- [ ] Choose one bounded prototype region using the matrix and existing CPU
-  evidence. Record the expected limiting costs and missing work; audit the
-  [HTP ternary prototype][htp-prototype] only at an immutable revision with
-  license, codec and transform review. Its existence is not golden correctness
-  or target-device performance evidence. End discovery with proceed, narrow
-  scope, or blocked, including the exact reason and condition for reopening.
+- [ ] Record host/device architecture, observable driver/firmware, Hexagon/SDK/
+  compiler, DLL/DSP hashes, signatures, ABI, licenses and source commits. Recheck
+  sources against pins. Use absolute temp working/output paths and preserve
+  inherited Windows system/profile environment variables.
+- [ ] Run a bounded supported-type correctness fixture with dispatch/trace proof
+  of Hexagon placement. Enumeration, loading and utilization alone are insufficient.
+  Keep timing/profile captures in CI, including single operators.
+- [ ] Map the captured Swift graph's operations, types, strides/shapes, precision,
+  transforms/basis, support/fallback and resident/scratch bytes. Include embeddings,
+  packed/floating projections, normalization/RoPE, full attention, GDN/convolution,
+  feed-forward/output, adapters and caches/checkpoints for prefill and decode.
+  Generic Q2/Q4/Q8 support does not prove PQ2/PTQ1 or graph coverage.
+- [ ] Select one bounded prototype region, with expected costs and owned gaps.
+  Audit the [HTP ternary prototype][htp-prototype] at an immutable revision for
+  license, codec and transforms. End discovery with proceed, narrower scope or
+  blocked, including conditions for reopening.
 
-### N2/N3: Packed execution, graph state and memory
+### N2/N3: Packed execution, state and memory
 
-- [ ] Implement checked lossless host tiling and fused packed matvec first.
-  Preserve PQ2 symbol semantics, scales, Q8_K quantization, integer sums and
-  scale application order. Qualify PTQ1's canonical encoding and distinct Q8_0
-  rounding separately. Follow [S0–S3](simd-plan.md#delivery-sequence-and-exits)
-  for zero/extreme inputs, fourth-symbol handling, malformed data, unaligned
-  blocks, tails, awkward dimensions and initial bitwise operator parity.
-  Later reassociation/FMA or precision changes need their own declared
-  tolerances and quality decision.
-- [ ] Evaluate HVX vector execution for packed decode and HMX matrix tiles for
-  prefill where the selected hardware/API supports the required arithmetic.
-  Neither unit earns an assumed speedup. If HMX requires a different precision
-  contract, retain the faithful path and label the alternative separately.
-  Bound VTCM tiles, DMA staging, alignment/padding and host repack scratch;
-  prototype fusion/overlap only after dependencies and numerical behavior pass.
-- [ ] Preserve Hadamard normalization, sign placement, layer-specific axes and
-  grouped recurrent projections. Follow the [adapter basis and qualification
-  blockers](swift-lora.md): adapter branches must consume their specified
-  original/transformed input, including the unresolved grouped-SSM basis.
-  Compare no-LoRA and approved-LoRA lanes separately; no merge or fusion may
-  silently change the standard adapter artifact or bypass its basis gate.
-- [ ] Prefer contiguous supported regions with persistent immutable weights,
-  reusable scratch and resident state. Specify ownership and representation of
-  every KV, convolution and recurrent-state buffer, including checkpoints and
-  phase changes. Compare fresh versus reused/edited prefixes, reset,
-  cancellation, failed evaluation and restored continuations. Selected logits,
-  intermediate states and deterministic streams need declared comparison
-  rules; generated text alone is insufficient proof of equivalence.
-- [ ] Produce a memory ledger for host weights/mappings, NPU tiles/repacked
-  copies, RPC/shared buffers, active/pinned mappings, KV/recurrent state,
-  checkpoints, compilation, graph caches and peak load/repack overlap. Charge
-  unique physical allocations once and separately record mapping/address-space
-  budgets; shared memory does not imply one copy or zero-copy handoff.
-  Include adapter storage and all live CPU/GPU/NPU copies.
-- [ ] Start with one NPU session. The upstream [backend design][hexagon-design]
-  describes an approximately 3.5 GB virtual mapping window, dynamic mapping of
-  weights and multiple-session alternatives. Verify actual Windows behavior at
-  the chosen pin; this is not a total-RAM ceiling or a universal device limit.
-  Compare bounded dynamic mapping with layer-partitioned virtual sessions only
-  when mapping overhead or capacity warrants it. Virtual sessions do not add
-  physical NPUs. Account for per-session state, duplicated buffers and sync.
-- [ ] Retain Swift's current 12 GiB service allowance and 4 GiB physical reserve
-  during experiments; a larger allowance needs separate memory qualification.
-  Include shared/device allocations outside Windows Job commit accounting in
-  admission/watchdogs. Refuse launch or reduce the explicitly requested
-  experimental placement when the full bounded ledger cannot fit; do not
-  quietly borrow the Qwen reference's 18 GiB allowance or shorten context.
+- [ ] Implement checked lossless tiling and fused packed matvec. Preserve PQ2
+  symbols, activation quantization, integer sums and scale order. Qualify PTQ1
+  canonicality/Q8_0 rounding separately. Use [S0–S3](simd-plan.md#delivery-sequence-and-exits)
+  fixtures for fourth symbols, extremes/zeros, malformed bytes, unaligned blocks,
+  tails and awkward dimensions. Initial operator parity is bitwise; later FMA/
+  reassociation needs declared tolerances and quality acceptance.
+- [ ] Evaluate HVX packed work and HMX prefill only where the selected hardware/API
+  supports the arithmetic. A different precision contract is a separate profile.
+  Bound VTCM tiles, DMA staging, padding/alignment and repack scratch; add overlap/
+  fusion only after dependencies and numerical checks pass.
+- [ ] Preserve transform normalization/signs/axes and grouped recurrent projection
+  basis. Resolve [adapter basis blockers](swift-lora.md), including grouped SSM,
+  before approving LoRA. Compare no-LoRA/approved-LoRA lanes separately; fusion
+  cannot change the standard adapter artifact or bypass its basis gate.
+- [ ] Prefer contiguous regions, immutable resident weights, reusable scratch and
+  owned KV/convolution/GDN state. Specify checkpoint and phase-change representation.
+  Compare fresh/reused/edited prefixes, reset, cancellation, failed evaluation and
+  restored continuation using logits/state and deterministic-stream rules.
+- [ ] Account for host weights/mappings, device tiles/repacked copies, RPC/shared
+  buffers, state/checkpoints, compilation/graph caches and peak load overlap.
+  Count unique physical bytes once; record address-space budgets separately.
+  Shared memory does not prove zero-copy. Include live CPU/GPU/NPU and adapter copies.
+- [ ] Start with one NPU session. The [upstream design][hexagon-design] describes
+  an approximately 3.5 GB mapping window, dynamic mapping and multiple sessions;
+  verify Windows behavior at the pin. This is not a universal RAM limit. Add
+  layer-partitioned sessions only when evidence warrants overhead/state duplication.
+- [ ] Retain the 12 GiB Swift service allowance and 4 GiB physical reserve.
+  Qualify larger limits separately; include allocations outside Job commit in
+  admission/watchdogs. Refuse or explicitly reduce placement if the ledger cannot
+  fit; do not borrow Qwen's 18 GiB allowance or silently shorten context.
 
-For N2/N3 prefill, evaluate the [chunkwise WY/UT GDN formulation](inference-algorithms.md#chunkwise-gated-deltanet-prefill)
-only after faithful state scheduling and reference fixtures. Keep its exact
-real-arithmetic derivation separate from floating-point evaluation order.
-Qualcomm's [June 2026 multiplication-only inverse](https://arxiv.org/abs/2606.06034)
-uses truncated Neumann terms, masking and residual correction. It belongs in
-a separate approximation profile: evidence on Snapdragon 8 Elite Gen 5 phone
-NPU does not qualify this Windows X Elite. Check signed Gram-entry/norm
-assumptions and full-model quality rather than treating strict triangularity
-as a sufficient truncation-error bound. The [review](inference-algorithms.md#compression-bound-and-deferred-experiments)
-also distinguishes low-bit LUT KV research from lossless physical FP16 storage.
+[Chunkwise WY/UT GDN](inference-algorithms.md#chunkwise-gated-deltanet-prefill)
+needs faithful scheduling/fixtures and separate floating-order qualification.
+Qualcomm's [multiplication-only inverse](https://arxiv.org/abs/2606.06034) uses
+truncation/residual correction and belongs in an approximation lane. Phone NPU
+results do not qualify Windows X Elite; strict triangularity alone does not
+bound low-order error. [Low-bit LUT KV](inference-algorithms.md#compression-bound-and-deferred-experiments)
+also differs from lossless physical FP16 storage.
 
-### N4: Select placement separately for prefill and decode
+### N4: Select prefill and decode placement
 
-Use a small successive screen, holding model, adapter setting, sampler, context
-and precision fixed. Admit only configurations whose component/state correctness
-has passed. Separate load/repack/compile, prompt processing, first-token wait,
-steady decode and whole finished-task time.
+Hold artifact, adapter setting, sampler, context and precision fixed. Admit only
+correct configurations. Separate load/repack/compile, prefill, first-token wait,
+decode and completed-task time.
 
-| Configuration to investigate | Question it resolves |
+| Candidate | Question |
 | --- | --- |
-| CPU control and the qualified Adreno profile when available | Does the NPU improve the best supported baseline, rather than an intentionally slow control? |
-| Largest contiguous supported Hexagon regions in both phases | Does resident packed execution overcome dispatch and memory costs? |
-| NPU prefill, CPU or Adreno decode | Does matrix-heavy prompt processing justify the state/layout migration? |
-| CPU or Adreno prefill, NPU decode | Does low-overhead packed decoding improve sustained energy or latency? |
-| Selected CPU/GPU/NPU regions | Does added parallelism beat extra crossings, shared-bandwidth contention and power competition? |
+| CPU control / qualified Adreno | Does Hexagon beat the supported baseline? |
+| Largest contiguous Hexagon regions | Does resident packed work offset dispatch/mapping costs? |
+| NPU prefill, CPU/Adreno decode | Does prompt benefit exceed state/layout migration? |
+| CPU/Adreno prefill, NPU decode | Does packed decoding improve sustained latency/energy? |
+| Selected CPU/GPU/NPU regions | Does parallelism offset crossings, bandwidth/power contention? |
 
-- [ ] Capture actual per-operation placement, fallback count, transferred bytes,
-  RPC/submission/synchronization time, mapping churn, repack/compile time,
-  memory traffic and device counters where supported. Identify compute,
-  bandwidth or dispatch limits before adding fusion, tiling or DMA overlap.
-  Report unavailable counters. Run profiling separately from clean performance
-  captures so instrumentation cannot manufacture the claimed result.
-- [ ] Screen batch/microbatch and tile sizes, HVX workers, supported power modes,
-  CPU generation/prefill threads and waiting policy. Reuse buffers and command
-  graphs only where shape/state ownership permits it. Review effective backend
-  defaults; the [current upstream guide][hexagon-guide] documents a default
-  alias to burst and warning-based fallback for unknown power modes. Validate
-  requested settings before launch; compare balanced/sustained modes supported
-  by the actual pin instead of accepting maximum clocks as optimal.
-- [ ] Include phase migration, cache misses and startup costs in request time.
-  Prefer fewer device crossings when equivalent arithmetic allows them; do not
-  move all operations to Hexagon merely to increase utilization. Keep a
-  configuration only if the measured gain survives sustained runs and the
-  ordinary creative workflow. Screen all-three-device execution last.
+- [ ] Capture placement/fallbacks, transfers, RPC/submission/sync, mapping churn,
+  repack/compile, traffic and supported counters. Identify compute, bandwidth or
+  dispatch limits before tuning; mark unavailable counters. Separate instrumented
+  profiles from clean performance captures.
+- [ ] Screen bounded batches/tiles, HVX workers, power modes and CPU threads/waits.
+  Reuse graphs/buffers only with valid shape/state ownership. Check effective
+  defaults: the [upstream guide][hexagon-guide] describes burst aliasing and warning
+  fallback for unknown modes. Validate settings; compare supported sustained modes.
+- [ ] Include migrations, cache misses and startup in request cost. Retain only
+  gains surviving sustained creative workloads. Screen all-three-device execution
+  last, rather than maximizing utilization.
 
-### N5: Integrate an explicit profile and failure contract
+### N5: Integrate profile and failure contracts
 
-- [ ] Add a separately versioned experimental NPU profile and matching build/
-  artifact lock after N3. The fixed [CPU launch policy](../src/broker/src/launch_policy.rs)
-  remains the reference. Explicitly allow reviewed device libraries, backend
-  arguments and child-only environment settings; retain rejection of arbitrary
-  inherited overrides. Validate requested versus effective placement and
-  resource limits before readiness. A strict NPU request fails if its declared
-  placement cannot be satisfied; a preferred-NPU profile may select an already
-  qualified fallback before generation, recording the effective profile/reason.
-- [ ] Keep authentication, Host/Origin/routes, exact token counts, canonical
-  request settings, one active conversation, output/context caps and cancellation.
-  Extend the audited process/device boundary rather than relaxing policy for a
-  plugin. Any runtime service/helper beyond the current one-process Job limit
-  needs explicit ownership, parent-death teardown, resource and isolation
-  qualification. A device driver/service is not automatically contained by the
-  inference Job. New device access does not establish daily isolation.
-- [ ] Bound waits and test NPU timeout, allocation failure, device loss/reset,
-  mapping failure, unsupported shape and cancellation during submitted work.
-  Do not free or reuse buffers while the device may still access them. Restore
-  complete committed KV/recurrent/checkpoint state or close admission until
-  verified teardown/reset recreates it. Fail the in-flight request after an
-  unrecoverable device error; do not resume from partial state on CPU or replay
-  already streamed tokens as a hidden retry. Exercise restart and recovery.
-- [ ] Bound private compiled-graph/repacked-weight caches. Key them by model and
-  adapter digests, runtime/kernel/ABI versions, driver/firmware where observable,
-  graph shape, precision and placement settings. Validate metadata before
-  reuse, invalidate incompatible entries and account for warm/cold behavior.
-  Keep payloads/prompts out of technical logs and ordinary telemetry.
+- [ ] Add a separate experimental profile/build lock after N3. Extend the fixed
+  [CPU policy](../src/broker/src/launch_policy.rs) with reviewed libraries, arguments
+  and child-only environment settings. Keep rejection of arbitrary overrides.
+  Check effective placement/resources before readiness. Strict NPU requests fail
+  if unmet; preferred-NPU profiles may choose a qualified fallback before generation,
+  recording the effective profile and reason.
+- [ ] Preserve authentication, Host/Origin/routes, exact counts, canonical requests,
+  one active conversation, caps and cancellation. Helpers beyond the one-process
+  Job limit need owned lifetime, parent-death teardown, resource and isolation
+  qualification; drivers/services are not automatically Job-contained.
+- [ ] Bound waits and test timeout, allocation/mapping failure, device loss,
+  unsupported shapes and cancellation in submitted work. Never release buffers
+  still in device use. Restore all committed state or close admission until
+  verified teardown/reset. Fail unrecoverable requests without hidden replay or
+  continuation from partial state on CPU.
+- [ ] Bound private compiled/repacked caches and key by artifacts, kernel/runtime/
+  ABI, observable driver/firmware, shape, precision and placement. Validate metadata,
+  invalidate stale entries and account for cold/warm costs. Exclude payloads/prompts
+  from technical logs and ordinary telemetry.
 
-### N6/N7: Qualification, promotion and rollback
+### N6/N7: Qualify, promote and retain rollback
 
-All full suites and every benchmark, including microkernels, profiling, smoke
-and dry runs, execute only in CI under [the validation policy](validation.md).
-Local builds, source/assembly inspection and focused untimed correctness checks
-are allowed. Device qualification requires reviewed manual main-only self-hosted
-CI on this laptop; generic hosted ARM64 runners cannot provide Hexagon evidence.
-This documentation update requires no runner setup, dispatch, push or CI polling.
+- [ ] Predeclare fixtures, tolerances and failure criteria. Use admitted 8K prompts
+  at 512, 2K and near-8K tokens with required output reserve; include fixed 128/512-
+  token captures and natural creative completions. Cover cold/warm caches,
+  reused/edited/occupied contexts, cancellation and failed recovery. Extend context
+  only after separate memory/state acceptance.
+- [ ] Repeat/interleave CPU, qualified Vulkan and viable NPU configurations.
+  Retain median/p95/variance, prefill/first-token/decode, time/tokens/retries to
+  acceptable output, memory, energy/task and sustained behavior. Compare AC/battery
+  separately, including 15–30-minute runs, responsiveness and thermals/fan observations.
+  No valid power telemetry means no energy verdict.
+- [ ] Require full CI correctness, daily security/resources and no material quality
+  regression. Resolve adapter basis blockers and apply [LoRA TPS/quality gates](swift-lora.md#required-standard-profile-qualification)
+  within NPU, separately from fixed-adapter CPU/GPU comparisons.
+- [ ] Apply [promotion criteria](../PLAN.md#promotion-criteria): at least 10% lower
+  end-to-end latency or a predeclared capacity/energy benefit within interactive
+  limits. Set benefit/regression thresholds before capture. Missing evidence or
+  unresolved critical failure keeps the profile experimental.
+- [ ] Retain results under `docs/results/` with CI run/tested main revision,
+  artifacts/build/driver, placement, raw captures and metric verdicts. Promote only
+  qualified interactive/battery profiles or record no-go. Preserve CPU rollback,
+  invalidate stale caches and requalify affected upgrades. Device absence needs
+  bounded visible fallback/failure.
 
-- [ ] Predeclare fixtures, metric tolerances and failure criteria. Start within
-  the admitted 8K profile with 512-token, 2K-token and near-8K prompts bounded
-  by the required output reserve, fixed 128/512-token captures and separate
-  natural creative completions. Include warm/cold model and compiled caches, reused/edited
-  prefixes, occupied-context decode, cancellation and failed recovery. Extend
-  context only after its separate state/memory acceptance.
-- [ ] Repeat/interleave CPU, qualified Vulkan and viable NPU configurations;
-  record median/p95, variance, prefill, time to first token, decode TPS, time/
-  tokens/retries to acceptable output, peak/resident/shared memory, energy per
-  acceptable task and sustained behavior. Compare AC and battery independently,
-  including 15–30-minute runs, OS responsiveness and heat/fan observations.
-  Missing valid power telemetry means no energy-efficiency verdict.
-- [ ] Require numerical/state correctness, required full CI suites, daily
-  security/resource acceptance and no material quality regression. Apply the
-  mandatory [LoRA TPS and quality parity gates](swift-lora.md#required-standard-profile-qualification)
-  against the same NPU engine without LoRA, separately from NPU-versus-CPU/GPU
-  comparisons at a fixed adapter setting. Resolve basis blockers first.
-- [ ] Use [the project promotion criteria](../PLAN.md#promotion-criteria): target
-  at least 10% lower end-to-end latency, or a predeclared capacity/energy benefit
-  within accepted interactive limits. Set the minimum energy/capacity benefit
-  and allowed per-metric regressions before capture. Uncertainty, missing
-  evidence or an unresolved critical failure leaves the profile experimental.
-- [ ] Retain a result under `docs/results/` when evidence exists, linking CI run,
-  tested main revision, artifact/runtime/driver identities, effective placement,
-  raw captures and per-metric verdicts. Promote only the winning interactive or
-  battery profile; record an explicit no-go if Hexagon offers no useful gain.
-  Preserve the pinned CPU fallback, invalidate stale caches and requalify
-  affected gates after runtime/kernel/driver updates. Device absence must have
-  a bounded, visible fallback or failure path.
+Retrieval embeddings and draft models are separately qualified features, not
+Swift decode acceleration. Reopen blocked work only when its specific signed-
+deployment, graph, memory or performance limitation changes.
 
-A later small NPU embedding model belongs to a qualified retrieval feature;
-an NPU draft model belongs to the separate speculation/rollback work. Neither
-counts as accelerating Swift decoding. Reopen a blocked Swift lane when its
-specific signed-kernel, graph, memory or performance limitation changes.
+## Validation and sources
 
-## Sources and implementation handoff
+Follow [validation policy](validation.md): local builds, assembly inspection and
+focused untimed correctness checks are allowed. Full suites, benchmarks and
+profiling/timing captures are CI-only. Device qualification needs reviewed manual
+main-only CI on this laptop; hosted ARM64 cannot supply Hexagon evidence.
 
-Primary documentation was checked October 23, 2026. Moving branches describe
-research leads; N0 must pin the exact implementation and recheck each claim.
-The operator matrix, manifests, kernel fixtures, memory ledger, profile and
-device reports above are required future outputs, not files or gates already
-implemented by this plan.
+Moving source links are research leads. N0 must pin/recheck them. Matrices,
+fixtures, manifests, memory ledgers and device reports above are required future
+outputs, not implemented files or satisfied gates.
 
 [geniex-sdk]: https://github.com/qualcomm/GenieX/blob/main/sdk/README.md
 [geniex-models]: https://geniex.aihub.qualcomm.com/en/models/supported

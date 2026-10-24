@@ -1,14 +1,13 @@
 # Bonsai maintenance tools
 
-`bonsai-tools` provides private credential creation, bounded completion-process
-supervision, and the fixed LoRA qualification policy/scorer. It reuses the
-existing Windows boundary crates and forbids unsafe code. Inference executables,
-arguments, compiler concurrency, and model qualification requirements are retained.
+`bonsai-tools` provides protected credential creation, bounded completion-process
+supervision and LoRA qualification scoring. It forbids unsafe code and reuses the
+audited Windows boundary crates.
 
 ## Packaged use
 
-Foundation CI publishes a native Windows ARM64 executable. Select the artifact
-from the main revision being evaluated and extract it outside Git:
+Select Foundation's native Windows ARM64 executable from the evaluated main
+revision and extract it outside Git:
 
 ```powershell
 $env:BONSAI_TOOLS_PATH = 'C:\BonsaiTools\bonsai-tools.exe'
@@ -17,16 +16,14 @@ $env:BONSAI_TOOLS_PATH = 'C:\BonsaiTools\bonsai-tools.exe'
 ./scripts/Get-LoraQualification.ps1 -EvidencePath C:\Evidence\capture.json
 ```
 
-Wrappers also accept `-ToolPath` where applicable. The shared bridge checks the
-tool's version and protocol. This is compatibility checking, not source-to-binary
-attestation; choose an executable from a trusted build. Key creation's `-WhatIf`
-creates no credentials and resolves no executable.
+Wrappers also accept `-ToolPath` where applicable. Version/protocol checks establish
+compatibility, not source-to-binary attestation; use a trusted build. Without a
+selected binary, the resolver builds pinned sources with `--locked --release` in
+an external incremental system-temp lane. This requires Rust and locked
+dependencies. GGUF wrappers share the resolver through `-GgufToolPath`.
 
-Without a selected binary, the shared resolver builds the reviewed sources with
-pinned stable Rust and `--locked --release`, retaining incremental outputs under
-system temp. This developer fallback requires a compiler and locked dependencies.
-Packaged use avoids compilation during normal commands. GGUF wrappers use the
-same resolver and retain their existing `-GgufToolPath` interface.
+Key creation with `-WhatIf` creates nothing and resolves no executable. Planning
+may resolve the maintenance tool but never starts inference.
 
 ## Command boundary
 
@@ -38,34 +35,29 @@ bonsai-tools completion --request ABSOLUTE_JSON_PATH
 bonsai-tools qualification --request ABSOLUTE_JSON_PATH
 ```
 
-Requests are bounded JSON objects read through one retained read-only handle.
-Ordinary requests are capped at 16 MiB. Qualification envelopes allow 160 MiB to
-retain the legacy in-memory response limits even with JSON escaping; original
-evidence/review files retain their separate 16 MiB limit and require standard JSON.
-Success writes one JSON object to stdout; failures write diagnostics to stderr
-with a nonzero exit code. The bridge keeps native working directories and failed
-requests under system temp and preserves inherited Windows/profile environment
-variables. Credential receipts contain paths only.
+Requests are JSON objects read through a retained read-only handle, capped at
+16 MiB. Qualification envelopes allow 160 MiB for escaped responses; original
+evidence/review files remain limited to 16 MiB each and require standard JSON.
+Success writes one JSON object to stdout; failure writes stderr diagnostics and
+returns nonzero. Credential receipts contain paths only. The bridge uses external
+native working directories, retains failed requests and preserves inherited
+Windows/profile environment variables.
 
-Completion supervision owns the child and its Job for the complete operation.
-It retains verified artifact handles and checks parent identity/liveness, current
-physical memory, process memory, deadlines, and caller-specific output limits.
-LoRA captures share verification and supervision across all scheduled samples.
-Parent identity includes creation time to avoid PID-reuse confusion. This remains
-trusted-input development tooling, without restricted-token, filesystem, or
-egress isolation.
+Completion supervision retains verified artifact handles and owns the complete
+child Job lifetime. It checks parent PID/creation time/liveness, physical/process
+memory, deadlines and caller-specific output limits. LoRA batches share
+verification across samples. Restricted tokens, filesystem/egress isolation and
+daily-service security remain unqualified.
 
-Qualification scoring reads original bounded evidence/review files directly
-through `Get-LoraQualification.ps1`. Committed legacy fixtures bind exact control
-serialization, Unicode response hashes, and accepted/pending/rejected reports.
-Missing external reviews and numerical/basis evidence remain pending. Planning
-may resolve the maintenance executable; it never starts inference.
+Qualification scoring reads bounded original evidence/reviews directly.
+[Committed fixtures](../../tests/fixtures/lora-qualification-v1.json) bind control
+serialization, Unicode response hashes and accepted/pending/rejected reports.
+Missing human reviews, native logits or basis evidence remain pending; known
+regressions still reject. Scoring never launches inference.
 
 ## Development checks
 
-Use explicit workspace package and feature selections. Native Prism linking and
-compiler trials retain separate target/cache lanes. Run Cargo from an external
-temporary working directory with an absolute external `--target-dir`. Full suites
-and all benchmarks remain CI-only; local builds, Release analyzers, and focused
-correctness checks are supported. No inference speedup is claimed by this tooling
-migration.
+Use explicit workspace packages/features and external working/target directories.
+Prism native linking and compiler trials need separate build lanes. Local builds,
+Release analyzers and focused regressions are allowed; complete suites and all
+benchmarks remain CI-only. See [validation](../../docs/validation.md).

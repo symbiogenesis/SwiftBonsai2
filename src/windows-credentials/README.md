@@ -1,43 +1,38 @@
 # Windows credential provisioning
 
-`PrivateCredentials::create(parent)` creates a fresh random child directory in an
-existing external local-drive parent. `directory`, `frontend_path`, and
-`backend_path` expose paths; `frontend_key` and `backend_key` borrow the two secret
-strings. There is deliberately no `Debug` implementation or secret-bearing error.
+`PrivateCredentials::create(parent)` creates a random child directory under an
+existing external local-drive parent. Accessors expose directory/key paths and
+borrow the two secret strings. The type has no `Debug` implementation or
+secret-bearing errors.
 
-The native boundary in `src/native.rs` is the only module permitted to use unsafe
-Rust. It uses Windows security attributes when calling `CreateDirectoryW` and
-`CreateFileW(CREATE_NEW)`, so protected ACLs exist before secrets are generated or
-written. Both directory and files explicitly grant full control only to the
-process token's user and LocalSystem. The requested owner, protected DACL bit, and
-every ACE are compared with the actual object security before secret writes.
-Directories grant object/container inheritance; the files have their own explicit
-protected ACLs. Creation never opens or overwrites an existing object.
+Only `src/native.rs` may use unsafe Rust. `CreateDirectoryW` and
+`CreateFileW(CREATE_NEW)` establish protected ACLs at creation, granting full
+control only to the process user and LocalSystem. Directory ACLs allow
+object/container inheritance; files have explicit protected ACLs. Actual owner,
+protected DACL and every ACE are checked before secret writes. Existing objects
+are never opened or overwritten for creation.
 
-Each credential contains 32 independent bytes from the system-preferred
-`BCryptGenRandom` CSPRNG, encoded as exactly 64 lowercase ASCII hexadecimal bytes
-without a newline. Files are flushed, then reopened read-only with share-read.
-The reopened handles are checked again for owner/DACL, reparse status, and exact
-content. Retained noninheritable read handles permit ordinary readers and deny
-write/delete opens while the owner lives. The private directory is also retained
-without delete sharing. Owning secret buffers use volatile zero stores and a
-compiler fence on drop, including random input and readback buffers; callers are
-responsible for copies made from borrowed secrets.
+Each key uses 32 independent system-preferred `BCryptGenRandom` bytes, encoded as
+exactly 64 lowercase ASCII hex bytes without a newline. Files are flushed then
+reopened read-only/share-read; owner/DACL, reparse status and exact content are
+checked again. Retained noninheritable handles deny write/delete opens; the
+directory handle also denies delete sharing. Owning secret/random/readback
+buffers use volatile zero stores and a compiler fence on drop. Callers must
+protect copies made from borrowed secrets.
 
-`validate_external_path` rejects relative/drive-root paths, UNC/device namespaces,
-alternate data streams, NUL/percent spellings, dot/parent segments, reserved DOS
-names, trailing dots/spaces, reparse ancestors, missing intermediate directories,
-and existing ancestors containing `.git`. Only recognized local disks are
-accepted. A new final component under an existing validated directory is allowed.
+`validate_external_path` accepts expanded absolute local-drive paths outside Git.
+It rejects drive roots, UNC/device namespaces, alternate data streams,
+NUL/percent spellings, dot/parent segments, reserved DOS names, trailing dots/spaces,
+reparse ancestors and missing intermediate directories. A new final component is
+allowed under an existing validated directory.
 
-An owner-controlled parent is required. Validation does not lock every ancestor.
-ACLs do not isolate a credential from other processes running as the same user or
-from administrators. The writer must close before a share-read reader can open;
-the reopen verification detects changed state but does not make that transition
-a security boundary against a hostile same-user process. Credentials and private
-partial artifacts are deliberately retained on success, failure, and shutdown;
-there is no recursive cleanup or deletion of a supplied directory.
+The caller must control the parent. Validation does not lock every ancestor;
+ACLs do not isolate same-user processes or administrators. Reopen verification
+detects changes across the required writer-to-reader transition but does not make
+it safe against hostile same-user interference. Credentials and partial artifacts
+remain retained after success, failure or shutdown; no recursive cleanup occurs.
 
-Focused Windows tests cover live ACLs and handle sharing plus unsafe path aliases.
-Tests use `BONSAI_CREDENTIAL_TEST_ROOT` when supplied, otherwise the external
-Windows temporary directory, and retain their small artifact directories.
+Focused Windows regressions cover live ACLs, handle sharing and unsafe aliases.
+They use `BONSAI_CREDENTIAL_TEST_ROOT` when supplied, otherwise external Windows
+temp, and retain their small evidence directories. See [validation](../../docs/validation.md)
+for local/CI limits.

@@ -1,84 +1,69 @@
 # Rust compiler trial
 
-This dependency-free, unpublished crate keeps the Rust 1.99.1 / edition 2024
-baseline and the repository's strict safety and lint settings. It explores
-borrowed logits without changing the production `Decoder` contract, numerical
-kernels, checkpoint ownership, or toolchain selection.
+This dependency-free crate compares the stable baseline with the nightly pinned
+in [configuration](../../config/rust-nightly-trial.json). It explores borrowed
+logits independently of production decoder, numerical and checkpoint contracts.
+Stable remains the production toolchain.
 
-## What works on stable
+## Stable storage reuse
 
-`LogitsSource` uses a generic associated output type tied to an exclusive borrow
-of its source. `LogitsCache` implements it with `&[f32]`, allocated once by its
-constructor. A cache hit returns the existing values; changing the token or
-calling `invalidate()` refills the same buffer. `maximum_logit` demonstrates a
-generic consumer that finishes using the view before the next evaluation.
+`LogitsSource` ties its generic associated output to an exclusive source borrow.
+`LogitsCache` returns `&[f32]` from storage allocated by its constructor. Cache
+hits reuse values; changed tokens or `invalidate()` refill that same buffer.
+`maximum_logit` demonstrates a consumer that releases its view before reevaluation.
 
-The two regression cases check an owned numerical reference, cache hits,
-invalidation, an empty vocabulary, and unchanged storage address/capacity across
-refills. The refill loop writes existing elements and does not allocate a new
-output vector. These checks demonstrate a storage ownership technique; they are
-not allocation profiling, a benchmark, model parity, or a claim about inference
-speed. The data is synthetic and the cache key does not represent a production
-decoder's full sequence state.
-
-This reusable buffer and lending interface already work on stable. Nightly is
-only needed for the two additional source shapes below.
+The synthetic regressions compare an owned numerical reference, cache hits,
+invalidation, empty vocabulary and unchanged storage address/capacity. They
+establish storage ownership/reuse, not allocation profiles, model parity or speed.
+The token-only cache key is not a production decoder's sequence state. This
+interface works on stable; nightly is needed only for the fixtures below.
 
 ## Compiler capability fixtures
 
-Files in `fixtures/` are compiled directly with `rustc --edition=2024
---crate-type=lib --emit=metadata`; Cargo does not treat them as library modules,
-examples, or tests. Every fixture forbids unsafe code and denies warnings and
-missing documentation.
+`fixtures/` files compile directly with `rustc --edition=2024 --crate-type=lib
+--emit=metadata`, outside Cargo's module/test discovery. They forbid unsafe code
+and deny warnings/missing documentation.
 
-| Fixture | Purpose | Stable / old component | New component |
+| Fixture | Assertion | Baseline | Candidate component |
 | --- | --- | --- | --- |
-| `stable_control.rs` | Refill before returning a borrow; ordinary generic view consumer | Accept | Accept |
-| `invalid_alias.rs` | Two live overlapping exclusive references | Reject `E0499` | Reject `E0499` |
-| `polonius.rs` | Return a cached borrow on one branch; refill through the original owner on the other | Reject `E0499` | Accept with Polonius Alpha |
-| `next_solver.rs` | Normalize a lifetime-generic backend view in a higher-ranked callback bound | Reject `E0277` | Accept with the next trait solver |
+| `stable_control.rs` | Refill before lending; generic consumer | Accept | Accept |
+| `invalid_alias.rs` | Two overlapping exclusive references | Reject `E0499` | Reject `E0499` |
+| `polonius.rs` | Cached-borrow return or owner refill on alternate branch | Reject `E0499` | Accept with Polonius Alpha |
+| `next_solver.rs` | Lifetime-generic view in higher-ranked callback bound | Reject `E0277` | Accept with next trait solver |
 
-The conditional cache example follows the Rust project's
-[Polonius Alpha announcement](https://blog.rust-lang.org/2026/08/04/enabling-polonius-alpha-on-nightly/).
-The callback example adapts the higher-ranked associated type example in the
-[next trait solver announcement](https://blog.rust-lang.org/2026/08/21/enabling-next-solver-on-nightly/).
-The controls check that a compiler invocation actually accepts valid Rust while
-still rejecting invalid aliasing. The complete hosted matrix isolates each
-component on the same pinned nightly, including a mode with both disabled.
-
-The table describes the trial's assertions, not proof that production code is
-blocked by the old compiler. The backend callback fixture is a small type-system
-example, not an implemented accelerator interface. These patterns may simplify
-future interfaces; adopting a nightly compiler alone changes neither output
-ownership nor inference behavior.
+The examples follow Rust's [Polonius Alpha](https://blog.rust-lang.org/2026/08/04/enabling-polonius-alpha-on-nightly/)
+and [next solver](https://blog.rust-lang.org/2026/08/21/enabling-next-solver-on-nightly/)
+announcements. Controls distinguish compiler acceptance from broken invocation or
+invalid aliasing. The hosted matrix isolates all four component combinations on
+one nightly binary, with stable as another baseline. These are compiler
+assertions, not evidence that production code requires nightly or that an
+accelerator interface exists.
 
 ## Validation
 
-The orchestrator is [`scripts/Test-RustNightly.ps1`](../../scripts/Test-RustNightly.ps1).
-For one local compiler comparison, supply a new absolute evidence directory
-outside every checkout:
+For one focused local comparison, give the orchestrator a new absolute evidence
+path outside Git:
 
 ```powershell
 ./scripts/Test-RustNightly.ps1 -Mode Probe -ProbeCase Polonius -EvidenceDirectory C:/absolute/temp/rust-trial-evidence
 ```
 
-Local formatting, Release builds, Clippy checks, standalone metadata checks, and
-an individual focused regression are permitted. The complete test suite and full
-compiler matrix run only in hosted CI with `-Mode Probe -FullTests`; do not cover
-the full suite by batching filtered local runs. No benchmark is part of this
-experiment.
-
-The hosted compatibility checks use four parallel lanes: stable and nightly,
-each checking the Runtime and Broker package groups. Runtime contains ternary,
-GGUF, Prism, the CPU reference and this crate; Broker contains the Windows
-boundary crates and broker. Shared dependencies stay in the same compiler/group
-target cache. Compiler probes run independently, and the final `compatibility`
-check requires every lane to succeed. `-Mode Compatibility -PackageGroup Runtime`
-or `Broker` selects formatting, Release Clippy and documentation locally; omitting
-the group checks all packages. Complete correctness suites still require hosted
-`-FullTests`, and receipts identify their selected group and package paths.
-
-The exact prototype regression names are:
+Local formatting, Release builds/analyzers, standalone metadata checks and focused
+regressions are allowed. Full suites and the complete compiler matrix require
+hosted CI with `-FullTests`; never approximate them by batching local selections.
+This trial includes no benchmarks. Exact prototype regression names are:
 
 - `tests::borrowed_outputs_match_reference_and_invalidate`
 - `tests::repeated_outputs_reuse_storage`
+
+The manual main-only [workflow](../../.github/workflows/rust-nightly.yml) checks
+stable/nightly across Runtime/Broker groups in four parallel lanes. Runtime holds
+ternary, GGUF, Prism, the CPU reference and this trial; Broker holds Windows
+boundaries, broker and maintenance tools. Compiler/group targets remain separate.
+Independent probes and every lane must pass the final `compatibility` check,
+including evidence retention. Receipts bind compiler identity, exact arguments,
+source hashes and verdicts. Native Prism linking remains in Foundation.
+
+`-Mode Compatibility -PackageGroup Runtime` or `Broker` selects formatting,
+Release Clippy/documentation locally; the default checks all packages. Full
+correctness still requires hosted `-FullTests`. See [validation](../../docs/validation.md).

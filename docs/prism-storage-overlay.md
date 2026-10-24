@@ -1,75 +1,60 @@
 # Immutable LoRA B storage sharing
 
-The Rust source overlay implements a lossless CPU allocation reduction for the
-approved adapter. All 129 rank-one B tensors have identical F32 payloads.
-The loader now gives each target its own tensor metadata and name over a
-same-context view of one immutable allocation. It skips writes through aliases.
-The model weights, adapter artifact, scales and graph arithmetic are unchanged.
+The [Rust Prism overlay](../tools/prism/README.md) reduces CPU allocation for the
+approved adapter by sharing identical immutable B payloads. Each target retains
+its tensor metadata/name over a same-context view of one allocation; aliases
+skip loading. Model weights, adapter bytes, scales and graph arithmetic remain
+unchanged. The released assessment runtime does not include this overlay.
 
-Only ordinary CPU-buffer, contiguous F32 rank-one B tensors are eligible.
-Shape, strides, buffer type, context and full byte equality must match. Signed
-zero and NaN payload bits remain distinct. Candidate tensors are capped at
-64 KiB; the temporary comparison pool is bounded to 64 entries and 1 MiB.
-Ineligible, unequal or uncached payloads retain independent allocations.
-Different adapter lifetimes and devices never share storage.
+## Sharing contract
 
-Before migration, the focused C++ native regression compiled with strict ARM64 MSVC options against
-the verified pinned publisher DLLs. It found exactly **2,621,440 fewer backend
-allocation bytes (2.5 MiB)** for 129 equal B vectors, preserved distinct names
-and layouts, and obtained byte-identical native matrix-operation outputs for
-independent and shared storage. It also checked payload/layout/device/context
-and pool-limit fallback cases. This is an allocator/arithmetic correctness
-result, not a full-model performance or quality verdict.
+Only ordinary CPU-buffer, contiguous F32 rank-one B tensors qualify. Context,
+buffer type/device, shape, strides and full payload bytes must match. Signed
+zero and NaN payload bits remain distinct. Candidate size is capped at 64 KiB;
+the comparison pool at 64 entries and 1 MiB. Ineligible, unequal or uncached
+payloads retain independent allocations. Independent adapter lifetimes/devices
+never share storage.
 
-The sharing policy and regression are now implemented in the
-[Rust Prism crate](../tools/prism/README.md), with no runtime dependencies.
-The policy forbids unsafe code; documented C ABI pointer handling and native
-test calls are confined to their boundary modules. Rust also owns metadata
-extraction, one-handle file reads, bounds checks, tensor view creation and loading.
-The external engine retains only call sites and exception translation; cbindgen
-generates the C declarations from Rust outside the repository. Rust's focused
-native regression again verifies the exact allocation saving, tensor names,
-layouts and byte-identical matrix-operation output against pinned ARM64 ggml.
+The approved adapter has 129 identical 20,480-byte B vectors. The focused native
+regression verifies **2,621,440 fewer backend allocation bytes (2.5 MiB)**,
+distinct names/layouts, byte-identical matrix-operation outputs and fallback
+cases. It checks allocation/arithmetic correctness, not full-model quality or
+performance. This saving does not explain the roughly 560 MiB diagnostic
+[Job-counter difference](swift-lora.md#memory-and-execution-cost).
 
-The [source lock](../tools/prism/source.lock.json) pins Prism commit
-`b87ca7225456b06b0975b8239c66b5aecf07e37c`, the complete 39,429,253-byte codeload
-ZIP SHA-256 `333ab1cc57bdb1be0b52f894fe8c6822eb7da667a239d7a587dce79283782e58`,
-and the before/after adapter-loader and CMake source hashes. This is the latest
-Prism default-branch source inspected on October 23, 2026, seven commits beyond
-the latest published assessment runtime, `73bfe6cc`. The additional source fixes
-include malformed UTF-8 sanitization, legacy Q2 row validation, empty JSON-schema
-unions, grammar cloning, and a CPU null-callback crash. The overlay insertion
-files and public ggml headers are unchanged across those seven commits.
+## Source and build boundary
 
-The assessment binary in [swift-assessment.lock.json](../config/swift-assessment.lock.json)
-remains the latest publisher release, `prism-b10787-73bfe6c`; it does not contain
-those seven source-only fixes. Building the candidate does not qualify or install
-a replacement. Prism also remains a divergent fork: its current source and
-ggml-org master `1a24df163920a4744a95373d178d790b72a9bb2f` have 178 Prism-only
-and 1,230 ggml-only commits since common ancestor `5ea87ddad22541a37053c7ba92b02ec1923617c6`,
-according to the [upstream comparison](https://github.com/ggml-org/llama.cpp/compare/b87ca7225456b06b0975b8239c66b5aecf07e37c...1a24df163920a4744a95373d178d790b72a9bb2f).
-The latest Prism source therefore does not include every ggml upstream fix.
+The Rust crate owns metadata extraction, one-handle bounded reads, validation,
+sharing policy, native views and loading. The policy forbids unsafe code;
+documented C ABI pointer handling and native-test calls are confined to boundary
+modules. There are no runtime dependencies. The external C/C++ engine retains
+call sites and exception translation; optional cbindgen generates declarations
+outside the repository. Full inference replacement is separate
+[native Rust engine work](native-rust-engine.md).
 
-The [overlay applicator](../tools/prism/Apply-Overlay.ps1) rejects drift, ambiguous
-insertion points and repeat application before writing. The
-[build script](../scripts/Build-PrismEngine.ps1) requires that verified archive,
-extracts a fresh external lane, applies the overlay and records source,
-compiler, configuration, Rust static library and binary identities. It never installs a runtime,
-launches a model or promotes a profile. `-PrepareOnly` performs source preparation
-without a C++ compiler; it still builds Rust and generates its declarations.
-The build route requires Clang for the full Prism ARM CPU
-sources; this laptop currently lacks the actual clang-cl compiler.
+[source.lock.json](../tools/prism/source.lock.json) pins Prism commit
+`b87ca7225456b06b0975b8239c66b5aecf07e37c`, archive size **39,429,253 bytes**,
+SHA-256 `333ab1cc57bdb1be0b52f894fe8c6822eb7da667a239d7a587dce79283782e58`,
+and before/after loader/CMake hashes. This source is seven commits beyond the
+assessment package at `73bfe6cc`, including UTF-8, Q2-row, JSON-schema, grammar
+and null-callback fixes. Those source fixes are absent from the pinned binary.
+Prism also diverges from ggml upstream; the pinned source does not contain all
+upstream fixes. See the [revision comparison](https://github.com/ggml-org/llama.cpp/compare/b87ca7225456b06b0975b8239c66b5aecf07e37c...1a24df163920a4744a95373d178d790b72a9bb2f).
 
-Foundation CI builds the actual modified completion/server linked to Rust,
-and builds the Rust regression against real ggml compiled with Clang on hosted
-Ubuntu ARM64, then runs the correctness test and strict Rust checks.
-That lane checks the modified loader translation unit as part of the engine;
-it does not certify a Windows binary or Snapdragon throughput. The publisher
-runtime remains the assessment executable until a separately verified Windows
-build and the mandatory model correctness/TPS/quality gates qualify a replacement.
+The [applicator](../tools/prism/Apply-Overlay.ps1) rejects source drift,
+ambiguous insertion points and repeat application. The
+[builder](../scripts/Build-PrismEngine.ps1) verifies the archive, creates a fresh
+external lane, applies the overlay and records source/compiler/configuration,
+Rust static library and binary identities. It never installs a runtime,
+loads a model or promotes a profile. `-PrepareOnly` still builds Rust and its
+header but needs no C++ compiler. Full ARM CPU builds require Clang. See the
+[crate's build commands](../tools/prism/README.md#build-and-checks).
 
-This implementation saves duplicate B payload, a small part of the previously
-observed roughly 560 MiB Job-counter difference. It does not explain or recover
-that entire diagnostic increment. Initial graph reservation and rank-one graph
-fusion remain separate unimplemented candidates. There is no retraining,
-adapter quantization, rank pruning or dense merge into the ternary base.
+Foundation CI builds the modified completion/server linked to Rust and the
+focused native ggml regression with Clang on Ubuntu ARM64, then runs correctness
+and strict Rust checks. This validates loader linkage and storage behavior;
+it does not qualify a Windows binary or Snapdragon throughput. Keep the
+publisher runtime until a verified Windows build passes model correctness,
+throughput and quality gates. Initial graph reservation and rank-one fusion
+remain unimplemented alternatives; no training, adapter quantization or dense
+merge is part of this overlay.

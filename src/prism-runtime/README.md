@@ -1,75 +1,59 @@
 # Native Rust Prism CPU reference
 
-`bonsai-prism-runtime` provides an experimental, safe Rust implementation of the
-dense Qwen35 text path used by Swift/Bonsai. It links no C/C++ inference library.
-The pinned publisher Prism runtime remains the assessment and fallback engine.
-This implementation has **not passed full-model parity or device qualification**.
+`bonsai-prism-runtime` is an experimental safe Rust implementation of the dense
+Qwen35 text path used by Swift/Bonsai. It links no C/C++ inference library.
+**Full-model parity, broker integration and target-device qualification are
+pending.** Pinned publisher Prism remains the assessment and fallback engine.
 
-The crate contains:
+## Implemented behavior
 
-- A loader factored from `bonsai-gguf`, verifying file length and SHA-256 before
-  parsing, retaining exact metadata and reading payloads through that same file
-  handle. Windows denies write/delete sharing while loading. On other platforms
-  the caller must keep the verified file immutable throughout loading.
-- Immutable Rust-owned F32/F16/BF16/PQ2/PTQ1 tensors, checked dimensions and a
-  cumulative retained-storage budget. The existing bounded LoRA B sharing policy
-  can share byte-identical rank-one payloads within a model.
-- Scalar packed matrix operations preserving PQ2's Q8_K activation quantization
-  and PTQ1's distinct Q8_0 activation quantization. No persistent expanded float
-  matrix is created. Float accumulation and SIMD reduction order can differ from
-  the publisher CPU implementation; no bit-identical full-model claim is made.
-- Automatic baseline NEON PQ2/PTQ1 integer kernels using safe core Fearless SIMD APIs
-  on supported Windows ARM64 builds, with scalar fallback. Exact synthetic
-  differential checks preserve scalar quantization and floating block order;
-  target-device speed and whole-model parity remain unqualified.
-- Embeddings, explicit Hadamard/sign transforms, RMS normalization, full causal
-  nonflash attention (including FP16 query/probability conversion), text
-  interleaved MRoPE, Gated Delta Net/convolution state, gated feed-forward
-  layers and output projection. KV entries retain exact FP16 bits in `u16`
-  vectors and widen before scalar multiplication; convolution/GDN state remains
-  F32. State admission and checkpoint accounting use these physical element sizes.
-  Flash attention has a distinct reduction/rounding contract and is not implemented.
-- A bounded single-owner conversation with exact prefix checkpoint restoration,
-  greedy token streaming, backpressure, cancellation between decoder operations,
-  edited prompts, reset and rollback after failed evaluation or stream delivery.
-  Failed rollback closes admission until reset succeeds. Streamed tokens are
-  provisional until the request returns successfully. A failed backend restore
-  still leaves the public token view at the previous committed prefix.
-- Reusable caller-owned logits through `Decoder::evaluate_into`, with the owned
-  `evaluate` API retained for compatibility. The Qwen35 graph retains bounded
-  workspace, per-layer state deltas and quantized activation scratch; the runtime
-  consumes logits before the next mutation and validates their shape/finiteness.
-  Reset and prefix restoration invalidate prior output without discarding the
-  reusable workspace. Checkpoints still own independent committed state/logits;
-  scratch never substitutes for a rollback snapshot. Errors clear direct output,
-  and runtime cancellation/failure restores the prior committed conversation.
-- State-only prompt ingestion through `Decoder::ingest`. Qwen35 skips final
-  output normalization/projection for intermediate uncached prompt tokens,
-  preserving all hidden/cache/recurrent validation. Unrequested output logits
-  are not computed or checked. The compatibility fallback computes and validates
-  logits before discarding them. Final prompt tokens and decode steps produce
-  ordinary validated logits; exact prefix hits reuse their saved output.
+- Verified bounded GGUF loading through `bonsai-gguf`: file length/SHA-256 are
+  checked before parsing, and payloads use the same retained handle. Windows
+  denies write/delete sharing; other platforms require caller-enforced immutability.
+- Immutable F32/F16/BF16/PQ2/PTQ1 tensors, checked dimensions, retained-storage
+  budgets and optional byte-identical rank-one LoRA B sharing. Storage sharing
+  does not implement adapter forward execution.
+- Packed scalar matrix operations with PQ2 Q8_K and PTQ1 Q8_0 activation
+  contracts, plus automatic baseline NEON on eligible Windows ARM64 operations.
+  Scalar remains the reference/fallback; no expanded float matrix is retained.
+  Synthetic integer/matvec parity does not establish whole-model parity or speed.
+- Embeddings, Hadamard/sign transforms, RMS normalization, causal nonflash
+  attention, text-interleaved MRoPE, GDN/convolution state, gated feed-forward
+  layers and output projection. Attention retains FP16 query/probability
+  conversion and exact FP16 KV bits; convolution/GDN state stays F32.
+- Single-owner bounded conversations with greedy token streaming, backpressure,
+  exact prefix checkpoints, edited prompts, reset, cancellation between decoder
+  operations and rollback after evaluation or delivery failure. Streamed tokens
+  are provisional until success. Failed restore preserves the public committed
+  token prefix and closes admission until reset succeeds.
+- Stable `Decoder::evaluate_into` reuses caller-owned logits; `evaluate` remains
+  available. Qwen35 retains bounded graph/kernel scratch and stages per-layer
+  state deltas. Outputs are shape/finiteness checked; errors clear direct output.
+  Checkpoints own independent committed state/logits, never scratch aliases.
+- `Decoder::ingest` skips output-only normalization/projection for intermediate
+  uncached prompt tokens while validating computed state. Its compatibility
+  fallback computes/validates then discards logits. Final prompt tokens and
+  decode steps produce logits; exact prefix hits reuse saved output.
 
-The graph/quantizer reference is Prism commit
+The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.
-The newer source-overlay build lock is a separate identity. Audited source paths
-and hashes are recorded in `kernels.rs`; the MIT terms are retained in the root
-`NOTICE` and `PRISM-LICENSE.txt`. No Camelid or Orangu code is incorporated.
+The source-overlay build lock is a separate identity. Audited source paths/hashes
+are in [kernels.rs](src/kernels.rs); MIT terms are in [NOTICE](../../NOTICE) and
+[PRISM-LICENSE.txt](PRISM-LICENSE.txt). No Camelid/Orangu code is incorporated.
 
 ## Build and use
 
-The default features enable the JSON token driver (`cli`) and packed NEON kernels
-(`experimental-neon`). Ordinary builds and calls automatically select NEON for
-supported Windows ARM64 packed operations. Library consumers can build with
-`--no-default-features --features experimental-neon --lib` to retain NEON without
-the JSON driver, or `--no-default-features --lib` for a scalar-only library.
-`--no-default-features --features cli` builds a scalar-only token driver.
-The inference API uses native typed GGUF
-metadata and compact arrays, and the safe Prism sharing policy needs no C-header
-generator. These feature choices do not change the model's numerical contract.
+Default features are `cli` (JSON token driver) and `experimental-neon`.
 
-Use Rust 1.99.1. Run Cargo from a unique system-temp directory, specifying absolute
-manifest and target paths. For example, after fetching locked dependencies:
+| Cargo feature selection | Result |
+| --- | --- |
+| Defaults | Token driver/library with eligible NEON selection |
+| `--no-default-features --features experimental-neon --lib` | NEON-enabled library without JSON driver |
+| `--no-default-features --lib` | Scalar-only library |
+| `--no-default-features --features cli` | Scalar-only token driver |
+
+Use Rust 1.99.1 and an absolute manifest/target path from a unique system-temp
+working directory. After fetching locked dependencies:
 
 ```powershell
 $repo = 'C:\Users\symbi\source\repos\SwiftBonsai2'
@@ -84,74 +68,53 @@ try {
 } finally { Pop-Location }
 ```
 
-The driver requires an absolute model path, expected artifact length and SHA-256,
-a retained-model byte budget, context and checkpoint budgets, prompt token IDs,
-and a generation limit. It validates artifact identity syntax, positive resource
-bounds, prompt plus generation capacity and the 256-stop-token limit before
-opening or hashing the model. Vocabulary checks require the verified model.
-`--stop-tokens` supplies the exact stop IDs. It emits one
-JSON token object per line, followed by completion accounting. It does not infer
-tokenization, stop tokens or a sampler from an approximate substitute. Use token
-IDs produced by the exact reference tokenizer. It does not install/promote a
-profile, launch the broker, or alter the configured fallback.
+The driver requires an absolute model path, expected length/SHA-256, retained-model,
+context/checkpoint budgets, prompt token IDs and generation limit. It validates
+identity syntax, positive bounds, prompt-plus-generation capacity and the
+256-stop-token limit before model I/O; vocabulary checks follow verified loading.
+Supply exact stop IDs with `--stop-tokens` and token IDs from the reference
+tokenizer. Output is one JSON token object per line followed by accounting.
+The driver does not tokenize, implement stochastic sampling, launch the broker
+or promote a profile.
 
-`--memory-bytes` bounds retained model storage. Parser scratch, transient payload
-conversion, graph scratch, active sequence state, checkpoint copies and allocator
-overhead need additional headroom. It is not an OS process limit. Graph state has
-its own checked bound; `--checkpoint-bytes` bounds all saved snapshots including
-the in-flight rollback state. Hardware/process admission remains the caller's
-responsibility until the broker ownership integration is qualified.
+## Memory and ownership
 
-Graph workspace now retains its high-water allocations across evaluations rather
-than releasing temporary vectors after each token. This can remove repeated
-allocation while retaining more idle memory. The graph's geometry/context bounds
-still apply; the retained-model and checkpoint budgets do not cover workspace.
-Synthetic numerical and storage-reuse tests do not measure full-model allocation
-counts, peak memory or speed. R4.2 still requires same-model prefill/decode
-allocation and memory qualification in CI when requested.
+`--memory-bytes` bounds retained model storage, not process memory. Allow additional
+headroom for parser/conversion scratch, graph workspace, active state, checkpoints
+and allocator overhead. Graph state has a separate checked bound;
+`--checkpoint-bytes` covers saved snapshots including in-flight rollback.
+Process/hardware admission remains the caller's responsibility pending broker
+integration.
 
-KV backing vectors also grow geometrically up to the validated context size,
-reducing repeated prefix copies at the cost of unused reserved capacity between
-growth steps. Reset retains that storage. The conservative checkpoint estimate
-charges actual vector capacities, so tight checkpoint budgets can reject a
-rollback capture or retain fewer reusable prefixes as this reserve grows.
-RoPE frequency reuse lasts only for one evaluation attempt; it carries no
-position cache across reset, restoration or failed evaluation.
+Graph workspace retains high-water allocations across evaluations/reset. KV
+vectors grow geometrically within the context bound and retain reserved capacity;
+checkpoint admission charges actual capacities. Tight budgets can reject rollback
+capture or retain fewer prefixes as this reserve grows. RoPE reuse lasts one
+evaluation attempt. Neither retained-model nor checkpoint budgets cover workspace.
+Synthetic capacity reuse does not establish full-model allocation, peak-memory or
+speed benefit; [R4.2](../../docs/native-rust-engine.md#ordered-work) remains open.
 
-## Validation and remaining work
+## SIMD and validation
 
-The [CPU SIMD plan](../../docs/simd-plan.md) records the implemented packed
-kernels. `MatvecBackend::Auto` is the default: `matvec`, the Qwen35 graph and the
-token driver select the available optimized path without a caller opt-in.
-`MatvecScratch::with_backend(MatvecBackend::Scalar)` forces the reference path;
-the existing `ExperimentalNeon` request remains supported.
-`selected_backend()` reports the actual per-call selection.
-Eligibility requires native Windows ARM64 MSVC with ambient baseline NEON and
-complete PQ2 or PTQ1 rows. PQ2 retains its Q8_K path for rows divisible by 256;
-odd-group PQ2 and PTQ1 retain four independent Q8_0 scales per 128 weights.
-Other formats, feature-disabled builds and other targets use scalar. Scalar runs
-natively on ARM64 as well; it does not imply x86 emulation. This kernel default
-does not qualify the native engine as a daily profile.
+[SIMD S0–S6](../../docs/simd-plan.md) owns kernel status and acceptance.
+`MatvecBackend::Auto` selects baseline NEON for complete PQ2/PTQ1 rows when built
+for Windows ARM64 MSVC with `experimental-neon` and ambient NEON. PQ2 widths
+divisible by 256 retain Q8_K; odd-group PQ2 and PTQ1 retain four Q8_0 scales per
+128 weights. Unsupported cases fall back to scalar, which also runs natively
+on ARM64. Force it with `MatvecScratch::with_backend(MatvecBackend::Scalar)`;
+`selected_backend()` reports actual selection.
 
-The safe core-only `fearless_simd` 1.1.0 dependency is target-specific and
-enabled by default; no local unsafe allowance or procedural macro is added. Packed
-unpack/dot consumes immutable bytes directly, keeps the original scalar
-quantizer and ordered scale operations, and creates no expanded matrix.
-Raw-integer and bitwise matvec/fallback/error tests cover PQ2 and PTQ1, including
-the immutable C++ packed-byte fixture. PTQ1 decodes directly without an expanded
-PQ2 block and validates canonical bytes even at zero scale. Strict native Release
-checks pass; the earlier PQ2 assembly inspection is recorded separately in the
-plan with compiler/source identities and limitations. The feature also
-works with `--no-default-features --lib`. Broader per-path memory qualification,
-optional ISA detection, fuller dispatch diagnostics, profiling and S6 promotion
-remain pending. No throughput or whole-model parity benefit is established.
+Target-only `fearless_simd` 1.1.0 uses safe core APIs under unchanged
+`forbid(unsafe_code)`. Direct packed decode preserves scalar quantization and
+ordered scales. Optional ISA detection, fuller diagnostics, per-path memory and
+performance qualification remain open.
 
-Focused fixtures cover malformed/truncated/over-budget GGUFs, exact metadata,
-immutable B sharing, native activation rounding and packed dot results, synthetic
-full/recurrent graph state, and transactional edited-prefix/cancellation behavior.
-Foundation CI runs the complete native crate suite and strict formatting,
-Release Clippy and documentation checks on Windows ARM64. Locally run only
-focused named regressions, for example:
+[Foundation](../../.github/workflows/foundation.yml) runs the complete synthetic
+native suite, formatting, Release Clippy/rustdoc, feature variants and non-ARM
+fallback checks. Fixtures cover bounded loading, exact codecs/rounding, graph
+state, output reuse, checkpoint isolation and transactional recovery. They do not
+load the full model. Locally run focused named regressions, from the same external
+working directory convention, for example:
 
 ```powershell
 cargo +1.99.1-aarch64-pc-windows-msvc test --locked --offline --release `
@@ -159,10 +122,8 @@ cargo +1.99.1-aarch64-pc-windows-msvc test --locked --offline --release `
     --test runtime edited_turns_restore_complete_recurrent_prefix_and_failed_stream_rolls_back -- --exact
 ```
 
-This is a token-level reference, not the accepted daily chat replacement.
-The [R0–R7 plan](../../docs/native-rust-engine.md) still requires baseline profiling,
-reference full-model logits/states and token comparisons, tokenizer/chat-template
-and stochastic RNG parity, adapter forward execution, broker count/completion and
-readiness integration, OS resource ownership, broader SIMD/Adreno execution, and paired
-device correctness/TPS/quality/security acceptance. Full suites and every
-benchmark remain CI-only. No speedup is claimed.
+The [R0–R7 roadmap](../../docs/native-rust-engine.md) still requires profiling,
+full-model logits/states/tokens, tokenizer/template and stochastic RNG parity,
+adapter execution, broker/OS ownership, broader SIMD/Adreno support and device
+correctness/TPS/quality/security acceptance. Full suites and every benchmark
+remain CI-only under [validation policy](../../docs/validation.md).

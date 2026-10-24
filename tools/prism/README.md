@@ -1,100 +1,96 @@
 # Rust LoRA storage sharing for pinned Prism
 
-`bonsai-prism` replaces the repository's C++ sharing, file-loading and tensor-view
-logic and native regression with Rust. The policy in `src/pool.rs` forbids unsafe
-code. `src/loader.rs` owns file reads, bounds checks, native metadata extraction,
-view creation and backend writes. The crate has no runtime dependencies.
-The `engine-loader` feature enables pinned optional build dependency cbindgen
-0.29.4, which generates the C ABI from Rust into Cargo's external output
-directory. Ordinary safe-policy builds compile no external dependencies and
-generate no header. No native header is checked into the repository.
-The static library is linked into pinned Prism commit
-`b87ca7225456b06b0975b8239c66b5aecf07e37c`.
+`bonsai-prism` implements bounded LoRA B-vector sharing and the pinned engine's
+file-loading/tensor-view boundary. The policy in `src/pool.rs` forbids unsafe code;
+`src/loader.rs` owns file reads, bounds checks, metadata extraction, views and
+backend writes. There are no runtime dependencies. `engine-loader` enables the
+pinned optional cbindgen build dependency to generate C declarations in Cargo's
+external output directory. Safe-policy builds need no external dependencies or
+header. The static library links into the Prism revision in
+[source.lock.json](source.lock.json).
 
-Only ordinary CPU-buffer, contiguous F32 rank-one B vectors are eligible.
-Context, buffer type, dimensions, strides and all payload bytes must match.
-Signed zero and NaN payload bits remain distinct. Each candidate is at most
+Only ordinary CPU-buffer, contiguous rank-one F32 B vectors are eligible.
+Context, buffer type, dimensions, strides and every payload byte must match;
+signed zero and NaN payload bits remain distinct. Each candidate is at most
 64 KiB; the cache holds at most 64 entries and 1 MiB. Existing matches remain
-usable after either cap. Failed cache allocations retain independent storage.
-Each native view keeps its own tensor name; only canonical owners are loaded.
+usable at either cap. Failed cache allocations retain independent storage.
+Views keep their own tensor names; only canonical owners are loaded.
 
-The approved adapter's 129 identical 20,480-byte B vectors can avoid
-**2,621,440 bytes (2.5 MiB)** of native payload allocation. The Rust native
-regression checks that exact allocator difference and byte-identical ggml
-MUL_MAT output. These checks do not qualify model throughput or output quality.
+The approved adapter's 129 identical 20,480-byte B vectors avoid **2.5 MiB** of
+native payload allocation. The native regression checks that exact difference
+and byte-identical ggml MUL_MAT output. Whole-model throughput/quality remain
+unqualified.
 
 ## Native boundary
 
-The external Prism/llama.cpp engine remains C/C++. Replacing its inference
-kernels, parser and platform backends is separate work. The source applicator
-inserts only ownership, calls and exception translation into that loader.
-The generated declarations and these call sites are the remaining interop;
-payload I/O, copying, bounds checks and sharing behavior are authored in Rust.
+The external Prism/llama.cpp engine remains C/C++. The source applicator inserts
+ownership, Rust calls and exception translation into its loader. Generated C
+declarations preserve the interop contract; inference replacement is separate
+[native Rust engine work](../../docs/native-rust-engine.md). The experimental
+[CPU reference](../../src/prism-runtime/README.md) reuses the safe sharing policy
+but does not replace this overlay or the publisher profile.
 
-The [native Rust engine plan](../../docs/native-rust-engine.md) tracks full
-inference replacement as M7/R0–R7: baseline profiling, reference parity, packed
-CPU kernels, Rust runtime, Adreno execution and qualification. It preserves the
-model's numerical/decoding contract and this component's storage behavior. The
-rough 2× performance goal and conditional 3–5× upside are unmeasured; this crate
-does not implement or qualify that replacement.
+`src/loader.rs` is the audited FFI boundary. It reads the pinned tensor's initial
+C layout fields and calls public ggml/gguf APIs. It retains one file handle and
+a fallible reusable read buffer; Windows denies source writes/deletion during
+loading. Other platforms require caller-enforced immutability. Views skip loading
+because canonical owners load separately. Null inputs, missing descriptors,
+changed file length, invalid offsets and size mismatches reject.
 
-The separate [native CPU reference](../../src/prism-runtime/README.md) now
-implements Rust-owned tensor storage, scalar packed operations, the Qwen35 hybrid
-graph and bounded token generation, reusing this crate's safe sharing policy.
-It is experimental and does not replace this overlay or the publisher profile.
-
-`src/loader.rs` is the audited engine boundary: it reads only the pinned tensor's
-initial C layout fields and calls the public ggml/gguf C APIs. It owns one file handle and
-a reusable fallible read buffer. Windows denies file writes/deletion during
-loading; other platforms require the caller to preserve file immutability.
-Native views skip loading because their canonical owner is loaded separately.
-Null inputs, missing descriptors, changed file lengths, invalid offsets and
-size mismatches fail closed. Opaque handles require exclusive access and native
-objects must remain live and disjoint from Rust state. Foreign callers remain
-responsible for pointer validity and the exact pinned engine layout.
-`tests/native.rs` separately allows documented unsafe calls into pinned ggml.
-The rest of the crate denies unsafe code and the policy forbids it.
+Foreign callers must provide valid pointers, the exact pinned layout, exclusive
+handle access and live native objects disjoint from Rust state. `tests/native.rs`
+has separate documented unsafe calls into pinned ggml. The rest of the crate
+denies unsafe code and the policy forbids it.
 
 ## Build and checks
 
-Use PowerShell 7.6, the pinned Rust 1.99.1 toolchain and a Clang-compatible
-CMake/Ninja environment for the external engine. Download and verify the ZIP
-identified by `source.lock.json` in external storage. Fetch the locked build
-dependencies once from a unique external scratch directory, then:
+Use PowerShell 7.6, pinned stable Rust and a Clang-compatible CMake environment
+for the external engine. Download and verify the ZIP in `source.lock.json` into
+external storage. From the checkout, capture the repository path and use an
+external native working directory for dependency fetches:
 
 ```powershell
-cargo +1.99.1 fetch --locked --manifest-path <repo>/tools/prism/Cargo.toml
-$result = ./scripts/Build-PrismEngine.ps1 -SourceArchive $absoluteZip -BuildMode All
-ctest --test-dir (Join-Path $result.EvidenceDirectory 'build-probe') --output-on-failure
+$repo = (Get-Location).Path
+$scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Prism-' + [guid]::NewGuid().ToString('N'))
+[void][IO.Directory]::CreateDirectory($scratch)
+$previous = [Environment]::CurrentDirectory
+Push-Location $scratch
+try {
+    [Environment]::CurrentDirectory = $scratch
+    cargo +1.99.1 fetch --locked --manifest-path (Join-Path $repo 'tools/prism/Cargo.toml')
+    if ($LASTEXITCODE) { throw 'Prism dependency fetch failed.' }
+    $result = & (Join-Path $repo 'scripts/Build-PrismEngine.ps1') -SourceArchive $absoluteZip -BuildMode All
+    ctest --test-dir (Join-Path $result.EvidenceDirectory 'build-probe') -C Release -R '^prism-lora-storage-alias$' --output-on-failure
+    if ($LASTEXITCODE) { throw 'Focused native regression failed.' }
+} finally {
+    [Environment]::CurrentDirectory = $previous
+    Pop-Location
+}
 ```
 
-The builder verifies the complete ZIP, extracts a fresh external temp lane,
-checks both original source hashes, applies exact substitutions, and checks
-both resulting hashes before writing. It builds the Rust static library,
-records its hash and toolchain, builds pinned ggml for the Rust native test,
-and links completion/server to Rust. Builds use locked offline dependencies.
-It does not run tests, install binaries, load a model or promote a profile.
-`-PrepareOnly` compiles Rust and generates its header, but requires no C++ compiler.
-`-BuildMode Probe` builds only Rust and the focused native regression.
-Windows Visual Studio generators select ClangCL for the engine.
+Set `$absoluteZip` to the verified archive path before running. The builder checks
+the whole ZIP, extracts a fresh external lane, verifies original and overlaid
+source hashes, builds locked/offline Rust and ggml, and links completion/server
+to Rust. Receipts record toolchain and library hash. It runs no tests or model
+and installs/promotes no binaries. `-PrepareOnly` compiles Rust/generates headers
+without a C++ compiler. `-BuildMode Probe` builds ggml plus the Rust native test.
+Visual Studio generators select ClangCL on Windows.
 
-Run Cargo from a unique system-temp working directory, with absolute manifest
-and target paths. A focused safe-policy check is:
+For a focused policy check, use the external working-directory convention above:
 
 ```powershell
 cargo +1.99.1 test --locked --offline --release --manifest-path <repo>/tools/prism/Cargo.toml --target-dir <temp>/build --test policy pool_policy_preserves_existing_cpp_cases -- --exact
 ```
 
-Native tests are opt-in with `--features native-tests --test native` and need
-`BONSAI_PRISM_NATIVE_LIB_DIR` containing absolute ggml library directories
-separated by the OS path separator. Static linking is the default. Reviewed
-Windows import libraries additionally require
-`BONSAI_PRISM_NATIVE_LINK_KIND=dylib` and matching DLLs on the process PATH.
-The exact math case is `native_storage_and_math`; a separate rejection case
-checks actual F16/strided tensors, missing descriptors and invalid file ranges.
-Full suites and benchmarks remain CI-only. Foundation checks Rust formatting, Clippy, documentation,
-policy/FFI correctness, source drift/repeat rejection, native allocator/math
-correctness, and the actual engine's Rust linkage on hosted Linux ARM64.
+Native tests require `--features native-tests --test native` and absolute ggml
+library directories in `BONSAI_PRISM_NATIVE_LIB_DIR`, separated by the OS path
+separator. Static linking is default. Reviewed Windows import libraries also need
+`BONSAI_PRISM_NATIVE_LINK_KIND=dylib` and matching DLLs on PATH. Exact cases are
+`native_storage_and_math` and
+`native_loader_rejects_invalid_reads_and_keeps_fallbacks`.
 
-The upstream MIT notice is retained in `PRISM-LICENSE.txt` for loader snippets.
-The complete engine sources remain in the verified external archive.
+Full suites and benchmarks remain CI-only. Foundation checks formatting, Release
+Clippy/documentation, policy/FFI behavior, source drift/repeat rejection, native
+allocator/math correctness and engine Rust linkage on Linux ARM64. The upstream
+MIT notice remains in `PRISM-LICENSE.txt`; full engine sources stay in the verified
+external archive.

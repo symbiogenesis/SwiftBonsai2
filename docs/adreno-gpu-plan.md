@@ -1,250 +1,180 @@
 # Snapdragon X Elite Adreno GPU plan
 
-Assessment and roadmap, October 23, 2026. **The implemented inference paths are
-CPU-only; optimal Adreno use has not been demonstrated.** GPU acceleration is
-planned, with no qualified native Windows ARM64 GPU build, whole-model GPU
-correctness result, or target-device performance verdict recorded here.
+**Current inference paths are CPU-only.** No native Windows ARM64 GPU build,
+whole-model GPU correctness result or target-device performance verdict is
+qualified. All G0–G5 exits remain pending.
 
-The first objective is to qualify the existing pinned Prism Vulkan backend for
-Swift. This is [M2](../PLAN.md#12-delivery-milestones-and-stopgo-decisions), and
-does not depend on completing the native Rust replacement. The later
-[Rust R6](native-rust-engine.md#ordered-work) path must meet the same device
-and model contracts after Rust CPU parity. All steps below are pending.
+First qualify pinned Prism Vulkan for Swift under [M2](../PLAN.md#12-delivery-milestones-and-stopgo-decisions).
+This can precede the Rust replacement. [Rust R6](native-rust-engine.md#ordered-work)
+follows Rust CPU parity and needs its own GPU implementation and evidence.
 
-## What the repository does today
+## Current constraints and backend choice
 
-| Evidence | Consequence |
+| Repository evidence | Constraint |
 | --- | --- |
-| [Swift artifact/runtime lock](../config/swift-assessment.lock.json) pins the 6.71 GiB PQ2 model and Prism commit `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, with a `win-cpu-arm64` package | A native CPU loading/decode reference exists; the installed package does not qualify Vulkan |
-| [Baseline build](../scripts/Build-Engine.ps1) and [Prism overlay build](../scripts/Build-PrismEngine.ps1) set `GGML_VULKAN=OFF` and `GGML_OPENCL=OFF` | Current build recipes do not produce the proposed accelerator |
-| [CPU completion arguments](../scripts/Bonsai.Completion.psm1), [server preflight](../scripts/Bonsai.ServerPolicy.psm1), and [owned broker launch policy](../src/broker/src/launch_policy.rs) explicitly select `--gpu-layers 0` and `--device none` | Installing a GPU driver alone will not activate inference offload; server policy also disables KV and operation offload |
-| [Native Rust reference](../src/prism-runtime/README.md) implements scalar CPU execution | Its storage reuse is useful groundwork, not GPU execution or evidence of a GPU speed gain |
-| [Doctor](../scripts/Doctor.ps1) records graphics identity/driver through Windows inventory | It does not yet qualify the Vulkan loader, ICD, features, memory budgets or selected kernels |
+| [Assessment lock](../config/swift-assessment.lock.json) pins the 6.71 GiB PQ2 artifact, Prism `73bfe6cc485554822f80c473a3c0c4f25e80f41b` and `win-cpu-arm64` package | Installed runtime is a CPU reference |
+| [Baseline](../scripts/Build-Engine.ps1) and [overlay](../scripts/Build-PrismEngine.ps1) builds disable Vulkan/OpenCL | A separate GPU recipe is required |
+| [Completion](../scripts/Bonsai.Completion.psm1), [server](../scripts/Bonsai.ServerPolicy.psm1) and [broker](../src/broker/src/launch_policy.rs) select `--gpu-layers 0` / `--device none` | Drivers alone do not activate offload; server policy also disables KV/operation offload |
+| [Rust runtime](../src/prism-runtime/README.md) uses scalar/NEON CPU kernels | Reusable storage does not provide GPU execution |
+| [Doctor](../scripts/Doctor.ps1) inventories graphics identity/driver | Vulkan loader/ICD, features, kernels and budgets still need qualification |
 
-The existing CPU paths are deliberate correctness controls. GPU work needs a
-separate explicit development profile, build receipt and bounded launch policy.
-Keep the CPU control reproducible while the GPU profile is experimental.
+Use **Prism Vulkan first**, testing PQ2 and [verified current-weight PTQ1](swift-memory.md)
+independently. The [Prism backend audit][prism-audit] documents packed scalar,
+coopmat1 and integer-dot paths/transforms, with no direct coopmat2 decoder for
+these formats. Source support does not establish actual Adreno kernel selection
+or complete graph coverage.
 
-## Backend choice and evidence boundary
+[OpenCL][opencl] is conditional: its Windows ARM64/X1-85 guidance does not establish
+Swift PQ2/PTQ1 support. X2 prebuilt-kernel claims do not qualify X1-85.
+[DirectML][directml]/Windows ML needs a faithful model/runtime integration, not a
+GGUF switch. Defer conversion or custom DX12 until Vulkan exposes a measured
+limitation. Hexagon discovery remains independent.
 
-Use **Prism Vulkan first** for the exact Swift PQ2 artifact and, independently,
-the [verified current-weight PTQ1 export](swift-memory.md). Prism's
-[backend audit][prism-audit] documents released PQ2/PTQ1 scalar/coopmat1 and
-integer-dot matrix-vector paths plus Bonsai transforms. Neither packing has a
-direct coopmat2 decoder in that audit. Actual kernel selection depends on the
-device and driver; packed decoding alone does not implement the complete graph.
-This is source support, not an Adreno result.
+The pinned source identifies three bring-up checks:
 
-Treat **OpenCL as a conditional alternative**. The [OpenCL guide][opencl]
-documents Windows ARM64/X1-85 and conventional quantizations, but does not
-establish Swift PQ2/PTQ1 and transform support. Its prebuilt binary kernel
-library targets X2 GPUs and selected non-ternary operations; do not apply those
-claims to X1-85. A compatible conventional model can test platform access under
-its own manifest, but cannot qualify Swift or replace its comparison weights.
-
-DirectML/Windows ML would require a separate faithful model/runtime integration.
-[Microsoft's overview][directml] describes DirectML operators and ONNX Runtime
-integration, not a GGUF provider toggle. Defer that conversion or a custom DX12
-backend until Vulkan exposes a concrete limitation worth solving. Hexagon NPU
-work remains independent; simultaneous CPU/GPU/NPU utilization is not a goal.
-
-### Specific opportunities in the pinned implementation
-
-The receipt-backed local Prism source at the locked commit exposes concrete
-checks for bring-up and later optimization:
-
-- The [Qwen35 graph][prism-graph] disables row-indexed recurrent-state reads and
-  raw-gate fusion for Vulkan. Its [Vulkan operation checks][prism-vulkan] reject
-  those variants. First qualify the existing gathered-state/activated-gate path;
-  then profile the gathers and gate dispatches before adding equivalent shader
-  support. Existing guards make this a tuning opportunity, not an identified
-  correctness defect in normal execution.
-- The same Vulkan operation checks enforce buffer/descriptor limits. From the
-  [Swift dimensions](../config/swift.metadata.json), its `[5120, 248320]` token
-  embedding alone has about 322.07 MiB of PQ2 payload, or 265.23 MiB after the
-  current PTQ1 export. Verify that operation's actual placement and indexing
-  path; a sufficient heap budget does not prove one tensor fits. Preserve
-  discovered limits rather than copying `FORCE_MAX_*` overrides.
-- [LoRA payload sharing](../tools/prism/src/pool.rs) currently admits CPU
-  buffers only. Its verified 2.5 MiB saving is not a Vulkan allocation result;
-  separately audit device storage, adapter basis and forward execution.
+- [Qwen35][prism-graph]/[Vulkan operation guards][prism-vulkan] disable row-indexed
+  recurrent reads and raw-gate fusion. Qualify the existing gathered-state/
+  activated-gate route before optimizing gathers or dispatches.
+- Buffer/descriptor limits can constrain individual tensors. Swift's
+  `[5120, 248320]` embedding has about 322.07 MiB PQ2 payload, or 265.23 MiB PTQ1.
+  Verify actual placement/indexing; sufficient heap space does not prove it fits.
+  Preserve discovered limits rather than copying `FORCE_MAX_*` overrides.
+- [LoRA sharing](../tools/prism/src/pool.rs) admits CPU buffers only. Its 2.5 MiB
+  storage saving does not qualify device allocations, basis or adapter execution.
 
 ## Delivery sequence and exits
 
-### G0 — Record the actual native device contract
+### G0 — Record the native device contract
 
-- [ ] Extend inventory with a bounded Vulkan capability report. Record the
-  X1-85 device/vendor IDs, OS build, driver version, Vulkan API/loader/ICD
-  identity and architecture, compute queues, enabled features/extensions and
-  runtime-selected device. Reject accidental software adapters or an emulated
-  inference executable. Verify deployed executable and in-process dependencies
-  are native ARM64; record build-time shader tools separately.
-- [ ] Record storage-buffer/allocation limits, memory heaps/types, workgroup
-  limits, subgroup sizes/operations, FP16/storage support, integer-dot features
-  and accelerated properties, and cooperative-matrix types/shapes if exposed.
-  Compare them with the pinned backend's actual shader requirements.
-  [Query capabilities][vulkan-query] and [subgroup properties][subgroups]; do not
-  hard-code another Adreno generation's subgroup width. An exposed integer-dot
-  feature and an [accelerated dot-product property][integer-dot] are distinct.
-- [ ] Query per-heap budget/usage through [VK_EXT_memory_budget][memory-budget]
-  when available; retain an explicit unavailable result and conservative
-  admission if absent. Budgets can change and are not reservations. Include
-  Windows available physical memory, commit and GPU residency/eviction evidence.
-  The reported 128 MB dedicated memory is not this integrated GPU's capacity;
-  neither installed RAM nor a reported shared-memory maximum is an allocation
-  entitlement.
+- [ ] Capture actual X1-85 IDs, OS/driver, Vulkan API/loader/ICD architecture,
+  queues, enabled features/extensions and selected device. Verify native ARM64
+  executable/dependencies; reject software adapters and emulated inference.
+  Record build-time shader tools separately.
+- [ ] Record buffer/allocation/workgroup limits, heaps/types, subgroups, FP16/
+  storage support, integer-dot features/acceleration and cooperative-matrix shapes.
+  Compare with pinned shader requirements. Use [capability queries][vulkan-query]
+  and [subgroup properties][subgroups]; exposed dot support and
+  [accelerated properties][integer-dot] are distinct.
+- [ ] Query [memory budget/usage][memory-budget] where available; record absence
+  with conservative admission. Include physical RAM, commit and residency/evictions.
+  UMA/shared-memory reports are not allocation entitlements; 128 MB dedicated
+  memory is not total GPU capacity.
 
-**Exit:** a retained device/build capability record and a list of unsupported
-requirements. Driver changes are separate managed changes, followed by renewed
-qualification; a newer version alone is not an improvement verdict.
+**Exit:** a retained device/build record and unsupported requirements. Driver
+changes require renewed qualification.
 
 ### G1 — Build an isolated Prism Vulkan candidate
 
-- [ ] Add a separate GPU build mode at the Swift lock's immutable Prism commit,
-  beginning with `GGML_VULKAN=ON`. Pin the Vulkan SDK/headers, shader compiler,
-  ARM64 link libraries, compiler/options, source overlay and output hashes.
-  Audit that revision's CMake and shader-generation requirements before writing
-  a runnable recipe. Keep unrelated accelerators disabled for initial diagnosis.
-- [ ] Preserve CPU build/install lanes. Do not combine the x64 Vulkan release
-  package with ARM64 CPU binaries, or load unrelated ggml DLLs. Check the native
-  dependency chain and enumerate the candidate's effective devices/options.
-- [ ] Add an explicit experimental GPU launch policy using only switches verified
-  against that binary. Capture requested and effective offload, device, cache,
-  batch and memory settings. Retain authentication, cancellation, deadlines,
-  process ownership and existing admission controls. Reassess their coverage of
-  GPU allocations: a Windows Job commit cap does not bound every mapped or
-  GPU-resident byte. Do not merely remove the CPU-only arguments globally.
+- [ ] Add a separate mode at the locked Prism revision with `GGML_VULKAN=ON`.
+  Pin SDK/headers, shader compiler, ARM64 libraries, compiler/options, overlay
+  and output hashes after auditing that revision's CMake/shader requirements.
+  Keep unrelated accelerators disabled initially.
+- [ ] Preserve CPU build/install lanes. Verify native dependency identity;
+  do not mix x64 GPU packages or unrelated ggml DLLs into ARM64 binaries.
+  Enumerate effective devices/options.
+- [ ] Add an explicit bounded experimental GPU launch policy using verified
+  switches. Record requested/effective placement, cache, batches and memory.
+  Retain authentication, cancellation, deadlines, process ownership and admission;
+  a Job commit cap does not cover all mapped/device bytes.
 
-**Exit:** a reproducible native GPU build and bounded diagnostic launch; no
-daily-profile promotion or performance claim yet.
+**Exit:** reproducible GPU build and bounded diagnostic launch. CPU-only policy
+changes apply only to the new profile.
 
 ### G2 — Prove exact-model execution and placement
 
-- [ ] Produce an operation/placement ledger for the actual Swift tensor
-  inventory: PQ2/PTQ1 and remaining types; activation quantization/scales;
-  Hadamard/sign/group transforms; embeddings/output; full attention/RoPE; Gated
-  Delta Net/convolution; KV and recurrent state; and the approved LoRA path.
-  Record CPU fallbacks and each CPU/GPU transfer or synchronization boundary.
-  Layer-offload count alone cannot demonstrate graph coverage.
-- [ ] Begin with focused packed-kernel and transform fixtures, including awkward
-  dimensions, extreme/zero values, non-contiguous inputs where supported, and
-  unsupported-shape rejection or explicit fallback. Declare tolerances and
-  accumulation/activation precision before GPU comparisons. Native CPU
-  matrix-vector traits include PQ2/Q8_K and PTQ1/Q8_0 paths, with a PQ2/Q8_0
-  fallback for widths not divisible by QK_K. The pinned Vulkan integer-dot
-  matrix-vector [shader family][prism-matvec] uses Q8_1 activation blocks
-  ([PTQ1 shader][prism-ptq1]). Record the selected path's actual arithmetic;
-  weight parity does not imply bit-identical CPU/GPU logits. Qualify existing
-  backend differences explicitly before optimizing that contract further.
-- [ ] Compare each GPU lane against its own same-artifact CPU reference with
-  fixed token IDs/settings. Check selected logits and recurrent/KV state over
-  prefill and multiple decode steps, then template/tokenizer/sampler behavior,
-  prefix restoration, reset, edited turns, cancellation and failure recovery.
-  Test the no-LoRA control and approved adapter, including transformed basis
-  and actual forward execution. Successful loading or plausible text is
-  insufficient. Full suites remain CI-only.
+- [ ] Build an operation ledger covering packed/floating types, activation
+  quantizers/scales, transforms, embeddings/output, attention/RoPE, GDN/convolution,
+  KV/recurrent state and approved LoRA. Record every CPU fallback, transfer and
+  synchronization boundary; layer-offload count is insufficient.
+- [ ] Check packed kernels/transforms with awkward shapes, extremes/zeros,
+  supported strides and explicit fallback/rejection. Predeclare tolerances and
+  precision. CPU PQ2/Q8_K, PTQ1/Q8_0 and odd-width PQ2/Q8_0 differ from the
+  Vulkan integer-dot [Q8_1 shader family][prism-matvec] ([PTQ1][prism-ptq1]).
+  Record selected arithmetic and qualify backend differences; weight parity does
+  not imply bit-identical logits.
+- [ ] Compare each lane with its same-artifact CPU control using fixed token IDs/
+  settings. Check logits and KV/GDN state across prefill/decode, then tokenizer,
+  template/sampler, prefixes, edits, reset, cancellation and recovery. Test no-LoRA
+  and approved-adapter lanes, including basis and real forward execution.
 
-**Exit:** retained numerical/correctness evidence and an honest placement ledger
-for each supported profile, with unresolved fallbacks visible.
+**Exit:** numerical/state evidence and a placement ledger for each supported
+profile, with unresolved fallbacks visible. Plausible text is insufficient.
 
-### G3 — Screen a small set of placements in device CI
+### G3 — Screen placements in device CI
 
-- [ ] Compare CPU-only, a small set of partial offloads, and the maximum feasible
-  offload within the memory envelope. Hold model/adapter, context, sampler,
-  precision and workload constant. Start at the admitted 8K/one-slot reference;
-  qualify longer contexts separately. Freeze batch/thread choices for the first
-  placement comparison, then vary one factor at a time on promising profiles.
-- [ ] Measure prefill and decode separately. Use the existing plan's bounded
-  batch/microbatch and CPU thread/polling candidates rather than a full Cartesian
-  sweep. Evaluate attention/cache placement only when supported and correct;
-  qualify fused/flash attention separately. Phase-specific device placement is
-  a later experiment if the runtime exposes it or a justified implementation
-  adds it; include migration costs rather than inventing a launch switch.
-- [ ] Retain kernel/queue timestamps where supported, CPU submission/wait time,
-  transfer bytes, allocation/repack copies and the end-to-end critical path.
-  Use Windows ETW/[GPUView][gpuview] when compatible to inspect scheduling and
-  synchronization; verify tool/counter support on native Windows ARM64. GPU
-  utilization percentages alone do not identify the bottleneck, and overlapping
-  CPU/GPU durations cannot simply be added.
+- [ ] Compare CPU-only, a few partial offloads and maximum feasible offload at
+  fixed model/adapter, context, precision, sampler and workload. Start at 8K/one
+  slot; qualify longer contexts separately. Freeze batches/threads initially,
+  then vary one factor at a time.
+- [ ] Measure prefill/decode separately using bounded batch/microbatch and thread/
+  polling candidates. Qualify attention/cache placement and flash fusion separately.
+  Phase-specific placement requires runtime support and must include migration.
+- [ ] Retain queue/kernel timestamps where supported, CPU submission/wait,
+  transfers, copies and critical-path traces. Use compatible Windows ETW/
+  [GPUView][gpuview] tooling after checking ARM64 support. Utilization alone is
+  insufficient; overlapping durations cannot simply be added.
 
-**Exit:** paired target-laptop CI results identifying a useful placement or a
-documented no-go. Maximum offload is a candidate, not the expected winner.
+**Exit:** paired target-laptop results identifying a useful placement or no-go.
+Maximum offload is one candidate.
 
 ### G4 — Optimize the demonstrated bottleneck
 
-| Measured cost | First experiment | Evidence required |
+| Cost | Candidate | Required evidence |
 | --- | --- | --- |
-| Packed matrix work / memory traffic | Fused unpack-and-dot, shape-specific tiling, coalesced packed loads and supported integer-dot paths; compare scalar/coopmat1 choices where available | Same arithmetic contract, kernel correctness, actual selected shader and lower full-task cost |
-| Intermediate tensors / CPU fallback crossings | Fuse compatible transforms or projections; keep recurrent/KV state and scratch resident; place contiguous supported work together | Correct state ownership, fewer transfers and lower peak residency; count LoRA temporaries |
-| Submission / synchronization overhead | Reuse persistent allocations, descriptors/pipelines and command/graph work where safe; batch dispatches and narrow barriers | Critical-path trace improvement without stale buffers, lifetime violations or cancellation/reset failures |
-| Shader compilation / cold startup | Qualify backend-supported persistent caches, keyed by source/options/toolchain/device/driver | Separate cold and warm startup, reliable invalidation and bounded private cache storage |
-| Shared-memory pressure / sustained throttling | Reduce microbatch, offload or retained cache/checkpoints; tune CPU activity alongside GPU work | No paging/eviction regression, useful context preserved and better energy/task or sustained latency |
+| Packed work/traffic | Fused decode/dot, shape tiles, coalesced loads, supported integer-dot paths | Correct arithmetic, actual shader and lower task cost |
+| Intermediates/fallback crossings | Compatible fusion, resident state/scratch and contiguous placement | Correct ownership, fewer transfers and bounded residency including LoRA |
+| Submission/synchronization | Allocation/descriptor/pipeline reuse, batching and narrower barriers | Better critical path without stale buffers or lifecycle failures |
+| Cold compilation | Bounded backend-supported caches keyed by source/options/toolchain/device/driver | Separate cold/warm results and reliable invalidation |
+| Memory pressure/throttling | Smaller microbatch/offload/cache; coordinate CPU activity | No paging/eviction regression; improved sustained latency or energy/task |
 
-These are hypotheses, not promised gains. Budget packed weights, expanded or
-repacked copies, staging, scratch, LoRA, KV, recurrent checkpoints and CPU mappings
-together without double-counting shared allocations. UMA does not establish
-zero-copy access. Prefer register/tile unpacking to a persistent expanded model
-unless measured evidence justifies its startup and residency costs. Preserve
-model/cache precision and decoding semantics; lower precision, speculation and
-other quality-changing methods remain separate lanes. Apply Amdahl/bandwidth
-bounds before a backend rewrite.
+Budget packed/repacked weights, staging, scratch, LoRA, caches/checkpoints and
+mappings together, counting shared physical allocations once. UMA does not prove
+zero-copy. Prefer tile/register unpacking unless persistent expansion justifies
+its load/residency cost. Preserve precision/decoding; approximation and speculation
+need separate lanes. Apply bandwidth/Amdahl bounds before a rewrite.
 
-G4's [algorithm candidates and attention constraints](inference-algorithms.md#attention-locality-and-the-io-bound)
-include grouped-head/cache-sized tiling and chunkwise WY/UT GDN prefill. The
-FlashAttention I/O proof motivates reduced traffic within its memory model;
-it is not an Adreno speed forecast. The scalar reference rounds globally
-normalized probabilities to FP16 before multiplying V. Conventional online
-softmax needs a separately declared numerical contract and identity, or an
-implementation retaining that intermediate rounding. Preserve G2 state/logit,
-adapter and cancellation checks when changing scheduling or reduction order.
+[Attention/locality and chunkwise GDN candidates](inference-algorithms.md#attention-locality-and-the-io-bound)
+need declared numerical contracts. Scalar nonflash attention rounds globally
+normalized probabilities to FP16 before multiplying V; ordinary online softmax
+changes that intermediate. Preserve it or qualify a distinct contract. Retain
+G2 state/logit, adapter and lifecycle checks after scheduling/reduction changes.
 
-### G5 — Qualify and promote a useful profile
+### G5 — Qualify and promote a profile
 
-- [ ] Retain exact model/export/adapter hashes, source/patch/build identities,
-  OS/driver/device capabilities, effective arguments, placement, power mode,
-  workload, CI revision/run and raw results. Repeat interleaved CPU/GPU trials
-  with predeclared per-metric tolerances and sustained workloads.
-- [ ] Record cold load/compile/repack time, warm prefill, first streamed token,
-  first useful final-answer token, decode tokens/second and completed creative
-  task time. Include peak/resident memory, available RAM, commit, hard faults,
-  GPU evictions, energy/task, thermals/fan behavior, UI responsiveness and
-  failures. Mark unavailable counters explicitly. Use an energy measurement
-  method with known scope instead of inferring battery savings from utilization.
-- [ ] Require correct behavior, useful creative quality, resource headroom and
-  sustained comfort. Preserve the mandatory [standard LoRA TPS and quality
-  comparison](swift-lora.md#required-standard-profile-qualification) within the
-  same GPU engine, as well as CPU/GPU comparisons at the same adapter setting.
-  Select validated interactive/battery profiles from measured tradeoffs; GPU
-  percentage and a short tokens/second peak are not acceptance criteria.
-- [ ] Integrate the accepted profile into broker admission and expose an
-  actionable unavailable/fallback reason. Verify device loss, allocation failure,
-  driver changes and cancellation clean up owned resources. Fail the affected
-  request safely; switch to an explicitly admitted CPU profile rather than
-  silently changing execution during a conversation. Retain rollback receipts.
+- [ ] Retain artifact/adapter/source/build hashes, capabilities/driver, effective
+  arguments/placement, power mode, workload, tested main revision, CI run and raw
+  results. Repeat/interleave CPU/GPU trials with predeclared per-metric criteria.
+- [ ] Capture cold load/compile/repack, warm prefill, first streamed/useful answer
+  token, decode TPS and completed-task time. Include peak/resident memory, commit,
+  available RAM, hard faults/evictions, energy/task, thermals, UI responsiveness,
+  sustained behavior and failures. Mark unavailable counters; use scoped energy
+  measurement rather than utilization as a proxy.
+- [ ] Require correctness, creative quality, headroom and sustained comfort.
+  Preserve [standard LoRA TPS/quality gates](swift-lora.md#required-standard-profile-qualification)
+  within the GPU engine, plus CPU/GPU comparisons at the same adapter setting.
+  Choose interactive/battery profiles from measured tradeoffs under
+  [project promotion criteria](../PLAN.md#promotion-criteria).
+- [ ] Integrate admission and actionable fallback reasons. Check allocation
+  failure, device loss, driver changes and cancellation teardown. Fail damaged
+  requests safely; admit CPU fallback explicitly rather than switching mid-
+  conversation. Retain rollback receipts and requalify affected upgrades.
 
-**Exit:** a profile-specific verdict with evidence links, limits and CPU fallback,
-or a documented no-go. A finite screen establishes a useful configuration, not
-a global optimum. No current checkbox is satisfied by this documentation change.
+**Exit:** profile-specific verdict, limits, evidence and reproducible CPU fallback,
+or a documented no-go.
 
 ## Validation and implementation order
 
-G0/G1 can proceed with local builds and focused capability/correctness checks.
-G2 precedes performance capture; **all benchmarks, profiling captures for timing,
-and full test suites run only in CI**, on the target laptop for Adreno evidence.
-No such runs or runner setup are required for this documentation-only assessment.
-Follow [validation policy](validation.md) and [the device CI plan](../PLAN.md#10-validation-and-performance-evidence).
-Diagnostics use an absolute system-temp working directory, preserve inherited
-Windows system/profile variables, and retain useful evidence outside Git.
+G0/G1 allow local builds and focused untimed capability/correctness checks.
+G2 precedes timing. Full suites, benchmarks and timing-profile captures run only
+in CI, on the target laptop for Adreno evidence. Follow [validation policy](validation.md)
+and [device CI policy](../PLAN.md#10-validation-and-performance-evidence).
+Diagnostics use absolute system-temp working/output paths and preserve inherited
+Windows system/profile variables.
 
-Complete initial Prism G0–G3 before committing to custom shaders or a new API.
-Carry its capability report, fixtures and placement ledger into Rust R6 after
-CPU parity; reassess GPU bindings/shaders and native safety boundaries there.
-Do not assume a Rust port inherits Prism's GPU coverage or performance.
-
-Primary sources below were checked October 23, 2026. Moving documentation is
-research evidence; implementation must pin its dependencies and recheck the
-selected revision. Recommendations and exits above are proposed engineering
-work, not measurements or certifications of this laptop.
+Complete Prism G0–G3 before investing in custom shaders/APIs. Carry capabilities,
+fixtures and placement evidence into Rust R6, then requalify Rust coverage and
+safety. Moving source links below are research leads; pin/recheck dependencies
+during implementation.
 
 [prism-audit]: https://github.com/PrismML-Eng/Bonsai-demo/blob/main/BACKEND-SUPPORT.md
 [opencl]: https://github.com/PrismML-Eng/llama.cpp/blob/prism/docs/backend/OPENCL.md
