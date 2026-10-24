@@ -134,7 +134,7 @@ impl Sampler for ReferenceSampler {
                 weight: 0.0,
             });
         }
-        candidates.sort_unstable_by(|left, right| {
+        let rank = |left: &Candidate, right: &Candidate| {
             // Validation excludes incomparable values; partial_cmp treats both
             // signs of zero as equal, so token ID also breaks that exact tie.
             right
@@ -142,10 +142,15 @@ impl Sampler for ReferenceSampler {
                 .partial_cmp(&left.logit)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| left.token.cmp(&right.token))
-        });
-        if self.options.top_k != 0 {
+        };
+        if self.options.top_k != 0 && self.options.top_k < candidates.len() {
+            // Partition in linear time, then rank only the admitted prefix.
+            // The token tie-breaker makes its membership identical to a full
+            // sort, including at an equal-logit top-k boundary.
+            candidates.select_nth_unstable_by(self.options.top_k, rank);
             candidates.truncate(self.options.top_k);
         }
+        candidates.sort_unstable_by(rank);
         let maximum = f64::from(candidates[0].logit);
         let mut total = 0.0;
         for candidate in &mut candidates {

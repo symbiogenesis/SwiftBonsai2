@@ -12,6 +12,7 @@ use crate::{
 use http::{Response, Version};
 use serde::Deserialize;
 use std::{
+    borrow::Cow,
     io,
     pin::Pin,
     task::{Context, Poll, ready},
@@ -122,7 +123,7 @@ where
     if bytes.len() > MAX_COUNT_BYTES {
         return Err(BackendError::CountSchema);
     }
-    let Object(count): Object<Count> =
+    let Object(count): Object<Count<'_>> =
         serde_json::from_slice(&bytes).map_err(|_| BackendError::CountSchema)?;
     ensure_time(deadline)?;
     if count.object != "response.input_tokens" {
@@ -138,9 +139,10 @@ where
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Count {
+struct Count<'a> {
     input_tokens: usize,
-    object: String,
+    #[serde(borrow)]
+    object: Cow<'a, str>,
 }
 
 /// Send the admitted bytes unchanged to the sole generation route.

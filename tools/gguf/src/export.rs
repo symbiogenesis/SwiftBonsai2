@@ -229,7 +229,6 @@ pub(super) fn export(
     };
     let mut input = vec![0; BATCH_BLOCKS * PQ2_BYTES];
     let mut packed = vec![0; BATCH_BLOCKS * PTQ1_BYTES];
-    let mut restored = vec![0; BATCH_BLOCKS * PQ2_BYTES];
     let mut copy_buffer = vec![0; COPY_BYTES];
     let zeros = [0; PAD_BYTES];
     let mut output = new_output(output_path)?;
@@ -277,21 +276,20 @@ pub(super) fn export(
             let count = usize::try_from(remaining.min(u64::try_from(BATCH_BLOCKS)?))?;
             let source = &mut input[..count * PQ2_BYTES];
             let destination = &mut packed[..count * PTQ1_BYTES];
-            let reconstructed = &mut restored[..count * PQ2_BYTES];
             read_exact(file, source)?;
-            for ((source_block, destination_block), restored_block) in source
+            let mut exact = true;
+            for (source_block, destination_block) in source
                 .as_chunks::<PQ2_BYTES>()
                 .0
                 .iter()
                 .zip(destination.as_chunks_mut::<PTQ1_BYTES>().0)
-                .zip(reconstructed.as_chunks_mut::<PQ2_BYTES>().0)
             {
                 deadline.check()?;
                 let encoded = pack_ptq(source_block)?;
                 destination_block.copy_from_slice(&encoded);
-                restored_block.copy_from_slice(&unpack_ptq(&encoded)?);
+                exact &= unpack_ptq(&encoded)? == *source_block;
             }
-            if source != reconstructed {
+            if !exact {
                 return Err(bad("PTQ1 export failed exact PQ2 reconstruction."));
             }
             deadline.check()?;
@@ -314,7 +312,7 @@ pub(super) fn export(
         "ExactPq2ReconstructionVerified": true,
         "NonPq2TensorBytesCopiedVerbatim": true,
         "MetadataChanges": "general.file_type UINT32 -> 143; PQ2 tensor type/offset fields; alignment padding normalized",
-        "WorkingBufferBytes": input.len() + packed.len() + restored.len() + copy_buffer.len() + zeros.len(),
+        "WorkingBufferBytes": input.len() + packed.len() + copy_buffer.len() + zeros.len(),
         "Qualification": "weight-symbol-and-scale parity only; PTQ1 native activation quantization, logits, quality and performance unqualified"
     }))
 }
