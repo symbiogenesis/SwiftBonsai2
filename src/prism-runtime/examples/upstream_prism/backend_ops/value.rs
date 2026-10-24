@@ -396,6 +396,18 @@ impl Value {
             let count: usize = count
                 .parse()
                 .map_err(|_| "source array extent is not a literal")?;
+            if element.contains('*') {
+                let provided = self.len()?;
+                if provided > count {
+                    return Err("source pointer-array initializer exceeds extent".into());
+                }
+                let mut values = Vec::with_capacity(count);
+                for index in 0..provided {
+                    values.push(self.index(index)?);
+                }
+                values.resize(count, Self::Null);
+                return Ok(Self::array(values));
+            }
             let element = Element::parse(element)?;
             let mut buffer = Buffer::new(element, count)?;
             let provided = self.len()?;

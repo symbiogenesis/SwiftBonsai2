@@ -37,3 +37,8 @@ mod value;
 
 #[path = "backend_ops/graph.rs"]
 mod graph;
+
+#[path = "backend_ops/interpreter.rs"]
+mod interpreter;
+#[path = "backend_ops/standard.rs"]
+mod standard;
