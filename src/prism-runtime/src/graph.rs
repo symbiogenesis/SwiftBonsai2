@@ -1,4 +1,4 @@
-//! Bounded scalar Qwen3.5 text decoder with full attention and Gated Delta Net.
+//! Bounded Qwen3.5 text decoder with full attention and Gated Delta Net.
 //!
 //! The operation ordering follows Prism's `src/models/qwen35.cpp`. KV values
 //! are stored as IEEE binary16 bits; convolution and recurrent state
@@ -11,7 +11,7 @@ use bonsai_gguf::{Metadata, MetadataArray, MetadataValue, MetadataValueRef};
 use bonsai_ternary::half_to_float;
 
 use crate::kernels::{
-    MatvecScratch, half_bits, rms_norm_into, round_f16, row, row_into, silu, softmax,
+    MatvecBackend, MatvecScratch, half_bits, rms_norm_into, round_f16, row, row_into, silu, softmax,
 };
 use crate::model::{Model, Tensor};
 use crate::{Decoder, Result, invalid};
@@ -449,7 +449,7 @@ pub struct Qwen35Checkpoint {
     layers: Vec<LayerState>,
 }
 
-/// Native scalar decoder for the supported Qwen3.5 dense text graph.
+/// Native decoder for the supported Qwen3.5 dense text graph.
 pub struct Qwen35 {
     provenance: Arc<()>,
     identity: String,
@@ -464,19 +464,40 @@ pub struct Qwen35 {
     context_limit: usize,
     position: usize,
     vocabulary: usize,
+    requested_backend: MatvecBackend,
 }
 
 impl Qwen35 {
     /// Validates model contracts and cache bounds before allocating decoder state.
     ///
+    /// Uses [`MatvecBackend::Auto`] with per-operation scalar fallback.
+    ///
     /// # Errors
     /// Returns an error for malformed tensors, unsupported graph variants, or
-    /// a context/state allocation beyond the scalar runtime's explicit bounds.
+    /// a context/state allocation beyond the native runtime's explicit bounds.
+    pub fn new(model: Model, context_limit: usize) -> Result<Self> {
+        Self::with_backend(model, context_limit, MatvecBackend::Auto)
+    }
+
+    /// Validates and creates a decoder with an explicit packed-matrix kernel request.
+    ///
+    /// Selection applies to every projection, including grouped siblings and the
+    /// output head. Unsupported builds, targets and tensor formats fall back to
+    /// scalar for each operation, matching [`MatvecScratch::with_backend`]. Other
+    /// graph operations retain their reference arithmetic. The request does not
+    /// establish whole-model SIMD parity or performance qualification.
+    ///
+    /// # Errors
+    /// Returns the same model validation and allocation errors as [`Self::new`].
     #[allow(
         clippy::too_many_lines,
         reason = "Keep validation and graph operation order auditable together."
     )]
-    pub fn new(model: Model, context_limit: usize) -> Result<Self> {
+    pub fn with_backend(
+        model: Model,
+        context_limit: usize,
+        backend: MatvecBackend,
+    ) -> Result<Self> {
         let metadata = &model.metadata;
         if string(metadata, "general.architecture")? != "qwen35" {
             return Err(invalid(
@@ -763,12 +784,27 @@ impl Qwen35 {
             state,
             workspace: Workspace {
                 deltas,
+                projection: ProjectionScratch {
+                    matvec: MatvecScratch::with_backend(backend),
+                    ..ProjectionScratch::default()
+                },
                 ..Workspace::default()
             },
             context_limit,
             position: 0,
             vocabulary,
+            requested_backend: backend,
         })
+    }
+
+    /// Returns the configured packed-matrix kernel request.
+    ///
+    /// This is a dispatch policy, not a whole-graph effective backend. Individual
+    /// projections may fall back to scalar even after a NEON projection succeeds.
+    /// Checkpoint restoration and reset preserve this request.
+    #[must_use]
+    pub const fn requested_backend(&self) -> MatvecBackend {
+        self.requested_backend
     }
 
     #[allow(

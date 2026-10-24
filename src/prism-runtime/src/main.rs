@@ -4,6 +4,7 @@
 use bonsai_prism_runtime::{
     Result,
     graph::Qwen35,
+    kernels::MatvecBackend,
     model::Model,
     runtime::{Cancellation, Finish, Generation, Limits, Runtime},
 };
@@ -14,7 +15,10 @@ const USAGE: &str = "Native CPU reference; full-model parity and performance are
 Usage: bonsai-prism-runtime --model <absolute-gguf-path> --bytes <u64>\n\
   --sha256 <64-hex> --memory-bytes <usize> --context <1..262144>\n\
   --checkpoint-bytes <usize> --max-tokens <usize> --tokens <id,id,...>\n\
-  [--stop-tokens <id,id,...>]\n\
+  [--stop-tokens <id,id,...>] [--backend <auto|scalar|neon>]\n\
+Backend defaults to auto. NEON requires the experimental-neon feature and\n\
+native Windows ARM64 MSVC; unsupported builds, targets and formats use scalar.\n\
+Selection is per matrix operation; backend_requested reports only the request.\n\
 Input is token IDs; decoding is greedy. Output is one JSON object per line.\n";
 
 struct Arguments {
@@ -26,6 +30,7 @@ struct Arguments {
     checkpoint_bytes: usize,
     generation: Generation,
     tokens: Vec<u32>,
+    backend: MatvecBackend,
 }
 
 fn bad(message: &'static str) -> bonsai_prism_runtime::Error {
@@ -47,6 +52,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
                 | "--max-tokens"
                 | "--tokens"
                 | "--stop-tokens"
+                | "--backend"
         ) || values.contains_key(&key)
         {
             return Err(bad("unknown or repeated option"));
@@ -92,6 +98,12 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         .map(|text| token_ids(&text, 256))
         .transpose()?
         .unwrap_or_default();
+    let backend = match values.remove("--backend").as_deref().unwrap_or("auto") {
+        "auto" => MatvecBackend::Auto,
+        "scalar" => MatvecBackend::Scalar,
+        "neon" => MatvecBackend::ExperimentalNeon,
+        _ => return Err(bad("backend must be auto, scalar or neon")),
+    };
     Ok(Arguments {
         path,
         bytes,
@@ -104,6 +116,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
             stop_tokens,
         },
         tokens,
+        backend,
     })
 }
 
@@ -129,7 +142,8 @@ fn execute(arguments: &Arguments) -> Result<()> {
         &arguments.sha256,
         arguments.memory,
     )?;
-    let decoder = Qwen35::new(model, arguments.context)?;
+    let decoder = Qwen35::with_backend(model, arguments.context, arguments.backend)?;
+    let backend_requested = backend_name(decoder.requested_backend());
     let mut runtime = Runtime::new(
         decoder,
         Limits {
@@ -157,11 +171,20 @@ fn execute(arguments: &Arguments) -> Result<()> {
             "prompt_tokens": result.prompt_tokens,
             "generated_tokens": result.generated_tokens,
             "reused_tokens": result.reused_tokens,
+            "backend_requested": backend_requested,
         }),
     )?;
     output.write_all(b"\n")?;
     output.flush()?;
     Ok(())
+}
+
+const fn backend_name(backend: MatvecBackend) -> &'static str {
+    match backend {
+        MatvecBackend::Auto => "auto",
+        MatvecBackend::Scalar => "scalar",
+        MatvecBackend::ExperimentalNeon => "neon",
+    }
 }
 
 fn main() -> ExitCode {
@@ -184,7 +207,7 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{Result, bad, parse};
+    use super::{MatvecBackend, Result, bad, parse};
 
     fn arguments() -> Vec<String> {
         [
@@ -271,5 +294,37 @@ mod tests {
         assert_eq!(parsed.tokens.len() + parsed.generation.max_tokens, 8);
         assert_eq!(parsed.generation.stop_tokens.len(), 0);
         Ok(())
+    }
+
+    #[test]
+    fn cli_backend_selection_defaults_to_auto_and_accepts_explicit_requests() -> Result<()> {
+        assert_eq!(parse(arguments())?.backend, MatvecBackend::Auto);
+        for (value, expected) in [
+            ("auto", MatvecBackend::Auto),
+            ("scalar", MatvecBackend::Scalar),
+            ("neon", MatvecBackend::ExperimentalNeon),
+        ] {
+            let mut input = arguments();
+            input.extend(["--backend".to_owned(), value.to_owned()]);
+            assert_eq!(parse(input)?.backend, expected);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn cli_backend_selection_rejects_invalid_repeated_and_missing_values() {
+        for value in ["", "NEON", "Scalar", "avx2", "neon ", "--scalar"] {
+            let mut input = arguments();
+            input.extend(["--backend".to_owned(), value.to_owned()]);
+            assert!(parse(input).is_err(), "accepted invalid backend {value}");
+        }
+        let mut input = arguments();
+        input.push("--backend".to_owned());
+        assert!(parse(input).is_err());
+        for second in ["auto", "scalar", "neon"] {
+            let mut input = arguments();
+            input.extend(["--backend", "scalar", "--backend", second].map(str::to_owned));
+            assert!(parse(input).is_err());
+        }
     }
 }

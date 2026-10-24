@@ -8,7 +8,7 @@ use std::sync::Arc;
 use bonsai_gguf::MetadataValueRef;
 use bonsai_gguf::{MetadataArray, MetadataValue};
 use bonsai_prism_runtime::graph::Qwen35;
-use bonsai_prism_runtime::kernels::round_f16;
+use bonsai_prism_runtime::kernels::{MatvecBackend, round_f16};
 use bonsai_prism_runtime::model::{Model, Tensor};
 use bonsai_prism_runtime::{Decoder, Result};
 #[cfg(feature = "cli")]
@@ -123,6 +123,136 @@ fn hybrid_fixture() -> Model {
         }
     }
     model
+}
+
+fn backend_fixture(recurrent: bool, kind: u32, width: usize) -> Result<Model> {
+    let mut model = fixture(recurrent);
+    model.metadata.insert(
+        "qwen35.feed_forward_length".to_owned(),
+        MetadataValue::from(u64::try_from(width)?),
+    );
+    for name in ["blk.0.ffn_up.weight", "blk.0.ffn_gate.weight"] {
+        let values = [0.25_f32, -0.125, -0.5, 0.75, 0.125, 0.25, -0.25, -0.25];
+        model.tensors.insert(
+            name.to_owned(),
+            weight(name, &[2, width], &values.repeat(width / 4)),
+        );
+    }
+    let mut data = Vec::new();
+    for symbols in [0x66, 0x99] {
+        let mut block = [symbols; 34];
+        block[..2].copy_from_slice(&0x2800_u16.to_le_bytes());
+        let bytes = if kind == 143 {
+            bonsai_ternary::pack_ptq(&block)?.to_vec()
+        } else {
+            block.to_vec()
+        };
+        data.extend(bytes.repeat(width / 128));
+    }
+    let name = "blk.0.ffn_down.weight";
+    model.tensors.insert(
+        name.to_owned(),
+        Tensor {
+            name: name.to_owned(),
+            dimensions: vec![width, 2],
+            kind,
+            data: Arc::from(data),
+        },
+    );
+    Ok(model)
+}
+
+fn assert_backend_state_parity(
+    mut scalar: Qwen35,
+    mut selected: Qwen35,
+    request: MatvecBackend,
+) -> Result<()> {
+    let bits = |values: Vec<f32>| values.into_iter().map(f32::to_bits).collect::<Vec<_>>();
+    assert_eq!(scalar.requested_backend(), MatvecBackend::Scalar);
+    assert_eq!(selected.requested_backend(), request);
+    for token in [0, 1, 0] {
+        assert_eq!(
+            bits(selected.evaluate(token)?),
+            bits(scalar.evaluate(token)?)
+        );
+    }
+    let scalar_checkpoint = scalar.checkpoint()?;
+    let selected_checkpoint = selected.checkpoint()?;
+    assert_eq!(selected.checkpoint_bytes(), scalar.checkpoint_bytes());
+    let expected = bits(scalar.evaluate(1)?);
+    assert_eq!(bits(selected.evaluate(1)?), expected);
+    selected.ingest(0)?;
+    scalar.ingest(0)?;
+    selected.restore(&selected_checkpoint)?;
+    scalar.restore(&scalar_checkpoint)?;
+    assert_eq!(bits(selected.evaluate(1)?), expected);
+    assert_eq!(bits(scalar.evaluate(1)?), expected);
+    let mut rejected = vec![f32::NAN];
+    assert!(selected.evaluate_into(2, &mut rejected).is_err());
+    assert_eq!(rejected, Vec::<f32>::new());
+    assert_eq!(bits(selected.evaluate(0)?), bits(scalar.evaluate(0)?));
+    selected.reset()?;
+    scalar.reset()?;
+    assert_eq!(selected.requested_backend(), request);
+    assert_eq!(bits(selected.evaluate(1)?), bits(scalar.evaluate(1)?));
+    // Reset and scratch reuse must not mutate either decoder's owned prefix.
+    selected.restore(&selected_checkpoint)?;
+    assert_eq!(bits(selected.evaluate(1)?), expected);
+    assert_eq!(selected.requested_backend(), request);
+    Ok(())
+}
+
+#[test]
+fn graph_backend_selection_matches_scalar_logits_checkpoints_and_recovery() -> Result<()> {
+    // F32 siblings feed a packed down projection, followed by an F32 output
+    // head. Exercise both PQ2 activation contracts and canonical PTQ1 blocks;
+    // the final scalar projection must not overwrite the configured request.
+    for recurrent in [false, true] {
+        for (kind, width) in [(142, 128), (142, 256), (143, 128)] {
+            for request in [MatvecBackend::Auto, MatvecBackend::ExperimentalNeon] {
+                assert_backend_state_parity(
+                    Qwen35::with_backend(
+                        backend_fixture(recurrent, kind, width)?,
+                        16,
+                        MatvecBackend::Scalar,
+                    )?,
+                    Qwen35::with_backend(backend_fixture(recurrent, kind, width)?, 16, request)?,
+                    request,
+                )?;
+            }
+            assert_backend_state_parity(
+                Qwen35::with_backend(
+                    backend_fixture(recurrent, kind, width)?,
+                    16,
+                    MatvecBackend::Scalar,
+                )?,
+                Qwen35::new(backend_fixture(recurrent, kind, width)?, 16)?,
+                MatvecBackend::Auto,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "experimental-neon"))]
+#[test]
+fn graph_backend_neon_request_falls_back_without_feature() -> Result<()> {
+    for (kind, width) in [(142, 128), (142, 256), (143, 128)] {
+        assert_backend_state_parity(
+            Qwen35::with_backend(
+                backend_fixture(true, kind, width)?,
+                16,
+                MatvecBackend::Scalar,
+            )?,
+            Qwen35::with_backend(
+                backend_fixture(true, kind, width)?,
+                16,
+                MatvecBackend::ExperimentalNeon,
+            )?,
+            MatvecBackend::ExperimentalNeon,
+        )?;
+    }
+    Ok(())
 }
 
 fn preparation_fixture(recurrent: bool, transformed: bool) -> Model {
@@ -1116,8 +1246,20 @@ fn native_driver_executes_verified_synthetic_gguf_and_rejects_wrong_digest() -> 
         .flat_map(|byte| [byte >> 4, byte & 15])
         .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
         .collect();
-    for (sha, success) in [(digest, true), ("0".repeat(64), false)] {
-        let output = Command::new(env!("CARGO_BIN_EXE_bonsai-prism-runtime"))
+    for (backend, success) in [
+        (None, true),
+        (Some("auto"), true),
+        (Some("scalar"), true),
+        (Some("neon"), true),
+        (None, false),
+    ] {
+        let sha = if success {
+            digest.clone()
+        } else {
+            "0".repeat(64)
+        };
+        let mut command = Command::new(env!("CARGO_BIN_EXE_bonsai-prism-runtime"));
+        command
             .current_dir(&artifact.directory)
             .arg("--model")
             .arg(&artifact.path)
@@ -1136,8 +1278,11 @@ fn native_driver_executes_verified_synthetic_gguf_and_rejects_wrong_digest() -> 
                 "2",
                 "--tokens",
                 "0,1",
-            ])
-            .output()?;
+            ]);
+        if let Some(backend) = backend {
+            command.args(["--backend", backend]);
+        }
+        let output = command.output()?;
         assert_eq!(
             output.status.success(),
             success,
@@ -1154,7 +1299,7 @@ fn native_driver_executes_verified_synthetic_gguf_and_rejects_wrong_digest() -> 
                 [
                     serde_json::json!({"token": 1}),
                     serde_json::json!({"token": 1}),
-                    serde_json::json!({"finish_reason":"length","prompt_tokens":2,"generated_tokens":2,"reused_tokens":0})
+                    serde_json::json!({"finish_reason":"length","prompt_tokens":2,"generated_tokens":2,"reused_tokens":0,"backend_requested":backend.unwrap_or("auto")})
                 ]
             );
         } else {
