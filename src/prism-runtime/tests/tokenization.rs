@@ -288,6 +288,31 @@ fn raw_ids_share_accounting_without_special_insertion_or_parsing() -> Result<()>
 }
 
 #[test]
+fn borrowed_raw_validation_checks_budget_and_vocabulary_without_changing_input() -> Result<()> {
+    let artifact = Artifact::new(260, 258, "qwen35")?;
+    let session = artifact.load()?;
+    let budget = policy(4, 1).budget;
+    let source = [259, 259, 0];
+    session.validate_tokens(&source, budget)?;
+    assert_eq!(source, [259, 259, 0]);
+    session.validate_tokens(&[], budget)?;
+    assert!(error(session.validate_tokens(&[u32::MAX; 4], budget))?.contains("token limit"));
+    for source in [&[260][..], &[u32::MAX]] {
+        assert!(
+            error(session.validate_tokens(source, budget))?
+                .contains("outside the model vocabulary")
+        );
+    }
+    for budget in [policy(0, 0).budget, policy(1, 1).budget] {
+        assert!(
+            error(session.validate_tokens(&[u32::MAX], budget))?
+                .contains("invalid tokenization context or output reservation")
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn session_load_rejects_identity_header_and_tokenizer_contract_failures() -> Result<()> {
     let artifact = Artifact::new(260, 258, "qwen35")?;
     let bytes = u64::try_from(artifact.bytes.len())?;

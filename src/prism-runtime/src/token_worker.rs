@@ -23,6 +23,7 @@
 //! an incomplete response and restart the process. Every complete response is
 //! flushed, allowing clients to wait for readiness before sending any request.
 
+use std::borrow::Cow;
 use std::io::{BufRead, Write};
 
 use serde::{Deserialize, Serialize};
@@ -59,17 +60,31 @@ impl WorkerConfig {
     }
 }
 
-// Intentionally no Debug: requests own caller-provided prompt text.
+// Intentionally no Debug: requests contain caller-provided prompt text.
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-enum Request {
-    Count { id: u64, text: String },
-    Encode { id: u64, text: String },
-    CountTokens { id: u64, token_ids: Vec<u32> },
-    EncodeTokens { id: u64, token_ids: Vec<u32> },
+enum Request<'a> {
+    Count {
+        id: u64,
+        #[serde(borrow)]
+        text: Cow<'a, str>,
+    },
+    Encode {
+        id: u64,
+        #[serde(borrow)]
+        text: Cow<'a, str>,
+    },
+    CountTokens {
+        id: u64,
+        token_ids: Vec<u32>,
+    },
+    EncodeTokens {
+        id: u64,
+        token_ids: Vec<u32>,
+    },
 }
 
-impl Request {
+impl Request<'_> {
     const fn id(&self) -> u64 {
         match *self {
             Self::Count { id, .. }
@@ -168,19 +183,21 @@ pub fn serve(
             write_invalid_request(output)?;
             continue;
         }
-        let Ok(request) = serde_json::from_slice::<Request>(&frame) else {
+        let Ok(request) = serde_json::from_slice::<Request<'_>>(&frame) else {
             write_invalid_request(output)?;
             continue;
         };
         let result = match &request {
-            Request::Count { text, .. } | Request::Encode { text, .. } => {
-                session.encode(text, config.text_policy)
-            }
+            Request::Count { text, .. } | Request::Encode { text, .. } => session
+                .encode(text, config.text_policy)
+                .map(|result| Cow::Owned(result.token_ids)),
             Request::CountTokens { token_ids, .. } | Request::EncodeTokens { token_ids, .. } => {
-                session.check_tokens(token_ids, config.text_policy.budget)
+                session
+                    .validate_tokens(token_ids, config.text_policy.budget)
+                    .map(|()| Cow::Borrowed(token_ids.as_slice()))
             }
         };
-        let Ok(result) = result else {
+        let Ok(token_ids) = result else {
             write_record(
                 output,
                 &Response::Error {
@@ -190,15 +207,15 @@ pub fn serve(
             )?;
             continue;
         };
-        let response = match request {
+        let response = match &request {
             Request::Count { id, .. } | Request::CountTokens { id, .. } => Response::Count {
-                id,
-                prompt_token_count: result.prompt_token_count(),
+                id: *id,
+                prompt_token_count: token_ids.len(),
             },
             Request::Encode { id, .. } | Request::EncodeTokens { id, .. } => Response::Encoded {
-                id,
-                prompt_token_count: result.prompt_token_count(),
-                token_ids: &result.token_ids,
+                id: *id,
+                prompt_token_count: token_ids.len(),
+                token_ids: &token_ids,
             },
         };
         write_record(output, &response)?;
@@ -250,4 +267,40 @@ fn write_record(output: &mut impl Write, response: &Response<'_>) -> Result<()> 
     output.write_all(b"\n")?;
     output.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cow, Request};
+    use crate::{Result, invalid};
+
+    #[test]
+    fn text_requests_borrow_plain_frames_and_decode_escaped_frames() -> Result<()> {
+        for bytes in [
+            br#"{"id":1,"op":"count","text":"ab"}"#.as_slice(),
+            br#"{"id":1,"op":"encode","text":"ab"}"#,
+        ] {
+            let request: Request<'_> = serde_json::from_slice(bytes)?;
+            match request {
+                Request::Count { text, .. } | Request::Encode { text, .. } => {
+                    assert!(matches!(text, Cow::Borrowed("ab")));
+                }
+                _ => return Err(invalid("expected a text request")),
+            }
+        }
+        for bytes in [
+            br#"{"id":1,"op":"count","text":"\u0061b"}"#.as_slice(),
+            br#"{"id":1,"op":"encode","text":"a\u0062"}"#,
+        ] {
+            let request: Request<'_> = serde_json::from_slice(bytes)?;
+            match request {
+                Request::Count { text, .. } | Request::Encode { text, .. } => {
+                    assert!(matches!(&text, Cow::Owned(_)));
+                    assert_eq!(text, "ab");
+                }
+                _ => return Err(invalid("expected a text request")),
+            }
+        }
+        Ok(())
+    }
 }

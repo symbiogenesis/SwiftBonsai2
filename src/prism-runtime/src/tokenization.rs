@@ -184,6 +184,23 @@ impl TokenizationSession {
     /// Rejects invalid budgets, excessive prompt length, out-of-vocabulary IDs
     /// and allocation failures. Errors contain no partial token result.
     pub fn check_tokens(&self, tokens: &[u32], budget: TokenBudget) -> Result<TokenizationResult> {
+        self.validate_tokens(tokens, budget)?;
+        let mut output = Vec::new();
+        output.try_reserve_exact(tokens.len())?;
+        output.extend_from_slice(tokens);
+        Ok(Self::result(output, budget))
+    }
+
+    /// Validate borrowed raw IDs without allocating or copying their storage.
+    ///
+    /// Uses the same context and vocabulary checks as [`Self::check_tokens`].
+    /// No text parsing or boundary insertion applies, and empty input is valid.
+    /// Callers can count or serialize their original IDs after this succeeds.
+    ///
+    /// # Errors
+    /// Rejects invalid budgets, excessive prompt length and out-of-vocabulary
+    /// IDs. No input values or partial token results are included in errors.
+    pub fn validate_tokens(&self, tokens: &[u32], budget: TokenBudget) -> Result<()> {
         let limit = budget.prompt_token_limit()?;
         if tokens.len() > limit {
             return Err(invalid("raw input exceeds token limit"));
@@ -194,10 +211,7 @@ impl TokenizationSession {
         {
             return Err(invalid("input token is outside the model vocabulary"));
         }
-        let mut output = Vec::new();
-        output.try_reserve_exact(tokens.len())?;
-        output.extend_from_slice(tokens);
-        Ok(Self::result(output, budget))
+        Ok(())
     }
 
     const fn result(token_ids: Vec<u32>, budget: TokenBudget) -> TokenizationResult {

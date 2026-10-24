@@ -55,8 +55,9 @@ impl ModelMetadata {
     /// Hashing streams through the complete file, then the same verified handle
     /// parses metadata and validates tensor descriptors. `memory_limit` bounds
     /// conservative retained-header storage, excluding bounded parser scratch
-    /// and subsequent tokenizer allocations. No call reads a tensor payload
-    /// into storage, constructs a graph, or establishes inference validity.
+    /// and subsequent tokenizer allocations. Artifact hashing reads the whole
+    /// file, and the bounded header buffer may read ahead into tensor data;
+    /// neither materializes tensors, constructs a graph, nor validates inference.
     ///
     /// # Errors
     /// Rejects identity mismatches, malformed or over-budget GGUF headers,

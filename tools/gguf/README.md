@@ -11,6 +11,12 @@ compact homogeneous arrays; JSON conversion occurs only for reports.
 `--no-default-features --lib` omits JSON/export tooling; the default `report`
 feature includes the CLI, census and export APIs.
 
+Runtime metadata loading shares the same parser and validation, but skips the
+inspection report's tokenizer-record hashes, histograms and tensor-name lists.
+Header reads use one bounded 64 KiB buffer, including any read-ahead into tensor
+data; tensor payloads are not interpreted or materialized by header parsing.
+Complete artifact size/SHA-256 verification still precedes parsing.
+
 ## PowerShell entry points
 
 Run from the repository root with model/output files outside Git:

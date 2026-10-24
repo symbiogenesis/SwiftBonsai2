@@ -215,15 +215,18 @@ same special-token and insertion policies as generation. Generation-only options
 including `--checkpoint-bytes`, are rejected. A single JSON record reports
 `token_ids`, `token_count`, `context`, `reserved_output_tokens`, effective input
 policies and artifact identity. Length/SHA-256 verification still reads the
-whole file, but the command retains only bounded metadata and never loads tensor
-payloads or executes inference. The metadata budget excludes tokenizer scratch
+whole file, and bounded header buffering can read ahead into tensor data. The
+command retains only bounded metadata, materializes no tensors and executes no
+inference. The metadata budget excludes tokenizer scratch
 and output buffers; this is not process-memory admission or broker integration.
 
 Library callers can retain `tokenization::TokenizationSession` across requests.
 `TextTokenizationPolicy` makes literal/parse handling, boundary insertion and
 `TokenBudget { context, reserved_output_tokens }` explicit. `encode` returns
 exact `token_ids` and their prompt/context/output accounting; `check_tokens`
-validates raw IDs with the same budget and never inserts tokens. The session
+validates and copies raw IDs with the same budget and never inserts tokens.
+`validate_tokens` applies those checks to borrowed IDs without allocating, for
+callers that only need a count or can serialize their existing storage. The session
 builds its tokenizer and special declarations from the same verified artifact,
 then releases the metadata and file handle. Invalid requests leave it reusable.
 Session construction requires a supported complete tokenizer even for later
@@ -269,6 +272,9 @@ duplicates, boundary IDs and empty arrays. They apply no parsing or insertion;
 their count still reserves the complete startup output allowance. `text` and
 `token_ids` are exclusive and must match the selected operation.
 IDs are correlation values; the worker retains no global ID registry.
+Raw operations validate and reuse the decoded request array without making a
+second ID vector. Unescaped text borrows the frame; escaped JSON strings decode
+to owned text with the same tokenization policy.
 Duplicate/unknown fields and malformed
 frames return `invalid_request` with a null ID; encoding/context rejection returns
 `rejected_input` with the parsed ID. These failures preserve the session for later
