@@ -148,12 +148,9 @@ and original source files are no longer compiled as tests. The original importer
 and replay build were removed after all33 Rust-owned contracts, including GGUF,
 passed [native Windows ARM64 CI](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40120815419).
 
-The reference build records an explicit production saver correction in
-[reference-patches.lock.json](reference-patches.lock.json). The pinned saver
-loses DSpark metadata despite advertising support; the fix restores those fields and all16 global tensors.
-Its exact external source bytes replace only that translation unit. Original
-archive files and every test predicate stay intact; receipts distinguish this
-variant from pristine upstream.
+The reference build uses unmodified upstream sources. The pinned saver omits
+DSpark metadata and global tensors, so its save/load roundtrip fails. Every
+original test predicate remains required; this reference failure fails the gate.
 
 The runtime's vector API runs once for each original activation column,
 preserving the complete `M*N` comparison. This tests numerical compatibility,

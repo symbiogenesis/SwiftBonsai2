@@ -93,14 +93,8 @@
       {
         "Id": "tests/test-llama-archs.cpp",
         "OriginalFailureRun": "https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40124618551",
-        "Reason": "Supply three required DSpark fixture keys omitted by the pinned generic architecture test: block_size128, mask_token_id127 and target_layers[1,16]. All151 variants, 128-row comparisons and saver roundtrips remain required; the upstream saver omissions have a separately pinned production fix."
+        "Reason": "Supply three required DSpark fixture keys omitted by the pinned generic architecture test: block_size128, mask_token_id127 and target_layers[1,16]. All151 variants, 128-row comparisons and saver roundtrips remain required; the unmodified upstream saver omits DSpark metadata and global tensors, so its save/load roundtrip remains a reference failure."
       }
-    ],
-    "ReferenceProductionFix": {
-      "Variant": "pinned-upstream-with-documented-production-fixes",
-      "Reason": "DSpark saver omits required/optional metadata and16 global tensors; every test predicate remains required.",
-      "Lock": "reference-patches.lock.json",
-      "Qualification": "Focused reproduction and patched build validation; native Windows ARM64 acceptance pending"
-    }
+    ]
   }
 }
