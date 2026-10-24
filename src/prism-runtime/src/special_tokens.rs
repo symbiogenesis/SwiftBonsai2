@@ -2,6 +2,8 @@
 //!
 //! This contract reads explicit GGUF declarations. It does not infer special
 //! tokens from vocabulary spellings, encode text, or apply a chat template.
+//! [`crate::tokenizer::Tokenizer::encode_with_special_tokens`] can explicitly
+//! apply its insertion declarations to a complete text input.
 
 use bonsai_gguf::{Metadata, MetadataValue};
 
@@ -24,6 +26,7 @@ const ADD_EOS: &str = "tokenizer.ggml.add_eos_token";
 /// default. This type does not insert BOS/EOS into caller-provided token input.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpecialTokens {
+    vocab_size: usize,
     eos_token: u32,
     bos_token: Option<u32>,
     padding_token: Option<u32>,
@@ -70,6 +73,7 @@ impl SpecialTokens {
             }
         }
         Ok(Self {
+            vocab_size,
             eos_token: end_of_sequence,
             bos_token: beginning,
             padding_token: padding,
@@ -80,6 +84,14 @@ impl SpecialTokens {
             stops,
             stop_count,
         })
+    }
+
+    /// Vocabulary size against which every declared ID was validated.
+    ///
+    /// Equal sizes establish matching bounds, without proving model identity.
+    #[must_use]
+    pub const fn vocab_size(&self) -> usize {
+        self.vocab_size
     }
 
     /// Required model-declared end-of-sequence token.

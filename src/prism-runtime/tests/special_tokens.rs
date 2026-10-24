@@ -29,6 +29,7 @@ fn eos_is_required_and_optional_declarations_do_not_get_guessed() -> Result<()> 
         ])),
     );
     let tokens = SpecialTokens::from_metadata(&metadata, 8)?;
+    assert_eq!(tokens.vocab_size(), 8);
     assert_eq!(tokens.eos_token(), 7);
     assert_eq!(tokens.bos_token(), None);
     assert_eq!(tokens.padding_token(), None);

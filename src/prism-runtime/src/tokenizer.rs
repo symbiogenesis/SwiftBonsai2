@@ -1,24 +1,29 @@
 //! Bounded plain-text encoding for the experimental GPT-2/Qwen35 reference.
 //!
 //! This composes explicit special-token handling, ordinary-text pretokenization
-//! and ranked byte-pair merges. It never applies a chat template or inserts
-//! BOS/EOS; callers supply the complete text they intend to encode.
+//! and ranked byte-pair merges. It never applies a chat template; callers
+//! supply the complete text they intend to encode. [`Tokenizer::encode`] leaves
+//! BOS/EOS insertion disabled, while [`Tokenizer::encode_with_special_tokens`]
+//! explicitly opts into validated model declarations.
 
 use bonsai_gguf::Metadata;
 
 use crate::bpe::{Bpe, MAX_BPE_INPUT_BYTES, MAX_BPE_INPUT_PIECES};
 use crate::pretokenizer::Qwen35PreTokenizer;
 use crate::special_input::{InputSegment, SpecialInput, SpecialInputPolicy};
+use crate::special_tokens::SpecialTokens;
 use crate::{Result, invalid};
 
 /// Validated, bounded plain-text encoder without implicit template or insertion.
 ///
 /// Special spellings become token IDs only with [`SpecialInputPolicy::Parse`].
 /// Literal mode sends every byte through ordinary pretokenization and BPE.
-/// Model-declared insertion flags are not acted on by this interface; exact
-/// caller-provided text is the complete input contract.
+/// [`Self::encode`] does not act on model-declared insertion flags. Call
+/// [`Self::encode_with_special_tokens`] to explicitly apply them to complete
+/// input text. Neither method applies a chat template.
 #[derive(Debug)]
 pub struct Tokenizer {
+    vocab_size: usize,
     bpe: Bpe,
     pretokenizer: Qwen35PreTokenizer,
     specials: SpecialInput,
@@ -32,6 +37,7 @@ impl Tokenizer {
     /// vocabulary size, resource limits and allocation failures.
     pub fn from_metadata(metadata: &Metadata, vocab_size: usize) -> Result<Self> {
         Ok(Self {
+            vocab_size,
             bpe: Bpe::from_metadata(metadata, vocab_size)?,
             pretokenizer: Qwen35PreTokenizer::from_metadata(metadata)?,
             specials: SpecialInput::from_metadata(metadata, vocab_size)?,
@@ -82,6 +88,57 @@ impl Tokenizer {
                     }
                 }
             }
+        }
+        Ok(output)
+    }
+
+    /// Encode complete text and explicitly apply model-declared BOS/EOS flags.
+    ///
+    /// Only flags equal to `Some(true)` insert their declared token. Missing or
+    /// false flags insert nothing. BOS precedes the encoded text and EOS follows
+    /// it, including for empty input. Parsed special tokens in the text remain
+    /// present even when they duplicate an inserted boundary token. The combined
+    /// output, including insertions, must fit `max_tokens` exactly.
+    ///
+    /// `special_tokens` must come from the same model metadata as this tokenizer.
+    /// This method verifies matching vocabulary sizes, which checks the ID bounds
+    /// but does not establish vocabulary or model identity. Ordinary text and
+    /// special-token parsing retain [`Self::encode`]'s input and piece limits.
+    ///
+    /// # Errors
+    /// Rejects mismatched vocabulary sizes, insufficient output allowance, and
+    /// all encoding or allocation errors. Errors return no partial output and
+    /// leave the tokenizer reusable.
+    pub fn encode_with_special_tokens(
+        &self,
+        text: &str,
+        max_tokens: usize,
+        policy: SpecialInputPolicy,
+        special_tokens: &SpecialTokens,
+    ) -> Result<Vec<u32>> {
+        if self.vocab_size != special_tokens.vocab_size() {
+            return Err(invalid(
+                "special tokens and tokenizer vocabulary sizes differ",
+            ));
+        }
+        let beginning = if special_tokens.add_bos_token() == Some(true) {
+            special_tokens.bos_token()
+        } else {
+            None
+        };
+        let end =
+            (special_tokens.add_eos_token() == Some(true)).then_some(special_tokens.eos_token());
+        let insertion_count = usize::from(beginning.is_some()) + usize::from(end.is_some());
+        let text_limit = max_tokens
+            .checked_sub(insertion_count)
+            .ok_or_else(|| invalid("tokenizer insertions exceed token limit"))?;
+        let mut output = self.encode(text, text_limit, policy)?;
+        output.try_reserve_exact(insertion_count)?;
+        if let Some(token) = beginning {
+            output.insert(0, token);
+        }
+        if let Some(token) = end {
+            output.push(token);
         }
         Ok(output)
     }
