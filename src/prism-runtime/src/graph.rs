@@ -11,7 +11,7 @@ use bonsai_gguf::{Metadata, MetadataArray, MetadataValue, MetadataValueRef};
 use bonsai_ternary::half_to_float;
 
 use crate::kernels::{
-    MatvecScratch, half_bits, matvec_into, rms_norm_into, round_f16, row, row_into, silu, softmax,
+    MatvecScratch, half_bits, rms_norm_into, round_f16, row, row_into, silu, softmax,
 };
 use crate::model::{Model, Tensor};
 use crate::{Decoder, Result, invalid};
@@ -127,6 +127,8 @@ enum LayerDelta {
 struct ProjectionScratch {
     transformed: Vec<f32>,
     matvec: MatvecScratch,
+    #[cfg(test)]
+    transforms: usize,
 }
 
 #[derive(Default)]
@@ -331,11 +333,81 @@ impl Transforms {
         output: &mut Vec<f32>,
         scratch: &mut ProjectionScratch,
     ) -> Result<()> {
-        if !self.weights.contains(&weight.name) {
-            return matvec_into(weight, input, output, &mut scratch.matvec);
+        self.project_group_into([weight], input, geometry, [output], scratch)
+    }
+
+    fn basis(&self, weight: &Tensor) -> (bool, bool) {
+        let rotated = self.weights.contains(&weight.name);
+        (
+            rotated,
+            rotated && self.grouped_values && weight.name.ends_with(".ssm_out.weight"),
+        )
+    }
+
+    // The fixed-size group borrows one exact input slice for its whole scope.
+    // Nothing is reused across calls, tokens, layers or failed evaluations.
+    fn project_group_into<const N: usize>(
+        &self,
+        weights: [&Tensor; N],
+        input: &[f32],
+        geometry: &Geometry,
+        mut outputs: [&mut Vec<f32>; N],
+        scratch: &mut ProjectionScratch,
+    ) -> Result<()> {
+        for output in &mut outputs {
+            output.clear();
         }
-        copy_into(input, &mut scratch.transformed)?;
-        let transformed = &mut scratch.transformed;
+        let result = (|| {
+            if N > 4 {
+                return Err(invalid("projection group exceeds four siblings"));
+            }
+            let mut completed = [false; N];
+            for index in 0..N {
+                if completed[index] {
+                    continue;
+                }
+                let basis = self.basis(weights[index]);
+                let activation = if basis.0 {
+                    self.transform_into(weights[index], input, geometry, &mut scratch.transformed)?;
+                    #[cfg(test)]
+                    {
+                        scratch.transforms += 1;
+                    }
+                    scratch.transformed.as_slice()
+                } else {
+                    input
+                };
+                let mut prepared = scratch.matvec.prepare(weights[index], activation)?;
+                for (candidate, (weight, output)) in
+                    weights.iter().zip(outputs.iter_mut()).enumerate()
+                {
+                    if !completed[candidate]
+                        && self.basis(weight) == basis
+                        && prepared.is_compatible(weight)?
+                    {
+                        prepared.matvec_into(weight, output)?;
+                        completed[candidate] = true;
+                    }
+                }
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            for output in &mut outputs {
+                output.clear();
+            }
+        }
+        result
+    }
+
+    fn transform_into(
+        &self,
+        weight: &Tensor,
+        input: &[f32],
+        geometry: &Geometry,
+        transformed: &mut Vec<f32>,
+    ) -> Result<()> {
+        copy_into(input, transformed)?;
         if self.grouped_values && weight.name.ends_with(".ssm_out.weight") {
             let repetitions = geometry.ssm_values / geometry.ssm_keys;
             for key in 0..geometry.ssm_keys {
@@ -349,7 +421,7 @@ impl Transforms {
         }
         self.sign(transformed);
         self.rotate(transformed)?;
-        matvec_into(weight, transformed, output, &mut scratch.matvec)
+        Ok(())
     }
 
     fn sign(&self, input: &mut [f32]) {
@@ -765,8 +837,7 @@ impl Qwen35 {
             }
             add(hidden, attention);
             rms_norm_into(hidden, &layer.post_norm, self.geometry.epsilon, normalized)?;
-            evaluation.project_into(&layer.up, normalized, up)?;
-            evaluation.project_into(&layer.gate, normalized, gate)?;
+            evaluation.project_group_into([&layer.up, &layer.gate], normalized, [up, gate])?;
             for (up, &gate) in up.iter_mut().zip(gate.iter()) {
                 *up *= silu(gate);
             }
@@ -817,6 +888,16 @@ impl Qwen35 {
 }
 
 impl Evaluation<'_> {
+    fn project_group_into<const N: usize>(
+        &mut self,
+        tensors: [&Tensor; N],
+        input: &[f32],
+        outputs: [&mut Vec<f32>; N],
+    ) -> Result<()> {
+        self.transforms
+            .project_group_into(tensors, input, self.geometry, outputs, self.projection)
+    }
+
     fn project_into(
         &mut self,
         tensor: &Tensor,
@@ -848,7 +929,11 @@ impl Evaluation<'_> {
             return Err(invalid("decoder full-attention delta kind mismatch"));
         };
         let g = self.geometry;
-        self.project_into(&layer.query, input, &mut scratch.joint_query)?;
+        self.project_group_into(
+            [&layer.query, &layer.key, &layer.value],
+            input,
+            [&mut scratch.joint_query, &mut scratch.key_projection, value],
+        )?;
         prepare(&mut scratch.query, g.head * g.heads)?;
         prepare(&mut scratch.gate, g.head * g.heads)?;
         for head in scratch.joint_query.chunks_exact(2 * g.head) {
@@ -861,13 +946,11 @@ impl Evaluation<'_> {
             scratch.query.extend_from_slice(&scratch.normalized);
             scratch.gate.extend_from_slice(&head[g.head..]);
         }
-        self.project_into(&layer.key, input, &mut scratch.key_projection)?;
         prepare(key, scratch.key_projection.len())?;
         for head in scratch.key_projection.chunks_exact(g.head) {
             rms_norm_into(head, &layer.key_norm, g.epsilon, &mut scratch.normalized)?;
             key.extend_from_slice(&scratch.normalized);
         }
-        self.project_into(&layer.value, input, value)?;
         // Geometry and position are shared by every full-attention layer in
         // this token evaluation. Reuse the exact scalar frequencies for Q/K
         // and subsequent layers; the flag resets for every evaluation attempt.
@@ -957,10 +1040,16 @@ impl Evaluation<'_> {
             return Err(invalid("decoder recurrent-attention delta kind mismatch"));
         };
         let g = self.geometry;
-        self.project_into(&layer.qkv, input, &mut scratch.qkv)?;
-        self.project_into(&layer.gate, input, &mut scratch.gate)?;
-        self.project_into(&layer.beta, input, &mut scratch.beta)?;
-        self.project_into(&layer.alpha, input, &mut scratch.alpha)?;
+        self.project_group_into(
+            [&layer.qkv, &layer.gate, &layer.beta, &layer.alpha],
+            input,
+            [
+                &mut scratch.qkv,
+                &mut scratch.gate,
+                &mut scratch.beta,
+                &mut scratch.alpha,
+            ],
+        )?;
         copy_into(history, convolution)?;
         zeros_into(g.convolution_width(), &mut scratch.mixed)?;
         let mixed = &mut scratch.mixed;
@@ -1619,11 +1708,189 @@ fn rope(input: &mut [f32], geometry: &Geometry, frequencies: &[(f32, f32)]) -> R
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
+
     use super::{
-        Geometry, LayerState, MAX_STATE_BYTES, copy_state, dot, dot_f16, half_bits, half_to_float,
-        reserve_cache_append, rope, rope_frequencies,
+        Geometry, LayerState, MAX_STATE_BYTES, ProjectionScratch, Transforms, copy_state, dot,
+        dot_f16, half_bits, half_to_float, reserve_cache_append, rope, rope_frequencies,
     };
     use crate::Result;
+    use crate::model::Tensor;
+
+    fn projection_geometry(width: usize) -> Geometry {
+        Geometry {
+            embedding: width,
+            feed_forward: width,
+            heads: 1,
+            kv_heads: 1,
+            head: width,
+            rope: width,
+            rope_sections: [width / 2, 0, 0, 0],
+            rope_base: 10_000.0,
+            epsilon: 0.000_001,
+            ssm_head: width / 4,
+            ssm_keys: 2,
+            ssm_values: 4,
+            convolution: 1,
+        }
+    }
+
+    fn projection_weight(name: &str, kind: u32, width: usize) -> Tensor {
+        let data: Vec<u8> = match kind {
+            142 => {
+                let mut block = [0x66; 34];
+                block[..2].copy_from_slice(&0x3555_u16.to_le_bytes());
+                block.repeat(width / 128)
+            }
+            8 => {
+                let mut block = [1; 34];
+                block[..2].copy_from_slice(&0x3555_u16.to_le_bytes());
+                block.repeat(width / 32)
+            }
+            _ => (0..width)
+                .flat_map(|index| {
+                    [0.125_f32, -0.25, 0.5, -1.0, 2.0, -4.0, 0.0, -0.0][index % 8].to_le_bytes()
+                })
+                .collect(),
+        };
+        Tensor {
+            name: name.to_owned(),
+            dimensions: vec![width],
+            kind,
+            data: Arc::from(data),
+        }
+    }
+
+    #[test]
+    fn grouped_projection_shares_only_matching_basis_permutation_and_quantizer() -> Result<()> {
+        for width in [8, 256] {
+            let geometry = projection_geometry(width);
+            let kind = if width == 256 { 142 } else { 0 };
+            let weights = [
+                projection_weight("up.weight", kind, width),
+                projection_weight("gate.weight", kind, width),
+                projection_weight("blk.0.ssm_out.weight", kind, width),
+                projection_weight("plain.weight", kind, width),
+            ];
+            let mut transforms = Transforms {
+                block: 4,
+                weights: weights[..3]
+                    .iter()
+                    .map(|weight| weight.name.clone())
+                    .collect::<BTreeSet<_>>(),
+                inverse_embedding: false,
+                grouped_values: true,
+                signs: BTreeMap::from([(
+                    width,
+                    (0..width)
+                        .map(|index| if index % 3 == 0 { -1.0 } else { 1.0 })
+                        .collect(),
+                )]),
+            };
+            let input: Vec<f32> = (0..width)
+                .map(|index| [127.0, 0.5, 1.5, -63.5, 2.5, -0.5, 4.0, -16.0][index % 8])
+                .collect();
+            let mut expected = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+            let mut independent = ProjectionScratch::default();
+            for (weight, output) in weights.iter().zip(&mut expected) {
+                transforms.project_into(weight, &input, &geometry, output, &mut independent)?;
+            }
+            let mut actual = [
+                vec![f32::NAN],
+                vec![f32::NAN],
+                vec![f32::NAN],
+                vec![f32::NAN],
+            ];
+            let mut scratch = ProjectionScratch::default();
+            transforms.project_group_into(
+                weights.each_ref(),
+                &input,
+                &geometry,
+                actual.each_mut(),
+                &mut scratch,
+            )?;
+            for (actual, expected) in actual.iter().zip(&expected) {
+                assert!(
+                    actual
+                        .iter()
+                        .map(|value| value.to_bits())
+                        .eq(expected.iter().map(|value| value.to_bits()))
+                );
+            }
+            assert_eq!(scratch.transforms, 2);
+            assert_eq!(scratch.matvec.preparation_count(), 3);
+            assert_eq!(independent.transforms, 3);
+            assert_eq!(independent.matvec.preparation_count(), 4);
+
+            // Same basis is still insufficient for PQ2 Q8_K vs legacy Q8_0.
+            if width == 256 {
+                transforms.grouped_values = false;
+                let legacy = projection_weight("gate.weight", 8, width);
+                let before = scratch.matvec.preparation_count();
+                let transforms_before = scratch.transforms;
+                let [first, second, ..] = &mut actual;
+                transforms.project_group_into(
+                    [&weights[0], &legacy],
+                    &input,
+                    &geometry,
+                    [first, second],
+                    &mut scratch,
+                )?;
+                assert_eq!(scratch.matvec.preparation_count() - before, 2);
+                assert_eq!(scratch.transforms - transforms_before, 2);
+                transforms.project_into(
+                    &legacy,
+                    &input,
+                    &geometry,
+                    &mut expected[1],
+                    &mut independent,
+                )?;
+                assert!(
+                    actual[1]
+                        .iter()
+                        .map(|value| value.to_bits())
+                        .eq(expected[1].iter().map(|value| value.to_bits()))
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn grouped_projection_failure_clears_all_siblings_and_reprepares() -> Result<()> {
+        let geometry = projection_geometry(8);
+        let first = projection_weight("first", 0, 8);
+        let mut second = projection_weight("second", 0, 8);
+        second.data = Arc::from(f32::NAN.to_le_bytes().repeat(8));
+        let transforms = Transforms::default();
+        let mut scratch = ProjectionScratch::default();
+        let mut output = [vec![1.0], vec![2.0]];
+        assert!(
+            transforms
+                .project_group_into(
+                    [&first, &second],
+                    &[1.0; 8],
+                    &geometry,
+                    output.each_mut(),
+                    &mut scratch
+                )
+                .is_err()
+        );
+        assert!(output.iter().all(Vec::is_empty));
+        assert_eq!(scratch.matvec.preparation_count(), 1);
+        transforms.project_group_into(
+            [&first, &first],
+            &[-1.0; 8],
+            &geometry,
+            output.each_mut(),
+            &mut scratch,
+        )?;
+        assert_eq!(scratch.matvec.preparation_count(), 2);
+        assert_eq!(output[0], output[1]);
+        assert_eq!(output[0].len(), 1);
+        Ok(())
+    }
 
     fn assert_state_bits_eq(expected: &[LayerState], actual: &[LayerState]) {
         assert_eq!(expected.len(), actual.len());

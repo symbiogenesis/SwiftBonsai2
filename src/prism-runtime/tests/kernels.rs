@@ -12,8 +12,8 @@
 use std::sync::Arc;
 
 use bonsai_prism_runtime::kernels::{
-    MatvecScratch, hadamard, matvec, matvec_into, rms_norm, rms_norm_into, round_f16, row,
-    row_into, softmax, validate_tensor,
+    MatvecBackend, MatvecScratch, hadamard, matvec, matvec_into, rms_norm, rms_norm_into,
+    round_f16, row, row_into, softmax, validate_tensor,
 };
 use bonsai_prism_runtime::model::Tensor;
 use bonsai_ternary::pack_ptq;
@@ -38,6 +38,141 @@ fn pq2(scale: u16, symbols: &[(usize, u8)]) -> [u8; 34] {
         block[2 + index / 4] |= symbol << shift;
     }
     block
+}
+
+fn assert_matvec_bits(actual: &[f32], expected: &[f32]) {
+    assert_eq!(
+        actual
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        expected
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn prepared_activations_match_independent_calls_and_split_quantizers() -> TestResult {
+    let first = pq2(0x3c00, &[(0, 0), (1, 2), (2, 2), (33, 2)]);
+    let second = pq2(0x3800, &[(0, 2), (1, 0), (3, 2), (127, 0)]);
+    let pq2_weights = tensor(142, vec![256, 2], [first, second, second, first].concat());
+    let sibling = tensor(142, vec![256], [second, first].concat());
+    let ptq1 = tensor(
+        143,
+        vec![256],
+        [pack_ptq(&first)?, pack_ptq(&second)?].concat(),
+    );
+    let mut input = vec![0.0; 256];
+    for (index, value) in input.iter_mut().enumerate() {
+        *value = [127.0, 0.5, 1.5, 2.5, -63.5, -0.5][index % 6];
+    }
+    let mut scratch = MatvecScratch::default();
+    let mut output = vec![f32::NAN];
+    {
+        let mut prepared = scratch.prepare(&pq2_weights, &input)?;
+        for weights in [&pq2_weights, &sibling] {
+            assert!(prepared.is_compatible(weights)?);
+            prepared.matvec_into(weights, &mut output)?;
+            assert_matvec_bits(&output, &matvec(weights, &input)?);
+        }
+        assert!(!prepared.is_compatible(&ptq1)?);
+        assert!(prepared.matvec_into(&ptq1, &mut output).is_err());
+        assert_eq!(output, Vec::<f32>::new());
+        prepared.matvec_into(&sibling, &mut output)?;
+        assert_matvec_bits(&output, &matvec(&sibling, &input)?);
+    }
+    // The same allocation now contains a different input. A fresh scope must
+    // quantize its contents again, including after a failed preparation.
+    input.fill(f32::NAN);
+    assert!(matvec_into(&pq2_weights, &input, &mut output, &mut scratch).is_err());
+    assert_eq!(output, Vec::<f32>::new());
+    assert_eq!(scratch.selected_backend(), MatvecBackend::Scalar);
+    input.fill(1.0);
+    scratch
+        .prepare(&pq2_weights, &input)?
+        .matvec_into(&sibling, &mut output)?;
+    assert_matvec_bits(&output, &matvec(&sibling, &input)?);
+
+    // A 128-column PQ2 fallback, PTQ1 and legacy Q kinds have the same Q8_0
+    // activation contract, despite using distinct packed row kernels.
+    let odd_pq2 = tensor(142, vec![128], first.to_vec());
+    let odd_ptq1 = tensor(143, vec![128], pack_ptq(&first)?.to_vec());
+    let q4 = tensor(
+        2,
+        vec![128],
+        [vec![0x3c, 0x3c], vec![0x98; 16]].concat().repeat(4),
+    );
+    let q8 = tensor(
+        8,
+        vec![128],
+        [vec![0, 0x3c], vec![1; 32]].concat().repeat(4),
+    );
+    let mut prepared = scratch.prepare(&odd_pq2, &input[..128])?;
+    for weights in [&odd_pq2, &odd_ptq1, &q4, &q8] {
+        assert!(prepared.is_compatible(weights)?);
+        prepared.matvec_into(weights, &mut output)?;
+        assert_matvec_bits(&output, &matvec(weights, &input[..128])?);
+    }
+    assert!(!prepared.is_compatible(&pq2_weights)?);
+    Ok(())
+}
+
+#[test]
+fn prepared_floating_precision_and_failures_preserve_output_contract() -> TestResult {
+    let f32_weights = tensor(
+        0,
+        vec![2],
+        [1.0_f32, -0.5]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect(),
+    );
+    let f16_weights = tensor(
+        1,
+        vec![2],
+        [0x3c00_u16, 0xb800]
+            .into_iter()
+            .flat_map(u16::to_le_bytes)
+            .collect(),
+    );
+    let bf16_weights = tensor(
+        30,
+        vec![2],
+        [0x3f80_u16, 0xbf00]
+            .into_iter()
+            .flat_map(u16::to_le_bytes)
+            .collect(),
+    );
+    let weights = [&f32_weights, &f16_weights, &bf16_weights];
+    let input = [1.000_7, 0.000_001];
+    let mut scratch = MatvecScratch::default();
+    let mut output = vec![1.0];
+    for (index, weight) in weights.iter().enumerate() {
+        let mut prepared = scratch.prepare(weight, &input)?;
+        for (candidate, other) in weights.iter().enumerate() {
+            assert_eq!(prepared.is_compatible(other)?, index == candidate);
+            if index != candidate {
+                assert!(prepared.matvec_into(other, &mut output).is_err());
+                assert_eq!(output, Vec::<f32>::new());
+            }
+        }
+        prepared.matvec_into(weight, &mut output)?;
+        assert_matvec_bits(&output, &matvec(weight, &input)?);
+    }
+    let mut bad = f32_weights.clone();
+    bad.data = Arc::from(f32::NAN.to_le_bytes().repeat(2));
+    let mut prepared = scratch.prepare(&f32_weights, &input)?;
+    assert!(prepared.matvec_into(&bad, &mut output).is_err());
+    assert_eq!(output, Vec::<f32>::new());
+    bad.dimensions = vec![1];
+    assert!(prepared.is_compatible(&bad).is_err());
+    assert!(prepared.matvec_into(&bad, &mut output).is_err());
+    assert_eq!(output, Vec::<f32>::new());
+    prepared.matvec_into(&f32_weights, &mut output)?;
+    assert_matvec_bits(&output, &matvec(&f32_weights, &input)?);
+    Ok(())
 }
 
 #[test]

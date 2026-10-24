@@ -498,6 +498,41 @@ pub struct MatvecScratch {
     row: Vec<f32>,
     requested_backend: MatvecBackend,
     selected_backend: MatvecBackend,
+    #[cfg(test)]
+    preparations: usize,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ActivationContract {
+    Q8K,
+    Q8,
+    F32,
+    F16,
+    BF16,
+}
+
+impl ActivationContract {
+    const fn for_tensor(tensor: &Tensor, columns: usize) -> Self {
+        match tensor.kind {
+            PQ2 if columns.is_multiple_of(256) => Self::Q8K,
+            PQ2 | PTQ1 | Q4_0 | Q8_0 => Self::Q8,
+            F16 => Self::F16,
+            BF16 => Self::BF16,
+            _ => Self::F32,
+        }
+    }
+}
+
+/// One scoped activation preparation shared by compatible matrix operations.
+///
+/// Created by [`MatvecScratch::prepare`]. The guard borrows both its exact input
+/// and scratch until dropped, preventing input mutation or scratch reuse between
+/// sibling projections. No pointer/content cache survives the scope. Tensor
+/// weights must already use the same input basis, signs and permutation.
+pub struct PreparedMatvec<'a> {
+    input: &'a [f32],
+    contract: ActivationContract,
+    scratch: &'a mut MatvecScratch,
 }
 
 /// Packed matrix kernel selection, independent of model and activation precision.
@@ -531,11 +566,68 @@ impl Default for MatvecScratch {
             row: Vec::new(),
             requested_backend: MatvecBackend::Auto,
             selected_backend: MatvecBackend::Scalar,
+            #[cfg(test)]
+            preparations: 0,
         }
     }
 }
 
 impl MatvecScratch {
+    /// Prepares one exact activation vector for compatible sibling projections.
+    ///
+    /// Quantization or floating activation rounding occurs once. Compatibility
+    /// requires equal input width and activation precision/quantizer; in
+    /// particular, `Q8_K` and `Q8_0` preparations cannot be interchanged. The
+    /// caller must establish identical transform basis, signs and permutation.
+    /// Scratch retains reusable format buffers and one decoded row, without
+    /// a decoded matrix or per-sibling activation copies.
+    ///
+    /// # Errors
+    /// Rejects malformed tensor dimensions, unsupported kinds, mismatched or
+    /// nonfinite input, quantization errors, and failed scratch allocation.
+    pub fn prepare<'a>(
+        &'a mut self,
+        tensor: &Tensor,
+        input: &'a [f32],
+    ) -> Result<PreparedMatvec<'a>> {
+        self.selected_backend = MatvecBackend::Scalar;
+        let (columns, _, _) = dimensions(tensor)?;
+        if input.len() != columns || input.iter().any(|value| !value.is_finite()) {
+            return Err(invalid(
+                "matvec requires a matching finite activation vector",
+            ));
+        }
+        let contract = ActivationContract::for_tensor(tensor, columns);
+        match contract {
+            ActivationContract::Q8K => q8k_into(input, &mut self.q8k)?,
+            ActivationContract::Q8 => q8_into(input, &mut self.q8)?,
+            _ => collect_into(
+                input.iter().map(|&value| {
+                    Ok(match contract {
+                        ActivationContract::F16 => round_f16(value),
+                        ActivationContract::BF16 => round_bf16(value),
+                        _ => value,
+                    })
+                }),
+                &mut self.activations,
+            )?,
+        }
+        #[cfg(test)]
+        {
+            self.preparations += 1;
+        }
+        Ok(PreparedMatvec {
+            input,
+            contract,
+            scratch: self,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn preparation_count(&self) -> usize {
+        self.preparations
+    }
+
     /// Creates reusable storage with an explicit kernel request.
     ///
     /// Unsupported requests fall back to scalar at each matrix operation. The
@@ -628,18 +720,48 @@ pub fn matvec_into(
     output: &mut Vec<f32>,
     scratch: &mut MatvecScratch,
 ) -> Result<()> {
-    scratch.selected_backend = MatvecBackend::Scalar;
-    fill_into(output, |output| {
+    output.clear();
+    scratch.prepare(tensor, input)?.matvec_into(tensor, output)
+}
+
+impl PreparedMatvec<'_> {
+    /// Checks whether a tensor uses this preparation's width and activation contract.
+    ///
+    /// This cannot establish the caller's transform basis, signs or permutation.
+    ///
+    /// # Errors
+    /// Rejects unsupported tensor kinds and malformed dimensions or byte extents.
+    pub fn is_compatible(&self, tensor: &Tensor) -> Result<bool> {
+        let (columns, _, _) = dimensions(tensor)?;
+        Ok(columns == self.input.len()
+            && ActivationContract::for_tensor(tensor, columns) == self.contract)
+    }
+
+    /// Multiplies compatible packed rows using the already prepared activation.
+    ///
+    /// Arithmetic and backend dispatch match [`matvec_into`]. Existing output
+    /// elements are discarded and output is empty on error. All growth is
+    /// fallible; this operation does not transform or quantize activations again.
+    ///
+    /// # Errors
+    /// Rejects incompatible activation contracts, malformed tensors, nonfinite
+    /// results, invalid PTQ1 encodings and failed output or row allocation.
+    pub fn matvec_into(&mut self, tensor: &Tensor, output: &mut Vec<f32>) -> Result<()> {
+        self.scratch.selected_backend = MatvecBackend::Scalar;
+        fill_into(output, |output| self.multiply(tensor, output))
+    }
+
+    fn multiply(&mut self, tensor: &Tensor, output: &mut Vec<f32>) -> Result<()> {
         let (columns, rows, row_bytes) = dimensions(tensor)?;
-        if input.len() != columns || input.iter().any(|value| !value.is_finite()) {
-            return Err(invalid(
-                "matvec requires a matching finite activation vector",
-            ));
+        if columns != self.input.len()
+            || ActivationContract::for_tensor(tensor, columns) != self.contract
+        {
+            return Err(invalid("incompatible prepared matvec activation contract"));
         }
+        let scratch = &mut *self.scratch;
         output.try_reserve_exact(rows)?;
         match tensor.kind {
             PQ2 if columns.is_multiple_of(256) => {
-                q8k_into(input, &mut scratch.q8k)?;
                 let (backend, dot) = scratch.select_pq2();
                 scratch.selected_backend = backend;
                 for bytes in tensor.data.chunks_exact(row_bytes) {
@@ -647,7 +769,6 @@ pub fn matvec_into(
                 }
             }
             PQ2 | PTQ1 => {
-                q8_into(input, &mut scratch.q8)?;
                 let (backend, dot) = scratch.select_q8_groups();
                 scratch.selected_backend = backend;
                 for bytes in tensor.data.chunks_exact(row_bytes) {
@@ -655,22 +776,11 @@ pub fn matvec_into(
                 }
             }
             Q4_0 | Q8_0 => {
-                q8_into(input, &mut scratch.q8)?;
                 for bytes in tensor.data.chunks_exact(row_bytes) {
                     output.push(dot_legacy(tensor.kind, bytes, &scratch.q8)?);
                 }
             }
             _ => {
-                collect_into(
-                    input.iter().map(|&value| {
-                        Ok(match tensor.kind {
-                            F16 => round_f16(value),
-                            BF16 => round_bf16(value),
-                            _ => value,
-                        })
-                    }),
-                    &mut scratch.activations,
-                )?;
                 for (index, _) in tensor.data.chunks_exact(row_bytes).enumerate() {
                     row_into(tensor, index, &mut scratch.row)?;
                     output.push(finite(float_dot(&scratch.row, &scratch.activations))?);
@@ -678,7 +788,7 @@ pub fn matvec_into(
             }
         }
         Ok(())
-    })
+    }
 }
 
 #[allow(
@@ -854,6 +964,42 @@ mod tests {
     use std::sync::Arc;
 
     use super::{MatvecScratch, Tensor, matvec_into, q8_into, q8k_into};
+
+    #[test]
+    fn prepared_siblings_quantize_once_and_retry_with_fresh_contents() -> crate::Result<()> {
+        let mut block = [0x55; 34];
+        block[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
+        block[2] = 0xaa;
+        let tensor = Tensor {
+            name: "prepared".to_owned(),
+            dimensions: vec![256, 2],
+            kind: super::PQ2,
+            data: Arc::from(block.repeat(4)),
+        };
+        let mut scratch = MatvecScratch::default();
+        let mut output = Vec::new();
+        let mut input = [127.0; 256];
+        {
+            let mut prepared = scratch.prepare(&tensor, &input)?;
+            for _ in 0..4 {
+                prepared.matvec_into(&tensor, &mut output)?;
+                assert_eq!(prepared.scratch.preparation_count(), 1);
+            }
+        }
+        let expected = output.clone();
+        input.fill(-127.0);
+        scratch
+            .prepare(&tensor, &input)?
+            .matvec_into(&tensor, &mut output)?;
+        assert_eq!(scratch.preparation_count(), 2);
+        assert!(
+            expected
+                .iter()
+                .zip(output)
+                .all(|(a, b)| (-a).to_bits() == b.to_bits())
+        );
+        Ok(())
+    }
 
     #[test]
     fn matvec_scratch_retains_quantized_and_floating_storage() -> crate::Result<()> {

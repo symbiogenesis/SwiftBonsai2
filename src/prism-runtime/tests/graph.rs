@@ -125,6 +125,173 @@ fn hybrid_fixture() -> Model {
     model
 }
 
+fn preparation_fixture(recurrent: bool, transformed: bool) -> Model {
+    let mut model = fixture(recurrent);
+    for (name, dimensions, values) in [
+        (
+            "blk.0.ffn_up.weight",
+            vec![2, 2],
+            vec![1.5, -0.25, -0.5, 0.75],
+        ),
+        (
+            "blk.0.ffn_gate.weight",
+            vec![2, 2],
+            vec![0.5, 0.25, -0.125, 1.25],
+        ),
+        (
+            "blk.0.ffn_down.weight",
+            vec![2, 2],
+            vec![0.25, -0.5, 0.75, 0.125],
+        ),
+    ] {
+        model
+            .tensors
+            .insert(name.to_owned(), weight(name, &dimensions, &values));
+    }
+    let siblings = if recurrent {
+        for (name, values) in [
+            ("blk.0.ssm_beta.weight", [0.125, -0.25]),
+            ("blk.0.ssm_alpha.weight", [-0.0625, 0.125]),
+        ] {
+            model
+                .tensors
+                .insert(name.to_owned(), weight(name, &[2, 1], &values));
+        }
+        ["blk.0.attn_qkv.weight", "blk.0.attn_gate.weight"]
+    } else {
+        model.tensors.insert(
+            "blk.0.attn_q.weight".to_owned(),
+            weight(
+                "blk.0.attn_q.weight",
+                &[2, 4],
+                &[0.75, -0.25, 0.125, 0.5, -0.5, 1.0, 0.25, -0.125],
+            ),
+        );
+        model.tensors.insert(
+            "blk.0.attn_k.weight".to_owned(),
+            weight("blk.0.attn_k.weight", &[2, 2], &[0.5, 0.25, -0.75, 0.125]),
+        );
+        ["blk.0.attn_q.weight", "blk.0.attn_k.weight"]
+    };
+    if transformed {
+        for (key, value) in [
+            ("prism.hadamard.version", metadata!(1)),
+            ("prism.hadamard.block_size", metadata!(2)),
+            (
+                "prism.hadamard.transform",
+                metadata!("normalized-sylvester-walsh-hadamard"),
+            ),
+            ("prism.hadamard.axis", metadata!("input-last-dimension")),
+            ("prism.hadamard.sign_mode", metadata!("explicit")),
+            ("prism.hadamard.sign_widths", metadata!([2])),
+            ("prism.hadamard.sign_values", metadata!([-1, 1])),
+            (
+                "prism.hadamard.weight_names",
+                metadata!([
+                    siblings[0],
+                    siblings[1],
+                    "blk.0.ffn_up.weight",
+                    "blk.0.ffn_gate.weight"
+                ]),
+            ),
+        ] {
+            model.metadata.insert(key.to_owned(), value);
+        }
+    }
+    model
+}
+
+#[test]
+fn shared_preparation_matches_independent_baseline_logits_and_recovery() -> Result<()> {
+    // Captured with the independent, ungrouped projection implementation at
+    // 18e6d6b5cadb985d25a3af9460c620b7514facaa, native Windows ARM64.
+    // Both attention routes have nonzero FFN siblings; transformed lanes mix
+    // signed Hadamard and plain siblings within the same attention group.
+    let expected = [
+        [
+            0x3fa5_10d0,
+            0x3f14_9c66,
+            0xbe7b_119b,
+            0x3fb2_472a,
+            0x3e6e_52e4,
+            0x3fb2_8d17,
+            0x3f89_bb5f,
+            0x3f6a_edcd,
+        ],
+        [
+            0x3fb3_0cb9,
+            0x3e55_0b5c,
+            0xbd3e_3ea0,
+            0x3fb4_ebef,
+            0xbc0c_b00d,
+            0x3fb5_0414,
+            0x3f9c_d9c5,
+            0x3f34_badd,
+        ],
+        [
+            0x3fae_d262,
+            0x3ebb_d7f0,
+            0xbed1_b0de,
+            0x3fad_432b,
+            0xbece_7676,
+            0x3fad_8128,
+            0x3fae_a37a,
+            0x3ebe_8d18,
+        ],
+        [
+            0x3faa_f9ff,
+            0x3eed_d29b,
+            0x3f4a_7b2d,
+            0x3f96_0fa0,
+            0x3f5a_ff0f,
+            0x3f90_256b,
+            0x3fac_395c,
+            0x3ede_f4bd,
+        ],
+    ];
+    for (lane, (recurrent, transformed)) in
+        [(false, false), (false, true), (true, false), (true, true)]
+            .into_iter()
+            .enumerate()
+    {
+        let mut decoder = Qwen35::new(preparation_fixture(recurrent, transformed), 16)?;
+        let first = decoder.evaluate(0)?;
+        assert_eq!(
+            first
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            expected[lane][..2]
+        );
+        let checkpoint = decoder.checkpoint()?;
+        for (index, token) in [1, 1, 0].into_iter().enumerate() {
+            let mut output = vec![f32::NAN];
+            assert!(decoder.evaluate_into(2, &mut output).is_err());
+            assert_eq!(output, Vec::<f32>::new());
+            decoder.evaluate_into(token, &mut output)?;
+            assert_eq!(
+                output
+                    .iter()
+                    .map(|value| value.to_bits())
+                    .collect::<Vec<_>>(),
+                expected[lane][2 + index * 2..4 + index * 2]
+            );
+        }
+        decoder.restore(&checkpoint)?;
+        assert_eq!(
+            decoder
+                .evaluate(1)?
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            expected[lane][2..4]
+        );
+        decoder.reset()?;
+        assert_eq!(decoder.evaluate(0)?, first);
+    }
+    Ok(())
+}
+
 fn two_full_layer_fixture() -> Model {
     let mut model = fixture(false);
     model

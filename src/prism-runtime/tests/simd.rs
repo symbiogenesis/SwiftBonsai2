@@ -133,6 +133,42 @@ fn compare(
 }
 
 #[test]
+fn simd_prepared_siblings_match_scalar_and_reset_after_rejection() -> TestResult {
+    let mut scratch = MatvecScratch::default();
+    let mut output = vec![f32::NAN];
+    for columns in [128, 256, 384, 512] {
+        let pq2 = pq2_tensor(columns, 3, &[0x3555, 0xb555, 0x0400])?;
+        let ptq1 = ptq1_tensor(columns, 2, &[0x3555, 0xb555])?;
+        let input = activations(columns, true);
+        for weights in [&pq2, &ptq1] {
+            let mut reference = MatvecScratch::with_backend(MatvecBackend::Scalar);
+            let mut expected = Vec::new();
+            matvec_into(weights, &input, &mut expected, &mut reference)?;
+            {
+                let mut prepared = scratch.prepare(weights, &input)?;
+                for _ in 0..3 {
+                    prepared.matvec_into(weights, &mut output)?;
+                    assert_bits(&output, &expected);
+                }
+            }
+            assert_eq!(scratch.selected_backend(), eligible_backend());
+        }
+        if columns.is_multiple_of(256) {
+            {
+                let mut prepared = scratch.prepare(&pq2, &input)?;
+                prepared.matvec_into(&pq2, &mut output)?;
+                assert!(prepared.matvec_into(&ptq1, &mut output).is_err());
+                assert_eq!(output, Vec::<f32>::new());
+            }
+            assert_eq!(scratch.selected_backend(), MatvecBackend::Scalar);
+        }
+        assert!(scratch.prepare(&pq2, &input[..columns - 1]).is_err());
+        assert_eq!(scratch.selected_backend(), MatvecBackend::Scalar);
+    }
+    Ok(())
+}
+
+#[test]
 fn simd_default_selects_available_kernel_and_explicit_scalar_overrides() -> TestResult {
     assert_eq!(MatvecBackend::default(), MatvecBackend::Auto);
     let mut scratch = MatvecScratch::default();
