@@ -8,6 +8,7 @@ use bonsai_prism_runtime::{
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
+    time::{Duration, Instant},
 };
 
 struct Recurrent {
@@ -685,5 +686,84 @@ fn default_ingestion_rejects_malformed_discarded_logits_and_rolls_back() -> Resu
         // the default ingestion path must dispatch through that implementation.
         assert_eq!(owned_calls.get(), 0);
     }
+    Ok(())
+}
+
+#[test]
+fn deadline_expired_admission_preserves_committed_state_and_snapshots() -> Result<()> {
+    let decoder = decoder();
+    let steps = decoder.steps.clone();
+    let checkpoint_fail = decoder.checkpoint_fail.clone();
+    let mut runtime = Runtime::new(decoder, LIMITS)?;
+    let cancellation = Cancellation::default();
+    runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+    let completed_steps = steps.get();
+    let saved = runtime.checkpoint_count();
+    checkpoint_fail.set(true);
+    let result = runtime.generate_until(&[2, 3], &options(), &cancellation, Instant::now(), |_| {
+        Err(std::io::Error::other("expired admission must not emit").into())
+    });
+    assert!(result.is_err());
+    if let Err(error) = result {
+        assert_eq!(
+            error
+                .downcast_ref::<std::io::Error>()
+                .map(std::io::Error::kind),
+            Some(std::io::ErrorKind::TimedOut)
+        );
+    }
+    assert_eq!(steps.get(), completed_steps);
+    assert_eq!(runtime.checkpoint_count(), saved);
+    assert_eq!(runtime.tokens(), &[1, 1]);
+    assert!(checkpoint_fail.get(), "expired admission must not capture");
+    assert!(!runtime.is_faulted());
+    checkpoint_fail.set(false);
+    let completion = runtime.generate_until(
+        &[1, 1],
+        &options(),
+        &cancellation,
+        Instant::now() + Duration::from_secs(60),
+        |_| Ok(()),
+    )?;
+    assert_eq!(completion.reused_tokens, 2);
+    assert_eq!(runtime.tokens(), &[1, 1, 2]);
+    Ok(())
+}
+
+#[test]
+fn deadline_generation_retains_cancellation_precedence_and_stream_rollback() -> Result<()> {
+    let mut runtime = Runtime::new(decoder(), LIMITS)?;
+    let active = Cancellation::default();
+    runtime.generate(&[1], &options(), &active, |_| Ok(()))?;
+    let cancelled = Cancellation::default();
+    cancelled.cancel();
+    let result = runtime.generate_until(&[2], &options(), &cancelled, Instant::now(), |_| Ok(()));
+    assert!(result.is_err());
+    if let Err(error) = result {
+        assert_eq!(
+            error
+                .downcast_ref::<std::io::Error>()
+                .map(std::io::Error::kind),
+            Some(std::io::ErrorKind::Interrupted)
+        );
+    }
+    assert!(
+        runtime
+            .generate_until(
+                &[2],
+                &options(),
+                &active,
+                Instant::now() + Duration::from_secs(60),
+                |_| {
+                    active.cancel();
+                    Ok(())
+                },
+            )
+            .is_err()
+    );
+    assert_eq!(runtime.tokens(), &[1, 1]);
+    assert!(!runtime.is_faulted());
+    runtime.generate(&[1, 1], &options(), &Cancellation::default(), |_| Ok(()))?;
+    assert_eq!(runtime.tokens(), &[1, 1, 2]);
     Ok(())
 }

@@ -5,6 +5,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use std::time::Instant;
 
 /// Cancellation shared with the request owner; checked between decoder steps.
 #[derive(Clone, Default)]
@@ -182,6 +183,45 @@ impl<D: Decoder> Runtime<D> {
         prompt: &[u32],
         options: &Generation,
         cancellation: &Cancellation,
+        emit: impl FnMut(u32) -> Result<()>,
+    ) -> Result<Completion> {
+        self.generate_checked(prompt, options, &|| cancellation.check(), emit)
+    }
+
+    /// Generate synchronously before an absolute monotonic request deadline.
+    ///
+    /// The deadline includes prefill, generation, callbacks and snapshot work.
+    /// Expiry is cooperative: a running decoder operation or callback completes
+    /// before the next check detects it. Recovery is allowed to finish after the
+    /// deadline. Emitted output remains provisional until this call succeeds.
+    /// Cancellation takes precedence when both cancellation and expiry occur.
+    ///
+    /// # Errors
+    /// Returns an [`std::io::ErrorKind::TimedOut`] error on expiry, or the same
+    /// errors as [`Self::generate`]. An expired request is rejected before any
+    /// decoder operation. Admitted failures restore the previous committed
+    /// state, unless restoration fails and closes admission until reset.
+    pub fn generate_until(
+        &mut self,
+        prompt: &[u32],
+        options: &Generation,
+        cancellation: &Cancellation,
+        deadline: Instant,
+        emit: impl FnMut(u32) -> Result<()>,
+    ) -> Result<Completion> {
+        self.generate_checked(
+            prompt,
+            options,
+            &|| check_deadline(cancellation, deadline, Instant::now()),
+            emit,
+        )
+    }
+
+    fn generate_checked(
+        &mut self,
+        prompt: &[u32],
+        options: &Generation,
+        check: &impl Fn() -> Result<()>,
         mut emit: impl FnMut(u32) -> Result<()>,
     ) -> Result<Completion> {
         if self.faulted {
@@ -189,17 +229,30 @@ impl<D: Decoder> Runtime<D> {
                 "native runtime requires reset after failed restoration",
             ));
         }
-        cancellation.check()?;
+        check()?;
         self.validate_request(prompt, options)?;
-        let rollback = self.capture(0)?;
-        let result = self.generate_inner(prompt, options, cancellation, &mut emit);
+        check()?;
+        let rollback = self.capture(0, check)?;
+        let result = (|| {
+            check()?;
+            let completion = self.generate_inner(prompt, options, check, &mut emit)?;
+            check()?;
+            // A failed optional capture still permits success, but deadline
+            // expiry during capture must roll back the completed generation.
+            let snapshot = if self.limits.checkpoints == 0 {
+                None
+            } else {
+                let snapshot = self.capture(rollback.bytes, check).ok();
+                check()?;
+                snapshot
+            };
+            Ok((completion, snapshot))
+        })();
         match result {
-            Ok(completion) => {
+            Ok((completion, snapshot)) => {
                 // Snapshots are an optional reuse optimization. A budget miss
                 // does not invalidate an otherwise completed generation.
-                if self.limits.checkpoints != 0
-                    && let Ok(snapshot) = self.capture(rollback.bytes)
-                {
+                if let Some(snapshot) = snapshot {
                     // Count pressure alone must not discard a usable prefix
                     // when its optional replacement could not be captured.
                     if self.checkpoints.len() == self.limits.checkpoints {
@@ -243,7 +296,11 @@ impl<D: Decoder> Runtime<D> {
         Ok(())
     }
 
-    fn capture(&mut self, reserved: usize) -> Result<Snapshot<D::Checkpoint>> {
+    fn capture(
+        &mut self,
+        reserved: usize,
+        check: &impl Fn() -> Result<()>,
+    ) -> Result<Snapshot<D::Checkpoint>> {
         let logits_len = self.logits.len();
         let bytes = self
             .tokens
@@ -272,6 +329,7 @@ impl<D: Decoder> Runtime<D> {
         }
         let tokens = copy(&self.tokens)?;
         let logits = copy(&self.logits)?;
+        check()?;
         let state = self.decoder.checkpoint()?;
         Ok(Snapshot {
             state,
@@ -281,7 +339,7 @@ impl<D: Decoder> Runtime<D> {
         })
     }
 
-    fn prepare(&mut self, prompt: &[u32]) -> Result<usize> {
+    fn prepare(&mut self, prompt: &[u32], check: &impl Fn() -> Result<()>) -> Result<usize> {
         if !self.tokens.is_empty() && prompt.starts_with(&self.tokens) && !self.logits.is_empty() {
             return Ok(self.tokens.len());
         }
@@ -297,23 +355,28 @@ impl<D: Decoder> Runtime<D> {
             let tokens = copy(&snapshot.tokens)?;
             self.logits.clear();
             self.logits.try_reserve_exact(snapshot.logits.len())?;
+            check()?;
             self.decoder.restore(&snapshot.state)?;
+            check()?;
             self.tokens = tokens;
             self.logits.extend_from_slice(&snapshot.logits);
         } else {
+            check()?;
             self.decoder.reset()?;
+            check()?;
             self.tokens.clear();
             self.logits.clear();
         }
         Ok(self.tokens.len())
     }
 
-    fn evaluate(&mut self, token: u32, cancellation: &Cancellation) -> Result<()> {
-        cancellation.check()?;
+    fn evaluate(&mut self, token: u32, check: &impl Fn() -> Result<()>) -> Result<()> {
+        check()?;
         // Reserve before mutating decoder state; rollback is still available if
         // a decoder allocation or arithmetic operation subsequently fails.
         self.tokens.try_reserve(1)?;
         self.logits.clear();
+        check()?;
         let result = self
             .decoder
             .evaluate_into(token, &mut self.logits)
@@ -323,7 +386,7 @@ impl<D: Decoder> Runtime<D> {
                 {
                     return Err(invalid("native decoder returned invalid logits"));
                 }
-                cancellation.check()
+                check()
             });
         if let Err(error) = result {
             self.logits.clear();
@@ -333,14 +396,15 @@ impl<D: Decoder> Runtime<D> {
         Ok(())
     }
 
-    fn ingest(&mut self, token: u32, cancellation: &Cancellation) -> Result<()> {
-        cancellation.check()?;
+    fn ingest(&mut self, token: u32, check: &impl Fn() -> Result<()>) -> Result<()> {
+        check()?;
         self.tokens.try_reserve(1)?;
         // Preserve the reusable allocation, but invalidate logits for the old
         // prefix before advancing state without producing a new distribution.
         self.logits.clear();
+        check()?;
         self.decoder.ingest(token)?;
-        cancellation.check()?;
+        check()?;
         self.tokens.push(token);
         Ok(())
     }
@@ -349,17 +413,17 @@ impl<D: Decoder> Runtime<D> {
         &mut self,
         prompt: &[u32],
         options: &Generation,
-        cancellation: &Cancellation,
+        check: &impl Fn() -> Result<()>,
         emit: &mut impl FnMut(u32) -> Result<()>,
     ) -> Result<Completion> {
-        cancellation.check()?;
-        let reused = self.prepare(prompt)?;
-        cancellation.check()?;
+        check()?;
+        let reused = self.prepare(prompt, check)?;
+        check()?;
         if let Some((&last, prefix)) = prompt[reused..].split_last() {
             for &token in prefix {
-                self.ingest(token, cancellation)?;
+                self.ingest(token, check)?;
             }
-            self.evaluate(last, cancellation)?;
+            self.evaluate(last, check)?;
         }
         let mut completion = Completion {
             prompt_tokens: prompt.len(),
@@ -368,19 +432,32 @@ impl<D: Decoder> Runtime<D> {
             finish: Finish::Length,
         };
         for _ in 0..options.max_tokens {
-            cancellation.check()?;
+            check()?;
             let token = greedy(&self.logits)?;
             if options.stop_tokens.contains(&token) {
                 completion.finish = Finish::Stop;
                 break;
             }
-            self.evaluate(token, cancellation)?;
+            self.evaluate(token, check)?;
+            check()?;
             emit(token)?;
-            cancellation.check()?;
+            check()?;
             completion.generated_tokens += 1;
         }
         Ok(completion)
     }
+}
+
+fn check_deadline(cancellation: &Cancellation, deadline: Instant, now: Instant) -> Result<()> {
+    cancellation.check()?;
+    if now >= deadline {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "native generation deadline exceeded",
+        )
+        .into());
+    }
+    Ok(())
 }
 
 fn copy<T: Copy>(source: &[T]) -> Result<Vec<T>> {
@@ -413,4 +490,260 @@ pub fn greedy(logits: &[f32]) -> Result<u32> {
         }
     }
     Ok(u32::try_from(best)?)
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+    use std::{
+        cell::{Cell, RefCell},
+        io::ErrorKind,
+        rc::Rc,
+        time::Duration,
+    };
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Operation {
+        Reset,
+        Restore,
+        Checkpoint,
+        Ingest(u32),
+        Evaluate(u32),
+        Emit(u32),
+    }
+
+    struct Clock {
+        now: Cell<Instant>,
+        deadline: Instant,
+        expire_on: Cell<Option<Operation>>,
+        operations: RefCell<Vec<Operation>>,
+        restore_fail: Cell<bool>,
+    }
+
+    impl Clock {
+        fn record(&self, operation: Operation) {
+            self.operations.borrow_mut().push(operation);
+            if self.expire_on.get() == Some(operation) {
+                self.expire_on.set(None);
+                self.now.set(self.deadline);
+            }
+        }
+
+        fn check(&self) -> Result<()> {
+            check_deadline(&Cancellation::default(), self.deadline, self.now.get())
+        }
+    }
+
+    struct TimedDecoder {
+        tokens: Vec<u32>,
+        clock: Rc<Clock>,
+    }
+
+    impl Decoder for TimedDecoder {
+        type Checkpoint = Vec<u32>;
+
+        fn identity(&self) -> &'static str {
+            "deadline-fixture/v1"
+        }
+        fn vocab_size(&self) -> usize {
+            8
+        }
+        fn checkpoint_bytes(&self) -> usize {
+            self.tokens.len() * 4
+        }
+        fn reset(&mut self) -> Result<()> {
+            self.tokens.clear();
+            self.clock.record(Operation::Reset);
+            Ok(())
+        }
+        fn ingest(&mut self, token: u32) -> Result<()> {
+            self.tokens.push(token);
+            self.clock.record(Operation::Ingest(token));
+            Ok(())
+        }
+        fn evaluate(&mut self, token: u32) -> Result<Vec<f32>> {
+            self.tokens.push(token);
+            self.clock.record(Operation::Evaluate(token));
+            let mut logits = vec![-1.0; 8];
+            logits[usize::try_from(self.tokens.iter().sum::<u32>() % 8)?] = 1.0;
+            Ok(logits)
+        }
+        fn checkpoint(&self) -> Result<Self::Checkpoint> {
+            self.clock.record(Operation::Checkpoint);
+            Ok(self.tokens.clone())
+        }
+        fn restore(&mut self, checkpoint: &Self::Checkpoint) -> Result<()> {
+            self.clock.record(Operation::Restore);
+            if self.clock.restore_fail.get() {
+                return Err(std::io::Error::other("injected deadline restoration failure").into());
+            }
+            self.tokens.clone_from(checkpoint);
+            Ok(())
+        }
+    }
+
+    const LIMITS: Limits = Limits {
+        context_tokens: 32,
+        checkpoints: 4,
+        checkpoint_bytes: 16_384,
+    };
+
+    const OPTIONS: Generation = Generation {
+        max_tokens: 1,
+        stop_tokens: vec![],
+    };
+
+    fn seeded() -> Result<(Runtime<TimedDecoder>, Rc<Clock>)> {
+        let now = Instant::now();
+        let clock = Rc::new(Clock {
+            now: Cell::new(now),
+            deadline: now + Duration::from_secs(1),
+            expire_on: Cell::new(None),
+            operations: RefCell::new(Vec::new()),
+            restore_fail: Cell::new(false),
+        });
+        let mut runtime = Runtime::new(
+            TimedDecoder {
+                tokens: Vec::new(),
+                clock: clock.clone(),
+            },
+            LIMITS,
+        )?;
+        runtime.generate(&[1], &OPTIONS, &Cancellation::default(), |_| Ok(()))?;
+        clock.operations.borrow_mut().clear();
+        Ok((runtime, clock))
+    }
+
+    fn assert_timeout(result: Result<Completion>) -> Result<()> {
+        let Err(error) = result else {
+            return Err(invalid("deadline fixture unexpectedly completed"));
+        };
+        assert_eq!(
+            error
+                .downcast_ref::<std::io::Error>()
+                .map(std::io::Error::kind),
+            Some(ErrorKind::TimedOut)
+        );
+        Ok(())
+    }
+
+    fn assert_continues(runtime: &mut Runtime<TimedDecoder>) -> Result<()> {
+        let committed = runtime.tokens().to_vec();
+        let completion =
+            runtime.generate(&committed, &OPTIONS, &Cancellation::default(), |_| Ok(()))?;
+        assert_eq!(completion.reused_tokens, committed.len());
+        let expected = committed.iter().sum::<u32>() % 8;
+        assert_eq!(runtime.tokens().last(), Some(&expected));
+        Ok(())
+    }
+
+    #[test]
+    fn deadline_backend_expiry_rolls_back_prefill_and_generation() -> Result<()> {
+        for operation in [
+            Operation::Checkpoint,
+            Operation::Reset,
+            Operation::Ingest(2),
+            Operation::Evaluate(3),
+            Operation::Evaluate(5),
+        ] {
+            let (mut runtime, clock) = seeded()?;
+            clock.expire_on.set(Some(operation));
+            assert_timeout(
+                runtime.generate_checked(&[2, 3], &OPTIONS, &|| clock.check(), |_| {
+                    Err(invalid("expired decoder output must not emit"))
+                }),
+            )?;
+            assert!(clock.operations.borrow().contains(&operation));
+            assert_eq!(clock.operations.borrow().last(), Some(&Operation::Restore));
+            assert_eq!(runtime.tokens(), &[1, 1]);
+            assert!(!runtime.is_faulted());
+            assert_continues(&mut runtime)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn deadline_expiry_during_prefix_restore_rolls_back() -> Result<()> {
+        let (mut runtime, clock) = seeded()?;
+        runtime.generate(&[1, 1, 2], &OPTIONS, &Cancellation::default(), |_| Ok(()))?;
+        clock.operations.borrow_mut().clear();
+        clock.expire_on.set(Some(Operation::Restore));
+        assert_timeout(
+            runtime.generate_checked(&[1, 1, 3], &OPTIONS, &|| clock.check(), |_| {
+                Err(invalid("expired prefix restore must not emit"))
+            }),
+        )?;
+        assert_eq!(
+            *clock.operations.borrow(),
+            [
+                Operation::Checkpoint,
+                Operation::Restore,
+                Operation::Restore
+            ]
+        );
+        assert_eq!(runtime.tokens(), &[1, 1, 2, 4]);
+        assert!(!runtime.is_faulted());
+        assert_continues(&mut runtime)
+    }
+
+    #[test]
+    fn deadline_expiry_during_emit_or_optional_snapshot_rolls_back() -> Result<()> {
+        for operation in [Operation::Emit(5), Operation::Checkpoint] {
+            let (mut runtime, clock) = seeded()?;
+            let mut emitted = Vec::new();
+            assert_timeout(runtime.generate_checked(
+                &[2, 3],
+                &OPTIONS,
+                &|| clock.check(),
+                |token| {
+                    emitted.push(token);
+                    // Arm after the mandatory rollback capture so Checkpoint
+                    // targets the optional completed-prefix capture exclusively.
+                    clock.expire_on.set(Some(operation));
+                    clock.record(Operation::Emit(token));
+                    Ok(())
+                },
+            ))?;
+            assert_eq!(emitted, [5]);
+            assert_eq!(clock.operations.borrow().last(), Some(&Operation::Restore));
+            assert_eq!(runtime.tokens(), &[1, 1]);
+            assert_eq!(runtime.checkpoint_count(), 1);
+            assert!(!runtime.is_faulted());
+            assert_continues(&mut runtime)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn deadline_restoration_failure_latches_admission_until_reset() -> Result<()> {
+        let (mut runtime, clock) = seeded()?;
+        clock.restore_fail.set(true);
+        clock.expire_on.set(Some(Operation::Ingest(2)));
+        let result = runtime.generate_checked(&[2, 3], &OPTIONS, &|| clock.check(), |_| Ok(()));
+        let Err(error) = result else {
+            return Err(invalid(
+                "failed deadline restoration unexpectedly completed",
+            ));
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("injected deadline restoration failure")
+        );
+        assert!(runtime.is_faulted());
+        assert_eq!(runtime.tokens(), &[1, 1]);
+        clock.operations.borrow_mut().clear();
+        assert!(
+            runtime
+                .generate(&[1, 1], &OPTIONS, &Cancellation::default(), |_| Ok(()))
+                .is_err()
+        );
+        assert!(clock.operations.borrow().is_empty());
+        clock.restore_fail.set(false);
+        runtime.reset()?;
+        runtime.generate(&[3], &OPTIONS, &Cancellation::default(), |_| Ok(()))?;
+        assert_eq!(runtime.tokens(), &[3, 3]);
+        assert!(!runtime.is_faulted());
+        Ok(())
+    }
 }
