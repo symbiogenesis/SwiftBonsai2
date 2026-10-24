@@ -93,7 +93,7 @@
       ],
       "AssertionsToPort": "All argv/env/default/override/quoting/LoRA vectors; valid and invalid remote grammar URL behavior. Do not silently drop HTTP case.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-autorelease.cpp",
@@ -227,7 +227,7 @@
       ],
       "AssertionsToPort": "All 317KB template/parser/message/tool/Responses conversion expectations; reasoning budgets/effort; malformed UTF-8; reconstruction and generation prompts; default run from upstream root.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-col2im-1d.cpp",
@@ -261,7 +261,7 @@
       ],
       "AssertionsToPort": "Exhaustive all 2^32 f32 bit patterns for finite rounding equality; F16C-only all65536 half SiLU comparisons allowing equal half or adjacent float. CI-only full correctness because exhaustive.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-dspark-forward.cpp",
@@ -339,7 +339,7 @@
       ],
       "AssertionsToPort": "Parse supplied grammar and evaluate every input codepoint/accept state with correct exit code; invent no single default fixture because original requires two paths.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-gguf-model-data.cpp",
@@ -435,7 +435,7 @@
       ],
       "AssertionsToPort": "Regression safety; synthetic Q4_0 layout gating versus unrotated model; softmax invariance with bias; generated temp GGUFs outside checkout.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-llama-archs.cpp",
@@ -448,7 +448,7 @@
       ],
       "AssertionsToPort": "All supported architecture/model tensor shape cases; CPU/backend execution comparison; deterministic seed; export mode generates qwen35-dense nemotron_h-dense deepseek4-moe assets for rollback.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-llama-grammar.cpp",
@@ -510,7 +510,7 @@
       ],
       "AssertionsToPort": "All fake HF repo quant/split/mmproj/MTP/dflash/eagle3/dspark/preset/explicit path precedence expectations; files are fake fixture names; no real model weights or external network needed.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-moe-weighted-reduce.cpp",
@@ -567,7 +567,7 @@
       ],
       "AssertionsToPort": "All original dataset/loss/gradient/forward/backward/optimizer/train/resume parameter cases for ADAMW and SGD; numerical thresholds; backend unsupported states explicit; upstream disabled under ASAN/no-realloc.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-peg-parser.cpp",
@@ -687,7 +687,7 @@
       ],
       "AssertionsToPort": "All non-SWA recurrent checkpoint/rollback/state-copy branches and logits parity after speculative/restore operations across3 architectures; fixed token inputs.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-rope.cpp",

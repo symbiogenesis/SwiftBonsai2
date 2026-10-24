@@ -3,11 +3,23 @@
 The `upstream_prism` example owns test inputs, references and assertions in
 safe Rust (`#![forbid(unsafe_code)]`). It uses the same test code with two
 targets: production Prism through a native process bridge, and this repository's
-production Rust runtime. Upstream runs first and must pass before Rust is tested.
+production Rust runtime. Both results are retained for each source; every
+upstream reference failure fails the final gate.
 
-The current ports preserve forty-three source contracts from
+The current ports preserve fifty-two source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
+- Architecture coverage retains every source variant and backend/export phase;
+  Rust generates the small model inputs and records capability skips. Recurrent
+  rollback creates its own three fixtures and retains every replay/fork schedule.
+- Full chat, argument parsing and model resolution retain all source cases and
+  optional diagnostic controls. Resolution uses a Rust loopback fixture server.
+- KV mean centering and optimizer schedules use Rust-owned metadata, tensors,
+  random inputs, callbacks and numeric predicates. Native model construction and
+  optimizer dispatch call production APIs only.
+- The binary32 arithmetic proof runs only in CI and is explicitly independent
+  of engine APIs. The manual grammar validator preserves its zero fixed source
+  assertions; independent grammar vectors provide additional regression checks.
 - Both tokenizer roundtrip sources retain every vocabulary token and the entire
   source Unicode domain across two SPM and eight BPE fixtures, including the
   commented slow fixtures. Rust owns exclusions, exceptions, worker strides,
@@ -128,8 +140,8 @@ Repeat with `--target rust`, omitting the bridge options. The PTQ1 selector is
 `test-ptq1_0-element-map`. For `test-unicode` or `test-mtp-catchup-batch`, use
 `--common-bridge` with the executable built from `common/` instead of `--bridge`.
 `tests/Test-PrismUpstream.ps1` supervises both targets,
-retains bridge requests/responses and logs, and checks the upstream report before
-retargeting. Full catalogs and all benchmarks run only in CI.
+retains bridge requests/responses and logs, and checks every upstream result in
+the final gate. Full catalogs and all benchmarks run only in CI.
 The Foundation manual input `prism_benchmarks` runs the ported benchmark paths
 after correctness. PEG deserialization retains its 100-iteration workload;
 sampling retains five 32-iteration workloads; chat PEG retains complete and

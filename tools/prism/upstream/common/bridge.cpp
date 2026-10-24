@@ -31,6 +31,10 @@
 #include "model_runtime.hpp"
 #include "json_schema.hpp"
 #include "chat_analysis.hpp"
+#include "arg_parser.hpp"
+#include "chat.hpp"
+#include "optimizer.hpp"
+#include "quantization.hpp"
 #include "public_c_abi.h"
 #include <nlohmann/json.hpp>
 
@@ -115,6 +119,9 @@ void validate_operation(const wire_json & operation) {
     const auto & kind = operation.at("Kind").get_ref<const std::string &>();
     if (kind == "public-c-abi") {
         require_keys(operation, {"Kind"});
+    } else if (kind == "unicode-encode" || kind == "unicode-decode") {
+        auto adapted = operation; adapted.erase("Kind"); adapted["Op"] = kind;
+        prism_vocab_session::validate_unicode(adapted);
     } else if (kind == "unicode-regex-split") {
         require_keys(operation, {"Kind", "Text", "Expressions", "ByteEncoding"});
         require(operation.at("Text").is_string() &&
@@ -175,6 +182,14 @@ void validate_operation(const wire_json & operation) {
         prism_json_schema::validate(operation);
     } else if (prism_chat_analysis::handles(kind)) {
         prism_chat_analysis::validate(operation);
+    } else if (prism_arg_parser::handles(kind)) {
+        prism_arg_parser::validate(operation);
+    } else if (prism_chat::handles(kind)) {
+        prism_chat::validate(operation);
+    } else if (prism_optimizer::handles(kind)) {
+        prism_optimizer::validate(operation);
+    } else if (prism_quantization::handles(kind)) {
+        prism_quantization::validate(operation);
     } else {
         throw std::runtime_error("unknown operation Kind");
     }
@@ -182,6 +197,10 @@ void validate_operation(const wire_json & operation) {
 
 wire_json execute(const wire_json & operation) {
     const auto & kind = operation.at("Kind").get_ref<const std::string &>();
+    if (kind == "unicode-encode" || kind == "unicode-decode") {
+        auto adapted = operation; adapted.erase("Kind"); adapted["Op"] = kind;
+        return prism_vocab_session::execute(adapted, nullptr);
+    }
     if (kind == "public-c-abi") {
         const auto value = prism_public_c_abi_observe();
         return wire_json{{"ModelParams", {{"Size", value.model_params_size}, {"Alignment", value.model_params_alignment}}},
@@ -252,6 +271,18 @@ wire_json execute(const wire_json & operation) {
     }
     if (prism_chat_analysis::handles(kind)) {
         return prism_chat_analysis::execute(operation);
+    }
+    if (prism_arg_parser::handles(kind)) {
+        return prism_arg_parser::execute(operation);
+    }
+    if (prism_chat::handles(kind)) {
+        return prism_chat::execute(operation);
+    }
+    if (prism_optimizer::handles(kind)) {
+        return prism_optimizer::execute(operation);
+    }
+    if (prism_quantization::handles(kind)) {
+        return prism_quantization::execute(operation);
     }
     if (kind == "unicode-regex-split") {
         const auto pieces = unicode_regex_split(operation.at("Text").get<std::string>(),

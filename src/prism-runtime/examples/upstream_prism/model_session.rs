@@ -6,7 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
@@ -28,6 +28,7 @@ const SESSION_TIMEOUT: Duration = Duration::from_secs(240);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
 type Callback = fn(f32) -> bool;
+pub(super) type TensorData = dyn Fn(&Value) -> Result<Value> + Send + Sync;
 type Response = std::result::Result<Reply, String>;
 
 pub(super) struct Reply {
@@ -39,6 +40,8 @@ pub(super) struct Reply {
 struct Pending {
     sender: mpsc::SyncSender<Response>,
     progress: Option<Callback>,
+    tensor_data: Option<Arc<TensorData>>,
+    callback_error: Option<String>,
     observations: Vec<(u32, bool)>,
     started: Instant,
 }
@@ -149,6 +152,16 @@ impl Client {
         operation: Value,
         progress: Option<Callback>,
     ) -> Result<Reply> {
+        self.call_with_handlers(worker, operation, progress, None)
+    }
+
+    pub(super) fn call_with_handlers(
+        &self,
+        worker: u32,
+        operation: Value,
+        progress: Option<Callback>,
+        tensor_data: Option<Arc<TensorData>>,
+    ) -> Result<Reply> {
         self.state.check()?;
         if worker >= 16 || lock(&self.state.closing_at).is_some() {
             return Err(invalid(
@@ -171,6 +184,8 @@ impl Client {
             Pending {
                 sender,
                 progress,
+                tensor_data,
+                callback_error: None,
                 observations: Vec::new(),
                 started: Instant::now(),
             },
@@ -216,12 +231,15 @@ fn unsigned(value: &Value, name: &str) -> Result<u64> {
 }
 
 fn callback(state: &State, value: &Value, seen: &mut HashSet<u64>) -> Result<()> {
-    exact_keys(value, &["CallbackId", "RequestId", "ProgressBits"])?;
     let id = unsigned(value, "CallbackId")?;
     if seen.len() >= MAX_CALLBACKS || !seen.insert(id) {
         return Err(invalid("native session callback identity/count mismatch"));
     }
     let request_id = unsigned(value, "RequestId")?;
+    if value.get("TensorSpec").is_some() {
+        return tensor_callback(state, value, id, request_id);
+    }
+    exact_keys(value, &["CallbackId", "RequestId", "ProgressBits"])?;
     let bits = u32::try_from(unsigned(value, "ProgressBits")?)?;
     let function = lock(&state.pending)
         .get(&request_id)
@@ -235,6 +253,35 @@ fn callback(state: &State, value: &Value, seen: &mut HashSet<u64>) -> Result<()>
         .observations
         .push((bits, decision));
     state.write(&json!({"CallbackId":id,"Return":decision}))
+}
+
+fn tensor_callback(state: &State, value: &Value, id: u64, request_id: u64) -> Result<()> {
+    exact_keys(value, &["CallbackId", "RequestId", "TensorSpec"])?;
+    let function = lock(&state.pending)
+        .get(&request_id)
+        .and_then(|request| request.tensor_data.clone())
+        .ok_or_else(|| invalid("native tensor callback has no pending Rust handler"))?;
+    let observation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        function(&value["TensorSpec"])
+    }))
+    .map_err(|_| invalid("Rust tensor callback panicked"))?;
+    match observation {
+        Ok(result) => {
+            let mut reply = json!({"CallbackId":id,"Result":null});
+            reply["Result"] = result;
+            state.write(&reply)
+        }
+        Err(error) => {
+            let error: String = error.to_string().chars().take(4096).collect();
+            lock(&state.pending)
+                .get_mut(&request_id)
+                .ok_or_else(|| invalid("native tensor callback request disappeared"))?
+                .callback_error = Some(error.clone());
+            // Let production cancel and release partial model state. The final
+            // native response is still correlated, then rejected with this cause.
+            state.write(&json!({"CallbackId":id,"Error":error}))
+        }
+    }
 }
 
 fn dispatch(state: &State, value: &Value, callbacks: &mut HashSet<u64>) -> Result<()> {
@@ -262,6 +309,7 @@ fn dispatch(state: &State, value: &Value, callbacks: &mut HashSet<u64>) -> Resul
     let request = lock(&state.pending).remove(&id).ok_or_else(|| {
         invalid("native session returned an unknown or duplicate request identity")
     })?;
+    let response = request.callback_error.map_or(response, Err);
     request
         .sender
         .send(response.map(|value| Reply {
@@ -329,6 +377,9 @@ pub(super) struct ModelSession {
 }
 
 impl ModelSession {
+    pub(super) fn evidence_directory(&self) -> &Path {
+        &self.directory
+    }
     pub(super) fn open(engine: &Engine, name: &str) -> Result<Option<Self>> {
         Self::open_with_environment(engine, name, &[])
     }
@@ -451,7 +502,7 @@ impl ModelSession {
         self.finished = true;
         let fatal = lock(&self.state.fatal).clone();
         fs::write(
-            self.directory.join("session.json"),
+            self.evidence_directory().join("session.json"),
             serde_json::to_vec_pretty(&json!({
             "SchemaVersion":1,"ExitCode":status.code(),"Requests":self.state.next_id.load(Ordering::Relaxed) - 1,
                 "ElapsedMilliseconds":self.state.started.elapsed().as_millis(),"Error":fatal,
@@ -475,7 +526,7 @@ fn validate_environment(environment: &[(String, String)]) -> Result<()> {
         }
         match name.as_str() {
             "LLAMA_CACHE" => {
-                let path = std::path::Path::new(value);
+                let path = Path::new(value);
                 if !path.is_absolute() || !path.is_dir() || value.contains('%') {
                     return Err(invalid(
                         "LLAMA_CACHE requires an existing expanded absolute evidence directory",

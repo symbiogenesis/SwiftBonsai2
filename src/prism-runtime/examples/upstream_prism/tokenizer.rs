@@ -311,8 +311,22 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
         }
         let schedules: Vec<_> = (0..workers).map(|worker| json!({"Actions":(0..cases.len()).map(|index| token_action(index,worker==0,worker==0)).collect::<Vec<_>>()})).collect();
         let response = evaluate(engine, &vocab, &inputs(&cases), &schedules)?;
-        exact_fields(&response, &["ModelLoaded", "ContextLoaded", "Workers"])?;
-        if !boolean(&response, "ModelLoaded")? || !boolean(&response, "ContextLoaded")? {
+        exact_fields(
+            &response,
+            &["ModelLoaded", "ContextLoaded", "Workers", "Error"],
+        )?;
+        let model_loaded = boolean(&response, "ModelLoaded")?;
+        let context_loaded = boolean(&response, "ContextLoaded")?;
+        if let Some(error) = response.get("Error").filter(|error| !error.is_null()) {
+            loader_failures.push(format!(
+                "{name}: {}",
+                error
+                    .as_str()
+                    .ok_or_else(|| invalid("vocabulary error must be null or text"))?
+            ));
+            continue;
+        }
+        if !model_loaded || !context_loaded {
             loader_failures.push(format!("{name}: vocabulary model/context loading failed"));
             continue;
         }
@@ -394,7 +408,18 @@ pub(super) fn export_text(
         &[json!({"Bytes":bytes,"AddSpecial":false,"ParseSpecial":false})],
         &[json!({"Actions":actions})],
     )?;
-    exact_fields(&response, &["ModelLoaded", "ContextLoaded", "Workers"])?;
+    exact_fields(
+        &response,
+        &["ModelLoaded", "ContextLoaded", "Workers", "Error"],
+    )?;
+    if let Some(error) = response.get("Error").filter(|error| !error.is_null()) {
+        return Err(invalid(format!(
+            "tokenizer diagnostic: {}",
+            error
+                .as_str()
+                .ok_or_else(|| invalid("vocabulary error must be null or text"))?
+        )));
+    }
     if !boolean(&response, "ModelLoaded")? || !boolean(&response, "ContextLoaded")? {
         return Err(invalid("tokenizer diagnostic vocabulary loading failed"));
     }

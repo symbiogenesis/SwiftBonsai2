@@ -86,6 +86,8 @@ inline void validate(const json & operation) {
             fields(action, {"Kind", "Grammar", "Target"});
             const auto target = static_cast<int>(integer(action.at("Target"), 0, 31));
             require(live.count(target) == 0, "grammar clone target exists"); live.insert(target);
+        } else if (kind == "accept-codepoint") {
+            fields(action, {"Kind", "Grammar", "CodePoint"}); u32(action.at("CodePoint"));
         } else if (kind == "accept-token") {
             require(action.contains("Piece") != action.contains("PieceBytes"), "accept requires Piece or PieceBytes");
             if (action.contains("Piece")) { fields(action, {"Kind", "Grammar", "Token", "Piece"}); text(action.at("Piece"), 65536); }
@@ -191,6 +193,13 @@ inline json execute(const json & operation) {
             else if (kind == "restore-stacks") {
                 const auto & entry = saved.at(static_cast<int>(integer(action.at("StackHandle"), 0, 63)));
                 require(entry.owner == grammar, "saved stacks lifetime mismatch"); llama_grammar_get_stacks(grammar) = entry.stacks;
+            } else if (kind == "accept-codepoint") {
+                json exception = nullptr; std::string message;
+                try { llama_grammar_accept(grammar, u32(action.at("CodePoint"))); }
+                catch (const std::runtime_error & error) { exception = "runtime"; message = error.what(); }
+                catch (const std::exception & error) { exception = "standard"; message = error.what(); }
+                catch (...) { exception = "unknown"; message = "non-standard production exception"; }
+                event = json{{"ExceptionKind", exception}, {"Message", message}, {"StackSizes", stack_sizes(grammar)}};
             } else if (kind == "accept-token") {
                 std::string piece;
                 if (action.contains("Piece")) piece = action.at("Piece").get<std::string>();

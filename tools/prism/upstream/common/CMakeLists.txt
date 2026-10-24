@@ -23,9 +23,25 @@ set(FETCHCONTENT_FULLY_DISCONNECTED ON CACHE BOOL "" FORCE)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "" FORCE)
 add_subdirectory("${PRISM_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/prism")
 
-add_executable(prism-upstream-common-bridge bridge.cpp jinja.hpp mtmd.hpp grammar_parser.hpp reasoning_budget.hpp tensor_graph.hpp grammar.hpp codec.hpp peg.hpp concurrency.hpp arena_graph.hpp batch_allocator.hpp allocation.hpp mtmd_chunks.hpp sampling.hpp gguf.hpp chat_templates.hpp chat_parser.hpp chat_auto.hpp vocab.hpp vocab_session.hpp model_runtime.hpp json_schema.hpp chat_analysis.hpp public_c_abi.c public_c_abi.h)
+# The production server-context library also supplies the chat conversion APIs.
+# Mirror its source list without enabling the HTTP executable or UI generation.
+find_package(Threads REQUIRED)
+set(PRISM_SERVER_CONTEXT_SOURCES
+  server-chat.cpp server-task.cpp server-queue.cpp server-common.cpp
+  server-context.cpp server-stream.cpp server-tools.cpp server-mcp.cpp server-schema.cpp)
+list(TRANSFORM PRISM_SERVER_CONTEXT_SOURCES PREPEND "${PRISM_SOURCE_DIR}/tools/server/")
+add_library(prism-upstream-server-context STATIC ${PRISM_SERVER_CONTEXT_SOURCES})
+target_include_directories(prism-upstream-server-context PRIVATE
+  "${PRISM_SOURCE_DIR}/tools/server" "${PRISM_SOURCE_DIR}/tools/mtmd"
+  "${PRISM_SOURCE_DIR}/src" "${PRISM_SOURCE_DIR}")
+target_link_libraries(prism-upstream-server-context PUBLIC llama-common mtmd Threads::Threads)
+if(MSVC)
+  target_compile_options(prism-upstream-server-context PRIVATE /utf-8)
+endif()
+
+add_executable(prism-upstream-common-bridge bridge.cpp jinja.hpp mtmd.hpp grammar_parser.hpp reasoning_budget.hpp tensor_graph.hpp grammar.hpp codec.hpp peg.hpp concurrency.hpp arena_graph.hpp batch_allocator.hpp allocation.hpp mtmd_chunks.hpp sampling.hpp gguf.hpp chat_templates.hpp chat_parser.hpp chat_auto.hpp vocab.hpp vocab_session.hpp model_runtime.hpp json_schema.hpp chat_analysis.hpp public_c_abi.c public_c_abi.h arg_parser.hpp model_resolution.hpp chat.hpp generated_model.hpp optimizer.hpp quantization.hpp)
 target_include_directories(prism-upstream-common-bridge PRIVATE "${PRISM_SOURCE_DIR}/src" "${PRISM_SOURCE_DIR}" "${PRISM_SOURCE_DIR}/ggml/src")
-target_link_libraries(prism-upstream-common-bridge PRIVATE llama-common mtmd)
+target_link_libraries(prism-upstream-common-bridge PRIVATE llama-common mtmd prism-upstream-server-context)
 
 set_source_files_properties(public_c_abi.c PROPERTIES LANGUAGE C)
 set_target_properties(prism-upstream-common-bridge PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)

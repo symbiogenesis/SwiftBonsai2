@@ -40,6 +40,20 @@ inline std::string hex(const std::string & bytes) {
     for (std::size_t i = 0; i < bytes.size(); ++i) { const auto byte = static_cast<std::uint8_t>(bytes[i]); result[2*i] = digits[byte >> 4]; result[2*i+1] = digits[byte & 15]; } return result;
 }
 inline bool handles(const std::string & op) { return op == "vocab-tokenize" || op == "vocab-detokenize" || op == "unicode-encode" || op == "unicode-decode"; }
+inline void validate_unicode(const json & operation) {
+    const auto op = operation.at("Op").get<std::string>();
+    const bool encode = op == "unicode-encode";
+    require(encode || op == "unicode-decode", "unknown Unicode operation");
+    if (encode) fields(operation, {"Op", "CodePoints"});
+    else fields(operation, {"Op", "InputsHex"});
+    const auto & items = operation.at(encode ? "CodePoints" : "InputsHex");
+    require(items.is_array() && items.size() <= 512, "Unicode batch exceeds512");
+    std::size_t supplied = 0;
+    for (const auto & item : items) {
+        if (encode) integer(item);
+        else { supplied += bytes(item).size(); require(supplied <= 1024*1024, "Unicode input exceeds1MiB"); }
+    }
+}
 inline json execute(const json & operation, llama_context * context) {
     const auto op = operation.at("Op").get<std::string>(); const json * items = nullptr;
     if (op == "vocab-tokenize") {

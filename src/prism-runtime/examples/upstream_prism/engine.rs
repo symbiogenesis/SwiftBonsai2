@@ -200,7 +200,7 @@ impl Engine {
     // as a failed contract, never substitute a test-only implementation.
     pub(super) fn execute_common(&self, name: &str, request: &Value) -> Result<Option<Value>> {
         if matches!(self.target, Target::Rust) {
-            return Ok(None);
+            return super::engine_vocab::execute(request);
         }
         let bridge = self
             .common_bridge

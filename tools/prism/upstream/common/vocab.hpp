@@ -72,8 +72,11 @@ inline json execute(const json & operation) {
     std::unique_ptr<llama_context, decltype(&llama_free)> context(nullptr, llama_free);
     const auto create_context = operation.at("CreateContext").get<bool>();
     if (model && create_context) context.reset(llama_init_from_model(model.get(), llama_context_default_params()));
-    json response{{"ModelLoaded", bool(model)}, {"ContextLoaded", create_context ? json(bool(context)) : json(nullptr)}, {"Workers", json::array()}};
-    if (!model || (create_context && !context)) return response;
+    json response{{"ModelLoaded", bool(model)}, {"ContextLoaded", create_context ? json(bool(context)) : json(nullptr)}, {"Workers", json::array()}, {"Error", nullptr}};
+    if (!model || (create_context && !context)) {
+        response["Error"] = !model ? "production llama_model_load_from_file returned null" : "production llama_init_from_model returned null";
+        return response;
+    }
     const auto * vocab = llama_model_get_vocab(model.get()); require(vocab != nullptr, "production model has no vocabulary");
     std::vector<std::string> inputs;
     for (const auto & input : operation.at("Inputs")) {
@@ -102,7 +105,12 @@ inline json execute(const json & operation) {
     try { for (std::size_t i = 0; i < workers.size(); ++i) threads.emplace_back(run, i); }
     catch (...) { for (auto & thread : threads) thread.join(); throw; }
     for (auto & thread : threads) thread.join();
-    for (const auto & error : errors) if (error) std::rethrow_exception(error);
+    for (const auto & error : errors) if (error) {
+        try { std::rethrow_exception(error); }
+        catch (const std::exception & failure) { response["Error"] = failure.what(); }
+        catch (...) { response["Error"] = "unknown production vocabulary worker exception"; }
+        return response;
+    }
     for (auto & observation : observations) response["Workers"].push_back(std::move(observation));
     return response;
 }

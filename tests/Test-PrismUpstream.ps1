@@ -14,7 +14,7 @@ param(
     [Parameter(Mandatory)][string]$SourceArchive,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [Parameter(Mandatory)][string]$TargetDirectory,
-    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')][string]$Case = 'All',
+    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')][string]$Case = 'All',
     [string]$CMakePath,
     [ValidateSet('Ninja', 'Visual Studio 18 2026', 'Visual Studio 17 2022')][string]$Generator = 'Ninja',
     [ValidateSet('ARM64', 'x64')][string]$NativePlatform = 'ARM64',
@@ -140,6 +140,15 @@ $adapters = @{
     JsonSchema = @{ Name = 'test-json-schema-to-grammar'; Family = 'common' }
     ChatAnalysis = @{ Name = 'test-chat-analysis'; Family = 'common' }
     PublicC = @{ Name = 'test-c'; Id = 'tests/test-c.c'; Family = 'common' }
+    Architectures = @{ Name = 'test-llama-archs'; Family = 'common' }
+    RecurrentRollback = @{ Name = 'test-recurrent-state-rollback'; Family = 'common' }
+    KvMeanCenter = @{ Name = 'test-kv-mean-center'; Family = 'common' }
+    Optimizer = @{ Name = 'test-opt'; Family = 'common' }
+    DoubleFloat = @{ Name = 'test-double-float'; Family = 'independent' }
+    GbnfValidator = @{ Name = 'test-gbnf-validator'; Family = 'common' }
+    ArgParser = @{ Name = 'test-arg-parser'; Family = 'common' }
+    Chat = @{ Name = 'test-chat'; Family = 'common' }
+    ModelResolution = @{ Name = 'test-model-resolution'; Family = 'common' }
     TokenizerSpm = @{ Name = 'test-tokenizer-1-spm'; Family = 'common' }
     TokenizerBpe = @{ Name = 'test-tokenizer-1-bpe'; Family = 'common' }
     Autorelease = @{ Name = 'test-autorelease'; Family = 'common' }
@@ -148,7 +157,7 @@ $adapters = @{
     StateRestoreFragmented = @{ Name = 'test-state-restore-fragmented'; Family = 'common' }
     ThreadSafety = @{ Name = 'test-thread-safety'; Family = 'common' }
 }
-$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety') } else { @($Case) }
+$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety') } else { @($Case) }
 $modelSelections = @('Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')
 $assetDirectory = $null
 if (@($selected | Where-Object { $_ -in $modelSelections }).Count) {
@@ -181,6 +190,7 @@ $bridges = @{}
 $nativeBuilds = [Collections.Generic.List[object]]::new()
 $extension = if ($IsWindows) { '.exe' } else { '' }
 foreach ($family in @($selected | ForEach-Object { $adapters[$_].Family } | Select-Object -Unique)) {
+    if ($family -eq 'independent') { continue }
     $definition = $bridgeFamilies[$family]
     $build = Join-Path $evidence ("build-$family")
     $configureArguments = @('-S', $definition.Source, '-B', $build, "-DPRISM_SOURCE_DIR=$source", '-DCMAKE_BUILD_TYPE=Release',
@@ -227,10 +237,10 @@ foreach ($selection in $selected) {
         $arguments = @('--target', $engine, '--case', $caseId, '--source-directory', $source, '--output', $output,
             '--evidence-directory', (Join-Path $evidence "$caseName-$engine-bridge"))
         if ($assetDirectory) { $arguments += @('--asset-directory', $assetDirectory) }
-        if ($engine -eq 'cpp') {
+        if ($engine -eq 'cpp' -and $adapter.Family -ne 'independent') {
             $arguments += @($bridgeFamilies[$adapter.Family].Option, $bridges[$adapter.Family])
         }
-        $timeout = if ($selection -eq 'TokenizerBpe') { 2100 } elseif ($selection -eq 'TokenizerSpm') { 600 } elseif ($selection -in $modelSelections) { 360 } elseif ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')) { 300 } else { 120 }
+        $timeout = if ($selection -eq 'Architectures') { 1800 } elseif ($selection -eq 'RecurrentRollback') { 600 } elseif ($selection -in @('KvMeanCenter','Optimizer')) { 600 } elseif ($selection -eq 'Chat') { 1200 } elseif ($selection -eq 'ModelResolution') { 360 } elseif ($selection -eq 'DoubleFloat') { 900 } elseif ($selection -eq 'TokenizerBpe') { 2100 } elseif ($selection -eq 'TokenizerSpm') { 600 } elseif ($selection -in $modelSelections) { 360 } elseif ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')) { 300 } else { 120 }
         $null = Invoke-UpstreamCommand -Executable $harness -Arguments $arguments -TimeoutSeconds $timeout
         $result = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json -AsHashtable
         if ($result.SchemaVersion -ne 1 -or $result.UpstreamCommit -cne $lock.Commit -or $result.Target -cne $engine -or
@@ -239,7 +249,6 @@ foreach ($selection in $selected) {
         }
         if ($engine -eq 'cpp') {
             $referenceCases.Add($result.Cases[0])
-            if ($result.Cases[0].Status -cne 'pass') { throw "Rust assertions failed on pinned Prism for $caseName; see $output" }
         }
         else { $rustCases.Add($result.Cases[0]) }
     }
@@ -253,11 +262,20 @@ if ($Case -eq 'All') {
     [IO.File]::WriteAllText((Join-Path $evidence 'report.json'), ($report | ConvertTo-Json -Depth 12))
     $gate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath (Join-Path $upstream 'baseline.json')
     [IO.File]::WriteAllText((Join-Path $evidence 'gate.json'), ($gate | ConvertTo-Json -Depth 12))
-    if (-not $gate.Passed) { throw "Prism baseline regressed; see $(Join-Path $evidence 'gate.json')" }
     $receipt.Summary = $gate.Summary
+    if (-not $gate.Passed) {
+        $receipt.Status = 'failed'
+        $receipt.Issues = $gate.Issues
+        [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
+        throw "Prism baseline regressed; all source contract failures are retained in $(Join-Path $evidence 'gate.json')"
+    }
 } else {
-    if (@($reference.Cases | Where-Object { $_.Status -cne 'pass' }).Count) { throw 'The focused C++ control failed.' }
     $receipt.Results = $rust
+    if (@($reference.Cases | Where-Object { $_.Status -cne 'pass' }).Count) {
+        $receipt.Status = 'failed'
+        [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
+        throw 'The focused C++ reference contract failed; both target result files are retained.'
+    }
 }
 $receipt.Status = 'complete'
 [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))

@@ -11,6 +11,12 @@
 
 #[path = "upstream_prism/allocation.rs"]
 mod allocation;
+#[path = "upstream_prism/architectures.rs"]
+mod architectures;
+#[path = "upstream_prism/arg_parser.rs"]
+mod arg_parser;
+#[path = "upstream_prism/chat.rs"]
+mod chat;
 #[path = "upstream_prism/chat_analysis.rs"]
 mod chat_analysis;
 #[path = "upstream_prism/chat_auto.rs"]
@@ -23,6 +29,8 @@ mod chat_template;
 mod gguf;
 #[path = "upstream_prism/model_lifecycle.rs"]
 mod model_lifecycle;
+#[path = "upstream_prism/model_resolution.rs"]
+mod model_resolution;
 #[path = "upstream_prism/model_session.rs"]
 mod model_session;
 #[path = "upstream_prism/mtmd_chunks.rs"]
@@ -38,12 +46,18 @@ mod batch_allocator;
 mod codec_assertions;
 #[path = "upstream_prism/common.rs"]
 mod common;
+#[path = "upstream_prism/double_float.rs"]
+mod double_float;
 #[path = "upstream_prism/engine.rs"]
 mod engine;
 #[path = "upstream_prism/engine_codec.rs"]
 mod engine_codec;
+#[path = "upstream_prism/engine_vocab.rs"]
+mod engine_vocab;
 #[path = "upstream_prism/fixture.rs"]
 mod fixture;
+#[path = "upstream_prism/generated_inputs.rs"]
+mod generated_inputs;
 #[path = "upstream_prism/grammar_integration.rs"]
 mod grammar_integration;
 #[path = "upstream_prism/grammar_parser.rs"]
@@ -52,6 +66,8 @@ mod grammar_parser;
 mod jinja;
 #[path = "upstream_prism/json_schema.rs"]
 mod json_schema;
+#[path = "upstream_prism/kv_mean_center.rs"]
+mod kv_mean_center;
 #[path = "upstream_prism/llama_grammar.rs"]
 mod llama_grammar;
 #[path = "upstream_prism/logging.rs"]
@@ -62,6 +78,8 @@ mod moe_reduce;
 mod mtmd;
 #[path = "upstream_prism/numerics.rs"]
 mod numerics;
+#[path = "upstream_prism/optimizer.rs"]
+mod optimizer;
 #[path = "upstream_prism/peg.rs"]
 mod peg;
 #[path = "upstream_prism/pq2.rs"]
@@ -72,10 +90,16 @@ mod ptq1;
 mod public_c;
 #[path = "upstream_prism/reasoning_budget.rs"]
 mod reasoning_budget;
+#[path = "upstream_prism/recurrent_rollback.rs"]
+mod recurrent_rollback;
 #[path = "upstream_prism/schema_python.rs"]
 mod schema_python;
 #[path = "upstream_prism/tokenizer_roundtrip.rs"]
 mod tokenizer_roundtrip;
+#[path = "upstream_prism/validator.rs"]
+mod validator;
+#[path = "upstream_prism/windows_random.rs"]
+mod windows_random;
 
 use std::env;
 use std::fs;
@@ -93,6 +117,7 @@ const MTP_ID: &str = "tests/test-mtp-catchup-batch.cpp";
 const MTMD_ID: &str = "tests/test-mtmd-impl.cpp";
 #[derive(Clone, Copy, PartialEq)]
 enum Bridge {
+    Independent,
     Ggml,
     Common,
 }
@@ -119,6 +144,60 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-llama-archs",
+        "tests/test-llama-archs.cpp",
+        Bridge::Common,
+        architectures::run,
+    ),
+    register(
+        "test-recurrent-state-rollback",
+        "tests/test-recurrent-state-rollback.cpp",
+        Bridge::Common,
+        recurrent_rollback::run,
+    ),
+    register(
+        "test-opt",
+        "tests/test-opt.cpp",
+        Bridge::Common,
+        optimizer::run,
+    ),
+    register(
+        "test-kv-mean-center",
+        "tests/test-kv-mean-center.cpp",
+        Bridge::Common,
+        kv_mean_center::run,
+    ),
+    register(
+        "test-gbnf-validator",
+        "tests/test-gbnf-validator.cpp",
+        Bridge::Common,
+        validator::run,
+    ),
+    register(
+        "test-arg-parser",
+        "tests/test-arg-parser.cpp",
+        Bridge::Common,
+        arg_parser::run,
+    ),
+    register(
+        "test-chat",
+        "tests/test-chat.cpp",
+        Bridge::Common,
+        chat::run,
+    ),
+    register(
+        "test-model-resolution",
+        "tests/test-model-resolution.cpp",
+        Bridge::Common,
+        model_resolution::run,
+    ),
+    register(
+        "test-double-float",
+        "tests/test-double-float.cpp",
+        Bridge::Independent,
+        double_float::run,
+    ),
     register(
         "test-chat-analysis",
         "tests/test-chat-analysis.cpp",
@@ -564,6 +643,61 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
         return Err(invalid("diagnostic configuration exceeds size bound"));
     }
     let value: Value = serde_json::from_slice(&fs::read(config)?)?;
+    match value["Kind"].as_str() {
+        Some("architecture-options") => {
+            llama_grammar::exact_fields(
+                &value,
+                &["Kind", "Architecture", "Seed", "Verbose", "Export"],
+            )?;
+            let architecture = if value["Architecture"].is_null() {
+                None
+            } else {
+                Some(
+                    value["Architecture"]
+                        .as_str()
+                        .ok_or_else(|| invalid("architecture filter must be null or text"))?
+                        .to_owned(),
+                )
+            };
+            let output = if value["Export"].as_bool() == Some(false) {
+                None
+            } else if value["Export"].as_bool() == Some(true) {
+                Some(engine.evidence_path("architecture-diagnostic-export")?)
+            } else {
+                return Err(invalid("architecture export flag must be boolean"));
+            };
+            let options = architectures::ArchitectureOptions {
+                architecture,
+                seed: value["Seed"]
+                    .as_u64()
+                    .ok_or_else(|| invalid("architecture seed must be unsigned"))?,
+                verbose: value["Verbose"]
+                    .as_bool()
+                    .ok_or_else(|| invalid("architecture verbose flag must be boolean"))?,
+                output,
+            };
+            return architectures::run_with_options(engine, &options);
+        }
+        Some("gbnf-validator") => return validator::diagnostic(engine, &value),
+        Some("chat-options") => {
+            llama_grammar::exact_fields(&value, &["Kind", "Filter", "ForceReconstruction"])?;
+            let filter = if value["Filter"].is_null() {
+                None
+            } else {
+                Some(
+                    value["Filter"]
+                        .as_str()
+                        .ok_or_else(|| invalid("chat filter must be null or text"))?,
+                )
+            };
+            let force = value["ForceReconstruction"]
+                .as_bool()
+                .ok_or_else(|| invalid("chat reconstruction flag must be boolean"))?;
+            return chat::run_with_options(engine, filter, force);
+        }
+        Some("tokenizer-export") => {}
+        _ => return Err(invalid("unknown diagnostic kind")),
+    }
     let object = value
         .as_object()
         .filter(|object| object.len() == 4)

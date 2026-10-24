@@ -31,9 +31,43 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Forty-three source contracts currently have safe Rust adapters in
+Fifty-two source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-llama-archs.cpp`: all 151 source variants, the production architecture
+  inventory and capability skips, backend comparisons, and model export/load
+  roundtrips. Rust creates metadata and tensor weights, retains the original
+  numeric predicates, and records seed 1234 as a repeatable replacement for the
+  source's unpinned random seed. The export phase runs separately from backend
+  comparison and preserves saver-capability and temporary-file skips.
+- `test-recurrent-state-rollback.cpp`: all three generated architecture fixtures and
+  their full, partial and dirty restores, two-sequence replay, independent tails,
+  and pending-fork byte equality. Fixtures are generated within this case's
+  evidence directory; it does not depend on an earlier test having run.
+- `test-chat.cpp`: all 14 default groups and 431 cases, including every byte
+  prefix, final-message updates and reconstruction checks. A separate diagnostic
+  retains source filters and forced reconstruction, including the filtered-only
+  regression. All 59 template assets retain their original bytes.
+- `test-arg-parser.cpp`: all 27 example inventories, option and environment
+  uniqueness, repeated valid/invalid parses, load modes, LoRA CSV settings and
+  the original HTTP cases. POSIX-only environment mutations remain excluded on
+  Windows, as in the source.
+- `test-model-resolution.cpp`: all 14 cases, 94 deterministic reorderings and
+  13 assembly cases. A bounded Rust loopback server and private cache provide
+  the source responses; the child invokes the production resolver.
+- `test-kv-mean-center.cpp`: all three generated-model groups and original
+  numeric predicates. Rust supplies GGUF metadata, Windows random inputs and
+  tensor bytes through bounded file callbacks to production model construction.
+- `test-opt.cpp`: all 118 AdamW and 46 SGD result subtests, including dataset
+  batching, shuffling, accumulated gradients, epoch/fit equivalence and training
+  regressions. The original diagnostic-only SGD tolerance policy is explicit.
+- `test-double-float.cpp`: the complete binary32 domain is a CI-only arithmetic
+  proof. This source calls no engine API. Rust compares defined floating-point
+  results and reports the original out-of-range integer-cast domain explicitly.
+- `test-gbnf-validator.cpp`: the manual validator retains Windows text reading,
+  acceptance tracing and source highlight behavior. Its zero fixed source
+  assertions are explicit; 119 independent source grammar vectors add regression
+  coverage. A CI-only diagnostic accepts grammar and input paths.
 - Both tokenizer roundtrip sources traverse every token and the entire original
   Unicode domain in two SPM and eight BPE fixtures, including fixtures upstream
   comments out for runtime. Per fixture this retains 456,703 Unicode calls and
@@ -137,7 +171,10 @@ Forty-three source contracts currently have safe Rust adapters in
   opaque fixture factory supplies chunk contents, as in the original source.
   Rust owns the invocation, traversal, serialization requests and comparisons.
 
-The Rust runtime has no equivalent generic regex, MTP, Jinja, MTMD or grammar APIs.
+The Rust runtime tokenizer adapter loads actual supported model metadata and
+uses its production tokenizer and vocabulary objects. Unsupported vocabulary
+constructors remain measured failures. The Rust runtime has no equivalent
+generic regex, MTP, Jinja, MTMD or grammar APIs.
 Those target results explicitly fail rather than testing substitute helpers.
 
 For each port, the same safe Rust inputs and assertions run against pinned Prism
