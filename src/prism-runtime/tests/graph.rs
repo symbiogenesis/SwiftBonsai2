@@ -1432,7 +1432,18 @@ fn wire_model(model: &Model) -> Result<Vec<u8>> {
     output.extend(u64::try_from(model.metadata.len())?.to_le_bytes());
     for (key, value) in &model.metadata {
         wire_text(&mut output, key)?;
-        let (kind, bytes) = wire_value(value.as_ref())?;
+        // Tokenizer contracts require these exact GGUF integer widths.
+        let (kind, bytes) = match value {
+            MetadataValue::U32(value) => (4, value.to_le_bytes().to_vec()),
+            MetadataValue::Array(MetadataArray::I32(values)) => {
+                let mut bytes = Vec::new();
+                bytes.extend(5_u32.to_le_bytes());
+                bytes.extend(u64::try_from(values.len())?.to_le_bytes());
+                bytes.extend(values.iter().flat_map(|value| value.to_le_bytes()));
+                (9, bytes)
+            }
+            _ => wire_value(value.as_ref())?,
+        };
         output.extend(kind.to_le_bytes());
         output.extend(bytes);
     }
@@ -1457,6 +1468,66 @@ fn wire_model(model: &Model) -> Result<Vec<u8>> {
 struct DriverArtifact {
     directory: std::path::PathBuf,
     path: std::path::PathBuf,
+    bytes: u64,
+    digest: String,
+}
+
+#[cfg(feature = "cli")]
+impl DriverArtifact {
+    fn new(model: &Model) -> Result<Self> {
+        use sha2::{Digest, Sha256};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "Bonsai-NativeDriver-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&directory)?;
+        let bytes = wire_model(model)?;
+        let artifact = Self {
+            path: directory.join("fixture.gguf"),
+            directory,
+            bytes: u64::try_from(bytes.len())?,
+            digest: Sha256::digest(&bytes)
+                .into_iter()
+                .flat_map(|byte| [byte >> 4, byte & 15])
+                .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
+                .collect(),
+        };
+        std::fs::write(&artifact.path, bytes)?;
+        Ok(artifact)
+    }
+
+    fn command(&self, max_tokens: usize, valid_digest: bool) -> std::process::Command {
+        let digest = if valid_digest {
+            self.digest.clone()
+        } else {
+            "0".repeat(64)
+        };
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_bonsai-prism-runtime"));
+        command
+            .current_dir(&self.directory)
+            .arg("--model")
+            .arg(&self.path)
+            .args([
+                "--bytes",
+                &self.bytes.to_string(),
+                "--sha256",
+                &digest,
+                "--memory-bytes",
+                "8388608",
+                "--context",
+                "16",
+                "--checkpoint-bytes",
+                "1048576",
+                "--max-tokens",
+                &max_tokens.to_string(),
+                "--tokens",
+                "0,1",
+            ]);
+        command
+    }
 }
 
 #[cfg(feature = "cli")]
@@ -1474,30 +1545,12 @@ impl Drop for DriverArtifact {
     reason = "Keep the complete driver invocation and JSON output contract together."
 )]
 fn native_driver_executes_verified_synthetic_gguf_and_enforces_state_budget() -> Result<()> {
-    use sha2::{Digest, Sha256};
-    use std::{
-        fs,
-        process::Command,
-        time::{SystemTime, UNIX_EPOCH},
-    };
-
-    let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-    let directory = std::env::temp_dir().join(format!(
-        "Bonsai-NativeDriver-{}-{nonce}",
-        std::process::id()
-    ));
-    fs::create_dir(&directory)?;
-    let artifact = DriverArtifact {
-        path: directory.join("fixture.gguf"),
-        directory,
-    };
-    let bytes = wire_model(&fixture(false))?;
-    fs::write(&artifact.path, &bytes)?;
-    let digest: String = Sha256::digest(&bytes)
-        .into_iter()
-        .flat_map(|byte| [byte >> 4, byte & 15])
-        .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
-        .collect();
+    let mut model = fixture(false);
+    model.metadata.insert(
+        "tokenizer.ggml.eos_token_id".to_owned(),
+        MetadataValue::U32(0),
+    );
+    let artifact = DriverArtifact::new(&model)?;
     for (backend, state_bytes, valid_digest, success) in [
         (None, None, true, true),
         (Some("auto"), None, true, true),
@@ -1507,32 +1560,7 @@ fn native_driver_executes_verified_synthetic_gguf_and_enforces_state_budget() ->
         (None, Some(127), true, false),
         (None, None, false, false),
     ] {
-        let sha = if valid_digest {
-            digest.clone()
-        } else {
-            "0".repeat(64)
-        };
-        let mut command = Command::new(env!("CARGO_BIN_EXE_bonsai-prism-runtime"));
-        command
-            .current_dir(&artifact.directory)
-            .arg("--model")
-            .arg(&artifact.path)
-            .args([
-                "--bytes",
-                &bytes.len().to_string(),
-                "--sha256",
-                &sha,
-                "--memory-bytes",
-                "8388608",
-                "--context",
-                "16",
-                "--checkpoint-bytes",
-                "1048576",
-                "--max-tokens",
-                "2",
-                "--tokens",
-                "0,1",
-            ]);
+        let mut command = artifact.command(2, valid_digest);
         if let Some(backend) = backend {
             command.args(["--backend", backend, "--timeout-seconds", "60"]);
         }
@@ -1564,6 +1592,7 @@ fn native_driver_executes_verified_synthetic_gguf_and_enforces_state_budget() ->
                         "prompt_tokens": 2,
                         "generated_tokens": 2,
                         "reused_tokens": 0,
+                        "stop_tokens": [0],
                         "backend_requested": backend.unwrap_or("auto"),
                         "state_budget_bytes": state_bytes.unwrap_or(bonsai_prism_runtime::graph::MAX_STATE_BYTES),
                         "prefill_block_tokens": if backend == Some("neon") { 4 } else { 1 },
@@ -1609,6 +1638,147 @@ fn native_driver_executes_verified_synthetic_gguf_and_enforces_state_budget() ->
                 assert!(String::from_utf8_lossy(&output.stderr).contains("state budget"));
             }
         }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "cli")]
+fn text_driver_fixture(eos: u32) -> Model {
+    let mut model = fixture(false);
+    for (key, value) in [
+        ("tokenizer.ggml.model", metadata!("gpt2")),
+        ("tokenizer.ggml.pre", metadata!("qwen35")),
+        ("tokenizer.ggml.tokens", metadata!(["a", "Ġb"])),
+        (
+            "tokenizer.ggml.token_type",
+            MetadataValue::Array(MetadataArray::I32(vec![1, 1])),
+        ),
+        ("tokenizer.ggml.eos_token_id", MetadataValue::U32(eos)),
+    ] {
+        model.metadata.insert(key.to_owned(), value);
+    }
+    model
+}
+
+#[cfg(feature = "cli")]
+fn driver_records(output: std::process::Output) -> Result<Vec<Value>> {
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(String::from_utf8(output.stdout)?
+        .lines()
+        .map(serde_json::from_str::<Value>)
+        .collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
+#[cfg(feature = "cli")]
+#[test]
+fn native_driver_streams_verified_vocabulary_bytes_and_text() -> Result<()> {
+    let artifact = DriverArtifact::new(&text_driver_fixture(0))?;
+    let records = driver_records(
+        artifact
+            .command(1, true)
+            .args(["--output", "text"])
+            .output()?,
+    )?;
+    assert_eq!(records.len(), 2);
+    assert_eq!(
+        records[0],
+        serde_json::json!({"token": 1, "bytes": [32, 98], "text": " b", "special": false})
+    );
+    let completion = &records[1];
+    assert_eq!(completion["finish_reason"], "length");
+    assert_eq!(completion["prompt_tokens"], 2);
+    assert_eq!(completion["generated_tokens"], 1);
+    assert_eq!(completion["stop_tokens"], serde_json::json!([0]));
+    assert_eq!(completion["text"], "");
+    Ok(())
+}
+
+#[cfg(feature = "cli")]
+#[test]
+fn native_driver_stops_on_model_ids_and_additive_deduplicated_user_ids() -> Result<()> {
+    for (eos, other_stop, user_stops) in [
+        (1, None, None),
+        (0, Some("tokenizer.ggml.eot_token_id"), None),
+        (0, Some("tokenizer.ggml.eom_token_id"), None),
+        (0, None, Some("1,0,1")),
+    ] {
+        let mut model = text_driver_fixture(eos);
+        if let Some(key) = other_stop {
+            model.metadata.insert(key.to_owned(), MetadataValue::U32(1));
+        }
+        let artifact = DriverArtifact::new(&model)?;
+        let mut command = artifact.command(2, true);
+        if let Some(ids) = user_stops {
+            command.args(["--stop-tokens", ids]);
+        }
+        let records = driver_records(command.output()?)?;
+        assert_eq!(records.len(), 1);
+        let completion = &records[0];
+        assert_eq!(completion["finish_reason"], "stop");
+        assert_eq!(completion["prompt_tokens"], 2);
+        assert_eq!(completion["generated_tokens"], 0);
+        assert_eq!(
+            completion["stop_tokens"],
+            if eos == 1 {
+                serde_json::json!([1])
+            } else {
+                serde_json::json!([0, 1])
+            }
+        );
+        assert!(completion.get("text").is_none());
+        assert!(completion.get("token").is_none());
+    }
+    Ok(())
+}
+
+#[cfg(feature = "cli")]
+#[test]
+fn native_driver_rejects_missing_mistyped_and_out_of_vocabulary_model_eos() -> Result<()> {
+    for eos in [
+        None,
+        Some(MetadataValue::U64(0)),
+        Some(metadata!("0")),
+        Some(MetadataValue::U32(2)),
+    ] {
+        let mut model = fixture(false);
+        if let Some(eos) = eos {
+            model
+                .metadata
+                .insert("tokenizer.ggml.eos_token_id".to_owned(), eos);
+        }
+        let artifact = DriverArtifact::new(&model)?;
+        let output = artifact.command(2, true).output()?;
+        assert!(!output.status.success());
+        assert_eq!(output.stdout, Vec::<u8>::new());
+        assert_ne!(output.stderr, Vec::<u8>::new());
+    }
+    Ok(())
+}
+
+#[cfg(feature = "cli")]
+#[test]
+fn native_driver_rejects_text_vocabulary_mismatch_before_emitting() -> Result<()> {
+    for (key, value) in [
+        ("tokenizer.ggml.tokens", metadata!(["a"])),
+        (
+            "tokenizer.ggml.token_type",
+            MetadataValue::Array(MetadataArray::I32(vec![1])),
+        ),
+    ] {
+        let mut model = text_driver_fixture(0);
+        model.metadata.insert(key.to_owned(), value);
+        let artifact = DriverArtifact::new(&model)?;
+        let output = artifact
+            .command(2, true)
+            .args(["--output", "text"])
+            .output()?;
+        assert!(!output.status.success());
+        assert_eq!(output.stdout, Vec::<u8>::new());
+        assert_ne!(output.stderr, Vec::<u8>::new());
     }
     Ok(())
 }
