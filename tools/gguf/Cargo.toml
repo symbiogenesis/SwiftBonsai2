@@ -24,5 +24,8 @@ bonsai-ternary = { path = "../ternary", optional = true }
 serde_json = { workspace = true, optional = true }
 sha2.workspace = true
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true

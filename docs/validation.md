@@ -54,6 +54,46 @@ owned build directory.
 Validation entry points named `Test-*` live under `tests/` alongside the
 regressions; reusable operational modules remain under `scripts/`.
 
+## Cargo test dependency review
+
+The October 24, 2026 review checked all 12 workspace package manifests, test and
+example imports, enabled features and locked registry packages against crates.io.
+All direct third-party dependencies use exact pins. Production dependencies also
+support unit/integration tests; the direct test-specific choices are:
+
+| Dependency | Decision and purpose |
+| --- | --- |
+| `tokio` 1.54.1 | Keep the current release and `test-util` for deterministic paused-clock tests. Its feature already enables `rt`; the duplicate dev feature was removed. |
+| `serde_json` 1.0.154 | Keep the current release for protocol assertions, fixtures and retained upstream reports. |
+| `sha2` 0.11.1 | Keep the current release, with default features disabled, for immutable fixture identities. |
+| `zip` 9.1.0 | Upgrade from 9.0.5 and share one workspace declaration between the artifact verifier and maintenance test fixtures. Keep only `deflate-flate2-zlib-rs`, with defaults disabled. |
+| `tempfile` 3.27.0 | Use owned temporary directories for GGUF export fixtures, replacing timestamp naming and leaked test outputs. Disable its optional OS RNG feature; these synthetic fixtures contain no secrets. Explicit successful cleanup reports errors; drop also cleans early returns. |
+| `cbindgen` 0.29.4 | Keep the current optional build dependency for native Prism test declarations, with its unused CLI defaults disabled. |
+
+The remaining direct dependencies (`serde` 1.0.229, `http` 1.5.0, `httparse`
+1.10.1, `subtle` 2.6.1, `windows-sys` 0.61.2 and `fearless_simd` 1.1.0) were
+already at their latest stable releases. Keep standard assertions and explicit
+process supervision: replacing them with a test framework adds no demonstrated
+coverage or reliability benefit. Preserve intentionally retained native/bridge
+evidence and Windows handle-release fixtures.
+
+The ZIP update also advances `typed-path` from 0.12.4 to 0.13.0. Its newly locked
+WebAssembly support packages are target-specific dependencies, not enabled ZIP
+compression features or Windows build requirements. Older major lines of `syn`,
+`toml`, `toml_datetime`, `winnow`, `r-efi`, `wasi` and `windows-link` remain
+constrained by their parents (`cbindgen`, `toml`, `getrandom`, `mio` and
+`windows-sys`). Do not force incompatible versions with patches. Re-resolve the
+lockfile when the parents support those versions. The all-features graph contains
+70 registry packages; the [OSV database](https://osv.dev/) returned no advisories
+for those exact versions on the review date. Every package declares a license.
+
+Release and API references: [ZIP 9.1.0 changelog](https://github.com/zip-rs/zip2/blob/v9.1.0/CHANGELOG.md),
+[Tokio features](https://docs.rs/crate/tokio/1.54.1/features) and
+[TempDir cleanup](https://docs.rs/tempfile/3.27.0/tempfile/struct.TempDir.html).
+Local validation should exercise deflated archive verification, GGUF export and
+paused-clock scheduling, plus a named [upstream C++ adapter](prism-upstream-tests.md).
+Complete suites remain the main-branch Foundation workflow's responsibility.
+
 ## Focused local checks
 
 Run from native Windows ARM64 PowerShell 7.6+. Keep scratch scripts, logs, captures

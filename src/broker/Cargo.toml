@@ -23,7 +23,7 @@ bonsai-windows-process = { path = "../windows-process" }
 bonsai-windows-credentials = { path = "../windows-credentials" }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["rt", "test-util"] }
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

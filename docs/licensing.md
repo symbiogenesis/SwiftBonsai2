@@ -22,11 +22,11 @@ Dependency terms apply independently of the application's license.
 
 | Material | Declared terms | Distribution requirements |
 | --- | --- | --- |
-| `http`, `httparse`, `serde`, `serde_json`, `sha2`, `windows-sys` | MIT OR Apache-2.0 | Retain the applicable license and attribution. |
+| `http`, `httparse`, `serde`, `serde_json`, `sha2`, `windows-sys`, `tempfile` | MIT OR Apache-2.0 | Retain the applicable license and attribution. |
 | `tokio` 1.54.1 | MIT | Retain copyright and permission notice. |
 | `fearless_simd` 1.1.0 | Apache-2.0 OR MIT | Optional native ARM64 Windows kernels; retain applicable license/attribution. |
 | `subtle` 2.6.1 | BSD-3-Clause | Retain copyright, conditions and disclaimer; respect non-endorsement. |
-| `zip` 9.0.5 | MIT | Retain the notice; enabled deflate dependencies also have permissive options. |
+| `zip` 9.1.0 | MIT | Retain the notice; enabled deflate dependencies also have permissive options. |
 | `zlib-rs` | Zlib | Retain source notices and identify altered versions. |
 | `unicode-ident` | (MIT OR Apache-2.0) AND Unicode-3.0 | Include Unicode-3.0 notices as well as the selected code license. |
 | `r-efi` | MIT OR Apache-2.0 OR LGPL-2.1-or-later | A permissive alternative is available; LGPL is not required. |

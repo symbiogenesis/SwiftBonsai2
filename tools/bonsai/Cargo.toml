@@ -25,4 +25,4 @@ bonsai-windows-credentials = { path = "../../src/windows-credentials" }
 workspace = true
 
 [dev-dependencies]
-zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip.workspace = true

@@ -10,7 +10,7 @@ description = "Offline bounded artifact verification with retained Windows file 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 sha2.workspace = true
-zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip.workspace = true
 
 [lints]
 workspace = true

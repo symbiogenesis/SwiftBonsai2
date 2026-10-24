@@ -4,15 +4,15 @@
 #![cfg(feature = "report")]
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::path::Path;
+use std::time::Duration;
 
 use bonsai_gguf::{
     CODEC_COMMIT, MetadataArray, MetadataValue, PRISM_DIALECT, Result, VerifiedModel, export_ptq1,
     inspect,
 };
 use sha2::{Digest, Sha256};
+use tempfile::{Builder, TempDir};
 
 struct Fixture {
     bytes: Vec<u8>,
@@ -112,16 +112,8 @@ fn fixture(large_blocks: usize, file_type_tag: u32) -> Result<Fixture> {
     })
 }
 
-fn scratch() -> Result<PathBuf> {
-    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
-    let sequence = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "SwiftBonsai-GgufExport-{}-{nonce}-{sequence}",
-        std::process::id()
-    ));
-    fs::create_dir(&path)?;
-    Ok(path)
+fn scratch() -> Result<TempDir> {
+    Ok(Builder::new().prefix("SwiftBonsai-GgufExport-").tempdir()?)
 }
 
 fn sha(bytes: &[u8]) -> String {
@@ -166,7 +158,7 @@ fn check_retained_metadata(metadata: &bonsai_gguf::Metadata, long_text: &str) {
 #[test]
 fn inspection_cursor_preserves_offsets_and_hashes_across_metadata_paths() -> Result<()> {
     let scratch = scratch()?;
-    let source = scratch.join("metadata.gguf");
+    let source = scratch.path().join("metadata.gguf");
     let mut bytes = Vec::new();
     u32_bytes(&mut bytes, 0x4655_4747);
     u32_bytes(&mut bytes, 3);
@@ -261,15 +253,15 @@ fn inspection_cursor_preserves_offsets_and_hashes_across_metadata_paths() -> Res
     let length = u64::try_from(bytes.len())?;
     assert!(inspect(&source, "Stock", false, length, &digest).is_err());
     assert!(VerifiedModel::open(&source, "Stock", length, &digest, 8 * 1024 * 1024).is_err());
-    fs::remove_dir_all(scratch)?;
+    scratch.close()?;
     Ok(())
 }
 
 #[test]
 fn streamed_export_matches_independent_wire_bytes_across_batch_boundary() -> Result<()> {
     let scratch = scratch()?;
-    let source = scratch.join("source.gguf");
-    let output = scratch.join("export.gguf");
+    let source = scratch.path().join("source.gguf");
+    let output = scratch.path().join("export.gguf");
     let fixture = fixture(1928, 4)?;
     fs::write(&source, &fixture.bytes)?;
     let report = convert(&source, &output, &fixture.bytes)?;
@@ -337,20 +329,21 @@ fn streamed_export_matches_independent_wire_bytes_across_batch_boundary() -> Res
         inspected["TokenizerMetadataSha256"],
         report["TokenizerMetadataSha256"]
     );
+    scratch.close()?;
     Ok(())
 }
 
 #[test]
 fn late_invalid_symbol_retains_partial_and_existing_destination_is_preserved() -> Result<()> {
     let scratch = scratch()?;
-    let source = scratch.join("source.gguf");
-    let output = scratch.join("export.gguf");
+    let source = scratch.path().join("source.gguf");
+    let output = scratch.path().join("export.gguf");
     let mut fixture = fixture(1, 4)?;
     fixture.bytes[fixture.data_offset + fixture.last_offset + 2] = 0xff;
     fs::write(&source, &fixture.bytes)?;
     assert!(convert(&source, &output, &fixture.bytes).is_err());
     assert!(!output.exists());
-    let partials = fs::read_dir(&scratch)?
+    let partials = fs::read_dir(scratch.path())?
         .collect::<std::result::Result<Vec<_>, _>>()?
         .into_iter()
         .filter(|entry| {
@@ -365,14 +358,15 @@ fn late_invalid_symbol_retains_partial_and_existing_destination_is_preserved() -
     fs::write(&output, b"existing output evidence")?;
     assert!(convert(&source, &output, &fixture.bytes).is_err());
     assert_eq!(fs::read(&output)?, b"existing output evidence");
+    scratch.close()?;
     Ok(())
 }
 
 #[test]
 fn signed_file_type_with_same_numeric_value_cannot_be_rewritten() -> Result<()> {
     let scratch = scratch()?;
-    let source = scratch.join("source.gguf");
-    let output = scratch.join("export.gguf");
+    let source = scratch.path().join("source.gguf");
+    let output = scratch.path().join("export.gguf");
     let fixture = fixture(1, 5)?; // INT32, whose JSON number also equals 141.
     fs::write(&source, &fixture.bytes)?;
     let error = convert(&source, &output, &fixture.bytes)
@@ -380,13 +374,14 @@ fn signed_file_type_with_same_numeric_value_cannot_be_rewritten() -> Result<()> 
         .ok_or("signed file type was accepted")?;
     assert!(error.to_string().contains("UINT32"));
     assert!(!output.exists());
+    scratch.close()?;
     Ok(())
 }
 
 #[test]
 fn census_counts_raw_symbols_across_batches_and_disqualifies_invalid_scales() -> Result<()> {
     let scratch = scratch()?;
-    let source = scratch.join("census.gguf");
+    let source = scratch.path().join("census.gguf");
     let mut fixture = fixture(1928, 4)?;
     // One block has a zero scale and every possible raw code in its first byte.
     // It still contributes raw symbols; a zero scale must not recode them.
@@ -415,5 +410,6 @@ fn census_counts_raw_symbols_across_batches_and_disqualifies_invalid_scales() ->
     assert_eq!(census["Scales"], 1929);
     assert_eq!(census["ScaleBytes"], 1929 * 2);
     assert_eq!(census["PayloadBufferBytes"], 65_536);
+    scratch.close()?;
     Ok(())
 }
