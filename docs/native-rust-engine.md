@@ -89,7 +89,10 @@ task time separately, accounting for bandwidth and the measured critical path.
 
 - [ ] **R5 — Complete runtime and broker integration.** Bounded conversation
   ownership, checkpoints, prefix restoration, streaming, cancellation, reset and
-  rollback are implemented at token level. Integrate broker count/completion/
+  rollback are implemented at token level. Absolute generation deadlines use
+  the same transaction rollback; checks surround synchronous decoder work and
+  delivery, so an in-progress operation must return before expiry is detected.
+  Integrate broker count/completion/
   readiness, authentication, Host/Origin/routes, process ownership and resource
   admission. Retain strict Rust standards; keep OS/device or future unsafe SIMD
   calls behind audited safe boundaries. Exit with native Windows ARM64 builds,

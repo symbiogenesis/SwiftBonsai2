@@ -464,7 +464,6 @@ pub struct Qwen35 {
     context_limit: usize,
     position: usize,
     vocabulary: usize,
-    requested_backend: MatvecBackend,
 }
 
 impl Qwen35 {
@@ -793,7 +792,6 @@ impl Qwen35 {
             context_limit,
             position: 0,
             vocabulary,
-            requested_backend: backend,
         })
     }
 
@@ -804,7 +802,7 @@ impl Qwen35 {
     /// Checkpoint restoration and reset preserve this request.
     #[must_use]
     pub const fn requested_backend(&self) -> MatvecBackend {
-        self.requested_backend
+        self.workspace.projection.matvec.requested_backend()
     }
 
     #[allow(

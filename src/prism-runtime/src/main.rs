@@ -9,13 +9,22 @@ use bonsai_prism_runtime::{
     runtime::{Cancellation, Finish, Generation, Limits, Runtime},
 };
 use serde_json::json;
-use std::{collections::BTreeMap, io::Write, path::PathBuf, process::ExitCode};
+use std::{
+    collections::BTreeMap,
+    io::Write,
+    path::PathBuf,
+    process::ExitCode,
+    time::{Duration, Instant},
+};
 
 const USAGE: &str = "Native CPU reference; full-model parity and performance are unqualified.\n\
 Usage: bonsai-prism-runtime --model <absolute-gguf-path> --bytes <u64>\n\
   --sha256 <64-hex> --memory-bytes <usize> --context <1..262144>\n\
   --checkpoint-bytes <usize> --max-tokens <usize> --tokens <id,id,...>\n\
   [--stop-tokens <id,id,...>] [--backend <auto|scalar|neon>]\n\
+  [--timeout-seconds <1..3600>]\n\
+Timeout covers generation after loading. Checks are cooperative between operations;\n\
+streamed tokens are provisional until the final completion record.\n\
 Backend defaults to auto. NEON requires the experimental-neon feature and\n\
 native Windows ARM64 MSVC; unsupported builds, targets and formats use scalar.\n\
 Selection is per matrix operation; backend_requested reports only the request.\n\
@@ -31,6 +40,7 @@ struct Arguments {
     generation: Generation,
     tokens: Vec<u32>,
     backend: MatvecBackend,
+    timeout: Option<Duration>,
 }
 
 fn bad(message: &'static str) -> bonsai_prism_runtime::Error {
@@ -53,6 +63,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
                 | "--tokens"
                 | "--stop-tokens"
                 | "--backend"
+                | "--timeout-seconds"
         ) || values.contains_key(&key)
         {
             return Err(bad("unknown or repeated option"));
@@ -104,6 +115,23 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         "neon" => MatvecBackend::ExperimentalNeon,
         _ => return Err(bad("backend must be auto, scalar or neon")),
     };
+    let timeout = values
+        .remove("--timeout-seconds")
+        .map(|value| -> Result<Duration> {
+            if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(bad(
+                    "timeout seconds must be an integer from 1 through 3600",
+                ));
+            }
+            let seconds = value.parse::<u64>()?;
+            if !(1..=3600).contains(&seconds) {
+                return Err(bad(
+                    "timeout seconds must be an integer from 1 through 3600",
+                ));
+            }
+            Ok(Duration::from_secs(seconds))
+        })
+        .transpose()?;
     Ok(Arguments {
         path,
         bytes,
@@ -117,6 +145,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         },
         tokens,
         backend,
+        timeout,
     })
 }
 
@@ -153,17 +182,32 @@ fn execute(arguments: &Arguments) -> Result<()> {
         },
     )?;
     let mut output = std::io::stdout().lock();
-    let result = runtime.generate(
-        &arguments.tokens,
-        &arguments.generation,
-        &Cancellation::default(),
-        |token| {
-            serde_json::to_writer(&mut output, &json!({"token": token}))?;
-            output.write_all(b"\n")?;
-            output.flush()?;
-            Ok(())
-        },
-    )?;
+    let cancellation = Cancellation::default();
+    let emit = |token| {
+        serde_json::to_writer(&mut output, &json!({"token": token}))?;
+        output.write_all(b"\n")?;
+        output.flush()?;
+        Ok(())
+    };
+    let result = if let Some(timeout) = arguments.timeout {
+        let deadline = Instant::now()
+            .checked_add(timeout)
+            .ok_or_else(|| bad("generation deadline exceeds monotonic clock bounds"))?;
+        runtime.generate_until(
+            &arguments.tokens,
+            &arguments.generation,
+            &cancellation,
+            deadline,
+            emit,
+        )?
+    } else {
+        runtime.generate(
+            &arguments.tokens,
+            &arguments.generation,
+            &cancellation,
+            emit,
+        )?
+    };
     serde_json::to_writer(
         &mut output,
         &json!({
@@ -207,7 +251,7 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{MatvecBackend, Result, bad, parse};
+    use super::{Duration, MatvecBackend, Result, bad, parse};
 
     fn arguments() -> Vec<String> {
         [
@@ -326,5 +370,41 @@ mod tests {
             input.extend(["--backend", "scalar", "--backend", second].map(str::to_owned));
             assert!(parse(input).is_err());
         }
+    }
+
+    #[test]
+    fn cli_timeout_accepts_bounded_seconds_and_preserves_default() -> Result<()> {
+        assert_eq!(parse(arguments())?.timeout, None);
+        for seconds in [1, 3600] {
+            let mut input = arguments();
+            input.extend(["--timeout-seconds".to_owned(), seconds.to_string()]);
+            assert_eq!(parse(input)?.timeout, Some(Duration::from_secs(seconds)));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn cli_timeout_rejects_invalid_repeated_and_missing_values() {
+        for value in [
+            "",
+            "0",
+            "3601",
+            "-1",
+            "+1",
+            "1.5",
+            " 1",
+            "1s",
+            "18446744073709551616",
+        ] {
+            let mut input = arguments();
+            input.extend(["--timeout-seconds".to_owned(), value.to_owned()]);
+            assert!(parse(input).is_err());
+        }
+        let mut input = arguments();
+        input.push("--timeout-seconds".to_owned());
+        assert!(parse(input).is_err());
+        let mut input = arguments();
+        input.extend(["--timeout-seconds", "1", "--timeout-seconds", "2"].map(str::to_owned));
+        assert!(parse(input).is_err());
     }
 }

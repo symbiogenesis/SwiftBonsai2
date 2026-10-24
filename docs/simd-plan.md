@@ -14,10 +14,14 @@ The default `experimental-neon` feature enables target-only
 [`fearless_simd` 1.1.0][fearless]. Its safe core API works under the runtime's
 `forbid(unsafe_code)` without a procedural macro or local unsafe allowance.
 `MatvecBackend::Auto` selects once per matrix operation; the Qwen35 graph and
-token driver inherit that default. Force scalar through
-`MatvecScratch::with_backend(MatvecBackend::Scalar)`; explicit
-`ExperimentalNeon` requests also remain supported. `selected_backend()` reports
-the actual backend. Detailed fallback reasons/build logging are pending.
+token driver inherit that default. Select a graph policy through
+`Qwen35::with_backend` or the driver's `--backend auto|scalar|neon` option.
+The completion record reports `backend_requested`, which describes the policy
+rather than a whole-graph effective backend. Floating projections and ineligible
+packed operations still use scalar. At the kernel level,
+`MatvecScratch::with_backend(MatvecBackend::Scalar)` forces scalar and
+`selected_backend()` reports the last matrix operation's actual backend.
+Detailed fallback reasons/build logging are pending.
 
 Eligibility requires `aarch64-pc-windows-msvc`, the feature and ambient baseline
 NEON. Complete PQ2/PTQ1 rows use packed kernels; other formats/targets and

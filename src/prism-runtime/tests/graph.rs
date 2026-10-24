@@ -1280,7 +1280,7 @@ fn native_driver_executes_verified_synthetic_gguf_and_rejects_wrong_digest() -> 
                 "0,1",
             ]);
         if let Some(backend) = backend {
-            command.args(["--backend", backend]);
+            command.args(["--backend", backend, "--timeout-seconds", "60"]);
         }
         let output = command.output()?;
         assert_eq!(

@@ -642,6 +642,15 @@ impl MatvecScratch {
         }
     }
 
+    /// Configured dispatch policy, preserved across preparation and failures.
+    ///
+    /// Individual operations may select scalar fallback. Use
+    /// [`Self::selected_backend`] for the last operation's actual selection.
+    #[must_use]
+    pub const fn requested_backend(&self) -> MatvecBackend {
+        self.requested_backend
+    }
+
     /// Returns the backend selected for the most recent matrix operation.
     ///
     /// Initially scalar. Selection resets for every call, including failed calls;

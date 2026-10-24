@@ -26,6 +26,10 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   operations and rollback after evaluation or delivery failure. Streamed tokens
   are provisional until success. Failed restore preserves the public committed
   token prefix and closes admission until reset succeeds.
+- `Runtime::generate_until` accepts an absolute monotonic deadline and rolls
+  back expiry through the same transaction. Checks surround decoder operations
+  and stream callbacks; synchronous work must return before expiry is detected,
+  and rollback itself must complete before the method returns.
 - Stable `Decoder::evaluate_into` reuses caller-owned logits; `evaluate` remains
   available. Qwen35 retains bounded graph/kernel scratch and stages per-layer
   state deltas. Outputs are shape/finiteness checked; errors clear direct output.
@@ -83,6 +87,11 @@ identity syntax, positive bounds, prompt-plus-generation capacity and the
 256-stop-token limit before model I/O; vocabulary checks follow verified loading.
 Supply exact stop IDs with `--stop-tokens` and token IDs from the reference
 tokenizer. Output is one JSON token object per line followed by accounting.
+Optional `--timeout-seconds <1..3600>` bounds generation from immediately before
+the runtime request, including prefill, delivery and checkpoint work. Model
+verification/loading and graph construction precede that deadline. Omit the
+option to retain cancellation-only behavior. A timeout fails the command;
+already streamed tokens are provisional and no success record follows.
 The driver does not tokenize, implement stochastic sampling, launch the broker
 or promote a profile.
 
@@ -112,6 +121,11 @@ divisible by 256 retain Q8_K; odd-group PQ2 and PTQ1 retain four Q8_0 scales per
 128 weights. Unsupported cases fall back to scalar, which also runs natively
 on ARM64. Force it with `MatvecScratch::with_backend(MatvecBackend::Scalar)`;
 `selected_backend()` reports actual selection.
+
+Use `Qwen35::with_backend` or the token driver's `--backend auto|scalar|neon`
+to apply that policy to the graph's retained projection scratch. The completion
+record's `backend_requested` reports the requested policy. It does not claim
+every projection used that backend; unsupported operations still use scalar.
 
 Target-only `fearless_simd` 1.1.0 uses safe core APIs under unchanged
 `forbid(unsafe_code)`. Direct packed decode preserves scalar quantization and
