@@ -137,7 +137,7 @@ inline void validate(const json & operation) {
             require(live.count(target) == 0, "clone target already exists");
             live.insert(target);
         } else if (action_kind == "state" || action_kind == "force" || action_kind == "end-match" ||
-                   action_kind == "reset" || action_kind == "free") {
+                   action_kind == "free") {
             fields(action, {"Kind", "Sampler"});
             if (action_kind == "free" && !is_null) {
                 live.erase(sampler);
@@ -218,8 +218,6 @@ inline json execute(const json & operation) {
         } else if (kind == "end-match") {
             const auto * match = common_reasoning_budget_get_end_match(sampler);
             event = json{{"EndMatch", match ? json(*match) : json(nullptr)}};
-        } else if (kind == "reset") {
-            llama_sampler_reset(sampler);
         } else if (kind == "free") {
             if (is_null) {
                 llama_sampler_free(nullptr);

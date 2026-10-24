@@ -150,9 +150,6 @@ inline void validate(const json & operation) {
             fields(action, {"Kind", "Sampler", "Candidates"}); require(candidates.count(u32(action.at("Candidates"), 31)), "unknown apply candidates");
         } else if (kind == "accept") {
             fields(action, {"Kind", "Sampler", "Token"}); i32(action.at("Token"));
-        } else if (kind == "clone") {
-            fields(action, {"Kind", "Sampler", "Target"}); const auto target = u32(action.at("Target"), 31);
-            require(!samplers.count(target), "sampler clone target exists"); samplers.insert(target);
         } else if (kind == "reset" || kind == "free-sampler") {
             fields(action, {"Kind", "Sampler"}); if (kind == "free-sampler") samplers.erase(id);
         } else throw std::runtime_error("unknown sampler action");
@@ -230,9 +227,7 @@ inline json execute(const json & operation) {
                 require(storage.view.size > 0, "cannot apply sampler to empty candidate view"); llama_sampler_apply(sampler, &storage.view); storage.offset();
             } else if (kind == "accept") llama_sampler_accept(sampler, i32(action.at("Token")));
             else if (kind == "reset") llama_sampler_reset(sampler);
-            else if (kind == "clone") {
-                auto & clone = samplers[u32(action.at("Target"), 31)]; clone.reset(llama_sampler_clone(sampler)); require(bool(clone), "production sampler clone returned null");
-            } else samplers[id].reset();
+            else samplers[id].reset();
         }
         trace.push_back(std::move(event));
     }
