@@ -21,7 +21,7 @@ together. Continued use of nightly requires an actual remaining compiler need.
 Track the [next-solver stabilization](https://github.com/rust-lang/rust/pull/164209)
 and [Polonius promotion](https://github.com/rust-lang/goals/issues/118) as upgrade signals.
 
-Rust is the default for repository-owned systems components. The broker, CPU policy, codecs,
+Rust is the default for repository-owned systems components. The broker, artifact verification, CPU policy, codecs,
 GGUF tools, maintenance tool and native CPU reference forbid unsafe code. Unsafe
 operations are confined to documented Win32 boundaries in `bonsai-windows-process`
 and `bonsai-windows-credentials`, plus Prism's C ABI/loader and native test bindings.
@@ -149,6 +149,11 @@ for focused local comparisons.
 Frozen pre-port PowerShell policies and full argument vectors check the shared
 CPU policy and paired-evaluation invocation builder. Script regressions exercise
 the packaged JSON boundary without loading models.
+
+Synthetic archive/PE fixtures check the shared artifact verifier. Windows
+regressions exercise existing writers, cancellation, installation drift, and
+write/delete/rename denial until guards drop. A supervised synthetic child checks
+runtime handles remain live through execution and release after exit.
 
 Synthetic fixtures establish policy, numerical and ownership contracts. They do
 not establish full-model parity, allocation counts, throughput, latency, power,

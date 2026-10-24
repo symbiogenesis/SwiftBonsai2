@@ -23,7 +23,7 @@ runs:
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ${{ env.BONSAI_TOOLS_TARGET }}
-        key: bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/bonsai/**', 'src/cpu-policy/**', 'src/windows-*/**', 'config/**/*.json', 'rust-toolchain.toml') }}
+        key: bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/bonsai/**', 'src/cpu-policy/**', 'src/artifacts/**', 'src/windows-*/**', 'config/**/*.json', 'rust-toolchain.toml') }}
         restore-keys: |
           bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-
     - name: Build the packaged CLI and select it for script invocations

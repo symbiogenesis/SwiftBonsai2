@@ -8,6 +8,7 @@ license.workspace = true
 description = "Bounded development chat transport and request supervision for the Bonsai broker"
 
 [dependencies]
+bonsai-artifacts = { path = "../artifacts" }
 bonsai-cpu-policy = { path = "../cpu-policy" }
 http = "=1.5.0"
 httparse = "=1.10.1"
@@ -16,7 +17,6 @@ serde_json.workspace = true
 sha2.workspace = true
 subtle = "=2.6.1"
 tokio = { workspace = true, features = ["io-util", "net", "rt", "signal", "sync", "time"] }
-zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [target.'cfg(windows)'.dependencies]
 bonsai-windows-process = { path = "../windows-process" }

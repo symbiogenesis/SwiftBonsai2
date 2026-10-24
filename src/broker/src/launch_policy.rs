@@ -5,8 +5,8 @@
 use serde::Deserialize;
 use std::{
     ffi::OsString,
-    fmt, fs,
-    path::{Component, Path, PathBuf},
+    fmt,
+    path::{Path, PathBuf},
 };
 
 const LOCK_JSON: &str = include_str!("../../../config/runtime.lock.json");
@@ -601,59 +601,7 @@ fn validate_profile(input: &str) -> Result<(), PolicyError> {
 /// # Errors
 /// Rejects nonabsolute, namespace, ADS, unresolved-variable, Git and reparse paths.
 pub fn validate_external_path(path: &Path) -> Result<(), PolicyError> {
-    let spelling = path.to_str().ok_or(PolicyError::Path)?;
-    if !path.is_absolute()
-        || spelling.contains('%')
-        || spelling.contains('\0')
-        || path
-            .components()
-            .any(|part| matches!(part, Component::ParentDir | Component::CurDir))
-    {
-        return Err(PolicyError::Path);
-    }
-    #[cfg(windows)]
-    {
-        use std::path::Prefix;
-        let Some(Component::Prefix(prefix)) = path.components().next() else {
-            return Err(PolicyError::Path);
-        };
-        if !matches!(prefix.kind(), Prefix::Disk(_))
-            || spelling.get(2..).is_none_or(|rest| rest.contains(':'))
-            || path.parent().is_none()
-        {
-            return Err(PolicyError::Path);
-        }
-    }
-    for ancestor in path.ancestors() {
-        match fs::symlink_metadata(ancestor) {
-            Ok(metadata) => {
-                if is_redirect(&metadata) {
-                    return Err(PolicyError::Path);
-                }
-                if metadata.is_dir() {
-                    match fs::symlink_metadata(ancestor.join(".git")) {
-                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                        _ => return Err(PolicyError::Path),
-                    }
-                }
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err(PolicyError::Path),
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn is_redirect(metadata: &fs::Metadata) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        metadata.file_attributes() & 0x400 != 0
-    }
-    #[cfg(not(windows))]
-    {
-        metadata.file_type().is_symlink()
-    }
+    bonsai_artifacts::validate_external_path(path).map_err(|_| PolicyError::Path)
 }
 
 #[cfg(test)]

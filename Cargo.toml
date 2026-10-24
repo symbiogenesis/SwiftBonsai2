@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "src/broker",
+    "src/artifacts",
     "src/cpu-policy",
     "src/windows-process",
     "src/windows-credentials",

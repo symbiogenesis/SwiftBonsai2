@@ -18,9 +18,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "bonsai-artifacts"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sha2",
+ "zip",
+]
+
+[[package]]
 name = "bonsai-broker"
 version = "0.1.0"
 dependencies = [
+ "bonsai-artifacts",
  "bonsai-cpu-policy",
  "bonsai-windows-credentials",
  "bonsai-windows-process",
@@ -31,7 +41,6 @@ dependencies = [
  "sha2",
  "subtle",
  "tokio",
- "zip",
 ]
 
 [[package]]
@@ -91,12 +100,14 @@ version = "0.1.0"
 name = "bonsai-tools"
 version = "0.1.0"
 dependencies = [
+ "bonsai-artifacts",
  "bonsai-cpu-policy",
  "bonsai-windows-credentials",
  "bonsai-windows-process",
  "serde",
  "serde_json",
  "sha2",
+ "zip",
 ]
 
 [[package]]

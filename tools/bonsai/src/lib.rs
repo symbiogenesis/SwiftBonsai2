@@ -10,5 +10,8 @@ pub mod credentials;
 /// Bounded completion supervision with retained process and artifact ownership.
 pub mod completion;
 
+/// Offline runtime verification and bounded probes with retained artifact guards.
+pub mod runtime;
+
 /// Fixed qualification plans, canonical identities, and offline gate scoring.
 pub mod qualification;

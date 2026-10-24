@@ -92,7 +92,7 @@ if ($available -lt $report.RequiredAvailableBytes) {
 }
 if ($CheckOnly -or $report.Status -ne 'admission-passed') { return [pscustomobject]$report }
 
-$runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly
+$runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly -ToolPath $ToolPath
 if ($runtime.Commit -cne $lock.runtime.commit) { throw 'Installed runtime and compiled CPU plan disagree.' }
 if ($UseAbliterateLora) {
     $adapter = & (Join-Path $PSScriptRoot 'Get-Adapter.ps1') -DataDirectory $data -VerifyOnly
@@ -111,7 +111,7 @@ $report['EvidenceDirectory'] = $scratch
 try {
     $supervision = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
         schemaVersion = 1; executable = $executable; arguments = $arguments
-        workingDirectory = $scratch; evidenceDirectory = $scratch; artifacts = $artifacts
+        workingDirectory = $scratch; evidenceDirectory = $scratch; artifacts = $artifacts; runtime = $runtime.Runtime
         memoryLimitBytes = $ceiling; requiredAvailableBytes = [long]$report.RequiredAvailableBytes
         physicalReserveBytes = $reserve; timeoutSeconds = [int]$report.TimeoutSeconds
         stdoutLimitBytes = $null; stderrLimitBytes = $null; requireNonemptyStdout = $true; ciOnly = $false

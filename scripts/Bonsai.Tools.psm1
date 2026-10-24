@@ -56,13 +56,14 @@ function Invoke-BonsaiTool {
     #>
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
-    param([Parameter(Mandatory)][ValidateSet('credentials','memory','cpu-check-plan','completion','qualification')][string]$Command,
+    param([Parameter(Mandatory)][ValidateSet('credentials','memory','cpu-check-plan','runtime-verify','completion','qualification')][string]$Command,
           [Collections.IDictionary]$Request = @{}, [string]$ToolPath,
           [ValidateRange(0,86400)][int]$TimeoutSeconds = 60)
     if (-not $ToolPath -and $env:BONSAI_TOOLS_PATH) { $ToolPath = $env:BONSAI_TOOLS_PATH }
     # The supervisor owns each sample deadline; hashing precedes that deadline
     # and paired captures can contain many ten-minute samples.
     if ($Command -eq 'completion' -and -not $PSBoundParameters.ContainsKey('TimeoutSeconds')) { $TimeoutSeconds = 0 }
+    if ($Command -eq 'runtime-verify' -and -not $PSBoundParameters.ContainsKey('TimeoutSeconds')) { $TimeoutSeconds = 120 }
     $tool = Resolve-BonsaiRustTool -Name 'bonsai-tools' -ManifestRelativePath '../tools/bonsai/Cargo.toml' -ToolPath $ToolPath
     $scratch = Get-BonsaiToolScratch -Name 'bonsai-tools'
     $file = Get-Item -LiteralPath $tool
@@ -71,8 +72,8 @@ function Invoke-BonsaiTool {
         $probe = Invoke-BonsaiNativeProcess -Executable $tool -ArgumentList @('--version') -WorkingDirectory $scratch -TimeoutSeconds 10
         if ($probe.ExitCode -ne 0) { throw 'The maintenance tool version probe failed.' }
         $version = $probe.StandardOutput | ConvertFrom-Json -AsHashtable -NoEnumerate -DateKind String
-        if ($version -isnot [Collections.IDictionary] -or $version.Name -cne 'bonsai-tools' -or $version.Version -cne '0.1.0' -or $version.ProtocolVersion -ne 3) {
-            throw 'Use a compatible bonsai-tools executable (version 0.1.0, protocol 3).'
+        if ($version -isnot [Collections.IDictionary] -or $version.Name -cne 'bonsai-tools' -or $version.Version -cne '0.1.0' -or $version.ProtocolVersion -ne 4) {
+            throw 'Use a compatible bonsai-tools executable (version 0.1.0, protocol 4).'
         }
         $script:CheckedTools[$identity] = $true
     }
@@ -81,7 +82,7 @@ function Invoke-BonsaiTool {
     $requestPath = Join-Path $lane 'request.json'
     $payload = [ordered]@{}
     foreach ($key in $Request.Keys) { $payload[$key] = $Request[$key] }
-    if ($Command -eq 'completion') {
+    if ($Command -in @('completion','runtime-verify')) {
         $currentProcess = [Diagnostics.Process]::GetCurrentProcess()
         try {
             $payload['parentProcessId'] = $PID

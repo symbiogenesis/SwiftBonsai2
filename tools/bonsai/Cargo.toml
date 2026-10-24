@@ -11,6 +11,7 @@ keywords = ["ternary", "quantization", "scalar"]
 categories = ["encoding", "science"]
 
 [dependencies]
+bonsai-artifacts = { path = "../../src/artifacts" }
 bonsai-cpu-policy = { path = "../../src/cpu-policy" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
@@ -22,3 +23,6 @@ bonsai-windows-credentials = { path = "../../src/windows-credentials" }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+zip = { version = "=9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }

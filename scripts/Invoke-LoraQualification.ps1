@@ -55,7 +55,7 @@ $lockPath = Join-Path $PSScriptRoot '../config/swift-assessment.lock.json'
 $lock = Read-BonsaiLock $lockPath
 $adapterLock = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/swift-lora.lock.json') | ConvertFrom-Json -AsHashtable -DateKind String
 if ($admission.ModelRevision -cne $lock.model.revision -or $admission.RuntimeCommit -cne $lock.runtime.commit) { throw 'CPU admission and qualification artifact pins disagree.' }
-$runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly
+$runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly -ToolPath $ToolPath
 $adapter = & (Join-Path $PSScriptRoot 'Get-Adapter.ps1') -DataDirectory $data -VerifyOnly
 $runtimeDirectory = Resolve-ExternalPath ([IO.Path]::GetDirectoryName($runtime.ServerPath))
 $executable = Resolve-ExternalPath (Join-Path $runtimeDirectory 'llama-completion.exe')
@@ -87,10 +87,9 @@ $evidence = [ordered]@{
     nonzeroAdapterCheck = @{ status = 'pending'; scale = 1; adapterSha256 = $controls.adapterSha256
         logitsChanged = $null; evidenceSha256 = $null }
 }
-$guards = [Collections.Generic.List[IO.FileStream]]::new()
 $receipt = [ordered]@{ Status = 'capturing'; StartedUtc = [DateTime]::UtcNow.ToString('o')
     EvidenceDirectory = $scratch; ProcessorName = $processors[0].Name; RuntimePackage = $lock.runtime.asset
-    RuntimeFiles = @(); ModelBytes = $modelBytes; SourceRevision = $env:GITHUB_SHA
+    RuntimeFiles = $runtime.RuntimeFiles; ModelBytes = $modelBytes; SourceRevision = $env:GITHUB_SHA
     TimingScope = 'native single-token eval runs/ms, excluding prompt evaluation; not exact sampled token count or first-token latency'
     QualificationStatus = 'pending'; ModelProcessStarted = $false }
 function Save-CaptureEvidence {
@@ -124,12 +123,7 @@ try {
     # adapter argument required by the pinned Windows parser.
     $copyPath = Join-Path $scratch 'bonsai-abliterate-lora.gguf'
     [IO.File]::Copy($adapter.AdapterPath, $copyPath, $false)
-    foreach ($file in (Get-ChildItem -LiteralPath $runtimeDirectory -File -Recurse | Where-Object Extension -In @('.exe', '.dll'))) {
-        $guards.Add([IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read))
-        $receipt.RuntimeFiles += @{ Path = $file.FullName; Sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
-    }
-    # Reverify package identity after acquiring read-denying guards.
-    $null = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly
+    # Rust re-verifies the complete runtime and retains its guards across every sample.
     Save-CaptureEvidence
     $nativeSamples = @(
         foreach ($sample in $invocations.Samples) {
@@ -144,7 +138,7 @@ try {
     try {
         $supervision = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
             schemaVersion = 1; executable = $executable; arguments = @(); samples = $nativeSamples
-            workingDirectory = $scratch; evidenceDirectory = $scratch
+            workingDirectory = $scratch; evidenceDirectory = $scratch; runtime = $runtime.Runtime
             artifacts = @(
                 @{ path = $modelPath; bytes = [long]$modelBytes; sha256 = $controls.modelSha256 },
                 @{ path = $copyPath; bytes = [long]$adapterLock.adapter.bytes; sha256 = $controls.adapterSha256 }
@@ -155,6 +149,7 @@ try {
             requireNonemptyStdout = $false; ciOnly = $true
         } -TimeoutSeconds 0
         $receipt.ModelProcessStarted = $supervision.ModelProcessStarted
+        $receipt.RuntimeFiles = $supervision.RuntimeFiles
     } catch {
         $captureFailure = $_
         $supervisionPath = Join-Path $scratch 'supervision.json'
@@ -196,4 +191,4 @@ try {
     Save-CaptureEvidence
     Write-Warning "Paired evaluation failure evidence retained at $scratch"
     throw
-} finally { foreach ($guard in $guards) { $guard.Dispose() } }
+}

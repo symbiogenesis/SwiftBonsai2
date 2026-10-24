@@ -25,9 +25,10 @@ dependencies. GGUF wrappers share the resolver through `-GgufToolPath`.
 Key creation with `-WhatIf` creates nothing and resolves no executable. Planning
 may resolve the maintenance tool but never starts inference.
 
-These wrappers require `bonsai-tools` version 0.1.0, protocol 3. Protocol 3 moves
-CPU policy, artifact selection and paired-evaluation arguments into Rust. Older
-binaries are rejected during the version handshake before a sample can start.
+These wrappers require `bonsai-tools` version 0.1.0, protocol 4. Protocol 4 adds
+shared runtime verification and retains runtime guards through version/help probes
+and complete completion batches. Older binaries are rejected during the version
+handshake before a sample can start.
 
 ## Command boundary
 
@@ -36,6 +37,7 @@ bonsai-tools --version
 bonsai-tools credentials --request ABSOLUTE_JSON_PATH
 bonsai-tools memory --request ABSOLUTE_JSON_PATH
 bonsai-tools cpu-check-plan --request ABSOLUTE_JSON_PATH
+bonsai-tools runtime-verify --request ABSOLUTE_JSON_PATH
 bonsai-tools completion --request ABSOLUTE_JSON_PATH
 bonsai-tools qualification --request ABSOLUTE_JSON_PATH
 ```
@@ -66,6 +68,16 @@ child Job lifetime. It checks parent PID/creation time/liveness, physical/proces
 memory, deadlines and caller-specific output limits. LoRA batches share
 verification across samples. Restricted tokens, filesystem/egress isolation and
 daily-service security remain unqualified.
+
+`runtime-verify` verifies the whole pinned archive, the complete installation and
+ARM64 EXE/DLL headers through `bonsai-artifacts`, then runs bounded version and
+optional help probes while every verified file and ancestor remains guarded.
+It returns the runtime descriptor and file identities. These receipts do not
+retain handles across the JSON boundary: completion receives the descriptor,
+verifies it again in Rust and keeps the resulting guard until all children exit.
+The selected completion executable must belong to that verified installation.
+Downloads and installation remain in PowerShell; installation still validates
+archive paths before writing staging files.
 
 Completed CI samples publish a single `capture.json` containing exact response
 text, its UTF-8 SHA-256 and diagnostics. Rust decodes stdout strictly and retains

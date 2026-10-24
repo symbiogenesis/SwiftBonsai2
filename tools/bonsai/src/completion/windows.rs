@@ -1,17 +1,17 @@
 //! Windows implementation using the separately audited native process boundary.
 
 use std::ffi::OsString;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::{Read as _, Write as _};
 use std::os::windows::fs::OpenOptionsExt as _;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use bonsai_artifacts::{ArtifactError, RuntimeSpec, VerifiedFile, VerifiedRuntime};
 use bonsai_windows_credentials::validate_external_path;
 use bonsai_windows_process::{OwnedProcess, ParentProcess, ProcessSpec, available_memory_bytes};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::{Digest as _, Sha256};
 
 use crate::Result;
 
@@ -44,6 +44,7 @@ struct Request {
     evidence_directory: PathBuf,
     artifacts: Vec<Artifact>,
     samples: Option<Vec<Sample>>,
+    runtime: Option<RuntimeSpec>,
     memory_limit_bytes: usize,
     required_available_bytes: u64,
     physical_reserve_bytes: u64,
@@ -139,49 +140,36 @@ fn validate_ci() -> Result<()> {
     Ok(())
 }
 
-fn verify_artifact(artifact: &Artifact, parent: &ParentProcess) -> Result<File> {
-    validate_external_path(&artifact.path).map_err(|error| error.to_string())?;
+fn verify_artifact(artifact: &Artifact, parent: &ParentProcess) -> Result<VerifiedFile> {
     if artifact.bytes == 0
         || artifact.sha256.len() != 64
         || !artifact.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
     {
         return Err("Artifact identity requires positive bytes and SHA-256.".into());
     }
-    let mut file = OpenOptions::new()
-        .read(true)
-        .share_mode(1)
-        .open(&artifact.path)
-        .map_err(|error| format!("Open retained artifact: {error}"))?;
-    let metadata = file.metadata().map_err(|error| error.to_string())?;
-    if !metadata.is_file() || metadata.len() != artifact.bytes {
-        return Err("Artifact length or file type differs from its reviewed identity.".into());
-    }
-    let mut hash = Sha256::new();
-    let mut buffer = vec![0_u8; 1024 * 1024];
-    let mut remaining = artifact.bytes;
     let mut checked = Instant::now();
-    while remaining != 0 {
-        if checked.elapsed() >= INTERVAL {
-            parent.ensure_alive().map_err(|error| error.to_string())?;
-            checked = Instant::now();
-        }
-        let count = usize::try_from(remaining.min(1_048_576)).map_err(|error| error.to_string())?;
-        file.read_exact(&mut buffer[..count])
-            .map_err(|error| error.to_string())?;
-        hash.update(&buffer[..count]);
-        remaining -= u64::try_from(count).map_err(|error| error.to_string())?;
-    }
-    let digest: String = hash
-        .finalize()
-        .into_iter()
-        .flat_map(|byte| [byte >> 4, byte & 15])
-        .map(|part| char::from(b"0123456789abcdef"[usize::from(part)]))
-        .collect();
-    if !digest.eq_ignore_ascii_case(&artifact.sha256) {
-        return Err("Artifact SHA-256 differs from its reviewed identity.".into());
-    }
+    let guard = VerifiedFile::verify_with(
+        &artifact.path,
+        artifact.bytes,
+        &artifact.sha256.to_ascii_lowercase(),
+        || verification_checkpoint(parent, &mut checked),
+    )
+    .map_err(|error| error.to_string())?;
     parent.ensure_alive().map_err(|error| error.to_string())?;
-    Ok(file)
+    Ok(guard)
+}
+
+fn verification_checkpoint(
+    parent: &ParentProcess,
+    checked: &mut Instant,
+) -> std::result::Result<(), ArtifactError> {
+    if checked.elapsed() >= INTERVAL {
+        parent
+            .ensure_alive()
+            .map_err(|_| ArtifactError::Cancelled)?;
+        *checked = Instant::now();
+    }
+    Ok(())
 }
 
 fn check_output(path: &Path, limit: Option<u64>) -> Result<()> {
@@ -210,7 +198,23 @@ fn execute(request: &Request, receipt: &mut Value) -> Result<()> {
         request.parent_creation_time_file_time,
     )
     .map_err(|error| format!("Open calling process: {error}"))?;
-    let _guards: Vec<File> = request
+    let mut checked = Instant::now();
+    let runtime = request
+        .runtime
+        .as_ref()
+        .map(|spec| {
+            VerifiedRuntime::verify_with(spec, || verification_checkpoint(&parent, &mut checked))
+                .map_err(|error| error.to_string())
+        })
+        .transpose()?;
+    if let Some(runtime) = &runtime {
+        if !runtime.contains_file(&request.executable) {
+            return Err("Completion executable is outside the verified runtime.".into());
+        }
+        receipt["RuntimeFiles"] = crate::runtime::file_receipt(runtime);
+        receipt["RuntimeVerification"] = json!("verified-and-retained-through-exit");
+    }
+    let _guards: Vec<VerifiedFile> = request
         .artifacts
         .iter()
         .map(|artifact| verify_artifact(artifact, &parent))

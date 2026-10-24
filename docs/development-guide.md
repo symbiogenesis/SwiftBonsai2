@@ -55,6 +55,11 @@ another model/runtime. Runtime verification compares installed files to the
 verified archive, ARM64 PE architecture and reported build identity; publisher
 digests do not attest source-to-binary builds.
 
+The shared Rust verifier owns installed-runtime checks and retains verified handles
+through bounded version/help probes. CPU and paired completion re-verify the runtime
+inside their Rust supervisor and hold the guards until execution ends. Provisioning
+therefore uses the packaged maintenance tool or builds it from the pinned sources.
+
 Doctor marks unavailable facts when inventory queries are denied. Reports include
 local paths; review them before sharing.
 

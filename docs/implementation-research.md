@@ -49,6 +49,13 @@ These choices follow the primary contracts for
 [exclusive creation](https://doc.rust-lang.org/std/fs/struct.OpenOptions.html#method.create_new)
 and [hard links](https://learn.microsoft.com/en-us/windows/win32/fileio/hard-links-and-junctions).
 
+The broker and maintenance supervisor share `bonsai-artifacts` for bounded ZIP,
+installed-file, SHA-256 and ARM64 PE checks. Its guards retain the archive, verified
+files and ancestors. Runtime version/help probes run under those guards; completion
+re-verifies the runtime and retains a fresh guard through the whole batch. A JSON
+receipt is evidence, not a live ownership transfer. PowerShell retains download and
+installation orchestration, including path checks before extraction.
+
 ## HTTP and admission choices
 
 The [broker contract](broker-policy.md) defines the enforced bounds and APIs.
