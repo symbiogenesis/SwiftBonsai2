@@ -10,6 +10,12 @@ description = "Bounded synthetic native PQ2/PTQ1 codec evidence for the pinned P
 keywords = ["ternary", "validation", "ggml"]
 categories = ["command-line-utilities", "development-tools::testing"]
 
+[[bin]]
+name = "bonsai-codec-probe"
+path = "src/main.rs"
+# Native parity is exercised by the probe, rather than an empty unit harness.
+test = false
+
 [dependencies]
 bonsai-ternary = { path = "../ternary" }
 serde_json.workspace = true

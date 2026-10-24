@@ -14,6 +14,8 @@ categories = ["caching", "science"]
 cbindgen = { version = "=0.29.4", default-features = false, optional = true }
 
 [lib]
+# Policy and native regressions live in integration targets.
+test = false
 crate-type = ["rlib", "staticlib"]
 
 [features]

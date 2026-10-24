@@ -7,6 +7,12 @@ publish.workspace = true
 license.workspace = true
 description = "Bounded development chat transport and request supervision for the Bonsai broker"
 
+[[bin]]
+name = "bonsai-broker"
+path = "src/main.rs"
+# CLI behavior is covered by integration tests; this root has no unit tests.
+test = false
+
 [dependencies]
 bonsai-artifacts = { path = "../artifacts" }
 bonsai-cpu-policy = { path = "../cpu-policy" }

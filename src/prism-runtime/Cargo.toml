@@ -24,6 +24,8 @@ required-features = ["cli"]
 [[bin]]
 name = "bonsai-token-worker"
 path = "src/bin/token_worker.rs"
+# Protocol regressions launch the ordinary binary; the root has no unit tests.
+test = false
 required-features = ["cli"]
 
 [dependencies]

@@ -10,6 +10,12 @@ repository.workspace = true
 keywords = ["ternary", "quantization", "scalar"]
 categories = ["encoding", "science"]
 
+[[bin]]
+name = "bonsai-tools"
+path = "src/main.rs"
+# Exercise the CLI through integration tests without linking an empty harness.
+test = false
+
 [dependencies]
 bonsai-artifacts = { path = "../../src/artifacts" }
 bonsai-cpu-policy = { path = "../../src/cpu-policy" }
