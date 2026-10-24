@@ -72,9 +72,13 @@ task time separately, accounting for bandwidth and the measured critical path.
     skips output-only normalization/projection while validating computed state.
     Final uncached prompt tokens and decode steps produce logits; exact prefix
     hits reuse saved output. The compatibility fallback still validates logits.
-  - [ ] **R4.4 — Share compatible activation preparation.** Reuse transforms and
-    packed activations only when input, basis/permutation, width and Q8_K/Q8_0
-    contracts match. Reusable storage alone does not remove repeated computation.
+  - [x] **R4.4 — Share compatible activation preparation.** Scoped prepared
+    matvecs reuse exact activation quantization across compatible sibling
+    projections. Qwen35 groups FFN up/gate, full-attention Q/K/V and recurrent
+    projections by input, basis/permutation, width and activation contract.
+    Mixed Q8_K/Q8_0 or transformed/plain groups prepare separately; nothing is
+    cached across calls. Synthetic exact-output and preparation-count checks
+    cover sharing and recovery. Full-model memory and speed evidence remain R4.2.
   - [x] **R4.5 — Store already-rounded KV as FP16.** Full-attention caches retain
     exact binary16 bits in `u16` vectors and widen before unchanged scalar products.
     Convolution/GDN state stays FP32; state/checkpoint budgets charge actual

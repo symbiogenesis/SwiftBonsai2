@@ -89,8 +89,10 @@ Keep a reproducible CPU fallback and report unsupported placements explicitly.
 
 The Rust broker implements bounded HTTP admission, exact-count orchestration,
 single-slot scheduling, streaming supervision and an explicit Windows
-development launcher for the Qwen reference. The launcher verifies artifacts,
-protects credentials and owns the backend through a Windows Job. Real model
+development launcher for the Qwen reference or Swift PQ2 assessment. Each
+selection uses its own compiled pins, batch sizes and memory admission. The
+launcher verifies artifacts, protects credentials and owns the backend through
+a Windows Job. Real model
 execution through that service and same-user backend bypass prevention remain
 unqualified. See the [broker contract](docs/broker-policy.md).
 
@@ -199,8 +201,9 @@ can increase contention and heat. Report effective settings and fallback reasons
 
 Follow [R0–R7](docs/native-rust-engine.md) and the
 [algorithm research map](docs/inference-algorithms.md). Reusable logits/scratch,
-state-only intermediate prompt ingestion, physical FP16 KV and baseline packed
-NEON are implemented in the experimental Rust reference. Full-model allocation,
+compatible sibling activation preparation, state-only intermediate prompt
+ingestion, physical FP16 KV and baseline packed NEON are implemented in the
+experimental Rust reference. Full-model allocation,
 parity and performance qualification remain open.
 
 Profile before expanding optimization work. Priorities include exact packed

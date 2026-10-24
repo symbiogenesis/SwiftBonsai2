@@ -34,6 +34,15 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   uncached prompt tokens while validating computed state. Its compatibility
   fallback computes/validates then discards logits. Final prompt tokens and
   decode steps produce logits; exact prefix hits reuse saved output.
+- Scoped prepared matvecs share activation preparation across compatible FFN,
+  full-attention and recurrent sibling projections. Groups require the same
+  exact input, transform/permutation, width and activation contract; mixed
+  contracts prepare separately. Prepared storage cannot outlive its borrowed
+  input or scratch. Exact synthetic checks do not establish device speed gains.
+- Optional checkpoint replacement preserves older prefixes when capture fails
+  or the replacement alone exceeds the available snapshot budget. Count-based
+  eviction follows successful capture; byte-pressure eviction still precedes
+  allocation to keep the hard snapshot bound.
 
 The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.
