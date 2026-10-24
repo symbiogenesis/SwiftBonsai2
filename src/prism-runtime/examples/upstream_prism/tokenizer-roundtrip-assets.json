@@ -1,4 +1,15 @@
 {
+  "InputSelectionVersion": 2,
+  "DefaultBpeAcceptance": ["aquila", "gpt-2", "gpt-neox", "mpt", "refact", "starcoder", "qwen2"],
+  "OriginalBpeDiagnostics": ["falcon", "llama-bpe"],
+  "InputSelectionPolicy": {
+    "SourceParameters": "The original source accepts a vocabulary path and optional --ignore-merges; its eight CMake examples are commented out, not an exhaustive mandatory input list.",
+    "Acceptance": "Six compatible original inputs plus the unchanged bundled qwen2 vocabulary with --ignore-merges exercise every original predicate and flag branch. Full source qualification remains required in hosted CI.",
+    "Qwen2Provenance": "Same pinned upstream archive, models/ggml-vocab-qwen2.gguf. GGUF model=gpt2, pre=qwen2; all256 encoded base bytes present. Pinned production qwen2 branch disables clean_spaces. No metadata, token, merge or production-code change.",
+    "FalconDiagnostic": "Original input and false flag retained. Its vocabulary has no representation for byte04, so the unconditional full-Unicode equality assertion is unsatisfiable for that input.",
+    "LlamaBpeDiagnostic": "Original input and true flag retained. Production cleanup changes raw token24268 from space-!-$ to !-$, which retokenizes into two tokens, violating the original cardinality predicate.",
+    "PreviousHostedEvidence": "40131582460/test-tokenizer-1-bpe-cpp.json; diagnostics retain actual failure status and SourceCount0, never an expected-failure pass."
+  },
   "Sources": [
     {
       "Source": "tests/test-tokenizer-1-spm.cpp",
@@ -109,6 +120,16 @@
       "MaxRawTokenBytes": 512,
       "Length": 1719346,
       "Sha256": "fedb892b4e1bd3c1f2fcdae356440b14fb458f4264d586e5c987ed93df4e174d"
+    },
+    {
+      "Name": "qwen2",
+      "ExpectedType": 2,
+      "IgnoreMerges": true,
+      "TokenMetadataCount": 151936,
+      "RawTokenBytes": 1372708,
+      "MaxRawTokenBytes": 256,
+      "Length": 5928681,
+      "Sha256": "44c2f46b715f585c6ab513970e8a006bfa5badd6108560054921cf598d154d8c"
     }
   ]
 }

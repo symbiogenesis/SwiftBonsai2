@@ -31,7 +31,7 @@ const BATCH: usize = 512;
 const UNICODE_LIMIT: u32 = 0x0011_0000;
 const UNICODE_CALLS: usize = 456_703;
 const UNICODE_PREDICATES: usize = 456_702;
-const NAMES: [&str; 10] = [
+const NAMES: [&str; 11] = [
     "llama-spm",
     "baichuan",
     "aquila",
@@ -42,7 +42,18 @@ const NAMES: [&str; 10] = [
     "mpt",
     "refact",
     "starcoder",
+    "qwen2",
 ];
+const DEFAULT_BPE: [&str; 7] = [
+    "aquila",
+    "gpt-2",
+    "gpt-neox",
+    "mpt",
+    "refact",
+    "starcoder",
+    "qwen2",
+];
+const ORIGINAL_BPE_DIAGNOSTICS: [&str; 2] = ["falcon", "llama-bpe"];
 
 fn text<'a>(value: &'a Value, name: &str) -> Result<&'a str> {
     field(value, name)?
@@ -70,9 +81,30 @@ fn manifest() -> Result<Value> {
     for (index, (asset, name)) in assets.iter().zip(NAMES).enumerate() {
         if text(asset, "Name")? != name
             || uint(asset, "ExpectedType")? != if index < 2 { 1 } else { 2 }
-            || field(asset, "IgnoreMerges")?.as_bool() != Some(name == "llama-bpe")
+            || field(asset, "IgnoreMerges")?.as_bool()
+                != Some(matches!(name, "llama-bpe" | "qwen2"))
         {
             return Err(invalid("roundtrip documented fixture variant mismatch"));
+        }
+    }
+    if uint(&value, "InputSelectionVersion")? != 2 {
+        return Err(invalid("BPE acceptance input selection version differs"));
+    }
+    for (key, expected) in [
+        ("DefaultBpeAcceptance", DEFAULT_BPE.as_slice()),
+        (
+            "OriginalBpeDiagnostics",
+            ORIGINAL_BPE_DIAGNOSTICS.as_slice(),
+        ),
+    ] {
+        let actual = array(&value, key)?;
+        if actual.len() != expected.len()
+            || actual
+                .iter()
+                .zip(expected)
+                .any(|(a, b)| a.as_str() != Some(*b))
+        {
+            return Err(invalid("BPE acceptance/diagnostic input selection differs"));
         }
     }
     Ok(value)
@@ -369,7 +401,14 @@ impl Counts {
         self.failures.extend(other.failures);
     }
     fn json(&self, asset: &Value) -> Value {
-        json!({"Name":asset["Name"],"IgnoreMerges":asset["IgnoreMerges"],"TokenMetadataCount":asset["TokenMetadataCount"],"TokenRowsVisited":self.tokens_visited,"TokenRoundtripPredicates":self.token_checks,"IgnoreMergePredicates":self.merge_checks,"CaughtInvalidArgumentSkips":self.invalid_skips-self.restored_utf8_skips,"RestoredInvalidUtf8Skips":self.restored_utf8_skips,"TotalSkippedRows":self.invalid_skips,"UnicodeRowsVisited":self.unicode_visited,"UnicodeEqualityPredicates":self.unicode_checks,"Exempt9601":self.exempt_9601,"Failures":self.failures})
+        let mut arguments = vec![format!(
+            "models/ggml-vocab-{}.gguf",
+            asset["Name"].as_str().unwrap_or("")
+        )];
+        if asset["IgnoreMerges"] == true {
+            arguments.push("--ignore-merges".into());
+        }
+        json!({"Name":asset["Name"],"IgnoreMerges":asset["IgnoreMerges"],"InputSha256":asset["Sha256"],"InputLength":asset["Length"],"SourceArguments":arguments,"TokenMetadataCount":asset["TokenMetadataCount"],"TokenRowsVisited":self.tokens_visited,"TokenRoundtripPredicates":self.token_checks,"IgnoreMergePredicates":self.merge_checks,"CaughtInvalidArgumentSkips":self.invalid_skips-self.restored_utf8_skips,"RestoredInvalidUtf8Skips":self.restored_utf8_skips,"TotalSkippedRows":self.invalid_skips,"UnicodeRowsVisited":self.unicode_visited,"UnicodeEqualityPredicates":self.unicode_checks,"Exempt9601":self.exempt_9601,"Failures":self.failures})
     }
 }
 
@@ -648,6 +687,11 @@ fn loaded_checks(
     if !counts.failures.is_empty() {
         return Ok(counts);
     }
+    if bpe && asset["IgnoreMerges"] == true && counts.merge_checks == 0 {
+        return Err(invalid(
+            "complete BPE source did not exercise its ignore-merges predicate",
+        ));
+    }
     let runtime = call(client, 0, json!({"Op":"hardware-concurrency"}))?;
     exact_fields(&runtime, &["Count"])?;
     let workers = u32::try_from(uint(&runtime, "Count")?)?;
@@ -725,20 +769,25 @@ fn run_source(engine: &Engine, bpe: bool) -> Result<Value> {
     let manifest = manifest()?;
     let mut observations = Vec::new();
     let mut passed = true;
-    for asset in array(&manifest, "Vocabularies")?
-        .iter()
-        .filter(|asset| asset["ExpectedType"] == if bpe { 2 } else { 1 })
-    {
+    for asset in array(&manifest, "Vocabularies")?.iter().filter(|asset| {
+        if bpe {
+            asset["Name"]
+                .as_str()
+                .is_some_and(|name| DEFAULT_BPE.contains(&name))
+        } else {
+            asset["ExpectedType"] == 1
+        }
+    }) {
         let Some(counts) = run_asset(engine, asset, bpe)? else {
             return Ok(result(id,false,"Rust production persistent vocabulary API unavailable; exhaustive source contract unsupported".into()));
         };
         passed &= counts.failures.is_empty();
         observations.push(counts.json(asset));
     }
-    if observations.len() != if bpe { 8 } else { 2 } {
+    if observations.len() != if bpe { DEFAULT_BPE.len() } else { 2 } {
         return Err(invalid("roundtrip full fixture variant count mismatch"));
     }
-    let receipt = json!({"Vocabularies":observations,"UnicodeDomainCallsPerVocabulary":UNICODE_CALLS,"UnicodePredicatesPerVocabulary":UNICODE_PREDICATES,"BatchSize":BATCH,"SourceCorrection":if bpe{Some("Approved restoration of intended invalid-UTF8 skip: strict Rust validity before retokenization, because pinned unicode_cpts_from_utf8 replaces invalid bytes instead of throwing") }else{None},"StopPolicy":"Rust checks shared stop before batches and each returned-item assertion; speculative pure operations in an in-flight batch are ignored after failure"});
+    let receipt = json!({"Vocabularies":observations,"UnicodeDomainCallsPerVocabulary":UNICODE_CALLS,"UnicodePredicatesPerVocabulary":UNICODE_PREDICATES,"BatchSize":BATCH,"InputSelectionVersion":manifest["InputSelectionVersion"],"DefaultBpeAcceptance":manifest["DefaultBpeAcceptance"],"OriginalBpeDiagnostics":manifest["OriginalBpeDiagnostics"],"InputSelectionPolicy":manifest["InputSelectionPolicy"],"SourceCorrection":if bpe{Some("Approved restoration of intended invalid-UTF8 skip: strict Rust validity before retokenization, because pinned unicode_cpts_from_utf8 replaces invalid bytes instead of throwing") }else{None},"StopPolicy":"Rust checks shared stop before batches and each returned-item assertion; speculative pure operations in an in-flight batch are ignored after failure"});
     Ok(result(id, passed, receipt.to_string()))
 }
 
@@ -749,10 +798,99 @@ pub(super) fn run_bpe(engine: &Engine) -> Result<Value> {
     run_source(engine, true)
 }
 
+/// The source's vocabulary argument and optional flag remain independently
+/// selectable. Diagnostics retain actual failures and cannot count as a source.
+pub(super) fn diagnostic(engine: &Engine, configuration: &Value) -> Result<Value> {
+    exact_fields(configuration, &["Kind", "Vocabulary", "IgnoreMerges"])?;
+    if text(configuration, "Kind")? != "tokenizer-bpe-roundtrip" {
+        return Err(invalid("unknown tokenizer roundtrip diagnostic"));
+    }
+    let name = text(configuration, "Vocabulary")?;
+    let ignore = field(configuration, "IgnoreMerges")?
+        .as_bool()
+        .ok_or_else(|| invalid("BPE diagnostic flag must be boolean"))?;
+    let fixture = manifest()?;
+    let mut asset = array(&fixture, "Vocabularies")?
+        .iter()
+        .find(|asset| asset["Name"] == name && asset["ExpectedType"] == 2)
+        .ok_or_else(|| invalid("diagnostic requires a named pinned BPE vocabulary"))?
+        .clone();
+    asset["IgnoreMerges"] = json!(ignore);
+    let counts = run_asset(engine, &asset, true)?;
+    diagnostic_output(
+        &asset,
+        counts.as_ref(),
+        uint(&fixture, "InputSelectionVersion")?,
+    )
+}
+
+fn diagnostic_output(
+    asset: &Value,
+    counts: Option<&Counts>,
+    selection_version: u64,
+) -> Result<Value> {
+    let name = text(asset, "Name")?;
+    let (passed,receipt)=counts.map_or_else(
+        ||(false,json!({"Name":name,"IgnoreMerges":asset["IgnoreMerges"],"Failure":"Runtime lacks the production vocabulary session APIs"})),
+        |counts|(counts.failures.is_empty(),counts.json(asset)),
+    );
+    let mut output = result(
+        &format!("diagnostic/tokenizer-bpe-roundtrip/{name}"),
+        passed,
+        serde_json::to_string(&receipt)?,
+    );
+    output["SourceId"] = json!(BPE_ID);
+    output["SourceCount"] = json!(0);
+    output["Measure"] = json!("diagnostic-workloads");
+    output["InputSelectionVersion"] = json!(selection_version);
+    output["InputSha256"] = asset["Sha256"].clone();
+    output["IgnoreMerges"] = asset["IgnoreMerges"].clone();
+    Ok(output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Row, excluded, hex, restore_utf8_piece_skips};
     use serde_json::json;
+
+    #[test]
+    fn explicit_acceptance_keeps_original_diagnostics_out_of_source_count() -> super::Result<()> {
+        let fixture = super::manifest()?;
+        let assets = super::array(&fixture, "Vocabularies")?;
+        let qwen = assets
+            .iter()
+            .find(|a| a["Name"] == "qwen2")
+            .ok_or_else(|| super::invalid("Qwen2 input missing"))?;
+        if qwen["IgnoreMerges"] != true
+            || qwen["TokenMetadataCount"] != 151_936
+            || qwen["Sha256"] != "44c2f46b715f585c6ab513970e8a006bfa5badd6108560054921cf598d154d8c"
+            || super::DEFAULT_BPE.contains(&"falcon")
+            || super::DEFAULT_BPE.contains(&"llama-bpe")
+        {
+            return Err(super::invalid("explicit BPE acceptance selection changed"));
+        }
+        for name in super::ORIGINAL_BPE_DIAGNOSTICS {
+            let asset = assets
+                .iter()
+                .find(|a| a["Name"] == name)
+                .ok_or_else(|| super::invalid("original BPE input was removed"))?;
+            let counts = super::Counts {
+                failures: vec!["independent failing-source receipt guard".into()],
+                ..super::Counts::default()
+            };
+            let output = super::diagnostic_output(asset, Some(&counts), 2)?;
+            if output["Status"] != "fail"
+                || output["SourceCount"] != 0
+                || output["SourceId"] != super::BPE_ID
+                || output["Id"] == super::BPE_ID
+            {
+                return Err(super::invalid(
+                    "diagnostic failure was counted as a source pass",
+                ));
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn source_unicode_boundaries_and_raw_bytes() -> super::Result<()> {

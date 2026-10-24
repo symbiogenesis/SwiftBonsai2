@@ -181,8 +181,10 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   assertions are explicit; 119 independent source grammar vectors add regression
   coverage. A CI-only diagnostic accepts grammar and input paths.
 - Both tokenizer roundtrip sources traverse every token and the entire original
-  Unicode domain in two SPM and eight BPE fixtures, including fixtures upstream
-  comments out for runtime. Per fixture this retains 456,703 Unicode calls and
+  Unicode domain in two SPM and seven explicitly selected BPE fixtures. The
+  [versioned acceptance inputs](../tools/prism/upstream/BPE-ACCEPTANCE.md)
+  preserve both optional-flag branches; the original named variants remain
+  available as diagnostics with their actual verdicts. Per fixture this retains 456,703 Unicode calls and
   456,702 equality predicates, source exceptions, worker strides and shared stop.
   The BPE rewrite restores the source's intended invalid-UTF-8 skip with safe
   Rust validation: the pinned native decoder consumes errors that the original

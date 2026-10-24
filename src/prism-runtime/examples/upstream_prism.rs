@@ -913,6 +913,7 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
         Some("backend-sampler-options") => backend_sampler::diagnostic(engine, &value),
         Some("tokenizer-file-options") => tokenizer_files::diagnostic(engine, &value),
         Some("tokenizer-random-options") => tokenizer_random::diagnostic(engine, &value),
+        Some("tokenizer-bpe-roundtrip") => tokenizer_roundtrip::diagnostic(engine, &value),
         Some("quantize-perf-options" | "quantize-stats-options") => {
             quantization_diagnostic(engine, &value)
         }

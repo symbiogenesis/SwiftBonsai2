@@ -50,8 +50,9 @@ The current ports preserve all seventy Windows-applicable source contracts from
   of engine APIs. The manual grammar validator preserves its zero fixed source
   assertions; independent grammar vectors provide additional regression checks.
 - Both tokenizer roundtrip sources retain every vocabulary token and the entire
-  source Unicode domain across two SPM and eight BPE fixtures, including the
-  commented slow fixtures. Rust owns exclusions, exceptions, worker strides,
+  source Unicode domain across two SPM and seven selected BPE fixtures. The
+  [versioned input selection](BPE-ACCEPTANCE.md) preserves both flag branches;
+  original incompatible variants remain explicit diagnostics. Rust owns exclusions, exceptions, worker strides,
   stop policy and comparisons; native batches contain supplied inputs only.
   Safe Rust restores BPE's intended malformed-UTF-8 skip because the pinned
   decoder consumes its own exceptions. Reports count the corrected skips;
