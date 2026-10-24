@@ -457,10 +457,10 @@ inline json state::run(const json & a) {
     }
     if(op=="backend-init") {
         keys(a,{"Op","Id","Device","Threads","UseRef"}); require(text(a.at("Device"))=="CPU" && a.at("UseRef").is_boolean(),"backend CPU device/UseRef required");
-        require(backends.size()<4,"backend count exceeds bound"); const auto threads=bounded(a.at("Threads"),1,256);
+        require(backends.size()<4,"backend count exceeds bound"); const auto threads=a.at("Threads").is_null()?0:bounded(a.at("Threads"),1,256);
         auto * backend=ggml_backend_cpu_init(); require(backend,"backend CPU init failed");
         try { bind(backends,a.at("Id"),backend); } catch(...) { ggml_backend_free(backend); throw; }
-        ggml_backend_cpu_set_n_threads(backend,int(threads));
+        if(!a.at("Threads").is_null()) ggml_backend_cpu_set_n_threads(backend,int(threads));
         const auto setter=reinterpret_cast<void(*)(ggml_backend_t,bool)>(ggml_backend_reg_get_proc_address(ggml_backend_cpu_reg(),"ggml_backend_cpu_set_use_ref"));
         if(setter) setter(backend,a.at("UseRef").get<bool>());
         return {{"UseRefAvailable",setter!=nullptr}};

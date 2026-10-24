@@ -89,6 +89,8 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   results. The 1,530 original performance workloads remain a separate requested
   CI measurement. CPU selection is explicit; source random-device seeds become
   logged reproducible Rust seeds.
+  The selected CPU receives the source thread count; the reference CPU retains
+  its production default, matching the original source.
   Bounded summaries retain each case's identity and full-result hash. Complete
   metrics and input receipts remain in the uploaded case receipts; aggregation
   preserves the ordered digest of those full results.

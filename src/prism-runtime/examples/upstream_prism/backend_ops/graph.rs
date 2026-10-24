@@ -327,7 +327,7 @@ impl<'a> Plan<'a> {
         Handle::Context(id)
     }
 
-    pub(super) fn backend(&mut self, threads: usize, reference: bool) -> Handle {
+    pub(super) fn backend(&mut self, threads: Option<usize>, reference: bool) -> Handle {
         let id = self.next_backend;
         self.next_backend += 1;
         self.push(json!({"Op":"backend-init","Id":id,"Device":"CPU","Threads":threads,"UseRef":reference}));

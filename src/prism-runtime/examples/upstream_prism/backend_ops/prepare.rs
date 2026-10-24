@@ -417,9 +417,9 @@ pub(super) fn prepare(
         .entry("mode".into())
         .or_insert_with(|| variable("test_mode".into(), integer(i64::from(mode.code()))));
     let threads = host.inputs.threads;
-    let optimized = backend(host.graph.backend(threads, false))?;
+    let optimized = backend(host.graph.backend(Some(threads), false))?;
     let reference = if mode == Mode::Eval {
-        Some(backend(host.graph.backend(threads, true))?)
+        Some(backend(host.graph.backend(None, true))?)
     } else {
         None
     };
