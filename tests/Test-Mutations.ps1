@@ -23,8 +23,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
-Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
-Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
+Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Common.psm1')
+Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Native.psm1')
 
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $evidence = Resolve-ExternalPath -Path $EvidenceDirectory

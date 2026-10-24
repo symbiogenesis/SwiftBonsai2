@@ -25,5 +25,5 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
-Import-Module (Join-Path $PSScriptRoot 'Bonsai.Rust.psm1')
+Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Rust.psm1')
 Invoke-BonsaiRustCheck @PSBoundParameters

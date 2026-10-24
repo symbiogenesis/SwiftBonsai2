@@ -33,7 +33,7 @@ runs:
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'
         $PSNativeCommandUseErrorActionPreference = $true
-        & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-Rust.ps1') -Package bonsai-tools -Phase build -TargetDirectory $env:BONSAI_TOOLS_TARGET -EvidenceDirectory $env:BONSAI_TOOLS_BUILD_EVIDENCE | ConvertTo-Json -Depth 8
+        & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Rust.ps1') -Package bonsai-tools -Phase build -TargetDirectory $env:BONSAI_TOOLS_TARGET -EvidenceDirectory $env:BONSAI_TOOLS_BUILD_EVIDENCE | ConvertTo-Json -Depth 8
         $tool = Join-Path $env:BONSAI_TOOLS_TARGET 'release/bonsai-tools.exe'
         if (-not [IO.File]::Exists($tool)) { throw 'Packaged maintenance CLI build output is missing.' }
         "BONSAI_TOOLS_PATH=$tool" >> $env:GITHUB_ENV

@@ -53,7 +53,7 @@ try {
     }
     $rejected = $false
     try {
-        $null = & (Join-Path $PSScriptRoot '../scripts/Test-RustNightly.ps1') -Mode Compatibility `
+        $null = & (Join-Path $PSScriptRoot 'Test-RustNightly.ps1') -Mode Compatibility `
             -Toolchain $configuration.StableToolchain -TargetDirectory (Join-Path $scratch 'target') `
             -EvidenceDirectory (Join-Path $scratch 'evidence')
     } catch {

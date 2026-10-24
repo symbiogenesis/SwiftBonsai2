@@ -78,7 +78,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.RUST_TRIAL_TARGET }}
-          key: rust-trial-targets-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.toolchain }}-${{ matrix.group }}-${{ env.RUST_TRIAL_CACHE_HOST }}-${{ env.RUST_TRIAL_IDENTITY }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', '**/Cargo.toml', 'tools/prism/source.lock.json', 'rust-toolchain.toml', 'config/rust-nightly-trial.json') }}-${{ hashFiles('src/**/*.rs', 'tools/**/*.rs', 'config/**/*.json', 'tests/fixtures/lora-qualification-v1.json', 'scripts/Test-RustNightly.ps1', 'scripts/Test-Rust.ps1', 'scripts/Bonsai.Rust.psm1', 'config/rust-packages.psd1', 'scripts/Bonsai.Native.psm1', 'scripts/Bonsai.Common.psm1', 'rustfmt.toml', '.github/workflows/rust-nightly.yml') }}
+          key: rust-trial-targets-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.toolchain }}-${{ matrix.group }}-${{ env.RUST_TRIAL_CACHE_HOST }}-${{ env.RUST_TRIAL_IDENTITY }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', '**/Cargo.toml', 'tools/prism/source.lock.json', 'rust-toolchain.toml', 'config/rust-nightly-trial.json') }}-${{ hashFiles('src/**/*.rs', 'tools/**/*.rs', 'config/**/*.json', 'tests/fixtures/lora-qualification-v1.json', 'tests/Test-RustNightly.ps1', 'tests/Test-Rust.ps1', 'scripts/Bonsai.Rust.psm1', 'config/rust-packages.psd1', 'scripts/Bonsai.Native.psm1', 'scripts/Bonsai.Common.psm1', 'rustfmt.toml', '.github/workflows/rust-nightly.yml') }}
           # Cargo validates fingerprints after either restore. Lockfile/config
           # changes can reuse unchanged dependencies without sharing compilers.
           restore-keys: |
@@ -94,7 +94,7 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-RustNightly.ps1') -Mode Compatibility -FullTests -PackageGroup $env:TRIAL_GROUP -Toolchain $env:RUST_TRIAL_TOOLCHAIN -TargetDirectory $env:RUST_TRIAL_TARGET -EvidenceDirectory (Join-Path $env:RUST_TRIAL_EVIDENCE 'compatibility')
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-RustNightly.ps1') -Mode Compatibility -FullTests -PackageGroup $env:TRIAL_GROUP -Toolchain $env:RUST_TRIAL_TOOLCHAIN -TargetDirectory $env:RUST_TRIAL_TARGET -EvidenceDirectory (Join-Path $env:RUST_TRIAL_EVIDENCE 'compatibility')
       - name: Record lane outcome
         if: always()
         shell: pwsh
@@ -153,7 +153,7 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Test-RustNightly.ps1') -Mode Probe -FullTests -EvidenceDirectory (Join-Path $env:RUST_TRIAL_EVIDENCE 'probe')
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-RustNightly.ps1') -Mode Probe -FullTests -EvidenceDirectory (Join-Path $env:RUST_TRIAL_EVIDENCE 'probe')
       - name: Retain compiler identities, acceptance results and command logs
         if: always() && env.RUST_TRIAL_EVIDENCE != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

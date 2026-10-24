@@ -51,6 +51,9 @@ warning standard: an upstream MSVC C4244 remains in `llama-graph.cpp`. Changed
 source-build configuration requires a fresh lane or reviewed removal of the old
 owned build directory.
 
+Validation entry points named `Test-*` live under `tests/` alongside the
+regressions; reusable operational modules remain under `scripts/`.
+
 ## Focused local checks
 
 Run from native Windows ARM64 PowerShell 7.6+. Keep scratch scripts, logs, captures
@@ -64,7 +67,7 @@ or save an isolated copy:
 ```powershell
 $tooling = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Tooling-' + [guid]::NewGuid().ToString('N'))
 Save-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Repository PSGallery -Path $tooling -Force
-./scripts/Test-Standards.ps1 -AnalyzerModulePath (Join-Path $tooling 'PSScriptAnalyzer/1.25.0/PSScriptAnalyzer.psd1')
+./tests/Test-Standards.ps1 -AnalyzerModulePath (Join-Path $tooling 'PSScriptAnalyzer/1.25.0/PSScriptAnalyzer.psd1')
 ```
 
 The checker extracts embedded C# helpers and keeps outputs/logs in system temp.
@@ -72,7 +75,7 @@ For registered Rust formatting, Release Clippy and documentation checks:
 
 ```powershell
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Checks-' + [guid]::NewGuid().ToString('N'))
-./scripts/Test-Rust.ps1 -Package bonsai-broker -TargetDirectory (Join-Path $scratch 'target') -EvidenceDirectory (Join-Path $scratch 'evidence')
+./tests/Test-Rust.ps1 -Package bonsai-broker -TargetDirectory (Join-Path $scratch 'target') -EvidenceDirectory (Join-Path $scratch 'evidence')
 ```
 
 Select a regression relevant to the change, for example:
@@ -100,14 +103,14 @@ try {
 }
 ```
 
-The [mutation checker](../scripts/Test-Mutations.ps1) validates six codec guards
+The [mutation checker](../tests/Test-Mutations.ps1) validates six codec guards
 in an external temporary copy. Each original assertion must pass; its mutant
 must compile and fail that same assertion. Compiler errors, unrelated failures,
 timeouts and surviving mutants fail the check. A focused local case is:
 
 ```powershell
 $evidence = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Mutations-' + [guid]::NewGuid().ToString('N'))
-./scripts/Test-Mutations.ps1 -Case ZeroScale -EvidenceDirectory $evidence
+./tests/Test-Mutations.ps1 -Case ZeroScale -EvidenceDirectory $evidence
 ```
 
 Receipts retain source hashes and bounded compile/test logs. This measures

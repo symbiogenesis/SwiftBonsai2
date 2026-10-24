@@ -65,7 +65,7 @@ For one focused local comparison, give the orchestrator a new absolute evidence
 path outside Git:
 
 ```powershell
-./scripts/Test-RustNightly.ps1 -Mode Probe -ProbeCase Polonius -EvidenceDirectory C:/absolute/temp/rust-trial-evidence
+./tests/Test-RustNightly.ps1 -Mode Probe -ProbeCase Polonius -EvidenceDirectory C:/absolute/temp/rust-trial-evidence
 ```
 
 Local formatting, Release builds/analyzers, standalone metadata checks and focused
