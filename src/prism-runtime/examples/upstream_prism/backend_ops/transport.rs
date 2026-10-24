@@ -168,6 +168,19 @@ impl Session {
         Ok(self.directory.join(name))
     }
 
+    pub(super) fn checked_file(&self, path: &Path) -> Result<PathBuf> {
+        if !path.is_absolute() {
+            return Err(invalid("backend observation file must be absolute"));
+        }
+        let path = fs::canonicalize(path)?;
+        if !path.starts_with(&self.directory) || !path.is_file() {
+            return Err(invalid(
+                "backend observation file is outside its owned session directory",
+            ));
+        }
+        Ok(path)
+    }
+
     fn request_stop(&mut self) -> Result<()> {
         if !self.stopped {
             self.poll_worker()?;
@@ -239,7 +252,7 @@ pub(super) fn with_session<T>(
             let _ = sender.send(outcome);
         });
         let mut session = Session {
-            directory: directory.to_path_buf(),
+            directory: fs::canonicalize(directory)?,
             receiver,
             completed: None,
             output,
