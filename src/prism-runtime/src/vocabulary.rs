@@ -61,21 +61,18 @@ pub struct Vocabulary {
     bytes: Vec<u8>,
 }
 
-impl Vocabulary {
-    /// Validates the pinned `gpt2` / `qwen35` output vocabulary against the graph.
-    ///
-    /// Requires string tokens and GGUF `INT32` token types with exactly
-    /// `vocab_size` elements each. Construction validates every renderable piece
-    /// before reserving decoded storage. At most [`MAX_VOCABULARY_TOKENS`]
-    /// entries, [`MAX_VOCABULARY_BYTES`] decoded bytes, and [`MAX_PIECE_BYTES`]
-    /// bytes per piece are admitted. The entry table additionally retains at
-    /// most `MAX_VOCABULARY_TOKENS * size_of::<Entry>()` bytes.
-    ///
-    /// # Errors
-    /// Rejects unsupported tokenizer metadata, graph/count mismatches, invalid
-    /// token types, malformed byte alphabet or byte notation, empty renderable
-    /// pieces, resource limits, and allocation failures.
-    pub fn from_metadata(metadata: &Metadata, vocab_size: usize) -> Result<Self> {
+/// Fully checked metadata, without allocating decoded output pieces.
+///
+/// The private slices have equal, bounded lengths and every renderable piece
+/// obeys the same spelling and decoded-size contract as [`Vocabulary`].
+pub(crate) struct ValidatedVocabulary<'a> {
+    tokens: &'a [String],
+    types: &'a [i32],
+    decoded_bytes: usize,
+}
+
+impl<'a> ValidatedVocabulary<'a> {
+    pub(crate) fn from_metadata(metadata: &'a Metadata, vocab_size: usize) -> Result<Self> {
         for (key, expected) in [
             ("tokenizer.ggml.model", "gpt2"),
             ("tokenizer.ggml.pre", "qwen35"),
@@ -110,11 +107,46 @@ impl Vocabulary {
                 .filter(|&bytes| bytes <= MAX_VOCABULARY_BYTES)
                 .ok_or_else(|| invalid("vocabulary exceeds decoded byte limit"))?;
         }
+        Ok(Self {
+            tokens,
+            types,
+            decoded_bytes: required,
+        })
+    }
+
+    pub(crate) const fn len(&self) -> usize {
+        self.tokens.len()
+    }
+
+    pub(crate) fn entries(&self) -> impl ExactSizeIterator<Item = (&'a str, i32)> {
+        self.tokens
+            .iter()
+            .map(String::as_str)
+            .zip(self.types.iter().copied())
+    }
+}
+
+impl Vocabulary {
+    /// Validates the pinned `gpt2` / `qwen35` output vocabulary against the graph.
+    ///
+    /// Requires string tokens and GGUF `INT32` token types with exactly
+    /// `vocab_size` elements each. Construction validates every renderable piece
+    /// before reserving decoded storage. At most [`MAX_VOCABULARY_TOKENS`]
+    /// entries, [`MAX_VOCABULARY_BYTES`] decoded bytes, and [`MAX_PIECE_BYTES`]
+    /// bytes per piece are admitted. The entry table additionally retains at
+    /// most `MAX_VOCABULARY_TOKENS * size_of::<Entry>()` bytes.
+    ///
+    /// # Errors
+    /// Rejects unsupported tokenizer metadata, graph/count mismatches, invalid
+    /// token types, malformed byte alphabet or byte notation, empty renderable
+    /// pieces, resource limits, and allocation failures.
+    pub fn from_metadata(metadata: &Metadata, vocab_size: usize) -> Result<Self> {
+        let vocabulary = ValidatedVocabulary::from_metadata(metadata, vocab_size)?;
         let mut entries = Vec::new();
-        entries.try_reserve_exact(vocab_size)?;
+        entries.try_reserve_exact(vocabulary.len())?;
         let mut bytes = Vec::new();
-        bytes.try_reserve_exact(required)?;
-        for (token, &kind) in tokens.iter().zip(types) {
+        bytes.try_reserve_exact(vocabulary.decoded_bytes)?;
+        for (token, kind) in vocabulary.entries() {
             let kind = TokenType::from_i32(kind)?;
             match kind {
                 TokenType::Normal => {
@@ -203,7 +235,7 @@ fn piece_length(token: &str, kind: TokenType) -> Result<usize> {
     Ok(length)
 }
 
-fn decode_character(character: char) -> Result<u8> {
+pub(crate) fn decode_character(character: char) -> Result<u8> {
     let scalar = u32::from(character);
     let byte = match scalar {
         33..=126 | 161..=172 | 174..=255 => scalar,

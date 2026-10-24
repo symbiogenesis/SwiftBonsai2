@@ -4,9 +4,9 @@
 //! spellings. It does not pretokenize normal text, apply merges or templates, or
 //! insert BOS/EOS. Callers must choose whether to recognize special spellings.
 
-use bonsai_gguf::{Metadata, MetadataArray};
+use bonsai_gguf::Metadata;
 
-use crate::vocabulary::Vocabulary;
+use crate::vocabulary::ValidatedVocabulary;
 use crate::{Result, invalid};
 
 /// Maximum number of control and user-defined vocabulary entries.
@@ -101,37 +101,29 @@ pub struct SpecialInput {
 impl SpecialInput {
     /// Validates the pinned `gpt2` / `qwen35` vocabulary and special spellings.
     ///
-    /// Uses the complete [`Vocabulary`] validation, including exact graph/token
-    /// counts, token types and normal-byte alphabet. Merge metadata is neither
-    /// required nor interpreted. No special IDs are inferred from token names.
-    /// An otherwise valid vocabulary with no special entries is accepted.
+    /// Uses the complete [`Vocabulary`](crate::vocabulary::Vocabulary)
+    /// validation, including exact graph/token counts, token types and the normal
+    /// byte alphabet. Merge metadata is neither required nor interpreted. No
+    /// special IDs are inferred from token names. An otherwise valid vocabulary
+    /// with no special entries is accepted.
     ///
     /// Construction bounds special counts and bytes before trie allocation.
-    /// Temporary storage comprises the bounded vocabulary validation, followed
-    /// by one borrowed entry per special and one three-index range per trie
-    /// node. Trie construction also caps failure-link work at 16 Mi transitions.
+    /// Vocabulary validation borrows metadata without allocating decoded pieces.
+    /// Temporary storage comprises one borrowed entry per special and one
+    /// three-index range per trie node. Trie construction also caps failure-link
+    /// work at 16 Mi transitions.
     ///
     /// # Errors
     /// Rejects invalid vocabulary metadata, empty or duplicate special spellings,
     /// special resource limits, excessive construction work, or allocation errors.
     pub fn from_metadata(metadata: &Metadata, vocab_size: usize) -> Result<Self> {
-        // This allocation is dropped before constructing the retained trie.
-        drop(Vocabulary::from_metadata(metadata, vocab_size)?);
-        let Some(MetadataArray::String(tokens)) = metadata
-            .get("tokenizer.ggml.tokens")
-            .and_then(|value| value.as_array())
-        else {
-            return Err(invalid("special input requires a STRING token array"));
-        };
-        let Some(MetadataArray::I32(types)) = metadata
-            .get("tokenizer.ggml.token_type")
-            .and_then(|value| value.as_array())
-        else {
-            return Err(invalid("special input requires an INT32 token type array"));
-        };
+        Self::from_vocabulary(&ValidatedVocabulary::from_metadata(metadata, vocab_size)?)
+    }
+
+    pub(crate) fn from_vocabulary(vocabulary: &ValidatedVocabulary<'_>) -> Result<Self> {
         let mut count = 0_usize;
         let mut bytes = 0_usize;
-        for (token, &kind) in tokens.iter().zip(types) {
+        for (token, kind) in vocabulary.entries() {
             if !matches!(kind, 3 | 4) {
                 continue;
             }
@@ -149,7 +141,7 @@ impl SpecialInput {
         }
         let mut entries = Vec::new();
         entries.try_reserve_exact(count)?;
-        for (index, (token, &kind)) in tokens.iter().zip(types).enumerate() {
+        for (index, (token, kind)) in vocabulary.entries().enumerate() {
             if matches!(kind, 3 | 4) {
                 entries.push((token.as_bytes(), u32::try_from(index)?));
             }
