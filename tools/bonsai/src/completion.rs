@@ -45,3 +45,17 @@ pub fn available_memory() -> crate::Result<serde_json::Value> {
         Err("Physical memory admission requires Windows.".into())
     }
 }
+
+/// Combines the fixed CPU policy and invocation with a current memory observation.
+/// No model/runtime bytes are read and no inference process is started.
+///
+/// # Errors
+/// Rejects malformed plans, invalid lexical storage or unavailable memory facts.
+pub fn cpu_check_plan(request: serde_json::Value) -> crate::Result<serde_json::Value> {
+    // This operation only plans. The script validates external storage, while
+    // supervision separately verifies every path before opening artifacts.
+    // Do not require unprovisioned ancestor directories to exist for CheckOnly.
+    let mut plan = bonsai_cpu_policy::run(request)?;
+    plan["AvailablePhysicalBytes"] = available_memory()?["AvailablePhysicalBytes"].clone();
+    Ok(plan)
+}

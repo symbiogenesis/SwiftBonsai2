@@ -13,9 +13,9 @@ const LOCK_JSON: &str = include_str!("../../../config/runtime.lock.json");
 const PROFILE_JSON: &str = include_str!("../../../config/profiles/reference-cpu.json");
 const SWIFT_LOCK_JSON: &str = include_str!("../../../config/swift-assessment.lock.json");
 /// Fixed process memory ceiling: 18 GiB.
-pub const MEMORY_LIMIT_BYTES: usize = 19_327_352_832;
+pub const MEMORY_LIMIT_BYTES: usize = bonsai_cpu_policy::MEMORY_LIMIT_BYTES;
 /// Required available physical memory including a 4 GiB host reserve.
-pub const REQUIRED_AVAILABLE_BYTES: u64 = 23_622_320_128;
+pub const REQUIRED_AVAILABLE_BYTES: u64 = bonsai_cpu_policy::REQUIRED_AVAILABLE_BYTES;
 
 /// The only reviewed development model/runtime selections. Neither qualifies daily use.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -39,18 +39,19 @@ impl LaunchProfile {
     /// Job-wide committed-memory ceiling; the physical reserve is additional.
     #[must_use]
     pub const fn memory_limit_bytes(self) -> usize {
-        match self {
-            Self::ReferenceCpu => MEMORY_LIMIT_BYTES,
-            Self::SwiftPq2Assessment => 12 * 1024 * 1024 * 1024,
-        }
+        self.cpu_profile().memory_limit_bytes()
     }
 
     /// Physical admission threshold, including a separate 4 GiB host reserve.
     #[must_use]
     pub const fn required_available_bytes(self) -> u64 {
+        self.cpu_profile().required_available_bytes()
+    }
+
+    const fn cpu_profile(self) -> bonsai_cpu_policy::Profile {
         match self {
-            Self::ReferenceCpu => REQUIRED_AVAILABLE_BYTES,
-            Self::SwiftPq2Assessment => 16 * 1024 * 1024 * 1024,
+            Self::ReferenceCpu => bonsai_cpu_policy::Profile::ReferenceCpu,
+            Self::SwiftPq2Assessment => bonsai_cpu_policy::Profile::SwiftPq2Assessment,
         }
     }
 }
@@ -180,11 +181,12 @@ impl LaunchPlan {
             "--cors-origins".into(),
             format!("http://127.0.0.1:{backend_port}").into(),
         ];
-        let (batch, microbatch) = match profile {
-            LaunchProfile::ReferenceCpu => ("256", "128"),
-            LaunchProfile::SwiftPq2Assessment => ("128", "64"),
-        };
-        arguments.extend(["--batch-size", batch, "--ubatch-size", microbatch].map(OsString::from));
+        arguments.extend([
+            OsString::from("--batch-size"),
+            profile.cpu_profile().batch_tokens().to_string().into(),
+            "--ubatch-size".into(),
+            profile.cpu_profile().microbatch_tokens().to_string().into(),
+        ]);
         arguments.extend(FIXED_ARGUMENTS.iter().map(OsString::from));
         Ok(Self {
             executable,

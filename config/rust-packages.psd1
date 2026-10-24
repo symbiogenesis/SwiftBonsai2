@@ -11,6 +11,7 @@
         @{ Name = 'bonsai-windows-process'; Manifest = 'src/windows-process/Cargo.toml'; Group = 'Broker'; Features = @('*') }
         @{ Name = 'bonsai-windows-credentials'; Manifest = 'src/windows-credentials/Cargo.toml'; Group = 'Broker'; Features = @('*') }
         @{ Name = 'bonsai-broker'; Manifest = 'src/broker/Cargo.toml'; Group = 'Broker'; Features = @('*') }
+        @{ Name = 'bonsai-cpu-policy'; Manifest = 'src/cpu-policy/Cargo.toml'; Group = 'Broker'; Features = @('*') }
         @{ Name = 'bonsai-tools'; Manifest = 'tools/bonsai/Cargo.toml'; Group = 'Broker'; Features = @('*') }
     )
 }

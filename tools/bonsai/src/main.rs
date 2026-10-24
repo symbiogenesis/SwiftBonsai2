@@ -45,11 +45,11 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     if arguments.len() == 1 && arguments[0] == "--version" {
         return Ok(serde_json::json!({
-            "Name": "bonsai-tools", "Version": env!("CARGO_PKG_VERSION"), "ProtocolVersion": 2
+            "Name": "bonsai-tools", "Version": env!("CARGO_PKG_VERSION"), "ProtocolVersion": 3
         }));
     }
     if arguments.len() != 3 || arguments[1] != "--request" {
-        return Err("Usage: bonsai-tools <credentials|memory|completion|qualification> --request ABSOLUTE_JSON_PATH; or --version".into());
+        return Err("Usage: bonsai-tools <credentials|memory|cpu-check-plan|completion|qualification> --request ABSOLUTE_JSON_PATH; or --version".into());
     }
     let maximum = if arguments[0] == "qualification" {
         MAX_QUALIFICATION_REQUEST_BYTES
@@ -60,6 +60,7 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
     match arguments[0].to_str() {
         Some("credentials") => bonsai_tools::credentials::run(request),
         Some("completion") => bonsai_tools::completion::run(request),
+        Some("cpu-check-plan") => bonsai_tools::completion::cpu_check_plan(request),
         Some("memory") if request.as_object().is_some_and(serde_json::Map::is_empty) => {
             bonsai_tools::completion::available_memory()
         }

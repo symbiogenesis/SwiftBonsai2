@@ -1,7 +1,7 @@
 # Bonsai maintenance tools
 
-`bonsai-tools` provides protected credential creation, bounded completion-process
-supervision and LoRA qualification scoring. It forbids unsafe code and reuses the
+`bonsai-tools` provides protected credential creation, fixed CPU invocation plans,
+bounded completion-process supervision and LoRA qualification scoring. It forbids unsafe code and reuses the
 audited Windows boundary crates.
 
 ## Packaged use
@@ -25,9 +25,9 @@ dependencies. GGUF wrappers share the resolver through `-GgufToolPath`.
 Key creation with `-WhatIf` creates nothing and resolves no executable. Planning
 may resolve the maintenance tool but never starts inference.
 
-These wrappers require `bonsai-tools` version 0.1.0, protocol 2. Protocol 2 adds
-the completed capture records consumed by paired evaluation; older binaries are
-rejected during the version handshake before a sample can start.
+These wrappers require `bonsai-tools` version 0.1.0, protocol 3. Protocol 3 moves
+CPU policy and artifact selection into Rust. Older
+binaries are rejected during the version handshake before a sample can start.
 
 ## Command boundary
 
@@ -35,6 +35,7 @@ rejected during the version handshake before a sample can start.
 bonsai-tools --version
 bonsai-tools credentials --request ABSOLUTE_JSON_PATH
 bonsai-tools memory --request ABSOLUTE_JSON_PATH
+bonsai-tools cpu-check-plan --request ABSOLUTE_JSON_PATH
 bonsai-tools completion --request ABSOLUTE_JSON_PATH
 bonsai-tools qualification --request ABSOLUTE_JSON_PATH
 ```
@@ -46,6 +47,13 @@ Success writes one JSON object to stdout; failure writes stderr diagnostics and
 returns nonzero. Credential receipts contain paths only. The bridge uses external
 native working directories, retains failed requests and preserves inherited
 Windows/profile environment variables.
+
+`cpu-check-plan` combines the shared `bonsai-cpu-policy` plan with a current
+available-memory observation. Its request contains `operation: "plan"`,
+`dataDirectory`, `profile`, `useAbliterateLora` and `useRepackedPtq1`. It returns
+the policy, compiled pins, selected paths and complete CPU-check argv without
+reading model bytes or starting inference. `Invoke-CpuCheck.ps1 -CheckOnly`
+uses this operation; the shared Rust crate owns its pure policy.
 
 Completion supervision retains verified artifact handles and owns the complete
 child Job lifetime. It checks parent PID/creation time/liveness, physical/process
@@ -65,6 +73,10 @@ Qualification scoring reads bounded original evidence/reviews directly.
 serialization, Unicode response hashes and accepted/pending/rejected reports.
 Missing human reviews, native logits or basis evidence remain pending; known
 regressions still reject. Scoring never launches inference.
+
+Frozen pre-port PowerShell fixtures cover complete CPU policies, artifact identities
+and argument vectors. Pure
+policy tests run in Rust; focused script checks cover the packaged JSON bridge.
 
 ## Development checks
 

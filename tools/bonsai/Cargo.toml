@@ -11,6 +11,7 @@ keywords = ["ternary", "quantization", "scalar"]
 categories = ["encoding", "science"]
 
 [dependencies]
+bonsai-cpu-policy = { path = "../../src/cpu-policy" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true

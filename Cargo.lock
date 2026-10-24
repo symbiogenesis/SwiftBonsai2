@@ -21,6 +21,7 @@ dependencies = [
 name = "bonsai-broker"
 version = "0.1.0"
 dependencies = [
+ "bonsai-cpu-policy",
  "bonsai-windows-credentials",
  "bonsai-windows-process",
  "http",
@@ -40,6 +41,14 @@ dependencies = [
  "bonsai-ternary",
  "serde_json",
  "windows-sys",
+]
+
+[[package]]
+name = "bonsai-cpu-policy"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -82,6 +91,7 @@ version = "0.1.0"
 name = "bonsai-tools"
 version = "0.1.0"
 dependencies = [
+ "bonsai-cpu-policy",
  "bonsai-windows-credentials",
  "bonsai-windows-process",
  "serde",
