@@ -128,8 +128,16 @@ mod pq2;
 mod ptq1;
 #[path = "upstream_prism/public_c.rs"]
 mod public_c;
+#[path = "upstream_prism/quant_buffers.rs"]
+mod quant_buffers;
 #[path = "upstream_prism/quant_selection.rs"]
 mod quant_selection;
+#[path = "upstream_prism/quantize_input.rs"]
+mod quantize_input;
+#[path = "upstream_prism/quantize_perf.rs"]
+mod quantize_perf;
+#[path = "upstream_prism/quantize_stats.rs"]
+mod quantize_stats;
 #[path = "upstream_prism/reasoning_budget.rs"]
 mod reasoning_budget;
 #[path = "upstream_prism/recurrent_rollback.rs"]
@@ -186,6 +194,18 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-quantize-perf",
+        "tests/test-quantize-perf.cpp",
+        Bridge::Common,
+        quantize_perf::run,
+    ),
+    register(
+        "test-quantize-stats",
+        "tests/test-quantize-stats.cpp",
+        Bridge::Common,
+        quantize_stats::run,
+    ),
     register(
         "test-backend-ops",
         "tests/test-backend-ops.cpp",
@@ -855,6 +875,9 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
         Some("dspark-forward-options") => dspark_forward::diagnostic(engine, &value),
         Some("export-graph-options") => export_graph::diagnostic(engine, &value),
         Some("backend-sampler-options") => backend_sampler::diagnostic(engine, &value),
+        Some("quantize-perf-options" | "quantize-stats-options") => {
+            quantization_diagnostic(engine, &value)
+        }
         Some("dspark-real-options") => {
             llama_grammar::exact_fields(&value, &["Kind", "Options"])?;
             dspark_real::run_with_options(
@@ -880,6 +903,22 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
         }
         Some("tokenizer-export") => tokenizer_diagnostic(engine, &value),
         _ => Err(invalid("unknown diagnostic kind")),
+    }
+}
+
+fn quantization_diagnostic(engine: &Engine, value: &Value) -> Result<Value> {
+    llama_grammar::exact_fields(value, &["Kind", "Arguments"])?;
+    let arguments: Vec<String> = serde_json::from_value(value["Arguments"].clone())?;
+    match value["Kind"].as_str() {
+        Some("quantize-perf-options") => quantize_perf::parse_arguments(&arguments)?.map_or_else(
+            || Ok(json!({"Diagnostic":"quantize-perf-options","Help":true,"OriginalExitStatus":1,"SourceCount":0})),
+            |options| quantize_perf::run_with_options(engine, &options),
+        ),
+        Some("quantize-stats-options") => quantize_stats::parse_arguments(&arguments)?.map_or_else(
+            || Ok(json!({"Diagnostic":"quantize-stats-options","Help":true,"OriginalExitStatus":0,"SourceCount":0})),
+            |options| quantize_stats::run_with_options(engine, &options),
+        ),
+        _ => Err(invalid("unknown quantization diagnostic")),
     }
 }
 

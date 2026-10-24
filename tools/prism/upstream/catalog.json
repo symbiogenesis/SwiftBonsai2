@@ -344,6 +344,8 @@
     "tests/test-ptq1_0-element-map.cpp",
     "tests/test-quant-type-selection.cpp",
     "tests/test-quantize-fns.cpp",
+    "tests/test-quantize-perf.cpp",
+    "tests/test-quantize-stats.cpp",
     "tests/test-reasoning-budget.cpp",
     "tests/test-recurrent-state-rollback.cpp",
     "tests/test-rope.cpp",

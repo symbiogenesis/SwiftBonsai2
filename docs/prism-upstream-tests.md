@@ -42,9 +42,18 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Sixty-five source contracts currently have safe Rust adapters in
+Sixty-seven source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-quantize-perf.cpp`: all five original operation schedules, eligible
+  types, sizes, alignment and iteration options. This benchmark-only source has
+  zero numerical assertions; passing means the workload completed. The source's
+  wrong-type vector-dot operand preparation is explicitly preserved.
+- `test-quantize-stats.cpp`: all float layers and eligible codecs, complete
+  150-bucket histograms and original error/reduction equations. Safe Rust owns
+  chunk scheduling and worker-local reductions. Its default compatible input
+  copies all 75 original tensors from a pinned publisher F32 checkpoint; no layer
+  is dropped for block-size compatibility. Both quantization sources are CI-only.
 - `test-backend-ops.cpp`: all 112 active CPU classes and 22,817 ordered
   geometries in each of evaluation, gradient and support modes. Rust interprets
   the complete pinned source program, builds inputs and computes every reference
