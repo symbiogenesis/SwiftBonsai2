@@ -20,6 +20,14 @@
 #include "concurrency.hpp"
 #include "arena_graph.hpp"
 #include "batch_allocator.hpp"
+#include "allocation.hpp"
+#include "mtmd_chunks.hpp"
+#include "sampling.hpp"
+#include "gguf.hpp"
+#include "chat_templates.hpp"
+#include "chat_parser.hpp"
+#include "chat_auto.hpp"
+#include "vocab.hpp"
 #include <nlohmann/json.hpp>
 
 #include <cstdint>
@@ -35,7 +43,7 @@
 #include <vector>
 
 namespace {
-using json = nlohmann::ordered_json;
+using wire_json = nlohmann::ordered_json;
 constexpr std::size_t max_file_bytes = 16 * 1024 * 1024;
 constexpr std::size_t max_response_bytes = 16 * 1024 * 1024;
 constexpr std::size_t max_operations = 128;
@@ -49,14 +57,14 @@ void require(bool condition, const char * message) {
     }
 }
 
-void require_keys(const json & object, std::initializer_list<const char *> keys) {
+void require_keys(const wire_json & object, std::initializer_list<const char *> keys) {
     require(object.is_object() && object.size() == keys.size(), "invalid object fields");
     for (const auto * key : keys) {
         require(object.contains(key), "missing or unknown object field");
     }
 }
 
-std::int32_t integer(const json & value) {
+std::int32_t integer(const wire_json & value) {
     require(value.is_number_integer(), "expected signed 32-bit integer");
     if (value.is_number_unsigned()) {
         const auto number = value.get<std::uint64_t>();
@@ -71,7 +79,7 @@ std::int32_t integer(const json & value) {
     return static_cast<std::int32_t>(number);
 }
 
-json read_request(const std::filesystem::path & path) {
+wire_json read_request(const std::filesystem::path & path) {
     const auto size = std::filesystem::file_size(path);
     require(size > 0 && size <= max_file_bytes, "request size must be 1 byte through 16 MiB");
     std::ifstream input(path, std::ios::binary);
@@ -81,23 +89,23 @@ json read_request(const std::filesystem::path & path) {
     require(bool(input) && input.peek() == std::char_traits<char>::eof() && !input.bad(),
             "request size changed during read");
     std::vector<std::set<std::string>> object_keys;
-    const auto callback = [&](int depth, json::parse_event_t event, json & parsed) {
+    const auto callback = [&](int depth, wire_json::parse_event_t event, wire_json & parsed) {
         require(depth <= 160, "JSON nesting exceeds limit");
-        if (event == json::parse_event_t::object_start) {
+        if (event == wire_json::parse_event_t::object_start) {
             object_keys.emplace_back();
-        } else if (event == json::parse_event_t::key) {
+        } else if (event == wire_json::parse_event_t::key) {
             require(!object_keys.empty() && object_keys.back().insert(parsed.get<std::string>()).second,
                     "duplicate JSON object key");
-        } else if (event == json::parse_event_t::object_end) {
+        } else if (event == wire_json::parse_event_t::object_end) {
             require(!object_keys.empty(), "invalid JSON object nesting");
             object_keys.pop_back();
         }
         return true;
     };
-    return json::parse(content, callback);
+    return wire_json::parse(content, callback);
 }
 
-void validate_operation(const json & operation) {
+void validate_operation(const wire_json & operation) {
     require(operation.is_object() && operation.contains("Kind") && operation.at("Kind").is_string(),
             "operation Kind must be a string");
     const auto & kind = operation.at("Kind").get_ref<const std::string &>();
@@ -141,12 +149,28 @@ void validate_operation(const json & operation) {
         prism_arena::validate(operation);
     } else if (prism_batch_allocator::handles(kind)) {
         prism_batch_allocator::validate(operation);
+    } else if (prism_allocation::handles(kind)) {
+        prism_allocation::validate(operation);
+    } else if (kind == "mtmd-chunks-trace") {
+        prism_mtmd_chunks::validate(operation);
+    } else if (prism_sampling::handles(kind)) {
+        prism_sampling::validate(operation);
+    } else if (prism_gguf::handles(kind)) {
+        prism_gguf::validate(operation);
+    } else if (prism_chat_templates::handles(kind)) {
+        prism_chat_templates::validate(operation);
+    } else if (prism_chat_parser::handles(kind)) {
+        prism_chat_parser::validate(operation);
+    } else if (prism_chat_auto::handles(kind)) {
+        prism_chat_auto::validate(operation);
+    } else if (prism_vocab::handles(kind)) {
+        prism_vocab::validate(operation);
     } else {
         throw std::runtime_error("unknown operation Kind");
     }
 }
 
-json execute(const json & operation) {
+wire_json execute(const wire_json & operation) {
     const auto & kind = operation.at("Kind").get_ref<const std::string &>();
     if (prism_jinja::handles(kind)) {
         return prism_jinja::execute(operation);
@@ -181,13 +205,37 @@ json execute(const json & operation) {
     if (prism_batch_allocator::handles(kind)) {
         return prism_batch_allocator::execute(operation);
     }
+    if (prism_allocation::handles(kind)) {
+        return prism_allocation::execute(operation);
+    }
+    if (kind == "mtmd-chunks-trace") {
+        return prism_mtmd_chunks::execute(operation);
+    }
+    if (prism_sampling::handles(kind)) {
+        return prism_sampling::execute(operation);
+    }
+    if (prism_gguf::handles(kind)) {
+        return prism_gguf::execute(operation);
+    }
+    if (prism_chat_templates::handles(kind)) {
+        return prism_chat_templates::execute(operation);
+    }
+    if (prism_chat_parser::handles(kind)) {
+        return prism_chat_parser::execute(operation);
+    }
+    if (prism_chat_auto::handles(kind)) {
+        return prism_chat_auto::execute(operation);
+    }
+    if (prism_vocab::handles(kind)) {
+        return prism_vocab::execute(operation);
+    }
     if (kind == "unicode-regex-split") {
         const auto pieces = unicode_regex_split(operation.at("Text").get<std::string>(),
                 operation.at("Expressions").get<std::vector<std::string>>(),
                 operation.at("ByteEncoding").get<bool>());
-        return json{{"Pieces", pieces}};
+        return wire_json{{"Pieces", pieces}};
     }
-    return json{{"Fits", common_speculative_mtp_first_decode_fits(
+    return wire_json{{"Fits", common_speculative_mtp_first_decode_fits(
             integer(operation.at("Batch")), integer(operation.at("Catchup")),
             integer(operation.at("Sequences")))}};
 }
@@ -212,11 +260,11 @@ int main(int argc, char ** argv) {
             require(operation.at("Kind") != "concurrent-log" || index + 1 == operations.size(),
                     "concurrent-log must be the final operation because it frees the logger singleton");
         }
-        json results = json::array();
+        wire_json results = wire_json::array();
         for (const auto & operation : operations) {
             results.push_back(execute(operation));
         }
-        const auto response = json{{"SchemaVersion", 1}, {"Results", results}}.dump();
+        const auto response = wire_json{{"SchemaVersion", 1}, {"Results", results}}.dump();
         require(response.size() <= max_response_bytes, "response exceeds 16 MiB limit");
         std::ofstream output(output_path, std::ios::binary | std::ios::trunc);
         require(bool(output), "cannot open response file");

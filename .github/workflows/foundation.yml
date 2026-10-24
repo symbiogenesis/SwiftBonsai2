@@ -347,15 +347,17 @@ jobs:
           $receipt = Get-Content -LiteralPath (Join-Path $env:PRISM_UPSTREAM_EVIDENCE 'receipt.json') -Raw | ConvertFrom-Json
           $bridge = @($receipt.NativeBuilds | Where-Object { $_.Family -ceq 'common' })
           if ($receipt.Status -cne 'complete' -or $bridge.Count -ne 1) { throw 'Benchmark requires the settled correctness build.' }
-          foreach ($target in @('cpp', 'rust')) {
-            $output = Join-Path $env:PRISM_UPSTREAM_EVIDENCE "peg-deserialize-$target-benchmark.json"
-            $arguments = @('--target', $target, '--benchmark', 'peg-deserialize', '--output', $output)
-            if ($target -eq 'cpp') { $arguments += @('--common-bridge', $bridge[0].Executable, '--evidence-directory', (Join-Path $env:PRISM_UPSTREAM_EVIDENCE 'peg-benchmark-bridge')) }
-            $result = Invoke-BonsaiNativeProcess -Executable $receipt.HarnessExecutable -ArgumentList $arguments -WorkingDirectory $env:PRISM_UPSTREAM_EVIDENCE -TimeoutSeconds 300 -LogPath (Join-Path $env:PRISM_UPSTREAM_EVIDENCE "peg-deserialize-$target-benchmark.log")
-            if ($result.ExitCode -ne 0) { throw "Benchmark infrastructure failed for $target." }
-            $report = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
-            if ($report.Measure -cne 'benchmark-workloads' -or $report.Cases.Count -ne 1 -or ($target -eq 'cpp' -and $report.Cases[0].Status -cne 'measured')) { throw 'Benchmark workload report is incomplete.' }
-            ($report | ConvertTo-Json -Depth 8) >> $env:GITHUB_STEP_SUMMARY
+          foreach ($benchmark in @('peg-deserialize', 'sampling', 'chat-peg')) {
+            foreach ($target in @('cpp', 'rust')) {
+              $output = Join-Path $env:PRISM_UPSTREAM_EVIDENCE "$benchmark-$target-benchmark.json"
+              $arguments = @('--target', $target, '--benchmark', $benchmark, '--output', $output)
+              if ($target -eq 'cpp') { $arguments += @('--common-bridge', $bridge[0].Executable, '--evidence-directory', (Join-Path $env:PRISM_UPSTREAM_EVIDENCE "$benchmark-benchmark-bridge")) }
+              $result = Invoke-BonsaiNativeProcess -Executable $receipt.HarnessExecutable -ArgumentList $arguments -WorkingDirectory $env:PRISM_UPSTREAM_EVIDENCE -TimeoutSeconds 300 -LogPath (Join-Path $env:PRISM_UPSTREAM_EVIDENCE "$benchmark-$target-benchmark.log")
+              if ($result.ExitCode -ne 0) { throw "Benchmark infrastructure failed for $target." }
+              $report = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
+              if ($report.Measure -cne 'benchmark-workloads' -or $report.Cases.Count -ne 1 -or ($target -eq 'cpp' -and $report.Cases[0].Status -cne 'measured')) { throw 'Benchmark workload report is incomplete.' }
+              ($report | ConvertTo-Json -Depth 8) >> $env:GITHUB_STEP_SUMMARY
+            }
           }
       - name: Summarize imported Prism coverage
         if: always() && env.PRISM_UPSTREAM_EVIDENCE != ''

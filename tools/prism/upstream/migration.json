@@ -80,7 +80,7 @@
       ],
       "AssertionsToPort": "13 original case invocations: tensor/arena/chunk maximums; leftover space; views/in-place; reuse/free; merge at32 andSIZE_MAX; prefer allocation; multiple types; zero; reallocation. Keep byte/allocation counts.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-arg-parser.cpp",
@@ -190,7 +190,7 @@
       ],
       "AssertionsToPort": "All diff-split/prefix/suffix/segment/marker/quote normalization and template-specific tool/reasoning detection tables; role markers across all templates; debug template mode separate.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-chat-peg-parser.cpp",
@@ -203,7 +203,7 @@
       ],
       "AssertionsToPort": "All whole and incremental parser/status/message/tool/schema expectations; preserve current_parse complete/incremental benchmarks separately.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-chat-template.cpp",
@@ -215,7 +215,7 @@
       ],
       "AssertionsToPort": "All default embedded template/message expectations; manual path/directory handling and supplied JSON paths separate; default requires no full model.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-chat.cpp",
@@ -364,7 +364,7 @@
       ],
       "AssertionsToPort": "All handcrafted malformed files; seed12345 metadata and tensor roundtrips; metadata-only/full; file/buffer/callback reads; set_kv copy and double-copy invariants across backends.",
       "LegacyReferenceRequired": true,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-grammar-integration.cpp",
@@ -533,7 +533,7 @@
       ],
       "AssertionsToPort": "Default marker; text/image/audio chunks positive counts and valid token/ID/position metadata; save query exact size; too-small save; truncated load rejected; full roundtrip exact metadata/token/ID equality.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-mtmd-impl.cpp",
@@ -723,7 +723,7 @@
       ],
       "AssertionsToPort": "All temp/temp-ext/topk/topp/minp/XTC/typical/penalties/DRY/top-n-sigma tables plus sampler queue combinations; preserve default test_perf separately.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-save-load-state.cpp",
@@ -771,7 +771,7 @@
       ],
       "AssertionsToPort": "Exact token ID fixtures; detokenization/roundtrip and vocab properties; concurrent tokenization; text-file export mode separate; all15 variants preserved.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-tokenizer-0.py",

@@ -9,6 +9,23 @@
     reason = "Sibling modules share adapters explicitly; unreachable_pub rejects unrestricted pub."
 )]
 
+#[path = "upstream_prism/allocation.rs"]
+mod allocation;
+#[path = "upstream_prism/chat_auto.rs"]
+mod chat_auto;
+#[path = "upstream_prism/chat_peg.rs"]
+mod chat_peg;
+#[path = "upstream_prism/chat_template.rs"]
+mod chat_template;
+#[path = "upstream_prism/gguf.rs"]
+mod gguf;
+#[path = "upstream_prism/mtmd_chunks.rs"]
+mod mtmd_chunks;
+#[path = "upstream_prism/sampling.rs"]
+mod sampling;
+#[path = "upstream_prism/tokenizer.rs"]
+mod tokenizer;
+
 #[path = "upstream_prism/batch_allocator.rs"]
 mod batch_allocator;
 #[path = "upstream_prism/codec_assertions.rs"]
@@ -88,6 +105,54 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-chat-auto-parser",
+        "tests/test-chat-auto-parser.cpp",
+        Bridge::Common,
+        chat_auto::run,
+    ),
+    register(
+        "test-tokenizer-0",
+        "tests/test-tokenizer-0.cpp",
+        Bridge::Common,
+        tokenizer::run,
+    ),
+    register(
+        "test-chat-peg-parser",
+        "tests/test-chat-peg-parser.cpp",
+        Bridge::Common,
+        chat_peg::run,
+    ),
+    register(
+        "test-gguf",
+        "tests/test-gguf.cpp",
+        Bridge::Common,
+        gguf::run,
+    ),
+    register(
+        "test-alloc",
+        "tests/test-alloc.cpp",
+        Bridge::Common,
+        allocation::run,
+    ),
+    register(
+        "test-chat-template",
+        "tests/test-chat-template.cpp",
+        Bridge::Common,
+        chat_template::run,
+    ),
+    register(
+        "test-mtmd-c-api",
+        "tests/test-mtmd-c-api.c",
+        Bridge::Common,
+        mtmd_chunks::run,
+    ),
+    register(
+        "test-sampling",
+        "tests/test-sampling.cpp",
+        Bridge::Common,
+        sampling::run,
+    ),
     register(
         "peg-basic",
         "tests/peg-parser/test-basic.cpp",
@@ -240,12 +305,26 @@ const CASES: &[Case] = &[
     ),
 ];
 
-const BENCHMARKS: &[Case] = &[register(
-    "peg-deserialize",
-    "tests/peg-parser/test-json-serialization.cpp#deserialize",
-    Bridge::Common,
-    peg::benchmark_deserialization,
-)];
+const BENCHMARKS: &[Case] = &[
+    register(
+        "chat-peg",
+        "tests/test-chat-peg-parser.cpp#performance",
+        Bridge::Common,
+        chat_peg::benchmark,
+    ),
+    register(
+        "sampling",
+        "tests/test-sampling.cpp#performance",
+        Bridge::Common,
+        sampling::benchmark,
+    ),
+    register(
+        "peg-deserialize",
+        "tests/peg-parser/test-json-serialization.cpp#deserialize",
+        Bridge::Common,
+        peg::benchmark_deserialization,
+    ),
+];
 
 fn selected(case: Option<&'static Case>) -> impl Iterator<Item = &'static Case> {
     CASES
@@ -256,9 +335,11 @@ struct Options {
     target: Target,
     case: Option<&'static Case>,
     benchmark: Option<&'static Case>,
+    diagnostic: Option<PathBuf>,
     bridge: Option<PathBuf>,
     common_bridge: Option<PathBuf>,
     evidence_directory: Option<PathBuf>,
+    source_directory: Option<PathBuf>,
     output: PathBuf,
 }
 
@@ -278,9 +359,11 @@ fn options() -> Result<Options> {
     let mut target = None;
     let mut case = None;
     let mut benchmark = None;
+    let mut diagnostic = None;
     let mut bridge = None;
     let mut common_bridge = None;
     let mut evidence_directory = None;
+    let mut source_directory = None;
     let mut output = None;
     let mut arguments = env::args_os().skip(1);
     while let Some(argument) = arguments.next() {
@@ -318,11 +401,17 @@ fn options() -> Result<Options> {
             Some("--bridge") if bridge.is_none() => {
                 bridge = Some(absolute_path(value, "--bridge")?);
             }
+            Some("--diagnostic") if diagnostic.is_none() => {
+                diagnostic = Some(absolute_path(value, "--diagnostic")?);
+            }
             Some("--common-bridge") if common_bridge.is_none() => {
                 common_bridge = Some(absolute_path(value, "--common-bridge")?);
             }
             Some("--evidence-directory") if evidence_directory.is_none() => {
                 evidence_directory = Some(absolute_path(value, "--evidence-directory")?);
+            }
+            Some("--source-directory") if source_directory.is_none() => {
+                source_directory = Some(absolute_path(value, "--source-directory")?);
             }
             Some("--output") if output.is_none() => {
                 output = Some(absolute_path(value, "--output")?);
@@ -330,45 +419,95 @@ fn options() -> Result<Options> {
             _ => return Err(invalid("unknown or duplicate upstream suite option")),
         }
     }
-    let target = target.ok_or_else(|| invalid("--target is required"))?;
-    if benchmark.is_some()
-        && (case.is_some()
-            || env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
-            || env::var("GITHUB_REF").as_deref() != Ok("refs/heads/main"))
-    {
-        return Err(invalid(
-            "Select either --case or a CI-only --benchmark on main",
-        ));
-    }
-    if matches!(target, Target::Cpp) {
-        if evidence_directory.is_none() {
-            return Err(invalid("--target cpp requires --evidence-directory"));
-        }
-        if benchmark.is_none()
-            && selected(case).any(|case| case.bridge == Bridge::Ggml)
-            && bridge.is_none()
-        {
-            return Err(invalid("selected C++ cases require --bridge"));
-        }
-        if (benchmark.is_some() || selected(case).any(|case| case.bridge == Bridge::Common))
-            && common_bridge.is_none()
-        {
-            return Err(invalid("selected C++ cases require --common-bridge"));
-        }
-    }
-    Ok(Options {
-        target,
+    let options = Options {
+        target: target.ok_or_else(|| invalid("--target is required"))?,
         case,
         benchmark,
+        diagnostic,
         bridge,
         common_bridge,
         evidence_directory,
+        source_directory,
         output: output.ok_or_else(|| invalid("--output is required"))?,
-    })
+    };
+    options.validate()?;
+    Ok(options)
+}
+
+impl Options {
+    fn validate(&self) -> Result<()> {
+        if self.case.is_none()
+            && self.benchmark.is_none()
+            && self.diagnostic.is_none()
+            && (env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
+                || env::var("GITHUB_REF").as_deref() != Ok("refs/heads/main"))
+        {
+            return Err(invalid(
+                "The complete source catalog runs only in GitHub Actions on main; select one --case locally.",
+            ));
+        }
+        if (self.benchmark.is_some() || self.diagnostic.is_some())
+            && (self.case.is_some()
+                || (self.benchmark.is_some() && self.diagnostic.is_some())
+                || env::var("GITHUB_ACTIONS").as_deref() != Ok("true")
+                || env::var("GITHUB_REF").as_deref() != Ok("refs/heads/main"))
+        {
+            return Err(invalid(
+                "Select one case, CI-only benchmark or CI-only diagnostic on main",
+            ));
+        }
+        if matches!(self.target, Target::Cpp) {
+            if self.evidence_directory.is_none() {
+                return Err(invalid("--target cpp requires --evidence-directory"));
+            }
+            if self.benchmark.is_none()
+                && self.diagnostic.is_none()
+                && selected(self.case).any(|case| case.bridge == Bridge::Ggml)
+                && self.bridge.is_none()
+            {
+                return Err(invalid("selected C++ cases require --bridge"));
+            }
+            if (self.benchmark.is_some()
+                || self.diagnostic.is_some()
+                || selected(self.case).any(|case| case.bridge == Bridge::Common))
+                && self.common_bridge.is_none()
+            {
+                return Err(invalid("selected C++ cases require --common-bridge"));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 fn result(id: &str, passed: bool, detail: String) -> Value {
     json!({"Id": id, "Status": if passed { "pass" } else { "fail" }, "Detail": Value::String(detail)})
+}
+
+fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
+    if fs::metadata(config)?.len() > 65536 {
+        return Err(invalid("diagnostic configuration exceeds size bound"));
+    }
+    let value: Value = serde_json::from_slice(&fs::read(config)?)?;
+    let object = value
+        .as_object()
+        .filter(|object| object.len() == 4)
+        .ok_or_else(|| invalid("diagnostic configuration requires four fields"))?;
+    let field = |name| {
+        object
+            .get(name)
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid("diagnostic field must be text"))
+    };
+    if field("Kind")? != "tokenizer-export" {
+        return Err(invalid("unknown diagnostic kind"));
+    }
+    tokenizer::export_text(
+        engine,
+        field("Vocabulary")?,
+        std::path::Path::new(field("InputPath")?),
+        std::path::Path::new(field("OutputPath")?),
+    )
 }
 
 fn main() -> Result<()> {
@@ -378,8 +517,11 @@ fn main() -> Result<()> {
         options.bridge,
         options.common_bridge,
         options.evidence_directory,
+        options.source_directory,
     )?;
-    let cases = if let Some(benchmark) = options.benchmark {
+    let cases = if let Some(config) = &options.diagnostic {
+        vec![diagnostic(&engine, config)?]
+    } else if let Some(benchmark) = options.benchmark {
         vec![(benchmark.run)(&engine)?]
     } else {
         selected(options.case)
@@ -391,7 +533,7 @@ fn main() -> Result<()> {
         "UpstreamCommit": UPSTREAM,
         "Target": match options.target { Target::Cpp => "cpp", Target::Rust => "rust" },
         "Cases": cases,
-        "Measure": if options.benchmark.is_some() { "benchmark-workloads" } else { "upstream-source-files" },
+        "Measure": if options.benchmark.is_some() { "benchmark-workloads" } else if options.diagnostic.is_some() { "diagnostic-workloads" } else { "upstream-source-files" },
     });
     fs::write(options.output, serde_json::to_vec_pretty(&report)?)?;
     // Measured failures belong in the report. Nonzero exits indicate an

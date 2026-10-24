@@ -54,7 +54,7 @@ if ((Get-FileHash -LiteralPath (Join-Path $source 'src/CMakeLists.txt') -Algorit
 # Model/download-dependent targets stay red
 # in the catalog until an explicit qualified adapter is added.
 $targets = @(
-    'test-alloc', 'test-gguf'
+    'test-gguf'
 )
 if ($Case) {
     if ($targets -cnotcontains $Case) { throw 'Case must name exactly one allowlisted original C++ suite.' }

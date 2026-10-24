@@ -23,6 +23,6 @@ set(FETCHCONTENT_FULLY_DISCONNECTED ON CACHE BOOL "" FORCE)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "" FORCE)
 add_subdirectory("${PRISM_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/prism")
 
-add_executable(prism-upstream-common-bridge bridge.cpp jinja.hpp mtmd.hpp grammar_parser.hpp reasoning_budget.hpp tensor_graph.hpp grammar.hpp codec.hpp peg.hpp concurrency.hpp arena_graph.hpp batch_allocator.hpp)
-target_include_directories(prism-upstream-common-bridge PRIVATE "${PRISM_SOURCE_DIR}/src" "${PRISM_SOURCE_DIR}")
+add_executable(prism-upstream-common-bridge bridge.cpp jinja.hpp mtmd.hpp grammar_parser.hpp reasoning_budget.hpp tensor_graph.hpp grammar.hpp codec.hpp peg.hpp concurrency.hpp arena_graph.hpp batch_allocator.hpp allocation.hpp mtmd_chunks.hpp sampling.hpp gguf.hpp chat_templates.hpp chat_parser.hpp chat_auto.hpp vocab.hpp)
+target_include_directories(prism-upstream-common-bridge PRIVATE "${PRISM_SOURCE_DIR}/src" "${PRISM_SOURCE_DIR}" "${PRISM_SOURCE_DIR}/ggml/src")
 target_link_libraries(prism-upstream-common-bridge PRIVATE llama-common mtmd)

@@ -315,6 +315,14 @@
     "tests/peg-parser/test-python-dict-parser.cpp",
     "tests/peg-parser/test-unicode.cpp",
     "tests/test-peg-parser.cpp",
-    "tests/test-batch-alloc.cpp"
+    "tests/test-batch-alloc.cpp",
+    "tests/test-alloc.cpp",
+    "tests/test-chat-template.cpp",
+    "tests/test-mtmd-c-api.c",
+    "tests/test-sampling.cpp",
+    "tests/test-chat-peg-parser.cpp",
+    "tests/test-gguf.cpp",
+    "tests/test-chat-auto-parser.cpp",
+    "tests/test-tokenizer-0.cpp"
   ]
 }

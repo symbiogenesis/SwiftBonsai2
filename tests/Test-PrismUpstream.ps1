@@ -14,7 +14,7 @@ param(
     [Parameter(Mandatory)][string]$SourceArchive,
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [Parameter(Mandatory)][string]$TargetDirectory,
-    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator')][string]$Case = 'All',
+    [ValidateSet('All', 'Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0')][string]$Case = 'All',
     [string]$CMakePath,
     [ValidateSet('Ninja', 'Visual Studio 18 2026', 'Visual Studio 17 2022')][string]$Generator = 'Ninja',
     [ValidateSet('ARM64', 'x64')][string]$NativePlatform = 'ARM64',
@@ -66,6 +66,7 @@ $receipt = [ordered]@{
     Selection = $Case
     Generator = $Generator
     NativePlatform = $NativePlatform
+    SourceDirectory = $source
     NativeToolset = if ($Generator -ne 'Ninja' -and $NativePlatform -eq 'ARM64') { 'ClangCL' } else { $null }
     CompilerLauncher = $CompilerLauncher
     ParallelJobs = $Parallel
@@ -126,8 +127,16 @@ $adapters = @{
     PegUnicode = @{ Name = 'peg-unicode'; Id = 'tests/peg-parser/test-unicode.cpp'; Family = 'common' }
     PegParser = @{ Name = 'test-peg-parser'; Family = 'common' }
     BatchAllocator = @{ Name = 'test-batch-alloc'; Family = 'common' }
+    Allocator = @{ Name = 'test-alloc'; Family = 'common' }
+    ChatTemplate = @{ Name = 'test-chat-template'; Family = 'common' }
+    MtmdCApi = @{ Name = 'test-mtmd-c-api'; Id = 'tests/test-mtmd-c-api.c'; Family = 'common' }
+    Sampling = @{ Name = 'test-sampling'; Family = 'common' }
+    ChatPeg = @{ Name = 'test-chat-peg-parser'; Family = 'common' }
+    Gguf = @{ Name = 'test-gguf'; Family = 'common' }
+    ChatAuto = @{ Name = 'test-chat-auto-parser'; Family = 'common' }
+    Tokenizer0 = @{ Name = 'test-tokenizer-0'; Family = 'common' }
 }
-$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator') } else { @($Case) }
+$selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0') } else { @($Case) }
 $bridgeFamilies = @{
     ggml = @{ Source = $upstream; Target = 'prism-upstream-bridge'; Option = '--bridge' }
     common = @{ Source = (Join-Path $upstream 'common'); Target = 'prism-upstream-common-bridge'; Option = '--common-bridge' }
@@ -179,11 +188,11 @@ foreach ($selection in $selected) {
     $caseId = if ($adapter.ContainsKey('Id')) { $adapter.Id } else { "tests/$caseName.cpp" }
     foreach ($engine in @('cpp', 'rust')) {
         $output = Join-Path $evidence "$caseName-$engine.json"
-        $arguments = @('--target', $engine, '--case', $caseId, '--output', $output)
+        $arguments = @('--target', $engine, '--case', $caseId, '--source-directory', $source, '--output', $output)
         if ($engine -eq 'cpp') {
             $arguments += @($bridgeFamilies[$adapter.Family].Option, $bridges[$adapter.Family], '--evidence-directory', (Join-Path $evidence "$caseName-bridge"))
         }
-        $timeout = if ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda')) { 300 } else { 120 }
+        $timeout = if ($selection -in @('Jinja', 'GrammarIntegration', 'Quantize', 'PtqCuda', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0')) { 300 } else { 120 }
         $null = Invoke-UpstreamCommand -Executable $harness -Arguments $arguments -TimeoutSeconds $timeout
         $result = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json -AsHashtable
         if ($result.SchemaVersion -ne 1 -or $result.UpstreamCommit -cne $lock.Commit -or $result.Target -cne $engine -or
@@ -207,7 +216,13 @@ if ($Case -eq 'All') {
             throw 'The raw C++ importer returned a missing or duplicate suite identity.'
         }
     }
-    foreach ($result in $raw.ReferenceResults.Cases) { $referenceCases.Add($result) }
+    foreach ($result in $raw.ReferenceResults.Cases) {
+        if (@($referenceCases | Where-Object { $_.Id -ceq $result.Id }).Count -gt 0) {
+            # Keep the original GGUF replay until its Rust replacement has
+            # passed hosted acceptance; a duplicate source is counted once.
+            if ($result.Status -cne 'pass') { throw "Retained original control failed for $($result.Id)." }
+        } else { $referenceCases.Add($result) }
+    }
 }
 $reference = @{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = $referenceCases.ToArray() }
 $rust = @{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = $rustCases.ToArray() }

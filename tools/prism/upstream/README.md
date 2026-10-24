@@ -5,8 +5,16 @@ safe Rust (`#![forbid(unsafe_code)]`). It uses the same test code with two
 targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Upstream runs first and must pass before Rust is tested.
 
-The current ports preserve twenty-five source contracts from
+The current ports preserve thirty-three source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
+
+- `tests/test-tokenizer-0.cpp`: all 694 independent token-vector predicates
+  across the fifteen bundled vocabulary fixtures, including shared-context
+  hardware workers and the original worker-zero comparisons. Fixtures remain
+  in the verified external source archive. Optional timed text export uses
+  a separate CI-only `--diagnostic` configuration.
+- `tests/test-chat-auto-parser.cpp`: all seventeen groups, including 524
+  executed conditions, the source quote normalizer and 42 role templates.
 
 - `tests/test-pq2-row-shapes.cpp`: all 15 shapes, `K` in
   `{128,256,384,512,640}`, `M=4`, `N` in `{1,4,16}`, and the original
@@ -58,6 +66,21 @@ The current ports preserve twenty-five source contracts from
   umbrella `tests/test-peg-parser.cpp` preserves its group order and summary.
 - `tests/test-batch-alloc.cpp`: all 26 named cases and 198 assertions, including
   invalid inputs, sequence splitting, tail retention and multidimensional positions.
+- `tests/test-alloc.cpp`: all 13 scenarios, 14 graph allocations, 468 unconditional
+  predicates and every overlap-dependent lifetime check, including multi-buffer
+  external allocations and reuse of one allocator across graphs.
+- `tests/test-gguf.cpp`: all 34 crafted variants, all CPU file/buffer/callback
+  roundtrips and metadata copying/merging. Input-only MSVC parity covers every
+  crafted byte file, both generated contexts and subsequent RNG state.
+- `tests/test-sampling.cpp`: all 343 correctness conditions. Candidate backing
+  storage remains stateful across filters, distributions, copies and resets.
+- `tests/test-chat-template.cpp`: all 73 default automated conditions, including
+  36 legacy renders and 35 Jinja renders with Windows newline normalization.
+- `tests/test-chat-peg-parser.cpp`: all seven groups, 197 fixed assertions,
+  conditional name checks and 105 diff crash-resistance conditions.
+- `tests/test-mtmd-c-api.c`: all 46 original conditions. Rust explicitly invokes
+  the public upstream opaque fixture factory; that production function supplies
+  chunk contents. Rust owns traversal, save/load requests and every predicate.
 
 Unicode, MTP, Jinja, MTMD and grammar use a [common bridge](common/PROTOCOL.md).
 The Rust runtime has no equivalent production APIs; their Rust results fail.
@@ -65,9 +88,9 @@ The Rust runtime has no equivalent production APIs; their Rust results fail.
 The native bridge contains only serialization, input validation and production
 ggml calls. It does not include upstream test sources or contain generators,
 references, expected values, assertions or tolerances. The C++ fixture exporters
-and all twenty-five ported test mains have been retired from this adapter build.
-`reference/` still imports the two unported C++ correctness controls. Removing
-those before their replacements pass would lose existing coverage.
+and ported source files are no longer compiled as tests, except for a temporary
+original GGUF replay in `reference/`. That replay remains until its replacement
+passes hosted acceptance. Duplicate source identities are counted once.
 
 The runtime's vector API runs once for each original activation column,
 preserving the complete `M*N` comparison. This tests numerical compatibility,
@@ -93,7 +116,9 @@ retains bridge requests/responses and logs, and checks the upstream report befor
 retargeting. Full catalogs and all benchmarks run only in CI.
 The Foundation manual input `prism_benchmarks` runs the ported benchmark paths
 after correctness. PEG deserialization retains its 100-iteration workload;
-reported wall time includes process transport and has no correctness threshold.
+sampling retains five 32-iteration workloads; chat PEG retains complete and
+incremental parse workloads. Each report states its timing boundary and has no
+correctness threshold.
 
 Reports preserve `SchemaVersion: 1`, `UpstreamCommit`, `Target`, and `Cases`
 containing `Id`, `Status` and `Detail`. Measured conformance failures are data for

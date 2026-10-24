@@ -49,6 +49,7 @@ pub(super) struct Engine {
     bridge: Option<PathBuf>,
     common_bridge: Option<PathBuf>,
     evidence_directory: Option<PathBuf>,
+    source_directory: Option<PathBuf>,
 }
 
 impl Engine {
@@ -57,6 +58,7 @@ impl Engine {
         bridge: Option<PathBuf>,
         common_bridge: Option<PathBuf>,
         evidence_directory: Option<PathBuf>,
+        source_directory: Option<PathBuf>,
     ) -> Result<Self> {
         for path in [&bridge, &common_bridge].into_iter().flatten() {
             if !path.is_absolute() || !path.is_file() {
@@ -69,12 +71,39 @@ impl Engine {
             }
             fs::create_dir_all(path)?;
         }
-        Ok(Self {
+        let engine = Self {
             target,
             bridge,
             common_bridge,
             evidence_directory,
-        })
+            source_directory,
+        };
+        if engine.source_directory.is_some() {
+            let root = engine.source_path("")?;
+            if !root.is_absolute() || !root.is_dir() {
+                return Err(invalid(
+                    "upstream source directory must be an existing absolute directory",
+                ));
+            }
+        }
+        Ok(engine)
+    }
+
+    pub(super) fn source_path(&self, relative: &str) -> Result<PathBuf> {
+        let path = Path::new(relative);
+        if path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        {
+            return Err(invalid(
+                "upstream asset path must contain only relative normal components",
+            ));
+        }
+        Ok(self
+            .source_directory
+            .as_ref()
+            .ok_or_else(|| invalid("selected source requires --source-directory"))?
+            .join(path))
     }
 
     pub(super) fn execute(&self, name: &str, requests: &[Request]) -> Result<Vec<Output>> {

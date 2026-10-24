@@ -315,3 +315,36 @@ batch field, output IDs, used/output counts, sequence position ranges, ubatch
 counts, pointer presence and pointed-to content. The optional range-only memory
 adapter returns caller-supplied position ranges; unused methods throw. Native
 code has no original case selector, expected split table or allocator assertions.
+
+## Generic graph allocator observations
+
+`allocation-graph` takes exact fields `Kind`, `Backends`, `Steps`. Up to three
+backend descriptors supply `Alignment` (power of two, 1..64) and `MaxBufferSize`
+(null for unlimited, or 1..1 MiB). The native input backend supplies real aligned
+backing storage, bounded to 4 MiB per allocation, and production gallocr behavior
+uses the supplied logical limits. Buffer callbacks carry data/size metadata only.
+
+One through four steps share the same production gallocr, with fresh graph
+contexts per step. Steps supply `Nodes`, `Output`, per-node `BufferTypes`,
+`ExternalAllocations`, and `Reserve`. Up to 40 nodes describe F32 input, add,
+multiply, concatenate, scale, pad, mean, reshape, permute and view operations.
+Each tensor has at most 16,384 elements and each axis at most 1,024. Exact node
+and context fields are declared in `allocation.hpp`.
+
+Results contain raw reserve/allocation status, live buffer sizes, tensor buffer
+and relative address offsets, byte extents, source/view references, actual op and
+flags, production in-place capability, output flags, graph nodes and leaves.
+The Rust suite owns graph scenarios, memory overlap/liveness analysis and every
+allocation assertion. The adapter does not execute tensor computation here.
+
+The generic `mtmd-chunks-trace` transport exposes production public chunk collection, serialization, reload and decoder-position APIs with bounded handles and buffers. Its explicit `create-test-inputs` action calls the pinned production public `mtmd_test_create_input_chunks` factory, as the original source does: Rust owns the invocation and predicates, while the opaque populated chunks originate in that existing SUT factory. The adapter does not duplicate its contents or compile a C++ test source.
+
+The `sampler-trace` transport owns scoped production sampler and candidate handles. Rust supplies constructors, raw IEEE binary32 candidate fields and ordered apply, accept, reset, clone, copy and free actions. Candidate copies retain the complete backing vector and rebase the production active-data pointer, size, selection and sorted metadata; snapshots return the active view. There are at most 4096 actions, 32 handles of each kind, 131072 entries per vector and 262144 retained entries. Explicit `clock` actions return `ggml_time_us`. Rust supplies any timed action interval; dispatch and metadata checks within that interval are included, while construction, request parsing and warmup can be excluded. Benchmark execution remains CI-only.
+
+`gguf-inventory` returns every compiled production backend device. `gguf-read` forwards supplied bytes unchanged into the selected production file, buffer or callback reader. `gguf-context-trace` applies ordered typed KV setters, creates supplied tensor descriptors on the selected backend, snapshots metadata and selected tensor bytes, copies KV pairs, and writes/reloads through the selected reader. Numeric payloads use raw little-endian bytes; string values use hex bytes, preserving invalid UTF-8. The callback is bounded to 4096-byte reads and the original 4 GiB expected-file limit. Descriptor content and random generation remain in Rust. At most eight contexts, 256 setters/tensors per descriptor, 32 actions and 8 MiB supplied bytes are accepted; each snapshot selects at most 2 MiB tensor data. Native files use exclusive owned temporary directories beneath the caller's absolute process working directory, and failure to create a file fails the operation.
+
+`chat-builtins`, `legacy-chat-render` and `common-chat-render` expose production template inventory and rendering. Legacy rendering returns the raw return code and supplied-capacity byte buffer; common rendering returns the production prompt or exception metadata. Templates, normalization and comparisons are Rust-owned. The preliminary `chat-peg-trace` transport evaluates a supplied declarative graph with the production chat PEG builder, retains its arena across explicit actions, and returns raw parse/mapping/diff observations. Source registration requires the corresponding complete Rust port; compiling this adapter does not establish source coverage.
+
+`vocab-runtime-info` returns production hardware concurrency. `vocab-evaluate` loads a supplied absolute GGUF path with vocabulary-only model parameters and optionally creates the production context with its defaults. Rust supplies byte inputs, special-token flags, and up to256 explicit worker action schedules operating on that same shared context. Tokenize actions choose capture and diagnostic detokenization; clock actions return production microseconds. The adapter returns model/context presence and raw per-action token observations, never expected tokens or comparisons. The default Rust source port reads all15 pinned `.inp`/`.out` corpora, verifies asset digests, reproduces Windows text I/O and map behavior, and captures source worker0. Text-file export is a separate bounded CI-only diagnostic; its timer includes action dispatch and token serialization. External vocabularies remain under the runner's verified source directory.
+
+`chat_auto.hpp` adds preliminary generic production chat helper, template-variant comparison and analyzer/parser traces. Its Rust source port must be complete before source registration; native compilation alone establishes no source coverage.
