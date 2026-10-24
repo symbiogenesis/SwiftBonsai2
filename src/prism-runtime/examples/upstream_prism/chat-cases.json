@@ -80392,7 +80392,7 @@
             "reasoning_budget": -1,
             "reasoning_format": 0
           },
-          "BodyJson": "[[{\"Bytes\":[109,101,115,115,97,103,101,115]},[{\"role\":\"user\",\"content\":\"hello\"}]],[{\"Bytes\":[114,101,97,115,111,110,105,110,103,95,98,117,100,103,101,116,95,116,111,107,101,110,115]},0]]"
+          "BodyJson": "{\"messages\":[{\"content\":\"hello\",\"role\":\"user\"}],\"reasoning_budget_tokens\":0}"
         }
       ],
       "Checks": [
@@ -80470,7 +80470,7 @@
             "reasoning_format": 0,
             "reasoning_budget_message": "server default"
           },
-          "BodyJson": "[[{\"Bytes\":[109,101,115,115,97,103,101,115]},[{\"role\":\"user\",\"content\":\"hello\"}]],[{\"Bytes\":[114,101,97,115,111,110,105,110,103,95,98,117,100,103,101,116,95,109,101,115,115,97,103,101]},{\"Bytes\":[112,101,114,45,114,101,113,117,101,115,116,32,109,101,115,115,97,103,101]}]]"
+          "BodyJson": "{\"messages\":[{\"content\":\"hello\",\"role\":\"user\"}],\"reasoning_budget_message\":\"per-request message\"}"
         }
       ],
       "Checks": [

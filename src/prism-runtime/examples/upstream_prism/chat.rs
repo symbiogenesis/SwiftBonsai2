@@ -85,6 +85,16 @@ fn bytes(v: &Value) -> Result<Vec<u8>> {
     byte_array(field(v, "Bytes")?)
 }
 fn validate_template_kwargs(value: &Value) -> Result<()> {
+    if let Some(encoded) = value.get("BodyJson") {
+        let body: Value = serde_json::from_str(
+            encoded
+                .as_str()
+                .ok_or_else(|| invalid("chat BodyJson must be a string"))?,
+        )?;
+        if !body.is_object() || !body["messages"].is_array() {
+            return Err(invalid("chat server body must preserve the source JSON object"));
+        }
+    }
     if let Some(encoded) = value.get("ParametersJson") {
         validate_template_kwargs(&serde_json::from_str::<Value>(
             encoded
