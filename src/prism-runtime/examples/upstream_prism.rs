@@ -52,6 +52,8 @@ mod codec_assertions;
 mod common;
 #[path = "upstream_prism/double_float.rs"]
 mod double_float;
+#[path = "upstream_prism/dspark_forward.rs"]
+mod dspark_forward;
 #[path = "upstream_prism/dspark_inputs.rs"]
 mod dspark_inputs;
 #[path = "upstream_prism/dspark_logsnr.rs"]
@@ -166,6 +168,12 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-dspark-forward",
+        "tests/test-dspark-forward.cpp",
+        Bridge::Common,
+        dspark_forward::run,
+    ),
     register(
         "test-dspark-loop",
         "tests/test-dspark-loop.cpp",
@@ -755,6 +763,7 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
         }
         Some("gbnf-validator") => return validator::diagnostic(engine, &value),
         Some("dspark-loop-options") => return dspark_loop::diagnostic(engine, &value),
+        Some("dspark-forward-options") => return dspark_forward::diagnostic(engine, &value),
         Some("dspark-real-options") => {
             llama_grammar::exact_fields(&value, &["Kind", "Options"])?;
             return dspark_real::run_with_options(

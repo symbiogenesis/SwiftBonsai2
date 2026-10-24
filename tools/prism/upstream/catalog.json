@@ -311,6 +311,7 @@
     "tests/test-col2im-1d.cpp",
     "tests/test-dfly-fusion.cpp",
     "tests/test-double-float.cpp",
+    "tests/test-dspark-forward.cpp",
     "tests/test-dspark-logsnr-meta.cpp",
     "tests/test-dspark-loop.cpp",
     "tests/test-dspark-real-eval.cpp",

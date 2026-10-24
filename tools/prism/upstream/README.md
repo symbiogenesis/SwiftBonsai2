@@ -6,9 +6,12 @@ targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Both results are retained for each source; every
 upstream reference failure fails the final gate.
 
-The current ports preserve fifty-nine source contracts from
+The current ports preserve sixty source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
+- DSpark forward retains all six Windows CPU modes and their runtime/prefix
+  grids, A/B checks, replays, capture atomicity and rejection contracts. Tier2
+  preserves diagnostic-only numeric differences against independent Rust math.
 - DSpark loop retains all seven acceptance cases,49 exact token comparisons and
   95 primitive predicates. Independent safe Rust math follows pinned published
   DeepSpec equations; expected tokens are computed before production opens.

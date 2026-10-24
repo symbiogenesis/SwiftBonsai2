@@ -42,9 +42,14 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Fifty-nine source contracts currently have safe Rust adapters in
+Sixty source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-dspark-forward.cpp`: all six Windows CPU modes, including scalar/head
+  oracles, SNR/output A/B, runtime/prefix grids, replay, capture atomicity and
+  negative-prefix contracts. Tier2 uses the independent Rust reference and
+  preserves the source's diagnostic-only numeric differences. Original Metal and
+  CUDA modes are explicitly outside the selected Snapdragon CPU backend scope.
 - `test-dspark-loop.cpp`: the full seven-entry acceptance cycle, 49 exact token
   comparisons and 95 original primitive predicates. Safe Rust computes the tiny
   fixture's independent reference before opening the production session, using

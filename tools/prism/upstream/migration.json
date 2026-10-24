@@ -276,7 +276,7 @@
       ],
       "AssertionsToPort": "Tier1 synthetic tap shapes/finiteness; SNR/output/runtime/prefix strict A/B logits; corrected/shared-head paths; CPU/Metal tolerance atol1e-3 rtol1e-2; tier2 reference binary. Runtime-bench modes remain CI-only.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-dspark-logsnr-meta.cpp",
