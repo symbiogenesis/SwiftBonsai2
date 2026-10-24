@@ -15,6 +15,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Some upstream files undefine NDEBUG themselves; others rely on build policy.
 if(MSVC)
     add_compile_options(/UNDEBUG /permissive- /sdl)
+    # Upstream uses POSIX CRT aliases such as isatty. Retain SDL without
+    # promoting their compatibility deprecation into a source-build error.
+    add_compile_definitions(_CRT_NONSTDC_NO_WARNINGS)
 else()
     add_compile_options(-UNDEBUG)
 endif()
