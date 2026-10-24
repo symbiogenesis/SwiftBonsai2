@@ -4,18 +4,22 @@
 Checks source pinning, deterministic overlay output, and rejection without edits.
 .DESCRIPTION
 Builds Rust and generates its C declarations, then checks source application.
+RustTargetDirectory optionally reuses the engine loader's external Cargo artifacts.
 Does not run native tests, load a model, or benchmark.
 #>
 [CmdletBinding()]
 [OutputType([string])]
-param([Parameter(Mandatory)][string]$SourceArchive)
+param(
+    [Parameter(Mandatory)][string]$SourceArchive,
+    [string]$RustTargetDirectory
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $overlay = Join-Path $repo 'tools/prism/Apply-Overlay.ps1'
 $lock = Get-Content -LiteralPath (Join-Path $repo 'tools/prism/source.lock.json') -Raw | ConvertFrom-Json -DateKind String
-$result = & (Join-Path $repo 'scripts/Build-PrismEngine.ps1') -SourceArchive $SourceArchive -PrepareOnly
+$result = & (Join-Path $repo 'scripts/Build-PrismEngine.ps1') -SourceArchive $SourceArchive -RustTargetDirectory $RustTargetDirectory -PrepareOnly
 $adapter = Join-Path $result.SourceDirectory 'src/llama-adapter.cpp'
 $header = Join-Path $result.SourceDirectory 'src/bonsai_prism.h'
 $cmake = Join-Path $result.SourceDirectory 'src/CMakeLists.txt'

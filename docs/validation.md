@@ -144,6 +144,17 @@ instead of checkout timestamps to validate restored Rust
 artifacts. Changed source still rebuilds; every analyzer and test command still
 runs. Build-script inputs retain Cargo's normal timestamp checks. The first run
 populates the new fingerprint caches; subsequent runs can reuse unchanged builds.
+Hosted jobs also cache the exact pinned Rust toolchain directory, isolated by
+runner image, architecture and required components. Every restore verifies the
+compiler host, sysroot and installed components; rustup settings and credentials
+are excluded. Owner-managed runners keep their ordinary rustup installation path.
+Prism caches the ccache installation packages for the exact Linux runner image,
+avoiding repeated package-index downloads. Its overlay checks and engine build
+share the cached Rust engine-loader artifacts while preparing fresh verified
+source trees; native-test artifacts remain separate. All overlay rejection,
+native build, analyzer and correctness checks still run. Nightly job summaries
+record the runner image and exact compiler/build cache hits so cold image
+transitions can be distinguished from warm runs.
 Scratch/evidence remains external. Select the published maintenance executable
 from the exact evaluated main revision via `BONSAI_TOOLS_PATH` or `-ToolPath`;
 version/protocol checking is not source-to-binary attestation.

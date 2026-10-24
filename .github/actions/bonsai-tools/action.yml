@@ -3,14 +3,17 @@ description: Build the pinned native Windows ARM64 maintenance CLI once for a jo
 runs:
   using: composite
   steps:
-    - name: Install and identify the pinned native Rust compiler
+    - name: Reuse the pinned native Rust compiler
+      uses: ./.github/actions/rust-toolchain
+      with:
+        toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+    - name: Identify the pinned native Rust compiler
       shell: pwsh
       working-directory: ${{ runner.temp }}
       run: |
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'
         $PSNativeCommandUseErrorActionPreference = $true
-        rustup toolchain install nightly-2026-10-22-aarch64-pc-windows-msvc --profile minimal --no-self-update
         $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
         if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
         "BONSAI_TOOLS_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV

@@ -50,11 +50,20 @@ jobs:
           "RUST_TRIAL_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           "RUST_TRIAL_TARGET=$target" >> $env:GITHUB_ENV
           "RUST_TRIAL_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
-      - name: Install and identify the pinned native Rust compiler
+          $configuration = Get-Content -Raw -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'config/rust-nightly-trial.json') | ConvertFrom-Json -DateKind String -NoEnumerate
+          if ($configuration.SchemaVersion -ne 1) { throw 'Unsupported Rust trial configuration schema.' }
+          "RUST_TRIAL_TOOLCHAIN=$($configuration.NightlyToolchain)" >> $env:GITHUB_ENV
+      - name: Reuse the pinned native Rust compiler
+        id: rust-toolchain
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: ${{ env.RUST_TRIAL_TOOLCHAIN }}
+      - name: Identify the pinned native Rust compiler
         shell: pwsh
         working-directory: ${{ runner.temp }}
         env:
           TRIAL_TOOLCHAIN: ${{ matrix.toolchain }}
+          TOOLCHAIN_CACHE_HIT: ${{ steps.rust-toolchain.outputs.cache-hit }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
@@ -63,7 +72,7 @@ jobs:
           $configuration = Get-Content -Raw -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'config/rust-nightly-trial.json') | ConvertFrom-Json -DateKind String -NoEnumerate
           if ($configuration.SchemaVersion -ne 1) { throw 'Unsupported Rust trial configuration schema.' }
           $toolchain = $configuration.NightlyToolchain
-          rustup toolchain install $toolchain --profile minimal --component rustfmt,clippy --no-self-update 2>&1 | Tee-Object -FilePath (Join-Path $env:RUST_TRIAL_EVIDENCE 'install.log')
+          "Exact compiler cache hit: $env:TOOLCHAIN_CACHE_HIT" | Set-Content -LiteralPath (Join-Path $env:RUST_TRIAL_EVIDENCE 'install.log')
           $identity = @(rustc ('+' + $toolchain) -vV)
           if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
           $identity | Tee-Object -FilePath (Join-Path $env:RUST_TRIAL_EVIDENCE 'rustc.txt')
@@ -82,6 +91,7 @@ jobs:
           restore-keys: |
             rust-trial-downloads-v1-${{ runner.os }}-${{ runner.arch }}-
       - name: Reuse compiler and partition build artifacts
+        id: build-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.RUST_TRIAL_TARGET }}
@@ -128,6 +138,8 @@ jobs:
           TRIAL_GROUP: ${{ matrix.group }}
           TRIAL_PARTITION: ${{ matrix.partition }}
           CHECKS_OUTCOME: ${{ steps.checks.outcome }}
+          TOOLCHAIN_CACHE_HIT: ${{ steps.rust-toolchain.outputs.cache-hit }}
+          BUILD_CACHE_HIT: ${{ steps.build-cache.outputs.cache-hit }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
@@ -135,6 +147,8 @@ jobs:
           @(
             "Revision: $env:GITHUB_SHA"
             "Compiler: $env:RUST_TRIAL_TOOLCHAIN ($env:TRIAL_TOOLCHAIN)"
+            "Runner image: $env:RUST_TRIAL_CACHE_HOST"
+            "Exact compiler/build cache hits: $env:TOOLCHAIN_CACHE_HIT / $env:BUILD_CACHE_HIT"
             "Package group: $env:TRIAL_GROUP / $env:TRIAL_PARTITION"
             "Packages: $env:RUST_TRIAL_PACKAGES"
             "Compatibility and complete correctness suites: $env:CHECKS_OUTCOME"

@@ -22,14 +22,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install native Rust for the CPU reference runtime
+      - name: Reuse the pinned native Rust compiler
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Identify native Rust for the CPU reference runtime
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          rustup toolchain install nightly-2026-10-22-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
           $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
           if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
           "NATIVE_RUNTIME_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
@@ -77,14 +80,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install native Rust and select the scalar fallback cache
+      - name: Reuse the pinned scalar fallback Rust compiler
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-x86_64-pc-windows-msvc
+      - name: Identify native Rust and select the scalar fallback cache
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          rustup toolchain install nightly-2026-10-22-x86_64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
           $identity = rustc +nightly-2026-10-22-x86_64-pc-windows-msvc -vV
           if ($identity -notcontains 'host: x86_64-pc-windows-msvc') { throw 'Expected x86-64 scalar fallback build.' }
           "SCALAR_FALLBACK_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
@@ -128,16 +134,33 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install native Rust for the storage policy and regression
+      - name: Reuse the pinned Linux ARM64 Rust compiler
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-unknown-linux-gnu
+      - name: Identify native Rust for the storage policy and regression
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          rustup toolchain install nightly-2026-10-22 --profile minimal --component rustfmt,clippy --no-self-update
           rustc +nightly-2026-10-22 -vV
-      - name: Select the native compiler cache identity
+      - name: Select the ccache installation identity
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          "PRISM_PACKAGE_HOST=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_ENV
+      - name: Reuse ccache installation packages for this runner image
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/SwiftBonsai-CcachePackages/*.deb
+          # Dependencies already installed by the image must match on a hit.
+          # Never restore these system packages across runner image versions.
+          key: prism-ccache-packages-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_PACKAGE_HOST }}
+      - name: Install ccache and select the native compiler cache identity
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
@@ -145,8 +168,16 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           if (-not (Get-Command ccache -CommandType Application -ErrorAction SilentlyContinue)) {
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends ccache
+            $packageDirectory = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-CcachePackages'
+            [void][IO.Directory]::CreateDirectory($packageDirectory)
+            $packages = @(Get-ChildItem -LiteralPath $packageDirectory -Filter '*.deb' -File | ForEach-Object { $_.FullName })
+            if (-not $packages.Count) {
+              sudo apt-get update -qq
+              sudo apt-get --download-only -y --no-install-recommends -o "Dir::Cache::archives=$packageDirectory" install ccache
+              $packages = @(Get-ChildItem -LiteralPath $packageDirectory -Filter '*.deb' -File | ForEach-Object { $_.FullName })
+            }
+            if (-not $packages.Count) { throw 'The ccache installation packages are missing.' }
+            sudo dpkg --install @packages
           }
           $compiler = clang++ --version | Out-String
           $ccache = ccache --version | Out-String
@@ -202,11 +233,11 @@ jobs:
           [IO.Directory]::CreateDirectory($lane) | Out-Null
           $archive = Join-Path $lane ("prism-source-$($lock.ArchiveSha256).zip")
           $null = Receive-LockedArtifact -Uri $lock.ArchiveUrl -Path $archive -Bytes $lock.ArchiveBytes -Sha256 $lock.ArchiveSha256 -TimeoutSeconds 600
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismOverlay.ps1') -SourceArchive $archive
+          $rustBuild = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismRustBuild'
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismOverlay.ps1') -SourceArchive $archive -RustTargetDirectory $rustBuild
           $launcher = (Get-Command ccache -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
           $parallel = [Math]::Min(4, [Environment]::ProcessorCount)
           ccache --zero-stats
-          $rustBuild = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismRustBuild'
           $result = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-PrismEngine.ps1') -SourceArchive $archive -BuildMode All -Generator Ninja -Parallel $parallel -CompilerLauncher $launcher -RustTargetDirectory $rustBuild
           $result | ConvertTo-Json -Depth 10
           "BONSAI_PRISM_EVIDENCE=$($result.EvidenceDirectory)" >> $env:GITHUB_ENV
@@ -242,14 +273,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install explicit native Rust toolchain
+      - name: Reuse the pinned native Rust compiler
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Identify the native Rust toolchain
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          rustup toolchain install nightly-2026-10-22-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
           $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
           if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
           $identity
@@ -327,14 +361,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install explicit native Rust toolchain in CI
+      - name: Reuse the pinned native Rust compiler
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Identify the native Rust toolchain in CI
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
-          rustup toolchain install nightly-2026-10-22-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
-          if ($LASTEXITCODE) { throw 'Rust toolchain installation failed.' }
           $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
           if ($LASTEXITCODE -or $identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
           $identity
@@ -556,14 +592,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install explicit native Rust and select the GGUF cache
+      - name: Reuse the pinned native Rust compiler
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Identify native Rust and select the GGUF cache
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          rustup toolchain install nightly-2026-10-22-aarch64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
           $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
           if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
           "GGUF_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
