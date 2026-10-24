@@ -613,7 +613,7 @@ inline json execute(const json & o) {
                 require(index+1==supplied.size(),"backend checkpoint must end its batch");
                 const auto output=s.file(a.at("OutputFile")),next=s.file(a.at("NextFile"));
                 require(output!=next && !state::exists(output) && !state::exists(next),"backend checkpoint files must be fresh and distinct");
-                const auto timeout=bounded(a.at("TimeoutMilliseconds"),1,60000);
+                const auto timeout=bounded(a.at("TimeoutMilliseconds"),1,3600000);
                 trace.push_back(json::object()); const auto encoded=json({{"Trace",trace}}).dump();
                 require(encoded.size()<=16*1024*1024,"backend checkpoint response exceeds16MiB");
                 const auto temporary=output.string()+".tmp"; require(!state::exists(temporary),"backend checkpoint temporary file already exists");

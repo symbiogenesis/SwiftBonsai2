@@ -63,3 +63,7 @@ target_link_libraries(prism-upstream-common-bridge PRIVATE llama-common mtmd pri
 
 set_source_files_properties(public_c_abi.c PROPERTIES LANGUAGE C)
 set_target_properties(prism-upstream-common-bridge PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+
+# Actual production LoRA exporter; no upstream test translation unit.
+add_executable(llama-export-lora "${PRISM_SOURCE_DIR}/tools/export-lora/export-lora.cpp")
+target_link_libraries(llama-export-lora PRIVATE llama-common llama)

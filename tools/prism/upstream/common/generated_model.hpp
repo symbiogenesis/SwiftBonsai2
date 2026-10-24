@@ -49,6 +49,10 @@ inline initialized initialize(const json&metadata_file,llama_model_params parame
     std::unique_ptr<llama_model,decltype(&llama_model_free)>model(llama_model_init_from_user(metadata.get(),setter,&state,parameters),llama_model_free);
     if(state.error)std::rethrow_exception(state.error);return initialized{model.release(),std::move(metadata)};
 }
+inline initialized initialize_metadata(const json&metadata_file,llama_model_params parameters){
+    auto file=owned_file(metadata_file);require(std::filesystem::file_size(file)<=64*1024*1024,"generated metadata exceeds64MiB");gguf_init_params gp{};gp.no_alloc=true;std::shared_ptr<gguf_context>metadata(gguf_init_from_file(file.string().c_str(),gp),gguf_free);require(metadata!=nullptr,"production GGUF reader rejected generated metadata");
+    parameters.no_alloc=true;return initialized{llama_model_init_from_user(metadata.get(),[](ggml_tensor*,void*){},nullptr,parameters),std::move(metadata)};
+}
 inline bool handles(const std::string&op){return op=="kv-center-write"||op=="kv-center-load"||op=="context-logits"||op=="context-metadata";}
 inline json execute(const json&operation,llama_context*context){
     const auto op=operation.at("Op").get<std::string>();

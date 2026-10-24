@@ -39,7 +39,7 @@ inline std::string hex(const std::string & bytes) {
     std::string result(bytes.size()*2, '\0');
     for (std::size_t i = 0; i < bytes.size(); ++i) { const auto byte = static_cast<std::uint8_t>(bytes[i]); result[2*i] = digits[byte >> 4]; result[2*i+1] = digits[byte & 15]; } return result;
 }
-inline bool handles(const std::string & op) { return op == "vocab-tokenize" || op == "vocab-detokenize" || op == "unicode-encode" || op == "unicode-decode"; }
+inline bool handles(const std::string & op) { return op == "vocab-tokenize" || op == "vocab-detokenize" || op == "raw-vocab-detokenize" || op == "unicode-encode" || op == "unicode-decode"; }
 inline void validate_unicode(const json & operation) {
     const auto op = operation.at("Op").get<std::string>();
     const bool encode = op == "unicode-encode";
@@ -61,15 +61,16 @@ inline json execute(const json & operation, llama_context * context) {
         require(operation.at("AddSpecial").is_boolean() && operation.at("ParseSpecial").is_boolean(), "vocab tokenizer flags must be boolean"); items = &operation.at("InputsHex");
     } else if (op == "vocab-detokenize") {
         fields(operation, {"Op", "Context", "TokenLists", "Special"}); require(operation.at("Special").is_boolean(), "vocab detokenizer Special must be boolean"); items = &operation.at("TokenLists");
+    } else if (op == "raw-vocab-detokenize") { fields(operation,{"Op","Context","TokenLists","RemoveSpecial","UnparseSpecial"});require(operation.at("RemoveSpecial").is_boolean()&&operation.at("UnparseSpecial").is_boolean(),"raw detokenizer flags must be boolean");items=&operation.at("TokenLists");
     } else if (op == "unicode-encode") { fields(operation, {"Op", "CodePoints"}); items = &operation.at("CodePoints"); }
     else { require(op == "unicode-decode", "unknown vocab session operation"); fields(operation, {"Op", "InputsHex"}); items = &operation.at("InputsHex"); }
     require(items->is_array() && items->size() <= 512, "vocab session batch exceeds512");
     const llama_vocab * vocabulary = nullptr;
-    if (op == "vocab-tokenize" || op == "vocab-detokenize") { require(context != nullptr, "vocab session requires shared context"); vocabulary = llama_model_get_vocab(llama_get_model(context)); require(vocabulary != nullptr, "model has no vocabulary"); }
+    if (op == "vocab-tokenize" || op == "vocab-detokenize" || op == "raw-vocab-detokenize") { require(context != nullptr, "vocab session requires shared context"); vocabulary = llama_model_get_vocab(llama_get_model(context)); require(vocabulary != nullptr, "model has no vocabulary"); }
     std::size_t supplied = 0;
     for (const auto & item : *items) {
         if (op == "unicode-encode") integer(item);
-        else if (op == "vocab-detokenize") {
+        else if (op == "vocab-detokenize" || op == "raw-vocab-detokenize") {
             require(item.is_array() && item.size() <= 65536, "vocab detokenizer token extent exceeds bound"); supplied += item.size()*sizeof(llama_token);
             for (const auto & token : item) { const auto id = integer(token, INT32_MAX); require(id < static_cast<std::uint32_t>(llama_vocab_n_tokens(vocabulary)), "detokenizer token outside vocabulary"); }
         } else supplied += bytes(item).size();
@@ -85,7 +86,7 @@ inline json execute(const json & operation, llama_context * context) {
                 const auto output = common_tokenize(context, bytes(item), operation.at("AddSpecial").get<bool>(), operation.at("ParseSpecial").get<bool>()); returned += output.size()*sizeof(llama_token); value = output;
             } else {
                 std::vector<llama_token> tokens; for (const auto & token : item) tokens.push_back(static_cast<llama_token>(integer(token, INT32_MAX)));
-                const auto output = common_detokenize(context, tokens, operation.at("Special").get<bool>()); returned += output.size(); value = hex(output);
+                std::string output;if(op=="vocab-detokenize")output=common_detokenize(context,tokens,operation.at("Special").get<bool>());else{auto count=llama_detokenize(vocabulary,tokens.data(),static_cast<std::int32_t>(tokens.size()),nullptr,0,operation.at("RemoveSpecial").get<bool>(),operation.at("UnparseSpecial").get<bool>());require(count<=0&&count>=-1048576,"raw detokenizer required extent outside bound");if(count<0){output.resize(static_cast<std::size_t>(-count));count=llama_detokenize(vocabulary,tokens.data(),static_cast<std::int32_t>(tokens.size()),output.data(),static_cast<std::int32_t>(output.size()),operation.at("RemoveSpecial").get<bool>(),operation.at("UnparseSpecial").get<bool>());require(count>=0&&static_cast<std::size_t>(count)<=output.size(),"raw detokenizer second extent differs");output.resize(static_cast<std::size_t>(count));}} returned += output.size(); value = hex(output);
             }
             require(returned <= 4*1024*1024, "vocab session returned payload exceeds4MiB"); values.push_back(std::move(value)); errors.push_back(nullptr);
         } catch (const std::invalid_argument & error) { values.push_back(nullptr); errors.push_back({{"Kind", "invalid-argument"}, {"Message", std::string(error.what()).substr(0,4096)}}); }
