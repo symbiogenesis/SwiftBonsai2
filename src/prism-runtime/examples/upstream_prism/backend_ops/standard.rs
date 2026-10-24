@@ -64,7 +64,9 @@ pub(super) fn literal(value: &Json, kind: Option<&str>) -> Result<Value> {
 }
 
 pub(super) fn zero(kind: &str) -> Value {
-    if kind.contains('*') {
+    // Template arguments can be pointers while the owning container is a value.
+    let outer = kind.rsplit_once('>').map_or(kind, |(_, suffix)| suffix);
+    if outer.contains('*') {
         return Value::Null;
     }
     if kind.contains("std::random_device") {
@@ -880,4 +882,87 @@ pub(super) fn call(
         _ => return Ok(None),
     };
     Ok(Some(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::interpreter::Host;
+    use super::super::value::Handle;
+    use super::*;
+
+    struct LanguageOnly;
+    impl Host for LanguageOnly {
+        fn call(&mut self, _name: &str, _arguments: &[Value]) -> Result<Option<Value>> {
+            Err(invalid(
+                "pointer-container guard must not invoke production",
+            ))
+        }
+        fn member(&mut self, _value: &Value, _name: &str) -> Result<Option<Value>> {
+            Err(invalid(
+                "pointer-container guard must not observe production",
+            ))
+        }
+        fn write(
+            &mut self,
+            _value: &Value,
+            _name: &str,
+            _index: Option<usize>,
+            _replacement: Value,
+        ) -> Result<()> {
+            Err(invalid(
+                "pointer-container guard must not mutate production",
+            ))
+        }
+        fn force(&mut self, value: Value) -> Result<Value> {
+            Ok(value)
+        }
+    }
+
+    #[test]
+    fn pointer_container_defaults_preserve_real_source_member_operations() -> Result<()> {
+        let (program, geometries) = super::super::program::load().map_err(invalid)?;
+        let geometry = geometries
+            .eval
+            .iter()
+            .find(|geometry| geometry.class == "test_arclab_t2_multi")
+            .ok_or_else(|| invalid("original T2 multi geometry missing"))?;
+        let mut host = LanguageOnly;
+        let mut runtime = Interpreter::new(program, &geometry.class, &mut host)?;
+        runtime.instantiate(geometry)?;
+        let outs = runtime.value("outs")?;
+        assert_eq!(outs.len().map_err(invalid)?, 0);
+        member_call(&mut runtime, outs.clone(), "clear", Vec::new())?;
+        member_call(
+            &mut runtime,
+            outs,
+            "push_back",
+            vec![Value::Handle(Handle::Tensor(7))],
+        )?;
+        let outs = runtime.value("outs")?;
+        assert_eq!(outs.len().map_err(invalid)?, 1);
+        assert!(matches!(
+            outs.index(0).map_err(invalid)?,
+            Value::Handle(Handle::Tensor(7))
+        ));
+        let array = zero("std::array<ggml_tensor*,2>")
+            .coerce("std::array<ggml_tensor*,2>")
+            .map_err(invalid)?;
+        assert_eq!(array.len().map_err(invalid)?, 2);
+        assert!(matches!(array.index(1).map_err(invalid)?, Value::Null));
+        assert_eq!(
+            zero("conststd::vector<ggml_tensor*>")
+                .len()
+                .map_err(invalid)?,
+            0
+        );
+        for kind in [
+            "ggml_tensor*",
+            "ggml_tensor**",
+            "std::vector<ggml_tensor*>*",
+            "std::array<ggml_tensor*,2>*const",
+        ] {
+            assert!(matches!(zero(kind), Value::Null));
+        }
+        Ok(())
+    }
 }
