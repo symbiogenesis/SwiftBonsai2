@@ -686,7 +686,7 @@ pub fn matvec_into(
     clippy::cast_possible_truncation,
     reason = "The converted binary16 sign and magnitude occupy at most sixteen bits."
 )]
-fn half_bits(value: f32) -> u16 {
+pub(crate) fn half_bits(value: f32) -> u16 {
     // Port of ggml_compute_fp32_to_fp16; the shift/add path rounds ties to
     // even via native f32 arithmetic and includes subnormals and signed zero.
     let mut base = (value.abs() * f32::from_bits(0x7780_0000)) * f32::from_bits(0x0880_0000);

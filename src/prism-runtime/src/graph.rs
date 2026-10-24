@@ -1,16 +1,17 @@
 //! Bounded scalar Qwen3.5 text decoder with full attention and Gated Delta Net.
 //!
 //! The operation ordering follows Prism's `src/models/qwen35.cpp`. KV values
-//! round through IEEE binary16 on insertion; convolution and recurrent state
+//! are stored as IEEE binary16 bits; convolution and recurrent state
 //! remain binary32. This correctness path does not establish device parity.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use bonsai_gguf::{Metadata, MetadataArray, MetadataValue, MetadataValueRef};
+use bonsai_ternary::half_to_float;
 
 use crate::kernels::{
-    MatvecScratch, matvec_into, rms_norm_into, round_f16, row, row_into, silu, softmax,
+    MatvecScratch, half_bits, matvec_into, rms_norm_into, round_f16, row, row_into, silu, softmax,
 };
 use crate::model::{Model, Tensor};
 use crate::{Decoder, Result, invalid};
@@ -88,8 +89,8 @@ struct Layer {
 #[derive(Clone)]
 enum LayerState {
     Full {
-        keys: Vec<f32>,
-        values: Vec<f32>,
+        keys: Vec<u16>,
+        values: Vec<u16>,
     },
     Recurrent {
         convolution: Vec<f32>,
@@ -99,19 +100,20 @@ enum LayerState {
 
 impl LayerState {
     const fn bytes(&self) -> usize {
-        let (first, second) = match self {
-            Self::Full { keys, values } => (keys, values),
+        match self {
+            Self::Full { keys, values } => (keys.capacity() + values.capacity()) * size_of::<u16>(),
             Self::Recurrent {
                 convolution,
                 matrix,
-            } => (convolution, matrix),
-        };
-        (first.capacity() + second.capacity()) * size_of::<f32>()
+            } => (convolution.capacity() + matrix.capacity()) * size_of::<f32>(),
+        }
     }
 }
 
 enum LayerDelta {
     Full {
+        // Keep the current token in reusable binary32 scratch while the graph
+        // runs; only a successful evaluation appends its rounded binary16 bits.
         key: Vec<f32>,
         value: Vec<f32>,
     },
@@ -513,7 +515,7 @@ impl Qwen35 {
                 .map(|index| index < layer_count && (index + 1) % full_interval != 0)
                 .collect()
         };
-        let mut state_elements = 0_usize;
+        let mut state_bytes = 0_usize;
         for &recurrent in recurrent_flags.iter().take(layer_count) {
             let elements = if recurrent {
                 checked_sum(
@@ -523,9 +525,14 @@ impl Qwen35 {
             } else {
                 checked_product(&[2, geometry.head, geometry.kv_heads, context_limit])?
             };
-            state_elements = checked_sum(state_elements, elements)?;
+            let element_bytes = if recurrent {
+                size_of::<f32>()
+            } else {
+                size_of::<u16>()
+            };
+            state_bytes = checked_sum(state_bytes, checked_product(&[elements, element_bytes])?)?;
         }
-        if state_elements > MAX_STATE_BYTES / size_of::<f32>() {
+        if state_bytes > MAX_STATE_BYTES {
             return Err(invalid(
                 "KV and recurrent state exceed the native state budget",
             ));
@@ -784,8 +791,8 @@ impl Qwen35 {
         for (state, delta) in self.state.iter_mut().zip(deltas.iter_mut()) {
             match (state, delta) {
                 (LayerState::Full { keys, values }, LayerDelta::Full { key, value }) => {
-                    keys.extend_from_slice(key);
-                    values.extend_from_slice(value);
+                    keys.extend(key.iter().copied().map(half_bits));
+                    values.extend(value.iter().copied().map(half_bits));
                 }
                 (
                     LayerState::Recurrent {
@@ -831,8 +838,8 @@ impl Evaluation<'_> {
         &mut self,
         layer: &FullAttention,
         input: &[f32],
-        keys: &[f32],
-        values: &[f32],
+        keys: &[u16],
+        values: &[u16],
         scratch: &mut AttentionScratch,
         delta: &mut LayerDelta,
         output: &mut Vec<f32>,
@@ -892,7 +899,7 @@ impl Evaluation<'_> {
             prepare(&mut scratch.scores, self.position + 1)?;
             let scores = &mut scratch.scores;
             for past in keys.chunks_exact(width) {
-                scores.push(dot(q, &past[offset..offset + g.head]) * scale);
+                scores.push(dot_f16(q, &past[offset..offset + g.head]) * scale);
             }
             scores.push(dot(q, &key[offset..offset + g.head]) * scale);
             softmax(scores)?;
@@ -905,7 +912,9 @@ impl Evaluation<'_> {
                 let past_sum = values
                     .chunks_exact(width)
                     .zip(scores.iter())
-                    .map(|(past, &probability)| f64::from(probability * past[offset + dimension]))
+                    .map(|(past, &probability)| {
+                        f64::from(probability * half_to_float(past[offset + dimension]))
+                    })
                     .sum::<f64>();
                 *out = (past_sum + f64::from(scores[self.position] * value[offset + dimension]))
                     as f32;
@@ -1444,9 +1453,12 @@ fn capacity<T>(count: usize) -> Result<Vec<T>> {
     Ok(result)
 }
 
-fn reserve_cache_append(cache: &mut Vec<f32>, width: usize, context: usize) -> Result<()> {
+fn reserve_cache_append(cache: &mut Vec<u16>, width: usize, context: usize) -> Result<()> {
     let required = checked_sum(cache.len(), width)?;
     let maximum = checked_product(&[width, context])?;
+    if checked_product(&[maximum, size_of::<u16>()])? > MAX_STATE_BYTES {
+        return Err(invalid("KV cache exceeds state budget"));
+    }
     if required > maximum {
         return Err(invalid("KV cache append exceeds context bound"));
     }
@@ -1464,7 +1476,7 @@ fn reserve_cache_append(cache: &mut Vec<f32>, width: usize, context: usize) -> R
     Ok(())
 }
 
-fn copy_values(values: &[f32]) -> Result<Vec<f32>> {
+fn copy_values<T: Copy>(values: &[T]) -> Result<Vec<T>> {
     let mut result = capacity(values.len())?;
     result.extend_from_slice(values);
     Ok(result)
@@ -1518,6 +1530,21 @@ fn dot(first: &[f32], second: &[f32]) -> f32 {
         .iter()
         .zip(second)
         .map(|(&first, &second)| f64::from(first * second))
+        .sum::<f64>() as f32
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    reason = "Preserve binary32 products and binary64 accumulation when reading the binary16 cache."
+)]
+fn dot_f16(first: &[f32], second: &[u16]) -> f32 {
+    // Widen each cached operand before the binary32 multiply, then accumulate
+    // its rounded product in binary64 exactly as the former float cache did.
+    first
+        .iter()
+        .zip(second)
+        .map(|(&first, &second)| f64::from(first * half_to_float(second)))
         .sum::<f64>() as f32
 }
 
@@ -1592,8 +1619,123 @@ fn rope(input: &mut [f32], geometry: &Geometry, frequencies: &[(f32, f32)]) -> R
 
 #[cfg(test)]
 mod tests {
-    use super::{Geometry, reserve_cache_append, rope, rope_frequencies};
+    use super::{
+        Geometry, LayerState, MAX_STATE_BYTES, copy_state, dot, dot_f16, half_bits, half_to_float,
+        reserve_cache_append, rope, rope_frequencies,
+    };
     use crate::Result;
+
+    fn assert_state_bits_eq(expected: &[LayerState], actual: &[LayerState]) {
+        assert_eq!(expected.len(), actual.len());
+        for (expected, actual) in expected.iter().zip(actual) {
+            match (expected, actual) {
+                (
+                    LayerState::Full { keys, values },
+                    LayerState::Full {
+                        keys: actual_keys,
+                        values: actual_values,
+                    },
+                ) => {
+                    assert_eq!(keys, actual_keys);
+                    assert_eq!(values, actual_values);
+                }
+                (
+                    LayerState::Recurrent {
+                        convolution,
+                        matrix,
+                    },
+                    LayerState::Recurrent {
+                        convolution: actual_convolution,
+                        matrix: actual_matrix,
+                    },
+                ) => {
+                    assert!(
+                        convolution
+                            .iter()
+                            .map(|value| value.to_bits())
+                            .eq(actual_convolution.iter().map(|value| value.to_bits()))
+                    );
+                    assert!(
+                        matrix
+                            .iter()
+                            .map(|value| value.to_bits())
+                            .eq(actual_matrix.iter().map(|value| value.to_bits()))
+                    );
+                }
+                _ => assert_eq!(
+                    std::mem::discriminant(expected),
+                    std::mem::discriminant(actual)
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn packed_cache_roundtrip_preserves_every_finite_binary16_value() {
+        for bits in 0..=u16::MAX {
+            if bits & 0x7c00 != 0x7c00 {
+                assert_eq!(half_bits(half_to_float(bits)), bits);
+            }
+        }
+    }
+
+    #[test]
+    fn packed_cache_dot_preserves_product_rounding_and_wide_accumulation() {
+        // Promoting operands before multiplication changes the first result;
+        // accumulating products in f32 loses the middle unit in the second.
+        assert_eq!(
+            dot_f16(&[f32::from_bits(0x3f80_0001), -1.0], &[0x3c01; 2]).to_bits(),
+            0x3400_0000
+        );
+        assert_eq!(
+            dot_f16(&[16_777_216.0, 1.0, -16_777_216.0], &[0x3c00; 3]).to_bits(),
+            1.0_f32.to_bits()
+        );
+        let bits = [0x8000, 0x0001, 0x03ff, 0x0400, 0x7bff, 0xfbff];
+        let expanded = bits.map(half_to_float);
+        let query = [-0.0, 0.25, -0.5, 1.0, 0.5, -0.5];
+        assert_eq!(
+            dot_f16(&query, &bits).to_bits(),
+            dot(&query, &expanded).to_bits()
+        );
+    }
+
+    #[test]
+    fn packed_cache_copy_owns_bits_and_charges_physical_capacity() -> Result<()> {
+        let bits = [0x8000, 0x0001, 0x03ff, 0x0400, 0x7bff, 0xfbff];
+        let mut keys = Vec::with_capacity(16);
+        keys.extend_from_slice(&bits);
+        let mut values = Vec::with_capacity(8);
+        values.extend_from_slice(&bits);
+        let cache_bytes = (keys.capacity() + values.capacity()) * size_of::<u16>();
+        let mut states = vec![
+            LayerState::Full { keys, values },
+            LayerState::Recurrent {
+                convolution: vec![-0.0, f32::from_bits(1)],
+                matrix: vec![f32::MIN_POSITIVE, f32::MAX],
+            },
+        ];
+        assert_eq!(states[0].bytes(), cache_bytes);
+        assert_eq!(states[1].bytes(), 4 * size_of::<f32>());
+        let checkpoint = copy_state(&states)?;
+        let expected = states.clone();
+        assert_state_bits_eq(&states, &checkpoint);
+        if let LayerState::Full { keys, values } = &mut states[0] {
+            keys[0] = 0;
+            values[1] = 0;
+            keys.clear();
+        }
+        if let LayerState::Recurrent {
+            convolution,
+            matrix,
+        } = &mut states[1]
+        {
+            convolution[0] = 1.0;
+            matrix[0] = 0.0;
+        }
+        assert_state_bits_eq(&expected, &checkpoint);
+        Ok(())
+    }
 
     #[test]
     fn text_imrope_uses_zero_fourth_position_for_unbalanced_sections() -> Result<()> {
@@ -1638,8 +1780,8 @@ mod tests {
             reserve_cache_append(&mut cache, width, context)?;
             growths += usize::from(cache.capacity() != old_capacity);
             assert!(cache.capacity() <= width * context);
-            assert_eq!(cache, vec![1.0; position * width]);
-            cache.extend_from_slice(&[1.0; 3]);
+            assert_eq!(cache, vec![0x3c00; position * width]);
+            cache.extend_from_slice(&[0x3c00; 3]);
         }
         // Thirty-three appends require at most seven allocation growths,
         // including the final non-power-of-two context cap.
@@ -1647,12 +1789,14 @@ mod tests {
         assert!(reserve_cache_append(&mut cache, width, context).is_err());
         assert_eq!(cache.len(), width * context);
         let mut oversized = Vec::with_capacity(width * (context + 1));
-        oversized.resize(width * context, 1.0);
+        oversized.resize(width * context, 0x3c00);
         assert!(reserve_cache_append(&mut oversized, width, context).is_err());
         let capacity = cache.capacity();
         cache.clear();
         reserve_cache_append(&mut cache, width, context)?;
         assert_eq!(cache.capacity(), capacity);
+        assert!(reserve_cache_append(&mut cache, usize::MAX, 2).is_err());
+        assert!(reserve_cache_append(&mut cache, 1, MAX_STATE_BYTES).is_err());
         Ok(())
     }
 }

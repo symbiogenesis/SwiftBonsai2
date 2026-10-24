@@ -424,6 +424,113 @@ fn hybrid_state_checkpoint_restores_exact_recurrent_prefix() -> Result<()> {
 }
 
 #[test]
+fn full_attention_checkpoint_bytes_charge_binary16_capacity_and_restore_prefix() -> Result<()> {
+    let mut decoder = Qwen35::new(fixture(false), 16)?;
+    let empty_bytes = decoder.checkpoint_bytes();
+    decoder.evaluate(0)?;
+    let checkpoint = decoder.checkpoint()?;
+    // One key and one value, each containing two physical binary16 elements.
+    assert_eq!(
+        decoder.checkpoint_bytes() - empty_bytes,
+        4 * size_of::<u16>()
+    );
+    let expected = decoder.evaluate(1)?;
+    decoder.evaluate(0)?;
+    // Geometric growth retains room for four tokens after the third append.
+    assert_eq!(
+        decoder.checkpoint_bytes() - empty_bytes,
+        16 * size_of::<u16>()
+    );
+    decoder.restore(&checkpoint)?;
+    assert_eq!(
+        decoder.checkpoint_bytes() - empty_bytes,
+        4 * size_of::<u16>()
+    );
+    assert_eq!(decoder.evaluate(1)?, expected);
+    decoder.reset()?;
+    decoder.restore(&checkpoint)?;
+    assert_eq!(decoder.evaluate(1)?, expected);
+    Ok(())
+}
+
+#[test]
+fn full_attention_binary16_overflow_does_not_commit_cache() -> Result<()> {
+    let model = || {
+        let mut model = fixture(false);
+        model.tensors.insert(
+            "blk.0.attn_v.weight".to_owned(),
+            weight("blk.0.attn_v.weight", &[2, 2], &[0.0, 65_504.0, 0.0, 0.0]),
+        );
+        model
+    };
+    let mut decoder = Qwen35::new(model(), 2)?;
+    let mut fresh = Qwen35::new(model(), 2)?;
+    let mut logits = Vec::new();
+    decoder.evaluate_into(0, &mut logits)?;
+    assert_eq!(logits, fresh.evaluate(0)?);
+    let checkpoint = decoder.checkpoint()?;
+    let prefix_bytes = decoder.checkpoint_bytes();
+    // The finite projected value exceeds binary16's finite range after RMS
+    // normalization. Rejection must leave both the prefix and position intact.
+    assert!(decoder.evaluate_into(1, &mut logits).is_err());
+    assert_eq!(logits, Vec::<f32>::new());
+    assert_eq!(decoder.checkpoint_bytes(), prefix_bytes);
+    let expected = fresh.evaluate(0)?;
+    assert_eq!(decoder.evaluate(0)?, expected);
+    assert!(decoder.evaluate(0).is_err());
+    decoder.restore(&checkpoint)?;
+    assert_eq!(decoder.evaluate(0)?, expected);
+    Ok(())
+}
+
+#[test]
+fn state_admission_charges_binary16_cache_and_binary32_recurrent_bytes() -> Result<()> {
+    let model = |head: usize, recurrent: bool| -> Result<Model> {
+        let mut model = if recurrent {
+            hybrid_fixture()
+        } else {
+            fixture(false)
+        };
+        model
+            .metadata
+            .insert("qwen35.context_length".to_owned(), metadata!(1_048_576));
+        for key in [
+            "qwen35.attention.key_length",
+            "qwen35.attention.value_length",
+        ] {
+            model
+                .metadata
+                .insert(key.to_owned(), MetadataValue::from(u64::try_from(head)?));
+        }
+        for (suffix, dimensions) in [
+            ("attn_q.weight", vec![2, 2 * head]),
+            ("attn_k.weight", vec![2, head]),
+            ("attn_v.weight", vec![2, head]),
+            ("attn_output.weight", vec![head, 2]),
+            ("attn_q_norm.weight", vec![head]),
+            ("attn_k_norm.weight", vec![head]),
+        ] {
+            let name = format!("blk.0.{suffix}");
+            let values = vec![1.0; dimensions.iter().product()];
+            model
+                .tensors
+                .insert(name.clone(), weight(&name, &dimensions, &values));
+        }
+        Ok(model)
+    };
+    // At 1M tokens, 1024 key/value elements exactly fill the 4 GiB state
+    // budget in binary16. Admission remains lazy and allocates no KV prefix.
+    let decoder = Qwen35::new(model(1024, false)?, 1_048_576)?;
+    assert!(decoder.checkpoint_bytes() < 1_048_576);
+    assert!(Qwen35::new(model(1025, false)?, 1_048_576).is_err());
+    // Adding any recurrent state exceeds that exact bound; a smaller cache
+    // leaves room for its convolution and matrix, which remain binary32.
+    assert!(Qwen35::new(model(1024, true)?, 1_048_576).is_err());
+    assert!(Qwen35::new(model(1023, true)?, 1_048_576).is_ok());
+    Ok(())
+}
+
+#[test]
 fn checkpoint_rejects_foreign_cache_contract_and_model() -> Result<()> {
     let mut first = Qwen35::new(fixture(false), 16)?;
     first.evaluate(0)?;
