@@ -27,6 +27,7 @@ const MAX_REQUESTS: u64 = 65536;
 const MAX_CALLBACKS: usize = 65536;
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(90);
 const SESSION_TIMEOUT: Duration = Duration::from_secs(240);
+const REAL_EVAL_SESSION_TIMEOUT: Duration = Duration::from_mins(15);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 const QUANTIZATION_OPERATION_TIMEOUT: Duration = Duration::from_secs(3600);
 const QUANTIZATION_SESSION_TIMEOUT: Duration = Duration::from_hours(4);
@@ -36,6 +37,18 @@ fn operation_timeout(quantization: bool, operation: &Value) -> Duration {
         QUANTIZATION_OPERATION_TIMEOUT
     } else {
         OPERATION_TIMEOUT
+    }
+}
+
+fn session_timeout(name: &str, quantization: bool, main_ci: bool) -> Duration {
+    match (name, quantization, main_ci) {
+        ("quantize-stats", true, true) => QUANTIZATION_SESSION_TIMEOUT,
+        // The source owns one model/speculation scope across all 24 prompts.
+        // Native ARM64 evidence reached prompt 13 at the ordinary 240s limit.
+        // Keep every per-operation and transport bound while allowing the
+        // complete source schedule to finish on the hosted reference runner.
+        ("dspark-real-eval", false, true) => REAL_EVAL_SESSION_TIMEOUT,
+        _ => SESSION_TIMEOUT,
     }
 }
 
@@ -497,11 +510,12 @@ impl ModelSession {
             closing_at: Mutex::new(None),
             done: AtomicBool::new(false),
             started: Instant::now(),
-            session_timeout: if quantization {
-                QUANTIZATION_SESSION_TIMEOUT
-            } else {
-                SESSION_TIMEOUT
-            },
+            session_timeout: session_timeout(
+                name,
+                quantization,
+                std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true")
+                    && std::env::var("GITHUB_REF").as_deref() == Ok("refs/heads/main"),
+            ),
             quantization,
         });
         let mut readers = Vec::new();
@@ -659,6 +673,23 @@ mod quantization_deadline_tests {
         ] {
             if operation_timeout(scope, &json!({"Op":op})) != expected {
                 return Err(invalid("quantization deadline escaped its exact scope"));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn complete_real_eval_lifetime_is_scoped_to_main_ci() -> Result<()> {
+        for (name, quantization, main_ci, expected) in [
+            ("dspark-real-eval", false, true, REAL_EVAL_SESSION_TIMEOUT),
+            ("dspark-real-eval", false, false, SESSION_TIMEOUT),
+            ("dspark-forward", false, true, SESSION_TIMEOUT),
+            ("ordinary", false, true, SESSION_TIMEOUT),
+            ("quantize-stats", true, true, QUANTIZATION_SESSION_TIMEOUT),
+            ("quantize-stats", true, false, SESSION_TIMEOUT),
+        ] {
+            if session_timeout(name, quantization, main_ci) != expected {
+                return Err(invalid("source lifetime escaped its exact CI scope"));
             }
         }
         Ok(())

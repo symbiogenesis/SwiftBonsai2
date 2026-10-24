@@ -112,6 +112,9 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   diagnostics. Timings include bridge dispatch and qualify workload completion,
   with no publisher model quality or Snapdragon throughput claim. Every execution
   is CI-only because the source includes benchmark timings.
+  The complete prompt loop retains one bounded 900-second session on main CI
+  (960-second outer process limit); individual operations still have 90 seconds.
+  Native ARM64 evidence reached prompt 13 at the ordinary 240-second lifetime.
 - `test-grammar-llguidance.cpp`: all 42 grammar/schema groups, 344 literal
   predicates, and every token/EOS sampler-chain check. Rust owns candidate
   construction and matching decisions. The reference links the exact production
