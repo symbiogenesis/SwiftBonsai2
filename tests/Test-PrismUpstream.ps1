@@ -235,6 +235,13 @@ if ($selected -contains 'LlGuidance') {
     $receipt.GrammarDependency = $grammarDependency
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
 }
+$referencePatch = $null
+if (@($selected | Where-Object { $adapters[$_].Family -eq 'common' }).Count) {
+    Import-Module (Join-Path $repo 'scripts/Bonsai.PrismReferencePatch.psm1')
+    $referencePatch = Initialize-BonsaiPrismReferencePatch -Repository $repo -SourceDirectory $nativeSource -Directory (Join-Path $nativeBuildRoot 'reference-patches')
+    $receipt.ReferenceProductionFix = $referencePatch
+    [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
+}
 foreach ($family in @($selected | ForEach-Object { $adapters[$_].Family } | Select-Object -Unique)) {
     if ($family -eq 'independent') { continue }
     $definition = $bridgeFamilies[$family]
@@ -242,6 +249,9 @@ foreach ($family in @($selected | ForEach-Object { $adapters[$_].Family } | Sele
     $null = Resolve-ExternalPath $build
     $configureArguments = @('-S', $definition.Source, '-B', $build, "-DPRISM_SOURCE_DIR=$nativeSource", '-DCMAKE_BUILD_TYPE=Release',
         '-DLLAMA_BUILD_NUMBER=0', "-DLLAMA_BUILD_COMMIT=$($lock.Commit)") + $generatorArguments
+    if ($family -eq 'common' -and $referencePatch) {
+        $configureArguments += "-DPRISM_PATCHED_SAVER=$($referencePatch.Path)"
+    }
     if ($family -eq 'common' -and $grammarDependency) {
         $configureArguments += @("-DPRISM_LLGUIDANCE_LIBRARY=$($grammarDependency.Library)", "-DPRISM_LLGUIDANCE_INCLUDE_DIR=$($grammarDependency.IncludeDirectory)")
     }

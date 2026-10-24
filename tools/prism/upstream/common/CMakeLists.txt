@@ -22,6 +22,7 @@ endforeach()
 set(FETCHCONTENT_FULLY_DISCONNECTED ON CACHE BOOL "" FORCE)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "" FORCE)
 add_subdirectory("${PRISM_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/prism")
+include("${CMAKE_CURRENT_LIST_DIR}/../Apply-ReferencePatch.cmake")
 
 # Consume a separately pinned/verified production LLGuidance build. This enables
 # the pristine common/llguidance.cpp feature branch without network build steps.
