@@ -1,6 +1,9 @@
 //! Transactional token generation, bounded snapshots and exact edited-prefix reuse.
 
-use crate::{Decoder, MAX_PREFILL_BLOCK_TOKENS, Result, invalid};
+use crate::{
+    Decoder, MAX_PREFILL_BLOCK_TOKENS, Result, invalid,
+    sampling::{Greedy, Sampler},
+};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -46,8 +49,7 @@ pub struct Limits {
     pub checkpoint_bytes: usize,
 }
 
-/// Greedy decoding options. Stochastic sampling is intentionally unavailable
-/// until pinned sampler/RNG parity fixtures exist.
+/// Generation bounds and exact stop tokens, independent of sampling policy.
 #[derive(Clone, Debug)]
 pub struct Generation {
     /// Maximum sampled tokens, including a sampled stop token.
@@ -79,7 +81,7 @@ impl Default for Prefill {
 /// Why a successfully completed request stopped.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Finish {
-    /// The greedy next token was in the supplied stop set.
+    /// The sampled next token was in the supplied stop set.
     Stop,
     /// The requested maximum number of sampled tokens was reached.
     Length,
@@ -298,12 +300,107 @@ impl<D: Decoder> Runtime<D> {
         )
     }
 
+    /// Generate with a caller-owned sampler and bounded causal prompt blocks.
+    ///
+    /// A successful request commits the sampler's state, including draws for a
+    /// stop token. Any returned error restores its original state alongside the
+    /// decoder, even if decoder restoration fails. The sampler's [`Clone`]
+    /// implementation must independently snapshot all state changed by sampling;
+    /// shared mutable RNG state cannot provide transactional recovery.
+    /// External effects performed by a sampler cannot be rolled back.
+    /// Cancellation is checked immediately before and after every sample.
+    /// Emitted output remains provisional until the whole request succeeds.
+    ///
+    /// # Errors
+    /// Returns the errors of [`Self::generate_with_prefill`], sampler failures,
+    /// or an out-of-vocabulary sampled token.
+    pub fn generate_sampled<S: Sampler + Clone>(
+        &mut self,
+        prompt: &[u32],
+        options: &Generation,
+        prefill: Prefill,
+        cancellation: &Cancellation,
+        sampler: &mut S,
+        emit: impl FnMut(u32) -> Result<()>,
+    ) -> Result<Completion> {
+        self.generate_sampled_checked(
+            prompt,
+            options,
+            prefill,
+            &|| cancellation.check(),
+            sampler,
+            emit,
+        )
+    }
+
+    /// Generate with a caller-owned sampler before a monotonic deadline.
+    ///
+    /// Uses the sampling and recovery contract of [`Self::generate_sampled`].
+    /// Deadline checks surround sampling as well as decoder and callback work;
+    /// a running operation completes before expiry is observed. Cancellation
+    /// takes precedence over expiry, and recovery may finish after the deadline.
+    ///
+    /// # Errors
+    /// Returns the errors of [`Self::generate_sampled`] or a timed-out error.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "explicit sampling extends the existing bounded deadline API"
+    )]
+    pub fn generate_sampled_until<S: Sampler + Clone>(
+        &mut self,
+        prompt: &[u32],
+        options: &Generation,
+        prefill: Prefill,
+        cancellation: &Cancellation,
+        deadline: Instant,
+        sampler: &mut S,
+        emit: impl FnMut(u32) -> Result<()>,
+    ) -> Result<Completion> {
+        self.generate_sampled_checked(
+            prompt,
+            options,
+            prefill,
+            &|| check_deadline(cancellation, deadline, Instant::now()),
+            sampler,
+            emit,
+        )
+    }
+
     fn generate_checked(
         &mut self,
         prompt: &[u32],
         options: &Generation,
         prefill: Prefill,
         check: &impl Fn() -> Result<()>,
+        emit: impl FnMut(u32) -> Result<()>,
+    ) -> Result<Completion> {
+        self.generate_sampled_checked(prompt, options, prefill, check, &mut Greedy, emit)
+    }
+
+    fn generate_sampled_checked<S: Sampler + Clone>(
+        &mut self,
+        prompt: &[u32],
+        options: &Generation,
+        prefill: Prefill,
+        check: &impl Fn() -> Result<()>,
+        sampler: &mut S,
+        emit: impl FnMut(u32) -> Result<()>,
+    ) -> Result<Completion> {
+        let checkpoint = sampler.clone();
+        let result = self.generate_transaction(prompt, options, prefill, check, sampler, emit);
+        if result.is_err() {
+            *sampler = checkpoint;
+        }
+        result
+    }
+
+    fn generate_transaction(
+        &mut self,
+        prompt: &[u32],
+        options: &Generation,
+        prefill: Prefill,
+        check: &impl Fn() -> Result<()>,
+        sampler: &mut impl Sampler,
         mut emit: impl FnMut(u32) -> Result<()>,
     ) -> Result<Completion> {
         if self.faulted {
@@ -317,7 +414,8 @@ impl<D: Decoder> Runtime<D> {
         let rollback = self.capture(0, check)?;
         let result = (|| {
             check()?;
-            let completion = self.generate_inner(prompt, options, prefill, check, &mut emit)?;
+            let completion =
+                self.generate_inner(prompt, options, prefill, check, sampler, &mut emit)?;
             check()?;
             // A failed optional capture still permits success, but deadline
             // expiry during capture must roll back the completed generation.
@@ -506,6 +604,7 @@ impl<D: Decoder> Runtime<D> {
         options: &Generation,
         prefill: Prefill,
         check: &impl Fn() -> Result<()>,
+        sampler: &mut impl Sampler,
         emit: &mut impl FnMut(u32) -> Result<()>,
     ) -> Result<Completion> {
         check()?;
@@ -525,7 +624,13 @@ impl<D: Decoder> Runtime<D> {
         };
         for _ in 0..options.max_tokens {
             check()?;
-            let token = greedy(&self.logits)?;
+            let token = sampler.sample(&self.logits)?;
+            check()?;
+            if usize::try_from(token).map_or(true, |value| value >= self.decoder.vocab_size()) {
+                return Err(invalid(
+                    "native sampler returned an out-of-vocabulary token",
+                ));
+            }
             if options.stop_tokens.contains(&token) {
                 completion.finish = Finish::Stop;
                 break;
@@ -601,6 +706,7 @@ mod deadline_tests {
         Checkpoint,
         Ingest(u32),
         Evaluate(u32),
+        Sample,
         Emit(u32),
     }
 
@@ -684,6 +790,20 @@ mod deadline_tests {
         max_tokens: 1,
         stop_tokens: vec![],
     };
+
+    #[derive(Clone)]
+    struct TimedSampler {
+        draws: usize,
+        clock: Rc<Clock>,
+    }
+
+    impl Sampler for TimedSampler {
+        fn sample(&mut self, logits: &[f32]) -> Result<u32> {
+            self.draws += 1;
+            self.clock.record(Operation::Sample);
+            greedy(logits)
+        }
+    }
 
     fn seeded() -> Result<(Runtime<TimedDecoder>, Rc<Clock>)> {
         let now = Instant::now();
@@ -872,6 +992,89 @@ mod deadline_tests {
             assert_eq!(runtime.decoder().tokens, [1, 1]);
             assert!(!runtime.is_faulted());
             assert_continues(&mut runtime)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn sampled_deadline_during_sampling_delivery_or_snapshot_restores_caller_rng() -> Result<()> {
+        for operation in [Operation::Sample, Operation::Emit(5), Operation::Checkpoint] {
+            let (mut runtime, clock) = seeded()?;
+            let initial_now = clock.now.get();
+            let mut sampler = TimedSampler {
+                draws: 7,
+                clock: clock.clone(),
+            };
+            if operation == Operation::Sample {
+                clock.expire_on.set(Some(operation));
+            }
+            let mut emitted = Vec::new();
+            assert_timeout(runtime.generate_sampled_checked(
+                &[2, 3],
+                &OPTIONS,
+                Prefill::default(),
+                &|| clock.check(),
+                &mut sampler,
+                |token| {
+                    emitted.push(token);
+                    clock.expire_on.set(Some(operation));
+                    clock.record(Operation::Emit(token));
+                    Ok(())
+                },
+            ))?;
+            assert_eq!(sampler.draws, 7);
+            assert_eq!(runtime.tokens(), &[1, 1]);
+            assert_eq!(runtime.decoder().tokens, [1, 1]);
+            assert!(!runtime.is_faulted());
+            assert_eq!(emitted.len(), usize::from(operation != Operation::Sample));
+            clock.now.set(initial_now);
+            clock.expire_on.set(None);
+            let completion = runtime.generate_sampled_checked(
+                &[2, 3],
+                &OPTIONS,
+                Prefill::default(),
+                &|| clock.check(),
+                &mut sampler,
+                |token| {
+                    assert_eq!(token, 5);
+                    Ok(())
+                },
+            )?;
+            assert_eq!(completion.generated_tokens, 1);
+            assert_eq!(sampler.draws, 8);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn sampled_deadline_after_stop_draw_or_failed_recovery_restores_caller_rng() -> Result<()> {
+        for fail_restore in [false, true] {
+            let (mut runtime, clock) = seeded()?;
+            let mut sampler = TimedSampler {
+                draws: 7,
+                clock: clock.clone(),
+            };
+            clock.restore_fail.set(fail_restore);
+            clock.expire_on.set(Some(Operation::Sample));
+            assert!(
+                runtime
+                    .generate_sampled_checked(
+                        &[2, 3],
+                        &Generation {
+                            max_tokens: 1,
+                            stop_tokens: vec![5],
+                        },
+                        Prefill::default(),
+                        &|| clock.check(),
+                        &mut sampler,
+                        |_| Err(invalid("expired stop sample must not emit")),
+                    )
+                    .is_err()
+            );
+            assert_eq!(sampler.draws, 7);
+            assert_eq!(runtime.tokens(), &[1, 1]);
+            assert_eq!(runtime.is_faulted(), fail_restore);
+            assert!(!clock.operations.borrow().contains(&Operation::Evaluate(5)));
         }
         Ok(())
     }

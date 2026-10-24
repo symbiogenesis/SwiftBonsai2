@@ -4,6 +4,7 @@
 use bonsai_prism_runtime::{
     Decoder, MAX_PREFILL_BLOCK_TOKENS, Result,
     runtime::{Cancellation, Finish, Generation, Limits, Prefill, Runtime, greedy},
+    sampling::Sampler,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -89,6 +90,358 @@ const fn options() -> Generation {
         max_tokens: 1,
         stop_tokens: vec![],
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum SamplingFault {
+    #[default]
+    None,
+    Error,
+    InvalidToken,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SequenceSampler {
+    state: u64,
+    draws: usize,
+    fault: SamplingFault,
+}
+
+impl Default for SequenceSampler {
+    fn default() -> Self {
+        Self {
+            state: 42,
+            draws: 0,
+            fault: SamplingFault::None,
+        }
+    }
+}
+
+impl Sampler for SequenceSampler {
+    fn sample(&mut self, logits: &[f32]) -> Result<u32> {
+        self.state = self
+            .state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        self.draws += 1;
+        match self.fault {
+            SamplingFault::None => Ok(u32::try_from(self.state % u64::try_from(logits.len())?)?),
+            SamplingFault::Error => {
+                Err(std::io::Error::other("sampler failed after RNG advancement").into())
+            }
+            SamplingFault::InvalidToken => Ok(u32::try_from(logits.len())?),
+        }
+    }
+}
+
+#[test]
+fn sampled_success_commits_caller_rng_and_stop_draws_without_emitting_stops() -> Result<()> {
+    let mut runtime = Runtime::new(scheduled(), LIMITS)?;
+    let mut sampler = SequenceSampler::default();
+    let mut expected_sampler = sampler.clone();
+    let expected = [
+        expected_sampler.sample(&[0.0; 8])?,
+        expected_sampler.sample(&[0.0; 8])?,
+    ];
+    let stop = expected_sampler.sample(&[0.0; 8])?;
+    let mut actual = Vec::new();
+    let completion = runtime.generate_sampled_until(
+        &[1, 2, 3, 4],
+        &Generation {
+            max_tokens: 4,
+            stop_tokens: vec![stop],
+        },
+        Prefill { block_tokens: 2 },
+        &Cancellation::default(),
+        Instant::now() + Duration::from_secs(60),
+        &mut sampler,
+        |token| {
+            actual.push(token);
+            Ok(())
+        },
+    )?;
+    assert_eq!(actual, expected);
+    assert_eq!(sampler, expected_sampler);
+    assert_eq!(completion.finish, Finish::Stop);
+    assert_eq!(completion.generated_tokens, 2);
+    assert_eq!(runtime.tokens(), &[1, 2, 3, 4, expected[0], expected[1]]);
+    assert_eq!(runtime.decoder().blocks, [vec![1, 2], vec![3]]);
+    Ok(())
+}
+
+#[test]
+fn sampled_callback_failure_restores_rng_and_retry_repeats_output() -> Result<()> {
+    let mut runtime = Runtime::new(decoder(), LIMITS)?;
+    let cancellation = Cancellation::default();
+    runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+    let committed = runtime.tokens().to_vec();
+    let generation = Generation {
+        max_tokens: 3,
+        stop_tokens: vec![],
+    };
+    let mut sampler = SequenceSampler::default();
+    let original = sampler.clone();
+    let mut failed_output = Vec::new();
+    assert!(
+        runtime
+            .generate_sampled(
+                &[2, 3],
+                &generation,
+                Prefill::default(),
+                &cancellation,
+                &mut sampler,
+                |token| {
+                    failed_output.push(token);
+                    if failed_output.len() == 2 {
+                        return Err(std::io::Error::other("consumer disconnected").into());
+                    }
+                    Ok(())
+                },
+            )
+            .is_err()
+    );
+    assert_eq!(sampler, original);
+    assert_eq!(runtime.tokens(), committed);
+    assert_eq!(runtime.decoder().tokens, committed);
+    let mut retried = Vec::new();
+    runtime.generate_sampled(
+        &[2, 3],
+        &generation,
+        Prefill::default(),
+        &cancellation,
+        &mut sampler,
+        |token| {
+            retried.push(token);
+            Ok(())
+        },
+    )?;
+    assert_eq!(&retried[..failed_output.len()], failed_output);
+    assert_eq!(sampler.draws, 3);
+    Ok(())
+}
+
+#[test]
+fn sampled_errors_and_invalid_tokens_restore_rng_and_decoder_before_retry() -> Result<()> {
+    for fault in [SamplingFault::Error, SamplingFault::InvalidToken] {
+        let mut runtime = Runtime::new(decoder(), LIMITS)?;
+        let cancellation = Cancellation::default();
+        runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+        let mut sampler = SequenceSampler {
+            fault,
+            ..SequenceSampler::default()
+        };
+        let original = sampler.clone();
+        let steps = runtime.decoder().steps.get();
+        let mut emitted = Vec::new();
+        assert!(
+            runtime
+                .generate_sampled(
+                    &[2, 3],
+                    &options(),
+                    Prefill::default(),
+                    &cancellation,
+                    &mut sampler,
+                    |token| {
+                        emitted.push(token);
+                        Ok(())
+                    },
+                )
+                .is_err()
+        );
+        assert_eq!(sampler, original);
+        assert_eq!(runtime.tokens(), &[1, 1]);
+        assert_eq!(runtime.decoder().tokens, [1, 1]);
+        assert_eq!(runtime.decoder().steps.get(), steps + 2);
+        assert_eq!(emitted, [0_u32; 0]);
+        assert!(!runtime.is_faulted());
+        sampler.fault = SamplingFault::None;
+        let expected = sampler.clone().sample(&[0.0; 8])?;
+        runtime.generate_sampled(
+            &[2, 3],
+            &options(),
+            Prefill::default(),
+            &cancellation,
+            &mut sampler,
+            |token| {
+                assert_eq!(token, expected);
+                Ok(())
+            },
+        )?;
+        assert_eq!(sampler.draws, 1);
+    }
+    Ok(())
+}
+
+#[derive(Clone)]
+struct CancellingSampler {
+    inner: SequenceSampler,
+    cancellation: Cancellation,
+}
+
+impl Sampler for CancellingSampler {
+    fn sample(&mut self, logits: &[f32]) -> Result<u32> {
+        let token = self.inner.sample(logits)?;
+        self.cancellation.cancel();
+        Ok(token)
+    }
+}
+
+#[test]
+fn sampled_cancellation_after_draw_prevents_stop_or_decoder_commit_and_restores_rng() -> Result<()>
+{
+    for stop_tokens in [vec![], vec![1]] {
+        let mut runtime = Runtime::new(decoder(), LIMITS)?;
+        runtime.generate(&[1], &options(), &Cancellation::default(), |_| Ok(()))?;
+        let cancellation = Cancellation::default();
+        let mut sampler = CancellingSampler {
+            inner: SequenceSampler::default(),
+            cancellation: cancellation.clone(),
+        };
+        let original = sampler.inner.clone();
+        let steps = runtime.decoder().steps.get();
+        assert!(
+            runtime
+                .generate_sampled(
+                    &[1, 1],
+                    &Generation {
+                        max_tokens: 2,
+                        stop_tokens,
+                    },
+                    Prefill::default(),
+                    &cancellation,
+                    &mut sampler,
+                    |_| Err(std::io::Error::other("cancelled sample must not emit").into()),
+                )
+                .is_err()
+        );
+        assert_eq!(sampler.inner, original);
+        assert_eq!(runtime.tokens(), &[1, 1]);
+        assert_eq!(runtime.decoder().tokens, [1, 1]);
+        assert_eq!(runtime.decoder().steps.get(), steps);
+        assert!(!runtime.is_faulted());
+    }
+    Ok(())
+}
+
+#[test]
+fn sampled_decoder_and_recovery_failures_restore_rng_even_when_admission_closes() -> Result<()> {
+    for fail_restore in [false, true] {
+        let decoder = decoder();
+        let fail = decoder.fail.clone();
+        let restore_fail = decoder.restore_fail.clone();
+        let mut runtime = Runtime::new(decoder, LIMITS)?;
+        let cancellation = Cancellation::default();
+        runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+        let mut sampler = SequenceSampler::default();
+        let original = sampler.clone();
+        let mut emitted = Vec::new();
+        assert!(
+            runtime
+                .generate_sampled(
+                    &[2],
+                    &Generation {
+                        max_tokens: 3,
+                        stop_tokens: vec![],
+                    },
+                    Prefill::default(),
+                    &cancellation,
+                    &mut sampler,
+                    |token| {
+                        emitted.push(token);
+                        fail.set(true);
+                        restore_fail.set(fail_restore);
+                        Ok(())
+                    },
+                )
+                .is_err()
+        );
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(sampler, original);
+        assert_eq!(runtime.tokens(), &[1, 1]);
+        assert_eq!(runtime.is_faulted(), fail_restore);
+        restore_fail.set(false);
+        if fail_restore {
+            assert!(
+                runtime
+                    .generate_sampled(
+                        &[2],
+                        &options(),
+                        Prefill::default(),
+                        &cancellation,
+                        &mut sampler,
+                        |_| Ok(()),
+                    )
+                    .is_err()
+            );
+            assert_eq!(sampler, original);
+            runtime.reset()?;
+        } else {
+            assert_eq!(runtime.decoder().tokens, [1, 1]);
+        }
+        runtime.generate_sampled(
+            &[2],
+            &options(),
+            Prefill::default(),
+            &cancellation,
+            &mut sampler,
+            |token| {
+                assert_eq!(token, emitted[0]);
+                Ok(())
+            },
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn sampled_rejected_requests_leave_rng_and_committed_graph_unchanged() -> Result<()> {
+    let decoder = decoder();
+    let checkpoint_fail = decoder.checkpoint_fail.clone();
+    let mut runtime = Runtime::new(decoder, LIMITS)?;
+    let cancellation = Cancellation::default();
+    runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+    let mut sampler = SequenceSampler::default();
+    let original = sampler.clone();
+    let steps = runtime.decoder().steps.get();
+    for prefill in [Prefill { block_tokens: 0 }, Prefill::default()] {
+        checkpoint_fail.set(true);
+        assert!(
+            runtime
+                .generate_sampled(
+                    &[2],
+                    &options(),
+                    prefill,
+                    &cancellation,
+                    &mut sampler,
+                    |_| Ok(()),
+                )
+                .is_err()
+        );
+        assert_eq!(sampler, original);
+        assert_eq!(runtime.tokens(), &[1, 1]);
+        assert_eq!(runtime.decoder().tokens, [1, 1]);
+        assert_eq!(runtime.decoder().steps.get(), steps);
+    }
+    checkpoint_fail.set(true);
+    assert!(
+        runtime
+            .generate_sampled_until(
+                &[2],
+                &options(),
+                Prefill::default(),
+                &cancellation,
+                Instant::now(),
+                &mut sampler,
+                |_| Ok(()),
+            )
+            .is_err()
+    );
+    assert_eq!(sampler, original);
+    assert_eq!(runtime.tokens(), &[1, 1]);
+    assert_eq!(runtime.decoder().tokens, [1, 1]);
+    assert_eq!(runtime.decoder().steps.get(), steps);
+    assert!(checkpoint_fail.get());
+    Ok(())
 }
 
 #[test]
