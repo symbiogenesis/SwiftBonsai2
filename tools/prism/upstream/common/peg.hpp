@@ -35,13 +35,13 @@ inline void validate_expr(const json & expression, const std::set<std::string> &
     fields(expression, {"Op", "Args"}); string(expression.at("Op"), 128);
     const auto op = expression.at("Op").get<std::string>(); const auto & args = expression.at("Args");
     require(args.is_array() && args.size() <= 64, "PEG Args must be an array of at most 64 values");
-    static const std::set<std::string> zero = {"eps","start","end","any","space","rest","double_quoted_string","single_quoted_string","json","python_value","marker"};
+    static const std::set<std::string> zero = {"eps","end","any","space","double_quoted_string","single_quoted_string","json","python_value","marker"};
     const auto arity = [&](std::size_t low, std::size_t high) { require(args.size() >= low && args.size() <= high, "PEG argument count mismatch"); };
     const auto child = [&](std::size_t index) { validate_expr(args.at(index), locals, depth+1, count); };
     if (zero.count(op)) arity(0,0);
     else if (op == "literal" || op == "ref" || op == "until") { arity(1,1); string(args[0]); }
     else if (op == "chars") { arity(1,3); string(args[0]); for (std::size_t i=1;i<args.size();++i) integer(args[i], i==1?0:-1,65536); }
-    else if (op == "one_or_more" || op == "zero_or_more" || op == "optional" || op == "atomic" || op == "peek" || op == "negate") { arity(1,1); child(0); }
+    else if (op == "one_or_more" || op == "zero_or_more" || op == "optional" || op == "atomic") { arity(1,1); child(0); }
     else if (op == "sequence" || op == "choice") { arity(1,1); require(args[0].is_array() && args[0].size() <= 1024, "PEG parser list exceeds bound"); for (const auto & item : args[0]) validate_expr(item,locals,depth+1,count); }
     else if (op == "until_one_of") { arity(1,1); require(args[0].is_array() && args[0].size() <= 1024, "PEG delimiter list exceeds bound"); for (const auto & item : args[0]) string(item); }
     else if (op == "add" || op == "or" || op == "space-add") { arity(2,2); require(!args[0].is_string() || !args[1].is_string(), "PEG operator requires a parser operand"); for (std::size_t i=0;i<2;++i) { if (args[i].is_string()) string(args[i]); else child(i); } }
@@ -50,7 +50,7 @@ inline void validate_expr(const json & expression, const std::set<std::string> &
     else if (op == "gbnf") { arity(2,2); child(0); string(args[1]); }
     else if (op == "ac") { arity(2,2); child(0); if(args[1].is_string()) string(args[1]); else { require(args[1].is_array() && args[1].size()<=1024,"PEG AC delimiter list exceeds bound"); for(const auto & item:args[1]) string(item); } }
     else if (op == "string_content") { arity(1,1); integer(args[0],0,255); }
-    else if (op == "repeat") { arity(2,3); child(0); integer(args[1],0,65536); if(args.size()==3) integer(args[2],-1,65536); }
+
     else throw std::runtime_error("unknown PEG builder Op");
 }
 inline void validate_graph(const json & graph, std::set<std::string> locals, std::size_t depth, std::size_t & count) {
@@ -81,7 +81,7 @@ inline common_peg_parser graph(common_peg_parser_builder &,const json &,environm
 inline common_peg_parser expr(common_peg_parser_builder & p,const json & expression,const environment & locals) {
     if(expression.contains("Ref")) return common_peg_parser(locals.at(expression.at("Ref").get<std::string>()),p);
     const auto op=expression.at("Op").get<std::string>(); const auto & a=expression.at("Args");
-    if(op=="eps") return p.eps(); if(op=="start") return p.start(); if(op=="end") return p.end(); if(op=="any") return p.any(); if(op=="space") return p.space(); if(op=="rest") return p.rest();
+    if(op=="eps") return p.eps(); if(op=="end") return p.end(); if(op=="any") return p.any(); if(op=="space") return p.space();
     if(op=="double_quoted_string") return p.double_quoted_string(); if(op=="single_quoted_string") return p.single_quoted_string();
     if(op=="json") return p.json();
     if(op=="python_value") return p.python_value(); if(op=="marker") return p.marker();
@@ -99,8 +99,8 @@ inline common_peg_parser expr(common_peg_parser_builder & p,const json & express
     }
     if(op=="tag" || op=="json_member" || op=="rule") { const auto name=a[0].get<std::string>(); const auto child=expr(p,a[1],locals); if(op=="tag") return p.tag(name,child); if(op=="json_member") return p.json_member(name,child); return p.rule(name,child,a.size()>2?a[2].get<bool>():false); }
     const auto child=expr(p,a[0],locals);
-    if(op=="one_or_more") return p.one_or_more(child); if(op=="zero_or_more") return p.zero_or_more(child); if(op=="optional") return p.optional(child); if(op=="atomic") return p.atomic(child); if(op=="peek") return p.peek(child); if(op=="negate") return p.negate(child);
-    if(op=="repeat") return a.size()==2?p.repeat(child,a[1].get<int>()):p.repeat(child,a[1].get<int>(),a[2].get<int>());
+    if(op=="one_or_more") return p.one_or_more(child); if(op=="zero_or_more") return p.zero_or_more(child); if(op=="optional") return p.optional(child); if(op=="atomic") return p.atomic(child);
+
     if(op=="gbnf") return p.gbnf(child,a[1].get<std::string>());
     if(op=="ac") return a[1].is_string()?p.ac(child,a[1].get<std::string>()):p.ac(child,a[1].get<std::vector<std::string>>());
     throw std::runtime_error("unknown PEG builder Op");
