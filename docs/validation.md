@@ -129,6 +129,7 @@ succeed, including artifact retention; skipped jobs are rejected.
 | GGUF and ternary | Bounded metadata/census/export, independent base-3 expected bytes, binary16 conversions, immutable C++ fixture parity, released native DLL FP32 parity and all six guard mutations. |
 | Native CPU reference | Formatting, Release Clippy/rustdoc, complete synthetic correctness suite, token-ID driver, packed SIMD/scalar parity, no-CLI/feature-disabled builds and non-ARM scalar fallback. |
 | Prism overlay | Source drift/repeat rejection, Rust policy/FFI checks, native allocator/math regression and actual engine linkage on Linux ARM64. |
+| Upstream Prism baseline | Verified full test-source inventory, original model-free C++ correctness tests, shared C++/Rust conformance assertions, retained per-source outcomes and a required nonregression floor. See the [baseline guide](prism-upstream-tests.md). |
 
 Foundation downloads runtime/source packages but no model weights and runs no
 inference benchmark. Caches isolate compiler, runner image, architecture and

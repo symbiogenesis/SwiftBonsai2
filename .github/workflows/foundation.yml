@@ -265,6 +265,85 @@ jobs:
           name: prism-rust-checks-${{ github.run_id }}
           path: ${{ env.PRISM_CHECK_EVIDENCE }}
           if-no-files-found: error
+  prism-upstream:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reuse the pinned Linux ARM64 Rust compiler
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-unknown-linux-gnu
+      - name: Reuse Prism source and shared-assertion Rust builds
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ${{ runner.temp }}/SwiftBonsai-PrismUpstreamDownloads
+            ${{ runner.temp }}/SwiftBonsai-PrismUpstreamRust
+          key: prism-upstream-v1-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/prism/upstream/**', 'src/prism-runtime/**', 'tools/ternary/**', 'tools/gguf/**') }}-content-v1
+          restore-keys: |
+            prism-upstream-v1-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-22-
+      - name: Import original C++ tests, retarget assertions and enforce the baseline
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          CC: clang
+          CXX: clang++
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-PrismUpstream-' + [guid]::NewGuid().ToString('N'))
+          "PRISM_UPSTREAM_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1')
+          $lock = Get-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'tools/prism/source.lock.json') -Raw | ConvertFrom-Json
+          $downloads = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamDownloads'
+          [void][IO.Directory]::CreateDirectory($downloads)
+          $archive = Join-Path $downloads ("prism-$($lock.ArchiveSha256).zip")
+          $null = Receive-LockedArtifact -Uri $lock.ArchiveUrl -Path $archive -Bytes $lock.ArchiveBytes -Sha256 $lock.ArchiveSha256 -TimeoutSeconds 600
+          cargo +nightly-2026-10-22 fetch --locked --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml')
+          foreach ($case in @('Catalog', 'Ratchet', 'Evidence')) {
+            & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBaseline.ps1') -Case $case
+          }
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -SourceArchive $archive -EvidenceDirectory $evidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -Parallel 4 | ConvertTo-Json -Depth 12
+      - name: Summarize imported Prism coverage
+        if: always() && env.PRISM_UPSTREAM_EVIDENCE != ''
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          $report = Join-Path $env:PRISM_UPSTREAM_EVIDENCE 'report.json'
+          if (Test-Path -LiteralPath $report) {
+            $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+            '### Pinned Prism conformance baseline' >> $env:GITHUB_STEP_SUMMARY
+            'Coverage unit: upstream test source files. Unsupported files count against the green fraction; this is not an assertion-level pass rate.' >> $env:GITHUB_STEP_SUMMARY
+            ($result.Summary | ConvertTo-Json -Depth 8) >> $env:GITHUB_STEP_SUMMARY
+            '' >> $env:GITHUB_STEP_SUMMARY
+            '| Source | Rust | C++ control | Detail |' >> $env:GITHUB_STEP_SUMMARY
+            '| --- | --- | --- | --- |' >> $env:GITHUB_STEP_SUMMARY
+            foreach ($case in $result.Cases) {
+              $detail = ([string]$case.Detail).Replace('|', '/').Replace("`n", ' ').Replace("`r", ' ')
+              "| $($case.Id) | $($case.Status) | $($case.ReferenceStatus) | $detail |" >> $env:GITHUB_STEP_SUMMARY
+            }
+          } else {
+            'Prism import did not produce a complete report; inspect retained build/command logs.' >> $env:GITHUB_STEP_SUMMARY
+          }
+      - name: Retain every Prism outcome and build diagnostic
+        if: always() && env.PRISM_UPSTREAM_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: prism-upstream-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            ${{ env.PRISM_UPSTREAM_EVIDENCE }}/*.json
+            ${{ env.PRISM_UPSTREAM_EVIDENCE }}/*.log
+            ${{ env.PRISM_UPSTREAM_EVIDENCE }}/raw-cpp/*.json
+            ${{ env.PRISM_UPSTREAM_EVIDENCE }}/raw-cpp/*.log
+            ${{ env.PRISM_UPSTREAM_EVIDENCE }}/*-fixtures.bin
+          if-no-files-found: error
   ternary:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
@@ -480,7 +559,7 @@ jobs:
   # Preserve the required check name and reject failure or skipping in any lane.
   foundation:
     if: always() && github.ref == 'refs/heads/main'
-    needs: [native-runtime, runtime-scalar-fallback, prism, ternary, broker, standards, foundation-tests, lifecycle, gguf, runtime-policy]
+    needs: [native-runtime, runtime-scalar-fallback, prism, prism-upstream, ternary, broker, standards, foundation-tests, lifecycle, gguf, runtime-policy]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 2
     steps:

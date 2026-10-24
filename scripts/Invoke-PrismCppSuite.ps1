@@ -46,12 +46,13 @@ if ((Get-FileHash -LiteralPath (Join-Path $source 'CMakeLists.txt') -Algorithm S
     throw 'The original upstream CMake source changed; use an unmodified extraction.'
 }
 
-# All are original, argument-free correctness suites. In particular exclude
+# All are original correctness suites. In particular exclude
 # sampling, barrier, chat-peg-parser, peg-parser and quantize-perf: their
-# default paths execute benchmarks. Model/download-dependent targets stay red
+# default paths execute benchmarks. Arg-parser makes live HTTP requests.
+# Model/download-dependent targets stay red
 # in the catalog until an explicit qualified adapter is added.
 $targets = @(
-    'test-alloc', 'test-arg-parser', 'test-batch-alloc', 'test-col2im-1d',
+    'test-alloc', 'test-batch-alloc', 'test-col2im-1d',
     'test-dfly-fusion', 'test-gguf', 'test-grammar-integration',
     'test-grammar-parser', 'test-jinja', 'test-llama-grammar', 'test-log',
     'test-moe-weighted-reduce', 'test-mtp-catchup-batch',
@@ -61,7 +62,7 @@ $targets = @(
 if ($Case) {
     if ($targets -cnotcontains $Case) { throw 'Case must name exactly one allowlisted original C++ suite.' }
     $targets = @($Case)
-} elseif (-not $BuildOnly -and $env:GITHUB_ACTIONS -ne 'true') {
+} elseif (-not $BuildOnly -and ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main')) {
     throw 'Complete upstream suite selections run only in CI. Use BuildOnly or one focused Case locally.'
 }
 foreach ($target in $targets) {
@@ -107,6 +108,7 @@ $receipt = [ordered]@{
     ConfigureArguments = $configure
     ParallelJobs = $Parallel
     Targets = $targets
+    TestArguments = @{ 'test-gguf' = @('12345') }
     AssertionsEnabled = $true
     Status = 'configuring'
     Qualification = 'Original CPU correctness suites only; no models, benchmarks or Rust parity claim.'
@@ -131,14 +133,15 @@ if (-not $BuildOnly) {
         $working = Join-Path $evidence ('run-' + $target)
         [void][IO.Directory]::CreateDirectory($working)
         $log = Join-Path $evidence ($target + '.log')
-        $tested = Invoke-BonsaiNativeProcess -Executable $executables[0].FullName -WorkingDirectory $working -TimeoutSeconds 300 -LogPath $log
+        $arguments = if ($target -ceq 'test-gguf') { @('12345') } else { @() }
+        $tested = Invoke-BonsaiNativeProcess -Executable $executables[0].FullName -ArgumentList $arguments -WorkingDirectory $working -TimeoutSeconds 300 -LogPath $log
         $status = if ($tested.ExitCode -eq 0) { 'pass' } else { 'fail' }
         $cases.Add([ordered]@{
             Id = 'tests/' + $target + '.cpp'
             Status = $status
             Detail = "Original unmodified C++ suite exited $($tested.ExitCode); log: $log"
         })
-        [IO.File]::WriteAllText($resultPath, ([ordered]@{ SchemaVersion = 1; Cases = $cases.ToArray() } | ConvertTo-Json -Depth 5))
+        [IO.File]::WriteAllText($resultPath, ([ordered]@{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = $cases.ToArray() } | ConvertTo-Json -Depth 5))
     }
     $receipt.Status = 'tested'
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 6))
@@ -148,5 +151,5 @@ return [ordered]@{
     BuildDirectory = $build
     ResultPath = if ($BuildOnly) { $null } else { $resultPath }
     Targets = $targets
-    ReferenceResults = [ordered]@{ SchemaVersion = 1; Cases = $cases.ToArray() }
+    ReferenceResults = [ordered]@{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = $cases.ToArray() }
 }

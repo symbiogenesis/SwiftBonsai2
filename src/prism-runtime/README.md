@@ -434,3 +434,8 @@ full-model logits/states/tokens, complete tokenizer/template and Prism sampler/R
 adapter execution, broker/OS ownership, broader SIMD/Adreno support and device
 correctness/TPS/quality/security acceptance. Full suites and every benchmark
 remain CI-only under [validation policy](../../docs/validation.md).
+
+The [upstream Prism baseline](../../docs/prism-upstream-tests.md) separately
+imports pinned original C++ tests and applies shared assertions to this runtime.
+Its complete source inventory retains unported tests as unsupported, counts them
+against the green fraction and prevents already-green adapters from regressing.
