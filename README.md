@@ -2,7 +2,7 @@
 
 # 🌱 Swift Bonsai 2
 
-**A local creative AI assistant for Windows on ARM.**
+**A local runner for the Swift Bonsai 2 model on Windows ARM64.**
 
 Creative writing · Brainstorming · Art direction
 
@@ -16,8 +16,13 @@ Creative writing · Brainstorming · Art direction
 
 ---
 
-Swift Bonsai 2 targets **Snapdragon X Elite laptops**, bringing the Swift Bonsai 2
-language model to a local Windows ARM64 assistant.
+Swift Bonsai 2 is a language model by [UkisAI](https://ukisai.com/swift-bonsai-2),
+built on [PrismML's Bonsai 2](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf),
+which derives from [Alibaba's Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B).
+
+This repository provides the setup and runtime tooling to run Swift on a
+**32 GB Snapdragon X Elite laptop with Windows ARM64**. A local creative
+assistant is being built around that setup.
 
 > [!IMPORTANT]
 > **Early development.** Model setup, CPU checks, and a development API are
