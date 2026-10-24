@@ -2,8 +2,10 @@
 
 [Foundation](../.github/workflows/foundation.yml) imports tests from the exact
 Prism archive in [source.lock.json](../tools/prism/source.lock.json), verifies its
-length and SHA-256, and extracts it into fresh external storage. The upstream
-engine sources are used unchanged. No engine sources or build trees are vendored here.
+length and SHA-256, and extracts it into fresh external storage. The archived
+engine source tree stays unchanged. The reference build explicitly substitutes
+one byte-pinned production saver fix, described below. No complete engine source
+tree or build tree is vendored here.
 The upstream MIT terms remain in [PRISM-LICENSE.txt](../tools/prism/PRISM-LICENSE.txt).
 
 The [catalog](../tools/prism/upstream/catalog.json) records all **71** recursive
@@ -28,6 +30,14 @@ counts as a pass. Porting all catalog sources is not complete. Every previously 
 remains required after replacement with safe Rust assertions against pinned Prism.
 Unported sources remain visible as unsupported.
 
+The pinned C++ saver advertises DSpark support but omits its required metadata.
+A focused load/save/reload reproduction proves the saved model cannot reload.
+The [reference patch lock](../tools/prism/upstream/reference-patches.lock.json)
+records the reviewed 39-line production correction and exact before/after hashes.
+The build compiles its verified external translation unit while preserving the
+original source tree. Receipts identify this reference variant explicitly.
+All architecture save/load assertions remain required; this is a production fix,
+and results from it must not be described as pristine-upstream qualification.
 The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.

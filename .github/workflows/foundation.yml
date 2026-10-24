@@ -331,7 +331,7 @@ jobs:
           path: ${{ runner.temp }}/SwiftBonsai-PrismUpstreamNative
           # No fallback tree: source verification and CMake run on every hit;
           # only unchanged compiler work is skipped, never correctness checks.
-          key: prism-upstream-native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_NATIVE_HOST }}-vs18-clangcl-arm64-${{ hashFiles('tools/prism/source.lock.json', 'tools/prism/upstream/**/CMakeLists.txt', 'tools/prism/upstream/**/*.cmake', 'tools/prism/upstream/**/*.c', 'tools/prism/upstream/**/*.cpp', 'tools/prism/upstream/**/*.h', 'tools/prism/upstream/**/*.hpp', 'tools/prism/upstream/**/*.inc', 'tests/Test-PrismUpstream.ps1', 'scripts/Bonsai.PrismNativeCache.psm1') }}
+          key: prism-upstream-native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_NATIVE_HOST }}-vs18-clangcl-arm64-${{ hashFiles('tools/prism/source.lock.json', 'tools/prism/upstream/reference-patches.lock.json', 'tools/prism/upstream/patches/**', 'tools/prism/upstream/**/CMakeLists.txt', 'tools/prism/upstream/**/*.cmake', 'tools/prism/upstream/**/*.c', 'tools/prism/upstream/**/*.cpp', 'tools/prism/upstream/**/*.h', 'tools/prism/upstream/**/*.hpp', 'tools/prism/upstream/**/*.inc', 'tests/Test-PrismUpstream.ps1', 'scripts/Bonsai.PrismNativeCache.psm1') }}
       - name: Run safe Rust conformance on upstream and Rust
         shell: pwsh
         working-directory: ${{ runner.temp }}
