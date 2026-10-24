@@ -11,7 +11,7 @@ keywords = ["inference", "ternary", "qwen35"]
 categories = ["science"]
 
 [features]
-default = ["cli"]
+default = ["cli", "experimental-neon"]
 cli = ["dep:serde_json"]
 experimental-neon = ["dep:fearless_simd"]
 

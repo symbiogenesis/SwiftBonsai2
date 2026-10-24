@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Exact differential checks for the optional packed PQ2/PTQ1 backend.
+//! Exact differential checks for the automatic packed PQ2/PTQ1 backend.
 //! The scalar runtime remains the arithmetic and failure-behavior oracle.
 
 use std::sync::Arc;
@@ -133,6 +133,44 @@ fn compare(
 }
 
 #[test]
+fn simd_default_selects_available_kernel_and_explicit_scalar_overrides() -> TestResult {
+    assert_eq!(MatvecBackend::default(), MatvecBackend::Auto);
+    let mut scratch = MatvecScratch::default();
+    assert_eq!(scratch.selected_backend(), MatvecBackend::Scalar);
+    let mut automatic = MatvecScratch::with_backend(MatvecBackend::Auto);
+    let mut scalar = MatvecScratch::with_backend(MatvecBackend::Scalar);
+    let mut output = Vec::new();
+    let mut legacy = [0x99; 18];
+    legacy[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
+    for (weights, expected_backend) in [
+        (pq2_tensor(256, 3, &SCALE_BITS)?, eligible_backend()),
+        (pq2_tensor(384, 3, &SCALE_BITS)?, eligible_backend()),
+        (ptq1_tensor(384, 3, &SCALE_BITS)?, eligible_backend()),
+        (tensor(2, 32, 1, legacy.to_vec()), MatvecBackend::Scalar),
+        (
+            tensor(0, 1, 1, 1.0_f32.to_le_bytes().to_vec()),
+            MatvecBackend::Scalar,
+        ),
+    ] {
+        let input = activations(weights.dimensions[0], false);
+        for request in [&mut scratch, &mut automatic] {
+            compare(&weights, &input, request, &mut output, expected_backend)?;
+        }
+        compare(
+            &weights,
+            &input,
+            &mut scalar,
+            &mut output,
+            MatvecBackend::Scalar,
+        )?;
+        assert!(matvec_into(&weights, &[], &mut output, &mut scratch).is_err());
+        assert_eq!(scratch.selected_backend(), MatvecBackend::Scalar);
+        assert!(output.is_empty());
+    }
+    Ok(())
+}
+
+#[test]
 fn simd_pq2_matches_scalar_for_multiple_rows_blocks_and_scale_bits() -> TestResult {
     let mut scratch = MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon);
     let mut output = Vec::new();
@@ -158,7 +196,7 @@ fn simd_pq2_matches_scalar_for_multiple_rows_blocks_and_scale_bits() -> TestResu
         &input,
         &mut default,
         &mut output,
-        MatvecBackend::Scalar,
+        eligible_backend(),
     )?;
     Ok(())
 }
@@ -339,7 +377,7 @@ fn simd_q8_groups_match_scalar_for_ptq1_and_odd_pq2() -> TestResult {
                     &activations(columns, false),
                     &mut MatvecScratch::default(),
                     &mut output,
-                    MatvecBackend::Scalar,
+                    eligible_backend(),
                 )?;
             }
         }
@@ -403,7 +441,7 @@ fn simd_q8_groups_preserve_ordered_float_sums() -> TestResult {
 #[test]
 fn simd_q8_groups_reject_noncanonical_and_nonfinite_payloads() -> TestResult {
     let mut scratch = MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon);
-    let mut scalar = MatvecScratch::default();
+    let mut scalar = MatvecScratch::with_backend(MatvecBackend::Scalar);
     let mut output = vec![99.0; 16];
     let pointer = output.as_ptr();
     let mut scalar_output = Vec::new();

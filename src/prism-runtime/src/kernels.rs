@@ -1,4 +1,4 @@
-//! Safe reference kernels and opt-in baseline NEON packed integer arithmetic.
+//! Safe reference kernels and automatic baseline NEON packed integer arithmetic.
 //!
 //! The reference basis is PrismML-Eng/llama.cpp revision
 //! `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, `ggml/src/ggml-quants.c`
@@ -491,7 +491,6 @@ fn float_dot(weights: &[f32], input: &[f32]) -> f32 {
 /// Construct with [`Default::default`]. Storage grows fallibly to accommodate
 /// each call and retains its capacity across tensors, activation formats and
 /// errors. Scratch contains no tensor-sized decoded matrix or model state.
-#[derive(Default)]
 pub struct MatvecScratch {
     q8k: Vec<Q8KBlock>,
     q8: Vec<Q8Block>,
@@ -503,16 +502,18 @@ pub struct MatvecScratch {
 
 /// Packed matrix kernel selection, independent of model and activation precision.
 ///
-/// Scalar is the default. Experimental selection permits only the compiled
-/// baseline NEON implementation on native Windows ARM64 MSVC for complete PQ2
-/// and PTQ1 blocks. Other targets and formats use scalar.
+/// Automatic selection uses the compiled baseline NEON implementation on native
+/// Windows ARM64 MSVC for complete PQ2 and PTQ1 blocks. Other targets and formats
+/// use scalar. Select [`Self::Scalar`] to retain the reference implementation.
 /// No optional CPU extension is enabled or inferred by this selection.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum MatvecBackend {
-    /// Scalar reference implementation and unconditional fallback.
+    /// Selects the best available packed kernel for the build, target and format.
     #[default]
+    Auto,
+    /// Scalar reference implementation and unconditional fallback.
     Scalar,
-    /// Opt-in baseline NEON packed dot, requiring the `experimental-neon` feature.
+    /// Explicit baseline NEON request, requiring the `experimental-neon` feature.
     ///
     /// Exact synthetic parity does not qualify whole-model performance or parity.
     ExperimentalNeon,
@@ -521,11 +522,25 @@ pub enum MatvecBackend {
 type Pq2RowKernel = fn(&[u8], &[Q8KBlock]) -> Result<f32>;
 type Q8GroupRowKernel = fn(u32, &[u8], &[Q8Block]) -> Result<f32>;
 
+impl Default for MatvecScratch {
+    fn default() -> Self {
+        Self {
+            q8k: Vec::new(),
+            q8: Vec::new(),
+            activations: Vec::new(),
+            row: Vec::new(),
+            requested_backend: MatvecBackend::Auto,
+            selected_backend: MatvecBackend::Scalar,
+        }
+    }
+}
+
 impl MatvecScratch {
     /// Creates reusable storage with an explicit kernel request.
     ///
     /// Unsupported requests fall back to scalar at each matrix operation. The
-    /// default constructor always requests scalar, even in builds with NEON.
+    /// default constructor requests automatic selection. Disabling default
+    /// features omits NEON unless `experimental-neon` is explicitly enabled.
     #[must_use]
     pub fn with_backend(backend: MatvecBackend) -> Self {
         Self {
@@ -551,7 +566,10 @@ impl MatvecScratch {
             target_env = "msvc",
             target_feature = "neon"
         ))]
-        if matches!(self.requested_backend, MatvecBackend::ExperimentalNeon) {
+        if matches!(
+            self.requested_backend,
+            MatvecBackend::Auto | MatvecBackend::ExperimentalNeon
+        ) {
             return (MatvecBackend::ExperimentalNeon, dot_pq2_neon);
         }
         // Read the request on scalar-only builds as well; no request can bypass
@@ -568,7 +586,10 @@ impl MatvecScratch {
             target_env = "msvc",
             target_feature = "neon"
         ))]
-        if matches!(self.requested_backend, MatvecBackend::ExperimentalNeon) {
+        if matches!(
+            self.requested_backend,
+            MatvecBackend::Auto | MatvecBackend::ExperimentalNeon
+        ) {
             return (MatvecBackend::ExperimentalNeon, dot_q8_groups_neon);
         }
         let _ = self.requested_backend;
