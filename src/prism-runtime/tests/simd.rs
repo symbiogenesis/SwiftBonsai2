@@ -4,7 +4,9 @@
 
 use std::sync::Arc;
 
-use bonsai_prism_runtime::kernels::{MatvecBackend, MatvecScratch, matvec_into};
+use bonsai_prism_runtime::kernels::{
+    MatvecBackend, MatvecFallbackReason, MatvecScratch, matvec_into,
+};
 use bonsai_prism_runtime::model::Tensor;
 use bonsai_ternary::pack_ptq;
 
@@ -109,6 +111,16 @@ const fn eligible_backend() -> MatvecBackend {
     }
 }
 
+const fn build_fallback() -> Option<MatvecFallbackReason> {
+    if !cfg!(feature = "experimental-neon") {
+        Some(MatvecFallbackReason::FeatureDisabled)
+    } else if matches!(eligible_backend(), MatvecBackend::Scalar) {
+        Some(MatvecFallbackReason::TargetUnsupported)
+    } else {
+        None
+    }
+}
+
 fn assert_bits(actual: &[f32], expected: &[f32]) {
     let actual: Vec<u32> = actual.iter().map(|value| value.to_bits()).collect();
     let expected: Vec<u32> = expected.iter().map(|value| value.to_bits()).collect();
@@ -129,6 +141,154 @@ fn compare(
     matvec_into(weights, input, output, scratch)?;
     assert_eq!(scratch.selected_backend(), expected_backend);
     assert_bits(output, &scalar);
+    Ok(())
+}
+
+#[test]
+fn simd_diagnostics_explain_build_tensor_and_explicit_scalar_selection() -> TestResult {
+    let mut output = Vec::new();
+    let mut legacy = [0x99; 18];
+    legacy[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
+    for request in [
+        MatvecBackend::Auto,
+        MatvecBackend::ExperimentalNeon,
+        MatvecBackend::Scalar,
+    ] {
+        let mut scratch = MatvecScratch::with_backend(request);
+        let initial = scratch.diagnostics();
+        assert_eq!(initial.requested_backend, request);
+        assert_eq!(initial.selected_backend, MatvecBackend::Scalar);
+        assert_eq!(
+            initial.neon_build_eligible,
+            matches!(eligible_backend(), MatvecBackend::ExperimentalNeon)
+        );
+        assert_eq!(initial.fallback_reason, None);
+        assert!(!initial.dispatched);
+        assert!(!initial.succeeded);
+        for (weights, supports_neon) in [
+            (pq2_tensor(256, 2, &[0x3c00])?, true),
+            (pq2_tensor(384, 2, &[0x3c00])?, true),
+            (ptq1_tensor(128, 2, &[0x3c00])?, true),
+            (tensor(2, 32, 1, legacy.to_vec()), false),
+            (tensor(0, 1, 1, 1.0_f32.to_le_bytes().to_vec()), false),
+        ] {
+            matvec_into(
+                &weights,
+                &activations(weights.dimensions[0], false),
+                &mut output,
+                &mut scratch,
+            )?;
+            let report = scratch.diagnostics();
+            let reason = if matches!(request, MatvecBackend::Scalar) {
+                Some(MatvecFallbackReason::ScalarRequested)
+            } else if !supports_neon {
+                Some(MatvecFallbackReason::TensorKindUnsupported)
+            } else {
+                build_fallback()
+            };
+            assert_eq!(report.requested_backend, request);
+            assert_eq!(report.selected_backend, scratch.selected_backend());
+            assert_eq!(report.fallback_reason, reason);
+            assert_eq!(report.neon_build_eligible, initial.neon_build_eligible);
+            assert!(report.dispatched);
+            assert!(report.succeeded);
+            assert_eq!(
+                report.selected_backend,
+                if reason.is_none() {
+                    MatvecBackend::ExperimentalNeon
+                } else {
+                    MatvecBackend::Scalar
+                }
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn simd_diagnostics_replace_success_on_preparation_and_row_failure() -> TestResult {
+    let weights = pq2_tensor(256, 2, &[0x3c00])?;
+    let input = activations(256, false);
+    let mut scratch = MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon);
+    let mut output = Vec::new();
+    matvec_into(&weights, &input, &mut output, &mut scratch)?;
+    let successful = scratch.diagnostics();
+    assert!(successful.dispatched);
+    assert!(successful.succeeded);
+
+    // Even a successful preparation clears the last matrix result.
+    {
+        let _prepared = scratch.prepare(&weights, &input)?;
+    }
+    assert!(!scratch.diagnostics().dispatched);
+    assert!(!scratch.diagnostics().succeeded);
+    assert_eq!(scratch.diagnostics().fallback_reason, None);
+
+    let mut invalid_scale = weights.data.to_vec();
+    invalid_scale[68..70].copy_from_slice(&0x7c00_u16.to_le_bytes());
+    let bad_rows = tensor(142, 256, 2, invalid_scale);
+    let malformed = tensor(142, 255, 2, weights.data.to_vec());
+    for (case_weights, case_input, dispatched) in [
+        (&bad_rows, input.clone(), true),
+        (&malformed, input.clone(), false),
+        (&weights, vec![f32::NAN; 256], false),
+        (&weights, input[..255].to_vec(), false),
+    ] {
+        assert!(matvec_into(case_weights, &case_input, &mut output, &mut scratch).is_err());
+        let failed = scratch.diagnostics();
+        assert_eq!(failed.requested_backend, successful.requested_backend);
+        assert_eq!(failed.neon_build_eligible, successful.neon_build_eligible);
+        assert_eq!(failed.dispatched, dispatched);
+        assert!(!failed.succeeded);
+        assert_eq!(
+            failed.fallback_reason,
+            if dispatched { build_fallback() } else { None }
+        );
+        assert_eq!(
+            failed.selected_backend,
+            if dispatched {
+                eligible_backend()
+            } else {
+                MatvecBackend::Scalar
+            }
+        );
+        assert_eq!(output, Vec::<f32>::new());
+        matvec_into(&weights, &input, &mut output, &mut scratch)?;
+        assert_eq!(scratch.diagnostics(), successful);
+    }
+    Ok(())
+}
+
+#[test]
+fn simd_diagnostics_track_latest_prepared_sibling_attempt() -> TestResult {
+    let weights = pq2_tensor(256, 2, &[0x3c00])?;
+    let incompatible = ptq1_tensor(256, 2, &[0x3c00])?;
+    let input = activations(256, false);
+    let mut scratch = MatvecScratch::default();
+    let mut output = Vec::new();
+    {
+        let mut prepared = scratch.prepare(&weights, &input)?;
+        prepared.matvec_into(&weights, &mut output)?;
+        assert!(prepared.matvec_into(&incompatible, &mut output).is_err());
+    }
+    assert!(!scratch.diagnostics().dispatched);
+    assert!(!scratch.diagnostics().succeeded);
+    assert_eq!(
+        scratch.diagnostics().selected_backend,
+        MatvecBackend::Scalar
+    );
+    assert_eq!(scratch.diagnostics().fallback_reason, None);
+    assert_eq!(output, Vec::<f32>::new());
+    {
+        let mut prepared = scratch.prepare(&weights, &input)?;
+        assert!(prepared.matvec_into(&incompatible, &mut output).is_err());
+        prepared.matvec_into(&weights, &mut output)?;
+    }
+    assert!(scratch.diagnostics().dispatched);
+    assert!(scratch.diagnostics().succeeded);
+    assert_eq!(scratch.diagnostics().selected_backend, eligible_backend());
+    assert_eq!(scratch.diagnostics().fallback_reason, build_fallback());
+    assert_eq!(output.len(), 2);
     Ok(())
 }
 

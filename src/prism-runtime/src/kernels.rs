@@ -496,8 +496,7 @@ pub struct MatvecScratch {
     q8: Vec<Q8Block>,
     activations: Vec<f32>,
     row: Vec<f32>,
-    requested_backend: MatvecBackend,
-    selected_backend: MatvecBackend,
+    diagnostics: MatvecDiagnostics,
     #[cfg(test)]
     preparations: usize,
 }
@@ -554,6 +553,90 @@ pub enum MatvecBackend {
     ExperimentalNeon,
 }
 
+/// Why the selected matrix operation uses scalar arithmetic.
+///
+/// Reasons have a fixed precedence: an explicit scalar request, a tensor kind
+/// without a NEON kernel, a disabled feature, then an unsupported build target.
+/// This reports dispatch policy and compile-time eligibility, not CPU probing,
+/// whole-model qualification or measured performance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MatvecFallbackReason {
+    /// The caller explicitly requested the scalar backend.
+    ScalarRequested,
+    /// This supported tensor kind has no NEON matrix kernel.
+    TensorKindUnsupported,
+    /// The build omitted the `experimental-neon` feature.
+    FeatureDisabled,
+    /// The build is not Windows ARM64 MSVC with baseline NEON enabled.
+    TargetUnsupported,
+}
+
+/// Dispatch and completion information for the most recent matrix attempt.
+///
+/// A new preparation or prepared matrix attempt resets this record, including
+/// on validation failure. Earlier successful operations are not retained.
+/// Neither a selected backend nor build eligibility establishes model parity
+/// or performance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MatvecDiagnostics {
+    /// Configured policy, preserved across preparations and failures.
+    pub requested_backend: MatvecBackend,
+    /// Actual row backend selected; scalar until dispatch occurs.
+    pub selected_backend: MatvecBackend,
+    /// Whether this build includes the supported baseline NEON implementation.
+    pub neon_build_eligible: bool,
+    /// Scalar selection reason, absent before dispatch and for NEON selection.
+    pub fallback_reason: Option<MatvecFallbackReason>,
+    /// A row backend was selected after dimension, activation and output allocation checks.
+    ///
+    /// Row validation or arithmetic may still fail after selection.
+    pub dispatched: bool,
+    /// The most recent matrix attempt returned success with complete output.
+    ///
+    /// Always false before dispatch and after any failed attempt.
+    pub succeeded: bool,
+}
+
+impl MatvecDiagnostics {
+    const fn new(requested_backend: MatvecBackend) -> Self {
+        Self {
+            requested_backend,
+            selected_backend: MatvecBackend::Scalar,
+            neon_build_eligible: cfg!(all(
+                feature = "experimental-neon",
+                target_arch = "aarch64",
+                target_os = "windows",
+                target_env = "msvc",
+                target_feature = "neon"
+            )),
+            fallback_reason: None,
+            dispatched: false,
+            succeeded: false,
+        }
+    }
+
+    const fn select(mut self, supports_neon: bool) -> Self {
+        self.fallback_reason = if matches!(self.requested_backend, MatvecBackend::Scalar) {
+            Some(MatvecFallbackReason::ScalarRequested)
+        } else if !supports_neon {
+            Some(MatvecFallbackReason::TensorKindUnsupported)
+        } else if !cfg!(feature = "experimental-neon") {
+            Some(MatvecFallbackReason::FeatureDisabled)
+        } else if !self.neon_build_eligible {
+            Some(MatvecFallbackReason::TargetUnsupported)
+        } else {
+            None
+        };
+        self.selected_backend = if self.fallback_reason.is_none() {
+            MatvecBackend::ExperimentalNeon
+        } else {
+            MatvecBackend::Scalar
+        };
+        self.dispatched = true;
+        self
+    }
+}
+
 type Pq2RowKernel = fn(&[u8], &[Q8KBlock]) -> Result<f32>;
 type Q8GroupRowKernel = fn(u32, &[u8], &[Q8Block]) -> Result<f32>;
 
@@ -564,8 +647,7 @@ impl Default for MatvecScratch {
             q8: Vec::new(),
             activations: Vec::new(),
             row: Vec::new(),
-            requested_backend: MatvecBackend::Auto,
-            selected_backend: MatvecBackend::Scalar,
+            diagnostics: MatvecDiagnostics::new(MatvecBackend::Auto),
             #[cfg(test)]
             preparations: 0,
         }
@@ -591,7 +673,7 @@ impl MatvecScratch {
         tensor: &Tensor,
         input: &'a [f32],
     ) -> Result<PreparedMatvec<'a>> {
-        self.selected_backend = MatvecBackend::Scalar;
+        self.reset_diagnostics();
         let (columns, _, _) = dimensions(tensor)?;
         if input.len() != columns || input.iter().any(|value| !value.is_finite()) {
             return Err(invalid(
@@ -637,7 +719,7 @@ impl MatvecScratch {
     #[must_use]
     pub fn with_backend(backend: MatvecBackend) -> Self {
         Self {
-            requested_backend: backend,
+            diagnostics: MatvecDiagnostics::new(backend),
             ..Self::default()
         }
     }
@@ -648,19 +730,34 @@ impl MatvecScratch {
     /// [`Self::selected_backend`] for the last operation's actual selection.
     #[must_use]
     pub const fn requested_backend(&self) -> MatvecBackend {
-        self.requested_backend
+        self.diagnostics.requested_backend
     }
 
     /// Returns the backend selected for the most recent matrix operation.
     ///
-    /// Initially scalar. Selection resets for every call, including failed calls;
-    /// this records dispatch rather than successful completion or qualification.
+    /// Initially scalar. Selection resets for every preparation and matrix
+    /// attempt, including failures. See [`Self::diagnostics`] to distinguish a
+    /// dispatched operation from failure before dispatch or successful completion.
     #[must_use]
     pub const fn selected_backend(&self) -> MatvecBackend {
-        self.selected_backend
+        self.diagnostics.selected_backend
     }
 
-    const fn select_pq2(&self) -> (MatvecBackend, Pq2RowKernel) {
+    /// Returns selection, fallback, build eligibility and completion information.
+    ///
+    /// This describes only the latest preparation or matrix attempt. A failed
+    /// attempt replaces earlier success; it is not a whole-model backend report.
+    #[must_use]
+    pub const fn diagnostics(&self) -> MatvecDiagnostics {
+        self.diagnostics
+    }
+
+    const fn reset_diagnostics(&mut self) {
+        self.diagnostics = MatvecDiagnostics::new(self.requested_backend());
+    }
+
+    const fn select_pq2(&mut self) -> Pq2RowKernel {
+        self.diagnostics = self.diagnostics.select(true);
         #[cfg(all(
             feature = "experimental-neon",
             target_arch = "aarch64",
@@ -668,19 +765,14 @@ impl MatvecScratch {
             target_env = "msvc",
             target_feature = "neon"
         ))]
-        if matches!(
-            self.requested_backend,
-            MatvecBackend::Auto | MatvecBackend::ExperimentalNeon
-        ) {
-            return (MatvecBackend::ExperimentalNeon, dot_pq2_neon);
+        if matches!(self.selected_backend(), MatvecBackend::ExperimentalNeon) {
+            return dot_pq2_neon;
         }
-        // Read the request on scalar-only builds as well; no request can bypass
-        // the build/target contract or enable an optional instruction set.
-        let _ = self.requested_backend;
-        (MatvecBackend::Scalar, dot_pq2)
+        dot_pq2
     }
 
-    const fn select_q8_groups(&self) -> (MatvecBackend, Q8GroupRowKernel) {
+    const fn select_q8_groups(&mut self) -> Q8GroupRowKernel {
+        self.diagnostics = self.diagnostics.select(true);
         #[cfg(all(
             feature = "experimental-neon",
             target_arch = "aarch64",
@@ -688,14 +780,10 @@ impl MatvecScratch {
             target_env = "msvc",
             target_feature = "neon"
         ))]
-        if matches!(
-            self.requested_backend,
-            MatvecBackend::Auto | MatvecBackend::ExperimentalNeon
-        ) {
-            return (MatvecBackend::ExperimentalNeon, dot_q8_groups_neon);
+        if matches!(self.selected_backend(), MatvecBackend::ExperimentalNeon) {
+            return dot_q8_groups_neon;
         }
-        let _ = self.requested_backend;
-        (MatvecBackend::Scalar, dot_q8_groups)
+        dot_q8_groups
     }
 }
 
@@ -757,8 +845,10 @@ impl PreparedMatvec<'_> {
     /// Rejects incompatible activation contracts, malformed tensors, nonfinite
     /// results, invalid PTQ1 encodings and failed output or row allocation.
     pub fn matvec_into(&mut self, tensor: &Tensor, output: &mut Vec<f32>) -> Result<()> {
-        self.scratch.selected_backend = MatvecBackend::Scalar;
-        fill_into(output, |output| self.multiply(tensor, output))
+        self.scratch.reset_diagnostics();
+        let result = fill_into(output, |output| self.multiply(tensor, output));
+        self.scratch.diagnostics.succeeded = result.is_ok();
+        result
     }
 
     fn multiply(&mut self, tensor: &Tensor, output: &mut Vec<f32>) -> Result<()> {
@@ -772,25 +862,25 @@ impl PreparedMatvec<'_> {
         output.try_reserve_exact(rows)?;
         match tensor.kind {
             PQ2 if columns.is_multiple_of(256) => {
-                let (backend, dot) = scratch.select_pq2();
-                scratch.selected_backend = backend;
+                let dot = scratch.select_pq2();
                 for bytes in tensor.data.chunks_exact(row_bytes) {
                     output.push(dot(bytes, &scratch.q8k)?);
                 }
             }
             PQ2 | PTQ1 => {
-                let (backend, dot) = scratch.select_q8_groups();
-                scratch.selected_backend = backend;
+                let dot = scratch.select_q8_groups();
                 for bytes in tensor.data.chunks_exact(row_bytes) {
                     output.push(dot(tensor.kind, bytes, &scratch.q8)?);
                 }
             }
             Q4_0 | Q8_0 => {
+                scratch.diagnostics = scratch.diagnostics.select(false);
                 for bytes in tensor.data.chunks_exact(row_bytes) {
                     output.push(dot_legacy(tensor.kind, bytes, &scratch.q8)?);
                 }
             }
             _ => {
+                scratch.diagnostics = scratch.diagnostics.select(false);
                 for (index, _) in tensor.data.chunks_exact(row_bytes).enumerate() {
                     row_into(tensor, index, &mut scratch.row)?;
                     output.push(finite(float_dot(&scratch.row, &scratch.activations))?);
