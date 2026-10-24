@@ -9,11 +9,28 @@
     "tests/test-pq2-row-shapes.cpp"
   ],
   "RequiredReferencePassedIds": [
+    "tests/test-alloc.cpp",
+    "tests/test-batch-alloc.cpp",
+    "tests/test-col2im-1d.cpp",
+    "tests/test-dfly-fusion.cpp",
+    "tests/test-gguf.cpp",
+    "tests/test-grammar-integration.cpp",
+    "tests/test-grammar-parser.cpp",
+    "tests/test-jinja.cpp",
+    "tests/test-llama-grammar.cpp",
+    "tests/test-log.cpp",
+    "tests/test-moe-weighted-reduce.cpp",
+    "tests/test-mtp-catchup-batch.cpp",
     "tests/test-pq2-row-shapes.cpp",
-    "tests/test-ptq1_0-element-map.cpp"
+    "tests/test-ptq1_0-cuda-dot.cpp",
+    "tests/test-ptq1_0-element-map.cpp",
+    "tests/test-quantize-fns.cpp",
+    "tests/test-reasoning-budget.cpp",
+    "tests/test-rope.cpp",
+    "tests/test-unicode.cpp"
   ],
   "Provenance": {
-    "Status": "focused-local-baseline-measured-hosted-confirmation-pending",
+    "Status": "hosted-baseline-confirmed",
     "MeasuredOn": "2026-10-24",
     "CppReference": "Pinned original C++ test-pq2-row-shapes executable, MSVC x64: all 15 source shape variants passed.",
     "SharedAssertionsCpp": "The common Rust assertion runner against C++-generated fixtures passed all 15 variants; worst relative RMS error 0.00678326 against the upstream 0.05 threshold.",
@@ -26,6 +43,21 @@
       "tests/test-ptq1_0-element-map.cpp"
     ],
     "KnownRedReason": "The original random-byte PTQ1 element-map source passes its C++ control, while Rust rejects noncanonical blocks. Target rejection is retained as a failed source suite, rather than dropping cases or narrowing the original input domain.",
-    "Explanation": "Minimum 1/71 preserves each measured Rust green source. The two independently measured C++ reference sources must remain passing even when the Rust source is red. Unported, skipped and failed source suites remain in the denominator. Hosted CI independently rebuilds both C++ controls and repeats these paired assertions. Baseline policy is never automatically rewritten by CI."
+    "Explanation": "Minimum 1/71 preserves each measured Rust green source. The two independently measured C++ reference sources must remain passing even when the Rust source is red. Unported, skipped and failed source suites remain in the denominator. Hosted CI independently rebuilds both C++ controls and repeats these paired assertions. Baseline policy is never automatically rewritten by CI.",
+    "Hosted": {
+      "ProjectRevision": "afe66d881b8828183b9ffe7ef3119463b5d58bc2",
+      "RunUrl": "https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40112751630",
+      "Verdict": "Foundation and imported Prism baseline passed",
+      "Platform": "Ubuntu 24.04.5 LTS ARM64",
+      "RustPassed": 1,
+      "RustFailed": 1,
+      "RustUnsupported": 69,
+      "TotalSources": 71,
+      "CppPassed": 19,
+      "CppUnsupported": 52,
+      "ReportSha256": "3368fd51550c3b4e8f08296186341e5a62e8c5fd5e9ff8cb94ecd0f6f8c56bbf",
+      "Pq2FixtureSha256": "279cac324e1382b93650dcfe3b4e2a1a80c346e7c481ba8ef966f47f6f7b1621",
+      "Ptq1FixtureSha256": "db47bed002bb2ac699dbe8cc324ba4607cbf4cc12982081f1059b0cce6980036"
+    }
   }
 }

@@ -54,6 +54,12 @@ reports 19,434 rejected blocks out of the original 20,000; admitted positions
 match exactly. The baseline retains this original domain instead of narrowing
 the test to canonical bytes.
 
+The initial [hosted Foundation run](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40112751630)
+passed on revision `afe66d881b8828183b9ffe7ef3119463b5d58bc2`. All **19 selected
+C++ controls** passed (17 original suites plus the two paired adapter controls).
+Their IDs are recorded in the baseline, so none can disappear from later runs.
+The other 52 source files have no executed C++ control in this lane.
+
 [baseline.json](../tools/prism/upstream/baseline.json) holds the recorded minimum
 green count and every required green source ID. `RequiredReferencePassedIds`
 also preserves each already-passing C++ control independently of Rust progress.
