@@ -1593,6 +1593,7 @@ fn native_driver_executes_verified_synthetic_gguf_and_enforces_state_budget() ->
                         "generated_tokens": 2,
                         "reused_tokens": 0,
                         "stop_tokens": [0],
+                        "sampling": { "mode": "greedy" },
                         "backend_requested": backend.unwrap_or("auto"),
                         "state_budget_bytes": state_bytes.unwrap_or(bonsai_prism_runtime::graph::MAX_STATE_BYTES),
                         "prefill_block_tokens": if backend == Some("neon") { 4 } else { 1 },
