@@ -207,9 +207,10 @@ experimental Rust reference. Bounded sequential prefill scheduling, immutable KV
 checkpoint pages and cumulative backend diagnostics are also implemented.
 The token driver honors declared model stops, emits lossless token bytes with
 incremental UTF-8 text, and offers explicit seeded reference sampling with
-transactional sampler recovery. A bounded byte-pair merge core accepts supplied
-pretokenizer boundaries. Complete input tokenization, chat templates and Prism
-sampler/RNG parity remain open.
+transactional sampler recovery. Bounded plain-text input composes pinned Qwen35
+Unicode boundaries, explicit special-token recognition and ranked byte-pair
+merges. Chat templates, automatic BOS/EOS insertion, full-model tokenizer parity
+and Prism sampler/RNG parity remain open.
 Tiled prefill kernels, full-model allocation,
 parity and performance qualification remain open.
 

@@ -1,5 +1,5 @@
 #![forbid(unsafe_code)]
-//! Explicit token-ID driver for the unqualified native CPU reference engine.
+//! Explicit token and plain-text driver for the unqualified CPU reference engine.
 
 use bonsai_prism_runtime::{
     MAX_PREFILL_BLOCK_TOKENS, Result,
@@ -8,7 +8,9 @@ use bonsai_prism_runtime::{
     model::Model,
     runtime::{Cancellation, Finish, Generation, Limits, Prefill, Runtime},
     sampling::{Greedy, ReferenceSampler, Sampler, Sampling},
+    special_input::SpecialInputPolicy,
     special_tokens::SpecialTokens,
+    tokenizer::Tokenizer,
     vocabulary::Vocabulary,
 };
 use serde_json::json;
@@ -23,7 +25,9 @@ use std::{
 const USAGE: &str = "Native CPU reference; full-model parity and performance are unqualified.\n\
 Usage: bonsai-prism-runtime --model <absolute-gguf-path> --bytes <u64>\n\
   --sha256 <64-hex> --memory-bytes <usize> --context <1..262144>\n\
-  --checkpoint-bytes <usize> --max-tokens <usize> --tokens <id,id,...>\n\
+  --checkpoint-bytes <usize> --max-tokens <usize>\n\
+  (--tokens <id,id,...> | --prompt <utf8-text>)\n\
+  [--special-input <literal|parse>]\n\
   [--stop-tokens <id,id,...>] [--backend <auto|scalar|neon>]\n\
   [--timeout-seconds <1..3600>] [--output <tokens|text>]\n\
   [--state-bytes <usize>]\n\
@@ -40,7 +44,10 @@ Selection is per matrix operation; backend_requested reports only the request.\n
 backend_last_operation records just the latest projection, including scalar fallback.\n\
 backend_statistics counts all attempted matrix work, including provisional work.\n\
 Prefill blocks default to one token and preserve sequential reference arithmetic.\n\
-Input is token IDs; decoding defaults to greedy. Output is one JSON object per line.\n\
+Input is exact token IDs or bounded plain text; no chat template or BOS/EOS is inserted.\n\
+Special input spellings stay literal by default; --special-input requires --prompt.\n\
+Text input is experimental; full-model tokenizer parity remains unqualified.\n\
+Decoding defaults to greedy. Output is one JSON object per line.\n\
 Reference sampling is experimental, requires --seed, and uses temperature, top-k,\n\
 then top-p with SplitMix64. Defaults are 1, 20 and 0.95; top-k 0 retains all IDs.\n\
 Top-p must be greater than zero. Sampling controls require --sampling reference.\n\
@@ -59,6 +66,8 @@ struct Arguments {
     state_bytes: usize,
     generation: Generation,
     tokens: Vec<u32>,
+    prompt: Option<String>,
+    special_input: SpecialInputPolicy,
     backend: MatvecBackend,
     timeout: Option<Duration>,
     prefill: Prefill,
@@ -130,6 +139,8 @@ fn option_values(arguments: impl IntoIterator<Item = String>) -> Result<BTreeMap
                 | "--checkpoint-bytes"
                 | "--max-tokens"
                 | "--tokens"
+                | "--prompt"
+                | "--special-input"
                 | "--stop-tokens"
                 | "--backend"
                 | "--timeout-seconds"
@@ -185,7 +196,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
     {
         return Err(bad("invalid artifact identity or native resource bounds"));
     }
-    let tokens = token_ids(&required("--tokens")?, context - max_tokens)?;
+    let (tokens, prompt, special_input) = input_options(&mut values, context - max_tokens)?;
     let stop_tokens = values
         .remove("--stop-tokens")
         .map(|text| token_ids(&text, 256))
@@ -230,12 +241,46 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
             stop_tokens,
         },
         tokens,
+        prompt,
+        special_input,
         backend,
         timeout,
         prefill,
         text_output,
         sampling,
     })
+}
+
+fn input_options(
+    values: &mut BTreeMap<String, String>,
+    max_tokens: usize,
+) -> Result<(Vec<u32>, Option<String>, SpecialInputPolicy)> {
+    let tokens = values.remove("--tokens");
+    let prompt = values.remove("--prompt");
+    let policy = values.remove("--special-input");
+    match (tokens, prompt) {
+        (Some(tokens), None) if policy.is_none() => Ok((
+            token_ids(&tokens, max_tokens)?,
+            None,
+            SpecialInputPolicy::Literal,
+        )),
+        (None, Some(prompt)) => {
+            if prompt.is_empty() || prompt.len() > bonsai_prism_runtime::bpe::MAX_BPE_INPUT_BYTES {
+                return Err(bad(
+                    "text prompt must contain 1 through 1048576 UTF-8 bytes",
+                ));
+            }
+            let policy = match policy.as_deref().unwrap_or("literal") {
+                "literal" => SpecialInputPolicy::Literal,
+                "parse" => SpecialInputPolicy::Parse,
+                _ => return Err(bad("special input must be literal or parse")),
+            };
+            Ok((Vec::new(), Some(prompt), policy))
+        }
+        _ => Err(bad(
+            "provide exactly one of --tokens or --prompt; special input policy requires --prompt",
+        )),
+    }
 }
 
 fn sampling_options(values: &mut BTreeMap<String, String>) -> Result<SamplingMode> {
@@ -401,7 +446,14 @@ impl Utf8Output {
     }
 }
 
-fn load_decoder(arguments: &Arguments) -> Result<(Qwen35, Generation, Option<Vocabulary>)> {
+struct Loaded {
+    decoder: Qwen35,
+    generation: Generation,
+    vocabulary: Option<Vocabulary>,
+    tokens: Vec<u32>,
+}
+
+fn load_decoder(arguments: &Arguments) -> Result<Loaded> {
     let model = Model::load(
         &arguments.path,
         arguments.bytes,
@@ -417,6 +469,15 @@ fn load_decoder(arguments: &Arguments) -> Result<(Qwen35, Generation, Option<Voc
         .ok_or_else(|| bad("missing token embedding vocabulary dimension"))?;
     let special_tokens = SpecialTokens::from_metadata(&model.metadata, vocab_size)?;
     let generation = generation_options(&arguments.generation, special_tokens.stop_tokens())?;
+    let tokens = if let Some(prompt) = &arguments.prompt {
+        Tokenizer::from_metadata(&model.metadata, vocab_size)?.encode(
+            prompt,
+            arguments.context - arguments.generation.max_tokens,
+            arguments.special_input,
+        )?
+    } else {
+        arguments.tokens.clone()
+    };
     let vocabulary = arguments
         .text_output
         .then(|| Vocabulary::from_metadata(&model.metadata, vocab_size))
@@ -427,12 +488,22 @@ fn load_decoder(arguments: &Arguments) -> Result<(Qwen35, Generation, Option<Voc
         arguments.state_bytes,
         arguments.backend,
     )?;
-    Ok((decoder, generation, vocabulary))
+    Ok(Loaded {
+        decoder,
+        generation,
+        vocabulary,
+        tokens,
+    })
 }
 
 fn execute(arguments: &Arguments) -> Result<()> {
     let mut sampler = arguments.sampling.sampler()?;
-    let (decoder, generation, vocabulary) = load_decoder(arguments)?;
+    let Loaded {
+        decoder,
+        generation,
+        vocabulary,
+        tokens,
+    } = load_decoder(arguments)?;
     let backend_requested = backend_name(decoder.requested_backend());
     let mut runtime = Runtime::new(
         decoder,
@@ -467,7 +538,7 @@ fn execute(arguments: &Arguments) -> Result<()> {
             .checked_add(timeout)
             .ok_or_else(|| bad("generation deadline exceeds monotonic clock bounds"))?;
         runtime.generate_sampled_until(
-            &arguments.tokens,
+            &tokens,
             &generation,
             arguments.prefill,
             &cancellation,
@@ -477,7 +548,7 @@ fn execute(arguments: &Arguments) -> Result<()> {
         )?
     } else {
         runtime.generate_sampled(
-            &arguments.tokens,
+            &tokens,
             &generation,
             arguments.prefill,
             &cancellation,
@@ -500,6 +571,13 @@ fn execute(arguments: &Arguments) -> Result<()> {
     });
     if arguments.text_output {
         completion["text"] = json!(text_output.finish());
+    }
+    if arguments.prompt.is_some() {
+        completion["input_mode"] = json!("text");
+        completion["special_input"] = json!(match arguments.special_input {
+            SpecialInputPolicy::Literal => "literal",
+            SpecialInputPolicy::Parse => "parse",
+        });
     }
     serde_json::to_writer(&mut output, &completion)?;
     output.write_all(b"\n")?;
@@ -570,8 +648,8 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        Duration, Generation, MAX_STATE_BYTES, MatvecBackend, Result, SamplingMode, Utf8Output,
-        bad, generation_options, parse,
+        Duration, Generation, MAX_STATE_BYTES, MatvecBackend, Result, SamplingMode,
+        SpecialInputPolicy, Utf8Output, bad, generation_options, parse,
     };
 
     fn arguments() -> Vec<String> {
@@ -605,6 +683,47 @@ mod tests {
             .position(|argument| argument == key)
             .ok_or_else(|| bad("missing test argument"))?;
         arguments[position + 1] = value.to_owned();
+        Ok(())
+    }
+
+    #[test]
+    fn cli_text_input_requires_one_input_and_explicit_special_policy() -> Result<()> {
+        let mut input = arguments();
+        let position = input
+            .iter()
+            .position(|key| key == "--tokens")
+            .ok_or("missing tokens")?;
+        input[position] = "--prompt".to_owned();
+        input[position + 1] = "a<stop>".to_owned();
+        let parsed = parse(input.clone())?;
+        assert_eq!(parsed.prompt.as_deref(), Some("a<stop>"));
+        assert_eq!(parsed.tokens, Vec::<u32>::new());
+        assert!(matches!(parsed.special_input, SpecialInputPolicy::Literal));
+        input.extend(["--special-input", "parse"].map(str::to_owned));
+        assert!(matches!(
+            parse(input)?.special_input,
+            SpecialInputPolicy::Parse
+        ));
+        for tail in [
+            vec!["--prompt", "a"],
+            vec!["--special-input", "literal"],
+            vec!["--special-input", "parse"],
+        ] {
+            let mut input = arguments();
+            input.extend(tail.into_iter().map(str::to_owned));
+            assert!(parse(input).is_err());
+        }
+        for text in [String::new(), "a".repeat(1_048_577)] {
+            let mut input = arguments();
+            input[position] = "--prompt".to_owned();
+            input[position + 1] = text;
+            assert!(parse(input).is_err());
+        }
+        let mut input = arguments();
+        input.truncate(position);
+        assert!(parse(input.clone()).is_err());
+        input.extend(["--prompt", "a", "--special-input", "auto"].map(str::to_owned));
+        assert!(parse(input).is_err());
         Ok(())
     }
 

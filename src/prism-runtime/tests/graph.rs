@@ -1442,6 +1442,15 @@ fn wire_model(model: &Model) -> Result<Vec<u8>> {
                 bytes.extend(values.iter().flat_map(|value| value.to_le_bytes()));
                 (9, bytes)
             }
+            MetadataValue::Array(MetadataArray::String(values)) => {
+                let mut bytes = Vec::new();
+                bytes.extend(8_u32.to_le_bytes());
+                bytes.extend(u64::try_from(values.len())?.to_le_bytes());
+                for value in values {
+                    wire_text(&mut bytes, value)?;
+                }
+                (9, bytes)
+            }
             _ => wire_value(value.as_ref())?,
         };
         output.extend(kind.to_le_bytes());
@@ -1500,6 +1509,16 @@ impl DriverArtifact {
     }
 
     fn command(&self, max_tokens: usize, valid_digest: bool) -> std::process::Command {
+        self.command_input(max_tokens, valid_digest, "--tokens", "0,1")
+    }
+
+    fn command_input(
+        &self,
+        max_tokens: usize,
+        valid_digest: bool,
+        input_option: &str,
+        input: &str,
+    ) -> std::process::Command {
         let digest = if valid_digest {
             self.digest.clone()
         } else {
@@ -1523,8 +1542,8 @@ impl DriverArtifact {
                 "1048576",
                 "--max-tokens",
                 &max_tokens.to_string(),
-                "--tokens",
-                "0,1",
+                input_option,
+                input,
             ]);
         command
     }
@@ -1672,6 +1691,73 @@ fn driver_records(output: std::process::Output) -> Result<Vec<Value>> {
         .lines()
         .map(serde_json::from_str::<Value>)
         .collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
+#[cfg(feature = "cli")]
+#[test]
+fn native_driver_text_prompt_matches_exact_ids_and_reserves_complete_output() -> Result<()> {
+    for (tokens, kinds, prompt, special_policy, expected_ids) in [
+        (["a", "b"], [1_i32, 1], "aa", None, "0,0"),
+        (["a", "<stop>"], [1, 3], "a<stop>", Some("parse"), "0,1"),
+    ] {
+        let mut model = text_driver_fixture(1);
+        model
+            .metadata
+            .insert("tokenizer.ggml.tokens".to_owned(), tokens.to_vec().into());
+        model.metadata.insert(
+            "tokenizer.ggml.token_type".to_owned(),
+            kinds.to_vec().into(),
+        );
+        model.metadata.insert(
+            "tokenizer.ggml.merges".to_owned(),
+            Vec::<String>::new().into(),
+        );
+        let artifact = DriverArtifact::new(&model)?;
+        let expected = driver_records(
+            artifact
+                .command_input(2, true, "--tokens", expected_ids)
+                .output()?,
+        )?;
+        let mut command = artifact.command_input(2, true, "--prompt", prompt);
+        if let Some(policy) = special_policy {
+            command.args(["--special-input", policy]);
+        }
+        let mut actual = driver_records(command.output()?)?;
+        let completion = actual.last_mut().ok_or("missing completion")?;
+        assert_eq!(completion["input_mode"], "text");
+        assert_eq!(
+            completion["special_input"],
+            special_policy.unwrap_or("literal")
+        );
+        let object = completion
+            .as_object_mut()
+            .ok_or("completion is not an object")?;
+        object.remove("input_mode");
+        object.remove("special_input");
+        assert_eq!(actual, expected);
+        if special_policy.is_some() {
+            let rejected = artifact
+                .command_input(2, true, "--prompt", prompt)
+                .output()?;
+            assert!(!rejected.status.success());
+            assert_eq!(rejected.stdout, Vec::<u8>::new());
+        }
+        for (text, succeeds) in [("a".repeat(14), true), ("a".repeat(15), false)] {
+            let result = artifact
+                .command_input(2, true, "--prompt", &text)
+                .output()?;
+            assert_eq!(
+                result.status.success(),
+                succeeds,
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            if !succeeds {
+                assert_eq!(result.stdout, Vec::<u8>::new());
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(feature = "cli")]

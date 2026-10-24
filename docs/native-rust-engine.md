@@ -38,8 +38,8 @@ task time separately, accounting for bandwidth and the measured critical path.
 
 - [ ] **R2 — Complete the Rust correctness reference.** The bounded loader,
   packed scalar operations and Qwen35 graph are implemented. Complete the selected
-  artifact's tensor inventory, tokenizer, chat template, special/stop tokens,
-  sampler/RNG and adapter forward path. Reuse bounded GGUF/codec components and
+  artifact's tensor inventory, full-model tokenizer parity, chat template,
+  special/stop tokens, sampler/RNG and adapter forward path. Reuse bounded GGUF/codec components and
   Rust-owned LoRA storage; ggml pointer bindings are not replacement tensors.
   Retain malformed-input, allocation and unsupported-contract checks. Exit with
   exact weight/metadata fixtures, scalar parity and bounded full-model comparisons
@@ -58,8 +58,8 @@ task time separately, accounting for bandwidth and the measured critical path.
     across token boundaries, including literal control-token spellings. Invalid
     or truncated UTF-8 uses replacement characters only in the display field;
     original bytes remain available. Synthetic mapping, boundary, malformed-input
-    and serialized-model checks cover this output path. Input tokenization,
-    chat templates and full-model tokenizer parity remain open R2 work.
+    and serialized-model checks cover this output path. Plain-text input is
+    implemented below; chat templates and full-model tokenizer parity remain open.
 
   - [x] **R2.3 — Add an explicit seeded reference sampler.** Bounded
     temperature/top-k/top-p selection, stable token-ID ties and documented RNG
@@ -72,8 +72,30 @@ task time separately, accounting for bandwidth and the measured critical path.
     encode by rank with leftmost ties, bounded heap work and exact byte fallback.
     Focused checks cover byte preservation, supplied boundaries, overlapping
     merges, malformed metadata and input/output limits.
-    Qwen35 regex splitting, special input tokens, templates and full-model
-    tokenizer parity remain separate R2 exits.
+    The following items add ordinary-text splitting and explicit special input;
+    templates and full-model tokenizer parity remain separate R2 exits.
+
+  - [x] **R2.5 — Implement pinned Qwen35 text boundaries.** The bounded scanner
+    follows the pinned Prism implementation and Unicode category data, including
+    combining marks, single-number pieces, contractions and whitespace behavior.
+    It returns borrowed UTF-8 slices without normalization or dropped bytes;
+    oversized matches reject rather than acquire invented merge boundaries.
+    Focused fixtures and an independent category-data comparison cover the port.
+    A native pinned-source differential also matched boundary contexts containing
+    every Unicode scalar and 20,000 deterministic mixed cases; this checks
+    boundaries rather than full-model tokenization.
+  - [x] **R2.6 — Recognize special input tokens explicitly.** Validated control
+    and user-defined spellings use bounded earliest-start/longest-match scanning.
+    Literal and parse modes are explicit; ambiguous spellings reject, and no
+    BOS/EOS is inserted. Overlap-oracle, Unicode and resource-bound regressions
+    cover recognition independently of ordinary text tokenization.
+  - [x] **R2.7 — Connect bounded text encoding to the driver.** `Tokenizer`
+    composes special handling, pinned boundaries and ranked BPE with whole-input
+    byte, piece and output bounds. `--prompt` accepts plain text instead of
+    `--tokens`, keeps special spellings literal unless explicitly enabled, and
+    reserves the complete requested output allowance before graph execution.
+    Serialized-model checks compare text prompts with exact token-ID input.
+    Chat templates, automatic BOS/EOS insertion and full-model parity remain open.
 
 - [ ] **R3 — Qualify packed CPU kernels.** Follow [SIMD S0–S4/S6](simd-plan.md).
   Baseline NEON PQ2/PTQ1, automatic selection, scalar forcing and focused exact

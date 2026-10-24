@@ -67,10 +67,13 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   supplied prompt token IDs receive no automatic token insertion.
 - Bounded `gpt2`/`qwen35` output vocabulary and optional incremental text rendering.
   Exact token bytes remain available across UTF-8 token boundaries; control-token
-  spellings remain literal. This does not implement input tokenization or templates.
+  spellings remain literal. Chat templates remain separate.
 - Ranked byte-pair merges for already pretokenized GPT-2 byte pieces. The bounded
-  merge core emits only normal IDs and preserves supplied piece boundaries; the
-  Qwen35 regex pretokenizer, special-token input policy and chat templates remain open.
+  merge core emits only normal IDs and preserves supplied piece boundaries.
+- Bounded plain-text input with the pinned Prism Qwen35 scanner and Unicode
+  tables, explicit literal/parse special-token handling and ranked BPE. Input
+  never receives an implicit chat template or BOS/EOS insertion. Full-model
+  tokenizer parity remains open.
 
 The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.
@@ -106,10 +109,18 @@ try {
 ```
 
 The driver requires an absolute model path, expected length/SHA-256, retained-model,
-context/checkpoint budgets, prompt token IDs and generation limit. It validates
+context/checkpoint budgets, one input form and generation limit. It validates
 identity syntax, positive bounds, prompt-plus-generation capacity and the
 256-stop-token limit before model I/O; vocabulary checks follow verified loading.
-Supply prompt token IDs from the reference tokenizer. The verified model must
+Supply `--tokens <id,id,...>` from the reference tokenizer, or use experimental
+`--prompt <text>` for plain UTF-8 encoding. The two input options are mutually
+exclusive. `--special-input literal|parse` is available only with text input;
+literal is the default. Text encoding applies no chat template or BOS/EOS
+insertion, even if insertion flags are present in metadata. Supply explicitly
+formatted text when control tokens are intended. Text input records
+`input_mode: "text"` and the effective `special_input` policy in the completion.
+Its exact encoded count must leave the entire output allowance in the context;
+overflow rejects before graph execution. The verified model must
 declare a valid EOS ID; its EOS and optional EOT/EOM IDs always stop generation.
 `--stop-tokens` adds IDs to that set, deduplicated under a combined 256-ID bound.
 Stops are neither emitted nor committed to the conversation. BOS/padding IDs and
@@ -146,13 +157,15 @@ Library callers can pass an independently cloneable `Sampler` through
 restores the sampler alongside graph state, even when decoder recovery fails.
 Successful stop-token draws advance the sampler without emitting the stop.
 Shared mutable state and external side effects are outside this recovery contract.
-The driver does not tokenize input, launch the broker or promote a profile.
+The driver does not render chat templates, launch the broker or promote a profile.
 
 `Bpe::from_metadata` validates normal vocabulary pieces and ranked merge rules.
 `encode_piece` accepts one already pretokenized byte slice; `encode_pieces`
 preserves caller-supplied boundaries. Neither API finds Qwen35 regex boundaries,
 recognizes special input tokens, inserts BOS/EOS or renders a chat template.
-Using it directly on arbitrary text does not establish tokenizer parity.
+`Tokenizer::encode` composes those boundaries and the special-input policy for
+plain text. Using the merge core directly on arbitrary text does not establish
+tokenizer parity.
 
 ## Memory and ownership
 
@@ -166,6 +179,13 @@ candidate scratch per draw. BPE admits at most 1,000,000 merge rules and 64 MiB
 serialized merge bytes, 64 KiB per pretokenized piece, and 1 MiB/65,536 pieces
 per multi-piece request. Vocabulary validation, lookup tables and heap/node/output
 scratch add storage outside model/state/checkpoint budgets.
+
+Plain-text requests share the same whole-input byte/piece limits. Special input
+admits at most 4,096 control/user-defined spellings, 256 bytes each and 1 MiB in
+total. Its sparse trie and per-input match storage are bounded independently;
+normal text boundaries borrow the input. The driver drops tokenizer storage
+before constructing the graph. These bounds do not qualify process-memory use.
+
 Optional `--state-bytes` sets the admitted maximum
 live KV/convolution/recurrent element payload, from 1 byte through the default
 4 GiB. `Qwen35::with_state_budget` exposes the same bound to library callers.

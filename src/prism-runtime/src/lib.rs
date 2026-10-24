@@ -1,7 +1,7 @@
 //! Native Rust CPU reference execution and bounded token conversation ownership.
 //!
 //! This experimental engine uses the pinned Prism numerical contract. It has no
-//! C/C++ inference dependency. Full-model parity, tokenizer/chat integration and
+//! C/C++ inference dependency. Full-model parity, chat-template integration and
 //! target-device performance qualification remain separate acceptance gates.
 
 #![forbid(unsafe_code)]
@@ -10,9 +10,12 @@ pub mod bpe;
 pub mod graph;
 pub mod kernels;
 pub mod model;
+pub mod pretokenizer;
 pub mod runtime;
 pub mod sampling;
+pub mod special_input;
 pub mod special_tokens;
+pub mod tokenizer;
 pub mod vocabulary;
 
 /// A rejected model, numerical contract, resource limit, or I/O operation.
