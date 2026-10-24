@@ -37,7 +37,7 @@ fn library() -> Result<&'static Library> {
         if library.schema_version != 1
             || library.source_sha256 != SOURCE_SHA256
             || library.upstream_commit != "b87ca7225456b06b0975b8239c66b5aecf07e37c"
-            || library.intrinsics.len() != 189
+            || library.intrinsics.len() != 173
         {
             return Err("backend production signature provenance or extent differs".into());
         }

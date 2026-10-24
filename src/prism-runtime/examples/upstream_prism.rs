@@ -44,6 +44,8 @@ mod tokenizer;
 #[path = "upstream_prism/tokenizer_repository.rs"]
 mod tokenizer_repository;
 
+#[path = "upstream_prism/backend_ops.rs"]
+mod backend_ops;
 #[path = "upstream_prism/backend_sampler.rs"]
 mod backend_sampler;
 #[path = "upstream_prism/barrier.rs"]
@@ -184,6 +186,12 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-backend-ops",
+        "tests/test-backend-ops.cpp",
+        Bridge::Common,
+        backend_ops::run,
+    ),
     register(
         "test-tokenizers-repo",
         "tests/test-tokenizers-repo.sh",
@@ -567,6 +575,12 @@ const CASES: &[Case] = &[
 
 const BENCHMARKS: &[Case] = &[
     register(
+        "backend-ops-performance",
+        "tests/test-backend-ops.cpp#performance",
+        Bridge::Common,
+        backend_ops::benchmark,
+    ),
+    register(
         "chat-peg",
         "tests/test-chat-peg-parser.cpp#performance",
         Bridge::Common,
@@ -750,22 +764,57 @@ fn result(id: &str, passed: bool, detail: String) -> Value {
     json!({"Id": id, "Status": if passed { "pass" } else { "fail" }, "Detail": Value::String(detail)})
 }
 
-fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
-    if fs::metadata(config)?.len() > 65536 {
+fn read_diagnostic(config: &std::path::Path) -> Result<Value> {
+    use std::io::Read as _;
+    const BACKEND_LIMIT: u64 = 128 * 1024 * 1024;
+    let mut bytes = Vec::new();
+    fs::File::open(config)?
+        .take(BACKEND_LIMIT + 1)
+        .read_to_end(&mut bytes)?;
+    if u64::try_from(bytes.len())? > BACKEND_LIMIT {
         return Err(invalid("diagnostic configuration exceeds size bound"));
     }
-    let value: Value = serde_json::from_slice(&fs::read(config)?)?;
+    let value: Value = serde_json::from_slice(&bytes)?;
+    let backend = matches!(
+        value["Kind"].as_str(),
+        Some(
+            "backend-plan"
+                | "backend-aggregate-plans"
+                | "backend-run"
+                | "backend-aggregate"
+                | "backend-source-aggregate"
+                | "backend-options"
+                | "backend-benchmark"
+        )
+    );
+    if !backend && bytes.len() > 65536 {
+        return Err(invalid("diagnostic configuration exceeds size bound"));
+    }
+    Ok(value)
+}
+
+fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
+    let value = read_diagnostic(config)?;
     match value["Kind"].as_str() {
+        Some(
+            "backend-plan"
+            | "backend-aggregate-plans"
+            | "backend-run"
+            | "backend-aggregate"
+            | "backend-source-aggregate"
+            | "backend-options"
+            | "backend-benchmark",
+        ) => backend_ops::diagnostic(engine, &value),
         Some("quant-schema-generate") => {
             llama_grammar::exact_fields(&value, &["Kind", "Confirmed"])?;
             let confirmed = value["Confirmed"]
                 .as_bool()
                 .ok_or_else(|| invalid("quantization generation confirmation must be boolean"))?;
-            return quant_selection::generate(
+            quant_selection::generate(
                 engine,
                 &engine.evidence_path("quantization-generated-schemas")?,
                 confirmed,
-            );
+            )
         }
         Some("architecture-options") => {
             llama_grammar::exact_fields(
@@ -799,19 +848,19 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
                     .ok_or_else(|| invalid("architecture verbose flag must be boolean"))?,
                 output,
             };
-            return architectures::run_with_options(engine, &options);
+            architectures::run_with_options(engine, &options)
         }
-        Some("gbnf-validator") => return validator::diagnostic(engine, &value),
-        Some("dspark-loop-options") => return dspark_loop::diagnostic(engine, &value),
-        Some("dspark-forward-options") => return dspark_forward::diagnostic(engine, &value),
-        Some("export-graph-options") => return export_graph::diagnostic(engine, &value),
-        Some("backend-sampler-options") => return backend_sampler::diagnostic(engine, &value),
+        Some("gbnf-validator") => validator::diagnostic(engine, &value),
+        Some("dspark-loop-options") => dspark_loop::diagnostic(engine, &value),
+        Some("dspark-forward-options") => dspark_forward::diagnostic(engine, &value),
+        Some("export-graph-options") => export_graph::diagnostic(engine, &value),
+        Some("backend-sampler-options") => backend_sampler::diagnostic(engine, &value),
         Some("dspark-real-options") => {
             llama_grammar::exact_fields(&value, &["Kind", "Options"])?;
-            return dspark_real::run_with_options(
+            dspark_real::run_with_options(
                 engine,
                 &serde_json::from_value(value["Options"].clone())?,
-            );
+            )
         }
         Some("chat-options") => {
             llama_grammar::exact_fields(&value, &["Kind", "Filter", "ForceReconstruction"])?;
@@ -827,11 +876,14 @@ fn diagnostic(engine: &Engine, config: &std::path::Path) -> Result<Value> {
             let force = value["ForceReconstruction"]
                 .as_bool()
                 .ok_or_else(|| invalid("chat reconstruction flag must be boolean"))?;
-            return chat::run_with_options(engine, filter, force);
+            chat::run_with_options(engine, filter, force)
         }
-        Some("tokenizer-export") => {}
-        _ => return Err(invalid("unknown diagnostic kind")),
+        Some("tokenizer-export") => tokenizer_diagnostic(engine, &value),
+        _ => Err(invalid("unknown diagnostic kind")),
     }
+}
+
+fn tokenizer_diagnostic(engine: &Engine, value: &Value) -> Result<Value> {
     let object = value
         .as_object()
         .filter(|object| object.len() == 4)

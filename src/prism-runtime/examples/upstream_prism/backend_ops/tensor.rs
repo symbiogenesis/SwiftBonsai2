@@ -38,8 +38,6 @@ pub(super) struct Tensor {
     pub(super) block_size: i64,
     pub(super) type_size: u64,
     pub(super) op_description: String,
-    pub(super) contiguous: bool,
-    pub(super) is_transposed: bool,
 }
 
 fn kind(program: &Program, name: &str) -> Result<i32> {

@@ -256,7 +256,11 @@ impl<'a> Interpreter<'a> {
             kind = format!("std::array<{kind},{count}>");
             value.unwrap_or_else(|| Value::array(Vec::new()))
         };
-        let value = if kind.contains('&') { value } else { value.copy_value() };
+        let value = if kind.contains('&') {
+            value
+        } else {
+            value.copy_value()
+        };
         let value = value.coerce(&kind).map_err(invalid)?;
         Ok((kind, value))
     }
@@ -447,7 +451,11 @@ impl<'a> Interpreter<'a> {
             Expression::Member { object, name } => {
                 let object = self.eval(object)?;
                 if matches!(object, Value::This) {
-                    return self.destination(&Expression::Id { name: name.clone() });
+                    let cell =
+                        self.fields.get(name).cloned().ok_or_else(|| {
+                            invalid(format!("explicit this field {name} is absent"))
+                        })?;
+                    return Ok(Destination::Local(Place::Variable(cell)));
                 }
                 Ok(Destination::Native {
                     object,
@@ -590,7 +598,11 @@ impl<'a> Interpreter<'a> {
             Expression::Member { object, name } => {
                 let object = self.eval(object)?;
                 if matches!(object, Value::This) {
-                    self.value(name)
+                    let cell = self
+                        .fields
+                        .get(name)
+                        .ok_or_else(|| invalid(format!("explicit this field {name} is absent")))?;
+                    Ok(cell.borrow().value.clone())
                 } else if let Some(value) = super::standard::member(&object, name)? {
                     Ok(value)
                 } else {
@@ -806,5 +818,129 @@ impl<'a> Interpreter<'a> {
             Statement::Continue => return Ok(Flow::Continue),
         }
         Ok(Flow::Next)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    struct LanguageOnly;
+    impl Host for LanguageOnly {
+        fn call(&mut self, _name: &str, _arguments: &[Value]) -> Result<Option<Value>> {
+            Err(invalid(
+                "synthetic language guard must not invoke a production API",
+            ))
+        }
+        fn member(&mut self, _value: &Value, _name: &str) -> Result<Option<Value>> {
+            Err(invalid(
+                "synthetic language guard must not observe production metadata",
+            ))
+        }
+        fn write(
+            &mut self,
+            _value: &Value,
+            _name: &str,
+            _index: Option<usize>,
+            _replacement: Value,
+        ) -> Result<()> {
+            Err(invalid(
+                "synthetic language guard must not mutate production metadata",
+            ))
+        }
+        fn force(&mut self, value: Value) -> Result<Value> {
+            Ok(value)
+        }
+    }
+    fn id(name: &str) -> Expression {
+        Expression::Id { name: name.into() }
+    }
+    fn literal(value: i32) -> Expression {
+        Expression::Literal {
+            value: json!(value),
+            number_kind: Some("integer".into()),
+        }
+    }
+
+    #[test]
+    fn source_shadowed_members_and_copied_view_shapes() -> Result<()> {
+        let (program, _) = super::super::program::load().map_err(invalid)?;
+        let mut host = LanguageOnly;
+        let mut runtime = Interpreter::new(program, "test_soft_max", &mut host)?;
+        runtime
+            .fields
+            .insert("mask".into(), variable("bool".into(), Value::Bool(true)));
+        runtime.scopes[0].insert("mask".into(), variable("ggml_tensor*".into(), Value::Null));
+        let member = Expression::Member {
+            object: Box::new(id("this")),
+            name: "mask".into(),
+        };
+        assert!(runtime.eval(&member)?.truth().map_err(invalid)?);
+        assert!(!runtime.eval(&id("mask"))?.truth().map_err(invalid)?);
+        let _ = runtime.eval(&Expression::Binary {
+            op: "=".into(),
+            left: Box::new(member),
+            right: Box::new(Expression::Literal {
+                value: json!(false),
+                number_kind: None,
+            }),
+        })?;
+        assert!(
+            !runtime.fields["mask"]
+                .borrow()
+                .value
+                .truth()
+                .map_err(invalid)?
+        );
+        assert!(matches!(
+            runtime.scopes[0]["mask"].borrow().value,
+            Value::Null
+        ));
+        let shape = Value::array(vec![
+            Value::Number(Number::I64(2)),
+            Value::Number(Number::I64(3)),
+            Value::Number(Number::I64(1)),
+            Value::Number(Number::I64(1)),
+        ])
+        .coerce("std::array<int64_t,4>")
+        .map_err(invalid)?;
+        runtime.fields.insert(
+            "ne_a".into(),
+            variable("conststd::array<int64_t,4>".into(), shape),
+        );
+        let _ = runtime.statement(&Statement::Declare {
+            name: "ne".into(),
+            kind: "auto".into(),
+            dimensions: Vec::new(),
+            value: Some(id("ne_a")),
+        })?;
+        let _ = runtime.eval(&Expression::Binary {
+            op: "*=".into(),
+            left: Box::new(Expression::Index {
+                object: Box::new(id("ne")),
+                index: Box::new(literal(0)),
+            }),
+            right: Box::new(literal(3)),
+        })?;
+        assert_eq!(
+            runtime
+                .value("ne_a")?
+                .index(0)
+                .map_err(invalid)?
+                .number()
+                .map_err(invalid)?,
+            Number::I64(2)
+        );
+        assert_eq!(
+            runtime
+                .value("ne")?
+                .index(0)
+                .map_err(invalid)?
+                .number()
+                .map_err(invalid)?,
+            Number::I64(6)
+        );
+        Ok(())
     }
 }

@@ -53,40 +53,12 @@ mod planner;
 #[path = "backend_ops/prepare.rs"]
 mod prepare;
 
-pub(super) fn plan_partition(
-    engine: &super::engine::Engine,
-    index: usize,
-    count: usize,
-    mode: &str,
-) -> super::Result<serde_json::Value> {
-    planner::plan(engine, index, count, prepare::Mode::parse(mode)?, None)
-}
-pub(super) fn aggregate_plans(plans: &[serde_json::Value]) -> super::Result<serde_json::Value> {
-    planner::aggregate(plans)
-}
-
 #[path = "backend_ops/driver.rs"]
 mod driver;
 #[path = "backend_ops/evaluate.rs"]
 mod evaluate;
 #[path = "backend_ops/gradient.rs"]
 mod gradient;
-
-pub(super) fn run_partition(
-    engine: &super::engine::Engine,
-    index: usize,
-    count: usize,
-    mode: &str,
-    plan: &serde_json::Value,
-) -> super::Result<serde_json::Value> {
-    driver::run(engine, index, count, prepare::Mode::parse(mode)?, plan)
-}
-pub(super) fn aggregate_partitions(
-    reports: &[serde_json::Value],
-    plan: &serde_json::Value,
-) -> super::Result<serde_json::Value> {
-    driver::aggregate(reports, plan)
-}
 
 #[path = "backend_ops/complete.rs"]
 mod complete;
@@ -96,8 +68,17 @@ mod performance;
 pub(super) fn run(engine: &super::engine::Engine) -> super::Result<serde_json::Value> {
     complete::run(engine)
 }
-pub(super) fn aggregate_correctness(
-    modes: &[serde_json::Value],
+#[path = "backend_ops/diagnostic.rs"]
+mod diagnostic;
+#[path = "backend_ops/reload.rs"]
+mod reload;
+
+pub(super) fn diagnostic(
+    engine: &super::engine::Engine,
+    request: &serde_json::Value,
 ) -> super::Result<serde_json::Value> {
-    complete::aggregate(modes)
+    diagnostic::dispatch(engine, request)
+}
+pub(super) fn benchmark(engine: &super::engine::Engine) -> super::Result<serde_json::Value> {
+    diagnostic::benchmark(engine)
 }

@@ -21,7 +21,7 @@ fn successful(status: &Json, mode: Mode) -> bool {
     matches!(status.as_str(), Some("pass" | "skip")) || (mode == Mode::Perf && status == "measured")
 }
 
-fn cleanup(directory: &Path) -> Result<()> {
+pub(super) fn cleanup(directory: &Path) -> Result<()> {
     let owned = fs::canonicalize(directory)?;
     if !owned.is_absolute() {
         return Err(invalid("backend owned cleanup directory is not absolute"));
@@ -297,6 +297,6 @@ pub(super) fn aggregate(reports: &[Json], plan: &Json) -> Result<Json> {
         digests.push(planner::hash(&serde_json::to_vec(&row)?));
     }
     Ok(
-        json!({"SchemaVersion":1,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Status":if passed{"pass"}else{"fail"},"PlanSha256":plan["PlanSha256"],"ExpectedGeometries":geometries.len(),"CompletedGeometries":digests.len(),"PassedGeometries":pass_count,"OriginalSkippedGeometries":skip_count,"FailedGeometries":fail_count,"ErrorGeometries":error_count,"OrderedResultSha256":planner::hash(&serde_json::to_vec(&digests)?),"TotalCrtDraws":plan["TotalCrtDraws"]}),
+        json!({"SchemaVersion":1,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Status":if passed{"pass"}else{"fail"},"PlanSha256":plan["PlanSha256"],"Filter":plan["Filter"],"Seed":plan["Seed"],"ExpectedGeometries":geometries.len(),"CompletedGeometries":digests.len(),"PassedGeometries":pass_count,"OriginalSkippedGeometries":skip_count,"FailedGeometries":fail_count,"ErrorGeometries":error_count,"OrderedResultSha256":planner::hash(&serde_json::to_vec(&digests)?),"TotalCrtDraws":plan["TotalCrtDraws"]}),
     )
 }

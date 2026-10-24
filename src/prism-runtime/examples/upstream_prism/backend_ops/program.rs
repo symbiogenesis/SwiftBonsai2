@@ -249,6 +249,13 @@ pub(super) fn load() -> Result<(&'static Program, &'static Geometries), String> 
                 .sum::<usize>()
                 != 440
             || program.helpers.len() != 7
+            || program
+                .classes
+                .iter()
+                .flat_map(|class| &class.methods)
+                .any(|method| {
+                    method.source_start >= method.source_end || method.source_end > 535_830
+                })
             || geometries
                 .eval
                 .iter()

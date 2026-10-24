@@ -19,7 +19,6 @@ pub(super) enum Handle {
     Graph(u32),
     Backend(u32),
     Buffer(u32),
-    Scalar(u32),
 }
 
 impl Handle {
@@ -30,7 +29,6 @@ impl Handle {
             Self::Graph(id) => serde_json::json!({"Graph":id}),
             Self::Backend(id) => serde_json::json!({"Backend":id}),
             Self::Buffer(id) => serde_json::json!({"Buffer":id}),
-            Self::Scalar(id) => serde_json::json!({"Scalar":id}),
         }
     }
 }
@@ -215,6 +213,7 @@ pub(super) enum Value {
     Number(Number),
     Bytes(Vec<u8>),
     Array(Rc<RefCell<Vec<Self>>>),
+    Record(Rc<RefCell<BTreeMap<String, Self>>>),
     Buffer(Rc<RefCell<Buffer>>),
     Pointer {
         value: Box<Self>,
@@ -275,6 +274,13 @@ impl Value {
 
     pub(super) fn copy_value(&self) -> Self {
         match self {
+            Self::Record(fields) => Self::Record(Rc::new(RefCell::new(
+                fields
+                    .borrow()
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.copy_value()))
+                    .collect(),
+            ))),
             Self::Array(values) => {
                 Self::array(values.borrow().iter().map(Self::copy_value).collect())
             }

@@ -31,6 +31,8 @@ pub(super) fn aggregate(modes: &[Json]) -> Result<Json> {
             || mode["GeometrySha256"]
                 != "1724d4a88170deb030f676d81f97ce050ab6ee32c37452626fd834ea1c4f7419"
             || mode["CpuSelection"] != "explicit CPU"
+            || mode.get("Filter") != Some(&Json::Null)
+            || mode["Seed"] != 1
             || mode["ExpectedGeometries"] != program::EVAL_COUNT
             || mode["CompletedGeometries"] != program::EVAL_COUNT
             || !matches!(mode["Status"].as_str(), Some("pass" | "fail"))
@@ -61,7 +63,7 @@ pub(super) fn aggregate(modes: &[Json]) -> Result<Json> {
         receipts.push(mode.clone());
     }
     let mut source = result(
-        "test-backend-ops",
+        "tests/test-backend-ops.cpp",
         passed,
         format!(
             "CPU explicitly selected; all {} ordered geometries accounted for in eval, grad and support; benchmark1530 workloads are separate CI-only measurements",
@@ -77,11 +79,12 @@ pub(super) fn aggregate(modes: &[Json]) -> Result<Json> {
 }
 
 pub(super) fn run(engine: &Engine) -> Result<Json> {
+    super::performance::require_ci()?;
     let mut modes = Vec::new();
     for mode in [Mode::Eval, Mode::Grad, Mode::Support] {
         let planned = planner::plan(engine, 0, 1, mode, None)?;
         if planned["Status"] != "planned" {
-            let mut unsupported=result("test-backend-ops",false,"unsupported production API: generic backend graph/support/allocation/comparison; no replacement Rust replica is used".into());
+            let mut unsupported=result("tests/test-backend-ops.cpp",false,"unsupported production API: generic backend graph/support/allocation/comparison; no replacement Rust replica is used".into());
             unsupported["Coverage"] = planned;
             return Ok(unsupported);
         }

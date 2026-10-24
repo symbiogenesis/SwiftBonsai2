@@ -92,7 +92,9 @@ fn validate_template_kwargs(value: &Value) -> Result<()> {
                 .ok_or_else(|| invalid("chat BodyJson must be a string"))?,
         )?;
         if !body.is_object() || !body["messages"].is_array() {
-            return Err(invalid("chat server body must preserve the source JSON object"));
+            return Err(invalid(
+                "chat server body must preserve the source JSON object",
+            ));
         }
     }
     if let Some(encoded) = value.get("ParametersJson") {

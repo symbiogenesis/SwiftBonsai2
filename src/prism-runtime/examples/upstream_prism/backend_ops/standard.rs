@@ -29,6 +29,21 @@ pub(super) fn literal(value: &Json, kind: Option<&str>) -> Result<Value> {
             .collect::<Result<Vec<_>>>()
             .map(Value::array);
     }
+    if let Some(record) = value.get("Record").and_then(Json::as_object) {
+        let mut fields = std::collections::BTreeMap::new();
+        for (name, value) in record {
+            let value = literal(value, None)?;
+            let value = match name.as_str() {
+                "type" => value.coerce("ggml_type"),
+                "ne" => value.coerce("std::array<int64_t,4>"),
+                "nb" => value.coerce("std::array<size_t,4>"),
+                _ => Ok(value),
+            }
+            .map_err(invalid)?;
+            fields.insert(name.clone(), value);
+        }
+        return Ok(Value::Record(Rc::new(RefCell::new(fields))));
+    }
     if let Some(name) = value.get("Function").and_then(Json::as_str) {
         return Ok(Value::Function(name.into()));
     }
@@ -147,8 +162,65 @@ fn number_string(value: Number) -> String {
     }
 }
 
+fn format_special(
+    runtime: &mut Interpreter<'_>,
+    value: &Value,
+    kind: &str,
+) -> Result<Option<String>> {
+    let count = runtime.program.constants["GGML_MAX_OP_PARAMS"]
+        .as_u64()
+        .ok_or_else(|| invalid("source op-parameter diagnostic extent missing"))?
+        / 4;
+    let clean = kind.replace("const", "");
+    if clean == format!("std::array<int32_t,{count}>") {
+        let mut parts = Vec::new();
+        for index in 0..value.len().map_err(invalid)? {
+            let number = value
+                .index(index)
+                .map_err(invalid)?
+                .number()
+                .map_err(invalid)?
+                .as_i64();
+            if number != 0 {
+                parts.push(format!("{index}:{number}"));
+            }
+        }
+        return Ok(Some(format!("[{}]", parts.join(","))));
+    }
+    if clean == "std::vector<input_tensor>" {
+        let mut parts = Vec::new();
+        for index in 0..value.len().map_err(invalid)? {
+            let input = value.index(index).map_err(invalid)?;
+            let kind = member(&input, "type")?
+                .ok_or_else(|| invalid("source input_tensor type missing"))?;
+            let ne =
+                member(&input, "ne")?.ok_or_else(|| invalid("source input_tensor ne missing"))?;
+            let nb =
+                member(&input, "nb")?.ok_or_else(|| invalid("source input_tensor nb missing"))?;
+            let name = runtime.call("ggml_type_name", vec![kind])?;
+            let mut text = String::from_utf8(text(&runtime.forced(name)?)?)?;
+            text.push_str(&format_value(runtime, ne, "std::array<int64_t,4>")?);
+            let noncontiguous = runtime
+                .call("is_non_contiguous", vec![input])?
+                .truth()
+                .map_err(invalid)?;
+            if noncontiguous {
+                text.push_str("nb");
+                text.push_str(&format_value(runtime, nb, "std::array<size_t,4>")?);
+            }
+            parts.push(text);
+        }
+        return Ok(Some(parts.join(",")));
+    }
+
+    Ok(None)
+}
+
 fn format_value(runtime: &mut Interpreter<'_>, value: Value, kind: &str) -> Result<String> {
     let value = runtime.forced(value)?;
+    if let Some(formatted) = format_special(runtime, &value, kind)? {
+        return Ok(formatted);
+    }
     if kind.contains("std::array<") || matches!(value, Value::Buffer(_) | Value::Array(_)) {
         let mut parts = Vec::new();
         for index in 0..value.len().map_err(invalid)? {
@@ -238,6 +310,9 @@ pub(super) fn vars(runtime: &mut Interpreter<'_>, arguments: &[Expression]) -> R
 }
 
 pub(super) fn member(value: &Value, name: &str) -> Result<Option<Value>> {
+    if let Value::Record(fields) = value {
+        return Ok(fields.borrow().get(name).cloned());
+    }
     if name == "first" || name == "second" {
         return value
             .index(usize::from(name == "second"))
