@@ -149,6 +149,8 @@ function Get-PrismReportSummary {
         Total = $Cases.Count; Passed = $passed.Count; Red = $Cases.Count - $passed.Count
         Failed = $failed.Count; Skipped = $skipped.Count; Unsupported = $unsupported.Count
         GreenRatio = $passed.Count / $Cases.Count; ReferencePassed = ($referenceFailures.Count -eq 0)
+        ReferencePassedCount = @($Cases | Where-Object { $_.ReferenceStatus -ceq 'pass' }).Count
+        ReferenceUnsupportedCount = @($Cases | Where-Object { $_.ReferenceStatus -ceq 'unsupported' }).Count
         PassedIds = @($passed | ForEach-Object { $_.Id })
         RedIds = @($Cases | Where-Object { $_.Status -cne 'pass' } | ForEach-Object { $_.Id })
         ReferenceFailureIds = @($referenceFailures | ForEach-Object { $_.Id })

@@ -55,7 +55,9 @@ match exactly. The baseline retains this original domain instead of narrowing
 the test to canonical bytes.
 
 [baseline.json](../tools/prism/upstream/baseline.json) holds the recorded minimum
-green count and every required green source ID. Its integer fraction is the
+green count and every required green source ID. `RequiredReferencePassedIds`
+also preserves each already-passing C++ control independently of Rust progress.
+Its integer fraction is the
 minimum green ratio. The exact catalog digest and upstream revision bind the
 baseline to the denominator. Each run:
 

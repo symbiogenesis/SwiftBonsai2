@@ -18,6 +18,7 @@ param(
     [Parameter(Mandatory)][string]$EvidenceDirectory,
     [string]$CMakePath,
     [ValidateSet('Ninja','Visual Studio 18 2026','Visual Studio 17 2022')][string]$Generator = 'Ninja',
+    [ValidateSet('ARM64', 'x64')][string]$NativePlatform = 'ARM64',
     [ValidateRange(1,12)][int]$Parallel = 2,
     [string]$CompilerLauncher,
     [string]$Case,
@@ -42,8 +43,8 @@ $catalog = Get-Content -LiteralPath (Join-Path $overlay 'upstream/catalog.json')
 if ($catalog.SchemaVersion -ne 1 -or $catalog.UpstreamCommit -cne $lock.Commit -or $catalog.ArchiveSha256 -cne $lock.ArchiveSha256) {
     throw 'The upstream catalog does not identify the pinned source archive.'
 }
-if ((Get-FileHash -LiteralPath (Join-Path $source 'CMakeLists.txt') -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lock.CMakeSourceSha256) {
-    throw 'The original upstream CMake source changed; use an unmodified extraction.'
+if ((Get-FileHash -LiteralPath (Join-Path $source 'src/CMakeLists.txt') -Algorithm SHA256).Hash.ToLowerInvariant() -cne $lock.CMakeSourceSha256) {
+    throw 'The original upstream src/CMakeLists.txt changed; use an unmodified extraction.'
 }
 
 # All are original correctness suites. In particular exclude
@@ -92,7 +93,10 @@ $wrapper = Join-Path $overlay 'upstream/reference'
 $configure = @('-S', $wrapper, '-B', $build, '-G', $Generator,
     "-DPRISM_SOURCE_DIR=$source", '-DCMAKE_BUILD_TYPE=Release',
     '-DLLAMA_BUILD_NUMBER=0', "-DLLAMA_BUILD_COMMIT=$($lock.Commit)")
-if ($Generator -ne 'Ninja') { $configure += @('-A','ARM64','-T','ClangCL') }
+if ($Generator -ne 'Ninja') {
+    $configure += @('-A', $NativePlatform)
+    if ($NativePlatform -eq 'ARM64') { $configure += @('-T', 'ClangCL') }
+}
 $environment = @{}
 if ($CompilerLauncher) {
     $configure += @("-DCMAKE_C_COMPILER_LAUNCHER=$CompilerLauncher", "-DCMAKE_CXX_COMPILER_LAUNCHER=$CompilerLauncher")

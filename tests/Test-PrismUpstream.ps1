@@ -65,6 +65,10 @@ $receipt = [ordered]@{
 $receiptPath = Join-Path $evidence 'receipt.json'
 [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 8))
 if (-not $CMakePath) { $CMakePath = (Get-Command cmake -CommandType Application -ErrorAction Stop).Source }
+if (-not [IO.Path]::IsPathFullyQualified($CMakePath) -or $CMakePath -match '%[^%]+%' -or -not [IO.File]::Exists($CMakePath)) {
+    throw 'CMakePath must name an existing expanded absolute executable.'
+}
+if ($Generator -ne 'Ninja' -and -not $IsWindows) { throw 'Visual Studio generators require Windows.' }
 $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
 $script:upstreamCommandNumber = 0
 function Invoke-UpstreamCommand {
@@ -121,7 +125,7 @@ foreach ($selection in $selected) {
     }
 }
 if ($Case -eq 'All') {
-    $raw = & (Join-Path $repo 'scripts/Invoke-PrismCppSuite.ps1') -SourceDirectory $source -EvidenceDirectory (Join-Path $evidence 'raw-cpp') -CMakePath $CMakePath -Parallel $Parallel
+    $raw = & (Join-Path $repo 'scripts/Invoke-PrismCppSuite.ps1') -SourceDirectory $source -EvidenceDirectory (Join-Path $evidence 'raw-cpp') -CMakePath $CMakePath -Generator $Generator -NativePlatform $NativePlatform -Parallel $Parallel
     if (@($raw.ReferenceResults.Cases).Count -ne @($raw.Targets).Count) { throw 'The raw C++ importer lost an expected result.' }
     foreach ($name in $raw.Targets) {
         if (@($raw.ReferenceResults.Cases | Where-Object { $_.Id -ceq "tests/$name.cpp" }).Count -ne 1) {
