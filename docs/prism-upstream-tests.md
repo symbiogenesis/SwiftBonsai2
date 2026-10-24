@@ -70,6 +70,9 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   assertions and non-failing mismatch diagnostics. Reports preserve that verdict
   and expose `StrictReferenceMatch` separately. Stateless process rotation keeps
   the complete schedules within bounded transport limits.
+  Production load or operation rejections produce failed source results with
+  their actual reasons. The shell workflow stops at the original failure point
+  and retains completed rows; malformed transport remains an infrastructure error.
 - `test-quantize-perf.cpp`: all five original operation schedules, eligible
   types, sizes, alignment and iteration options. This benchmark-only source has
   zero numerical assertions; passing means the workload completed. The source's
