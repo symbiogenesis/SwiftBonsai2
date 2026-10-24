@@ -72,7 +72,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Verify non-ARM fallback with default and explicit feature builds
+      - name: Install native Rust and select the scalar fallback cache
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
@@ -82,7 +82,25 @@ jobs:
           rustup toolchain install nightly-2026-10-22-x86_64-pc-windows-msvc --profile minimal --component rustfmt,clippy --no-self-update
           $identity = rustc +nightly-2026-10-22-x86_64-pc-windows-msvc -vV
           if ($identity -notcontains 'host: x86_64-pc-windows-msvc') { throw 'Expected x86-64 scalar fallback build.' }
-          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-ScalarFallback'
+          "SCALAR_FALLBACK_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
+          "CARGO_TARGET_DIR=$(Join-Path $env:RUNNER_TEMP 'SwiftBonsai-ScalarFallback')" >> $env:GITHUB_ENV
+      - name: Reuse locked scalar fallback dependencies and build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ${{ env.CARGO_TARGET_DIR }}
+          key: scalar-fallback-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.SCALAR_FALLBACK_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/prism-runtime/**', 'tools/prism/**', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
+          restore-keys: |
+            scalar-fallback-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.SCALAR_FALLBACK_CACHE_HOST }}-nightly-2026-10-22-
+      - name: Verify non-ARM fallback with default and explicit feature builds
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-ScalarFallbackChecks-' + [guid]::NewGuid().ToString('N'))
           "SCALAR_FALLBACK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Rust.ps1') -Package bonsai-prism-runtime -Toolchain nightly-2026-10-22-x86_64-pc-windows-msvc -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -Build | ConvertTo-Json -Depth 8
@@ -290,9 +308,16 @@ jobs:
             ${{ env.MUTATION_EVIDENCE }}/*.log
           if-no-files-found: error
   broker:
+    name: broker / ${{ matrix.lane }}
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
     timeout-minutes: 15
+    strategy:
+      # Keep each package's feature checks isolated while compiling independent
+      # package selections concurrently. Every lane must still pass the gate.
+      fail-fast: false
+      matrix:
+        lane: [core, maintenance]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -335,26 +360,38 @@ jobs:
             ${{ env.CARGO_HOME }}/registry/cache
             ${{ env.CARGO_HOME }}/git/db
             ${{ env.CARGO_TARGET_DIR }}
-          key: broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs', 'src/cpu-policy/**', 'src/artifacts/**', 'src/windows-*/**', 'tools/bonsai/**', 'config/**/*.json', 'tests/fixtures/lora-qualification-v1.json', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1') }}
+          key: broker-v4-${{ matrix.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs', 'src/cpu-policy/**', 'src/artifacts/**', 'src/windows-*/**', 'tools/bonsai/**', 'config/**/*.json', 'tests/fixtures/lora-qualification-v1.json', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1') }}
           restore-keys: |
+            broker-v4-${{ matrix.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
             broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
       - name: Broker format, analyzer and full correctness suite
         shell: pwsh
         working-directory: ${{ runner.temp }}
+        env:
+          BROKER_LANE: ${{ matrix.lane }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-BrokerChecks-' + [guid]::NewGuid().ToString('N'))
           "BROKER_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Rust.ps1') -Group Broker -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Rust.psm1')
+          # Derive both selections from the registry so future Broker packages
+          # remain covered without another hard-coded package list.
+          $packages = @(Get-BonsaiRustPackage -Group Broker | Where-Object {
+            if ($env:BROKER_LANE -ceq 'core') { $_.Name -ceq 'bonsai-broker' }
+            else { $_.Name -cne 'bonsai-broker' }
+          } | ForEach-Object { $_.Name })
+          if (-not $packages.Count) { throw 'The Broker lane must select registered packages.' }
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Rust.ps1') -Group Broker -Package $packages -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
       - name: Retain broker and packaged tool check evidence
         if: always() && env.BROKER_CHECK_EVIDENCE != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: broker-checks-${{ github.run_id }}
+          name: broker-checks-${{ matrix.lane }}-${{ github.run_id }}
           path: ${{ env.BROKER_CHECK_EVIDENCE }}
           if-no-files-found: error
       - name: Package the native Windows ARM64 maintenance CLI
+        if: matrix.lane == 'maintenance'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bonsai-tools-windows-arm64-${{ github.sha }}

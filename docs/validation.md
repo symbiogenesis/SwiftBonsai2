@@ -133,6 +133,10 @@ succeed, including artifact retention; skipped jobs are rejected.
 Foundation downloads runtime/source packages but no model weights and runs no
 inference benchmark. Caches isolate compiler, runner image, architecture and
 package/native-linking lanes; every check still runs after cache restoration.
+Broker and maintenance packages run in parallel lanes, each with its own build
+cache and evidence. Both selections come from the package registry, and the
+aggregate gate requires both lanes. The x86-64 scalar fallback also reuses its
+own dependency/build cache while repeating every feature and correctness check.
 Scratch/evidence remains external. Select the published maintenance executable
 from the exact evaluated main revision via `BONSAI_TOOLS_PATH` or `-ToolPath`;
 version/protocol checking is not source-to-binary attestation.
