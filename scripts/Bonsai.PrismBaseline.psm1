@@ -37,7 +37,7 @@ function Get-PrismCatalogIndex {
     param([Parameter(Mandatory)][Collections.IDictionary]$Catalog)
     Assert-PrismObject -Value $Catalog -Required @('SchemaVersion', 'UpstreamCommit', 'ArchiveSha256', 'TestCMakeSourceSha256', 'Measure', 'AdapterIds', 'Cases') -Context 'Catalog'
     Assert-PrismInteger -Value $Catalog.SchemaVersion -Context 'Catalog.SchemaVersion' -Minimum 1
-    if ($Catalog.SchemaVersion -ne 1 -or $Catalog.Measure -cne 'upstream-source-files' -or
+    if ($Catalog.SchemaVersion -ne 1 -or $Catalog.Measure -isnot [string] -or $Catalog.Measure -cne 'upstream-source-files' -or
         $Catalog.UpstreamCommit -isnot [string] -or $Catalog.UpstreamCommit -cnotmatch '^[a-f0-9]{40}$' -or
         $Catalog.ArchiveSha256 -isnot [string] -or $Catalog.ArchiveSha256 -cnotmatch '^[a-f0-9]{64}$' -or
         $Catalog.TestCMakeSourceSha256 -isnot [string] -or $Catalog.TestCMakeSourceSha256 -cnotmatch '^[a-f0-9]{64}$' -or
@@ -56,7 +56,7 @@ function Get-PrismCatalogIndex {
             throw 'Catalog has an unknown or duplicate adapter ID.'
         }
     }
-    return ,$index
+    return $index
 }
 
 function Get-PrismCatalogDigest {
@@ -120,7 +120,7 @@ function Get-PrismResultIndex {
           [string]$Context)
     Assert-PrismObject -Value $Results -Required @('SchemaVersion', 'UpstreamCommit', 'Cases') -Context $Context
     Assert-PrismInteger -Value $Results.SchemaVersion -Context "$Context.SchemaVersion" -Minimum 1
-    if ($Results.SchemaVersion -ne 1 -or $Results.UpstreamCommit -cne $Catalog.UpstreamCommit -or $Results.Cases -isnot [array]) {
+    if ($Results.SchemaVersion -ne 1 -or $Results.UpstreamCommit -isnot [string] -or $Results.UpstreamCommit -cne $Catalog.UpstreamCommit -or $Results.Cases -isnot [array]) {
         throw "$Context schema or upstream revision does not match the catalog."
     }
     $index = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
@@ -130,7 +130,7 @@ function Get-PrismResultIndex {
         if ($case.Status -isnot [string] -or $case.Status -cnotin @('pass', 'fail', 'skip', 'unsupported') -or $case.Detail -isnot [string]) { throw "Invalid $Context result for $($case.Id)." }
         if (-not $index.TryAdd($case.Id, $case)) { throw "Duplicate $Context case ID: $($case.Id)" }
     }
-    return ,$index
+    return $index
 }
 
 function Get-PrismReportSummary {
@@ -138,7 +138,7 @@ function Get-PrismReportSummary {
     Counts every catalog entry, retaining red statuses and reference failures.
     #>
     [CmdletBinding()]
-    [OutputType([Collections.IDictionary])]
+    [OutputType([Collections.Specialized.OrderedDictionary])]
     param([Parameter(Mandatory)][array]$Cases)
     $passed = @($Cases | Where-Object { $_.Status -ceq 'pass' })
     $failed = @($Cases | Where-Object { $_.Status -ceq 'fail' })
@@ -164,7 +164,8 @@ function New-BonsaiPrismReport {
     the report and always rejects the gate, regardless of the target green ratio.
     #>
     [CmdletBinding()]
-    [OutputType([Collections.IDictionary])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Constructs only an in-memory evidence report; no external state changes.')]
+    [OutputType([Collections.Specialized.OrderedDictionary])]
     param([Parameter(Mandatory)][Collections.IDictionary]$Catalog,
           [Parameter(Mandatory)][Collections.IDictionary]$TargetResults,
           [Parameter(Mandatory)][Collections.IDictionary]$ReferenceResults)
@@ -206,7 +207,7 @@ function Test-BonsaiPrismBaseline {
     the report's presentation summary.
     #>
     [CmdletBinding()]
-    [OutputType([Collections.IDictionary])]
+    [OutputType([Collections.Specialized.OrderedDictionary])]
     param([Parameter(Mandatory)][Collections.IDictionary]$Catalog,
           [Parameter(Mandatory)][Collections.IDictionary]$Report,
           [Parameter(Mandatory)][string]$BaselinePath)
@@ -214,8 +215,9 @@ function Test-BonsaiPrismBaseline {
     $catalogDigest = Get-PrismCatalogDigest -Catalog $Catalog
     Assert-PrismObject -Value $Report -Required @('SchemaVersion', 'UpstreamCommit', 'CatalogSha256', 'Measure', 'Cases') -Context 'Report'
     Assert-PrismInteger -Value $Report.SchemaVersion -Context 'Report.SchemaVersion' -Minimum 1
-    if ($Report.SchemaVersion -ne 1 -or $Report.UpstreamCommit -cne $Catalog.UpstreamCommit -or
-        $Report.CatalogSha256 -cne $catalogDigest -or $Report.Measure -cne $Catalog.Measure -or $Report.Cases -isnot [array]) { throw 'Report does not match the catalog.' }
+    if ($Report.SchemaVersion -ne 1 -or $Report.UpstreamCommit -isnot [string] -or $Report.UpstreamCommit -cne $Catalog.UpstreamCommit -or
+        $Report.CatalogSha256 -isnot [string] -or $Report.CatalogSha256 -cne $catalogDigest -or
+        $Report.Measure -isnot [string] -or $Report.Measure -cne $Catalog.Measure -or $Report.Cases -isnot [array]) { throw 'Report does not match the catalog.' }
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($case in $Report.Cases) {
         Assert-PrismObject -Value $case -Required @('Id', 'SourceSha256', 'Status', 'Detail', 'ReferenceStatus', 'ReferenceDetail') -Context 'Report case'
@@ -235,8 +237,9 @@ function Test-BonsaiPrismBaseline {
     Assert-PrismInteger -Value $baseline.SchemaVersion -Context 'Baseline.SchemaVersion' -Minimum 1
     Assert-PrismInteger -Value $baseline.Total -Context 'Baseline.Total' -Minimum 1
     Assert-PrismInteger -Value $baseline.MinimumPassed -Context 'Baseline.MinimumPassed'
-    if ($baseline.SchemaVersion -ne 1 -or $baseline.UpstreamCommit -cne $Catalog.UpstreamCommit -or
-        $baseline.CatalogSha256 -cne $catalogDigest -or $baseline.Measure -cne $Catalog.Measure -or $baseline.Total -ne $catalogIndex.Count -or
+    if ($baseline.SchemaVersion -ne 1 -or $baseline.UpstreamCommit -isnot [string] -or $baseline.UpstreamCommit -cne $Catalog.UpstreamCommit -or
+        $baseline.CatalogSha256 -isnot [string] -or $baseline.CatalogSha256 -cne $catalogDigest -or
+        $baseline.Measure -isnot [string] -or $baseline.Measure -cne $Catalog.Measure -or $baseline.Total -ne $catalogIndex.Count -or
         $baseline.MinimumPassed -gt $baseline.Total -or $baseline.RequiredPassedIds -isnot [array]) {
         throw 'Baseline does not match the catalog or has an invalid minimum.'
     }

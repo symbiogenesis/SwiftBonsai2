@@ -31,12 +31,13 @@ $catalog = Import-BonsaiPrismCatalog -Path $catalogPath
 $baseline.CatalogSha256 = $catalog.CatalogSha256
 $baseline | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $baselinePath -Encoding utf8
 
-function New-TestResults {
+function New-TestResult {
     <# .SYNOPSIS
     Creates a sparse runner report for the selected synthetic source IDs.
     #>
     [CmdletBinding()]
-    [OutputType([Collections.IDictionary])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Constructs only an in-memory synthetic runner report; no external state changes.')]
+    [OutputType([Collections.Specialized.OrderedDictionary])]
     param([string[]]$Ids = @(), [string[]]$Statuses = @())
     return [ordered]@{
         SchemaVersion = 1; UpstreamCommit = $commit
@@ -84,54 +85,56 @@ switch ($Case) {
         Assert-Failure { Import-BonsaiPrismCatalog -Path $catalogPath } 'Escaping source path was accepted.'
     }
     'Ratchet' {
-        $target = New-TestResults -Ids @($ids[0]) -Statuses @('pass')
-        $reference = New-TestResults -Ids $ids -Statuses @('pass', 'pass', 'pass')
+        $target = New-TestResult -Ids @($ids[0]) -Statuses @('pass')
+        $reference = New-TestResult -Ids $ids -Statuses @('pass', 'pass', 'pass')
         $report = New-BonsaiPrismReport -Catalog $catalog -TargetResults $target -ReferenceResults $reference
         $gate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath
         Assert ($gate.Passed -and $gate.Summary.Total -eq 3 -and $gate.Summary.Passed -eq 1 -and $gate.Summary.Unsupported -eq 2) 'Sparse adapters must retain unported entries as red.'
         Assert ($gate.Summary.GreenRatio -eq (1 / 3)) 'The denominator must include all upstream files.'
-        $target = New-TestResults -Ids @($ids[0], $ids[1]) -Statuses @('fail', 'pass')
+        $target = New-TestResult -Ids @($ids[0], $ids[1]) -Statuses @('fail', 'pass')
         $report = New-BonsaiPrismReport -Catalog $catalog -TargetResults $target -ReferenceResults $reference
         $gate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath
         Assert (-not $gate.Passed) 'A different new green case must not replace a previously green case.'
         foreach ($status in @('fail', 'skip')) {
-            $target = New-TestResults -Ids @($ids[0]) -Statuses @($status)
+            $target = New-TestResult -Ids @($ids[0]) -Statuses @($status)
             $report = New-BonsaiPrismReport -Catalog $catalog -TargetResults $target -ReferenceResults $reference
             $report.Summary.Passed = 3
             $gate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath
             Assert (-not $gate.Passed -and $gate.Summary.Passed -eq 0) "Red status $status or a forged presentation summary bypassed the minimum."
             Assert (@($gate.Issues | Where-Object { $_ -like 'Green ratio fell below*' }).Count -eq 1) 'The ratio floor must reject a regression independently.'
         }
-        $target = New-TestResults -Ids @($ids[0], $ids[1]) -Statuses @('pass', 'pass')
+        $target = New-TestResult -Ids @($ids[0], $ids[1]) -Statuses @('pass', 'pass')
         $report = New-BonsaiPrismReport -Catalog $catalog -TargetResults $target -ReferenceResults $reference
         Assert ((Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath).Passed) 'New green cases must be accepted without rewriting the policy.'
-        $reference = New-TestResults -Ids @($ids[0]) -Statuses @('fail')
+        $reference = New-TestResult -Ids @($ids[0]) -Statuses @('fail')
         $report = New-BonsaiPrismReport -Catalog $catalog -TargetResults $target -ReferenceResults $reference
         $gate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath $baselinePath
         Assert (-not $gate.Passed -and $gate.Summary.ReferenceFailureIds.Count -eq 2) 'Failed and missing C++ reference results must both reject a green target.'
     }
     'Evidence' {
-        $valid = New-TestResults -Ids @($ids[0]) -Statuses @('pass')
-        $empty = New-TestResults
+        $valid = New-TestResult -Ids @($ids[0]) -Statuses @('pass')
+        $empty = New-TestResult
         Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $empty -ReferenceResults $valid } 'A missing implemented target adapter was accepted.'
         Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $valid -ReferenceResults $empty } 'A missing implemented C++ adapter was accepted.'
-        $invalid = New-TestResults -Ids @($ids[0]) -Statuses @('unsupported')
+        $invalid = New-TestResult -Ids @($ids[0]) -Statuses @('unsupported')
         Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $invalid -ReferenceResults $valid } 'An implemented adapter was allowed to disappear as unsupported.'
-        $invalid = New-TestResults -Ids @($ids[0], $ids[0]) -Statuses @('pass', 'fail')
+        $invalid = New-TestResult -Ids @($ids[0], $ids[0]) -Statuses @('pass', 'fail')
         Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $invalid -ReferenceResults $valid } 'Duplicate target IDs were accepted.'
         Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $valid -ReferenceResults $invalid } 'Duplicate reference IDs were accepted.'
-        $invalid = New-TestResults -Ids @('tests/test-unknown.cpp') -Statuses @('pass')
+        $invalid = New-TestResult -Ids @('tests/test-unknown.cpp') -Statuses @('pass')
         Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $invalid -ReferenceResults $valid } 'Unknown target ID was accepted.'
         Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $valid -ReferenceResults $invalid } 'Unknown reference ID was accepted.'
-        $invalid = New-TestResults -Ids @($ids[0]) -Statuses @('PASS')
+        $invalid = New-TestResult -Ids @($ids[0]) -Statuses @('PASS')
         Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $invalid -ReferenceResults $valid } 'Wrong-case status was accepted.'
-        $invalid = New-TestResults -Ids @($ids[0]) -Statuses @('pass')
+        $invalid = New-TestResult -Ids @($ids[0]) -Statuses @('pass')
         $invalid.UpstreamCommit = 'd' * 40
         Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $invalid -ReferenceResults $valid } 'Mismatched upstream pin was accepted.'
-        $invalid = New-TestResults -Ids @($ids[0]) -Statuses @('pass')
+        $invalid.UpstreamCommit = @($commit)
+        Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $invalid -ReferenceResults $valid } 'An array coerced into the upstream pin was accepted.'
+        $invalid = New-TestResult -Ids @($ids[0]) -Statuses @('pass')
         $invalid.SchemaVersion = '1'
         Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $invalid -ReferenceResults $valid } 'A string schema version was accepted.'
-        $invalid = New-TestResults -Ids @($ids[0]) -Statuses @('pass')
+        $invalid = New-TestResult -Ids @($ids[0]) -Statuses @('pass')
         $invalid.Remove('Cases')
         Assert-Failure { New-BonsaiPrismReport -Catalog $catalog -TargetResults $invalid -ReferenceResults $valid } 'A missing Cases array was accepted.'
         $report = New-BonsaiPrismReport -Catalog $catalog -TargetResults $valid -ReferenceResults $valid
