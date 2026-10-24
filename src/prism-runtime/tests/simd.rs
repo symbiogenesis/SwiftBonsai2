@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use bonsai_prism_runtime::kernels::{
-    MatvecBackend, MatvecFallbackReason, MatvecScratch, matvec_into,
+    MatvecBackend, MatvecFallbackReason, MatvecScratch, MatvecStatistics, matvec_into,
 };
 use bonsai_prism_runtime::model::Tensor;
 use bonsai_ternary::pack_ptq;
@@ -289,6 +289,82 @@ fn simd_diagnostics_track_latest_prepared_sibling_attempt() -> TestResult {
     assert_eq!(scratch.diagnostics().selected_backend, eligible_backend());
     assert_eq!(scratch.diagnostics().fallback_reason, build_fallback());
     assert_eq!(output.len(), 2);
+    Ok(())
+}
+
+#[test]
+fn simd_statistics_retain_mixed_dispatch_and_failed_work() -> TestResult {
+    let weights = pq2_tensor(256, 2, &[0x3c00])?;
+    let floating = tensor(0, 1, 1, 1.0_f32.to_le_bytes().to_vec());
+    let mut invalid = weights.clone();
+    let mut bytes = invalid.data.to_vec();
+    bytes[..2].copy_from_slice(&0x7c00_u16.to_le_bytes());
+    invalid.data = Arc::from(bytes);
+    let incompatible = ptq1_tensor(256, 2, &[0x3c00])?;
+    let input = activations(256, false);
+    for request in [MatvecBackend::Auto, MatvecBackend::Scalar] {
+        let mut scratch = MatvecScratch::with_backend(request);
+        let mut output = Vec::new();
+        assert_eq!(scratch.statistics(), MatvecStatistics::default());
+        matvec_into(&weights, &input, &mut output, &mut scratch)?;
+        matvec_into(&floating, &[1.0], &mut output, &mut scratch)?;
+        assert!(matvec_into(&weights, &[], &mut output, &mut scratch).is_err());
+        assert_eq!(output, Vec::<f32>::new());
+        {
+            let mut prepared = scratch.prepare(&weights, &input)?;
+            prepared.matvec_into(&weights, &mut output)?;
+            assert!(prepared.matvec_into(&incompatible, &mut output).is_err());
+            assert_eq!(output, Vec::<f32>::new());
+            assert!(prepared.matvec_into(&invalid, &mut output).is_err());
+            assert_eq!(output, Vec::<f32>::new());
+            prepared.matvec_into(&weights, &mut output)?;
+        }
+        let statistics = scratch.statistics();
+        assert_eq!(statistics.preparations, 4);
+        assert_eq!(statistics.preparation_failures, 1);
+        assert_eq!(statistics.matrix_attempts, 6);
+        assert_eq!(statistics.matrix_successes, 4);
+        assert_eq!(statistics.rejected_before_dispatch, 1);
+        let neon = if request == MatvecBackend::Auto
+            && eligible_backend() == MatvecBackend::ExperimentalNeon
+        {
+            4
+        } else {
+            0
+        };
+        assert_eq!(statistics.neon_operations, neon);
+        assert_eq!(statistics.scalar_operations, 5 - neon);
+        if request == MatvecBackend::Scalar {
+            assert_eq!(statistics.scalar_requested, 5);
+            assert_eq!(statistics.tensor_kind_unsupported, 0);
+        } else {
+            assert_eq!(statistics.scalar_requested, 0);
+            assert_eq!(statistics.tensor_kind_unsupported, 1);
+            assert_eq!(
+                statistics.feature_disabled,
+                if build_fallback() == Some(MatvecFallbackReason::FeatureDisabled) {
+                    4
+                } else {
+                    0
+                }
+            );
+            assert_eq!(
+                statistics.target_unsupported,
+                if build_fallback() == Some(MatvecFallbackReason::TargetUnsupported) {
+                    4
+                } else {
+                    0
+                }
+            );
+        }
+        assert_eq!(
+            statistics.scalar_operations,
+            statistics.scalar_requested
+                + statistics.tensor_kind_unsupported
+                + statistics.feature_disabled
+                + statistics.target_unsupported
+        );
+    }
     Ok(())
 }
 

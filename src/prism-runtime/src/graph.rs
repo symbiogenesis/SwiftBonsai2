@@ -11,8 +11,8 @@ use bonsai_gguf::{Metadata, MetadataArray, MetadataValue, MetadataValueRef};
 use bonsai_ternary::half_to_float;
 
 use crate::kernels::{
-    MatvecBackend, MatvecDiagnostics, MatvecScratch, half_bits, rms_norm_into, round_f16, row,
-    row_into, silu, softmax,
+    MatvecBackend, MatvecDiagnostics, MatvecScratch, MatvecStatistics, half_bits, rms_norm_into,
+    round_f16, row, row_into, silu, softmax,
 };
 use crate::model::{Model, Tensor};
 use crate::{Decoder, Result, invalid};
@@ -955,6 +955,16 @@ impl Qwen35 {
     #[must_use]
     pub const fn backend_diagnostics(&self) -> MatvecDiagnostics {
         self.workspace.projection.matvec.diagnostics()
+    }
+
+    /// Aggregate matrix dispatch and failure counts for this decoder's lifetime.
+    ///
+    /// Reset and checkpoint restoration preserve these counts, including failed
+    /// and provisional graph work. They do not describe committed token counts
+    /// or establish whole-model backend coverage or performance.
+    #[must_use]
+    pub const fn backend_statistics(&self) -> MatvecStatistics {
+        self.workspace.projection.matvec.statistics()
     }
 
     #[allow(

@@ -48,7 +48,7 @@ task time separately, accounting for bandwidth and the measured critical path.
 - [ ] **R3 — Qualify packed CPU kernels.** Follow [SIMD S0–S4/S6](simd-plan.md).
   Baseline NEON PQ2/PTQ1, automatic selection, scalar forcing and focused exact
   regressions are implemented using safe core SIMD APIs. Profiling, fuller
-  aggregate diagnostics, per-path memory evidence, optional ISAs and performance acceptance
+  per-path memory evidence, optional ISAs and performance acceptance
   remain open. Preserve quantizers, scale order, generic PQ2's fourth symbol,
   tails and malformed-input rejection. Compare [exact ternary LUTs](inference-algorithms.md#exact-ternary-tables-for-decode)
   under the same contract; INT8 table quantization is a separate approximation.
@@ -86,6 +86,12 @@ task time separately, accounting for bandwidth and the measured critical path.
   - [ ] **R4.6 — Add bounded block prefill.** Prove causal/state scheduling,
     atomic commit and cancellation before comparing [Vec-LUT and chunkwise WY/UT GDN](inference-algorithms.md#chunkwise-gated-deltanet-prefill).
     Declare numerical tolerances and qualify prefill separately from decode.
+    - [x] **R4.6a — Establish the bounded reference scheduler.** Explicit
+      1–256-token blocks use the decoder's checked block-ingestion boundary.
+      The sequential fallback preserves exact per-token arithmetic and checks
+      cancellation/deadlines between tokens. Whole-request rollback includes
+      failures inside blocks; the final uncached prompt token produces logits.
+      Tiled graph kernels and measured prefill benefit remain R4.6 work.
 
 - [ ] **R5 — Complete runtime and broker integration.** Bounded conversation
   ownership, checkpoints, prefix restoration, streaming, cancellation, reset and
@@ -104,10 +110,13 @@ task time separately, accounting for bandwidth and the measured critical path.
     only when a real lending/cache/stream interface demonstrates a limitation;
     record the stable alternative, production benefit and compatibility evidence
     before considering migration. Checkpoint ownership still applies.
-  - [ ] **R5.2 — Share immutable KV checkpoint pages.** Copy the mutable tail and
-    keep exact convolution/recurrent snapshots. Follow [hybrid reuse boundaries](inference-algorithms.md#hybrid-cache-reuse-and-speculative-state),
-    prove snapshot isolation and edited-prefix recovery, and budget unique pages,
-    worst-case copy-on-write and retained recurrent state.
+  - [x] **R5.2 — Share immutable KV checkpoint pages.** Sealed 64-token FP16
+    pages are shared immutably; the mutable tail and exact convolution/recurrent
+    state are copied. Page-boundary and edited-prefix regressions prove snapshot
+    isolation and recovery. Snapshot admission conservatively charges every
+    referenced page per snapshot, including page tables, private tail capacity
+    and recurrent storage, without relying on sharing to meet the bound.
+    Full-model process-memory benefit remains R4.2.
 
 - [ ] **R6 — Add Adreno after CPU parity.** Follow [G0–G5](adreno-gpu-plan.md),
   implementing the same packed types, transforms and complete hybrid graph.

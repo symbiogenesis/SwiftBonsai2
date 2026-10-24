@@ -497,6 +497,7 @@ pub struct MatvecScratch {
     activations: Vec<f32>,
     row: Vec<f32>,
     diagnostics: MatvecDiagnostics,
+    statistics: MatvecStatistics,
     #[cfg(test)]
     preparations: usize,
 }
@@ -637,6 +638,73 @@ impl MatvecDiagnostics {
     }
 }
 
+/// Aggregate matrix work observed by one scratch owner over its lifetime.
+///
+/// Counts include provisional and failed work and survive reset or checkpoint
+/// restoration of an owning graph. They describe dispatch, not committed tokens
+/// or performance. Counters saturate at [`u64::MAX`] and retain no input data.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MatvecStatistics {
+    /// Activation preparations attempted, including unused prepared guards.
+    pub preparations: u64,
+    /// Preparations rejected before a matrix could be attempted.
+    pub preparation_failures: u64,
+    /// Matrix attempts using successfully prepared activations.
+    pub matrix_attempts: u64,
+    /// Matrix attempts returning complete successful output.
+    pub matrix_successes: u64,
+    /// Matrix attempts rejected before selecting a row backend.
+    pub rejected_before_dispatch: u64,
+    /// Matrix attempts dispatched to scalar, including later row failures.
+    pub scalar_operations: u64,
+    /// Matrix attempts dispatched to NEON, including later row failures.
+    pub neon_operations: u64,
+    /// Scalar dispatches explicitly requested by the caller.
+    pub scalar_requested: u64,
+    /// Scalar dispatches for tensor kinds without a NEON kernel.
+    pub tensor_kind_unsupported: u64,
+    /// Scalar dispatches because the NEON feature was disabled.
+    pub feature_disabled: u64,
+    /// Scalar dispatches because the build target was ineligible.
+    pub target_unsupported: u64,
+}
+
+impl MatvecStatistics {
+    const fn record(&mut self, diagnostics: MatvecDiagnostics) {
+        self.matrix_attempts = self.matrix_attempts.saturating_add(1);
+        if diagnostics.succeeded {
+            self.matrix_successes = self.matrix_successes.saturating_add(1);
+        }
+        if !diagnostics.dispatched {
+            self.rejected_before_dispatch = self.rejected_before_dispatch.saturating_add(1);
+            return;
+        }
+        if matches!(
+            diagnostics.selected_backend,
+            MatvecBackend::ExperimentalNeon
+        ) {
+            self.neon_operations = self.neon_operations.saturating_add(1);
+        } else {
+            self.scalar_operations = self.scalar_operations.saturating_add(1);
+        }
+        match diagnostics.fallback_reason {
+            Some(MatvecFallbackReason::ScalarRequested) => {
+                self.scalar_requested = self.scalar_requested.saturating_add(1);
+            }
+            Some(MatvecFallbackReason::TensorKindUnsupported) => {
+                self.tensor_kind_unsupported = self.tensor_kind_unsupported.saturating_add(1);
+            }
+            Some(MatvecFallbackReason::FeatureDisabled) => {
+                self.feature_disabled = self.feature_disabled.saturating_add(1);
+            }
+            Some(MatvecFallbackReason::TargetUnsupported) => {
+                self.target_unsupported = self.target_unsupported.saturating_add(1);
+            }
+            None => {}
+        }
+    }
+}
+
 type Pq2RowKernel = fn(&[u8], &[Q8KBlock]) -> Result<f32>;
 type Q8GroupRowKernel = fn(u32, &[u8], &[Q8Block]) -> Result<f32>;
 
@@ -648,6 +716,7 @@ impl Default for MatvecScratch {
             activations: Vec::new(),
             row: Vec::new(),
             diagnostics: MatvecDiagnostics::new(MatvecBackend::Auto),
+            statistics: MatvecStatistics::default(),
             #[cfg(test)]
             preparations: 0,
         }
@@ -674,6 +743,23 @@ impl MatvecScratch {
         input: &'a [f32],
     ) -> Result<PreparedMatvec<'a>> {
         self.reset_diagnostics();
+        self.statistics.preparations = self.statistics.preparations.saturating_add(1);
+        let contract = match self.prepare_input(tensor, input) {
+            Ok(contract) => contract,
+            Err(error) => {
+                self.statistics.preparation_failures =
+                    self.statistics.preparation_failures.saturating_add(1);
+                return Err(error);
+            }
+        };
+        Ok(PreparedMatvec {
+            input,
+            contract,
+            scratch: self,
+        })
+    }
+
+    fn prepare_input(&mut self, tensor: &Tensor, input: &[f32]) -> Result<ActivationContract> {
         let (columns, _, _) = dimensions(tensor)?;
         if input.len() != columns || input.iter().any(|value| !value.is_finite()) {
             return Err(invalid(
@@ -699,11 +785,7 @@ impl MatvecScratch {
         {
             self.preparations += 1;
         }
-        Ok(PreparedMatvec {
-            input,
-            contract,
-            scratch: self,
-        })
+        Ok(contract)
     }
 
     #[cfg(test)]
@@ -750,6 +832,16 @@ impl MatvecScratch {
     #[must_use]
     pub const fn diagnostics(&self) -> MatvecDiagnostics {
         self.diagnostics
+    }
+
+    /// Aggregate preparation, dispatch and failure counts for this scratch owner.
+    ///
+    /// Prepared siblings each count as a matrix attempt while sharing one
+    /// preparation. Preparation failures are counted separately. Later failures
+    /// never erase earlier dispatches; all counters include provisional work.
+    #[must_use]
+    pub const fn statistics(&self) -> MatvecStatistics {
+        self.statistics
     }
 
     const fn reset_diagnostics(&mut self) {
@@ -848,6 +940,7 @@ impl PreparedMatvec<'_> {
         self.scratch.reset_diagnostics();
         let result = fill_into(output, |output| self.multiply(tensor, output));
         self.scratch.diagnostics.succeeded = result.is_ok();
+        self.scratch.statistics.record(self.scratch.diagnostics);
         result
     }
 

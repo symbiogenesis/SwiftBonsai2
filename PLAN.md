@@ -203,7 +203,9 @@ Follow [R0–R7](docs/native-rust-engine.md) and the
 [algorithm research map](docs/inference-algorithms.md). Reusable logits/scratch,
 compatible sibling activation preparation, state-only intermediate prompt
 ingestion, physical FP16 KV and baseline packed NEON are implemented in the
-experimental Rust reference. Full-model allocation,
+experimental Rust reference. Bounded sequential prefill scheduling, immutable KV
+checkpoint pages and cumulative backend diagnostics are also implemented.
+Tiled prefill kernels, full-model allocation,
 parity and performance qualification remain open.
 
 Profile before expanding optimization work. Priorities include exact packed

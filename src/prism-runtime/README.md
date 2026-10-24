@@ -38,6 +38,15 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   uncached prompt tokens while validating computed state. Its compatibility
   fallback computes/validates then discards logits. Final prompt tokens and
   decode steps produce logits; exact prefix hits reuse saved output.
+- `Decoder::ingest_block` provides bounded 1–256-token reference prefill.
+  `Runtime::generate_with_prefill` and `generate_until_with_prefill` accept
+  `Prefill { block_tokens }`; existing generation calls retain one-token blocks.
+  The default block decoder preserves exact sequential arithmetic and checks
+  cancellation/deadlines between tokens. Errors roll back the whole request.
+  Optimized tiled graph execution and prefill performance remain unqualified.
+- Full-attention checkpoints share sealed 64-token FP16 KV pages. Each snapshot
+  copies the private mutable tail and complete F32 convolution/recurrent state;
+  later append, reset or restoration cannot modify saved pages.
 - Scoped prepared matvecs share activation preparation across compatible FFN,
   full-attention and recurrent sibling projections. Groups require the same
   exact input, transform/permutation, width and activation contract; mixed
@@ -94,6 +103,9 @@ the runtime request, including prefill, delivery and checkpoint work. Model
 verification/loading and graph construction precede that deadline. Omit the
 option to retain cancellation-only behavior. A timeout fails the command;
 already streamed tokens are provisional and no success record follows.
+Optional `--prefill-block-tokens <1..256>` selects the reference block boundary;
+the default is one. `prefill_block_tokens` records the selected size. This changes
+scheduling boundaries while retaining sequential graph operations.
 The driver does not tokenize, implement stochastic sampling, launch the broker
 or promote a profile.
 
@@ -113,9 +125,12 @@ Process/hardware admission remains the caller's responsibility pending broker
 integration.
 
 Graph workspace retains high-water allocations across evaluations/reset. KV
-vectors grow geometrically within the context bound and retain reserved capacity;
-checkpoint admission charges actual capacities. Tight budgets can reject rollback
-capture or retain fewer prefixes as this reserve grows. RoPE reuse lasts one
+pages grow within the context bound, sealing only complete pages. Checkpoint
+admission charges every referenced immutable page per snapshot, page-table
+capacity, copied private tails and recurrent storage. This conservatively
+overcharges shared payload rather than depending on current reference counts;
+the bound covers worst-case independent copies. Tight budgets can reject rollback
+capture or retain fewer prefixes. RoPE reuse lasts one
 evaluation attempt. Neither retained-model nor checkpoint budgets cover workspace.
 Synthetic capacity reuse does not establish full-model allocation, peak-memory or
 speed benefit; [R4.2](../../docs/native-rust-engine.md#ordered-work) remains open.
@@ -143,9 +158,17 @@ rejection before matrix preparation leave it unchanged; it can describe
 provisional work. A final F32 output projection reports scalar even when earlier
 packed projections used NEON.
 
+`backend_statistics` reports cumulative preparation attempts/failures, matrix
+attempts/successes, rejection before dispatch, scalar/NEON dispatches and each
+scalar fallback reason. `MatvecScratch::statistics` and
+`Qwen35::backend_statistics` expose these counts. Prepared siblings share a
+preparation and each count as a matrix attempt. Counts include failed/provisional
+work and survive graph reset/restore; they are not committed-token accounting.
+Counters saturate at `u64::MAX` and retain no input data.
+
 Target-only `fearless_simd` 1.1.0 uses safe core APIs under unchanged
 `forbid(unsafe_code)`. Direct packed decode preserves scalar quantization and
-ordered scales. Optional ISA detection, aggregate per-path diagnostics, memory and
+ordered scales. Optional ISA detection, per-path memory and
 performance qualification remain open.
 
 [Foundation](../../.github/workflows/foundation.yml) runs the complete synthetic

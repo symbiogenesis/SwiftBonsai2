@@ -2,11 +2,11 @@
 //! Explicit token-ID driver for the unqualified native CPU reference engine.
 
 use bonsai_prism_runtime::{
-    Result,
+    MAX_PREFILL_BLOCK_TOKENS, Result,
     graph::{MAX_STATE_BYTES, Qwen35},
-    kernels::{MatvecBackend, MatvecDiagnostics, MatvecFallbackReason},
+    kernels::{MatvecBackend, MatvecDiagnostics, MatvecFallbackReason, MatvecStatistics},
     model::Model,
-    runtime::{Cancellation, Finish, Generation, Limits, Runtime},
+    runtime::{Cancellation, Finish, Generation, Limits, Prefill, Runtime},
 };
 use serde_json::json;
 use std::{
@@ -24,6 +24,7 @@ Usage: bonsai-prism-runtime --model <absolute-gguf-path> --bytes <u64>\n\
   [--stop-tokens <id,id,...>] [--backend <auto|scalar|neon>]\n\
   [--timeout-seconds <1..3600>]\n\
   [--state-bytes <usize>]\n\
+  [--prefill-block-tokens <1..256>]\n\
 State budget defaults to 4 GiB for live KV/recurrent element payload only;\n\
 model storage, graph scratch, checkpoints and allocator overhead are separate.\n\
 Timeout covers generation after loading. Checks are cooperative between operations;\n\
@@ -32,6 +33,8 @@ Backend defaults to auto. NEON requires the experimental-neon feature and\n\
 native Windows ARM64 MSVC; unsupported builds, targets and formats use scalar.\n\
 Selection is per matrix operation; backend_requested reports only the request.\n\
 backend_last_operation records just the latest projection, including scalar fallback.\n\
+backend_statistics counts all attempted matrix work, including provisional work.\n\
+Prefill blocks default to one token and preserve sequential reference arithmetic.\n\
 Input is token IDs; decoding is greedy. Output is one JSON object per line.\n";
 
 struct Arguments {
@@ -46,6 +49,7 @@ struct Arguments {
     tokens: Vec<u32>,
     backend: MatvecBackend,
     timeout: Option<Duration>,
+    prefill: Prefill,
 }
 
 fn bad(message: &'static str) -> bonsai_prism_runtime::Error {
@@ -70,6 +74,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
                 | "--backend"
                 | "--timeout-seconds"
                 | "--state-bytes"
+                | "--prefill-block-tokens"
         ) || values.contains_key(&key)
         {
             return Err(bad("unknown or repeated option"));
@@ -134,6 +139,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         .as_deref()
         .map(timeout_seconds)
         .transpose()?;
+    let prefill = prefill_options(values.remove("--prefill-block-tokens").as_deref())?;
     Ok(Arguments {
         path,
         bytes,
@@ -149,7 +155,20 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         tokens,
         backend,
         timeout,
+        prefill,
     })
+}
+
+fn prefill_options(value: Option<&str>) -> Result<Prefill> {
+    let value = value.unwrap_or("1");
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(bad("prefill block tokens must be from 1 through 256"));
+    }
+    let block_tokens = value.parse::<usize>()?;
+    if !(1..=MAX_PREFILL_BLOCK_TOKENS).contains(&block_tokens) {
+        return Err(bad("prefill block tokens must be from 1 through 256"));
+    }
+    Ok(Prefill { block_tokens })
 }
 
 fn timeout_seconds(value: &str) -> Result<Duration> {
@@ -216,17 +235,19 @@ fn execute(arguments: &Arguments) -> Result<()> {
         let deadline = Instant::now()
             .checked_add(timeout)
             .ok_or_else(|| bad("generation deadline exceeds monotonic clock bounds"))?;
-        runtime.generate_until(
+        runtime.generate_until_with_prefill(
             &arguments.tokens,
             &arguments.generation,
+            arguments.prefill,
             &cancellation,
             deadline,
             emit,
         )?
     } else {
-        runtime.generate(
+        runtime.generate_with_prefill(
             &arguments.tokens,
             &arguments.generation,
+            arguments.prefill,
             &cancellation,
             emit,
         )?
@@ -240,7 +261,9 @@ fn execute(arguments: &Arguments) -> Result<()> {
             "reused_tokens": result.reused_tokens,
             "backend_requested": backend_requested,
             "state_budget_bytes": arguments.state_bytes,
+            "prefill_block_tokens": arguments.prefill.block_tokens,
             "backend_last_operation": backend_record(runtime.decoder().backend_diagnostics()),
+            "backend_statistics": statistics_record(runtime.decoder().backend_statistics()),
         }),
     )?;
     output.write_all(b"\n")?;
@@ -268,6 +291,25 @@ fn backend_record(diagnostics: MatvecDiagnostics) -> serde_json::Value {
         }),
         "dispatched": diagnostics.dispatched,
         "succeeded": diagnostics.succeeded,
+    })
+}
+
+fn statistics_record(statistics: MatvecStatistics) -> serde_json::Value {
+    json!({
+        "scope": "decoder_lifetime_including_provisional_work",
+        "preparations": statistics.preparations,
+        "preparation_failures": statistics.preparation_failures,
+        "matrix_attempts": statistics.matrix_attempts,
+        "matrix_successes": statistics.matrix_successes,
+        "rejected_before_dispatch": statistics.rejected_before_dispatch,
+        "scalar_operations": statistics.scalar_operations,
+        "neon_operations": statistics.neon_operations,
+        "fallbacks": {
+            "scalar_requested": statistics.scalar_requested,
+            "tensor_kind_unsupported": statistics.tensor_kind_unsupported,
+            "feature_disabled": statistics.feature_disabled,
+            "target_unsupported": statistics.target_unsupported,
+        },
     })
 }
 
@@ -392,6 +434,30 @@ mod tests {
             input.extend(["--backend".to_owned(), value.to_owned()]);
             assert_eq!(parse(input)?.backend, expected);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn cli_prefill_blocks_validate_bounds_before_model_loading() -> Result<()> {
+        assert_eq!(parse(arguments())?.prefill.block_tokens, 1);
+        for tokens in ["1", "2", "256"] {
+            let mut input = arguments();
+            input.extend(["--prefill-block-tokens".to_owned(), tokens.to_owned()]);
+            assert_eq!(parse(input)?.prefill.block_tokens, tokens.parse::<usize>()?);
+        }
+        for tokens in ["0", "257", "-1", "+1", "1.5", "", "18446744073709551616"] {
+            let mut input = arguments();
+            input.extend(["--prefill-block-tokens".to_owned(), tokens.to_owned()]);
+            assert!(parse(input).is_err());
+        }
+        let mut input = arguments();
+        input.push("--prefill-block-tokens".to_owned());
+        assert!(parse(input).is_err());
+        let mut input = arguments();
+        input.extend(
+            ["--prefill-block-tokens", "2", "--prefill-block-tokens", "4"].map(str::to_owned),
+        );
+        assert!(parse(input).is_err());
         Ok(())
     }
 

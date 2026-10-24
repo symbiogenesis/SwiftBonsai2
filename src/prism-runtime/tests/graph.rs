@@ -10,8 +10,8 @@ use bonsai_gguf::{MetadataArray, MetadataValue};
 use bonsai_prism_runtime::graph::Qwen35;
 use bonsai_prism_runtime::kernels::{MatvecBackend, MatvecFallbackReason, round_f16};
 use bonsai_prism_runtime::model::{Model, Tensor};
-use bonsai_prism_runtime::runtime::{Cancellation, Generation, Limits, Runtime};
-use bonsai_prism_runtime::{Decoder, Result};
+use bonsai_prism_runtime::runtime::{Cancellation, Generation, Limits, Prefill, Runtime};
+use bonsai_prism_runtime::{Decoder, MAX_PREFILL_BLOCK_TOKENS, Result};
 #[cfg(feature = "cli")]
 use serde_json::Value;
 
@@ -268,6 +268,13 @@ fn graph_backend_diagnostics_distinguish_latest_projection_from_complete_graph()
     }
     decoder.evaluate(1)?;
     let floating = decoder.backend_diagnostics();
+    let statistics = decoder.backend_statistics();
+    let checkpoint = decoder.checkpoint()?;
+    assert!(statistics.matrix_attempts > 1);
+    assert!(statistics.scalar_operations > 0);
+    if packed.selected_backend == MatvecBackend::ExperimentalNeon {
+        assert!(statistics.neon_operations > 0);
+    }
     assert!(floating.dispatched && floating.succeeded);
     assert_eq!(floating.selected_backend, MatvecBackend::Scalar);
     assert_eq!(
@@ -276,8 +283,12 @@ fn graph_backend_diagnostics_distinguish_latest_projection_from_complete_graph()
     );
     assert!(decoder.evaluate(2).is_err());
     assert_eq!(decoder.backend_diagnostics(), floating);
+    assert_eq!(decoder.backend_statistics(), statistics);
     decoder.reset()?;
     assert_eq!(decoder.backend_diagnostics(), floating);
+    assert_eq!(decoder.backend_statistics(), statistics);
+    decoder.restore(&checkpoint)?;
+    assert_eq!(decoder.backend_statistics(), statistics);
     Ok(())
 }
 
@@ -834,6 +845,41 @@ fn paged_hybrid_checkpoints_restore_exact_logits_on_both_sides_of_seals() -> Res
 }
 
 #[test]
+fn bounded_prefill_matches_exact_hybrid_logits_across_page_boundaries() -> Result<()> {
+    for length in [1, 63, 64, 65, 127, 128, 129] {
+        let prompt: Vec<u32> = [0, 1].into_iter().cycle().take(length).collect();
+        let mut reference = Qwen35::new(paged_hybrid_fixture(), 192)?;
+        for &token in &prompt[..length - 1] {
+            reference.ingest(token)?;
+        }
+        let expected: Vec<u32> = reference
+            .evaluate(prompt[length - 1])?
+            .into_iter()
+            .map(f32::to_bits)
+            .collect();
+        for block_tokens in [1, 2, 4, MAX_PREFILL_BLOCK_TOKENS] {
+            let mut decoder = Qwen35::new(paged_hybrid_fixture(), 192)?;
+            for block in prompt[..length - 1].chunks(block_tokens) {
+                decoder.ingest_block(block, &|| Ok(()))?;
+            }
+            let actual: Vec<u32> = decoder
+                .evaluate(prompt[length - 1])?
+                .into_iter()
+                .map(f32::to_bits)
+                .collect();
+            assert_eq!(actual, expected, "prompt {length}, block {block_tokens}");
+            assert_eq!(decoder.evaluate(0)?, reference.evaluate(0)?);
+            // Restore the reference so each block size compares the same continuation.
+            reference.reset()?;
+            for &token in &prompt {
+                reference.ingest(token)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn paged_hybrid_runtime_reuses_edited_prefix_and_rolls_back_across_seals() -> Result<()> {
     let limits = Limits {
         context_tokens: 192,
@@ -842,15 +888,16 @@ fn paged_hybrid_runtime_reuses_edited_prefix_and_rolls_back_across_seals() -> Re
     };
     let mut runtime = Runtime::new(Qwen35::new(paged_hybrid_fixture(), 192)?, limits)?;
     let cancellation = Cancellation::default();
+    let prefill = Prefill { block_tokens: 4 };
     let stop = Generation {
         max_tokens: 1,
         stop_tokens: vec![0, 1],
     };
     let prefix: Vec<u32> = [0, 1].into_iter().cycle().take(65).collect();
-    runtime.generate(&prefix, &stop, &cancellation, |_| Ok(()))?;
+    runtime.generate_with_prefill(&prefix, &stop, prefill, &cancellation, |_| Ok(()))?;
     let mut longer = prefix.clone();
     longer.extend([1, 0].into_iter().cycle().take(65));
-    runtime.generate(&longer, &stop, &cancellation, |_| Ok(()))?;
+    runtime.generate_with_prefill(&longer, &stop, prefill, &cancellation, |_| Ok(()))?;
     assert_eq!(runtime.tokens(), longer);
     let mut edited = prefix.clone();
     edited.extend([0, 0, 1, 1].into_iter().cycle().take(66));
@@ -862,7 +909,7 @@ fn paged_hybrid_runtime_reuses_edited_prefix_and_rolls_back_across_seals() -> Re
     };
     assert!(
         runtime
-            .generate(&edited, &generate, &cancellation, |_| {
+            .generate_with_prefill(&edited, &generate, prefill, &cancellation, |_| {
                 Err(std::io::Error::other("synthetic consumer failure").into())
             })
             .is_err()
@@ -870,10 +917,11 @@ fn paged_hybrid_runtime_reuses_edited_prefix_and_rolls_back_across_seals() -> Re
     assert_eq!(runtime.tokens(), longer);
     assert!(!runtime.is_faulted());
     let mut emitted = Vec::new();
-    let completion = runtime.generate(&edited, &generate, &cancellation, |token| {
-        emitted.push(token);
-        Ok(())
-    })?;
+    let completion =
+        runtime.generate_with_prefill(&edited, &generate, prefill, &cancellation, |token| {
+            emitted.push(token);
+            Ok(())
+        })?;
     assert_eq!(completion.reused_tokens, prefix.len());
     let mut fresh = Runtime::new(Qwen35::new(paged_hybrid_fixture(), 192)?, limits)?;
     let mut expected = Vec::new();
@@ -1488,6 +1536,9 @@ fn native_driver_executes_verified_synthetic_gguf_and_enforces_state_budget() ->
         if let Some(backend) = backend {
             command.args(["--backend", backend, "--timeout-seconds", "60"]);
         }
+        if backend == Some("neon") {
+            command.args(["--prefill-block-tokens", "4"]);
+        }
         if let Some(bytes) = state_bytes {
             command.args(["--state-bytes", &bytes.to_string()]);
         }
@@ -1515,6 +1566,23 @@ fn native_driver_executes_verified_synthetic_gguf_and_enforces_state_budget() ->
                         "reused_tokens": 0,
                         "backend_requested": backend.unwrap_or("auto"),
                         "state_budget_bytes": state_bytes.unwrap_or(bonsai_prism_runtime::graph::MAX_STATE_BYTES),
+                        "prefill_block_tokens": if backend == Some("neon") { 4 } else { 1 },
+                        "backend_statistics": {
+                            "scope": "decoder_lifetime_including_provisional_work",
+                            "preparations": 19,
+                            "preparation_failures": 0,
+                            "matrix_attempts": 31,
+                            "matrix_successes": 31,
+                            "rejected_before_dispatch": 0,
+                            "scalar_operations": 31,
+                            "neon_operations": 0,
+                            "fallbacks": {
+                                "scalar_requested": if backend == Some("scalar") { 31 } else { 0 },
+                                "tensor_kind_unsupported": if backend == Some("scalar") { 0 } else { 31 },
+                                "feature_disabled": 0,
+                                "target_unsupported": 0,
+                            },
+                        },
                         "backend_last_operation": {
                             "selected": "scalar",
                             "neon_build_eligible": cfg!(all(

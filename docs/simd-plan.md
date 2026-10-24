@@ -3,7 +3,7 @@
 This expands R3/R4 in the [native engine roadmap](native-rust-engine.md).
 Baseline NEON PQ2/PTQ1 kernels, including odd-group PQ2, are implemented and
 selected automatically on eligible Windows ARM64 builds. Scalar remains the
-reference/fallback. Profiling, fuller diagnostics, per-path memory qualification,
+reference/fallback. Profiling, per-path memory qualification,
 optional ISAs and production promotion remain open. **No target-device speedup
 or whole-model parity improvement is established.** Pinned Prism remains the
 assessment and fallback engine.
@@ -16,12 +16,15 @@ The default `experimental-neon` feature enables target-only
 `MatvecBackend::Auto` selects once per matrix operation; the Qwen35 graph and
 token driver inherit that default. Select a graph policy through
 `Qwen35::with_backend` or the driver's `--backend auto|scalar|neon` option.
-The completion record reports `backend_requested`, which describes the policy
-rather than a whole-graph effective backend. Floating projections and ineligible
+The completion record reports `backend_requested`, which describes the policy.
+`backend_statistics` retains cumulative matrix attempts, successes, scalar/NEON
+dispatches, preparation failures and fallback reasons, including provisional
+work. Floating projections and ineligible
 packed operations still use scalar. At the kernel level,
 `MatvecScratch::with_backend(MatvecBackend::Scalar)` forces scalar and
 `selected_backend()` reports the last matrix operation's actual backend.
-Detailed fallback reasons/build logging are pending.
+`statistics()` retains aggregate counts without input data; counters saturate at
+`u64::MAX`. Reset and checkpoint restoration preserve these diagnostics.
 
 Eligibility requires `aarch64-pc-windows-msvc`, the feature and ambient baseline
 NEON. Complete PQ2/PTQ1 rows use packed kernels; other formats/targets and
@@ -154,9 +157,15 @@ and fast-math modes need separate numerical qualification.
   selection, actual-backend reporting and focused exact regressions are implemented.
   Fallback/build diagnostics distinguish explicit scalar, unsupported tensor kinds,
   disabled features and unsupported targets, with attempt/completion flags.
-  Graph/driver reporting describes only the latest projection. Complete S6
+  Complete S6
   qualification; retain bounded loads,
   scalar quantization, ordered scales and negative controls.
+  - [x] **S2.1 — Report aggregate graph dispatch.** Retained matrix statistics
+    distinguish mixed scalar/NEON work, shared preparations, preparation failures,
+    failed matrix attempts and scalar fallback reasons. The graph and JSON driver
+    expose lifetime counts, including provisional work, alongside the latest
+    operation record. Focused regressions cover mixed paths and failure recovery;
+    no backend or performance verdict is inferred from counts.
 - [ ] **S3 — Qualify PTQ1 and odd-group PQ2 (R3).** Direct decoding, 128/256/384-
   column and multirow cases, exact scalar comparisons, C++ byte fixtures and
   recovery with retained scratch are implemented. Complete independent per-path
