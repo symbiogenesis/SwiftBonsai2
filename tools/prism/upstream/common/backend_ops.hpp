@@ -504,14 +504,14 @@ inline json state::run(const json & a) {
     if(op=="supports") { keys(a,{"Op","Backend","Tensor"}); return {{"Supported",ggml_backend_supports_op(lookup(backends,a.at("Backend")),lookup(tensors,a.at("Tensor")))}}; }
     if(op=="backend-features") {
         keys(a,{"Op","Backend"}); const auto backend=lookup(backends,a.at("Backend"));
-        const auto registry=ggml_backend_dev_backend_reg(ggml_backend_get_device(backend));
+        const auto device=ggml_backend_get_device(backend); const auto registry=ggml_backend_dev_backend_reg(device);
         const auto get=reinterpret_cast<ggml_backend_get_features_t>(ggml_backend_reg_get_proc_address(registry,"ggml_backend_get_features"));
         json features=nullptr;
         if(get) if(const auto * values=get(registry)) {
             features=json::array();
             for(const auto * f=values;f->name;++f) { require(features.size()<1024,"backend feature count exceeds bound"); features.push_back({{"Name",f->name},{"Value",f->value?json(f->value):json(nullptr)}}); }
         }
-        return {{"ProcedureAvailable",get!=nullptr},{"Features",features}};
+        return {{"ProcedureAvailable",get!=nullptr},{"Features",features},{"RegistryName",ggml_backend_reg_name(registry)},{"BackendName",ggml_backend_name(backend)},{"DeviceName",device?json(ggml_backend_dev_name(device)):json(nullptr)}};
     }
     if(op=="tensor-set" || op=="tensor-get") {
         if(a.contains("Truncate")) { keys(a,{"Op","Tensor","File","FileOffset","TensorOffset","Bytes","Truncate"}); require(op=="tensor-get" && a.at("Truncate").is_boolean(),"backend Truncate only applies to tensor-get"); }
