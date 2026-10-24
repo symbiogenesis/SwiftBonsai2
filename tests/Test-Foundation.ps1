@@ -215,6 +215,13 @@ if ($Case -in @('All','ServerPolicy')) {
     Assert ($plan.Arguments -ccontains '--no-agent' -and $plan.Arguments -ccontains '--no-ui-mcp-proxy' -and
         $plan.Arguments -ccontains '--no-ui' -and $plan.Arguments -ccontains '--no-slots' -and
         $plan.Arguments -ccontains '--offline') 'Plan omitted explicit restrictions.'
+    foreach ($setting in @(
+        @{ Flag = '--reasoning'; Value = 'on' }, @{ Flag = '--reasoning-effort'; Value = 'xhigh' },
+        @{ Flag = '--reasoning-budget'; Value = '-1' }, @{ Flag = '--frequency-penalty'; Value = '0.0' }
+    )) {
+        $index = [Array]::IndexOf($plan.Arguments, $setting.Flag)
+        Assert ($index -ge 0 -and $plan.Arguments[$index + 1] -ceq $setting.Value) "Plan omitted explicit inference default: $($setting.Flag)."
+    }
     foreach ($name in @('llama_arg_agent','LLAMACPP_FOO','GGML_BACKEND_PATH','AIP_MODE','aip_http_port',
         'MTMD_BACKEND_DEVICE','HF_TOKEN','HF_ENDPOINT','MODEL_ENDPOINT')) {
         $failureText = $null

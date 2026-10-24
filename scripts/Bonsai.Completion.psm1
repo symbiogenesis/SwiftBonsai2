@@ -72,14 +72,17 @@ function Get-CpuCheckArgument {
     $logVerbosity = if ($ProfileName -eq 'swift-pq2-assessment') { '3' } else { '2' }
     $arguments = @(Get-BonsaiCompletionArgument -ModelPath $ModelPath -Profile $ProfileName) + @(
         '--no-perf', '--log-verbosity', $logVerbosity, '--color', 'off', '--simple-io', '--no-display-prompt',
-        '--conversation', '--jinja', '--single-turn', '--n-predict', [string]$policy.TokenLimit)
-    if ($ProfileName -eq 'reference-cpu') {
-        $arguments += @('--system-prompt', 'You are a helpful assistant.')
-    }
+        '--conversation', '--jinja', '--single-turn', '--n-predict', [string]$policy.TokenLimit,
+        '--reasoning', 'on', '--reasoning-effort', 'xhigh', '--reasoning-budget', '-1',
+        '--temp', '1.0', '--top-p', '0.95', '--top-k', '20', '--min-p', '0.0',
+        '--repeat-penalty', '1.0', '--presence-penalty', '0.0', '--frequency-penalty', '0.0')
     if ($UseAbliterateLora) { $arguments += @('--lora', $AdapterPath) }
     # Swift's template requires a user query. Completion formats an explicit
     # system message on its own before appending the user, which throws. Start
-    # this synthetic conversation with the user; retain embedded default reasoning.
+    # this synthetic conversation with the user. Preserve the publisher template
+    # and request its supported thinking mode rather than adding a system persona.
+    # Sampler/reasoning defaults live here, not in the common prefix: the paired
+    # LoRA qualification deliberately uses its own immutable greedy controls.
     $arguments + @('--prompt', 'Reply with the word ready.')
 }
 

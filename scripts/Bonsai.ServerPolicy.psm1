@@ -95,8 +95,9 @@ function New-BonsaiServerPlan {
         '--spec-type', 'none', '--gpu-layers', '0', '--device', 'none', '--no-kv-offload', '--no-op-offload',
         '--fit', 'off', '--load-mode', 'mmap', '--no-repack', '--offline', '--no-warmup',
         '--threads', '4', '--threads-batch', '4', '--poll', '0', '--poll-batch', '0',
-        '--jinja', '--reasoning', 'auto', '--temp', '1.0', '--top-p', '0.95', '--top-k', '20',
-        '--min-p', '0.0', '--presence-penalty', '0.0', '--repeat-penalty', '1.0',
+        '--jinja', '--reasoning', 'on', '--reasoning-effort', 'xhigh', '--reasoning-budget', '-1',
+        '--temp', '1.0', '--top-p', '0.95', '--top-k', '20',
+        '--min-p', '0.0', '--presence-penalty', '0.0', '--frequency-penalty', '0.0', '--repeat-penalty', '1.0',
         '--n-predict', '4096', '--timeout', '60', '--no-perf', '--log-disable')
     [pscustomobject]@{
         SchemaVersion = 1; Status = 'preflight-only-launch-disabled'; LaunchEnabled = $false

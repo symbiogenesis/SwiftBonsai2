@@ -44,6 +44,12 @@ if ($Case -in @('Arguments', 'All')) {
         Assert ($argsForArm[1] -ceq 'C:\model & data\base.gguf') 'Model path must remain one argv entry.'
         Assert ($argsForArm -cnotcontains '--no-perf' -and $argsForArm -cnotcontains '--system-prompt' -and
             $argsForArm -ccontains '--single-turn' -and $argsForArm -ccontains '--no-log-prefix') 'Timing or Swift single-turn policy changed.'
+        # Production sampler/effort defaults must not leak into the immutable
+        # paired qualification controls or silently change its evidence identity.
+        foreach ($flag in @('--temp', '--top-k', '--top-p', '--min-p', '--repeat-penalty', '--presence-penalty', '--frequency-penalty')) {
+            Assert (@($argsForArm | Where-Object { $_ -ceq $flag }).Count -eq 1) "Duplicate qualification sampler: $flag."
+        }
+        Assert ($argsForArm -cnotcontains '--reasoning-effort' -and $argsForArm -cnotcontains '--reasoning-budget') 'Qualification inherited unrecorded reasoning overrides.'
         $index = [Array]::IndexOf($argsForArm, '--lora-scaled')
         if ($arm -eq 'baseline') { Assert ($index -eq -1) 'Baseline silently enabled the adapter.' }
         else {

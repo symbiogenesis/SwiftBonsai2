@@ -89,7 +89,6 @@ $defaultArguments = @(Get-CpuCheckArgument -ModelPath $model)
 Assert-ArgumentValue -Arguments $defaultArguments -Name '--batch-size' -Value '256'
 Assert-ArgumentValue -Arguments $defaultArguments -Name '--ubatch-size' -Value '128'
 Assert-ArgumentValue -Arguments $defaultArguments -Name '--log-verbosity' -Value '2'
-Assert-ArgumentValue -Arguments $defaultArguments -Name '--system-prompt' -Value 'You are a helpful assistant.'
 $swiftArguments = @(Get-CpuCheckArgument -ModelPath $model -Profile swift-pq2-assessment)
 Assert-ArgumentValue -Arguments $swiftArguments -Name '--batch-size' -Value '128'
 Assert-ArgumentValue -Arguments $swiftArguments -Name '--ubatch-size' -Value '64'
@@ -107,6 +106,17 @@ Assert-Failure { Get-CpuCheckPolicy -UseAbliterateLora } 'Swift adapter was acce
 Assert-Failure { Get-CpuCheckArgument -ModelPath $model -Profile swift-pq2-assessment -UseAbliterateLora } 'Unverified empty adapter path reached native arguments.'
 Assert-Failure { Get-CpuCheckArgument -ModelPath $model -Profile swift-pq2-assessment -AdapterPath $adapterPath } 'Adapter path silently enabled an adapter.'
 foreach ($arguments in @($defaultArguments, $swiftArguments)) {
+    Assert ($arguments -cnotcontains '--system-prompt') 'The check injected an unqualified system persona.'
+    Assert-ArgumentValue -Arguments $arguments -Name '--reasoning' -Value 'on'
+    Assert-ArgumentValue -Arguments $arguments -Name '--reasoning-effort' -Value 'xhigh'
+    Assert-ArgumentValue -Arguments $arguments -Name '--reasoning-budget' -Value '-1'
+    Assert-ArgumentValue -Arguments $arguments -Name '--temp' -Value '1.0'
+    Assert-ArgumentValue -Arguments $arguments -Name '--top-p' -Value '0.95'
+    Assert-ArgumentValue -Arguments $arguments -Name '--top-k' -Value '20'
+    Assert-ArgumentValue -Arguments $arguments -Name '--min-p' -Value '0.0'
+    Assert-ArgumentValue -Arguments $arguments -Name '--repeat-penalty' -Value '1.0'
+    Assert-ArgumentValue -Arguments $arguments -Name '--presence-penalty' -Value '0.0'
+    Assert-ArgumentValue -Arguments $arguments -Name '--frequency-penalty' -Value '0.0'
     Assert-ArgumentValue -Arguments $arguments -Name '--model' -Value $model
     Assert-ArgumentValue -Arguments $arguments -Name '--ctx-size' -Value '8192'
     Assert-ArgumentValue -Arguments $arguments -Name '--parallel' -Value '1'
@@ -120,7 +130,7 @@ foreach ($arguments in @($defaultArguments, $swiftArguments)) {
     foreach ($flag in @('--no-repack', '--no-context-shift', '--offline', '--no-warmup', '--no-perf', '--single-turn')) {
         Assert ($arguments -ccontains $flag) "The CPU check omitted $flag."
     }
-    foreach ($flag in @('--spec-type', '--ctx-checkpoints', '--cache-ram')) {
+    foreach ($flag in @('--spec-type', '--ctx-checkpoints', '--cache-ram', '--chat-template-kwargs')) {
         Assert ($arguments -cnotcontains $flag) "The CPU check passed an unsupported completion flag: $flag."
     }
 }

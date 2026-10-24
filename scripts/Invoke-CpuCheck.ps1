@@ -5,8 +5,9 @@ Runs one synthetic, trusted-input CPU load/decode check; never enables chat serv
 .DESCRIPTION
 Vetted against the pinned tools/completion source and its actual --help. The modern
 llama-cli launches a server, so this check uses the in-process llama-completion.
-The embedded template's default thinking behavior is preserved. Sixteen generated
-tokens establish a bounded decode check, not answer quality or performance.
+The embedded template's thinking mode and xhigh effort are requested explicitly,
+with the publisher sampler. Sixteen generated tokens establish a bounded decode
+check, not answer quality or performance.
 Memory admission reserves the selected fixed service allowance plus 4 GiB available
 headroom. The reference remains 18 GiB; the explicit Swift assessment uses 12 GiB.
 A Windows Job enforces job-wide committed memory, one active process,
