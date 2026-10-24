@@ -89,6 +89,11 @@
         "Reason": "Restore the intended malformed UTF8 skip in safe Rust before retokenizing raw BPE pieces. The pinned decoder swallows invalid_argument; valid pieces and all original Unicode predicates remain required. No CI gate waiver.",
         "OriginalFailureRun": "https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40122224434",
         "Id": "tests/test-tokenizer-1-bpe.cpp"
+      },
+      {
+        "Id": "tests/test-llama-archs.cpp",
+        "OriginalFailureRun": "https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40124618551",
+        "Reason": "Supply three required DSpark fixture keys omitted by the pinned generic architecture test: block_size128, mask_token_id127 and target_layers[1,16]. All151 variants, 128-row comparisons and saver roundtrips remain required; the upstream saver omission remains a visible failure."
       }
     ]
   }

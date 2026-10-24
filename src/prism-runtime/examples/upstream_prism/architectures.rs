@@ -434,6 +434,13 @@ fn metadata(
     m.f("ACTIVATION_SITU_BETA", 4.0)?;
     m.f("ACTIVATION_SITU_LINEAR_BETA", 25.0)?;
     m.f("KDA_GATE_LOWER_BOUND", -5.0)?;
+    if en == "DSPARK" {
+        // The pinned generic fixture predates these required loader keys.
+        // Span all source tokens so every requested row remains a draft output.
+        m.u("DSPARK_BLOCK_SIZE", 128)?;
+        m.u("DSPARK_MASK_TOKEN_ID", 127)?;
+        m.ua("DSPARK_TARGET_LAYERS", &[1, 16])?;
+    }
     if backend && en == "BAILINGMOE3" {
         let old = m.entries.len();
         m.entries.retain(|(k, _)| k != "KDA_SAFE_GATE");
@@ -738,9 +745,9 @@ fn backend_variant(
         let weights = evidence
             .lock()
             .map_err(|_| invalid("architecture weight receipt poisoned"))?;
-        Ok(
-            json!({"Architecture":name,"Moe":moe,"Encode":encode,"SourceAssertions":assertions,"BackendRows":rows,"FloatInputBytes":weights.bytes,"TensorInputs":weights.tensors}),
-        )
+        let value = json!({"Architecture":name,"Moe":moe,"Encode":encode,"SourceAssertions":assertions,"BackendRows":rows,"FloatInputBytes":weights.bytes,"TensorInputs":weights.tensors,"FixtureRepairs":if name=="dspark"{fixture["FixtureRepairs"].clone()}else{json!([])}});
+        drop(weights);
+        Ok(value)
     })();
     let finish = session.finish();
     let v = run?;
@@ -956,6 +963,7 @@ mod tests {
                 "deepseek4",
                 "bailingmoe3",
                 "gemma3n",
+                "dspark",
             ] {
                 let row = array(&f, "Architectures")?
                     .iter()
