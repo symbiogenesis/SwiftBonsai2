@@ -327,8 +327,16 @@ fn diff_equal(e: &Value, a: &Value) -> Result<bool> {
     }
     for (e, a) in e.iter().zip(a) {
         // The original common_chat_msg_diff::operator== omits reasoning_content_delta.
-        for key in ["content_delta", "tool_call_index", "tool_call_delta"] {
-            if field(e, key)? != field(a, key)? {
+        // Source literals may be byte wrappers while the native wire uses strings.
+        if bytes(field(e, "content_delta")?)? != bytes(field(a, "content_delta")?)?
+            || field(e, "tool_call_index")? != field(a, "tool_call_index")?
+        {
+            return Ok(false);
+        }
+        let expected_call = field(e, "tool_call_delta")?;
+        let actual_call = field(a, "tool_call_delta")?;
+        for key in ["name", "arguments", "id"] {
+            if bytes(field(expected_call, key)?)? != bytes(field(actual_call, key)?)? {
                 return Ok(false);
             }
         }
@@ -1039,7 +1047,11 @@ pub(super) fn run_with_options(
                 if boolean(&eval(field(check, "When")?, &results)?)? {
                     stats.fixed += 1;
                     stats.check(
-                        text(check, "Name")?,
+                        &format!(
+                            "{} check {index}: {}",
+                            text(group, "Name")?,
+                            text(check, "Name")?
+                        ),
                         boolean(&eval(field(check, "Value")?, &results)?)?,
                     );
                 }
@@ -1137,6 +1149,44 @@ pub(super) fn run_with_options(
 mod tests {
     use super::*;
     #[test]
+    fn diff_equality_compares_source_string_bytes_and_rejects_changed_fields() -> Result<()> {
+        let expected = json!([{
+            "reasoning_content_delta":"ignored source field",
+            "content_delta":{"Bytes":[104,101,108,108,111]},
+            "tool_call_index":0,
+            "tool_call_delta":{
+                "name":{"Bytes":[102]},
+                "arguments":{"Bytes":[123,125]},
+                "id":{"Bytes":[105,100]}
+            }
+        }]);
+        let actual = json!([{
+            "reasoning_content_delta":"different ignored field",
+            "content_delta":"hello",
+            "tool_call_index":0,
+            "tool_call_delta":{"name":"f","arguments":"{}","id":"id"}
+        }]);
+        assert!(diff_equal(&expected, &actual)?);
+        let mut changed = actual.clone();
+        changed[0]["content_delta"] = json!("Hello");
+        assert!(!diff_equal(&expected, &changed)?);
+        changed = actual.clone();
+        changed[0]["tool_call_index"] = json!(1);
+        assert!(!diff_equal(&expected, &changed)?);
+        for key in ["name", "arguments", "id"] {
+            changed = actual.clone();
+            changed[0]["tool_call_delta"][key] = json!("different");
+            assert!(!diff_equal(&expected, &changed)?);
+        }
+        changed = actual.clone();
+        changed[0]["tool_call_delta"]["arguments"] = json!("{ }");
+        assert!(!diff_equal(&expected, &changed)?);
+        assert!(!diff_equal(&expected, &json!([]))?);
+        assert!(diff_equal(&actual, &expected)?);
+        Ok(())
+    }
+
+    #[test]
     fn source_chat_helper_guards_preserve_bytes_and_json_order() -> Result<()> {
         let _ = fixture()?;
         validate_template_kwargs(
@@ -1173,8 +1223,8 @@ mod tests {
             json!({"name":"f","id":"id","arguments":"{}"})
         );
         assert!(diff_equal(
-            &json!([{"content_delta":"x","tool_call_index":null,"tool_call_delta":{},"reasoning_content_delta":"a"}]),
-            &json!([{"content_delta":"x","tool_call_index":null,"tool_call_delta":{},"reasoning_content_delta":"b"}])
+            &json!([{"content_delta":"x","tool_call_index":null,"tool_call_delta":{"name":"","arguments":"","id":""},"reasoning_content_delta":"a"}]),
+            &json!([{"content_delta":"x","tool_call_index":null,"tool_call_delta":{"name":"","arguments":"","id":""},"reasoning_content_delta":"b"}])
         )?);
         assert_eq!(codepoints(&[0xeb, 0x82, b'x']), vec![0xfffd, 0xfffd, 120]);
         Ok(())
