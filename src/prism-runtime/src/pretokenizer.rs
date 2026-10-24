@@ -31,6 +31,16 @@ pub struct Qwen35PreTokenizer {
     _validated: (),
 }
 
+/// Checked ordinary-text pieces borrowed from the original UTF-8 input.
+///
+/// Each item validates its byte and piece bounds before yielding a nonempty
+/// slice. Fully consuming the iterator validates the entire input. After an
+/// error it yields no further items. Scanning uses constant scratch space.
+pub struct Qwen35Pieces<'a> {
+    remaining: &'a str,
+    emitted: usize,
+}
+
 impl Qwen35PreTokenizer {
     /// Requires exact string metadata `tokenizer.ggml.model = "gpt2"` and
     /// `tokenizer.ggml.pre = "qwen35"`.
@@ -60,31 +70,66 @@ impl Qwen35PreTokenizer {
     /// rather than split, since invented boundaries would change merge results.
     ///
     /// Work is linear in input scalars with a bounded binary category lookup;
-    /// scratch is at most 65,536 borrowed slices and no copied input characters.
+    /// storage is at most 65,536 borrowed slices and no copied input characters.
+    /// Use [`Self::pieces`] to consume the same boundaries without collecting.
     ///
     /// # Errors
     /// Rejects input/piece limits and allocation failures.
     pub fn split<'a>(&self, text: &'a str) -> Result<Vec<&'a str>> {
-        if text.len() > MAX_BPE_INPUT_BYTES {
-            return Err(invalid("Qwen35 pretokenizer input exceeds byte limit"));
-        }
+        let boundaries = self.pieces(text)?;
         let mut pieces = Vec::new();
         pieces.try_reserve_exact(text.len().min(MAX_BPE_INPUT_PIECES))?;
-        let mut remaining = text;
-        while !remaining.is_empty() {
-            let end = piece_end(remaining);
-            if end > MAX_BPE_PIECE_BYTES {
-                return Err(invalid("Qwen35 pretokenizer piece exceeds byte limit"));
-            }
-            if pieces.len() == MAX_BPE_INPUT_PIECES {
-                return Err(invalid("Qwen35 pretokenizer input exceeds piece limit"));
-            }
-            pieces.push(&remaining[..end]);
-            remaining = &remaining[end..];
+        for piece in boundaries {
+            pieces.push(piece?);
         }
         Ok(pieces)
     }
+
+    /// Iterates the same borrowed boundaries as [`Self::split`] without allocating.
+    ///
+    /// Input length is checked immediately. Per-piece and piece-count limits
+    /// are checked as pieces are consumed; finish the iterator to validate all
+    /// input. An error terminates iteration. No bytes are copied or normalized.
+    ///
+    /// # Errors
+    /// Rejects input above the byte limit. Iterator items reject piece limits.
+    pub fn pieces<'a>(&self, text: &'a str) -> Result<Qwen35Pieces<'a>> {
+        if text.len() > MAX_BPE_INPUT_BYTES {
+            return Err(invalid("Qwen35 pretokenizer input exceeds byte limit"));
+        }
+        Ok(Qwen35Pieces {
+            remaining: text,
+            emitted: 0,
+        })
+    }
 }
+
+impl<'a> Iterator for Qwen35Pieces<'a> {
+    type Item = Result<&'a str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining.is_empty() {
+            return None;
+        }
+        let end = piece_end(self.remaining);
+        if end > MAX_BPE_PIECE_BYTES {
+            self.remaining = "";
+            return Some(Err(invalid("Qwen35 pretokenizer piece exceeds byte limit")));
+        }
+        if self.emitted == MAX_BPE_INPUT_PIECES {
+            self.remaining = "";
+            return Some(Err(invalid(
+                "Qwen35 pretokenizer input exceeds piece limit",
+            )));
+        }
+        let (piece, remaining) = self.remaining.split_at(end);
+        self.remaining = remaining;
+        self.emitted += 1;
+        Some(Ok(piece))
+    }
+}
+
+impl std::iter::FusedIterator for Qwen35Pieces<'_> {}
 
 fn piece_end(text: &str) -> usize {
     let mut characters = text.char_indices();

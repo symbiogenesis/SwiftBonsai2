@@ -159,6 +159,48 @@ fn input_byte_and_piece_count_limits_fail_without_invented_boundaries() -> Resul
 }
 
 #[test]
+fn checked_iterator_borrows_boundaries_and_fuses_after_limit_errors() -> Result<()> {
+    let splitter = Qwen35PreTokenizer::from_metadata(&metadata())?;
+    let input = "can't  é1\r\n🦀";
+    let mut pieces = splitter.pieces(input)?;
+    let mut offset = 0;
+    for expected in ["can", "'t", " ", " é", "1", "\r\n", "🦀"] {
+        let piece = pieces.next().ok_or("missing expected boundary")??;
+        assert_eq!(piece, expected);
+        assert_eq!(piece.as_ptr(), input[offset..].as_ptr());
+        offset += piece.len();
+    }
+    assert_eq!(offset, input.len());
+    assert!(pieces.next().is_none());
+    assert!(pieces.next().is_none());
+
+    // A valid prefix is available before a later oversized match is rejected.
+    let oversized_piece = "1".to_owned() + &"a".repeat(MAX_BPE_PIECE_BYTES + 1);
+    let mut pieces = splitter.pieces(&oversized_piece)?;
+    assert_eq!(pieces.next().ok_or("missing valid prefix")??, "1");
+    assert!(pieces.next().is_some_and(|piece| {
+        piece.is_err_and(|error| error.to_string().contains("piece exceeds byte limit"))
+    }));
+    assert!(pieces.next().is_none());
+
+    let too_many = "1".repeat(MAX_BPE_INPUT_PIECES + 1);
+    let mut pieces = splitter.pieces(&too_many)?;
+    for _ in 0..MAX_BPE_INPUT_PIECES {
+        assert_eq!(pieces.next().ok_or("missing permitted piece")??, "1");
+    }
+    assert!(pieces.next().is_some_and(|piece| {
+        piece.is_err_and(|error| error.to_string().contains("input exceeds piece limit"))
+    }));
+    assert!(pieces.next().is_none());
+    assert!(
+        splitter
+            .pieces(&"1".repeat(MAX_BPE_INPUT_BYTES + 1))
+            .is_err()
+    );
+    Ok(())
+}
+
+#[test]
 fn missing_mistyped_and_other_tokenizer_metadata_is_rejected() {
     for key in ["tokenizer.ggml.model", "tokenizer.ggml.pre"] {
         let mut values = metadata();

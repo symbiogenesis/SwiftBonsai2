@@ -42,6 +42,14 @@ struct Node {
 // deterministically merge at the leftmost surviving position.
 type Candidate = (usize, usize, usize, u32, u32, u32);
 
+// Owned by one encoding request: immutable BPE rules remain freely shareable.
+// Clearing between pieces retains capacity bounded by the largest piece seen.
+#[derive(Debug, Default)]
+pub(crate) struct BpeScratch {
+    nodes: Vec<Node>,
+    candidates: BinaryHeap<Reverse<Candidate>>,
+}
+
 /// Bounded normal-token BPE rules, independent of pretokenization and templates.
 ///
 /// Every byte starts as its normal single-byte vocabulary ID. At each step the
@@ -170,7 +178,7 @@ impl Bpe {
     /// tokens, final outputs above `max_tokens`, and allocation failures.
     pub fn encode_piece(&self, bytes: &[u8], max_tokens: usize) -> Result<Vec<u32>> {
         let mut output = Vec::new();
-        self.encode_piece_into(bytes, max_tokens, &mut output)?;
+        self.encode_piece_into(bytes, max_tokens, &mut output, &mut BpeScratch::default())?;
         Ok(output)
     }
 
@@ -181,6 +189,7 @@ impl Bpe {
         bytes: &[u8],
         max_tokens: usize,
         output: &mut Vec<u32>,
+        scratch: &mut BpeScratch,
     ) -> Result<()> {
         if bytes.len() > MAX_BPE_PIECE_BYTES {
             return Err(invalid("BPE input piece exceeds byte limit"));
@@ -191,7 +200,9 @@ impl Bpe {
         if max_tokens == 0 {
             return Err(invalid("BPE output exceeds token limit"));
         }
-        let mut nodes = Vec::new();
+        let BpeScratch { nodes, candidates } = scratch;
+        nodes.clear();
+        candidates.clear();
         nodes.try_reserve_exact(bytes.len())?;
         for (index, &byte) in bytes.iter().enumerate() {
             let token = self.bytes[usize::from(byte)]
@@ -203,10 +214,9 @@ impl Bpe {
                 alive: true,
             });
         }
-        let mut candidates = BinaryHeap::new();
         candidates.try_reserve_exact(bytes.len() * 3)?;
         for left in 0..bytes.len() - 1 {
-            if let Some(candidate) = self.candidate(&nodes, left) {
+            if let Some(candidate) = self.candidate(nodes, left) {
                 candidates.push(candidate);
             }
         }
@@ -230,11 +240,11 @@ impl Bpe {
             }
             remaining -= 1;
             if let Some(previous) = nodes[left].previous
-                && let Some(candidate) = self.candidate(&nodes, previous)
+                && let Some(candidate) = self.candidate(nodes, previous)
             {
                 candidates.push(candidate);
             }
-            if let Some(candidate) = self.candidate(&nodes, left) {
+            if let Some(candidate) = self.candidate(nodes, left) {
                 candidates.push(candidate);
             }
         }
@@ -255,6 +265,8 @@ impl Bpe {
     /// This does not find the boundaries itself. At most 64 Ki pieces and 1 MiB
     /// total bytes are admitted, with the same per-piece bound as
     /// [`Self::encode_piece`]. Empty pieces contribute no output.
+    /// Node and candidate storage is reused across pieces, with capacity bounded
+    /// by the largest piece in this request.
     ///
     /// # Errors
     /// Rejects input bounds, missing normal byte tokens, aggregate outputs above
@@ -275,8 +287,9 @@ impl Bpe {
         }
         let mut output = Vec::new();
         output.try_reserve_exact(total_bytes.min(max_tokens))?;
+        let mut scratch = BpeScratch::default();
         for piece in pieces {
-            self.encode_piece_into(piece, max_tokens - output.len(), &mut output)?;
+            self.encode_piece_into(piece, max_tokens - output.len(), &mut output, &mut scratch)?;
         }
         Ok(output)
     }

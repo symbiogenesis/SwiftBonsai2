@@ -134,6 +134,31 @@ fn merged_pieces_share_the_aggregate_token_allowance() -> Result<()> {
 }
 
 #[test]
+fn successive_unequal_pieces_keep_nodes_and_merge_candidates_independent() -> Result<()> {
+    let tokens = [
+        ("a", 1),
+        ("aa", 1),
+        ("aaa", 1),
+        ("b", 1),
+        ("ab", 1),
+        ("aab", 1),
+    ];
+    let bpe = Bpe::from_metadata(
+        &metadata(&tokens, &["a a", "aa a", "a b", "aa b"]),
+        tokens.len(),
+    )?;
+    // Repeated leftmost ties leave stale candidates; neither those candidates
+    // nor old links may affect the next shorter, longer or empty piece.
+    let pieces: &[&[u8]] = &[b"aaaaa", b"", b"a", b"aab", b"b", b"aaa", b"ab"];
+    let expected = [1, 2, 0, 5, 3, 2, 4];
+    assert_eq!(bpe.encode_pieces(pieces, expected.len())?, expected);
+    assert!(bpe.encode_pieces(pieces, expected.len() - 1).is_err());
+    assert!(bpe.encode_pieces(&[b"aaaaa", b"aax"], 10).is_err());
+    assert_eq!(bpe.encode_pieces(pieces, usize::MAX)?, expected);
+    Ok(())
+}
+
+#[test]
 fn all_bytes_and_unicode_round_trip_without_merges() -> Result<()> {
     let values = complete_metadata()?;
     let vocabulary = Vocabulary::from_metadata(&values, 256)?;

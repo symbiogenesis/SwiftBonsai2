@@ -8,7 +8,7 @@
 
 use bonsai_gguf::Metadata;
 
-use crate::bpe::{Bpe, MAX_BPE_INPUT_BYTES, MAX_BPE_INPUT_PIECES};
+use crate::bpe::{Bpe, BpeScratch, MAX_BPE_INPUT_BYTES, MAX_BPE_INPUT_PIECES};
 use crate::pretokenizer::Qwen35PreTokenizer;
 use crate::special_input::{InputSegment, SpecialInput, SpecialInputPolicy};
 use crate::special_tokens::SpecialTokens;
@@ -67,6 +67,7 @@ impl Tokenizer {
         let segments = self.specials.split(text, policy, MAX_BPE_INPUT_PIECES)?;
         let mut output = Vec::new();
         output.try_reserve_exact(text.len().min(max_tokens))?;
+        let mut scratch = BpeScratch::default();
         let mut piece_count = 0_usize;
         for segment in segments {
             match segment {
@@ -78,13 +79,14 @@ impl Tokenizer {
                     output.push(token);
                 }
                 InputSegment::Text(text) => {
-                    let pieces = self.pretokenizer.split(text)?;
-                    charge_pieces(&mut piece_count, pieces.len())?;
-                    for piece in pieces {
+                    for piece in self.pretokenizer.pieces(text)? {
+                        let piece = piece?;
+                        charge_pieces(&mut piece_count, 1)?;
                         self.bpe.encode_piece_into(
                             piece.as_bytes(),
                             max_tokens - output.len(),
                             &mut output,
+                            &mut scratch,
                         )?;
                     }
                 }

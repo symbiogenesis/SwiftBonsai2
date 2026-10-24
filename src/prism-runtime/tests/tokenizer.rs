@@ -145,6 +145,39 @@ fn text_encoding_charges_piece_limits_across_special_boundaries() -> Result<()> 
         .err()
         .ok_or("global piece limit must include all ordinary and special segments")?;
     assert!(error.to_string().contains("total piece count"), "{error}");
+    let exact = "1".repeat(65_534) + "<stop>1";
+    assert_eq!(
+        tokenizer
+            .encode(&exact, 65_536, SpecialInputPolicy::Parse)?
+            .len(),
+        65_536
+    );
+    assert!(
+        tokenizer
+            .encode(&(exact + "1"), 65_537, SpecialInputPolicy::Parse)
+            .is_err_and(|error| error.to_string().contains("total piece count"))
+    );
+    Ok(())
+}
+
+#[test]
+fn text_encoding_keeps_unequal_pieces_independent_across_special_boundaries() -> Result<()> {
+    let tokenizer = Tokenizer::from_metadata(&metadata()?, 260)?;
+    let text = "abababab1a<stop>ab ab1";
+    let expected = [256, 256, 256, 256, 49, 97, 258, 256, 32, 256, 49];
+    assert_eq!(
+        tokenizer.encode(text, expected.len(), SpecialInputPolicy::Parse)?,
+        expected
+    );
+    assert!(
+        tokenizer
+            .encode(text, expected.len() - 1, SpecialInputPolicy::Parse)
+            .is_err()
+    );
+    assert_eq!(
+        tokenizer.encode(text, usize::MAX, SpecialInputPolicy::Parse)?,
+        expected
+    );
     Ok(())
 }
 
