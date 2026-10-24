@@ -129,6 +129,6 @@ object!(ReviewRecord {
 object!(Prompt {
     id: String => "id",
     category: String => "category",
-    _text: String => "text",
+    text: String => "text",
     _review_notes: String => "reviewNotes",
 });

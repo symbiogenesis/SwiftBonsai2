@@ -1,34 +1,32 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([string])]
-param([Parameter(Mandatory)][ValidateSet('Arguments', 'All')][string]$Case)
+param(
+    [Parameter(Mandatory)][ValidateSet('Arguments', 'All')][string]$Case,
+    [string]$ToolPath
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
-Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.LoraEvaluation.psm1') -Force
+if ($Case -eq 'All' -and $env:GITHUB_ACTIONS -ne 'true') { throw 'Select the focused Arguments case locally.' }
+Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Tools.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 
-
-if ($Case -in @('Arguments', 'All')) {
-    foreach ($arm in @('baseline', 'zero', 'adapter')) {
-        $argsForArm = @(Get-BonsaiLoraEvaluationArgument -ModelPath 'C:\model & data\base.gguf' -AdapterPath 'bonsai-abliterate-lora.gguf' -Arm $arm -Prompt 'Write a short scene.')
-        Assert ($argsForArm[1] -ceq 'C:\model & data\base.gguf') 'Model path must remain one argv entry.'
-        Assert ($argsForArm -cnotcontains '--no-perf' -and $argsForArm -cnotcontains '--system-prompt' -and
-            $argsForArm -ccontains '--single-turn' -and $argsForArm -ccontains '--no-log-prefix') 'Timing or Swift single-turn policy changed.'
-        # Production sampler/effort defaults must not leak into the immutable
-        # paired qualification controls or silently change its evidence identity.
-        foreach ($flag in @('--temp', '--top-k', '--top-p', '--min-p', '--repeat-penalty', '--presence-penalty', '--frequency-penalty')) {
-            Assert (@($argsForArm | Where-Object { $_ -ceq $flag }).Count -eq 1) "Duplicate qualification sampler: $flag."
-        }
-        Assert ($argsForArm -cnotcontains '--reasoning-effort' -and $argsForArm -cnotcontains '--reasoning-budget') 'Qualification inherited unrecorded reasoning overrides.'
-        $index = [Array]::IndexOf($argsForArm, '--lora-scaled')
-        if ($arm -eq 'baseline') { Assert ($index -eq -1) 'Baseline silently enabled the adapter.' }
-        else {
-            $scale = if ($arm -eq 'zero') { '0' } else { '1' }
-            Assert ($index -ge 0 -and $argsForArm[$index + 1] -ceq ('bonsai-abliterate-lora.gguf:' + $scale)) 'Pinned parser needs one relative FNAME:SCALE argument.'
-        }
+# Rust owns the pure argument regressions. Exercise the packaged bridge with
+# independently frozen control identities for both approved representations.
+$fixture = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'fixtures/lora-qualification-v1.json') | ConvertFrom-Json -AsHashtable -DateKind String
+$model = 'C:\model & data\base.gguf'
+foreach ($vector in $fixture.controlVectors) {
+    $result = Invoke-BonsaiTool -Command qualification -ToolPath $ToolPath -Request @{
+        operation = 'invocations'; controls = $vector.controls; modelPath = $model
     }
-    Assert-Failure { Get-BonsaiLoraEvaluationArgument -ModelPath 'base.gguf' -AdapterPath 'C:\data\adapter.gguf' -Arm zero -Prompt 'Write.' }
-    Assert-Failure { Get-BonsaiLoraEvaluationArgument -ModelPath 'base.gguf' -AdapterPath 'bonsai-abliterate-lora.gguf' -Arm baseline -Prompt ('x' * 4097) }
+    Assert ($result.ControlsSha256 -ceq $vector.sha256 -and $result.Samples.Count -eq 28) 'Packaged invocations changed the recorded control identity or sample count.'
+    Assert ($result.Samples[0].id -ceq $fixture.plan.Schedule[0].sampleId) 'Packaged invocation order changed.'
+    foreach ($sample in $result.Samples) {
+        Assert ($sample.arguments[1] -ceq $model -and $sample.arguments -cnotcontains '--reasoning-effort') 'The bridge changed an argv token or inherited production reasoning settings.'
+    }
 }
-'Focused LoRA evaluation contract checks passed.'
+$plan = & (Join-Path $PSScriptRoot '../scripts/Invoke-LoraQualification.ps1') -DataDirectory ([IO.Path]::GetTempPath()) -PlanOnly -UseRepackedPtq1 -ToolPath $ToolPath
+Assert (-not $plan.ModelProcessStarted -and $plan.PairedSamples -eq 24 -and $plan.ZeroScaleSamples -eq 4 -and
+    $plan.ServiceCeilingBytes -eq 12GB -and $plan.PhysicalReserveBytes -eq 4GB -and $plan.PerSampleTimeoutSeconds -eq 600) 'The nonlaunching wrapper lost the shared capture policy.'
+'Focused packaged LoRA invocation checks passed.'

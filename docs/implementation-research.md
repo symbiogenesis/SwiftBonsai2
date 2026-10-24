@@ -117,7 +117,11 @@ priority and power hints remain workload-dependent tuning candidates.
 Rust is the default for repository-owned systems code. Safe policy/tooling and
 the CPU reference forbid unsafe code; Win32 and Prism FFI/native-loader calls
 remain small audited boundaries. PowerShell owns installation/build orchestration
-and delegates maintenance, credentials and qualification scoring to Rust.
+and delegates maintenance, credentials, CPU completion policy and qualification
+planning/scoring to Rust. The shared `bonsai-cpu-policy` crate owns profile limits,
+memory accounting, common completion flags and explicit source/PTQ1 selection;
+the broker reuses its profile limits and batch sizes. Qualification produces argv
+from its validated controls and returns their canonical identity with the plan.
 The [language standards](validation.md) distinguish these first-party rules from
 the pinned external engine's warning policy.
 

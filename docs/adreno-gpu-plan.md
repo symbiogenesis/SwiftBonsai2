@@ -14,7 +14,7 @@ follows Rust CPU parity and needs its own GPU implementation and evidence.
 | --- | --- |
 | [Assessment lock](../config/swift-assessment.lock.json) pins the 6.71 GiB PQ2 artifact, Prism `73bfe6cc485554822f80c473a3c0c4f25e80f41b` and `win-cpu-arm64` package | Installed runtime is a CPU reference |
 | [Baseline](../scripts/Build-Engine.ps1) and [overlay](../scripts/Build-PrismEngine.ps1) builds disable Vulkan/OpenCL | A separate GPU recipe is required |
-| [Completion](../scripts/Bonsai.Completion.psm1), [server](../scripts/Bonsai.ServerPolicy.psm1) and [broker](../src/broker/src/launch_policy.rs) select `--gpu-layers 0` / `--device none` | Drivers alone do not activate offload; server policy also disables KV/operation offload |
+| [Completion](../src/cpu-policy/src/lib.rs), [server](../scripts/Bonsai.ServerPolicy.psm1) and [broker](../src/broker/src/launch_policy.rs) select `--gpu-layers 0` / `--device none` | Drivers alone do not activate offload; server policy also disables KV/operation offload |
 | [Rust runtime](../src/prism-runtime/README.md) uses scalar/NEON CPU kernels | Reusable storage does not provide GPU execution |
 | [Doctor](../scripts/Doctor.ps1) inventories graphics identity/driver | Vulkan loader/ICD, features, kernels and budgets still need qualification |
 

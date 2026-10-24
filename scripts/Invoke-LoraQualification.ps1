@@ -24,18 +24,18 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Qualification.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'Bonsai.LoraEvaluation.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'Bonsai.Completion.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
 $data = Resolve-ExternalPath $DataDirectory
-$plan = Get-BonsaiLoraQualificationPlan
-$contract = $plan.Contract
 $representation = if ($UseRepackedPtq1) { 'current-repacked-PTQ1_0' } else { 'PQ2_0' }
+$plan = Get-BonsaiLoraQualificationPlan -ToolPath $ToolPath -WeightRepresentation $representation
+$contract = $plan.Contract
+$policy = [pscustomobject]$plan.CpuPolicy
 if ($PlanOnly) {
     return [pscustomobject]@{ Status = 'plan-only'; ModelProcessStarted = $false
         ContractSha256 = $plan.ContractSha256; WeightRepresentation = $representation
         PairedSamples = $plan.Schedule.Count; ZeroScaleSamples = $contract.prompts.Count
-        ServiceCeilingBytes = 12GB; PhysicalReserveBytes = 4GB; PerSampleTimeoutSeconds = 600
+        ServiceCeilingBytes = $policy.ServiceCeilingBytes; PhysicalReserveBytes = $policy.AvailableMemoryFloorBytes
+        PerSampleTimeoutSeconds = $policy.TimeoutSeconds
         MandatoryQualityReview = $true; MandatoryLogitsAndBasisVerification = $true }
 }
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64' -or
@@ -54,25 +54,23 @@ if ($admission.Status -cne 'admission-passed') { throw 'The unchanged 16 GiB ava
 $lockPath = Join-Path $PSScriptRoot '../config/swift-assessment.lock.json'
 $lock = Read-BonsaiLock $lockPath
 $adapterLock = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/swift-lora.lock.json') | ConvertFrom-Json -AsHashtable -DateKind String
+if ($admission.ModelRevision -cne $lock.model.revision -or $admission.RuntimeCommit -cne $lock.runtime.commit) { throw 'CPU admission and qualification artifact pins disagree.' }
 $runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly
 $adapter = & (Join-Path $PSScriptRoot 'Get-Adapter.ps1') -DataDirectory $data -VerifyOnly
 $runtimeDirectory = Resolve-ExternalPath ([IO.Path]::GetDirectoryName($runtime.ServerPath))
 $executable = Resolve-ExternalPath (Join-Path $runtimeDirectory 'llama-completion.exe')
 Assert-Arm64PE $executable
-$policy = Get-CpuCheckPolicy -Profile swift-pq2-assessment -UseAbliterateLora -UseRepackedPtq1:$UseRepackedPtq1
-$derived = $null
-if ($UseRepackedPtq1) {
-    $derived = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../config/swift.ptq1-export.json') | ConvertFrom-Json -AsHashtable -DateKind String
-}
-$artifact = Get-BonsaiCompletionArtifact -Lock $lock -Policy $policy -Derived $derived
-$modelBytes = $artifact.Bytes
-$modelPath = Resolve-ExternalPath (Join-Path $data -ChildPath 'models', $lock.model.revision, $artifact.Filename)
+$modelBytes = $admission.EstimatedWeightBytes
+$modelPath = $admission.ModelPath
 $controls = @{}
 foreach ($key in $contract.controls.Keys) { $controls[$key] = $contract.controls[$key] }
 $controls.modelSha256 = $contract.representations[$representation]
 $controls.weightRepresentation = $representation
-if ($artifact.Sha256 -cne $controls.modelSha256) { throw 'Selected artifact and qualification controls disagree.' }
-$controlDigest = Get-BonsaiLoraControlDigest $controls
+if ($admission.ArtifactSha256 -cne $controls.modelSha256) { throw 'Selected artifact and qualification controls disagree.' }
+$invocations = Invoke-BonsaiTool -Command qualification -ToolPath $ToolPath -Request @{
+    operation = 'invocations'; controls = $controls; modelPath = $modelPath
+}
+$controlDigest = $invocations.ControlsSha256
 if ($lock.runtime.commit -cne $controls.runtimeCommit -or $adapterLock.adapter.sha256 -cne $controls.adapterSha256) { throw 'Runtime/adapter and qualification controls disagree.' }
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-LoraQualification-' + [guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)
@@ -134,21 +132,12 @@ try {
     $null = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly
     Save-CaptureEvidence
     $nativeSamples = @(
-        foreach ($scheduled in $plan.Schedule) {
-            $prompt = @($contract.prompts | Where-Object { $_.id -ceq $scheduled.promptId })[0]
-            $lane = Resolve-ExternalPath (Join-Path $scratch $scheduled.sampleId)
+        foreach ($sample in $invocations.Samples) {
+            $lane = Resolve-ExternalPath (Join-Path $scratch $sample.id)
             [void][IO.Directory]::CreateDirectory($lane)
-            $arguments = @(Get-BonsaiLoraEvaluationArgument -ModelPath $modelPath -AdapterPath 'bonsai-abliterate-lora.gguf' -Arm $scheduled.arm -Prompt $prompt.text)
+            $arguments = [string[]]$sample.arguments
             $arguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $lane 'arguments.json') -Encoding utf8
-            @{ id = $scheduled.sampleId; arguments = $arguments; evidenceDirectory = $lane }
-        }
-        foreach ($prompt in $contract.prompts) {
-            $id = 'zero-' + $prompt.id
-            $lane = Resolve-ExternalPath (Join-Path $scratch $id)
-            [void][IO.Directory]::CreateDirectory($lane)
-            $arguments = @(Get-BonsaiLoraEvaluationArgument -ModelPath $modelPath -AdapterPath 'bonsai-abliterate-lora.gguf' -Arm zero -Prompt $prompt.text)
-            $arguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $lane 'arguments.json') -Encoding utf8
-            @{ id = $id; arguments = $arguments; evidenceDirectory = $lane }
+            @{ id = $sample.id; arguments = $arguments; evidenceDirectory = $lane }
         }
     )
     $captureFailure = $null
@@ -160,8 +149,9 @@ try {
                 @{ path = $modelPath; bytes = [long]$modelBytes; sha256 = $controls.modelSha256 },
                 @{ path = $copyPath; bytes = [long]$adapterLock.adapter.bytes; sha256 = $controls.adapterSha256 }
             )
-            memoryLimitBytes = 12GB; requiredAvailableBytes = 16GB; physicalReserveBytes = 4GB
-            timeoutSeconds = 600; stdoutLimitBytes = 4MB; stderrLimitBytes = 64MB
+            memoryLimitBytes = [long]$policy.ServiceCeilingBytes; requiredAvailableBytes = [long]$policy.RequiredAvailableBytes
+            physicalReserveBytes = [long]$policy.AvailableMemoryFloorBytes
+            timeoutSeconds = [int]$policy.TimeoutSeconds; stdoutLimitBytes = 4MB; stderrLimitBytes = 64MB
             requireNonemptyStdout = $false; ciOnly = $true
         } -TimeoutSeconds 0
         $receipt.ModelProcessStarted = $supervision.ModelProcessStarted
@@ -196,7 +186,7 @@ try {
         Save-CaptureEvidence
     }
     if ($captureFailure) { throw $captureFailure }
-    $qualification = Test-BonsaiLoraQualification -Evidence $evidence
+    $qualification = Test-BonsaiLoraQualification -Evidence $evidence -ToolPath $ToolPath
     $qualification | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $scratch 'qualification.json') -Encoding utf8
     $receipt.Status = 'capture-completed'; $receipt.QualificationStatus = $qualification.Status
     Save-CaptureEvidence

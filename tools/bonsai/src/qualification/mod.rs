@@ -4,6 +4,7 @@
     reason = "Fixed JSON controls and integer-valued identities require exact equality."
 )]
 
+mod invocation;
 mod schema;
 mod score;
 #[cfg(test)]
@@ -324,7 +325,7 @@ fn take<T: for<'de> Deserialize<'de>>(request: &mut Map<String, Value>, key: &st
     )
 }
 
-/// Runs a plan, controls, score, or bounded file-score qualification request.
+/// Runs fixed plans/invocations, controls, scores or bounded file-score requests.
 ///
 /// # Errors
 /// Rejects malformed schemas, changed pins, mismatched evidence, unsafe external
@@ -338,7 +339,28 @@ pub fn run(request: Value) -> Result<Value> {
     let policy = policy()?;
     let result = match operation.as_str() {
         "plan" => {
-            json!({"Contract": policy.contract, "ContractSha256": policy.contract_sha256, "Schedule": policy.schedule})
+            let mut plan = json!({"Contract": policy.contract, "ContractSha256": policy.contract_sha256, "Schedule": policy.schedule});
+            if let Some(representation) = request.remove("weightRepresentation") {
+                let representation: String = decode(representation)?;
+                let repacked = match representation.as_str() {
+                    "PQ2_0" => false,
+                    "current-repacked-PTQ1_0" => true,
+                    _ => return Err("Unpinned capture weight representation.".into()),
+                };
+                plan["CpuPolicy"] = bonsai_cpu_policy::policy(
+                    bonsai_cpu_policy::Profile::SwiftPq2Assessment,
+                    true,
+                    repacked,
+                )?;
+            }
+            plan
+        }
+        "invocations" => {
+            let controls = take(&mut request, "controls")?;
+            let model_path: String = take(&mut request, "modelPath")?;
+            let (sha256, _) = control_identity(&controls, &policy)?;
+            let samples = invocation::samples(&policy, &controls, &model_path)?;
+            json!({"ControlsSha256": sha256, "Samples": samples})
         }
         "controls" => {
             let controls = take(&mut request, "controls")?;

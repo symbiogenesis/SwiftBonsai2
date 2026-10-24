@@ -23,8 +23,11 @@ function Get-BonsaiLoraQualificationPlan {
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
-    param([string]$ToolPath)
-    $result = Invoke-BonsaiTool -Command qualification -Request @{ operation = 'plan' } -ToolPath $ToolPath
+    param([string]$ToolPath,
+          [ValidateSet('PQ2_0','current-repacked-PTQ1_0')][string]$WeightRepresentation)
+    $request = @{ operation = 'plan' }
+    if ($PSBoundParameters.ContainsKey('WeightRepresentation')) { $request.weightRepresentation = $WeightRepresentation }
+    $result = Invoke-BonsaiTool -Command qualification -Request $request -ToolPath $ToolPath
     return [pscustomobject]$result
 }
 

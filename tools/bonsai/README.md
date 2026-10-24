@@ -26,7 +26,7 @@ Key creation with `-WhatIf` creates nothing and resolves no executable. Planning
 may resolve the maintenance tool but never starts inference.
 
 These wrappers require `bonsai-tools` version 0.1.0, protocol 3. Protocol 3 moves
-CPU policy and artifact selection into Rust. Older
+CPU policy, artifact selection and paired-evaluation arguments into Rust. Older
 binaries are rejected during the version handshake before a sample can start.
 
 ## Command boundary
@@ -53,7 +53,13 @@ available-memory observation. Its request contains `operation: "plan"`,
 `dataDirectory`, `profile`, `useAbliterateLora` and `useRepackedPtq1`. It returns
 the policy, compiled pins, selected paths and complete CPU-check argv without
 reading model bytes or starting inference. `Invoke-CpuCheck.ps1 -CheckOnly`
-uses this operation; the shared Rust crate owns its pure policy.
+uses this operation; the former per-function PowerShell policy helpers are removed.
+
+Qualification `invocations` requests take `modelPath` and validated `controls`.
+They return all 24 paired and four zero-scale argument vectors with the same
+`ControlsSha256` used for scoring. Qualification `plan` optionally accepts
+`weightRepresentation` to include the shared capture memory policy. The sampler
+and reasoning settings of ordinary CPU checks remain distinct from qualification.
 
 Completion supervision retains verified artifact handles and owns the complete
 child Job lifetime. It checks parent PID/creation time/liveness, physical/process
@@ -75,7 +81,7 @@ Missing human reviews, native logits or basis evidence remain pending; known
 regressions still reject. Scoring never launches inference.
 
 Frozen pre-port PowerShell fixtures cover complete CPU policies, artifact identities
-and argument vectors. Pure
+and argument vectors, including Unicode prompts and adapter scale syntax. Pure
 policy tests run in Rust; focused script checks cover the packaged JSON bridge.
 
 ## Development checks
