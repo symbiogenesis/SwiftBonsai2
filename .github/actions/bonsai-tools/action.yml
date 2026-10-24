@@ -1,27 +1,48 @@
-name: Build packaged Bonsai tools
-description: Build the pinned native Windows ARM64 maintenance CLI once for a job.
+name: Reuse packaged Bonsai tools
+description: Reuse an exact native Windows ARM64 CLI; build it only when its inputs change.
+inputs:
+  require-compiler:
+    description: Also prepare the Rust compiler and Cargo target cache for subsequent builds.
+    default: 'false'
 runs:
   using: composite
   steps:
-    - name: Reuse the pinned native Rust compiler
-      uses: ./.github/actions/rust-toolchain
-      with:
-        toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
-    - name: Identify the pinned native Rust compiler
+    - name: Select the exact packaged CLI identity and external paths
       shell: pwsh
       working-directory: ${{ runner.temp }}
+      env:
+        TOOLS_SOURCE_ID: ${{ hashFiles('Cargo.toml', 'Cargo.lock', '**/Cargo.toml', 'tools/bonsai/**', 'src/artifacts/**', 'src/cpu-policy/**', 'src/windows-*/**', '.cargo/**', 'rust-toolchain.toml', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/**', '.github/actions/bonsai-tools/action.yml') }}
+        REQUIRE_COMPILER: ${{ inputs.require-compiler }}
+        RUNNER_ENVIRONMENT: ${{ runner.environment }}
       run: |
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'
-        $PSNativeCommandUseErrorActionPreference = $true
-        $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
-        if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
+        if ($env:REQUIRE_COMPILER -cnotin @('true', 'false')) { throw 'require-compiler must be true or false.' }
+        if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') { throw 'Packaged tools require native Windows ARM64.' }
+        if ($env:TOOLS_SOURCE_ID -cnotmatch '^[a-f0-9]{64}$') { throw 'An exact source identity is required.' }
+        if ($env:RUNNER_ENVIRONMENT -ceq 'github-hosted' -and (-not $env:ImageOS -or -not $env:ImageVersion)) { throw 'Hosted executable caching requires the runner image identity.' }
         "BONSAI_TOOLS_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
+        "BONSAI_TOOLS_SOURCE_ID=$env:TOOLS_SOURCE_ID" >> $env:GITHUB_ENV
         "BONSAI_TOOLS_TARGET=$(Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PackagedTools')" >> $env:GITHUB_ENV
+        "BONSAI_TOOLS_PACKAGE=$(Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PackagedToolsBin')" >> $env:GITHUB_ENV
         $buildId = [guid]::NewGuid().ToString('N')
         "BONSAI_TOOLS_BUILD_ID=$buildId" >> $env:GITHUB_ENV
         "BONSAI_TOOLS_BUILD_EVIDENCE=$(Join-Path $env:RUNNER_TEMP ('SwiftBonsai-ToolsBuild-' + $buildId))" >> $env:GITHUB_ENV
+    - name: Reuse only the exact packaged CLI and its digest receipt
+      id: executable-cache
+      if: runner.environment == 'github-hosted'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.BONSAI_TOOLS_PACKAGE }}
+        # No fallback keys: skipping compilation requires identical build inputs.
+        key: bonsai-tools-executable-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-${{ env.BONSAI_TOOLS_SOURCE_ID }}
+    - name: Reuse the pinned native Rust compiler when compilation is needed
+      if: steps.executable-cache.outputs.cache-hit != 'true' || inputs.require-compiler == 'true'
+      uses: ./.github/actions/rust-toolchain
+      with:
+        toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
     - name: Reuse Cargo downloads and native tool build artifacts
+      if: steps.executable-cache.outputs.cache-hit != 'true' || inputs.require-compiler == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
@@ -31,7 +52,8 @@ runs:
         key: bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/bonsai/**', 'src/cpu-policy/**', 'src/artifacts/**', 'src/windows-*/**', 'config/**/*.json', 'rust-toolchain.toml') }}-content-v1
         restore-keys: |
           bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-
-    - name: Build the packaged CLI and select it for script invocations
+    - name: Build the packaged CLI after build inputs change
+      if: steps.executable-cache.outputs.cache-hit != 'true'
       shell: pwsh
       working-directory: ${{ runner.temp }}
       env:
@@ -43,11 +65,36 @@ runs:
         $ErrorActionPreference = 'Stop'
         $PSNativeCommandUseErrorActionPreference = $true
         & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Rust.ps1') -Package bonsai-tools -Phase build -TargetDirectory $env:BONSAI_TOOLS_TARGET -EvidenceDirectory $env:BONSAI_TOOLS_BUILD_EVIDENCE | ConvertTo-Json -Depth 8
-        $tool = Join-Path $env:BONSAI_TOOLS_TARGET 'release/bonsai-tools.exe'
-        if (-not [IO.File]::Exists($tool)) { throw 'Packaged maintenance CLI build output is missing.' }
+        $builtTool = Join-Path $env:BONSAI_TOOLS_TARGET 'release/bonsai-tools.exe'
+        if (-not [IO.File]::Exists($builtTool)) { throw 'Packaged maintenance CLI build output is missing.' }
+        [void][IO.Directory]::CreateDirectory($env:BONSAI_TOOLS_PACKAGE)
+        $tool = Join-Path $env:BONSAI_TOOLS_PACKAGE 'bonsai-tools.exe'
+        Copy-Item -LiteralPath $builtTool -Destination $tool
+        @{
+          SchemaVersion = 1
+          SourceId = $env:BONSAI_TOOLS_SOURCE_ID
+          Toolchain = 'nightly-2026-10-22-aarch64-pc-windows-msvc'
+          Sha256 = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:BONSAI_TOOLS_PACKAGE 'receipt.json')
+    - name: Verify the packaged CLI and select it for script invocations
+      shell: pwsh
+      working-directory: ${{ runner.temp }}
+      env:
+        EXECUTABLE_CACHE_HIT: ${{ steps.executable-cache.outputs.cache-hit }}
+      run: |
+        Set-StrictMode -Version Latest
+        $ErrorActionPreference = 'Stop'
+        $tool = Join-Path $env:BONSAI_TOOLS_PACKAGE 'bonsai-tools.exe'
+        $receipt = Get-Content -LiteralPath (Join-Path $env:BONSAI_TOOLS_PACKAGE 'receipt.json') -Raw | ConvertFrom-Json
+        if ($receipt.SchemaVersion -ne 1 -or $receipt.SourceId -cne $env:BONSAI_TOOLS_SOURCE_ID -or
+            $receipt.Toolchain -cne 'nightly-2026-10-22-aarch64-pc-windows-msvc' -or
+            $receipt.Sha256 -cne (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Packaged CLI digest or build identity differs.' }
+        Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1')
+        Assert-Arm64PE -Path $tool
         "BONSAI_TOOLS_PATH=$tool" >> $env:GITHUB_ENV
+        "Exact packaged CLI cache hit: $env:EXECUTABLE_CACHE_HIT; correctness checks still run in every lane." >> $env:GITHUB_STEP_SUMMARY
     - name: Retain packaged CLI build evidence
-      if: always() && env.BONSAI_TOOLS_BUILD_EVIDENCE != ''
+      if: always() && steps.executable-cache.outputs.cache-hit != 'true' && env.BONSAI_TOOLS_BUILD_EVIDENCE != ''
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: tools-build-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.BONSAI_TOOLS_BUILD_ID }}

@@ -169,7 +169,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install pinned native compilers for metadata probes
+      - name: Select pinned native compilers and external evidence for metadata probes
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
@@ -183,9 +183,17 @@ jobs:
           "RUST_TRIAL_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           $configuration = Get-Content -Raw -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'config/rust-nightly-trial.json') | ConvertFrom-Json -DateKind String -NoEnumerate
           if ($configuration.SchemaVersion -ne 1) { throw 'Unsupported Rust trial configuration schema.' }
-          foreach ($toolchain in @($configuration.StableToolchain, $configuration.NightlyToolchain)) {
-            rustup toolchain install $toolchain --profile minimal --no-self-update 2>&1 | Tee-Object -FilePath (Join-Path $evidence ($toolchain + '-install.log'))
-          }
+          "RUST_PROBE_STABLE_TOOLCHAIN=$($configuration.StableToolchain)" >> $env:GITHUB_ENV
+          "RUST_PROBE_NIGHTLY_TOOLCHAIN=$($configuration.NightlyToolchain)" >> $env:GITHUB_ENV
+      - name: Reuse the exact stable control compiler
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: ${{ env.RUST_PROBE_STABLE_TOOLCHAIN }}
+          components: ''
+      - name: Reuse the exact production nightly compiler
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: ${{ env.RUST_PROBE_NIGHTLY_TOOLCHAIN }}
       - name: Compare borrowing and trait-solver acceptance
         shell: pwsh
         working-directory: ${{ runner.temp }}
