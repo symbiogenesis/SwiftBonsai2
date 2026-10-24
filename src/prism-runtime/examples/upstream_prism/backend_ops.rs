@@ -87,3 +87,17 @@ pub(super) fn aggregate_partitions(
 ) -> super::Result<serde_json::Value> {
     driver::aggregate(reports, plan)
 }
+
+#[path = "backend_ops/complete.rs"]
+mod complete;
+#[path = "backend_ops/performance.rs"]
+mod performance;
+
+pub(super) fn run(engine: &super::engine::Engine) -> super::Result<serde_json::Value> {
+    complete::run(engine)
+}
+pub(super) fn aggregate_correctness(
+    modes: &[serde_json::Value],
+) -> super::Result<serde_json::Value> {
+    complete::aggregate(modes)
+}

@@ -7,6 +7,7 @@ use super::evaluate;
 use super::gradient;
 use super::graph::Plan;
 use super::host::Production;
+use super::performance;
 use super::planner;
 use super::prepare::{Mode, prepare};
 use super::program::{Geometry, SOURCE_SHA256};
@@ -15,6 +16,10 @@ use serde_json::{Value as Json, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+
+fn successful(status: &Json, mode: Mode) -> bool {
+    matches!(status.as_str(), Some("pass" | "skip")) || (mode == Mode::Perf && status == "measured")
+}
 
 fn cleanup(directory: &Path) -> Result<()> {
     let owned = fs::canonicalize(directory)?;
@@ -93,11 +98,7 @@ fn one(
             match mode {
                 Mode::Eval => evaluate::evaluate(&mut host, &mut prepared, geometry)?,
                 Mode::Grad => gradient::evaluate(&mut host, &mut prepared, geometry)?,
-                Mode::Perf => {
-                    return Err(invalid(
-                        "backend performance runner has not been registered",
-                    ));
-                }
+                Mode::Perf => performance::evaluate(&mut host, &mut prepared, geometry)?,
                 Mode::Support => {
                     return Err(invalid("source support mode cannot initialize tensors"));
                 }
@@ -127,6 +128,9 @@ pub(super) fn run(
     mode: Mode,
     plan: &Json,
 ) -> Result<Json> {
+    if mode == Mode::Perf {
+        performance::require_ci()?;
+    }
     planner::partition(index, count)?;
     let rows = planner::validate(plan, mode)?;
     let (_, geometries, geometry_hash) = planner::extent(mode)?;
@@ -162,14 +166,15 @@ pub(super) fn run(
             directory.join("case-receipt.json"),
             serde_json::to_vec_pretty(&observed)?,
         )?;
-        if matches!(observed["Status"].as_str(), Some("pass" | "skip")) {
+        if matches!(
+            observed["Status"].as_str(),
+            Some("pass" | "skip" | "measured")
+        ) {
             cleanup(&directory)?;
         }
         items.push(observed);
     }
-    let passed = items
-        .iter()
-        .all(|item| matches!(item["Status"].as_str(), Some("pass" | "skip")));
+    let passed = items.iter().all(|item| successful(&item["Status"], mode));
     Ok(
         json!({"SchemaVersion":1,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Partition":{"Index":index,"Count":count},"Status":if passed{"pass"}else{"fail"},"PlanSha256":plan["PlanSha256"],"ExpectedGeometries":geometries.len(),"Items":items}),
     )
@@ -249,14 +254,19 @@ pub(super) fn aggregate(reports: &[Json], plan: &Json) -> Result<Json> {
                 || row["CrtDraws"] != rows[expected_index]["CrtDraws"]
                 || !matches!(
                     row["Status"].as_str(),
-                    Some("pass" | "skip" | "fail" | "error")
+                    Some("pass" | "skip" | "measured" | "fail" | "error")
                 )
             {
                 return Err(invalid(
                     "backend result geometry identity/order or input-stream receipt differs",
                 ));
             }
-            passed &= matches!(row["Status"].as_str(), Some("pass" | "skip"));
+            if row["Status"] == "measured" && mode != Mode::Perf {
+                return Err(invalid(
+                    "performance measurement cannot satisfy a correctness geometry",
+                ));
+            }
+            passed &= successful(&row["Status"], mode);
             if items.insert(expected_index, row.clone()).is_some() {
                 return Err(invalid("duplicate backend result geometry"));
             }
@@ -278,6 +288,7 @@ pub(super) fn aggregate(reports: &[Json], plan: &Json) -> Result<Json> {
         }
         match row["Status"].as_str() {
             Some("pass") => pass_count += 1,
+            Some("measured") if mode == Mode::Perf => pass_count += 1,
             Some("skip") => skip_count += 1,
             Some("fail") => fail_count += 1,
             Some("error") => error_count += 1,
