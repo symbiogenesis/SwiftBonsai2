@@ -20,6 +20,7 @@ pub mod text_output;
 pub mod text_session;
 #[cfg(feature = "cli")]
 pub mod token_client;
+pub mod token_input;
 #[cfg(feature = "cli")]
 pub mod token_worker;
 pub mod tokenization;
