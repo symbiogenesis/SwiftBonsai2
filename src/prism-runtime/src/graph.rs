@@ -696,7 +696,7 @@ impl Qwen35 {
         clippy::too_many_lines,
         reason = "Keep validation and transactional graph operation order auditable together."
     )]
-    fn evaluate_token_into(&mut self, token: u32, logits: &mut Vec<f32>) -> Result<()> {
+    fn evaluate_token_into(&mut self, token: u32, logits: Option<&mut Vec<f32>>) -> Result<()> {
         let token = usize::try_from(token)?;
         if token >= self.vocabulary || self.position >= self.context_limit {
             return Err(invalid(
@@ -767,9 +767,11 @@ impl Qwen35 {
             add(hidden, attention);
             finite(hidden, "decoder layer output")?;
         }
-        rms_norm_into(hidden, &self.output_norm, self.geometry.epsilon, normalized)?;
-        evaluation.project_into(&self.output, normalized, logits)?;
-        finite(logits, "output logits")?;
+        if let Some(logits) = logits {
+            rms_norm_into(hidden, &self.output_norm, self.geometry.epsilon, normalized)?;
+            evaluation.project_into(&self.output, normalized, logits)?;
+            finite(logits, "output logits")?;
+        }
         // Reserve every append before changing numerical state. Deltas retain
         // their allocations across tokens but never alias checkpoint storage.
         let width = self.geometry.head * self.geometry.kv_heads;
@@ -1065,11 +1067,14 @@ impl Decoder for Qwen35 {
 
     fn evaluate_into(&mut self, token: u32, logits: &mut Vec<f32>) -> Result<()> {
         logits.clear();
-        let result = self.evaluate_token_into(token, logits);
+        let result = self.evaluate_token_into(token, Some(logits));
         if result.is_err() {
             logits.clear();
         }
         result
+    }
+    fn ingest(&mut self, token: u32) -> Result<()> {
+        self.evaluate_token_into(token, None)
     }
     fn checkpoint_bytes(&self) -> usize {
         size_of::<Qwen35Checkpoint>()

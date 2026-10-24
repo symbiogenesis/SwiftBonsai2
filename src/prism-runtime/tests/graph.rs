@@ -250,6 +250,79 @@ fn staged_multi_layer_rope_failure_does_not_advance_state() -> Result<()> {
 }
 
 #[test]
+fn state_only_ingestion_matches_hybrid_outputs_checkpoints_and_reset() -> Result<()> {
+    let bits = |values: Vec<f32>| values.into_iter().map(f32::to_bits).collect::<Vec<_>>();
+    let mut reference = Qwen35::new(hybrid_fixture(), 16)?;
+    let mut ingested = Qwen35::new(hybrid_fixture(), 16)?;
+    for token in [0, 1, 1] {
+        reference.evaluate(token)?;
+        ingested.ingest(token)?;
+    }
+    assert_eq!(ingested.checkpoint_bytes(), reference.checkpoint_bytes());
+    let reference_checkpoint = reference.checkpoint()?;
+    let ingested_checkpoint = ingested.checkpoint()?;
+    for token in [0, 1, 0] {
+        assert_eq!(
+            bits(ingested.evaluate(token)?),
+            bits(reference.evaluate(token)?)
+        );
+    }
+    ingested.reset()?;
+    reference.reset()?;
+    assert_eq!(bits(ingested.evaluate(1)?), bits(reference.evaluate(1)?));
+    ingested.restore(&ingested_checkpoint)?;
+    reference.restore(&reference_checkpoint)?;
+    for token in [1, 0, 0] {
+        assert_eq!(
+            bits(ingested.evaluate(token)?),
+            bits(reference.evaluate(token)?)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn state_only_ingestion_skips_only_output_validation() -> Result<()> {
+    let mut output_fault = hybrid_fixture();
+    output_fault.tensors.insert(
+        "output.weight".to_owned(),
+        weight("output.weight", &[2, 2], &[f32::MAX; 4]),
+    );
+    let mut decoder = Qwen35::new(output_fault, 2)?;
+    assert!(decoder.evaluate(0).is_err());
+    // Unrequested output norm/projection is deliberately not computed or
+    // validated. All hybrid state still commits exactly one token.
+    decoder.ingest(0)?;
+    decoder.ingest(1)?;
+    assert!(decoder.ingest(0).is_err());
+    decoder.reset()?;
+    decoder.ingest(0)?;
+
+    let mut state_fault = fixture(false);
+    state_fault.tensors.insert(
+        "blk.0.attn_q.weight".to_owned(),
+        weight("blk.0.attn_q.weight", &[2, 4], &[f32::MAX; 8]),
+    );
+    let mut decoder = Qwen35::new(state_fault, 1)?;
+    assert!(decoder.ingest(0).is_err());
+    assert!(decoder.ingest(0).is_err());
+    Ok(())
+}
+
+#[test]
+fn state_only_ingestion_rejects_invalid_tokens_without_advancing() -> Result<()> {
+    let mut decoder = Qwen35::new(hybrid_fixture(), 2)?;
+    let mut reference = Qwen35::new(hybrid_fixture(), 2)?;
+    assert!(decoder.ingest(2).is_err());
+    decoder.ingest(0)?;
+    reference.evaluate(0)?;
+    assert!(decoder.ingest(u32::MAX).is_err());
+    assert_eq!(decoder.evaluate(1)?, reference.evaluate(1)?);
+    assert!(decoder.ingest(0).is_err());
+    Ok(())
+}
+
+#[test]
 fn reusable_logits_match_owned_evaluation_across_hybrid_restore_and_reset() -> Result<()> {
     let mut owned = Qwen35::new(hybrid_fixture(), 16)?;
     let mut reused = Qwen35::new(hybrid_fixture(), 16)?;
