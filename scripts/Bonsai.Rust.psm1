@@ -103,6 +103,7 @@ function Invoke-BonsaiRustCheck {
     $records = [Collections.Generic.List[object]]::new()
     $receipt = [ordered]@{
         SchemaVersion = 1; Revision = $env:GITHUB_SHA; Toolchain = $Toolchain; CheckProfile = $CheckProfile
+        FingerprintMode = if ($env:CARGO_BUILD_FINGERPRINT) { $env:CARGO_BUILD_FINGERPRINT } else { 'mtime' }
         Packages = @($packages.Name); TargetDirectory = $target; WorkingDirectory = $work
         CompilerIdentity = $null; Checks = $records; Success = $false; Error = $null
         PerformanceMeasured = $false

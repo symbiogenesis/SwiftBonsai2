@@ -137,14 +137,23 @@ Broker and maintenance packages run in parallel lanes, each with its own build
 cache and evidence. Both selections come from the package registry, and the
 aggregate gate requires both lanes. The x86-64 scalar fallback also reuses its
 own dependency/build cache while repeating every feature and correctness check.
+Foundation's script regressions run in two parallel lanes with the same required
+aggregate gate. In hosted Foundation and nightly checks, the pinned Cargo uses
+[content fingerprints](https://doc.rust-lang.org/nightly/cargo/reference/unstable.html#checksum-freshness)
+instead of checkout timestamps to validate restored Rust
+artifacts. Changed source still rebuilds; every analyzer and test command still
+runs. Build-script inputs retain Cargo's normal timestamp checks. The first run
+populates the new fingerprint caches; subsequent runs can reuse unchanged builds.
 Scratch/evidence remains external. Select the published maintenance executable
 from the exact evaluated main revision via `BONSAI_TOOLS_PATH` or `-ToolPath`;
 version/protocol checking is not source-to-binary attestation.
 
 The manual main-only [nightly checks](../.github/workflows/rust-nightly.yml) use
 the production nightly pinned in [configuration](../config/rust-nightly-trial.json).
-Runtime/Broker lanes run formatting, Release analyzers/documentation and full
-correctness suites; separate probes isolate trait-solver/Polonius modes and
+Each Runtime/Broker group splits its core package and remaining registered
+packages into separate lanes. All four lanes run formatting, Release
+analyzers/documentation and full correctness suites; separate probes isolate
+trait-solver/Polonius modes and
 retain stable 1.99.1 as a control for standalone fixtures only.
 Prism loader APIs compile there, while native linking remains in Foundation.
 The final `compatibility` check requires all lanes and probes, including retained

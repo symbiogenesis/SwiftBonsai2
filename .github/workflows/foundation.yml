@@ -5,6 +5,11 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  # Checkout timestamps change on every runner. Reuse compiled Rust only when
+  # Cargo verifies the source contents, while every check and test still runs.
+  CARGO_UNSTABLE_CHECKSUM_FRESHNESS: 'true'
+  CARGO_BUILD_FINGERPRINT: content
 concurrency:
   group: foundation-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'push' }}
@@ -36,7 +41,7 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ${{ env.CARGO_TARGET_DIR }}
-          key: native-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NATIVE_RUNTIME_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/prism-runtime/**', 'tools/prism/**', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
+          key: native-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NATIVE_RUNTIME_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/prism-runtime/**', 'tools/prism/**', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}-content-v1
           restore-keys: |
             native-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.NATIVE_RUNTIME_CACHE_HOST }}-nightly-2026-10-22-
       - name: Native CPU reference format, analyzers and complete correctness suite
@@ -91,7 +96,7 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ${{ env.CARGO_TARGET_DIR }}
-          key: scalar-fallback-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.SCALAR_FALLBACK_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/prism-runtime/**', 'tools/prism/**', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
+          key: scalar-fallback-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.SCALAR_FALLBACK_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/prism-runtime/**', 'tools/prism/**', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}-content-v1
           restore-keys: |
             scalar-fallback-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.SCALAR_FALLBACK_CACHE_HOST }}-nightly-2026-10-22-
       - name: Verify non-ARM fallback with default and explicit feature builds
@@ -168,7 +173,7 @@ jobs:
             ~/.cargo/git/db
             ${{ runner.temp }}/SwiftBonsai-PrismRustChecks
             ${{ runner.temp }}/SwiftBonsai-PrismRustBuild
-          key: prism-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/prism/**', 'scripts/Build-PrismEngine.ps1', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
+          key: prism-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/prism/**', 'scripts/Build-PrismEngine.ps1', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}-content-v1
           restore-keys: |
             prism-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_CACHE_HOST }}-nightly-2026-10-22-
       - name: Check Rust and build the pinned engine with its Rust storage overlay
@@ -257,7 +262,7 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ${{ env.TERNARY_TARGET_DIR }}
-          key: ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
+          key: ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}-content-v1
           restore-keys: |
             ternary-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TERNARY_CACHE_HOST }}-nightly-2026-10-22-
       - name: PQ2 and PTQ codecs, FP16 reference parity and Rust analyzers
@@ -360,7 +365,7 @@ jobs:
             ${{ env.CARGO_HOME }}/registry/cache
             ${{ env.CARGO_HOME }}/git/db
             ${{ env.CARGO_TARGET_DIR }}
-          key: broker-v4-${{ matrix.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs', 'src/cpu-policy/**', 'src/artifacts/**', 'src/windows-*/**', 'tools/bonsai/**', 'config/**/*.json', 'tests/fixtures/lora-qualification-v1.json', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1') }}
+          key: broker-v4-${{ matrix.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs', 'src/cpu-policy/**', 'src/artifacts/**', 'src/windows-*/**', 'tools/bonsai/**', 'config/**/*.json', 'tests/fixtures/lora-qualification-v1.json', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1') }}-content-v1
           restore-keys: |
             broker-v4-${{ matrix.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
             broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
@@ -475,9 +480,14 @@ jobs:
             ./tests/Test-CompletionSupervision.ps1 -Case $case -ToolPath $env:BONSAI_TOOLS_PATH
           }
   foundation-tests:
+    name: scripts / ${{ matrix.lane }}
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [foundation, native]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -489,26 +499,32 @@ jobs:
       - name: Build packaged maintenance tools once for script checks
         uses: ./.github/actions/bonsai-tools
       - name: Full foundation suite
+        if: matrix.lane == 'foundation'
         shell: pwsh
         run: ./tests/Test-Foundation.ps1 -Case All
       - name: Native tool invocation contracts
+        if: matrix.lane == 'native'
         shell: pwsh
         run: |
           foreach ($case in @('Capture','Failure','Environment','Timeout','Drain')) {
             ./tests/Test-NativeProcess.ps1 -Case $case
           }
       - name: Engine build scheduling correctness
+        if: matrix.lane == 'native'
         shell: pwsh
         run: ./tests/Test-EngineBuild.ps1 -Case Parallelism
       - name: Rust check feature isolation and local-suite policy
+        if: matrix.lane == 'foundation'
         shell: pwsh
         run: ./tests/Test-RustTooling.ps1
       - name: Development credential creation and path policy
+        if: matrix.lane == 'foundation'
         shell: pwsh
         run: |
           ./tests/Test-DevelopmentKeys.ps1 -Case Creation
           ./tests/Test-DevelopmentKeys.ps1 -Case Paths
       - name: CPU admission diagnostics without model launch
+        if: matrix.lane == 'foundation'
         shell: pwsh
         run: |
           Set-StrictMode -Version Latest
@@ -517,6 +533,7 @@ jobs:
           if ($result.ModelProcessStarted -or $result.AvailablePhysicalBytesAtAdmission -le 0) { throw 'Invalid admission-only result.' }
           $result | ConvertTo-Json
       - name: Mandatory standard LoRA scorer and capture argument contracts
+        if: matrix.lane == 'native'
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
@@ -559,7 +576,7 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             ${{ env.CARGO_TARGET_DIR }}
-          key: gguf-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GGUF_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}
+          key: gguf-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GGUF_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/gguf/**', 'tools/ternary/**', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1', 'rust-toolchain.toml') }}-content-v1
           restore-keys: |
             gguf-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.GGUF_CACHE_HOST }}-nightly-2026-10-22-
       - name: Build and check the Rust GGUF CLI
