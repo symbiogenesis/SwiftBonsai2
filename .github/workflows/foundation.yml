@@ -352,7 +352,9 @@ jobs:
           $null = Receive-LockedArtifact -Uri $lock.ArchiveUrl -Path $archive -Bytes $lock.ArchiveBytes -Sha256 $lock.ArchiveSha256 -TimeoutSeconds 600
           cargo +nightly-2026-10-22-aarch64-pc-windows-msvc fetch --locked --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml')
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismNativeCache.ps1')
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismRunner.ps1')
+          foreach ($case in @('Scheduling', 'Identity', 'ProcessFailure')) {
+            & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismRunner.ps1') -Case $case
+          }
           foreach ($case in @('Catalog', 'Ratchet', 'Evidence')) {
             & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBaseline.ps1') -Case $case
           }
