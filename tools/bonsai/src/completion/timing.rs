@@ -136,6 +136,8 @@ pub(super) fn parse(text: &str) -> Result<Value> {
                 .into(),
         );
     }
+    // The pinned logger counts decode eval runs. The first sampled token follows
+    // prompt evaluation, so the rate uses eval runs rather than sampled tokens.
     Ok(json!({
         "Timing": {"DecodeTokens": count, "DecodeMilliseconds": milliseconds,
             "DecodeTokensPerSecond": 1000.0 * f64::from(count) / milliseconds,
@@ -151,6 +153,8 @@ mod tests {
 
     const LOG: &str = "main: number of tokens in prompt = 15\ncommon_perf_print: prompt eval time = 100.5 ms / 15 tokens ( 6.7 ms per token, 149.25 tokens per second)\ncommon_perf_print: eval time = 200.0 ms / 3 runs ( 66.7 ms per token, 15 tokens per second)\ncommon_perf_print: samplers time = 0.50 ms / 19 tokens\n";
 
+    const QUALIFICATION_LOG: &str = "main: number of tokens in prompt = 80\ncommon_perf_print:    samplers time =       5.00 ms /   208 tokens\ncommon_perf_print: prompt eval time =     125.50 ms /    80 tokens ( 1.57 ms per token, 637.45 tokens per second)\ncommon_perf_print:        eval time =    1000.25 ms /   127 runs   ( 7.88 ms per token, 126.97 tokens per second)\n";
+
     #[test]
     fn exact_logger_records_separate_sampled_tokens_and_decode_runs() -> crate::Result<()> {
         let parsed = parse(&format!("\u{feff}{}", LOG.replace('\n', "\r\n")))?;
@@ -162,11 +166,33 @@ mod tests {
     }
 
     #[test]
+    fn fractional_timings_compute_unrounded_decode_rate() -> crate::Result<()> {
+        let parsed = parse(QUALIFICATION_LOG)?;
+        assert_eq!(parsed["Timing"]["DecodeTokens"], 127);
+        assert_eq!(parsed["Timing"]["DecodeMilliseconds"], 1000.25);
+        assert_eq!(parsed["Timing"]["PromptTokens"], 80);
+        assert_eq!(parsed["Timing"]["PromptMilliseconds"], 125.5);
+        assert_eq!(parsed["Counts"]["GeneratedSampledTokens"], 128);
+        assert_eq!(parsed["Counts"]["SamplerAcceptedTokens"], 208);
+        assert_eq!(parsed["Counts"]["PromptTokenCount"], 80);
+        assert_eq!(
+            parsed["Timing"]["DecodeTokensPerSecond"],
+            127000.0 / 1000.25
+        );
+        assert_ne!(parsed["Timing"]["DecodeTokensPerSecond"], 126.97);
+        Ok(())
+    }
+
+    #[test]
     fn malformed_duplicate_and_inconsistent_records_are_rejected() {
         for text in [
             LOG.replace("19 tokens", "18 tokens"),
+            format!("{LOG}main: number of tokens in prompt = 15\n"),
+            LOG.replace("200.0 ms", "NaN ms"),
             LOG.replace("200.0 ms", "0.0 ms"),
             LOG.replace("3 runs", "513 runs"),
+            LOG.replace("15 tokens (", "0 tokens ("),
+            LOG.replace("common_perf_print:", "llama_perf_context_print:"),
             LOG.replace("0.50 ms", "0 ms"),
             LOG.replace("15 tokens (", "15 tokens (invalid "),
             format!("{LOG}{LOG}"),

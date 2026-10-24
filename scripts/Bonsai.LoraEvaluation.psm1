@@ -34,59 +34,6 @@ function Get-BonsaiLoraEvaluationArgument {
     $arguments + @('--prompt', $Prompt)
 }
 
-function Read-BonsaiCompletionTiming {
-    <# .SYNOPSIS
-    Reads the unique pinned native prompt and single-token decode timing records.
-    .DESCRIPTION
-    The fixed Prism context logger reports decode eval runs, not total sampled
-       tokens. In particular, the first sampled token follows prompt evaluation.
-       Do not rename this denominator to generated tokens or use wall time. #>
-    [CmdletBinding()]
-    [OutputType([pscustomobject])]
-    param([Parameter(Mandatory)][string]$Text)
-    $number = '[0-9]+(?:\.[0-9]+)?'
-    $tail = '[ \t]+\([ \t]*' + $number + ' ms per token,[ \t]*' + $number + ' tokens per second\)\r?$'
-    $evalPattern = '(?m)^common_perf_print:[ \t]+eval time[ \t]*=[ \t]*(?<ms>' + $number + ') ms[ \t]*/[ \t]*(?<count>[0-9]+) runs' + $tail
-    $promptPattern = '(?m)^common_perf_print:[ \t]+prompt eval time[ \t]*=[ \t]*(?<ms>' + $number + ') ms[ \t]*/[ \t]*(?<count>[0-9]+) tokens' + $tail
-    $evalMatches = [regex]::Matches($Text, $evalPattern)
-    $promptMatches = [regex]::Matches($Text, $promptPattern)
-    if ($evalMatches.Count -ne 1 -or $promptMatches.Count -ne 1) { throw 'Expected exactly one complete prompt and decode timing record from the pinned logger.' }
-    $culture = [Globalization.CultureInfo]::InvariantCulture
-    $milliseconds = [double]::Parse($evalMatches[0].Groups['ms'].Value, $culture)
-    $count = [int]::Parse($evalMatches[0].Groups['count'].Value, $culture)
-    $promptMilliseconds = [double]::Parse($promptMatches[0].Groups['ms'].Value, $culture)
-    $promptTokens = [int]::Parse($promptMatches[0].Groups['count'].Value, $culture)
-    if (-not [double]::IsFinite($milliseconds) -or $milliseconds -le 0 -or $count -lt 1 -or $count -gt 512 -or
-        -not [double]::IsFinite($promptMilliseconds) -or $promptMilliseconds -le 0 -or $promptTokens -lt 1 -or $promptTokens -gt 8192) {
-        throw 'Invalid or out-of-contract native timing counts.'
-    }
-    [pscustomobject]@{ DecodeTokens = $count; DecodeMilliseconds = $milliseconds
-        DecodeTokensPerSecond = 1000 * $count / $milliseconds
-        PromptTokens = $promptTokens; PromptMilliseconds = $promptMilliseconds }
-}
-
-function Read-BonsaiCompletionTokenCount {
-    <# .SYNOPSIS
-    Cross-checks fresh-completion counters and separates sampled and eval tokens.
-    #>
-    [CmdletBinding()]
-    [OutputType([pscustomobject])]
-    param([Parameter(Mandatory)][string]$Text, [Parameter(Mandatory)][pscustomobject]$Timing)
-    $prompt = [regex]::Matches($Text, '(?m)^main: number of tokens in prompt = (?<count>[0-9]+)[ \t]*\r?$')
-    $sampler = [regex]::Matches($Text, '(?m)^common_perf_print:[ \t]+samplers time[ \t]*=[ \t]*[0-9]+\.[0-9]+ ms[ \t]*/[ \t]*(?<count>[0-9]+) tokens[ \t]*\r?$')
-    if ($prompt.Count -ne 1 -or $sampler.Count -ne 1) { throw 'Expected unique prompt and sampler-accept counters from the pinned completion tool.' }
-    $culture = [Globalization.CultureInfo]::InvariantCulture
-    $promptTokens = [int]::Parse($prompt[0].Groups['count'].Value, $culture)
-    $acceptedTokens = [int]::Parse($sampler[0].Groups['count'].Value, $culture)
-    $generated = $acceptedTokens - $promptTokens
-    if ($promptTokens -lt 2 -or $promptTokens -gt 8192 -or $generated -lt 1 -or $generated -gt 512 -or
-        $acceptedTokens -ne ($Timing.PromptTokens + $Timing.DecodeTokens + 1)) {
-        throw 'Native prompt, sampler and decode counters disagree for a fresh single-turn sample.'
-    }
-    [pscustomobject]@{ PromptTokenCount = $promptTokens; SamplerAcceptedTokens = $acceptedTokens
-        GeneratedSampledTokens = $generated }
-}
-
 function Get-BonsaiResponseDigest {
     <# .SYNOPSIS
     Hashes exact captured UTF-8 response text without trimming or normalization.
@@ -97,4 +44,4 @@ function Get-BonsaiResponseDigest {
     [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($Text)))
 }
 
-Microsoft.PowerShell.Core\Export-ModuleMember -Function Get-BonsaiLoraEvaluationArgument, Read-BonsaiCompletionTiming, Read-BonsaiCompletionTokenCount, Get-BonsaiResponseDigest
+Microsoft.PowerShell.Core\Export-ModuleMember -Function Get-BonsaiLoraEvaluationArgument, Get-BonsaiResponseDigest
