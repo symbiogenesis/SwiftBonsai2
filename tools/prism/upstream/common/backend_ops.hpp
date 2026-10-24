@@ -194,7 +194,7 @@ struct state {
             else if constexpr(std::is_same_v<P,ggml_cgraph>) { keys(v,{"Graph"}); return lookup(graphs,v.at("Graph")); }
             else if constexpr(std::is_same_v<T,ggml_backend_t>) { keys(v,{"Backend"}); return lookup(backends,v.at("Backend")); }
             else if constexpr(std::is_same_v<T,ggml_backend_buffer_t>) { keys(v,{"Buffer"}); return lookup(buffers,v.at("Buffer")); }
-            else if constexpr(std::is_same_v<P,char>) { keys(v,{"String"}); a.string=text(v.at("String")); return a.string.data(); }
+            else if constexpr(std::is_same_v<P,char>) { const auto value=v.contains("Scalar")?lookup(scalars,v.at("Scalar")):v; keys(value,{"String"}); if(value.at("String").is_null()) return nullptr; a.string=text(value.at("String")); return a.string.data(); }
             else if constexpr(std::is_same_v<P,std::int64_t>) { keys(v,{"I64Array"}); const auto & values=v.at("I64Array"); require(values.is_array() && values.size()<=32768,"backend I64 array exceeds bound"); for(const auto & n:values) a.integers64.push_back(n.is_object()?integer(n):i64(n)); return a.integers64.data(); }
             else if constexpr(std::is_same_v<P,std::int32_t>) { keys(v,{"I32Array"}); const auto & values=v.at("I32Array"); require(values.is_array() && values.size()<=32768,"backend I32 array exceeds bound"); for(const auto & n:values) { const auto x=n.is_object()?integer(n):i64(n); require(x>=INT32_MIN && x<=INT32_MAX,"backend I32 array overflow"); a.integers32.push_back(std::int32_t(x)); } return a.integers32.data(); }
             else if constexpr(std::is_same_v<P,float>) { keys(v,{"F32BitsArray"}); const auto & values=v.at("F32BitsArray"); require(values.is_array() && values.size()<=32768,"backend float array exceeds bound"); for(const auto & n:values) { const auto bits=std::uint32_t(bounded(n,0,UINT32_MAX)); float x; std::memcpy(&x,&bits,4); a.floats.push_back(x); } return a.floats.data(); }
@@ -213,6 +213,7 @@ struct state {
         if(result.is_null()) return;
         if constexpr(std::is_same_v<T,ggml_tensor *>) { keys(result,{"Tensor"}); bind_tensor(result.at("Tensor"),value); }
         else if constexpr(std::is_same_v<T,ggml_cgraph *>) { keys(result,{"Graph"}); require(value,"backend graph allocation failed"); bind(graphs,result.at("Graph"),value); }
+        else if constexpr(std::is_same_v<T,const char *> || std::is_same_v<T,char *>) { keys(result,{"Scalar"}); bind(scalars,result.at("Scalar"),json{{"String",value?json(value):json(nullptr)}}); }
         else {
             keys(result,{"Scalar"}); json scalar;
             if constexpr(std::is_same_v<T,bool>) scalar={{"Bool",value}};
@@ -252,6 +253,7 @@ inline void state::call(const json & action) {
     PRISM_BACKEND_CALL(ggml_argsort)
     PRISM_BACKEND_CALL(ggml_argsort_top_k)
     PRISM_BACKEND_CALL(ggml_backend_buffer_set_usage)
+    PRISM_BACKEND_CALL(ggml_backend_name)
     PRISM_BACKEND_CALL(ggml_backend_graph_compute)
     PRISM_BACKEND_CALL(ggml_backend_synchronize)
     PRISM_BACKEND_CALL(ggml_blck_size)
@@ -415,6 +417,13 @@ inline void state::call(const json & action) {
     PRISM_BACKEND_CALL(ggml_tri)
     PRISM_BACKEND_CALL(ggml_trunc)
     PRISM_BACKEND_CALL(ggml_type_size)
+    PRISM_BACKEND_CALL(ggml_type_name)
+    PRISM_BACKEND_CALL(ggml_unary_op_name)
+    PRISM_BACKEND_CALL(ggml_glu_op_name)
+    PRISM_BACKEND_CALL(ggml_op_name)
+    PRISM_BACKEND_CALL(ggml_op_desc)
+    PRISM_BACKEND_CALL(ggml_get_name)
+    PRISM_BACKEND_CALL(ggml_status_to_string)
     PRISM_BACKEND_CALL(ggml_unary)
     PRISM_BACKEND_CALL(ggml_upscale)
     PRISM_BACKEND_CALL(ggml_view_1d)
@@ -493,6 +502,17 @@ inline json state::run(const json & a) {
         require(buffer,"backend tensor allocation failed"); try { bind(buffers,a.at("Result").at("Buffer"),buffer); } catch(...) { ggml_backend_buffer_free(buffer); throw; } return json::object();
     }
     if(op=="supports") { keys(a,{"Op","Backend","Tensor"}); return {{"Supported",ggml_backend_supports_op(lookup(backends,a.at("Backend")),lookup(tensors,a.at("Tensor")))}}; }
+    if(op=="backend-features") {
+        keys(a,{"Op","Backend"}); const auto backend=lookup(backends,a.at("Backend"));
+        const auto registry=ggml_backend_dev_backend_reg(ggml_backend_get_device(backend));
+        const auto get=reinterpret_cast<ggml_backend_get_features_t>(ggml_backend_reg_get_proc_address(registry,"ggml_backend_get_features"));
+        json features=nullptr;
+        if(get) if(const auto * values=get(registry)) {
+            features=json::array();
+            for(const auto * f=values;f->name;++f) { require(features.size()<1024,"backend feature count exceeds bound"); features.push_back({{"Name",f->name},{"Value",f->value?json(f->value):json(nullptr)}}); }
+        }
+        return {{"ProcedureAvailable",get!=nullptr},{"Features",features}};
+    }
     if(op=="tensor-set" || op=="tensor-get") {
         if(a.contains("Truncate")) { keys(a,{"Op","Tensor","File","FileOffset","TensorOffset","Bytes","Truncate"}); require(op=="tensor-get" && a.at("Truncate").is_boolean(),"backend Truncate only applies to tensor-get"); }
         else keys(a,{"Op","Tensor","File","FileOffset","TensorOffset","Bytes"});
