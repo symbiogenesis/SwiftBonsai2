@@ -557,7 +557,7 @@ impl Run {
                 let ok = self.prompts(&mut c, &[(0, "Some")])?;
                 self.check(ok, "prompt decode failed")?;
                 let t = self
-                    .observe(&c, 0, false, false, false, false, true)?
+                    .observe(&c, Self::index(&c, 0), false, false, false, false, true)?
                     .token
                     .ok_or_else(|| invalid("single-output token absent"))?;
                 self.piece(t)?;
