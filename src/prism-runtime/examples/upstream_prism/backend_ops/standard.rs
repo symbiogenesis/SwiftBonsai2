@@ -362,6 +362,20 @@ fn same_storage(a: &Value, b: &Value) -> bool {
     }
 }
 
+fn numeric_array_equal(a: &Value, b: &Value) -> Result<bool> {
+    let length = a.len().map_err(invalid)?;
+    if length != b.len().map_err(invalid)? {
+        return Ok(false);
+    }
+    for index in 0..length {
+        let a = a.index(index).map_err(invalid)?.number().map_err(invalid)?;
+        let b = b.index(index).map_err(invalid)?.number().map_err(invalid)?;
+        if !a.equal(b) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
 pub(super) fn binary(op: &str, a: &Value, b: &Value) -> Result<Option<Value>> {
     if op == "+" && matches!((a, b), (Value::Bytes(_), Value::Bytes(_))) {
         let mut bytes = text(a)?;
@@ -404,6 +418,10 @@ pub(super) fn binary(op: &str, a: &Value, b: &Value) -> Result<Option<Value>> {
             (Value::Null, Value::Function(_) | Value::Handle(_))
             | (Value::Function(_) | Value::Handle(_), Value::Null) => Some(false),
             (Value::Bytes(a), Value::Bytes(b)) => Some(a == b),
+            // Value containers compare elements; pointers keep their storage/offset identity above.
+            (Value::Array(_) | Value::Buffer(_), Value::Array(_) | Value::Buffer(_)) => {
+                Some(numeric_array_equal(a, b)?)
+            }
             _ => None,
         };
         if let Some(equal) = equal {
@@ -1091,6 +1109,119 @@ mod tests {
             )?
             .is_none()
         );
+        Ok(())
+    }
+    #[test]
+    fn original_flash_attention_array_comparison_preserves_value_and_pointer_semantics()
+    -> Result<()> {
+        let (program, geometries) = super::super::program::load().map_err(invalid)?;
+        let geometry = geometries
+            .eval
+            .iter()
+            .find(|geometry| geometry.class == "test_flash_attn_ext")
+            .ok_or_else(|| invalid("actual flash-attention geometry missing"))?;
+        let mut host = LanguageOnly;
+        let mut runtime = Interpreter::new(program, &geometry.class, &mut host)?;
+        runtime.instantiate(geometry)?;
+        let identity = Value::array(
+            (0..4)
+                .map(|value| Value::Number(Number::I32(value)))
+                .collect(),
+        );
+        let permute = runtime.value("permute")?;
+        assert!(
+            !runtime
+                .binary_value("!=", permute.clone(), identity.clone())?
+                .truth()
+                .map_err(invalid)?
+        );
+        assert!(
+            runtime
+                .binary_value("==", identity.clone(), permute.clone())?
+                .truth()
+                .map_err(invalid)?
+        );
+        let changed = permute.copy_value();
+        changed
+            .place(1)
+            .map_err(invalid)?
+            .set(Value::Number(Number::I32(2)))
+            .map_err(invalid)?;
+        changed
+            .place(2)
+            .map_err(invalid)?
+            .set(Value::Number(Number::I32(1)))
+            .map_err(invalid)?;
+        assert!(
+            runtime
+                .binary_value("!=", changed, identity)?
+                .truth()
+                .map_err(invalid)?
+        );
+        let shorter = Value::array(vec![Value::Number(Number::I32(0))]);
+        assert!(
+            !runtime
+                .binary_value("==", permute.clone(), shorter)?
+                .truth()
+                .map_err(invalid)?
+        );
+        let floats = |values: &[f32]| {
+            Value::array(
+                values
+                    .iter()
+                    .copied()
+                    .map(|value| Value::Number(Number::F32(value)))
+                    .collect(),
+            )
+        };
+        let zero = floats(&[-0.0])
+            .coerce("std::array<float,1>")
+            .map_err(invalid)?;
+        assert!(
+            runtime
+                .binary_value("==", zero, floats(&[0.0]))?
+                .truth()
+                .map_err(invalid)?
+        );
+        let nan = floats(&[f32::NAN])
+            .coerce("std::array<float,1>")
+            .map_err(invalid)?;
+        assert!(
+            !runtime
+                .binary_value("==", nan, floats(&[f32::NAN]))?
+                .truth()
+                .map_err(invalid)?
+        );
+        array_pointer_identity(&mut runtime, &permute)
+    }
+
+    fn array_pointer_identity(runtime: &mut Interpreter<'_>, permute: &Value) -> Result<()> {
+        let first = Value::Pointer {
+            value: Box::new(Value::clone(permute)),
+            index: 0,
+        };
+        let next = Value::Pointer {
+            value: Box::new(Value::clone(permute)),
+            index: 1,
+        };
+        assert!(
+            !runtime
+                .binary_value("==", first.clone(), next)?
+                .truth()
+                .map_err(invalid)?
+        );
+        assert!(
+            runtime
+                .binary_value("==", first.clone(), first.clone())?
+                .truth()
+                .map_err(invalid)?
+        );
+        let separate = Value::Pointer {
+            value: Box::new(permute.copy_value()),
+            index: 0,
+        };
+        assert!(binary("==", &first, &separate)?.is_none());
+        assert!(binary("<", permute, permute)?.is_none());
         Ok(())
     }
 }
