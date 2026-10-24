@@ -184,6 +184,7 @@ fn inspection_cursor_preserves_offsets_and_hashes_across_metadata_paths() -> Res
     u32_bytes(&mut bytes, 9);
     u32_bytes(&mut bytes, 7);
     u64_bytes(&mut bytes, 65_537);
+    let boolean_start = bytes.len();
     bytes.extend((0..65_537).map(|index| u8::from(index % 2 != 0)));
 
     text(&mut bytes, "tokenizer.numeric_values")?;
@@ -251,6 +252,15 @@ fn inspection_cursor_preserves_offsets_and_hashes_across_metadata_paths() -> Res
     check_retained_metadata(model.metadata(), &long_text);
     assert_eq!(model.read_tensor(0, 4)?, [1, 2, 3, 4]);
     drop(model);
+
+    // Validation must also inspect the final boolean after the input buffer
+    // refills, including report mode where the array itself is not retained.
+    bytes[boolean_start + 65_536] = 2;
+    fs::write(&source, &bytes)?;
+    let digest = sha(&bytes);
+    let length = u64::try_from(bytes.len())?;
+    assert!(inspect(&source, "Stock", false, length, &digest).is_err());
+    assert!(VerifiedModel::open(&source, "Stock", length, &digest, 8 * 1024 * 1024).is_err());
     fs::remove_dir_all(scratch)?;
     Ok(())
 }

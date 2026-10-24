@@ -4,18 +4,17 @@
     reason = "Keep explicit internal visibility if the parent module is reorganized."
 )]
 
-#[cfg(feature = "report")]
-use crate::hash_range;
 use crate::{Metadata, MetadataArray, MetadataValue};
 use crate::{PRISM_DIALECT, Result};
 #[cfg(feature = "report")]
 use serde_json::{Map, Value, json};
+#[cfg(feature = "report")]
 use sha2::{Digest, Sha256};
 #[cfg(feature = "report")]
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 
 const HEADER_LIMIT: u64 = 256 * 1024 * 1024;
@@ -23,7 +22,6 @@ const STRING_LIMIT: u64 = 8 * 1024 * 1024;
 const ARRAY_LIMIT: u64 = 2 * 1024 * 1024;
 const TOTAL_ELEMENT_LIMIT: u64 = 8 * 1024 * 1024;
 const BUFFER_BYTES: usize = 65_536;
-const BUFFER_BYTES_U64: u64 = 65_536;
 
 fn bad(message: impl Into<String>) -> crate::Error {
     crate::bad(format!("GGUF: {}", message.into()))
@@ -141,14 +139,15 @@ const fn width(type_id: u32) -> Option<u64> {
 }
 
 struct Parser<'a> {
-    file: &'a mut File,
+    // One fixed buffer serves scalar reads, skipped booleans and report hashes.
+    // Every seek goes through this reader, preserving its logical file cursor.
+    reader: BufReader<&'a mut File>,
     // Reads and skips advance this cursor; hashing restores the file cursor.
     // Tracking it avoids an OS position query for every scalar/limit check.
     position: u64,
     file_bytes: u64,
     elements: u64,
     array_summary: Option<(u32, u64)>,
-    buffer: Box<[u8]>,
     retain_budget: Option<usize>,
 }
 
@@ -181,7 +180,7 @@ impl Parser<'_> {
     fn read<const N: usize>(&mut self) -> Result<[u8; N]> {
         self.need(u64::try_from(N)?)?;
         let mut bytes = [0; N];
-        self.file.read_exact(&mut bytes)?;
+        self.reader.read_exact(&mut bytes)?;
         self.position = add(self.position, u64::try_from(N)?)?;
         Ok(bytes)
     }
@@ -204,14 +203,23 @@ impl Parser<'_> {
     }
 
     fn read_text(&mut self, size: usize) -> Result<String> {
-        self.file.read_exact(&mut self.buffer[..size])?;
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(size)?;
+        let available = self.reader.fill_buf()?;
+        if let Some(text) = available.get(..size) {
+            bytes.extend_from_slice(text);
+            self.reader.consume(size);
+        } else {
+            bytes.resize(size, 0);
+            self.reader.read_exact(&mut bytes)?;
+        }
         self.position = add(self.position, u64::try_from(size)?)?;
-        Ok(std::str::from_utf8(&self.buffer[..size])?.to_owned())
+        Ok(String::from_utf8(bytes)?)
     }
 
     fn skip(&mut self, bytes: u64) -> Result<()> {
         let position = add(self.position(), bytes)?;
-        self.file.seek(SeekFrom::Start(position))?;
+        self.reader.seek_relative(i64::try_from(bytes)?)?;
         self.position = position;
         Ok(())
     }
@@ -275,12 +283,16 @@ impl Parser<'_> {
     fn booleans(&mut self, mut count: u64) -> Result<()> {
         self.need(count)?;
         while count > 0 {
-            let size = usize::try_from(count.min(BUFFER_BYTES_U64))?;
-            self.file.read_exact(&mut self.buffer[..size])?;
-            self.position = add(self.position, u64::try_from(size)?)?;
-            if self.buffer[..size].iter().any(|value| *value > 1) {
+            let available = self.reader.fill_buf()?;
+            if available.is_empty() {
+                return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
+            }
+            let size = available.len().min(usize::try_from(count)?);
+            if available[..size].iter().any(|value| *value > 1) {
                 return Err(bad("invalid boolean."));
             }
+            self.reader.consume(size);
+            self.position = add(self.position, u64::try_from(size)?)?;
             count -= u64::try_from(size)?;
         }
         Ok(())
@@ -299,14 +311,9 @@ impl Parser<'_> {
             if retain && self.retain_budget.is_some() {
                 let size = usize::try_from(size)?;
                 self.charge(size)?;
-                let mut bytes = Vec::new();
-                bytes.try_reserve_exact(size)?;
-                bytes.resize(size, 0);
-                self.file.read_exact(&mut bytes)?;
-                self.position = add(self.position, u64::try_from(size)?)?;
-                return Ok(Some(MetadataValue::String(String::from_utf8(bytes)?)));
+                return Ok(Some(MetadataValue::String(self.read_text(size)?)));
             }
-            if retain && size <= BUFFER_BYTES_U64 {
+            if retain && size <= u64::try_from(BUFFER_BYTES)? {
                 return Ok(Some(MetadataValue::String(
                     self.read_text(usize::try_from(size)?)?,
                 )));
@@ -407,20 +414,25 @@ impl Parser<'_> {
         Ok(Some(MetadataValue::Array(values)))
     }
 
+    #[cfg(feature = "report")]
     fn hash_record(&mut self, hash: &mut Sha256, start: u64, length: u64) -> Result<()> {
         let restore = self.position();
-        self.file.seek(SeekFrom::Start(start))?;
+        self.reader.seek(SeekFrom::Start(start))?;
         let result = (|| -> Result<()> {
             let mut remaining = length;
             while remaining > 0 {
-                let size = usize::try_from(remaining.min(BUFFER_BYTES_U64))?;
-                self.file.read_exact(&mut self.buffer[..size])?;
-                hash.update(&self.buffer[..size]);
+                let available = self.reader.fill_buf()?;
+                if available.is_empty() {
+                    return Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof).into());
+                }
+                let size = available.len().min(usize::try_from(remaining)?);
+                hash.update(&available[..size]);
+                self.reader.consume(size);
                 remaining -= u64::try_from(size)?;
             }
             Ok(())
         })();
-        self.file.seek(SeekFrom::Start(restore))?;
+        self.reader.seek(SeekFrom::Start(restore))?;
         result
     }
 }
@@ -538,12 +550,11 @@ pub(crate) fn inspect_retained(
     file.seek(SeekFrom::Start(0))?;
     let file_bytes = file.metadata()?.len();
     let mut parser = Parser {
-        file,
+        reader: BufReader::with_capacity(BUFFER_BYTES, file),
         position: 0,
         file_bytes,
         elements: 0,
         array_summary: None,
-        buffer: vec![0; BUFFER_BYTES].into_boxed_slice(),
         retain_budget: memory_limit,
     };
     if parser.u32()? != 0x4655_4747 {
@@ -571,12 +582,18 @@ pub(crate) fn inspect_retained(
     let mut alignment = 32u32;
     #[cfg(feature = "report")]
     let mut file_type_position = None;
+    #[cfg(feature = "report")]
     let mut tokenizer_hash = Sha256::new();
+    #[cfg(feature = "report")]
     let mut tokenizer_bytes = 0;
+    #[cfg(feature = "report")]
     let mut tokenizer_records = 0u64;
     for _ in 0..metadata_count {
+        #[cfg(feature = "report")]
         let start = parser.position();
         let key = parser.text(1024)?;
+        #[cfg(feature = "report")]
+        let tokenizer = key.starts_with("tokenizer.");
         // Covers tree nodes, duplicated validation keys and native value storage.
         // Payload charges below are checked before reserving string/array space.
         parser.charge(key.len().checked_add(256).ok_or_else(overflow)?)?;
@@ -591,6 +608,7 @@ pub(crate) fn inspect_retained(
         let template =
             key == "tokenizer.chat_template" || key.starts_with("tokenizer.chat_template.");
         if template && type_id == 8 && memory_limit.is_none() {
+            #[cfg(feature = "report")]
             let value_start = parser.position();
             let size = parser.u64()?;
             if size > STRING_LIMIT {
@@ -600,11 +618,11 @@ pub(crate) fn inspect_retained(
             parser.skip(size)?;
             #[cfg(feature = "report")]
             {
-                let digest = hash_range(parser.file, add(value_start, 8)?, size)?;
-                templates.insert(key.clone(), json!({"Utf8Bytes": size, "Sha256": digest}));
+                let mut hash = Sha256::new();
+                parser.hash_record(&mut hash, add(value_start, 8)?, size)?;
+                let digest = crate::digest_hex(hash);
+                templates.insert(key, json!({"Utf8Bytes": size, "Sha256": digest}));
             }
-            #[cfg(not(feature = "report"))]
-            let _ = value_start;
         } else {
             let value = parser.value(type_id, 0, true)?;
             #[cfg(feature = "report")]
@@ -664,12 +682,13 @@ pub(crate) fn inspect_retained(
             }
             if memory_limit.is_some() {
                 metadata.insert(
-                    key.clone(),
+                    key,
                     value.ok_or_else(|| bad("retained model metadata value is required."))?,
                 );
             }
         }
-        if key.starts_with("tokenizer.") {
+        #[cfg(feature = "report")]
+        if memory_limit.is_none() && tokenizer {
             let bytes = parser.position() - start;
             parser.hash_record(&mut tokenizer_hash, start, bytes)?;
             tokenizer_bytes = add(tokenizer_bytes, bytes)?;
@@ -795,7 +814,9 @@ pub(crate) fn inspect_retained(
         return Err(bad("MTP block count exceeds block count."));
     }
     #[cfg(feature = "report")]
-    let report = {
+    let report = if memory_limit.is_some() {
+        Value::Null
+    } else {
         let mut groups: BTreeMap<u32, (u64, u64, u64)> = BTreeMap::new();
         for tensor in &tensors {
             let group = groups.entry(tensor.type_id).or_default();
@@ -828,10 +849,7 @@ pub(crate) fn inspect_retained(
             })
             .map(|tensor| tensor.name.clone())
             .collect();
-        if memory_limit.is_some() {
-            Value::Null
-        } else {
-            json!({
+        json!({
                 "SchemaVersion": 1, "Format": "GGUF", "Version": 3, "ByteOrder": "little", "ModelPath": path.to_string_lossy(),
                 "FileBytes": file_bytes, "Architecture": architecture, "Alignment": alignment, "MetadataCount": metadata_count,
                 "MetadataEndOffset": metadata_end, "TensorDescriptorsEndOffset": descriptors_end, "TensorDataOffset": data_offset,
@@ -843,15 +861,16 @@ pub(crate) fn inspect_retained(
                 "InspectionLimits": {"HeaderBytes": HEADER_LIMIT, "StringBytes": STRING_LIMIT, "ArrayElements": ARRAY_LIMIT,
                     "TotalArrayElements": TOTAL_ELEMENT_LIMIT, "ArrayNesting": 4, "MetadataRecords": 10_000, "Tensors": 100_000},
                 "TensorPayloadRead": false, "Dialect": dialect
-            })
-        }
+        })
     };
     #[cfg(not(feature = "report"))]
-    let _ = (path, tokenizer_hash, tokenizer_bytes, tokenizer_records);
+    let _ = path;
     let retained_bytes = match (memory_limit, parser.retain_budget) {
         (Some(limit), Some(remaining)) => limit - remaining,
         _ => 0,
     };
+    // Release buffered read-ahead before returning the verified file owner.
+    drop(parser);
     Ok(Inspection {
         #[cfg(feature = "report")]
         report,
