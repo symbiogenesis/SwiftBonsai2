@@ -1,0 +1,32 @@
+cmake_minimum_required(VERSION 3.24)
+project(BonsaiPrismUpstreamTests LANGUAGES C CXX)
+
+if(NOT DEFINED PRISM_SOURCE_DIR)
+  message(FATAL_ERROR "PRISM_SOURCE_DIR must name the verified, unmodified pinned Prism source")
+endif()
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
+set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+set(GGML_CUDA OFF CACHE BOOL "" FORCE)
+set(GGML_METAL OFF CACHE BOOL "" FORCE)
+set(GGML_ACCELERATE OFF CACHE BOOL "" FORCE)
+set(GGML_BLAS OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+add_subdirectory("${PRISM_SOURCE_DIR}/ggml" "${CMAKE_CURRENT_BINARY_DIR}/ggml")
+
+# Build the original test mains directly; no assertions or fixture cases change.
+add_executable(prism-upstream-pq2-row-shapes "${PRISM_SOURCE_DIR}/tests/test-pq2-row-shapes.cpp")
+target_link_libraries(prism-upstream-pq2-row-shapes PRIVATE ggml ggml-cpu)
+add_executable(prism-upstream-ptq1-element-map "${PRISM_SOURCE_DIR}/tests/test-ptq1_0-element-map.cpp")
+
+# These exporters share the original source's helpers. The Rust adapter applies
+# the same assertions to C++ outputs before it retargets them to our runtime.
+add_executable(prism-upstream-pq2-fixtures pq2-fixtures.cpp)
+target_include_directories(prism-upstream-pq2-fixtures PRIVATE "${PRISM_SOURCE_DIR}/tests")
+target_link_libraries(prism-upstream-pq2-fixtures PRIVATE ggml ggml-cpu)
+add_executable(prism-upstream-ptq1-fixtures ptq1-fixtures.cpp)
+target_include_directories(prism-upstream-ptq1-fixtures PRIVATE "${PRISM_SOURCE_DIR}/tests")
