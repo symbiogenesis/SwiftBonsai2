@@ -14,6 +14,9 @@ categories = ["encoding", "science"]
 default = ["report"]
 report = ["dep:serde_json", "dep:bonsai-ternary"]
 
+[lib]
+test = false
+
 [[bin]]
 name = "bonsai-gguf"
 path = "src/main.rs"
@@ -23,9 +26,6 @@ required-features = ["report"]
 bonsai-ternary = { path = "../ternary", optional = true }
 serde_json = { workspace = true, optional = true }
 sha2.workspace = true
-
-[dev-dependencies]
-tempfile.workspace = true
 
 [lints]
 workspace = true

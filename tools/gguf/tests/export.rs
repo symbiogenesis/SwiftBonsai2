@@ -12,7 +12,9 @@ use bonsai_gguf::{
     inspect,
 };
 use sha2::{Digest, Sha256};
-use tempfile::{Builder, TempDir};
+
+mod support;
+use support::ScratchDirectory;
 
 struct Fixture {
     bytes: Vec<u8>,
@@ -112,8 +114,8 @@ fn fixture(large_blocks: usize, file_type_tag: u32) -> Result<Fixture> {
     })
 }
 
-fn scratch() -> Result<TempDir> {
-    Ok(Builder::new().prefix("SwiftBonsai-GgufExport-").tempdir()?)
+fn scratch() -> Result<ScratchDirectory> {
+    Ok(ScratchDirectory::new()?)
 }
 
 fn sha(bytes: &[u8]) -> String {

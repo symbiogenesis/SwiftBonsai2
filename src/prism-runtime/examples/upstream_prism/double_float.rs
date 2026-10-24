@@ -24,12 +24,17 @@ const FINITE: u64 = 2 * 255 * (1 << 23);
 const RANGE_BITS: u32 = 23;
 const RANGES: u32 = 512;
 const MAX_WORKERS: usize = 8;
+const FINITE_INTERVALS: [(u32, u32); 2] = [(0, 0x7f7f_ffff), (0x8000_0000, 0xff7f_ffff)];
+// round(127.5) is 128; round(-128.5) is -129. The negative endpoint
+// differs because -128 is representable by the original signed-byte cast.
+const UNDEFINED_CAST_INTERVALS: [(u32, u32); 2] =
+    [(0x42ff_0000, 0x7f7f_ffff), (0xc300_8000, 0xff7f_ffff)];
 
 fn rounded(value: f32) -> (f64, f64) {
     (f64::from(value).round(), f64::from(value.round()))
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct Proof {
     visited: u64,
     finite: u64,
@@ -39,13 +44,29 @@ struct Proof {
 
 impl Proof {
     fn examine(&mut self, patterns: std::ops::RangeInclusive<u32>) {
-        for bits in patterns.rev() {
-            self.visited += 1;
-            let value = f32::from_bits(bits);
-            if value.is_finite() {
-                self.finite += 1;
+        let (first, last) = patterns.into_inner();
+        if first > last {
+            return;
+        }
+        self.visited += u64::from(last) - u64::from(first) + 1;
+        // A sign/exponent range has uniform finiteness. Count intervals once
+        // instead of classifying and updating counters billions of
+        // times. Every finite bit pattern still reaches both rounding calls
+        // and the exact comparison; only nonfinite patterns have no predicate,
+        // exactly as in the original proof.
+        for (start, end) in UNDEFINED_CAST_INTERVALS {
+            self.undefined_casts += intersection_count(first, last, start, end);
+        }
+        for (start, end) in FINITE_INTERVALS.into_iter().rev() {
+            let start = first.max(start);
+            let end = last.min(end);
+            if start > end {
+                continue;
+            }
+            self.finite += u64::from(end) - u64::from(start) + 1;
+            for bits in (start..=end).rev() {
+                let value = f32::from_bits(bits);
                 let (double, single) = rounded(value);
-                self.undefined_casts += u64::from(!(-128.0..128.0).contains(&double));
                 #[allow(
                     clippy::float_cmp,
                     reason = "The original proof requires exact rounding equality, not approximate error."
@@ -66,6 +87,16 @@ impl Proof {
         {
             self.failure = other.failure;
         }
+    }
+}
+
+fn intersection_count(first: u32, last: u32, start: u32, end: u32) -> u64 {
+    let lower = if first > start { first } else { start };
+    let upper = if last < end { last } else { end };
+    if lower > upper {
+        0
+    } else {
+        u64::from(upper) - u64::from(lower) + 1
     }
 }
 
@@ -122,6 +153,8 @@ pub(super) fn run(_engine: &Engine) -> Result<Value> {
         "SourceSha256":"1a967f5a89c959260d1884740ac0b2f25a8db9dcc96f4c6eed05fcdb35c9627b",
         "Scope":"source-local arithmetic proof; no upstream or Rust runtime engine API exists in this source",
         "VisitedPatterns":proof.visited,"ExpectedPatterns":PATTERNS,"FinitePredicates":proof.finite,"ExpectedFinitePredicates":FINITE,
+        "NonfinitePatternsClassified":proof.visited-proof.finite,
+        "CoverageAccounting":"every finite bit pattern is enumerated and compared; nonfinite intervals are classified by their IEEE exponent bits",
         "UndefinedOriginalCastInputs":proof.undefined_casts,"DefinedOriginalCastInputs":proof.finite-proof.undefined_casts,
         "Workers":workers,"Ranges":RANGES,
         "Comparison":"exact rounded-number equality; implies original int8 equality on its defined domain",
@@ -133,6 +166,63 @@ pub(super) fn run(_engine: &Engine) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn reference(patterns: std::ops::RangeInclusive<u32>) -> Proof {
+        let mut proof = Proof::default();
+        for bits in patterns.rev() {
+            proof.visited += 1;
+            let value = f32::from_bits(bits);
+            if !value.is_finite() {
+                continue;
+            }
+            proof.finite += 1;
+            let (double, single) = rounded(value);
+            proof.undefined_casts += u64::from(!(-128.0..128.0).contains(&double));
+            #[allow(
+                clippy::float_cmp,
+                reason = "This independent scalar oracle preserves the original exact comparison."
+            )]
+            if double != single && proof.failure.is_none() {
+                proof.failure = Some((bits, double, single));
+            }
+        }
+        proof
+    }
+
+    #[test]
+    fn interval_accounting_matches_scalar_oracle_at_every_boundary_and_sampled_ranges() {
+        for boundary in [
+            0_u32,
+            0x42ff_0000,
+            0x7f80_0000,
+            0x8000_0000,
+            0xc300_8000,
+            0xff80_0000,
+            u32::MAX,
+        ] {
+            for radius in [0, 1, 127, 512] {
+                let range = boundary.saturating_sub(radius)..=boundary.saturating_add(radius);
+                let mut proof = Proof::default();
+                proof.examine(range.clone());
+                assert_eq!(
+                    proof,
+                    reference(range),
+                    "boundary {boundary:08x}, radius {radius}"
+                );
+            }
+        }
+        let mut first = 0x1234_5678_u32;
+        for _ in 0..512 {
+            first = first.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let range = first..=first.saturating_add(255);
+            let mut proof = Proof::default();
+            proof.examine(range.clone());
+            assert_eq!(proof, reference(range), "sample {first:08x}");
+        }
+        let mut empty = Proof::default();
+        empty.examine(std::ops::RangeInclusive::new(1, 0));
+        assert_eq!(empty, Proof::default());
+    }
 
     #[test]
     fn finite_boundary_and_tie_rounding_witnesses() {
