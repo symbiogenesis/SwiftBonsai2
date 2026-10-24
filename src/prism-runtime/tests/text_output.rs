@@ -30,7 +30,7 @@ fn assert_all_chunkings(bytes: &[u8]) -> Result<()> {
         append(&mut output, &bytes[start..], &mut rendered)?;
         rendered.push_str(output.finish());
         assert_eq!(rendered, expected, "bytes {bytes:?}, partition {mask}");
-        assert_eq!(output.pending_bytes(), []);
+        assert_eq!(output.pending_bytes(), [0_u8; 0]);
         assert_eq!(output.finish(), "");
     }
     Ok(())
@@ -110,7 +110,7 @@ fn bounded_push_rejects_without_losing_pending_bytes_and_accepts_exact_limit() -
 
     let bounded = &oversized[..MAX_TEXT_OUTPUT_BYTES];
     assert_eq!(output.push(bounded)?.as_bytes(), bounded);
-    assert_eq!(output.pending_bytes(), []);
+    assert_eq!(output.pending_bytes(), [0_u8; 0]);
     let malformed = vec![0xff; MAX_TEXT_OUTPUT_BYTES];
     let rendered = output.push(&malformed)?;
     assert_eq!(rendered.len(), 3 * MAX_TEXT_OUTPUT_BYTES);
@@ -134,7 +134,7 @@ fn reset_and_finish_make_request_reuse_explicit() -> Result<()> {
 
         assert_eq!(output.push(suffix)?, "");
         output.reset();
-        assert_eq!(output.pending_bytes(), []);
+        assert_eq!(output.pending_bytes(), [0_u8; 0]);
         assert_eq!(output.finish(), "");
         assert_eq!(output.push(&[0x80])?, "\u{fffd}");
         assert_eq!(output.push(b"after cancellation")?, "after cancellation");

@@ -62,7 +62,7 @@ struct RepeatingReader {
 
 impl Read for RepeatingReader {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        assert_ne!(buffer, []);
+        assert_ne!(buffer, [0_u8; 0]);
         let count = buffer.len().min(self.maximum_chunk);
         buffer[..count].fill(b'a');
         self.consumed += count;
@@ -118,7 +118,7 @@ fn short_reads_and_trait_object_readers_preserve_split_utf8() -> Result<()> {
         };
         let erased: &mut dyn Read = &mut reader;
         assert_eq!(read_prompt(erased)?, text);
-        assert_eq!(reader.bytes, []);
+        assert_eq!(reader.bytes, [0_u8; 0]);
     }
     Ok(())
 }

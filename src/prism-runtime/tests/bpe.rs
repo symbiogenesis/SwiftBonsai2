@@ -188,7 +188,7 @@ fn missing_normal_byte_fallback_fails_even_if_a_longer_or_byte_type_token_exists
     assert!(bpe.encode_piece(b"a", 1).is_err());
     assert!(bpe.encode_piece(b"ab", 1).is_err());
     assert_eq!(bpe.encode_piece(b"b", 1)?, [2]);
-    assert_eq!(bpe.encode_piece(b"", 0)?, []);
+    assert_eq!(bpe.encode_piece(b"", 0)?, [0_u32; 0]);
     assert!(bpe.encode_piece(b"b", 0).is_err());
     Ok(())
 }
@@ -293,6 +293,6 @@ fn input_work_and_final_output_limits_are_enforced() -> Result<()> {
     assert!(bpe.encode_pieces(&too_many, usize::MAX).is_err());
     let too_large = vec![at_limit.as_slice(); MAX_BPE_INPUT_BYTES / MAX_BPE_PIECE_BYTES + 1];
     assert!(bpe.encode_pieces(&too_large, usize::MAX).is_err());
-    assert_eq!(bpe.encode_pieces(&[], 0)?, []);
+    assert_eq!(bpe.encode_pieces(&[], 0)?, [0_u32; 0]);
     Ok(())
 }
