@@ -1,0 +1,13 @@
+{
+  "SchemaVersion": 1,
+  "UpstreamCommit": "b87ca7225456b06b0975b8239c66b5aecf07e37c",
+  "CatalogSha256": "fc6efc6a705d21d4037a1dcff676381a89ef30985af122e5de319cd13cf615b3",
+  "Measure": "upstream-source-files",
+  "Total": 71,
+  "MinimumPassed": 0,
+  "RequiredPassedIds": [],
+  "Provenance": {
+    "Status": "awaiting-first-measured-adapter-run",
+    "Explanation": "Bootstrap policy; both implemented adapters must still produce target and independently passing C++ reference evidence. Raise this minimum and record each measured green ID before considering the initial baseline established."
+  }
+}
