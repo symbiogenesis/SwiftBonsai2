@@ -331,6 +331,18 @@ impl<D: Decoder> Runtime<D> {
         Ok(())
     }
 
+    fn ingest(&mut self, token: u32, cancellation: &Cancellation) -> Result<()> {
+        cancellation.check()?;
+        self.tokens.try_reserve(1)?;
+        // Preserve the reusable allocation, but invalidate logits for the old
+        // prefix before advancing state without producing a new distribution.
+        self.logits.clear();
+        self.decoder.ingest(token)?;
+        cancellation.check()?;
+        self.tokens.push(token);
+        Ok(())
+    }
+
     fn generate_inner(
         &mut self,
         prompt: &[u32],
@@ -338,9 +350,14 @@ impl<D: Decoder> Runtime<D> {
         cancellation: &Cancellation,
         emit: &mut impl FnMut(u32) -> Result<()>,
     ) -> Result<Completion> {
+        cancellation.check()?;
         let reused = self.prepare(prompt)?;
-        for &token in &prompt[reused..] {
-            self.evaluate(token, cancellation)?;
+        cancellation.check()?;
+        if let Some((&last, prefix)) = prompt[reused..].split_last() {
+            for &token in prefix {
+                self.ingest(token, cancellation)?;
+            }
+            self.evaluate(last, cancellation)?;
         }
         let mut completion = Completion {
             prompt_tokens: prompt.len(),

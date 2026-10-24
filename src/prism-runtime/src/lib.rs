@@ -69,6 +69,31 @@ pub trait Decoder {
         output.extend_from_slice(&logits);
         Ok(())
     }
+    /// Include one token in sequence state without retaining next-token logits.
+    ///
+    /// Success advances exactly the same recurrent/convolution/KV state and
+    /// position as [`Self::evaluate_into`]. An override may skip output-only
+    /// normalization and vocabulary projection, but must still validate the
+    /// token, context bounds and every computed state value. Checkpoints must
+    /// remain complete and independent of scratch storage.
+    ///
+    /// The compatibility implementation calls [`Self::evaluate_into`] and
+    /// discards its output only after independently checking that it contains
+    /// exactly [`Self::vocab_size`] finite logits. Thus an invalid output from
+    /// an existing decoder remains an error even when no logits are needed.
+    ///
+    /// # Errors
+    /// Rejects invalid tokens, exhausted context, numerical and allocation
+    /// errors. State may have changed on failure and requires transaction
+    /// restoration before reuse.
+    fn ingest(&mut self, token: u32) -> Result<()> {
+        let mut logits = Vec::new();
+        self.evaluate_into(token, &mut logits)?;
+        if logits.len() != self.vocab_size() || logits.iter().any(|value| !value.is_finite()) {
+            return Err(invalid("native decoder returned invalid logits"));
+        }
+        Ok(())
+    }
     /// Capture every mutable component needed for exact prefix restoration.
     ///
     /// # Errors

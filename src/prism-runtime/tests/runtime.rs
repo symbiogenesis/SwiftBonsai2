@@ -380,3 +380,236 @@ fn owned_decoder_fallback_reuses_output_and_clears_failed_evaluations() -> Resul
     assert_eq!(output, [0.0_f32; 0]);
     Ok(())
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Operation {
+    Ingest(u32),
+    Evaluate(u32),
+}
+
+#[derive(Clone, Copy, Default)]
+enum IngestFault {
+    #[default]
+    None,
+    Failure,
+    Cancel,
+}
+
+struct StateOnly {
+    inner: Reusing,
+    operations: Rc<RefCell<Vec<Operation>>>,
+    fault: Rc<Cell<IngestFault>>,
+}
+
+impl Decoder for StateOnly {
+    type Checkpoint = Vec<u32>;
+
+    fn identity(&self) -> &str {
+        self.inner.identity()
+    }
+    fn vocab_size(&self) -> usize {
+        self.inner.vocab_size()
+    }
+    fn checkpoint_bytes(&self) -> usize {
+        self.inner.checkpoint_bytes()
+    }
+    fn reset(&mut self) -> Result<()> {
+        self.inner.reset()
+    }
+    fn checkpoint(&self) -> Result<Self::Checkpoint> {
+        self.inner.checkpoint()
+    }
+    fn restore(&mut self, checkpoint: &Self::Checkpoint) -> Result<()> {
+        self.inner.restore(checkpoint)
+    }
+    fn evaluate(&mut self, token: u32) -> Result<Vec<f32>> {
+        self.inner.evaluate(token)
+    }
+    fn evaluate_into(&mut self, token: u32, output: &mut Vec<f32>) -> Result<()> {
+        self.operations
+            .borrow_mut()
+            .push(Operation::Evaluate(token));
+        self.inner.evaluate_into(token, output)
+    }
+    fn ingest(&mut self, token: u32) -> Result<()> {
+        self.operations.borrow_mut().push(Operation::Ingest(token));
+        self.inner.inner.tokens.push(token);
+        match self.fault.replace(IngestFault::None) {
+            IngestFault::None => {}
+            IngestFault::Failure => {
+                return Err(std::io::Error::other("ingestion failed after state mutation").into());
+            }
+            IngestFault::Cancel => self.inner.cancellation.cancel(),
+        }
+        Ok(())
+    }
+}
+
+fn state_only() -> StateOnly {
+    StateOnly {
+        inner: Reusing {
+            inner: decoder(),
+            storage: Rc::new(RefCell::new(Vec::new())),
+            owned_calls: Rc::new(Cell::new(0)),
+            fault: Rc::new(Cell::new(OutputFault::None)),
+            cancellation: Cancellation::default(),
+        },
+        operations: Rc::new(RefCell::new(Vec::new())),
+        fault: Rc::new(Cell::new(IngestFault::None)),
+    }
+}
+
+#[test]
+fn prompt_ingestion_skips_only_intermediate_uncached_logits_and_preserves_storage() -> Result<()> {
+    use Operation::{Evaluate, Ingest};
+
+    let decoder = state_only();
+    let operations = decoder.operations.clone();
+    let storage = decoder.inner.storage.clone();
+    let owned_calls = decoder.inner.owned_calls.clone();
+    let mut runtime = Runtime::new(decoder, LIMITS)?;
+    let cancellation = Cancellation::default();
+    let first = runtime.generate(
+        &[1, 2, 3],
+        &Generation {
+            max_tokens: 2,
+            stop_tokens: vec![],
+        },
+        &cancellation,
+        |_| Ok(()),
+    )?;
+    assert_eq!(first.reused_tokens, 0);
+    assert_eq!(runtime.tokens(), &[1, 2, 3, 6, 4]);
+    assert_eq!(
+        operations.replace(Vec::new()),
+        [Ingest(1), Ingest(2), Evaluate(3), Evaluate(6), Evaluate(4)]
+    );
+    let cached = runtime.generate(&[1, 2, 3, 6, 4], &options(), &cancellation, |_| Ok(()))?;
+    assert_eq!(cached.reused_tokens, 5);
+    assert_eq!(operations.replace(Vec::new()), [Evaluate(0)]);
+    let extended =
+        runtime.generate(&[1, 2, 3, 6, 4, 0, 2, 1], &options(), &cancellation, |_| {
+            Ok(())
+        })?;
+    assert_eq!(extended.reused_tokens, 6);
+    assert_eq!(
+        operations.replace(Vec::new()),
+        [Ingest(2), Evaluate(1), Evaluate(3)]
+    );
+    let edited = runtime.generate(
+        &[1, 2, 3, 6, 4, 7, 1],
+        &options(),
+        &cancellation,
+        |_| Ok(()),
+    )?;
+    assert_eq!(edited.reused_tokens, 5);
+    assert_eq!(runtime.tokens(), &[1, 2, 3, 6, 4, 7, 1, 0]);
+    assert_eq!(
+        operations.replace(Vec::new()),
+        [Ingest(7), Evaluate(1), Evaluate(0)]
+    );
+    let first_storage = storage.borrow()[0];
+    assert!(storage.borrow().iter().all(|&entry| entry == first_storage));
+    assert_eq!(owned_calls.get(), 0);
+    Ok(())
+}
+
+#[test]
+fn ingestion_failure_and_cancellation_restore_committed_state_and_logits() -> Result<()> {
+    for failure in [IngestFault::Failure, IngestFault::Cancel] {
+        let decoder = state_only();
+        let operations = decoder.operations.clone();
+        let fault = decoder.fault.clone();
+        let cancellation = decoder.inner.cancellation.clone();
+        let mut runtime = Runtime::new(decoder, LIMITS)?;
+        runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+        operations.borrow_mut().clear();
+        fault.set(failure);
+        assert!(
+            runtime
+                .generate(&[2, 3, 4], &options(), &cancellation, |_| Ok(()))
+                .is_err()
+        );
+        assert_eq!(operations.replace(Vec::new()), [Operation::Ingest(2)]);
+        assert_eq!(runtime.tokens(), &[1, 1]);
+        assert!(!runtime.is_faulted());
+        let cancelled = Cancellation::default();
+        cancelled.cancel();
+        assert!(
+            runtime
+                .generate(&[2, 3, 4], &options(), &cancelled, |_| Ok(()))
+                .is_err()
+        );
+        assert!(operations.borrow().is_empty());
+        let recovered =
+            runtime.generate(&[1, 1], &options(), &Cancellation::default(), |_| Ok(()))?;
+        assert_eq!(recovered.reused_tokens, 2);
+        assert_eq!(runtime.tokens(), &[1, 1, 2]);
+        assert_eq!(operations.replace(Vec::new()), [Operation::Evaluate(2)]);
+    }
+    Ok(())
+}
+
+#[test]
+fn failed_ingestion_restoration_latches_admission_until_reset() -> Result<()> {
+    let decoder = state_only();
+    let fault = decoder.fault.clone();
+    let restore_fail = decoder.inner.inner.restore_fail.clone();
+    let operations = decoder.operations.clone();
+    let mut runtime = Runtime::new(decoder, LIMITS)?;
+    let cancellation = Cancellation::default();
+    runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+    operations.borrow_mut().clear();
+    fault.set(IngestFault::Failure);
+    restore_fail.set(true);
+    assert!(
+        runtime
+            .generate(&[2, 3], &options(), &cancellation, |_| Ok(()))
+            .is_err()
+    );
+    assert!(runtime.is_faulted());
+    assert_eq!(runtime.tokens(), &[1, 1]);
+    assert_eq!(operations.replace(Vec::new()), [Operation::Ingest(2)]);
+    assert!(
+        runtime
+            .generate(&[1, 1], &options(), &cancellation, |_| Ok(()))
+            .is_err()
+    );
+    assert!(operations.borrow().is_empty());
+    runtime.reset()?;
+    restore_fail.set(false);
+    runtime.generate(&[3, 4], &options(), &cancellation, |_| Ok(()))?;
+    assert_eq!(runtime.tokens(), &[3, 4, 7]);
+    Ok(())
+}
+
+#[test]
+fn default_ingestion_rejects_malformed_discarded_logits_and_rolls_back() -> Result<()> {
+    for failure in [
+        OutputFault::PartialFailure,
+        OutputFault::WrongSize,
+        OutputFault::Nonfinite,
+    ] {
+        let decoder = state_only().inner;
+        let fault = decoder.fault.clone();
+        let owned_calls = decoder.owned_calls.clone();
+        let mut runtime = Runtime::new(decoder, LIMITS)?;
+        let cancellation = Cancellation::default();
+        runtime.generate(&[1], &options(), &cancellation, |_| Ok(()))?;
+        fault.set(failure);
+        assert!(
+            runtime
+                .generate(&[2, 3, 4], &options(), &cancellation, |_| Ok(()))
+                .is_err()
+        );
+        assert_eq!(runtime.tokens(), &[1, 1]);
+        assert!(!runtime.is_faulted());
+        let recovered = runtime.generate(&[1, 1], &options(), &cancellation, |_| Ok(()))?;
+        assert_eq!(recovered.reused_tokens, 2);
+        assert_eq!(runtime.tokens(), &[1, 1, 2]);
+        // A decoder supplying only reusable output remains backward compatible;
+        // the default ingestion path must dispatch through that implementation.
+        assert_eq!(owned_calls.get(), 0);
+    }
+    Ok(())
+}
