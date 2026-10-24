@@ -169,23 +169,22 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Require every package group and acceptance probe
-        shell: pwsh
+        shell: bash
         working-directory: ${{ runner.temp }}
         env:
           CHECKS_RESULT: ${{ needs.checks.result }}
           PROBE_RESULT: ${{ needs.probe.result }}
         run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-          @(
-            "Revision: $env:GITHUB_SHA"
-            "Production nightly x Runtime/Broker: $env:CHECKS_RESULT"
-            "Compiler acceptance probes: $env:PROBE_RESULT"
-            ''
-            'The pinned nightly is the production toolchain; stable is an isolated compiler-probe control. Compiler acceptance and correctness do not establish inference performance gains.'
-            'Prism native linking and regression remain covered by the separate Foundation workflow.'
-          ) >> $env:GITHUB_STEP_SUMMARY
-          if ($env:CHECKS_RESULT -cne 'success' -or $env:PROBE_RESULT -cne 'success') {
-            throw 'Every compiler/package group and the acceptance probes must succeed; failed, cancelled or skipped jobs are not accepted.'
-          }
+          {
+            printf '%s\n' \
+              "Revision: $GITHUB_SHA" \
+              "Production nightly x Runtime/Broker: $CHECKS_RESULT" \
+              "Compiler acceptance probes: $PROBE_RESULT" \
+              '' \
+              'The pinned nightly is the production toolchain; stable is an isolated compiler-probe control. Compiler acceptance and correctness do not establish inference performance gains.' \
+              'Prism native linking and regression remain covered by the separate Foundation workflow.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$CHECKS_RESULT" != 'success' || "$PROBE_RESULT" != 'success' ]]; then
+            echo 'Every compiler/package group and the acceptance probes must succeed; failed, cancelled or skipped jobs are not accepted.' >&2
+            exit 1
+          fi
