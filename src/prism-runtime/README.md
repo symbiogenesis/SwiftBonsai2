@@ -320,6 +320,8 @@ failure. The library accepts an empty array; the driver requires a nonempty
 prompt. Neither reading path supplies cancellation or an input deadline.
 
 `Bpe::from_metadata` validates normal vocabulary pieces and ranked merge rules.
+Input-only construction checks the full vocabulary without materializing decoded
+output pieces; composed tokenizers reuse that checked view for special spellings.
 `encode_piece` accepts one already pretokenized byte slice; `encode_pieces`
 preserves caller-supplied boundaries. Neither API finds Qwen35 regex boundaries,
 recognizes special input tokens, inserts BOS/EOS or renders a chat template.
@@ -328,6 +330,14 @@ plain text. `encode_with_special_tokens` additionally applies a validated
 `SpecialTokens` contract with the same vocabulary size and explicit insertion
 flags; the caller must supply metadata from the same model. Using the merge core
 directly on arbitrary text does not establish tokenizer parity.
+
+Multi-piece encoding reuses one request-local node vector and candidate heap;
+scratch capacity is bounded by the largest admitted piece. The tokenizer consumes
+`Qwen35PreTokenizer::pieces` directly without collecting a slice vector. This
+checked iterator borrows the original text and stops after an error; callers must
+consume it completely to validate all piece limits. The collecting `split` API
+remains available. These changes retain immutable shared tokenizer state and do
+not establish measured allocation counts, throughput or full-model parity.
 
 ## Memory and ownership
 
