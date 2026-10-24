@@ -165,7 +165,7 @@ fn simd_default_selects_available_kernel_and_explicit_scalar_overrides() -> Test
         )?;
         assert!(matvec_into(&weights, &[], &mut output, &mut scratch).is_err());
         assert_eq!(scratch.selected_backend(), MatvecBackend::Scalar);
-        assert!(output.is_empty());
+        assert_eq!(output, [] as [f32; 0]);
     }
     Ok(())
 }
