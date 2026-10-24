@@ -67,7 +67,7 @@ support unit/integration tests; the direct test-specific choices are:
 | `serde_json` 1.0.154 | Keep the current release for protocol assertions, fixtures and retained upstream reports. |
 | `sha2` 0.11.1 | Keep the current release, with default features disabled, for immutable fixture identities. |
 | `zip` 9.1.0 | Upgrade from 9.0.5 and share one workspace declaration between the artifact verifier and maintenance test fixtures. Keep only `deflate-flate2-zlib-rs`, with defaults disabled. |
-| `tempfile` 3.27.0 | Use owned temporary directories for GGUF export fixtures, replacing timestamp naming and leaked test outputs. Disable its optional OS RNG feature; these synthetic fixtures contain no secrets. Explicit successful cleanup reports errors; drop also cleans early returns. |
+| GGUF scratch directories | Use a small standard-library owner with exclusive directory creation and cleanup on early returns. This removes the direct `tempfile` test dependency while preserving explicit cleanup errors after successful tests. Optional native binding generation can still require `tempfile` transitively. |
 | `cbindgen` 0.29.4 | Keep the current optional build dependency for native Prism test declarations, with its unused CLI defaults disabled. |
 
 The remaining direct dependencies (`serde` 1.0.229, `http` 1.5.0, `httparse`
@@ -222,13 +222,36 @@ and configuration diagnostics copied into the fresh evidence directory. See
 [CMake build trees](https://cmake.org/cmake/help/latest/manual/cmake.1.html) and
 [Actions cache matching](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching).
 
-The complete binary32 arithmetic proof still visits all 4,294,967,296 patterns.
-Bounded standard-library workers distribute its sign/exponent ranges and reduce
-counts and failures deterministically. Codec mutation checks run Cargo's emitted
+The complete binary32 arithmetic proof accounts for all 4,294,967,296 patterns.
+It compares both rounding operations for every finite input. Integer interval
+accounting classifies nonfinite patterns and the original undefined cast domain
+outside the hot loop. Bounded standard-library workers distribute ranges and
+reduce counts and failures deterministically. Focused tests compare interval
+counts with the original floating-point oracle at boundaries and sampled ranges.
+Codec mutation checks run Cargo's emitted
 test executable directly after compilation; compilation failures cannot count as
 killed mutants. The PTQ1 export oracle compares the entire expected byte payload,
 including padding and gaps, in one native comparison. These changes add no test
 framework or worker-pool dependency. All exhaustive runs remain CI-only.
+
+Prism conformance runs two independent adapters concurrently, starting the largest
+timeout budgets first; each adapter retains sequential C++ and Rust controls and
+separate logs and bridge evidence. Results return to catalog order before the
+unchanged complete baseline gate runs. Command and adapter durations identify
+remaining hosted bottlenecks. The scheduler has synthetic overlap, identity and
+failure regressions; exhaustive workloads remain CI-only.
+
+Native bridge CMake inputs are mirrored into a content-verified stable directory,
+so checkout timestamps do not force unchanged adapter sources to compile again.
+Native cache fallback keys retain the exact source and compiler identity while
+allowing orchestration changes. Fresh extraction, source verification, CMake
+configuration and every correctness check still run. Evidence uses faster
+compression without dropping request/response files.
+
+Seven library or binary roots with no unit tests disable their empty unit-test
+harnesses. Their ordinary builds, Clippy coverage, integration tests and doctests
+remain enabled. This avoids seven unnecessary test compilations and links per
+all-package check without removing assertions or adding a test runner dependency.
 
 Scratch/evidence remains external. Select the published maintenance executable
 from the exact evaluated main revision via `BONSAI_TOOLS_PATH` or `-ToolPath`;

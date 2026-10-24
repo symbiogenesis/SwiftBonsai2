@@ -67,7 +67,6 @@ dependencies = [
  "bonsai-ternary",
  "serde_json",
  "sha2",
- "tempfile",
 ]
 
 [[package]]
