@@ -6,6 +6,7 @@ members = [
     "src/windows-credentials",
     "src/prism-runtime",
     "tools/ternary",
+    "tools/codec-probe",
     "tools/gguf",
     "tools/prism",
     "tools/rust-trial",
