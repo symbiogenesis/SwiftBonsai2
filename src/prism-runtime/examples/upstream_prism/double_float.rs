@@ -11,6 +11,7 @@
 //! Upstream MIT attribution: tools/prism/upstream/LICENSE.
 
 use serde_json::{Value, json};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use super::engine::Engine;
 use super::{Result, invalid, result};
@@ -18,9 +19,84 @@ use super::{Result, invalid, result};
 const ID: &str = "tests/test-double-float.cpp";
 const PATTERNS: u64 = 1_u64 << 32;
 const FINITE: u64 = 2 * 255 * (1 << 23);
+// Each range owns one sign/exponent pair. Queueing ranges keeps workers busy
+// across finite and nonfinite regions without synchronization in the hot loop.
+const RANGE_BITS: u32 = 23;
+const RANGES: u32 = 512;
+const MAX_WORKERS: usize = 8;
 
 fn rounded(value: f32) -> (f64, f64) {
     (f64::from(value).round(), f64::from(value.round()))
+}
+
+#[derive(Clone, Copy, Default)]
+struct Proof {
+    visited: u64,
+    finite: u64,
+    undefined_casts: u64,
+    failure: Option<(u32, f64, f64)>,
+}
+
+impl Proof {
+    fn examine(&mut self, patterns: std::ops::RangeInclusive<u32>) {
+        for bits in patterns.rev() {
+            self.visited += 1;
+            let value = f32::from_bits(bits);
+            if value.is_finite() {
+                self.finite += 1;
+                let (double, single) = rounded(value);
+                self.undefined_casts += u64::from(!(-128.0..128.0).contains(&double));
+                #[allow(
+                    clippy::float_cmp,
+                    reason = "The original proof requires exact rounding equality, not approximate error."
+                )]
+                if double != single && self.failure.is_none_or(|(previous, _, _)| bits > previous) {
+                    self.failure = Some((bits, double, single));
+                }
+            }
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.visited += other.visited;
+        self.finite += other.finite;
+        self.undefined_casts += other.undefined_casts;
+        if let Some((bits, _, _)) = other.failure
+            && self.failure.is_none_or(|(previous, _, _)| bits > previous)
+        {
+            self.failure = other.failure;
+        }
+    }
+}
+
+fn prove(workers: usize, range_bits: u32, ranges: u32) -> Result<Proof> {
+    let next = AtomicU32::new(0);
+    std::thread::scope(|scope| {
+        let handles = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut proof = Proof::default();
+                    loop {
+                        let range = next.fetch_add(1, Ordering::Relaxed);
+                        if range >= ranges {
+                            return proof;
+                        }
+                        let start = (ranges - range - 1) << range_bits;
+                        proof.examine(start..=start | ((1_u32 << range_bits) - 1));
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut proof = Proof::default();
+        for handle in handles {
+            proof.merge(
+                handle
+                    .join()
+                    .map_err(|_| invalid("binary32 proof worker panicked"))?,
+            );
+        }
+        Ok(proof)
+    })
 }
 
 pub(super) fn run(_engine: &Engine) -> Result<Value> {
@@ -36,34 +112,18 @@ pub(super) fn run(_engine: &Engine) -> Result<Value> {
             "this source port covers the requested Windows ARM64 path",
         ));
     }
-    let mut visited = 0_u64;
-    let mut finite = 0_u64;
-    let mut undefined_casts = 0_u64;
-    let mut failure = None;
-    for bits in (0..=u32::MAX).rev() {
-        visited += 1;
-        let value = f32::from_bits(bits);
-        if value.is_finite() {
-            finite += 1;
-            let (double, single) = rounded(value);
-            undefined_casts += u64::from(!(-128.0..128.0).contains(&double));
-            #[allow(
-                clippy::float_cmp,
-                reason = "The original proof requires exact rounding equality, not approximate error."
-            )]
-            if double != single {
-                failure =
-                    Some(json!({"InputBits":bits,"DoubleRounded":double,"FloatRounded":single}));
-                break;
-            }
-        }
-    }
-    let passed = visited == PATTERNS && finite == FINITE && failure.is_none();
+    let workers = std::thread::available_parallelism()?.get().min(MAX_WORKERS);
+    let proof = prove(workers, RANGE_BITS, RANGES)?;
+    let passed = proof.visited == PATTERNS && proof.finite == FINITE && proof.failure.is_none();
+    let failure = proof.failure.map(|(bits, double, single)| {
+        json!({"InputBits":bits,"DoubleRounded":double,"FloatRounded":single})
+    });
     Ok(result(ID, passed, json!({
         "SourceSha256":"1a967f5a89c959260d1884740ac0b2f25a8db9dcc96f4c6eed05fcdb35c9627b",
         "Scope":"source-local arithmetic proof; no upstream or Rust runtime engine API exists in this source",
-        "VisitedPatterns":visited,"ExpectedPatterns":PATTERNS,"FinitePredicates":finite,"ExpectedFinitePredicates":FINITE,
-        "UndefinedOriginalCastInputs":undefined_casts,"DefinedOriginalCastInputs":finite-undefined_casts,
+        "VisitedPatterns":proof.visited,"ExpectedPatterns":PATTERNS,"FinitePredicates":proof.finite,"ExpectedFinitePredicates":FINITE,
+        "UndefinedOriginalCastInputs":proof.undefined_casts,"DefinedOriginalCastInputs":proof.finite-proof.undefined_casts,
+        "Workers":workers,"Ranges":RANGES,
         "Comparison":"exact rounded-number equality; implies original int8 equality on its defined domain",
         "ExcludedBranch":"x86 F16C half-SiLU code does not apply to Windows ARM64",
         "FirstFailure":failure,
@@ -96,5 +156,59 @@ mod tests {
         }
         assert_eq!(FINITE, 4_278_190_080);
         assert_eq!(PATTERNS - FINITE, 16_777_216);
+    }
+
+    #[test]
+    fn range_partition_and_reduction_preserve_exact_counts_and_first_failure() -> Result<()> {
+        assert_eq!(u64::from(RANGES) << RANGE_BITS, PATTERNS);
+        let parallel = prove(3, 7, 5)?;
+        assert_eq!(parallel.visited, 640);
+        assert_eq!(parallel.finite, 640);
+        assert_eq!(parallel.undefined_casts, 0);
+        assert!(parallel.failure.is_none());
+        let mut combined = Proof::default();
+        for bits in [
+            0_u32,
+            0x3eff_ff80,
+            0x42fe_ff80,
+            0x7f7f_ff80,
+            0x7fff_ff80,
+            0x8000_0000,
+            0xff7f_ff80,
+            0xffff_ff80,
+        ] {
+            let mut proof = Proof::default();
+            proof.examine(bits..=bits + 127);
+            assert_eq!(proof.visited, 128);
+            assert_eq!(
+                proof.finite,
+                if matches!(bits, 0x7fff_ff80 | 0xffff_ff80) {
+                    0
+                } else {
+                    128
+                }
+            );
+            assert_eq!(
+                proof.undefined_casts,
+                if matches!(bits, 0x7f7f_ff80 | 0xff7f_ff80) {
+                    128
+                } else {
+                    0
+                }
+            );
+            assert!(proof.failure.is_none());
+            combined.merge(proof);
+        }
+        assert_eq!(combined.visited, 1024);
+        assert_eq!(combined.finite, 768);
+        assert_eq!(combined.undefined_casts, 256);
+        for bits in [200, 100, 300, 250] {
+            combined.merge(Proof {
+                failure: Some((bits, 1.0, 2.0)),
+                ..Proof::default()
+            });
+        }
+        assert_eq!(combined.failure, Some((300, 1.0, 2.0)));
+        Ok(())
     }
 }

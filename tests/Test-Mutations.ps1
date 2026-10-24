@@ -101,22 +101,50 @@ $receipt = [ordered]@{
     Error = $null
 }
 $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
-$arguments = @('+nightly-2026-10-22-aarch64-pc-windows-msvc', 'test', '--locked', '--offline', '--release',
+$arguments = @('+nightly-2026-10-22-aarch64-pc-windows-msvc', 'test', '--locked', '--offline', '--release', '--no-run', '--message-format=json',
     '--manifest-path', (Join-Path $crate 'Cargo.toml'), '--target-dir', (Join-Path $work 'target'),
     '--test', 'mutation_guards')
 $environment = @{ TEMP = $work; TMP = $work; CARGO_TERM_COLOR = 'never' }
 
-function Invoke-MutationPhase {
+function Invoke-MutationCompile {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][int]$TimeoutSeconds
+    )
+    $log = Join-Path $evidence ($Name + '.log')
+    $result = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments `
+        -WorkingDirectory $work -TimeoutSeconds $TimeoutSeconds -Environment $environment -LogPath $log
+    $checks.Add([pscustomobject]@{ Name = $Name; ExitCode = $result.ExitCode; Log = $log })
+    if ($result.ExitCode -ne 0) { throw "Mutation guard compilation failed; it does not count as a kill: $Name" }
+    $executables = @($result.StandardOutput -split "`n" | Where-Object { $_.StartsWith('{') } | ForEach-Object {
+        $record = $_ | ConvertFrom-Json -AsHashtable
+        if ($record.reason -eq 'compiler-artifact' -and $record.target.name -eq 'mutation_guards' -and $record.executable) {
+            $record.executable
+        }
+    })
+    if ($executables.Count -ne 1 -or -not [IO.Path]::IsPathFullyQualified($executables[0]) -or
+        -not [IO.File]::Exists($executables[0])) {
+        throw 'Expected exactly one compiled mutation guard executable.'
+    }
+    return $executables[0]
+}
+
+function Invoke-MutationTest {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
     param(
         [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][string[]]$ExtraArguments,
-        [Parameter(Mandatory)][int]$TimeoutSeconds
+        [Parameter(Mandatory)][string]$Executable,
+        [Parameter(Mandatory)][string[]]$TestArguments
     )
+    # Cargo already supplied the exact compiled artifact. Running it directly
+    # avoids a second Cargo/toolchain launch and dependency freshness scan for
+    # the baseline and every mutant, while retaining separate compile verdicts.
     $log = Join-Path $evidence ($Name + '.log')
-    $result = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList ($arguments + $ExtraArguments) `
-        -WorkingDirectory $work -TimeoutSeconds $TimeoutSeconds -Environment $environment -LogPath $log
+    $result = Invoke-BonsaiNativeProcess -Executable $Executable -ArgumentList $TestArguments `
+        -WorkingDirectory $work -TimeoutSeconds $TestTimeoutSeconds -Environment $environment -LogPath $log
     $checks.Add([pscustomobject]@{ Name = $Name; ExitCode = $result.ExitCode; Log = $log })
     return $result
 }
@@ -135,9 +163,8 @@ try {
             throw "Mutation source anchor must occur exactly once: $($mutant.Name)"
         }
     }
-    $compile = Invoke-MutationPhase -Name 'baseline-compile' -ExtraArguments @('--no-run') -TimeoutSeconds $BaselineCompileTimeoutSeconds
-    if ($compile.ExitCode -ne 0) { throw 'The unmodified mutation guard target did not compile.' }
-    $baseline = Invoke-MutationPhase -Name 'baseline-tests' -ExtraArguments @('--', '--test-threads=1') -TimeoutSeconds $TestTimeoutSeconds
+    $executable = Invoke-MutationCompile -Name 'baseline-compile' -TimeoutSeconds $BaselineCompileTimeoutSeconds
+    $baseline = Invoke-MutationTest -Name 'baseline-tests' -Executable $executable -TestArguments @('--test-threads=1')
     if ($baseline.ExitCode -ne 0 -or $baseline.StandardOutput -notmatch 'test result: ok\. 6 passed; 0 failed; 0 ignored;') {
         throw 'All six mutation guards must pass without ignored or missing tests before mutation.'
     }
@@ -146,10 +173,9 @@ try {
         $outcomes.Add($outcome)
         try {
             [IO.File]::WriteAllText($sourcePath, $original.Replace($mutant.Anchor, $mutant.Replacement, [StringComparison]::Ordinal))
-            $compile = Invoke-MutationPhase -Name ($mutant.Name + '-compile') -ExtraArguments @('--no-run') -TimeoutSeconds $CompileTimeoutSeconds
-            if ($compile.ExitCode -ne 0) { throw "Mutant compilation failed; it does not count as a kill: $($mutant.Name)" }
+            $executable = Invoke-MutationCompile -Name ($mutant.Name + '-compile') -TimeoutSeconds $CompileTimeoutSeconds
             $outcome.Compiled = $true
-            $test = Invoke-MutationPhase -Name ($mutant.Name + '-test') -ExtraArguments @($mutant.Test, '--', '--exact', '--test-threads=1') -TimeoutSeconds $TestTimeoutSeconds
+            $test = Invoke-MutationTest -Name ($mutant.Name + '-test') -Executable $executable -TestArguments @($mutant.Test, '--exact', '--test-threads=1')
             $testName = [regex]::Escape($mutant.Test)
             $output = $test.StandardOutput + $test.StandardError
             if ($test.ExitCode -ne 101 -or

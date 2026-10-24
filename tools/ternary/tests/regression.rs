@@ -148,16 +148,22 @@ fn every_ptq_byte_and_position_preserves_canonical_validation() {
     let mut source = zeros(0x3c00);
     source[2..].fill(0);
     let baseline = pack_ptq(&source).unwrap();
+    // Enumerate each independent arithmetic oracle once. Canonical membership
+    // depends on the lane width, so the same two sets cover every position.
+    let canonical = [(243_u32, 256), (81, 768)].map(|(values, multiplier)| {
+        let mut bytes = [false; 256];
+        for value in 0..values {
+            let byte = u8::try_from((value * multiplier).div_ceil(243)).unwrap();
+            bytes[usize::from(byte)] = true;
+        }
+        bytes
+    });
     for position in 0..26 {
-        let (values, multiplier) = if position < 24 { (243, 256) } else { (81, 768) };
+        let canonical = &canonical[usize::from(position >= 24)];
         for byte in 0..=255_u8 {
-            // Independently enumerate the unique serialized representatives
-            // of five trits, or four trits with an implicit trailing zero.
-            let canonical =
-                (0..values).any(|value: u32| (value * multiplier).div_ceil(243) == u32::from(byte));
             let mut packed = baseline;
             packed[position] = byte;
-            if canonical {
+            if canonical[usize::from(byte)] {
                 let decoded = unpack_ptq(&packed).unwrap();
                 assert_eq!(
                     pack_ptq(&decoded).unwrap(),

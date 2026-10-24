@@ -77,14 +77,23 @@ if ($Case -in @('Repack','All')) {
     Assert ($result.WorkingBufferBytes -lt 256KB) 'Exporter working buffers exceed their bounded allowance.'
     $bytes = [IO.File]::ReadAllBytes($target)
     Assert ([Convert]::ToHexString($bytes, [int]$fixture.Data, 4) -ceq '01020304') 'Non-PQ tensor bytes changed.'
-    $packedOffset = [int]$fixture.Data + 32
-    for ($block = 0; $block -lt $fixture.Blocks + 1; $block++) {
-        # Large physical tensor, followed by the separately aligned final one.
-        $offset = if ($block -lt $fixture.Blocks) { $packedOffset + 28 * $block } else { [int]$fixture.Data + [int]([Math]::Ceiling((32 + 28 * $fixture.Blocks) / 32.0) * 32) }
-        Assert (@($bytes[$offset..($offset + 23)] | Where-Object { $_ -ne 255 }).Count -eq 0) 'Five-trit byte mapping differs from independent +1 fixture.'
-        Assert ($bytes[$offset + 24] -eq 253 -and $bytes[$offset + 25] -eq 253 -and $bytes[$offset + 26] -eq 0) 'Four-trit tail or scale order differs.'
-        Assert ($bytes[$offset + 27] -eq $(if ($block -eq $fixture.Blocks) { 0xbc } else { 0x3c })) 'Raw scale bits changed.'
+    # Build the independent all-+1 wire oracle once, including compacted gaps
+    # and final padding. One native comparison replaces a PowerShell pipeline
+    # over every five-trit byte and thousands of repeated assertion invocations.
+    $lastPackedOffset = [int]([Math]::Ceiling((32 + 28 * $fixture.Blocks) / 32.0) * 32)
+    $expectedPayload = [byte[]]::new([int]([Math]::Ceiling(($lastPackedOffset + 28) / 32.0) * 32))
+    [Array]::Copy([byte[]]@(1,2,3,4), $expectedPayload, 4)
+    $expectedBlock = [byte[]]::new(28)
+    [Array]::Fill[byte]($expectedBlock, 255)
+    $expectedBlock[24] = $expectedBlock[25] = 253
+    $expectedBlock[26] = 0; $expectedBlock[27] = 0x3c
+    for ($block = 0; $block -lt $fixture.Blocks; $block++) {
+        [Array]::Copy($expectedBlock, 0, $expectedPayload, 32 + 28 * $block, 28)
     }
+    $expectedBlock[27] = 0xbc
+    [Array]::Copy($expectedBlock, 0, $expectedPayload, $lastPackedOffset, 28)
+    Assert ([Convert]::ToHexString($bytes, [int]$fixture.Data, $bytes.Length - [int]$fixture.Data) -ceq
+        [Convert]::ToHexString($expectedPayload)) 'Compacted PTQ1 payload differs from independent wire bytes, raw scale bits or zero padding.'
     Assert ($result.OutputBytes -lt $result.SourceBytes) 'Synthetic export did not compact tensor payloads/gaps.'
 }
 if ($Case -in @('Rejection','All')) {
