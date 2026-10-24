@@ -5,6 +5,9 @@
 //! The native session performs only supplied production batch primitives. Pure
 //! operations within the current batch may finish after another worker fails;
 //! Rust ignores those observations and schedules no further batches.
+//! The approved BPE correction restores its intended invalid-UTF8 exception skip:
+//! the pinned bulk Unicode decoder replaces invalid bytes instead of throwing.
+//! Strict Rust validity checks reject only malformed raw pieces before encoding.
 //! Upstream MIT attribution: tools/prism/upstream/LICENSE.
 
 use std::fmt::Write as _;
@@ -193,6 +196,7 @@ struct Row {
     tokens: Option<Vec<i32>>,
     check: Option<String>,
     skipped: bool,
+    restored_utf8_skip: bool,
     failure: Option<String>,
     merge: Option<bool>,
 }
@@ -218,6 +222,7 @@ fn active(rows: &[Row]) -> Vec<usize> {
 }
 
 fn validate_utf8(client: &Client, rows: &mut [Row]) -> Result<()> {
+    restore_utf8_piece_skips(rows)?;
     let indices = active(rows);
     let inputs: Vec<_> = indices
         .iter()
@@ -244,6 +249,37 @@ fn validate_utf8(client: &Client, rows: &mut [Row]) -> Result<()> {
                 }
             }
             Sample::Error(error) => rows[index].error("UTF8 validation", &error, true),
+        }
+    }
+    Ok(())
+}
+
+fn restore_utf8_piece_skips(rows: &mut [Row]) -> Result<()> {
+    for row in rows.iter_mut().filter(|row| row.active()) {
+        let encoded = row
+            .original
+            .as_ref()
+            .ok_or_else(|| invalid("BPE initial piece missing"))?;
+        let encoded = hex(&json!(encoded))?;
+        let bytes = encoded
+            .as_bytes()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| {
+                let digit = |value: u8| {
+                    if value <= b'9' {
+                        value - b'0'
+                    } else {
+                        value - b'a' + 10
+                    }
+                };
+                (digit(pair[0]) << 4) | digit(pair[1])
+            })
+            .collect::<Vec<_>>();
+        if std::str::from_utf8(&bytes).is_err() {
+            row.skipped = true;
+            row.restored_utf8_skip = true;
         }
     }
     Ok(())
@@ -313,6 +349,7 @@ struct Counts {
     token_checks: usize,
     merge_checks: usize,
     invalid_skips: usize,
+    restored_utf8_skips: usize,
     unicode_visited: usize,
     unicode_checks: usize,
     exempt_9601: usize,
@@ -325,13 +362,14 @@ impl Counts {
         self.token_checks += other.token_checks;
         self.merge_checks += other.merge_checks;
         self.invalid_skips += other.invalid_skips;
+        self.restored_utf8_skips += other.restored_utf8_skips;
         self.unicode_visited += other.unicode_visited;
         self.unicode_checks += other.unicode_checks;
         self.exempt_9601 += other.exempt_9601;
         self.failures.extend(other.failures);
     }
     fn json(&self, asset: &Value) -> Value {
-        json!({"Name":asset["Name"],"IgnoreMerges":asset["IgnoreMerges"],"TokenMetadataCount":asset["TokenMetadataCount"],"TokenRowsVisited":self.tokens_visited,"TokenRoundtripPredicates":self.token_checks,"IgnoreMergePredicates":self.merge_checks,"CaughtInvalidArgumentSkips":self.invalid_skips,"UnicodeRowsVisited":self.unicode_visited,"UnicodeEqualityPredicates":self.unicode_checks,"Exempt9601":self.exempt_9601,"Failures":self.failures})
+        json!({"Name":asset["Name"],"IgnoreMerges":asset["IgnoreMerges"],"TokenMetadataCount":asset["TokenMetadataCount"],"TokenRowsVisited":self.tokens_visited,"TokenRoundtripPredicates":self.token_checks,"IgnoreMergePredicates":self.merge_checks,"CaughtInvalidArgumentSkips":self.invalid_skips-self.restored_utf8_skips,"RestoredInvalidUtf8Skips":self.restored_utf8_skips,"TotalSkippedRows":self.invalid_skips,"UnicodeRowsVisited":self.unicode_visited,"UnicodeEqualityPredicates":self.unicode_checks,"Exempt9601":self.exempt_9601,"Failures":self.failures})
     }
 }
 
@@ -349,6 +387,7 @@ fn observe_tokens(rows: Vec<Row>, counts: &mut Counts) -> Result<bool> {
         }
         if row.skipped {
             counts.invalid_skips += 1;
+            counts.restored_utf8_skips += usize::from(row.restored_utf8_skip);
             continue;
         }
         if let Some(failure) = row.failure {
@@ -699,7 +738,7 @@ fn run_source(engine: &Engine, bpe: bool) -> Result<Value> {
     if observations.len() != if bpe { 8 } else { 2 } {
         return Err(invalid("roundtrip full fixture variant count mismatch"));
     }
-    let receipt = json!({"Vocabularies":observations,"UnicodeDomainCallsPerVocabulary":UNICODE_CALLS,"UnicodePredicatesPerVocabulary":UNICODE_PREDICATES,"BatchSize":BATCH,"StopPolicy":"Rust checks shared stop before batches and each returned-item assertion; speculative pure operations in an in-flight batch are ignored after failure"});
+    let receipt = json!({"Vocabularies":observations,"UnicodeDomainCallsPerVocabulary":UNICODE_CALLS,"UnicodePredicatesPerVocabulary":UNICODE_PREDICATES,"BatchSize":BATCH,"SourceCorrection":if bpe{Some("Approved restoration of intended invalid-UTF8 skip: strict Rust validity before retokenization, because pinned unicode_cpts_from_utf8 replaces invalid bytes instead of throwing") }else{None},"StopPolicy":"Rust checks shared stop before batches and each returned-item assertion; speculative pure operations in an in-flight batch are ignored after failure"});
     Ok(result(id, passed, receipt.to_string()))
 }
 
@@ -712,7 +751,7 @@ pub(super) fn run_bpe(engine: &Engine) -> Result<Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::{excluded, hex};
+    use super::{Row, excluded, hex, restore_utf8_piece_skips};
     use serde_json::json;
 
     #[test]
@@ -737,6 +776,40 @@ mod tests {
         }
         if hex(&json!("00ff"))? != "00ff" || hex(&json!("0x")).is_ok() {
             return Err(super::invalid("raw NUL/invalidUTF8 transport guard failed"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn restored_bpe_guard_keeps_valid_replacement_nul_and_unicode() -> super::Result<()> {
+        let cases = [
+            ("a1", true),
+            ("ff", true),
+            ("f09f", true),
+            ("eda080", true),
+            ("c080", true),
+            ("efbfbd", false),
+            ("00", false),
+            ("c2a1", false),
+            ("f09f9a80", false),
+        ];
+        let mut rows = cases
+            .iter()
+            .map(|(bytes, _)| Row {
+                original: Some((*bytes).into()),
+                ..Row::default()
+            })
+            .collect::<Vec<_>>();
+        restore_utf8_piece_skips(&mut rows)?;
+        for (row, (_, expected_skip)) in rows.iter().zip(cases) {
+            if row.skipped != expected_skip
+                || row.restored_utf8_skip != expected_skip
+                || row.active() == expected_skip
+            {
+                return Err(super::invalid(
+                    "restored BPE invalid-piece guard changed the valid UTF8 domain",
+                ));
+            }
         }
         Ok(())
     }

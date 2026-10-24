@@ -24,6 +24,9 @@ The current ports preserve fifty-two source contracts from
   source Unicode domain across two SPM and eight BPE fixtures, including the
   commented slow fixtures. Rust owns exclusions, exceptions, worker strides,
   stop policy and comparisons; native batches contain supplied inputs only.
+  Safe Rust restores BPE's intended malformed-UTF-8 skip because the pinned
+  decoder consumes its own exceptions. Reports count the corrected skips;
+  valid token pieces and all Unicode comparisons remain required.
 - `tests/test-c.c`: compile-only C17 public-header coverage via raw native ABI
   observations and additional Rust layout guards; no C test main remains.
 - `tests/test-chat-analysis.cpp`: all37 diagnostic templates and render/stat

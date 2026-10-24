@@ -72,6 +72,10 @@ Fifty-two source contracts currently have safe Rust adapters in
   Unicode domain in two SPM and eight BPE fixtures, including fixtures upstream
   comments out for runtime. Per fixture this retains 456,703 Unicode calls and
   456,702 equality predicates, source exceptions, worker strides and shared stop.
+  The BPE rewrite restores the source's intended invalid-UTF-8 skip with safe
+  Rust validation: the pinned native decoder consumes errors that the original
+  test expected to catch. Skip counts and this correction are reported explicitly;
+  every valid token piece and original Unicode predicate remain required.
 - `test-c.c`: the empty C main is retired. A C17 adapter includes the actual
   public header and exposes raw ABI layouts to seven additional Rust guards.
   The original contract is compile-only with zero behavioral assertions.
