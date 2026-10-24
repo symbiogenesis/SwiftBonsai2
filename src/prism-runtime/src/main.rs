@@ -3,8 +3,8 @@
 
 use bonsai_prism_runtime::{
     Result,
-    graph::Qwen35,
-    kernels::MatvecBackend,
+    graph::{MAX_STATE_BYTES, Qwen35},
+    kernels::{MatvecBackend, MatvecDiagnostics, MatvecFallbackReason},
     model::Model,
     runtime::{Cancellation, Finish, Generation, Limits, Runtime},
 };
@@ -23,11 +23,15 @@ Usage: bonsai-prism-runtime --model <absolute-gguf-path> --bytes <u64>\n\
   --checkpoint-bytes <usize> --max-tokens <usize> --tokens <id,id,...>\n\
   [--stop-tokens <id,id,...>] [--backend <auto|scalar|neon>]\n\
   [--timeout-seconds <1..3600>]\n\
+  [--state-bytes <usize>]\n\
+State budget defaults to 4 GiB for live KV/recurrent element payload only;\n\
+model storage, graph scratch, checkpoints and allocator overhead are separate.\n\
 Timeout covers generation after loading. Checks are cooperative between operations;\n\
 streamed tokens are provisional until the final completion record.\n\
 Backend defaults to auto. NEON requires the experimental-neon feature and\n\
 native Windows ARM64 MSVC; unsupported builds, targets and formats use scalar.\n\
 Selection is per matrix operation; backend_requested reports only the request.\n\
+backend_last_operation records just the latest projection, including scalar fallback.\n\
 Input is token IDs; decoding is greedy. Output is one JSON object per line.\n";
 
 struct Arguments {
@@ -37,6 +41,7 @@ struct Arguments {
     memory: usize,
     context: usize,
     checkpoint_bytes: usize,
+    state_bytes: usize,
     generation: Generation,
     tokens: Vec<u32>,
     backend: MatvecBackend,
@@ -64,6 +69,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
                 | "--stop-tokens"
                 | "--backend"
                 | "--timeout-seconds"
+                | "--state-bytes"
         ) || values.contains_key(&key)
         {
             return Err(bad("unknown or repeated option"));
@@ -109,6 +115,14 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         .map(|text| token_ids(&text, 256))
         .transpose()?
         .unwrap_or_default();
+    let state_bytes = values
+        .remove("--state-bytes")
+        .map(|value| value.parse::<usize>())
+        .transpose()?
+        .unwrap_or(MAX_STATE_BYTES);
+    if state_bytes == 0 || state_bytes > MAX_STATE_BYTES {
+        return Err(bad("invalid native live-state payload budget"));
+    }
     let backend = match values.remove("--backend").as_deref().unwrap_or("auto") {
         "auto" => MatvecBackend::Auto,
         "scalar" => MatvecBackend::Scalar,
@@ -117,20 +131,8 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
     };
     let timeout = values
         .remove("--timeout-seconds")
-        .map(|value| -> Result<Duration> {
-            if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err(bad(
-                    "timeout seconds must be an integer from 1 through 3600",
-                ));
-            }
-            let seconds = value.parse::<u64>()?;
-            if !(1..=3600).contains(&seconds) {
-                return Err(bad(
-                    "timeout seconds must be an integer from 1 through 3600",
-                ));
-            }
-            Ok(Duration::from_secs(seconds))
-        })
+        .as_deref()
+        .map(timeout_seconds)
         .transpose()?;
     Ok(Arguments {
         path,
@@ -139,6 +141,7 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         memory,
         context,
         checkpoint_bytes,
+        state_bytes,
         generation: Generation {
             max_tokens,
             stop_tokens,
@@ -147,6 +150,21 @@ fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Arguments> {
         backend,
         timeout,
     })
+}
+
+fn timeout_seconds(value: &str) -> Result<Duration> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(bad(
+            "timeout seconds must be an integer from 1 through 3600",
+        ));
+    }
+    let seconds = value.parse::<u64>()?;
+    if !(1..=3600).contains(&seconds) {
+        return Err(bad(
+            "timeout seconds must be an integer from 1 through 3600",
+        ));
+    }
+    Ok(Duration::from_secs(seconds))
 }
 
 fn token_ids(text: &str, limit: usize) -> Result<Vec<u32>> {
@@ -171,7 +189,12 @@ fn execute(arguments: &Arguments) -> Result<()> {
         &arguments.sha256,
         arguments.memory,
     )?;
-    let decoder = Qwen35::with_backend(model, arguments.context, arguments.backend)?;
+    let decoder = Qwen35::with_state_budget(
+        model,
+        arguments.context,
+        arguments.state_bytes,
+        arguments.backend,
+    )?;
     let backend_requested = backend_name(decoder.requested_backend());
     let mut runtime = Runtime::new(
         decoder,
@@ -216,6 +239,8 @@ fn execute(arguments: &Arguments) -> Result<()> {
             "generated_tokens": result.generated_tokens,
             "reused_tokens": result.reused_tokens,
             "backend_requested": backend_requested,
+            "state_budget_bytes": arguments.state_bytes,
+            "backend_last_operation": backend_record(runtime.decoder().backend_diagnostics()),
         }),
     )?;
     output.write_all(b"\n")?;
@@ -229,6 +254,21 @@ const fn backend_name(backend: MatvecBackend) -> &'static str {
         MatvecBackend::Scalar => "scalar",
         MatvecBackend::ExperimentalNeon => "neon",
     }
+}
+
+fn backend_record(diagnostics: MatvecDiagnostics) -> serde_json::Value {
+    json!({
+        "selected": backend_name(diagnostics.selected_backend),
+        "neon_build_eligible": diagnostics.neon_build_eligible,
+        "fallback_reason": diagnostics.fallback_reason.map(|reason| match reason {
+            MatvecFallbackReason::ScalarRequested => "scalar_requested",
+            MatvecFallbackReason::TensorKindUnsupported => "tensor_kind_unsupported",
+            MatvecFallbackReason::FeatureDisabled => "feature_disabled",
+            MatvecFallbackReason::TargetUnsupported => "target_unsupported",
+        }),
+        "dispatched": diagnostics.dispatched,
+        "succeeded": diagnostics.succeeded,
+    })
 }
 
 fn main() -> ExitCode {
@@ -251,7 +291,7 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{Duration, MatvecBackend, Result, bad, parse};
+    use super::{Duration, MAX_STATE_BYTES, MatvecBackend, Result, bad, parse};
 
     fn arguments() -> Vec<String> {
         [
@@ -370,6 +410,40 @@ mod tests {
             input.extend(["--backend", "scalar", "--backend", second].map(str::to_owned));
             assert!(parse(input).is_err());
         }
+    }
+
+    #[test]
+    fn cli_state_budget_accepts_explicit_bounds_and_preserves_default() -> Result<()> {
+        assert_eq!(parse(arguments())?.state_bytes, MAX_STATE_BYTES);
+        for bytes in [1, 4096, MAX_STATE_BYTES] {
+            let mut input = arguments();
+            input.extend(["--state-bytes".to_owned(), bytes.to_string()]);
+            assert_eq!(parse(input)?.state_bytes, bytes);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn cli_state_budget_rejects_invalid_repeated_and_missing_values() {
+        for value in [
+            "",
+            "0",
+            "-1",
+            "1.5",
+            " 1",
+            "4294967297",
+            "18446744073709551616",
+        ] {
+            let mut input = arguments();
+            input.extend(["--state-bytes".to_owned(), value.to_owned()]);
+            assert!(parse(input).is_err());
+        }
+        let mut input = arguments();
+        input.push("--state-bytes".to_owned());
+        assert!(parse(input).is_err());
+        let mut input = arguments();
+        input.extend(["--state-bytes", "4096", "--state-bytes", "8192"].map(str::to_owned));
+        assert!(parse(input).is_err());
     }
 
     #[test]

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use bonsai_gguf::MetadataValueRef;
 use bonsai_gguf::{MetadataArray, MetadataValue};
 use bonsai_prism_runtime::graph::Qwen35;
-use bonsai_prism_runtime::kernels::{MatvecBackend, round_f16};
+use bonsai_prism_runtime::kernels::{MatvecBackend, MatvecFallbackReason, round_f16};
 use bonsai_prism_runtime::model::{Model, Tensor};
 use bonsai_prism_runtime::{Decoder, Result};
 #[cfg(feature = "cli")]
@@ -231,6 +231,43 @@ fn graph_backend_selection_matches_scalar_logits_checkpoints_and_recovery() -> R
             )?;
         }
     }
+    Ok(())
+}
+
+#[test]
+fn graph_backend_diagnostics_distinguish_latest_projection_from_complete_graph() -> Result<()> {
+    let mut decoder = Qwen35::new(backend_fixture(false, 142, 128)?, 16)?;
+    assert!(!decoder.backend_diagnostics().dispatched);
+    decoder.ingest(0)?;
+    let packed = decoder.backend_diagnostics();
+    assert!(packed.dispatched && packed.succeeded);
+    assert_eq!(packed.requested_backend, MatvecBackend::Auto);
+    if packed.neon_build_eligible {
+        assert_eq!(packed.selected_backend, MatvecBackend::ExperimentalNeon);
+        assert_eq!(packed.fallback_reason, None);
+    } else {
+        assert_eq!(packed.selected_backend, MatvecBackend::Scalar);
+        assert_eq!(
+            packed.fallback_reason,
+            Some(if cfg!(feature = "experimental-neon") {
+                MatvecFallbackReason::TargetUnsupported
+            } else {
+                MatvecFallbackReason::FeatureDisabled
+            })
+        );
+    }
+    decoder.evaluate(1)?;
+    let floating = decoder.backend_diagnostics();
+    assert!(floating.dispatched && floating.succeeded);
+    assert_eq!(floating.selected_backend, MatvecBackend::Scalar);
+    assert_eq!(
+        floating.fallback_reason,
+        Some(MatvecFallbackReason::TensorKindUnsupported)
+    );
+    assert!(decoder.evaluate(2).is_err());
+    assert_eq!(decoder.backend_diagnostics(), floating);
+    decoder.reset()?;
+    assert_eq!(decoder.backend_diagnostics(), floating);
     Ok(())
 }
 
@@ -828,6 +865,38 @@ fn state_admission_charges_binary16_cache_and_binary32_recurrent_bytes() -> Resu
 }
 
 #[test]
+fn explicit_state_budget_admits_exact_hybrid_payload_and_preserves_execution() -> Result<()> {
+    let cases: [(fn() -> Model, usize); 3] = [
+        (|| fixture(false), 128),
+        (|| fixture(true), 40),
+        (hybrid_fixture, 168),
+    ];
+    for (model, payload_bytes) in cases {
+        assert!(
+            Qwen35::with_state_budget(model(), 16, payload_bytes - 1, MatvecBackend::Scalar)
+                .is_err()
+        );
+        let mut reference = Qwen35::new(model(), 16)?;
+        let mut bounded =
+            Qwen35::with_state_budget(model(), 16, payload_bytes, MatvecBackend::Scalar)?;
+        let checkpoint = bounded.checkpoint()?;
+        for token in [0, 1].into_iter().cycle().take(16) {
+            assert_eq!(bounded.evaluate(token)?, reference.evaluate(token)?);
+        }
+        assert!(bounded.evaluate(0).is_err());
+        bounded.restore(&checkpoint)?;
+        reference.reset()?;
+        assert_eq!(bounded.evaluate(1)?, reference.evaluate(1)?);
+    }
+    for budget in [0, bonsai_prism_runtime::graph::MAX_STATE_BYTES + 1] {
+        assert!(
+            Qwen35::with_state_budget(fixture(false), 16, budget, MatvecBackend::Auto).is_err()
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn checkpoint_rejects_foreign_cache_contract_and_model() -> Result<()> {
     let mut first = Qwen35::new(fixture(false), 16)?;
     first.evaluate(0)?;
@@ -1221,7 +1290,11 @@ impl Drop for DriverArtifact {
 
 #[cfg(feature = "cli")]
 #[test]
-fn native_driver_executes_verified_synthetic_gguf_and_rejects_wrong_digest() -> Result<()> {
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the complete driver invocation and JSON output contract together."
+)]
+fn native_driver_executes_verified_synthetic_gguf_and_enforces_state_budget() -> Result<()> {
     use sha2::{Digest, Sha256};
     use std::{
         fs,
@@ -1246,14 +1319,16 @@ fn native_driver_executes_verified_synthetic_gguf_and_rejects_wrong_digest() -> 
         .flat_map(|byte| [byte >> 4, byte & 15])
         .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
         .collect();
-    for (backend, success) in [
-        (None, true),
-        (Some("auto"), true),
-        (Some("scalar"), true),
-        (Some("neon"), true),
-        (None, false),
+    for (backend, state_bytes, valid_digest, success) in [
+        (None, None, true, true),
+        (Some("auto"), None, true, true),
+        (Some("scalar"), None, true, true),
+        (Some("neon"), None, true, true),
+        (None, Some(128_usize), true, true),
+        (None, Some(127), true, false),
+        (None, None, false, false),
     ] {
-        let sha = if success {
+        let sha = if valid_digest {
             digest.clone()
         } else {
             "0".repeat(64)
@@ -1282,6 +1357,9 @@ fn native_driver_executes_verified_synthetic_gguf_and_rejects_wrong_digest() -> 
         if let Some(backend) = backend {
             command.args(["--backend", backend, "--timeout-seconds", "60"]);
         }
+        if let Some(bytes) = state_bytes {
+            command.args(["--state-bytes", &bytes.to_string()]);
+        }
         let output = command.output()?;
         assert_eq!(
             output.status.success(),
@@ -1299,11 +1377,38 @@ fn native_driver_executes_verified_synthetic_gguf_and_rejects_wrong_digest() -> 
                 [
                     serde_json::json!({"token": 1}),
                     serde_json::json!({"token": 1}),
-                    serde_json::json!({"finish_reason":"length","prompt_tokens":2,"generated_tokens":2,"reused_tokens":0,"backend_requested":backend.unwrap_or("auto")})
+                    serde_json::json!({
+                        "finish_reason": "length",
+                        "prompt_tokens": 2,
+                        "generated_tokens": 2,
+                        "reused_tokens": 0,
+                        "backend_requested": backend.unwrap_or("auto"),
+                        "state_budget_bytes": state_bytes.unwrap_or(bonsai_prism_runtime::graph::MAX_STATE_BYTES),
+                        "backend_last_operation": {
+                            "selected": "scalar",
+                            "neon_build_eligible": cfg!(all(
+                                feature = "experimental-neon",
+                                target_arch = "aarch64",
+                                target_os = "windows",
+                                target_env = "msvc",
+                                target_feature = "neon"
+                            )),
+                            "fallback_reason": if backend == Some("scalar") {
+                                "scalar_requested"
+                            } else {
+                                "tensor_kind_unsupported"
+                            },
+                            "dispatched": true,
+                            "succeeded": true,
+                        },
+                    })
                 ]
             );
         } else {
             assert_eq!(output.stdout, Vec::<u8>::new());
+            if state_bytes.is_some() {
+                assert!(String::from_utf8_lossy(&output.stderr).contains("state budget"));
+            }
         }
     }
     Ok(())

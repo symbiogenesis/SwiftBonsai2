@@ -11,12 +11,16 @@ use bonsai_gguf::{Metadata, MetadataArray, MetadataValue, MetadataValueRef};
 use bonsai_ternary::half_to_float;
 
 use crate::kernels::{
-    MatvecBackend, MatvecScratch, half_bits, rms_norm_into, round_f16, row, row_into, silu, softmax,
+    MatvecBackend, MatvecDiagnostics, MatvecScratch, half_bits, rms_norm_into, round_f16, row,
+    row_into, silu, softmax,
 };
 use crate::model::{Model, Tensor};
 use crate::{Decoder, Result, invalid};
 
-const MAX_STATE_BYTES: usize = 4 * 1024 * 1024 * 1024;
+/// Maximum admitted live KV/recurrent element payload, also the default budget.
+///
+/// This excludes model storage, scratch, checkpoints and allocator overhead.
+pub const MAX_STATE_BYTES: usize = 4 * 1024 * 1024 * 1024;
 const MAX_WIDTH: usize = 1 << 20;
 const MAX_LAYERS: usize = 256;
 
@@ -488,15 +492,39 @@ impl Qwen35 {
     ///
     /// # Errors
     /// Returns the same model validation and allocation errors as [`Self::new`].
-    #[allow(
-        clippy::too_many_lines,
-        reason = "Keep validation and graph operation order auditable together."
-    )]
     pub fn with_backend(
         model: Model,
         context_limit: usize,
         backend: MatvecBackend,
     ) -> Result<Self> {
+        Self::with_state_budget(model, context_limit, MAX_STATE_BYTES, backend)
+    }
+
+    /// Creates a decoder within an explicit maximum live-state payload budget.
+    ///
+    /// Admission charges full-context FP16 K/V plus F32 convolution/recurrent
+    /// elements before allocating decoder state. KV allocation remains lazy.
+    /// The budget excludes model storage, graph scratch, checkpoints and
+    /// allocator overhead; it does not bound process memory. Kernel selection
+    /// follows [`Self::with_backend`].
+    ///
+    /// # Errors
+    /// Rejects zero budgets, budgets above [`MAX_STATE_BYTES`], a graph whose
+    /// maximum live-state element payload exceeds the budget, and the same
+    /// malformed model/allocation errors as [`Self::new`].
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep validation and graph operation order auditable together."
+    )]
+    pub fn with_state_budget(
+        model: Model,
+        context_limit: usize,
+        state_budget_bytes: usize,
+        backend: MatvecBackend,
+    ) -> Result<Self> {
+        if state_budget_bytes == 0 || state_budget_bytes > MAX_STATE_BYTES {
+            return Err(invalid("invalid native live-state payload budget"));
+        }
         let metadata = &model.metadata;
         if string(metadata, "general.architecture")? != "qwen35" {
             return Err(invalid(
@@ -624,7 +652,7 @@ impl Qwen35 {
             };
             state_bytes = checked_sum(state_bytes, checked_product(&[elements, element_bytes])?)?;
         }
-        if state_bytes > MAX_STATE_BYTES {
+        if state_bytes > state_budget_bytes {
             return Err(invalid(
                 "KV and recurrent state exceed the native state budget",
             ));
@@ -803,6 +831,17 @@ impl Qwen35 {
     #[must_use]
     pub const fn requested_backend(&self) -> MatvecBackend {
         self.workspace.projection.matvec.requested_backend()
+    }
+
+    /// Diagnostics for the latest matrix attempt, including provisional work.
+    ///
+    /// This describes one projection, not every projection in a token or graph.
+    /// Failure before matrix preparation, reset and checkpoint restoration leave
+    /// the record unchanged. A successful matrix may precede a later graph
+    /// failure; this record does not establish committed conversation state.
+    #[must_use]
+    pub const fn backend_diagnostics(&self) -> MatvecDiagnostics {
+        self.workspace.projection.matvec.diagnostics()
     }
 
     #[allow(

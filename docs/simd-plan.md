@@ -152,7 +152,10 @@ and fast-math modes need separate numerical qualification.
   license and code generation when relevant inputs change.
 - [ ] **S2 — Complete baseline PQ2 selection (R3).** Kernel, automatic/explicit
   selection, actual-backend reporting and focused exact regressions are implemented.
-  Complete fallback/build diagnostics and S6 qualification; retain bounded loads,
+  Fallback/build diagnostics distinguish explicit scalar, unsupported tensor kinds,
+  disabled features and unsupported targets, with attempt/completion flags.
+  Graph/driver reporting describes only the latest projection. Complete S6
+  qualification; retain bounded loads,
   scalar quantization, ordered scales and negative controls.
 - [ ] **S3 — Qualify PTQ1 and odd-group PQ2 (R3).** Direct decoding, 128/256/384-
   column and multirow cases, exact scalar comparisons, C++ byte fixtures and

@@ -47,6 +47,8 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   or the replacement alone exceeds the available snapshot budget. Count-based
   eviction follows successful capture; byte-pressure eviction still precedes
   allocation to keep the hard snapshot bound.
+- Failed decoder resets keep the public committed history and saved prefixes
+  while closing admission. A successful reset clears them and restores admission.
 
 The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.
@@ -99,7 +101,13 @@ or promote a profile.
 
 `--memory-bytes` bounds retained model storage, not process memory. Allow additional
 headroom for parser/conversion scratch, graph workspace, active state, checkpoints
-and allocator overhead. Graph state has a separate checked bound;
+and allocator overhead. Optional `--state-bytes` sets the admitted maximum
+live KV/convolution/recurrent element payload, from 1 byte through the default
+4 GiB. `Qwen35::with_state_budget` exposes the same bound to library callers.
+Admission charges the complete configured context using FP16 K/V and F32
+convolution/recurrent state before state allocation; KV storage remains lazy.
+The completion record includes `state_budget_bytes`. This is a payload bound,
+not a bound on vector headers, allocator overhead, graph scratch or process RAM;
 `--checkpoint-bytes` covers saved snapshots including in-flight rollback.
 Process/hardware admission remains the caller's responsibility pending broker
 integration.
@@ -126,10 +134,18 @@ Use `Qwen35::with_backend` or the token driver's `--backend auto|scalar|neon`
 to apply that policy to the graph's retained projection scratch. The completion
 record's `backend_requested` reports the requested policy. It does not claim
 every projection used that backend; unsupported operations still use scalar.
+`backend_last_operation` reports only the latest matrix attempt: actual selection,
+build eligibility, scalar fallback reason, dispatch and success flags. Fallback
+reasons distinguish explicit scalar selection, unsupported tensor kinds, disabled
+NEON features and unsupported targets. `MatvecScratch::diagnostics` and
+`Qwen35::backend_diagnostics` expose the same record. Reset, restore and graph
+rejection before matrix preparation leave it unchanged; it can describe
+provisional work. A final F32 output projection reports scalar even when earlier
+packed projections used NEON.
 
 Target-only `fearless_simd` 1.1.0 uses safe core APIs under unchanged
 `forbid(unsafe_code)`. Direct packed decode preserves scalar quantization and
-ordered scales. Optional ISA detection, fuller diagnostics, per-path memory and
+ordered scales. Optional ISA detection, aggregate per-path diagnostics, memory and
 performance qualification remain open.
 
 [Foundation](../../.github/workflows/foundation.yml) runs the complete synthetic

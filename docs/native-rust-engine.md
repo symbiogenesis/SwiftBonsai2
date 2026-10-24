@@ -48,7 +48,7 @@ task time separately, accounting for bandwidth and the measured critical path.
 - [ ] **R3 — Qualify packed CPU kernels.** Follow [SIMD S0–S4/S6](simd-plan.md).
   Baseline NEON PQ2/PTQ1, automatic selection, scalar forcing and focused exact
   regressions are implemented using safe core SIMD APIs. Profiling, fuller
-  diagnostics, per-path memory evidence, optional ISAs and performance acceptance
+  aggregate diagnostics, per-path memory evidence, optional ISAs and performance acceptance
   remain open. Preserve quantizers, scale order, generic PQ2's fourth symbol,
   tails and malformed-input rejection. Compare [exact ternary LUTs](inference-algorithms.md#exact-ternary-tables-for-decode)
   under the same contract; INT8 table quantization is a separate approximation.
