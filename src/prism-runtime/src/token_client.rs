@@ -1,4 +1,4 @@
-//! Checked synchronous text requests over an existing token-worker transport.
+//! Checked synchronous text and raw-ID requests over a token-worker transport.
 //!
 //! [`TokenClient::connect`] verifies readiness against a caller-pinned artifact,
 //! vocabulary and complete worker policy before sending any request. The client
@@ -54,7 +54,7 @@ pub enum ClientError {
     Transport,
     /// The serialized request exceeds the worker bound; nothing was sent.
     RequestTooLarge,
-    /// The worker rejected this input; the transport remains usable.
+    /// Local raw-ID bounds or the worker rejected input; transport remains usable.
     RejectedInput,
     /// A prior fatal error or exhausted correlation space prevents further use.
     Unavailable,
@@ -179,7 +179,7 @@ impl<R: BufRead, W: Write> TokenClient<R, W> {
     /// fatal protocol/transport failures. Only local request-size rejection and
     /// worker input rejection permit another attempt on this connection.
     pub fn count(&mut self, text: &str) -> Result<usize, ClientError> {
-        match self.exchange(Operation::Count, text)? {
+        match self.exchange(Operation::Count, RequestInput::Text { text })? {
             Response::Count {
                 prompt_token_count, ..
             } => Ok(prompt_token_count),
@@ -192,7 +192,44 @@ impl<R: BufRead, W: Write> TokenClient<R, W> {
     /// # Errors
     /// Has the same failure and connection-reuse contract as [`Self::count`].
     pub fn encode(&mut self, text: &str) -> Result<TokenizationResult, ClientError> {
-        match self.exchange(Operation::Encode, text)? {
+        match self.exchange(Operation::Encode, RequestInput::Text { text })? {
+            Response::Encoded { token_ids, .. } => Ok(TokenizationResult {
+                token_ids,
+                context: self.config.text_policy.budget.context,
+                reserved_output_tokens: self.config.text_policy.budget.reserved_output_tokens,
+            }),
+            _ => Err(ClientError::InvalidResponse),
+        }
+    }
+
+    /// Count checked raw IDs without text parsing or special-token insertion.
+    ///
+    /// IDs must fit the pinned vocabulary and prompt allowance. Empty input is
+    /// valid, and repeated IDs count separately. The response must report the
+    /// exact supplied length, including when model insertion is enabled.
+    ///
+    /// # Errors
+    /// Local invalid IDs or context overflow return [`ClientError::RejectedInput`]
+    /// before writing or consuming a correlation ID, leaving the client reusable.
+    /// Other errors follow the connection-reuse contract of [`Self::count`].
+    pub fn count_tokens(&mut self, token_ids: &[u32]) -> Result<usize, ClientError> {
+        match self.exchange(Operation::CountTokens, RequestInput::Tokens { token_ids })? {
+            Response::Count {
+                prompt_token_count, ..
+            } => Ok(prompt_token_count),
+            _ => Err(ClientError::InvalidResponse),
+        }
+    }
+
+    /// Return checked raw IDs and fixed accounting without changing their order.
+    ///
+    /// No text parsing or special-token insertion applies. The response must
+    /// preserve the exact supplied sequence, including duplicates and empty input.
+    ///
+    /// # Errors
+    /// Has the same failure and connection-reuse contract as [`Self::count_tokens`].
+    pub fn encode_tokens(&mut self, token_ids: &[u32]) -> Result<TokenizationResult, ClientError> {
+        match self.exchange(Operation::EncodeTokens, RequestInput::Tokens { token_ids })? {
             Response::Encoded { token_ids, .. } => Ok(TokenizationResult {
                 token_ids,
                 context: self.config.text_policy.budget.context,
@@ -211,9 +248,22 @@ impl<R: BufRead, W: Write> TokenClient<R, W> {
         (self.input, self.output)
     }
 
-    fn exchange(&mut self, operation: Operation, text: &str) -> Result<Response, ClientError> {
+    fn exchange(
+        &mut self,
+        operation: Operation,
+        input: RequestInput<'_>,
+    ) -> Result<Response, ClientError> {
         if !self.is_usable() {
             return Err(ClientError::Unavailable);
+        }
+        let raw_tokens = input.raw_tokens();
+        if raw_tokens.is_some_and(|tokens| {
+            tokens.len() > self.prompt_limit
+                || tokens.iter().any(|&token| {
+                    usize::try_from(token).map_or(true, |token| token >= self.vocab_size)
+                })
+        }) {
+            return Err(ClientError::RejectedInput);
         }
         let id = self.next_id.ok_or(ClientError::Unavailable)?;
         self.request.clear();
@@ -225,7 +275,7 @@ impl<R: BufRead, W: Write> TokenClient<R, W> {
             &Request {
                 id,
                 op: operation,
-                text,
+                input,
             },
         )
         .map_err(|_| ClientError::RequestTooLarge)?;
@@ -244,17 +294,19 @@ impl<R: BufRead, W: Write> TokenClient<R, W> {
             Response::Count {
                 id: response_id,
                 prompt_token_count,
-            } if matches!(operation, Operation::Count)
+            } if matches!(operation, Operation::Count | Operation::CountTokens)
                 && *response_id == id
-                && *prompt_token_count <= self.prompt_limit => {}
+                && *prompt_token_count <= self.prompt_limit
+                && raw_tokens.is_none_or(|tokens| *prompt_token_count == tokens.len()) => {}
             Response::Encoded {
                 id: response_id,
                 prompt_token_count,
                 token_ids,
-            } if matches!(operation, Operation::Encode)
+            } if matches!(operation, Operation::Encode | Operation::EncodeTokens)
                 && *response_id == id
                 && *prompt_token_count <= self.prompt_limit
                 && *prompt_token_count == token_ids.len()
+                && raw_tokens.is_none_or(|tokens| token_ids == tokens)
                 && token_ids.iter().all(|&token| {
                     usize::try_from(token).is_ok_and(|token| token < self.vocab_size)
                 }) => {}
@@ -301,13 +353,32 @@ impl<R: BufRead, W: Write> TokenClient<R, W> {
 enum Operation {
     Count,
     Encode,
+    CountTokens,
+    EncodeTokens,
 }
 
 #[derive(Serialize)]
 struct Request<'a> {
     id: u64,
     op: Operation,
-    text: &'a str,
+    #[serde(flatten)]
+    input: RequestInput<'a>,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(untagged)]
+enum RequestInput<'a> {
+    Text { text: &'a str },
+    Tokens { token_ids: &'a [u32] },
+}
+
+impl<'a> RequestInput<'a> {
+    const fn raw_tokens(self) -> Option<&'a [u32]> {
+        match self {
+            Self::Text { .. } => None,
+            Self::Tokens { token_ids } => Some(token_ids),
+        }
+    }
 }
 
 #[derive(Deserialize)]
