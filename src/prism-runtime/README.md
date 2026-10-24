@@ -84,6 +84,11 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
 - Public `text_output::Utf8Output` renders bounded caller-owned byte chunks,
   retains at most three incomplete UTF-8 bytes, and resets abandoned output
   before a new request. The token driver uses this same decoder.
+- A persistent `bonsai-token-worker` verifies one tokenizer artifact at startup,
+  flushes readiness and serves bounded JSONL count/encode requests without graph
+  allocation or subsequent artifact I/O. Its fixed text/context policy is explicit.
+- Library callers share the driver's bounded UTF-8 prompt reader and checked
+  model-plus-caller generation-stop policy.
 
 The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.
@@ -178,6 +183,11 @@ Library callers can pass an independently cloneable `Sampler` through
 restores the sampler alongside graph state, even when decoder recovery fails.
 Successful stop-token draws advance the sampler without emitting the stop.
 Shared mutable state and external side effects are outside this recovery contract.
+`SpecialTokens::generation(max_tokens, caller_stops)` builds the driver's same
+checked EOS/EOT/EOM-plus-caller stop set. It validates vocabulary IDs, preserves
+first occurrence order and admits at most 256 distinct stops. Output must leave
+room for a nonempty prompt within the maximum context; the runtime still checks
+the actual prompt/context. Insertion flags do not disable declared generation stops.
 The driver does not render chat templates, launch the broker or promote a profile.
 
 Use `--mode tokenize` to inspect exact input IDs/count without graph allocation.
@@ -204,6 +214,46 @@ Session construction requires a supported complete tokenizer even for later
 raw-ID requests. The CLI's existing raw-ID mode remains metadata-only and does
 not require BPE or pretokenizer support. Persistent broker transport and template
 rendering remain separate work.
+
+The default `cli` feature also builds `bonsai-token-worker`; `--help` lists its
+startup contract. Every setting is required: absolute `--model`, verified
+`--bytes`/`--sha256`, `--memory-bytes`, `--context`, `--reserved-output-tokens`,
+`--special-input literal|parse`, `--insert-special none|model` and
+`--max-frame-bytes` (1 through 1,048,576). Run it from an explicit external
+system-temp working directory, using the same pinned toolchain/build commands
+above. `cargo run` still selects the original token driver by default.
+
+Read the flushed `type: "ready"` record before sending input. It identifies
+protocol `bonsai-token-worker-v1`, the verified model SHA-256, vocabulary and all
+fixed text/context/transport settings. Each request is one LF-terminated JSON
+object with exactly these fields:
+
+```json
+{"id":1,"op":"count","text":"Draft a scene."}
+{"id":2,"op":"encode","text":"Draft a scene."}
+```
+
+Responses carry the request ID and exact `prompt_token_count`; `type: "encoded"`
+also returns ordered `token_ids`, while `type: "count"` omits them. Empty text
+follows the library's counting/insertion contract. IDs are correlation values;
+the worker retains no global ID registry. Duplicate/unknown fields and malformed
+frames return `invalid_request` with a null ID; encoding/context rejection returns
+`rejected_input` with the parsed ID. These failures preserve the session for later
+requests and expose no prompt text or underlying diagnostics.
+
+The frame bound counts bytes before LF, including CR in CRLF. An unterminated
+final frame receives `invalid_request`, followed by clean exit. Oversized frames
+and transport/allocation errors terminate the worker without draining input;
+discard incomplete output and restart. The synchronous transport has no deadline
+or cancellation protocol. Readiness establishes a verified tokenizer, not a
+rendered chat template, broker endpoint, inference backend or daily-service gate.
+
+`prompt_input::read_prompt` is the driver's public file/stream reader. It preserves
+valid UTF-8 exactly, consumes at most 1 MiB plus one overflow byte and rejects
+empty, oversized or malformed input without returning partial text. I/O errors
+retain their kind with sanitized messages and return immediately, including
+interruption. Callers own input deadlines and must rewind or replace a failed
+stream before retrying a whole prompt.
 
 `Bpe::from_metadata` validates normal vocabulary pieces and ranked merge rules.
 `encode_piece` accepts one already pretokenized byte slice; `encode_pieces`

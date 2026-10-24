@@ -6,6 +6,7 @@ use bonsai_prism_runtime::{
     graph::{MAX_STATE_BYTES, Qwen35},
     kernels::{MatvecBackend, MatvecDiagnostics, MatvecFallbackReason, MatvecStatistics},
     model::{Model, ModelMetadata},
+    prompt_input::read_prompt,
     runtime::{Cancellation, Finish, Generation, Limits, Prefill, Runtime},
     sampling::{Greedy, ReferenceSampler, Sampler, Sampling},
     special_input::SpecialInputPolicy,
@@ -20,7 +21,7 @@ use bonsai_prism_runtime::{
 use serde_json::json;
 use std::{
     collections::BTreeMap,
-    io::{Read, Write},
+    io::Write,
     path::PathBuf,
     process::ExitCode,
     time::{Duration, Instant},
@@ -405,21 +406,6 @@ fn input_options(
     }
 }
 
-fn read_prompt(reader: &mut impl Read) -> Result<String> {
-    let limit = bonsai_prism_runtime::bpe::MAX_BPE_INPUT_BYTES;
-    let mut bytes = Vec::new();
-    bytes.try_reserve_exact(limit + 1)?;
-    reader
-        .take(u64::try_from(limit)? + 1)
-        .read_to_end(&mut bytes)?;
-    if bytes.is_empty() || bytes.len() > limit {
-        return Err(bad(
-            "text prompt must contain 1 through 1048576 UTF-8 bytes",
-        ));
-    }
-    Ok(String::from_utf8(bytes)?)
-}
-
 fn sampling_options(values: &mut BTreeMap<String, String>) -> Result<SamplingMode> {
     match values.remove("--sampling").as_deref().unwrap_or("greedy") {
         "greedy" => {
@@ -518,23 +504,6 @@ fn token_ids(text: &str, limit: usize) -> Result<Vec<u32>> {
     Ok(result)
 }
 
-fn generation_options(options: &Generation, model_stops: &[u32]) -> Result<Generation> {
-    let mut stop_tokens = Vec::new();
-    stop_tokens.try_reserve_exact(256)?;
-    for &token in model_stops.iter().chain(&options.stop_tokens) {
-        if !stop_tokens.contains(&token) {
-            if stop_tokens.len() == 256 {
-                return Err(bad("combined model and caller stop set exceeds 256 tokens"));
-            }
-            stop_tokens.push(token);
-        }
-    }
-    Ok(Generation {
-        max_tokens: options.max_tokens,
-        stop_tokens,
-    })
-}
-
 struct Loaded {
     decoder: Qwen35,
     generation: Generation,
@@ -557,7 +526,10 @@ fn load_decoder(arguments: &Arguments) -> Result<Loaded> {
         .copied()
         .ok_or_else(|| bad("missing token embedding vocabulary dimension"))?;
     let special_tokens = SpecialTokens::from_metadata(&model.metadata, vocab_size)?;
-    let generation = generation_options(&arguments.generation, special_tokens.stop_tokens())?;
+    let generation = special_tokens.generation(
+        arguments.generation.max_tokens,
+        &arguments.generation.stop_tokens,
+    )?;
     let tokens = if let Some(prompt) = &arguments.prompt {
         encode_prompt(
             arguments,
@@ -825,8 +797,8 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        Duration, Generation, InsertSpecial, MAX_STATE_BYTES, MatvecBackend, Mode, Result,
-        SamplingMode, SpecialInputPolicy, Utf8Output, bad, generation_options, parse, read_prompt,
+        Duration, InsertSpecial, MAX_STATE_BYTES, MatvecBackend, Mode, Result, SamplingMode,
+        SpecialInputPolicy, Utf8Output, bad, parse, read_prompt,
     };
 
     fn arguments() -> Vec<String> {
@@ -1156,22 +1128,6 @@ mod tests {
             input.extend(tail.into_iter().map(str::to_owned));
             assert!(parse(input).is_err());
         }
-        Ok(())
-    }
-
-    #[test]
-    fn cli_stop_union_preserves_declared_stops_and_bounds_unique_ids() -> Result<()> {
-        let mut options = Generation {
-            max_tokens: 8,
-            stop_tokens: vec![2, 3, 2],
-        };
-        let merged = generation_options(&options, &[1, 2])?;
-        assert_eq!(merged.max_tokens, 8);
-        assert_eq!(merged.stop_tokens, [1, 2, 3]);
-        assert_eq!(options.stop_tokens, [2, 3, 2]);
-        options.stop_tokens = (0..256).collect();
-        assert_eq!(generation_options(&options, &[1])?.stop_tokens.len(), 256);
-        assert!(generation_options(&options, &[256]).is_err());
         Ok(())
     }
 

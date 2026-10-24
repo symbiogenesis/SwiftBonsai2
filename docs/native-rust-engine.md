@@ -106,6 +106,13 @@ task time separately, accounting for bandwidth and the measured critical path.
     Focused flag, empty-input, boundary and serialized-driver checks cover the
     contract; chat templates and full-model tokenizer parity remain open.
 
+  - [x] **R2.9 — Share checked generation-stop policy with library callers.**
+    `SpecialTokens::generation` combines verified EOS/EOT/EOM with caller stops,
+    preserves their order and validates vocabulary, output bounds and the
+    256-distinct-stop limit. The driver uses this same API. Focused boundary,
+    collision and insertion-policy checks cover the shared contract; full-model
+    stop-token and sampler parity remain separate R2 qualification.
+
 - [ ] **R3 — Qualify packed CPU kernels.** Follow [SIMD S0–S4/S6](simd-plan.md).
   Baseline NEON PQ2/PTQ1, automatic selection, scalar forcing and focused exact
   regressions are implemented using safe core SIMD APIs. Profiling, fuller
@@ -223,6 +230,23 @@ task time separately, accounting for bandwidth and the measured critical path.
     are preserved, input forms are exclusive, and text policies/accounting match
     inline prompts. Focused parser, reader and serialized-driver checks cover
     the contract. Stdin reads remain synchronous and have no input deadline.
+
+  - [x] **R5.8 — Expose a persistent bounded tokenization worker.** An explicit
+    `bonsai-token-worker` verifies one artifact, flushes readiness with identity
+    and fixed policy, then serves strict JSONL count/encode requests without
+    model I/O or graph allocation. Framing, context and response contents are
+    bounded; malformed requests have value-free errors and leave the session
+    reusable, while oversized frames and transport failures terminate. Focused
+    protocol and executable checks cover readiness, artifact release, recovery
+    and exact counts/IDs. Chat-template rendering and broker wiring remain open.
+
+  - [x] **R5.9 — Share bounded prompt reading with library callers.** The
+    driver and public `prompt_input::read_prompt` use the same 1 MiB UTF-8 input
+    contract, consuming at most one overflow byte. Valid bytes remain exact;
+    empty, malformed and failed reads return no partial prompt. Sanitized I/O
+    errors retain their kind and return immediately, including interruption.
+    Focused exact-limit, short-read, infinite-input and privacy checks cover
+    this synchronous boundary; callers still own cancellation and input deadlines.
 
 - [ ] **R6 — Add Adreno after CPU parity.** Follow [G0–G5](adreno-gpu-plan.md),
   implementing the same packed types, transforms and complete hybrid graph.

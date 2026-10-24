@@ -84,6 +84,7 @@ dependencies = [
  "bonsai-prism",
  "bonsai-ternary",
  "fearless_simd",
+ "serde",
  "serde_json",
  "sha2",
 ]

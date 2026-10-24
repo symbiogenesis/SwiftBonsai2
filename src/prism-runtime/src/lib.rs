@@ -11,11 +11,14 @@ pub mod graph;
 pub mod kernels;
 pub mod model;
 pub mod pretokenizer;
+pub mod prompt_input;
 pub mod runtime;
 pub mod sampling;
 pub mod special_input;
 pub mod special_tokens;
 pub mod text_output;
+#[cfg(feature = "cli")]
+pub mod token_worker;
 pub mod tokenization;
 pub mod tokenizer;
 pub mod vocabulary;

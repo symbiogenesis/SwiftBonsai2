@@ -216,8 +216,11 @@ allocation. Chat templates, full-model tokenizer parity, persistent broker count
 integration and Prism sampler/RNG parity remain open.
 Verified tokenizer sessions now reuse exact prompt/context/output accounting;
 the public incremental UTF-8 decoder and bounded prompt-file/stdin input are
-available for service integration. Their focused correctness checks do not
-establish daily-service acceptance.
+available for service integration. A persistent bounded JSONL worker exposes
+verified count/encode requests with fixed policy and explicit readiness. Library
+callers share the driver's checked model/caller stops and bounded UTF-8 prompt
+reader. Their focused correctness checks do not establish chat-template parity,
+broker integration or daily-service acceptance.
 Tiled prefill kernels, full-model allocation,
 parity and performance qualification remain open.
 
