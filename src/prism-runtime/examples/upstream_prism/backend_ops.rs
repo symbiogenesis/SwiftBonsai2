@@ -1,0 +1,32 @@
+// Copyright (c) 2023-2026 The ggml/llama.cpp authors
+// SPDX-License-Identifier: MIT
+//! Rust ownership of the complete backend operation source program.
+//!
+//! The source program and geometry are immutable inputs. Native operations are
+//! production GGML calls; generation, references and every decision belong here.
+
+#![forbid(unsafe_code)]
+#![allow(
+    clippy::float_cmp,
+    clippy::suboptimal_flops,
+    reason = "Source comparisons are exact and its separate multiply/add rounding must be preserved."
+)]
+#![allow(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "The source contract explicitly uses C++ integer conversions and binary32 arithmetic; the safe interpreter models those operations."
+)]
+
+#[path = "backend_ops/metrics.rs"]
+mod metrics;
+#[path = "backend_ops/number.rs"]
+mod number;
+#[path = "backend_ops/program.rs"]
+mod program;
+#[path = "backend_ops/random.rs"]
+mod random;
+#[path = "backend_ops/value.rs"]
+mod value;
