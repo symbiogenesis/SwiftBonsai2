@@ -1,7 +1,7 @@
 #requires -Version 7.6
 <#
 .SYNOPSIS
-Checks Rust feature isolation, production toolchains and local-suite rejection.
+Checks Rust batching, feature isolation, production toolchains and suite rejection.
 .DESCRIPTION
 Imports pure package/argument policy and exercises early rejection paths only.
 No compiler, test suite, benchmark, model or native tool is started.
@@ -36,6 +36,59 @@ if ($arguments[0] -cne ('+' + $configuration.NightlyToolchain)) {
 if ('--package' -cnotin $arguments -or 'bonsai-prism' -cnotin $arguments -or '--all' -cin $arguments) {
     throw 'Formatting expanded beyond the selected package.'
 }
+
+$phases = @('fmt', 'clippy', 'doc', 'test', 'build')
+foreach ($group in @('All', 'Runtime', 'Broker')) {
+    $packages = @(Get-BonsaiRustPackage -Group $group)
+    foreach ($checkProfile in @('Foundation', 'Compatibility', 'Native')) {
+        $plan = @(Get-BonsaiRustCheckPlan -Package $packages -Phase ($phases + 'fmt') -CheckProfile $checkProfile -Offline)
+        $expectedCount = if ($group -ne 'Broker' -and $checkProfile -ne 'Native') { 9 } else { 5 }
+        if ($plan.Count -ne $expectedCount) { throw "Unexpected Cargo process count for $group/$checkProfile." }
+        foreach ($phase in $phases) {
+            $checks = @($plan | Where-Object Phase -CEQ $phase)
+            $covered = @($checks.Packages | Sort-Object)
+            if (($covered -join ',') -cne (($packages.Name | Sort-Object) -join ',')) {
+                throw "Batching omitted or duplicated package coverage for $group/$checkProfile/$phase."
+            }
+            foreach ($check in $checks) {
+                $selected = [Collections.Generic.List[string]]::new()
+                for ($index = 0; $index -lt $check.Arguments.Count; $index++) {
+                    if ($check.Arguments[$index] -ceq '--package') { $selected.Add($check.Arguments[$index + 1]) }
+                }
+                if (($selected -join ',') -cne ($check.Packages -join ',') -or '--workspace' -cin $check.Arguments -or '--all' -cin $check.Arguments) {
+                    throw 'A Cargo batch widened its explicit selected-package boundary.'
+                }
+                if ($phase -eq 'fmt') {
+                    if ($checks.Count -ne 1 -or '--check' -cnotin $check.Arguments -or '--all-features' -cin $check.Arguments) {
+                        throw 'Formatting must check all selected packages in one feature-free invocation.'
+                    }
+                    continue
+                }
+                foreach ($required in @('--locked', '--release', '--offline')) {
+                    if ($required -cnotin $check.Arguments) { throw "A Cargo batch dropped $required." }
+                }
+                if ($phase -eq 'clippy' -and '--all-targets' -cnotin $check.Arguments) { throw 'Batching omitted a Clippy target.' }
+                if ($phase -eq 'test' -and '--no-fail-fast' -cnotin $check.Arguments) {
+                    throw 'One failed test binary must not suppress later package suites in a Cargo batch.'
+                }
+                if ('bonsai-prism' -cin $check.Packages -and $checkProfile -ne 'Native') {
+                    if ($check.Packages.Count -ne 1 -or '--all-features' -cin $check.Arguments) {
+                        throw 'Restricted Prism feature checks must remain isolated from all-feature packages.'
+                    }
+                } elseif ('--all-features' -cnotin $check.Arguments) { throw 'An all-feature package lost its feature audit.' }
+            }
+        }
+    }
+}
+$selection = @(Get-BonsaiRustPackage -Name bonsai-ternary,bonsai-prism)
+$plan = @(Get-BonsaiRustCheckPlan -Package $selection -Phase fmt,test -CheckProfile Compatibility)
+if ($plan.Count -ne 3 -or @($plan.Packages | Sort-Object -Unique).Count -ne 2) {
+    throw 'A partial package selection expanded to the full workspace.'
+}
+$rejected = $false
+try { $null = Get-BonsaiRustArgument -Package $selection -Phase test -CheckProfile Compatibility }
+catch { $rejected = $_.Exception.Message -ceq 'Only all-feature packages can share a Cargo compile command.' }
+if (-not $rejected) { throw 'A direct Cargo argument request mixed restricted and all-feature packages.' }
 
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-RustPolicy-' + [guid]::NewGuid().ToString('N'))
 $previousActions = $env:GITHUB_ACTIONS
@@ -89,4 +142,4 @@ try {
 } finally {
     $env:GITHUB_ACTIONS = $previousActions
 }
-Write-Output 'Rust feature isolation, production-toolchain and local-suite policy checks passed without starting native tools.'
+Write-Output 'Rust batching, feature isolation, production-toolchain and local-suite policy checks passed without starting native tools.'

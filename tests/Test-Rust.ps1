@@ -4,6 +4,8 @@
 Runs registered Rust format, Release analyzer, documentation and optional CI suites.
 .DESCRIPTION
 Uses the same package/feature registry as Foundation and the nightly trial.
+Packages share Cargo invocations by phase; restricted feature profiles remain
+separate. Receipts retain package coverage and command durations for each batch.
 Targets, command logs and receipts remain external. Complete suites require
 main-branch GitHub Actions. No toolchain installation or benchmark is performed.
 #>
