@@ -556,7 +556,10 @@ impl Run {
                 let mut c = self.context(&[(0, s)], None, 0, 0, 1)?;
                 let ok = self.prompts(&mut c, &[(0, "Some")])?;
                 self.check(ok, "prompt decode failed")?;
-                let t = self.sampled(&c, 0)?;
+                let t = self
+                    .observe(&c, 0, false, false, false, false, true)?
+                    .token
+                    .ok_or_else(|| invalid("single-output token absent"))?;
                 self.piece(t)?;
                 if name == "dist_and_cpu" {
                     let cpu = self.chain(&[dist(18)])?;
