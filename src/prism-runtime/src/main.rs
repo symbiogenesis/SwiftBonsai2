@@ -12,6 +12,7 @@ use bonsai_prism_runtime::{
     special_input::SpecialInputPolicy,
     special_tokens::SpecialTokens,
     text_output::Utf8Output,
+    token_input::read_tokens,
     tokenization::{
         SpecialTokenInsertion, TextTokenizationPolicy, TokenBudget, TokenizationSession,
     },
@@ -32,7 +33,8 @@ Usage: bonsai-prism-runtime --model <absolute-gguf-path> --bytes <u64>\n\
   --sha256 <64-hex> --memory-bytes <usize> --context <1..262144>\n\
   [--mode <generate|tokenize>]\n\
   [--checkpoint-bytes <usize>] [--max-tokens <usize>]\n\
-  (--tokens <id,id,...> | --prompt <utf8-text> | --prompt-file <absolute-path|->)\n\
+  (--tokens <id,id,...> | --tokens-file <absolute-path|-> |\n\
+   --prompt <utf8-text> | --prompt-file <absolute-path|->)\n\
   [--special-input <literal|parse>] [--insert-special <none|model>]\n\
   [--stop-tokens <id,id,...>] [--backend <auto|scalar|neon>]\n\
   [--timeout-seconds <1..3600>] [--output <tokens|text>]\n\
@@ -62,6 +64,8 @@ Text BOS/EOS insertion defaults to none; model explicitly follows insertion flag
 Special input spellings stay literal by default; special-input and insert-special\n\
 require text input. Prompt files and stdin (-) contain bounded exact UTF-8;\n\
 newlines and a UTF-8 BOM are preserved. Input is read before model verification.\n\
+Token files and stdin (-) contain a nonempty strict JSON array of u32 IDs,\n\
+bounded to 1 MiB and the available prompt context; IDs are preserved exactly.\n\
 Text input is experimental; full-model tokenizer parity remains unqualified.\n\
 Decoding defaults to greedy. Output is one JSON object per line.\n\
 Reference sampling is experimental, requires --seed, and uses temperature, top-k,\n\
@@ -179,6 +183,7 @@ fn option_values(arguments: impl IntoIterator<Item = String>) -> Result<BTreeMap
                 | "--checkpoint-bytes"
                 | "--max-tokens"
                 | "--tokens"
+                | "--tokens-file"
                 | "--prompt"
                 | "--prompt-file"
                 | "--special-input"
@@ -364,16 +369,35 @@ fn input_options(
     max_tokens: usize,
 ) -> Result<(Vec<u32>, Option<String>, SpecialInputPolicy)> {
     let tokens = values.remove("--tokens");
+    let tokens_file = values.remove("--tokens-file");
     let prompt = values.remove("--prompt");
     let prompt_file = values.remove("--prompt-file");
     let policy = values.remove("--special-input");
-    match (tokens, prompt, prompt_file) {
-        (Some(tokens), None, None) if policy.is_none() => Ok((
+    match (tokens, tokens_file, prompt, prompt_file) {
+        (Some(tokens), None, None, None) if policy.is_none() => Ok((
             token_ids(&tokens, max_tokens)?,
             None,
             SpecialInputPolicy::Literal,
         )),
-        (None, prompt, prompt_file) if prompt.is_some() != prompt_file.is_some() => {
+        (None, Some(source), None, None) if policy.is_none() => {
+            let tokens = if source == "-" {
+                read_tokens(&mut std::io::stdin().lock(), max_tokens)?
+            } else {
+                let path = PathBuf::from(source);
+                if !path.is_absolute() {
+                    return Err(bad("token file path must be absolute or - for stdin"));
+                }
+                let mut file = std::fs::File::open(path).map_err(|error| {
+                    std::io::Error::new(error.kind(), "failed to open raw token input")
+                })?;
+                read_tokens(&mut file, max_tokens)?
+            };
+            if tokens.is_empty() {
+                return Err(bad("raw token input must not be empty"));
+            }
+            Ok((tokens, None, SpecialInputPolicy::Literal))
+        }
+        (None, None, prompt, prompt_file) if prompt.is_some() != prompt_file.is_some() => {
             let policy = match policy.as_deref().unwrap_or("literal") {
                 "literal" => SpecialInputPolicy::Literal,
                 "parse" => SpecialInputPolicy::Parse,
@@ -401,7 +425,7 @@ fn input_options(
             Ok((Vec::new(), Some(prompt), policy))
         }
         _ => Err(bad(
-            "provide exactly one of --tokens, --prompt or --prompt-file; special input policy requires text input",
+            "provide exactly one of --tokens, --tokens-file, --prompt or --prompt-file; special input policy requires text input",
         )),
     }
 }
@@ -876,6 +900,32 @@ mod tests {
                 .position(|key| key == "--tokens")
                 .ok_or("missing input")?;
             input[index] = "--prompt-file".to_owned();
+            input[index + 1] = "-".to_owned();
+            input.extend(<[&str; 2]>::from(pair).map(str::to_owned));
+            assert!(parse(input).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn cli_token_file_options_reject_before_reading_stdin() -> Result<()> {
+        for pair in [
+            ("--backend", "invalid"),
+            ("--insert-special", "none"),
+            ("--insert-special", "model"),
+            ("--special-input", "literal"),
+            ("--special-input", "parse"),
+            ("--prompt", "private prompt sentinel"),
+            ("--prompt-file", "-"),
+            ("--tokens", "1"),
+            ("--tokens-file", "-"),
+        ] {
+            let mut input = arguments();
+            let index = input
+                .iter()
+                .position(|key| key == "--tokens")
+                .ok_or("missing input")?;
+            input[index] = "--tokens-file".to_owned();
             input[index + 1] = "-".to_owned();
             input.extend(<[&str; 2]>::from(pair).map(str::to_owned));
             assert!(parse(input).is_err());

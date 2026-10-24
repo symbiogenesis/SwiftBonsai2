@@ -181,6 +181,7 @@ mod driver {
             // Only the exact file and directory created by this fixture are removed.
             let _ = fs::remove_file(&self.path);
             let _ = fs::remove_file(self.root.join("prompt-input.bin"));
+            let _ = fs::remove_file(self.root.join("token-input.json"));
             let _ = fs::remove_dir(&self.root);
         }
     }
@@ -381,6 +382,93 @@ mod driver {
         let output = fixture.run_stdin(&arguments, &[0xff])?;
         assert!(!output.status.success());
         assert_eq!(output.stdout, Vec::<u8>::new());
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_driver_token_file_and_stdin_match_exact_inline_ids() -> Result<()> {
+        let fixture = Artifact::new(260)?;
+        let mut arguments = fixture.arguments();
+        replace(&mut arguments, "--context", "8")?;
+        arguments.extend(["--tokens", "0,258,259,258", "--max-tokens", "4"].map(str::to_owned));
+        let inline = fixture.record(&arguments)?;
+        assert_eq!(inline["token_ids"], json!([0, 258, 259, 258]));
+        assert_eq!(inline["token_count"], 4);
+        assert_eq!(inline["insert_special"], "none");
+        let serialized = b" \r\n[0, 258,259,258]\t\n";
+        let path = fixture.root.join("token-input.json");
+        fs::write(&path, serialized)?;
+        let index = arguments
+            .iter()
+            .position(|key| key == "--tokens")
+            .ok_or("missing tokens")?;
+        arguments[index] = "--tokens-file".to_owned();
+        arguments[index + 1] = path.to_string_lossy().into_owned();
+        assert_eq!(fixture.record(&arguments)?, inline);
+        arguments[index + 1] = "-".to_owned();
+        let output = fixture.run_stdin(&arguments, serialized)?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stderr.is_empty());
+        assert_eq!(serde_json::from_slice::<Value>(&output.stdout)?, inline);
+        let output = fixture.run_stdin(&arguments, b"[260]")?;
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(String::from_utf8(output.stderr)?.contains("outside the model vocabulary"));
+        Ok(())
+    }
+
+    #[test]
+    fn tokenize_driver_token_files_reject_privately_before_model_verification() -> Result<()> {
+        let fixture = Artifact::new(260)?;
+        let path = fixture.root.join("token-input.json");
+        let mut arguments = fixture.arguments();
+        replace(
+            &mut arguments,
+            "--model",
+            &fixture.root.join("unopened.gguf").to_string_lossy(),
+        )?;
+        arguments.extend([
+            "--tokens-file".to_owned(),
+            path.to_string_lossy().into_owned(),
+            "--max-tokens".to_owned(),
+            "1".to_owned(),
+        ]);
+        for bytes in [
+            Vec::new(),
+            b"[]".to_vec(),
+            b"[1,\"private token sentinel\"]".to_vec(),
+            b"[4294967296]".to_vec(),
+            b"[1] [2]".to_vec(),
+            b"[0,258,259,0]".to_vec(),
+            vec![b' '; 1_048_577],
+        ] {
+            fs::write(&path, &bytes)?;
+            let error = rejected(&fixture, &arguments)?;
+            assert!(!error.contains("private"));
+            assert!(!error.contains("token-input.json"));
+            assert!(!error.contains("unopened.gguf"));
+            assert!(
+                error.contains("raw token input")
+                    || error.contains("raw input exceeds token limit")
+            );
+            replace(&mut arguments, "--tokens-file", "-")?;
+            let output = fixture.run_stdin(&arguments, &bytes)?;
+            assert!(!output.status.success());
+            assert!(output.stdout.is_empty());
+            assert_eq!(String::from_utf8(output.stderr)?, error);
+            replace(&mut arguments, "--tokens-file", &path.to_string_lossy())?;
+        }
+        replace(&mut arguments, "--tokens-file", "relative.json")?;
+        assert!(rejected(&fixture, &arguments)?.contains("must be absolute"));
+        fs::remove_file(&path)?;
+        replace(&mut arguments, "--tokens-file", &path.to_string_lossy())?;
+        let error = rejected(&fixture, &arguments)?;
+        assert!(error.contains("failed to open raw token input"));
+        assert!(!error.contains("token-input.json"));
         Ok(())
     }
 
