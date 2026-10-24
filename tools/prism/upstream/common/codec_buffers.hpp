@@ -1,6 +1,7 @@
 // Persistent byte buffers and production codec primitives. Rust owns all inputs,
 // warmups, iterations, scheduling, timing math, statistics and expectations.
 #pragma once
+#include "action_file.hpp"
 #include "codec.hpp"
 #include "llama-model.h"
 #include <algorithm>
@@ -11,13 +12,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <system_error>
-#if defined(_WIN32)
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
 #if defined(__x86_64__) || defined(__i386__)
 #include <x86intrin.h>
 #endif
@@ -36,22 +30,6 @@ struct state{
  std::shared_ptr<buffer>get(const json&id){std::lock_guard<std::mutex>guard(mutex);auto it=buffers.find(static_cast<std::uint32_t>(integer(id,1000000)));require(it!=buffers.end(),"unknown codec buffer handle");return it->second;}
  static std::uint8_t*region(buffer&b,const json&v,std::size_t bytes){const auto offset=integer(v,b.bytes);require(bytes<=b.bytes-offset,"codec buffer access exceeds extent");return b.data+offset;}
  static std::size_t row_bytes(ggml_type type,std::size_t n){const auto block=ggml_blck_size(type);require(block>0&&n%std::size_t(block)==0,"codec element count violates production block precondition");auto bytes=ggml_row_size(type,static_cast<std::int64_t>(n));require(bytes<=max_buffer,"codec row exceeds buffer bound");return bytes;}
- static std::string action_bytes(const std::filesystem::path&filename){
-  constexpr std::size_t limit=128ULL*1024*1024;require(std::filesystem::is_regular_file(filename),"codec action file must be regular");
-#if defined(_WIN32)
-  // A published immutable file can still have a short-lived delete-access
-  // handle from its atomic rename. CRT ifstream omits FILE_SHARE_DELETE.
-  struct owned_file{HANDLE value;~owned_file(){if(value!=INVALID_HANDLE_VALUE)CloseHandle(value);}};
-  owned_file input{CreateFileW(filename.c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr)};
-  if(input.value==INVALID_HANDLE_VALUE)throw std::system_error(static_cast<int>(GetLastError()),std::system_category(),"codec action file open");
-  LARGE_INTEGER size;if(!GetFileSizeEx(input.value,&size))throw std::system_error(static_cast<int>(GetLastError()),std::system_category(),"codec action file size");
-  require(size.QuadPart>=0&&static_cast<std::uint64_t>(size.QuadPart)<=limit,"codec action file exceeds bound");std::string bytes(static_cast<std::size_t>(size.QuadPart),'\0');DWORD read=0;
-  if(!ReadFile(input.value,bytes.data(),static_cast<DWORD>(bytes.size()),&read,nullptr))throw std::system_error(static_cast<int>(GetLastError()),std::system_category(),"codec action file read");
-  require(read==bytes.size(),"codec action file read extent differs");return bytes;
-#else
-  const auto size=std::filesystem::file_size(filename);require(size<=limit,"codec action file exceeds bound");std::ifstream input(filename,std::ios::binary);require(input.is_open(),"codec action file open failed");std::string bytes(static_cast<std::size_t>(size),'\0');if(size)input.read(bytes.data(),static_cast<std::streamsize>(size));require(bool(input),"codec action file read failed");return bytes;
-#endif
- }
  template<class Model>json execute(const json&o,std::uint32_t worker,Model model){
  const auto op=text(o.at("Op"));
  if(op=="qb-inventory"){keys(o,{"Op"});ggml_cpu_init();json types=json::array();for(int i=0;i<GGML_TYPE_COUNT;++i){auto type=static_cast<ggml_type>(i);const auto*t=ggml_get_type_traits(type);const auto*c=ggml_get_type_traits_cpu(type);types.push_back({{"Type",i},{"Name",t->type_name?json(t->type_name):json(nullptr)},{"BlockSize",t->blck_size},{"TypeSize",t->type_size},{"FromFloatReference",t->from_float_ref!=nullptr},{"FromFloatCpu",c->from_float!=nullptr},{"ToFloat",t->to_float!=nullptr},{"VecDot",c->vec_dot!=nullptr},{"VecDotType",static_cast<int>(c->vec_dot_type)}});}return{{"Types",types}};}
@@ -76,7 +54,7 @@ struct state{
 #endif
  return{{"Value",value}};}
  if(op=="qb-trace"){
-  const auto read_actions=[&](const std::filesystem::path&filename){return json::parse(action_bytes(filename),[](int depth,json::parse_event_t,json&){require(depth<=160,"codec action JSON depth exceeds bound");return true;});};
+  const auto read_actions=[&](const std::filesystem::path&filename){return json::parse(prism_action_file::read(filename,"codec action file"),[](int depth,json::parse_event_t,json&){require(depth<=160,"codec action JSON depth exceeds bound");return true;});};
   json actions;if(o.contains("ActionsFile")){keys(o,{"Op","ActionsFile"});actions=read_actions(path(o.at("ActionsFile")));}else{keys(o,{"Op","Actions"});actions=o.at("Actions");}
   json trace=json::array();std::size_t total=0;for(;;){require(actions.is_array()&&actions.size()<=524288-total,"codec explicit action count exceeds bound");total+=actions.size();bool continued=false;
    for(std::size_t index=0;index<actions.size();++index){const auto&action=actions[index];require(action.is_object()&&action.contains("Op"),"codec trace action required");const auto name=text(action.at("Op"));

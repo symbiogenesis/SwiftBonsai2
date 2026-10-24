@@ -1,6 +1,7 @@
 // Typed production GGML calls and bounded binary serialization. Workloads,
 // generators, references, comparisons and benchmark schedules belong to Rust.
 #pragma once
+#include "action_file.hpp"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-cpu.h"
@@ -568,10 +569,8 @@ inline json state::run(const json & a) {
     throw std::invalid_argument("backend unknown action");
 }
 inline json read_actions(state & s,const json & file) {
-        const auto path=s.file(file); const auto bytes=std::filesystem::file_size(path);
-        require(std::filesystem::is_regular_file(path) && bytes>0 && bytes<=std::size_t(128)*1024*1024,"backend ActionsFile extent differs");
-        std::ifstream input(path,std::ios::binary); require(bool(input),"backend ActionsFile open failed"); std::string content(std::size_t(bytes),'\0');
-        input.read(content.data(),std::streamsize(content.size())); require(bool(input) && input.peek()==std::char_traits<char>::eof(),"backend ActionsFile size changed");
+        const auto content=prism_action_file::read(s.file(file),"backend ActionsFile");
+        require(!content.empty(),"backend ActionsFile extent differs");
         std::vector<std::set<std::string>> object_keys;
         const auto callback=[&](int depth,json::parse_event_t event,json & parsed) {
             require(depth<=160,"backend ActionsFile nesting exceeds limit");
