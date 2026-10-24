@@ -72,6 +72,8 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   chunk scheduling and worker-local reductions. Its default compatible input
   copies all 75 original tensors from a pinned publisher F32 checkpoint; no layer
   is dropped for block-size compatibility. Both quantization sources are CI-only.
+  Windows continuation reads allow file deletion sharing after atomic publication
+  and report I/O failures directly; Rust retains the first native/controller error.
 - `test-backend-ops.cpp`: all 112 active CPU classes and 22,817 ordered
   geometries in each of evaluation, gradient and support modes. Rust interprets
   the complete pinned source program, builds inputs and computes every reference

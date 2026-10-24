@@ -439,15 +439,21 @@ fn consume(files: &ChunkFiles, expected: usize) -> Result<(Vec<u8>, Vec<u8>)> {
     fs::remove_file(&files.output)?;
     Ok((input, decoded))
 }
-fn wait(files: &ChunkFiles, receiver: &mpsc::Receiver<Result<Value>>) -> Result<()> {
+fn wait(
+    files: &ChunkFiles,
+    receiver: &mpsc::Receiver<Result<Value>>,
+    trace_ended: &mut bool,
+) -> Result<()> {
     let started = Instant::now();
     while !files.output.is_file() {
         match receiver.try_recv() {
             Ok(reply) => {
+                *trace_ended = true;
                 let _ = reply?;
                 return Err(invalid("codec trace ended before checkpoint"));
             }
             Err(mpsc::TryRecvError::Disconnected) => {
+                *trace_ended = true;
                 return Err(invalid("codec trace controller disconnected"));
             }
             Err(mpsc::TryRecvError::Empty) => {}
@@ -459,6 +465,24 @@ fn wait(files: &ChunkFiles, receiver: &mpsc::Receiver<Result<Value>>) -> Result<
         thread::sleep(Duration::from_millis(1));
     }
     Ok(())
+}
+fn finish_trace(
+    receiver: &mpsc::Receiver<Result<Value>>,
+    trace_ended: bool,
+    controlled: Result<()>,
+) -> Result<()> {
+    if trace_ended {
+        return controlled;
+    }
+    let reply = receiver
+        .recv()
+        .map_err(|_| invalid("statistics worker trace disconnected"))??;
+    exact_fields(&reply, &["Trace"])?;
+    verify(
+        array(&reply, "Trace")?.is_empty(),
+        "statistics completed trace not empty",
+    )?;
+    controlled
 }
 struct Work<'a> {
     driver: &'a Driver,
@@ -506,11 +530,12 @@ fn worker(work: &Work<'_>, queue: &Mutex<Queue>, lanes: &Lanes) -> Result<()> {
                 .call(lane_number, json!({"Op":"qb-trace","ActionsFile":initial}));
             let _ = sender.send(reply);
         });
+        let mut trace_ended = false;
         let controlled = (|| -> Result<()> {
             let mut previous_next = None;
             let mut first = true;
             loop {
-                wait(&files, &receiver)?;
+                wait(&files, &receiver, &mut trace_ended)?;
                 // A new checkpoint proves the preceding action file was fully
                 // read. Retain failed payloads, but avoid collecting hundreds
                 // of thousands of successful transport files in CI artifacts.
@@ -535,21 +560,14 @@ fn worker(work: &Work<'_>, queue: &Mutex<Queue>, lanes: &Lanes) -> Result<()> {
             }
             Ok(())
         })();
-        if controlled.is_err() && !files.next.exists() {
+        if controlled.is_err() && !trace_ended && !files.next.exists() {
             let _ = publish(&files.next, &[]);
         }
-        let reply = receiver
-            .recv()
-            .map_err(|_| invalid("statistics worker trace disconnected"))??;
-        exact_fields(&reply, &["Trace"])?;
-        verify(
-            array(&reply, "Trace")?.is_empty(),
-            "statistics completed trace not empty",
-        )?;
-        if controlled.is_ok() {
+        let finished = finish_trace(&receiver, trace_ended, controlled);
+        if finished.is_ok() {
             fs::remove_file(&files.next)?;
         }
-        controlled
+        finished
     })
 }
 fn roundtrip_layer(work: &Work<'_>, target: Stats, max_thread: usize) -> Result<(Stats, usize)> {
@@ -786,6 +804,44 @@ pub(super) fn run_with_options(engine: &Engine, options: &Options) -> Result<Val
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn worker_completion_preserves_native_error() -> Result<()> {
+        let path = std::env::temp_dir().join(format!(
+            "prism-stats-absent-checkpoint-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos()
+        ));
+        let files = ChunkFiles {
+            output: path.clone(),
+            next: path.clone(),
+            input: path.clone(),
+            decoded: path,
+        };
+        let (sender, receiver) = mpsc::channel();
+        sender.send(Err(invalid("native codec action file open failed")))?;
+        drop(sender);
+        let mut ended = false;
+        let controlled = wait(&files, &receiver, &mut ended);
+        let error = finish_trace(&receiver, ended, controlled)
+            .err()
+            .ok_or_else(|| invalid("native worker error was accepted"))?;
+        verify(
+            ended && error.to_string() == "native codec action file open failed",
+            "consumed native worker error was replaced by disconnect",
+        )?;
+        let (sender, receiver) = mpsc::channel();
+        sender.send(Ok(json!({"Trace":[]})))?;
+        drop(sender);
+        let error = finish_trace(&receiver, false, Err(invalid("controller payload failed")))
+            .err()
+            .ok_or_else(|| invalid("controller error was accepted"))?;
+        verify(
+            error.to_string() == "controller payload failed",
+            "completed native trace replaced the controller error",
+        )
+    }
     #[test]
     #[allow(
         clippy::suboptimal_flops,
