@@ -372,6 +372,67 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
     Ok(result(ID, passed, detail))
 }
 
+/// Reuse the original corpus parser and shared-context worker semantics for an
+/// independently verified external vocabulary repository fixture.
+pub(super) fn check_corpus(
+    engine: &Engine,
+    name: &str,
+    vocabulary: &Path,
+    input: &[u8],
+    output: &[u8],
+) -> Result<Value> {
+    let runtime = exchange(engine, &json!({"Kind":"vocab-runtime-info"}))?
+        .ok_or_else(|| invalid("target lacks production vocabulary API"))?;
+    exact_fields(&runtime, &["HardwareConcurrency"])?;
+    let workers = usize::try_from(uint(&runtime, "HardwareConcurrency")?)?;
+    if workers == 0 || workers > 256 || !vocabulary.is_absolute() {
+        return Err(invalid(
+            "external corpus workers/path outside source bounds",
+        ));
+    }
+    let (rows, cases) = read_cases(input, output)?;
+    let schedules: Vec<_> = (0..workers).map(|worker| json!({"Actions":(0..cases.len()).map(|index| token_action(index,worker==0,worker==0)).collect::<Vec<_>>()})).collect();
+    let response = evaluate(engine, vocabulary, &inputs(&cases), &schedules)?;
+    exact_fields(
+        &response,
+        &["ModelLoaded", "ContextLoaded", "Workers", "Error"],
+    )?;
+    if !boolean(&response, "ModelLoaded")?
+        || !boolean(&response, "ContextLoaded")?
+        || !response["Error"].is_null()
+    {
+        return Err(invalid(format!(
+            "external vocabulary {name} failed production load: {}",
+            response["Error"]
+        )));
+    }
+    let observations = array(&response, "Workers")?;
+    if observations.len() != workers {
+        return Err(invalid("external corpus worker extent differs"));
+    }
+    let mut failures = Vec::new();
+    for (worker, observation) in observations.iter().enumerate() {
+        let events = worker_results(observation, array(&schedules[worker], "Actions")?)?;
+        if worker == 0 {
+            for (index, (event, expected)) in events.iter().zip(cases.values()).enumerate() {
+                exact_fields(event, &["Tokens", "TextHex"])?;
+                validate_text_hex(event)?;
+                let actual = tokens(event)?;
+                if actual != *expected {
+                    failures.push(json!({"Case":index,"Expected":expected,"Actual":actual}));
+                }
+            }
+        } else {
+            for event in events {
+                exact_fields(event, &[])?;
+            }
+        }
+    }
+    Ok(
+        json!({"Name":name,"Rows":rows,"SourcePredicates":cases.len(),"Workers":workers,"Passed":failures.is_empty(),"Failures":failures}),
+    )
+}
+
 /// Optional source text-file path: a bounded export and timing diagnostic.
 /// It adds no corpus predicates and must only be executed in CI.
 pub(super) fn export_text(

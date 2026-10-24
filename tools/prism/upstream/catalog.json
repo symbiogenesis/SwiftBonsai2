@@ -353,6 +353,7 @@
     "tests/test-tokenizer-0.cpp",
     "tests/test-tokenizer-1-bpe.cpp",
     "tests/test-tokenizer-1-spm.cpp",
+    "tests/test-tokenizers-repo.sh",
     "tests/test-unicode.cpp"
   ]
 }

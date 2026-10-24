@@ -42,9 +42,13 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
-Sixty-three source contracts currently have safe Rust adapters in
+Sixty-four source contracts currently have safe Rust adapters in
 [upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
 
+- `test-tokenizers-repo.sh`: all eleven publisher vocabulary/input/output triples,
+  with every corpus attempted even after a failure. The existing Rust corpus
+  predicates are shared with `test-tokenizer-0.cpp`; immutable provisioning
+  replaces the source shell script's mutable repository update.
 - `test-lora-conversion-inference.sh`: all three original Gemma, Llama and
   Phi models, all nine base/hot/merged output-prefix predicates, and the same
   greedy 50-token schedules. Safe Rust converts the 28 pinned original inputs;

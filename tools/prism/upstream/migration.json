@@ -849,7 +849,7 @@
       ],
       "AssertionsToPort": "Discover recursive GGUF assets and invoke tokenizer fixture checks; no current upstream commit pin for remote repo; freeze before reproducible Rust migration; unmatched pairs explicit.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-unicode.cpp",

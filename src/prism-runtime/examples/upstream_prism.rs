@@ -41,6 +41,8 @@ mod mtmd_chunks;
 mod sampling;
 #[path = "upstream_prism/tokenizer.rs"]
 mod tokenizer;
+#[path = "upstream_prism/tokenizer_repository.rs"]
+mod tokenizer_repository;
 
 #[path = "upstream_prism/backend_sampler.rs"]
 mod backend_sampler;
@@ -182,6 +184,12 @@ const fn register(
 }
 
 const CASES: &[Case] = &[
+    register(
+        "test-tokenizers-repo",
+        "tests/test-tokenizers-repo.sh",
+        Bridge::Common,
+        tokenizer_repository::run,
+    ),
     register(
         "test-lora-conversion-inference",
         "tests/test-lora-conversion-inference.sh",
