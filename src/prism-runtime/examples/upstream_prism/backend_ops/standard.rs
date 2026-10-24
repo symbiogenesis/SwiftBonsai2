@@ -400,7 +400,9 @@ pub(super) fn binary(op: &str, a: &Value, b: &Value) -> Result<Option<Value>> {
         let equal = match (a, b) {
             (Value::Null, Value::Null) => Some(true),
             (Value::Handle(a), Value::Handle(b)) => Some(a == b),
-            (Value::Null, Value::Handle(_)) | (Value::Handle(_), Value::Null) => Some(false),
+            (Value::Function(a), Value::Function(b)) => Some(a == b),
+            (Value::Null, Value::Function(_) | Value::Handle(_))
+            | (Value::Function(_) | Value::Handle(_), Value::Null) => Some(false),
             (Value::Bytes(a), Value::Bytes(b)) => Some(a == b),
             _ => None,
         };
@@ -1007,6 +1009,87 @@ mod tests {
         assert_eq!(
             size_of(&runtime, &argument)?.number().map_err(invalid)?,
             Number::U64(8)
+        );
+        Ok(())
+    }
+    #[test]
+    fn source_function_identity_controls_original_bin_bcast_methods() -> Result<()> {
+        let (program, geometries) = super::super::program::load().map_err(invalid)?;
+        let names = [
+            "ggml_add",
+            "ggml_sub",
+            "ggml_mul",
+            "ggml_div",
+            "ggml_add_inplace",
+            "ggml_sub_inplace",
+            "ggml_mul_inplace",
+            "ggml_div_inplace",
+        ];
+        for name in names {
+            let geometry = geometries
+                .eval
+                .iter()
+                .find(|geometry| {
+                    geometry.class == "test_bin_bcast"
+                        && geometry
+                            .arguments
+                            .first()
+                            .and_then(|value| value.get("Function"))
+                            .and_then(Json::as_str)
+                            == Some(name)
+                })
+                .ok_or_else(|| invalid("actual binary-broadcast function geometry missing"))?;
+            let mut host = LanguageOnly;
+            let mut runtime = Interpreter::new(program, &geometry.class, &mut host)?;
+            runtime.instantiate(geometry)?;
+            assert_eq!(
+                runtime
+                    .call("grad_precise", Vec::new())?
+                    .truth()
+                    .map_err(invalid)?,
+                name == "ggml_div"
+            );
+            assert_eq!(
+                runtime
+                    .call("max_maa_err", Vec::new())?
+                    .number()
+                    .map_err(invalid)?,
+                Number::F64(if name == "ggml_add" { 1e-4 } else { 1e-3 })
+            );
+            let function = runtime.value("op")?;
+            for other in names {
+                for (op, expected) in [("==", name == other), ("!=", name != other)] {
+                    assert_eq!(
+                        runtime
+                            .binary_value(op, function.clone(), Value::Function(other.into()))?
+                            .truth()
+                            .map_err(invalid)?,
+                        expected
+                    );
+                }
+            }
+            for (left, right) in [(function.clone(), Value::Null), (Value::Null, function)] {
+                assert!(
+                    !runtime
+                        .binary_value("==", left.clone(), right.clone())?
+                        .truth()
+                        .map_err(invalid)?
+                );
+                assert!(
+                    runtime
+                        .binary_value("!=", left, right)?
+                        .truth()
+                        .map_err(invalid)?
+                );
+            }
+        }
+        assert!(
+            binary(
+                "<",
+                &Value::Function("ggml_add".into()),
+                &Value::Function("ggml_sub".into())
+            )?
+            .is_none()
         );
         Ok(())
     }
