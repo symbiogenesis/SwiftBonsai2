@@ -34,3 +34,6 @@ mod tensor;
 mod transport;
 #[path = "backend_ops/value.rs"]
 mod value;
+
+#[path = "backend_ops/graph.rs"]
+mod graph;
