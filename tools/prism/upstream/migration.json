@@ -144,7 +144,7 @@
       ],
       "AssertionsToPort": "Barrier integrity; active thread graph and multi-graph correctness; original thread/round parameter handling. Separate any timing/performance observations.",
       "LegacyReferenceRequired": false,
-      "SafeRustPort": false
+      "SafeRustPort": true
     },
     {
       "Id": "tests/test-batch-alloc.cpp",

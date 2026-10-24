@@ -6,9 +6,13 @@ targets: production Prism through a native process bridge, and this repository's
 production Rust runtime. Both results are retained for each source; every
 upstream reference failure fails the final gate.
 
-The current ports preserve fifty-two source contracts from
+The current ports preserve fifty-three source contracts from
 `PrismML-Eng/llama.cpp@b87ca7225456b06b0975b8239c66b5aecf07e37c`:
 
+- The barrier source retains all three graph/threadpool schedules. It has zero
+  output assertions; reports distinguish workload completion and additional API
+  guards from numerical coverage. All its executions, including named cases,
+  are CI-only because the original source measures timings.
 - Architecture coverage retains every source variant and backend/export phase;
   Rust generates the small model inputs and records capability skips. Recurrent
   rollback creates its own three fixtures and retains every replay/fork schedule.
@@ -24,6 +28,9 @@ The current ports preserve fifty-two source contracts from
   source Unicode domain across two SPM and eight BPE fixtures, including the
   commented slow fixtures. Rust owns exclusions, exceptions, worker strides,
   stop policy and comparisons; native batches contain supplied inputs only.
+  Safe Rust restores BPE's intended malformed-UTF-8 skip because the pinned
+  decoder consumes its own exceptions. Reports count the corrected skips;
+  valid token pieces and all Unicode comparisons remain required.
 - `tests/test-c.c`: compile-only C17 public-header coverage via raw native ABI
   observations and additional Rust layout guards; no C test main remains.
 - `tests/test-chat-analysis.cpp`: all37 diagnostic templates and render/stat
@@ -123,6 +130,13 @@ passed [native Windows ARM64 CI](https://github.com/symbiogenesis/SwiftBonsai2/a
 The runtime's vector API runs once for each original activation column,
 preserving the complete `M*N` comparison. This tests numerical compatibility,
 without claiming batched execution or throughput equivalence.
+
+The metadata fixture lock pins eleven model selections at immutable publisher
+revisions. GGUF inputs are bounded raw prefixes, downloaded with exact HTTP
+range, size and SHA-256 checks. Raw API listings are an input-only corpus because
+their activity fields change even at revision URLs. No header input is derived
+from expected schemas. The lock explicitly records the upstream Nemotron
+repository-name correction. Assets are materialized only in external evidence.
 
 From a verified, unmodified source extraction, configure this directory with
 CMake and `-DPRISM_SOURCE_DIR=<absolute upstream path>`, then build the
