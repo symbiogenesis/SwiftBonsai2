@@ -25,8 +25,9 @@ The crate contains:
 - Embeddings, explicit Hadamard/sign transforms, RMS normalization, full causal
   nonflash attention (including FP16 query/probability conversion), text
   interleaved MRoPE, Gated Delta Net/convolution state, gated feed-forward
-  layers and output projection. KV entries round through FP16; their current
-  backing storage is F32, so retained cache bytes exceed a native FP16 layout.
+  layers and output projection. KV entries retain exact FP16 bits in `u16`
+  vectors and widen before scalar multiplication; convolution/GDN state remains
+  F32. State admission and checkpoint accounting use these physical element sizes.
   Flash attention has a distinct reduction/rounding contract and is not implemented.
 - A bounded single-owner conversation with exact prefix checkpoint restoration,
   greedy token streaming, backpressure, cancellation between decoder operations,
@@ -42,6 +43,12 @@ The crate contains:
   reusable workspace. Checkpoints still own independent committed state/logits;
   scratch never substitutes for a rollback snapshot. Errors clear direct output,
   and runtime cancellation/failure restores the prior committed conversation.
+- State-only prompt ingestion through `Decoder::ingest`. Qwen35 skips final
+  output normalization/projection for intermediate uncached prompt tokens,
+  preserving all hidden/cache/recurrent validation. Unrequested output logits
+  are not computed or checked. The compatibility fallback computes and validates
+  logits before discarding them. Final prompt tokens and decode steps produce
+  ordinary validated logits; exact prefix hits reuse their saved output.
 
 The graph/quantizer reference is Prism commit
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.

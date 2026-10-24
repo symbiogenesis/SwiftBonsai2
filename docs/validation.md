@@ -91,6 +91,15 @@ The existing Foundation native-runtime lane includes them in its complete suite;
 same-model prefill/decode allocation counts/bytes and peak-memory qualification
 remain separate R4.2 work and run only in CI when requested.
 
+State-only prompt ingestion skips the Qwen35 output head only before the final
+uncached prompt token. Focused cases check hybrid continuation/restoration,
+invalid tokens and state arithmetic, explicit skipped-output validation, exact
+prefix hits, cancellation and rollback. Full-attention KV caches now store exact
+binary16 bits physically, retaining the existing scalar products and reductions.
+Packed-bit/storage, mixed-state accounting and pinned graph-logit regressions
+cover snapshots and admission. These checks close the R4.3/R4.5 implementation
+items; full-model parity, process-memory and performance qualification remain open.
+
 The safe optimization pass also grows native KV storage geometrically within
 the validated context bound, reuses scalar RoPE frequencies across query/key
 and full-attention layers for one evaluation, and validates/selects greedy

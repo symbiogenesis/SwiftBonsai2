@@ -143,18 +143,25 @@ saturates sustainable bandwidth, faster arithmetic alone offers little gain.
     recovery. Run performance measurements only in CI when requested. Synthetic
     address/capacity reuse is not evidence of a full-model memory or speed gain.
 
-  - [ ] **R4.3 — Add state-only prompt ingestion.** Compute logits only for the
-    final uncached prompt token; define skipped-output validation explicitly
-    and preserve the existing single-token API, prefix hits, cancellation and
-    request rollback. Compare final logits and complete hybrid state.
+  - [x] **R4.3 — Add state-only prompt ingestion.** `Decoder::ingest` preserves
+    the existing single-token API with a validated compatibility fallback.
+    Qwen35 omits final output normalization/projection for intermediate uncached
+    prompt tokens while retaining hidden, attention and recurrent-state checks.
+    Runtime computes logits for the final uncached prompt token and all decode
+    steps; exact prefix hits retain their saved logits. Focused regressions
+    cover hybrid continuation/restoration, skipped-output validation, scheduling,
+    cancellation and request rollback. Same-model performance remains unqualified.
   - [ ] **R4.4 — Share compatible activation preparation.** Reuse sign/Hadamard
     transforms and packed activations across sibling projections only where
     input, basis/permutation and Q8_K/Q8_0 contracts match. Storage reuse alone
     does not complete this task.
-  - [ ] **R4.5 — Store already-rounded KV physically as FP16.** Preserve exact
-    binary16 bits and widening behavior, with convolution/GDN state remaining
-    FP32. Verify attention, snapshots and memory/admission accounting; the
-    expected halving applies to KV element payload, not total process memory.
+  - [x] **R4.5 — Store already-rounded KV physically as FP16.** Full-attention
+    caches retain binary16 bits in `u16` vectors, widening before each unchanged
+    scalar multiplication. Convolution/GDN state and staged graph deltas remain
+    FP32. State admission and checkpoint accounting charge the mixed element
+    sizes and actual retained capacities. Focused packed-bit, pinned-logit and
+    snapshot regressions preserve rounding and restoration. The halving applies
+    to KV element payload; process-memory and throughput qualification remain open.
   - [ ] **R4.6 — Add bounded block prefill and qualify its algorithms.** Establish
     causal/state scheduling, atomic commit and cancellation before comparing
     [Vec-LUT and chunkwise WY/UT GDN](inference-algorithms.md#chunkwise-gated-deltanet-prefill).
