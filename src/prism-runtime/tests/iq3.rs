@@ -166,8 +166,8 @@ fn checked_rows_prepared_matvec_and_explicit_encoder_limits() -> Result<()> {
         let mut output = Vec::new();
         prepared.matvec_into(&weights, &mut output)?;
         assert_eq!(output, [expected, expected]);
-        assert!(kernels::quantize_row(kind, &input).is_err());
-        assert!(kernels::quantize_row_weighted(kind, &input, &[1.0; 768]).is_err());
+        assert!(kernels::quantize_row(kind, &input[..767]).is_err());
+        assert!(kernels::quantize_row_weighted(kind, &input, &[1.0; 767]).is_err());
         assert!(kernels::row(&weights, 2).is_err());
         let size = if kind == 18 { 98 } else { 110 };
         for bytes in [0, size - 1, size + 1] {

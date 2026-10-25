@@ -210,8 +210,16 @@ fn iq2_rejects_malformed_extents_nonfinite_scales_and_unavailable_encoders() -> 
         let mut invalid_activation = activations;
         invalid_activation[..4].copy_from_slice(&f32::NAN.to_le_bytes());
         assert!(kernels::packed_dot(kind, 256, &packed, &invalid_activation).is_err());
-        assert!(kernels::quantize_row(kind, &[0.0; 256]).is_err());
-        assert!(kernels::quantize_row_weighted(kind, &[0.0; 256], &[1.0; 256]).is_err());
+        if kind == 22 {
+            assert_eq!(kernels::quantize_row(kind, &[0.0; 256])?, vec![0; size]);
+            assert_eq!(
+                kernels::quantize_row_weighted(kind, &[0.0; 256], &[1.0; 256])?,
+                vec![0; size]
+            );
+        } else {
+            assert!(kernels::quantize_row(kind, &[0.0; 256]).is_err());
+            assert!(kernels::quantize_row_weighted(kind, &[0.0; 256], &[1.0; 256]).is_err());
+        }
     }
     // A shared preparation can serve each IQ2 codebook without changing its
     // native Q8_K quantizer or allocating a decoded tensor.

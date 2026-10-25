@@ -2,8 +2,8 @@
 //!
 //! Ported from PrismML-Eng/llama.cpp `73bfe6cc485554822f80c473a3c0c4f25e80f41b`,
 //! ggml/src/ggml-quants.c and ggml/src/ggml-cpu/quants.c (MIT; root NOTICE).
-//! The integer codebooks retain the original ggml-common.h values. Encoders
-//! remain unavailable: decoding does not imply a native importance-aware fit.
+//! The integer codebooks retain the original ggml-common.h values. Reference
+//! and importance encoders preserve the pinned native grid-fitting contracts.
 
 #![allow(
     clippy::cast_precision_loss,
@@ -16,6 +16,23 @@ use super::{Q8KBlock, finite, scale};
 use crate::{Result, invalid};
 #[path = "iq3_tables.rs"]
 mod tables;
+
+pub(super) fn quantize(kind: u32, input: &[f32], importance: Option<&[f32]>) -> Result<Vec<u8>> {
+    match kind {
+        18 => {
+            // The decoder's optimized magnitudes identify the same native
+            // odd-level grid by floor(magnitude/8), including its top value 62.
+            let points =
+                tables::XXS.map(|word| word.to_le_bytes().map(|value| 2 * (value / 8) + 1));
+            super::iqfit::quantize(kind, input, importance, &points)
+        }
+        21 => {
+            let points = tables::SMALL.map(u32::to_le_bytes);
+            super::iqfit::quantize(kind, input, importance, &points)
+        }
+        _ => Err(invalid("unknown IQ3 quantizer")),
+    }
+}
 
 pub(super) const fn layout(kind: u32) -> Option<(usize, usize)> {
     match kind {

@@ -37,8 +37,9 @@ The production codebooks are mechanically extracted from the same pinned
 checked against the oracle's original 128-entry sign table through the full
 payload domains. Native integer block accumulation and the final row-wide
 `0.125` multiplication are preserved. No floating expansion substitutes for
-the production packed dot. Rust importance encoders remain explicitly
-unavailable.
+the production packed dot. `IQ2_XXS/XS` importance encoders remain explicitly
+unavailable; the separately qualified `IQ2_S` encoder is documented in
+`upstream-iq-encoders.md`.
 
 External Rust candidates were inspected but no external code was imported:
 `https://github.com/InfiniTensor/gguf` at

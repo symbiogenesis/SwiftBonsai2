@@ -125,7 +125,7 @@ fn descriptor(type_id: u32) -> CodecTraits {
             from_float_cpu: type_id == 0,
             from_float_reference: matches!(
                 type_id,
-                0..=3 | 6..=15 | 20 | 23 | 30 | 34 | 35 | 39..=42 | 142 | 143
+                0..=3 | 6..=15 | 18 | 20..=23 | 30 | 34 | 35 | 39..=42 | 142 | 143
             ),
             // Safe kernels also define scalar/auxiliary reads unavailable as
             // native to_float pointers; this does not change native metadata.

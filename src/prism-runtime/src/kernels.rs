@@ -19,6 +19,7 @@ mod fp4;
 mod iq1;
 mod iq2;
 mod iq3;
+mod iqfit;
 mod iquants;
 mod kquants;
 mod legacy;
@@ -463,7 +464,7 @@ fn quantize_ternary(input: &[f32]) -> Result<[u8; 34]> {
 /// Encodes one or more complete native blocks using deterministic reference quantizers.
 ///
 /// Supported kinds include F32, F16, BF16, the legacy Q4/Q5/Q8 formats,
-/// `Q8_K`, `Q1_0`, `Q2_0`, PQ2 and PTQ1.
+/// `Q8_K`, `Q1_0`, `Q2_0`, `IQ2_S`, `IQ3_XXS`, `IQ3_S`, PQ2 and PTQ1.
 /// Binary16 and bfloat16 use ties-to-even; ternary and `Q8_0` integer rounding
 /// uses ties away from zero. PQ2/PTQ1 share identical scales and ternary values.
 /// Zero scales retain each native format's original signed-zero representation.
@@ -477,14 +478,14 @@ fn quantize_ternary(input: &[f32]) -> Result<[u8; 34]> {
 )]
 pub fn quantize_row(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
     match kind {
+        10..=14 => return kquants::quantize(kind, input),
+        18 | 21 => return iq3::quantize(kind, input, None),
+        22 => return iq2::quantize(input, None),
         20 | 23 => return iquants::quantize(kind, input, None),
         34 | 35 => return tquants::quantize(kind, input),
         39 | 40 => return fp4::quantize(kind, input),
         41 | 42 => return signquants::quantize(kind, input),
         _ => {}
-    }
-    if matches!(kind, 10..=14) {
-        return kquants::quantize(kind, input);
     }
     let (group, bytes) = layout(kind)?;
     if input.is_empty()
@@ -660,6 +661,7 @@ fn weighted_symmetric_block(
 /// Scalar formats, `Q8_0`, PQ2 and PTQ1 retain their native behavior in which
 /// importance does not alter the output. The same row importance vector may
 /// be reused by the caller for subsequent rows.
+/// `IQ2_S`, `IQ3_XXS` and `IQ3_S` retain their codebook-specific native fits.
 ///
 /// # Errors
 /// Rejects unequal or empty extents, negative/nonfinite importance, malformed
@@ -669,6 +671,12 @@ fn weighted_symmetric_block(
     reason = "Preserve source row-wide sum of squares and per-element weighting association."
 )]
 pub fn quantize_row_weighted(kind: u32, input: &[f32], importance: &[f32]) -> Result<Vec<u8>> {
+    if matches!(kind, 18 | 21) {
+        return iq3::quantize(kind, input, Some(importance));
+    }
+    if kind == 22 {
+        return iq2::quantize(input, Some(importance));
+    }
     if matches!(kind, 20 | 23) {
         return iquants::quantize(kind, input, Some(importance));
     }

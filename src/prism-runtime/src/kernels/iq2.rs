@@ -3,8 +3,8 @@
 //! Adapted from PrismML-Eng/llama.cpp `73bfe6cc485554822f80c473a3c0c4f25e80f41b`,
 //! `ggml/src/ggml-quants.c`, `ggml/src/ggml-cpu/quants.c`, and the tables in
 //! `ggml/src/ggml-common.h` (MIT; see NOTICE). All fields are read from bytes;
-//! no alignment, host endianness, or decoded matrix is assumed. Importance
-//! encoders remain unavailable; decoding does not supply a substitute encoder.
+//! no alignment, host endianness, or decoded matrix is assumed. `IQ2_S` also
+//! exposes the pinned reference and importance fit; `IQ2_XXS/XS` do not.
 
 #![allow(
     clippy::as_conversions,
@@ -18,6 +18,13 @@ use crate::{Result, invalid};
 
 #[path = "iq2_tables.rs"]
 mod tables;
+
+pub(super) fn quantize(input: &[f32], importance: Option<&[f32]>) -> Result<Vec<u8>> {
+    // Native encoder grid uses odd levels 1,3,5. The decode codebook's
+    // optimized magnitudes 8,25,43 identify exactly those same grid indices.
+    let points = tables::IQ2S.map(|word| word.to_le_bytes().map(|value| 2 * (value / 16) + 1));
+    super::iqfit::quantize(22, input, importance, &points)
+}
 
 pub(super) const fn layout(kind: u32) -> Option<(usize, usize)> {
     match kind {

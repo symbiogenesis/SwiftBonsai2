@@ -33,7 +33,7 @@ fn inventory_retains_native_holes_and_distinguishes_unimplemented_cpu_operations
     assert!(values[1].native.from_float_cpu);
     assert!(!values[1].rust.from_float_cpu);
     assert!(values[18].native.from_float_reference);
-    assert!(!values[18].rust.from_float_reference);
+    assert!(values[18].rust.from_float_reference);
     assert!(values[18].rust.to_float);
     assert!(values[18].rust.vec_dot);
     assert!(values[26].native.from_float_cpu);
@@ -146,7 +146,10 @@ fn rejected_calls_leave_output_intact_without_cpu_reference_substitution() -> Te
     owner.write(region(output, 0), &[0x5a; 1024])?;
     for (function, kind, count, input_offset, with_rhs, output_offset) in [
         (CodecFunction::FromFloatCpu, 1, 256, 0, false, 0),
-        (CodecFunction::FromFloatReference, 18, 256, 0, false, 0),
+        (CodecFunction::FromFloatReference, 16, 256, 0, false, 0),
+        (CodecFunction::FromFloatCpu, 18, 256, 0, false, 0),
+        (CodecFunction::FromFloatCpu, 21, 256, 0, false, 0),
+        (CodecFunction::FromFloatCpu, 22, 256, 0, false, 0),
         (CodecFunction::FromFloatReference, 142, 127, 0, false, 0),
         (CodecFunction::FromFloatReference, 142, 256, 1, false, 0),
         (CodecFunction::FromFloatReference, 142, 256, 0, true, 0),
