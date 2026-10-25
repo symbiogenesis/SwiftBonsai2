@@ -59,6 +59,10 @@ pub(super) struct ModelSessionSpec {
 }
 
 impl Engine {
+    pub(super) const fn is_rust(&self) -> bool {
+        matches!(self.target, Target::Rust)
+    }
+
     pub(super) fn new(
         target: Target,
         bridge: Option<PathBuf>,

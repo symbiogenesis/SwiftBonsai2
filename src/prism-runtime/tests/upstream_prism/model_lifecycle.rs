@@ -1,10 +1,10 @@
 //! Rust-owned schedules for all five pinned model lifecycle source tests.
 //!
-//! Production model/context/state operations use the persistent native adapter.
+//! Production operations use native sessions or the owned Rust model loader.
 //! Pinned source: b87ca7225456b06b0975b8239c66b5aecf07e37c (MIT).
 
 use super::engine::Engine;
-use super::model_session::{Client, ModelSession};
+use super::model_session::{Client, ModelSession, Reply};
 use super::{Result, invalid, result};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -22,6 +22,10 @@ const CANCEL: &str = "tests/test-model-load-cancel.cpp";
 const SAVE: &str = "tests/test-save-load-state.cpp";
 const FRAGMENTED: &str = "tests/test-state-restore-fragmented.cpp";
 const THREADS: &str = "tests/test-thread-safety.cpp";
+
+mod storage;
+
+type ProgressPolicy = fn(f32) -> bool;
 
 #[derive(Default)]
 struct Checks {
@@ -327,14 +331,22 @@ fn autorelease(client: &Client, path: &str, checks: &mut Checks) -> Result<Value
 fn cancel_policy(progress: f32) -> bool {
     progress > 0.50
 }
-fn load_cancel(client: &Client, path: &str, checks: &mut Checks) -> Result<Value> {
+fn load_cancel(
+    mut call: impl FnMut(u32, Value, Option<ProgressPolicy>) -> Result<Reply>,
+    path: &str,
+    checks: &mut Checks,
+) -> Result<Value> {
     checks.source(
         std::fs::File::open(path).is_ok(),
         "original model file-open predicate failed",
     )?;
-    plain(client, 0, "backend-init")?;
-    let reply=client.call(0,json!({"Op":"model-load","Path":path,"Base":"zero","Params":null,"Overrides":{"LoadMode":"none"},"Progress":true}),Some(cancel_policy))?;
-    plain(client, 0, "backend-free")?;
+    call(0, json!({"Op":"backend-init"}), None)?;
+    let reply = call(
+        0,
+        json!({"Op":"model-load","Path":path,"Base":"zero","Params":null,"Overrides":{"LoadMode":"none"},"Progress":true}),
+        Some(cancel_policy),
+    )?;
+    call(0, json!({"Op":"backend-free"}), None)?;
     checks.source(
         reply.value["Model"].is_null(),
         "load-cancel returned a model",
@@ -817,6 +829,9 @@ fn source_sha(id: &str) -> Result<&'static str> {
 }
 pub(super) fn run(engine: &Engine, id: &str) -> Result<Value> {
     let sha = source_sha(id)?;
+    if id == CANCEL && engine.is_rust() {
+        return Ok(run_rust_cancel(engine, sha));
+    }
     let Some(session) = ModelSession::open(engine, id)? else {
         return Ok(result(
             id,
@@ -834,7 +849,11 @@ pub(super) fn run(engine: &Engine, id: &str) -> Result<Value> {
             .ok_or_else(|| invalid("model path is not UTF-8"))?;
         match id {
             AUTORELEASE => autorelease(&client, path, &mut checks),
-            CANCEL => load_cancel(&client, path, &mut checks),
+            CANCEL => load_cancel(
+                |worker, operation, progress| client.call(worker, operation, progress),
+                path,
+                &mut checks,
+            ),
             SAVE => save_load(&client, path, &mut checks),
             FRAGMENTED => fragmented(&client, path, &mut checks),
             THREADS => thread_safety(&client, path, &mut checks),
@@ -847,6 +866,28 @@ pub(super) fn run(engine: &Engine, id: &str) -> Result<Value> {
         (Err(error), _) | (_, Err(error)) => (false, json!({"Error":error.to_string()})),
     };
     Ok(result(id,passed,json!({"SourceSHA256":sha,"SourceChecks":checks.source,"AdditionalGuards":checks.guards,"Asset":ASSET,"Observation":detail}).to_string()))
+}
+
+fn run_rust_cancel(engine: &Engine, sha: &str) -> Value {
+    let mut client = storage::Client::default();
+    let mut checks = Checks::default();
+    let outcome = (|| {
+        let asset = engine.asset_path(ASSET)?;
+        verify_artifact(&asset, ASSET_LENGTH, ASSET_SHA)?;
+        let path = asset
+            .to_str()
+            .ok_or_else(|| invalid("model path is not UTF-8"))?;
+        load_cancel(
+            |worker, operation, progress| client.call(worker, &operation, progress),
+            path,
+            &mut checks,
+        )
+    })();
+    let (passed, detail) = match (outcome, client.finish()) {
+        (Ok(schedule), Ok(())) => (true, json!({"Schedule":schedule})),
+        (Err(error), _) | (_, Err(error)) => (false, json!({"Error":error.to_string()})),
+    };
+    result(CANCEL,passed,json!({"SourceSHA256":sha,"SourceChecks":checks.source,"AdditionalGuards":checks.guards,"Asset":ASSET,"Observation":detail}).to_string())
 }
 
 #[cfg(test)]
