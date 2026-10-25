@@ -247,6 +247,7 @@ pub(super) struct Plan<'a> {
     pub(super) contexts: BTreeMap<u32, Vec<u32>>,
     pub(super) graphs: BTreeMap<u32, Json>,
     scalars: BTreeMap<u32, Value>,
+    shape_queries: BTreeMap<(String, u32), Value>,
     next_context: u32,
     next_backend: u32,
     next_tensor: u32,
@@ -264,6 +265,7 @@ impl<'a> Plan<'a> {
             contexts: BTreeMap::new(),
             graphs: BTreeMap::new(),
             scalars: BTreeMap::new(),
+            shape_queries: BTreeMap::new(),
             next_context: 0,
             next_backend: 0,
             next_tensor: 0,
@@ -274,6 +276,12 @@ impl<'a> Plan<'a> {
     }
 
     pub(super) fn push(&mut self, action: Json) {
+        if matches!(
+            action["Op"].as_str(),
+            Some("tensor-write" | "context-init" | "context-free")
+        ) {
+            self.shape_queries.clear();
+        }
         self.pending.push(action);
     }
 
@@ -361,6 +369,24 @@ impl<'a> Plan<'a> {
                 "source production argument count differs for {name}"
             )));
         }
+        // These immutable shape queries occur inside original per-element
+        // initializer loops. Retain the actual typed production observation
+        // until a metadata mutation, rather than emitting the same native
+        // query hundreds of thousands of times and exhausting the action cap.
+        let shape_key = if matches!(name, "ggml_nelements" | "ggml_nrows") {
+            match values.first() {
+                Some(Value::Handle(Handle::Tensor(id))) => Some((name.to_owned(), *id)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if let Some(value) = shape_key
+            .as_ref()
+            .and_then(|key| self.shape_queries.get(key))
+        {
+            return Ok(value.clone());
+        }
         let arguments = values
             .iter()
             .zip(&intrinsic.parameters)
@@ -392,8 +418,19 @@ impl<'a> Plan<'a> {
         };
         if intrinsic.result == "void" || matches!(value, Value::Handle(Handle::Tensor(_))) {
             self.tensors.clear();
+            self.shape_queries.clear();
         }
         self.push(json!({"Op":"call","Function":name,"Arguments":arguments,"Result":result}));
+        if let Some(key) = shape_key {
+            let id = u32::try_from(
+                result["Scalar"]
+                    .as_u64()
+                    .ok_or_else(|| invalid("shape query scalar is missing"))?,
+            )?;
+            let observed = self.observe_scalar(id)?;
+            self.shape_queries.insert(key, observed.clone());
+            return Ok(observed);
+        }
         Ok(value)
     }
 

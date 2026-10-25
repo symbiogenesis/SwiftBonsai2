@@ -451,4 +451,65 @@ mod tests {
         assert!(outcome?.is_some());
         Ok(())
     }
+
+    #[test]
+    fn rust_backend_hosted_argsort_geometry_preserves_original_crt_stream() -> Result<()> {
+        use super::super::{
+            evaluate,
+            graph::Plan,
+            host::Production,
+            prepare::{self, Mode},
+            program,
+        };
+        // Hosted run40153890429 partition10 exhausted the bounded action
+        // transport while its original loop queried nelements262,400times.
+        // Preserve the exact geometry, index seed and joined globalCRT offset.
+        const INDEX: usize = 15450;
+        const OFFSET: u64 = 7_748_238;
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "prism-hosted-argsort-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory)?;
+        // An explicit immutable production bridge enables the same focused
+        // reproduction against C++; ordinary CI runs the Rust backend here.
+        let bridge = std::env::var_os("PRISM_FOCUSED_COMMON_BRIDGE").map(std::path::PathBuf::from);
+        let retain_native_evidence = bridge.is_some();
+        let target = if bridge.is_some() {
+            Target::Cpp
+        } else {
+            Target::Rust
+        };
+        let engine = Engine::new(target, None, bridge, Some(directory.clone()), None, None)?;
+        let (program, geometries) = program::load().map_err(invalid)?;
+        let geometry = &geometries.eval[INDEX];
+        assert_eq!(geometry.class, "test_argsort");
+        let outcome = transport::with_session(&engine, &directory, |session| {
+            let mut host = Production::new(
+                Plan::new(session),
+                program,
+                INDEX as u64,
+                1,
+                Mode::Eval.code(),
+            );
+            let mut prepared = prepare::prepare(&mut host, geometry, Mode::Eval, None)?;
+            assert!(prepared.supported && prepared.initialize);
+            assert_eq!(prepared.crt_draws, 262_400);
+            evaluate::allocate(&mut host, &mut prepared, geometry, Mode::Eval, OFFSET)?;
+            let result = evaluate::evaluate(&mut host, &mut prepared, geometry)?;
+            assert_eq!(result["Status"], "pass");
+            assert_eq!(host.crt.draws, OFFSET + prepared.crt_draws);
+            Ok(())
+        });
+        assert!(outcome?.is_some());
+        if retain_native_evidence {
+            return Ok(());
+        }
+        for entry in fs::read_dir(&directory)? {
+            fs::remove_file(entry?.path())?;
+        }
+        fs::remove_dir(&directory)?;
+        Ok(())
+    }
 }
