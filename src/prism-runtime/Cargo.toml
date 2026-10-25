@@ -52,6 +52,7 @@ sentencepiece-rs = { version = "=0.2.2", default-features = false }
 [[example]]
 name = "upstream_prism"
 test = true
+required-features = ["cli"]
 
 [lints]
 workspace = true
