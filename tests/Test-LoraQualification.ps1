@@ -13,7 +13,7 @@ $toolArguments = @{}
 if ($ToolPath) { $toolArguments.ToolPath = $ToolPath }
 
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
-
+$golden = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/lora-qualification-v1.json') -Raw | ConvertFrom-Json -AsHashtable -DateKind String -Depth 40
 
 function Assert-JsonEqual {
     [CmdletBinding()]
@@ -34,51 +34,17 @@ function New-Fixture {
     [CmdletBinding()]
     [OutputType([hashtable])]
     param()
-    $plan = Get-BonsaiLoraQualificationPlan @toolArguments
-    $controls = Copy-Fixture $plan.Contract.controls
-    $controls.weightRepresentation = 'PQ2_0'
-    $controls.modelSha256 = $plan.Contract.representations.PQ2_0
-    $digest = Get-BonsaiLoraControlDigest @toolArguments $controls
-    $proof = Get-BonsaiQualificationDigest -Text 'synthetic proof, not actual qualification'
-    $samples = [Collections.Generic.List[object]]::new()
-    $records = [Collections.Generic.List[object]]::new()
-    foreach ($item in $plan.Schedule) {
-        $text = "Synthetic response $($item.promptId) $($item.repeat)."
-        $hash = Get-BonsaiQualificationDigest -Text $text
-        $samples.Add([ordered]@{
-            sampleId = $item.sampleId; promptId = $item.promptId; repeat = $item.repeat; arm = $item.arm
-            order = $item.order; seed = $item.seed; controlsSha256 = $digest
-            decodeTokens = 100; decodeMilliseconds = 10000; peakJobMemoryBytes = 2GB + $(if ($item.arm -ceq 'adapter') { 560MB } else { 0 })
-            minimumAvailablePhysicalBytes = 5GB; completed = $true; responseText = $text; responseSha256 = $hash
-        })
-        $scores = [ordered]@{ instructionFollowing = 3; correctness = 3; coherence = 3 }
-        if ($item.promptId -like 'creative-*') { $scores.creativeUsefulness = 3 }
-        $records.Add([ordered]@{
-            sampleId = $item.sampleId; responseSha256 = $hash; reviewerId = 'synthetic-test-fixture-only'
-            humanReviewed = $true; reviewedAtUtc = '2026-10-23T15:00:00Z'; answerComplete = $true; refused = $false
-            scores = $scores; rationale = 'Synthetic fixture tests the scorer, never represents a real human review.'
-        })
-    }
-    $zero = @($plan.Contract.prompts | ForEach-Object {
-        $id = $_.id
-        $base = @($samples | Where-Object { $_.promptId -ceq $id -and $_.arm -ceq 'baseline' -and $_.repeat -eq 1 })[0]
-        [ordered]@{ promptId = $id; seed = 42; baselineResponseSha256 = $base.responseSha256; zeroScaleResponseSha256 = $base.responseSha256; baselineLogitsSha256 = $proof; zeroScaleLogitsSha256 = $proof }
-    })
+    # The frozen accepted scenario is identical to the former generated data.
+    # Clone the evidence and review so each rejection probe owns its mutations.
+    $accepted = @($golden.scenarios | Where-Object name -CEQ 'accepted')
+    Assert ($accepted.Count -eq 1) 'The frozen accepted qualification scenario is missing or repeated.'
     return @{
-        Evidence = @{
-            schemaVersion = 1; runId = 'synthetic-unit-fixture'; contractSha256 = $plan.ContractSha256
-            execution = @{ githubActions = $true; runUrl = 'https://github.com/example/synthetic/actions/runs/123'; runnerArchitecture = 'Arm64'; deviceModel = 'Snapdragon X Elite'; runnerName = 'synthetic' }
-            controls = $controls
-            basis = @{ status = 'verified'; evidenceSha256 = $proof; reviewerId = 'synthetic-fixture'; note = 'Synthetic operator proof for unit checks only.' }
-            samples = $samples.ToArray(); zeroScaleChecks = $zero
-            nonzeroAdapterCheck = @{ status = 'verified'; scale = 1; adapterSha256 = $controls.adapterSha256; logitsChanged = $true; evidenceSha256 = $proof }
-        }
-        Review = @{ schemaVersion = 1; runId = 'synthetic-unit-fixture'; contractSha256 = $plan.ContractSha256; source = 'external-human-review'; attestation = 'I reviewed the exact captured responses without automated scoring.'; reviews = $records.ToArray() }
+        Evidence = Copy-Fixture $accepted[0].evidence
+        Review = Copy-Fixture $accepted[0].review
     }
 }
 
 if ($Case -ceq 'Compatibility') {
-    $golden = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/lora-qualification-v1.json') -Raw | ConvertFrom-Json -AsHashtable -DateKind String -Depth 40
     Assert-JsonEqual -Actual (Get-BonsaiLoraQualificationPlan @toolArguments) -Expected $golden.plan -Message 'The packaged plan differs from the frozen PowerShell contract.'
     foreach ($vector in $golden.controlVectors) {
         Assert ((Get-BonsaiLoraControlDigest @toolArguments $vector.controls) -ceq $vector.sha256) 'A legacy canonical control identity changed.'
