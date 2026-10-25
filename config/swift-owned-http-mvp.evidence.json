@@ -50,7 +50,10 @@
     "serverStartupPatchSha256": "d2c692fec9579a0a0099a715efc9ca185d340aa5c97b34dbce8dff91c1dfb485",
     "serverBuildManifestSha256": "025c60b3c13d77ea2a2d9f516f0ed756556978bb5a8ae71fbb3aefcfb248aad6",
     "releaseLockSha256": "1def86efa51526636ae436294dd360c54644783ebe472db75418f3f84c61ba22",
-    "releaseLockUnchanged": true
+    "releaseLockUnchanged": true,
+    "releaseLockHashScope": "Raw uniform-CRLF checkout used for the compiled diagnostic broker; the integration checkout has one LF line ending, with identical canonical Git content.",
+    "releaseLockCanonicalLfSha256": "0db4dc676167316b66e178b1f679016c322080577b05c3cc060b898c00f8e397",
+    "integrationCheckoutRawLockSha256": "8bc079ac74b8d39e21f7a6c9e4f741f70af0c1b68b09c7a227025e27e22f77e9"
   },
   "admission": {
     "productionStartupAvailableBytes": 17179869184,
