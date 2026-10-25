@@ -97,7 +97,7 @@ fn unhex(value: &Value) -> Result<Vec<u8>> {
         .map(|bytes| Ok(u8::from_str_radix(std::str::from_utf8(bytes)?, 16)?))
         .collect()
 }
-fn observations(value: &Value, count: usize) -> Result<Vec<Result<Value>>> {
+fn observations(value: &Value, count: usize) -> Result<Vec<Result<&Value>>> {
     let object = value
         .as_object()
         .ok_or_else(|| invalid("Tokenizer observation is not an object"))?;
@@ -120,7 +120,7 @@ fn observations(value: &Value, count: usize) -> Result<Vec<Result<Value>>> {
                 if value.is_null() {
                     Err(invalid("Tokenizer native null result without error"))
                 } else {
-                    Ok(value.clone())
+                    Ok(value)
                 }
             } else {
                 Err(invalid(format!(
@@ -199,24 +199,15 @@ impl Comparison {
         let start = Instant::now();
         // Store per-item reference errors so observations beyond the exact source
         // early-stop prefix cannot create an extra source failure.
-        let expected = inputs
-            .iter()
-            .map(|input| reference.encode(input, true))
-            .collect::<Vec<_>>();
+        let expected = reference.encode_batch(inputs, true);
         self.reference_encode_ns += start.elapsed().as_nanos();
         let start = Instant::now();
-        let decoded = expected
-            .iter()
-            .map(|ids| match ids {
-                Ok(ids) => reference.decode(ids, false),
-                Err(error) => Err(invalid(error.to_string())),
-            })
-            .collect::<Vec<_>>();
-        self.reference_decode_ns += start.elapsed().as_nanos();
         let supplied = expected
             .iter()
-            .map(|ids| ids.as_ref().map_or_else(|_| Vec::new(), Clone::clone))
+            .map(|ids| ids.as_ref().map_or(&[][..], Vec::as_slice))
             .collect::<Vec<_>>();
+        let decoded = reference.decode_batch(&supplied, false);
+        self.reference_decode_ns += start.elapsed().as_nanos();
         let observation = session.observe(inputs, &supplied)?;
         self.production_encode_ns += observation.encode_ns;
         self.production_decode_ns += observation.decode_ns;
@@ -229,10 +220,10 @@ impl Comparison {
             .zip(decoded.into_iter().zip(decoded_actual))
         {
             let expected = expected?;
-            let actual = token_ids(&actual?)?;
+            let actual = token_ids(actual?)?;
             let decoded = decoded?;
             // Python's original CFFI wrapper explicitly uses UTF-8 errors=replace.
-            let decoded_bytes = unhex(&decoded_actual?)?;
+            let decoded_bytes = unhex(decoded_actual?)?;
             let decoded_actual = String::from_utf8_lossy(&decoded_bytes);
             self.compared += 1;
             self.input_hash

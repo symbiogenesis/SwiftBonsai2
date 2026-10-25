@@ -3,7 +3,6 @@ use super::engine::Engine;
 use super::model_session::{Client, ModelSession};
 use super::{Result, invalid};
 use serde_json::{Value, json};
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -40,12 +39,33 @@ fn handle(value: &Value, key: &str) -> Result<u64> {
         .and_then(Value::as_u64)
         .ok_or_else(|| invalid(format!("Tokenizer production {key} handle missing")))
 }
-fn hex(bytes: &[u8]) -> Result<String> {
+fn hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut text = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
-        write!(text, "{byte:02x}")?;
+        text.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        text.push(char::from(DIGITS[usize::from(byte & 15)]));
     }
-    Ok(text)
+    text
+}
+#[derive(Default)]
+struct ByteCount(usize);
+impl std::io::Write for ByteCount {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 = self
+            .0
+            .checked_add(bytes.len())
+            .ok_or_else(|| std::io::Error::other("Tokenizer JSON byte count overflow"))?;
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+fn json_size(value: &Value) -> Result<usize> {
+    let mut count = ByteCount::default();
+    serde_json::to_writer(&mut count, value)?;
+    Ok(count.0)
 }
 fn open(engine: &Engine, name: &str, path: &Path, index: usize) -> Result<Option<State>> {
     let Some(session) = ModelSession::open(engine, &format!("tokenizer-{name}-lease-{index}"))?
@@ -123,7 +143,7 @@ impl<'a> VocabularySession<'a> {
         Ok(())
     }
     fn exchange(&mut self, operation: Value) -> Result<Value> {
-        let size = serde_json::to_vec(&operation)?.len();
+        let size = json_size(&operation)?;
         let state = self
             .state
             .as_ref()
@@ -132,7 +152,7 @@ impl<'a> VocabularySession<'a> {
         self.wire = self
             .wire
             .checked_add(size)
-            .and_then(|n| n.checked_add(serde_json::to_vec(&response).ok()?.len()))
+            .and_then(|n| n.checked_add(json_size(&response).ok()?))
             .and_then(|n| n.checked_add(256))
             .ok_or_else(|| invalid("Tokenizer wire accounting overflow"))?;
         Ok(response)
@@ -140,7 +160,7 @@ impl<'a> VocabularySession<'a> {
     pub(super) fn observe(
         &mut self,
         inputs: &[String],
-        reference_tokens: &[Vec<u32>],
+        reference_tokens: &[&[u32]],
     ) -> Result<Observation> {
         if inputs.is_empty()
             || inputs.len() > 256
@@ -171,7 +191,7 @@ impl<'a> VocabularySession<'a> {
         let inputs = inputs
             .iter()
             .map(|input| hex(input.as_bytes()))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<Vec<_>>();
         let start = Instant::now();
         let tokens=self.exchange(json!({"Op":"vocab-tokenize","Context":context,"InputsHex":inputs,"AddSpecial":true,"ParseSpecial":true}))?;
         let encode_ns = start.elapsed().as_nanos();
@@ -191,5 +211,23 @@ impl<'a> VocabularySession<'a> {
         Ok(
             json!({"Sessions":self.leases,"MaximumPrefetchedRowsPerSession":ROW_LIMIT,"RotationCombinedWireThreshold":WIRE_LIMIT,"RotationLifetimeSeconds":120,"SourceCorrection":"Vocabulary tokenization/detokenization is stateless; the identical immutable input is reloaded across bounded process leases while source counters, generator order and compared prefix remain unchanged"}),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn focused_tokenizer_wire_accounting_guard() -> Result<()> {
+        for value in [
+            json!(null),
+            json!({"Text":"\0\n\r\t\"é𝕒","Numbers":[0, 17, 4_294_967_295_u64]}),
+            json!({"Values":[[1,2],[],[3]],"Errors":[null,null,null]}),
+        ] {
+            assert_eq!(json_size(&value)?, serde_json::to_vec(&value)?.len());
+        }
+        assert_eq!(hex(&[0, 1, 15, 16, 127, 128, 255]), "00010f107f80ff");
+        Ok(())
     }
 }

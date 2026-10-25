@@ -327,7 +327,7 @@ impl Reference {
     pub(super) fn encode(&self, text: &str, special: bool) -> Result<Vec<u32>> {
         let mut ids = match &self.backend {
             Backend::Fast(tokenizer) => tokenizer
-                .encode(text, special && !self.manual_boundaries)?
+                .encode_fast(text, special && !self.manual_boundaries)?
                 .get_ids()
                 .to_vec(),
             Backend::BaiChuan(processor) => {
@@ -365,6 +365,10 @@ impl Reference {
                 ids
             }
         };
+        self.add_boundaries(&mut ids, special)?;
+        Ok(ids)
+    }
+    fn add_boundaries(&self, ids: &mut Vec<u32>, special: bool) -> Result<()> {
         if special && self.manual_boundaries {
             if self.add_bos {
                 ids.insert(0, self.bos_id.ok_or_else(|| invalid("HF BOS ID missing"))?);
@@ -373,10 +377,33 @@ impl Reference {
                 ids.push(self.eos_id.ok_or_else(|| invalid("HF EOS ID missing"))?);
             }
         }
-        Ok(ids)
+        Ok(())
+    }
+    pub(super) fn encode_batch(&self, texts: &[String], special: bool) -> Vec<Result<Vec<u32>>> {
+        if let Backend::Fast(tokenizer) = &self.backend
+            && let Ok(encodings) = tokenizer.encode_batch_fast(
+                texts.iter().map(String::as_str).collect(),
+                special && !self.manual_boundaries,
+            )
+        {
+            return encodings
+                .into_iter()
+                .map(|encoding| {
+                    let mut ids = encoding.get_ids().to_vec();
+                    self.add_boundaries(&mut ids, special)?;
+                    Ok(ids)
+                })
+                .collect();
+        }
+        // Batch APIs return only the first failure. Recover individual errors so
+        // an unconsumed prefetched input cannot change the source stop prefix.
+        texts
+            .iter()
+            .map(|text| self.encode(text, special))
+            .collect()
     }
     pub(super) fn decode(&self, ids: &[u32], skip_special: bool) -> Result<String> {
-        let mut text = match &self.backend {
+        let text = match &self.backend {
             Backend::Fast(tokenizer) => {
                 // Python's release backend returns an empty string here; an explicit
                 // guard also avoids its BPEDecoder's empty-input usize subtraction.
@@ -417,6 +444,9 @@ impl Reference {
                 text
             }
         };
+        Ok(self.clean_text(text))
+    }
+    fn clean_text(&self, mut text: String) -> String {
         if self.cleanup {
             for (from, to) in [
                 (" .", "."),
@@ -433,7 +463,46 @@ impl Reference {
                 text = text.replace(from, to);
             }
         }
-        Ok(text)
+        text
+    }
+    pub(super) fn decode_batch(&self, ids: &[&[u32]], skip_special: bool) -> Vec<Result<String>> {
+        if let Backend::Fast(tokenizer) = &self.backend {
+            // BPEDecoder cannot process an empty surviving token sequence in
+            // debug builds. Preserve the scalar wrapper's empty-result guard.
+            let active = ids
+                .iter()
+                .map(|ids| {
+                    ids.iter().any(|id| {
+                        tokenizer.id_to_token(*id).is_some()
+                            && !(skip_special && self.special_ids.contains(id))
+                    })
+                })
+                .collect::<Vec<_>>();
+            let nonempty = ids
+                .iter()
+                .zip(&active)
+                .filter_map(|(ids, active)| active.then_some(*ids))
+                .collect::<Vec<_>>();
+            if let Ok(decoded) = tokenizer.decode_batch(&nonempty, skip_special) {
+                let mut decoded = decoded.into_iter();
+                return active
+                    .into_iter()
+                    .map(|active| {
+                        if active {
+                            decoded
+                                .next()
+                                .ok_or_else(|| invalid("HF batch decode extent differs"))
+                                .map(|text| self.clean_text(text))
+                        } else {
+                            Ok(String::new())
+                        }
+                    })
+                    .collect();
+            }
+        }
+        ids.iter()
+            .map(|ids| self.decode(ids, skip_special))
+            .collect()
     }
     pub(super) fn vocabulary(&self) -> Result<Vocabulary> {
         // Groundtruth checks this only for the random harness, never the file script.
@@ -448,10 +517,15 @@ impl Reference {
                 .collect::<std::result::Result<Vec<_>, _>>()?,
         };
         ids.sort_unstable();
-        let mut words = ids
-            .into_iter()
-            .map(|id| self.decode(&[id], true))
-            .collect::<Result<Vec<_>>>()?;
+        let mut words = Vec::with_capacity(ids.len());
+        for batch in ids.chunks(1024) {
+            let batch = batch.iter().map(std::slice::from_ref).collect::<Vec<_>>();
+            words.extend(
+                self.decode_batch(&batch, true)
+                    .into_iter()
+                    .collect::<Result<Vec<_>>>()?,
+            );
+        }
         words.sort();
         let added = self
             .added_ids
@@ -511,6 +585,57 @@ mod tests {
             assert!(vocab.add_bos);
             assert!(!vocab.add_eos);
             assert_eq!(vocab.words.iter().filter(|word| word.is_empty()).count(), 3);
+            let inputs = ["", "a", "a .", "<s>a</s>", "é𝕒", "a\n\0", "\r\n"].map(str::to_owned);
+            for special in [false, true] {
+                let batch = reference.encode_batch(&inputs, special);
+                let Backend::Fast(tokenizer) = &reference.backend else {
+                    return Err(invalid("synthetic reference must use fast backend"));
+                };
+                for (input, actual) in inputs.iter().zip(batch) {
+                    // The previous offset-producing API is the independent
+                    // baseline for the IDs-only scalar and parallel paths.
+                    let mut expected = tokenizer
+                        .encode(input.as_str(), special && !reference.manual_boundaries)?
+                        .get_ids()
+                        .to_vec();
+                    reference.add_boundaries(&mut expected, special)?;
+                    assert_eq!(actual?, expected);
+                    assert_eq!(reference.encode(input, special)?, expected);
+                }
+            }
+            let ids: [&[u32]; 6] = [&[], &[2, 3], &[2, 1, 4], &[4], &[u32::MAX], &[u32::MAX, 1]];
+            for skip_special in [false, true] {
+                for (ids, actual) in ids.iter().zip(reference.decode_batch(&ids, skip_special)) {
+                    assert_eq!(actual?, reference.decode(ids, skip_special)?);
+                }
+            }
+            // One failed prefetched input must preserve successful neighbors,
+            // not turn the complete batch into a source failure.
+            std::fs::write(
+                directory.join("tokenizer.json"),
+                serde_json::to_vec(
+                    &json!({"version":"1.0","truncation":null,"padding":null,"added_tokens":[],"normalizer":null,"pre_tokenizer":{"type":"Whitespace"},"post_processor":null,"decoder":null,"model":{"type":"WordLevel","vocab":{"a":0,"b":1},"unk_token":"<missing>"}}),
+                )?,
+            )?;
+            std::fs::write(
+                directory.join("tokenizer_config.json"),
+                serde_json::to_vec(&json!({"tokenizer_class":"PreTrainedTokenizerFast"}))?,
+            )?;
+            let reference = Reference::open(&directory)?;
+            let inputs = ["a", "absent", "b"].map(str::to_owned);
+            let batch = reference.encode_batch(&inputs, true);
+            assert_eq!(
+                batch.iter().map(Result::is_ok).collect::<Vec<_>>(),
+                [true, false, true]
+            );
+            for (input, actual) in inputs.iter().zip(batch) {
+                assert_eq!(
+                    actual.map_err(|error| error.to_string()),
+                    reference
+                        .encode(input, true)
+                        .map_err(|error| error.to_string())
+                );
+            }
             Ok(())
         })();
         for name in ["tokenizer.json", "tokenizer_config.json"] {
