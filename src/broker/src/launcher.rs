@@ -334,13 +334,13 @@ impl LaunchConfig {
             self.profile,
         )
         .map_err(|_| LaunchError::Policy)?;
-        validate_external_path(&plan.executable).map_err(|_| LaunchError::Path)?;
         // Reserve only as a collision check; PID checks close the release/bind
         // race without ever trusting a pre-existing server on the selected port.
         let reservation =
             bound_loopback_socket(self.backend_port).map_err(|_| LaunchError::Port)?;
         admit(plan.required_available_bytes)?;
         let (specification, native_executable) = self.specification(plan, &credentials)?;
+        validate_external_path(&specification.executable).map_err(|_| LaunchError::Path)?;
         drop(reservation);
         let process = OwnedProcess::start(&specification).map_err(|_| LaunchError::Process)?;
         let startup = wait_ready(
