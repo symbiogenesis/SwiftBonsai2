@@ -52,6 +52,7 @@ if ($CommonToolsBundleDirectory -and ($Case -cne 'All' -or -not $DeferBackend -o
 }
 $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1')
+Import-Module (Join-Path $repo 'scripts/Bonsai.PrismAssets.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.Native.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBaseline.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismNativeCache.psm1')
@@ -273,7 +274,6 @@ if (@($selected | Where-Object { $_ -in $modelSelections }).Count) {
     $receipt.ModelAssets = $modelReceipts.ToArray()
 }
 if (@($selected | Where-Object { $_ -in @('GgufMetadata', 'QuantSelection', 'ExportGraph') }).Count) {
-    Import-Module (Join-Path $repo 'scripts/Bonsai.PrismAssets.psm1')
     if (-not $assetDirectory) { $assetDirectory = Join-Path $evidence 'model-assets' }
     $receipt.MetadataAssets = Save-BonsaiPrismMetadataAsset -Repository $repo -Directory $assetDirectory
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
@@ -283,19 +283,16 @@ $bridgeFamilies = @{
     common = @{ Source = (Join-Path $nativeAdapter 'common'); Target = 'prism-upstream-common-bridge'; Option = '--common-bridge' }
 }
 if ($selected -contains 'LoraConversion') {
-    Import-Module (Join-Path $repo 'scripts/Bonsai.PrismLoraAssets.psm1')
     if (-not $assetDirectory) { $assetDirectory = Join-Path $evidence 'model-assets' }
     $receipt.LoraAssets = Save-BonsaiPrismLoraAsset -Repository $repo -Directory $assetDirectory
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
 }
 if ($selected -contains 'TokenizersRepo') {
-    Import-Module (Join-Path $repo 'scripts/Bonsai.PrismTokenizerAssets.psm1')
     if (-not $assetDirectory) { $assetDirectory = Join-Path $evidence 'model-assets' }
     $receipt.TokenizerRepository = Save-BonsaiPrismTokenizerRepository -Repository $repo -Directory $assetDirectory
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
 }
 if (@($selected | Where-Object { $_ -in @('TokenizerPython','TokenizerShell','TokenizerRandom') }).Count) {
-    Import-Module (Join-Path $repo 'scripts/Bonsai.PrismTokenizerAssets.psm1')
     if (-not $assetDirectory) { $assetDirectory = Join-Path $evidence 'model-assets' }
     $receipt.TokenizerReference = Save-BonsaiPrismTokenizerReference -Repository $repo -Directory $assetDirectory
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))

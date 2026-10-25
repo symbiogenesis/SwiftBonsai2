@@ -87,4 +87,130 @@ function Save-BonsaiPrismMetadataAsset {
     } finally { $client.Dispose() }
 }
 
-Export-ModuleMember -Function Save-BonsaiPrismMetadataAsset
+function Save-BonsaiPrismFixture {
+    <# .SYNOPSIS
+    Preflights a complete fixture lock before receiving its verified external files.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Explicit Prism setup writes only hash-verified external input artifacts.')]
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param([Parameter(Mandatory)][hashtable]$Lock, [Parameter(Mandatory)][string]$Directory,
+          [Parameter(Mandatory)][long]$TotalBytes, [Parameter(Mandatory)][long]$MaximumFileBytes,
+          [Parameter(Mandatory)][scriptblock]$ValidateEntry, [scriptblock]$ValidatePaths,
+          [hashtable]$Receipt = @{})
+    $root = Resolve-ExternalPath $Directory
+    $paths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    [long]$total = 0
+    # Family predicates own the allowed relative paths and immutable source URLs.
+    # Validate the entire collection before allowing the first download.
+    foreach ($entry in $Lock.Files) {
+        if ($entry.Path -isnot [string] -or -not $paths.Add($entry.Path) -or
+            $entry.Sha256 -cnotmatch '^[a-f0-9]{64}$' -or
+            $entry.Bytes -le 0 -or $entry.Bytes -gt $MaximumFileBytes -or -not (& $ValidateEntry $entry)) {
+            throw 'A Prism fixture input has an invalid or unpinned identity.'
+        }
+        $total += $entry.Bytes
+        if ($total -gt $TotalBytes) { throw 'Prism fixture extent exceeds its lock.' }
+    }
+    if ($total -ne $TotalBytes) { throw 'Prism fixture extent is incomplete.' }
+    if ($ValidatePaths) { $null = & $ValidatePaths $paths }
+    $Receipt.Files = @(foreach ($entry in $Lock.Files) {
+        $path = Resolve-ExternalPath (Join-Path $root ($Lock.AssetPrefix + $entry.Path))
+        $null = Receive-LockedArtifact -Uri $entry.Url -Path $path -Bytes $entry.Bytes -Sha256 $entry.Sha256 -TimeoutSeconds 600
+        @{ Path=$path; Bytes=$entry.Bytes; Sha256=$entry.Sha256; Url=$entry.Url }
+    })
+    $Receipt.TotalBytes = $total
+    return $Receipt
+}
+
+function Save-BonsaiPrismTokenizerRepository {
+    <#
+    .SYNOPSIS
+    Materializes every vocabulary/corpus triple in the compatible publisher snapshot.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Explicit Prism setup writes only hash-verified external input artifacts.')]
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param([Parameter(Mandatory)][string]$Repository,
+          [Parameter(Mandatory)][string]$Directory)
+    $lockPath = Join-Path $Repository 'src/prism-runtime/tests/upstream_prism/tokenizer-repository-assets.json'
+    $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json -AsHashtable
+    $revision = 'cee4b7a68518c579bb758fca46bb149cd109348e'
+    if ($lock.Repository -cne 'ggml-org/vocabs' -or $lock.Revision -cne $revision -or
+        $lock.AssetPrefix -cne 'tokenizer-repository/' -or $lock.Files.Count -ne 18) {
+        throw 'The tokenizer corpus repository lock differs from its source identity.'
+    }
+    return Save-BonsaiPrismFixture -Lock $lock -Directory $Directory -TotalBytes 23804987 -MaximumFileBytes 20000000 -Receipt @{ Revision=$revision; CorpusCount=6 } -ValidateEntry {
+        param($entry)
+        $entry.Path -cmatch '^(BPE|SPM|HybridDNA|PLaMo2|PLaMo3|RWKV|UGM|WPM)/ggml-vocab-[a-z0-9-]+\.gguf(?:\.(?:inp|out))?$' -and
+        $entry.GitBlobSha1 -cmatch '^[a-f0-9]{40}$' -and
+        $entry.Url -ceq "https://huggingface.co/ggml-org/vocabs/resolve/$revision/$($entry.Path)"
+    }.GetNewClosure() -ValidatePaths {
+        param($paths)
+        foreach ($relative in $paths) {
+            if ($relative.EndsWith('.gguf', [StringComparison]::Ordinal) -and
+                (-not $paths.Contains($relative + '.inp') -or -not $paths.Contains($relative + '.out'))) {
+                throw 'An external vocabulary has no complete input/output corpus.'
+            }
+        }
+    }
+}
+
+function Save-BonsaiPrismTokenizerReference {
+    <# .SYNOPSIS
+    Materializes all immutable inputs of the original 26 tokenizer families.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Explicit Prism setup writes only hash-verified external publisher inputs.')]
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param([Parameter(Mandatory)][string]$Repository,
+          [Parameter(Mandatory)][string]$Directory)
+    $lockPath = Join-Path $Repository 'src/prism-runtime/tests/upstream_prism/tokenizer-reference-assets.json'
+    $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json -AsHashtable
+    if ($lock.SchemaVersion -ne 1 -or $lock.UpstreamRevision -cne 'b87ca7225456b06b0975b8239c66b5aecf07e37c' -or
+        $lock.AssetPrefix -cne 'tokenizer-reference/' -or $lock.Files.Count -ne 122 -or $lock.Cases.Count -ne 26) {
+        throw 'The full tokenizer reference lock differs from its original source identity.'
+    }
+    $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($case in $lock.Cases) {
+        if ($case.Name -cnotmatch '^[a-z0-9-]+$' -or -not $names.Add($case.Name)) { throw 'Invalid tokenizer family identity.' }
+    }
+    return Save-BonsaiPrismFixture -Lock $lock -Directory $Directory -TotalBytes 150188454 -MaximumFileBytes 33554432 -Receipt @{ Families=26; GeneratedVocabularyOwner='safe-rust' } -ValidateEntry {
+        param($entry)
+        $entry.Path -cmatch '^[a-z0-9-]+/(?:config\.json|tokenizer\.json|tokenizer_config(?:\.source)?\.json|special_tokens_map\.json|added_tokens\.json|tokenizer\.model|vocab\.(?:json|txt)|merges\.txt)$' -and
+        $names.Contains($entry.Path.Split('/')[0]) -and
+        $entry.Repository -cmatch '^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$' -and
+        $entry.Revision -cmatch '^[a-f0-9]{40}$' -and
+        $entry.Url.StartsWith("https://huggingface.co/$($entry.Repository)/resolve/$($entry.Revision)/", [StringComparison]::Ordinal)
+    }.GetNewClosure()
+}
+
+function Save-BonsaiPrismLoraAsset {
+    <#
+    .SYNOPSIS
+    Materializes the exact original model, adapter, tokenizer and text inputs.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Explicit Prism test setup writes only verified external input artifacts.')]
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param([Parameter(Mandatory)][string]$Repository,
+          [Parameter(Mandatory)][string]$Directory)
+    $lockPath = Join-Path $Repository 'src/prism-runtime/tests/upstream_prism/lora-assets.json'
+    $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json -AsHashtable
+    $revision = 'c26d5fb85b4070a9e9c4e65d132c783b98086890'
+    if ($lock.Repository -cne 'ggml-org/lora-tests' -or $lock.Revision -cne $revision -or
+        $lock.Source -cne 'tests/test-lora-conversion-inference.sh' -or
+        $lock.SourceSha256 -cne '69584616380bdaa7f6ee1e53d165408118fb0897e1280f964eb7bc3b932b9c9a' -or
+        $lock.AssetPrefix -cne 'lora-tests/' -or $lock.Files.Count -ne 28) {
+        throw 'The original LoRA fixture lock differs from its source identity.'
+    }
+    return Save-BonsaiPrismFixture -Lock $lock -Directory $Directory -TotalBytes 269404497 -MaximumFileBytes 100000000 -Receipt @{ Revision=$revision; ConvertedInputs=$false } -ValidateEntry {
+        param($entry)
+        $relative = $entry.Path
+        -not ([string]::IsNullOrEmpty($relative) -or [IO.Path]::IsPathRooted($relative) -or $relative.Contains('\') -or
+            @($relative.Split('/') | Where-Object { $_ -in @('', '.', '..') }).Count) -and
+        $entry.Url -ceq "https://huggingface.co/ggml-org/lora-tests/resolve/$revision/$relative"
+    }.GetNewClosure()
+}
+
+Export-ModuleMember -Function Save-BonsaiPrismMetadataAsset, Save-BonsaiPrismTokenizerRepository, Save-BonsaiPrismTokenizerReference, Save-BonsaiPrismLoraAsset

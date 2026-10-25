@@ -56,15 +56,10 @@ function Read-BonsaiPrismBackendJson {
     $stream = [IO.File]::OpenRead($Path)
     try {
         if ($stream.Length -gt $script:BackendReportLimit) { throw 'Backend report exceeds 128MiB.' }
-        $memory = [IO.MemoryStream]::new()
-        try {
-            $buffer = [byte[]]::new(65536)
-            while (($read = $stream.Read($buffer, 0, $buffer.Length)) -ne 0) {
-                if ($memory.Length + $read -gt $script:BackendReportLimit) { throw 'Backend report exceeds128MiB.' }
-                $memory.Write($buffer, 0, $read)
-            }
-            $text = [Text.UTF8Encoding]::new($false, $true).GetString($memory.ToArray())
-        } finally { $memory.Dispose() }
+        # OpenRead retains FILE_SHARE_READ, so writers cannot change this length.
+        $bytes = [byte[]]::new($stream.Length)
+        $stream.ReadExactly($bytes)
+        $text = [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
     } finally { $stream.Dispose() }
     return ConvertFrom-Json -InputObject $text -Depth 100 -AsHashtable -NoEnumerate -DateKind String
 }
@@ -145,19 +140,6 @@ function Assert-BonsaiPrismBackendContext {
     if (-not [IO.Directory]::Exists($Context.EvidenceDirectory)) { throw 'Backend evidence root disappeared.' }
 }
 
-function Assert-BonsaiPrismBackendRecord {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([object]$Record, [string[]]$Statuses, [string]$Mode, [int]$Index = -1, [int]$Count = -1)
-    if ($Record -isnot [Collections.IDictionary] -or $Record.SchemaVersion -ne 1 -or
-        $Record.SourceId -cne 'test-backend-ops' -or $Record.SourceSha256 -cne $script:BackendSourceSha256 -or
-        $Record.Status -cnotin $Statuses) { throw 'Backend phase record has invalid provenance or status.' }
-    if ($Mode -and $Record.Mode -cne $Mode) { throw 'Backend phase mode differs from the request.' }
-    if ($Index -ge 0 -and ($Record.Partition.Index -ne $Index -or $Record.Partition.Count -ne $Count)) {
-        throw 'Backend phase partition differs from the request.'
-    }
-}
-
 function New-BonsaiPrismBackendEnvelope {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Constructs an in-memory provenance record without external state changes.')]
     [CmdletBinding()]
@@ -172,7 +154,8 @@ function New-BonsaiPrismBackendEnvelope {
 function Get-BonsaiPrismBackendPayload {
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
-    param([Collections.IDictionary]$Context, [object]$Envelope)
+    param([Collections.IDictionary]$Context, [object]$Envelope,
+        [string[]]$Statuses, [string]$Mode, [int]$Index = -1, [int]$Count = -1)
     if ($Envelope -isnot [Collections.IDictionary] -or $Envelope.Count -ne 6 -or
         @('SchemaVersion','Target','ProjectRevision','HarnessSha256','CommonBridgeSha256','Payload').Where({-not $Envelope.Contains($_)}).Count -or
         $Envelope.SchemaVersion -ne 1 -or $Envelope.Target -cne $Context.Target -or
@@ -180,13 +163,25 @@ function Get-BonsaiPrismBackendPayload {
         $Envelope.CommonBridgeSha256 -cne $Context.CommonBridgeSha256 -or $Envelope.Payload -isnot [Collections.IDictionary]) {
         throw 'Backend cross-job record target, revision, binary identity or envelope differs.'
     }
-    return $Envelope.Payload
+    $record = $Envelope.Payload
+    if ($Statuses) {
+        if ($record.SchemaVersion -ne 1 -or $record.SourceId -cne 'test-backend-ops' -or
+            $record.SourceSha256 -cne $script:BackendSourceSha256 -or $record.Status -cnotin $Statuses) {
+            throw 'Backend phase record has invalid provenance or status.'
+        }
+        if ($Mode -and $record.Mode -cne $Mode) { throw 'Backend phase mode differs from the request.' }
+        if ($Index -ge 0 -and ($record.Partition.Index -ne $Index -or $record.Partition.Count -ne $Count)) {
+            throw 'Backend phase partition differs from the request.'
+        }
+    }
+    return $record
 }
 
 function Invoke-BonsaiPrismBackendDiagnostic {
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
-    param([Collections.IDictionary]$Context, [Collections.IDictionary]$Request, [string]$Phase)
+    param([Collections.IDictionary]$Context, [Collections.IDictionary]$Request, [string]$Phase,
+        [string[]]$Statuses, [string]$Mode, [int]$Index = -1, [int]$Count = -1)
     Assert-BonsaiPrismBackendContext -Context $Context
     $stage = Join-Path $Context.EvidenceDirectory ($Phase + '-' + [Guid]::NewGuid().ToString('N'))
     [void][IO.Directory]::CreateDirectory($stage)
@@ -215,13 +210,14 @@ function Invoke-BonsaiPrismBackendDiagnostic {
             $report.Cases[0] -isnot [Collections.IDictionary]) { throw 'Backend harness diagnostic envelope differs.' }
         $envelope = New-BonsaiPrismBackendEnvelope -Context $Context -Payload $report.Cases[0]
         Write-BonsaiPrismBackendJson -Path (Join-Path $stage 'phase-record.json') -Value $envelope
-        return $envelope
     } catch {
         Write-BonsaiPrismBackendJson -Path (Join-Path $stage 'transport-failure.json') -Value ([ordered]@{
             SchemaVersion = 1; Status = 'infrastructure-failure'; Phase = $Phase; Target = $Context.Target; Reason = $_.Exception.Message
         })
         throw
     }
+    if ($Statuses) { $null = Get-BonsaiPrismBackendPayload -Context $Context -Envelope $envelope -Statuses $Statuses -Mode $Mode -Index $Index -Count $Count }
+    return $envelope
 }
 
 function New-BonsaiPrismBackendIncomplete {
@@ -253,9 +249,8 @@ function Invoke-BonsaiPrismBackendPlanPartition {
         [Parameter(Mandatory)][ValidateRange(1,4096)][int]$Count,
         [Parameter(Mandatory)][ValidateSet('eval','grad','support','perf')][string]$Mode)
     if ($Index -ge $Count) { throw 'Partition index must be below its count.' }
-    $record = Invoke-BonsaiPrismBackendDiagnostic -Context $Context -Request ([ordered]@{Kind='backend-plan';Index=$Index;Count=$Count;Mode=$Mode}) -Phase "plan-$Mode-$Index"
-    Assert-BonsaiPrismBackendRecord -Record (Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record) -Statuses @('planned','unsupported') -Mode $Mode -Index $Index -Count $Count
-    return $record
+    $request = [ordered]@{Kind='backend-plan';Index=$Index;Count=$Count;Mode=$Mode}
+    return Invoke-BonsaiPrismBackendDiagnostic -Context $Context -Request $request -Phase "plan-$Mode-$Index" -Statuses @('planned','unsupported') -Mode $Mode -Index $Index -Count $Count
 }
 
 function Merge-BonsaiPrismBackendPlan {
@@ -267,15 +262,14 @@ function Merge-BonsaiPrismBackendPlan {
     [OutputType([Collections.IDictionary])]
     param([Parameter(Mandatory)][Collections.IDictionary]$Context,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][array]$Plans)
-    $raw = @(foreach ($record in $Plans) { Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record })
+    $raw = @(foreach ($record in $Plans) { Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record -Statuses @('planned','unsupported') })
     $mode = [string]$raw[0].Mode
-    foreach ($plan in $raw) { Assert-BonsaiPrismBackendRecord -Record $plan -Statuses @('planned','unsupported') -Mode $mode }
-    if (@($raw | Where-Object { $_.Status -ceq 'unsupported' }).Count) {
+    if ($mode -and $raw.Where({ $_.Mode -cne $mode }, 'First').Count) { throw 'Backend phase mode differs from the request.' }
+    if ($raw.Where({ $_.Status -ceq 'unsupported' }, 'First').Count) {
         return New-BonsaiPrismBackendIncomplete -Context $Context -Phase 'aggregate-plans' -Mode $mode -Inputs $raw
     }
-    $record = Invoke-BonsaiPrismBackendDiagnostic -Context $Context -Request ([ordered]@{Kind='backend-aggregate-plans';Plans=$raw}) -Phase "aggregate-plans-$mode"
-    Assert-BonsaiPrismBackendRecord -Record (Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record) -Statuses @('planned-complete') -Mode $mode
-    return $record
+    $request = [ordered]@{Kind='backend-aggregate-plans';Plans=$raw}
+    return Invoke-BonsaiPrismBackendDiagnostic -Context $Context -Request $request -Phase "aggregate-plans-$mode" -Statuses @('planned-complete') -Mode $mode
 }
 
 function Invoke-BonsaiPrismBackendPartition {
@@ -291,12 +285,10 @@ function Invoke-BonsaiPrismBackendPartition {
         [Parameter(Mandatory)][ValidateSet('eval','grad','support','perf')][string]$Mode,
         [Parameter(Mandatory)][Collections.IDictionary]$Plan)
     if ($Index -ge $Count) { throw 'Partition index must be below its count.' }
-    $raw = Get-BonsaiPrismBackendPayload -Context $Context -Envelope $Plan
-    Assert-BonsaiPrismBackendRecord -Record $raw -Statuses @('planned-complete','unsupported') -Mode $Mode
+    $raw = Get-BonsaiPrismBackendPayload -Context $Context -Envelope $Plan -Statuses @('planned-complete','unsupported') -Mode $Mode
     if ($raw.Status -ceq 'unsupported') { return New-BonsaiPrismBackendIncomplete -Context $Context -Phase 'run' -Mode $Mode -Inputs @($raw) }
-    $record = Invoke-BonsaiPrismBackendDiagnostic -Context $Context -Request ([ordered]@{Kind='backend-run';Index=$Index;Count=$Count;Mode=$Mode;Plan=$raw}) -Phase "run-$Mode-$Index"
-    Assert-BonsaiPrismBackendRecord -Record (Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record) -Statuses @('pass','fail','unsupported') -Mode $Mode -Index $Index -Count $Count
-    return $record
+    $request = [ordered]@{Kind='backend-run';Index=$Index;Count=$Count;Mode=$Mode;Plan=$raw}
+    return Invoke-BonsaiPrismBackendDiagnostic -Context $Context -Request $request -Phase "run-$Mode-$Index" -Statuses @('pass','fail','unsupported') -Mode $Mode -Index $Index -Count $Count
 }
 
 function Merge-BonsaiPrismBackendPartition {
@@ -309,18 +301,15 @@ function Merge-BonsaiPrismBackendPartition {
     param([Parameter(Mandatory)][Collections.IDictionary]$Context,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][array]$Reports,
         [Parameter(Mandatory)][Collections.IDictionary]$Plan)
-    $rawPlan = Get-BonsaiPrismBackendPayload -Context $Context -Envelope $Plan
-    $raw = @(foreach ($record in $Reports) { Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record })
+    $rawPlan = Get-BonsaiPrismBackendPayload -Context $Context -Envelope $Plan -Statuses @('planned-complete','unsupported')
     $mode = [string]$rawPlan.Mode
     if ($mode -ceq 'perf') { throw 'Use Merge-BonsaiPrismBackendBenchmark for performance reports.' }
-    Assert-BonsaiPrismBackendRecord -Record $rawPlan -Statuses @('planned-complete','unsupported') -Mode $mode
-    foreach ($report in $raw) { Assert-BonsaiPrismBackendRecord -Record $report -Statuses @('pass','fail','unsupported') -Mode $mode }
-    if ($rawPlan.Status -ceq 'unsupported' -or @($raw | Where-Object { $_.Status -ceq 'unsupported' }).Count) {
+    $raw = @(foreach ($record in $Reports) { Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record -Statuses @('pass','fail','unsupported') -Mode $mode })
+    if ($rawPlan.Status -ceq 'unsupported' -or $raw.Where({ $_.Status -ceq 'unsupported' }, 'First').Count) {
         return New-BonsaiPrismBackendIncomplete -Context $Context -Phase 'aggregate' -Mode $mode -Inputs @($rawPlan; $raw)
     }
-    $record = Invoke-BonsaiPrismBackendDiagnostic -Context $Context -Request ([ordered]@{Kind='backend-aggregate';Reports=$raw;Plan=$rawPlan}) -Phase "aggregate-$mode"
-    Assert-BonsaiPrismBackendRecord -Record (Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record) -Statuses @('pass','fail') -Mode $mode
-    return $record
+    $request = [ordered]@{Kind='backend-aggregate';Reports=$raw;Plan=$rawPlan}
+    return Invoke-BonsaiPrismBackendDiagnostic -Context $Context -Request $request -Phase "aggregate-$mode" -Statuses @('pass','fail') -Mode $mode
 }
 
 function Merge-BonsaiPrismBackendSource {
@@ -332,18 +321,14 @@ function Merge-BonsaiPrismBackendSource {
     [OutputType([Collections.IDictionary])]
     param([Parameter(Mandatory)][Collections.IDictionary]$Context,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][array]$Modes)
-    $raw = @(foreach ($record in $Modes) { Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record })
+    $raw = @(foreach ($record in $Modes) { Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record -Statuses @('pass','fail','unsupported') })
     if ($raw.Count -notin @(2,3) -or
-        @($raw | Where-Object Mode -CEQ 'eval').Count -ne 1 -or
-        @($raw | Where-Object Mode -CEQ 'support').Count -ne 1 -or
-        @($raw | Where-Object Mode -CEQ 'grad').Count -ne ($raw.Count - 2)) {
+        $raw.Where({ $_.Mode -ceq 'eval' }).Count -ne 1 -or
+        $raw.Where({ $_.Mode -ceq 'support' }).Count -ne 1 -or
+        $raw.Where({ $_.Mode -ceq 'grad' }).Count -ne ($raw.Count - 2)) {
         throw 'Backend source requires eval and support exactly once, with grad only when selected.'
     }
-    foreach ($mode in $raw) {
-        Assert-BonsaiPrismBackendRecord -Record $mode -Statuses @('pass','fail','unsupported') -Mode ''
-        if ($mode.Mode -cnotin @('eval','grad','support')) { throw 'Only correctness modes enter the source verdict.' }
-    }
-    if (@($raw | Where-Object { $_.Status -ceq 'unsupported' }).Count) {
+    if ($raw.Where({ $_.Status -ceq 'unsupported' }, 'First').Count) {
         $coverage = New-BonsaiPrismBackendIncomplete -Context $Context -Phase 'source-aggregate' -Mode '' -Inputs $raw
         $value = [ordered]@{Id='tests/test-backend-ops.cpp';Status='fail';Detail=$coverage.Payload.Reason;SourceCount=1;Coverage=$coverage.Payload}
         $record = New-BonsaiPrismBackendEnvelope -Context $Context -Payload $value
@@ -368,11 +353,9 @@ function Merge-BonsaiPrismBackendBenchmark {
     param([Parameter(Mandatory)][Collections.IDictionary]$Context,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][array]$Reports,
         [Parameter(Mandatory)][Collections.IDictionary]$Plan)
-    $rawPlan = Get-BonsaiPrismBackendPayload -Context $Context -Envelope $Plan
-    $raw = @(foreach ($record in $Reports) { Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record })
-    Assert-BonsaiPrismBackendRecord -Record $rawPlan -Statuses @('planned-complete','unsupported') -Mode 'perf'
-    foreach ($report in $raw) { Assert-BonsaiPrismBackendRecord -Record $report -Statuses @('pass','fail','unsupported') -Mode 'perf' }
-    if ($rawPlan.Status -ceq 'unsupported' -or @($raw | Where-Object { $_.Status -ceq 'unsupported' }).Count) {
+    $rawPlan = Get-BonsaiPrismBackendPayload -Context $Context -Envelope $Plan -Statuses @('planned-complete','unsupported') -Mode 'perf'
+    $raw = @(foreach ($record in $Reports) { Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record -Statuses @('pass','fail','unsupported') -Mode 'perf' })
+    if ($rawPlan.Status -ceq 'unsupported' -or $raw.Where({ $_.Status -ceq 'unsupported' }, 'First').Count) {
         $coverage = New-BonsaiPrismBackendIncomplete -Context $Context -Phase 'benchmark-aggregate' -Mode 'perf' -Inputs @($rawPlan; $raw)
         return New-BonsaiPrismBackendEnvelope -Context $Context -Payload ([ordered]@{SchemaVersion=1;Benchmark='backend-ops-performance';Status='unsupported';CorrectnessSourceCount=0;Coverage=$coverage.Payload})
     }

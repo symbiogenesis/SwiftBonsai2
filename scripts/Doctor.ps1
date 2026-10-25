@@ -36,8 +36,8 @@ $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 if (-not $IsWindows) { throw 'Doctor requires Windows and PowerShell 7.6 or later.' }
 
-$issues = [System.Collections.Generic.List[string]]::new()
-$repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$issues = [Collections.Generic.List[string]]::new()
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 
 function Get-ExternalPath {
     [CmdletBinding()]
@@ -46,57 +46,57 @@ function Get-ExternalPath {
     param([string] $Path, [switch] $Directory)
 
     if ([string]::IsNullOrWhiteSpace($Path) -or $Path -match '%[^%]+%' -or
-        -not [System.IO.Path]::IsPathFullyQualified($Path) -or
+        -not [IO.Path]::IsPathFullyQualified($Path) -or
         $Path.Replace('/', '\').StartsWith('\\?\') -or $Path.Replace('/', '\').StartsWith('\\.\')) {
         throw 'Use a fully qualified filesystem path with all environment variables expanded.'
     }
-    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $fullPath = [IO.Path]::GetFullPath($Path)
     # Disallow alternate data streams, including a drive-qualified filename with a second colon.
-    if ($fullPath.Substring([System.IO.Path]::GetPathRoot($fullPath).Length).Contains(':')) {
+    if ($fullPath.Substring([IO.Path]::GetPathRoot($fullPath).Length).Contains(':')) {
         throw 'Alternate data stream paths are not supported.'
     }
-    $parent = if ($Directory) { $fullPath } else { [System.IO.Path]::GetDirectoryName($fullPath) }
-    if (-not [System.IO.Directory]::Exists($parent)) { throw 'The external directory must already exist.' }
+    $parent = if ($Directory) { $fullPath } else { [IO.Path]::GetDirectoryName($fullPath) }
+    if (-not [IO.Directory]::Exists($parent)) { throw 'The external directory must already exist.' }
 
     # Resolve every ancestor, so a junction cannot disguise an output path in a checkout.
-    $physicalParent = [System.IO.Path]::GetPathRoot($parent)
+    $physicalParent = [IO.Path]::GetPathRoot($parent)
     $relativeParts = $parent.Substring($physicalParent.Length).Split(
-        [char[]] @([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar),
-        [System.StringSplitOptions]::RemoveEmptyEntries)
+        [char[]] @([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar),
+        [StringSplitOptions]::RemoveEmptyEntries)
     foreach ($part in $relativeParts) {
         $physicalParent = Join-Path $physicalParent $part
         $item = Get-Item -LiteralPath $physicalParent -Force
-        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
             $target = $item.ResolveLinkTarget($true)
             if ($null -eq $target) { throw 'The external path contains an unresolved link.' }
             $physicalParent = $target.FullName
         }
     }
-    $ancestor = [System.IO.DirectoryInfo]::new($physicalParent)
+    $ancestor = [IO.DirectoryInfo]::new($physicalParent)
     while ($null -ne $ancestor) {
-        if ([System.IO.File]::Exists((Join-Path $ancestor.FullName '.git')) -or
-            [System.IO.Directory]::Exists((Join-Path $ancestor.FullName '.git')) -or
+        if ([IO.File]::Exists((Join-Path $ancestor.FullName '.git')) -or
+            [IO.Directory]::Exists((Join-Path $ancestor.FullName '.git')) -or
             $ancestor.FullName.TrimEnd('\') -eq $repoRoot.TrimEnd('\')) {
             throw 'Data and report output must be outside a Git checkout.'
         }
         $ancestor = $ancestor.Parent
     }
     if ($Directory) { return $physicalParent }
-    if ([System.IO.File]::Exists($fullPath) -or [System.IO.Directory]::Exists($fullPath)) {
+    if ([IO.File]::Exists($fullPath) -or [IO.Directory]::Exists($fullPath)) {
         throw 'OutputPath must name a new file; existing files are never overwritten.'
     }
-    return Join-Path $physicalParent ([System.IO.Path]::GetFileName($fullPath))
+    return Join-Path $physicalParent ([IO.Path]::GetFileName($fullPath))
 }
 
 $dataDirectory = if ($PSBoundParameters.ContainsKey('DataPath')) { Get-ExternalPath $DataPath -Directory } else { $null }
 $reportPath = if ($PSBoundParameters.ContainsKey('OutputPath')) { Get-ExternalPath $OutputPath } else { $null }
-$scratchRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
-if (-not [System.IO.Path]::IsPathFullyQualified($scratchRoot) -or $scratchRoot -match '%[^%]+%') {
+$scratchRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+if (-not [IO.Path]::IsPathFullyQualified($scratchRoot) -or $scratchRoot -match '%[^%]+%') {
     throw 'The system temporary directory is not an expanded absolute path.'
 }
 $scratchRoot = Get-ExternalPath $scratchRoot -Directory
 $scratchDirectory = Join-Path $scratchRoot ('SwiftBonsai-Doctor-' + [guid]::NewGuid().ToString('N'))
-[void][System.IO.Directory]::CreateDirectory($scratchDirectory)
+[void][IO.Directory]::CreateDirectory($scratchDirectory)
 
 function Invoke-VersionCommand {
     [CmdletBinding()]
@@ -116,8 +116,8 @@ function Get-ExecutableArchitecture {
     $stream = $null
     $reader = $null
     try {
-        $stream = [System.IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
-        $reader = [System.IO.BinaryReader]::new($stream)
+        $stream = [IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+        $reader = [IO.BinaryReader]::new($stream)
         if ($stream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5A4D) { return 'unknown' }
         $stream.Position = 0x3C
         $peOffset = $reader.ReadInt32()
@@ -148,7 +148,7 @@ function Find-Application {
     $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($null -ne $command) { return $command.Source }
     foreach ($candidate in $Fallbacks) {
-        if ([System.IO.File]::Exists($candidate)) { return $candidate }
+        if ([IO.File]::Exists($candidate)) { return $candidate }
     }
     return $null
 }
@@ -165,7 +165,7 @@ function Get-Tool {
     $status = 'unavailable'
     try {
         if ($FileVersion) {
-            $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($Path).FileVersion
+            $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($Path).FileVersion
             $status = if ($version) { 'file-metadata' } else { 'unavailable' }
         }
         else {
@@ -200,9 +200,9 @@ try {
     $cpus = @(Get-CimFact 'Win32_Processor' @('Name', 'Manufacturer', 'NumberOfCores', 'NumberOfLogicalProcessors'))
     $gpus = @(Get-CimFact 'Win32_VideoController' @('Name', 'AdapterCompatibility', 'DriverVersion', 'DriverDate', 'Status'))
 
-    $vsRoots = [System.Collections.Generic.List[string]]::new()
+    $vsRoots = [Collections.Generic.List[string]]::new()
     $programDirectories = @(${env:ProgramFiles}, ${env:ProgramFiles(x86)}, ${env:ProgramW6432}) |
-        Where-Object { $_ -and [System.IO.Path]::IsPathFullyQualified($_) } | Select-Object -Unique
+        Where-Object { $_ -and [IO.Path]::IsPathFullyQualified($_) } | Select-Object -Unique
     $vswhereCandidates = @($programDirectories | ForEach-Object { Join-Path $_ 'Microsoft Visual Studio\Installer\vswhere.exe' })
     $vswhere = Find-Application 'vswhere.exe' $vswhereCandidates
     if ($vswhere) {
@@ -210,7 +210,7 @@ try {
             $locations = Invoke-VersionCommand $vswhere @('-all', '-products', '*', '-prerelease', '-property', 'installationPath')
             if ($locations.ExitCode -eq 0) {
                 foreach ($location in ($locations.Text -split '\r?\n')) {
-                    if ($location -and [System.IO.Path]::IsPathFullyQualified($location) -and [System.IO.Directory]::Exists($location)) {
+                    if ($location -and [IO.Path]::IsPathFullyQualified($location) -and [IO.Directory]::Exists($location)) {
                         $vsRoots.Add($location)
                     }
                 }
@@ -221,23 +221,23 @@ try {
     # Fallback for hosts where the installer utility is absent or blocked; no recursive disk search.
     foreach ($programDirectory in $programDirectories) {
         $vsDirectory = Join-Path $programDirectory 'Microsoft Visual Studio'
-        if ([System.IO.Directory]::Exists($vsDirectory)) {
+        if ([IO.Directory]::Exists($vsDirectory)) {
             foreach ($year in (Get-ChildItem -LiteralPath $vsDirectory -Directory -ErrorAction SilentlyContinue)) {
                 foreach ($edition in (Get-ChildItem -LiteralPath $year.FullName -Directory -ErrorAction SilentlyContinue)) {
-                    if ([System.IO.Directory]::Exists((Join-Path $edition.FullName 'Common7'))) { $vsRoots.Add($edition.FullName) }
+                    if ([IO.Directory]::Exists((Join-Path $edition.FullName 'Common7'))) { $vsRoots.Add($edition.FullName) }
                 }
             }
         }
     }
     $gitFallbacks = @($programDirectories | ForEach-Object { Join-Path $_ 'Git\cmd\git.exe' })
     $cmakeFallbacks = @($programDirectories | ForEach-Object { Join-Path $_ 'CMake\bin\cmake.exe' })
-    $compilerFallbacks = [System.Collections.Generic.List[string]]::new()
+    $compilerFallbacks = [Collections.Generic.List[string]]::new()
     foreach ($vsRoot in ($vsRoots | Select-Object -Unique)) {
         $gitFallbacks += Join-Path $vsRoot 'Common7\IDE\CommonExtensions\Microsoft\TeamFoundation\Team Explorer\Git\cmd\git.exe'
         $gitFallbacks += Join-Path $vsRoot 'Common7\IDE\CommonExtensions\Microsoft\TeamFoundation\Team Explorer\Git\mingw64\bin\git.exe'
         $cmakeFallbacks += Join-Path $vsRoot 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
         $msvcRoot = Join-Path $vsRoot 'VC\Tools\MSVC'
-        if ([System.IO.Directory]::Exists($msvcRoot)) {
+        if ([IO.Directory]::Exists($msvcRoot)) {
             foreach ($version in (Get-ChildItem -LiteralPath $msvcRoot -Directory | Sort-Object Name -Descending)) {
                 # Native ARM64 host/target first; other compilers are reported honestly if found.
                 foreach ($compilerLane in @('Hostarm64\arm64', 'Hostx64\arm64', 'Hostx64\x64', 'Hostx86\x86')) {
@@ -259,15 +259,15 @@ try {
         if (-not $tool.Present) { $issues.Add("$($tool.Name) not found; no dependency was installed.") }
         elseif ($tool.VersionStatus -in @('unavailable', 'command-failed')) { $issues.Add("$($tool.Name) found but its version could not be read.") }
     }
-    $osArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-    $processArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+    $osArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    $processArchitecture = [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
     if ($osArchitecture -ne 'Arm64') { $issues.Add('The operating system is not ARM64; target-device qualification is unavailable on this host.') }
     if ($osArchitecture -ne $processArchitecture) { $issues.Add('PowerShell runs under architecture emulation; use native ARM64 PowerShell for target-device checks.') }
 
     $storage = [ordered] @{ Selected = ($null -ne $dataDirectory); Path = $dataDirectory; TotalBytes = $null; AvailableBytes = $null }
     if ($dataDirectory) {
         try {
-            $drive = [System.IO.DriveInfo]::new([System.IO.Path]::GetPathRoot($dataDirectory))
+            $drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($dataDirectory))
             $storage.TotalBytes = $drive.TotalSize
             $storage.AvailableBytes = $drive.AvailableFreeSpace
         }
@@ -279,23 +279,23 @@ try {
         SchemaVersion = 1
         CollectedAtUtc = [DateTime]::UtcNow.ToString('o')
         OperatingSystem = [ordered] @{
-            Description = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
-            Caption = if ($null -ne $os) { $os.Caption } else { $null }
-            Version = if ($null -ne $os) { $os.Version } else { $null }
-            BuildNumber = if ($null -ne $os) { $os.BuildNumber } else { $null }
+            Description = [Runtime.InteropServices.RuntimeInformation]::OSDescription
+            Caption = ($os)?.Caption
+            Version = ($os)?.Version
+            BuildNumber = ($os)?.BuildNumber
             Architecture = $osArchitecture
         }
         Runtime = [ordered] @{
             PowerShellVersion = $PSVersionTable.PSVersion.ToString()
-            DotNet = [System.Runtime.InteropServices.RuntimeInformation]::FrameworkDescription
+            DotNet = [Runtime.InteropServices.RuntimeInformation]::FrameworkDescription
             ProcessArchitecture = $processArchitecture
             IsNativeProcess = ($processArchitecture -eq $osArchitecture)
         }
         Computer = if ($null -ne $computer) { [ordered] @{ Manufacturer = $computer.Manufacturer; Model = $computer.Model } } else { $null }
         Memory = [ordered] @{
             # WMI calls this KiB "kilobytes"; retain bytes to avoid GB/GiB admission mistakes.
-            UsablePhysicalBytes = if ($null -ne $os -and $null -ne $os.TotalVisibleMemorySize) { [uint64] $os.TotalVisibleMemorySize * [uint64] 1024 } else { $null }
-            ReportedPhysicalBytes = if ($null -ne $computer) { $computer.TotalPhysicalMemory } else { $null }
+            UsablePhysicalBytes = if ($null -ne ($os)?.TotalVisibleMemorySize) { [uint64] $os.TotalVisibleMemorySize * [uint64] 1024 } else { $null }
+            ReportedPhysicalBytes = ($computer)?.TotalPhysicalMemory
             UsableSource = 'Win32_OperatingSystem.TotalVisibleMemorySize * 1024'
         }
         Processors = @($cpus | ForEach-Object { [ordered] @{ Name = $_.Name; Manufacturer = $_.Manufacturer; Cores = $_.NumberOfCores; LogicalProcessors = $_.NumberOfLogicalProcessors } })
@@ -307,35 +307,37 @@ try {
     }
     if ($reportPath) {
         $json = $report | ConvertTo-Json -Depth 8
-        $file = [System.IO.File]::Open($reportPath, 'CreateNew', 'Write', 'None')
+        $file = [IO.File]::Open($reportPath, 'CreateNew', 'Write', 'None')
         try {
-            $writer = [System.IO.StreamWriter]::new($file, [System.Text.UTF8Encoding]::new($false))
+            $writer = [IO.StreamWriter]::new($file, [Text.UTF8Encoding]::new($false))
             try { $writer.WriteLine($json) } finally { $writer.Dispose() }
         }
         finally { $file.Dispose() }
     }
 
-    Write-Information -InformationAction Continue "Windows architecture: $osArchitecture; PowerShell process: $processArchitecture ($($PSVersionTable.PSVersion))"
-    if ($null -ne $report.Memory.UsablePhysicalBytes) {
-        Write-Information -InformationAction Continue "OS-usable physical memory: $($report.Memory.UsablePhysicalBytes) bytes ($([Math]::Round($report.Memory.UsablePhysicalBytes / 1GB, 2)) GiB)"
-    }
-    else { Write-Information -InformationAction Continue 'OS-usable physical memory: unavailable' }
-    foreach ($cpu in $report.Processors) { Write-Information -InformationAction Continue "CPU: $($cpu.Name.Trim()) ($($cpu.Cores) cores, $($cpu.LogicalProcessors) logical)" }
-    foreach ($gpu in $report.Graphics) { Write-Information -InformationAction Continue "GPU: $($gpu.Name); driver $($gpu.DriverVersion)" }
-    foreach ($tool in $tools) {
-        $summary = if ($tool.Present) { "$($tool.Architecture); $($tool.Version ?? $tool.VersionStatus)" } else { 'not found' }
-        Write-Information -InformationAction Continue "$($tool.Name): $summary"
-    }
-    if ($dataDirectory) { Write-Information -InformationAction Continue "External data directory: validated; available bytes: $($storage.AvailableBytes ?? 'unavailable')" }
-    foreach ($issue in $issues) { Write-Information -InformationAction Continue "Gap: $issue" }
-    Write-Information -InformationAction Continue $report.Qualification
-    if ($reportPath) { Write-Information -InformationAction Continue 'JSON report written to the requested external file; it includes exact tool paths.' }
+    @(
+        "Windows architecture: $osArchitecture; PowerShell process: $processArchitecture ($($PSVersionTable.PSVersion))"
+        if ($null -ne $report.Memory.UsablePhysicalBytes) {
+            "OS-usable physical memory: $($report.Memory.UsablePhysicalBytes) bytes ($([Math]::Round($report.Memory.UsablePhysicalBytes / 1GB, 2)) GiB)"
+        }
+        else { 'OS-usable physical memory: unavailable' }
+        foreach ($cpu in $report.Processors) { "CPU: $($cpu.Name.Trim()) ($($cpu.Cores) cores, $($cpu.LogicalProcessors) logical)" }
+        foreach ($gpu in $report.Graphics) { "GPU: $($gpu.Name); driver $($gpu.DriverVersion)" }
+        foreach ($tool in $tools) {
+            $summary = if ($tool.Present) { "$($tool.Architecture); $($tool.Version ?? $tool.VersionStatus)" } else { 'not found' }
+            "$($tool.Name): $summary"
+        }
+        if ($dataDirectory) { "External data directory: validated; available bytes: $($storage.AvailableBytes ?? 'unavailable')" }
+        foreach ($issue in $issues) { "Gap: $issue" }
+        $report.Qualification
+        if ($reportPath) { 'JSON report written to the requested external file; it includes exact tool paths.' }
+    ) | Write-Information -InformationAction Continue
     if ($PassThru) { Write-Output $report }
 }
 finally {
     # Only remove the unique directory allocated by this invocation, and only when empty.
-    if ([System.IO.Directory]::Exists($scratchDirectory) -and
-        -not [System.IO.Directory]::EnumerateFileSystemEntries($scratchDirectory).GetEnumerator().MoveNext()) {
-        [System.IO.Directory]::Delete($scratchDirectory, $false)
+    if ([IO.Directory]::Exists($scratchDirectory) -and
+        -not [IO.Directory]::EnumerateFileSystemEntries($scratchDirectory).GetEnumerator().MoveNext()) {
+        [IO.Directory]::Delete($scratchDirectory, $false)
     }
 }

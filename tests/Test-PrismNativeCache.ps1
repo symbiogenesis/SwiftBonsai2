@@ -17,7 +17,16 @@ $cache = Join-Path $scratch 'native'
 [void][IO.Directory]::CreateDirectory((Join-Path $source 'nested'))
 [IO.File]::WriteAllText((Join-Path $source 'CMakeLists.txt'), 'verified build configuration')
 [IO.File]::WriteAllText((Join-Path $source 'nested/kernel.cpp'), 'verified native source')
+[void][IO.Directory]::CreateDirectory((Join-Path $source 'empty'))
+$hidden = Join-Path $source '.hidden.h'
+[IO.File]::WriteAllText($hidden, 'hidden native input')
+if ($IsWindows) { [IO.File]::SetAttributes($hidden, [IO.FileAttributes]::Hidden) }
+$preview = Join-Path $scratch 'preview'
+Assert ($null -eq (Initialize-BonsaiPrismNativeSource -SourceDirectory $source -BuildDirectory $preview -WhatIf)) 'Source WhatIf returned an uncreated cache.'
+Assert (-not (Test-Path -LiteralPath $preview)) 'Source WhatIf created a cache.'
 $cached = Initialize-BonsaiPrismNativeSource -SourceDirectory $source -BuildDirectory $cache
+Assert ([IO.Directory]::Exists((Join-Path $cached 'empty'))) 'Source caching discarded an empty directory.'
+Assert ([IO.File]::ReadAllText((Join-Path $cached '.hidden.h')) -ceq 'hidden native input') 'Source caching discarded a hidden input.'
 $kernel = Join-Path $cached 'nested/kernel.cpp'
 $timestamp = [IO.File]::GetLastWriteTimeUtc($kernel)
 [IO.File]::SetLastWriteTimeUtc((Join-Path $source 'nested/kernel.cpp'), $timestamp.AddHours(1))
@@ -46,6 +55,8 @@ $stableGrammarKernel = Join-Path $stableGrammar 'nested/kernel.cpp'
 $stableGrammarTimestamp = [IO.File]::GetLastWriteTimeUtc($stableGrammarKernel)
 $nextExtraction = Join-Path $scratch 'next-extraction'
 [void][IO.Directory]::CreateDirectory((Join-Path $nextExtraction 'nested'))
+[void][IO.Directory]::CreateDirectory((Join-Path $nextExtraction 'empty'))
+[IO.File]::Copy($hidden, (Join-Path $nextExtraction '.hidden.h'), $false)
 [IO.File]::Copy((Join-Path $source 'CMakeLists.txt'), (Join-Path $nextExtraction 'CMakeLists.txt'), $false)
 [IO.File]::Copy((Join-Path $source 'nested/kernel.cpp'), (Join-Path $nextExtraction 'nested/kernel.cpp'), $false)
 [IO.File]::SetLastWriteTimeUtc((Join-Path $nextExtraction 'nested/kernel.cpp'), $stableGrammarTimestamp.AddHours(2))
@@ -59,6 +70,8 @@ $adapter = Join-Path $scratch 'checkout-adapter'
 [IO.File]::WriteAllText((Join-Path $adapter 'common/bridge.cpp'), 'adapter production calls')
 [IO.File]::WriteAllText((Join-Path $adapter 'common/operations.hpp'), 'adapter production operations')
 [IO.File]::WriteAllText((Join-Path $adapter 'catalog.json'), 'non-native evidence policy')
+Assert ($null -eq (Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $adapter -BuildDirectory $preview -WhatIf)) 'Adapter WhatIf returned an uncreated cache.'
+Assert (-not (Test-Path -LiteralPath $preview)) 'Adapter WhatIf created a cache.'
 $cachedAdapter = Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $adapter -BuildDirectory $cache
 Assert (-not [IO.File]::Exists((Join-Path $cachedAdapter 'catalog.json'))) 'Native caches must not bind unrelated evidence policy files.'
 $bridge = Join-Path $cachedAdapter 'common/bridge.cpp'
