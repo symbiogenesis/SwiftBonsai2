@@ -8,6 +8,7 @@
 )]
 
 use crate::client::{self, Command, Config, Event};
+mod transcript;
 use std::{
     cell::RefCell,
     io,
@@ -30,8 +31,8 @@ use windows_sys::{
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             Controls::{
-                DRAWITEMSTRUCT, EM_REPLACESEL, EM_SCROLLCARET, EM_SETLIMITTEXT, EM_SETSEL,
-                ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, ODT_BUTTON, SetWindowTheme,
+                DRAWITEMSTRUCT, EM_SETLIMITTEXT, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, ODT_BUTTON,
+                SetWindowTheme,
             },
             HiDpi::{
                 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow,
@@ -44,10 +45,10 @@ use windows_sys::{
                 BS_OWNERDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
                 DispatchMessageW, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, ES_WANTRETURN,
                 GetClientRect, GetDlgCtrlID, GetMessageW, GetWindowTextLengthW, GetWindowTextW,
-                IDC_ARROW, IDI_APPLICATION, IsDialogMessageW, KillTimer, LoadCursorW, LoadIconW,
-                MB_ICONERROR, MB_OK, MINMAXINFO, MSG, MessageBoxW, MoveWindow, PostQuitMessage,
-                RegisterClassW, SW_HIDE, SW_SHOW, SendMessageW, SetTimer, SetWindowTextW,
-                ShowWindow, TranslateMessage, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
+                IDC_ARROW, IDI_APPLICATION, IsDialogMessageW, IsWindow, KillTimer, LoadCursorW,
+                LoadIconW, MB_ICONERROR, MB_OK, MINMAXINFO, MSG, MessageBoxW, MoveWindow,
+                PostQuitMessage, RegisterClassW, SW_HIDE, SW_SHOW, SendMessageW, SetTimer,
+                SetWindowTextW, ShowWindow, TranslateMessage, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
                 WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM,
                 WM_ERASEBKGND, WM_GETFONT, WM_KEYDOWN, WM_PAINT, WM_SETFONT, WM_SIZE, WM_TIMER,
                 WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_OVERLAPPEDWINDOW,
@@ -103,6 +104,7 @@ struct State {
     busy: bool,
     retryable: bool,
     show_thinking: bool,
+    chat_started: bool,
 }
 
 struct Brush(HBRUSH);
@@ -377,25 +379,7 @@ fn set_text(control: HWND, text: &str) {
 }
 
 fn append(control: HWND, text: &str) {
-    let text = wide(&text.replace('\n', "\r\n"));
-    // SAFETY: This is a live EDIT control on the UI thread. EM_SETSEL accepts
-    // usize::MAX as the documented end-of-text sentinel, with no pointer input.
-    unsafe {
-        SendMessageW(control, EM_SETSEL, usize::MAX, -1);
-    }
-    // SAFETY: EM_REPLACESEL consumes the live NUL-terminated buffer synchronously.
-    unsafe {
-        SendMessageW(
-            control,
-            EM_REPLACESEL,
-            0,
-            text.as_ptr().addr().cast_signed(),
-        );
-    }
-    // SAFETY: The live edit control accepts this pointer-free scrolling message.
-    unsafe {
-        SendMessageW(control, EM_SCROLLCARET, 0, 0);
-    }
+    transcript::append(control, text, TEXT, false);
 }
 
 fn control(parent: HWND, class: *const u16, text: &str, style: u32, id: usize) -> io::Result<HWND> {
@@ -487,12 +471,12 @@ impl State {
             subtitle: control(
                 window,
                 w!("STATIC"),
-                "THE WRITING ROOM   /   LOCAL CPU   /   NATIVE RUST",
+                "Your private, local writing companion",
                 0,
                 0,
             )?,
-            transcript: edit(window, true, 201)?,
-            reasoning: edit(window, true, 202)?,
+            transcript: transcript::create(window, 201)?,
+            reasoning: transcript::create(window, 202)?,
             input: edit(window, false, 203)?,
             send: control(
                 window,
@@ -545,6 +529,7 @@ impl State {
             busy: false,
             retryable: false,
             show_thinking: false,
+            chat_started: false,
         })
     }
 
@@ -674,8 +659,6 @@ impl State {
             return;
         }
         for control in [
-            self.transcript,
-            self.reasoning,
             self.input,
             self.send,
             self.stop,
@@ -685,6 +668,8 @@ impl State {
         ] {
             apply_font(control, font);
         }
+        transcript::set_font(self.transcript);
+        transcript::set_font(self.reasoning);
         apply_font(self.title, title);
         apply_font(self.subtitle, small);
         apply_font(self.status, small);
@@ -715,12 +700,17 @@ impl State {
             self.fail("The model worker stopped. Close and restart the demo.");
             return;
         }
-        append(
-            self.transcript,
-            &format!("\nYou\n{text}\n\nSwift Bonsai 2\n"),
-        );
+        if !self.chat_started {
+            set_text(self.transcript, "");
+            self.chat_started = true;
+        }
+        transcript::turn(self.transcript, "You", 0x00e8_c799);
+        append(self.transcript, text);
+        transcript::turn(self.transcript, "Swift Bonsai 2", ACCENT);
+        transcript::scroll_to_end(self.transcript);
         set_text(self.input, "");
         set_text(self.reasoning, "");
+        transcript::turn(self.reasoning, "Thinking", MUTED);
         self.busy = true;
         set_text(
             self.status,
@@ -734,7 +724,8 @@ impl State {
         self.busy = false;
         self.retryable = false;
         set_text(self.status, message);
-        append(self.transcript, &format!("\n\nDemo status\n{message}\n"));
+        transcript::turn(self.transcript, "Demo status", MUTED);
+        transcript::append(self.transcript, message, MUTED, false);
         self.update_buttons();
     }
 
@@ -771,27 +762,34 @@ impl State {
                         "Ready. Enter to send; Shift+Enter for a new line.",
                     );
                     self.update_buttons();
-                    // SAFETY: input is an enabled live control on this thread.
-                    unsafe {
-                        SetFocus(self.input);
+                    // SAFETY: Query only this UI thread's live focus handle.
+                    let focus = unsafe { GetFocus() };
+                    if focus != self.transcript && focus != self.reasoning {
+                        // SAFETY: The composer is enabled; readers keep keyboard
+                        // focus in the transcript so copying still works.
+                        unsafe { SetFocus(self.input) };
                     }
                 }
                 Event::Text(text) => {
                     append(self.transcript, &text);
                     set_text(self.status, "Writing...");
                 }
-                Event::Reasoning(text) => append(self.reasoning, &text),
+                Event::Reasoning(text) => {
+                    transcript::append(self.reasoning, &text, MUTED, false);
+                }
                 Event::Complete => {
                     self.busy = false;
-                    append(self.transcript, "\n");
                     set_text(
                         self.status,
                         "Ready. Enter to send; Shift+Enter for a new line.",
                     );
                     self.update_buttons();
-                    // SAFETY: input is an enabled live control on this thread.
-                    unsafe {
-                        SetFocus(self.input);
+                    // SAFETY: Query only this UI thread's live focus handle.
+                    let focus = unsafe { GetFocus() };
+                    if focus != self.transcript && focus != self.reasoning {
+                        // SAFETY: The composer is enabled; readers keep keyboard
+                        // focus in the transcript so copying still works.
+                        unsafe { SetFocus(self.input) };
                     }
                 }
                 Event::Failed(message) => self.fail(&message),
@@ -884,11 +882,11 @@ unsafe extern "system" fn procedure(
                 }
                 NEW if state.ready && !state.busy => {
                     let _result = state.commands.send(Command::NewChat);
-                    set_text(
-                        state.transcript,
-                        "A new conversation. What would you like to create?\r\n",
-                    );
+                    transcript::welcome(state.transcript);
+                    state.chat_started = false;
                     set_text(state.reasoning, "");
+                    // SAFETY: The composer is an enabled live control on this thread.
+                    unsafe { SetFocus(state.input) };
                 }
                 THINKING => {
                     state.show_thinking = !state.show_thinking;
@@ -989,22 +987,34 @@ fn create_window() -> io::Result<HWND> {
     Ok(window)
 }
 
+struct WindowLifetime(HWND);
+
+impl Drop for WindowLifetime {
+    fn drop(&mut self) {
+        // SAFETY: This handle belongs to the current UI thread. On early startup
+        // errors, destroy all children before unloading the Rich Edit module.
+        if unsafe { IsWindow(self.0) } != 0 {
+            // SAFETY: The guard owns this live window on its creating thread.
+            unsafe { DestroyWindow(self.0) };
+        }
+    }
+}
+
 pub(super) fn run(config: Config) -> io::Result<()> {
+    let _rich_edit = transcript::Library::load()?;
     PALETTE.with(|palette| {
         *palette.borrow_mut() = Some(Palette::new()?);
         Ok::<(), io::Error>(())
     })?;
     let window = create_window()?;
+    let _window_lifetime = WindowLifetime(window);
     let (commands, incoming_commands) = mpsc::channel();
     let (events, incoming_events) = mpsc::channel();
     let mut state = State::create(window, commands.clone(), incoming_events)?;
     state.set_font();
     state.layout();
     state.update_buttons();
-    set_text(
-        state.transcript,
-        "A small model. An open canvas.\r\n\r\nStart with a scene, a spark, or a wonderfully strange question.\r\n\r\nTry this\r\nWrite the opening of a story about a botanist who discovers a tree that remembers the future.\r\n\r\nYour conversation stays in this window's memory.\r\n",
-    );
+    transcript::welcome(state.transcript);
     STATE.with(|slot| *slot.borrow_mut() = Some(state));
     let worker = std::thread::Builder::new()
         .name("swift-chat-client".to_owned())
