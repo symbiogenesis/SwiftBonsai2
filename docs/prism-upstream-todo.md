@@ -2,7 +2,7 @@
 
 Original handoff at code revision `9332b01cd8b7102ce1f05d6858dc9d75ccf48a03`.
 Implementation and qualification are tracked independently below.
-Wrap-up update: completed in-flight work is being committed to local `main`.
+Wrap-up update: completed in-flight work is committed to local `main`.
 The user explicitly requested **no further push**. Remote `main` was last
 published at `5ede838409461f6d8385ad20167288a44f519946`; subsequent local commits
 have no hosted verdict. The migration is **not complete**.
@@ -232,6 +232,13 @@ record of its tested revision, not a current capability inventory.
   source, 358 guards, 228 live GETs and five additional production checks;
   integrated locally as `24a3f0e`. Hosted qualification remains open below.
   Its model/draft option handlers do not implement the complete CLI parser.
+- [ ] **Qualify the resolver's remaining input domains.** The original source
+  exercises refs/tree listing retrieval and offline finalization. Separate
+  production parity checks remain for live HTTPS/curl, actual URL/multi-shard
+  downloads, redirect/Content-Length behavior, recursive cached snapshots and
+  metadata-inferred draft resolution. Quant-tag patterns currently use Rust
+  regex syntax; support or explicitly reject native ECMAScript-only syntax
+  rather than claiming complete regex-domain equivalence from these fixtures.
 - [ ] **Provide the shared model/context/session APIs.** Build an owned model
   loader, generated-tensor/progress callbacks, encoder/decoder contexts,
   vocabulary/logit ownership, graph reservation/export, sequence/KV state,
@@ -283,6 +290,14 @@ record of its tested revision, not a current capability inventory.
   Snapdragon X Elite performance evidence. Full suites/benchmarks remain CI-only.
 
 ## Constraints to preserve
+
+Closing local checks passed after the in-flight integration: Release all-target,
+all-feature Clippy for ARM64 and x64, the no-default-features all-target analyzer,
+formatting, focused new codec checks and the original chat-PEG correctness test.
+Full suites and benchmarks were not run locally. `baseline.json` was not
+ratcheted. Session worktrees and temporary branches were decommissioned after
+their changes were integrated; useful evidence, patches and branch bundles were
+retained outside the repository in the session's temporary evidence directory.
 
 - Keep the intended invalid-UTF-8 skip, immutable model/vocabulary inputs,
   synthetic DSpark references, and both documented, hash-verified upstream
