@@ -52,6 +52,9 @@ sentencepiece-rs = { version = "=0.2.2", default-features = false }
 
 [[example]]
 name = "upstream_prism"
+# Conformance code lives with tests; the explicit example target preserves
+# its command-line runner and embedded unit tests.
+path = "tests/upstream_prism/harness.rs"
 test = true
 required-features = ["cli"]
 

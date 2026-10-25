@@ -13,166 +13,86 @@
     reason = "Sibling modules share adapters explicitly; unreachable_pub rejects unrestricted pub."
 )]
 
-#[path = "upstream_prism/allocation.rs"]
 mod allocation;
-#[path = "upstream_prism/architectures.rs"]
 mod architectures;
-#[path = "upstream_prism/arg_parser.rs"]
 mod arg_parser;
-#[path = "upstream_prism/chat.rs"]
 mod chat;
-#[path = "upstream_prism/chat_analysis.rs"]
 mod chat_analysis;
-#[path = "upstream_prism/chat_auto.rs"]
 mod chat_auto;
-#[path = "upstream_prism/chat_peg.rs"]
 mod chat_peg;
-#[path = "upstream_prism/chat_template.rs"]
 mod chat_template;
-#[path = "upstream_prism/gguf.rs"]
 mod gguf;
-#[path = "upstream_prism/gguf_model_data.rs"]
 mod gguf_model_data;
-#[path = "upstream_prism/model_lifecycle.rs"]
 mod model_lifecycle;
-#[path = "upstream_prism/model_resolution.rs"]
 mod model_resolution;
-#[path = "upstream_prism/model_session.rs"]
 mod model_session;
-#[path = "upstream_prism/mtmd_chunks.rs"]
 mod mtmd_chunks;
-#[path = "upstream_prism/sampling.rs"]
 mod sampling;
-#[path = "upstream_prism/tokenizer.rs"]
 mod tokenizer;
-#[path = "upstream_prism/tokenizer_files.rs"]
 mod tokenizer_files;
-#[path = "upstream_prism/tokenizer_generators.rs"]
 mod tokenizer_generators;
-#[path = "upstream_prism/tokenizer_inputs.rs"]
 mod tokenizer_inputs;
-#[path = "upstream_prism/tokenizer_random.rs"]
 mod tokenizer_random;
-#[path = "upstream_prism/tokenizer_reference.rs"]
 mod tokenizer_reference;
-#[path = "upstream_prism/tokenizer_repository.rs"]
 mod tokenizer_repository;
-#[path = "upstream_prism/tokenizer_session.rs"]
 mod tokenizer_session;
-#[path = "upstream_prism/tokenizer_vocab.rs"]
 mod tokenizer_vocab;
 
-#[path = "upstream_prism/backend_ops.rs"]
 mod backend_ops;
-#[path = "upstream_prism/backend_sampler.rs"]
 mod backend_sampler;
-#[path = "upstream_prism/barrier.rs"]
 mod barrier;
-#[path = "upstream_prism/batch_allocator.rs"]
 mod batch_allocator;
-#[path = "upstream_prism/codec_assertions.rs"]
 mod codec_assertions;
-#[path = "upstream_prism/common.rs"]
 mod common;
-#[path = "upstream_prism/double_float.rs"]
 mod double_float;
-#[path = "upstream_prism/dspark_forward.rs"]
 mod dspark_forward;
-#[path = "upstream_prism/dspark_inputs.rs"]
 mod dspark_inputs;
-#[path = "upstream_prism/dspark_logsnr.rs"]
 mod dspark_logsnr;
-#[path = "upstream_prism/dspark_loop.rs"]
 mod dspark_loop;
-#[path = "upstream_prism/dspark_pair.rs"]
 mod dspark_pair;
-#[path = "upstream_prism/dspark_real.rs"]
 mod dspark_real;
-#[path = "upstream_prism/dspark_real_inputs.rs"]
 mod dspark_real_inputs;
-#[path = "upstream_prism/dspark_reference.rs"]
 mod dspark_reference;
-#[path = "upstream_prism/engine.rs"]
 mod engine;
-#[path = "upstream_prism/engine_codec.rs"]
 mod engine_codec;
-#[path = "upstream_prism/engine_runtime.rs"]
 mod engine_runtime;
-#[path = "upstream_prism/engine_schema.rs"]
 mod engine_schema;
-#[path = "upstream_prism/engine_unicode.rs"]
 mod engine_unicode;
-#[path = "upstream_prism/engine_vocab.rs"]
 mod engine_vocab;
-#[path = "upstream_prism/export_graph.rs"]
 mod export_graph;
-#[path = "upstream_prism/fixture.rs"]
 mod fixture;
-#[path = "upstream_prism/generated_inputs.rs"]
 mod generated_inputs;
-#[path = "upstream_prism/grammar_integration.rs"]
 mod grammar_integration;
-#[path = "upstream_prism/grammar_parser.rs"]
 mod grammar_parser;
-#[path = "upstream_prism/jinja.rs"]
 mod jinja;
-#[path = "upstream_prism/json_schema.rs"]
 mod json_schema;
-#[path = "upstream_prism/kv_mean_center.rs"]
 mod kv_mean_center;
-#[path = "upstream_prism/llama_grammar.rs"]
 mod llama_grammar;
-#[path = "upstream_prism/llguidance.rs"]
 mod llguidance;
-#[path = "upstream_prism/logging.rs"]
 mod logging;
-#[path = "upstream_prism/lora_conversion.rs"]
 mod lora_conversion;
-#[path = "upstream_prism/lora_convert.rs"]
 mod lora_convert;
-#[path = "upstream_prism/lora_gguf.rs"]
 mod lora_gguf;
-#[path = "upstream_prism/lora_inputs.rs"]
 mod lora_inputs;
-#[path = "upstream_prism/lora_vocab.rs"]
 mod lora_vocab;
-#[path = "upstream_prism/moe_reduce.rs"]
 mod moe_reduce;
-#[path = "upstream_prism/mtmd.rs"]
 mod mtmd;
-#[path = "upstream_prism/numerics.rs"]
 mod numerics;
-#[path = "upstream_prism/optimizer.rs"]
 mod optimizer;
-#[path = "upstream_prism/peg.rs"]
 mod peg;
-#[path = "upstream_prism/pq2.rs"]
 mod pq2;
-#[path = "upstream_prism/ptq1.rs"]
 mod ptq1;
-#[path = "upstream_prism/public_c.rs"]
 mod public_c;
-#[path = "upstream_prism/quant_buffers.rs"]
 mod quant_buffers;
-#[path = "upstream_prism/quant_selection.rs"]
 mod quant_selection;
-#[path = "upstream_prism/quantize_input.rs"]
 mod quantize_input;
-#[path = "upstream_prism/quantize_perf.rs"]
 mod quantize_perf;
-#[path = "upstream_prism/quantize_stats.rs"]
 mod quantize_stats;
-#[path = "upstream_prism/reasoning_budget.rs"]
 mod reasoning_budget;
-#[path = "upstream_prism/recurrent_rollback.rs"]
 mod recurrent_rollback;
-#[path = "upstream_prism/schema_python.rs"]
 mod schema_python;
-#[path = "upstream_prism/tokenizer_roundtrip.rs"]
 mod tokenizer_roundtrip;
-#[path = "upstream_prism/validator.rs"]
 mod validator;
-#[path = "upstream_prism/windows_random.rs"]
 mod windows_random;
 
 use std::env;

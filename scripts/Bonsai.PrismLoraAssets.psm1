@@ -15,7 +15,7 @@ function Save-BonsaiPrismLoraAsset {
     param([Parameter(Mandatory)][string]$Repository,
           [Parameter(Mandatory)][string]$Directory)
     $root = Resolve-ExternalPath $Directory
-    $lockPath = Join-Path $Repository 'src/prism-runtime/examples/upstream_prism/lora-assets.json'
+    $lockPath = Join-Path $Repository 'src/prism-runtime/tests/upstream_prism/lora-assets.json'
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json -AsHashtable
     $revision = 'c26d5fb85b4070a9e9c4e65d132c783b98086890'
     if ($lock.Repository -cne 'ggml-org/lora-tests' -or $lock.Revision -cne $revision -or

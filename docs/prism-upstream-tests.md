@@ -63,8 +63,13 @@ The [migration inventory](../tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
+The Rust harness, adapters and fixtures live together under
+[`src/prism-runtime/tests/upstream_prism/`](../src/prism-runtime/tests/upstream_prism/).
+An explicit Cargo example target retains the `upstream_prism` command-line runner
+and its embedded unit tests, so the existing build and CI commands remain valid.
+
 Seventy Windows-applicable source contracts currently have safe Rust adapters in
-[upstream_prism.rs](../src/prism-runtime/examples/upstream_prism.rs):
+[harness.rs](../src/prism-runtime/tests/upstream_prism/harness.rs):
 
 - `test-tokenizer-0.py`, `test-tokenizer-0.sh` and `test-tokenizer-random.py`:
   independent safe Rust HF/SentencePiece references, all 26 original families,

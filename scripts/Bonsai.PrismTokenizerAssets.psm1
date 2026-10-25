@@ -15,7 +15,7 @@ function Save-BonsaiPrismTokenizerRepository {
     param([Parameter(Mandatory)][string]$Repository,
           [Parameter(Mandatory)][string]$Directory)
     $root = Resolve-ExternalPath $Directory
-    $lockPath = Join-Path $Repository 'src/prism-runtime/examples/upstream_prism/tokenizer-repository-assets.json'
+    $lockPath = Join-Path $Repository 'src/prism-runtime/tests/upstream_prism/tokenizer-repository-assets.json'
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json -AsHashtable
     $revision = 'cee4b7a68518c579bb758fca46bb149cd109348e'
     if ($lock.Repository -cne 'ggml-org/vocabs' -or $lock.Revision -cne $revision -or
@@ -60,7 +60,7 @@ function Save-BonsaiPrismTokenizerReference {
     param([Parameter(Mandatory)][string]$Repository,
           [Parameter(Mandatory)][string]$Directory)
     $root = Resolve-ExternalPath $Directory
-    $lockPath = Join-Path $Repository 'src/prism-runtime/examples/upstream_prism/tokenizer-reference-assets.json'
+    $lockPath = Join-Path $Repository 'src/prism-runtime/tests/upstream_prism/tokenizer-reference-assets.json'
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json -AsHashtable
     if ($lock.SchemaVersion -ne 1 -or $lock.UpstreamRevision -cne 'b87ca7225456b06b0975b8239c66b5aecf07e37c' -or
         $lock.AssetPrefix -cne 'tokenizer-reference/' -or $lock.Files.Count -ne 122 -or $lock.Cases.Count -ne 26) {
