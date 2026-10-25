@@ -3,8 +3,9 @@ name = "bonsai-windows-process"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-publish.workspace = true
+publish = ["crates-io"]
 license.workspace = true
+repository.workspace = true
 description = "Windows Job ownership and bounded native process lifecycle for Bonsai"
 
 [target.'cfg(windows)'.dependencies]

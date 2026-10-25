@@ -3,8 +3,9 @@ name = "bonsai-windows-credentials"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-publish.workspace = true
+publish = ["crates-io"]
 license.workspace = true
+repository.workspace = true
 description = "Private Windows credential provisioning for the Bonsai development launcher"
 
 [dependencies]
