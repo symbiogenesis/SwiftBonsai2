@@ -40,6 +40,7 @@ bonsai-tools memory --request ABSOLUTE_JSON_PATH
 bonsai-tools cpu-check-plan --request ABSOLUTE_JSON_PATH
 bonsai-tools server-policy --request ABSOLUTE_JSON_PATH
 bonsai-tools prism-source --request ABSOLUTE_JSON_PATH
+bonsai-tools prism-baseline --request ABSOLUTE_JSON_PATH
 bonsai-tools runtime-stage --request ABSOLUTE_JSON_PATH
 bonsai-tools runtime-verify --request ABSOLUTE_JSON_PATH
 bonsai-tools completion --request ABSOLUTE_JSON_PATH
@@ -78,6 +79,20 @@ UTF-8 and BOM-marked UTF-8, UTF-16 or UTF-32 JSON. The partition wrapper returns
 the original PowerShell objects so caller properties and object identity survive.
 This command preserves the existing 100-level source JSON limit; response parsing
 also allows the additional merge envelopes.
+
+`prism-baseline` owns catalog validation and its canonical identity, complete
+target/reference reports, recomputed summaries and the recorded nonregression
+floor. Its `catalog`, `report` and `baseline` operations preserve the checked-in
+catalog digest and independently reject C++ reference regressions. PowerShell
+retains file reads and optional source discovery/hashing; Rust validates the
+complete supplied inventory against the catalog. The bridge projects policy
+fields so unrelated diagnostic payloads do not consume the request limit, and
+catalog imports retain the original metadata, including deeply nested extras.
+The three public PowerShell
+commands remain because upstream orchestration and focused regressions call them.
+The pre-port [fixture](../../tests/fixtures/prism-baseline-v1.json) binds the
+Unicode report, omitted-source defaults and regression diagnostics. A selected
+binary must advertise `prism-baseline` before the bridge writes its request.
 
 Qualification `invocations` requests take `modelPath` and validated `controls`.
 They return all 24 paired and four zero-scale argument vectors with the same

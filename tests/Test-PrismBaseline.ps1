@@ -49,6 +49,35 @@ switch ($Case) {
     'Catalog' {
         $imported = Import-BonsaiPrismCatalog -Path $catalogPath
         Assert ($imported.Cases.Count -eq 3) 'Catalog IDs must preserve nested paths.'
+        $metadata = @{ Leaf='Preserve metadata beyond the bridge serialization depth.' }
+        for ($depth = 0; $depth -lt 70; $depth++) { $metadata = @{ Nested=$metadata } }
+        $extended = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json -AsHashtable -DateKind String
+        $extended.Extra = $metadata
+        $extended.Cases[0].Extra = $metadata
+        $extendedPath = Join-Path $scratch 'extended-catalog.json'
+        $extended | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $extendedPath -Encoding utf8
+        $preserved = Import-BonsaiPrismCatalog -Path $extendedPath
+        foreach ($extra in @($preserved.Extra, $preserved.Cases[0].Extra)) {
+            $leaf = $extra
+            for ($depth = 0; $depth -lt 70; $depth++) { $leaf = $leaf.Nested }
+            Assert ($leaf.Leaf -ceq 'Preserve metadata beyond the bridge serialization depth.') 'Catalog metadata was truncated by the bridge.'
+        }
+        Assert ($preserved.CatalogSha256 -ceq $imported.CatalogSha256) 'Unrelated metadata changed the canonical catalog identity.'
+        $target = New-TestResult -Ids @($ids[0]) -Statuses @('pass')
+        $reference = New-TestResult -Ids $ids -Statuses @('pass', 'pass', 'pass')
+        $target.Cases[0].Coverage = 'x' * (17 * 1024 * 1024)
+        $report = New-BonsaiPrismReport -Catalog $preserved -TargetResults $target -ReferenceResults $reference
+        $report.Summary.Extra = $target.Cases[0].Coverage
+        Assert ((Test-BonsaiPrismBaseline -Catalog $preserved -Report $report -BaselinePath $baselinePath).Passed) 'Ignored diagnostic metadata must not exceed the bridge policy-request limit.'
+        $invalid = New-TestResult -Ids @($ids[0]) -Statuses @('pass')
+        $invalid.Cases = @([pscustomobject]@{ Id=$ids[0]; Status='pass'; Detail='A non-dictionary input must remain invalid.' })
+        Assert-Failure { New-BonsaiPrismReport -Catalog $preserved -TargetResults $invalid -ReferenceResults $reference } 'Serialization repaired an invalid non-dictionary result.'
+        $invalid.Cases = [Collections.Generic.List[object]]::new()
+        $invalid.Cases.Add(@{ Id=$ids[0]; Status='pass'; Detail='A list must not become a valid array.' })
+        Assert-Failure { New-BonsaiPrismReport -Catalog $preserved -TargetResults $invalid -ReferenceResults $reference } 'Serialization repaired an invalid Cases collection.'
+        $invalid = New-TestResult -Ids @($ids[0]) -Statuses @('pass')
+        $invalid.Cases[0].Detail = [DateTime]::UtcNow
+        Assert-Failure { New-BonsaiPrismReport -Catalog $preserved -TargetResults $invalid -ReferenceResults $reference } 'Serialization repaired a non-string result detail.'
         $real = Import-BonsaiPrismCatalog -Path (Join-Path $PSScriptRoot '../tools/prism/upstream/catalog.json')
         Assert ($real.Cases.Count -eq 71) 'Pinned upstream inventory must include all 71 test source files.'
         Assert (@($real.Cases | Where-Object { $_.Id -ceq 'tests/test-tokenizer-0.cpp' }).Count -eq 1) 'C++ tokenizer ID is absent.'
