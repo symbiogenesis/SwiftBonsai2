@@ -264,7 +264,7 @@ fn output_budget(reserved_output_tokens: usize) -> Result<TokenBudget> {
     })
 }
 
-fn validate_messages(messages: &Value) -> Result<()> {
+pub(crate) fn validate_messages(messages: &Value) -> Result<()> {
     let messages = messages
         .as_array()
         .ok_or_else(|| invalid("Swift messages must be an array"))?;
