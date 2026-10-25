@@ -264,6 +264,10 @@ staging serializes bounded blocks while computing their digest. Tensor snapshot
 alias indexes replace repeated full-handle scans while retaining canonical IDs
 and alias order. Exact-bit, bounds, digest and scheduler regressions cover these
 changes; full matrices and performance measurements remain CI-only.
+Rust partitions use a fresh in-memory production graph session per geometry,
+retaining the file protocol's action/response limits, deadline, failure poisoning
+and evidence. Focused parity checks compare numerical outputs, metadata, source
+planning receipts, random draws and input digests with the existing file protocol.
 
 The production GGUF tokenizer narrows a sorted vocabulary index by input bytes
 instead of scanning every token with the same first byte. Longest-match,
@@ -272,7 +276,10 @@ Immutable byte alphabets, fallback IDs, WordPiece regexes and Unigram score
 minima are prepared once per vocabulary. BPE pieces share bounded merge scratch;
 BPE and SPM omit unused raw-vocabulary indexes. PLaMo scores retain lazy range rejection.
 Focused validation uses all 694 original corpus predicates across 15 pinned
-vocabularies; this establishes correctness, not a measured CI speedup.
+vocabularies and 230 predicates in the five affected external tokenizer families.
+The external repository source retains its pre-existing HybridDNA decoding
+failure; its complete result matches the pre-optimization baseline. These checks
+establish correctness, not a measured CI speedup.
 
 Native bridge CMake inputs are mirrored into a content-verified stable directory,
 so checkout timestamps do not force unchanged adapter sources to compile again.
