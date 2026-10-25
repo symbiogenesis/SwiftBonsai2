@@ -822,7 +822,7 @@ fn main() -> ExitCode {
 mod tests {
     use super::{
         Duration, InsertSpecial, MAX_STATE_BYTES, MatvecBackend, Mode, Result, SamplingMode,
-        SpecialInputPolicy, Utf8Output, bad, parse, read_prompt,
+        SpecialInputPolicy, bad, parse,
     };
 
     fn arguments() -> Vec<String> {
@@ -868,21 +868,6 @@ mod tests {
         }
         input.extend(["--mode", "tokenize"].map(str::to_owned));
         input
-    }
-
-    #[test]
-    fn cli_prompt_reader_preserves_exact_utf8_and_bounds_reads() -> Result<()> {
-        let text = "\u{feff}private\r\n\u{1f331}\n";
-        assert_eq!(read_prompt(&mut text.as_bytes())?, text);
-        for bytes in [Vec::new(), vec![0xff], vec![0xe2, 0x82]] {
-            assert!(read_prompt(&mut bytes.as_slice()).is_err());
-        }
-        let limit = bonsai_prism_runtime::bpe::MAX_BPE_INPUT_BYTES;
-        assert_eq!(read_prompt(&mut vec![b'a'; limit].as_slice())?.len(), limit);
-        let mut oversized = std::io::Cursor::new(vec![b'a'; limit + 100]);
-        assert!(read_prompt(&mut oversized).is_err());
-        assert_eq!(oversized.position(), u64::try_from(limit)? + 1);
-        Ok(())
     }
 
     #[test]
@@ -1177,52 +1162,6 @@ mod tests {
             let mut input = arguments();
             input.extend(tail.into_iter().map(str::to_owned));
             assert!(parse(input).is_err());
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn cli_utf8_output_preserves_split_characters_and_bounds_pending_suffix() -> Result<()> {
-        for text in ["a café\n", "🌱 bonsai", "\0中文"] {
-            let bytes = text.as_bytes();
-            for split in 0..=bytes.len() {
-                let mut output = Utf8Output::default();
-                let mut rendered = output.push(&bytes[..split])?;
-                assert!(output.pending_bytes().len() <= 3);
-                rendered.push_str(&output.push(&bytes[split..])?);
-                rendered.push_str(output.finish());
-                assert_eq!(rendered, text);
-                assert_eq!(output.pending_bytes(), [0_u8; 0]);
-            }
-            let mut output = Utf8Output::default();
-            let mut rendered = String::new();
-            for byte in bytes {
-                rendered.push_str(&output.push(&[*byte])?);
-                assert!(output.pending_bytes().len() <= 3);
-            }
-            rendered.push_str(output.finish());
-            assert_eq!(rendered, text);
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn cli_utf8_output_matches_lossy_rendering_for_invalid_and_truncated_bytes() -> Result<()> {
-        for bytes in [
-            &[0xff, b'a', 0xc3, b'b'][..],
-            &[0xf0, 0x9f, 0x8c][..],
-            &[0xed, 0xa0, 0x80][..],
-            &[0xc0, 0xaf][..],
-            &[0xe2, 0x82, b'!', 0x80][..],
-        ] {
-            for split in 0..=bytes.len() {
-                let mut output = Utf8Output::default();
-                let mut rendered = output.push(&bytes[..split])?;
-                rendered.push_str(&output.push(&bytes[split..])?);
-                rendered.push_str(output.finish());
-                assert_eq!(rendered, String::from_utf8_lossy(bytes));
-                assert_eq!(output.finish(), "");
-            }
         }
         Ok(())
     }

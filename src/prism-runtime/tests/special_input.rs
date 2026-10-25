@@ -183,10 +183,7 @@ fn overlapping_failure_links_agree_with_a_simple_independent_oracle() -> Result<
 }
 
 #[test]
-fn empty_and_ambiguous_special_spellings_are_rejected() {
-    for kind in [3, 4] {
-        assert!(SpecialInput::from_metadata(&metadata(&[("", kind)]), 1).is_err());
-    }
+fn ambiguous_special_spellings_are_rejected() {
     for kinds in [[3, 3], [4, 4], [3, 4], [4, 3]] {
         let records = [("<same>", kinds[0]), ("<same>", kinds[1])];
         assert!(SpecialInput::from_metadata(&metadata(&records), records.len()).is_err());

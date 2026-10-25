@@ -47,6 +47,7 @@ fn common_text_survives_every_single_split_and_bytewise_input() -> Result<()> {
             append(&mut output, &bytes[split..], &mut rendered)?;
             rendered.push_str(output.finish());
             assert_eq!(rendered, text);
+            assert_eq!(output.pending_bytes(), [0_u8; 0]);
         }
         let mut output = Utf8Output::new();
         let mut rendered = String::new();
@@ -55,6 +56,7 @@ fn common_text_survives_every_single_split_and_bytewise_input() -> Result<()> {
         }
         rendered.push_str(output.finish());
         assert_eq!(rendered, text);
+        assert_eq!(output.pending_bytes(), [0_u8; 0]);
     }
     Ok(())
 }

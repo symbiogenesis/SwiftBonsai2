@@ -39,6 +39,8 @@ fn exact_byte_limit_accepts_ascii_and_multibyte_prompts() -> Result<()> {
 fn empty_malformed_and_truncated_utf8_reject_without_exposing_prompt_bytes() {
     for bytes in [
         &b""[..],
+        &[0xff][..],
+        &[0xe2, 0x82][..],
         &b"private prompt\xff"[..],
         &b"private prompt\xc0\xaf"[..],
         &b"private prompt\xed\xa0\x80"[..],
