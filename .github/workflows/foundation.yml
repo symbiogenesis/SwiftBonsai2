@@ -373,14 +373,6 @@ jobs:
             & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBaseline.ps1') -Case $case
           }
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -SourceArchive $archive -EvidenceDirectory $evidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -NativeBuildDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamNative') -Generator 'Visual Studio 18 2026' -NativePlatform ARM64 -Toolchain nightly-2026-10-22-aarch64-pc-windows-msvc -Parallel 4 -CaseParallel 2 -DeferBackend -SourcePartition ([int]$env:SOURCE_PARTITION) | ConvertTo-Json -Depth 12
-      - name: Publish revision-bound native backend shard tools
-        id: backend-tools
-        if: always() && !cancelled() && matrix.partition == 0 && env.PRISM_UPSTREAM_EVIDENCE != ''
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: prism-backend-tools
-          path: ${{ env.PRISM_UPSTREAM_EVIDENCE }}/backend-tools
-          if-no-files-found: warn
       - name: Publish ordinary source results for the complete gate
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -448,13 +440,110 @@ jobs:
           # Keep the full numeric request/response evidence; use a faster zlib
           # level so packaging it does not extend the correctness critical path.
           compression-level: 1
+  # Backend planning needs compiled production tools, not ordinary-source
+  # verdicts. Prepare the checked bundle independently so all backend partitions
+  # can overlap the exhaustive tokenizer, grammar and model workloads.
+  prism-backend-tools:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-11-arm
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reuse the pinned native Windows ARM64 Rust compiler
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Identify the backend build host
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne [Runtime.InteropServices.Architecture]::Arm64) { throw 'Prism acceptance requires native Windows ARM64.' }
+          $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
+          if ($identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native Windows ARM64 Rust.' }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if (-not [IO.File]::Exists($vswhere)) { throw 'Visual Studio Installer discovery is required for the ClangCL toolset.' }
+          $visualStudio = (& $vswhere -latest -products '*' -version '[18.0,19.0)' -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationPath | Out-String).Trim()
+          if (-not $visualStudio -or -not [IO.Directory]::Exists($visualStudio)) { throw 'Visual Studio 2026 with the LLVM Clang component is required for ARM64 ggml.' }
+          "Native C++ acceptance uses Visual Studio 2026 ClangCL ARM64: $visualStudio"
+          "PRISM_UPSTREAM_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
+          $visualStudioVersion = (& $vswhere -latest -products '*' -version '[18.0,19.0)' -requires Microsoft.VisualStudio.Component.VC.Llvm.Clang -property installationVersion | Out-String).Trim()
+          $msvcVersion = (Get-Content -LiteralPath (Join-Path $visualStudio 'VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt') -Raw).Trim()
+          $llvmCompilers = @(Get-ChildItem -LiteralPath (Join-Path $visualStudio 'VC/Tools/Llvm') -Recurse -File -Filter clang-cl.exe)
+          if (-not $llvmCompilers.Count) { throw 'The pinned Visual Studio LLVM compiler is missing.' }
+          $llvmIdentity = @($llvmCompilers | Sort-Object FullName | ForEach-Object { "$($_.FullName):$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }) -join ';'
+          $cmakeVersion = cmake --version | Out-String
+          $nativeIdentity = "$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)-$visualStudioVersion-$msvcVersion-$llvmIdentity-$cmakeVersion"
+          $nativeDigest = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($nativeIdentity)))
+          "PRISM_UPSTREAM_NATIVE_HOST=$nativeDigest" >> $env:GITHUB_ENV
+      - name: Reuse the pinned upstream archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/SwiftBonsai-PrismUpstreamDownloads
+          key: prism-upstream-download-v1-${{ runner.os }}-${{ hashFiles('tools/prism/source.lock.json') }}
+      - name: Reuse shared-assertion Rust dependencies and build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ${{ runner.temp }}/SwiftBonsai-PrismUpstreamRust
+          key: prism-backend-tools-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/prism/upstream/**', 'src/prism-runtime/**', 'tools/ternary/**', 'tools/gguf/**') }}-content-v1
+          restore-keys: |
+            prism-backend-tools-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_CACHE_HOST }}-nightly-2026-10-22-
+            prism-upstream-rust-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_CACHE_HOST }}-nightly-2026-10-22-
+      - name: Reuse exact pinned upstream native builds
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/SwiftBonsai-PrismUpstreamNative
+          # Orchestration changes can reuse the same native source/compiler tree.
+          # Never restore across source pins, adapter code or compiler identities;
+          # source verification and CMake still run before every correctness test.
+          key: prism-upstream-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_NATIVE_HOST }}-vs18-clangcl-arm64-${{ hashFiles('tools/prism/source.lock.json', 'tools/prism/upstream/*.lock.json', 'tools/prism/upstream/**/CMakeLists.txt', 'tools/prism/upstream/**/*.cmake', 'tools/prism/upstream/**/*.c', 'tools/prism/upstream/**/*.cpp', 'tools/prism/upstream/**/*.h', 'tools/prism/upstream/**/*.hpp', 'tools/prism/upstream/**/*.inc') }}-backend-tools-${{ hashFiles('tests/Test-PrismUpstream.ps1', 'scripts/Bonsai.PrismNativeCache.psm1') }}
+          restore-keys: |
+            prism-upstream-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_NATIVE_HOST }}-vs18-clangcl-arm64-${{ hashFiles('tools/prism/source.lock.json', 'tools/prism/upstream/*.lock.json', 'tools/prism/upstream/**/CMakeLists.txt', 'tools/prism/upstream/**/*.cmake', 'tools/prism/upstream/**/*.c', 'tools/prism/upstream/**/*.cpp', 'tools/prism/upstream/**/*.h', 'tools/prism/upstream/**/*.hpp', 'tools/prism/upstream/**/*.inc') }}-backend-tools-
+            prism-upstream-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_NATIVE_HOST }}-vs18-clangcl-arm64-${{ hashFiles('tools/prism/source.lock.json', 'tools/prism/upstream/*.lock.json', 'tools/prism/upstream/**/CMakeLists.txt', 'tools/prism/upstream/**/*.cmake', 'tools/prism/upstream/**/*.c', 'tools/prism/upstream/**/*.cpp', 'tools/prism/upstream/**/*.h', 'tools/prism/upstream/**/*.hpp', 'tools/prism/upstream/**/*.inc') }}-source-0-
+      - name: Prepare revision-bound native backend tools without running source workloads
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-PrismBackendTools-' + [guid]::NewGuid().ToString('N'))
+          "PRISM_BACKEND_TOOLS_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1')
+          $lock = Get-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'tools/prism/source.lock.json') -Raw | ConvertFrom-Json
+          $downloads = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamDownloads'
+          [void][IO.Directory]::CreateDirectory($downloads)
+          $archive = Join-Path $downloads ("prism-$($lock.ArchiveSha256).zip")
+          $null = Receive-LockedArtifact -Uri $lock.ArchiveUrl -Path $archive -Bytes $lock.ArchiveBytes -Sha256 $lock.ArchiveSha256 -TimeoutSeconds 600
+          cargo +nightly-2026-10-22-aarch64-pc-windows-msvc fetch --locked --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml')
+          $prepared = & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -Case BackendOps -PrepareBackendToolsOnly -SourceArchive $archive -EvidenceDirectory $evidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -NativeBuildDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamNative') -Generator 'Visual Studio 18 2026' -NativePlatform ARM64 -Toolchain nightly-2026-10-22-aarch64-pc-windows-msvc -Parallel 4 -CaseParallel 1
+          if ($prepared.Status -cne 'backend-tools-ready' -or $prepared.ProjectRevision -cne $env:GITHUB_SHA -or $prepared.FullSourceGate -isnot [bool] -or $prepared.FullSourceGate -ne $false) { throw 'Backend preparation did not produce the expected revision-bound tool handoff.' }
+          $prepared | ConvertTo-Json -Depth 12
+      - name: Publish revision-bound native backend shard tools
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: prism-backend-tools
+          path: ${{ env.PRISM_BACKEND_TOOLS_EVIDENCE }}/backend-tools
+          if-no-files-found: error
+      - name: Retain backend tool preparation evidence
+        if: always() && env.PRISM_BACKEND_TOOLS_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: prism-backend-tools-evidence-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            ${{ env.PRISM_BACKEND_TOOLS_EVIDENCE }}/receipt.json
+            ${{ env.PRISM_BACKEND_TOOLS_EVIDENCE }}/*.log
+          if-no-files-found: error
   prism-backend-plan:
-    # Partition zero alone publishes the named tools artifact. Do not depend on
-    # an output shared by matrix jobs; a later empty output can obscure it.
-    # A missing or invalid bundle fails download/verification, while unrelated
-    # ordinary-source failures still allow independent backend diagnostics.
-    if: always() && !cancelled() && github.ref == 'refs/heads/main'
-    needs: prism-upstream
+    if: github.ref == 'refs/heads/main'
+    needs: prism-backend-tools
     runs-on: windows-11-arm
     timeout-minutes: 120
     strategy:
@@ -849,7 +938,7 @@ jobs:
   # Preserve the required check name and reject failure or skipping in any lane.
   foundation:
     if: always() && github.ref == 'refs/heads/main'
-    needs: [native-runtime, runtime-scalar-fallback, prism, prism-upstream, prism-upstream-gate, ternary, broker, standards, foundation-tests, lifecycle, gguf, runtime-policy]
+    needs: [native-runtime, runtime-scalar-fallback, prism, prism-upstream, prism-backend-tools, prism-upstream-gate, ternary, broker, standards, foundation-tests, lifecycle, gguf, runtime-policy]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 2
     steps:

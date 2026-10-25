@@ -439,10 +439,12 @@ remaining adapter. Each group retains its own result files and receipt. Fan-in
 checks the revision, exact assigned source set and both targets for all four
 groups before combining every checked backend partition and applying the final
 unified source gate; no deferred result counts as passed. Native feature builds
-may differ between groups; group zero supplies the checked backend tools.
-If an ordinary source fails after the verified backend tools have been built,
-backend partitions can still retain independent results. Missing tools prevent
-their execution; a failed ordinary job still fails final Foundation acceptance.
+may differ between groups. A separate build-only job supplies revision-bound,
+hash-checked ARM64 backend tools, so backend planning and execution can overlap
+every ordinary group. It uses the same verified source and native build cache
+rules and produces no source verdict. Missing tools prevent backend execution;
+a failed ordinary job still fails final Foundation acceptance, and the final
+gate still requires all four ordinary groups and all backend partitions.
 
 ## Growing the baseline
 
