@@ -171,36 +171,32 @@ fn tokenize(client: &Client, context: u64, input: &str, count: usize) -> Result<
         })
         .collect()
 }
-struct CandidateFiles {
-    full: std::path::PathBuf,
-    zero: std::path::PathBuf,
-    one_hot: std::path::PathBuf,
-}
-fn candidate_files(directory: &Path, count: usize) -> Result<CandidateFiles> {
+fn candidate_bytes(count: usize) -> Result<Vec<u8>> {
     let mut full = Vec::with_capacity(count * 12);
-    let mut one_hot = Vec::with_capacity(count * 8);
     for index in 0..count {
         let id = i32::try_from(index)?.to_le_bytes();
         full.extend(id);
         full.extend(0_u32.to_le_bytes());
         full.extend(0_u32.to_le_bytes());
-        one_hot.extend(id);
-        one_hot.extend(0_u32.to_le_bytes());
     }
-    let files = CandidateFiles {
-        full: directory.join("candidates.bin"),
-        zero: directory.join("zero-logits.bin"),
-        one_hot: directory.join("id-logits.bin"),
-    };
-    fs::write(&files.full, full)?;
-    fs::write(&files.zero, vec![0_u8; count * 4])?;
-    fs::write(&files.one_hot, one_hot)?;
-    Ok(files)
+    Ok(full)
 }
-fn new_candidates(client: &Client, count: usize, files: &CandidateFiles) -> Result<u64> {
+fn candidate_template(client: &Client, directory: &Path, count: usize) -> Result<u64> {
+    let full = directory.join("candidates.bin");
+    fs::write(&full, candidate_bytes(count)?)?;
+    // Retain the original caller-supplied fields once. Every reset still copies
+    // all vocabulary entries, preserving exactly the fields each source loop
+    // assigns, without repeating the file reads and byte decoding.
     handle(
         client,
-        json!({"Op":"llg-candidates-new","Count":count,"File":files.full,"Selected":-1,"Sorted":false}),
+        json!({"Op":"llg-candidates-new","Count":count,"File":full,"Selected":-1,"Sorted":false}),
+        "Candidates",
+    )
+}
+fn new_candidates(client: &Client, template: u64) -> Result<u64> {
+    handle(
+        client,
+        json!({"Op":"llg-candidates-clone","Source":template}),
         "Candidates",
     )
 }
@@ -284,17 +280,17 @@ fn probed_logit(v: &Value) -> Result<f32> {
 fn matches(
     client: &Client,
     loaded: &Loaded,
-    files: &CandidateFiles,
+    template: u64,
     sampler: u64,
     input: &str,
 ) -> Result<bool> {
     null(client, json!({"Op":"llg-reset","Sampler":sampler}))?;
     let tokens = tokenize(client, loaded.context, input, loaded.count)?;
-    let candidates = new_candidates(client, loaded.count, files)?;
+    let candidates = new_candidates(client, template)?;
     for token in tokens {
         null(
             client,
-            json!({"Op":"llg-candidates-load","Candidates":candidates,"File":files.zero,"Encoding":"logits-le","Metadata":null}),
+            json!({"Op":"llg-candidates-copy","Candidates":candidates,"Source":template,"Encoding":"logits-le","Metadata":null}),
         )?;
         let observed = apply(client, sampler, candidates, Some(token), loaded.count)?;
         if probed_logit(&observed)? < 0.0 {
@@ -338,7 +334,7 @@ fn debug_text(value: &str) -> Vec<u8> {
     }
     bytes
 }
-fn chain(client: &Client, loaded: &Loaded, files: &CandidateFiles) -> Result<(usize, Vec<String>)> {
+fn chain(client: &Client, loaded: &Loaded, template: u64) -> Result<(usize, Vec<String>)> {
     let sampler = handle(
         client,
         json!({"Op":"llg-chain-new","NoPerf":false}),
@@ -359,13 +355,13 @@ fn chain(client: &Client, loaded: &Loaded, files: &CandidateFiles) -> Result<(us
         json!({"Op":"llg-chain-add","Chain":sampler,"Sampler":dist}),
     )?;
     let tokens = tokenize(client, loaded.context, CHAIN_INPUT, loaded.count)?;
-    let candidates = new_candidates(client, loaded.count, files)?;
+    let candidates = new_candidates(client, template)?;
     let mut checks = 0;
     let mut failures = Vec::new();
     for token in tokens.iter().copied().chain(std::iter::once(loaded.eos)) {
         null(
             client,
-            json!({"Op":"llg-candidates-load","Candidates":candidates,"File":files.one_hot,"Encoding":"id-logit-le","Metadata":{"Offset":0,"Size":loaded.count,"Selected":-1,"Sorted":false}}),
+            json!({"Op":"llg-candidates-copy","Candidates":candidates,"Source":template,"Encoding":"id-logit-le","Metadata":{"Offset":0,"Size":loaded.count,"Selected":-1,"Sorted":false}}),
         )?;
         patch(client, candidates, token, 100.0_f32.to_bits())?;
         let value = apply(client, sampler, candidates, None, loaded.count)?;
@@ -417,9 +413,9 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
             return Ok(result(ID,false,"Pinned production LLGuidance feature/dependency is required; disabled builds do not count as passing coverage".into()));
         }
         let loaded = load(&client, &verify_vocab(engine)?)?;
-        let files = candidate_files(session.evidence_directory(), loaded.count)?;
+        let template = candidate_template(&client, session.evidence_directory(), loaded.count)?;
         if group == 42 {
-            let (count, failed) = chain(&client, &loaded, &files)?;
+            let (count, failed) = chain(&client, &loaded, template)?;
             chain_checks = count;
             failures.extend(failed);
         } else {
@@ -441,7 +437,7 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
                     let input = input
                         .as_str()
                         .ok_or_else(|| invalid("LLG input must be text"))?;
-                    let matched = matches(&client, &loaded, &files, sampler, input)?;
+                    let matched = matches(&client, &loaded, template, sampler, input)?;
                     checks += 1;
                     if matched != expected {
                         if expected {
@@ -468,6 +464,10 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
                 json!({"Group":group,"Description":case["Description"],"Predicates":checks-before}),
             );
         }
+        null(
+            &client,
+            json!({"Op":"llg-candidates-free","Candidates":template}),
+        )?;
         cleanup(&client, &loaded)?;
         session.finish()?;
     }
@@ -491,8 +491,29 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::{probed_logit, validate_candidate};
+    use super::{candidate_bytes, fixtures, probed_logit, validate_candidate};
     use serde_json::json;
+
+    #[test]
+    fn retained_template_contains_every_original_reset_field() -> super::Result<()> {
+        // Initial candidates assign all three fields. The literal matcher then
+        // restores only logits; the chain restores IDs and logits, retaining P.
+        // All three source byte streams must be exact projections of this one
+        // immutable, Rust-supplied template, including the entire BPE vocabulary.
+        for count in [1, 257, 128_256] {
+            let bytes = candidate_bytes(count)?;
+            assert_eq!(bytes.len(), count * 12);
+            for (index, row) in bytes.as_chunks::<12>().0.iter().enumerate() {
+                assert_eq!(&row[..4], &i32::try_from(index)?.to_le_bytes());
+                assert_eq!(&row[4..8], &0_f32.to_le_bytes());
+                assert_eq!(&row[8..], &0_f32.to_le_bytes());
+            }
+        }
+        // The fixture validator independently pins all 42 original groups and
+        // all 344 passing/failing predicates, beyond the sampler-chain workload.
+        fixtures()?;
+        Ok(())
+    }
 
     #[test]
     fn raw_float_probes_preserve_sign_and_reject_overflow() -> super::Result<()> {
