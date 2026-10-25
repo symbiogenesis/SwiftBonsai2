@@ -1,5 +1,8 @@
 # Safe Rust Prism conformance migration
 
+The [remaining-work handoff](prism-upstream-todo.md) records the latest measured
+coverage, pending backend qualification, and Rust runtime gaps.
+
 [Foundation](../.github/workflows/foundation.yml) imports tests from the exact
 Prism archive in [source.lock.json](../tools/prism/source.lock.json), verifies its
 length and SHA-256, and extracts it into fresh external storage. The reference
