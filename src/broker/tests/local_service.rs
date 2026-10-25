@@ -6,6 +6,7 @@
 )]
 
 use bonsai_broker::{
+    Rejection,
     backend::BackendError,
     scheduler::GateError,
     service::{LocalChatService, ServiceError},
@@ -76,12 +77,79 @@ fn frontend_retains_exclusive_loopback_address_ownership() {
 
 async fn send_request(client: &mut TcpStream, port: u16) {
     let body = br#"{"messages":[{"role":"user","content":"A rainy scene."}],"max_completion_tokens":128,"stream":false}"#;
+    send_body(client, port, body).await;
+}
+
+async fn send_body(client: &mut TcpStream, port: u16, body: &[u8]) {
     let head = format!(
         "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: http://127.0.0.1:{port}\r\nAuthorization: Bearer {FRONT_KEY}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
         body.len()
     );
     client.write_all(head.as_bytes()).await.unwrap();
     client.write_all(body).await.unwrap();
+}
+
+#[test]
+fn rejected_context_preserves_admission_for_a_subsequent_multiturn_request() {
+    run(async {
+        let backend = listener().await;
+        let service = service(&backend, 1).await;
+        let worker = Arc::clone(&service);
+        let serving = spawn_local(async move {
+            let rejected = worker.accept().await.unwrap().serve().await;
+            let completed = worker.accept().await.unwrap().serve().await;
+            (rejected, completed)
+        });
+        let backend_work = spawn_local(async move {
+            let (mut rejected, _) = backend.accept().await.unwrap();
+            let (head, _) = read_request(&mut rejected).await;
+            assert!(head.starts_with("POST /v1/chat/completions/input_tokens HTTP/1.1\r\n"));
+            respond(
+                &mut rejected,
+                br#"{"input_tokens":8192,"object":"response.input_tokens"}"#,
+            )
+            .await;
+            drop(rejected);
+            // The next backend connection must count the next request, never
+            // execute the rejected prompt or reuse a cached count/body.
+            let counted = count(&backend).await;
+            let (mut generation, _) = backend.accept().await.unwrap();
+            let generated = read_request(&mut generation).await;
+            respond(&mut generation, br#"{"choices":[]}"#).await;
+            (counted, generated)
+        });
+        let mut rejected = TcpStream::connect(("127.0.0.1", service.port()))
+            .await
+            .unwrap();
+        send_request(&mut rejected, service.port()).await;
+        let mut rejected_response = Vec::new();
+        rejected.read_to_end(&mut rejected_response).await.unwrap();
+        assert_eq!(rejected_response, [0_u8; 0]);
+
+        let mut client = TcpStream::connect(("127.0.0.1", service.port()))
+            .await
+            .unwrap();
+        let history = br#"{"messages":[{"role":"user","content":"Write rain."},{"role":"assistant","content":"The rain fell.","reasoning_content":"Keep the scene restrained."},{"role":"user","content":"Continue in the same voice."}],"max_completion_tokens":128,"stream":false}"#;
+        send_body(&mut client, service.port(), history).await;
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        assert_eq!(
+            serving.await.unwrap(),
+            (
+                Err(ServiceError::Request(ServeError::Backend(
+                    BackendError::Admission(Rejection::ContextLimit)
+                ))),
+                Ok(())
+            )
+        );
+        let ((count_head, count_body), (_, generation_body)) = backend_work.await.unwrap();
+        assert!(count_head.starts_with("POST /v1/chat/completions/input_tokens HTTP/1.1\r\n"));
+        assert_eq!(count_body, generation_body);
+        let counted: serde_json::Value = serde_json::from_slice(&count_body).unwrap();
+        let supplied: serde_json::Value = serde_json::from_slice(history).unwrap();
+        assert_eq!(counted["messages"], supplied["messages"]);
+        assert!(response.ends_with(br#"{"choices":[]}"#));
+    });
 }
 
 async fn read_request(stream: &mut TcpStream) -> (String, Vec<u8>) {

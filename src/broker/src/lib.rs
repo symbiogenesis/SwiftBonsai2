@@ -35,7 +35,7 @@ use serde::{Deserialize, Deserializer, Serialize, de};
 use std::{borrow::Cow, fmt, marker::PhantomData};
 use subtle::ConstantTimeEq;
 
-/// Largest accepted client request body in bytes.
+/// Largest accepted client or canonical backend request body in bytes.
 pub const MAX_BODY_BYTES: usize = 1024 * 1024;
 /// Largest accepted HTTP header block in bytes.
 pub const MAX_HEADER_BYTES: usize = 16 * 1024;
@@ -69,7 +69,7 @@ pub enum Rejection {
     Framing,
     /// The request does not declare the supported JSON content type.
     ContentType,
-    /// The declared or actual body length is invalid or exceeds the cap.
+    /// The declared, actual or canonical body length is invalid or exceeds the cap.
     BodySize,
     /// The body does not match the strict chat schema or role sequence.
     ChatSchema,
@@ -213,8 +213,8 @@ impl AuthorizedHead {
     /// Validate a bounded JSON chat body and construct canonical backend bytes.
     ///
     /// # Errors
-    /// Returns [`Rejection`] for a mismatched length, invalid schema, unsupported
-    /// message history, completion limit or canonical serialization failure.
+    /// Returns [`Rejection`] for a mismatched or oversized canonical body, invalid
+    /// schema, unsupported message history, completion limit or serialization failure.
     pub fn prepare(self, body: &[u8]) -> Result<PendingChat, Rejection> {
         if body.len() != self.length || body.len() > MAX_BODY_BYTES {
             return Err(Rejection::BodySize);
@@ -252,6 +252,11 @@ impl AuthorizedHead {
             },
         })
         .map_err(|_| Rejection::ChatSchema)?;
+        // Fixed sampler/template fields can grow an otherwise valid client
+        // body past the private backend's identical request-byte limit.
+        if body.len() > MAX_BODY_BYTES {
+            return Err(Rejection::BodySize);
+        }
         Ok(PendingChat {
             body,
             max_completion_tokens,

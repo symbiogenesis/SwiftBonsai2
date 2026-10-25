@@ -222,6 +222,30 @@ fn bounds_both_advertised_and_actual_body_bytes() {
 }
 
 #[test]
+fn canonical_backend_body_respects_the_exact_private_request_byte_limit() {
+    let empty = br#"{"messages":[{"role":"user","content":""}]}"#;
+    let overhead = prepare(empty)
+        .unwrap()
+        .admit(|_| Ok(1))
+        .unwrap()
+        .backend_body()
+        .len();
+    for extra in [0, 1] {
+        let body = serde_json::to_vec(&serde_json::json!({
+            "messages": [{"role": "user", "content": "x".repeat(MAX_BODY_BYTES - overhead + extra)}]
+        }))
+        .unwrap();
+        assert!(body.len() < MAX_BODY_BYTES);
+        if extra == 0 {
+            let admitted = prepare(&body).unwrap().admit(|_| Ok(1)).unwrap();
+            assert_eq!(admitted.backend_body().len(), MAX_BODY_BYTES);
+        } else {
+            rejected_body(&body, Rejection::BodySize);
+        }
+    }
+}
+
+#[test]
 fn json_media_type_is_required() {
     for media in [
         "text/plain",
