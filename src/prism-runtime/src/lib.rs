@@ -33,6 +33,10 @@ pub mod schema;
 pub mod special_input;
 pub mod special_tokens;
 pub mod speculative;
+#[cfg(feature = "cli")]
+pub mod swift_chat;
+#[cfg(feature = "cli")]
+pub mod swift_session;
 pub mod text_output;
 pub mod text_session;
 #[cfg(feature = "cli")]
