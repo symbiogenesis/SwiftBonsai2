@@ -745,10 +745,12 @@
     "boundedDiagnosticStartFloorBytes": 14656575898,
     "memoryAcceptableForPreviouslyObservedWorkload": true,
     "M2": "qualified for pinned Swift CPU source: current scalar three-token and NEON 61-token prefix plus three greedy steps are byte-exact with pinned native; broader workloads remain unqualified",
-    "M6": "owned HTTP recovery and current-revision device coverage remain open",
+    "M6": "passed bounded owned source HTTP diagnostic with both explicit13.65GiB startup patches; production/released-runtime acceptance excluded",
     "runtimeReleasePin": "0.1.1",
     "serviceStartupAdmissionBytes": 17179869184,
-    "lastObservedPhysicalMemoryScope": "Initial available RAM of the corrected-revision scalar three-token run at 9899a253; not a live host reading"
+    "lastObservedPhysicalMemoryScope": "Initial available RAM of the corrected-revision scalar three-token run at 9899a253; not a live host reading",
+    "M5": "qualified bounded source wiring and focused recovery contracts",
+    "ownedHttpEvidence": "config/swift-owned-http-mvp.evidence.json"
   },
   "prefixFollowups": [
     {
