@@ -266,6 +266,12 @@ impl Engine {
             ));
         }
         if matches!(self.target, Target::Rust) {
+            if let Some(response) = super::engine_schema::execute(request)? {
+                return Ok(Some(response));
+            }
+            if let Some(response) = super::engine_unicode::execute(request)? {
+                return Ok(Some(response));
+            }
             if let Some(response) = super::engine_runtime::execute(request)? {
                 return Ok(Some(response));
             }

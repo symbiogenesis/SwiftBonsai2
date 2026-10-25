@@ -18,6 +18,8 @@ pub mod pretokenizer;
 pub mod prompt_input;
 pub mod runtime;
 pub mod sampling;
+#[cfg(feature = "cli")]
+pub mod schema;
 pub mod special_input;
 pub mod special_tokens;
 pub mod speculative;

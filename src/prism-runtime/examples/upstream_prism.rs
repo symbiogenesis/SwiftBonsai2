@@ -98,6 +98,10 @@ mod engine;
 mod engine_codec;
 #[path = "upstream_prism/engine_runtime.rs"]
 mod engine_runtime;
+#[path = "upstream_prism/engine_schema.rs"]
+mod engine_schema;
+#[path = "upstream_prism/engine_unicode.rs"]
+mod engine_unicode;
 #[path = "upstream_prism/engine_vocab.rs"]
 mod engine_vocab;
 #[path = "upstream_prism/export_graph.rs"]
