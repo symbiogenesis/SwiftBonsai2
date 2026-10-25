@@ -50,6 +50,11 @@ sha2.workspace = true
 tokenizers = { version = "=0.22.2", default-features = false, features = ["fancy-regex"] }
 sentencepiece-rs = { version = "=0.2.2", default-features = false }
 
+[[test]]
+name = "jinja_capabilities"
+path = "tests/jinja_capabilities.rs"
+required-features = ["cli"]
+
 [[example]]
 name = "upstream_prism"
 # Conformance code lives with tests; the explicit example target preserves
