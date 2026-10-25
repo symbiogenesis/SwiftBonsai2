@@ -1,6 +1,7 @@
 //! Decimal integer range lowering from the pinned MIT-licensed Prism converter.
 
 use crate::{Result, invalid};
+use std::fmt::Write as _;
 
 fn range(from: u8, to: u8) -> String {
     if from == to {
@@ -41,7 +42,7 @@ fn uniform(from: &str, to: &str) -> Result<String> {
         .count();
     let mut output = String::new();
     if shared > 0 {
-        output.push_str(&format!("\"{}\"", &from[..shared]));
+        write!(output, "\"{}\"", &from[..shared])?;
     }
     if shared < from.len() {
         if shared > 0 {
@@ -51,7 +52,7 @@ fn uniform(from: &str, to: &str) -> Result<String> {
         let first = from.as_bytes()[shared];
         let last = to.as_bytes()[shared];
         if trailing == 0 {
-            output.push_str(&format!("[{}-{}]", char::from(first), char::from(last)));
+            write!(output, "[{}-{}]", char::from(first), char::from(last))?;
         } else {
             let lower = &from[shared + 1..];
             let upper = &to[shared + 1..];
@@ -68,11 +69,12 @@ fn uniform(from: &str, to: &str) -> Result<String> {
                 output.push(' ');
                 output.push_str(&digits(i32::try_from(trailing)?, i32::try_from(trailing)?));
             } else {
-                output.push_str(&format!(
+                write!(
+                    output,
                     "[{}] ({})",
                     char::from(first),
                     uniform(lower, &nines)?
-                ));
+                )?;
                 if first + 1 < last {
                     output.push_str(" | ");
                     if upper == nines {
@@ -102,7 +104,7 @@ fn uniform(from: &str, to: &str) -> Result<String> {
     clippy::too_many_lines,
     reason = "The signed decimal branches retain the pinned converter's exact grammar formatting."
 )]
-pub(crate) fn build(mut minimum: i64, maximum: i64, decimals: i32, top: bool) -> Result<String> {
+pub(super) fn build(mut minimum: i64, maximum: i64, decimals: i32, top: bool) -> Result<String> {
     if !(1..=32).contains(&decimals) {
         return Err(invalid("integer grammar decimal budget outside 1..32"));
     }
@@ -198,17 +200,19 @@ pub(crate) fn build(mut minimum: i64, maximum: i64, decimals: i32, top: bool) ->
         } else {
             String::new()
         };
-        output.push_str(&format!(
+        write!(
+            output,
             "{} ({})",
             range(digit, digit),
             build(lower[1..].parse()?, i64::MAX, less, false)?
-        ));
+        )?;
         if digit < b'9' {
-            output.push_str(&format!(
+            write!(
+                output,
                 " | {} {}",
                 range(digit + 1, b'9'),
                 digits(length - 1, less)
-            ));
+            )?;
         }
         return Ok(output);
     }
