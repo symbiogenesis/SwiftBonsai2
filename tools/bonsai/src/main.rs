@@ -10,6 +10,15 @@ const MAX_REQUEST_BYTES: u64 = 16 * 1024 * 1024;
 // Legacy in-memory scoring permits 24 responses of 1 Mi UTF-16 units each.
 // JSON escaping can use six bytes per unit, plus the bounded review records.
 const MAX_QUALIFICATION_REQUEST_BYTES: u64 = 160 * 1024 * 1024;
+const COMMANDS: &[&str] = &[
+    "credentials",
+    "memory",
+    "cpu-check-plan",
+    "server-policy",
+    "runtime-verify",
+    "completion",
+    "qualification",
+];
 
 fn read_request(path: &Path, maximum: u64) -> bonsai_tools::Result<serde_json::Value> {
     if !path.is_absolute() {
@@ -45,11 +54,12 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     if arguments.len() == 1 && arguments[0] == "--version" {
         return Ok(serde_json::json!({
-            "Name": "bonsai-tools", "Version": env!("CARGO_PKG_VERSION"), "ProtocolVersion": 4
+            "Name": "bonsai-tools", "Version": env!("CARGO_PKG_VERSION"),
+            "ProtocolVersion": 5, "Commands": COMMANDS
         }));
     }
     if arguments.len() != 3 || arguments[1] != "--request" {
-        return Err("Usage: bonsai-tools <credentials|memory|cpu-check-plan|runtime-verify|completion|qualification> --request ABSOLUTE_JSON_PATH; or --version".into());
+        return Err("Usage: bonsai-tools <credentials|memory|cpu-check-plan|server-policy|runtime-verify|completion|qualification> --request ABSOLUTE_JSON_PATH; or --version".into());
     }
     let maximum = if arguments[0] == "qualification" {
         MAX_QUALIFICATION_REQUEST_BYTES
@@ -61,6 +71,7 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
         Some("credentials") => bonsai_tools::credentials::run(request),
         Some("completion") => bonsai_tools::completion::run(request),
         Some("cpu-check-plan") => bonsai_tools::completion::cpu_check_plan(request),
+        Some("server-policy") => bonsai_tools::server::run(request),
         Some("runtime-verify") => bonsai_tools::runtime::run(request),
         Some("memory") if request.as_object().is_some_and(serde_json::Map::is_empty) => {
             bonsai_tools::completion::available_memory()

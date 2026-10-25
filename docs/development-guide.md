@@ -129,7 +129,10 @@ requires [paired same-backend TPS and quality gates](swift-lora.md#required-stan
 ./scripts/Get-ServerPlan.ps1 -DataDirectory $data -VerifyArtifacts
 ```
 
-The default is pure planning: no process, key, storage creation or listener.
+The default uses the maintenance tool for policy planning; it creates no model or
+key storage and starts no inference or listener. Tool resolution may compile the
+pinned Rust sources and retain build/request evidence in external temp. Select
+`-ToolPath` or `BONSAI_TOOLS_PATH` to use a trusted packaged binary.
 `-VerifyRuntime` verifies installed runtime files and runs bounded version/help
 probes; `-VerifyArtifacts` also hashes the existing model. Neither downloads nor
 loads a model. The preflight rejects unknown profile fields, unsafe/network paths

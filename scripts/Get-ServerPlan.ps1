@@ -3,8 +3,9 @@
 .SYNOPSIS
 Prepares the fixed CPU server configuration without enabling chat or loading a model.
 .DESCRIPTION
-By default this validates policy, paths and inherited overrides without starting
-processes or writing files. -VerifyRuntime checks the installed runtime;
+By default this validates paths and uses the maintenance tool for policy and
+inherited override checks, without starting inference. The tool resolver may
+build pinned sources and retain external request/build evidence. -VerifyRuntime checks the installed runtime;
 -VerifyArtifacts also checks the existing offline model. Verification runs only
 bounded version/help probes in unique system temp. It never
 downloads, creates keys, opens a browser, binds a socket, or invokes inference.
@@ -27,7 +28,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 if (-not $IsWindows) { throw 'Server planning targets Windows.' }
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.ServerPolicy.psm1') -Force
-$plan = New-BonsaiServerPlan -DataDirectory $DataDirectory -Port $Port
+$plan = New-BonsaiServerPlan -DataDirectory $DataDirectory -Port $Port -ToolPath $ToolPath
 if (-not $VerifyRuntime -and -not $VerifyArtifacts) { return $plan }
 if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
     [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {

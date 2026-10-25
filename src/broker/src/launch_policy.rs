@@ -96,15 +96,8 @@ impl std::error::Error for PolicyError {}
 /// Returns [`PolicyError::Environment`] for forbidden or non-Unicode names.
 pub fn validate_environment(names: impl IntoIterator<Item = OsString>) -> Result<(), PolicyError> {
     for name in names {
-        let name = name
-            .to_str()
-            .ok_or(PolicyError::Environment)?
-            .to_ascii_uppercase();
-        if ["LLAMA_", "LLAMACPP_", "GGML_", "AIP_", "MTMD_"]
-            .iter()
-            .any(|prefix| name.starts_with(prefix))
-            || ["HF_TOKEN", "HF_ENDPOINT", "MODEL_ENDPOINT"].contains(&name.as_str())
-        {
+        let name = name.to_str().ok_or(PolicyError::Environment)?;
+        if bonsai_cpu_policy::server::forbidden_environment_name(name) {
             return Err(PolicyError::Environment);
         }
     }
@@ -169,25 +162,16 @@ impl LaunchPlan {
         for path in [&executable, &model_path, &archive_path] {
             validate_external_path(path)?;
         }
-        let mut arguments = vec![
-            OsString::from("--model"),
-            model_path.as_os_str().to_owned(),
-            "--host".into(),
-            "127.0.0.1".into(),
-            "--port".into(),
-            backend_port.to_string().into(),
-            "--api-key-file".into(),
-            key_file.as_os_str().to_owned(),
-            "--cors-origins".into(),
-            format!("http://127.0.0.1:{backend_port}").into(),
-        ];
-        arguments.extend([
-            OsString::from("--batch-size"),
-            profile.cpu_profile().batch_tokens().to_string().into(),
-            "--ubatch-size".into(),
-            profile.cpu_profile().microbatch_tokens().to_string().into(),
-        ]);
-        arguments.extend(FIXED_ARGUMENTS.iter().map(OsString::from));
+        let arguments = bonsai_cpu_policy::server::arguments(
+            model_path.to_str().ok_or(PolicyError::Path)?,
+            key_file.to_str().ok_or(PolicyError::Path)?,
+            backend_port,
+            profile.cpu_profile(),
+        )
+        .map_err(|_| PolicyError::Configuration)?
+        .into_iter()
+        .map(OsString::from)
+        .collect();
         Ok(Self {
             executable,
             arguments,
@@ -200,84 +184,6 @@ impl LaunchPlan {
         })
     }
 }
-
-const FIXED_ARGUMENTS: &[&str] = &[
-    "--cors-methods",
-    "GET,POST,OPTIONS",
-    "--cors-headers",
-    "Authorization,Content-Type",
-    "--no-cors-credentials",
-    "--no-agent",
-    "--no-ui-mcp-proxy",
-    "--no-ui",
-    "--no-slots",
-    "--no-mmproj",
-    "--ctx-size",
-    "8192",
-    "--parallel",
-    "1",
-    "--cache-type-k",
-    "f16",
-    "--cache-type-v",
-    "f16",
-    "--ctx-checkpoints",
-    "0",
-    "--cache-ram",
-    "0",
-    "--no-cache-prompt",
-    "--no-cache-idle-slots",
-    "--no-context-shift",
-    "--spec-type",
-    "none",
-    "--gpu-layers",
-    "0",
-    "--device",
-    "none",
-    "--no-kv-offload",
-    "--no-op-offload",
-    "--fit",
-    "off",
-    "--load-mode",
-    "mmap",
-    "--no-repack",
-    "--offline",
-    "--no-warmup",
-    "--threads",
-    "4",
-    "--threads-batch",
-    "4",
-    "--poll",
-    "0",
-    "--poll-batch",
-    "0",
-    "--jinja",
-    "--reasoning",
-    "on",
-    "--reasoning-effort",
-    "xhigh",
-    "--reasoning-budget",
-    "-1",
-    "--temp",
-    "1.0",
-    "--top-p",
-    "0.95",
-    "--top-k",
-    "20",
-    "--min-p",
-    "0.0",
-    "--presence-penalty",
-    "0.0",
-    "--frequency-penalty",
-    "0.0",
-    "--repeat-penalty",
-    "1.0",
-    "--n-predict",
-    "4096",
-    "--timeout",
-    "60",
-    "--no-perf",
-    "--log-disable",
-];
 
 // Struct deserialization rejects duplicate and unknown fields. Object wrappers
 // also reject Serde's positional-array representation at every object boundary.

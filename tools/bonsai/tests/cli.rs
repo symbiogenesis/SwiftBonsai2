@@ -1,4 +1,4 @@
-//! Compatibility of the packaged JSON boundary with legacy scoring limits.
+//! Packaged JSON command discovery and compatibility with legacy scoring limits.
 #![forbid(unsafe_code)]
 
 use std::fs;
@@ -9,6 +9,35 @@ use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
+
+#[test]
+fn version_advertises_server_policy_without_resolving_a_request_file()
+-> Result<(), Box<dyn std::error::Error>> {
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let scratch = std::env::temp_dir().join(format!(
+        "SwiftBonsai-CommandDiscovery-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir(&scratch)?;
+    let output = Command::new(env!("CARGO_BIN_EXE_bonsai-tools"))
+        .arg("--version")
+        .current_dir(&scratch)
+        .output()?;
+    fs::remove_dir(scratch)?;
+    assert!(output.status.success());
+    assert_eq!(output.stderr, Vec::<u8>::new());
+    let version: Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(version["Name"], "bonsai-tools");
+    assert_eq!(version["ProtocolVersion"], 5);
+    assert!(
+        version["Commands"]
+            .as_array()
+            .ok_or("Missing command capabilities")?
+            .iter()
+            .any(|command| command == "server-policy")
+    );
+    Ok(())
+}
 
 #[test]
 fn large_legacy_in_memory_evidence_remains_accepted()

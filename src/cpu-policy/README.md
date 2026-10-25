@@ -1,12 +1,14 @@
 # Shared CPU policy
 
 `bonsai-cpu-policy` owns the reviewed reference and Swift memory budgets, source
-accounting, CPU completion arguments, and explicit source/PTQ1 artifact selection.
+accounting, CPU completion and server arguments, and explicit source/PTQ1 artifact selection.
 It forbids unsafe code and uses the workspace's existing Serde dependencies.
 
 The maintenance CLI combines its pure plan with a physical-memory observation.
-The broker reuses profile memory limits and batch sizes. Server-only flags and
-qualification samplers remain separate contracts.
+The broker reuses profile memory limits, server arguments and environment-name
+policy. The PowerShell server preflight delegates strict reference profile checks
+and its launch-disabled plan to the same crate. Qualification samplers remain a
+separate contract.
 
 Planning uses compiled immutable configurations and constructs paths without
 reading artifacts, querying the operating system, writing files, or starting

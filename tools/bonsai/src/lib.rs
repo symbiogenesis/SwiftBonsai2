@@ -15,3 +15,6 @@ pub mod runtime;
 
 /// Fixed qualification plans, canonical identities, and offline gate scoring.
 pub mod qualification;
+
+/// Pure server preflight policy shared with the development broker.
+pub mod server;

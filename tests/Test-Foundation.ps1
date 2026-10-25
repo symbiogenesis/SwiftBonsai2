@@ -208,6 +208,12 @@ if ($Case -in @('All','ServerPolicy')) {
     Assert ($plan.Origin -ceq 'http://127.0.0.1:18080' -and $plan.Arguments -contains $plan.PlannedKeyFile -and
         $plan.PlannedKeyFile.StartsWith($data + '\') -and $plan.Arguments -contains $plan.ModelPath) 'Plan paths or exact origin are inconsistent.'
     Assert ($plan.RemainingGates.Count -ge 6 -and $plan.RequiredAvailableBytes -eq 22GB) 'Plan omitted required qualification gaps.'
+    $frozenServer = Get-Content -Raw -LiteralPath (Join-Path $repo 'src/cpu-policy/tests/fixtures/server-policy-v1.json') | ConvertFrom-Json -DateKind String -AsHashtable
+    $expectedArguments = [string[]]$frozenServer.plan.Arguments
+    $expectedArguments[1] = $plan.ModelPath; $expectedArguments[5] = '18080'
+    $expectedArguments[7] = $plan.PlannedKeyFile; $expectedArguments[9] = $plan.Origin
+    Assert ($plan.Arguments -is [string[]] -and
+        (ConvertTo-Json -InputObject $plan.Arguments -Compress) -ceq (ConvertTo-Json -InputObject $expectedArguments -Compress)) 'Plan changed exact argument tokens or their order.'
     foreach ($unsafeFlag in @('--api-key','--agent','--tools','--mcp-servers-json','--mcp-servers-config',
         '--ui-mcp-proxy','--path','--models-dir','--model-url','--rpc','--metrics','--props')) {
         Assert ($plan.Arguments -cnotcontains $unsafeFlag) "Plan contains unsafe server option: $unsafeFlag"
@@ -239,6 +245,8 @@ if ($Case -in @('All','ServerPolicy')) {
     foreach ($mutation in @(
         @{ Name = 'launchEnabled'; Value = $true }, @{ Name = 'launchEnabled'; Value = 'false' },
         @{ Name = 'contextTokens'; Value = '8192' }, @{ Name = 'contextTokens'; Value = 16384 },
+        @{ Name = 'contextTokens'; Value = [short]8192 }, @{ Name = 'contextTokens'; Value = [decimal]8192 },
+        @{ Name = 'estimateScope'; Value = [char]'x' }, @{ Name = 'remainingGates'; Value = [char[]]@('x') },
         @{ Name = 'cachePrompt'; Value = $true }, @{ Name = 'estimatedRuntimeHeadroomBytes'; Value = 1 },
         @{ Name = 'remainingGates'; Value = @() }, @{ Name = 'extraArguments'; Value = @('--tools','all') }
     )) {

@@ -1,6 +1,6 @@
 # Bonsai maintenance tools
 
-`bonsai-tools` provides protected credential creation, fixed CPU invocation plans,
+`bonsai-tools` provides protected credential creation, fixed CPU and server invocation plans,
 bounded completion-process supervision and LoRA qualification scoring. It forbids unsafe code and reuses the
 audited Windows boundary crates.
 
@@ -25,10 +25,11 @@ dependencies. GGUF wrappers share the resolver through `-GgufToolPath`.
 Key creation with `-WhatIf` creates nothing and resolves no executable. Planning
 may resolve the maintenance tool but never starts inference.
 
-These wrappers require `bonsai-tools` version 0.1.0, protocol 4. Protocol 4 adds
-shared runtime verification and retains runtime guards through version/help probes
-and complete completion batches. Older binaries are rejected during the version
-handshake before a sample can start.
+These wrappers require `bonsai-tools` version 0.1.0, protocol 5. The version
+handshake advertises supported commands, so a selected binary must support the
+requested operation before its request is written. Runtime guards remain held
+through version/help probes and complete completion batches. Older protocols are
+rejected before an operation can start.
 
 ## Command boundary
 
@@ -37,6 +38,7 @@ bonsai-tools --version
 bonsai-tools credentials --request ABSOLUTE_JSON_PATH
 bonsai-tools memory --request ABSOLUTE_JSON_PATH
 bonsai-tools cpu-check-plan --request ABSOLUTE_JSON_PATH
+bonsai-tools server-policy --request ABSOLUTE_JSON_PATH
 bonsai-tools runtime-verify --request ABSOLUTE_JSON_PATH
 bonsai-tools completion --request ABSOLUTE_JSON_PATH
 bonsai-tools qualification --request ABSOLUTE_JSON_PATH
@@ -56,6 +58,14 @@ available-memory observation. Its request contains `operation: "plan"`,
 the policy, compiled pins, selected paths and complete CPU-check argv without
 reading model bytes or starting inference. `Invoke-CpuCheck.ps1 -CheckOnly`
 uses this operation; the former per-function PowerShell policy helpers are removed.
+
+`server-policy` owns reference preflight profile validation, environment-name
+rejection and fixed server arguments through `bonsai-cpu-policy`. The development
+broker shares the environment and argument policy. PowerShell validates local
+storage and matches advertised help switches. Requests carry environment names
+only; values are never serialized. Planning remains launch-disabled and may use
+the tool resolver's external build/request storage without creating model or key
+storage.
 
 Qualification `invocations` requests take `modelPath` and validated `controls`.
 They return all 24 paired and four zero-scale argument vectors with the same

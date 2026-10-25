@@ -56,7 +56,7 @@ function Invoke-BonsaiTool {
     #>
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
-    param([Parameter(Mandatory)][ValidateSet('credentials','memory','cpu-check-plan','runtime-verify','completion','qualification')][string]$Command,
+    param([Parameter(Mandatory)][ValidateSet('credentials','memory','cpu-check-plan','server-policy','runtime-verify','completion','qualification')][string]$Command,
           [Collections.IDictionary]$Request = @{}, [string]$ToolPath,
           [ValidateRange(0,86400)][int]$TimeoutSeconds = 60)
     if (-not $ToolPath -and $env:BONSAI_TOOLS_PATH) { $ToolPath = $env:BONSAI_TOOLS_PATH }
@@ -72,11 +72,14 @@ function Invoke-BonsaiTool {
         $probe = Invoke-BonsaiNativeProcess -Executable $tool -ArgumentList @('--version') -WorkingDirectory $scratch -TimeoutSeconds 10
         if ($probe.ExitCode -ne 0) { throw 'The maintenance tool version probe failed.' }
         $version = $probe.StandardOutput | ConvertFrom-Json -AsHashtable -NoEnumerate -DateKind String
-        if ($version -isnot [Collections.IDictionary] -or $version.Name -cne 'bonsai-tools' -or $version.Version -cne '0.1.0' -or $version.ProtocolVersion -ne 4) {
-            throw 'Use a compatible bonsai-tools executable (version 0.1.0, protocol 4).'
+        if ($version -isnot [Collections.IDictionary] -or $version.Name -cne 'bonsai-tools' -or $version.Version -cne '0.1.0' -or $version.ProtocolVersion -ne 5 -or
+            -not $version.Contains('Commands') -or $version.Commands -isnot [array] -or
+            @($version.Commands | Where-Object { $_ -isnot [string] }).Count) {
+            throw 'Use a compatible bonsai-tools executable (version 0.1.0, protocol 5).'
         }
-        $script:CheckedTools[$identity] = $true
+        $script:CheckedTools[$identity] = $version.Commands
     }
+    if ($Command -cnotin $script:CheckedTools[$identity]) { throw "The selected maintenance tool does not support '$Command'; use a current build." }
     $lane = Join-Path $scratch ([guid]::NewGuid().ToString('N'))
     [void][IO.Directory]::CreateDirectory($lane)
     $requestPath = Join-Path $lane 'request.json'
