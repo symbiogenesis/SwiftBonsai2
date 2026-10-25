@@ -101,6 +101,13 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   Prism markers, usage observations and exception/fallback rules. The existing
   content-only API remains available. These probes do not qualify general chat
   conversion or template behavior for every input.
+- `codec::CodecBuffers` owns bounded persistent byte buffers with checked regions,
+  monotonic handles and explicit reference/CPU/decode/dot calls. Unaligned and
+  overlapping regions use safe byte access, and failed calls preserve output.
+  The complete pinned 144-slot trait inventory distinguishes native function
+  availability from implemented Rust operations; unavailable CPU quantizers
+  reject instead of using a reference implementation. Borrowed row decoding
+  reuses existing kernels without copying input into an owned tensor.
 
 The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.

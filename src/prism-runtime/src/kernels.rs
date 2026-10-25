@@ -238,21 +238,47 @@ fn row_impl(tensor: &Tensor, index: usize, output: &mut Vec<f32>) -> Result<()> 
         return Err(invalid("tensor row index out of bounds"));
     }
     let bytes = &tensor.data[index * row_bytes..(index + 1) * row_bytes];
+    decode_row_impl(tensor.kind, columns, bytes, output)
+}
+
+/// Decodes one complete contiguous row from borrowed packed bytes.
+///
+/// Byte alignment is unrestricted. The packed input is never copied into an
+/// owned tensor. Existing output elements are discarded, capacity is retained,
+/// and the output is empty on every error, including invalid layout or extent.
+///
+/// # Errors
+/// Rejects unsupported kinds, empty or incomplete blocks, byte extent mismatch,
+/// nonfinite stored values or scales, and output allocation failures.
+pub fn decode_row_into(kind: u32, count: usize, bytes: &[u8], output: &mut Vec<f32>) -> Result<()> {
+    fill_into(output, |output| {
+        let (group, block_bytes) = layout(kind)?;
+        if count == 0
+            || !count.is_multiple_of(group)
+            || (count / group).checked_mul(block_bytes) != Some(bytes.len())
+        {
+            return Err(invalid("packed row byte extent mismatch"));
+        }
+        decode_row_impl(kind, count, bytes, output)
+    })
+}
+
+fn decode_row_impl(kind: u32, columns: usize, bytes: &[u8], output: &mut Vec<f32>) -> Result<()> {
     output.try_reserve_exact(columns)?;
-    match tensor.kind {
-        16 | 17 | 22 => return iq2::decode(tensor.kind, bytes, output),
-        18 | 21 => return iq3::decode(tensor.kind, bytes, output),
-        19 | 29 => return iq1::decode(tensor.kind, bytes, output),
-        20 | 23 => return iquants::decode(tensor.kind, bytes, output),
-        34 | 35 => return tquants::decode(tensor.kind, bytes, output),
-        39 | 40 => return fp4::decode(tensor.kind, bytes, output),
-        41 | 42 => return signquants::decode(tensor.kind, bytes, output),
+    match kind {
+        16 | 17 | 22 => return iq2::decode(kind, bytes, output),
+        18 | 21 => return iq3::decode(kind, bytes, output),
+        19 | 29 => return iq1::decode(kind, bytes, output),
+        20 | 23 => return iquants::decode(kind, bytes, output),
+        34 | 35 => return tquants::decode(kind, bytes, output),
+        39 | 40 => return fp4::decode(kind, bytes, output),
+        41 | 42 => return signquants::decode(kind, bytes, output),
         _ => {}
     }
-    if matches!(tensor.kind, 10..=14) {
-        return kquants::decode(tensor.kind, bytes, output);
+    if matches!(kind, 10..=14) {
+        return kquants::decode(kind, bytes, output);
     }
-    match tensor.kind {
+    match kind {
         F32 => {
             for chunk in bytes.as_chunks::<4>().0 {
                 output.push(finite(f32::from_le_bytes(*chunk))?);
@@ -261,7 +287,7 @@ fn row_impl(tensor: &Tensor, index: usize, output: &mut Vec<f32>) -> Result<()> 
         F16 | BF16 => {
             for chunk in bytes.as_chunks::<2>().0 {
                 let bits = u16::from_le_bytes(*chunk);
-                output.push(finite(if tensor.kind == F16 {
+                output.push(finite(if kind == F16 {
                     half_to_float(bits)
                 } else {
                     f32::from_bits(u32::from(bits) << 16)
@@ -269,9 +295,9 @@ fn row_impl(tensor: &Tensor, index: usize, output: &mut Vec<f32>) -> Result<()> 
             }
         }
         PQ2 | PTQ1 => {
-            let (_, block_bytes) = layout(tensor.kind)?;
+            let (_, block_bytes) = layout(kind)?;
             for block in bytes.chunks_exact(block_bytes) {
-                let (values, d) = if tensor.kind == PQ2 {
+                let (values, d) = if kind == PQ2 {
                     (pq2_values(block), scale(block)?)
                 } else {
                     (ptq1_values(block)?, scale(&block[26..])?)
@@ -312,8 +338,8 @@ fn row_impl(tensor: &Tensor, index: usize, output: &mut Vec<f32>) -> Result<()> 
             }
         }
         Q4_1 | Q5_0 | Q5_1 | Q8_1 => {
-            for block in bytes.chunks_exact(layout(tensor.kind)?.1) {
-                legacy::decode(tensor.kind, block, output)?;
+            for block in bytes.chunks_exact(layout(kind)?.1) {
+                legacy::decode(kind, block, output)?;
             }
         }
         _ => return Err(invalid("unsupported row decoder")),
@@ -892,7 +918,8 @@ fn float_dot(weights: &[f32], input: &[f32]) -> f32 {
 ///
 /// # Errors
 /// Rejects unsupported kinds, empty or incomplete blocks, mismatched byte
-/// extents, nonfinite stored values/scales, and nonfinite accumulated results.
+/// extents, nonfinite stored values/scales, nonfinite accumulated results and
+/// temporary activation allocation failures.
 pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -> Result<f32> {
     if matches!(kind, Q8_K | Q8_1) {
         return Err(invalid(
@@ -922,11 +949,9 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
     }
     match kind {
         PQ2 | 10..=14 | 16..=19 | 21..=23 | 29 | 34 | 35 => {
-            let input = activations
-                .as_chunks::<292>()
-                .0
-                .iter()
-                .map(|block| {
+            let mut input = Vec::new();
+            collect_into(
+                activations.as_chunks::<292>().0.iter().map(|block| {
                     Ok(Q8KBlock {
                         scale: finite(f32::from_le_bytes(block[..4].try_into()?))?,
                         values: std::array::from_fn(|index| i8::from_ne_bytes([block[4 + index]])),
@@ -934,8 +959,9 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
                             i16::from_le_bytes([block[260 + 2 * index], block[261 + 2 * index]])
                         }),
                     })
-                })
-                .collect::<Result<Vec<_>>>()?;
+                }),
+                &mut input,
+            )?;
             if kind == PQ2 {
                 dot_pq2(weights, &input)
             } else if matches!(kind, 16..=19 | 21..=23 | 29 | 34 | 35) {
@@ -947,9 +973,9 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
         PTQ1 | Q4_0 | Q4_1 | Q5_0 | Q5_1 | Q8_0 | 20 | 39..=42 => {
             let affine = matches!(kind, Q4_1 | Q5_1);
             let offset = if affine { 4 } else { 2 };
-            let input = activations
-                .chunks_exact(activation_bytes)
-                .map(|block| {
+            let mut input = Vec::new();
+            collect_into(
+                activations.chunks_exact(activation_bytes).map(|block| {
                     Ok(Q8Block {
                         scale: scale(block)?,
                         sum: if affine { scale(&block[2..])? } else { 0.0 },
@@ -957,8 +983,9 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
                             i8::from_ne_bytes([block[offset + index]])
                         }),
                     })
-                })
-                .collect::<Result<Vec<_>>>()?;
+                }),
+                &mut input,
+            )?;
             if matches!(kind, 20 | 39..=42) {
                 dot_additional(kind, weights, &input, &[])
             } else if kind == PTQ1 {
@@ -969,26 +996,9 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
         }
         _ => {
             let decode = |data: &[u8]| -> Result<Vec<f32>> {
-                if kind == F32 {
-                    data.as_chunks::<4>()
-                        .0
-                        .iter()
-                        .map(|bytes| finite(f32::from_le_bytes(*bytes)))
-                        .collect()
-                } else {
-                    data.as_chunks::<2>()
-                        .0
-                        .iter()
-                        .map(|bytes| {
-                            let bits = u16::from_le_bytes(*bytes);
-                            finite(if kind == F16 {
-                                half_to_float(bits)
-                            } else {
-                                f32::from_bits(u32::from(bits) << 16)
-                            })
-                        })
-                        .collect()
-                }
+                let mut values = Vec::new();
+                decode_row_into(kind, count, data, &mut values)?;
+                Ok(values)
             };
             finite(float_dot(&decode(weights)?, &decode(activations)?))
         }

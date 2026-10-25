@@ -119,6 +119,7 @@ are not a complete hosted run and do not ratchet the accepted baseline.
 | Quantization selection | All 11 unchanged real metadata models and 363 expected sections |
 | HF model resolution | All 94 listing variants/13 handler assemblies, 757 original predicates, 358 guards and 228 live loopback GETs; complete CLI parser remains separate |
 | Legacy, K, IQ4, TQ and FP4 codecs | Independent native reference/importance encodings, arbitrary packed decoders and generic packed activation dots; complete source/benchmark qualification remains open |
+| Codec traits and owned buffers | All 144 trait slots match the pinned C++ inventory; eight focused ownership/codec checks and two adapter guards pass. CPU/reference capabilities stay distinct; persistent model-session transport remains open. |
 
 The CPU backend now has typed production tensor storage, strided views, graph
 operations and a source-controller adapter. Advanced operations and unsupported
@@ -200,9 +201,15 @@ record of its tested revision, not a current capability inventory.
   Rust canonicalizes those unused nibbles and preserves numeric zero. Do not
   claim byte parity for undefined native bytes or copy native stack addresses.
 - [ ] **Expose complete codec traits and persistent buffers.** Implement the
-  production trait inventory and owned `qb-*` buffer/call/model-tensor APIs used
+  remaining owned `qb-*` transport and model-tensor APIs used
   by `test-quantize-fns.cpp`, `test-quantize-perf.cpp` and
-  `test-quantize-stats.cpp`. Preserve all 22 required eligible type identities,
+  `test-quantize-stats.cpp`. The production `codec` module now exposes all 144
+  pinned trait slots and bounded buffers with checked byte regions, stale-handle
+  rejection, overlapping calls and unchanged output on failure. The ordinary
+  codec adapter uses this API. Native capabilities and implemented Rust operations
+  remain distinct; unported CPU quantizers reject without a reference fallback.
+  Persistent model sessions, file transfers, clocks and full source qualification
+  remain open. Preserve all 22 required eligible type identities,
   scalar input order, block boundaries, alignment offsets, native dot operand
   layouts, per-call schedules, statistical accumulation and source thresholds.
   Statistics must read the actual pinned model's F32/F16 tensors. Implement real

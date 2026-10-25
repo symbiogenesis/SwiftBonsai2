@@ -10,6 +10,7 @@ pub mod backend;
 pub mod bpe;
 #[cfg(feature = "cli")]
 pub mod chat;
+pub mod codec;
 pub mod grammar;
 pub mod graph;
 #[cfg(feature = "cli")]
