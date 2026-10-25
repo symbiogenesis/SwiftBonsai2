@@ -145,13 +145,27 @@ impl Model {
         memory_limit: usize,
         progress: &mut impl FnMut(f32) -> Result<bool>,
     ) -> Result<Self> {
-        let mut reader = VerifiedModel::open(
+        let reader = VerifiedModel::open(
             path,
             PRISM_DIALECT,
             expected_bytes,
             expected_sha256,
             memory_limit,
         )?;
+        Self::load_verified(reader, expected_sha256, memory_limit, progress)
+    }
+
+    #[allow(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "The pinned loader reports byte-weighted progress as binary32."
+    )]
+    fn load_verified(
+        mut reader: VerifiedModel,
+        expected_sha256: &str,
+        memory_limit: usize,
+        progress: &mut impl FnMut(f32) -> Result<bool>,
+    ) -> Result<Self> {
         let mut remaining = memory_limit
             .checked_sub(reader.retained_bytes())
             .ok_or_else(|| invalid("model header exceeds memory budget"))?;
@@ -337,3 +351,4 @@ pub mod batch_allocator;
 pub mod gguf_context;
 pub mod owned;
 pub mod quantization_policy;
+pub mod swift;
