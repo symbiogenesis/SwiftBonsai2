@@ -21,15 +21,17 @@ use windows_sys::{
         Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
         Graphics::Dwm::DwmSetWindowAttribute,
         Graphics::Gdi::{
-            BeginPaint, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateFontW, CreateSolidBrush,
-            DC_PEN, DEFAULT_CHARSET, DEFAULT_PITCH, DT_CENTER, DT_NOPREFIX, DT_SINGLELINE,
-            DT_VCENTER, DeleteObject, DrawFocusRect, DrawTextW, EndPaint, FW_NORMAL, FillRect,
-            GetStockObject, HBRUSH, HDC, HFONT, InvalidateRect, OUT_DEFAULT_PRECIS, PAINTSTRUCT,
-            RoundRect, SelectObject, SetBkColor, SetBkMode, SetDCPenColor, SetTextColor,
-            TRANSPARENT,
+            BeginPaint, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, COLOR_BTNFACE, COLOR_BTNTEXT,
+            COLOR_GRAYTEXT, COLOR_HIGHLIGHT, COLOR_HIGHLIGHTTEXT, COLOR_WINDOW, COLOR_WINDOWTEXT,
+            CreateFontW, CreateSolidBrush, DC_PEN, DEFAULT_CHARSET, DEFAULT_PITCH, DT_CENTER,
+            DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawFocusRect, DrawTextW, EndPaint, FW_NORMAL,
+            FillRect, GetStockObject, GetSysColor, HBRUSH, HDC, HFONT, InvalidateRect,
+            OUT_DEFAULT_PRECIS, PAINTSTRUCT, RoundRect, SelectObject, SetBkColor, SetBkMode,
+            SetDCPenColor, SetTextColor, TRANSPARENT,
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
+            Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW},
             Controls::{
                 DRAWITEMSTRUCT, EM_SETLIMITTEXT, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, ODT_BUTTON,
                 SetWindowTheme,
@@ -47,12 +49,14 @@ use windows_sys::{
                 GetClientRect, GetDlgCtrlID, GetMessageW, GetWindowTextLengthW, GetWindowTextW,
                 IDC_ARROW, IDI_APPLICATION, IsDialogMessageW, IsWindow, KillTimer, LoadCursorW,
                 LoadIconW, MB_ICONERROR, MB_OK, MINMAXINFO, MSG, MessageBoxW, MoveWindow,
-                PostQuitMessage, RegisterClassW, SW_HIDE, SW_SHOW, SendMessageW, SetTimer,
-                SetWindowTextW, ShowWindow, TranslateMessage, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
-                WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM,
-                WM_ERASEBKGND, WM_GETFONT, WM_KEYDOWN, WM_PAINT, WM_SETFONT, WM_SIZE, WM_TIMER,
-                WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_OVERLAPPEDWINDOW,
-                WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+                PostQuitMessage, RegisterClassW, SPI_GETHIGHCONTRAST, SW_HIDE, SW_SHOW,
+                SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetTimer, SetWindowPos, SetWindowTextW,
+                ShowWindow, SystemParametersInfoW, TranslateMessage, WM_CLOSE, WM_COMMAND,
+                WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED,
+                WM_DRAWITEM, WM_ERASEBKGND, WM_GETFONT, WM_KEYDOWN, WM_PAINT, WM_SETFONT,
+                WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER, WNDCLASSW,
+                WS_CHILD, WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_OVERLAPPEDWINDOW, WS_TABSTOP,
+                WS_VISIBLE, WS_VSCROLL,
             },
         },
     },
@@ -86,8 +90,11 @@ struct State {
     window: HWND,
     title: HWND,
     subtitle: HWND,
+    transcript_label: HWND,
     transcript: HWND,
+    reasoning_label: HWND,
     reasoning: HWND,
+    input_label: HWND,
     input: HWND,
     send: HWND,
     stop: HWND,
@@ -128,7 +135,88 @@ impl Drop for Brush {
         }
     }
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ColorScheme {
+    background: u32,
+    panel: u32,
+    border: u32,
+    text: u32,
+    muted: u32,
+    accent: u32,
+    accent_text: u32,
+    button: u32,
+    button_text: u32,
+    disabled: u32,
+    high_contrast: bool,
+}
+impl ColorScheme {
+    const SAGE: Self = Self {
+        background: BACKGROUND,
+        panel: PANEL,
+        border: BORDER,
+        text: TEXT,
+        muted: MUTED,
+        accent: ACCENT,
+        accent_text: BACKGROUND,
+        button: BUTTON,
+        button_text: TEXT,
+        disabled: 0x0060_6b58,
+        high_contrast: false,
+    };
+
+    fn current() -> Self {
+        let mut contrast = HIGHCONTRASTW {
+            cbSize: u32::try_from(size_of::<HIGHCONTRASTW>()).unwrap_or_default(),
+            ..HIGHCONTRASTW::default()
+        };
+        // SAFETY: The OS writes only this correctly sized SDK structure during the call.
+        let available = unsafe {
+            SystemParametersInfoW(
+                SPI_GETHIGHCONTRAST,
+                contrast.cbSize,
+                (&raw mut contrast).cast(),
+                0,
+            )
+        };
+        if available == 0 || contrast.dwFlags & HCF_HIGHCONTRASTON == 0 {
+            return Self::SAGE;
+        }
+        Self::system_contrast()
+    }
+
+    fn system_contrast() -> Self {
+        // SAFETY: Each index is a documented system color; no pointer or ownership crosses the call.
+        let background = unsafe { GetSysColor(COLOR_WINDOW) };
+        // SAFETY: COLOR_WINDOWTEXT is a documented system color index.
+        let text = unsafe { GetSysColor(COLOR_WINDOWTEXT) };
+        // SAFETY: COLOR_BTNFACE is a documented system color index.
+        let button = unsafe { GetSysColor(COLOR_BTNFACE) };
+        // SAFETY: COLOR_BTNTEXT is a documented system color index.
+        let button_text = unsafe { GetSysColor(COLOR_BTNTEXT) };
+        // SAFETY: COLOR_HIGHLIGHT is a documented system color index.
+        let accent = unsafe { GetSysColor(COLOR_HIGHLIGHT) };
+        // SAFETY: COLOR_HIGHLIGHTTEXT is a documented system color index.
+        let accent_text = unsafe { GetSysColor(COLOR_HIGHLIGHTTEXT) };
+        // SAFETY: COLOR_GRAYTEXT is a documented system color index.
+        let disabled = unsafe { GetSysColor(COLOR_GRAYTEXT) };
+        Self {
+            background,
+            panel: background,
+            border: text,
+            text,
+            muted: text,
+            accent,
+            accent_text,
+            button,
+            button_text,
+            disabled,
+            high_contrast: true,
+        }
+    }
+}
+
 struct Palette {
+    colors: ColorScheme,
     background: Brush,
     panel: Brush,
     button: Brush,
@@ -136,16 +224,32 @@ struct Palette {
 }
 impl Palette {
     fn new() -> io::Result<Self> {
+        Self::from_colors(ColorScheme::current())
+    }
+
+    fn from_colors(colors: ColorScheme) -> io::Result<Self> {
         Ok(Self {
-            background: Brush::new(BACKGROUND)?,
-            panel: Brush::new(PANEL)?,
-            button: Brush::new(BUTTON)?,
-            accent: Brush::new(ACCENT)?,
+            colors,
+            background: Brush::new(colors.background)?,
+            panel: Brush::new(colors.panel)?,
+            button: Brush::new(colors.button)?,
+            accent: Brush::new(colors.accent)?,
         })
     }
 }
 fn palette_with<T>(action: impl FnOnce(&Palette) -> T) -> Option<T> {
     PALETTE.with(|palette| palette.try_borrow().ok()?.as_ref().map(action))
+}
+fn colors() -> ColorScheme {
+    palette_with(|palette| palette.colors).unwrap_or_else(ColorScheme::current)
+}
+fn display_color(color: u32) -> u32 {
+    let colors = colors();
+    if colors.high_contrast {
+        colors.text
+    } else {
+        color
+    }
 }
 fn color_control(wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     let dc: HDC = without_provenance_mut(wparam);
@@ -153,10 +257,11 @@ fn color_control(wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // SAFETY: WM_CTLCOLOR supplies a live control and message-scoped paint HDC.
     let id = unsafe { GetDlgCtrlID(control) };
     let editor = matches!(id, 201..=203);
+    let colors = colors();
     let foreground = if id == 202 || (!editor && id != 301) {
-        MUTED
+        colors.muted
     } else {
-        TEXT
+        colors.text
     };
     // SAFETY: dc is the live paint context supplied by this synchronous message.
     unsafe {
@@ -164,7 +269,14 @@ fn color_control(wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     }
     // SAFETY: Same message-scoped HDC; only scalar colors are passed.
     unsafe {
-        SetBkColor(dc, if editor { PANEL } else { BACKGROUND });
+        SetBkColor(
+            dc,
+            if editor {
+                colors.panel
+            } else {
+                colors.background
+            },
+        );
     }
     palette_with(|p| if editor { p.panel.0 } else { p.background.0 })
         .map_or(0, |brush| brush.addr().cast_signed())
@@ -236,7 +348,7 @@ fn paint(window: HWND) {
             right: bounds.right - pad,
             bottom: bottom - split,
         };
-        round_box(dc, body, p.panel.0, BORDER, px(16));
+        round_box(dc, body, p.panel.0, p.colors.border, px(16));
         if thinking {
             let reasoning = RECT {
                 left: pad,
@@ -244,7 +356,7 @@ fn paint(window: HWND) {
                 right: bounds.right - pad,
                 bottom,
             };
-            round_box(dc, reasoning, p.panel.0, BORDER, px(16));
+            round_box(dc, reasoning, p.panel.0, p.colors.border, px(16));
         }
         let composer = RECT {
             left: pad,
@@ -252,7 +364,7 @@ fn paint(window: HWND) {
             right: bounds.right - pad,
             bottom: bounds.bottom - px(49),
         };
-        round_box(dc, composer, p.panel.0, BORDER, px(16));
+        round_box(dc, composer, p.panel.0, p.colors.border, px(16));
     });
     // SAFETY: Completes the exact BeginPaint scope for this window.
     unsafe {
@@ -276,15 +388,19 @@ fn draw_button(draw: &DRAWITEMSTRUCT) {
             draw.hDC,
             draw.rcItem,
             brush,
-            if primary && !disabled { ACCENT } else { BORDER },
+            if primary && !disabled {
+                p.colors.accent
+            } else {
+                p.colors.border
+            },
             12,
         );
         let color = if disabled {
-            0x0060_6b58
+            p.colors.disabled
         } else if primary && !selected {
-            BACKGROUND
+            p.colors.accent_text
         } else {
-            TEXT
+            p.colors.button_text
         };
         // SAFETY: DRAWITEMSTRUCT supplies this message-scoped paint HDC.
         unsafe {
@@ -310,7 +426,7 @@ fn draw_button(draw: &DRAWITEMSTRUCT) {
                 text.as_ptr(),
                 length.max(0),
                 &raw mut rect,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
             );
         }
         // SAFETY: Restore the previous borrowed font before leaving the paint scope.
@@ -382,6 +498,13 @@ fn append(control: HWND, text: &str) {
     transcript::append(control, text, TEXT, false);
 }
 
+fn place(handle: HWND, x: i32, y: i32, width: i32, height: i32) {
+    // SAFETY: Callers supply live UI-thread controls and bounded scalar coordinates.
+    unsafe {
+        MoveWindow(handle, x, y, width.max(1), height.max(1), 1);
+    }
+}
+
 fn control(parent: HWND, class: *const u16, text: &str, style: u32, id: usize) -> io::Result<HWND> {
     let text = wide(text);
     // SAFETY: Parent belongs to this thread; class is a static system class,
@@ -448,9 +571,17 @@ fn edit(parent: HWND, readonly: bool, id: usize) -> io::Result<HWND> {
             0,
         );
     }
-    // SAFETY: Static theme name is consumed synchronously by this live native control.
+    // SAFETY: Theme pointers are static or null and consumed synchronously.
     unsafe {
-        SetWindowTheme(handle, w!("DarkMode_Explorer"), null());
+        SetWindowTheme(
+            handle,
+            if colors().high_contrast {
+                null()
+            } else {
+                w!("DarkMode_Explorer")
+            },
+            null(),
+        );
     }
     Ok(handle)
 }
@@ -475,41 +606,46 @@ impl State {
                 0,
                 0,
             )?,
+            // Native accessibility proxies associate each edit with its preceding
+            // static label. Keep these label/control pairs adjacent in child order.
+            transcript_label: control(window, w!("STATIC"), "&Conversation", 0, 401)?,
             transcript: transcript::create(window, 201)?,
+            reasoning_label: control(window, w!("STATIC"), "&Thinking", 0, 402)?,
             reasoning: transcript::create(window, 202)?,
+            input_label: control(window, w!("STATIC"), "&Message", 0, 403)?,
             input: edit(window, false, 203)?,
             send: control(
                 window,
                 w!("BUTTON"),
-                "Send  ↑",
+                "&Send  ↑",
                 WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
                 SEND,
             )?,
             stop: control(
                 window,
                 w!("BUTTON"),
-                "Stop",
+                "S&top",
                 WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
                 STOP,
             )?,
             new_chat: control(
                 window,
                 w!("BUTTON"),
-                "＋  New conversation",
+                "＋  &New conversation",
                 WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
                 NEW,
             )?,
             thinking: control(
                 window,
                 w!("BUTTON"),
-                "Show thinking",
+                "Show t&hinking",
                 WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
                 THINKING,
             )?,
             retry: control(
                 window,
                 w!("BUTTON"),
-                "Retry model",
+                "&Retry model",
                 WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
                 RETRY,
             )?,
@@ -582,31 +718,46 @@ impl State {
             0
         };
         let body_height = bottom - top - split;
-        let place = |handle, x, y, w: i32, h: i32| {
-            // SAFETY: All handles are live UI-thread children, and layout coordinates are scalar.
-            unsafe {
-                MoveWindow(handle, x, y, w.max(1), h.max(1), 1);
-            }
-        };
         place(self.title, pad, p(25), content, p(46));
         place(self.subtitle, pad + p(1), p(79), content, p(20));
         place(self.new_chat, pad, p(106), p(190), p(30));
         place(self.thinking, pad + p(202), p(106), p(145), p(30));
         place(self.retry, width - pad - p(145), p(106), p(145), p(30));
         place(
+            self.transcript_label,
+            pad + p(20),
+            top + p(9),
+            content - p(40),
+            p(20),
+        );
+        place(
             self.transcript,
             pad + p(20),
-            top + p(18),
+            top + p(36),
             content - p(40),
-            body_height - p(36),
+            body_height - p(52),
+        );
+        place(
+            self.reasoning_label,
+            pad + p(20),
+            top + body_height + p(19),
+            content - p(40),
+            p(20),
         );
         place(
             self.reasoning,
             pad + p(20),
-            top + body_height + p(28),
+            top + body_height + p(44),
             content - p(40),
-            split - p(46),
+            split - p(58),
         );
+        // SAFETY: Live child label, scalar visibility flag mirrors its associated edit.
+        unsafe {
+            ShowWindow(
+                self.reasoning_label,
+                if self.show_thinking { SW_SHOW } else { SW_HIDE },
+            );
+        }
         // SAFETY: Live child HWND, scalar visibility flag.
         unsafe {
             ShowWindow(
@@ -614,12 +765,31 @@ impl State {
                 if self.show_thinking { SW_SHOW } else { SW_HIDE },
             );
         }
+        self.layout_composer(width, height, dpi);
+        // SAFETY: Invalidate the owned window; null means the complete client area.
+        unsafe {
+            InvalidateRect(self.window, null(), 1);
+        }
+    }
+
+    fn layout_composer(&self, width: i32, height: i32, dpi: i32) {
+        let p = |value: i32| value.saturating_mul(dpi) / 96;
+        let pad = p(32);
+        let content = width - 2 * pad;
+        let bottom = height - p(184);
+        place(
+            self.input_label,
+            pad + p(20),
+            bottom + p(24),
+            content - p(160),
+            p(20),
+        );
         place(
             self.input,
             pad + p(20),
-            bottom + p(34),
+            bottom + p(48),
             content - p(160),
-            p(82),
+            p(62),
         );
         place(
             self.send,
@@ -642,10 +812,6 @@ impl State {
             content - p(4),
             p(32),
         );
-        // SAFETY: Invalidate the owned window; null means the complete client area.
-        unsafe {
-            InvalidateRect(self.window, null(), 1);
-        }
     }
 
     fn set_font(&mut self) {
@@ -673,10 +839,42 @@ impl State {
         apply_font(self.title, title);
         apply_font(self.subtitle, small);
         apply_font(self.status, small);
+        apply_font(self.transcript_label, small);
+        apply_font(self.reasoning_label, small);
+        apply_font(self.input_label, small);
         delete_fonts([self.font, self.title_font, self.small_font]);
         self.font = font;
         self.title_font = title;
         self.small_font = small;
+    }
+
+    fn refresh_theme(&self) {
+        let Ok(palette) = Palette::new() else {
+            return;
+        };
+        if palette.colors == colors() {
+            return;
+        }
+        PALETTE.with(|slot| *slot.borrow_mut() = Some(palette));
+        let colors = colors();
+        set_dark_frame(self.window, !colors.high_contrast);
+        // SAFETY: Live native edit and static/null theme pointers; the call is synchronous.
+        unsafe {
+            SetWindowTheme(
+                self.input,
+                if colors.high_contrast {
+                    null()
+                } else {
+                    w!("DarkMode_Explorer")
+                },
+                null(),
+            );
+        }
+        transcript::refresh_theme(self.transcript);
+        transcript::refresh_theme(self.reasoning);
+        // SAFETY: Invalidate this owned window and all visible controls through layout.
+        unsafe { InvalidateRect(self.window, null(), 1) };
+        self.layout();
     }
 
     fn submit(&mut self) {
@@ -849,8 +1047,29 @@ unsafe extern "system" fn procedure(
             true
         }
         WM_DPICHANGED => {
+            if lparam != 0 {
+                // SAFETY: WM_DPICHANGED supplies a message-scoped suggested RECT.
+                let suggested = unsafe { *without_provenance_mut::<RECT>(lparam.cast_unsigned()) };
+                // SAFETY: The owned HWND and scalar screen coordinates are valid.
+                // Reentrant size messages use try_borrow_mut; layout runs again below.
+                unsafe {
+                    SetWindowPos(
+                        window,
+                        null_mut(),
+                        suggested.left,
+                        suggested.top,
+                        suggested.right.saturating_sub(suggested.left),
+                        suggested.bottom.saturating_sub(suggested.top),
+                        SWP_NOACTIVATE | SWP_NOZORDER,
+                    );
+                }
+            }
             state.set_font();
             state.layout();
+            true
+        }
+        WM_SETTINGCHANGE | WM_SYSCOLORCHANGE | WM_THEMECHANGED => {
+            state.refresh_theme();
             true
         }
         WM_TIMER if wparam == TIMER => {
@@ -893,9 +1112,9 @@ unsafe extern "system" fn procedure(
                     set_text(
                         state.thinking,
                         if state.show_thinking {
-                            "Hide thinking"
+                            "Hide t&hinking"
                         } else {
-                            "Show thinking"
+                            "Show t&hinking"
                         },
                     );
                     state.layout();
@@ -974,17 +1193,22 @@ fn create_window() -> io::Result<HWND> {
     if window.is_null() {
         return Err(io::Error::last_os_error());
     }
-    let dark: i32 = 1;
-    // SAFETY: Attribute 20 takes a four-byte BOOL, alive through this call; unsupported Windows versions may reject it harmlessly.
-    unsafe {
-        DwmSetWindowAttribute(window, 20, (&raw const dark).cast(), 4);
-    }
+    set_dark_frame(window, !colors().high_contrast);
     let corners: u32 = 2;
     // SAFETY: Attribute 33 takes a four-byte corner preference, alive through the synchronous call.
     unsafe {
         DwmSetWindowAttribute(window, 33, (&raw const corners).cast(), 4);
     }
     Ok(window)
+}
+
+fn set_dark_frame(window: HWND, enabled: bool) {
+    let dark = i32::from(enabled);
+    // SAFETY: DWMWA_USE_IMMERSIVE_DARK_MODE takes this four-byte BOOL synchronously.
+    // Older Windows versions can harmlessly decline this appearance hint.
+    unsafe {
+        DwmSetWindowAttribute(window, 20, (&raw const dark).cast(), 4);
+    }
 }
 
 struct WindowLifetime(HWND);

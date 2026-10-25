@@ -1,7 +1,7 @@
 //! Read-only native Rich Edit transcript. Selection belongs to the reader;
 //! streaming always writes to the document end, independently of that selection.
 
-use super::{ACCENT, MUTED, PANEL, TEXT, control, set_text, wide};
+use super::{ACCENT, MUTED, TEXT, colors, control, display_color, set_text, wide};
 use std::io;
 use windows_sys::{
     Win32::{
@@ -105,14 +105,80 @@ pub(super) fn create(parent: HWND, id: usize) -> io::Result<HWND> {
             handle,
             EM_SETBKGNDCOLOR,
             0,
-            isize::try_from(PANEL).unwrap_or_default(),
+            isize::try_from(colors().panel).unwrap_or_default(),
         )
     };
     // SAFETY: Read-only transcript needs no undo storage; scalar message only.
     unsafe { SendMessageW(handle, EM_SETUNDOLIMIT, 0, 0) };
-    // SAFETY: Static native theme name is read synchronously by this live control.
-    unsafe { SetWindowTheme(handle, w!("DarkMode_Explorer"), std::ptr::null()) };
+    theme_control(handle);
     Ok(handle)
+}
+
+fn theme_control(control: HWND) {
+    // SAFETY: Static/null theme pointers are read synchronously by this live control.
+    unsafe {
+        SetWindowTheme(
+            control,
+            if colors().high_contrast {
+                std::ptr::null()
+            } else {
+                w!("DarkMode_Explorer")
+            },
+            std::ptr::null(),
+        );
+    }
+}
+
+pub(super) fn refresh_theme(control: HWND) {
+    let saved = selection(control);
+    let mut scroll = POINT::default();
+    // SAFETY: Live native control writes to this message-scoped POINT.
+    unsafe {
+        SendMessageW(
+            control,
+            EM_GETSCROLLPOS,
+            0,
+            (&raw mut scroll).addr().cast_signed(),
+        );
+    }
+    let colors = colors();
+    theme_control(control);
+    // SAFETY: Scalar COLORREF updates the live control's background.
+    unsafe {
+        SendMessageW(
+            control,
+            EM_SETBKGNDCOLOR,
+            0,
+            isize::try_from(colors.panel).unwrap_or_default(),
+        );
+    }
+    // Recolor existing text as well as subsequent deltas. Speaker emphasis stays
+    // bold; old accent colors must not override the user's contrast settings.
+    let format = CharFormat {
+        size: u32::try_from(size_of::<CharFormat>()).unwrap_or_default(),
+        mask: CFM_COLOR,
+        color: colors.text,
+        ..CharFormat::default()
+    };
+    // SAFETY: SCF_ALL changes only color, reading the correctly sized structure inline.
+    unsafe {
+        SendMessageW(
+            control,
+            EM_SETCHARFORMAT,
+            4,
+            (&raw const format).addr().cast_signed(),
+        );
+    }
+    select(control, saved);
+    // SAFETY: Restore this reader's viewport from a message-scoped POINT.
+    unsafe {
+        SendMessageW(
+            control,
+            EM_SETSCROLLPOS,
+            0,
+            (&raw const scroll).addr().cast_signed(),
+        );
+    }
 }
 
 fn length(control: HWND) -> i32 {
@@ -214,7 +280,7 @@ pub(super) fn append(control: HWND, text: &str, color: u32, bold: bool) {
         size: u32::try_from(size_of::<CharFormat>()).unwrap_or_default(),
         mask: CFM_BOLD | CFM_COLOR,
         effects: u32::from(bold),
-        color,
+        color: display_color(color),
         ..CharFormat::default()
     };
     // SAFETY: The SDK-layout format is live until this synchronous call returns.

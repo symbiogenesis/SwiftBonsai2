@@ -277,3 +277,76 @@ fn native_transcript_streaming_preserves_reader_state() -> io::Result<()> {
     assert_eq!(fresh_body.color, TEXT);
     Ok(())
 }
+
+#[test]
+fn native_transcript_contrast_refresh_preserves_text_selection_and_viewport() -> io::Result<()> {
+    use super::super::{ColorScheme, PALETTE, Palette};
+
+    struct ResetPalette;
+    impl Drop for ResetPalette {
+        fn drop(&mut self) {
+            PALETTE.with(|slot| slot.borrow_mut().take());
+        }
+    }
+    let _palette_guard = ResetPalette;
+    PALETTE.with(|slot| {
+        *slot.borrow_mut() = Some(Palette::from_colors(ColorScheme::SAGE)?);
+        Ok::<(), io::Error>(())
+    })?;
+    let _library = Library::load()?;
+    let parent = TestWindow::create()?;
+    let transcript = create(parent.0, 201)?;
+    // SAFETY: The test owns this live child and uses bounded scalar dimensions.
+    unsafe { MoveWindow(transcript, 0, 0, 360, 160, 1) };
+    turn(transcript, "Assistant", ACCENT);
+    append(
+        transcript,
+        &"A readable paragraph.\n".repeat(100),
+        TEXT,
+        false,
+    );
+    let original = document(transcript);
+    let selected = CharRange { start: 30, end: 42 };
+    select(transcript, selected);
+    // SAFETY: Scalar native input scrolls this live Rich Edit to the first page.
+    unsafe {
+        SendMessageW(
+            transcript,
+            WM_VSCROLL,
+            usize::try_from(SB_TOP).unwrap_or_default(),
+            0,
+        );
+    }
+    let position = scroll_position(transcript);
+    let contrast = ColorScheme {
+        background: 0,
+        panel: 0,
+        text: 0x00ff_ffff,
+        ..ColorScheme::system_contrast()
+    };
+    PALETTE.with(|slot| {
+        *slot.borrow_mut() = Some(Palette::from_colors(contrast)?);
+        Ok::<(), io::Error>(())
+    })?;
+    refresh_theme(transcript);
+    assert_eq!(document(transcript), original);
+    assert_eq!(selection(transcript), selected);
+    let refreshed = scroll_position(transcript);
+    assert_eq!((refreshed.x, refreshed.y), (position.x, position.y));
+    let speaker = format_at(transcript, 0);
+    assert_eq!(speaker.color, contrast.text);
+    assert_ne!(speaker.effects & CFM_BOLD, 0);
+    select(transcript, selected);
+    append(transcript, "New contrasting text.", ACCENT, false);
+    let arriving = format_at(transcript, length(transcript) - 2);
+    assert_eq!(arriving.color, contrast.text);
+    PALETTE.with(|slot| {
+        *slot.borrow_mut() = Some(Palette::from_colors(ColorScheme::SAGE)?);
+        Ok::<(), io::Error>(())
+    })?;
+    refresh_theme(transcript);
+    assert_eq!(format_at(transcript, 0).color, TEXT);
+    append(transcript, "Sage speaker", ACCENT, true);
+    assert_eq!(format_at(transcript, length(transcript) - 2).color, ACCENT);
+    Ok(())
+}
