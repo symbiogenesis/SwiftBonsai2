@@ -254,6 +254,26 @@ default fixture uses 5,434 transport groups for 78,342 source chunks. This reduc
 transport overhead without removing codec calls or numerical assertions. Action
 JSON is serialized in memory before a single file write.
 
+Backend Plan, JoinPlan and Run stages overlap the independent C++ and Rust
+target chains with a limit of two workers. Each target retains its sequential
+mode order, source random offsets, isolated process state and evidence paths.
+Stage receipts record each concurrent chain's elapsed milliseconds. Optional benchmark
+execution starts only after both correctness chains finish and stays sequential.
+The interpreter writes typed scalars directly into existing storage, and input
+staging serializes bounded blocks while computing their digest. Tensor snapshot
+alias indexes replace repeated full-handle scans while retaining canonical IDs
+and alias order. Exact-bit, bounds, digest and scheduler regressions cover these
+changes; full matrices and performance measurements remain CI-only.
+
+The production GGUF tokenizer narrows a sorted vocabulary index by input bytes
+instead of scanning every token with the same first byte. Longest-match,
+duplicate-token and score ties retain each tokenizer family's original rules.
+Immutable byte alphabets, fallback IDs, WordPiece regexes and Unigram score
+minima are prepared once per vocabulary. BPE pieces share bounded merge scratch;
+BPE and SPM omit unused raw-vocabulary indexes. PLaMo scores retain lazy range rejection.
+Focused validation uses all 694 original corpus predicates across 15 pinned
+vocabularies; this establishes correctness, not a measured CI speedup.
+
 Native bridge CMake inputs are mirrored into a content-verified stable directory,
 so checkout timestamps do not force unchanged adapter sources to compile again.
 Native cache fallback keys retain the exact source and compiler identity while
