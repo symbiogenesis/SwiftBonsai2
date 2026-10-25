@@ -6,6 +6,12 @@ mod client;
 #[cfg(windows)]
 #[allow(
     unsafe_code,
+    reason = "Audited Windows speech COM boundary, confined to its worker thread."
+)]
+mod speech;
+#[cfg(windows)]
+#[allow(
+    unsafe_code,
     reason = "Audited Win32 control and message-loop boundary."
 )]
 mod window;
