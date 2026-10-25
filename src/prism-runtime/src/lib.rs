@@ -14,6 +14,8 @@ pub mod kernels;
 pub mod logging;
 pub mod media;
 pub mod model;
+#[cfg(feature = "cli")]
+pub mod peg;
 pub mod pretokenizer;
 pub mod prompt_input;
 pub mod runtime;
