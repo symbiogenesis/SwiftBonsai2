@@ -17,6 +17,177 @@ use std::path::Path;
 
 const META_ID: &str = "tests/test-gguf-model-data.cpp";
 const QUANT_ID: &str = "tests/test-quant-type-selection.cpp";
+
+use bonsai_prism_runtime::model::quantization_policy::{
+    ModelDescriptor, Parameters, Policy, TYPE_COUNT, TensorDescriptor, default_type, type_name,
+};
+
+fn runtime_policy(model: &Value) -> Result<Policy> {
+    exact_fields(
+        model,
+        &[
+            "Architecture",
+            "Embedding",
+            "FeedForward",
+            "Layers",
+            "Heads",
+            "KvHeads",
+            "Experts",
+            "HeadKey",
+            "HeadValue",
+        ],
+    )?;
+    let number = |name| {
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(u32::try_from(uint(model, name)?)?)
+    };
+    Policy::new(
+        ModelDescriptor {
+            architecture: text(model, "Architecture")?.to_owned(),
+            embedding: number("Embedding")?,
+            feed_forward: number("FeedForward")?,
+            layers: number("Layers")?,
+            heads: number("Heads")?,
+            kv_heads: number("KvHeads")?,
+            experts: number("Experts")?,
+            head_key: number("HeadKey")?,
+            head_value: number("HeadValue")?,
+        },
+        Parameters::default(),
+    )
+}
+
+fn runtime_tensors(operation: &Value) -> Result<Vec<TensorDescriptor>> {
+    let tensors = array(operation, "Tensors")?;
+    if tensors.is_empty() || tensors.len() > 32768 {
+        return Err(invalid("quantization tensor count exceeds bound"));
+    }
+    tensors
+        .iter()
+        .map(|tensor| {
+            exact_fields(tensor, &["Name", "Dimensions"])?;
+            let dimensions = array(tensor, "Dimensions")?;
+            if dimensions.len() != 4 {
+                return Err(invalid("quantization tensors require four dimensions"));
+            }
+            let mut shape = [0; 4];
+            for (dimension, value) in shape.iter_mut().zip(dimensions) {
+                *dimension = value
+                    .as_u64()
+                    .ok_or_else(|| invalid("quantization dimension must be unsigned"))?;
+            }
+            TensorDescriptor::new(text(tensor, "Name")?, shape)
+        })
+        .collect()
+}
+
+fn runtime_model(operation: &Value) -> Result<Value> {
+    exact_fields(operation, &["Kind", "Model", "Tensors", "Actions"])?;
+    let policy = runtime_policy(field(operation, "Model")?)?;
+    let tensors = runtime_tensors(operation)?;
+    let actions = array(operation, "Actions")?;
+    if actions.len() > 128 {
+        return Err(invalid("quantization action count exceeds bound"));
+    }
+    let mut returned = 0;
+    let mut results = Vec::with_capacity(actions.len());
+    for action in actions {
+        match text(action, "Op")? {
+            "allows" => {
+                exact_fields(action, &["Op"])?;
+                returned += tensors.len();
+                results.push(json!({"Allowed":tensors.iter().map(|tensor|policy.allows(tensor)).collect::<Vec<_>>(),"Names":tensors.iter().map(TensorDescriptor::name).collect::<Vec<_>>()}));
+            }
+            "types" => {
+                exact_fields(action, &["Op", "Ftype", "TensorIndices"])?;
+                let ftype = u32::try_from(uint(action, "Ftype")?)?;
+                if ftype >= 1024 {
+                    return Err(invalid("quantization ftype exceeds bound"));
+                }
+                let indices = array(action, "TensorIndices")?;
+                if indices.len() > tensors.len() {
+                    return Err(invalid("quantization indices exceed tensor count"));
+                }
+                let selected = indices
+                    .iter()
+                    .map(|index| {
+                        let index = usize::try_from(
+                            index
+                                .as_u64()
+                                .ok_or_else(|| invalid("quantization index must be unsigned"))?,
+                        )?;
+                        let tensor = tensors
+                            .get(index)
+                            .ok_or_else(|| invalid("quantization index exceeds tensor count"))?;
+                        if !policy.allows(tensor) {
+                            return Err(invalid("quantization types require eligible tensors"));
+                        }
+                        Ok(tensor)
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let types = policy.compute(ftype, &selected)?;
+                returned += selected.len();
+                results.push(json!({"DefaultType":default_type(ftype),"Types":types}));
+            }
+            _ => return Err(invalid("unknown quantization action")),
+        }
+        if returned > 2 * 1024 * 1024 {
+            return Err(invalid("quantization response exceeds bound"));
+        }
+    }
+    Ok(json!({"Created":true,"Results":results}))
+}
+
+fn runtime_operation(operation: &Value) -> Result<Value> {
+    if text(operation, "Kind")? == "quantization-model" {
+        return runtime_model(operation);
+    }
+    exact_fields(operation, &["Kind", "Ftypes"])?;
+    let ftypes = array(operation, "Ftypes")?;
+    if ftypes.len() > 1024 {
+        return Err(invalid("quantization ftype count exceeds bound"));
+    }
+    let defaults = ftypes
+        .iter()
+        .map(|ftype| {
+            let ftype = u32::try_from(
+                ftype
+                    .as_u64()
+                    .ok_or_else(|| invalid("quantization ftype must be unsigned"))?,
+            )?;
+            if ftype >= 1024 {
+                return Err(invalid("quantization ftype exceeds bound"));
+            }
+            Ok(default_type(ftype))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(
+        json!({"TypeCount":TYPE_COUNT,"FtypeGuessed":1024,"Types":(0..TYPE_COUNT).map(|kind|json!({"Type":kind,"Name":type_name(kind)})).collect::<Vec<_>>(),"Defaults":defaults}),
+    )
+}
+
+pub(super) fn execute_runtime(request: &Value) -> Result<Option<Value>> {
+    exact_fields(request, &["SchemaVersion", "Operations"])?;
+    if uint(request, "SchemaVersion")? != 1 {
+        return Err(invalid("quantization protocol version differs"));
+    }
+    let operations = array(request, "Operations")?;
+    if operations.is_empty() || operations.len() > 128 {
+        return Err(invalid("quantization operation count exceeds bound"));
+    }
+    if operations.iter().any(|operation| {
+        !matches!(
+            operation["Kind"].as_str(),
+            Some("quantization-info" | "quantization-model")
+        )
+    }) {
+        return Ok(None);
+    }
+    let results = operations
+        .iter()
+        .map(runtime_operation)
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Some(json!({"SchemaVersion":1,"Results":results})))
+}
 // Original source model identity, quant request, existing schema and full extent.
 const MODELS: [(&str, &str, &str, usize); 11] = [
     ("ggml-org/Qwen3-0.6B-GGUF", "Q8_0", "qwen3-0.6b", 1153),

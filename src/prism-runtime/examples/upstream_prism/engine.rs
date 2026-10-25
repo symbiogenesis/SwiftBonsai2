@@ -281,6 +281,9 @@ impl Engine {
             if let Some(response) = super::gguf::execute_runtime(request)? {
                 return Ok(Some(response));
             }
+            if let Some(response) = super::quant_selection::execute_runtime(request)? {
+                return Ok(Some(response));
+            }
             if let Some(response) = super::engine_runtime::execute(request)? {
                 return Ok(Some(response));
             }

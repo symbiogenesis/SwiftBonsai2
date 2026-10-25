@@ -279,3 +279,4 @@ fn validate_prism_scale(bytes: [u8; 2]) -> Result<()> {
 }
 pub mod batch_allocator;
 pub mod gguf_context;
+pub mod quantization_policy;
