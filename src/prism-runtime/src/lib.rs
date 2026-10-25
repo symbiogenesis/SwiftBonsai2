@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod backend;
 pub mod bpe;
 pub mod graph;
 pub mod kernels;
@@ -162,4 +163,5 @@ pub trait Decoder {
     /// Rejects foreign or malformed snapshots and allocation failures.
     fn restore(&mut self, checkpoint: &Self::Checkpoint) -> Result<()>;
 }
+
 
