@@ -5,7 +5,7 @@
     reason = "test construction and successful-operation assertions must fail visibly"
 )]
 
-use bonsai_ternary::{Error, Pq2Block, Q8KBlock, half_to_float, pack_ptq, unpack_ptq};
+use bonsai_ternary::{Error, Pq2Block, Q8KBlock, pack_ptq, unpack_ptq};
 
 fn zeros(scale: u16) -> Pq2Block {
     let mut block = [0x55; 34];
@@ -19,27 +19,9 @@ const fn set_code(block: &mut Pq2Block, index: usize, code: u8) {
 }
 
 #[test]
-fn half_edge_values_preserve_exact_bits() {
-    for (half, expected) in [
-        (0x0000, 0x0000_0000),
-        (0x8000, 0x8000_0000),
-        (0x0001, 0x3380_0000),
-        (0x8001, 0xb380_0000),
-        (0x03ff, 0x387f_c000),
-        (0x83ff, 0xb87f_c000),
-        (0x0400, 0x3880_0000),
-        (0x3555, 0x3eaa_a000),
-        (0x3c00, 0x3f80_0000),
-        (0xbc00, 0xbf80_0000),
-        (0x7bff, 0x477f_e000),
-        (0xfbff, 0xc77f_e000),
-        (0x7c00, 0x7f80_0000),
-        (0xfc00, 0xff80_0000),
-        (0x7c01, 0x7f80_2000),
-        (0xfe00, 0xffc0_0000),
-    ] {
-        assert_eq!(half_to_float(half).to_bits(), expected);
-    }
+fn q8k_block_preserves_native_abi_layout() {
+    // Exact binary16 edge bits are already checked against all 26 captured
+    // native reference cases in cpp_reference_ptq_parity.
     assert_eq!(size_of::<Q8KBlock>(), 292);
     assert_eq!(std::mem::offset_of!(Q8KBlock, values), 4);
     assert_eq!(std::mem::offset_of!(Q8KBlock, sums), 260);
@@ -131,59 +113,9 @@ fn reviewed_finite_scales_preserve_exact_wire_bits() {
 }
 
 #[test]
-fn noncanonical_ptq_bytes_are_rejected() {
-    let mut negative = zeros(0x3c00);
-    negative[2..].fill(0);
-    let ptq = pack_ptq(&negative).unwrap();
-    for index in 0..26 {
-        // Byte 1 decodes to the same negative trits as canonical byte 0.
-        let mut bad = ptq;
-        bad[index] = 1;
-        assert_eq!(unpack_ptq(&bad), Err(Error::NoncanonicalPtq));
-    }
-}
-
-#[test]
-fn every_ptq_byte_and_position_preserves_canonical_validation() {
-    let mut source = zeros(0x3c00);
-    source[2..].fill(0);
-    let baseline = pack_ptq(&source).unwrap();
-    // Enumerate each independent arithmetic oracle once. Canonical membership
-    // depends on the lane width, so the same two sets cover every position.
-    let canonical = [(243_u32, 256), (81, 768)].map(|(values, multiplier)| {
-        let mut bytes = [false; 256];
-        for value in 0..values {
-            let byte = u8::try_from((value * multiplier).div_ceil(243)).unwrap();
-            bytes[usize::from(byte)] = true;
-        }
-        bytes
-    });
-    for position in 0..26 {
-        let canonical = &canonical[usize::from(position >= 24)];
-        for byte in 0..=255_u8 {
-            let mut packed = baseline;
-            packed[position] = byte;
-            if canonical[usize::from(byte)] {
-                let decoded = unpack_ptq(&packed).unwrap();
-                assert_eq!(
-                    pack_ptq(&decoded).unwrap(),
-                    packed,
-                    "byte {byte}, position {position}"
-                );
-            } else {
-                assert_eq!(
-                    unpack_ptq(&packed),
-                    Err(Error::NoncanonicalPtq),
-                    "byte {byte}, position {position}"
-                );
-            }
-        }
-    }
-}
-
-#[test]
 fn every_native_lane_word_has_independent_base_three_symbols() {
     let mut checked = 0;
+    let mut rejected = 0;
     for lane in 0..26 {
         let (digits, words, first, stride) = match lane {
             0..16 => (5, 243_u32, lane, 16),
@@ -234,8 +166,11 @@ fn every_native_lane_word_has_independent_base_three_symbols() {
                     Err(Error::NoncanonicalPtq),
                     "lane {lane}, byte {byte}"
                 );
+                rejected += 1;
             }
         }
     }
-    assert_eq!(checked, 5994);
+    // These two counts cover every byte at every position, including aliases
+    // such as byte 1 that decode like a canonical encoding but must be rejected.
+    assert_eq!((checked, rejected), (5994, 662));
 }
