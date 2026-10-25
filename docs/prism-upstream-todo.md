@@ -177,20 +177,24 @@ record of its tested revision, not a current capability inventory.
   accompanies numerical kernels for F32/F16/BF16 `ADD1` (4), `IM2COL_BACK` (53),
   `POOL_2D_BACK` (62), `WIN_PART`/`WIN_UNPART` (78/79) and
   `GET_REL_POS`/`ADD_REL_POS` (80/81). These have focused local checks;
-  full source qualification remains open. Packed `ADD1`, `FLASH_ATTN_BACK`
-  (75) and custom/map callbacks (92–95) remain unimplemented. Preserve actual
+  full source qualification remains open. Packed `ADD1` additionally covers
+  20 encodable formats with F32 scalars, restricted to one fourth-axis slab;
+  auxiliary formats and codecs with unavailable encoders remain rejected.
+  `FLASH_ATTN_BACK` (75) and custom/map callbacks (92–95) remain unimplemented.
+  The pinned public attention-backward constructor aborts; its dormant CPU code
+  is not a passing public reference. Preserve actual
   shape, stride, alias and arithmetic contracts; extraction-source restrictions
   are explicit in the [reuse review](prism-reuse-review.md).
   `ggml_build_backward_expand`, gradient snapshots and
   reset remain incomplete; keep these separate from default eval/support
   acceptance and from the excluded GEGLU gradient diagnostic.
-- [ ] **Finish packed formats.** Remaining type IDs are 16 `IQ2_XXS`, 17 `IQ2_XS`,
-  18 `IQ3_XXS`, 19 `IQ1_S`, 21 `IQ3_S`, 22 `IQ2_S` and 29 `IQ1_M`.
-  Types 41 `Q1_0` and 42 `Q2_0` now have checked layouts, decoding, encoding
-  and packed dots with focused native evidence; full source qualification
-  remains open. Supply checked byte layouts, arbitrary-byte decoding, reference
-  and CPU encoders where native traits expose them, actual importance semantics,
-  and native packed-activation dots. Preserve each trait's unavailable entries.
+- [ ] **Finish packed formats.** Types 16 `IQ2_XXS`, 17 `IQ2_XS`, 18 `IQ3_XXS`,
+  19 `IQ1_S`, 21 `IQ3_S`, 22 `IQ2_S` and 29 `IQ1_M` now have checked layouts,
+  arbitrary-byte decoding, native packed-activation dots and CPU graph routing,
+  with focused native evidence. Types 41 `Q1_0` and 42 `Q2_0` also provide
+  encoding. Full source qualification remains open. Complete reference and
+  importance encoders where native traits expose them; preserve the unavailable
+  native CPU encoder entries. See the [direct-port evidence](prism-reuse-review.md#direct-port-continuation).
   IQ4_NL's native zero-scale reference path packs uninitialized payload nibbles;
   Rust canonicalizes those unused nibbles and preserves numeric zero. Do not
   claim byte parity for undefined native bytes or copy native stack addresses.
