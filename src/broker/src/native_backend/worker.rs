@@ -84,6 +84,7 @@ struct Command {
 }
 
 pub(super) struct Worker {
+    pub(super) seed: u32,
     commands: Option<mpsc::SyncSender<Command>>,
     thread: Option<JoinHandle<()>>,
     busy: Arc<AtomicBool>,
@@ -104,7 +105,7 @@ impl Drop for Settlement<'_> {
 }
 
 impl Worker {
-    pub(super) fn new(engine: impl Engine) -> Result<Self, NativeBackendError> {
+    pub(super) fn new(engine: impl Engine, seed: u32) -> Result<Self, NativeBackendError> {
         let (commands, receive) = mpsc::sync_channel::<Command>(1);
         let busy = Arc::new(AtomicBool::new(false));
         let idle = Arc::new(Notify::new());
@@ -132,6 +133,7 @@ impl Worker {
             })
             .map_err(|_| NativeBackendError::Engine)?;
         Ok(Self {
+            seed,
             commands: Some(commands),
             thread: Some(thread),
             busy,

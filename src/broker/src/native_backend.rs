@@ -88,7 +88,8 @@ pub async fn serve(
     }
     let policy =
         RequestPolicy::new(address.port(), &key).map_err(|_| NativeBackendError::Configuration)?;
-    let mut worker = Worker::new(session)?;
+    let seed = session.seed();
+    let mut worker = Worker::new(session, seed)?;
     loop {
         let (client, peer) = listener
             .accept()
@@ -154,7 +155,7 @@ async fn serve_connection<C: AsyncRead + AsyncWrite + Unpin + 'static>(
             return write_json(
                 &mut client,
                 200,
-                &json!({"data":[{"id":"Swift-Bonsai-2-PQ2_0","object":"model"}]}),
+                &json!({"data":[{"id":"Swift-Bonsai-2-PQ2_0","object":"model","model_sha256":bonsai_prism_runtime::model::swift::MODEL_SHA256,"template_sha256":bonsai_prism_runtime::model::swift::TEMPLATE_SHA256,"runtime":"bonsai-prism-runtime","context_tokens":8192,"seed":worker.seed}]}),
                 deadline,
             )
             .await;
@@ -406,7 +407,7 @@ struct FixedBody<'a> {
     presence_penalty: f32,
     frequency_penalty: f32,
     repeat_penalty: f32,
-    chat_template_kwargs: FixedTemplate,
+    chat_template_kwargs: Object<FixedTemplate>,
 }
 
 #[derive(Deserialize)]
@@ -430,9 +431,9 @@ fn canonical(bytes: &[u8]) -> Result<PendingChat, NativeBackendError> {
         || body.n_cache_reuse != 0
         || body.ignore_eos
         || body.top_k != 20
-        || !body.chat_template_kwargs.enable_thinking
-        || body.chat_template_kwargs.reasoning_effort != "xhigh"
-        || !body.chat_template_kwargs.preserve_thinking
+        || !body.chat_template_kwargs.0.enable_thinking
+        || body.chat_template_kwargs.0.reasoning_effort != "xhigh"
+        || !body.chat_template_kwargs.0.preserve_thinking
         || [
             body.temperature,
             body.top_p,
@@ -531,3 +532,6 @@ fn ensure_time(deadline: Instant) -> Result<(), NativeBackendError> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;
