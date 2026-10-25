@@ -90,8 +90,15 @@ struct Observation {
     executions: Arc<AtomicUsize>,
     state: Arc<AtomicUsize>,
     resets: Arc<AtomicUsize>,
+    terminated: Arc<AtomicBool>,
 }
 struct FakeEngine(Observation);
+
+impl Drop for FakeEngine {
+    fn drop(&mut self) {
+        self.0.terminated.store(true, Ordering::Release);
+    }
+}
 
 impl worker::Engine for FakeEngine {
     type Prepared = FakePrepared;
@@ -343,6 +350,155 @@ fn private_disconnect_rolls_back_and_requires_reset_before_subsequent_success() 
             perform(&mut worker, request("/v1/chat/completions", &body, true)).await?;
         assert_eq!(result, Ok(()));
         assert_eq!(observed.state.load(Ordering::Relaxed), 1);
+        Ok(())
+    })
+}
+
+#[test]
+fn private_worker_drop_cancels_queued_unacknowledged_output_and_joins() -> TestResult {
+    run(async {
+        let observed = Observation::default();
+        let mut worker =
+            Worker::new(FakeEngine(observed.clone()), 42).map_err(|e| format!("{e:?}"))?;
+        let mut events = worker
+            .start(
+                Input::Count(pending(true, 128).map_err(|e| format!("{e:?}"))?),
+                Cancellation::default(),
+                std::time::Instant::now() + Duration::from_secs(10),
+            )
+            .map_err(|e| format!("{e:?}"))?;
+        while events.is_empty() {
+            tokio::task::yield_now().await;
+        }
+        // Keep the receiver and its unacknowledged queued event live while
+        // dropping the owner. Joining must cancel the wait, not detach it or
+        // block behind a second send into the already occupied one-event slot.
+        drop(worker);
+        assert!(observed.terminated.load(Ordering::Acquire));
+        let event = events.recv().await.ok_or("missing provisional count")?;
+        assert!(matches!(event.output, Output::Count(100)));
+        assert!(
+            event
+                .ack
+                .ok_or("missing count acknowledgement")?
+                .send(())
+                .is_err()
+        );
+        Ok(())
+    })
+}
+
+#[test]
+fn private_head_reuses_strict_host_auth_origin_and_framing_policy() -> TestResult {
+    let policy = RequestPolicy::new(8080, KEY).map_err(|e| format!("{e:?}"))?;
+    let bytes = request("/v1/chat/completions/input_tokens", b"{}", true);
+    let end = bytes
+        .array_windows()
+        .position(|part| part == b"\r\n\r\n")
+        .ok_or("missing fixture head")?
+        + 4;
+    let head = std::str::from_utf8(&bytes[..end])?;
+    assert!(matches!(
+        parse_head(head.as_bytes(), &policy),
+        Ok((Route::Count, 2))
+    ));
+    for changed in [
+        head.replace("\r\n", "\n"),
+        head.replace("Host: 127.0.0.1:8080", "Host: 127.0.0.1:8081"),
+        head.replace(
+            "Host: 127.0.0.1:8080",
+            "Host: 127.0.0.1:8080\r\nHost: 127.0.0.1:8080",
+        ),
+        head.replace(
+            "Content-Length: 2",
+            "Content-Length: 2\r\nContent-Length: 2",
+        ),
+        head.replace(
+            "Content-Length: 2",
+            "Content-Length: 2\r\nTransfer-Encoding: chunked",
+        ),
+        head.replace(
+            "Connection: close",
+            "Connection: close\r\nOrigin: http://elsewhere.invalid",
+        ),
+        head.replace(
+            "Connection: close",
+            "Connection: close\r\nForwarded: for=127.0.0.1",
+        ),
+        head.replace(
+            "/v1/chat/completions/input_tokens",
+            "/v1/chat/completions/../input_tokens",
+        ),
+    ] {
+        assert!(parse_head(changed.as_bytes(), &policy).is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn private_unacknowledged_deadline_and_terminal_failure_restore_then_close_admission() -> TestResult
+{
+    run(async {
+        for terminal in [false, true] {
+            let observed = Observation::default();
+            let mut worker =
+                Worker::new(FakeEngine(observed.clone()), 42).map_err(|e| format!("{e:?}"))?;
+            let body = pending(true, 128).map_err(|e| format!("{e:?}"))?.body;
+            let (counted, _) = perform(
+                &mut worker,
+                request("/v1/chat/completions/input_tokens", &body, true),
+            )
+            .await?;
+            assert_eq!(counted, Ok(()));
+            let allowance = if terminal {
+                Duration::from_secs(10)
+            } else {
+                Duration::from_secs(1)
+            };
+            let mut events = worker
+                .start(
+                    Input::Generate(canonical(&body).map_err(|e| format!("{e:?}"))?),
+                    Cancellation::default(),
+                    std::time::Instant::now() + allowance,
+                )
+                .map_err(|e| format!("{e:?}"))?;
+            let held = loop {
+                let Event { output, ack } = events.recv().await.ok_or("missing worker event")?;
+                let target = if terminal {
+                    matches!(output, Output::Complete(_))
+                } else {
+                    matches!(output, Output::Delta(_))
+                };
+                if target {
+                    break ack;
+                }
+                assert!(!matches!(output, Output::Done(_)));
+                ack.ok_or("missing write acknowledgement")?
+                    .send(())
+                    .map_err(|_| "worker rejected acknowledgement")?;
+            };
+            let held = if terminal {
+                drop(held);
+                None
+            } else {
+                held
+            };
+            let event = events.recv().await.ok_or("missing failed completion")?;
+            assert!(matches!(
+                event.output,
+                Output::Done(Err(NativeBackendError::Engine))
+            ));
+            drop(held);
+            drop(events);
+            worker.settled().await;
+            assert_eq!(observed.state.load(Ordering::Relaxed), 0);
+            let (result, _) = perform(
+                &mut worker,
+                request("/v1/chat/completions/input_tokens", &body, true),
+            )
+            .await?;
+            assert_eq!(result, Err(NativeBackendError::Engine));
+        }
         Ok(())
     })
 }

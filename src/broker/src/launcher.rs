@@ -361,6 +361,12 @@ impl LaunchConfig {
             process.stop(STOP_TIMEOUT).map_err(|_| LaunchError::Stop)?;
             return Err(error);
         }
+        if self.native_engine
+            && !native_identity(self.backend_port, credentials.backend_key(), process.id()).await
+        {
+            process.stop(STOP_TIMEOUT).map_err(|_| LaunchError::Stop)?;
+            return Err(LaunchError::Backend);
+        }
         let mut service = LocalChatService::bind(
             self.frontend_port,
             credentials.frontend_key(),
@@ -535,6 +541,57 @@ async fn healthy(port: u16, key: &str, process_id: u32) -> bool {
     )
     .await
     .is_ok_and(|result| result.is_ok())
+}
+
+#[cfg(feature = "native-swift")]
+async fn native_identity(port: u16, key: &str, process_id: u32) -> bool {
+    timeout(Duration::from_secs(2), async {
+        validate_native_identity(&exchange(port, "/v1/models", Some(key), process_id).await?)
+    })
+    .await
+    .is_ok_and(|result| result.is_ok())
+}
+
+#[cfg(not(feature = "native-swift"))]
+fn native_identity(_port: u16, _key: &str, _process_id: u32) -> impl Future<Output = bool> {
+    std::future::ready(false)
+}
+
+#[cfg(feature = "native-swift")]
+fn validate_native_identity(bytes: &[u8]) -> io::Result<()> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Models {
+        data: Vec<crate::Object<NativeModel>>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct NativeModel {
+        id: String,
+        object: String,
+        model_sha256: String,
+        template_sha256: String,
+        runtime: String,
+        context_tokens: usize,
+        seed: u32,
+    }
+    let body = validate_response(bytes, 200)?;
+    let crate::Object(models): crate::Object<Models> =
+        serde_json::from_slice(body).map_err(io::Error::other)?;
+    let [crate::Object(model)] = models.data.as_slice() else {
+        return Err(io::Error::other("native model inventory mismatch"));
+    };
+    if model.id != "Swift-Bonsai-2-PQ2_0"
+        || model.object != "model"
+        || model.model_sha256 != bonsai_prism_runtime::model::swift::MODEL_SHA256
+        || model.template_sha256 != bonsai_prism_runtime::model::swift::TEMPLATE_SHA256
+        || model.runtime != "bonsai-prism-runtime"
+        || model.context_tokens != crate::CONTEXT_TOKENS
+        || model.seed != 42
+    {
+        return Err(io::Error::other("native model readiness identity mismatch"));
+    }
+    Ok(())
 }
 
 async fn health_exchange(port: u16, key: &str, process_id: u32) -> io::Result<()> {
@@ -748,6 +805,47 @@ mod tests {
             LaunchConfig::parse(args).err(),
             Some(LaunchError::Arguments)
         );
+    }
+
+    #[test]
+    #[cfg(feature = "native-swift")]
+    fn native_readiness_requires_exact_model_template_runtime_context_and_seed()
+    -> std::io::Result<()> {
+        use serde_json::json;
+        let model = json!({"id":"Swift-Bonsai-2-PQ2_0","object":"model",
+            "model_sha256":bonsai_prism_runtime::model::swift::MODEL_SHA256,
+            "template_sha256":bonsai_prism_runtime::model::swift::TEMPLATE_SHA256,
+            "runtime":"bonsai-prism-runtime","context_tokens":8192,"seed":42});
+        let body = serde_json::to_string(&json!({"data":[model.clone()]}))?;
+        assert!(super::validate_native_identity(&response(&body)).is_ok());
+        for (field, changed) in [
+            ("id", json!("foreign")),
+            ("object", json!("list")),
+            ("model_sha256", json!("0".repeat(64))),
+            ("template_sha256", json!("0".repeat(64))),
+            ("runtime", json!("Prism")),
+            ("context_tokens", json!(8193)),
+            ("seed", json!(43)),
+        ] {
+            let mut changed_model = model.clone();
+            changed_model[field] = changed;
+            let body = serde_json::to_string(&json!({"data":[changed_model]}))?;
+            assert!(
+                super::validate_native_identity(&response(&body)).is_err(),
+                "{field}"
+            );
+        }
+        for data in [
+            json!([]),
+            json!([model.clone(), model]),
+            json!([["positional"]]),
+        ] {
+            let body = serde_json::to_string(&json!({"data":data}))?;
+            assert!(super::validate_native_identity(&response(&body)).is_err());
+        }
+        let duplicate = body.replace("\"seed\":42", "\"seed\":42,\"seed\":42");
+        assert!(super::validate_native_identity(&response(&duplicate)).is_err());
+        Ok(())
     }
 
     #[test]

@@ -12,7 +12,7 @@ use std::{
         mpsc,
     },
     thread::{self, JoinHandle},
-    time::Instant,
+    time::{Duration, Instant},
 };
 use tokio::sync::{Notify, mpsc as channel};
 
@@ -125,7 +125,7 @@ impl Worker {
                         idle: &notified,
                     };
                     let result = state.execute(&command);
-                    let _ = command.events.blocking_send(Event {
+                    let _ = command.events.try_send(Event {
                         output: Output::Done(result),
                         ack: None,
                     });
@@ -295,12 +295,19 @@ fn acknowledge(command: &Command, output: Output) -> Result<(), NativeBackendErr
             ack: Some(send),
         })
         .map_err(|_| NativeBackendError::ClientAbandoned)?;
-    let remaining = command
-        .deadline
-        .checked_duration_since(Instant::now())
-        .ok_or(NativeBackendError::Deadline)?;
-    receive
-        .recv_timeout(remaining)
-        .map_err(|_| NativeBackendError::ClientAbandoned)?;
+    loop {
+        check(command)?;
+        let remaining = command
+            .deadline
+            .checked_duration_since(Instant::now())
+            .ok_or(NativeBackendError::Deadline)?;
+        match receive.recv_timeout(remaining.min(Duration::from_millis(50))) {
+            Ok(()) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(NativeBackendError::ClientAbandoned);
+            }
+        }
+    }
     check(command)
 }
