@@ -3,7 +3,7 @@
 
 use bonsai_prism_runtime::{
     Decoder, MAX_PREFILL_BLOCK_TOKENS, Result,
-    runtime::{Cancellation, Finish, Generation, Limits, Prefill, Runtime, greedy},
+    runtime::{Cancellation, Finish, Generation, Limits, Prefill, Runtime},
     sampling::Sampler,
 };
 use std::{
@@ -585,9 +585,7 @@ fn failed_reset_preserves_committed_history_and_latches_admission_until_success(
 }
 
 #[test]
-fn bounds_stop_tokens_and_ties_do_not_silently_change_decoding() -> Result<()> {
-    assert_eq!(greedy(&[1.0, 2.0, 2.0])?, 1);
-    assert!(greedy(&[f32::NAN]).is_err());
+fn bounds_and_stop_tokens_do_not_silently_change_decoding() -> Result<()> {
     let decoder = decoder();
     let steps = decoder.steps.clone();
     let mut runtime = Runtime::new(decoder, LIMITS)?;
@@ -613,22 +611,6 @@ fn bounds_stop_tokens_and_ties_do_not_silently_change_decoding() -> Result<()> {
     assert_eq!(done.finish, Finish::Stop);
     assert_eq!(done.generated_tokens, 0);
     assert_eq!(runtime.tokens(), &[1]);
-    Ok(())
-}
-
-#[test]
-fn greedy_validates_the_entire_vocabulary_and_preserves_first_ties() -> Result<()> {
-    assert!(greedy(&[]).is_err());
-    for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
-        for position in 0..4 {
-            let mut logits = [f32::MAX, -1.0, -2.0, -3.0];
-            logits[position] = invalid;
-            assert!(greedy(&logits).is_err());
-        }
-    }
-    assert_eq!(greedy(&[-0.0, 0.0, -0.0])?, 0);
-    assert_eq!(greedy(&[-3.0, -1.0, -1.0, -2.0])?, 1);
-    assert_eq!(greedy(&[-2.0, -1.0, 0.0, 1.0])?, 3);
     Ok(())
 }
 

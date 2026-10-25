@@ -26,13 +26,28 @@ fn default_options_match_explicit_reference_settings() {
 }
 
 #[test]
-fn greedy_adapter_preserves_selection_and_validation() -> Result<()> {
+fn greedy_and_adapter_validate_every_logit_and_preserve_first_ties() -> Result<()> {
     let mut sampler = Greedy;
-    for logits in [&[1.0, 3.0, 3.0][..], &[-0.0, 0.0], &[-2.0, -1.0]] {
-        assert_eq!(sampler.sample(logits)?, greedy(logits)?);
+    for (logits, expected) in [
+        (&[1.0, 3.0, 3.0][..], 1),
+        (&[-0.0, 0.0, -0.0][..], 0),
+        (&[-3.0, -1.0, -1.0, -2.0][..], 1),
+        (&[-2.0, -1.0, 0.0, 1.0][..], 3),
+    ] {
+        assert_eq!(greedy(logits)?, expected);
+        assert_eq!(sampler.sample(logits)?, expected);
     }
-    for logits in [&[][..], &[1.0, f32::NAN], &[f32::INFINITY, 0.0]] {
-        assert!(sampler.sample(logits).is_err());
+    assert!(greedy(&[]).is_err());
+    assert!(sampler.sample(&[]).is_err());
+    for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert!(greedy(&[invalid]).is_err());
+        assert!(sampler.sample(&[invalid]).is_err());
+        for position in 0..4 {
+            let mut logits = [f32::MAX, -1.0, -2.0, -3.0];
+            logits[position] = invalid;
+            assert!(greedy(&logits).is_err());
+            assert!(sampler.sample(&logits).is_err());
+        }
     }
     Ok(())
 }
