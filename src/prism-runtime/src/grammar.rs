@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 
 use crate::{Result, invalid};
 
+pub mod runtime;
+
 /// One flattened grammar instruction in the pinned production representation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Element {

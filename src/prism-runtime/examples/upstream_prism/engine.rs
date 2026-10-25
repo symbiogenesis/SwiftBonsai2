@@ -278,6 +278,9 @@ impl Engine {
             if let Some(response) = super::backend_ops::execute(request)? {
                 return Ok(Some(response));
             }
+            if let Some(response) = super::llama_grammar::execute_runtime(request)? {
+                return Ok(Some(response));
+            }
             return super::engine_vocab::execute(request);
         }
         let bridge = self
