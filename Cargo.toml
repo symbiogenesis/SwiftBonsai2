@@ -18,7 +18,7 @@ edition = "2024"
 rust-version = "1.101"
 publish = false
 license = "Apache-2.0"
-repository = "https://github.com/symbiogenesis/SwiftBonsai2"
+repository = "https://github.com/symbiogenesis/SwiftBonsai2Runner"
 
 [workspace.dependencies]
 serde = "=1.0.229"

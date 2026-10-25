@@ -24,7 +24,7 @@ See the [migration guide](prism-upstream-tests.md),
 - Original C++ test executables, fixture exporters, and the replay importer/build
   are retired. The remaining two C++ translation units and one C ABI translation
   unit expose production operations needed by the reference adapters.
-- [Run 40146089128](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40146089128)
+- [Run 40146089128](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40146089128)
   on `eb37e263b9852c4fcccb0d1fa8ee69aea977b4d5` passed all 69 ordinary source
   adapters against C++ and all 16 backend planning partitions. Rust recorded
   4 ordinary passes and 65 failures. The run failed during artifact extraction
@@ -35,7 +35,7 @@ See the [migration guide](prism-upstream-tests.md),
 
 ## Deferred full reference qualification
 
-- [x] Collect the result of [run 40150402106](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40150402106),
+- [x] Collect the result of [run 40150402106](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40150402106),
   which tests `9332b01` with benchmarks enabled and optional gradients disabled.
   Its verdict was pending at handoff. The run was subsequently cancelled during
   the ordinary source job, before backend plan joining or numerical execution.
@@ -44,7 +44,7 @@ See the [migration guide](prism-upstream-tests.md),
   and that the separate `prism-backend-evidence-plan-*` and
   `prism-backend-evidence-run-*` artifacts retain complete diagnostics.
   Planning is now demonstrated: run
-  [40153890429](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40153890429)
+  [40153890429](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40153890429)
   at `8aca3a1` passed all 16 planning partitions and the plan join. Compact
   `prism-backend-plan-*` records and separate diagnostic artifacts were retained.
   Execution stopped before producing all compact execution records, so this
@@ -144,7 +144,7 @@ remain open. Persistent Rust vocabulary sessions now call the same production
 tokenizer, without a separate tokenizer implementation in the test harness.
 
 The scalar and native runtime lanes in
-[run 40153248553](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40153248553)
+[run 40153248553](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40153248553)
 tested `e62b81556e266b927ad11632c93ee73805d3badb` and failed compilation/analyzer
 checks. The retained logs identify backend test naming/value-argument lints, an
 unwired reasoning adapter, and extra trailing whitespace in `lib.rs`; no runtime
@@ -156,12 +156,12 @@ the earlier failure rather than the final session status.
 
 ## Latest CI failures and committed repairs
 
-- [Run 40155168704](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40155168704)
+- [Run 40155168704](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40155168704)
   tested `a2d085d`. Scalar fallback passed. Native execution passed its runtime
   tests, then the no-default-features analyzer attempted to compile the JSON
   example with its schema/PEG modules disabled. `03fd07b` declares the example's
   `cli` requirement. The exact no-default all-target analyzer passed locally.
-- [Run 40155820247](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40155820247)
+- [Run 40155820247](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40155820247)
   tested `03fd07b`. Its native suite failed only the Jinja observation-count
   guard: all observations passed, but the guard still expected 56 after 16
   additional hash checks were added. `97a0dda` expects 72; the focused test passed.
@@ -178,7 +178,7 @@ the earlier failure rather than the final session status.
   until metadata changes. The exact geometry passed against Rust and production
   C++, preserving geometry seed, CRT offset **7,748,238**, **262,400** draws,
   original inputs and comparisons. This does not qualify the remaining matrix.
-- [Run 40156509200](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40156509200)
+- [Run 40156509200](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40156509200)
   tested the previously published `5ede838`; it was pending when inspected. No
   passing verdict is claimed. Later wrap-up commits were unpublished at that
   handoff.

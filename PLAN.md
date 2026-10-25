@@ -1,4 +1,4 @@
-# Swift Bonsai 2 implementation plan
+# Swift Bonsai 2 - Runner implementation plan
 
 Build a local creative assistant for a 32 GB Snapdragon X Elite laptop running
 Windows ARM64. Prioritize writing, revision, brainstorming and art direction,

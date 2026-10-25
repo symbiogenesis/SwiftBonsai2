@@ -15,7 +15,7 @@ or throughput measurements.
 
 The former optimized C++ prototype was **3.24× / 3.36× slower than PQ2** in hot
 and larger-footprint single-thread synthetic cases on Cobalt 100 ARM64, MSVC
-19.51.36260.0 with DOTPROD. [Run 39986261941](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/39986261941)
+19.51.36260.0 with DOTPROD. [Run 39986261941](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/39986261941)
 tested `49693a5`; its adapted PTQ/Q8_K comparator differed from Prism's released
 PTQ/Q8_0 route. These historical kernel results do not qualify Rust, full-model,
 multithreaded or Snapdragon behavior.
@@ -27,6 +27,6 @@ separate logits, quality and performance qualification. See the
 [current assessment](swift-memory.md).
 
 Prior sources and raw evidence remain in
-[Git at `b59b3236`](https://github.com/symbiogenesis/SwiftBonsai2/tree/b59b3236d76e1f0c4a38943898286c64f43dff9a),
-including the [layout census](https://github.com/symbiogenesis/SwiftBonsai2/blob/b59b3236d76e1f0c4a38943898286c64f43dff9a/config/swift.bitcos-census.json)
-and [timing records](https://github.com/symbiogenesis/SwiftBonsai2/blob/b59b3236d76e1f0c4a38943898286c64f43dff9a/config/bitcos.synthetic-cobalt100.json).
+[Git at `b59b3236`](https://github.com/symbiogenesis/SwiftBonsai2Runner/tree/b59b3236d76e1f0c4a38943898286c64f43dff9a),
+including the [layout census](https://github.com/symbiogenesis/SwiftBonsai2Runner/blob/b59b3236d76e1f0c4a38943898286c64f43dff9a/config/swift.bitcos-census.json)
+and [timing records](https://github.com/symbiogenesis/SwiftBonsai2Runner/blob/b59b3236d76e1f0c4a38943898286c64f43dff9a/config/bitcos.synthetic-cobalt100.json).

@@ -124,7 +124,7 @@ fn synthetic_ci_child(name: &str) -> Result<bool> {
             .env(CHILD, "1")
             .env("GITHUB_ACTIONS", "true")
             .env("GITHUB_REF", "refs/heads/main")
-            .env("GITHUB_REPOSITORY", "symbiogenesis/SwiftBonsai2")
+            .env("GITHUB_REPOSITORY", "symbiogenesis/SwiftBonsai2Runner")
             .env("RUNNER_ARCH", "ARM64")
             .env("GITHUB_RUN_ID", "1")
             .env("RUNNER_NAME", "synthetic-completion-fixture")

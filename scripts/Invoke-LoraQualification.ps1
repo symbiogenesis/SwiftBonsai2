@@ -41,7 +41,7 @@ if ($PlanOnly) {
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64' -or
     [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
     $env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main' -or
-    $env:GITHUB_REPOSITORY -cne 'symbiogenesis/SwiftBonsai2' -or $env:RUNNER_ARCH -cne 'ARM64' -or
+    $env:GITHUB_REPOSITORY -cne 'symbiogenesis/SwiftBonsai2Runner' -or $env:RUNNER_ARCH -cne 'ARM64' -or
     $env:GITHUB_RUN_ID -cnotmatch '^[0-9]+$' -or [string]::IsNullOrWhiteSpace($env:RUNNER_NAME)) {
     throw 'Model evaluations are CI-only, on this repository main and the native Windows ARM64 Snapdragon runner.'
 }

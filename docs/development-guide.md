@@ -31,6 +31,9 @@ isolation or same-user backend bypass prevention.
 Choose an absolute local data directory outside Git on a hard-link-capable
 filesystem such as NTFS. Provisioning rejects junctions and device paths.
 
+The default data directory keeps the `SwiftBonsai2` name for compatibility with
+existing installations. It is separate from the `SwiftBonsai2Runner` checkout.
+
 ```powershell
 ./scripts/Doctor.ps1
 # Optional existing data directory and new report file:

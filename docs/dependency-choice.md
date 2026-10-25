@@ -54,9 +54,9 @@ advantage for replacing the bounded Tokio runner.
 
 ## Evidence and limits
 
-[CI run 40039211957](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40039211957)
-tested [`c63a7c0762f7cc64df0d67b34001a31fda6a0b5f`](https://github.com/symbiogenesis/SwiftBonsai2/tree/c63a7c0762f7cc64df0d67b34001a31fda6a0b5f).
-Its [artifact](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40039211957/artifacts/12538059153)
+[CI run 40039211957](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40039211957)
+tested [`c63a7c0762f7cc64df0d67b34001a31fda6a0b5f`](https://github.com/symbiogenesis/SwiftBonsai2Runner/tree/c63a7c0762f7cc64df0d67b34001a31fda6a0b5f).
+Its [artifact](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40039211957/artifacts/12538059153)
 contains raw observations, correctness logs, compiler/CPU/OS identities, hashes,
 selection calculations and exclusions. The host was four-core Cobalt 100,
 Windows 11 Enterprise build 26200, using

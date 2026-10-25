@@ -1,6 +1,6 @@
 # Licensing and dependency terms
 
-Original Swift Bonsai 2 code, documentation and configuration use
+Original Swift Bonsai 2 - Runner code, documentation and configuration use
 [Apache-2.0](../LICENSE), copyright 2026 Edward Miller and contributors.
 Third-party material retains its own terms. [NOTICE](../NOTICE) preserves
 Prism/ggml attribution and the MIT permission notice for inherited portions.

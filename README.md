@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🌱 Swift Bonsai 2
+# 🌱 Swift Bonsai 2 - Runner
 
 **A local runner for the Swift Bonsai 2 model on Windows ARM64.**
 

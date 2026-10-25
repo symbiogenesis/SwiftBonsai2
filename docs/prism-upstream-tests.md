@@ -401,7 +401,7 @@ reports 19,434 rejected blocks out of the original 20,000; admitted positions
 match exactly. The baseline retains this original domain instead of narrowing
 the test to canonical bytes.
 
-The initial [hosted Foundation run](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40112751630)
+The initial [hosted Foundation run](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40112751630)
 passed on revision `afe66d881b8828183b9ffe7ef3119463b5d58bc2`. All **19 selected
 C++ controls** passed (17 original suites plus the two paired adapter controls).
 Their IDs are recorded in the baseline, so none can disappear from later runs.
@@ -412,19 +412,19 @@ That initial run left 52 sources without an executed C++ control. The MTMD
 Rust port adds another upstream control; it is separate from the original 19.
 
 The first native Windows ARM64 acceptance run passed on revision `84ad97d`,
-[Foundation run 40116792959](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40116792959).
+[Foundation run 40116792959](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40116792959).
 Its ClangCL bridges and Rust harness were verified as ARM64 PE files. All eight
 ports published at that revision and 12 retained original controls passed on
 Prism. Rust recorded one passing source, seven failed ports and 63 unsupported
 sources. Later port registrations require their own hosted reference acceptance.
 
-The next [Windows ARM64 run, 40118410264](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40118410264),
+The next [Windows ARM64 run, 40118410264](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40118410264),
 passed on `18d2c18`: all 25 ports registered at that revision and two original
 controls passed. Rust recorded one passing source, 24 failed ports and 46
 unsupported sources. The baseline retains the original green source and all 19
 required reference identities independently of these increasing port counts.
 
-[Windows ARM64 run 40120815419](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40120815419)
+[Windows ARM64 run 40120815419](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40120815419)
 passed on `2daa94c`: all33 Rust-owned source contracts passed on upstream,
 including all694 tokenizer predicates and the complete GGUF replacement.
 Rust recorded one passing source,32 failed ports and38 unsupported sources.

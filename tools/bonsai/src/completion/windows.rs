@@ -117,7 +117,7 @@ fn validate_ci() -> Result<()> {
     for (name, value) in [
         ("GITHUB_ACTIONS", "true"),
         ("GITHUB_REF", "refs/heads/main"),
-        ("GITHUB_REPOSITORY", "symbiogenesis/SwiftBonsai2"),
+        ("GITHUB_REPOSITORY", "symbiogenesis/SwiftBonsai2Runner"),
         ("RUNNER_ARCH", "ARM64"),
     ] {
         if std::env::var(name).as_deref() != Ok(value) {
