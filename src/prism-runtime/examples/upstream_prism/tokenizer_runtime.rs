@@ -458,7 +458,7 @@ mod tests {
             Some(source.clone().into()),
             None,
         )?;
-        for name in ["gpt-2", "llama-spm"] {
+        for name in ["gpt-2", "llama-spm", "aquila"] {
             let session =
                 ModelSession::open(&engine, name)?.ok_or("Rust vocabulary session missing")?;
             let client = session.client();
