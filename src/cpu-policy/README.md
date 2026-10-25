@@ -4,6 +4,10 @@
 accounting, CPU completion and server arguments, and explicit source/PTQ1 artifact selection.
 It forbids unsafe code and uses the workspace's existing Serde dependencies.
 
+The `hardware` module defines the initial H0 runtime discovery parser and
+immutable profile/evidence keys. It does not select or qualify profiles; see the
+[wire and evidence contracts](../../docs/hardware-capabilities.md).
+
 The maintenance CLI combines its pure plan with a physical-memory observation.
 The broker reuses profile memory limits, server arguments and environment-name
 policy. The PowerShell server preflight delegates strict reference profile checks

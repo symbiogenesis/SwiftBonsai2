@@ -13,6 +13,9 @@ use serde_json::{Value, json};
 /// Shared fixed server arguments and nonlaunching reference preflight policy.
 pub mod server;
 
+/// Versioned discovery and profile evidence contracts; no automatic selection.
+pub mod hardware;
+
 const REFERENCE_LOCK: &str = include_str!("../../../config/runtime.lock.json");
 const SWIFT_LOCK: &str = include_str!("../../../config/swift-assessment.lock.json");
 const ADAPTER_LOCK: &str = include_str!("../../../config/swift-lora.lock.json");

@@ -24,7 +24,7 @@
     "foundation_scripts": {
       "packages": ["bonsai-tools"],
       "paths": [
-        "scripts/Doctor.ps1", "scripts/Get-Inference.ps1", "scripts/New-InferenceLock.ps1",
+        "scripts/Doctor.ps1", "scripts/Bonsai.Capabilities.psm1", "scripts/Get-Inference.ps1", "scripts/New-InferenceLock.ps1",
         "scripts/Read-Gguf.ps1", "scripts/Export-SwiftPtq1.ps1", "scripts/Bonsai.Gguf.psm1",
         "scripts/Get-Model.ps1", "scripts/Get-ServerPlan.ps1", "scripts/Bonsai.ServerPolicy.psm1",
         "scripts/New-DevelopmentKeys.ps1", "scripts/Bonsai.Inference.psm1",

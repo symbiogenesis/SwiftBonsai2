@@ -96,14 +96,16 @@ and [development commands](docs/development-guide.md).
 | Native Rust CPU | Verified Swift loader, hybrid graph, transactional generation, exact Swift chat/tokenizer, native sampler and experimental broker path | Reviewed prebuilt consumption; broader models, full-context workloads and adapters remain deferred |
 | Adreno Vulkan | CPU-only builds and profiles today | Native ARM64 build, exact-model placement/parity and paired device evidence |
 | Hexagon | Discovery and implementation plan only; recent upstream X2 DMA and low-bit/Hadamard leads | Signed matching kernels, exact packed arithmetic, hybrid state and bounded per-device deployment |
-| Automatic X1/X2 profiles | H0-H5 planned; no selector or accepted accelerator defaults | Shared capabilities, measured profile catalog, deterministic selection and qualified fallback on each generation |
+| Automatic X1/X2 profiles | Initial H0 inventory/contracts implemented; no selector or accepted accelerator defaults | Shared capabilities, measured profile catalog, deterministic selection and qualified fallback on each generation |
 
 The [SIMD S0–S6 plan](docs/simd-plan.md), [Adreno G0–G5 plan](docs/adreno-gpu-plan.md)
 and [Hexagon N0–N7 plan](docs/hexagon-npu-plan.md) own their detailed exits.
 Source support or device detection does not qualify this laptop. OpenCL and
 conversion-based ONNX/QNN routes require separate exact-format/graph audits.
 Keep a reproducible CPU fallback and report unsupported placements explicitly.
-The [hardware H0-H5 plan](docs/hardware-profiles.md#delivery-sequence) combines
+The [first H0 implementation](docs/hardware-capabilities.md) provides versioned
+host/runtime inventory and checked profile/evidence contracts without selecting
+a profile. The [hardware H0-H5 plan](docs/hardware-profiles.md#delivery-sequence) combines
 these exits into automatic selection. Rank qualified profiles by complete-task
 latency or energy within constraints; tune prefill/decode separately and account
 for state migration, shared bandwidth, load/compile/repack and sustained behavior.
@@ -363,7 +365,7 @@ when authorized, uses only `main`. Git history holds implementation chronology.
 | M1b — optional agents | Pending | Qualified client and whole-agent containment before tools are enabled |
 | M2 — Adreno | G0–G5 pending | Per-device X1/X2 exact-model correctness and useful benefit, or documented no-go |
 | M3 — cache/context | Bounded experimental Rust state exists | Full-model reuse, context, allocation and quality qualification |
-| M4 — daily profiles and automatic hardware selection | H0-H5 pending | Reproducible installation; automatic qualified interactive/battery configurations and CPU fallback independently accepted on X1 and X2 |
+| M4 — daily profiles and automatic hardware selection | Initial H0 discovery/contracts implemented; H1-H5 pending | Reproducible installation; automatic qualified interactive/battery configurations and CPU fallback independently accepted on X1 and X2 |
 | M5 — Hexagon | N0–N7 pending; prioritize X2 packed-kernel investigation alongside controls | Signed exact-model execution, bounded state/memory and per-device benefit, or no-go |
 | M6 — advanced kernels/speculation | Research candidates | Correctness and measured benefit justify maintenance |
 | M7 — Rust replacement | Swift loader/graph, chat/tokenizer, native sampler and experimental owned service implemented | Reviewed runtime consumption, followed by broader R0–R7 and per-profile acceptance |

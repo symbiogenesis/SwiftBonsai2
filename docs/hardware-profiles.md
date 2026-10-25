@@ -6,7 +6,7 @@ for the actual device and task. Optimize time to a useful answer for interactive
 use, and energy per useful task within acceptable latency for battery use.
 These objectives can select different profiles on the same processor.
 
-**This is planned behavior.** Current released launch policies are CPU-only;
+**Automatic selection is planned behavior.** Current released launch policies are CPU-only;
 there is no hardware profile selector or qualified X1/X2 accelerator default.
 The recorded development machine remains the 32 GB X1E-78-100. Preserve the
 [CPU MVP delivery boundary](prism-upstream-todo.md) while preparing this later
@@ -116,7 +116,11 @@ authentication and daily isolation across every selected route.
 
 ## Delivery sequence
 
-All H0-H5 exits are pending. These are project hardware milestones, separate
+The [first H0 discovery and contract implementation](hardware-capabilities.md)
+is available: Doctor's versioned host facts, Prism's model-free runtime report,
+checked compatibility/evidence keys and explicit unknown/fallback vocabulary.
+Digest generation, reviewed prebuilt consumption and selector integration remain
+open. H1-H5 exits are pending. These are project hardware milestones, separate
 from the CPU MVP checklist and backend-specific S/G/N stages.
 
 | Stage | Deliverable and exit |
