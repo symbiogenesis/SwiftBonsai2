@@ -807,6 +807,26 @@ fn exhaustive(position: usize, value: usize) -> Result<HostCase> {
         activations,
     })
 }
+// Supplement the unchanged source schedule with the former packed_codec
+// regression's isolated byte domain and original signed activation bits. The
+// source exhaustive groups change four lanes at once, so keep these stronger
+// independent checks in the upstream port.
+fn native_byte_domain(position: usize, value: u8) -> HostCase {
+    let mut packed = [0; 26];
+    packed[position] = value;
+    HostCase {
+        packed,
+        scale: 1.0,
+        activations: std::array::from_fn(|group| Q8Host {
+            scale: 1.0,
+            values: std::array::from_fn(|element| {
+                let index = group * 32 + element;
+                i8::from_ne_bytes([index.to_le_bytes()[0].wrapping_mul(197).wrapping_add(13)])
+            }),
+        }),
+    }
+}
+
 fn production_host_ops(case: &HostCase) -> [Value; 2] {
     let mut weights = case.packed.to_vec();
     weights.extend(0x3c00_u16.to_le_bytes());
@@ -980,17 +1000,47 @@ pub(super) fn run_ptq_cuda(engine: &Engine) -> Result<Value> {
     if original.count != 53192 || production.count != 14096 {
         return Err(invalid("PTQ CUDA-host source assertion count mismatch"));
     }
+    let mut supplemental = Checks::default();
+    for position in 0..26 {
+        let cases: Vec<_> = (0..=255)
+            .map(|value| native_byte_domain(position, value))
+            .collect();
+        let operations: Vec<Value> = cases.iter().flat_map(production_host_ops).collect();
+        let Some(observations) = exchange(
+            engine,
+            &format!("codec-ptq-byte-domain-{position}"),
+            &operations,
+        )?
+        else {
+            return Ok(unsupported(CUDA_ID));
+        };
+        for (value, case) in cases.iter().enumerate() {
+            check_production(
+                case,
+                &observations[value * 2..value * 2 + 2],
+                position * 256 + value,
+                &mut supplemental,
+            )?;
+        }
+    }
+    if supplemental.count != 13312 {
+        return Err(invalid(
+            "PTQ supplemental byte-domain assertion count mismatch",
+        ));
+    }
     Ok(result(
         CUDA_ID,
-        original.failed == 0 && production.failed == 0,
+        original.failed == 0 && production.failed == 0 && supplemental.failed == 0,
         format!(
-            "source={CUDA_SHA}; host transcription, no GPU execution; 5000 trials:20000 scalar integer,20000 HIP integer,5000 HIP float; exhaustive:8192 HIP integer; original failures={}; production decode/CPU dot checks=14096 failures={}; worst relative={:.3e}, worst scaled={:.3e}; examples={:?}/{:?}",
+            "source={CUDA_SHA}; host transcription, no GPU execution; 5000 trials:20000 scalar integer,20000 HIP integer,5000 HIP float; exhaustive:8192 HIP integer; original failures={}; production decode/CPU dot checks=14096 failures={}; supplemental 6656 isolated lane bytes with signed i8 activations: decode/CPU dot checks=13312 failures={}; worst relative={:.3e}, worst scaled={:.3e}; examples={:?}/{:?}/{:?}",
             original.failed,
             production.failed,
+            supplemental.failed,
             metrics.worst_relative,
             metrics.worst_scaled,
             original.examples,
-            production.examples
+            production.examples,
+            supplemental.examples
         ),
     ))
 }
