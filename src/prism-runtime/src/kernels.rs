@@ -15,8 +15,11 @@ use bonsai_ternary::{Q8KBlock, decode_ptq_trits, half_to_float};
 use crate::model::Tensor;
 use crate::{Result, invalid};
 
+mod fp4;
+mod iquants;
 mod kquants;
 mod legacy;
+mod tquants;
 
 #[cfg(all(
     feature = "experimental-neon",
@@ -41,6 +44,12 @@ const PQ2: u32 = 142;
 const PTQ1: u32 = 143;
 
 fn layout(kind: u32) -> Result<(usize, usize)> {
+    if let Some(layout) = fp4::layout(kind).or_else(|| iquants::layout(kind)) {
+        return Ok(layout);
+    }
+    if let Some(bytes) = tquants::block_bytes(kind) {
+        return Ok((256, bytes));
+    }
     match kind {
         F32 => Ok((1, 4)),
         F16 | BF16 => Ok((1, 2)),
@@ -134,6 +143,12 @@ fn ptq1_values(block: &[u8]) -> Result<[i16; 128]> {
 pub fn validate_tensor(tensor: &Tensor) -> Result<()> {
     dimensions(tensor)?;
     match tensor.kind {
+        20 | 23 => return iquants::validate(tensor.kind, &tensor.data),
+        34 | 35 => return tquants::validate(tensor.kind, &tensor.data),
+        39 | 40 => return fp4::validate(tensor.kind, &tensor.data),
+        _ => {}
+    }
+    match tensor.kind {
         F32 => {
             for chunk in tensor.data.as_chunks::<4>().0 {
                 finite(f32::from_le_bytes(*chunk))?;
@@ -210,6 +225,12 @@ fn row_impl(tensor: &Tensor, index: usize, output: &mut Vec<f32>) -> Result<()> 
     }
     let bytes = &tensor.data[index * row_bytes..(index + 1) * row_bytes];
     output.try_reserve_exact(columns)?;
+    match tensor.kind {
+        20 | 23 => return iquants::decode(tensor.kind, bytes, output),
+        34 | 35 => return tquants::decode(tensor.kind, bytes, output),
+        39 | 40 => return fp4::decode(tensor.kind, bytes, output),
+        _ => {}
+    }
     if matches!(tensor.kind, 10..=14) {
         return kquants::decode(tensor.kind, bytes, output);
     }
@@ -410,6 +431,12 @@ fn quantize_ternary(input: &[f32]) -> Result<[u8; 34]> {
     reason = "Preserve native reference quantizer multiply-then-add rounding."
 )]
 pub fn quantize_row(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
+    match kind {
+        20 | 23 => return iquants::quantize(kind, input, None),
+        34 | 35 => return tquants::quantize(kind, input),
+        39 | 40 => return fp4::quantize(kind, input),
+        _ => {}
+    }
     if matches!(kind, 10..=14) {
         return kquants::quantize(kind, input);
     }
@@ -596,6 +623,9 @@ fn weighted_symmetric_block(
     reason = "Preserve source row-wide sum of squares and per-element weighting association."
 )]
 pub fn quantize_row_weighted(kind: u32, input: &[f32], importance: &[f32]) -> Result<Vec<u8>> {
+    if matches!(kind, 20 | 23) {
+        return iquants::quantize(kind, input, Some(importance));
+    }
     if matches!(kind, 10..=14) {
         return kquants::quantize_weighted(kind, input, importance);
     }
@@ -783,6 +813,20 @@ fn dot_q8_groups_neon(kind: u32, bytes: &[u8], input: &[Q8Block]) -> Result<f32>
     clippy::suboptimal_flops,
     reason = "Preserve scalar reference multiply-then-add rounding."
 )]
+fn dot_additional(kind: u32, bytes: &[u8], q8: &[Q8Block], q8k: &[Q8KBlock]) -> Result<f32> {
+    match kind {
+        20 => iquants::dot_q8(bytes, q8),
+        23 => iquants::dot_q8k(bytes, q8k),
+        34 | 35 => tquants::dot(kind, bytes, q8k),
+        39 | 40 => fp4::dot(kind, bytes, q8),
+        _ => Err(invalid("unknown additional packed dot format")),
+    }
+}
+
+#[allow(
+    clippy::suboptimal_flops,
+    reason = "Preserve scalar reference multiply-then-add rounding."
+)]
 fn dot_legacy(kind: u32, bytes: &[u8], input: &[Q8Block]) -> Result<f32> {
     if matches!(kind, Q4_1 | Q5_0 | Q5_1) {
         return legacy::dot(kind, bytes, input);
@@ -842,8 +886,8 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
         return Err(invalid("packed dot weight extent mismatch"));
     }
     let (activation_group, activation_bytes) = match kind {
-        PQ2 | 10..=14 => (256, 292),
-        PTQ1 | Q4_0 | Q5_0 | Q8_0 => (32, 34),
+        PQ2 | 10..=14 | 23 | 34 | 35 => (256, 292),
+        PTQ1 | Q4_0 | Q5_0 | Q8_0 | 20 | 39 | 40 => (32, 34),
         Q4_1 | Q5_1 => (32, 36),
         _ => (group, block_bytes),
     };
@@ -853,7 +897,7 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
         return Err(invalid("packed dot activation extent mismatch"));
     }
     match kind {
-        PQ2 | 10..=14 => {
+        PQ2 | 10..=14 | 23 | 34 | 35 => {
             let input = activations
                 .as_chunks::<292>()
                 .0
@@ -870,11 +914,13 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
                 .collect::<Result<Vec<_>>>()?;
             if kind == PQ2 {
                 dot_pq2(weights, &input)
+            } else if matches!(kind, 23 | 34 | 35) {
+                dot_additional(kind, weights, &[], &input)
             } else {
                 kquants::dot(kind, weights, &input)
             }
         }
-        PTQ1 | Q4_0 | Q4_1 | Q5_0 | Q5_1 | Q8_0 => {
+        PTQ1 | Q4_0 | Q4_1 | Q5_0 | Q5_1 | Q8_0 | 20 | 39 | 40 => {
             let affine = matches!(kind, Q4_1 | Q5_1);
             let offset = if affine { 4 } else { 2 };
             let input = activations
@@ -889,7 +935,9 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            if kind == PTQ1 {
+            if matches!(kind, 20 | 39 | 40) {
+                dot_additional(kind, weights, &input, &[])
+            } else if kind == PTQ1 {
                 dot_q8_groups(kind, weights, &input)
             } else {
                 dot_legacy(kind, weights, &input)
@@ -951,9 +999,9 @@ enum ActivationContract {
 impl ActivationContract {
     const fn for_tensor(tensor: &Tensor, columns: usize) -> Self {
         match tensor.kind {
-            10..=14 => Self::Q8K,
+            10..=14 | 23 | 34 | 35 => Self::Q8K,
             PQ2 if columns.is_multiple_of(256) => Self::Q8K,
-            PQ2 | PTQ1 | Q4_0 | Q4_1 | Q5_0 | Q5_1 | Q8_0 => Self::Q8,
+            PQ2 | PTQ1 | Q4_0 | Q4_1 | Q5_0 | Q5_1 | Q8_0 | 20 | 39 | 40 => Self::Q8,
             F16 => Self::F16,
             BF16 => Self::BF16,
             _ => Self::F32,
@@ -1392,6 +1440,17 @@ impl PreparedMatvec<'_> {
         let scratch = &mut *self.scratch;
         output.try_reserve_exact(rows)?;
         match tensor.kind {
+            20 | 23 | 34 | 35 | 39 | 40 => {
+                scratch.diagnostics = scratch.diagnostics.select(false);
+                for bytes in tensor.data.chunks_exact(row_bytes) {
+                    output.push(dot_additional(
+                        tensor.kind,
+                        bytes,
+                        &scratch.q8,
+                        &scratch.q8k,
+                    )?);
+                }
+            }
             10..=14 => {
                 scratch.diagnostics = scratch.diagnostics.select(false);
                 for bytes in tensor.data.chunks_exact(row_bytes) {
