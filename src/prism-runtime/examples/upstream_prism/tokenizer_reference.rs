@@ -490,7 +490,9 @@ impl Reference {
         Ok(self.clean_text(text))
     }
     fn clean_text(&self, mut text: String) -> String {
-        if self.cleanup {
+        // All upstream replacements start with ASCII space. Most single-token
+        // and Unicode observations need no cleanup; keep their existing String.
+        if self.cleanup && text.contains(' ') {
             for (from, to) in [
                 (" .", "."),
                 (" ?", "?"),
@@ -503,7 +505,9 @@ impl Reference {
                 (" 've", "'ve"),
                 (" 're", "'re"),
             ] {
-                text = text.replace(from, to);
+                if text.contains(from) {
+                    text = text.replace(from, to);
+                }
             }
         }
         text
@@ -597,6 +601,40 @@ impl Reference {
 mod tests {
     use super::*;
     use serde_json::json;
+    fn cleanup_equivalence_guard(reference: &Reference) {
+        let fragments = [
+            "", " ", " .", " ?", " !", " ,", " ' ", " n't", " 'm", " 's", " 've", " 're", " ' t",
+            "  '  ", "é𝕒", "\0\n\r\t", "plain",
+        ];
+        for left in fragments {
+            for right in fragments {
+                let input = format!("{left}{right}");
+                let mut expected = input.clone();
+                for (from, to) in [
+                    (" .", "."),
+                    (" ?", "?"),
+                    (" !", "!"),
+                    (" ,", ","),
+                    (" ' ", "'"),
+                    (" n't", "n't"),
+                    (" 'm", "'m"),
+                    (" 's", "'s"),
+                    (" 've", "'ve"),
+                    (" 're", "'re"),
+                ] {
+                    expected = expected.replace(from, to);
+                }
+                assert_eq!(reference.clean_text(input), expected);
+            }
+        }
+        for input in ["a", "é𝕒", "unchanged whitespace", "\0\n\r\t"] {
+            let text = input.to_owned();
+            let allocation = text.as_ptr();
+            let cleaned = reference.clean_text(text);
+            assert_eq!(cleaned, input);
+            assert_eq!(cleaned.as_ptr(), allocation);
+        }
+    }
     #[test]
     fn focused_added_token_overlay_equivalence_guard() -> Result<()> {
         let original = Tokenizer::from_bytes(serde_json::to_vec(
@@ -720,7 +758,7 @@ mod tests {
                 )?,
             )?;
             let reference = Reference::open(&directory)?;
-
+            cleanup_equivalence_guard(&reference);
             assert_eq!(reference.encode("a", true)?, [2, 1]);
             assert_eq!(reference.encode("a", false)?, [1]);
             assert_eq!(reference.decode(&[2, 1, 4], false)?, "<s> a.");
