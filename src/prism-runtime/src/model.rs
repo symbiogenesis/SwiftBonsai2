@@ -29,7 +29,7 @@ pub struct Model {
     pub metadata: Metadata,
     /// Tensors indexed by their unique GGUF names.
     pub tensors: BTreeMap<String, Tensor>,
-    /// Lowercase SHA-256 identity verified before parsing or loading tensors.
+    /// Lowercase SHA-256 of the verified file or canonical generated GGUF.
     pub identity: String,
 }
 
@@ -99,7 +99,7 @@ impl Model {
     /// payloads retained by the returned model. The parser uses fixed bounded
     /// scratch, and converting vectors to shared storage can transiently copy
     /// one tensor. This is a storage budget, not a process resident-set limit.
-    /// Executable payloads currently support F32, F16, BF16, PQ2 and PTQ1.
+    /// Payloads support every currently implemented production row decoder.
     /// Finite native PQ2/PTQ1 scales include both signed zeroes.
     /// Native PQ2 supports all four two-bit codes, decoding to -1, 0, 1, 2;
     /// native PTQ1 supports every fractional trit byte, including aliases.
@@ -114,6 +114,37 @@ impl Model {
         expected_sha256: &str,
         memory_limit: usize,
     ) -> Result<Self> {
+        Self::load_with_progress(
+            path,
+            expected_bytes,
+            expected_sha256,
+            memory_limit,
+            &mut |_| Ok(true),
+        )
+    }
+
+    /// Loads a verified model with cancellable, byte-weighted progress.
+    ///
+    /// The callback runs before each tensor read and once at `1.0` after all
+    /// payload validation, matching the pinned file loader's ordering. Returning
+    /// false or an error drops all partial storage without publishing a model.
+    /// Hash verification and header parsing precede the first callback.
+    ///
+    /// # Errors
+    /// Returns the same errors as [`Self::load`], plus callback failure or
+    /// cancellation, including cancellation at the final callback.
+    #[allow(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "The pinned loader reports byte-weighted progress as binary32."
+    )]
+    pub fn load_with_progress(
+        path: &Path,
+        expected_bytes: u64,
+        expected_sha256: &str,
+        memory_limit: usize,
+        progress: &mut impl FnMut(f32) -> Result<bool>,
+    ) -> Result<Self> {
         let mut reader = VerifiedModel::open(
             path,
             PRISM_DIALECT,
@@ -126,7 +157,7 @@ impl Model {
             .ok_or_else(|| invalid("model header exceeds memory budget"))?;
         let mut required = 0_usize;
         for tensor in reader.tensors() {
-            if !matches!(tensor.type_id, 0 | 1 | 30 | 142 | 143) {
+            if !owned::supported_kind(tensor.type_id) {
                 return Err(invalid(format!(
                     "unsupported executable tensor encoding {} for {}",
                     tensor.type_id, tensor.name
@@ -142,7 +173,11 @@ impl Model {
             ));
         }
         let mut tensors = BTreeMap::new();
+        let mut completed = 0_usize;
         for index in 0..reader.tensors().len() {
+            if !progress(completed as f32 / required as f32)? {
+                return Err(invalid("model loading cancelled"));
+            }
             let descriptor = &reader.tensors()[index];
             let name = descriptor.name.clone();
             let dimensions = descriptor
@@ -154,6 +189,7 @@ impl Model {
             let bytes = reader.read_tensor(index, remaining)?;
             validate_payload(kind, &bytes)?;
             remaining -= bytes.len();
+            completed += bytes.len();
             tensors.insert(
                 name.clone(),
                 Tensor {
@@ -163,6 +199,9 @@ impl Model {
                     data: bytes.into(),
                 },
             );
+        }
+        if !progress(1.0)? {
+            return Err(invalid("model loading cancelled"));
         }
         Ok(Self {
             metadata: reader.into_metadata(),
@@ -263,6 +302,20 @@ fn validate_payload(kind: u32, bytes: &[u8]) -> Result<()> {
             }
             true
         }
+        _ if owned::supported_kind(kind) => {
+            let (elements, width) = gguf_context::tensor_layout(kind)
+                .ok_or_else(|| invalid("unsupported executable tensor encoding"))?;
+            let mut decoded = Vec::new();
+            for block in bytes.chunks_exact(usize::try_from(width)?) {
+                crate::kernels::decode_row_into(
+                    kind,
+                    usize::try_from(elements)?,
+                    block,
+                    &mut decoded,
+                )?;
+            }
+            true
+        }
         _ => return Err(invalid("unsupported executable tensor encoding")),
     };
     if !finite {
@@ -279,4 +332,5 @@ fn validate_prism_scale(bytes: [u8; 2]) -> Result<()> {
 }
 pub mod batch_allocator;
 pub mod gguf_context;
+pub mod owned;
 pub mod quantization_policy;
