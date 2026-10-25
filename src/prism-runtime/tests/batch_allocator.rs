@@ -27,7 +27,7 @@ fn token_positions_broadcast_into_owned_mrope_sections() -> TestResult {
 }
 
 #[test]
-fn coupled_memory_ranges_and_last_output_fulfillment_are_checked() -> TestResult {
+fn coupled_memory_ranges_fill_positions_after_rejection() -> TestResult {
     let mut allocator = BatchAllocator::new(1)?;
     let input = Input {
         embedding_width: 1,
@@ -42,11 +42,6 @@ fn coupled_memory_ranges_and_last_output_fulfillment_are_checked() -> TestResult
     memory.insert(1, (0, 4));
     assert!(allocator.init(input, 0, 2, false, Some(&memory))?);
     assert_eq!(allocator.batch().ok_or("missing batch")?.positions, [5, 6]);
-    assert_eq!(allocator.batch().ok_or("missing batch")?.logits, [0, 1]);
-    assert!(allocator.split_equal(2, true, 0)?.data.is_none());
-    let split = allocator.split_equal(2, false, 0)?;
-    assert_eq!(split.unique_sequence_ids, [0, 1]);
-    assert_eq!(allocator.output_ids(), [1]);
     Ok(())
 }
 

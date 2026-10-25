@@ -641,6 +641,7 @@ fn end_scripts() -> Vec<Script> {
         overlap.accept(0, token);
     }
     overlap.end(Some(&[103, 104]));
+    overlap.state(DONE);
     overlap.free(0);
     let mut forced = Script::end_match("forced sequence records end", &[102, 103, 104], 0, FORCING);
     forced.accept(0, 102);

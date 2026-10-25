@@ -1,4 +1,5 @@
 //! All 26 default cases and 198 assertions from pinned test-batch-alloc.cpp.
+//! Three additional observations retain the stronger owned-batch checks.
 //!
 //! Upstream MIT attribution: tools/prism/upstream/LICENSE. Typed batch inputs,
 //! action traces and expected observations live in safe Rust; the adapter calls
@@ -13,6 +14,7 @@ type MemoryRanges = std::collections::BTreeMap<usize, (i32, i32)>;
 
 const ID: &str = "tests/test-batch-alloc.cpp";
 const SOURCE_SHA: &str = "341b3c4291cb46e412d6e750c2ab2e19131812d08ee3b236938c587e99341d79";
+const ASSERTION_COUNT: usize = 198 + 3;
 
 fn runtime_integer(value: &Value, minimum: i64, maximum: i64) -> Result<i64> {
     value
@@ -497,6 +499,7 @@ fn cases() -> Result<Vec<Case>> {
     c.equal(a, "State/NOutputs", json!(1));
     c.equal(a, "State/Batch/Logits/0", json!(0));
     c.equal(a, "State/Batch/Logits/3", json!(1));
+    c.equal(a, "State/Batch/Logits", json!([0, 0, 0, 1]));
     c.equal(a, "State/SequencePositions/0/Min", json!(0));
     c.equal(a, "State/SequencePositions/0/Max", json!(3));
     c.equal(a, "State/SequencePositions/1/Min", json!(-1));
@@ -713,6 +716,8 @@ fn cases() -> Result<Vec<Case>> {
     c.length(a, "Ubatch/SequenceIds/0", 2);
     c.equal(a, "Ubatch/SequenceIndices/0", json!(0));
     c.equal(a, "Ubatch/SequenceIndices/1", json!(1));
+    c.equal(a, "Ubatch/UniqueSequenceIds", json!([0, 1]));
+    c.equal(a, "State/OutIds", json!([1]));
     cases.push(c);
 
     let mut c = Case::new("split/split_seq_per_sequence");
@@ -886,7 +891,9 @@ fn cases() -> Result<Vec<Case>> {
         );
     }
     cases.push(c);
-    if cases.len() != 26 || cases.iter().map(|c| c.assertions.len()).sum::<usize>() != 198 {
+    if cases.len() != 26
+        || cases.iter().map(|c| c.assertions.len()).sum::<usize>() != ASSERTION_COUNT
+    {
         return Err(invalid("batch allocator source corpus count mismatch"));
     }
     Ok(cases)
@@ -971,7 +978,7 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
         ID,
         failures.is_empty(),
         format!(
-            "source={SOURCE_SHA}; all26 cases and198 original assertions; failures={}; examples={:?}",
+            "source={SOURCE_SHA}; all26 cases and198 original assertions plus3 additional observations; failures={}; examples={:?}",
             failures.len(),
             failures.iter().take(12).collect::<Vec<_>>()
         ),
@@ -992,7 +999,7 @@ mod tests {
                 .iter()
                 .map(|case| case.assertions.len())
                 .sum::<usize>(),
-            198
+            ASSERTION_COUNT
         );
         let mut case = Case::new("focused");
         case.equal(0, "Ubatch/Positions/0", json!(11));
