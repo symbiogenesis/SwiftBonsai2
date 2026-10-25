@@ -24,6 +24,15 @@ const MODEL_BYTES: u64 = 7_206_168_928;
 const MODEL_SHA256: &str = "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5";
 const TEMPLATE_SHA256: &str = "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041";
 const VOCAB_SIZE: usize = 248_320;
+// Pinned Prism 73bfe6c llama_vocab_is_eog, including vocabulary-inferred stops.
+const NATIVE_STOPS: [(u32, &str); 5] = [
+    (248_044, "<|endoftext|>"),
+    (248_046, "<|im_end|>"),
+    (248_063, "<|fim_pad|>"),
+    (248_064, "<|repo_name|>"),
+    (248_065, "<|file_sep|>"),
+];
+const NATIVE_STOP_IDS: [u32; 5] = [248_044, 248_046, 248_063, 248_064, 248_065];
 /// Fixed prompt-plus-output context capacity for the Swift CPU MVP.
 pub const CONTEXT_TOKENS: usize = 8192;
 /// Largest complete output allowance, including every reasoning token.
@@ -146,6 +155,11 @@ impl SwiftChatSession {
         let eos = tokens
             .get(248_046)
             .ok_or_else(|| invalid("missing Swift EOS spelling"))?;
+        for (id, spelling) in NATIVE_STOPS {
+            if tokens.get(usize::try_from(id)?).map(String::as_str) != Some(spelling) {
+                return Err(invalid("Swift native stop vocabulary identity mismatch"));
+            }
+        }
         let template = ChatTemplate::new(source, bos, eos)?;
         let tokenization = TokenizationSession::from_parts(metadata, vocab_size, identity)?;
         Ok(Self {
@@ -176,6 +190,30 @@ impl SwiftChatSession {
     #[must_use]
     pub const fn special_tokens(&self) -> &SpecialTokens {
         self.tokenization.special_tokens()
+    }
+
+    /// Exact pinned Prism end-of-generation IDs, including inferred vocabulary stops.
+    ///
+    /// The generic [`SpecialTokens`] accessor retains explicit GGUF declarations.
+    /// Prism additionally infers four stops from this exact pinned vocabulary;
+    /// their spellings are validated at construction and no other model is used.
+    #[must_use]
+    pub const fn stop_tokens(&self) -> &'static [u32] {
+        &NATIVE_STOP_IDS
+    }
+
+    /// Build full-output generation options with the exact pinned native stop set.
+    ///
+    /// The output bound includes all reasoning and answer tokens. No independent
+    /// thinking cutoff is added. Stop ordering is EOS first, then remaining IDs;
+    /// the set equals pinned Prism's `llama_vocab_is_eog` observations.
+    ///
+    /// # Errors
+    /// Rejects output allowances outside 1 through 4096 and allocation failure.
+    pub fn generation(&self, max_tokens: usize) -> Result<crate::runtime::Generation> {
+        output_budget(max_tokens)?;
+        self.special_tokens()
+            .generation(max_tokens, self.stop_tokens())
     }
 
     /// Render, encode and reserve the entire output before any graph execution.
