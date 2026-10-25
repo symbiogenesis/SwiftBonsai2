@@ -7,6 +7,7 @@
 use crate::{Result, invalid, runtime::greedy};
 
 pub mod reasoning_budget;
+pub mod upstream;
 
 /// Select a token from the complete next-token logits.
 ///

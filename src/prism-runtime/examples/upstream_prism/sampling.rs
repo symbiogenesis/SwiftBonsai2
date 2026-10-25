@@ -21,6 +21,311 @@ const CASES: &str = include_str!("sampling-cases.json");
 const EXPECTED_CONDITIONS: usize = 343;
 const MAX_CANDIDATES: usize = 131_072;
 
+use bonsai_prism_runtime::sampling::upstream::{
+    Candidate as RuntimeCandidate, Candidates as RuntimeCandidates, Config, State,
+};
+
+fn runtime_config(action: &Value) -> Result<Config> {
+    let parameters = field(action, "Parameters")?;
+    let probability = || float_bits(parameters, "ProbabilityBits");
+    let keep = || {
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(usize::try_from(uint(
+            parameters, "MinKeep",
+        )?)?)
+    };
+    Ok(match text(action, "Type")? {
+        "temp" => {
+            exact_fields(parameters, &["TemperatureBits"])?;
+            Config::Temperature(float_bits(parameters, "TemperatureBits")?)
+        }
+        "temp-ext" => {
+            exact_fields(
+                parameters,
+                &["TemperatureBits", "DeltaBits", "ExponentBits"],
+            )?;
+            Config::ExtendedTemperature {
+                temperature: float_bits(parameters, "TemperatureBits")?,
+                delta: float_bits(parameters, "DeltaBits")?,
+                exponent: float_bits(parameters, "ExponentBits")?,
+            }
+        }
+        "dist" => {
+            exact_fields(parameters, &["Seed"])?;
+            Config::Distribution(u32::try_from(uint(parameters, "Seed")?)?)
+        }
+        "top-k" => {
+            exact_fields(parameters, &["K"])?;
+            Config::TopK(integer(parameters, "K")?)
+        }
+        kind @ ("top-p" | "min-p" | "typical") => {
+            exact_fields(parameters, &["ProbabilityBits", "MinKeep"])?;
+            match kind {
+                "top-p" => Config::TopP {
+                    probability: probability()?,
+                    min_keep: keep()?,
+                },
+                "min-p" => Config::MinP {
+                    probability: probability()?,
+                    min_keep: keep()?,
+                },
+                _ => Config::Typical {
+                    probability: probability()?,
+                    min_keep: keep()?,
+                },
+            }
+        }
+        "xtc" => {
+            exact_fields(
+                parameters,
+                &["ProbabilityBits", "ThresholdBits", "MinKeep", "Seed"],
+            )?;
+            Config::Xtc {
+                probability: probability()?,
+                threshold: float_bits(parameters, "ThresholdBits")?,
+                min_keep: keep()?,
+                seed: u32::try_from(uint(parameters, "Seed")?)?,
+            }
+        }
+        "penalties" => {
+            exact_fields(
+                parameters,
+                &[
+                    "VocabularySize",
+                    "PenaltyLastN",
+                    "RepeatBits",
+                    "FrequencyBits",
+                    "PresenceBits",
+                ],
+            )?;
+            Config::Penalties {
+                vocabulary_size: usize::try_from(uint(parameters, "VocabularySize")?)?,
+                last_n: integer(parameters, "PenaltyLastN")?,
+                repeat: float_bits(parameters, "RepeatBits")?,
+                frequency: float_bits(parameters, "FrequencyBits")?,
+                presence: float_bits(parameters, "PresenceBits")?,
+            }
+        }
+        "dry-testing" => runtime_dry_config(parameters)?,
+        "top-n-sigma" => {
+            exact_fields(parameters, &["NBits"])?;
+            Config::TopNSigma(float_bits(parameters, "NBits")?)
+        }
+        _ => return Err(invalid("unknown production sampler type")),
+    })
+}
+
+fn runtime_dry_config(parameters: &Value) -> Result<Config> {
+    exact_fields(
+        parameters,
+        &[
+            "MultiplierBits",
+            "BaseBits",
+            "AllowedLength",
+            "PenaltyLastN",
+            "SequenceBreakers",
+        ],
+    )?;
+    let breakers = array(parameters, "SequenceBreakers")?
+        .iter()
+        .map(|value| {
+            value
+                .as_array()
+                .ok_or_else(|| invalid("DRY breaker must be an array"))?
+                .iter()
+                .map(|token| {
+                    Ok(i32::try_from(token.as_i64().ok_or_else(|| {
+                        invalid("DRY breaker token must be int32")
+                    })?)?)
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Config::Dry {
+        multiplier: float_bits(parameters, "MultiplierBits")?,
+        base: float_bits(parameters, "BaseBits")?,
+        allowed_length: usize::try_from(uint(parameters, "AllowedLength")?)?,
+        last_n: integer(parameters, "PenaltyLastN")?,
+        sequence_breakers: breakers,
+    })
+}
+
+fn runtime_candidates(action: &Value) -> Result<RuntimeCandidates> {
+    let data = array(action, "Data")?
+        .iter()
+        .map(|entry| {
+            exact_fields(entry, &["Id", "LogitBits", "ProbabilityBits"])?;
+            Ok(RuntimeCandidate {
+                id: integer(entry, "Id")?,
+                logit: float_bits(entry, "LogitBits")?,
+                probability: float_bits(entry, "ProbabilityBits")?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    RuntimeCandidates::new(
+        data,
+        field(action, "Selected")?
+            .as_i64()
+            .ok_or_else(|| invalid("Selected must be int64"))?,
+        boolean(action, "Sorted")?,
+    )
+}
+
+fn runtime_handle(action: &Value, name: &str) -> Result<u32> {
+    let handle = u32::try_from(uint(action, name)?)?;
+    if handle > 31 {
+        return Err(invalid("sampling handle exceeds bound"));
+    }
+    Ok(handle)
+}
+
+fn runtime_snapshot(
+    action: &Value,
+    candidates: &std::collections::BTreeMap<u32, RuntimeCandidates>,
+) -> Result<Value> {
+    exact_fields(action, &["Kind", "Candidates"])?;
+    let value = candidates
+        .get(&runtime_handle(action, "Candidates")?)
+        .ok_or_else(|| invalid("candidate handle is missing"))?;
+    let data = value.data().iter().map(|entry| json!({"Id":entry.id,"LogitBits":entry.logit.to_bits(),"ProbabilityBits":entry.probability.to_bits()})).collect::<Vec<_>>();
+    Ok(json!({"Data":data,"Size":data.len(),"Selected":value.selected(),"Sorted":value.sorted()}))
+}
+
+fn runtime_check_retained(
+    candidates: &std::collections::BTreeMap<u32, RuntimeCandidates>,
+) -> Result<()> {
+    if candidates
+        .values()
+        .map(RuntimeCandidates::backing_len)
+        .sum::<usize>()
+        > 262_144
+    {
+        return Err(invalid("retained candidates exceed bound"));
+    }
+    Ok(())
+}
+
+fn runtime_trace(operation: &Value) -> Result<Value> {
+    exact_fields(operation, &["Kind", "Actions"])?;
+    let actions = array(operation, "Actions")?;
+    if actions.is_empty() || actions.len() > 4096 {
+        return Err(invalid("sampling action count exceeds bound"));
+    }
+    let mut samplers = std::collections::BTreeMap::<u32, State>::new();
+    let mut candidates = std::collections::BTreeMap::<u32, RuntimeCandidates>::new();
+    let mut trace = Vec::with_capacity(actions.len());
+    let clock = std::time::Instant::now();
+    for action in actions {
+        let mut event = json!({});
+        match text(action, "Kind")? {
+            "clock" => {
+                exact_fields(action, &["Kind"])?;
+                event = json!({"Microseconds":i64::try_from(clock.elapsed().as_micros())?});
+            }
+            "init-sampler" => {
+                exact_fields(action, &["Kind", "Sampler", "Type", "Parameters"])?;
+                let handle = runtime_handle(action, "Sampler")?;
+                if samplers.contains_key(&handle) {
+                    return Err(invalid("sampler handle already exists"));
+                }
+                samplers.insert(handle, State::new(runtime_config(action)?)?);
+            }
+            "init-candidates" => {
+                exact_fields(
+                    action,
+                    &["Kind", "Candidates", "Data", "Selected", "Sorted"],
+                )?;
+                let handle = runtime_handle(action, "Candidates")?;
+                if candidates.contains_key(&handle) {
+                    return Err(invalid("candidate handle already exists"));
+                }
+                candidates.insert(handle, runtime_candidates(action)?);
+            }
+            "copy-candidates" => {
+                exact_fields(action, &["Kind", "Source", "Target"])?;
+                let source = runtime_handle(action, "Source")?;
+                let target = runtime_handle(action, "Target")?;
+                let copied = candidates
+                    .get(&source)
+                    .ok_or_else(|| invalid("candidate source is missing"))?
+                    .clone();
+                candidates.insert(target, copied);
+            }
+            "free-candidates" => {
+                exact_fields(action, &["Kind", "Candidates"])?;
+                if candidates
+                    .remove(&runtime_handle(action, "Candidates")?)
+                    .is_none()
+                {
+                    return Err(invalid("candidate handle is missing"));
+                }
+            }
+            "snapshot-candidates" => {
+                event = runtime_snapshot(action, &candidates)?;
+            }
+            "apply" => {
+                exact_fields(action, &["Kind", "Sampler", "Candidates"])?;
+                samplers
+                    .get_mut(&runtime_handle(action, "Sampler")?)
+                    .ok_or_else(|| invalid("sampler handle is missing"))?
+                    .apply(
+                        candidates
+                            .get_mut(&runtime_handle(action, "Candidates")?)
+                            .ok_or_else(|| invalid("candidate handle is missing"))?,
+                    )?;
+            }
+            "accept" => {
+                exact_fields(action, &["Kind", "Sampler", "Token"])?;
+                samplers
+                    .get_mut(&runtime_handle(action, "Sampler")?)
+                    .ok_or_else(|| invalid("sampler handle is missing"))?
+                    .accept(integer(action, "Token")?);
+            }
+            "reset" => {
+                exact_fields(action, &["Kind", "Sampler"])?;
+                samplers
+                    .get_mut(&runtime_handle(action, "Sampler")?)
+                    .ok_or_else(|| invalid("sampler handle is missing"))?
+                    .reset();
+            }
+            "free-sampler" => {
+                exact_fields(action, &["Kind", "Sampler"])?;
+                if samplers
+                    .remove(&runtime_handle(action, "Sampler")?)
+                    .is_none()
+                {
+                    return Err(invalid("sampler handle is missing"));
+                }
+            }
+            _ => return Err(invalid("unknown production sampler action")),
+        }
+        runtime_check_retained(&candidates)?;
+        trace.push(event);
+    }
+    Ok(json!({"Trace":trace}))
+}
+
+pub(super) fn execute_runtime(request: &Value) -> Result<Option<Value>> {
+    exact_fields(request, &["SchemaVersion", "Operations"])?;
+    if uint(request, "SchemaVersion")? != 1 {
+        return Err(invalid("sampling protocol version differs"));
+    }
+    let operations = array(request, "Operations")?;
+    if operations.is_empty() || operations.len() > 128 {
+        return Err(invalid("sampling operation count exceeds bound"));
+    }
+    if operations
+        .iter()
+        .any(|operation| operation["Kind"] != "sampler-trace")
+    {
+        return Ok(None);
+    }
+    let results = operations
+        .iter()
+        .map(runtime_trace)
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Some(json!({"SchemaVersion":1,"Results":results})))
+}
+
 #[derive(Default)]
 struct Assertions {
     count: usize,

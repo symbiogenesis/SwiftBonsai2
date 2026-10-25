@@ -287,6 +287,9 @@ impl Engine {
             if let Some(response) = super::reasoning_budget::execute_runtime(request)? {
                 return Ok(Some(response));
             }
+            if let Some(response) = super::sampling::execute_runtime(request)? {
+                return Ok(Some(response));
+            }
             if let Some(response) = super::batch_allocator::execute_runtime(request)? {
                 return Ok(Some(response));
             }
