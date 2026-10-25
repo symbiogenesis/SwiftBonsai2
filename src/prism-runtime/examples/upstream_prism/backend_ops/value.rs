@@ -128,22 +128,33 @@ impl Buffer {
     }
 
     pub(super) fn set(&mut self, index: usize, value: Number) -> Result<(), String> {
-        let bytes = match self.element {
-            Element::I8 | Element::U8 => vec![value.as_u64() as u8],
-            Element::I16 | Element::U16 => (value.as_u64() as u16).to_le_bytes().to_vec(),
-            Element::I32 | Element::U32 => (value.as_u64() as u32).to_le_bytes().to_vec(),
-            Element::I64 | Element::U64 => value.as_u64().to_le_bytes().to_vec(),
-            Element::F32 => value.as_f32().to_le_bytes().to_vec(),
-            Element::F64 => value.as_f64().to_le_bytes().to_vec(),
-        };
+        let width = self.element.bytes();
         let offset = index
-            .checked_mul(self.element.bytes())
+            .checked_mul(width)
+            .ok_or("source buffer index overflow")?;
+        let end = offset
+            .checked_add(width)
             .ok_or("source buffer index overflow")?;
         let destination = self
             .bytes
-            .get_mut(offset..offset + bytes.len())
+            .get_mut(offset..end)
             .ok_or("source buffer index out of bounds")?;
-        destination.copy_from_slice(&bytes);
+        // Initializers and STL algorithms write every element through this
+        // path. Encode on the stack instead of allocating a Vec per scalar.
+        match self.element {
+            Element::I8 | Element::U8 => destination[0] = value.as_u64() as u8,
+            Element::I16 | Element::U16 => {
+                destination.copy_from_slice(&(value.as_u64() as u16).to_le_bytes());
+            }
+            Element::I32 | Element::U32 => {
+                destination.copy_from_slice(&(value.as_u64() as u32).to_le_bytes());
+            }
+            Element::I64 | Element::U64 => {
+                destination.copy_from_slice(&value.as_u64().to_le_bytes());
+            }
+            Element::F32 => destination.copy_from_slice(&value.as_f32().to_le_bytes()),
+            Element::F64 => destination.copy_from_slice(&value.as_f64().to_le_bytes()),
+        }
         Ok(())
     }
 
@@ -477,4 +488,71 @@ impl Value {
 
 pub(super) fn variable(kind: String, value: Value) -> Cell {
     Rc::new(RefCell::new(Variable { kind, value }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn typed_writes_preserve_integer_truncation_float_bits_and_bounds() -> Result<(), String> {
+        for (element, value, expected) in [
+            (Element::I8, Number::I32(-1), vec![0xff]),
+            (Element::U8, Number::U64(0x1234), vec![0x34]),
+            (Element::I16, Number::I64(-2), vec![0xfe, 0xff]),
+            (Element::U16, Number::U64(0x1234_abcd), vec![0xcd, 0xab]),
+            (
+                Element::I32,
+                Number::I64(-3),
+                (-3_i32).to_le_bytes().to_vec(),
+            ),
+            (
+                Element::U32,
+                Number::U64(0x1234_abcd_9876_5432),
+                0x9876_5432_u32.to_le_bytes().to_vec(),
+            ),
+            (
+                Element::I64,
+                Number::I64(-4),
+                (-4_i64).to_le_bytes().to_vec(),
+            ),
+            (
+                Element::U64,
+                Number::U64(u64::MAX),
+                u64::MAX.to_le_bytes().to_vec(),
+            ),
+            (
+                Element::F32,
+                Number::F32(f32::from_bits(0xff80_0042)),
+                0xff80_0042_u32.to_le_bytes().to_vec(),
+            ),
+            (
+                Element::F64,
+                Number::F64(f64::from_bits(0x8000_0000_0000_0000)),
+                0x8000_0000_0000_0000_u64.to_le_bytes().to_vec(),
+            ),
+        ] {
+            let mut buffer = Buffer::new(element, 3)?;
+            buffer.set(1, value)?;
+            assert_eq!(
+                &buffer.bytes[element.bytes()..2 * element.bytes()],
+                expected
+            );
+            assert!(
+                buffer.bytes[..element.bytes()]
+                    .iter()
+                    .all(|&byte| byte == 0)
+            );
+            assert!(
+                buffer.bytes[2 * element.bytes()..]
+                    .iter()
+                    .all(|&byte| byte == 0)
+            );
+            let unchanged = buffer.bytes.clone();
+            assert!(buffer.set(3, value).is_err());
+            assert!(buffer.set(usize::MAX, value).is_err());
+            assert_eq!(buffer.bytes, unchanged);
+        }
+        Ok(())
+    }
 }

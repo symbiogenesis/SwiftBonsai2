@@ -91,6 +91,7 @@ struct state {
     std::map<std::uint32_t, ggml_cgraph *> graphs;
     std::map<std::uint32_t, json> scalars;
     std::map<ggml_tensor *, std::uint32_t> tensor_ids;
+    std::map<ggml_tensor *, std::set<std::uint32_t>> tensor_aliases;
     std::uint32_t automatic_id = UINT32_C(0x80000000);
     std::size_t context_bytes = 0;
     explicit state(const json & o): directory(std::filesystem::canonical(text(o.at("Directory")))), max_file_bytes(std::size_t(u64(o.at("MaxFileBytes")))) {
@@ -112,11 +113,11 @@ struct state {
         if(!t) return nullptr;
         auto found=tensor_ids.find(t); if(found != tensor_ids.end()) return found->second;
         require(tensors.size()<32768 && automatic_id != UINT32_MAX,"backend automatic handle bound");
-        const auto n=automatic_id++; tensor_ids.emplace(t,n); tensors.emplace(n,t); return n;
+        const auto n=automatic_id++; tensor_ids.emplace(t,n); tensors.emplace(n,t); tensor_aliases[t].insert(n); return n;
     }
     void bind_tensor(const json & n, ggml_tensor * t) {
         // Null is a valid raw observation for get_grad/get_tensor calls.
-        bind(tensors,n,t); if(t) tensor_ids.emplace(t,id(n));
+        bind(tensors,n,t); if(t) { tensor_ids.emplace(t,id(n)); tensor_aliases[t].insert(id(n)); }
     }
     std::filesystem::path file(const json & v) const {
         auto path=std::filesystem::path(text(v)); require(path.is_absolute(),"backend file must be absolute");
@@ -150,7 +151,9 @@ struct state {
         for(int i=0;i<GGML_MAX_DIMS;++i) { ne.push_back(t->ne[i]); nb.push_back(t->nb[i]); }
         for(int i=0;i<GGML_MAX_SRC;++i) src.push_back(tensor_id(t->src[i]));
         const auto canonical=tensor_id(t);
-        for(const auto & item:tensors) if(item.second==t) aliases.push_back(item.first);
+        // Keep the original numeric handle order without scanning all bound
+        // tensors for every tensor in a context snapshot.
+        for(const auto alias:tensor_aliases.at(t)) aliases.push_back(alias);
         return {{"Id",canonical},{"Aliases",aliases},{"Type",int(t->type)},{"NE",ne},{"NB",nb},{"Op",int(t->op)},{"Flags",t->flags},{"Name",t->name},
             {"ViewSource",tensor_id(t->view_src)},{"ViewOffset",t->view_offs},{"Sources",src},{"OpParamsHex",hex(t->op_params,sizeof(t->op_params))},
             {"NBytes",ggml_nbytes(t)},{"NElements",ggml_nelements(t)},{"NRows",ggml_nrows(t)},{"BlockSize",ggml_blck_size(t->type)},{"TypeSize",ggml_type_size(t->type)},

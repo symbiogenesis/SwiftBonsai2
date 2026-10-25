@@ -464,6 +464,8 @@ mod tests {
             json!({"Op":"backend-init","Id":0,"Device":"CPU","Threads":1,"UseRef":false}),
             json!({"Op":"call","Function":"ggml_new_tensor_1d","Arguments":[{"Context":0},{"I32":0},{"I64":32}],"Result":{"Tensor":0}}),
             json!({"Op":"call","Function":"ggml_new_tensor_1d","Arguments":[{"Context":0},{"I32":0},{"I64":32}],"Result":{"Tensor":1}}),
+            json!({"Op":"call","Function":"ggml_set_name","Arguments":[{"Tensor":0},{"String":"left"}],"Result":{"Tensor":9}}),
+            json!({"Op":"call","Function":"ggml_set_name","Arguments":[{"Tensor":9},{"String":"left"}],"Result":{"Tensor":3}}),
             json!({"Op":"call","Function":"ggml_add","Arguments":[{"Context":0},{"Tensor":0},{"Tensor":1}],"Result":{"Tensor":2}}),
             json!({"Op":"call","Function":"ggml_new_graph","Arguments":[{"Context":0}],"Result":{"Graph":0}}),
             json!({"Op":"call","Function":"ggml_build_forward_expand","Arguments":[{"Graph":0},{"Tensor":2}],"Result":null}),
@@ -471,6 +473,13 @@ mod tests {
             json!({"Op":"context-snapshot","Context":0}),
             json!({"Op":"graph-snapshot","Graph":0}),
         ])?;
+        let tensors = observations
+            .iter()
+            .find_map(|value| value.get("Tensors"))
+            .ok_or_else(|| invalid("focused tensor snapshot missing"))?;
+        assert_eq!(tensors[0]["Aliases"], json!([0, 3, 9]));
+        assert_eq!(tensors[0]["Id"], 0);
+        assert_eq!(tensors[0]["Name"], "left");
         observations.extend(session.exchange(vec![
             json!({"Op":"tensor-set","Tensor":0,"File":left,"FileOffset":0,"TensorOffset":0,"Bytes":bytes.len()}),
             json!({"Op":"tensor-set","Tensor":1,"File":right,"FileOffset":0,"TensorOffset":0,"Bytes":bytes.len()}),

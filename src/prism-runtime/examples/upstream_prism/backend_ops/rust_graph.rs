@@ -35,27 +35,31 @@ fn lookup<T: Copy>(map: &BTreeMap<u32, T>, value: &Value) -> Result<T> {
         .copied()
         .ok_or_else(|| invalid("Rust backend handle is unknown"))
 }
-fn canonical(tensors: &BTreeMap<u32, Option<TensorId>>, tensor: TensorId) -> u32 {
-    tensors
-        .iter()
-        .find_map(|(&id, &value)| (value == Some(tensor)).then_some(id))
+type TensorAliases = BTreeMap<TensorId, Vec<u32>>;
+
+fn tensor_aliases(tensors: &BTreeMap<u32, Option<TensorId>>) -> TensorAliases {
+    let mut aliases = TensorAliases::new();
+    for (&id, &tensor) in tensors {
+        if let Some(tensor) = tensor {
+            aliases.entry(tensor).or_default().push(id);
+        }
+    }
+    aliases
+}
+
+fn canonical(aliases: &TensorAliases, tensor: TensorId) -> u32 {
+    aliases
+        .get(&tensor)
+        .and_then(|ids| ids.first().copied())
         .unwrap_or_else(|| 0x8000_0000 + u32::try_from(tensor.0).unwrap_or(u32::MAX - 0x8000_0000))
 }
-fn metadata(
-    backend: &CpuBackend,
-    tensors: &BTreeMap<u32, Option<TensorId>>,
-    tensor: TensorId,
-) -> Result<Value> {
+fn metadata(backend: &CpuBackend, aliases: &TensorAliases, tensor: TensorId) -> Result<Value> {
     let info = backend.info(tensor)?;
     let layout = type_layout(info.kind)?;
-    let aliases = tensors
-        .iter()
-        .filter_map(|(&id, &value)| (value == Some(tensor)).then_some(id))
-        .collect::<Vec<_>>();
     let sources = info
         .source_slots
         .iter()
-        .map(|id| id.map_or(Value::Null, |id| json!(canonical(tensors, id))))
+        .map(|id| id.map_or(Value::Null, |id| json!(canonical(aliases, id))))
         .collect::<Vec<_>>();
     let description = if info.operation == 91 {
         unary_name(i32::from_le_bytes(info.parameters[..4].try_into()?))
@@ -63,8 +67,8 @@ fn metadata(
         operation_name(info.operation)
     };
     Ok(
-        json!({"Id":canonical(tensors,tensor),"Aliases":aliases,"Type":info.kind,"NE":info.shape,"NB":info.strides,"Op":info.operation,"Flags":info.flags,"Name":info.name,
-        "ViewSource":info.view.map(|id|canonical(tensors,id)),"ViewOffset":info.offset,"Sources":sources,"OpParamsHex":hex(&info.parameters),"NBytes":info.bytes()?,"NElements":info.elements(),"NRows":info.rows(),"BlockSize":layout.block,"TypeSize":layout.bytes,"OpDescription":description,"Contiguous":info.contiguous(),"IsTransposed":info.strides[0]>info.strides[1]}),
+        json!({"Id":canonical(aliases,tensor),"Aliases":aliases.get(&tensor).cloned().unwrap_or_default(),"Type":info.kind,"NE":info.shape,"NB":info.strides,"Op":info.operation,"Flags":info.flags,"Name":info.name,
+        "ViewSource":info.view.map(|id|canonical(aliases,id)),"ViewOffset":info.offset,"Sources":sources,"OpParamsHex":hex(&info.parameters),"NBytes":info.bytes()?,"NElements":info.elements(),"NRows":info.rows(),"BlockSize":layout.block,"TypeSize":layout.bytes,"OpDescription":description,"Contiguous":info.contiguous(),"IsTransposed":info.strides[0]>info.strides[1]}),
     )
 }
 
@@ -344,19 +348,26 @@ impl State {
             "context-snapshot" => {
                 let context = id(&action["Context"])?;
                 let ids = self.backend.context_tensors(context);
+                let mut aliases = tensor_aliases(&self.tensors);
                 for &tensor in &ids {
-                    let canonical = canonical(&self.tensors, tensor);
-                    self.tensors.entry(canonical).or_insert(Some(tensor));
+                    let canonical = canonical(&aliases, tensor);
+                    if let std::collections::btree_map::Entry::Vacant(entry) =
+                        self.tensors.entry(canonical)
+                    {
+                        entry.insert(Some(tensor));
+                        aliases.entry(tensor).or_default().push(canonical);
+                    }
                 }
                 Ok(
-                    json!({"Tensors":ids.into_iter().map(|tensor|metadata(&self.backend,&self.tensors,tensor)).collect::<Result<Vec<_>>>()?}),
+                    json!({"Tensors":ids.into_iter().map(|tensor|metadata(&self.backend,&aliases,tensor)).collect::<Result<Vec<_>>>()?}),
                 )
             }
             "graph-snapshot" => {
                 let graph = lookup(&self.graphs, &action["Graph"])?;
                 let (nodes, leaves) = self.backend.graph_nodes(graph)?;
+                let aliases = tensor_aliases(&self.tensors);
                 Ok(
-                    json!({"Nodes":nodes.iter().map(|&id|canonical(&self.tensors,id)).collect::<Vec<_>>(),"Leaves":leaves.iter().map(|&id|canonical(&self.tensors,id)).collect::<Vec<_>>(),"Gradients":nodes.iter().map(|&id|json!({"Tensor":canonical(&self.tensors,id),"Gradient":Value::Null,"GradientAccumulator":Value::Null})).collect::<Vec<_>>()}),
+                    json!({"Nodes":nodes.iter().map(|&id|canonical(&aliases,id)).collect::<Vec<_>>(),"Leaves":leaves.iter().map(|&id|canonical(&aliases,id)).collect::<Vec<_>>(),"Gradients":nodes.iter().map(|&id|json!({"Tensor":canonical(&aliases,id),"Gradient":Value::Null,"GradientAccumulator":Value::Null})).collect::<Vec<_>>()}),
                 )
             }
             "allocate" => {
@@ -443,7 +454,7 @@ impl State {
                 let graph = lookup(&self.graphs, &action["Graph"])?;
                 let prefix = self.file(&action["Prefix"])?;
                 let maximum = unsigned(&action["MaxOutputBytes"])?;
-                let tensors = self.tensors.clone();
+                let aliases = tensor_aliases(&self.tensors);
                 let mut pairs = Vec::new();
                 let mut total = 0_usize;
                 let selected = if action["Nodes"].is_null() {
@@ -460,7 +471,7 @@ impl State {
                     if selected.as_ref().is_some_and(|selected|!selected.contains(&tensor)){return Ok(());}
                     let bytes=left.info(tensor)?.bytes()?;total=total.checked_add(2*bytes).ok_or_else(||invalid("Rust comparison extent overflow"))?;if total>maximum{return Err(invalid("Rust comparison output exceeds bound"));}
                     let left_path=PathBuf::from(format!("{}-{}-left.bin",prefix.display(),pairs.len()));let right_path=PathBuf::from(format!("{}-{}-right.bin",prefix.display(),pairs.len()));fs::write(&left_path,left.get(tensor,0,bytes)?)?;fs::write(&right_path,right.get(tensor,0,bytes)?)?;
-                    pairs.push(json!({"Index":index,"Left":metadata(left,&tensors,tensor)?,"Right":metadata(right,&tensors,tensor)?,"LeftFile":left_path,"RightFile":right_path,"Bytes":bytes}));Ok(())
+                    pairs.push(json!({"Index":index,"Left":metadata(left,&aliases,tensor)?,"Right":metadata(right,&aliases,tensor)?,"LeftFile":left_path,"RightFile":right_path,"Bytes":bytes}));Ok(())
                 })?;
                 let mut captures = Vec::new();
                 for handle in array(&action["CaptureTensors"])? {
@@ -668,5 +679,28 @@ pub(super) fn execute(operation: &Value) -> Result<Value> {
         } else {
             return Ok(json!({"Trace":trace}));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_alias_index_preserves_handle_order_nulls_and_unbound_identity() {
+        let tensors = BTreeMap::from([
+            (2, Some(TensorId(1))),
+            (3, Some(TensorId(0))),
+            (7, None),
+            (9, Some(TensorId(0))),
+            (0x8000_0000, Some(TensorId(0))),
+        ]);
+        let aliases = tensor_aliases(&tensors);
+        assert_eq!(aliases[&TensorId(0)], [3, 9, 0x8000_0000]);
+        assert_eq!(aliases[&TensorId(1)], [2]);
+        assert_eq!(aliases.len(), 2);
+        assert_eq!(canonical(&aliases, TensorId(0)), 3);
+        assert_eq!(canonical(&aliases, TensorId(1)), 2);
+        assert_eq!(canonical(&aliases, TensorId(17)), 0x8000_0011);
     }
 }
