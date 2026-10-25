@@ -325,6 +325,28 @@ fn body_buffer_boundary_preserves_framing_with_fragmented_reads() {
 #[test]
 fn body_limit_and_schema_are_enforced_after_fragmented_reception() {
     run(async {
+        // Exact-limit client input remains valid when canonicalization leaves
+        // room for the fixed backend policy fields. Whitespace is input, not
+        // message content, and disappears from the canonical request.
+        let mut padded = CHAT.to_vec();
+        padded.resize(MAX_BODY_BYTES, b' ');
+        let received = receive_chat(
+            ProbeRead::new(wire(&padded, ""), 4096),
+            &policy(),
+            deadline(),
+        )
+        .await
+        .unwrap();
+        let (_, pending) = received.into_parts();
+        let admitted = pending.admit(|_| Ok(100)).unwrap();
+        let canonical: serde_json::Value = serde_json::from_slice(admitted.backend_body()).unwrap();
+        assert_eq!(
+            canonical["messages"][0]["content"],
+            "Draft a scene.\nKeep the rain."
+        );
+
+        // Filling the same input allowance with content would exceed the
+        // backend's byte cap once those policy fields are added.
         let prefix = br#"{"messages":[{"role":"user","content":""#;
         let suffix = br#""}]}"#;
         let mut body = prefix.to_vec();
@@ -334,11 +356,13 @@ fn body_limit_and_schema_are_enforced_after_fragmented_reception() {
         ));
         body.extend_from_slice(suffix);
         assert_eq!(body.len(), MAX_BODY_BYTES);
-        assert!(
-            receive_chat(ProbeRead::new(wire(&body, ""), 4096), &policy(), deadline())
-                .await
-                .is_ok()
-        );
+        let stream = ProbeRead::new(wire(&body, ""), 4096);
+        let dropped = stream.dropped.clone();
+        assert!(matches!(
+            receive_chat(stream, &policy(), deadline()).await,
+            Err(ReceiveError::Policy(Rejection::BodySize))
+        ));
+        assert!(dropped.get());
         rejected(
             wire(br#"{"messages":[],"stream":true,"stream":false}"#, ""),
             ReceiveError::Policy(Rejection::ChatSchema),
