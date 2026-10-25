@@ -184,6 +184,12 @@ configured budgets, not
 measured peaks or installed-RAM recommendations. Current-weight PTQ1 saves
 1.173 GiB of serialized payload without reducing the Swift admission policy.
 
+An owner-authorized actual-model load/three-token diagnostic succeeded starting
+with 13.73 GiB free, with 7.02 GiB peak process commit and at least 7.31 GiB free
+throughout sampled observation. Approximately 13.7 GiB is accepted for that
+bounded diagnostic. The full-service startup policy remains 16 GiB; see the
+[scope and numerical outcome](config/swift-native-mvp-followup.evidence.json).
+
 Track process private bytes/working set, Job commit, system commit, available
 RAM and device allocations. Mapped weights are not fully bounded by the Job's
 commit cap; shared-memory accounting can both overlap and hide copies. Admit

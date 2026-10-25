@@ -79,6 +79,12 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   its effect on full-model logits/state and the remaining arithmetic differences
   still needs the unchanged M2 qualification.
 
+  The [actual-model follow-up](../config/swift-native-mvp-followup.evidence.json)
+  repeated all three supplied-token steps against a fresh native capture. The
+  repaired graph still exceeds the declared logits/state tolerances, beginning
+  in block 1 convolution. Observed greedy choices match; a generated greedy
+  continuation remains unqualified.
+
 - [x] **M3 — Connect Swift's chat prompt to the exact tokenizer.** Render the
   verified embedded template with the existing Jinja/chat APIs, current
   thinking/effort defaults and supplied assistant reasoning history. Feed those
@@ -164,6 +170,14 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   execution, context rejection, cancellation and restart still need a complete
   run; M2 also remains unqualified. CI monitoring and repairs were handed to
   the user. No full local suites or benchmarks ran.
+
+  A later owner-authorized memory diagnostic completed the actual model load
+  and three forward steps starting with 13.73 GiB free. Peak process commit was
+  7.02 GiB and minimum available RAM was 7.31 GiB, preserving the sampled 12 GiB
+  process threshold and 4 GiB physical reserve. Approximately 13.7 GiB free is
+  accepted for that bounded workload; this observation leaves the full-service
+  16 GiB startup policy and complete M6 recovery requirements unchanged. See the
+  [follow-up receipt](../config/swift-native-mvp-followup.evidence.json).
 
 ## Deferred until after the MVP
 

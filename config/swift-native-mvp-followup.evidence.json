@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-25",
+  "testedRuntimeRevision": "1f22c4dd2236513a239eea4d172864a8b7332419",
+  "purpose": "Owner-authorized reduced-start memory and actual-model numerical diagnostic",
+  "modelSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+  "nativeReferenceRevision": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+  "suppliedTokenIds": [
+    248045,
+    872,
+    198
+  ],
+  "generatedGreedyContinuation": false,
+  "memory": {
+    "acceptableForBoundedThreeTokenDiagnostic": true,
+    "observedStartingFreeGiB": 13.733230590820312,
+    "observedMinimumFreeGiB": 7.312019348144531,
+    "rustProcess": {
+      "revision": "1f22c4dd2236513a239eea4d172864a8b7332419",
+      "mode": "neon",
+      "exitCode": 0,
+      "violation": null,
+      "peakProcessCommitBytes": 7536267264,
+      "peakWorkingSetBytes": 7522807808,
+      "initialAvailablePhysicalBytes": 14745944064,
+      "minimumAvailablePhysicalBytes": 7851220992,
+      "requiredInitialAvailableBytes": 14656575898,
+      "standardServiceAdmissionBytes": 17179869184,
+      "ownerAuthorizedReducedAdmission": true,
+      "processThresholdBytes": 12884901888,
+      "physicalReserveBytes": 4294967296,
+      "executableSha256": "32c516a73452ec14147a0e60cb653712ff20b2f13bffbe64769ff9bbefe6ec18",
+      "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+    },
+    "nativeReferenceProcess": {
+      "revision": "1f22c4dd2236513a239eea4d172864a8b7332419",
+      "mode": "native",
+      "exitCode": 0,
+      "violation": null,
+      "peakProcessCommitBytes": 1820762112,
+      "peakWorkingSetBytes": 8385544192,
+      "initialAvailablePhysicalBytes": 16736026624,
+      "minimumAvailablePhysicalBytes": 8067457024,
+      "requiredInitialAvailableBytes": 14656575898,
+      "standardServiceAdmissionBytes": 17179869184,
+      "ownerAuthorizedReducedAdmission": true,
+      "processThresholdBytes": 12884901888,
+      "physicalReserveBytes": 4294967296,
+      "executableSha256": "5663411fd4dc477ea1d3b3dc1b61ae50745e13001507b3abf241fa167ef5e936",
+      "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+    },
+    "acceptanceScope": "Pinned-model load and three supplied-token forward steps. Approximately 13.7 GiB free at startup was sufficient for this observed bounded workload; full 8K/4K-output service admission is not changed."
+  },
+  "numerical": {
+    "passed": false,
+    "tolerances": {
+      "modelSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+      "criterion": "abs(actual-reference) <= 0.001 + 0.001*abs(reference)",
+      "declaredAtUtc": "2026-10-25T06:49:54.9539929Z",
+      "scalarVsNeon": "exact binary32 bit equality",
+      "nativeReferenceCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+      "scope": "diagnostic three supplied-token trajectory; further prompt/decode and complete greedy continuation remain required",
+      "relativeTolerance": 0.001,
+      "appliesTo": [
+        "logits",
+        "F32 GDN state",
+        "F32 convolution state",
+        "FP16 KV promoted exactly to F32"
+      ],
+      "absoluteTolerance": 0.001,
+      "greedy": "same token ID for every checked step"
+    },
+    "logits": [
+      {
+        "step": 0,
+        "max_absolute_error": 0.07762551307678223,
+        "mean_absolute_error": 0.011811250815095408,
+        "failed_values": 190826,
+        "logits_count": 248320,
+        "greedy_actual": 198,
+        "greedy_reference": 198
+      },
+      {
+        "step": 1,
+        "max_absolute_error": 0.11354207992553711,
+        "mean_absolute_error": 0.015852863753517438,
+        "failed_values": 204115,
+        "logits_count": 248320,
+        "greedy_actual": 198,
+        "greedy_reference": 198
+      },
+      {
+        "step": 2,
+        "max_absolute_error": 0.08354902267456055,
+        "mean_absolute_error": 0.011595355446663408,
+        "failed_values": 197019,
+        "logits_count": 248320,
+        "greedy_actual": 220,
+        "greedy_reference": 220
+      }
+    ],
+    "state": {
+      "totalElements": 117866496,
+      "failedElements": 2314311,
+      "maximumAbsoluteError": 0.1875,
+      "firstFailingComponent": [
+        {
+          "step": 0,
+          "block": 1,
+          "component": "convolution",
+          "elements": 30720,
+          "failed_elements": 3040,
+          "max_absolute_error": 0.006453871726989746,
+          "mean_absolute_error": 0.00035075655475177807,
+          "maximum_index": 26165,
+          "actual_at_maximum": 1.8958208560943604,
+          "reference_at_maximum": 1.8893669843673706
+        }
+      ]
+    }
+  },
+  "rawEvidenceDirectory": "C:\\Users\\symbi\\AppData\\Local\\Temp\\SwiftMvp-8da0ada7fcf648059cb3cc9282112d3d\\actual-model",
+  "claimsExcluded": [
+    "full-model parity",
+    "generated greedy continuation qualification",
+    "complete broker/device lifecycle",
+    "service-wide admission reduction",
+    "throughput",
+    "creative quality",
+    "daily security",
+    "LoRA"
+  ],
+  "retainedArtifactHashes": [
+    {
+      "path": "first-followup-receipt.json",
+      "bytes": 5317,
+      "sha256": "f849be1f62a376547783cd13e05c84090c12c611ea7f67aa0eac47c63cd3b51f"
+    },
+    {
+      "path": "observation-files.sha256.json",
+      "bytes": 181407,
+      "sha256": "11a5ab8ed32cd65141faf2f54b34cf69e14a7c4e259afd15b19b094ce1607544"
+    },
+    {
+      "path": "declared-tolerances.json",
+      "bytes": 713,
+      "sha256": "04695f7f048c79ae86db10629c40f704e689052aec169736aa5d276c974a417c"
+    },
+    {
+      "path": "native-forward.py",
+      "bytes": 10559,
+      "sha256": "71af79d1b18f2c6b888da79ea3d6dbcafa6b033e8f028bd8516e9620425853c8"
+    },
+    {
+      "path": "native-forward\\report.json",
+      "bytes": 144622,
+      "sha256": "050726b15c2391e97cddbf153d49e545946c75548c8c12fc576b07c1f1005dc9"
+    },
+    {
+      "path": "neon-process.json",
+      "bytes": 780,
+      "sha256": "0b7f4cef7d39893584a73e870c5d5e7521fdec44c2fc0ebeb9b39ac1ac58eb17"
+    },
+    {
+      "path": "native-process.json",
+      "bytes": 782,
+      "sha256": "50fe3c1201477fbf3a769c10393374226d5775e5ed2f44ee5297e76a09b7417f"
+    },
+    {
+      "path": "logits-comparison.json",
+      "bytes": 723,
+      "sha256": "2a632935e33538e52eabd7141a4061e2c551730b3e2d2c59b6bfa0bf9f96416d"
+    },
+    {
+      "path": "state-comparison.json",
+      "bytes": 177571,
+      "sha256": "173ef770f05dc55bb27db7cd1f145e8eca21d7763ca76ba1f2f5877f30c3b7cf"
+    }
+  ],
+  "sessionFollowup": {
+    "testedRevision": "14b98a82fe0bea0aa9e945faf16737b024cc3bb6",
+    "status": "passed-focused-actual-model-library-session",
+    "test": "actual_swift_session_stream_cancel_deadline_reset_and_context",
+    "cases": [
+      "pre-cancelled and expired requests rejected before generation",
+      "context overflow rejected with complete output reservation",
+      "active cancellation after provisional text",
+      "abandoned provisional delivery",
+      "successful request without reset after rollback",
+      "explicit reset and seeded replay",
+      "abandoned terminal delivery latches admission until reset",
+      "successful multi-turn request with supplied reasoning"
+    ],
+    "process": {
+      "revision": "14b98a82fe0bea0aa9e945faf16737b024cc3bb6",
+      "mode": "session",
+      "exitCode": 0,
+      "violation": null,
+      "peakProcessCommitBytes": 7874260992,
+      "peakWorkingSetBytes": 7860633600,
+      "initialAvailablePhysicalBytes": 17849040896,
+      "minimumAvailablePhysicalBytes": 8272990208,
+      "requiredInitialAvailableBytes": 14656575898,
+      "standardServiceAdmissionBytes": 17179869184,
+      "ownerAuthorizedReducedAdmission": true,
+      "processThresholdBytes": 12884901888,
+      "physicalReserveBytes": 4294967296,
+      "executableSha256": "864d486145f6c5b1b305912f179817265143df3dc822ffafd7c429801bb40223",
+      "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+    },
+    "limits": "Library/session exercise; predates the final activation/GDN repairs and does not close owned HTTP cancellation/restart or M2."
+  }
+}
