@@ -572,7 +572,8 @@ fn rejects_nonfinite_and_invalid_executable_payloads() -> Result<()> {
     );
     let mut ptq = [0; 28];
     ptq[0] = 1;
-    ptq[26..].copy_from_slice(&0x3c00_u16.to_le_bytes());
+    // Arbitrary native PTQ bytes are admitted; an infinite scale is invalid.
+    ptq[26..].copy_from_slice(&0x7c00_u16.to_le_bytes());
     assert!(
         Artifact::new(
             &[Spec {

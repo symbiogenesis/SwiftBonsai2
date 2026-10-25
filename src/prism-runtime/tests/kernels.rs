@@ -387,6 +387,9 @@ fn malformed_packed_tensors_and_nonfinite_inputs_fail_closed() -> TestResult {
     assert!(matvec(&weights, &[f32::NAN; 128]).is_err());
     let mut corrupted = block;
     corrupted[24] = 255;
+    // Native PTQ admits every packed byte; malformed scales still fail closed.
+    assert!(row(&tensor(143, vec![128], corrupted.to_vec()), 0).is_ok());
+    corrupted[26..].copy_from_slice(&0x7c00_u16.to_le_bytes());
     assert!(row(&tensor(143, vec![128], corrupted.to_vec()), 0).is_err());
     Ok(())
 }
@@ -561,6 +564,7 @@ fn reusable_matvec_preserves_float_order_and_recovers_from_partial_errors() -> T
     let block = pack_ptq(&pq2(0x3c00, &[(0, 2)]))?;
     let mut corrupted = block;
     corrupted[24] = 255;
+    corrupted[26..].copy_from_slice(&0x7c00_u16.to_le_bytes());
     let invalid = tensor(143, vec![128, 2], [block, corrupted].concat());
     assert!(matvec_into(&invalid, &[1.0; 128], &mut output, &mut scratch).is_err());
     assert_eq!(output, [0.0; 0]);

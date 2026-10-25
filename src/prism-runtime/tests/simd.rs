@@ -803,6 +803,8 @@ fn simd_errors_clear_output_and_recover_with_retained_storage() -> TestResult {
     canonical[26..].copy_from_slice(&0_u16.to_le_bytes());
     let mut invalid_ptq1 = [canonical, canonical].concat();
     invalid_ptq1[28 + 24] = 255;
+    // Native aliases remain valid, but even zero inputs must reject infinity.
+    invalid_ptq1[28 + 26..28 + 28].copy_from_slice(&0x7c00_u16.to_le_bytes());
     cases.push((tensor(143, 128, 2, invalid_ptq1), vec![0.0; 128]));
 
     let mut scalar_scratch = MatvecScratch::with_backend(MatvecBackend::Scalar);
