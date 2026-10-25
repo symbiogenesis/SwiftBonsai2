@@ -1,0 +1,880 @@
+//! Typed graph construction and shape validation for production operations.
+
+use super::{
+    Argument, CpuBackend, Graph, GraphId, Observation, TensorId, TensorInfo, product, type_layout,
+};
+use crate::{Result, invalid};
+
+fn at(args: &[Argument], index: usize) -> Result<&Argument> {
+    args.get(index)
+        .ok_or_else(|| invalid("CPU operation argument is missing"))
+}
+fn int(args: &[Argument], index: usize) -> Result<i64> {
+    if let Argument::Integer(value) = at(args, index)? {
+        Ok(*value)
+    } else {
+        Err(invalid("CPU operation requires an integer"))
+    }
+}
+fn usize_arg(args: &[Argument], index: usize) -> Result<usize> {
+    Ok(usize::try_from(int(args, index)?)?)
+}
+fn float(args: &[Argument], index: usize) -> Result<f32> {
+    if let Argument::Float(value) = at(args, index)? {
+        Ok(*value)
+    } else {
+        Err(invalid("CPU operation requires binary32"))
+    }
+}
+fn boolean(args: &[Argument], index: usize) -> Result<bool> {
+    if let Argument::Bool(value) = at(args, index)? {
+        Ok(*value)
+    } else {
+        Err(invalid("CPU operation requires a boolean"))
+    }
+}
+fn tensor(args: &[Argument], index: usize) -> Result<TensorId> {
+    if let Argument::Tensor(value) = at(args, index)? {
+        Ok(*value)
+    } else {
+        Err(invalid("CPU operation requires a tensor"))
+    }
+}
+fn graph(args: &[Argument], index: usize) -> Result<GraphId> {
+    if let Argument::Graph(value) = at(args, index)? {
+        Ok(*value)
+    } else {
+        Err(invalid("CPU operation requires a graph"))
+    }
+}
+fn string(args: &[Argument], index: usize) -> Result<Option<String>> {
+    if let Argument::String(value) = at(args, index)? {
+        Ok(value.clone())
+    } else {
+        Err(invalid("CPU operation requires a string"))
+    }
+}
+fn context(args: &[Argument], index: usize) -> Result<u32> {
+    if let Argument::Context(value) = at(args, index)? {
+        Ok(*value)
+    } else {
+        Err(invalid("CPU operation requires a context"))
+    }
+}
+fn put_int(params: &mut [u8; 64], index: usize, value: i32) {
+    params[index * 4..index * 4 + 4].copy_from_slice(&value.to_le_bytes());
+}
+fn put_float(params: &mut [u8; 64], index: usize, value: f32) {
+    params[index * 4..index * 4 + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+/// Resolve the pinned numerical operation name.
+#[must_use]
+#[allow(
+    clippy::too_many_lines,
+    reason = "All pinned operation discriminants are kept in one auditable mapping."
+)]
+pub const fn operation_name(operation: i32) -> &'static str {
+    match operation {
+        0 => "NONE",
+        1 => "DUP",
+        2 => "ADD",
+        3 => "ADD_ID",
+        4 => "ADD1",
+        5 => "ACC",
+        6 => "SUB",
+        7 => "MUL",
+        8 => "DIV",
+        9 => "SQR",
+        10 => "SQRT",
+        11 => "LOG",
+        12 => "SIN",
+        13 => "COS",
+        14 => "SUM",
+        15 => "SUM_ROWS",
+        16 => "CUMSUM",
+        17 => "MEAN",
+        18 => "ARGMAX",
+        19 => "COUNT_EQUAL",
+        20 => "REPEAT",
+        21 => "REPEAT_BACK",
+        22 => "CONCAT",
+        23 => "SILU_BACK",
+        24 => "NORM",
+        25 => "RMS_NORM",
+        26 => "RMS_NORM_BACK",
+        27 => "GROUP_NORM",
+        28 => "L2_NORM",
+        29 => "MUL_MAT",
+        30 => "MUL_MAT_ID",
+        31 => "OUT_PROD",
+        32 => "SCALE",
+        33 => "SET",
+        34 => "CPY",
+        35 => "CONT",
+        36 => "RESHAPE",
+        37 => "VIEW",
+        38 => "PERMUTE",
+        39 => "TRANSPOSE",
+        40 => "GET_ROWS",
+        41 => "GET_ROWS_BACK",
+        42 => "SET_ROWS",
+        43 => "DIAG",
+        44 => "DIAG_MASK_INF",
+        45 => "DIAG_MASK_ZERO",
+        46 => "SOFT_MAX",
+        47 => "SOFT_MAX_BACK",
+        48 => "ROPE",
+        49 => "ROPE_BACK",
+        50 => "CLAMP",
+        51 => "CONV_TRANSPOSE_1D",
+        52 => "IM2COL",
+        53 => "IM2COL_BACK",
+        54 => "IM2COL_3D",
+        55 => "COL2IM_1D",
+        56 => "CONV_2D",
+        57 => "CONV_3D",
+        58 => "CONV_2D_DW",
+        59 => "CONV_TRANSPOSE_2D",
+        60 => "POOL_1D",
+        61 => "POOL_2D",
+        62 => "POOL_2D_BACK",
+        63 => "UPSCALE",
+        64 => "PAD",
+        65 => "PAD_REFLECT_1D",
+        66 => "ROLL",
+        67 => "ARANGE",
+        68 => "TIMESTEP_EMBEDDING",
+        69 => "ARGSORT",
+        70 => "TOP_K",
+        71 => "LEAKY_RELU",
+        72 => "TRI",
+        73 => "FILL",
+        74 => "FLASH_ATTN_EXT",
+        75 => "FLASH_ATTN_BACK",
+        76 => "SSM_CONV",
+        77 => "SSM_SCAN",
+        78 => "WIN_PART",
+        79 => "WIN_UNPART",
+        80 => "GET_REL_POS",
+        81 => "ADD_REL_POS",
+        82 => "RWKV_WKV6",
+        83 => "GATED_LINEAR_ATTN",
+        84 => "RWKV_WKV7",
+        85 => "SOLVE_TRI",
+        86 => "GATED_DELTA_NET",
+        87 => "LIGHTNING_INDEXER",
+        88 => "DSV4_HC_COMB",
+        89 => "DSV4_HC_PRE",
+        90 => "DSV4_HC_POST",
+        91 => "UNARY",
+        92 => "MAP_CUSTOM1",
+        93 => "MAP_CUSTOM2",
+        94 => "MAP_CUSTOM3",
+        95 => "CUSTOM",
+        96 => "CROSS_ENTROPY_LOSS",
+        97 => "CROSS_ENTROPY_LOSS_BACK",
+        98 => "OPT_STEP_ADAMW",
+        99 => "OPT_STEP_SGD",
+        100 => "GLU",
+        101 => "GATED_DELTA_NET_REPLAY",
+        _ => "UNKNOWN",
+    }
+}
+
+/// Resolve a pinned unary operation name.
+#[must_use]
+pub const fn unary_name(operation: i32) -> &'static str {
+    match operation {
+        0 => "ABS",
+        1 => "SGN",
+        2 => "NEG",
+        3 => "STEP",
+        4 => "TANH",
+        5 => "ELU",
+        6 => "RELU",
+        7 => "SIGMOID",
+        8 => "GELU",
+        9 => "GELU_QUICK",
+        10 => "SILU",
+        11 => "HARDSWISH",
+        12 => "HARDSIGMOID",
+        13 => "EXP",
+        14 => "EXPM1",
+        15 => "SOFTPLUS",
+        16 => "GELU_ERF",
+        17 => "XIELU",
+        18 => "FLOOR",
+        19 => "CEIL",
+        20 => "ROUND",
+        21 => "TRUNC",
+        _ => "UNKNOWN",
+    }
+}
+
+impl CpuBackend {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Tensor construction keeps the complete pinned metadata contract explicit."
+    )]
+    fn derived(
+        &mut self,
+        ctx: u32,
+        kind: i32,
+        shape: [usize; 4],
+        operation: i32,
+        sources: Vec<TensorId>,
+        params: [u8; 64],
+        view: Option<(TensorId, [usize; 4], usize)>,
+    ) -> Result<Observation> {
+        let id = self.tensor(ctx, kind, shape)?;
+        let info = self.info_mut(id)?;
+        info.operation = operation;
+        info.sources = sources;
+        info.parameters = params;
+        if let Some((source, strides, offset)) = view {
+            info.view = Some(source);
+            info.strides = strides;
+            info.offset = offset;
+        }
+        Ok(Observation::Tensor(Some(id)))
+    }
+
+    /// Invoke a typed production graph operation from the pinned GGML contract.
+    ///
+    /// Graph construction and execution use the same safe storage and kernels as
+    /// direct runtime calls. No test programs or reference answers are consulted.
+    ///
+    /// # Errors
+    /// Rejects unsupported calls, wrong argument types, invalid shapes, storage
+    /// overflow, unknown identities, and numerical execution failures.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The allowlist keeps operation shape rules adjacent to their typed dispatch."
+    )]
+    pub fn call(&mut self, name: &str, args: &[Argument]) -> Result<Observation> {
+        match name {
+            "ggml_type_size" | "ggml_blck_size" | "ggml_type_name" | "ggml_is_quantized" => {
+                let layout = type_layout(i32::try_from(int(args, 0)?)?)?;
+                return Ok(match name {
+                    "ggml_type_size" => Observation::Integer(layout.bytes as i64),
+                    "ggml_blck_size" => Observation::Integer(layout.block as i64),
+                    "ggml_is_quantized" => Observation::Bool(layout.block != 1),
+                    _ => Observation::String(Some(layout.name.into())),
+                });
+            }
+            "ggml_tensor_overhead" | "ggml_graph_overhead" | "ggml_graph_overhead_custom" => {
+                return Ok(Observation::Integer(size_of::<TensorInfo>() as i64));
+            }
+            "ggml_op_name" => {
+                return Ok(Observation::String(Some(
+                    operation_name(i32::try_from(int(args, 0)?)?).into(),
+                )));
+            }
+            "ggml_unary_op_name" => {
+                return Ok(Observation::String(Some(
+                    unary_name(i32::try_from(int(args, 0)?)?).into(),
+                )));
+            }
+            "ggml_nbytes" | "ggml_nelements" | "ggml_nrows" | "ggml_element_size"
+            | "ggml_is_vector" | "ggml_is_matrix" | "ggml_get_name" | "ggml_op_desc" => {
+                let info = self.info(tensor(args, 0)?)?;
+                return Ok(match name {
+                    "ggml_nbytes" => Observation::Integer(info.bytes()? as i64),
+                    "ggml_nelements" => Observation::Integer(info.elements() as i64),
+                    "ggml_nrows" => Observation::Integer(info.rows() as i64),
+                    "ggml_element_size" => {
+                        Observation::Integer(type_layout(info.kind)?.bytes as i64)
+                    }
+                    "ggml_is_vector" => {
+                        Observation::Bool(info.shape[1..].iter().all(|&dim| dim == 1))
+                    }
+                    "ggml_is_matrix" => {
+                        Observation::Bool(info.shape[2..].iter().all(|&dim| dim == 1))
+                    }
+                    "ggml_get_name" => Observation::String(Some(info.name.clone())),
+                    _ => Observation::String(Some(
+                        if info.operation == 91 {
+                            unary_name(i32::from_le_bytes(info.parameters[..4].try_into()?))
+                        } else {
+                            operation_name(info.operation)
+                        }
+                        .into(),
+                    )),
+                });
+            }
+            "ggml_are_same_shape" => {
+                return Ok(Observation::Bool(
+                    self.info(tensor(args, 0)?)?.shape == self.info(tensor(args, 1)?)?.shape,
+                ));
+            }
+            "ggml_get_tensor" => {
+                let ctx = context(args, 0)?;
+                let name =
+                    string(args, 1)?.ok_or_else(|| invalid("CPU tensor lookup name is null"))?;
+                return Ok(Observation::Tensor(
+                    self.context_tensors(ctx)
+                        .into_iter()
+                        .find(|&id| self.info(id).is_ok_and(|info| info.name == name)),
+                ));
+            }
+            "ggml_set_name" => {
+                let id = tensor(args, 0)?;
+                self.info_mut(id)?.name =
+                    string(args, 1)?.ok_or_else(|| invalid("CPU tensor name is null"))?;
+                return Ok(Observation::Tensor(Some(id)));
+            }
+            "ggml_set_param" | "ggml_set_loss" => {
+                self.info_mut(tensor(args, 0)?)?.flags |=
+                    if name == "ggml_set_param" { 16 } else { 8 };
+                return Ok(Observation::Void);
+            }
+            "ggml_new_graph" | "ggml_new_graph_custom" => {
+                let capacity = if name == "ggml_new_graph" {
+                    2048
+                } else {
+                    usize_arg(args, 1)?
+                };
+                if capacity == 0 || capacity > 32768 {
+                    return Err(invalid("CPU graph capacity outside bounds"));
+                }
+                let id = GraphId(self.graphs.len());
+                self.graphs.push(Graph {
+                    nodes: Vec::new(),
+                    leaves: Vec::new(),
+                    capacity,
+                });
+                return Ok(Observation::Graph(id));
+            }
+            "ggml_build_forward_expand" => {
+                self.expand(graph(args, 0)?, tensor(args, 1)?, &mut Vec::new())?;
+                return Ok(Observation::Void);
+            }
+            "ggml_graph_add_node" => {
+                let id = tensor(args, 1)?;
+                self.info(id)?;
+                let graph = &mut self.graphs[graph(args, 0)?.0];
+                if graph.nodes.len() >= graph.capacity {
+                    return Err(invalid("CPU graph capacity exceeded"));
+                }
+                graph.nodes.push(id);
+                return Ok(Observation::Void);
+            }
+            "ggml_graph_n_nodes" | "ggml_graph_size" => {
+                let graph = self
+                    .graphs
+                    .get(graph(args, 0)?.0)
+                    .ok_or_else(|| invalid("unknown CPU graph"))?;
+                return Ok(Observation::Integer(if name == "ggml_graph_size" {
+                    graph.capacity
+                } else {
+                    graph.nodes.len()
+                } as i64));
+            }
+            "ggml_graph_cpy" => {
+                let source = graph(args, 0)?;
+                let destination = graph(args, 1)?;
+                let (nodes, leaves) = self.graph_nodes(source)?;
+                let nodes = nodes.to_vec();
+                let leaves = leaves.to_vec();
+                let graph = self
+                    .graphs
+                    .get_mut(destination.0)
+                    .ok_or_else(|| invalid("unknown CPU destination graph"))?;
+                if nodes.len() > graph.capacity {
+                    return Err(invalid("CPU graph copy exceeds capacity"));
+                }
+                graph.nodes = nodes;
+                graph.leaves = leaves;
+                return Ok(Observation::Void);
+            }
+            "ggml_graph_reset" => {
+                self.graph_nodes(graph(args, 0)?)?;
+                return Ok(Observation::Void);
+            }
+            "ggml_backend_graph_compute" => {
+                self.compute(graph(args, 1)?)?;
+                return Ok(Observation::Integer(0));
+            }
+            "ggml_mul_mat_set_hint" | "ggml_backend_buffer_set_usage" => {
+                return Ok(Observation::Void);
+            }
+            "ggml_new_tensor" | "ggml_new_tensor_1d" | "ggml_new_tensor_2d"
+            | "ggml_new_tensor_3d" | "ggml_new_tensor_4d" => {
+                let ctx = context(args, 0)?;
+                let kind = i32::try_from(int(args, 1)?)?;
+                let mut shape = [1; 4];
+                if name == "ggml_new_tensor" {
+                    let dims = usize_arg(args, 2)?;
+                    let Argument::Integers(values) = at(args, 3)? else {
+                        return Err(invalid("CPU shape requires an integer list"));
+                    };
+                    if !(1..=4).contains(&dims) || values.len() < dims {
+                        return Err(invalid("CPU shape rank outside bounds"));
+                    }
+                    for axis in 0..dims {
+                        shape[axis] = usize::try_from(values[axis])?;
+                    }
+                } else {
+                    for (axis, dim) in shape.iter_mut().enumerate().take(args.len() - 2) {
+                        *dim = usize_arg(args, axis + 2)?;
+                    }
+                }
+                return Ok(Observation::Tensor(Some(self.tensor(ctx, kind, shape)?)));
+            }
+            "ggml_arange" => {
+                let ctx = context(args, 0)?;
+                let start = float(args, 1)?;
+                let end = float(args, 2)?;
+                let step = float(args, 3)?;
+                if !start.is_finite()
+                    || !end.is_finite()
+                    || !step.is_finite()
+                    || step <= 0.0
+                    || end <= start
+                {
+                    return Err(invalid("CPU arange bounds differ"));
+                }
+                let shape = [((end - start) / step).ceil() as usize, 1, 1, 1];
+                let mut p = [0; 64];
+                put_float(&mut p, 0, start);
+                put_float(&mut p, 1, end);
+                put_float(&mut p, 2, step);
+                return self.derived(ctx, 0, shape, 67, Vec::new(), p, None);
+            }
+            _ => {}
+        }
+        let ctx = context(args, 0)?;
+        let a = tensor(args, 1)?;
+        let a_info = self.info(a)?.clone();
+        let mut shape = a_info.shape;
+        let mut kind = a_info.kind;
+        let mut sources = vec![a];
+        let mut p = [0; 64];
+        let mut view = None;
+        let mut inplace = name.ends_with("_inplace");
+        let op = match name {
+            "ggml_dup" => 1,
+            "ggml_add" | "ggml_add_inplace" => 2,
+            "ggml_sub" | "ggml_sub_inplace" => 6,
+            "ggml_mul" | "ggml_mul_inplace" => 7,
+            "ggml_div" | "ggml_div_inplace" => 8,
+            "ggml_sqr" => 9,
+            "ggml_sqrt" => 10,
+            "ggml_log" => 11,
+            "ggml_sin" => 12,
+            "ggml_cos" => 13,
+            "ggml_sum" => {
+                shape = [1; 4];
+                14
+            }
+            "ggml_sum_rows" => {
+                shape[0] = 1;
+                15
+            }
+            "ggml_cumsum" => 16,
+            "ggml_mean" => {
+                shape[0] = 1;
+                17
+            }
+            "ggml_argmax" => {
+                shape = [a_info.shape[1], 1, 1, 1];
+                kind = 26;
+                18
+            }
+            "ggml_count_equal" => {
+                sources.push(tensor(args, 2)?);
+                shape = [1; 4];
+                kind = 27;
+                19
+            }
+            "ggml_repeat" | "ggml_repeat_back" => {
+                let b = tensor(args, 2)?;
+                shape = self.info(b)?.shape;
+                if name == "ggml_repeat" { 20 } else { 21 }
+            }
+            "ggml_repeat_4d" => {
+                for (axis, dim) in shape.iter_mut().enumerate() {
+                    *dim = usize_arg(args, axis + 2)?;
+                }
+                20
+            }
+            "ggml_concat" => {
+                let b = tensor(args, 2)?;
+                let bs = self.info(b)?.shape;
+                let axis = usize_arg(args, 3)?;
+                if axis >= 4 || (0..4).any(|i| i != axis && shape[i] != bs[i]) {
+                    return Err(invalid("CPU concat shapes differ"));
+                }
+                shape[axis] = shape[axis]
+                    .checked_add(bs[axis])
+                    .ok_or_else(|| invalid("CPU concat extent overflow"))?;
+                sources.push(b);
+                put_int(&mut p, 0, axis as i32);
+                22
+            }
+            "ggml_silu_back" => {
+                sources.push(tensor(args, 2)?);
+                23
+            }
+            "ggml_norm" => {
+                put_float(&mut p, 0, float(args, 2)?);
+                24
+            }
+            "ggml_rms_norm" | "ggml_rms_norm_inplace" => {
+                put_float(&mut p, 0, float(args, 2)?);
+                25
+            }
+            "ggml_rms_norm_back" => {
+                sources.push(tensor(args, 2)?);
+                put_float(&mut p, 0, float(args, 3)?);
+                26
+            }
+            "ggml_group_norm" => {
+                let groups = int(args, 2)?;
+                if groups <= 0 || groups > shape[2] as i64 {
+                    return Err(invalid("CPU group count outside bounds"));
+                }
+                put_int(&mut p, 0, i32::try_from(groups)?);
+                put_float(&mut p, 1, float(args, 3)?);
+                27
+            }
+            "ggml_l2_norm" => {
+                put_float(&mut p, 0, float(args, 2)?);
+                28
+            }
+            "ggml_mul_mat" => {
+                let b = tensor(args, 2)?;
+                let bs = self.info(b)?.shape;
+                if shape[0] != bs[0]
+                    || shape[2] == 0
+                    || shape[3] == 0
+                    || !bs[2].is_multiple_of(shape[2])
+                    || !bs[3].is_multiple_of(shape[3])
+                {
+                    return Err(invalid("CPU matmul shapes differ"));
+                }
+                shape = [shape[1], bs[1], bs[2], bs[3]];
+                kind = 0;
+                sources.push(b);
+                29
+            }
+            "ggml_out_prod" => {
+                let b = tensor(args, 2)?;
+                let bs = self.info(b)?.shape;
+                if shape[1] != bs[1] {
+                    return Err(invalid("CPU outer product shapes differ"));
+                }
+                shape = [shape[0], bs[0], bs[2], bs[3]];
+                kind = 0;
+                sources.push(b);
+                31
+            }
+            "ggml_scale" | "ggml_scale_bias" | "ggml_scale_bias_inplace" => {
+                put_float(&mut p, 0, float(args, 2)?);
+                if name != "ggml_scale" {
+                    put_float(&mut p, 1, float(args, 3)?);
+                }
+                32
+            }
+            "ggml_set" | "ggml_set_inplace" => {
+                sources.push(tensor(args, 2)?);
+                for i in 0..4 {
+                    put_int(&mut p, i, i32::try_from(int(args, i + 3)?)?);
+                }
+                put_int(&mut p, 4, i32::from(inplace));
+                33
+            }
+            "ggml_cpy" => {
+                let b = tensor(args, 2)?;
+                let bi = self.info(b)?.clone();
+                if product(shape)? != product(bi.shape)? {
+                    return Err(invalid("CPU copy element counts differ"));
+                }
+                shape = bi.shape;
+                kind = bi.kind;
+                view = Some((b, bi.strides, 0));
+                sources.push(b);
+                34
+            }
+            "ggml_cont" => 35,
+            "ggml_reshape_2d" | "ggml_reshape_3d" | "ggml_reshape_4d" => {
+                shape = [1; 4];
+                for (axis, dim) in shape.iter_mut().enumerate().take(args.len() - 2) {
+                    *dim = usize_arg(args, axis + 2)?;
+                }
+                if !a_info.contiguous() || product(shape)? != a_info.elements() {
+                    return Err(invalid(
+                        "CPU reshape is not contiguous or changes element count",
+                    ));
+                }
+                view = Some((a, super::contiguous_strides(kind, shape)?, 0));
+                36
+            }
+            "ggml_view_tensor" => {
+                view = Some((a, a_info.strides, 0));
+                37
+            }
+            "ggml_view_1d" | "ggml_view_2d" | "ggml_view_3d" | "ggml_view_4d" => {
+                let dims = match name {
+                    "ggml_view_1d" => 1,
+                    "ggml_view_2d" => 2,
+                    "ggml_view_3d" => 3,
+                    _ => 4,
+                };
+                shape = [1; 4];
+                for (axis, dim) in shape.iter_mut().enumerate().take(dims) {
+                    *dim = usize_arg(args, axis + 2)?;
+                }
+                let mut strides = super::contiguous_strides(kind, shape)?;
+                for (axis, stride) in strides.iter_mut().enumerate().take(dims).skip(1) {
+                    *stride = usize_arg(args, 1 + dims + axis)?;
+                }
+                view = Some((a, strides, usize_arg(args, args.len() - 1)?));
+                37
+            }
+            "ggml_permute" => {
+                let mut strides = [0; 4];
+                let mut output = [0; 4];
+                let mut seen = [false; 4];
+                for axis in 0..4 {
+                    let destination = usize_arg(args, axis + 2)?;
+                    if destination >= 4 || seen[destination] {
+                        return Err(invalid("CPU permutation axes differ"));
+                    }
+                    seen[destination] = true;
+                    output[destination] = shape[axis];
+                    strides[destination] = a_info.strides[axis];
+                }
+                shape = output;
+                view = Some((a, strides, 0));
+                38
+            }
+            "ggml_transpose" => {
+                shape.swap(0, 1);
+                let mut strides = a_info.strides;
+                strides.swap(0, 1);
+                view = Some((a, strides, 0));
+                39
+            }
+            "ggml_get_rows" => {
+                let b = tensor(args, 2)?;
+                let bs = self.info(b)?.shape;
+                if bs[3] != 1 || shape[2] != bs[1] || shape[3] != bs[2] {
+                    return Err(invalid("CPU gather batch shapes differ"));
+                }
+                shape = [shape[0], bs[0], bs[1], bs[2]];
+                kind = 0;
+                sources.push(b);
+                40
+            }
+            "ggml_get_rows_back" => {
+                sources.push(tensor(args, 2)?);
+                shape = self.info(tensor(args, 3)?)?.shape;
+                kind = 0;
+                41
+            }
+            "ggml_set_rows" => {
+                let b = tensor(args, 2)?;
+                let bi = self.info(b)?.clone();
+                sources.push(b);
+                sources.push(tensor(args, 3)?);
+                shape = bi.shape;
+                kind = bi.kind;
+                view = Some((b, bi.strides, 0));
+                42
+            }
+            "ggml_diag" => {
+                shape[1] = shape[0];
+                43
+            }
+            "ggml_diag_mask_inf" => {
+                put_int(&mut p, 0, i32::try_from(int(args, 2)?)?);
+                44
+            }
+            "ggml_soft_max" | "ggml_soft_max_ext" | "ggml_soft_max_ext_inplace" => {
+                put_float(&mut p, 0, 1.0);
+                if name != "ggml_soft_max" {
+                    if let Argument::Tensor(mask) = at(args, 2)? {
+                        sources.push(*mask);
+                    } else if !matches!(at(args, 2)?, Argument::Null) {
+                        return Err(invalid("CPU softmax mask differs"));
+                    }
+                    put_float(&mut p, 0, float(args, 3)?);
+                    put_float(&mut p, 1, float(args, 4)?);
+                }
+                46
+            }
+            "ggml_soft_max_ext_back" => {
+                sources.push(tensor(args, 2)?);
+                put_float(&mut p, 0, float(args, 3)?);
+                put_float(&mut p, 1, float(args, 4)?);
+                47
+            }
+            "ggml_clamp" => {
+                put_float(&mut p, 0, float(args, 2)?);
+                put_float(&mut p, 1, float(args, 3)?);
+                50
+            }
+            "ggml_pad" | "ggml_pad_circular" | "ggml_pad_ext" | "ggml_pad_ext_circular" => {
+                for (axis, dimension) in shape.iter_mut().enumerate() {
+                    let (left, right) = if name.contains("_ext") {
+                        (int(args, 2 + 2 * axis)?, int(args, 3 + 2 * axis)?)
+                    } else {
+                        (0, int(args, 2 + axis)?)
+                    };
+                    let extent = *dimension as i64 + left + right;
+                    if extent < 0 {
+                        return Err(invalid("CPU padding creates negative extent"));
+                    }
+                    *dimension = usize::try_from(extent)?;
+                    put_int(&mut p, 2 * axis, i32::try_from(left)?);
+                    put_int(&mut p, 2 * axis + 1, i32::try_from(right)?);
+                }
+                put_int(&mut p, 8, i32::from(name.ends_with("_circular")));
+                64
+            }
+            "ggml_roll" => {
+                for axis in 0..4 {
+                    put_int(&mut p, axis, i32::try_from(int(args, axis + 2)?)?);
+                }
+                66
+            }
+            "ggml_timestep_embedding" => {
+                let dim = usize_arg(args, 2)?;
+                shape = [dim.next_multiple_of(2), a_info.shape[0], 1, 1];
+                kind = 0;
+                put_int(&mut p, 0, i32::try_from(dim)?);
+                put_int(&mut p, 1, i32::try_from(int(args, 3)?)?);
+                68
+            }
+            "ggml_argsort" | "ggml_argsort_top_k" | "ggml_top_k" => {
+                kind = 26;
+                put_int(
+                    &mut p,
+                    0,
+                    if name == "ggml_argsort" {
+                        i32::try_from(int(args, 2)?)?
+                    } else {
+                        1
+                    },
+                );
+                if name != "ggml_argsort" {
+                    let k = usize_arg(args, 2)?;
+                    if k == 0 || k > shape[0] {
+                        return Err(invalid("CPU top-k exceeds row width"));
+                    }
+                    shape[0] = k;
+                }
+                if name == "ggml_top_k" { 70 } else { 69 }
+            }
+            "ggml_leaky_relu" => {
+                put_float(&mut p, 0, float(args, 2)?);
+                inplace = boolean(args, 3)?;
+                71
+            }
+            "ggml_tri" => {
+                put_int(&mut p, 0, i32::try_from(int(args, 2)?)?);
+                72
+            }
+            "ggml_fill" => {
+                put_float(&mut p, 0, float(args, 2)?);
+                73
+            }
+            "ggml_solve_tri" => {
+                sources.push(tensor(args, 2)?);
+                shape = self.info(sources[1])?.shape;
+                for i in 0..3 {
+                    put_int(&mut p, i, i32::from(boolean(args, i + 3)?));
+                }
+                85
+            }
+            "ggml_unary" | "ggml_relu" | "ggml_silu" | "ggml_sigmoid" | "ggml_tanh"
+            | "ggml_softplus" | "ggml_floor" | "ggml_ceil" | "ggml_round" | "ggml_trunc"
+            | "ggml_xielu" => {
+                let unary = match name {
+                    "ggml_relu" => 6,
+                    "ggml_silu" => 10,
+                    "ggml_sigmoid" => 7,
+                    "ggml_tanh" => 4,
+                    "ggml_softplus" => 15,
+                    "ggml_xielu" => 17,
+                    "ggml_floor" => 18,
+                    "ggml_ceil" => 19,
+                    "ggml_round" => 20,
+                    "ggml_trunc" => 21,
+                    _ => i32::try_from(int(args, 2)?)?,
+                };
+                if !(0..22).contains(&unary) {
+                    return Err(invalid("unknown CPU unary discriminator"));
+                }
+                put_int(&mut p, 0, unary);
+                if name == "ggml_xielu" {
+                    for i in 1..5 {
+                        put_float(&mut p, i, float(args, i + 1)?);
+                    }
+                }
+                91
+            }
+            "ggml_cross_entropy_loss" | "ggml_cross_entropy_loss_back" => {
+                sources.push(tensor(args, 2)?);
+                if name.ends_with("_back") {
+                    sources.push(tensor(args, 3)?);
+                    97
+                } else {
+                    shape = [1; 4];
+                    96
+                }
+            }
+            "ggml_glu" | "ggml_glu_split" | "ggml_swiglu_split" | "ggml_swiglu_oai" => {
+                let glu = if name == "ggml_glu" {
+                    let glu = i32::try_from(int(args, 2)?)?;
+                    if !shape[0].is_multiple_of(2) {
+                        return Err(invalid("CPU GLU row width must be even"));
+                    }
+                    shape[0] /= 2;
+                    put_int(&mut p, 1, i32::from(boolean(args, 3)?));
+                    glu
+                } else {
+                    let b = tensor(args, 2)?;
+                    if self.info(b)?.shape != shape {
+                        return Err(invalid("CPU GLU shapes differ"));
+                    }
+                    sources.push(b);
+                    match name {
+                        "ggml_swiglu_split" => 2,
+                        "ggml_swiglu_oai" => {
+                            put_float(&mut p, 2, float(args, 3)?);
+                            put_float(&mut p, 3, float(args, 4)?);
+                            3
+                        }
+                        _ => i32::try_from(int(args, 3)?)?,
+                    }
+                };
+                put_int(&mut p, 0, glu);
+                100
+            }
+            _ => {
+                return Err(invalid(format!(
+                    "unsupported CPU production graph call {name}"
+                )));
+            }
+        };
+        if matches!(op, 2 | 6..=8) {
+            let b = tensor(args, 2)?;
+            let bs = self.info(b)?.shape;
+            if bs
+                .iter()
+                .zip(shape)
+                .any(|(&b, a)| b == 0 || !a.is_multiple_of(b))
+            {
+                return Err(invalid("CPU binary shapes cannot broadcast"));
+            }
+            sources.push(b);
+        }
+        if inplace {
+            view = Some((a, a_info.strides, 0));
+        }
+        self.derived(ctx, kind, shape, op, sources, p, view)
+    }
+}

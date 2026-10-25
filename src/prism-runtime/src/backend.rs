@@ -1,0 +1,557 @@
+//! Safe, strided CPU tensor graphs using the pinned GGML operation contract.
+//!
+//! Storage is owned by the graph. Views retain byte strides and offsets, and
+//! graph execution writes through aliases. Unsupported operations are errors;
+//! support queries never advertise an operation without a numerical kernel.
+
+#![allow(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::float_cmp,
+    clippy::suboptimal_flops,
+    reason = "The pinned GGML ABI specifies integer casts and binary32 operation ordering."
+)]
+
+use crate::{Result, invalid};
+use bonsai_ternary::half_to_float;
+
+mod call;
+mod ops;
+
+pub use call::{operation_name, unary_name};
+
+/// An owned tensor identity within one [`CpuBackend`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct TensorId(pub usize);
+
+/// An owned computation graph identity within one [`CpuBackend`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GraphId(pub usize);
+
+/// A typed argument to the pinned production graph operation API.
+#[derive(Clone, Debug)]
+pub enum Argument {
+    /// A tensor owned by this backend.
+    Tensor(TensorId),
+    /// A graph owned by this backend.
+    Graph(GraphId),
+    /// A signed integer or enum discriminant.
+    Integer(i64),
+    /// A binary32 scalar.
+    Float(f32),
+    /// A boolean option.
+    Bool(bool),
+    /// An immutable dimension, stride, or axis list.
+    Integers(Vec<i64>),
+    /// A nullable byte string, validated by the caller as UTF-8.
+    String(Option<String>),
+    /// An execution-context identity. Contexts own metadata, not native memory.
+    Context(u32),
+    /// An absent optional input.
+    Null,
+}
+
+/// The typed result of a graph API call.
+#[derive(Clone, Debug)]
+pub enum Observation {
+    /// A tensor, or absence for a failed name lookup.
+    Tensor(Option<TensorId>),
+    /// A newly allocated graph.
+    Graph(GraphId),
+    /// A signed integer result.
+    Integer(i64),
+    /// A boolean result.
+    Bool(bool),
+    /// A nullable string result.
+    String(Option<String>),
+    /// No returned value.
+    Void,
+}
+
+/// The storage geometry of a pinned scalar or quantized element type.
+#[derive(Clone, Copy, Debug)]
+pub struct TypeLayout {
+    /// Number of logical values in one storage block.
+    pub block: usize,
+    /// Bytes in one storage block.
+    pub bytes: usize,
+    /// Pinned type name.
+    pub name: &'static str,
+}
+
+/// Resolve supported production tensor storage types.
+///
+/// # Errors
+/// Rejects types without an implemented production decoder.
+pub fn type_layout(kind: i32) -> Result<TypeLayout> {
+    let (block, bytes, name) = match kind {
+        0 => (1, 4, "f32"),
+        1 => (1, 2, "f16"),
+        2 => (32, 18, "q4_0"),
+        8 => (32, 34, "q8_0"),
+        24 => (1, 1, "i8"),
+        25 => (1, 2, "i16"),
+        26 => (1, 4, "i32"),
+        27 => (1, 8, "i64"),
+        28 => (1, 8, "f64"),
+        30 => (1, 2, "bf16"),
+        142 => (128, 34, "pq2_0"),
+        143 => (128, 28, "ptq1_0"),
+        _ => return Err(invalid(format!("unsupported CPU tensor type {kind}"))),
+    };
+    Ok(TypeLayout { block, bytes, name })
+}
+
+/// Public tensor metadata; dimensions are ordered with the contiguous axis first.
+#[derive(Clone, Debug)]
+pub struct TensorInfo {
+    /// Storage type discriminant.
+    pub kind: i32,
+    /// Logical dimensions.
+    pub shape: [usize; 4],
+    /// Byte strides, including packed block stride on axis zero.
+    pub strides: [usize; 4],
+    /// Pinned operation discriminant.
+    pub operation: i32,
+    /// Input tensor identities, in operation order.
+    pub sources: Vec<TensorId>,
+    /// Underlying tensor for a storage view.
+    pub view: Option<TensorId>,
+    /// Byte offset relative to the underlying tensor.
+    pub offset: usize,
+    /// Operation parameters, in the pinned little-endian ABI.
+    pub parameters: [u8; 64],
+    /// Caller assigned tensor name.
+    pub name: String,
+    /// Pinned tensor flags.
+    pub flags: i32,
+    /// The metadata context that owns this tensor.
+    pub context: u32,
+}
+
+impl TensorInfo {
+    /// Number of logical scalar elements.
+    #[must_use]
+    pub fn elements(&self) -> usize {
+        self.shape.iter().product()
+    }
+
+    /// Number of logical rows.
+    #[must_use]
+    pub fn rows(&self) -> usize {
+        self.shape[1..].iter().product()
+    }
+
+    /// Storage byte extent, including gaps between strided rows.
+    ///
+    /// # Errors
+    /// Rejects unsupported storage types or overflowing byte extents.
+    pub fn bytes(&self) -> Result<usize> {
+        let layout = type_layout(self.kind)?;
+        if self.shape.contains(&0) {
+            return Ok(0);
+        }
+        let mut bytes = layout.bytes;
+        for (axis, (&dimension, &stride)) in self.shape.iter().zip(&self.strides).enumerate() {
+            let count = if axis == 0 {
+                dimension / layout.block
+            } else {
+                dimension
+            };
+            bytes = bytes
+                .checked_add(
+                    (count - 1)
+                        .checked_mul(stride)
+                        .ok_or_else(|| invalid("tensor byte extent overflow"))?,
+                )
+                .ok_or_else(|| invalid("tensor byte extent overflow"))?;
+        }
+        Ok(bytes)
+    }
+
+    /// Whether all dimensions use the canonical contiguous byte strides.
+    #[must_use]
+    pub fn contiguous(&self) -> bool {
+        contiguous_strides(self.kind, self.shape).is_ok_and(|strides| strides == self.strides)
+    }
+}
+
+struct Node {
+    info: TensorInfo,
+    data: Vec<u8>,
+}
+
+#[derive(Default)]
+struct Graph {
+    nodes: Vec<TensorId>,
+    leaves: Vec<TensorId>,
+    capacity: usize,
+}
+
+/// Safe reference CPU backend with owned graph metadata and checked storage.
+#[derive(Default)]
+pub struct CpuBackend {
+    tensors: Vec<Node>,
+    graphs: Vec<Graph>,
+}
+
+fn product(shape: [usize; 4]) -> Result<usize> {
+    shape.into_iter().try_fold(1_usize, |count, dim| {
+        count
+            .checked_mul(dim)
+            .ok_or_else(|| invalid("tensor element count overflow"))
+    })
+}
+
+fn contiguous_strides(kind: i32, shape: [usize; 4]) -> Result<[usize; 4]> {
+    product(shape)?;
+    let layout = type_layout(kind)?;
+    if !shape[0].is_multiple_of(layout.block) {
+        return Err(invalid("tensor width is not block aligned"));
+    }
+    let mut strides = [layout.bytes; 4];
+    strides[1] = (shape[0] / layout.block)
+        .checked_mul(layout.bytes)
+        .ok_or_else(|| invalid("tensor row extent overflow"))?;
+    for axis in 2..4 {
+        strides[axis] = strides[axis - 1]
+            .checked_mul(shape[axis - 1])
+            .ok_or_else(|| invalid("tensor stride overflow"))?;
+    }
+    Ok(strides)
+}
+
+fn coordinates(mut index: usize, shape: [usize; 4]) -> [usize; 4] {
+    std::array::from_fn(|axis| {
+        let coordinate = index % shape[axis];
+        index /= shape[axis];
+        coordinate
+    })
+}
+
+const fn linear(index: [usize; 4], shape: [usize; 4]) -> usize {
+    index[0] + shape[0] * (index[1] + shape[1] * (index[2] + shape[2] * index[3]))
+}
+
+impl CpuBackend {
+    /// Construct an empty CPU backend.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Read tensor metadata by owned identity.
+    ///
+    /// # Errors
+    /// Rejects an unknown identity.
+    pub fn info(&self, tensor: TensorId) -> Result<&TensorInfo> {
+        self.tensors
+            .get(tensor.0)
+            .map(|node| &node.info)
+            .ok_or_else(|| invalid("unknown CPU tensor identity"))
+    }
+
+    /// Change tensor metadata before graph execution.
+    ///
+    /// # Errors
+    /// Rejects an unknown identity. Storage and numerical bounds are rechecked
+    /// at allocation and I/O, including after callers change strides.
+    pub fn info_mut(&mut self, tensor: TensorId) -> Result<&mut TensorInfo> {
+        self.tensors
+            .get_mut(tensor.0)
+            .map(|node| &mut node.info)
+            .ok_or_else(|| invalid("unknown CPU tensor identity"))
+    }
+
+    /// List tensors owned by a metadata context in creation order.
+    #[must_use]
+    pub fn context_tensors(&self, context: u32) -> Vec<TensorId> {
+        self.tensors
+            .iter()
+            .enumerate()
+            .filter_map(|(index, node)| (node.info.context == context).then_some(TensorId(index)))
+            .collect()
+    }
+
+    /// Allocate a scalar or supported packed tensor's metadata, without data.
+    ///
+    /// # Errors
+    /// Rejects invalid shapes, types, overflowing extents, and excess tensors.
+    pub fn tensor(&mut self, context: u32, kind: i32, shape: [usize; 4]) -> Result<TensorId> {
+        let strides = contiguous_strides(kind, shape)?;
+        if self.tensors.len() >= 32768 || product(shape)? > 1 << 30 {
+            return Err(invalid("CPU tensor extent exceeds resource bound"));
+        }
+        let info = TensorInfo {
+            kind,
+            shape,
+            strides,
+            operation: 0,
+            sources: Vec::new(),
+            view: None,
+            offset: 0,
+            parameters: [0; 64],
+            name: String::new(),
+            flags: 0,
+            context,
+        };
+        if info.bytes()? > 4 * 1024 * 1024 * 1024_usize {
+            return Err(invalid("CPU tensor storage exceeds 4 GiB"));
+        }
+        let id = TensorId(self.tensors.len());
+        self.tensors.push(Node {
+            info,
+            data: Vec::new(),
+        });
+        Ok(id)
+    }
+
+    fn storage(&self, tensor: TensorId) -> Result<(TensorId, usize)> {
+        let mut current = tensor;
+        let mut offset = 0_usize;
+        for _ in 0..=self.tensors.len() {
+            let info = self.info(current)?;
+            offset = offset
+                .checked_add(info.offset)
+                .ok_or_else(|| invalid("CPU view offset overflow"))?;
+            if let Some(source) = info.view {
+                current = source;
+            } else {
+                return Ok((current, offset));
+            }
+        }
+        Err(invalid("cyclic CPU storage views"))
+    }
+
+    /// Allocate all non-view tensors owned by a context, preserving existing data.
+    ///
+    /// # Errors
+    /// Rejects allocation failures, malformed views, and excessive storage.
+    pub fn allocate(&mut self, context: u32) -> Result<()> {
+        for id in self.context_tensors(context) {
+            self.ensure_storage(id)?;
+        }
+        Ok(())
+    }
+
+    fn ensure_storage(&mut self, tensor: TensorId) -> Result<()> {
+        let bytes = self.info(tensor)?.bytes()?;
+        let (root, offset) = self.storage(tensor)?;
+        let extent = offset
+            .checked_add(bytes)
+            .ok_or_else(|| invalid("CPU storage extent overflow"))?;
+        let root_bytes = self.info(root)?.bytes()?;
+        if extent > root_bytes {
+            return Err(invalid("CPU view exceeds its underlying tensor"));
+        }
+        let data = &mut self.tensors[root.0].data;
+        if data.len() < root_bytes {
+            data.try_reserve_exact(root_bytes - data.len())?;
+            data.resize(root_bytes, 0);
+        }
+        Ok(())
+    }
+
+    /// Copy raw bytes into tensor storage, including a view's underlying storage.
+    ///
+    /// # Errors
+    /// Rejects allocation failures or an out-of-range byte extent.
+    pub fn set(&mut self, tensor: TensorId, offset: usize, data: &[u8]) -> Result<()> {
+        self.ensure_storage(tensor)?;
+        let bytes = self.info(tensor)?.bytes()?;
+        if offset > bytes || data.len() > bytes - offset {
+            return Err(invalid("CPU tensor write exceeds extent"));
+        }
+        let (root, base) = self.storage(tensor)?;
+        self.tensors[root.0].data[base + offset..base + offset + data.len()].copy_from_slice(data);
+        Ok(())
+    }
+
+    /// Read raw bytes from allocated tensor storage.
+    ///
+    /// # Errors
+    /// Rejects unallocated tensors and out-of-range byte extents.
+    pub fn get(&self, tensor: TensorId, offset: usize, bytes: usize) -> Result<&[u8]> {
+        let extent = self.info(tensor)?.bytes()?;
+        if offset > extent || bytes > extent - offset {
+            return Err(invalid("CPU tensor read exceeds extent"));
+        }
+        let (root, base) = self.storage(tensor)?;
+        self.tensors[root.0]
+            .data
+            .get(base + offset..base + offset + bytes)
+            .ok_or_else(|| invalid("CPU tensor has no allocated storage"))
+    }
+
+    /// Decode all logical values in contiguous logical order, respecting strides.
+    ///
+    /// # Errors
+    /// Rejects malformed storage, unsupported types, or allocation failure.
+    pub fn values(&self, tensor: TensorId) -> Result<Vec<f32>> {
+        let info = self.info(tensor)?;
+        let layout = type_layout(info.kind)?;
+        let mut values = Vec::new();
+        values.try_reserve_exact(info.elements())?;
+        for row in 0..info.rows() {
+            let index = coordinates(row, [info.shape[1], info.shape[2], info.shape[3], 1]);
+            let row_offset = index[0] * info.strides[1]
+                + index[1] * info.strides[2]
+                + index[2] * info.strides[3];
+            if layout.block != 1 {
+                let mut packed = Vec::new();
+                packed.try_reserve_exact(info.shape[0] / layout.block * layout.bytes)?;
+                for block in 0..info.shape[0] / layout.block {
+                    packed.extend_from_slice(self.get(
+                        tensor,
+                        row_offset + block * info.strides[0],
+                        layout.bytes,
+                    )?);
+                }
+                let packed = crate::model::Tensor {
+                    name: info.name.clone(),
+                    kind: info.kind as u32,
+                    dimensions: vec![info.shape[0]],
+                    data: std::sync::Arc::from(packed),
+                };
+                values.extend(crate::kernels::row(&packed, 0)?);
+                continue;
+            }
+            for column in 0..info.shape[0] {
+                let bytes =
+                    self.get(tensor, row_offset + column * info.strides[0], layout.bytes)?;
+                values.push(match info.kind {
+                    0 => f32::from_le_bytes(bytes.try_into()?),
+                    1 => half_to_float(u16::from_le_bytes(bytes.try_into()?)),
+                    24 => f32::from(i8::from_le_bytes(bytes.try_into()?)),
+                    25 => f32::from(i16::from_le_bytes(bytes.try_into()?)),
+                    26 => i32::from_le_bytes(bytes.try_into()?) as f32,
+                    27 => i64::from_le_bytes(bytes.try_into()?) as f32,
+                    28 => f64::from_le_bytes(bytes.try_into()?) as f32,
+                    30 => f32::from_bits(u32::from(u16::from_le_bytes(bytes.try_into()?)) << 16),
+                    _ => return Err(invalid("unsupported CPU scalar decoding")),
+                });
+            }
+        }
+        Ok(values)
+    }
+
+    /// Replace tensor values in logical order, applying its scalar storage format.
+    ///
+    /// # Errors
+    /// Rejects packed output types, wrong element counts and invalid storage.
+    pub fn set_values(&mut self, tensor: TensorId, values: &[f32]) -> Result<()> {
+        let info = self.info(tensor)?.clone();
+        let layout = type_layout(info.kind)?;
+        if layout.block != 1 || values.len() != info.elements() {
+            return Err(invalid("CPU scalar output extent or type differs"));
+        }
+        self.ensure_storage(tensor)?;
+        for (index, &value) in values.iter().enumerate() {
+            let coordinate = coordinates(index, info.shape);
+            let offset: usize = coordinate
+                .iter()
+                .zip(info.strides)
+                .map(|(&index, stride)| index * stride)
+                .sum();
+            let bytes = match info.kind {
+                0 => value.to_le_bytes().to_vec(),
+                1 => crate::kernels::half_bits(value).to_le_bytes().to_vec(),
+                24 => (value as i8).to_le_bytes().to_vec(),
+                25 => (value as i16).to_le_bytes().to_vec(),
+                26 => (value as i32).to_le_bytes().to_vec(),
+                27 => (value as i64).to_le_bytes().to_vec(),
+                28 => f64::from(value).to_le_bytes().to_vec(),
+                30 => {
+                    let bits = value.to_bits();
+                    let rounded = if value.is_nan() {
+                        (bits >> 16) | 0x40
+                    } else {
+                        bits.wrapping_add(0x7fff + ((bits >> 16) & 1)) >> 16
+                    };
+                    (rounded as u16).to_le_bytes().to_vec()
+                }
+                _ => return Err(invalid("unsupported CPU scalar output type")),
+            };
+            self.set(tensor, offset, &bytes)?;
+        }
+        Ok(())
+    }
+
+    /// Return the topologically ordered numerical nodes and leaves of a graph.
+    ///
+    /// # Errors
+    /// Rejects an unknown graph identity.
+    pub fn graph_nodes(&self, graph: GraphId) -> Result<(&[TensorId], &[TensorId])> {
+        let graph = self
+            .graphs
+            .get(graph.0)
+            .ok_or_else(|| invalid("unknown CPU graph"))?;
+        Ok((&graph.nodes, &graph.leaves))
+    }
+
+    fn expand(
+        &mut self,
+        graph: GraphId,
+        tensor: TensorId,
+        visiting: &mut Vec<TensorId>,
+    ) -> Result<()> {
+        let graph_ref = self
+            .graphs
+            .get(graph.0)
+            .ok_or_else(|| invalid("unknown CPU graph"))?;
+        if graph_ref.nodes.contains(&tensor) || graph_ref.leaves.contains(&tensor) {
+            return Ok(());
+        }
+        if visiting.contains(&tensor) || visiting.len() > 32768 {
+            return Err(invalid("cyclic or excessive CPU graph"));
+        }
+        visiting.push(tensor);
+        let info = self.info(tensor)?.clone();
+        for source in &info.sources {
+            self.expand(graph, *source, visiting)?;
+        }
+        visiting.pop();
+        let graph = &mut self.graphs[graph.0];
+        if info.operation == 0 && info.flags & 16 == 0 {
+            graph.leaves.push(tensor);
+        } else {
+            if graph.nodes.len() >= graph.capacity {
+                return Err(invalid("CPU graph exceeds requested node capacity"));
+            }
+            graph.nodes.push(tensor);
+        }
+        Ok(())
+    }
+
+    /// Check whether a tensor's operation and storage formats have CPU kernels.
+    ///
+    /// # Errors
+    /// Rejects an unknown tensor.
+    pub fn supports(&self, tensor: TensorId) -> Result<bool> {
+        let info = self.info(tensor)?;
+        Ok(ops::supports(info.operation)
+            && (type_layout(info.kind)?.block == 1 || matches!(info.operation, 0 | 36..=39)))
+    }
+
+    /// Evaluate the graph in topological order using production CPU kernels.
+    ///
+    /// # Errors
+    /// Rejects unsupported operations, malformed input geometry, and allocation
+    /// errors. Existing input storage remains owned by this backend.
+    pub fn compute(&mut self, graph: GraphId) -> Result<()> {
+        let nodes = self.graph_nodes(graph)?.0.to_vec();
+        for tensor in nodes {
+            if !self.supports(tensor)? {
+                return Err(invalid(format!(
+                    "unsupported CPU operation {}",
+                    self.info(tensor)?.operation
+                )));
+            }
+            self.evaluate(tensor)?;
+        }
+        Ok(())
+    }
+}
