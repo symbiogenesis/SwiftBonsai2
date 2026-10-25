@@ -39,7 +39,11 @@ function Invoke-BonsaiPrismCaseBatch {
                 $timer = [Diagnostics.Stopwatch]::StartNew()
                 $result = Invoke-BonsaiNativeProcess -Executable $using:Executable -ArgumentList $command.Arguments -WorkingDirectory $using:EvidenceDirectory -TimeoutSeconds $adapter.TimeoutSeconds -Environment $using:Environment -LogPath $command.LogPath
                 $timer.Stop()
-                if ($result.ExitCode -ne 0) { throw "Prism adapter $($adapter.Id) ($($command.Target)) exited $($result.ExitCode); see $($command.LogPath)" }
+                if ($result.ExitCode -ne 0) {
+                    $detail = if ($result.StandardError.Trim()) { $result.StandardError.Trim() } else { $result.StandardOutput.Trim() }
+                    $detail = $detail.Substring([Math]::Max(0, $detail.Length - 4096))
+                    throw "Prism adapter $($adapter.Id) ($($command.Target)) exited $($result.ExitCode): $detail; see $($command.LogPath)"
+                }
                 $report = Get-Content -LiteralPath $command.OutputPath -Raw | ConvertFrom-Json -AsHashtable
                 if ($report.SchemaVersion -ne 1 -or $report.UpstreamCommit -cne $using:UpstreamCommit -or
                     $report.Target -cne $command.Target -or @($report.Cases).Count -ne 1 -or

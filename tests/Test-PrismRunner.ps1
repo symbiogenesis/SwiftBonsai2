@@ -22,7 +22,7 @@ param([string]$Id, [string]$Target, [string]$Output, [string]$Directory, [string
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($env:BONSAI_RUNNER_SENTINEL -cne 'inherited') { throw 'The child environment was lost.' }
-if ($Mode -ceq 'ProcessFailure') { exit 17 }
+if ($Mode -ceq 'ProcessFailure') { [Console]::Error.WriteLine('synthetic adapter failure detail'); exit 17 }
 if ($Mode -ceq 'Scheduling') {
     if ($Target -ceq 'cpp') {
         [IO.File]::WriteAllText((Join-Path $Directory "$Id-started"), '')
@@ -70,5 +70,8 @@ if ($Case -ceq 'Scheduling') {
     $diagnostic = Assert-Failure { Invoke-BonsaiPrismCaseBatch @parameters } -PassThru
     $expected = if ($Case -ceq 'Identity') { 'unexpected case identity' } else { 'exited 17' }
     Assert ($diagnostic.Contains($expected, [StringComparison]::Ordinal)) "The scheduler did not retain its $Case failure diagnostic."
+    if ($Case -ceq 'ProcessFailure') {
+        Assert ($diagnostic.Contains('synthetic adapter failure detail', [StringComparison]::Ordinal)) 'The scheduler must surface the adapter stderr without downloading a large evidence archive.'
+    }
 }
 return "Prism runner $Case passed; evidence: $scratch"
