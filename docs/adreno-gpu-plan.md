@@ -1,12 +1,17 @@
-# Snapdragon X Elite Adreno GPU plan
+# Snapdragon X1/X2 Adreno GPU plan
 
 **Current inference paths are CPU-only.** No native Windows ARM64 GPU build,
 whole-model GPU correctness result or target-device performance verdict is
-qualified. All G0–G5 exits remain pending.
+qualified on either family. All G0–G5 exits remain pending. The eventual GPU
+profiles participate in the planned [hardware selector](hardware-profiles.md)
+alongside CPU and Hexagon profiles.
 
 First qualify pinned Prism Vulkan for Swift under [M2](../PLAN.md#12-delivery-milestones-and-stopgo-decisions).
 This can precede the Rust replacement. [Rust R6](native-rust-engine.md#ordered-work)
 follows Rust CPU parity and needs its own GPU implementation and evidence.
+Prism Vulkan is the first GPU implementation route. Compare it with Hexagon and
+qualify X1 and X2 independently; prioritize packed
+NPU prefill/decode exploration on X2 alongside the Vulkan comparison.
 
 ## Current constraints and backend choice
 
@@ -30,6 +35,22 @@ Swift PQ2/PTQ1 support. X2 prebuilt-kernel claims do not qualify X1-85.
 GGUF switch. Defer conversion or custom DX12 until Vulkan exposes a measured
 limitation. Hexagon discovery remains independent.
 
+### Family and capability selection
+
+The recorded X1 target is Adreno X1-85 in the X1E-78-100. X2 GPU variants,
+including X2-90 in X2 Elite Extreme, need their own G0 inventory, shader/graph
+checks and device qualification. Neither family names nor advertised API support
+prove the required subgroup, integer-dot, cooperative-matrix or allocation
+capabilities. Select kernels from queried features and accepted profile records.
+
+The selector should compare complete CPU/GPU/NPU candidates for the observed
+SKU/device, runtime/driver, workload size, available memory and interactive or
+battery objective. GPU prefill and GPU decode may win different cases. Include
+state migration, duplicated allocations and cold pipeline/repack costs before
+selecting a mixed phase profile; prefer contiguous resident regions. Keep a
+qualified CPU fallback when GPU access, capabilities, resources or evidence are
+missing. Automatic policy and accelerated execution remain future work.
+
 The pinned source identifies three bring-up checks:
 
 - [Qwen35][prism-graph]/[Vulkan operation guards][prism-vulkan] disable row-indexed
@@ -46,7 +67,8 @@ The pinned source identifies three bring-up checks:
 
 ### G0 — Record the native device contract
 
-- [ ] Capture actual X1-85 IDs, OS/driver, Vulkan API/loader/ICD architecture,
+- [ ] Capture actual X1/X2 GPU IDs, processor SKU, OS/driver, Vulkan API/loader/ICD
+  architecture,
   queues, enabled features/extensions and selected device. Verify native ARM64
   executable/dependencies; reject software adapters and emulated inference.
   Record build-time shader tools separately.
@@ -60,8 +82,8 @@ The pinned source identifies three bring-up checks:
   UMA/shared-memory reports are not allocation entitlements; 128 MB dedicated
   memory is not total GPU capacity.
 
-**Exit:** a retained device/build record and unsupported requirements. Driver
-changes require renewed qualification.
+**Exit:** a retained record per target device/build and unsupported requirements.
+Driver changes require renewed qualification.
 
 ### G1 — Build an isolated Prism Vulkan candidate
 
@@ -106,6 +128,9 @@ profile, with unresolved fallbacks visible. Plausible text is insufficient.
   fixed model/adapter, context, precision, sampler and workload. Start at 8K/one
   slot; qualify longer contexts separately. Freeze batches/threads initially,
   then vary one factor at a time.
+  Run separate X1/X2 screens and compare qualified Hexagon candidates at the same
+  artifact/numerical contract. No X1 or X2 result automatically qualifies another
+  SKU, driver or GPU variant.
 - [ ] Measure prefill/decode separately using bounded batch/microbatch and thread/
   polling candidates. Qualify attention/cache placement and flash fusion separately.
   Phase-specific placement requires runtime support and must include migration.
@@ -114,7 +139,8 @@ profile, with unresolved fallbacks visible. Plausible text is insufficient.
   [GPUView][gpuview] tooling after checking ARM64 support. Utilization alone is
   insufficient; overlapping durations cannot simply be added.
 
-**Exit:** paired target-laptop results identifying a useful placement or no-go.
+**Exit:** paired per-device results identifying useful prefill/decode placements
+and interactive/battery tradeoffs or no-go, suitable for selector qualification.
 Maximum offload is one candidate.
 
 ### G4 — Optimize the demonstrated bottleneck
@@ -154,6 +180,11 @@ G2 state/logit, adapter and lifecycle checks after scheduling/reduction changes.
   within the GPU engine, plus CPU/GPU comparisons at the same adapter setting.
   Choose interactive/battery profiles from measured tradeoffs under
   [project promotion criteria](../PLAN.md#promotion-criteria).
+- [ ] Publish eligible GPU entries for the [hardware selector](hardware-profiles.md)
+  with capability predicates, memory envelope, phase/state identity and evidence
+  scope. Check unknown devices, disabled/unavailable GPU, stale driver/runtime
+  records and memory pressure. Keep requested/effective selection and fallback
+  reasons visible without exposing prompts.
 - [ ] Integrate admission and actionable fallback reasons. Check allocation
   failure, device loss, driver changes and cancellation teardown. Fail damaged
   requests safely; admit CPU fallback explicitly rather than switching mid-
@@ -166,7 +197,8 @@ or a documented no-go.
 
 G0/G1 allow local builds and focused untimed capability/correctness checks.
 G2 precedes timing. Full suites, benchmarks and timing-profile captures run only
-in CI, on the target laptop for Adreno evidence. Follow [validation policy](validation.md)
+in CI, on each target X1/X2 device for Adreno evidence. Follow
+[validation policy](validation.md)
 and [device CI policy](../PLAN.md#10-validation-and-performance-evidence).
 Diagnostics use absolute system-temp working/output paths and preserve inherited
 Windows system/profile variables.

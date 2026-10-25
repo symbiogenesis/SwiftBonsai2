@@ -1,9 +1,13 @@
 # Hexagon NPU execution plan
 
-This expands [M5](../PLAN.md) for Snapdragon X Elite X1E-78-100. **All N0–N7
-exits are pending.** Current builds/launch policies use CPU execution, including
+This expands [M5](../PLAN.md) for Snapdragon X1 and X2 under the planned
+[hardware profile selector](hardware-profiles.md). The recorded X1E-78-100 is
+the initial device; X2 Elite Extreme is an additional qualification target.
+**All N0–N7 exits are pending.** Current builds/launch policies use CPU execution,
+including
 scalar/NEON in the [Rust reference](https://github.com/symbiogenesis/prism-inference/blob/main/README.md). No NPU
-performance or deployment qualification is established.
+performance, deployment or automatic-selection qualification is established on
+either family.
 
 ## Scope and route selection
 
@@ -11,6 +15,38 @@ Qualify Hexagon only where it improves completed-response latency or energy
 within memory, quality and sustained-comfort limits. Compare the same Swift
 artifact against CPU and qualified Adreno profiles. Retain CPU fallback; device
 utilization/TOPS and simultaneous CPU/GPU/NPU use are not acceptance criteria.
+The intended result is automatic selection of a qualified configuration for the
+observed device, workload and interactive/battery objective. X1 and X2 may select
+different backends, phase placements, batches, worker counts and power modes.
+
+### X1 and X2 qualification lanes
+
+| Lane | Starting hypothesis | Required evidence |
+| --- | --- | --- |
+| Recorded X1E-78-100 / Hexagon v73 | Compare packed HVX execution with CPU NEON and Adreno; bound mapping-window and dispatch costs | Actual runtime/driver access, signed kernels, exact Swift graph/state and useful device benefit |
+| X2 / Hexagon v81, initially X2 Elite Extreme | Prioritize batched HMX prefill and packed HVX decode with extended DMA mappings; retain CPU/Adreno comparisons | Verified extended-mapping path, arithmetic and signed package at the selected revision, separate prefill/decode and sustained evidence |
+
+These are experiment priorities, not default placements or family-wide results.
+Query actual Hexagon architecture, runtime and driver capabilities; a processor
+name cannot enable an unverified path. Qualification receipts must identify the
+exact SKU/device capabilities, driver/runtime/kernel package and resource limits
+accepted by the selector. Missing, changed or unsupported capabilities exclude
+that candidate and retain a qualified CPU fallback.
+
+Upstream [64-bit DMA support][hexagon-dma64], merged September 21, 2026, targets
+v81 and newer and avoids dynamic weight-buffer mappings above the old address
+window through DMA/VTCM execution. [Q1/Q2 Hadamard matmul and row reads][hexagon-q2],
+merged October 18, 2026, provide a useful implementation lead. Neither change
+establishes support for this project's PQ2/PTQ1 artifacts, complete graph or
+signed Windows distribution. Pin and audit source before reuse.
+
+Upstream Q2_0 has 64 weights per scale; Prism PQ2 has 128. A candidate bridge
+splits each PQ2 block and duplicates its scale, retaining decoded weights at
+approximately 5.9% more packed-weight storage. Verify symbol layout, raw scale
+bits and transform metadata. Activation quantization, reduction/scale order and
+logits/state still require separate qualification against the PQ2/Q8_K contract.
+Keep [upstream layouts][hexagon-design]
+and [Prism numerical contracts](simd-plan.md) explicit in the operation ledger.
 
 Preserve weights, tokenizer/template, sampler, transforms, attention and declared
 activation/cache precision. Pin PQ2 through the [assessment lock](../config/swift-assessment.lock.json)
@@ -40,8 +76,10 @@ It cannot qualify Swift or change model selection. Do not provision another larg
 model or keep the control resident with Swift. Wrapping external engines in Rust
 does not satisfy replacement requirements.
 
-[GenieX v0.8.0][geniex-signed] reports a signed HTP catalog for its bundled revision;
-custom DSP binaries need their own supported signing/distribution route. The
+[GenieX v0.8.0][geniex-signed] reports a signed HTP catalog for its bundled revision.
+Verify that the selected v73/v81 binary and catalog cover the required kernels;
+the bundled signature does not cover later source changes or rebuilt DSP code.
+Custom DSP binaries need their own supported signing/distribution route. The
 [upstream Windows guide][hexagon-windows] also describes test-signing. Changes to
 Secure Boot, boot/signing policy or certificate trust require a separate owner
 decision. Missing signed deployment is a blocker.
@@ -59,16 +97,18 @@ or another bounded representation before exporting for a 32 GB device.
 | N1 — Swift compatibility | Per-operation/type/shape placement matrix; assign treatment for every numerical, memory and fallback gap |
 | N2 — Packed kernels/transforms | PQ2 first, PTQ1 separately; codec, activation, scale/transform and operator fixtures pass before timing |
 | N3 — Hybrid graph/state | Contiguous graph regions, ownership and memory ledger; whole-model state correctness plus bounded cancellation/recovery pass |
-| N4 — Placement/tuning | Small CPU/Adreno/Hexagon screen with traces; demonstrate reproducible useful benefit or no-go |
-| N5 — Broker/resources | Versioned experimental profile and guarded lifecycle/fallback; preserve authentication, exact count, process and resource contracts |
-| N6 — Device qualification | Paired quality/correctness/latency/memory/energy evidence; required CI and predeclared metric criteria pass on settled main |
-| N7 — Promotion/upkeep | Qualified selectable profile, rollback and upgrade checklist; unresolved gaps remain explicit |
+| N4 — Placement/tuning | Separate X1/X2 CPU/Adreno/Hexagon screens with phase and objective costs; demonstrate reproducible useful benefit or no-go |
+| N5 — Broker/resources | Versioned experimental profile compatible with hardware selection and guarded lifecycle/fallback; preserve authentication, exact count, process and resource contracts |
+| N6 — Device qualification | Per-device quality/correctness/latency/memory/energy evidence; required CI and predeclared metric criteria pass on settled main |
+| N7 — Promotion/upkeep | Qualified selector entries, fallback/rollback and upgrade checklist; unresolved family/SKU gaps remain explicit |
 
 ### N0/N1: Inventory and compatibility
 
 - [ ] Record host/device architecture, observable driver/firmware, Hexagon/SDK/
   compiler, DLL/DSP hashes, signatures, ABI, licenses and source commits. Recheck
-  sources against pins. Use absolute temp working/output paths and preserve
+  sources against pins. Keep separate X1/v73 and X2/v81 records and verify the
+  actual mapping and execution capabilities exposed on each. Use absolute temp
+  working/output paths and preserve
   inherited Windows system/profile environment variables.
 - [ ] Run a bounded supported-type correctness fixture with dispatch/trace proof
   of Hexagon placement. Enumeration, loading and utilization alone are insufficient.
@@ -95,6 +135,10 @@ or another bounded representation before exporting for a 32 GB device.
   supports the arithmetic. A different precision contract is a separate profile.
   Bound VTCM tiles, DMA staging, padding/alignment and repack scratch; add overlap/
   fusion only after dependencies and numerical checks pass.
+  Keep weights packed in shared RAM and expand bounded tiles in VTCM; include
+  persistent expansion as a separately budgeted candidate. HMX prefill needs
+  genuine batched matrix work and compatible hybrid-state scheduling; sequential
+  matvec block scheduling alone does not provide weight reuse.
 - [ ] Preserve transform normalization/signs/axes and grouped recurrent projection
   basis. Resolve [adapter basis blockers](swift-lora.md), including grouped SSM,
   before approving LoRA. Compare no-LoRA/approved-LoRA lanes separately; fusion
@@ -107,10 +151,13 @@ or another bounded representation before exporting for a 32 GB device.
   buffers, state/checkpoints, compilation/graph caches and peak load overlap.
   Count unique physical bytes once; record address-space budgets separately.
   Shared memory does not prove zero-copy. Include live CPU/GPU/NPU and adapter copies.
-- [ ] Start with one NPU session. The [upstream design][hexagon-design] describes
-  an approximately 3.5 GB mapping window, dynamic mapping and multiple sessions;
-  verify Windows behavior at the pin. This is not a universal RAM limit. Add
-  layer-partitioned sessions only when evidence warrants overhead/state duplication.
+- [ ] Start with one NPU session. For the X1/v73 path, verify the approximately
+  3.5 GB mapping window and dynamic mapping described by the
+  [upstream design][hexagon-design]. For X2/v81, verify the selected signed
+  runtime's [64-bit DMA mappings][hexagon-dma64] and actual DMA/VTCM-only access
+  constraints. Address-space windows are separate from physical RAM budgets.
+  Add layer-partitioned sessions only when evidence warrants overhead/state
+  duplication.
 - [ ] Retain the 12 GiB Swift service allowance and 4 GiB physical reserve.
   Qualify larger limits separately; include allocations outside Job commit in
   admission/watchdogs. Refuse or explicitly reduce placement if the ledger cannot
@@ -129,6 +176,11 @@ also differs from lossless physical FP16 storage.
 Hold artifact, adapter setting, sampler, context and precision fixed. Admit only
 correct configurations. Separate load/repack/compile, prefill, first-token wait,
 decode and completed-task time.
+Run the screen separately for X1 and X2, including interactive and battery
+objectives. Prefill and decode may use different kernels or devices only when
+the qualified phase transition includes state/layout conversion and peak memory.
+Prefer contiguous graph regions and batched submissions over individual matmul
+RPCs. Shared system bandwidth and power contention remain part of the cost.
 
 | Candidate | Question |
 | --- | --- |
@@ -158,6 +210,10 @@ decode and completed-task time.
   Check effective placement/resources before readiness. Strict NPU requests fail
   if unmet; preferred-NPU profiles may choose a qualified fallback before generation,
   recording the effective profile and reason.
+  Feed the same eligibility, memory and phase-transition contracts into the
+  [hardware selector](hardware-profiles.md); automatic mode cannot bypass them.
+  Reconsider candidates at safe request boundaries after capability or resource
+  changes, preserving state identity and the existing failure contract.
 - [ ] Preserve authentication, Host/Origin/routes, exact counts, canonical requests,
   one active conversation, caps and cancellation. Helpers beyond the one-process
   Job limit need owned lifetime, parent-death teardown, resource and isolation
@@ -184,6 +240,9 @@ decode and completed-task time.
   acceptable output, memory, energy/task and sustained behavior. Compare AC/battery
   separately, including 15–30-minute runs, responsiveness and thermals/fan observations.
   No valid power telemetry means no energy verdict.
+  Retain distinct X1/X2 device receipts and selector decisions. Test unknown
+  processors, absent NPU, unsupported mappings, stale driver/runtime entries and
+  insufficient memory; actual NPU execution requires a matching device lane.
 - [ ] Require full CI correctness, daily security/resources and no material quality
   regression. Resolve adapter basis blockers and apply [LoRA TPS/quality gates](swift-lora.md#required-standard-profile-qualification)
   within NPU, separately from fixed-adapter CPU/GPU comparisons.
@@ -206,7 +265,7 @@ deployment, graph, memory or performance limitation changes.
 Follow [validation policy](validation.md): local builds, assembly inspection and
 focused untimed correctness checks are allowed. Full suites, benchmarks and
 profiling/timing captures are CI-only. Device qualification needs reviewed manual
-main-only CI on this laptop; hosted ARM64 cannot supply Hexagon evidence.
+main-only CI on each target X1/X2 device; hosted ARM64 cannot supply Hexagon evidence.
 
 Moving source links are research leads. N0 must pin/recheck them. Matrices,
 fixtures, manifests, memory ledgers and device reports above are required future
@@ -218,5 +277,7 @@ outputs, not implemented files or satisfied gates.
 [hexagon-windows]: https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/snapdragon/windows.md
 [hexagon-guide]: https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/snapdragon/README.md
 [hexagon-design]: https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/snapdragon/developer.md
+[hexagon-dma64]: https://github.com/ggml-org/llama.cpp/pull/29197
+[hexagon-q2]: https://github.com/ggml-org/llama.cpp/pull/30627
 [qnn-genai]: https://github.com/microsoft/onnxruntime-genai/blob/main/docs/qnn.md
 [htp-prototype]: https://github.com/aakar-mutha/llama.cpp/tree/ternary-bonsai-htp
