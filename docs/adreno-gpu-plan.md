@@ -68,8 +68,8 @@ The pinned source identifies three bring-up checks:
 ### G0 — Record the native device contract
 
 - [ ] Capture actual X1/X2 GPU IDs, processor SKU, OS/driver, Vulkan API/loader/ICD
-  architecture, queues, enabled features/extensions and selected device. Verify native ARM64
-  executable/dependencies; reject software adapters and emulated inference.
+  architecture, queues, enabled features/extensions and selected device. Verify
+  native ARM64 executable/dependencies; reject software adapters and emulated inference.
   Record build-time shader tools separately.
 - [ ] Record buffer/allocation/workgroup limits, heaps/types, subgroups, FP16/
   storage support, integer-dot features/acceleration and cooperative-matrix shapes.

@@ -128,9 +128,9 @@ from the CPU MVP checklist and backend-specific S/G/N stages.
 | H4 - Automatic selection | Deterministic eligibility/ranking, readiness recheck, effective-plan reporting, CPU fallback and safe request-boundary reevaluation; focused policy and recovery regressions pass |
 | H5 - Promotion and upkeep | Qualified automatic interactive/battery behavior independently demonstrated on X1 and X2, reproducible install/rollback, and compatibility/cache invalidation and requalification on affected upgrades |
 
-H0 design and untimed inventory can proceed during CPU MVP delivery. H1-H5
-implementation and promotion follow the reviewed CPU runtime handoff. Neither
-Vulkan nor Hexagon qualification is a prerequisite for investigating the other.
+H0 design and bounded untimed inventory/access probes can proceed during CPU MVP
+delivery. H1-H5 implementation and promotion follow the reviewed CPU runtime
+handoff. Vulkan and Hexagon investigation can proceed independently.
 One family's accepted profile may ship while the other retains a qualified CPU
 fallback; keep the remaining family/accelerator exits open and explicit.
 
@@ -149,12 +149,14 @@ AC/battery, memory pressure and sustained creative tasks. Record first useful
 token, completed-task latency, decode, peak memory, energy when available,
 responsiveness and thermals. Results from X1, hosted ARM64 or a different X2 SKU
 do not establish a verdict for an untested class.
+Unavailable power telemetry means no energy verdict; battery operation alone
+does not qualify an energy-saving profile or energy-based ranking.
 
 Focused selection checks must cover unknown/misidentified devices, absent optional
 ISA, incompatible or missing signed accelerators, stale driver/evidence/cache
 keys, insufficient RAM, workload bucket boundaries, deterministic ranking,
 objective changes, valid CPU fallback, strict-backend rejection, and complete-state
-handoff/failure/cancellation. Run real unsupported instructions only on eligible
+handoff/failure/cancellation. Execute optional ISA variants only on eligible
 hardware; simulate negative capability cases.
 
 Follow [validation policy](validation.md): local builds and focused untimed

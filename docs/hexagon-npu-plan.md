@@ -4,8 +4,7 @@ This expands [M5](../PLAN.md) for Snapdragon X1 and X2 under the planned
 [hardware profile selector](hardware-profiles.md). The recorded X1E-78-100 is
 the initial device; X2 Elite Extreme is an additional qualification target.
 **All N0–N7 exits are pending.** Current builds/launch policies use CPU execution,
-including
-scalar/NEON in the [Rust reference](https://github.com/symbiogenesis/prism-inference/blob/main/README.md). No NPU
+including scalar/NEON in the [Rust reference](https://github.com/symbiogenesis/prism-inference/blob/main/README.md). No NPU
 performance, deployment or automatic-selection qualification is established on
 either family.
 
@@ -45,8 +44,8 @@ splits each PQ2 block and duplicates its scale, retaining decoded weights at
 approximately 5.9% more packed-weight storage. Verify symbol layout, raw scale
 bits and transform metadata. Activation quantization, reduction/scale order and
 logits/state still require separate qualification against the PQ2/Q8_K contract.
-Keep [upstream layouts][hexagon-design]
-and [Prism numerical contracts](simd-plan.md) explicit in the operation ledger.
+Keep [upstream layouts][hexagon-design] and
+[Prism numerical contracts](simd-plan.md) explicit in the operation ledger.
 
 Preserve weights, tokenizer/template, sampler, transforms, attention and declared
 activation/cache precision. Pin PQ2 through the [assessment lock](../config/swift-assessment.lock.json)
