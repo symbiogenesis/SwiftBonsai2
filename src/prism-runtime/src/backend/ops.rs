@@ -4,7 +4,7 @@ use super::{CpuBackend, TensorId, coordinates, linear};
 use crate::{Result, invalid};
 
 pub(super) const fn supports(operation: i32) -> bool {
-    matches!(operation, 0..=3 | 5..=52 | 55..=61 | 63..=74 | 76..=77 | 82..=85 | 88..=91 | 96..=100)
+    matches!(operation, 0..=3 | 5..=52 | 55..=61 | 63..=74 | 76..=77 | 82..=86 | 88..=91 | 96..=101)
 }
 
 fn integer(parameters: &[u8; 64], index: usize) -> i32 {
@@ -810,6 +810,7 @@ impl CpuBackend {
             77 => out = self.scan_values(&info, self.values(tensor).unwrap_or(out))?,
             82..=84 => out = self.linear_attention_values(&info)?,
             88..=90 => out = self.hyperconnection_values(&info, &a)?,
+            86 | 101 => out = self.delta_values(&info, self.values(tensor).unwrap_or(out))?,
             76 => {
                 let weights_id = source(1)?;
                 let weights = self.values(weights_id)?;

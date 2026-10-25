@@ -20,6 +20,7 @@ use bonsai_ternary::half_to_float;
 
 mod attention;
 mod call;
+mod gdn;
 mod image;
 mod ops;
 mod recurrent;

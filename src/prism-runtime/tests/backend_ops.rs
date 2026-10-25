@@ -127,13 +127,13 @@ fn inplace_views_write_underlying_storage_and_reject_invalid_extent() -> Result<
 fn unsupported_operation_never_reports_support_or_computes() -> Result<()> {
     let mut backend = CpuBackend::new();
     let tensor = backend.tensor(1, 0, [1; 4])?;
-    backend.info_mut(tensor)?.operation = 86;
+    backend.info_mut(tensor)?.operation = 75;
     assert!(!backend.supports(tensor)?);
     assert!(evaluate(&mut backend, tensor).is_err());
     assert!(
         backend
             .call(
-                "ggml_gated_delta_net",
+                "ggml_build_backward_expand",
                 &[Argument::Context(1), Argument::Tensor(tensor)]
             )
             .is_err()
@@ -595,5 +595,132 @@ fn hyperconnections_preserve_channel_matrix_orientation() -> Result<()> {
     )?)?;
     evaluate(&mut backend, balanced)?;
     assert_eq!(backend.values(balanced)?, [0.25; 16]);
+    Ok(())
+}
+
+#[test]
+fn delta_attention_snapshots_and_cache_rows_preserve_initial_states() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let mut vector = |values: &[f32]| -> Result<TensorId> {
+        let id = backend.tensor(1, 0, [1, 1, values.len(), 1])?;
+        backend.set_values(id, values)?;
+        Ok(id)
+    };
+    let query = vector(&[1.0, 1.0])?;
+    let values = vector(&[3.0, 4.0])?;
+    let gate = vector(&[0.0, 0.0])?;
+    let beta = vector(&[0.5, 0.5])?;
+    let state = backend.tensor(1, 0, [1; 4])?;
+    backend.set_values(state, &[2.0])?;
+    let mut arguments = vec![
+        Argument::Context(1),
+        Argument::Tensor(query),
+        Argument::Tensor(query),
+        Argument::Tensor(values),
+        Argument::Tensor(gate),
+        Argument::Tensor(beta),
+        Argument::Tensor(state),
+        Argument::Integer(2),
+    ];
+    let result = result_tensor(&backend.call("ggml_gated_delta_net", &arguments)?)?;
+    evaluate(&mut backend, result)?;
+    assert_eq!(backend.values(result)?, [2.5, 3.25, 3.25, 2.5]);
+    let cache = backend.tensor(1, 0, [1, 3, 1, 1])?;
+    backend.set_values(cache, &[2.0, 5.0, 7.0])?;
+    let rows = backend.tensor(1, 26, [1; 4])?;
+    backend.set_values(rows, &[1.0])?;
+    arguments[6] = Argument::Tensor(cache);
+    arguments[7] = Argument::Tensor(rows);
+    arguments.push(Argument::Integer(2));
+    let gathered = result_tensor(&backend.call("ggml_gated_delta_net_rows", &arguments)?)?;
+    evaluate(&mut backend, gathered)?;
+    assert_eq!(backend.values(gathered)?, [4.0, 4.0, 4.0, 4.0]);
+    assert_eq!(backend.values(cache)?, [2.0, 5.0, 7.0]);
+    Ok(())
+}
+
+#[test]
+fn delta_replay_applies_only_selected_bank_and_retained_records() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let mut vector = |values: &[f32]| -> Result<TensorId> {
+        let id = backend.tensor(1, 0, [1, 1, values.len(), 1])?;
+        backend.set_values(id, values)?;
+        Ok(id)
+    };
+    let query = vector(&[1.0, 1.0])?;
+    let values = vector(&[3.0, 4.0])?;
+    let zero = vector(&[0.0, 0.0])?;
+    let state = backend.tensor(1, 0, [1; 4])?;
+    backend.set_values(state, &[3.0])?;
+    let records = backend.tensor(1, 0, [6, 2, 1, 1])?;
+    backend.set_values(
+        records,
+        &[1.0, 1.0, 1.0, 9.0, 9.0, 9.0, 9.0, 9.0, 9.0, 9.0, 9.0, 9.0],
+    )?;
+    let control = backend.tensor(1, 26, [2, 1, 1, 1])?;
+    backend.set_values(control, &[1.0, 0.0])?;
+    let replay = result_tensor(&backend.call(
+        "ggml_gated_delta_net_replay",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(query),
+            Argument::Tensor(query),
+            Argument::Tensor(values),
+            Argument::Tensor(zero),
+            Argument::Tensor(zero),
+            Argument::Tensor(state),
+            Argument::Tensor(records),
+            Argument::Tensor(control),
+            Argument::Integer(3),
+        ],
+    )?)?;
+    evaluate(&mut backend, replay)?;
+    assert_eq!(
+        backend.values(replay)?,
+        [4.0, 4.0, 4.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+    );
+    assert_eq!(backend.values(state)?, [3.0]);
+    Ok(())
+}
+
+#[test]
+fn raw_delta_gates_preserve_nullable_row_slot_and_apply_activations() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let query = backend.tensor(1, 0, [2, 1, 1, 1])?;
+    backend.set_values(query, &[1.0, 0.0])?;
+    let values = backend.tensor(1, 0, [2, 1, 1, 1])?;
+    backend.set_values(values, &[2.0, 4.0])?;
+    let zero = backend.tensor(1, 0, [1; 4])?;
+    backend.set_values(zero, &[0.0])?;
+    let state = backend.tensor(1, 0, [2, 2, 1, 1])?;
+    backend.set_values(state, &[0.0; 4])?;
+    let delta = result_tensor(&backend.call(
+        "ggml_gated_delta_net",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(query),
+            Argument::Tensor(query),
+            Argument::Tensor(values),
+            Argument::Tensor(zero),
+            Argument::Tensor(zero),
+            Argument::Tensor(state),
+            Argument::Integer(1),
+        ],
+    )?)?;
+    backend.call(
+        "ggml_gated_delta_net_set_raw_gates",
+        &[
+            Argument::Tensor(delta),
+            Argument::Tensor(zero),
+            Argument::Tensor(zero),
+        ],
+    )?;
+    assert!(backend.info(delta)?.source_slots[6].is_none());
+    assert_eq!(backend.info(delta)?.source_slots[7], Some(zero));
+    evaluate(&mut backend, delta)?;
+    let actual = backend.values(delta)?;
+    assert!((actual[0] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6);
+    assert!((actual[1] - std::f32::consts::SQRT_2).abs() < 1e-6);
+    assert_eq!(&actual[2..], &[1.0, 0.0, 2.0, 0.0]);
     Ok(())
 }

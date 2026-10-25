@@ -438,6 +438,30 @@ impl CpuBackend {
                 put_int(&mut info.parameters, 3, precision);
                 return Ok(Observation::Void);
             }
+            "ggml_gated_delta_net_set_raw_gates" => {
+                let id = tensor(args, 0)?;
+                let bias = tensor(args, 1)?;
+                let weight = tensor(args, 2)?;
+                let info = self.info(id)?;
+                if info.operation != 86 || self.info(info.sources[3])?.shape[0] != 1 {
+                    return Err(invalid(
+                        "CPU raw gates require scalar-gated delta attention",
+                    ));
+                }
+                let heads = self.info(info.sources[2])?.shape[1];
+                for input in [bias, weight] {
+                    let info = self.info(input)?;
+                    if info.kind != 0 || info.elements() != heads || !info.contiguous() {
+                        return Err(invalid("CPU raw gate weight extent differs"));
+                    }
+                }
+                let info = self.info_mut(id)?;
+                put_int(&mut info.parameters, 1, 1);
+                info.source_slots[7] = Some(bias);
+                info.source_slots[8] = Some(weight);
+                info.sources = info.source_slots.iter().flatten().copied().collect();
+                return Ok(Observation::Void);
+            }
             "ggml_flash_attn_ext_add_sinks" | "ggml_soft_max_add_sinks" => {
                 let id = tensor(args, 0)?;
                 let flash = name == "ggml_flash_attn_ext_add_sinks";
@@ -1396,6 +1420,114 @@ impl CpuBackend {
                 put_float(&mut p, 0, float(args, 4)?);
                 put_int(&mut p, 1, i32::try_from(iterations)?);
                 88
+            }
+            "ggml_gated_delta_net"
+            | "ggml_gated_delta_net_rows"
+            | "ggml_gated_delta_net_replay" => {
+                for index in 2..=6 {
+                    sources.push(tensor(args, index)?);
+                }
+                let rows = name.ends_with("_rows");
+                let replay = name.ends_with("_replay");
+                let vs = self.info(sources[2])?.shape;
+                let qs = shape;
+                let ks = self.info(sources[1])?.shape;
+                let gs = self.info(sources[3])?.shape;
+                let bs = self.info(sources[4])?.shape;
+                let ss = self.info(sources[5])?.shape;
+                let [width, heads, tokens, sequences] = vs;
+                let snapshots = int(
+                    args,
+                    if replay {
+                        9
+                    } else if rows {
+                        8
+                    } else {
+                        7
+                    },
+                )?;
+                if width == 0
+                    || heads == 0
+                    || sequences == 0
+                    || snapshots < 1
+                    || qs[0] != width
+                    || ks[0] != width
+                    || qs[1] == 0
+                    || ks[1] == 0
+                    || !heads.is_multiple_of(qs[1])
+                    || !heads.is_multiple_of(ks[1])
+                    || qs[2] != tokens
+                    || ks[2] != tokens
+                    || qs[3] == 0
+                    || ks[3] == 0
+                    || !sequences.is_multiple_of(qs[3])
+                    || !sequences.is_multiple_of(ks[3])
+                    || (gs[0] != 1 && gs[0] != width)
+                    || gs[1..] != vs[1..]
+                    || bs != [1, heads, tokens, sequences]
+                    || sources
+                        .iter()
+                        .any(|&id| self.info(id).is_ok_and(|info| info.kind != 0))
+                {
+                    return Err(invalid("CPU gated delta input geometry differs"));
+                }
+                if rows {
+                    let indices = tensor(args, 7)?;
+                    let ii = self.info(indices)?;
+                    if ss[0] != width * width * heads
+                        || ss[2..] != [1, 1]
+                        || ii.shape != [sequences, 1, 1, 1]
+                        || ii.kind != 26
+                    {
+                        return Err(invalid("CPU gated delta cache row geometry differs"));
+                    }
+                    sources.push(indices);
+                } else if ss != [width, width, heads, sequences] {
+                    return Err(invalid("CPU gated delta state geometry differs"));
+                }
+                put_int(&mut p, 0, i32::try_from(snapshots)?);
+                kind = 0;
+                if replay {
+                    let records = tensor(args, 7)?;
+                    let control = tensor(args, 8)?;
+                    let record_width = heads * (2 * width + 1);
+                    let ri = self.info(records)?;
+                    let ci = self.info(control)?;
+                    if snapshots < 2
+                        || tokens == 0
+                        || gs[0] != 1
+                        || ri.kind != 0
+                        || ri.shape
+                            != [
+                                record_width * (usize::try_from(snapshots)? - 1),
+                                2,
+                                sequences,
+                                1,
+                            ]
+                        || ci.kind != 26
+                        || ci.elements() != 2 * sequences
+                    {
+                        return Err(invalid("CPU gated delta replay record geometry differs"));
+                    }
+                    sources.extend([records, control]);
+                    shape = [
+                        width * heads * tokens * sequences
+                            + width * width * heads * sequences
+                            + (usize::try_from(snapshots)? - 1) * record_width * sequences,
+                        1,
+                        1,
+                        1,
+                    ];
+                    101
+                } else {
+                    shape = [
+                        width * heads,
+                        tokens * sequences + usize::try_from(snapshots)? * width * sequences,
+                        1,
+                        1,
+                    ];
+                    86
+                }
             }
             "ggml_dsv4_hc_pre" => {
                 let weights = tensor(args, 2)?;
