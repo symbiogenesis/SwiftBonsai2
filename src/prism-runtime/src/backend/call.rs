@@ -487,6 +487,22 @@ impl CpuBackend {
         let op = match name {
             "ggml_dup" => 1,
             "ggml_add" | "ggml_add_inplace" => 2,
+            "ggml_add_id" => {
+                let b = tensor(args, 2)?;
+                let ids = tensor(args, 3)?;
+                let bi = self.info(b)?;
+                let indices = self.info(ids)?;
+                if shape[0] != bi.shape[0]
+                    || shape[1] != indices.shape[0]
+                    || shape[2] != indices.shape[1]
+                    || indices.kind != 26
+                {
+                    return Err(invalid("CPU indexed add geometry differs"));
+                }
+                sources.push(b);
+                sources.push(ids);
+                3
+            }
             "ggml_sub" | "ggml_sub_inplace" => 6,
             "ggml_mul" | "ggml_mul_inplace" => 7,
             "ggml_div" | "ggml_div_inplace" => 8,
@@ -590,6 +606,30 @@ impl CpuBackend {
                 sources.push(b);
                 29
             }
+            "ggml_mul_mat_id" => {
+                let b = tensor(args, 2)?;
+                let ids = tensor(args, 3)?;
+                let bs = self.info(b)?.shape;
+                let indices = self.info(ids)?;
+                let is = indices.shape;
+                if shape[3] != 1
+                    || bs[3] != 1
+                    || is[2] != 1
+                    || is[3] != 1
+                    || is[1] != bs[2]
+                    || shape[0] != bs[0]
+                    || bs[1] == 0
+                    || !is[0].is_multiple_of(bs[1])
+                    || indices.kind != 26
+                {
+                    return Err(invalid("CPU expert matmul geometry differs"));
+                }
+                shape = [shape[1], is[0], bs[2], 1];
+                kind = 0;
+                sources.push(b);
+                sources.push(ids);
+                30
+            }
             "ggml_out_prod" => {
                 let b = tensor(args, 2)?;
                 let bs = self.info(b)?.shape;
@@ -608,13 +648,13 @@ impl CpuBackend {
                 }
                 32
             }
-            "ggml_set" | "ggml_set_inplace" => {
+            "ggml_acc" | "ggml_set" | "ggml_set_inplace" => {
                 sources.push(tensor(args, 2)?);
                 for i in 0..4 {
                     put_int(&mut p, i, i32::try_from(int(args, i + 3)?)?);
                 }
                 put_int(&mut p, 4, i32::from(inplace));
-                33
+                if name == "ggml_acc" { 5 } else { 33 }
             }
             "ggml_cpy" => {
                 let b = tensor(args, 2)?;
@@ -1143,6 +1183,44 @@ impl CpuBackend {
                     return Err(invalid("CPU triangular solve geometry differs"));
                 }
                 85
+            }
+            "ggml_ssm_conv" => {
+                let weights = tensor(args, 2)?;
+                let ws = self.info(weights)?.shape;
+                if ws[0] == 0
+                    || ws[1] != shape[1]
+                    || ws[2] != 1
+                    || ws[3] != 1
+                    || shape[3] != 1
+                    || shape[0] + 1 < ws[0]
+                {
+                    return Err(invalid("CPU SSM convolution geometry differs"));
+                }
+                shape = [shape[1], shape[0] + 1 - ws[0], shape[2], 1];
+                kind = 0;
+                sources.push(weights);
+                76
+            }
+            "ggml_opt_step_adamw" | "ggml_opt_step_sgd" => {
+                let adam = name == "ggml_opt_step_adamw";
+                if a_info.flags & 16 == 0 || kind != 0 {
+                    return Err(invalid("CPU optimizer requires an F32 parameter tensor"));
+                }
+                for index in 2..if adam { 5 } else { 3 } {
+                    let input = tensor(args, index)?;
+                    if self.info(input)?.shape != shape {
+                        return Err(invalid("CPU optimizer moment/gradient shape differs"));
+                    }
+                    sources.push(input);
+                }
+                let params = tensor(args, if adam { 5 } else { 3 })?;
+                let pi = self.info(params)?;
+                if pi.kind != 0 || pi.elements() != if adam { 7 } else { 2 } {
+                    return Err(invalid("CPU optimizer parameter extent differs"));
+                }
+                sources.push(params);
+                view = Some((a, a_info.strides, 0));
+                if adam { 98 } else { 99 }
             }
             "ggml_unary" | "ggml_relu" | "ggml_silu" | "ggml_sigmoid" | "ggml_tanh"
             | "ggml_softplus" | "ggml_floor" | "ggml_ceil" | "ggml_round" | "ggml_trunc"

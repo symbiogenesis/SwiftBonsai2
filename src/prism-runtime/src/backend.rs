@@ -508,6 +508,72 @@ impl CpuBackend {
         Ok(values)
     }
 
+    /// Decode integer tensors without passing through floating point.
+    ///
+    /// # Errors
+    /// Rejects noninteger types, unknown identities, malformed storage, and
+    /// allocation failures. All signed 64-bit values retain their exact bits.
+    pub fn integer_values(&self, tensor: TensorId) -> Result<Vec<i64>> {
+        let info = self.info(tensor)?;
+        if !(24..=27).contains(&info.kind) {
+            return Err(invalid("CPU integer access requires an integer tensor"));
+        }
+        let width = type_layout(info.kind)?.bytes;
+        let mut values = Vec::new();
+        values.try_reserve_exact(info.elements())?;
+        for index in 0..info.elements() {
+            let coordinate = coordinates(index, info.shape);
+            let offset: usize = coordinate
+                .iter()
+                .zip(info.strides)
+                .map(|(&index, stride)| index * stride)
+                .sum();
+            let bytes = self.get(tensor, offset, width)?;
+            values.push(match info.kind {
+                24 => i64::from(i8::from_le_bytes(bytes.try_into()?)),
+                25 => i64::from(i16::from_le_bytes(bytes.try_into()?)),
+                26 => i64::from(i32::from_le_bytes(bytes.try_into()?)),
+                27 => i64::from_le_bytes(bytes.try_into()?),
+                _ => return Err(invalid("CPU integer kind differs")),
+            });
+        }
+        Ok(values)
+    }
+
+    fn copy_storage(&mut self, destination: TensorId, source: TensorId) -> Result<()> {
+        let input = self.info(source)?.clone();
+        let output = self.info(destination)?.clone();
+        if input.kind != output.kind || input.elements() != output.elements() {
+            return Err(invalid("CPU bit-preserving copy shapes or types differ"));
+        }
+        let layout = type_layout(input.kind)?;
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(input.elements() / layout.block * layout.bytes)?;
+        let mut shape = input.shape;
+        shape[0] /= layout.block;
+        for index in 0..input.elements() / layout.block {
+            let coordinate = coordinates(index, shape);
+            let offset: usize = coordinate
+                .iter()
+                .zip(input.strides)
+                .map(|(&index, stride)| index * stride)
+                .sum();
+            bytes.extend_from_slice(self.get(source, offset, layout.bytes)?);
+        }
+        shape = output.shape;
+        shape[0] /= layout.block;
+        for (index, bytes) in bytes.chunks_exact(layout.bytes).enumerate() {
+            let coordinate = coordinates(index, shape);
+            let offset: usize = coordinate
+                .iter()
+                .zip(output.strides)
+                .map(|(&index, stride)| index * stride)
+                .sum();
+            self.set(destination, offset, bytes)?;
+        }
+        Ok(())
+    }
+
     /// Replace tensor values in logical order, applying its scalar storage format.
     ///
     /// # Errors
@@ -603,7 +669,13 @@ impl CpuBackend {
     pub fn supports(&self, tensor: TensorId) -> Result<bool> {
         let info = self.info(tensor)?;
         Ok(ops::supports(info.operation)
-            && (type_layout(info.kind)?.block == 1 || matches!(info.operation, 0 | 36..=39)))
+            && (type_layout(info.kind)?.block == 1
+                || matches!(info.operation, 0 | 36..=39)
+                || matches!(info.operation, 1 | 34 | 35)
+                    && info.sources.first().is_some_and(|&source| {
+                        self.info(source)
+                            .is_ok_and(|source| source.kind == info.kind)
+                    })))
     }
 
     /// Evaluate the graph in topological order using production CPU kernels.

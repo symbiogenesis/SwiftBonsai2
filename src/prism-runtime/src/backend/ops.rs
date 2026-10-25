@@ -4,7 +4,7 @@ use super::{CpuBackend, TensorId, coordinates, linear};
 use crate::{Result, invalid};
 
 pub(super) const fn supports(operation: i32) -> bool {
-    matches!(operation, 0..=2 | 6..=29 | 31..=52 | 55..=61 | 63..=73 | 85 | 91 | 96..=97 | 100)
+    matches!(operation, 0..=3 | 5..=52 | 55..=61 | 63..=73 | 76 | 85 | 91 | 96..=100)
 }
 
 fn integer(parameters: &[u8; 64], index: usize) -> i32 {
@@ -119,6 +119,14 @@ impl CpuBackend {
         let p = &info.parameters;
         let shape = info.shape;
         let n = info.elements();
+        if matches!(op, 1 | 34 | 35)
+            && info.sources.first().is_some_and(|&source| {
+                self.info(source)
+                    .is_ok_and(|source| source.kind == info.kind)
+            })
+        {
+            return self.copy_storage(tensor, info.sources[0]);
+        }
         let a_id = source(0).ok();
         let a = if let Some(id) = a_id {
             self.values(id)?
@@ -164,6 +172,24 @@ impl CpuBackend {
                         7 => a[index] * b[b_index],
                         _ => a[index] / b[b_index],
                     };
+                }
+            }
+            3 => {
+                let b_id = source(1)?;
+                let b = self.values(b_id)?;
+                let b_shape = self.info(b_id)?.shape;
+                let ids_id = source(2)?;
+                let ids = self.integer_values(ids_id)?;
+                let ids_shape = self.info(ids_id)?.shape;
+                for (index, value) in out.iter_mut().enumerate() {
+                    let coordinate = coordinates(index, shape);
+                    let row = usize::try_from(
+                        ids[linear([coordinate[1], coordinate[2], 0, 0], ids_shape)],
+                    )?;
+                    if row >= b_shape[1] {
+                        return Err(invalid("CPU indexed add expert exceeds row count"));
+                    }
+                    *value = a[index] + b[coordinate[0] + b_shape[0] * row];
                 }
             }
             9..=13 | 32 | 50 | 71 | 73 | 91 => {
@@ -227,7 +253,20 @@ impl CpuBackend {
                 }
             }
             19 => {
-                let b = self.values(source(1)?)?;
+                let other = source(1)?;
+                if (24..=27).contains(&self.info(source(0)?)?.kind)
+                    && (24..=27).contains(&self.info(other)?.kind)
+                {
+                    let left = self.integer_values(source(0)?)?;
+                    let right = self.integer_values(other)?;
+                    if left.len() != right.len() {
+                        return Err(invalid("CPU equal count shapes differ"));
+                    }
+                    let equal =
+                        i64::try_from(left.iter().zip(&right).filter(|(x, y)| x == y).count())?;
+                    return self.set(tensor, 0, &equal.to_le_bytes());
+                }
+                let b = self.values(other)?;
                 if a.len() != b.len() {
                     return Err(invalid("CPU equal count shapes differ"));
                 }
@@ -403,6 +442,27 @@ impl CpuBackend {
                     *value = sum as f32;
                 }
             }
+            30 => {
+                let b_id = source(1)?;
+                let b = self.values(b_id)?;
+                let b_shape = self.info(b_id)?.shape;
+                let ids_id = source(2)?;
+                let ids = self.integer_values(ids_id)?;
+                let ids_shape = self.info(ids_id)?.shape;
+                for (index, value) in out.iter_mut().enumerate() {
+                    let [row, slot, token, _] = coordinates(index, shape);
+                    let expert = usize::try_from(ids[linear([slot, token, 0, 0], ids_shape)])?;
+                    if expert >= a_shape[2] {
+                        return Err(invalid("CPU matmul expert exceeds expert count"));
+                    }
+                    let mut sum = 0.0_f64;
+                    for column in 0..a_shape[0] {
+                        sum += f64::from(a[linear([column, row, expert, 0], a_shape)])
+                            * f64::from(b[linear([column, slot % b_shape[1], token, 0], b_shape)]);
+                    }
+                    *value = sum as f32;
+                }
+            }
             31 => {
                 let b_id = source(1)?;
                 let b_shape = self.info(b_id)?.shape;
@@ -420,7 +480,7 @@ impl CpuBackend {
                     *value = sum as f32;
                 }
             }
-            33 => {
+            5 | 33 => {
                 out.copy_from_slice(&a);
                 let b_id = source(1)?;
                 let b_shape = self.info(b_id)?.shape;
@@ -439,8 +499,14 @@ impl CpuBackend {
                             .zip(strides)
                             .map(|(&x, stride)| x * stride)
                             .sum::<usize>();
-                    *out.get_mut(offset / 4)
-                        .ok_or_else(|| invalid("CPU set destination exceeds extent"))? = x;
+                    let destination = out
+                        .get_mut(offset / 4)
+                        .ok_or_else(|| invalid("CPU set destination exceeds extent"))?;
+                    if op == 5 {
+                        *destination += x;
+                    } else {
+                        *destination = x;
+                    }
                 }
             }
             40 => {
@@ -713,6 +779,20 @@ impl CpuBackend {
                     }
                 }
             }
+            76 => {
+                let weights_id = source(1)?;
+                let weights = self.values(weights_id)?;
+                let weights_shape = self.info(weights_id)?.shape;
+                for (index, value) in out.iter_mut().enumerate() {
+                    let [channel, time, sequence, _] = coordinates(index, shape);
+                    let mut sum = 0.0_f32;
+                    for tap in 0..weights_shape[0] {
+                        sum += a[linear([time + tap, channel, sequence, 0], a_shape)]
+                            * weights[tap + weights_shape[0] * channel];
+                    }
+                    *value = sum;
+                }
+            }
             85 => {
                 let b_id = source(1)?;
                 let b = self.values(b_id)?;
@@ -796,6 +876,34 @@ impl CpuBackend {
                         5 => unary(9, gate, p)? * up,
                         _ => return Err(invalid("unknown CPU GLU operation")),
                     };
+                }
+            }
+            98 | 99 => {
+                let gradient = self.values(source(1)?)?;
+                let params = self.values(source(if op == 98 { 4 } else { 2 })?)?;
+                let alpha = params[0];
+                let decay = params[if op == 98 { 4 } else { 1 }];
+                let keep = 1.0 - alpha * decay;
+                if op == 98 {
+                    let moment_id = source(2)?;
+                    let variance_id = source(3)?;
+                    let mut moment = self.values(moment_id)?;
+                    let mut variance = self.values(variance_id)?;
+                    for (index, value) in out.iter_mut().enumerate() {
+                        let grad = gradient[index];
+                        moment[index] = moment[index] * params[1] + grad * (1.0 - params[1]);
+                        variance[index] =
+                            variance[index] * params[2] + grad * grad * (1.0 - params[2]);
+                        let corrected_moment = moment[index] * params[5];
+                        let corrected_variance = (variance[index] * params[6]).sqrt() + params[3];
+                        *value = a[index] * keep - alpha * corrected_moment / corrected_variance;
+                    }
+                    self.set_values(moment_id, &moment)?;
+                    self.set_values(variance_id, &variance)?;
+                } else {
+                    for (index, value) in out.iter_mut().enumerate() {
+                        *value = a[index] * keep - alpha * gradient[index];
+                    }
                 }
             }
             _ => return Err(invalid(format!("unsupported CPU numerical operation {op}"))),

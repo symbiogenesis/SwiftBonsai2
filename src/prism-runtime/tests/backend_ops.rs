@@ -244,3 +244,138 @@ fn interpolation_and_reflection_use_pinned_pixel_positions() -> Result<()> {
     assert_eq!(backend.values(reflected)?, [3.0, 2.0, 1.0, 2.0, 3.0, 2.0]);
     Ok(())
 }
+
+#[test]
+fn integer_copies_and_comparisons_preserve_full_i64_domain() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let original = backend.tensor(1, 27, [2, 2, 1, 1])?;
+    backend.set(
+        original,
+        0,
+        &[i64::MAX, i64::MAX - 1, i64::MIN, i64::MIN + 1]
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>(),
+    )?;
+    let transposed = result_tensor(&backend.call(
+        "ggml_transpose",
+        &[Argument::Context(1), Argument::Tensor(original)],
+    )?)?;
+    let copied = result_tensor(&backend.call(
+        "ggml_cont",
+        &[Argument::Context(1), Argument::Tensor(transposed)],
+    )?)?;
+    evaluate(&mut backend, copied)?;
+    assert_eq!(
+        backend.integer_values(copied)?,
+        [i64::MAX, i64::MIN, i64::MAX - 1, i64::MIN + 1]
+    );
+    let other = backend.tensor(1, 27, [2, 2, 1, 1])?;
+    backend.set(
+        other,
+        0,
+        &[i64::MAX - 1, i64::MAX - 1, i64::MIN + 1, i64::MIN + 1]
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>(),
+    )?;
+    let equal = result_tensor(&backend.call(
+        "ggml_count_equal",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(original),
+            Argument::Tensor(other),
+        ],
+    )?)?;
+    evaluate(&mut backend, equal)?;
+    assert_eq!(backend.integer_values(equal)?, [2]);
+    Ok(())
+}
+
+#[test]
+fn expert_matmul_uses_per_token_ids_and_broadcast_activation_slots() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let weights = backend.tensor(1, 0, [2, 2, 2, 1])?;
+    backend.set_values(weights, &[1.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 2.0])?;
+    let activations = backend.tensor(1, 0, [2, 1, 2, 1])?;
+    backend.set_values(activations, &[3.0, 4.0, 5.0, 6.0])?;
+    let experts = backend.tensor(1, 26, [2, 2, 1, 1])?;
+    backend.set_values(experts, &[1.0, 0.0, 0.0, 1.0])?;
+    let product = result_tensor(&backend.call(
+        "ggml_mul_mat_id",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(weights),
+            Argument::Tensor(activations),
+            Argument::Tensor(experts),
+        ],
+    )?)?;
+    evaluate(&mut backend, product)?;
+    assert_eq!(
+        backend.values(product)?,
+        [6.0, 8.0, 3.0, 4.0, 5.0, 6.0, 10.0, 12.0]
+    );
+    let bias = backend.tensor(1, 0, [2, 2, 1, 1])?;
+    backend.set_values(bias, &[1.0, 2.0, 3.0, 4.0])?;
+    let shifted = result_tensor(&backend.call(
+        "ggml_add_id",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(product),
+            Argument::Tensor(bias),
+            Argument::Tensor(experts),
+        ],
+    )?)?;
+    evaluate(&mut backend, shifted)?;
+    assert_eq!(
+        backend.values(shifted)?,
+        [9.0, 12.0, 4.0, 6.0, 6.0, 8.0, 13.0, 16.0]
+    );
+    Ok(())
+}
+
+#[test]
+fn ssm_convolution_and_optimizer_update_persistent_moments() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let signal = backend.tensor(1, 0, [4, 2, 1, 1])?;
+    backend.set_values(signal, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])?;
+    let weights = backend.tensor(1, 0, [2, 2, 1, 1])?;
+    backend.set_values(weights, &[1.0, 1.0, 1.0, -1.0])?;
+    let filtered = result_tensor(&backend.call(
+        "ggml_ssm_conv",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(signal),
+            Argument::Tensor(weights),
+        ],
+    )?)?;
+    evaluate(&mut backend, filtered)?;
+    assert_eq!(backend.values(filtered)?, [3.0, -1.0, 5.0, -1.0, 7.0, -1.0]);
+    let parameter = backend.tensor(2, 0, [2, 1, 1, 1])?;
+    backend.set_values(parameter, &[3.0, 5.0])?;
+    backend.call("ggml_set_param", &[Argument::Tensor(parameter)])?;
+    let gradient = backend.tensor(2, 0, [2, 1, 1, 1])?;
+    backend.set_values(gradient, &[2.0, -4.0])?;
+    let moment = backend.tensor(2, 0, [2, 1, 1, 1])?;
+    backend.set_values(moment, &[0.0, 0.0])?;
+    let variance = backend.tensor(2, 0, [2, 1, 1, 1])?;
+    backend.set_values(variance, &[0.0, 0.0])?;
+    let options = backend.tensor(2, 0, [7, 1, 1, 1])?;
+    backend.set_values(options, &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0])?;
+    let updated = result_tensor(&backend.call(
+        "ggml_opt_step_adamw",
+        &[
+            Argument::Context(2),
+            Argument::Tensor(parameter),
+            Argument::Tensor(gradient),
+            Argument::Tensor(moment),
+            Argument::Tensor(variance),
+            Argument::Tensor(options),
+        ],
+    )?)?;
+    evaluate(&mut backend, updated)?;
+    assert_eq!(backend.values(parameter)?, [2.0, 6.0]);
+    assert_eq!(backend.values(moment)?, [2.0, -4.0]);
+    assert_eq!(backend.values(variance)?, [4.0, 16.0]);
+    Ok(())
+}
