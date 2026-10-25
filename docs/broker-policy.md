@@ -292,13 +292,23 @@ Startup and serving monitor process exit, private bytes, working set and the
 4 GiB physical reserve; serving also checks listener ownership. Guard failure
 closes admission/drains sockets. Every serving exit kills the whole owned Job
 and waits up to ten seconds for emptiness. Startup failure, owner drop and abrupt
-broker death also kill it. There is no restart/reset. Commit limits do not cover
+broker death also kill it. There is no automatic restart or public reset route.
+Commit limits do not cover
 all resident file-backed mappings, so the physical watchdog remains necessary.
 
 Data/evidence parents must exist outside Git on local storage with no reparse
 components. Evidence and credentials remain retained; never share either key or
 the whole directory. CPU/LoRA checks use the packaged Rust maintenance tool and
 same Windows process boundary, with their separate fixed arguments/pins.
+
+The [bounded source HTTP diagnostic](../config/swift-owned-http-mvp.evidence.json)
+passed supplied-history streaming, private reset/replay, independently verified
+context rejection/recovery, active abandonment with owned shutdown, and a fresh
+owned restart followed by success. It binds exact source-server bytes through
+explicit temporary diagnostic patches, including matching 13.65 GiB parent and
+child startup checks. The 12 GiB Job cap and 4 GiB running reserve were retained.
+These are recorded diagnostic binaries; ordinary release pins and 16 GiB Swift
+startup admission remain unchanged.
 
 Restricted tokens, filesystem/egress isolation, same-user backend bypass
 prevention, daily UI and real-model quality/performance remain unqualified.

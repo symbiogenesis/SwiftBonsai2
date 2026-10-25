@@ -26,10 +26,10 @@ accelerator is enabled in current launch profiles.
 The active implementation scope is the pinned Swift PQ2 CPU MVP in the
 [Prism migration TODO](docs/prism-upstream-todo.md). Exact Swift chat rendering,
 token accounting and native sampler parity are implemented, as is the
-experimental owned service path. Bounded full-model forward parity is qualified
-in the source runtime; complete owned device recovery and a reviewed prebuilt
-runtime update remain the next exits. The broader acceleration, adapter, UI and
-optimization work below stays deferred while closing that MVP.
+experimental owned service path. Bounded full-model forward parity and owned
+HTTP recovery are qualified in the source runtime. A reviewed prebuilt runtime
+release and lock update remain before ordinary Runner consumes those changes.
+Broader acceleration, adapters, UI and optimization remain deferred.
 
 The approved abliteration LoRA is intended for the standard profile. Acceptance
 requires **decode tokens/second and output quality each to match or exceed the
@@ -83,7 +83,7 @@ and [development commands](docs/development-guide.md).
 | Path | Current state | Next gate |
 | --- | --- | --- |
 | Pinned Prism CPU | Bounded Swift decode works | Real service behavior, creative/comfort and daily security qualification |
-| Native Rust CPU | Verified Swift loader, hybrid graph, transactional generation, exact Swift chat/tokenizer, native sampler and experimental broker path | Complete owned device recovery and reviewed prebuilt consumption; broader models and adapters remain deferred |
+| Native Rust CPU | Verified Swift loader, hybrid graph, transactional generation, exact Swift chat/tokenizer, native sampler and experimental broker path | Reviewed prebuilt consumption; broader models, full-context workloads and adapters remain deferred |
 | Adreno Vulkan | CPU-only builds and profiles today | Native ARM64 build, exact-model placement/parity and paired device evidence |
 | Hexagon | Discovery and implementation plan only | Signed access, exact packed kernels, hybrid state and bounded deployment |
 
@@ -100,9 +100,9 @@ single-slot scheduling, streaming supervision and an explicit Windows
 development launcher for the Qwen reference or Swift PQ2 assessment. Each
 selection uses its own compiled pins, batch sizes and memory admission. The
 launcher verifies artifacts, protects credentials and owns the backend through
-a Windows Job. The experimental native Swift selection has partial actual-model
-streaming evidence; complete recovery and same-user backend bypass prevention
-remain unqualified. See the [broker contract](docs/broker-policy.md).
+a Windows Job. The source native Swift path has bounded owned HTTP recovery evidence from
+explicit diagnostic binaries. Released packaging, same-user backend bypass
+prevention and restricted daily execution remain unqualified. See the [broker contract](docs/broker-policy.md).
 
 Daily chat and its UI are not enabled. The first user flow is authenticated,
 offline creative chat, using the pinned server's UI where it can satisfy the
@@ -257,7 +257,7 @@ native MT19937 sampler. Retained native captures cover prompt bytes/token IDs
 and seeded sampler draws; the independently released server connects that
 session to the owned experimental broker. Separate source-runtime evidence
 qualifies bounded Swift full-model forward parity. Other templates/models,
-complete owned device recovery and daily service remain separate exits in the
+reviewed prebuilt consumption and daily service remain separate exits in the
 [active MVP checklist](docs/prism-upstream-todo.md). Tiled prefill kernels, broader
 model/full-context allocation, broader model parity and performance
 qualification remain open.
@@ -342,7 +342,7 @@ when authorized, uses only `main`. Git history holds implementation chronology.
 | M4 — daily profiles | Pending | Reproducible installation and accepted creative/daily/battery profiles |
 | M5 — Hexagon | N0–N7 pending | Signed exact-model execution, bounded state/memory and device benefit, or no-go |
 | M6 — advanced kernels/speculation | Research candidates | Correctness and measured benefit justify maintenance |
-| M7 — Rust replacement | Swift loader/graph, chat/tokenizer, native sampler and experimental owned service implemented | Complete Swift MVP owned device lifecycle and reviewed runtime consumption, followed by broader R0–R7 and per-profile acceptance |
+| M7 — Rust replacement | Swift loader/graph, chat/tokenizer, native sampler and experimental owned service implemented | Reviewed runtime consumption, followed by broader R0–R7 and per-profile acceptance |
 
 The immediate engine work follows M2 → M5 → M6 in the
 [Swift-only MVP checklist](docs/prism-upstream-todo.md), against the pinned native

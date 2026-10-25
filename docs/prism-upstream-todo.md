@@ -4,13 +4,11 @@ The MVP is a safe Rust CPU engine that runs the pinned Swift Bonsai 2 model on
 a 32 GB Snapdragon X Elite laptop with Windows ARM64. Prioritize only the
 engine behavior needed for that path. **Everything else is deferred.**
 
-The migration is not complete. Verified loading, packed CPU kernels, the Qwen35
-hybrid graph, tokenization and transactional token generation already exist;
-bounded Swift full-model numerical parity is now qualified. Complete owned
-device lifecycle and reviewed prebuilt consumption remain open. The experimental
-native session and owned broker path are implemented.
-Pinned Prism remains the
-comparison and fallback engine until the replacement is qualified.
+The source CPU MVP checks below are complete for their declared bounded Swift
+workloads. Delivery into ordinary Runner builds still requires a reviewed
+prebuilt runtime release and lock update. Pinned Prism remains the comparison
+and fallback engine while that consumption boundary is closed. Broader models,
+full-context workloads, performance and daily-service qualification remain open.
 
 Runtime implementation follow-ups below refer to
 [Prism Inference source](https://github.com/symbiogenesis/prism-inference).
@@ -124,69 +122,61 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   [Sampler captures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/swift-sampler.json)
   are independent of the driver's SplitMix64 reference sampler.
 
-- [ ] **M5 — Complete the minimal Swift session and broker wiring.** Reuse
+- [x] **M5 — Complete the minimal Swift session and broker wiring.** Reuse
   the existing runtime, token worker/client and broker boundaries for pinned
   startup identity/readiness, render/count/completion consistency and bounded
-  streaming. Preserve current authentication, admission, process ownership and
-  resource policies. Exercise cancellation, deadlines, abandoned output, reset
-  and a subsequent successful request; failure must restore consistent KV,
+  streaming. Preserve authentication, admission, process ownership and resource
+  policies. Exercise cancellation, deadlines, abandoned output, reset and a
+  subsequent successful request; failure must restore consistent KV,
   recurrent/convolution and sampler state or close admission until reset.
-  Require only this one-model, one-conversation API. Generic model-session
-  transport, multi-sequence scheduling, portable state files, cache reuse and
-  new UI/client features are deferred.
+  Generic transport, multi-sequence scheduling, portable state files, cache
+  reuse and new UI/client features remain deferred.
 
-  Implementation is connected through `SwiftSession`, bounded Swift worker/client,
-  and `--native-engine` with the independently released server in an ordinary broker build. The existing 12 GiB Job,
-  16 GiB startup admission, 4 GiB reserve, private credentials and listener-PID
-  checks remain in force. Focused lifecycle and protocol regressions pass, and
-  the actual owned path counted/prefilled 53 prompt tokens and streamed one
-  sampled token. Complete device recovery evidence remains with M6.
+  The source `SwiftSession`, worker/client and owned `--native-engine` path are
+  connected. Dropping an in-flight private request signals its exact model
+  cancellation token. Canonical backend requests are capped at 1 MiB before
+  counting, and supplied reasoning is preserved identically for count and
+  generation. Focused lifecycle/protocol checks cover rollback, closed
+  admission, deadlines, reset and subsequent success. The earlier actual-model
+  library session at `14b98a8` separately covers provisional/terminal delivery
+  faults, cancellation, context rejection and seeded replay.
 
-  Recovery follow-up: dropping an in-flight private request future now signals
-  its model cancellation token even when the server retains the worker. A
-  focused regression covers provisional output, drop, rollback, closed
-  admission, explicit reset and a successful subsequent request. Runner also
-  bounds the complete canonical backend request to 1 MiB before counting;
-  fixed policy fields can expand an otherwise admitted client body past that
-  limit. Loopback coverage checks context rejection followed by a successful
-  multi-turn request, preserving supplied reasoning and identical count and
-  generation bytes. These synthetic checks do not replace M6 device evidence.
+  The current [owned HTTP receipt](../config/swift-owned-http-mvp.evidence.json)
+  completes the bounded source wiring/recovery demonstration. It records the
+  exact temporary source bindings and admission patches; ordinary Runner still
+  consumes release `0.1.1`, whose production startup policy remains 16 GiB.
 
-  The focused actual-model library session also passed active cancellation,
-  abandoned provisional/terminal delivery, rollback, seeded reset/replay,
-  context rejection and a subsequent multi-turn request on revision `14b98a8`.
-  Its exact scope and resource observation are retained in the follow-up
-  receipt. It predates later arithmetic repairs and does not close the owned
-  HTTP cancellation/restart requirements below.
-
-- [ ] **M6 — Demonstrate bounded end-to-end Swift operation.** On the target
+- [x] **M6 — Demonstrate bounded end-to-end Swift operation.** On the target
   Windows ARM64 device, run the pinned model through the connected engine path:
   load, render/count, prefill, sampled text streaming, model stop/output limit,
-  cancellation and restart/reset followed by another request. Include a
-  multi-turn prompt with supplied history and a context-bound rejection. Retain
-  the tested revision, model/runtime identities, effective settings, hardware,
-  correctness comparisons and memory/admission outcome. MVP completion requires
-  this Swift evidence and the relevant regression checks; completing the entire
-  upstream catalog is deferred. Keep focused local checks/builds allowed, full
-  suites and every benchmark CI-only. Performance optimization and benchmark
-  campaigns are deferred; do not claim qualified throughput, creative quality,
-  daily security or standard-profile readiness from this engine demonstration.
+  cancellation and restart/reset followed by another request. Include supplied
+  history and context rejection, retaining exact revisions, artifacts,
+  settings, hardware, correctness and memory observations. Full local suites,
+  benchmarks and broader profile qualification remain outside this demonstration.
 
-  **Partial:** [device session evidence](../config/swift-native-session.evidence.json)
-  records verified readiness, exact counting, sampled SSE output, length stop
-  and acknowledged reset. The diagnostic was deliberately stopped during its
-  post-reset request when the user authorized handoff. Actual multi-turn
-  execution, context rejection, cancellation and restart still need a complete
-  run. Bounded source forward parity is now qualified by M2 above; the complete
-  owned HTTP lifecycle remains a separate exit. No full local suites or
-  benchmarks ran.
+  **Passed bounded source diagnostic:** the Snapdragon X Elite run verified
+  owned readiness and authentication, a 78-token supplied-history request with
+  two sampled tokens and length termination, identical seeded reset/replay,
+  rejection of an independently verified 9,052-token prompt followed by success,
+  active stream abandonment with closed admission and complete Job cleanup,
+  fresh owned restart followed by a successful request, and final owner-death
+  cleanup. Both backend listeners closed without an escaped child or watchdog
+  violation. M2 separately records byte-exact native logits/state and greedy
+  continuation at the same Prism source base `9899a25`.
 
-  A later owner-authorized memory diagnostic completed the actual model load
-  and three forward steps starting with 13.73 GiB free. Peak process commit was
-  7.02 GiB and minimum available RAM was 7.31 GiB, preserving the sampled 12 GiB
-  process threshold and 4 GiB physical reserve. Approximately 13.7 GiB free is
-  accepted for that bounded workload; this observation leaves the full-service
-  16 GiB startup policy and complete M6 recovery requirements unchanged. See the
+  The trial used exact diagnostic binaries with source bindings and both startup
+  checks explicitly set to 13.65 GiB. It began with 14.63 GiB free, peaked at
+  7.20 GiB sampled process private memory and retained at least 7.14 GiB free.
+  The 12 GiB Job cap and 4 GiB running reserve stayed enforced. Production
+  admission remains 16 GiB, and the released-runtime lock remains `0.1.1`.
+  The [receipt](../config/swift-owned-http-mvp.evidence.json) retains each patch,
+  binary hash, context-proof limitation, resource outcome and prior startup
+  failure. This does not qualify released packaging, full 8K/4K-output workloads,
+  throughput, creative quality, daily security or LoRA.
+
+  Separately, the owner-authorized three-token diagnostic succeeded with
+  13.73 GiB free and 7.02 GiB peak process commit. Approximately 13.7 GiB is
+  accepted for that bounded workload, as recorded in the
   [follow-up receipt](../config/swift-native-mvp-followup.evidence.json).
 
 ## Deferred until after the MVP

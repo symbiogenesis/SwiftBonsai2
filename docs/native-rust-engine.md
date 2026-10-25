@@ -5,9 +5,9 @@ verified loading, the Qwen35 hybrid graph and transactional token generation
 from token IDs, without a C/C++ inference library. Eligible Windows ARM64
 PQ2/PTQ1 operations use baseline NEON automatically; scalar remains the reference
 and fallback. The pinned Swift chat/tokenizer, native sampler and experimental
-owned broker path are connected. **Bounded Swift full-model numerical parity is
-qualified; complete owned device lifecycle and reviewed prebuilt consumption
-remain pending.** Pinned Prism remains the
+owned broker path are connected. **Bounded Swift full-model numerical parity
+and owned HTTP lifecycle are qualified through the recorded source diagnostics;
+reviewed prebuilt consumption remains pending.** Pinned Prism remains the
 comparison and fallback engine. The [active MVP checklist](prism-upstream-todo.md)
 records the narrower Swift evidence; the historical R0–R7 entries below retain
 their broader scope.
