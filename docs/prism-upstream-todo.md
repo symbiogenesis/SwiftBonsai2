@@ -91,8 +91,13 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   Production-identical first-token traces locate the initial divergence in GDN.
   After its repair, block 0 matches native bit-for-bit through FFN SwiGLU,
   including recurrent/convolution state; the next difference is the FFN down
-  projection. Complete model logits/state still fail the unchanged tolerance.
-  The follow-up receipt records each tested revision and its separate result.
+  projection. Those completed model comparisons exceed the unchanged tolerance.
+  A same-input down-projection control then isolated a single Q8_K rounding
+  boundary: source arithmetic emits 72 where the compiled native fused rounding
+  emits 71. The private preparation path now reproduces the native block exactly.
+  Native-controlled attention dot, masked softmax and RoPE repairs are also
+  implemented. Their combined actual-model rerun remains pending available RAM;
+  the follow-up receipt records each tested revision and its separate result.
 
 - [x] **M3 — Connect Swift's chat prompt to the exact tokenizer.** Render the
   verified embedded template with the existing Jinja/chat APIs, current

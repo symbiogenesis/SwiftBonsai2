@@ -452,7 +452,7 @@
     ]
   },
   "downProjectionDiagnosis": {
-    "status": "same-input causal discrepancy proven; private repair pending",
+    "status": "Private fused-rounding repair implemented; combined actual-model rerun pending available memory",
     "modelMaterialized": false,
     "transformed17408InputBitExact": true,
     "sourceVsNativeQ8kDifferentBytes": 2,
@@ -477,6 +477,18 @@
     "sourceQuantizationReproducesRustProjectionRowsExactly": true,
     "nativeQuantizationReproducesNativeProjectionRowsExactly": true,
     "rawEvidenceDirectory": "C:\\Users\\symbi\\AppData\\Local\\Temp\\SwiftMvp-8da0ada7fcf648059cb3cc9282112d3d\\ffn-down-evidence-c2ced959b48b4b5597a30553e562f6cb",
-    "controlSha256": "bfc3ca704fc2db9abf3cbc3f09ee21c36bc78d59b8292e772ce4ce9f9f709f9e"
+    "controlSha256": "bfc3ca704fc2db9abf3cbc3f09ee21c36bc78d59b8292e772ce4ce9f9f709f9e",
+    "implementationRevision": "46599ba2ef35c9d5c1bbd6817bfe5b8636c68fc7"
+  },
+  "currentQualification": {
+    "implementationRevision": "46599ba2ef35c9d5c1bbd6817bfe5b8636c68fc7",
+    "combinedActualModelRerun": "not-started-memory-admission",
+    "lastObservedAvailablePhysicalBytes": 12505128960,
+    "boundedDiagnosticStartFloorBytes": 13958643712,
+    "memoryAcceptableForPreviouslyObservedWorkload": true,
+    "M2": "unqualified until combined full-model comparison",
+    "M6": "owned HTTP recovery and current-revision device coverage remain open",
+    "runtimeReleasePin": "0.1.1",
+    "serviceStartupAdmissionBytes": 17179869184
   }
 }
