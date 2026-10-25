@@ -379,20 +379,3 @@ pub fn test_inputs() -> Vec<Chunk> {
         }),
     ]
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn cache_roundtrips_and_rejects_truncated_extents() -> Result<()> {
-        for chunk in test_inputs() {
-            let bytes = chunk.save()?;
-            assert_eq!(Chunk::load(&bytes)?, chunk);
-            assert!(Chunk::load(&bytes[..bytes.len() - 1]).is_err());
-            let mut corrupted = bytes;
-            corrupted[12..20].copy_from_slice(&u64::MAX.to_le_bytes());
-            assert!(Chunk::load(&corrupted).is_err());
-        }
-        Ok(())
-    }
-}

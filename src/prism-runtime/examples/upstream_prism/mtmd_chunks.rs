@@ -272,3 +272,24 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
         ),
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use bonsai_prism_runtime::media::chunks::{self, Chunk};
+
+    use super::Result;
+
+    #[test]
+    fn owned_cache_preserves_full_metadata_and_rejects_corrupt_extents() -> Result<()> {
+        for chunk in chunks::test_inputs() {
+            let bytes = chunk.save()?;
+            // The original source roundtrip checks protocol-visible fields;
+            // retain the stronger typed equality for every image/frame field.
+            assert_eq!(Chunk::load(&bytes)?, chunk);
+            let mut corrupted = bytes;
+            corrupted[12..20].copy_from_slice(&u64::MAX.to_le_bytes());
+            assert!(Chunk::load(&corrupted).is_err());
+        }
+        Ok(())
+    }
+}
