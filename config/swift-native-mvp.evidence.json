@@ -1,0 +1,441 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Swift native engine MVP actual-model correctness and load evidence",
+  "date": "2026-10-25",
+  "qualification": {
+    "M1": "verified actual weight load and 8192-context graph construction within observed CPU budget",
+    "M2": "unqualified: declared full-model logits/state tolerances exceeded",
+    "M6": "not covered by this receipt"
+  },
+  "model": {
+    "lock": "config/swift-assessment.lock.json",
+    "sha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+    "bytes": 7206168928,
+    "tensorInventory": {
+      "bf16": 96,
+      "pq2": 402,
+      "f32": 353,
+      "recurrentBlocks": 48,
+      "fullAttentionBlocks": 16,
+      "count": 851
+    }
+  },
+  "hardware": {
+    "Name": "Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Oryon(TM) CPU",
+    "NumberOfCores": 12,
+    "NumberOfLogicalProcessors": 12
+  },
+  "osArchitecture": "Arm64",
+  "compiler": "rustc 1.101.0-nightly (1a2c4797ef2570bd76ca5dee34449169bc7dc457 2026-10-21), aarch64-pc-windows-msvc",
+  "testedRevisions": {
+    "nativeReference": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+    "load": "dc45c907ac46d7a2716a25868334852ef7eede55",
+    "neon": "4e62982394024ca8c70159446559468cc852bc2b",
+    "scalar": "4e62982394024ca8c70159446559468cc852bc2b"
+  },
+  "sourceSha256": [
+    {
+      "path": "src/prism-runtime/src/model.rs",
+      "sha256": "cce4af9e6d14870e61f2ad34f333718f721b4d2df8b628dc62a9dda6620d8808"
+    },
+    {
+      "path": "src/prism-runtime/src/model/swift.rs",
+      "sha256": "cfd50954dab57c63714305f0cfa04f2c850bcf0debb973d326fc8c8f8e930db1"
+    },
+    {
+      "path": "src/prism-runtime/src/graph.rs",
+      "sha256": "bffab018a6e4f88800666ab1c8653d9744e718eaa3e4db771ca882f908570f2e"
+    },
+    {
+      "path": "src/prism-runtime/src/kernels.rs",
+      "sha256": "42695c0560b3e8a87364b00b32f834bf9bbf3ca5307423ba3aff9128a24cd4bd"
+    },
+    {
+      "path": "src/prism-runtime/src/kernels/neon.rs",
+      "sha256": "462822d2286c6d71802fc7991deff2470e12b0160ad91f2c658e2452739b05c8"
+    },
+    {
+      "path": "src/prism-runtime/examples/swift_model_check.rs",
+      "sha256": "07057dad01d2b96eee08e51605e25bcfc1acc52983c6b3c907801fe799de640d"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "f0267fe4860ddc8a70ef912984a243ab3773e28550f9f2c9d758d6149a3b616b"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "sha256": "a5dc1de7d95aed08582e7099210b424c9be08e6d5eb7b37ada88cc679dc20078"
+    }
+  ],
+  "load": {
+    "contextTokens": 8192,
+    "vocabulary": 248320,
+    "headerChargeBytes": 19248870,
+    "tensorPayloadBytes": 7195047936,
+    "retainedStorageBytes": 7214296806,
+    "largestTensorConversionCopyBytes": 337715200,
+    "maximumLiveStatePayloadBytes": 693764096,
+    "initialCheckpointBytes": 156903624,
+    "processObservation": {
+      "executableSha256": "5af6dd14a2d9e7e9e4fd9f67fcc17a500efa1a8e0436d17e0575e9556c3badd0",
+      "violation": null,
+      "mode": "load",
+      "peakProcessCommitBytes": 7410827264,
+      "hardware": {
+        "Name": "Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Oryon(TM) CPU",
+        "NumberOfCores": 12,
+        "NumberOfLogicalProcessors": 12
+      },
+      "revision": "dc45c907ac46d7a2716a25868334852ef7eede55",
+      "initialAvailablePhysicalBytes": 17375072256,
+      "requiredInitialAvailableBytes": 17179869184,
+      "exitCode": 0,
+      "osArchitecture": "Arm64",
+      "physicalReserveBytes": 4294967296,
+      "minimumAvailablePhysicalBytes": 10183749632,
+      "processLimitBytes": 12884901888,
+      "peakWorkingSetBytes": 7397650432
+    },
+    "limits": "Retained-storage accounting and sampled process memory; not an allocator-wide or resident-set proof. A periodic watchdog enforced the unchanged 16GiB initial admission, 12GiB process threshold and 4GiB physical reserve. No throughput measurement."
+  },
+  "forward": {
+    "suppliedTokenIds": [
+      248045,
+      872,
+      198
+    ],
+    "observedNextGreedyTokenIds": [
+      198,
+      198,
+      220
+    ],
+    "nativeGreedyMatches": true,
+    "generatedGreedyContinuation": false,
+    "settings": {
+      "recurrentAndConvolution": "f32",
+      "flashAttention": false,
+      "kv": "f16",
+      "contextTokens": 8192,
+      "microbatch": 64,
+      "nativePerformanceCounters": false,
+      "batch": 128,
+      "nativeThreads": 4
+    },
+    "tolerances": {
+      "modelSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+      "criterion": "abs(actual-reference) <= 0.001 + 0.001*abs(reference)",
+      "declaredAtUtc": "2026-10-25T06:49:54.9539929Z",
+      "scalarVsNeon": "exact binary32 bit equality",
+      "nativeReferenceCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+      "scope": "diagnostic three supplied-token trajectory; further prompt/decode and complete greedy continuation remain required",
+      "relativeTolerance": 0.001,
+      "appliesTo": [
+        "logits",
+        "F32 GDN state",
+        "F32 convolution state",
+        "FP16 KV promoted exactly to F32"
+      ],
+      "absoluteTolerance": 0.001,
+      "greedy": "same token ID for every checked step"
+    },
+    "logitsComparison": [
+      {
+        "step": 0,
+        "max_absolute_error": 0.07519340515136719,
+        "mean_absolute_error": 0.011822492641451892,
+        "failed_values": 191031,
+        "logits_count": 248320,
+        "greedy_actual": 198,
+        "greedy_reference": 198
+      },
+      {
+        "step": 1,
+        "max_absolute_error": 0.1489555835723877,
+        "mean_absolute_error": 0.02062950677347284,
+        "failed_values": 214778,
+        "logits_count": 248320,
+        "greedy_actual": 198,
+        "greedy_reference": 198
+      },
+      {
+        "step": 2,
+        "max_absolute_error": 0.10181975364685059,
+        "mean_absolute_error": 0.011749249266401923,
+        "failed_values": 196993,
+        "logits_count": 248320,
+        "greedy_actual": 220,
+        "greedy_reference": 220
+      }
+    ],
+    "stateComparison": {
+      "nativeStateExtraction": "GDN/convolution via exact runtime evaluation callbacks; all K/V rows decoded from the exact native serialized state; latest V rows matched independent callback captures byte for byte.",
+      "passed": false,
+      "failedElements": 2331246,
+      "maximumAbsoluteError": 0.3458518981933594,
+      "firstFailingComponents": [
+        {
+          "step": 0,
+          "block": 1,
+          "component": "convolution",
+          "elements": 30720,
+          "failed_elements": 22,
+          "max_absolute_error": 0.001774221658706665,
+          "mean_absolute_error": 0.00011149984376146449,
+          "maximum_index": 15728,
+          "actual_at_maximum": 0.2766948342323303,
+          "reference_at_maximum": 0.278469055891037
+        },
+        {
+          "step": 1,
+          "block": 1,
+          "component": "convolution",
+          "elements": 30720,
+          "failed_elements": 5305,
+          "max_absolute_error": 0.008924305438995361,
+          "mean_absolute_error": 0.0006583936974209337,
+          "maximum_index": 16886,
+          "actual_at_maximum": -0.6175945997238159,
+          "reference_at_maximum": -0.6265189051628113
+        },
+        {
+          "step": 2,
+          "block": 1,
+          "component": "convolution",
+          "elements": 30720,
+          "failed_elements": 5305,
+          "max_absolute_error": 0.008924305438995361,
+          "mean_absolute_error": 0.0006584090774452989,
+          "maximum_index": 16885,
+          "actual_at_maximum": -0.6175945997238159,
+          "reference_at_maximum": -0.6265189051628113
+        }
+      ],
+      "totalElements": 117866496
+    },
+    "scalarNeon": {
+      "mismatches": [],
+      "criterion": "exact file bytes",
+      "files": 483,
+      "passed": true,
+      "totalBytes": 474445824
+    },
+    "processObservations": {
+      "native": {
+        "initialAvailablePhysicalBytes": 17832194048,
+        "osArchitecture": "Arm64",
+        "minimumAvailablePhysicalBytes": 9830543360,
+        "hardware": {
+          "Name": "Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Oryon(TM) CPU",
+          "NumberOfCores": 12,
+          "NumberOfLogicalProcessors": 12
+        },
+        "executableSha256": "5663411fd4dc477ea1d3b3dc1b61ae50745e13001507b3abf241fa167ef5e936",
+        "exitCode": 0,
+        "physicalReserveBytes": 4294967296,
+        "mode": "native",
+        "violation": null,
+        "revision": "dc45c907ac46d7a2716a25868334852ef7eede55",
+        "peakProcessCommitBytes": 1820946432,
+        "requiredInitialAvailableBytes": 17179869184,
+        "peakWorkingSetBytes": 8386498560,
+        "processLimitBytes": 12884901888
+      },
+      "neon": {
+        "processLimitBytes": 12884901888,
+        "revision": "4e62982394024ca8c70159446559468cc852bc2b",
+        "violation": null,
+        "mode": "neon",
+        "osArchitecture": "Arm64",
+        "peakProcessCommitBytes": 7536189440,
+        "physicalReserveBytes": 4294967296,
+        "minimumAvailablePhysicalBytes": 10882863104,
+        "requiredInitialAvailableBytes": 17179869184,
+        "hardware": {
+          "Name": "Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Oryon(TM) CPU",
+          "NumberOfCores": 12,
+          "NumberOfLogicalProcessors": 12
+        },
+        "exitCode": 0,
+        "executableSha256": "4be3a6f7962e0358db19346a3a4b7e73e7979a94137ff2d2dc948343b862a091",
+        "initialAvailablePhysicalBytes": 18125578240,
+        "peakWorkingSetBytes": 7522738176
+      },
+      "scalar": {
+        "hardware": {
+          "Name": "Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Oryon(TM) CPU",
+          "NumberOfCores": 12,
+          "NumberOfLogicalProcessors": 12
+        },
+        "executableSha256": "4be3a6f7962e0358db19346a3a4b7e73e7979a94137ff2d2dc948343b862a091",
+        "revision": "4e62982394024ca8c70159446559468cc852bc2b",
+        "peakWorkingSetBytes": 7522754560,
+        "osArchitecture": "Arm64",
+        "requiredInitialAvailableBytes": 17179869184,
+        "minimumAvailablePhysicalBytes": 10094989312,
+        "processLimitBytes": 12884901888,
+        "violation": null,
+        "exitCode": 0,
+        "physicalReserveBytes": 4294967296,
+        "initialAvailablePhysicalBytes": 17785233408,
+        "mode": "scalar",
+        "peakProcessCommitBytes": 7536209920
+      }
+    },
+    "remaining": [
+      "Localize and repair the full-model numerical mismatch without weakening the declared tolerance.",
+      "Qualify actual prompt ingestion and generated greedy continuations, including successive decode and recovery.",
+      "The connected chat/broker demonstration and its independent acceptance evidence are outside this receipt."
+    ]
+  },
+  "nativeStops": [
+    {
+      "id": 248044,
+      "text": "<|endoftext|>"
+    },
+    {
+      "id": 248046,
+      "text": "<|im_end|>"
+    },
+    {
+      "id": 248063,
+      "text": "<|fim_pad|>"
+    },
+    {
+      "id": 248064,
+      "text": "<|repo_name|>"
+    },
+    {
+      "id": 248065,
+      "text": "<|file_sep|>"
+    }
+  ],
+  "runtimeDllSha256": {
+    "ggml-base.dll": "cef62eabf27b1e6f78e024f293e7f9c34adf13d51a499490304ec4ccc2b2c5d7",
+    "ggml-cpu.dll": "701b354a38b25e5c6dc57a1559f71cd26b2d0f8d69c1576a0e77a59a4273d2ab",
+    "ggml-rpc.dll": "842f1a814790d30b8fcc1d76de244ed937a68731391cac23dcedf773319ee3f2",
+    "ggml.dll": "3e0caeb96473fed052832f3c0cd013301de408ed29b706ab2072bfe403f9cb29",
+    "libomp140.aarch64.dll": "f87c3f333de0b09eda4e76096ad642a82f7ef8da350b22b7fc10b7b34ec51a23",
+    "llama-batched-bench-impl.dll": "d26cfff95c10e5ac10bd8b2531fad9c12a4a982dd84806005d90bcdb12589653",
+    "llama-bench-impl.dll": "9bca88a258d940c4868ace777fb7923f8e7507f2635a2b4eaca9cace3daf5dd0",
+    "llama-cli-impl.dll": "dae698a1cb7d78683f317dd85012100beb1e19d5351418dde358dc7a19a09947",
+    "llama-common.dll": "a6dd99451074b89b4bda4ed2feeb3d060f3bea86379c08162e18f962a4024c48",
+    "llama-completion-impl.dll": "7acf7a4482607bb93eb53b1d8b1f7ca4e8db9f83fbf100f6f916ae5ff855d320",
+    "llama-fit-params-impl.dll": "8ead412252eaa3394074cf62b33ece12c2cc5bef66d549b2a983935ec5bbf226",
+    "llama-perplexity-impl.dll": "a32385daad357b3000bbb54631f8b2ed1a140eb9c59d3aefa46dd46d3cc24372",
+    "llama-quantize-impl.dll": "d7b8bc14b2ccc018f046dac09cf93df2df5483ff0707adfe0a72585e9bf6d10e",
+    "llama-server-impl.dll": "73bf9ce81a1b0ad91000b0386747288f498221e568e946b377fba1d0a9e40c71",
+    "llama.dll": "923a518137e50be427ef6c7de9ebdeb3535d6e6f00d709a3e31d0b475d07a9d1",
+    "mtmd.dll": "3e392db0e5f9a615dbae815616102507ed04930041e858452c5394a9b1eee0fe"
+  },
+  "retainedEvidence": {
+    "directory": "C:\\Users\\symbi\\AppData\\Local\\Temp\\SwiftBonsai-PrismMvp-a437b701d771454ea2ff96f812fb7739\\model-evidence",
+    "largeStateAndLogits": "Retained under rust-scalar, rust-neon, native-forward and native-state-decoded; scalar-neon-comparison.json records every Rust observation file digest.",
+    "artifacts": [
+      {
+        "sha256": "acd624cd8fbe1aa3d2934a33eee1b7b8ceae174b871277239c73671569d9d385",
+        "bytes": 757,
+        "path": "actual-load.jsonl"
+      },
+      {
+        "sha256": "36db8d2780cc8ee15e0dac8b6eeb0487d3665eff1a75df1cf7334246aaf7d279",
+        "bytes": 709,
+        "path": "actual-load-process.json"
+      },
+      {
+        "sha256": "8c8924ed782208a81892519298d3f4bad61cac8cc672e21560c5f825013f5054",
+        "bytes": 1739,
+        "path": "actual-scalar.jsonl"
+      },
+      {
+        "sha256": "0ec6decf548cbc96f5d35625b0dccf3638f17331c1f77eb7128673874b121da3",
+        "bytes": 711,
+        "path": "actual-scalar-process.json"
+      },
+      {
+        "sha256": "9b8298329a9213c103956e3ac14fb839b16c619f683e3107d72cb5c40281d47a",
+        "bytes": 1727,
+        "path": "actual-neon.jsonl"
+      },
+      {
+        "sha256": "d93f50e7b983c6dee6618f190653e4eeab3088ebf70669dc57852db18d6776a9",
+        "bytes": 709,
+        "path": "actual-neon-process.json"
+      },
+      {
+        "sha256": "89b56071cc01d1815b94132f0fe9ee4d94f5080832c9f8d567520f5d0fc9d27e",
+        "bytes": 1710,
+        "path": "actual-native.jsonl"
+      },
+      {
+        "sha256": "d27e7b94eeaaf23b8b26a818c15b29871560e6bd6cf4bc27ef616d973e1e8419",
+        "bytes": 710,
+        "path": "actual-native-process.json"
+      },
+      {
+        "sha256": "6a39d0c6e7ce7af7537a2714d15b1a9ed134c6f89ae52138394ea8a8e5df9928",
+        "bytes": 149410,
+        "path": "native-forward/report.json"
+      },
+      {
+        "sha256": "741cbe0971a53c73f8811d5af80e17c5da02b82209683c96a90e06ec26fd295d",
+        "bytes": 2110,
+        "path": "native-vocab.json"
+      },
+      {
+        "sha256": "04695f7f048c79ae86db10629c40f704e689052aec169736aa5d276c974a417c",
+        "bytes": 713,
+        "path": "declared-tolerances.json"
+      },
+      {
+        "sha256": "2a85167a303e3c71cabf12357fd569f2cf4d24c3843786fecd05d319a10ce249",
+        "bytes": 721,
+        "path": "logits-comparison.json"
+      },
+      {
+        "sha256": "462b495e6e088dd6b11098ecfb578891d1b71f6d8427c9c05ed15740d98e5e7a",
+        "bytes": 177565,
+        "path": "state-comparison.json"
+      },
+      {
+        "sha256": "e1f2172e474db3e944bf3170635fc2281d67c9ff932294d03d0baeae25c0de25",
+        "bytes": 84051,
+        "path": "scalar-neon-comparison.json"
+      },
+      {
+        "sha256": "ee5624fcfcf9f3ca37f5d9abf4b96cc55b0fb0481bfea25a567ae58b90077369",
+        "bytes": 10573,
+        "path": "native-forward.py"
+      },
+      {
+        "sha256": "f6c256f8bc0a1b89b37ae086669a42510edd56a3089b6bbb6b32da4941f701e7",
+        "bytes": 1702,
+        "path": "decode-native-kv.py"
+      },
+      {
+        "sha256": "20a0ac8dca9d9b6a9817920459432f030834786531337eed0e7b31b2e0d93a65",
+        "bytes": 2290,
+        "path": "compare-state.py"
+      },
+      {
+        "sha256": "f14e77010dd4d475ea90d8be2ac124c321470b1fd6fffc41cbe9aa66540d85bd",
+        "bytes": 962,
+        "path": "compare-neon.py"
+      },
+      {
+        "sha256": "8e5b21449977899020bac34df5ecf072b435efaaca36ea33f16fdd08e455216f",
+        "bytes": 2918,
+        "path": "run-guarded.ps1"
+      }
+    ]
+  },
+  "checks": [
+    "Focused strict model inventory and rejection tests passed, including bonsai-gguf/report feature unification.",
+    "Focused read-only graph state observation and observer-error state-preservation regression passed.",
+    "Release Clippy for the library, model-check example and graph regression target passed.",
+    "Release model-check example build passed."
+  ],
+  "exclusions": [
+    "Full correctness suites and all benchmarks were not run locally.",
+    "This receipt makes no throughput, creative-quality, LoRA, daily-security or standard-profile-readiness claim."
+  ]
+}
