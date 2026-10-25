@@ -3,6 +3,19 @@
   "date": "2026-10-25",
   "testedRuntimeRevision": "1f22c4dd2236513a239eea4d172864a8b7332419",
   "purpose": "Owner-authorized reduced-start memory and actual-model numerical diagnostic",
+  "scopeNotes": {
+    "initialObservationRevision": "1f22c4dd2236513a239eea4d172864a8b7332419",
+    "historicalTopLevelFields": [
+      "testedRuntimeRevision",
+      "generatedGreedyContinuation",
+      "memory.rustProcess",
+      "memory.nativeReferenceProcess",
+      "numerical",
+      "claimsExcluded"
+    ],
+    "currentStatusField": "currentQualification",
+    "description": "The listed top-level fields describe the initial reduced-memory diagnostic, not the latest result. Later numericalFollowups and prefixFollowups retain their own tested revisions. The initial native process revision is the paired diagnostic guard label; nativeReferenceRevision and the DLL capture identify the native library."
+  },
   "modelSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
   "nativeReferenceRevision": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
   "suppliedTokenIds": [
@@ -55,8 +68,10 @@
       "minimumFreeGiB": 6.7581329345703125,
       "peakProcessCommitBytes": 7536111616,
       "acceptedForThisFixedDiagnostic": true,
-      "processRecord": "numericalFollowups latest entry",
-      "rationale": "Measured prior peak plus 4 GiB reserve and approximately 1 GiB admission margin; full-service policy unchanged"
+      "processRecord": "numericalFollowups entry testedRevision 7d49e43bf8ad248f7270ac252534db7e5cdeebb3, mode neon (neon-q8k)",
+      "rationale": "Measured prior peak plus 4 GiB reserve and approximately 1 GiB admission margin; full-service policy unchanged",
+      "historicalObservation": true,
+      "testedRevision": "7d49e43bf8ad248f7270ac252534db7e5cdeebb3"
     }
   },
   "numerical": {
@@ -726,13 +741,14 @@
   "currentQualification": {
     "implementationRevision": "9899a253633568b4cb870cdaf9e4df795c7cc0d8",
     "combinedActualModelRerun": "passed-61-token-prefix-and-three-greedy-steps",
-    "lastObservedAvailablePhysicalBytes": 15655223296,
+    "lastObservedAvailablePhysicalBytes": 15458250752,
     "boundedDiagnosticStartFloorBytes": 14656575898,
     "memoryAcceptableForPreviouslyObservedWorkload": true,
     "M2": "qualified for pinned Swift CPU source: current scalar three-token and NEON 61-token prefix plus three greedy steps are byte-exact with pinned native; broader workloads remain unqualified",
     "M6": "owned HTTP recovery and current-revision device coverage remain open",
     "runtimeReleasePin": "0.1.1",
-    "serviceStartupAdmissionBytes": 17179869184
+    "serviceStartupAdmissionBytes": 17179869184,
+    "lastObservedPhysicalMemoryScope": "Initial available RAM of the corrected-revision scalar three-token run at 9899a253; not a live host reading"
   },
   "prefixFollowups": [
     {
@@ -937,5 +953,11 @@
       "comparedFiles": 8388,
       "scope": "61-token pinned chat prefix plus three generated greedy steps; all 64 blocks and complete logical state at positions 60 through 63"
     }
-  ]
+  ],
+  "qualificationAudit": {
+    "path": "C:\\Users\\symbi\\AppData\\Local\\Temp\\SwiftMvp-8da0ada7fcf648059cb3cc9282112d3d\\http-acceptance-evidence\\m2-audit-e62a8758723a4a7286da65684b0cfdf8\\review.json",
+    "sha256": "2f3be6d211768d5f5bd9b9001582db0ac98f277152f5a69377921599913a7a80",
+    "retainedArtifactsVerifiedAtAudit": 22,
+    "scope": "M2 counts, exact hashes, unchanged tolerances, scalar revision scopes and release/admission boundaries"
+  }
 }

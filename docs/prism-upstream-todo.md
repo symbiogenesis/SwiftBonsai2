@@ -6,8 +6,9 @@ engine behavior needed for that path. **Everything else is deferred.**
 
 The migration is not complete. Verified loading, packed CPU kernels, the Qwen35
 hybrid graph, tokenization and transactional token generation already exist;
-full-model numerical parity and complete device lifecycle qualification remain
-open. The experimental native session and owned broker path are implemented.
+bounded Swift full-model numerical parity is now qualified. Complete owned
+device lifecycle and reviewed prebuilt consumption remain open. The experimental
+native session and owned broker path are implemented.
 Pinned Prism remains the
 comparison and fallback engine until the replacement is qualified.
 
@@ -176,8 +177,9 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   and acknowledged reset. The diagnostic was deliberately stopped during its
   post-reset request when the user authorized handoff. Actual multi-turn
   execution, context rejection, cancellation and restart still need a complete
-  run; M2 also remains unqualified. CI monitoring and repairs were handed to
-  the user. No full local suites or benchmarks ran.
+  run. Bounded source forward parity is now qualified by M2 above; the complete
+  owned HTTP lifecycle remains a separate exit. No full local suites or
+  benchmarks ran.
 
   A later owner-authorized memory diagnostic completed the actual model load
   and three forward steps starting with 13.73 GiB free. Peak process commit was

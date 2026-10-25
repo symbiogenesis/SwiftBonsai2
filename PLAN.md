@@ -26,9 +26,10 @@ accelerator is enabled in current launch profiles.
 The active implementation scope is the pinned Swift PQ2 CPU MVP in the
 [Prism migration TODO](docs/prism-upstream-todo.md). Exact Swift chat rendering,
 token accounting and native sampler parity are implemented, as is the
-experimental owned service path. Bounded full-model forward parity is qualified in the source runtime; complete
-owned device recovery and a reviewed prebuilt runtime update remain the next exits. The broader acceleration, adapter,
-UI and optimization work below stays deferred while closing that MVP.
+experimental owned service path. Bounded full-model forward parity is qualified
+in the source runtime; complete owned device recovery and a reviewed prebuilt
+runtime update remain the next exits. The broader acceleration, adapter, UI and
+optimization work below stays deferred while closing that MVP.
 
 The approved abliteration LoRA is intended for the standard profile. Acceptance
 requires **decode tokens/second and output quality each to match or exceed the
@@ -254,12 +255,12 @@ For the pinned Swift artifact, the separate Swift session/worker connects the
 verified embedded chat template, exact tokenizer, supplied reasoning history and
 native MT19937 sampler. Retained native captures cover prompt bytes/token IDs
 and seeded sampler draws; the independently released server connects that
-session to the owned experimental broker. These results do not qualify other
-templates/models, full-model forward arithmetic, complete device recovery or
-daily service. The [active MVP checklist](docs/prism-upstream-todo.md) owns those
-remaining exits.
-Tiled prefill kernels, full-model allocation,
-broader model parity and performance qualification remain open.
+session to the owned experimental broker. Separate source-runtime evidence
+qualifies bounded Swift full-model forward parity. Other templates/models,
+complete owned device recovery and daily service remain separate exits in the
+[active MVP checklist](docs/prism-upstream-todo.md). Tiled prefill kernels, broader
+model/full-context allocation, broader model parity and performance
+qualification remain open.
 
 Profile before expanding optimization work. Priorities include exact packed
 lookup kernels, compatible activation sharing, bounded block prefill and hybrid
