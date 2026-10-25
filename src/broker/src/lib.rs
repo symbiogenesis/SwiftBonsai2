@@ -19,6 +19,8 @@ mod configuration;
 pub mod launch_policy;
 #[cfg(windows)]
 pub mod launcher;
+#[cfg(feature = "native-swift")]
+pub mod native_swift;
 pub mod reception;
 pub mod response;
 pub mod runtime;
