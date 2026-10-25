@@ -67,6 +67,27 @@ impl VerifiedArtifacts {
         })
     }
 
+    #[cfg(windows)]
+    pub(crate) fn verify_model_for_profile(
+        data: &Path,
+        profile: LaunchProfile,
+    ) -> Result<Self, ArtifactError> {
+        let pins = reviewed_pins(profile).map_err(|_| ArtifactError::Configuration)?;
+        let model = data
+            .join("models")
+            .join(&pins.model.revision)
+            .join(&pins.model.filename);
+        let model_guard = VerifiedFile::verify(&model, pins.model.bytes, &pins.model.sha256)?;
+        Ok(Self {
+            executable: PathBuf::new(),
+            model,
+            runtime_directory: PathBuf::new(),
+            archive_path: PathBuf::new(),
+            _runtime: None,
+            _model: Some(model_guard),
+        })
+    }
+
     /// Server path established by the verified archive.
     #[must_use]
     pub fn executable(&self) -> &Path {
@@ -93,6 +114,39 @@ impl VerifiedArtifacts {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn native_profile_checks_model_without_requiring_upstream_runtime() -> std::io::Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(std::io::Error::other)?
+            .as_nanos();
+        let parent = std::env::temp_dir();
+        let data = parent.join(format!(
+            "Bonsai-native-model-{}-{stamp}",
+            std::process::id()
+        ));
+        let profile = LaunchProfile::SwiftPq2Assessment;
+        let pins = reviewed_pins(profile).map_err(std::io::Error::other)?;
+        let model_directory = data.join("models").join(&pins.model.revision);
+        fs::create_dir_all(&model_directory)?;
+        let model = model_directory.join(&pins.model.filename);
+        fs::write(&model, b"")?;
+        // Identity, rather than Path, proves admission reached the model without
+        // first opening a C++ archive or requiring its installed runtime tree.
+        assert_eq!(
+            VerifiedArtifacts::verify_model_for_profile(&data, profile).err(),
+            Some(ArtifactError::Identity)
+        );
+        assert!(!data.join("downloads").exists());
+        fs::remove_file(model)?;
+        fs::remove_dir(&model_directory)?;
+        fs::remove_dir(data.join("models"))?;
+        assert_eq!(data.parent(), Some(parent.as_path()));
+        fs::remove_dir(data)?;
+        Ok(())
+    }
+
     #[cfg(windows)]
     #[test]
     fn profile_verification_opens_only_its_locked_archive() -> std::io::Result<()> {

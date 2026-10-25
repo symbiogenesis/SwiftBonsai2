@@ -8,7 +8,8 @@ license.workspace = true
 description = "Bounded development chat transport and request supervision for the Bonsai broker"
 
 [features]
-native-swift = ["dep:bonsai-prism-runtime"]
+# Compatibility marker; native inference always uses the pinned external server.
+native-swift = []
 
 [[bin]]
 name = "bonsai-broker"
@@ -17,7 +18,6 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
-bonsai-prism-runtime = { path = "../prism-runtime", optional = true }
 bonsai-artifacts = { path = "../artifacts" }
 bonsai-cpu-policy = { path = "../cpu-policy" }
 http = "=1.5.0"

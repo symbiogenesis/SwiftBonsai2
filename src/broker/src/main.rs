@@ -19,17 +19,6 @@ fn main() -> ExitCode {
         };
     }
     let args: Vec<_> = args.collect();
-    #[cfg(all(windows, feature = "native-swift"))]
-    if args
-        .iter()
-        .any(|argument| argument == "--native-engine-child")
-    {
-        return if bonsai_broker::native_child::run(args).is_ok() {
-            ExitCode::SUCCESS
-        } else {
-            failure(b"Native Swift child failed; admission remains closed.\n")
-        };
-    }
     if args
         .iter()
         .any(|argument| argument == "--launch-development")

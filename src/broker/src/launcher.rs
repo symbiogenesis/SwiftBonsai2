@@ -40,7 +40,7 @@ pub const LAUNCH_USAGE: &str = concat!(
     "  --evidence-parent <existing-external-directory>\n",
     "  --frontend-port <0-or-1024..65535> --backend-port <1024..65535>\n",
     "  [--profile <reference-cpu|swift-pq2-assessment>]\n",
-    "  [--native-engine] (requires native-swift build and swift-pq2-assessment)\n",
+    "  [--native-engine] (requires the pinned Prism inference release and swift-pq2-assessment)\n",
     "  [--max-waiting <0..8>] [--check-only]\n",
     "Default: reference-cpu. Only compiled model/runtime pins and fixed CPU policies are accepted.\n",
     "Swift selects original PQ2 weights without an adapter; daily use remains unqualified.\n",
@@ -118,7 +118,7 @@ impl LaunchConfig {
                 Some("--launch-development") if !launch => launch = true,
                 Some("--allow-unisolated-backend") if !unisolated => unisolated = true,
                 Some("--check-only") if !check_only => check_only = true,
-                Some("--native-engine") if !native_engine && cfg!(feature = "native-swift") => {
+                Some("--native-engine") if !native_engine => {
                     native_engine = true;
                 }
                 Some("--profile") if profile.is_none() => {
@@ -214,6 +214,14 @@ impl LaunchConfig {
     }
 
     fn verify_artifacts(&self, plan: &LaunchPlan) -> Result<VerifiedArtifacts, LaunchError> {
+        if self.native_engine {
+            let artifacts = VerifiedArtifacts::verify_model_for_profile(&self.data, self.profile)
+                .map_err(|_| LaunchError::Artifacts)?;
+            if artifacts.model() != plan.model_path {
+                return Err(LaunchError::Artifacts);
+            }
+            return Ok(artifacts);
+        }
         let artifacts = VerifiedArtifacts::verify_for_profile(&self.data, self.profile)
             .map_err(|_| LaunchError::Artifacts)?;
         if artifacts.executable() != plan.executable
@@ -236,35 +244,21 @@ impl LaunchConfig {
         Ok(())
     }
 
-    fn native_executable_guard(&self) -> Result<Option<(PathBuf, std::fs::File)>, LaunchError> {
-        use std::os::windows::fs::OpenOptionsExt as _;
-        if !self.native_engine {
-            return Ok(None);
+    fn native_executable_guard(
+        &self,
+    ) -> Result<Option<(PathBuf, bonsai_artifacts::VerifiedFile)>, LaunchError> {
+        if self.native_engine {
+            crate::inference::verify(&self.data).map(Some)
+        } else {
+            Ok(None)
         }
-        let executable = std::env::current_exe().map_err(|_| LaunchError::Path)?;
-        validate_external_path(&executable).map_err(|_| LaunchError::Path)?;
-        // FILE_SHARE_READ only: retain this exact self-executable against write,
-        // delete and replacement for the complete owned child's lifetime.
-        let guard = std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(1)
-            .open(&executable)
-            .map_err(|_| LaunchError::Artifacts)?;
-        if !guard
-            .metadata()
-            .map_err(|_| LaunchError::Artifacts)?
-            .is_file()
-        {
-            return Err(LaunchError::Artifacts);
-        }
-        Ok(Some((executable, guard)))
     }
 
     fn specification(
         &self,
         plan: LaunchPlan,
         credentials: &PrivateCredentials,
-    ) -> Result<(ProcessSpec, Option<std::fs::File>), LaunchError> {
+    ) -> Result<(ProcessSpec, Option<bonsai_artifacts::VerifiedFile>), LaunchError> {
         let native = self.native_executable_guard()?;
         let (executable, arguments, guard) = if let Some((executable, guard)) = native {
             let arguments = vec![
@@ -395,7 +389,7 @@ pub struct LaunchedService {
     process: OwnedProcess,
     credentials: PrivateCredentials,
     _artifacts: VerifiedArtifacts,
-    _native_executable: Option<std::fs::File>,
+    _native_executable: Option<bonsai_artifacts::VerifiedFile>,
     memory_limit_bytes: usize,
     backend_port: u16,
 }
@@ -543,7 +537,6 @@ async fn healthy(port: u16, key: &str, process_id: u32) -> bool {
     .is_ok_and(|result| result.is_ok())
 }
 
-#[cfg(feature = "native-swift")]
 async fn native_identity(port: u16, key: &str, process_id: u32) -> bool {
     timeout(Duration::from_secs(2), async {
         validate_native_identity(&exchange(port, "/v1/models", Some(key), process_id).await?)
@@ -552,12 +545,6 @@ async fn native_identity(port: u16, key: &str, process_id: u32) -> bool {
     .is_ok_and(|result| result.is_ok())
 }
 
-#[cfg(not(feature = "native-swift"))]
-fn native_identity(_port: u16, _key: &str, _process_id: u32) -> impl Future<Output = bool> {
-    std::future::ready(false)
-}
-
-#[cfg(feature = "native-swift")]
 fn validate_native_identity(bytes: &[u8]) -> io::Result<()> {
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
@@ -583,9 +570,9 @@ fn validate_native_identity(bytes: &[u8]) -> io::Result<()> {
     };
     if model.id != "Swift-Bonsai-2-PQ2_0"
         || model.object != "model"
-        || model.model_sha256 != bonsai_prism_runtime::model::swift::MODEL_SHA256
-        || model.template_sha256 != bonsai_prism_runtime::model::swift::TEMPLATE_SHA256
-        || model.runtime != "bonsai-prism-runtime"
+        || model.model_sha256 != crate::inference::MODEL_SHA256
+        || model.template_sha256 != crate::inference::TEMPLATE_SHA256
+        || model.runtime != "prism-inference"
         || model.context_tokens != crate::CONTEXT_TOKENS
         || model.seed != 42
     {
@@ -773,7 +760,7 @@ mod tests {
     }
 
     #[test]
-    fn native_engine_is_explicit_feature_gated_and_swift_only() {
+    fn native_engine_is_explicit_and_swift_only() {
         let mut args = arguments();
         args.push(OsString::from("--native-engine"));
         assert_eq!(
@@ -782,15 +769,8 @@ mod tests {
         );
         let mut args = arguments();
         args.extend(["--profile", "swift-pq2-assessment", "--native-engine"].map(OsString::from));
-        if cfg!(feature = "native-swift") {
-            let config = LaunchConfig::parse(args).ok();
-            assert!(config.is_some_and(|value| value.uses_native_engine()));
-        } else {
-            assert_eq!(
-                LaunchConfig::parse(args).err(),
-                Some(LaunchError::Arguments)
-            );
-        }
+        let config = LaunchConfig::parse(args).ok();
+        assert!(config.is_some_and(|value| value.uses_native_engine()));
         let mut args = arguments();
         args.extend(
             [
@@ -808,15 +788,14 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "native-swift")]
     fn native_readiness_requires_exact_model_template_runtime_context_and_seed()
     -> std::io::Result<()> {
         use serde_json::json;
         let model = json!({"id":"Swift-Bonsai-2-PQ2_0","object":"model",
-            "model_sha256":bonsai_prism_runtime::model::swift::MODEL_SHA256,
-            "template_sha256":bonsai_prism_runtime::model::swift::TEMPLATE_SHA256,
-            "runtime":"bonsai-prism-runtime","context_tokens":8192,"seed":42});
-        let body = serde_json::to_string(&json!({"data":[model.clone()]}))?;
+            "model_sha256":crate::inference::MODEL_SHA256,
+            "template_sha256":crate::inference::TEMPLATE_SHA256,
+            "runtime":"prism-inference","context_tokens":8192,"seed":42});
+        let body = serde_json::to_string(&json!({"data":[model]}))?;
         assert!(super::validate_native_identity(&response(&body)).is_ok());
         for (field, changed) in [
             ("id", json!("foreign")),
