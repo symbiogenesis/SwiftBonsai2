@@ -309,6 +309,17 @@ fn hash_assertions(engine: &Engine, assertions: &mut Assertions) -> Result<()> {
             false,
         );
     }
+    // Preserve the stronger all-byte/block-boundary coverage from the Rust
+    // helper test alongside the original 36 source hash properties.
+    let bytes: Vec<u8> = (0..=255).collect();
+    for stride in 1..=16 {
+        pair(
+            format!("all-byte stream stride {stride}"),
+            bytes.chunks(stride).map(<[u8]>::to_vec).collect(),
+            vec![bytes.clone()],
+            true,
+        );
+    }
     let values = exchange(engine, "jinja-hasher", &operations)?
         .ok_or_else(|| invalid("Jinja production backend disappeared"))?;
     let digests = values
@@ -873,7 +884,7 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
         ID,
         assertions.failures.is_empty(),
         format!(
-            "19 original default groups; 278 literal renders; 36 hash properties; 10 stats flags; 6 caps flags; 4 guarded string-parts assertions; {fuzz_count} no-crash fuzz calls; assertions={}; original_not_implemented_skips={}; failed={}; {}",
+            "19 original default groups; 278 literal renders; 36 original hash properties plus16 all-byte streaming checks; 10 stats flags; 6 caps flags; 4 guarded string-parts assertions; {fuzz_count} no-crash fuzz calls; assertions={}; original_not_implemented_skips={}; failed={}; {}",
             assertions.count,
             assertions.skipped,
             assertions.failures.len(),

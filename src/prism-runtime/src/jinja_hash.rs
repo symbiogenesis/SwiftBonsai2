@@ -77,18 +77,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn streaming_boundaries_and_intermediate_digest_match_block_contract() {
-        let bytes: Vec<_> = (0..=255).collect();
-        let mut whole = Hasher::new();
-        whole.update(&bytes);
-        let expected = whole.digest();
-        for stride in 1..=16 {
-            let mut split = Hasher::new();
-            for chunk in bytes.chunks(stride) {
-                split.update(chunk);
-            }
-            assert_eq!(split.digest(), expected);
-        }
+    fn intermediate_digest_matches_block_arithmetic() {
         let mut traced = Hasher::new();
         traced.update(b"a");
         let first = (SEED ^ u64::from(b'a')).wrapping_mul(PRIME);
