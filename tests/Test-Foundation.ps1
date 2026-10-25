@@ -286,7 +286,8 @@ if ($Case -in @('All','Capabilities')) {
     }
     $known = Get-BonsaiHostCapability -Facts $facts
     Assert ($known.cpu.identities[0].name -ceq 'Snapdragon X2E-96-100' -and $known.cpu.identities[0].physical_cores -eq 18) 'Observed processor identity or counts were lost.'
-    Assert ($known.memory.usable_physical_bytes -eq [uint64]34359738368 -and
+    Assert ($known.memory.reported_total_physical_bytes -eq [uint64]34359738368 -and
+        $known.memory.usable_physical_bytes -eq [uint64]34359738368 -and
         $known.memory.commit_limit_bytes -eq [uint64]68719476736 -and $known.memory.status -ceq 'observed') 'Memory units or observed commit facts changed.'
     Assert ($known.cpu.isa.advsimd -ceq $false -and $known.cpu.isa.dotprod -ceq $false -and
         $null -eq $known.cpu.topology.processor_groups -and $null -eq $known.gpu.api_features -and

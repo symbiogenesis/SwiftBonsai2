@@ -17,7 +17,7 @@ The pure `Get-BonsaiHostCapability` projection in
 | `operating_system`, `process` | Native OS and current process architectures; OS version/build where available; native versus emulated process |
 | `cpu.identities` | CIM processor names, manufacturers and core/logical counts; processor groups and efficiency classes remain unknown |
 | `cpu.isa` | .NET AdvSimd and dot-product support for the current process architecture only |
-| `memory` | Installed/usable/available physical bytes and commit limit/current committed bytes where available |
+| `memory` | CIM-reported total, OS-usable/currently available physical bytes and commit limit/current committed bytes where available |
 | `gpu` | CIM device/vendor/driver inventory; API features and device budgets remain unknown |
 | `npu` | ComputeAccelerator-class signed-driver inventory; architecture, firmware and backend readiness remain unknown |
 
@@ -33,6 +33,8 @@ Names such as X1/X2 and a signed driver do not establish optional ISA, GPU/NPU
 execution or deployment trust. An emulated process's ISA result cannot qualify
 a native runtime. Current memory is a diagnostic snapshot, never a substitute
 for admission immediately before a request.
+`memory.reported_total_physical_bytes` is CIM's `TotalPhysicalMemory`; it can
+exclude hardware-reserved RAM and does not establish installed capacity.
 
 ## Runtime inventory
 

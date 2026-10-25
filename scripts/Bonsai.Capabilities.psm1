@@ -141,7 +141,9 @@ function Get-BonsaiHostCapability {
             }
         }
     )
-    $installed = Get-CapabilityUInt64 (Get-CapabilityProperty $computer 'TotalPhysicalMemory')
+    # CIM's total can exclude hardware-reserved memory; this is not an
+    # independently measured physically installed capacity.
+    $reportedTotal = Get-CapabilityUInt64 (Get-CapabilityProperty $computer 'TotalPhysicalMemory')
     $usableKiB = Get-CapabilityUInt64 (Get-CapabilityProperty $os 'TotalVisibleMemorySize')
     if ($null -ne $usableKiB -and $usableKiB -gt ([uint64]::MaxValue -shr 10)) { throw 'Capability memory conversion exceeds its byte bound.' }
     $usable = if ($null -ne $usableKiB) { [uint64]($usableKiB -shl 10) } else { $null }
@@ -179,10 +181,10 @@ function Get-BonsaiHostCapability {
             }
         }
         memory = [ordered]@{
-            installed_physical_bytes = $installed; usable_physical_bytes = $usable
+            reported_total_physical_bytes = $reportedTotal; usable_physical_bytes = $usable
             available_physical_bytes = $available; commit_limit_bytes = $commitLimit; committed_bytes = $committed
             source = 'Win32_ComputerSystem;Win32_OperatingSystem;Win32_PerfFormattedData_PerfOS_Memory'
-            status = Get-CapabilityStatus ([bool]($probes['Computer'] -or $probes['OperatingSystem'] -or $probes['Memory'])) ($null -eq $installed -or $null -eq $usable -or $null -eq $available -or $null -eq $commitLimit -or $null -eq $committed)
+            status = Get-CapabilityStatus ([bool]($probes['Computer'] -or $probes['OperatingSystem'] -or $probes['Memory'])) ($null -eq $reportedTotal -or $null -eq $usable -or $null -eq $available -or $null -eq $commitLimit -or $null -eq $committed)
         }
         gpu = [ordered]@{
             devices = $graphics; source = 'Win32_VideoController'
