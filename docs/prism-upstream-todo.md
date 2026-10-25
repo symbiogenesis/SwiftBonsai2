@@ -11,6 +11,12 @@ open. The experimental native session and owned broker path are implemented.
 Pinned Prism remains the
 comparison and fallback engine until the replacement is qualified.
 
+Runtime implementation follow-ups below refer to
+[Prism Inference source](https://github.com/symbiogenesis/prism-inference).
+Runner still provisions its immutable `0.1.1` release lock; source repairs require
+a separately reviewed binary release and lock update before that provisioned
+runtime includes them.
+
 ## MVP boundary
 
 | Area | Required for this MVP |
@@ -62,7 +68,16 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   Matching next-token observations do not qualify a generated greedy sequence.
   [Focused operator evidence](../config/swift-native-operators.evidence.json)
   identifies RMS multiplication grouping and other small arithmetic differences;
-  their full-model causal effect and a production repair remain unproven.
+  their full-model causal effect remains unproven.
+
+  Implementation follow-up: the Qwen35 graph now has a separate weighted RMS
+  path matching the pinned Windows ARM64 binary's `(input * weight) * scale`
+  rounding. Fresh, hash-verified native operator captures at widths
+  16/64/128/5120 match that order exactly; an independent native-output bit
+  regression rejects the previous order. The generic scalar RMS API retains
+  its original semantics. This repairs one measured operator discrepancy;
+  its effect on full-model logits/state and the remaining arithmetic differences
+  still needs the unchanged M2 qualification.
 
 - [x] **M3 — Connect Swift's chat prompt to the exact tokenizer.** Render the
   verified embedded template with the existing Jinja/chat APIs, current
@@ -118,6 +133,16 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   checks remain in force. Focused lifecycle and protocol regressions pass, and
   the actual owned path counted/prefilled 53 prompt tokens and streamed one
   sampled token. Complete device recovery evidence remains with M6.
+
+  Recovery follow-up: dropping an in-flight private request future now signals
+  its model cancellation token even when the server retains the worker. A
+  focused regression covers provisional output, drop, rollback, closed
+  admission, explicit reset and a successful subsequent request. Runner also
+  bounds the complete canonical backend request to 1 MiB before counting;
+  fixed policy fields can expand an otherwise admitted client body past that
+  limit. Loopback coverage checks context rejection followed by a successful
+  multi-turn request, preserving supplied reasoning and identical count and
+  generation bytes. These synthetic checks do not replace M6 device evidence.
 
 - [ ] **M6 — Demonstrate bounded end-to-end Swift operation.** On the target
   Windows ARM64 device, run the pinned model through the connected engine path:

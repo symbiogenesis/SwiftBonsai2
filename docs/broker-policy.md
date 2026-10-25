@@ -27,7 +27,7 @@ Policy-only callers must bound their own prior allocations.
 | --- | --- |
 | Parsed header names/values/separators; complete raw request/response head | 16 KiB each |
 | Header values | 64 |
-| Public body | 1 MiB |
+| Public body / complete canonical backend body | 1 MiB each |
 | Messages | 128 |
 | Completion tokens | 1–4096, default 4096 |
 | Decoded backend response | 4 MiB |
@@ -78,6 +78,9 @@ launcher also fixes thinking on, effort `xhigh` and no separate reasoning cutoff
 does not promise that many visible prose tokens. See
 [inference defaults and evidence](inference-defaults.md).
 Public headers, credentials and original JSON are never forwarded.
+The complete canonical body must also fit the backend's 1 MiB request cap.
+Preparation rejects expansion past that cap before exact counting or a backend
+connection; the fixed policy fields count toward the limit.
 
 `check_head -> prepare -> admit` retains a pending request until a trusted counter
 returns the exact rendered prompt length. The counter receives the canonical
