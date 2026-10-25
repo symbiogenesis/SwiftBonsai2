@@ -115,6 +115,18 @@ impl SwiftSession {
         &self.receipt
     }
 
+    /// Explicit reproducible seed restored by a successful reset.
+    #[must_use]
+    pub const fn seed(&self) -> u32 {
+        self.seed
+    }
+
+    /// Requested CPU dispatch policy; individual projections may fall back.
+    #[must_use]
+    pub const fn requested_backend(&self) -> MatvecBackend {
+        self.runtime.decoder().requested_backend()
+    }
+
     /// Whether reset is required before another completion can start.
     #[must_use]
     pub const fn is_faulted(&self) -> bool {
