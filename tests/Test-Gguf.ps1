@@ -14,18 +14,11 @@ $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBon
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 
 
-function Write-Text {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([IO.BinaryWriter]$Writer, [string]$Text)
-    $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
-    $Writer.Write([uint64]$bytes.Length); $Writer.Write($bytes)
-}
 function Write-Key {
     [CmdletBinding()]
     [OutputType([void])]
     param([IO.BinaryWriter]$Writer, [string]$Key, [uint32]$Type)
-    Write-Text -Writer $Writer -Text $Key
+    Write-TestGgufText -Writer $Writer -Text $Key
     $Writer.Write($Type)
 }
 function New-Fixture {
@@ -40,7 +33,7 @@ function New-Fixture {
     $writer = [IO.BinaryWriter]::new($memory, [Text.Encoding]::UTF8, $true)
     try {
         $writer.Write([uint32]0x46554747); $writer.Write([uint32]3); $writer.Write([uint64]3); $writer.Write([uint64]11)
-        Write-Key -Writer $writer -Key 'general.architecture' -Type 8; Write-Text $writer 'qwen35'
+        Write-Key -Writer $writer -Key 'general.architecture' -Type 8; Write-TestGgufText $writer 'qwen35'
         Write-Key -Writer $writer -Key 'general.alignment' -Type 4; $alignmentValue = $memory.Position; $writer.Write([uint32]32)
         Write-Key -Writer $writer -Key 'qwen35.block_count' -Type 4; $writer.Write([uint32]65)
         Write-Key -Writer $writer -Key 'qwen35.nextn_predict_layers' -Type 4; $writer.Write([uint32]1)
@@ -49,18 +42,18 @@ function New-Fixture {
         Write-Key -Writer $writer -Key 'qwen35.attention.recurrent_layers' -Type 9; $writer.Write([uint32]7); $writer.Write([uint64]4)
         $boolValue = $memory.Position; $writer.Write([byte]1); $writer.Write([byte]1); $writer.Write([byte]1); $writer.Write([byte]0)
         $tokenizerStart = $memory.Position
-        Write-Key -Writer $writer -Key 'tokenizer.ggml.model' -Type 8; Write-Text $writer 'gpt2'
+        Write-Key -Writer $writer -Key 'tokenizer.ggml.model' -Type 8; Write-TestGgufText $writer 'gpt2'
         Write-Key -Writer $writer -Key 'tokenizer.ggml.tokens' -Type 9; $writer.Write([uint32]8); $vocabCount = $memory.Position; $writer.Write([uint64]5000)
-        for ($i = 0; $i -lt 5000; $i++) { Write-Text $writer ('token-' + $i) }
+        for ($i = 0; $i -lt 5000; $i++) { Write-TestGgufText $writer ('token-' + $i) }
         Write-Key -Writer $writer -Key 'tokenizer.ggml.eos_token_id' -Type 4; $writer.Write([uint32]42)
         Write-Key -Writer $writer -Key 'tokenizer.chat_template' -Type 8
         $template = "{{ messages }}`nUnicode: λ 🍀`n"
-        Write-Text $writer $template
+        Write-TestGgufText $writer $template
         $tokenizerEnd = $memory.Position
-        Write-Text $writer 'blk.0.attn_q.weight'; $dimensionsValue = $memory.Position; $writer.Write([uint32]1); $dimensionSize = $memory.Position; $writer.Write([uint64]256)
+        Write-TestGgufText $writer 'blk.0.attn_q.weight'; $dimensionsValue = $memory.Position; $writer.Write([uint32]1); $dimensionSize = $memory.Position; $writer.Write([uint64]256)
         $tensorType = $memory.Position; $writer.Write([uint32]11); $tensorOffset = $memory.Position; $writer.Write([uint64]0)
-        Write-Text $writer 'blk.64.ffn_norm.weight'; $writer.Write([uint32]1); $writer.Write([uint64]2); $writer.Write([uint32]0); $writer.Write([uint64]128)
-        Write-Text $writer 'blk.64.nextn.eh_proj.weight'; $writer.Write([uint32]1); $writer.Write([uint64]2); $writer.Write([uint32]0); $writer.Write([uint64]160)
+        Write-TestGgufText $writer 'blk.64.ffn_norm.weight'; $writer.Write([uint32]1); $writer.Write([uint64]2); $writer.Write([uint32]0); $writer.Write([uint64]128)
+        Write-TestGgufText $writer 'blk.64.nextn.eh_proj.weight'; $writer.Write([uint32]1); $writer.Write([uint64]2); $writer.Write([uint32]0); $writer.Write([uint64]160)
         while ($memory.Position % 32) { $writer.Write([byte]0) }
         $dataOffset = $memory.Position
         $writer.Write([byte[]]::new(168)); $writer.Flush()
@@ -127,11 +120,11 @@ if ($Case -in @('All','Strings')) {
         $writer = [IO.BinaryWriter]::new($memory, [Text.Encoding]::UTF8, $true)
         try {
             $writer.Write([uint32]0x46554747); $writer.Write([uint32]3); $writer.Write([uint64]0); $writer.Write([uint64]2)
-            Write-Key -Writer $writer -Key 'general.architecture' -Type 8; Write-Text $writer 'synthetic'
+            Write-Key -Writer $writer -Key 'general.architecture' -Type 8; Write-TestGgufText $writer 'synthetic'
             $tokenizerStart = $memory.Position
             Write-Key -Writer $writer -Key $Key -Type 8
             $valueStart = $memory.Position + 8
-            Write-Text $writer $Value
+            Write-TestGgufText $writer $Value
             $writer.Flush()
             $bytes = $memory.ToArray()
             [IO.File]::WriteAllBytes($Path, $bytes)
@@ -185,7 +178,7 @@ if ($Case -in @('All','Arrays')) {
         $writer = [IO.BinaryWriter]::new($memory, [Text.Encoding]::UTF8, $true)
         try {
             $writer.Write([uint32]0x46554747); $writer.Write([uint32]3); $writer.Write([uint64]0); $writer.Write([uint64]2)
-            Write-Key -Writer $writer -Key 'general.architecture' -Type 8; Write-Text $writer 'synthetic'
+            Write-Key -Writer $writer -Key 'general.architecture' -Type 8; Write-TestGgufText $writer 'synthetic'
             $tokenizerStart = $memory.Position
             Write-Key -Writer $writer -Key 'tokenizer.test_array' -Type 9; $writer.Write($ElementType); $writer.Write($Count)
             $valuesStart = $memory.Position

@@ -17,13 +17,6 @@ $dialect = 'Prism-73bfe6cc485554822f80c473a3c0c4f25e80f41b'
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 
 
-function Write-Text {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([IO.BinaryWriter]$Writer, [string]$Text)
-    $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
-    $Writer.Write([uint64]$bytes.Length); $Writer.Write($bytes)
-}
 function New-Fixture {
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([hashtable])]
@@ -34,17 +27,17 @@ function New-Fixture {
     try {
         $writer.Write([uint32]0x46554747); $writer.Write([uint32]3)
         $writer.Write([uint64]3); $writer.Write([uint64]4)
-        Write-Text $writer 'general.architecture'; $writer.Write([uint32]8); Write-Text $writer 'synthetic'
-        Write-Text $writer 'general.file_type'; $writer.Write([uint32]4); $writer.Write($FileType)
-        Write-Text $writer 'tokenizer.chat_template'; $writer.Write([uint32]8); Write-Text $writer '{{ unchanged }}'
-        Write-Text $writer 'prism.hadamard.transform'; $writer.Write([uint32]8); Write-Text $writer 'unchanged-transform'
+        Write-TestGgufText $writer 'general.architecture'; $writer.Write([uint32]8); Write-TestGgufText $writer 'synthetic'
+        Write-TestGgufText $writer 'general.file_type'; $writer.Write([uint32]4); $writer.Write($FileType)
+        Write-TestGgufText $writer 'tokenizer.chat_template'; $writer.Write([uint32]8); Write-TestGgufText $writer '{{ unchanged }}'
+        Write-TestGgufText $writer 'prism.hadamard.transform'; $writer.Write([uint32]8); Write-TestGgufText $writer 'unchanged-transform'
         # Descriptor order deliberately differs from physical order. Source gaps
         # and final padding contain nonzero bytes, outside tensor payloads.
         $sourcePqOffset = 64L
         $secondOffset = [long]([Math]::Ceiling(($sourcePqOffset + 34 * $Blocks) / 32.0) * 32) + 32
-        Write-Text $writer 'last.pq'; $writer.Write([uint32]1); $writer.Write([uint64]128); $writer.Write([uint32]142); $writer.Write([uint64]$secondOffset)
-        Write-Text $writer 'first.bf16'; $writer.Write([uint32]1); $writer.Write([uint64]2); $writer.Write([uint32]30); $writer.Write([uint64]0)
-        Write-Text $writer 'large.pq'; $writer.Write([uint32]1); $writer.Write([uint64](128 * $Blocks)); $writer.Write([uint32]142); $writer.Write([uint64]$sourcePqOffset)
+        Write-TestGgufText $writer 'last.pq'; $writer.Write([uint32]1); $writer.Write([uint64]128); $writer.Write([uint32]142); $writer.Write([uint64]$secondOffset)
+        Write-TestGgufText $writer 'first.bf16'; $writer.Write([uint32]1); $writer.Write([uint64]2); $writer.Write([uint32]30); $writer.Write([uint64]0)
+        Write-TestGgufText $writer 'large.pq'; $writer.Write([uint32]1); $writer.Write([uint64](128 * $Blocks)); $writer.Write([uint32]142); $writer.Write([uint64]$sourcePqOffset)
         while ($stream.Position % 32) { $writer.Write([byte]0) }
         $data = $stream.Position
         $padding = [byte[]]::new($secondOffset + 64)

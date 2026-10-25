@@ -5,6 +5,18 @@ $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Gguf.psm1') -Force
 $script:GgufTool = Resolve-GgufTool -GgufToolPath $env:BONSAI_GGUF_TOOL
 
+function Write-TestGgufText {
+    <#
+    .SYNOPSIS
+    Writes the shared GGUF length-prefixed UTF-8 fixture representation.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([IO.BinaryWriter]$Writer, [string]$Text)
+    $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
+    $Writer.Write([uint64]$bytes.Length); $Writer.Write($bytes)
+}
+
 function Read-TestGguf {
     <#
     .SYNOPSIS
@@ -33,4 +45,4 @@ function Export-TestGguf {
         '--timeout-seconds', [string]$TimeoutSeconds)
 }
 
-Export-ModuleMember -Function Read-TestGguf, Export-TestGguf
+Export-ModuleMember -Function Read-TestGguf, Export-TestGguf, Write-TestGgufText

@@ -18,13 +18,6 @@ $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBon
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 
 
-function Write-Text {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([IO.BinaryWriter]$Writer, [string]$Text)
-    $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
-    $Writer.Write([uint64]$bytes.Length); $Writer.Write($bytes)
-}
 function New-CensusFixture {
     [CmdletBinding(SupportsShouldProcess)]
     [OutputType([hashtable])]
@@ -36,10 +29,10 @@ function New-CensusFixture {
     try {
         $writer.Write([uint32]0x46554747); $writer.Write([uint32]3)
         $writer.Write([uint64]$Tensors.Count); $writer.Write([uint64]1)
-        Write-Text $writer 'general.architecture'; $writer.Write([uint32]8); Write-Text $writer 'synthetic'
+        Write-TestGgufText $writer 'general.architecture'; $writer.Write([uint32]8); Write-TestGgufText $writer 'synthetic'
         $offset = 0L
         foreach ($tensor in $Tensors) {
-            Write-Text $writer $tensor.Name; $writer.Write([uint32]1)
+            Write-TestGgufText $writer $tensor.Name; $writer.Write([uint32]1)
             $dimensionPosition = $memory.Position; $writer.Write([uint64]$tensor.Elements)
             $typePosition = $memory.Position; $writer.Write([uint32]$tensor.Type)
             $offsetPosition = $memory.Position; $writer.Write([uint64]$offset)
