@@ -43,12 +43,44 @@ pub const MAX_HEADER_BYTES: usize = 16 * 1024;
 pub const MAX_HEADERS: usize = 64;
 /// Largest accepted number of messages in one chat history.
 pub const MAX_MESSAGES: usize = 128;
+/// Largest accepted number of text content parts in one message.
+pub const MAX_CONTENT_PARTS: usize = 128;
+/// Stable public alias for the broker's already selected and verified model.
+pub const MODEL_ALIAS: &str = "bonsai";
 /// Largest allowed completion token budget.
 pub const MAX_COMPLETION_TOKENS: u32 = 4096;
 /// Total prompt and completion context budget of the pinned model.
 pub const CONTEXT_TOKENS: usize = 8192;
 /// Context reserved for template accounting differences.
 pub const TEMPLATE_MARGIN_TOKENS: usize = 64;
+
+/// Declared inference capabilities of the broker's verified text-only profile.
+///
+/// Native speech recognition/synthesis belongs to the desktop client and does
+/// not expand these model capabilities. Media parts remain rejected until a
+/// verified matching model/projector and exact media-token admission exist.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct ModelCapabilities {
+    /// Stable public model alias; this never selects a caller-provided model.
+    pub id: &'static str,
+    /// Supported inference inputs, independent of native speech facilities.
+    pub input_modalities: &'static [&'static str],
+    /// Supported inference outputs, independent of native speech facilities.
+    pub output_modalities: &'static [&'static str],
+    /// Total prompt, completion and reserved context bound.
+    pub context_tokens: usize,
+    /// Maximum requested completion, including model reasoning.
+    pub max_completion_tokens: u32,
+}
+
+/// Capabilities supported by both currently released broker launch profiles.
+pub const MODEL_CAPABILITIES: ModelCapabilities = ModelCapabilities {
+    id: MODEL_ALIAS,
+    input_modalities: &["text"],
+    output_modalities: &["text"],
+    context_tokens: CONTEXT_TOKENS,
+    max_completion_tokens: MAX_COMPLETION_TOKENS,
+};
 
 /// Deliberately contains no input values, parser diagnostics, keys or prompts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -268,6 +300,8 @@ impl AuthorizedHead {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ClientChat<'a> {
+    #[serde(default, rename = "model", deserialize_with = "deserialize_model")]
+    _model: (),
     #[serde(borrow, deserialize_with = "deserialize_messages")]
     messages: Vec<Message<'a>>,
     #[serde(default = "default_cap")]
@@ -290,7 +324,7 @@ struct Message<'a> {
     role: Role,
     // JSON text without escapes can be borrowed until canonical serialization;
     // escaped text still uses Serde's owned decoding without changing its bytes.
-    #[serde(borrow)]
+    #[serde(borrow, deserialize_with = "deserialize_content")]
     content: Cow<'a, str>,
     #[serde(
         default,
@@ -299,6 +333,81 @@ struct Message<'a> {
         skip_serializing_if = "Option::is_none"
     )]
     reasoning_content: Option<Cow<'a, str>>,
+}
+
+fn deserialize_model<'de, D: Deserializer<'de>>(deserializer: D) -> Result<(), D::Error> {
+    struct ModelVisitor;
+    impl de::Visitor<'_> for ModelVisitor {
+        type Value = ();
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("the fixed public model alias")
+        }
+
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<(), E> {
+            if value == MODEL_ALIAS {
+                Ok(())
+            } else {
+                Err(E::custom("unsupported model alias"))
+            }
+        }
+    }
+    deserializer.deserialize_str(ModelVisitor)
+}
+
+fn deserialize_content<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Cow<'de, str>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct TextPart<'a> {
+        #[serde(borrow, rename = "type")]
+        kind: Cow<'a, str>,
+        #[serde(borrow)]
+        text: Cow<'a, str>,
+    }
+
+    struct ContentVisitor;
+    impl<'de> de::Visitor<'de> for ContentVisitor {
+        type Value = Cow<'de, str>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a string or bounded nonempty array of text objects")
+        }
+
+        fn visit_borrowed_str<E: de::Error>(self, value: &'de str) -> Result<Self::Value, E> {
+            Ok(Cow::Borrowed(value))
+        }
+
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+            Ok(Cow::Owned(value.to_owned()))
+        }
+
+        fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+            Ok(Cow::Owned(value))
+        }
+
+        fn visit_seq<A: de::SeqAccess<'de>>(
+            self,
+            mut sequence: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut content = String::new();
+            let mut count = 0;
+            while let Some(Object(part)) = sequence.next_element::<Object<TextPart<'de>>>()? {
+                if count == MAX_CONTENT_PARTS || part.kind != "text" {
+                    return Err(de::Error::custom("unsupported content part"));
+                }
+                content.push_str(&part.text);
+                count += 1;
+            }
+            if count == 0 {
+                return Err(de::Error::custom("empty content parts"));
+            }
+            Ok(Cow::Owned(content))
+        }
+    }
+
+    deserializer.deserialize_any(ContentVisitor)
 }
 
 fn deserialize_reasoning_content<'de, D: Deserializer<'de>>(

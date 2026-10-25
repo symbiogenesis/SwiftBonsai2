@@ -6,8 +6,8 @@
 )]
 
 use bonsai_broker::{
-    CONTEXT_TOKENS, MAX_BODY_BYTES, MAX_COMPLETION_TOKENS, MAX_MESSAGES, PendingChat, Rejection,
-    RequestPolicy, TEMPLATE_MARGIN_TOKENS,
+    CONTEXT_TOKENS, MAX_BODY_BYTES, MAX_COMPLETION_TOKENS, MAX_CONTENT_PARTS, MAX_MESSAGES,
+    MODEL_ALIAS, PendingChat, Rejection, RequestPolicy, TEMPLATE_MARGIN_TOKENS,
 };
 use http::{HeaderValue, Method, Request, Version, request::Parts};
 
@@ -296,6 +296,80 @@ fn typed_schema_rejects_aliases_controls_tools_and_media() {
             format!(r#"{{"messages":[{message}]}}"#).as_bytes(),
             Rejection::ChatSchema,
         );
+    }
+}
+
+#[test]
+fn compatibility_model_alias_never_selects_or_reaches_the_backend() {
+    let plain = prepare(CHAT).unwrap().admit(|_| Ok(100)).unwrap();
+    let body = serde_json::to_vec(&serde_json::json!({
+        "model": MODEL_ALIAS,
+        "messages": [{"role": "user", "content": "Draft a scene with rain."}]
+    }))
+    .unwrap();
+    let aliased = prepare(&body).unwrap().admit(|_| Ok(100)).unwrap();
+    assert_eq!(aliased.backend_body(), plain.backend_body());
+    for model in ["null", "42", "true", "{}", "[]", r#""other""#, r#""""#] {
+        rejected_body(
+            format!(r#"{{"model":{model},"messages":[{{"role":"user","content":"hi"}}]}}"#)
+                .as_bytes(),
+            Rejection::ChatSchema,
+        );
+    }
+    rejected_body(
+        br#"{"model":"bonsai","model":"bonsai","messages":[{"role":"user","content":"hi"}]}"#,
+        Rejection::ChatSchema,
+    );
+}
+
+#[test]
+fn compatibility_text_parts_preserve_exact_canonical_text_and_reasoning() {
+    let plain = br#"{"messages":[{"role":"system","content":"System"},{"role":"user","content":"Snow \u2603"},{"role":"assistant","content":"Reply","reasoning_content":"Reason"},{"role":"user","content":"Again"}]}"#;
+    let parts = br#"{"messages":[{"role":"system","content":[{"type":"text","text":"System"}]},{"role":"user","content":[{"type":"text","text":"Snow "},{"type":"text","text":"\u2603"}]},{"role":"assistant","content":[{"type":"text","text":"Re"},{"type":"text","text":"ply"}],"reasoning_content":"Reason"},{"role":"user","content":[{"type":"text","text":"Again"}]}]}"#;
+    let expected = prepare(plain).unwrap().admit(|_| Ok(100)).unwrap();
+    let actual = prepare(parts).unwrap().admit(|_| Ok(100)).unwrap();
+    assert_eq!(actual.backend_body(), expected.backend_body());
+}
+
+#[test]
+fn compatibility_text_parts_reject_media_ambiguous_shapes_and_excess_parts() {
+    for content in [
+        "[]",
+        "null",
+        "{}",
+        r#"["text"]"#,
+        r#"[["text","hi"]]"#,
+        r#"[{"type":"text","text":"hi","url":"file:///private"}]"#,
+        r#"[{"type":"text","text":"one","text":"two"}]"#,
+        r#"[{"type":"text","type":"text","text":"hi"}]"#,
+        r#"[{"type":{"text":null},"text":"hi"}]"#,
+        r#"[{"type":"text","text":null}]"#,
+        r#"[{"type":"image_url","image_url":{"url":"data:image/png;base64,eA=="}}]"#,
+        r#"[{"type":"input_audio","input_audio":{"data":"eA==","format":"wav"}}]"#,
+    ] {
+        rejected_body(
+            format!(r#"{{"messages":[{{"role":"user","content":{content}}}]}}"#).as_bytes(),
+            Rejection::ChatSchema,
+        );
+    }
+    for extra in [0, 1] {
+        let parts =
+            vec![serde_json::json!({"type": "text", "text": "x"}); MAX_CONTENT_PARTS + extra];
+        let body = serde_json::to_vec(&serde_json::json!({
+            "messages": [{"role": "user", "content": parts}]
+        }))
+        .unwrap();
+        if extra == 0 {
+            let actual = prepare(&body).unwrap().admit(|_| Ok(100)).unwrap();
+            let canonical: serde_json::Value =
+                serde_json::from_slice(actual.backend_body()).unwrap();
+            assert_eq!(
+                canonical["messages"][0]["content"],
+                "x".repeat(MAX_CONTENT_PARTS)
+            );
+        } else {
+            rejected_body(&body, Rejection::ChatSchema);
+        }
     }
 }
 
