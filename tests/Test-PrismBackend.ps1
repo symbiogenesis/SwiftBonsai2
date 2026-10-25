@@ -25,6 +25,7 @@ if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main') 
 $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackend.psm1')
+Import-Module (Join-Path $repo 'scripts/Bonsai.PrismRunner.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackendBundle.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBaseline.psm1')
 $evidence = Resolve-ExternalPath $EvidenceDirectory
@@ -80,43 +81,48 @@ $record = @{
     SchemaVersion=1; ProjectRevision=$env:GITHUB_SHA; Phase=$Phase; Count=16
     Index=$Index; Benchmarks=$Benchmarks.IsPresent; Gradients=$Gradients.IsPresent; Modes=$modes; Targets=@{}
 }
-if ($Phase -ceq 'Plan') {
-    foreach ($target in @('cpp','rust')) {
-        $record.Targets[$target] = @{}
-        foreach ($mode in $modes) {
-            $record.Targets[$target][$mode] = Invoke-BonsaiPrismBackendPlanPartition -Context $contexts[$target] -Index $Index -Count 16 -Mode $mode
-        }
+if ($Phase -cne 'Gate') {
+    $parts = $null
+    $plan = $null
+    if ($Phase -ceq 'JoinPlan') {
+        $parts = @(foreach ($part in 0..15) {
+            $item = Read-BackendStage -Path (Join-Path $InputDirectory "prism-backend-plan-$part/record.json") -ExpectedPhase 'Plan'
+            if ($item.Index -ne $part) { throw 'Backend plan artifact index differs.' }
+            $item
+        })
+    } elseif ($Phase -ceq 'Run') {
+        $plan = Read-BackendStage -Path $PlanPath -ExpectedPhase 'JoinPlan'
     }
-    Write-BackendStage -Name 'record.json' -Value $record
-    return $record
-}
-if ($Phase -ceq 'JoinPlan') {
-    $parts = @(foreach ($part in 0..15) {
-        $item = Read-BackendStage -Path (Join-Path $InputDirectory "prism-backend-plan-$part/record.json") -ExpectedPhase 'Plan'
-        if ($item.Index -ne $part) { throw 'Backend plan artifact index differs.' }
-        $item
+    # Each target owns its context/evidence and single-threaded native graphs.
+    # Overlap the independent target chains while preserving each mode's order,
+    # source-order CRT offsets and all cross-job provenance checks.
+    $parallelModes = if ($Phase -ceq 'Run') { $correctnessModes } else { $modes }
+    $tasks = @(foreach ($ordinal in 0..1) {
+        $target = @('cpp','rust')[$ordinal]
+        [pscustomobject]@{
+            Ordinal=$ordinal; Id=$target
+            Parameters=@{ Context=$contexts[$target]; Phase=$Phase; Modes=$parallelModes; Index=$Index; Count=16; Parts=$parts; Plan=$plan }
+        }
     })
-    foreach ($target in @('cpp','rust')) {
-        $record.Targets[$target] = @{}
-        foreach ($mode in $modes) {
-            $plans = @($parts | ForEach-Object { $_.Targets[$target][$mode] })
-            $record.Targets[$target][$mode] = Merge-BonsaiPrismBackendPlan -Context $contexts[$target] -Plans $plans
+    $results = @(Invoke-BonsaiPrismTaskBatch -Tasks $tasks -ModulePath (Join-Path $repo 'scripts/Bonsai.PrismBackend.psm1') -CommandName Invoke-BonsaiPrismBackendTarget)
+    $record.TargetElapsedMilliseconds = @{}
+    foreach ($result in $results) {
+        $record.Targets[$result.Id] = $result.Value
+        $record.TargetElapsedMilliseconds[$result.Id] = $result.ElapsedMilliseconds
+    }
+    # Requested measurements retain exclusive use of the runner after all
+    # correctness tasks finish; concurrency must not contaminate benchmark data.
+    if ($Phase -ceq 'Run' -and $Benchmarks) {
+        foreach ($target in @('cpp','rust')) {
+            $performance = Invoke-BonsaiPrismBackendTarget -Context $contexts[$target] -Phase Run -Modes @('perf') -Index $Index -Count 16 -Plan $plan
+            $record.Targets[$target]['perf'] = $performance.perf
         }
     }
-    Write-BackendStage -Name 'plans.json' -Value $record
+    $name = if ($Phase -ceq 'JoinPlan') { 'plans.json' } else { 'record.json' }
+    Write-BackendStage -Name $name -Value $record
     return $record
 }
 $plan = Read-BackendStage -Path $PlanPath -ExpectedPhase 'JoinPlan'
-if ($Phase -ceq 'Run') {
-    foreach ($target in @('cpp','rust')) {
-        $record.Targets[$target] = @{}
-        foreach ($mode in $modes) {
-            $record.Targets[$target][$mode] = Invoke-BonsaiPrismBackendPartition -Context $contexts[$target] -Index $Index -Count 16 -Mode $mode -Plan $plan.Targets[$target][$mode]
-        }
-    }
-    Write-BackendStage -Name 'record.json' -Value $record
-    return $record
-}
 $parts = @(foreach ($part in 0..15) {
     $item = Read-BackendStage -Path (Join-Path $InputDirectory "prism-backend-run-$part/record.json") -ExpectedPhase 'Run'
     if ($item.Index -ne $part) { throw 'Backend execution artifact index differs.' }

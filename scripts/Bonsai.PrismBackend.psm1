@@ -381,6 +381,36 @@ function Merge-BonsaiPrismBackendBenchmark {
     return $record
 }
 
+function Invoke-BonsaiPrismBackendTarget {
+    <#
+    .SYNOPSIS
+    Runs one target's backend stage, preserving its sequential mode order.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)][Collections.IDictionary]$Context,
+        [Parameter(Mandatory)][ValidateSet('Plan', 'JoinPlan', 'Run')][string]$Phase,
+        [Parameter(Mandatory)][string[]]$Modes,
+        [ValidateRange(0,15)][int]$Index = 0,
+        [ValidateRange(1,16)][int]$Count = 16,
+        [object[]]$Parts,
+        [Collections.IDictionary]$Plan
+    )
+    $results = @{}
+    foreach ($mode in $Modes) {
+        $results[$mode] = switch ($Phase) {
+            'Plan' { Invoke-BonsaiPrismBackendPlanPartition -Context $Context -Index $Index -Count $Count -Mode $mode }
+            'JoinPlan' {
+                $plans = @($Parts | ForEach-Object { $_.Targets[$Context.Target][$mode] })
+                Merge-BonsaiPrismBackendPlan -Context $Context -Plans $plans
+            }
+            'Run' { Invoke-BonsaiPrismBackendPartition -Context $Context -Index $Index -Count $Count -Mode $mode -Plan $Plan.Targets[$Context.Target][$mode] }
+        }
+    }
+    return $results
+}
+
 Export-ModuleMember -Function New-BonsaiPrismBackendContext, Invoke-BonsaiPrismBackendPlanPartition,
     Merge-BonsaiPrismBackendPlan, Invoke-BonsaiPrismBackendPartition, Merge-BonsaiPrismBackendPartition,
-    Merge-BonsaiPrismBackendSource, Merge-BonsaiPrismBackendBenchmark
+    Merge-BonsaiPrismBackendSource, Merge-BonsaiPrismBackendBenchmark, Invoke-BonsaiPrismBackendTarget
