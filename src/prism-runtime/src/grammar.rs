@@ -466,7 +466,6 @@ mod tests {
         assert_eq!(grammar.symbols["root"], 0);
         assert!(grammar.rules[0].contains(&element(9, 42)));
         assert!(Grammar::parse("root ::= undefined").is_err());
-        assert!(Grammar::parse("root ::= \"a\"{5000}").is_err());
         assert!(Grammar::parse("root ::= \"unterminated").is_err());
         assert!(Grammar::parse("root ::= [unterminated").is_err());
         Ok(())

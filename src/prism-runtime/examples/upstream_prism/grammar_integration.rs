@@ -282,7 +282,11 @@ fn literals(engine: &Engine, cases: &[Value], assertions: &mut Assertions) -> Re
         let actions = array(&operation, "Actions")?;
         let trace = native_trace(&values[0], actions)?;
         if !created(&trace[0])? {
-            return Err(invalid("original integration grammar failed to initialize"));
+            return Err(invalid(format!(
+                "{}.{}: original integration grammar failed to initialize\n{grammar}",
+                text(case, "Group")?,
+                text(case, "Name")?
+            )));
         }
         for (index, check) in checks.iter().enumerate() {
             // The source stops at the first rejection. A finite action vector
