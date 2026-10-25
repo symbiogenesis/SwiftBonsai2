@@ -297,12 +297,50 @@ reserve watchdog, protected keys and listener-PID checks. The seed is fixed at
 generation closes admission and stops the owned backend; restart the launcher
 to establish a fresh owned instance.
 
-This is an experimental path. Actual model loading, prompt/tokenizer parity and
-seeded sampler comparisons have evidence, but full-model numerical parity fails
-the declared tolerance and complete device recovery remains pending. See the
-[MVP checklist](prism-upstream-todo.md); no throughput or daily-service claim is
-made. The server's private child protocol alone does not establish Job
+This is an experimental path. Bounded source-runtime checks qualify actual model
+loading, native logit/state parity, prompt/tokenizer and seeded sampler parity,
+and owned HTTP recovery. The provisioned `0.1.1` release predates those source
+repairs; reviewed prebuilt delivery remains open. See the
+[MVP checklist](prism-upstream-todo.md) for exact workloads and diagnostic
+admission patches. Full-context behavior, throughput and daily-service acceptance
+remain open. The server's private child protocol alone does not establish Job
 ownership or prevent same-user bypass.
+
+### Prepare a runtime lock update
+
+Runtime promotion uses checked prebuilt files from Prism's `main` Foundation
+workflow. Review the exact source revision, all required run results and the
+Windows ARM64 bundle receipt before generating a candidate. A receipt records
+identities; it does not prove that the run passed or authorize publication.
+
+Download the ARM64 bundle ZIP and receipt from that run, and the source ZIP from
+`https://github.com/symbiogenesis/prism-inference/archive/<full-commit>.zip`,
+into a new system-temp lane outside Git. Use the independently reviewed revision
+and run identity, rather than copying them from an unreviewed receipt:
+
+```powershell
+./scripts/New-InferenceLock.ps1 `
+    -ReceiptPath (Join-Path $lane 'prism-inference-0.1.2-aarch64-pc-windows-msvc.receipt.json') `
+    -ArchivePath (Join-Path $lane 'prism-inference-0.1.2-aarch64-pc-windows-msvc.zip') `
+    -SourceArchivePath (Join-Path $lane 'source.zip') `
+    -SourceRevision $reviewedRevision -Version 0.1.2 `
+    -RunId $reviewedRunId -RunAttempt 1 `
+    -OutputPath (Join-Path $lane 'prism-inference.lock.candidate.json')
+```
+
+The command checks receipt identities, archive and individual file hashes,
+the complete executable/license inventory, ARM64 PE headers and the source
+archive's commit root, package versions and compiler pin. It writes a new
+external candidate and retains verification evidence. It does not execute a
+binary, build source, publish a release or replace the repository's lock.
+
+Publication requires separate authorization under the session's repository
+rules. After the exact checked bundle is available at the candidate's immutable
+release URL, verify those downloaded bytes and review the candidate before
+replacing `config/prism-inference.lock.json`. Rebuild the broker, which embeds
+that lock, provision through `Get-Inference.ps1`, and run the required checks on
+the settled `main` revision. Preserve the prior release for rollback. Packaging
+and hosted synthetic checks do not broaden the retained model/device evidence.
 
 ### Publisher Prism source build
 
