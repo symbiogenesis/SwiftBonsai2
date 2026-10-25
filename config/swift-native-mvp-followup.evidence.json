@@ -209,5 +209,246 @@
       "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
     },
     "limits": "Library/session exercise; predates the final activation/GDN repairs and does not close owned HTTP cancellation/restart or M2."
+  },
+  "numericalFollowups": [
+    {
+      "testedRevision": "14b98a82fe0bea0aa9e945faf16737b024cc3bb6",
+      "repair": "PQ2 fused accumulation",
+      "passed": false,
+      "logits": [
+        {
+          "step": 0,
+          "max_absolute_error": 0.07276606559753418,
+          "mean_absolute_error": 0.01145421723021367,
+          "failed_values": 189226,
+          "logits_count": 248320,
+          "greedy_actual": 198,
+          "greedy_reference": 198
+        },
+        {
+          "step": 1,
+          "max_absolute_error": 0.1183089017868042,
+          "mean_absolute_error": 0.017585308642209543,
+          "failed_values": 209260,
+          "logits_count": 248320,
+          "greedy_actual": 198,
+          "greedy_reference": 198
+        },
+        {
+          "step": 2,
+          "max_absolute_error": 0.0786672830581665,
+          "mean_absolute_error": 0.011658409881463449,
+          "failed_values": 196694,
+          "logits_count": 248320,
+          "greedy_actual": 220,
+          "greedy_reference": 220
+        }
+      ],
+      "state": {
+        "totalElements": 117866496,
+        "failedElements": 2313355,
+        "maximumAbsoluteError": 0.2734375,
+        "firstFailingComponent": [
+          {
+            "step": 0,
+            "block": 1,
+            "component": "convolution",
+            "elements": 30720,
+            "failed_elements": 22,
+            "max_absolute_error": 0.0017743110656738281,
+            "mean_absolute_error": 0.0001114948466986713,
+            "maximum_index": 15728,
+            "actual_at_maximum": 0.27669474482536316,
+            "reference_at_maximum": 0.278469055891037
+          }
+        ]
+      },
+      "process": {
+        "revision": "14b98a82fe0bea0aa9e945faf16737b024cc3bb6",
+        "mode": "neon",
+        "exitCode": 0,
+        "violation": null,
+        "peakProcessCommitBytes": 7536205824,
+        "peakWorkingSetBytes": 7522705408,
+        "initialAvailablePhysicalBytes": 17606627328,
+        "minimumAvailablePhysicalBytes": 10010345472,
+        "requiredInitialAvailableBytes": 14656575898,
+        "standardServiceAdmissionBytes": 17179869184,
+        "ownerAuthorizedReducedAdmission": true,
+        "processThresholdBytes": 12884901888,
+        "physicalReserveBytes": 4294967296,
+        "executableSha256": "9c5d0339b293a4d2e9495a5f4f8879220740bc57670e5f5aa594fc86a7114ed1",
+        "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+      }
+    },
+    {
+      "testedRevision": "9933888fefd0002eaf1e6057630dd3870dcdde25",
+      "repair": "Exact-artifact native activation arithmetic",
+      "passed": false,
+      "logits": [
+        {
+          "step": 0,
+          "max_absolute_error": 0.07871079444885254,
+          "mean_absolute_error": 0.011766944504928144,
+          "failed_values": 190939,
+          "logits_count": 248320,
+          "greedy_actual": 198,
+          "greedy_reference": 198
+        },
+        {
+          "step": 1,
+          "max_absolute_error": 0.18054533004760742,
+          "mean_absolute_error": 0.021299038316546146,
+          "failed_values": 215589,
+          "logits_count": 248320,
+          "greedy_actual": 198,
+          "greedy_reference": 198
+        },
+        {
+          "step": 2,
+          "max_absolute_error": 0.08278417587280273,
+          "mean_absolute_error": 0.011577990344866892,
+          "failed_values": 196471,
+          "logits_count": 248320,
+          "greedy_actual": 220,
+          "greedy_reference": 220
+        }
+      ],
+      "state": {
+        "totalElements": 117866496,
+        "failedElements": 2350934,
+        "maximumAbsoluteError": 0.33984375,
+        "firstFailingComponent": [
+          {
+            "step": 0,
+            "block": 1,
+            "component": "convolution",
+            "elements": 30720,
+            "failed_elements": 3040,
+            "max_absolute_error": 0.0064536333084106445,
+            "mean_absolute_error": 0.0003507563205848404,
+            "maximum_index": 26165,
+            "actual_at_maximum": 1.8958206176757812,
+            "reference_at_maximum": 1.8893669843673706
+          }
+        ]
+      },
+      "process": {
+        "revision": "9933888fefd0002eaf1e6057630dd3870dcdde25",
+        "mode": "neon",
+        "exitCode": 0,
+        "violation": null,
+        "peakProcessCommitBytes": 7536177152,
+        "peakWorkingSetBytes": 7522680832,
+        "initialAvailablePhysicalBytes": 17193889792,
+        "minimumAvailablePhysicalBytes": 9470369792,
+        "requiredInitialAvailableBytes": 14656575898,
+        "standardServiceAdmissionBytes": 17179869184,
+        "ownerAuthorizedReducedAdmission": true,
+        "processThresholdBytes": 12884901888,
+        "physicalReserveBytes": 4294967296,
+        "executableSha256": "9fe69722b827505109049518c3acab000a29a084a5a0c21b1db5a7d828619872",
+        "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+      }
+    },
+    {
+      "testedRevision": "413f1142c5857e7f056bd5cb6e04404642b654e9",
+      "repair": "Native GDN dot reduction and fused state update",
+      "passed": false,
+      "logits": [
+        {
+          "step": 0,
+          "max_absolute_error": 0.07608675956726074,
+          "mean_absolute_error": 0.011697787397304886,
+          "failed_values": 190579,
+          "logits_count": 248320,
+          "greedy_actual": 198,
+          "greedy_reference": 198
+        },
+        {
+          "step": 1,
+          "max_absolute_error": 0.11547911167144775,
+          "mean_absolute_error": 0.018601400733505847,
+          "failed_values": 211260,
+          "logits_count": 248320,
+          "greedy_actual": 198,
+          "greedy_reference": 198
+        },
+        {
+          "step": 2,
+          "max_absolute_error": 0.07949554920196533,
+          "mean_absolute_error": 0.011636952046439157,
+          "failed_values": 196445,
+          "logits_count": 248320,
+          "greedy_actual": 220,
+          "greedy_reference": 220
+        }
+      ],
+      "state": {
+        "totalElements": 117866496,
+        "failedElements": 2321600,
+        "maximumAbsoluteError": 0.4156341552734375,
+        "firstFailingComponent": [
+          {
+            "step": 0,
+            "block": 1,
+            "component": "convolution",
+            "elements": 30720,
+            "failed_elements": 22,
+            "max_absolute_error": 0.0017743706703186035,
+            "mean_absolute_error": 0.0001114961961979096,
+            "maximum_index": 15728,
+            "actual_at_maximum": 0.2766946852207184,
+            "reference_at_maximum": 0.278469055891037
+          }
+        ]
+      },
+      "process": {
+        "revision": "413f1142c5857e7f056bd5cb6e04404642b654e9",
+        "mode": "neon",
+        "exitCode": 0,
+        "violation": null,
+        "peakProcessCommitBytes": 7536173056,
+        "peakWorkingSetBytes": 7522680832,
+        "initialAvailablePhysicalBytes": 14990049280,
+        "minimumAvailablePhysicalBytes": 7566372864,
+        "requiredInitialAvailableBytes": 13958643712,
+        "standardServiceAdmissionBytes": 17179869184,
+        "ownerAuthorizedReducedAdmission": true,
+        "processThresholdBytes": 12884901888,
+        "physicalReserveBytes": 4294967296,
+        "executableSha256": "e9093b362c00f49f410c5f71f9793eb2075342907cbd9ad6e4cad27774c3124b",
+        "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+      }
+    }
+  ],
+  "causalTrace": {
+    "nativeAndRustTraceFinalLogitsAreProductionIdentical": true,
+    "allRustStepZeroStatesAreProductionIdentical": true,
+    "beforeGdnRepair": {
+      "testedRevision": "9933888fefd0002eaf1e6057630dd3870dcdde25",
+      "firstDivergence": "block 0 GDN core output",
+      "precedingStagesBitExact": [
+        "weighted attention norm",
+        "QKV and Z projections",
+        "alpha/beta projections",
+        "convolution",
+        "SiLU",
+        "L2 normalization",
+        "pre-delta Q/K/V"
+      ]
+    },
+    "afterGdnRepair": {
+      "testedRevision": "413f1142c5857e7f056bd5cb6e04404642b654e9",
+      "bitExactThrough": "block 0 FFN SwiGLU",
+      "firstDivergence": "block 0 FFN down projection",
+      "differentDownProjectionWords": 3407,
+      "totalDownProjectionWords": 5120,
+      "blockZeroRecurrentAndConvolutionStateBitExact": true
+    },
+    "comparisonFiles": [
+      "block-trace-comparison.json",
+      "gdn-block-trace-comparison.json"
+    ]
   }
 }

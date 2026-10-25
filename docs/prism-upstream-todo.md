@@ -85,6 +85,15 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   in block 1 convolution. Observed greedy choices match; a generated greedy
   continuation remains unqualified.
 
+  Further same-input native controls qualify pinned PQ2 fused accumulation,
+  SiLU/SwiGLU and GDN dot/update arithmetic. These choices apply only to the
+  exact verified Swift identity; generic graph arithmetic remains unchanged.
+  Production-identical first-token traces locate the initial divergence in GDN.
+  After its repair, block 0 matches native bit-for-bit through FFN SwiGLU,
+  including recurrent/convolution state; the next difference is the FFN down
+  projection. Complete model logits/state still fail the unchanged tolerance.
+  The follow-up receipt records each tested revision and its separate result.
+
 - [x] **M3 — Connect Swift's chat prompt to the exact tokenizer.** Render the
   verified embedded template with the existing Jinja/chat APIs, current
   thinking/effort defaults and supplied assistant reasoning history. Feed those
@@ -149,6 +158,13 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   limit. Loopback coverage checks context rejection followed by a successful
   multi-turn request, preserving supplied reasoning and identical count and
   generation bytes. These synthetic checks do not replace M6 device evidence.
+
+  The focused actual-model library session also passed active cancellation,
+  abandoned provisional/terminal delivery, rollback, seeded reset/replay,
+  context rejection and a subsequent multi-turn request on revision `14b98a8`.
+  Its exact scope and resource observation are retained in the follow-up
+  receipt. It predates later arithmetic repairs and does not close the owned
+  HTTP cancellation/restart requirements below.
 
 - [ ] **M6 — Demonstrate bounded end-to-end Swift operation.** On the target
   Windows ARM64 device, run the pinned model through the connected engine path:
