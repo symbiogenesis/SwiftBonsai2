@@ -207,6 +207,8 @@ of broader migration scope. Deferred does not mean passed, removed or complete.
 
 This is a work-priority change. Keep existing required green source identities,
 immutable fixtures, upstream assertions/tolerances, explicit unsupported results
-and required production bridges. It does not change CI workflows, ratchet
-`baseline.json` or report a new test verdict. Track implementation and measured
-qualification separately, and promote only the scope actually demonstrated.
+and required production bridges. Runtime CI and its test tooling now belong to
+Prism Inference; Runner retains its application and released-runtime integration
+checks. Moving those checks does not ratchet `baseline.json` or report a new test
+verdict. Track implementation and measured qualification separately, and promote
+only the scope actually demonstrated.

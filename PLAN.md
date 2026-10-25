@@ -318,7 +318,7 @@ Promote each profile only when:
 | `config/` | Immutable artifacts, metadata, explicit profiles and qualification inputs |
 | `src/broker/`, `src/windows-*/` | Request policy, service, credentials and process ownership |
 | [Prism Inference](https://github.com/symbiogenesis/prism-inference) | Independent CPU engine, codecs, GGUF tools and storage overlay; consumed as pinned releases |
-| `tools/` | Published-codec parity probe, maintenance CLI and compiler-trial components |
+| `tools/` | Application maintenance CLI and embedded-C# validation support |
 | `scripts/` | Provisioning, builds, planning and development checks |
 | `tests/`, `.github/workflows/` | Focused regressions and hosted/full-suite handoff |
 | `docs/` | Current contracts, evidence limits and remaining work |
