@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "src/broker",
+    "src/chat-ui",
     "src/artifacts",
     "src/cpu-policy",
     "src/windows-process",

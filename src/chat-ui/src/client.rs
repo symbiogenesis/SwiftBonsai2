@@ -31,6 +31,7 @@ const READ_SIZE: usize = 8192;
 const EVIDENCE_PREFIX: &str = "Protected credentials and technical evidence: ";
 
 /// Fixed development launch inputs; paths and keys have no debug representation.
+#[derive(Clone)]
 pub(crate) struct Config {
     pub(crate) broker: PathBuf,
     pub(crate) data: PathBuf,
@@ -44,22 +45,26 @@ pub(crate) enum Command {
     Send(String),
     NewChat,
     Stop,
+    Retry,
     Shutdown,
 }
 
 /// Text-only notifications; no credentials or raw HTTP diagnostics cross this boundary.
 pub(crate) enum Event {
+    Starting,
     Ready,
     Text(String),
     Reasoning(String),
     Complete,
     Failed(String),
+    Retryable(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Failure {
     Shutdown,
     Stopped,
+    Memory,
     Message(&'static str),
 }
 
@@ -97,15 +102,51 @@ struct ChatRequest<'a> {
     reason = "The background thread owns its configuration and channels until the broker is stopped"
 )]
 pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Event>) {
-    if let Err(failure) = worker(&config, &commands, &events) {
-        let message = match failure {
-            Failure::Shutdown => return,
-            Failure::Stopped => {
-                "Generation stopped. Restart the demo to begin a fresh model session."
-            }
-            Failure::Message(message) => message,
+    for attempt in 0..u32::MAX {
+        let attempt_config = Config {
+            evidence: config.evidence.join(format!("attempt-{attempt}")),
+            ..config.clone()
         };
-        let _notification = events.send(Event::Failed(message.to_owned()));
+        if std::fs::create_dir(&attempt_config.evidence).is_err() {
+            let _notification = events.send(Event::Failed(
+                "Could not create a fresh model startup directory. Restart the demo.".to_owned(),
+            ));
+            return;
+        }
+        if notify(&events, Event::Starting).is_err() {
+            return;
+        }
+        match worker(&attempt_config, &commands, &events) {
+            Ok(()) | Err(Failure::Shutdown) => return,
+            Err(Failure::Memory) => {
+                if notify(&events, Event::Retryable("Not enough free memory. Swift needs 16 GiB available. Free some RAM, then select Retry model.".to_owned())).is_err()
+                    || !wait_for_retry(&commands)
+                {
+                    return;
+                }
+            }
+            Err(failure) => {
+                let message = match failure {
+                    Failure::Stopped => "Generation stopped. Restart the demo to begin a fresh model session.",
+                    Failure::Message(message) => message,
+                    Failure::Shutdown | Failure::Memory => return,
+                };
+                let _notification = events.send(Event::Failed(message.to_owned()));
+                return;
+            }
+        }
+    }
+}
+
+fn wait_for_retry(commands: &Receiver<Command>) -> bool {
+    loop {
+        match commands.recv_timeout(POLL) {
+            Ok(Command::Retry) => return true,
+            Ok(Command::Shutdown | Command::Stop) | Err(RecvTimeoutError::Disconnected) => {
+                return false;
+            }
+            Ok(Command::Send(_) | Command::NewChat) | Err(RecvTimeoutError::Timeout) => {}
+        }
     }
 }
 
@@ -175,7 +216,7 @@ fn worker(config: &Config, commands: &Receiver<Command>, events: &Sender<Event>)
                 history.push(answer);
                 notify(events, Event::Complete)?;
             }
-            Err(RecvTimeoutError::Timeout) => {}
+            Ok(Command::Retry) | Err(RecvTimeoutError::Timeout) => {}
         }
     }
 }
@@ -236,7 +277,7 @@ fn wait_ready(
             .is_some()
         {
             let diagnostic = read_bounded_file(stderr_path, MAX_HEAD).unwrap_or_default();
-            return Err(Failure::Message(startup_failure(&diagnostic)));
+            return Err(startup_failure(&diagnostic));
         }
         if Instant::now() >= until {
             return Err(Failure::Message(
@@ -247,16 +288,22 @@ fn wait_ready(
     }
 }
 
-fn startup_failure(diagnostic: &[u8]) -> &'static str {
+fn startup_failure(diagnostic: &[u8]) -> Failure {
     let text = String::from_utf8_lossy(diagnostic);
     if text.contains("Memory") {
-        "Swift could not start because its memory admission check failed. Free at least 16 GiB of physical RAM and restart the demo."
+        Failure::Memory
     } else if text.contains("Port") || text.contains("Service") {
-        "A local demo port is unavailable. Close the previous demo instance and restart."
+        Failure::Message(
+            "A local demo port is unavailable. Close the previous demo instance and restart.",
+        )
     } else if text.contains("Artifacts") {
-        "The pinned Swift model or CPU runtime could not be verified. Provision both with the Swift assessment lock and restart."
+        Failure::Message(
+            "The pinned Swift model or CPU runtime could not be verified. Provision both with the Swift assessment lock and restart.",
+        )
     } else {
-        "Swift could not start. Check the retained broker diagnostic logs, then restart the demo."
+        Failure::Message(
+            "Swift could not start. Check the retained broker diagnostic logs, then restart the demo.",
+        )
     }
 }
 
@@ -336,7 +383,7 @@ fn check_commands(commands: &Receiver<Command>) -> Result<()> {
                 return Err(Failure::Shutdown);
             }
             Ok(Command::Stop) => return Err(Failure::Stopped),
-            Ok(Command::Send(_) | Command::NewChat) => {}
+            Ok(Command::Send(_) | Command::NewChat | Command::Retry) => {}
             Err(TryRecvError::Empty) => return Ok(()),
         }
     }
@@ -792,8 +839,8 @@ impl Sse {
 #[cfg(test)]
 mod tests {
     use super::{
-        Failure, HttpBody, Message, Sse, evidence_directory, parse_head, serialize_request,
-        startup_failure,
+        Command, Failure, HttpBody, Message, Sse, evidence_directory, parse_head,
+        serialize_request, startup_failure, wait_for_retry,
     };
     use std::io::{self, Read};
 
@@ -884,7 +931,28 @@ mod tests {
             evidence_directory(b"Protected credentials and technical evidence: C:\\unfinished")?
                 .is_none()
         );
-        assert!(startup_failure(b"Development backend launch failed: Memory.").contains("16 GiB"));
+        assert_eq!(
+            startup_failure(b"Development backend launch failed: Memory."),
+            Failure::Memory
+        );
         Ok(())
+    }
+
+    #[test]
+    fn memory_retry_requires_explicit_command_and_allows_shutdown() {
+        let (commands, incoming) = std::sync::mpsc::channel();
+        assert_eq!(
+            startup_failure(b"Development backend launch failed: Memory."),
+            Failure::Memory
+        );
+        assert!(matches!(
+            startup_failure(b"Development backend launch failed: Artifacts."),
+            Failure::Message(_)
+        ));
+        assert!(commands.send(Command::NewChat).is_ok());
+        assert!(commands.send(Command::Retry).is_ok());
+        assert!(wait_for_retry(&incoming));
+        assert!(commands.send(Command::Shutdown).is_ok());
+        assert!(!wait_for_retry(&incoming));
     }
 }

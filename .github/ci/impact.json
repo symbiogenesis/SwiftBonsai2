@@ -11,9 +11,9 @@
     "bonsai-tools": ["config/swift-assessment.lock.json", "config/swift-lora.lock.json", "config/swift.ptq1-export.json", "config/swift-lora.qualification.json", "config/swift.metadata.json", "tests/fixtures/lora-qualification-v1.json"]
   },
   "groups": {
-    "broker": {"packages": ["bonsai-broker"]},
+    "broker": {"packages": ["bonsai-broker", "bonsai-chat"]},
     "maintenance": {
-      "packages": ["*"], "exclude_packages": ["bonsai-broker"],
+      "packages": ["*"], "exclude_packages": ["bonsai-broker", "bonsai-chat"],
       "groups": ["tools"]
     },
     "tools": {
@@ -26,7 +26,7 @@
       "paths": [
         "scripts/Doctor.ps1", "scripts/Bonsai.Capabilities.psm1", "scripts/Get-Inference.ps1", "scripts/New-InferenceLock.ps1",
         "scripts/Read-Gguf.ps1", "scripts/Export-SwiftPtq1.ps1", "scripts/Bonsai.Gguf.psm1",
-        "scripts/Get-Model.ps1", "scripts/Get-ServerPlan.ps1", "scripts/Bonsai.ServerPolicy.psm1",
+        "scripts/Get-Model.ps1", "scripts/Get-ServerPlan.ps1", "scripts/Start-Demo.ps1", "scripts/Bonsai.ServerPolicy.psm1",
         "scripts/New-DevelopmentKeys.ps1", "scripts/Bonsai.Inference.psm1",
         "scripts/Bonsai.Common.psm1", "scripts/Bonsai.Tools.psm1", "scripts/Bonsai.Native.psm1",
         "tests/Test-Foundation.ps1", "tests/Test-Inference*.ps1", "tests/Test-Gguf.ps1",

@@ -44,6 +44,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bonsai-chat"
+version = "0.1.0"
+dependencies = [
+ "bonsai-windows-credentials",
+ "httparse",
+ "serde",
+ "serde_json",
+ "windows-sys",
+]
+
+[[package]]
 name = "bonsai-cpu-policy"
 version = "0.1.0"
 dependencies = [

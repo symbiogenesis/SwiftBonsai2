@@ -210,6 +210,16 @@ class RoutingPolicyTests(WorkspaceCase):
         self.assertTrue(self.plan("leaf/unknown-input.bin")["full"])
 
 
+class NativeUiRoutingTests(unittest.TestCase):
+    def test_native_ui_uses_core_lane_without_maintenance(self):
+        root = Path(__file__).resolve().parents[2]
+        plan = impact.select(root, ["src/chat-ui/src/window.rs"])
+        self.assertEqual(plan["packages"], ["bonsai-chat"])
+        self.assertTrue(plan["groups"]["broker"])
+        self.assertFalse(plan["groups"]["maintenance"])
+        self.assertFalse(plan["groups"]["tools"])
+
+
 class AggregateGateTests(unittest.TestCase):
     def needs(self, selected, result="success"):
         return {

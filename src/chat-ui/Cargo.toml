@@ -1,0 +1,23 @@
+[package]
+name = "bonsai-chat"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+license.workspace = true
+repository.workspace = true
+keywords = ["chat", "windows", "native", "llm", "rust"]
+categories = ["gui"]
+description = "Native Rust desktop chat for the local Swift Bonsai 2 broker"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+httparse = "=1.10.1"
+
+[target.'cfg(windows)'.dependencies]
+bonsai-windows-credentials = { path = "../windows-credentials" }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_HiDpi", "Win32_UI_Controls"] }
+
+[lints]
+workspace = true
