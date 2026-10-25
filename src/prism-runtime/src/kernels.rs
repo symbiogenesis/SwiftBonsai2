@@ -15,6 +15,8 @@ use bonsai_ternary::{Q8KBlock, decode_ptq_trits, half_to_float};
 use crate::model::Tensor;
 use crate::{Result, invalid};
 
+mod legacy;
+
 #[cfg(all(
     feature = "experimental-neon",
     target_arch = "aarch64",
@@ -27,7 +29,11 @@ mod neon;
 const F32: u32 = 0;
 const F16: u32 = 1;
 const Q4_0: u32 = 2;
+const Q4_1: u32 = 3;
+const Q5_0: u32 = 6;
+const Q5_1: u32 = 7;
 const Q8_0: u32 = 8;
+const Q8_1: u32 = 9;
 const Q8_K: u32 = 15;
 const BF16: u32 = 30;
 const PQ2: u32 = 142;
@@ -38,7 +44,11 @@ fn layout(kind: u32) -> Result<(usize, usize)> {
         F32 => Ok((1, 4)),
         F16 | BF16 => Ok((1, 2)),
         Q4_0 => Ok((32, 18)),
+        Q4_1 => Ok((32, 20)),
+        Q5_0 => Ok((32, 22)),
+        Q5_1 => Ok((32, 24)),
         Q8_0 => Ok((32, 34)),
+        Q8_1 => Ok((32, 36)),
         Q8_K => Ok((256, 292)),
         PQ2 => Ok((128, 34)),
         PTQ1 => Ok((128, 28)),
@@ -149,6 +159,9 @@ pub fn validate_tensor(tensor: &Tensor) -> Result<()> {
             let (_, block_bytes) = layout(tensor.kind)?;
             for block in tensor.data.chunks_exact(block_bytes) {
                 scale(block)?;
+                if matches!(tensor.kind, Q4_1 | Q5_1 | Q8_1) {
+                    scale(&block[2..])?;
+                }
             }
         }
     }
@@ -246,6 +259,11 @@ fn row_impl(tensor: &Tensor, index: usize, output: &mut Vec<f32>) -> Result<()> 
                 );
             }
         }
+        Q4_1 | Q5_0 | Q5_1 | Q8_1 => {
+            for block in bytes.chunks_exact(layout(tensor.kind)?.1) {
+                legacy::decode(tensor.kind, block, output)?;
+            }
+        }
         _ => return Err(invalid("unsupported row decoder")),
     }
     Ok(())
@@ -311,6 +329,7 @@ fn q8k_into(input: &[f32], output: &mut Vec<Q8KBlock>) -> Result<()> {
 
 struct Q8Block {
     scale: f32,
+    sum: f32,
     values: [i8; 32],
 }
 
@@ -328,12 +347,15 @@ fn q8_into(input: &[f32], output: &mut Vec<Q8Block>) -> Result<()> {
             let inverse_scale = if d == 0.0 { 0.0 } else { 1.0 / d };
             let mut block = Q8Block {
                 scale: round_f16(d),
+                sum: 0.0,
                 values: [0; 32],
             };
             finite(block.scale)?;
             for (target, &value) in block.values.iter_mut().zip(chunk) {
                 *target = quantized((value * inverse_scale).round())?;
             }
+            let sum = block.values.iter().map(|&value| i32::from(value)).sum();
+            block.sum = round_f16(integer_float(sum) * d);
             Ok(block)
         }),
         output,
@@ -362,7 +384,7 @@ fn quantize_ternary(input: &[f32]) -> Result<[u8; 34]> {
 
 /// Encodes one or more complete native blocks using deterministic reference quantizers.
 ///
-/// Supported kinds are F32, F16, BF16, `Q4_0`, `Q8_0`, `Q8_K`, PQ2 and PTQ1.
+/// Supported kinds are F32, F16, BF16, the legacy Q4/Q5/Q8 formats, `Q8_K`, PQ2 and PTQ1.
 /// Binary16 and bfloat16 use ties-to-even; ternary and `Q8_0` integer rounding
 /// uses ties away from zero. PQ2/PTQ1 share identical scales and ternary values.
 /// Zero scales retain each native format's original signed-zero representation.
@@ -463,6 +485,7 @@ pub fn quantize_row(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
                 }
             }
         }
+        Q4_1 | Q5_0 | Q5_1 | Q8_1 => legacy::encode(kind, input, &mut output)?,
         _ => return Err(invalid("unsupported reference row quantizer")),
     }
     Ok(output)
@@ -473,7 +496,11 @@ pub fn quantize_row(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
     clippy::suspicious_operation_groupings,
     reason = "Preserve weighted native quantizer search arithmetic association."
 )]
-fn weighted_q4_block(input: &[f32; 32], weights: &[f32; 32]) -> Result<(u16, [u8; 16])> {
+fn weighted_symmetric_block(
+    input: &[f32; 32],
+    weights: &[f32; 32],
+    limit: i8,
+) -> Result<(u16, [u8; 32])> {
     let mut maximum = 0.0_f32;
     for &value in input {
         if value.abs() > maximum.abs() {
@@ -481,16 +508,19 @@ fn weighted_q4_block(input: &[f32; 32], weights: &[f32; 32]) -> Result<(u16, [u8
         }
     }
     if maximum.abs() < 1e-15 {
-        return Ok((0, [0; 16]));
+        return Ok((0, [0; 32]));
     }
     let mut codes = [0_u8; 32];
-    let mut inverse = finite(-8.0 / maximum)?;
+    let bound = f32::from(limit);
+    let mut inverse = finite(-bound / maximum)?;
     let sums = |inverse: f32| -> Result<(f32, f32)> {
         let mut weighted_values = 0.0;
         let mut weighted_codes = 0.0;
         for (&value, &weight) in input.iter().zip(weights) {
             let code = f32::from(quantized(
-                (inverse * value).round_ties_even().clamp(-8.0, 7.0),
+                (inverse * value)
+                    .round_ties_even()
+                    .clamp(-bound, bound - 1.0),
             )?);
             weighted_values += weight * value * code;
             weighted_codes += weight * code * code;
@@ -500,9 +530,11 @@ fn weighted_q4_block(input: &[f32; 32], weights: &[f32; 32]) -> Result<(u16, [u8
     let assign = |codes: &mut [u8; 32], inverse: f32| -> Result<()> {
         for (code, &value) in codes.iter_mut().zip(input) {
             *code = u8::try_from(
-                8_i16
+                i16::from(limit)
                     + i16::from(quantized(
-                        (inverse * value).round_ties_even().clamp(-8.0, 7.0),
+                        (inverse * value)
+                            .round_ties_even()
+                            .clamp(-bound, bound - 1.0),
                     )?),
             )?;
         }
@@ -520,7 +552,7 @@ fn weighted_q4_block(input: &[f32; 32], weights: &[f32; 32]) -> Result<(u16, [u8
         if step == 0 {
             continue;
         }
-        inverse = finite(-(8.0 + 0.1 * f32::from(step)) / maximum)?;
+        inverse = finite(-(bound + 0.1 * f32::from(step)) / maximum)?;
         let (values, codes_squared) = sums(inverse)?;
         if codes_squared > 0.0 && values * values > best * codes_squared {
             assign(&mut codes, inverse)?;
@@ -530,10 +562,7 @@ fn weighted_q4_block(input: &[f32; 32], weights: &[f32; 32]) -> Result<(u16, [u8
     }
     let scale = half_bits(finite(scale)?);
     finite(half_to_float(scale))?;
-    Ok((
-        scale,
-        std::array::from_fn(|index| codes[index] | (codes[index + 16] << 4)),
-    ))
+    Ok((scale, codes))
 }
 
 /// Encodes one row with an explicit per-element importance vector.
@@ -561,11 +590,16 @@ pub fn quantize_row_weighted(kind: u32, input: &[f32], importance: &[f32]) -> Re
             "quantization importance must be finite, nonnegative and match the row",
         ));
     }
-    if kind != Q4_0 {
+    if !matches!(kind, Q4_0 | Q4_1 | Q5_0 | Q5_1) {
         return quantize_row(kind, input);
     }
     if !input.len().is_multiple_of(32) || input.iter().any(|value| !value.is_finite()) {
-        return Err(invalid("weighted Q4_0 requires complete finite blocks"));
+        return Err(invalid(
+            "weighted legacy quantization requires complete finite blocks",
+        ));
+    }
+    if kind != Q4_0 {
+        return legacy::weighted(kind, input, importance);
     }
     let mut sum_squared = 0.0;
     for &value in input {
@@ -585,9 +619,9 @@ pub fn quantize_row_weighted(kind: u32, input: &[f32], importance: &[f32]) -> Re
         for (index, weight) in weights.iter_mut().enumerate() {
             *weight = finite(importance[index] * (sigma + values[index] * values[index]).sqrt())?;
         }
-        let (scale, codes) = weighted_q4_block(values, &weights)?;
+        let (scale, codes) = weighted_symmetric_block(values, &weights, 8)?;
         output.extend(scale.to_le_bytes());
-        output.extend(codes);
+        output.extend((0..16).map(|index| codes[index] | (codes[index + 16] << 4)));
     }
     Ok(output)
 }
@@ -731,6 +765,9 @@ fn dot_q8_groups_neon(kind: u32, bytes: &[u8], input: &[Q8Block]) -> Result<f32>
     reason = "Preserve scalar reference multiply-then-add rounding."
 )]
 fn dot_legacy(kind: u32, bytes: &[u8], input: &[Q8Block]) -> Result<f32> {
+    if matches!(kind, Q4_1 | Q5_0 | Q5_1) {
+        return legacy::dot(kind, bytes, input);
+    }
     let (_, block_bytes) = layout(kind)?;
     let mut output = 0.0;
     for (block, activation) in bytes.chunks_exact(block_bytes).zip(input) {
@@ -770,8 +807,10 @@ fn float_dot(weights: &[f32], input: &[f32]) -> f32 {
 /// Rejects unsupported kinds, empty or incomplete blocks, mismatched byte
 /// extents, nonfinite stored values/scales, and nonfinite accumulated results.
 pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -> Result<f32> {
-    if kind == Q8_K {
-        return Err(invalid("native Q8_K has no packed weight dot entry point"));
+    if matches!(kind, Q8_K | Q8_1) {
+        return Err(invalid(
+            "native auxiliary Q8 format has no packed weight dot entry point",
+        ));
     }
     let (group, block_bytes) = layout(kind)?;
     if count == 0
@@ -785,7 +824,8 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
     }
     let (activation_group, activation_bytes) = match kind {
         PQ2 => (256, 292),
-        PTQ1 | Q4_0 | Q8_0 => (32, 34),
+        PTQ1 | Q4_0 | Q5_0 | Q8_0 => (32, 34),
+        Q4_1 | Q5_1 => (32, 36),
         _ => (group, block_bytes),
     };
     if !count.is_multiple_of(activation_group)
@@ -811,15 +851,18 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
                 .collect::<Result<Vec<_>>>()?;
             dot_pq2(weights, &input)
         }
-        PTQ1 | Q4_0 | Q8_0 => {
+        PTQ1 | Q4_0 | Q4_1 | Q5_0 | Q5_1 | Q8_0 => {
+            let affine = matches!(kind, Q4_1 | Q5_1);
+            let offset = if affine { 4 } else { 2 };
             let input = activations
-                .as_chunks::<34>()
-                .0
-                .iter()
+                .chunks_exact(activation_bytes)
                 .map(|block| {
                     Ok(Q8Block {
                         scale: scale(block)?,
-                        values: std::array::from_fn(|index| i8::from_ne_bytes([block[2 + index]])),
+                        sum: if affine { scale(&block[2..])? } else { 0.0 },
+                        values: std::array::from_fn(|index| {
+                            i8::from_ne_bytes([block[offset + index]])
+                        }),
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -886,7 +929,7 @@ impl ActivationContract {
     const fn for_tensor(tensor: &Tensor, columns: usize) -> Self {
         match tensor.kind {
             PQ2 if columns.is_multiple_of(256) => Self::Q8K,
-            PQ2 | PTQ1 | Q4_0 | Q8_0 => Self::Q8,
+            PQ2 | PTQ1 | Q4_0 | Q4_1 | Q5_0 | Q5_1 | Q8_0 => Self::Q8,
             F16 => Self::F16,
             BF16 => Self::BF16,
             _ => Self::F32,
@@ -1337,7 +1380,7 @@ impl PreparedMatvec<'_> {
                     output.push(dot(tensor.kind, bytes, &scratch.q8)?);
                 }
             }
-            Q4_0 | Q8_0 => {
+            Q4_0 | Q4_1 | Q5_0 | Q5_1 | Q8_0 => {
                 scratch.diagnostics = scratch.diagnostics.select(false);
                 for bytes in tensor.data.chunks_exact(row_bytes) {
                     output.push(dot_legacy(tensor.kind, bytes, &scratch.q8)?);

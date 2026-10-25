@@ -1,3 +1,5 @@
 row-quantizers.json -text
 weighted-q4.json -text
 sampler-rng.json -text
+legacy-row-quantizers.json -text
+weighted-legacy.json -text

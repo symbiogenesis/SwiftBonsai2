@@ -136,3 +136,92 @@ fn weighted_q4_matches_original_native_scale_search_with_ones_and_varied_importa
     assert!(quantize_row_weighted(2, &[1.0; 32], &[-1.0; 32]).is_err());
     Ok(())
 }
+
+#[test]
+fn legacy_affine_and_five_bit_rows_match_native_bytes_decoders_and_packed_dots() -> TestResult {
+    for (bytes, hash, count) in [
+        (
+            include_bytes!("fixtures/legacy-row-quantizers.json").as_slice(),
+            "085a94cd73be5fe410faa6149264a2f6e724bf7ff47412fec969ffaf2e8029dc",
+            16,
+        ),
+        (
+            include_bytes!("fixtures/weighted-legacy.json").as_slice(),
+            "b9fd8de01c5b7705e373bae311b899bbacec397d2e32db3fcdd7bd52e20a7e52",
+            24,
+        ),
+    ] {
+        assert_eq!(
+            Sha256::digest(bytes).as_slice(),
+            unhex(&Value::String(hash.to_owned()))?
+        );
+        let fixture: Value = serde_json::from_slice(bytes)?;
+        let cases = fixture["Cases"]
+            .as_array()
+            .ok_or("native cases must be an array")?;
+        assert_eq!(cases.len(), count);
+        for case in cases {
+            let kind = u32::try_from(
+                case["TypeId"]
+                    .as_u64()
+                    .ok_or("native type must be unsigned")?,
+            )?;
+            let values = unhex(&case["InputHex"])?
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| f32::from_le_bytes(*bytes))
+                .collect::<Vec<_>>();
+            let output = if case["ImportanceHex"].is_string() {
+                let importance = unhex(&case["ImportanceHex"])?
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|bytes| f32::from_le_bytes(*bytes))
+                    .collect::<Vec<_>>();
+                quantize_row_weighted(kind, &values, &importance)?
+            } else {
+                quantize_row(kind, &values)?
+            };
+            assert_eq!(
+                output,
+                unhex(&case["OutputHex"])?,
+                "quantizer type={kind} name={}",
+                case["Name"]
+            );
+            let tensor = Tensor {
+                name: "native-legacy-reference".to_owned(),
+                kind,
+                dimensions: vec![256],
+                data: Arc::from(output),
+            };
+            validate_tensor(&tensor)?;
+            if kind == 9 {
+                assert!(packed_dot(kind, 256, &tensor.data, &tensor.data).is_err());
+                continue;
+            }
+            let decoded = row(&tensor, 0)?
+                .into_iter()
+                .flat_map(f32::to_le_bytes)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                decoded,
+                unhex(&case["DecodedHex"])?,
+                "decoder type={kind} name={}",
+                case["Name"]
+            );
+            let actual = packed_dot(kind, 256, &tensor.data, &unhex(&case["ActivationsHex"])?)?;
+            let expected = f32::from_le_bytes(
+                unhex(&case["DotHex"])?
+                    .try_into()
+                    .map_err(|_| "native dot size differs")?,
+            );
+            assert!(
+                (actual - expected).abs() <= 2e-6 * expected.abs().max(1.0),
+                "dot type={kind} name={} expected={expected} actual={actual}",
+                case["Name"]
+            );
+        }
+    }
+    Ok(())
+}
