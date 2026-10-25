@@ -23,6 +23,8 @@ pub mod optimization;
 pub mod peg;
 pub mod pretokenizer;
 pub mod prompt_input;
+#[cfg(feature = "cli")]
+pub mod resolution;
 pub mod runtime;
 pub mod sampling;
 #[cfg(feature = "cli")]

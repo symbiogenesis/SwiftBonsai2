@@ -1,12 +1,14 @@
 //! Full safe Rust HF model-resolution and handler-assembly source contracts.
 //!
 //! Rust serves the original synthetic HF listings over bounded loopback HTTP.
-//! Production resolution/parser/cache APIs run in one persistent native child.
+//! The selected production runtime resolves listings, parses model options and owns its cache.
 //! Pinned source b87ca7225456b06b0975b8239c66b5aecf07e37c, MIT.
 
 use super::engine::Engine;
-use super::model_session::{Client, ModelSession};
+#[path = "model_resolution_runtime.rs"]
+mod runtime;
 use super::{Result, invalid, result};
+use runtime::{Client, ModelSession};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -63,7 +65,7 @@ fn strings(value: &Value) -> Result<Vec<String>> {
         .collect()
 }
 fn invoke(client: &Client, operation: Value) -> Result<Value> {
-    Ok(client.call(0, operation, None)?.value)
+    client.invoke(operation)
 }
 fn cached(cache: &Path, repo: &str, file: &str) -> Result<String> {
     cache
