@@ -486,7 +486,7 @@ jobs:
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismNativeCache.ps1')
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismSourcePartition.ps1')
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismSourceResults.ps1')
-          foreach ($case in @('Scheduling', 'ParallelTargets', 'Identity', 'ProcessFailure')) {
+          foreach ($case in @('Scheduling', 'Identity', 'ProcessFailure')) {
             & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismRunner.ps1') -Case $case
           }
           foreach ($case in @('Scheduling', 'ProcessFailure')) {

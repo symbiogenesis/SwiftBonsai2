@@ -468,10 +468,7 @@ foreach ($selection in $selected) {
         Ordinal = $caseWork.Count; Id = $caseId; TimeoutSeconds = $timeout; Commands = $commands.ToArray()
     })
 }
-# The thread-safety partition has one adapter and independent target evidence.
-# Share the existing process budget between its controls instead of leaving the
-# second worker idle for the duration of each complete target schedule.
-$completed = @(Invoke-BonsaiPrismCaseBatch -Cases $caseWork.ToArray() -Executable $harness -EvidenceDirectory $evidence -UpstreamCommit $lock.Commit -Environment $compilerEnvironment -Parallel $CaseParallel -ParallelTargets:($SourcePartition -eq 1))
+$completed = @(Invoke-BonsaiPrismCaseBatch -Cases $caseWork.ToArray() -Executable $harness -EvidenceDirectory $evidence -UpstreamCommit $lock.Commit -Environment $compilerEnvironment -Parallel $CaseParallel)
 $receipt.CaseRuns = @($completed | ForEach-Object { [ordered]@{ Id = $_.Id; Commands = $_.Commands } })
 $reference = @{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = @($completed.Reference) }
 $rust = @{ SchemaVersion = 1; UpstreamCommit = $lock.Commit; Cases = @($completed.Rust) }

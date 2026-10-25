@@ -9,9 +9,8 @@ function Invoke-BonsaiPrismCaseBatch {
     Runs isolated Prism adapters with bounded concurrency and ordered results.
     .DESCRIPTION
     Each adapter owns its output and bridge evidence paths. Its C++ and Rust
-    controls remain sequential unless ParallelTargets is selected. That option
-    places each target command in the same globally bounded queue. Native timeout
-    and process-tree cleanup stay owned by Invoke-BonsaiNativeProcess.
+    controls remain sequential, while independent adapters can overlap. Native
+    timeout and process-tree cleanup stay owned by Invoke-BonsaiNativeProcess.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -21,34 +20,22 @@ function Invoke-BonsaiPrismCaseBatch {
         [Parameter(Mandatory)][string]$EvidenceDirectory,
         [Parameter(Mandatory)][string]$UpstreamCommit,
         [Collections.IDictionary]$Environment,
-        [ValidateRange(1, 12)][int]$Parallel = 2,
-        [switch]$ParallelTargets
+        [ValidateRange(1, 12)][int]$Parallel = 2
     )
     $nativeModule = Join-Path $PSScriptRoot 'Bonsai.Native.psm1'
     # Start the adapters with the largest existing timeout budgets first. This
     # keeps the exhaustive tokenizer/architecture cases out of the queue tail.
-    $caseIndex = 0
-    $tasks = @(foreach ($adapter in ($Cases | Sort-Object -Property @{ Expression = 'TimeoutSeconds'; Descending = $true }, Ordinal)) {
-        if ($ParallelTargets) {
-            for ($commandIndex = 0; $commandIndex -lt $adapter.Commands.Count; $commandIndex++) {
-                [pscustomobject]@{ CaseIndex = $caseIndex; CommandIndex = $commandIndex; Adapter = $adapter; Commands = @($adapter.Commands[$commandIndex]) }
-            }
-        } else {
-            [pscustomobject]@{ CaseIndex = $caseIndex; CommandIndex = 0; Adapter = $adapter; Commands = $adapter.Commands }
-        }
-        $caseIndex++
-    })
-    $completed = @($tasks | ForEach-Object -Parallel {
+    $completed = @($Cases | Sort-Object -Property @{ Expression = 'TimeoutSeconds'; Descending = $true }, Ordinal |
+        ForEach-Object -Parallel {
             Set-StrictMode -Version Latest
             $ErrorActionPreference = 'Stop'
             $PSNativeCommandUseErrorActionPreference = $true
             Import-Module $using:nativeModule
-            $task = $_
-            $adapter = $task.Adapter
+            $adapter = $_
             $reference = $null
             $rust = $null
             $observations = [Collections.Generic.List[object]]::new()
-            foreach ($command in $task.Commands) {
+            foreach ($command in $adapter.Commands) {
                 $timer = [Diagnostics.Stopwatch]::StartNew()
                 $result = Invoke-BonsaiNativeProcess -Executable $using:Executable -ArgumentList $command.Arguments -WorkingDirectory $using:EvidenceDirectory -TimeoutSeconds $adapter.TimeoutSeconds -Environment $using:Environment -LogPath $command.LogPath
                 $timer.Stop()
@@ -67,23 +54,10 @@ function Invoke-BonsaiPrismCaseBatch {
                 else { $rust = $report.Cases[0] }
                 $observations.Add([ordered]@{ Target = $command.Target; ElapsedMilliseconds = $timer.ElapsedMilliseconds; LogPath = $command.LogPath })
             }
-            [pscustomobject]@{ CaseIndex = $task.CaseIndex; CommandIndex = $task.CommandIndex; Ordinal = $adapter.Ordinal; Id = $adapter.Id; Reference = $reference; Rust = $rust; Commands = $observations.ToArray() }
+            [pscustomobject]@{ Ordinal = $adapter.Ordinal; Id = $adapter.Id; Reference = $reference; Rust = $rust; Commands = $observations.ToArray() }
         } -ThrottleLimit $Parallel)
-    if ($completed.Count -ne $tasks.Count) { throw 'A Prism adapter command did not complete.' }
     # Scheduling must not change the catalog's stable presentation order.
-    $results = @(foreach ($group in ($completed | Group-Object CaseIndex)) {
-        $parts = @($group.Group | Sort-Object CommandIndex)
-        $reference = $null
-        $rust = $null
-        $observations = [Collections.Generic.List[object]]::new()
-        foreach ($part in $parts) {
-            if ($null -ne $part.Reference) { $reference = $part.Reference }
-            if ($null -ne $part.Rust) { $rust = $part.Rust }
-            foreach ($observation in $part.Commands) { $observations.Add($observation) }
-        }
-        [pscustomobject]@{ Ordinal = $parts[0].Ordinal; Id = $parts[0].Id; Reference = $reference; Rust = $rust; Commands = $observations.ToArray() }
-    })
-    return $results | Sort-Object Ordinal
+    return $completed | Sort-Object Ordinal
 }
 
 function Invoke-BonsaiPrismTaskBatch {

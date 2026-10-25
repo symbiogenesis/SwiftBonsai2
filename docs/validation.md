@@ -245,10 +245,8 @@ ARM64 PE headers, compiler identity and build provenance. LLGuidance requires a
 distinct native feature build and starts independently. Every runner extracts
 and verifies fresh source, runs every assigned workload and retains its own
 results. Each runs up to two independent adapters concurrently, starting the
-largest timeout budgets first. The single-source thread-safety partition shares
-that two-process budget between its independent C++ and Rust controls. Other
-partitions retain sequential controls per adapter. Logs and bridge evidence are
-isolated for every target. The final gate requires all four revision-bound
+largest timeout budgets first. Each adapter retains sequential C++ and Rust controls, separate
+logs and bridge evidence. The final gate requires all four revision-bound
 receipts and exactly one result for every assigned source on each target before
 combining the backend partitions and applying the unchanged complete baseline.
 Results return to catalog order. Focused regressions reject missing, duplicate,
