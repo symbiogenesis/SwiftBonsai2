@@ -4,7 +4,7 @@ use super::{CpuBackend, TensorId, coordinates, linear};
 use crate::{Result, invalid};
 
 pub(super) const fn supports(operation: i32) -> bool {
-    matches!(operation, 0..=3 | 5..=52 | 55..=61 | 63..=73 | 76 | 85 | 91 | 96..=100)
+    matches!(operation, 0..=3 | 5..=52 | 55..=61 | 63..=74 | 76 | 85 | 91 | 96..=100)
 }
 
 fn integer(parameters: &[u8; 64], index: usize) -> i32 {
@@ -578,13 +578,11 @@ impl CpuBackend {
                 }
             }
             46 => {
-                let mask = info.sources.get(1).map(|&id| self.values(id)).transpose()?;
-                let mask_shape = info
-                    .sources
-                    .get(1)
-                    .map(|&id| self.info(id).map(|info| info.shape))
+                let mask = info.source_slots[1].map(|id| self.values(id)).transpose()?;
+                let mask_shape = info.source_slots[1]
+                    .map(|id| self.info(id).map(|info| info.shape))
                     .transpose()?;
-                let sinks = info.sources.get(2).map(|&id| self.values(id)).transpose()?;
+                let sinks = info.source_slots[2].map(|id| self.values(id)).transpose()?;
                 let scale = float(p, 0);
                 let max_bias = float(p, 1);
                 let heads = shape[2];
@@ -779,6 +777,7 @@ impl CpuBackend {
                     }
                 }
             }
+            74 => out = self.attention_values(&info, &a)?,
             76 => {
                 let weights_id = source(1)?;
                 let weights = self.values(weights_id)?;

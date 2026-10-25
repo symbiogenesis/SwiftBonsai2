@@ -52,12 +52,11 @@ fn metadata(
         .iter()
         .filter_map(|(&id, &value)| (value == Some(tensor)).then_some(id))
         .collect::<Vec<_>>();
-    let mut sources = info
-        .sources
+    let sources = info
+        .source_slots
         .iter()
-        .map(|&id| json!(canonical(tensors, id)))
+        .map(|id| id.map_or(Value::Null, |id| json!(canonical(tensors, id))))
         .collect::<Vec<_>>();
-    sources.resize(10, Value::Null);
     let description = if info.operation == 91 {
         unary_name(i32::from_le_bytes(info.parameters[..4].try_into()?))
     } else {
@@ -414,12 +413,21 @@ impl State {
                                 i32::try_from(integer(value)?)?;
                         }
                         "Sources" => {
-                            let sources = array(value)?
+                            let slots = array(value)?
                                 .iter()
-                                .filter(|value| !value.is_null())
-                                .map(|value| self.tensor(value))
+                                .map(|value| {
+                                    if value.is_null() {
+                                        Ok(None)
+                                    } else {
+                                        Ok(Some(self.tensor(value)?))
+                                    }
+                                })
                                 .collect::<Result<Vec<_>>>()?;
-                            self.backend.info_mut(tensor)?.sources = sources;
+                            let info = self.backend.info_mut(tensor)?;
+                            info.source_slots = slots
+                                .try_into()
+                                .map_err(|_| invalid("Rust backend sources require ten slots"))?;
+                            info.sources = info.source_slots.iter().flatten().copied().collect();
                         }
                         "OpParamsHex" => {
                             self.backend.info_mut(tensor)?.parameters = unhex(value)?

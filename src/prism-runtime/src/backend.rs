@@ -18,6 +18,7 @@
 use crate::{Result, invalid};
 use bonsai_ternary::half_to_float;
 
+mod attention;
 mod call;
 mod image;
 mod ops;
@@ -120,6 +121,8 @@ pub struct TensorInfo {
     pub operation: i32,
     /// Input tensor identities, in operation order.
     pub sources: Vec<TensorId>,
+    /// Original nullable GGML source slots, retaining optional-input positions.
+    pub source_slots: [Option<TensorId>; 10],
     /// Underlying tensor for a storage view.
     pub view: Option<TensorId>,
     /// Byte offset relative to the underlying tensor.
@@ -293,6 +296,7 @@ impl CpuBackend {
             strides,
             operation: 0,
             sources: Vec::new(),
+            source_slots: [None; 10],
             view: None,
             offset: 0,
             parameters: [0; 64],
@@ -572,6 +576,36 @@ impl CpuBackend {
             self.set(destination, offset, bytes)?;
         }
         Ok(())
+    }
+
+    fn matrix(
+        &self,
+        tensor: TensorId,
+        batch2: usize,
+        batch3: usize,
+    ) -> Result<crate::model::Tensor> {
+        let info = self.info(tensor)?;
+        let layout = type_layout(info.kind)?;
+        if batch2 >= info.shape[2] || batch3 >= info.shape[3] {
+            return Err(invalid("CPU matrix batch exceeds tensor extent"));
+        }
+        let mut packed = Vec::new();
+        packed.try_reserve_exact(info.shape[0] / layout.block * info.shape[1] * layout.bytes)?;
+        for row in 0..info.shape[1] {
+            for block in 0..info.shape[0] / layout.block {
+                let offset = block * info.strides[0]
+                    + row * info.strides[1]
+                    + batch2 * info.strides[2]
+                    + batch3 * info.strides[3];
+                packed.extend_from_slice(self.get(tensor, offset, layout.bytes)?);
+            }
+        }
+        Ok(crate::model::Tensor {
+            name: info.name.clone(),
+            kind: u32::try_from(info.kind)?,
+            dimensions: vec![info.shape[0], info.shape[1]],
+            data: std::sync::Arc::from(packed),
+        })
     }
 
     /// Replace tensor values in logical order, applying its scalar storage format.

@@ -252,6 +252,9 @@ impl CpuBackend {
         let id = self.tensor(ctx, kind, shape)?;
         let info = self.info_mut(id)?;
         info.operation = operation;
+        for (slot, &source) in info.source_slots.iter_mut().zip(&sources) {
+            *slot = Some(source);
+        }
         info.sources = sources;
         info.parameters = params;
         if let Some((source, strides, offset)) = view {
@@ -422,6 +425,47 @@ impl CpuBackend {
                 }
                 put_int(&mut self.info_mut(id)?.parameters, 15, offset);
                 return Ok(Observation::Tensor(Some(id)));
+            }
+            "ggml_flash_attn_ext_set_prec" => {
+                let id = tensor(args, 0)?;
+                let precision = i32::try_from(int(args, 1)?)?;
+                let info = self.info_mut(id)?;
+                if info.operation != 74 {
+                    return Err(invalid(
+                        "CPU attention precision requires an attention operation",
+                    ));
+                }
+                put_int(&mut info.parameters, 3, precision);
+                return Ok(Observation::Void);
+            }
+            "ggml_flash_attn_ext_add_sinks" | "ggml_soft_max_add_sinks" => {
+                let id = tensor(args, 0)?;
+                let flash = name == "ggml_flash_attn_ext_add_sinks";
+                let slot = if flash { 4 } else { 2 };
+                let sink = match at(args, 1)? {
+                    Argument::Null => None,
+                    Argument::Tensor(id) => Some(*id),
+                    _ => return Err(invalid("CPU attention sink argument differs")),
+                };
+                if let Some(sink) = sink {
+                    let si = self.info(sink)?;
+                    let info = self.info(id)?;
+                    let heads = if flash {
+                        self.info(info.sources[0])?.shape[2]
+                    } else {
+                        info.shape[2]
+                    };
+                    if si.kind != 0 || si.shape[0] != heads {
+                        return Err(invalid("CPU attention sink shape differs"));
+                    }
+                }
+                let info = self.info_mut(id)?;
+                if info.operation != if flash { 74 } else { 46 } {
+                    return Err(invalid("CPU attention sink operation differs"));
+                }
+                info.source_slots[slot] = sink;
+                info.sources = info.source_slots.iter().flatten().copied().collect();
+                return Ok(Observation::Void);
             }
             "ggml_backend_graph_compute" => {
                 self.compute(graph(args, 1)?)?;
@@ -788,6 +832,45 @@ impl CpuBackend {
                 put_float(&mut p, 0, float(args, 3)?);
                 put_float(&mut p, 1, float(args, 4)?);
                 47
+            }
+            "ggml_flash_attn_ext" => {
+                let keys = tensor(args, 2)?;
+                let values = tensor(args, 3)?;
+                let ks = self.info(keys)?.shape;
+                let vs = self.info(values)?.shape;
+                if shape[0] != ks[0]
+                    || shape[3] != ks[3]
+                    || shape[3] != vs[3]
+                    || ks[1] != vs[1]
+                    || ks[2] == 0
+                    || vs[2] == 0
+                    || !shape[2].is_multiple_of(ks[2])
+                    || !shape[2].is_multiple_of(vs[2])
+                {
+                    return Err(invalid("CPU attention input geometry differs"));
+                }
+                sources.push(keys);
+                sources.push(values);
+                if let Argument::Tensor(mask) = at(args, 4)? {
+                    let mi = self.info(*mask)?;
+                    if mi.kind != 1
+                        || mi.shape[0] < ks[1]
+                        || mi.shape[1] < shape[1]
+                        || !shape[2].is_multiple_of(mi.shape[2])
+                        || !shape[3].is_multiple_of(mi.shape[3])
+                    {
+                        return Err(invalid("CPU attention mask geometry differs"));
+                    }
+                    sources.push(*mask);
+                } else if !matches!(at(args, 4)?, Argument::Null) {
+                    return Err(invalid("CPU attention mask argument differs"));
+                }
+                for index in 0..3 {
+                    put_float(&mut p, index, float(args, index + 5)?);
+                }
+                shape = [vs[0], shape[2], shape[1], shape[3]];
+                kind = 0;
+                74
             }
             "ggml_clamp" => {
                 put_float(&mut p, 0, float(args, 2)?);

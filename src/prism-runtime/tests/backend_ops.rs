@@ -379,3 +379,59 @@ fn ssm_convolution_and_optimizer_update_persistent_moments() -> Result<()> {
     assert_eq!(backend.values(variance)?, [4.0, 16.0]);
     Ok(())
 }
+
+#[test]
+fn attention_and_softmax_sinks_preserve_absent_mask_slots() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let queries = backend.tensor(1, 0, [2, 1, 2, 1])?;
+    backend.set_values(queries, &[0.0; 4])?;
+    let keys = backend.tensor(1, 1, [2, 2, 1, 1])?;
+    backend.set_values(keys, &[1.0; 4])?;
+    let values = backend.tensor(1, 1, [1, 2, 1, 1])?;
+    backend.set_values(values, &[1.0, 3.0])?;
+    let sinks = backend.tensor(1, 0, [2, 1, 1, 1])?;
+    backend.set_values(sinks, &[0.0, 2.0_f32.ln()])?;
+    let attention = result_tensor(&backend.call(
+        "ggml_flash_attn_ext",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(queries),
+            Argument::Tensor(keys),
+            Argument::Tensor(values),
+            Argument::Null,
+            Argument::Float(1.0),
+            Argument::Float(0.0),
+            Argument::Float(0.0),
+        ],
+    )?)?;
+    backend.call(
+        "ggml_flash_attn_ext_add_sinks",
+        &[Argument::Tensor(attention), Argument::Tensor(sinks)],
+    )?;
+    assert!(backend.info(attention)?.source_slots[3].is_none());
+    assert_eq!(backend.info(attention)?.source_slots[4], Some(sinks));
+    evaluate(&mut backend, attention)?;
+    for (&actual, expected) in backend.values(attention)?.iter().zip([4.0 / 3.0, 1.0]) {
+        assert!((actual - expected).abs() < 1e-6);
+    }
+    let probabilities = result_tensor(&backend.call(
+        "ggml_soft_max",
+        &[Argument::Context(1), Argument::Tensor(queries)],
+    )?)?;
+    backend.call(
+        "ggml_soft_max_add_sinks",
+        &[Argument::Tensor(probabilities), Argument::Tensor(sinks)],
+    )?;
+    assert!(backend.info(probabilities)?.source_slots[1].is_none());
+    assert_eq!(backend.info(probabilities)?.source_slots[2], Some(sinks));
+    evaluate(&mut backend, probabilities)?;
+    for (&actual, expected) in
+        backend
+            .values(probabilities)?
+            .iter()
+            .zip([1.0 / 3.0, 1.0 / 3.0, 0.25, 0.25])
+    {
+        assert!((actual - expected).abs() < 1e-6);
+    }
+    Ok(())
+}
