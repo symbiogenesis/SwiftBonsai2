@@ -414,13 +414,13 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.InferenceSource.psm1')
+          $inference = Resolve-BonsaiInferenceSource -LockPath (Join-Path $env:GITHUB_WORKSPACE 'config/prism-inference.lock.json')
           Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.PrismBackendBundle.psm1')
-          $bundle = Import-BonsaiPrismBackendBundle -Directory (Join-Path $env:PRISM_BACKEND_TOOLS_EVIDENCE 'backend-tools') -Repository $env:GITHUB_WORKSPACE
+          $bundle = Import-BonsaiPrismBackendBundle -Directory (Join-Path $env:PRISM_BACKEND_TOOLS_EVIDENCE 'backend-tools') -Repository $inference
           $env:BONSAI_BACKEND_TRANSPORT_BRIDGE = $bundle.CommonBridgePath
           $env:BONSAI_BACKEND_TRANSPORT_EVIDENCE = Join-Path $env:PRISM_BACKEND_TOOLS_EVIDENCE 'transport-checks'
           [void][IO.Directory]::CreateDirectory($env:BONSAI_BACKEND_TRANSPORT_EVIDENCE)
-          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.InferenceSource.psm1')
-          $inference = Resolve-BonsaiInferenceSource -LockPath (Join-Path $env:GITHUB_WORKSPACE 'config/prism-inference.lock.json')
           $checks = @(
             'backend_ops::transport::pipe::tests::native_file_and_pipe_observations_match_and_geometry_state_is_fresh',
             'llguidance::tests::native_candidate_templates_match_original_file_imports'
