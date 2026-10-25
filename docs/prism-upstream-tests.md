@@ -110,6 +110,11 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   Bounded summaries retain each case's identity and full-result hash. Complete
   metrics and input receipts remain in the uploaded case receipts; aggregation
   preserves the ordered digest of those full results.
+  Plan and execution handoff artifacts contain only their revision-bound
+  `record.json`. Complete case receipts and native diagnostics remain in the
+  separate `prism-backend-evidence-plan-*` and `prism-backend-evidence-run-*`
+  artifacts. Fan-in jobs read the compact records and retain every identity,
+  digest, ordering and completeness check.
 - `test-tokenizers-repo.sh`: all six publisher vocabulary/input/output triples
   in the complete compatible 2026-05-22 repository snapshot,
   with every corpus attempted even after a failure. The existing Rust corpus

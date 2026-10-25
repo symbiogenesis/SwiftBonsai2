@@ -472,6 +472,14 @@ jobs:
         if: always() && env.BACKEND_STAGE != ''
         with:
           name: prism-backend-plan-${{ matrix.partition }}
+          # Fan-in consumes this complete stage envelope, not its verbose evidence.
+          path: ${{ env.BACKEND_STAGE }}/record.json
+          if-no-files-found: error
+          compression-level: 1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && env.BACKEND_STAGE != ''
+        with:
+          name: prism-backend-evidence-plan-${{ matrix.partition }}
           path: |
             ${{ env.BACKEND_STAGE }}/*.json
             ${{ env.BACKEND_STAGE }}/**/phase-record.json
@@ -553,6 +561,14 @@ jobs:
         if: always() && env.BACKEND_STAGE != ''
         with:
           name: prism-backend-run-${{ matrix.partition }}
+          # Keep numerical evidence separate from the final gate's compact input.
+          path: ${{ env.BACKEND_STAGE }}/record.json
+          if-no-files-found: error
+          compression-level: 1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && env.BACKEND_STAGE != ''
+        with:
+          name: prism-backend-evidence-run-${{ matrix.partition }}
           path: |
             ${{ env.BACKEND_STAGE }}/*.json
             ${{ env.BACKEND_STAGE }}/**/phase-record.json
