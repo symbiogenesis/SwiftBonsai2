@@ -103,6 +103,11 @@ pub fn type_layout(kind: i32) -> Result<TypeLayout> {
         7 => (32, 24, "q5_1"),
         8 => (32, 34, "q8_0"),
         9 => (32, 36, "q8_1"),
+        10 => (256, 84, "q2_K"),
+        11 => (256, 110, "q3_K"),
+        12 => (256, 144, "q4_K"),
+        13 => (256, 176, "q5_K"),
+        14 => (256, 210, "q6_K"),
         15 => (256, 292, "q8_K"),
         24 => (1, 1, "i8"),
         25 => (1, 2, "i16"),
@@ -763,7 +768,7 @@ impl CpuBackend {
                 .get(usize::from(info.operation == 74))
                 .is_some_and(|&source| {
                     self.info(source).is_ok_and(
-                        |source| matches!(source.kind, 0..=3 | 6..=8 | 15 | 30 | 142 | 143),
+                        |source| matches!(source.kind, 0..=3 | 6..=8 | 10..=15 | 30 | 142 | 143),
                     )
                 })
         {

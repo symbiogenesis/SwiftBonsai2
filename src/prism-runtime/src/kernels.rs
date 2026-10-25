@@ -15,6 +15,7 @@ use bonsai_ternary::{Q8KBlock, decode_ptq_trits, half_to_float};
 use crate::model::Tensor;
 use crate::{Result, invalid};
 
+mod kquants;
 mod legacy;
 
 #[cfg(all(
@@ -50,6 +51,7 @@ fn layout(kind: u32) -> Result<(usize, usize)> {
         Q8_0 => Ok((32, 34)),
         Q8_1 => Ok((32, 36)),
         Q8_K => Ok((256, 292)),
+        10..=14 => Ok((256, kquants::block_bytes(kind).ok_or_else(|| invalid("unknown K quantization type"))?)),
         PQ2 => Ok((128, 34)),
         PTQ1 => Ok((128, 28)),
         _ => Err(invalid(format!("unsupported runtime tensor type {kind}"))),
@@ -155,6 +157,11 @@ pub fn validate_tensor(tensor: &Tensor) -> Result<()> {
                 finite(f32::from_le_bytes(block[..4].try_into()?))?;
             }
         }
+        10..=14 => {
+            for block in tensor.data.chunks_exact(layout(tensor.kind)?.1) {
+                kquants::validate(tensor.kind, block)?;
+            }
+        }
         _ => {
             let (_, block_bytes) = layout(tensor.kind)?;
             for block in tensor.data.chunks_exact(block_bytes) {
@@ -200,6 +207,9 @@ fn row_impl(tensor: &Tensor, index: usize, output: &mut Vec<f32>) -> Result<()> 
     }
     let bytes = &tensor.data[index * row_bytes..(index + 1) * row_bytes];
     output.try_reserve_exact(columns)?;
+    if matches!(tensor.kind, 10..=14) {
+        return kquants::decode(tensor.kind, bytes, output);
+    }
     match tensor.kind {
         F32 => {
             for chunk in bytes.as_chunks::<4>().0 {
@@ -580,6 +590,9 @@ fn weighted_symmetric_block(
     reason = "Preserve source row-wide sum of squares and per-element weighting association."
 )]
 pub fn quantize_row_weighted(kind: u32, input: &[f32], importance: &[f32]) -> Result<Vec<u8>> {
+    if matches!(kind, 10..=14) {
+        return Err(invalid("weighted K quantizers are not available"));
+    }
     if input.is_empty()
         || input.len() != importance.len()
         || importance
@@ -823,7 +836,7 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
         return Err(invalid("packed dot weight extent mismatch"));
     }
     let (activation_group, activation_bytes) = match kind {
-        PQ2 => (256, 292),
+        PQ2 | 10..=14 => (256, 292),
         PTQ1 | Q4_0 | Q5_0 | Q8_0 => (32, 34),
         Q4_1 | Q5_1 => (32, 36),
         _ => (group, block_bytes),
@@ -834,7 +847,7 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
         return Err(invalid("packed dot activation extent mismatch"));
     }
     match kind {
-        PQ2 => {
+        PQ2 | 10..=14 => {
             let input = activations
                 .as_chunks::<292>()
                 .0
@@ -849,7 +862,11 @@ pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            dot_pq2(weights, &input)
+            if kind == PQ2 {
+                dot_pq2(weights, &input)
+            } else {
+                kquants::dot(kind, weights, &input)
+            }
         }
         PTQ1 | Q4_0 | Q4_1 | Q5_0 | Q5_1 | Q8_0 => {
             let affine = matches!(kind, Q4_1 | Q5_1);
@@ -928,6 +945,7 @@ enum ActivationContract {
 impl ActivationContract {
     const fn for_tensor(tensor: &Tensor, columns: usize) -> Self {
         match tensor.kind {
+            10..=14 => Self::Q8K,
             PQ2 if columns.is_multiple_of(256) => Self::Q8K,
             PQ2 | PTQ1 | Q4_0 | Q4_1 | Q5_0 | Q5_1 | Q8_0 => Self::Q8,
             F16 => Self::F16,
@@ -1368,6 +1386,12 @@ impl PreparedMatvec<'_> {
         let scratch = &mut *self.scratch;
         output.try_reserve_exact(rows)?;
         match tensor.kind {
+            10..=14 => {
+                scratch.diagnostics = scratch.diagnostics.select(false);
+                for bytes in tensor.data.chunks_exact(row_bytes) {
+                    output.push(kquants::dot(tensor.kind, bytes, &scratch.q8k)?);
+                }
+            }
             PQ2 if columns.is_multiple_of(256) => {
                 let dot = scratch.select_pq2();
                 for bytes in tensor.data.chunks_exact(row_bytes) {
