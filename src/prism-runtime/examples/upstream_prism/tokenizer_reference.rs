@@ -32,6 +32,7 @@ pub(super) struct Reference {
     backend: Backend,
     specials: Vec<String>,
     special_ids: BTreeSet<u32>,
+    valid_ids: Vec<u32>,
     added_ids: Vec<u32>,
     bos: Option<String>,
     eos: Option<String>,
@@ -324,8 +325,20 @@ impl Reference {
             ids.sort_unstable();
             (Backend::Fast(Box::new(tokenizer)), ids)
         };
+        let mut valid_ids = match &backend {
+            // Query both maps: a supplied added spelling can hide a model
+            // spelling in get_vocab(true), while its original ID still decodes.
+            Backend::Fast(tokenizer) => tokenizer
+                .get_vocab(false)
+                .into_values()
+                .chain(tokenizer.get_added_tokens_decoder().into_keys())
+                .collect::<Vec<_>>(),
+            Backend::BaiChuan(_) => Vec::new(),
+        };
+        valid_ids.sort_unstable();
+        valid_ids.dedup();
         let mut reference = Self {
-            backend, specials, special_ids: BTreeSet::new(), added_ids, bos, eos,
+            backend, specials, special_ids: BTreeSet::new(), valid_ids, added_ids, bos, eos,
             bos_id: None, eos_id: None, add_bos, add_eos, manual_boundaries,
             boundary_properties: (config.get("add_bos_token").and_then(Value::as_bool).or_else(|| manual_boundaries.then_some(add_bos)), config.get("add_eos_token").and_then(Value::as_bool).or_else(|| manual_boundaries.then_some(add_eos))),
             cleanup: config.get("clean_up_tokenization_spaces").and_then(Value::as_bool).unwrap_or(false),
@@ -451,7 +464,7 @@ impl Reference {
                 // Python's release backend returns an empty string here; an explicit
                 // guard also avoids its BPEDecoder's empty-input usize subtraction.
                 if ids.iter().all(|id| {
-                    tokenizer.id_to_token(*id).is_none()
+                    self.valid_ids.binary_search(id).is_err()
                         || (skip_special && self.special_ids.contains(id))
                 }) {
                     String::new()
@@ -520,7 +533,7 @@ impl Reference {
                 .iter()
                 .map(|ids| {
                     ids.iter().any(|id| {
-                        tokenizer.id_to_token(*id).is_some()
+                        self.valid_ids.binary_search(id).is_ok()
                             && !(skip_special && self.special_ids.contains(id))
                     })
                 })
@@ -820,6 +833,61 @@ mod tests {
                         .encode(input, true)
                         .map_err(|error| error.to_string())
                 );
+            }
+            Ok(())
+        })();
+        for name in ["tokenizer.json", "tokenizer_config.json"] {
+            let _ = std::fs::remove_file(directory.join(name));
+        }
+        let _ = std::fs::remove_dir(directory);
+        test
+    }
+
+    #[test]
+    fn cached_decode_ids_keep_sparse_vocabulary_and_added_tokens() -> Result<()> {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "SwiftBonsai-HfSparseReference-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&directory)?;
+        let test = (|| -> Result<()> {
+            // Sparse model IDs and an added special must all follow the
+            // backend lookup, without copying token strings to test existence.
+            std::fs::write(
+                directory.join("tokenizer.json"),
+                serde_json::to_vec(
+                    &json!({"version":"1.0","truncation":null,"padding":null,"added_tokens":[],"normalizer":null,"pre_tokenizer":null,"post_processor":null,"decoder":{"type":"WordPiece","prefix":"##","cleanup":false},"model":{"type":"WordLevel","vocab":{"a":0,"b":7,"<special>":8},"unk_token":"a"}}),
+                )?,
+            )?;
+            std::fs::write(
+                directory.join("tokenizer_config.json"),
+                serde_json::to_vec(
+                    &json!({"tokenizer_class":"PreTrainedTokenizerFast","additional_special_tokens":["<special>"]}),
+                )?,
+            )?;
+            let reference = Reference::open(&directory)?;
+            let Backend::Fast(tokenizer) = &reference.backend else {
+                return Err(invalid("sparse reference must use fast backend"));
+            };
+            assert_eq!(reference.valid_ids, [0, 7, 8]);
+            for id in (0..=9).chain([u32::MAX]) {
+                assert_eq!(
+                    reference.valid_ids.binary_search(&id).is_ok(),
+                    tokenizer.id_to_token(id).is_some()
+                );
+            }
+            let ids: [&[u32]; 5] = [&[0], &[1], &[7], &[8], &[1, 7, 8, u32::MAX]];
+            for skip_special in [false, true] {
+                for (ids, actual) in ids.iter().zip(reference.decode_batch(&ids, skip_special)) {
+                    assert_eq!(actual?, tokenizer.decode(ids, skip_special)?);
+                    assert_eq!(
+                        reference.decode(ids, skip_special)?,
+                        tokenizer.decode(ids, skip_special)?
+                    );
+                }
             }
             Ok(())
         })();

@@ -124,6 +124,7 @@ dependencies = [
 name = "bonsai-prism-runtime"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "bonsai-gguf",
  "bonsai-prism",
  "bonsai-ternary",

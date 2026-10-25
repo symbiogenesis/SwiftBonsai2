@@ -29,6 +29,7 @@ test = false
 required-features = ["cli"]
 
 [dependencies]
+aho-corasick = "=1.1.5"
 bonsai-ternary = { path = "../../tools/ternary" }
 bonsai-gguf = { path = "../../tools/gguf", default-features = false }
 bonsai-prism = { path = "../../tools/prism" }

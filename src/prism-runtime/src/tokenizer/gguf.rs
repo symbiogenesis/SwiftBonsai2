@@ -10,6 +10,7 @@
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 
+use aho_corasick::{AhoCorasick, AhoCorasickKind, MatchKind};
 use bonsai_gguf::{Metadata, MetadataArray, MetadataValue};
 use fancy_regex::Regex;
 use unicode_normalization_alignments::UnicodeNormalization;
@@ -25,6 +26,58 @@ use crate::vocabulary::{
 use crate::{Result, invalid};
 
 const LIMIT: usize = 1024 * 1024;
+
+// Search all eligible special spellings together instead of scanning the full
+// remaining input once per spelling. IDs stay ordered so duplicate spellings
+// retain the source's lowest-ID tie. Very large tables retain the linear path
+// rather than adding unbounded automaton construction to model loading.
+#[derive(Debug)]
+struct SpecialIndex {
+    ids: Vec<usize>,
+    matcher: Option<AhoCorasick>,
+}
+
+impl SpecialIndex {
+    fn new(tokens: &[String], types: &[i32], parse_special: bool) -> Self {
+        let ids: Vec<_> = types
+            .iter()
+            .enumerate()
+            .filter_map(|(id, &kind)| {
+                (!tokens[id].is_empty() && (kind == 4 || (parse_special && matches!(kind, 2 | 3))))
+                    .then_some(id)
+            })
+            .collect();
+        let matcher =
+            if ids.is_empty() || ids.iter().map(|&id| tokens[id].len()).sum::<usize>() > LIMIT {
+                None
+            } else {
+                AhoCorasick::builder()
+                    .kind(Some(AhoCorasickKind::ContiguousNFA))
+                    .match_kind(MatchKind::LeftmostLongest)
+                    .build(ids.iter().map(|&id| tokens[id].as_bytes()))
+                    .ok()
+            };
+        Self { ids, matcher }
+    }
+
+    fn find(&self, tokens: &[String], input: &[u8]) -> Option<(usize, usize)> {
+        if let Some(matcher) = &self.matcher {
+            return matcher
+                .find(input)
+                .map(|found| (found.start(), self.ids[found.pattern().as_usize()]));
+        }
+        self.ids
+            .iter()
+            .filter_map(|&id| {
+                input
+                    .windows(tokens[id].len())
+                    .position(|part| part == tokens[id].as_bytes())
+                    .map(|position| (position, std::cmp::Reverse(tokens[id].len()), id))
+            })
+            .min()
+            .map(|(position, _, id)| (position, id))
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Family {
@@ -144,7 +197,8 @@ pub struct GgufTokenizer {
     pre: String,
     tokens: Vec<String>,
     types: Vec<i32>,
-    specials: Vec<usize>,
+    specials: SpecialIndex,
+    user_defined: SpecialIndex,
     scores: Vec<f32>,
     plamo_scores: Vec<Option<i32>>,
     lookup: HashMap<String, u32>,
@@ -358,11 +412,8 @@ impl GgufTokenizer {
             "normalizer.lowercase",
             family == Family::WordPiece,
         )?;
-        let specials = types
-            .iter()
-            .enumerate()
-            .filter_map(|(index, kind)| matches!(kind, 2..=4).then_some(index))
-            .collect();
+        let specials = SpecialIndex::new(tokens, &types, true);
+        let user_defined = SpecialIndex::new(tokens, &types, false);
         Ok(Self {
             family,
             model: model.to_owned(),
@@ -370,6 +421,7 @@ impl GgufTokenizer {
             tokens: tokens.clone(),
             types,
             specials,
+            user_defined,
             scores,
             plamo_scores,
             lookup,
@@ -460,23 +512,13 @@ impl GgufTokenizer {
         while offset < text.len() {
             let remaining = &text[offset..];
             let special = self
-                .specials
-                .iter()
-                .copied()
-                .filter(|&index| {
-                    !self.tokens[index].is_empty() && (self.types[index] == 4 || parse_special)
-                })
-                .filter_map(|index| {
-                    remaining.find(&self.tokens[index]).map(|position| {
-                        (position, std::cmp::Reverse(self.tokens[index].len()), index)
-                    })
-                })
-                .min();
-            let end = special.map_or(text.len(), |(position, _, _)| offset + position);
+                .special_index(parse_special)
+                .find(&self.tokens, remaining.as_bytes());
+            let end = special.map_or(text.len(), |(position, _)| offset + position);
             if end > offset {
                 self.ordinary(&text[offset..end], true, &mut output)?;
             }
-            if let Some((_, _, index)) = special {
+            if let Some((_, index)) = special {
                 output.push(u32::try_from(index)?);
                 offset = end + self.tokens[index].len();
             } else {
@@ -518,22 +560,9 @@ impl GgufTokenizer {
         let mut offset = 0;
         while offset < bytes.len() {
             let special = self
-                .specials
-                .iter()
-                .copied()
-                .filter(|&index| {
-                    !self.tokens[index].is_empty() && (self.types[index] == 4 || parse_special)
-                })
-                .filter_map(|index| {
-                    bytes[offset..]
-                        .windows(self.tokens[index].len())
-                        .position(|part| part == self.tokens[index].as_bytes())
-                        .map(|position| {
-                            (position, std::cmp::Reverse(self.tokens[index].len()), index)
-                        })
-                })
-                .min();
-            let end = special.map_or(bytes.len(), |(position, _, _)| offset + position);
+                .special_index(parse_special)
+                .find(&self.tokens, &bytes[offset..]);
+            let end = special.map_or(bytes.len(), |(position, _)| offset + position);
             if end > offset {
                 let mut escaped = Vec::new();
                 if self.prefix_space {
@@ -548,7 +577,7 @@ impl GgufTokenizer {
                 }
                 self.merge_spm_bytes(&escaped, &mut output)?;
             }
-            if let Some((_, _, index)) = special {
+            if let Some((_, index)) = special {
                 output.push(u32::try_from(index)?);
                 offset = end + self.tokens[index].len();
             } else {
@@ -562,6 +591,14 @@ impl GgufTokenizer {
             return Err(invalid("tokenizer output exceeds token bound"));
         }
         Ok(output)
+    }
+
+    const fn special_index(&self, parse_special: bool) -> &SpecialIndex {
+        if parse_special {
+            &self.specials
+        } else {
+            &self.user_defined
+        }
     }
 
     fn merge_spm_bytes(&self, bytes: &[u8], output: &mut Vec<u32>) -> Result<()> {
@@ -1092,6 +1129,14 @@ impl GgufTokenizer {
     /// # Errors
     /// Rejects an invalid token ID or malformed byte notation/alphabet.
     pub fn piece(&self, id: u32, special: bool) -> Result<Vec<u8>> {
+        let mut output = Vec::new();
+        self.append_piece(id, special, &mut output)?;
+        Ok(output)
+    }
+
+    // Whole-sequence decode shares its destination across pieces. In particular,
+    // exhaustive roundtrip checks must not allocate a temporary Vec per token.
+    fn append_piece(&self, id: u32, special: bool, output: &mut Vec<u8>) -> Result<()> {
         let index = usize::try_from(id)?;
         let token = self
             .tokens
@@ -1099,34 +1144,35 @@ impl GgufTokenizer {
             .ok_or_else(|| invalid("tokenizer piece ID out of range"))?;
         let kind = self.types[index];
         if matches!(kind, 2 | 3) {
-            return Ok(if special {
-                token.as_bytes().to_vec()
-            } else {
-                Vec::new()
-            });
+            if special {
+                output.extend_from_slice(token.as_bytes());
+            }
+            return Ok(());
         }
         if kind == 5 {
-            return Ok(Vec::new());
+            return Ok(());
         }
         if kind == 4 {
-            return Ok(token.as_bytes().to_vec());
+            output.extend_from_slice(token.as_bytes());
+            return Ok(());
         }
         if kind == 6 {
-            return Ok(vec![parse_byte(token)?]);
+            output.push(parse_byte(token)?);
+            return Ok(());
         }
         match self.family {
             Family::Bpe if self.pre != "gemma4" && self.model != "whitespace" && kind == 1 => {
-                token.chars().map(decode_character).collect()
+                for character in token.chars() {
+                    output.push(decode_character(character)?);
+                }
             }
-            Family::Rwkv => Ok(self.raw[index].clone()),
+            Family::Rwkv => output.extend_from_slice(&self.raw[index]),
             Family::Spm | Family::Unigram | Family::WordPiece => {
-                Ok(token.replace('▁', " ").into_bytes())
+                append_spaces(token, output);
             }
-            _ => Ok(token
-                .trim_end_matches('\u{e000}')
-                .replace('▁', " ")
-                .into_bytes()),
+            _ => append_spaces(token.trim_end_matches('\u{e000}'), output),
         }
+        Ok(())
     }
 
     /// Concatenates decoded pieces using model boundary and cleanup policy.
@@ -1148,7 +1194,7 @@ impl GgufTokenizer {
         }
         let mut output = Vec::new();
         for &id in ids {
-            output.extend(self.piece(id, unparse_special)?);
+            self.append_piece(id, unparse_special, &mut output)?;
             if output.len() > LIMIT {
                 return Err(invalid("tokenizer decoded bytes exceed bound"));
             }
@@ -1157,6 +1203,15 @@ impl GgufTokenizer {
             output.remove(0);
         }
         Ok(output)
+    }
+}
+
+fn append_spaces(token: &str, output: &mut Vec<u8>) {
+    for (index, fragment) in token.split('▁').enumerate() {
+        if index != 0 {
+            output.push(b' ');
+        }
+        output.extend_from_slice(fragment.as_bytes());
     }
 }
 
@@ -1267,6 +1322,7 @@ mod tests {
         let metadata = Metadata::from([
             ("tokenizer.ggml.model".into(), model.into()),
             ("tokenizer.ggml.tokens".into(), tokens.to_vec().into()),
+            ("tokenizer.ggml.merges".into(), Vec::<String>::new().into()),
             ("tokenizer.ggml.scores".into(), scores.to_vec().into()),
             ("tokenizer.ggml.unknown_token_id".into(), 0_u32.into()),
             ("tokenizer.ggml.add_space_prefix".into(), false.into()),
@@ -1301,6 +1357,84 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn special_search_keeps_earliest_longest_id_and_literal_policy() {
+        let tokens = ["", "a", "aba", "aba", "b", "é", "éa", "aé", "\0"].map(str::to_owned);
+        let types = [4, 4, 3, 4, 2, 3, 4, 4, 4];
+        let fragments: &[&[u8]] = &[b"", b"a", b"ab", b"b", "é".as_bytes(), b"\0", b"\xff"];
+        for parse_special in [false, true] {
+            let mut index = SpecialIndex::new(&tokens, &types, parse_special);
+            assert!(index.matcher.is_some());
+            for use_matcher in [true, false] {
+                if !use_matcher {
+                    index.matcher = None;
+                }
+                for left in fragments {
+                    for middle in fragments {
+                        for right in fragments {
+                            let input = [*left, *middle, *right].concat();
+                            let expected = tokens
+                                .iter()
+                                .enumerate()
+                                .filter(|(id, token)| {
+                                    !token.is_empty() && (types[*id] == 4 || parse_special)
+                                })
+                                .filter_map(|(id, token)| {
+                                    input
+                                        .windows(token.len())
+                                        .position(|part| part == token.as_bytes())
+                                        .map(|offset| (offset, std::cmp::Reverse(token.len()), id))
+                                })
+                                .min()
+                                .map(|(offset, _, id)| (offset, id));
+                            assert_eq!(index.find(&tokens, &input), expected, "{input:?}");
+                        }
+                    }
+                }
+            }
+        }
+        let empty = SpecialIndex::new(&tokens, &[1; 9], true);
+        assert!(empty.matcher.is_none());
+        assert_eq!(empty.find(&tokens, b"aba"), None);
+        let oversized = ["x".repeat(LIMIT + 1)];
+        let linear = SpecialIndex::new(&oversized, &[4], true);
+        assert!(linear.matcher.is_none());
+        assert_eq!(
+            linear.find(&oversized, oversized[0].as_bytes()),
+            Some((0, 0))
+        );
+    }
+
+    #[test]
+    fn decoding_appends_family_pieces_and_retains_lazy_errors() -> Result<()> {
+        for model in ["llama", "t5", "bert", "plamo2"] {
+            let tokens = ["?", "▁a", "▁▁é▁", "<C>", "<U>", "<unused>", "<0xFF>"];
+            let mut tokenizer = tokenizer(model, &tokens, &[0.0; 7])?;
+            tokenizer.types = vec![1, 1, 1, 3, 4, 5, 6];
+            for special in [false, true] {
+                let expected = if special {
+                    b"? a  \xc3\xa9 <C><U>\xff".as_slice()
+                } else {
+                    b"? a  \xc3\xa9 <U>\xff".as_slice()
+                };
+                assert_eq!(
+                    tokenizer.decode(&[0, 1, 2, 3, 4, 5, 6], false, special)?,
+                    expected
+                );
+                assert_eq!(tokenizer.piece(2, special)?, "  é ".as_bytes());
+                assert!(tokenizer.decode(&[1, 7], false, special).is_err());
+            }
+            tokenizer.tokens[6] = "<0xGG>".into();
+            assert!(tokenizer.decode(&[1, 6], false, false).is_err());
+            assert_eq!(tokenizer.decode(&[1], false, false)?, b" a");
+        }
+        let bpe = tokenizer("gpt2", &["?", "Ġa", "é"], &[0.0; 3])?;
+        assert_eq!(bpe.decode(&[1, 2], false, false)?, b" a\xe9");
+        let rwkv = tokenizer("rwkv", &["?", "\\xFF", "é"], &[0.0; 3])?;
+        assert_eq!(rwkv.decode(&[1, 2], false, false)?, b"\xff\xc3\xa9");
+        Ok(())
     }
 
     #[test]
