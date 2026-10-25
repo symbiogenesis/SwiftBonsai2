@@ -268,6 +268,18 @@ harnesses. Their ordinary builds, Clippy coverage, integration tests and doctest
 remain enabled. This avoids seven unnecessary test compilations and links per
 all-package check without removing assertions or adding a test runner dependency.
 
+Upstream Prism ports own the original corpus expectations. Bundled and repository
+GGUF tokenizer checks share those ports rather than repeat them in ignored
+integration tests. Focused Rust schema checks live beside the upstream schema
+port and share its conversion/type predicates and failure diagnostics. Stronger
+batch and reasoning observations extend existing upstream cases without removing
+their original assertions. Keep separate Rust API regressions for ownership,
+malformed inputs, resource limits and recovery when those contracts differ from
+the upstream source. Isolated-byte PTQ decode/dot checks supplement the original
+upstream CUDA-host schedule with separate assertion counts. Exhaustive PTQ byte
+classification owns overlapping byte examples; dedicated mutation guards remain
+independently addressable.
+
 Scratch/evidence remains external. Select the published maintenance executable
 from the exact evaluated main revision via `BONSAI_TOOLS_PATH` or `-ToolPath`;
 version/protocol checking is not source-to-binary attestation.
