@@ -26,6 +26,28 @@ Daily model chat and an offline UI are not enabled. Development ownership and
 memory controls do not qualify restricted inference identity, filesystem/egress
 isolation or same-user backend bypass prevention.
 
+## Planned X1/X2 configuration
+
+The recorded development machine is a 32 GB Snapdragon X Elite X1E-78-100.
+The ultimate target covers Snapdragon X1 and X2 Windows ARM64 systems with
+[automatic hardware profiles](hardware-profiles.md). That selector is planned;
+current released launch policies remain explicit CPU profiles and provide no
+automatic generation detection or GPU/NPU placement.
+
+The planned Auto mode will identify actual CPU/OS capabilities, GPU/NPU and
+driver/runtime compatibility, then select a qualified bounded configuration for
+the device, workload and interactive or battery objective. Prefill and decode
+may use different approved placements and CPU settings when the complete
+state-transfer cost and numerical contract are qualified. Admission uses actual
+available RAM and device budgets, rather than assuming every X1 or X2 has the
+recorded machine's capacity.
+
+Unknown or unsupported hardware will select a supported baseline CPU profile
+with a recorded reason, or refuse admission when its requirements cannot be
+met. Hardware names and advertised TOPS alone will not enable acceleration.
+The CPU MVP and existing model, context, LoRA and service acceptance requirements
+remain the immediate delivery scope.
+
 ## Inventory and provisioning
 
 Choose an absolute local data directory outside Git on a hard-link-capable

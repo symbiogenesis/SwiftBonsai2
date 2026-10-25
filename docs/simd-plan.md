@@ -32,6 +32,10 @@ feature-disabled builds use scalar. Scalar also runs natively on ARM64.
 There is no optional-ISA detector, global target override or persistent expanded
 weight copy.
 
+This kernel-level `Auto` policy does not detect Snapdragon generations or select
+CPU/GPU/NPU profiles. The planned [X1/X2 profile selector](hardware-profiles.md)
+will compose qualified CPU kernels with per-device placement and resource policy.
+
 | Path | Retained arithmetic |
 | --- | --- |
 | PQ2, rows divisible by 256 | Q8_K activations; decode each 128-weight block's two-bit codes to -1, 0, 1, 2; preserve integer dots and ordered floating scale/add operations |
@@ -124,6 +128,28 @@ unsupported instructions. Log selected backend/fallback and build identity witho
 private prompts or tensor contents. Use paired evidence to refine automatic
 selection, including cases where vector execution loses.
 
+### X1/X2 CPU policy integration
+
+Retain scalar and baseline NEON as the portable Windows ARM64 foundation for
+Snapdragon X1 and X2. Optional dotprod/i8mm eligibility comes from verified
+Windows CPU/OS capabilities and exact kernel contracts; a processor family or
+SKU name alone cannot enable an ISA. Qualify performance independently for each
+supported family/SKU and relevant OS/runtime revision, with accelerator driver
+identity included when evaluating mixed-device profiles.
+
+Measure prefill and decode thread counts, worker placement, batch/tile sizes and
+polling separately. The current four-thread development policy and the machine's
+total core count are controls, not universal X1/X2 optima. Compare CPU-only work
+with CPU participation in GPU/NPU profiles, including shared-memory contention,
+submission waits and sustained power behavior. Retain separate interactive and
+battery candidates where measurements justify them.
+
+Publish only bounded, qualified entries to the planned profile selector. Unknown
+hardware or an unmatched capability/runtime record uses the supported baseline
+CPU policy, subject to normal admission; an unavailable optional ISA falls back
+without executing it. Future selection must retain actual-backend diagnostics
+and numerical identity across checkpoints and phase changes.
+
 ## Numerical acceptance
 
 Keep optimized-Rust/scalar comparisons separate from Rust/Prism comparisons.
@@ -182,7 +208,8 @@ and fast-math modes need separate numerical qualification.
 - [ ] **S6 — Qualify and refine selection (R3/R7).** Run paired, repeated/
   interleaved manual main-only target-device CI. Compare scalar Rust, optimized
   Rust and applicable pinned Prism controls. Publish successful and losing entries,
-  refine selection by format/shape/backend and retain scalar forcing/Prism fallback.
+  refine selection by X1/X2 device identity, format/shape/backend, phase and
+  interactive/battery objective, and retain scalar forcing/Prism fallback.
   A microkernel win does not qualify the replacement.
 
 Synthetic S1–S3 work can precede full-model parity. S0 determines investment;
