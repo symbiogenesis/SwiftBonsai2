@@ -4,7 +4,7 @@ use super::{CpuBackend, TensorId, coordinates, linear};
 use crate::{Result, invalid};
 
 pub(super) const fn supports(operation: i32) -> bool {
-    matches!(operation, 0..=2 | 6..=29 | 31..=51 | 55 | 64 | 66..=73 | 85 | 91 | 96..=97 | 100)
+    matches!(operation, 0..=2 | 6..=29 | 31..=52 | 55..=61 | 63..=73 | 85 | 91 | 96..=97 | 100)
 }
 
 fn integer(parameters: &[u8; 64], index: usize) -> i32 {
@@ -633,6 +633,7 @@ impl CpuBackend {
                     }
                 }
             }
+            52 | 56..=61 | 63 | 65 => out = self.image_values(&info, &a)?,
             64 => {
                 let circular = integer(p, 8) != 0;
                 for (index, value) in out.iter_mut().enumerate() {

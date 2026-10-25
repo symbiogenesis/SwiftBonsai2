@@ -68,6 +68,28 @@ fn put_float(params: &mut [u8; 64], index: usize, value: f32) {
     params[index * 4..index * 4 + 4].copy_from_slice(&value.to_le_bytes());
 }
 
+fn convolution_extent(
+    input: usize,
+    kernel: usize,
+    stride: i64,
+    padding: i64,
+    dilation: i64,
+) -> Result<usize> {
+    if stride <= 0 || dilation <= 0 || padding < 0 {
+        return Err(invalid(
+            "CPU convolution stride, padding or dilation differs",
+        ));
+    }
+    let extent =
+        (input as i128 + 2 * i128::from(padding) - i128::from(dilation) * (kernel as i128 - 1) - 1)
+            / i128::from(stride)
+            + 1;
+    if extent <= 0 {
+        return Err(invalid("CPU convolution kernel exceeds padded input"));
+    }
+    Ok(usize::try_from(extent)?)
+}
+
 /// Resolve the pinned numerical operation name.
 #[must_use]
 #[allow(
@@ -837,6 +859,212 @@ impl CpuBackend {
                     put_int(&mut p, index, i32::try_from(value)?);
                 }
                 55
+            }
+            "ggml_im2col" | "ggml_conv_2d_direct" | "ggml_conv_2d_dw_direct" => {
+                let b = tensor(args, 2)?;
+                let bs = self.info(b)?.shape;
+                let two_dimensional = if name == "ggml_im2col" {
+                    boolean(args, 9)?
+                } else {
+                    true
+                };
+                for index in 0..6 {
+                    put_int(&mut p, index, i32::try_from(int(args, index + 3)?)?);
+                }
+                let width = convolution_extent(
+                    bs[0],
+                    shape[0],
+                    int(args, 3)?,
+                    int(args, 5)?,
+                    int(args, 7)?,
+                )?;
+                let height = if two_dimensional {
+                    convolution_extent(
+                        bs[1],
+                        shape[1],
+                        int(args, 4)?,
+                        int(args, 6)?,
+                        int(args, 8)?,
+                    )?
+                } else {
+                    bs[2]
+                };
+                if name == "ggml_im2col" {
+                    if (two_dimensional && shape[2] != bs[2])
+                        || (!two_dimensional && (shape[1] != bs[1] || bs[3] != 1))
+                    {
+                        return Err(invalid("CPU im2col channel geometry differs"));
+                    }
+                    shape = [
+                        shape[0] * shape[1] * if two_dimensional { shape[2] } else { 1 },
+                        width,
+                        height,
+                        if two_dimensional { bs[3] } else { 1 },
+                    ];
+                    kind = i32::try_from(int(args, 10)?)?;
+                    put_int(&mut p, 6, i32::from(two_dimensional));
+                    sources.push(b);
+                    52
+                } else {
+                    let depthwise = name == "ggml_conv_2d_dw_direct";
+                    if depthwise && (shape[2] != 1 || shape[3] != bs[2])
+                        || !depthwise && shape[2] != bs[2]
+                    {
+                        return Err(invalid("CPU 2D convolution channel geometry differs"));
+                    }
+                    shape = [width, height, shape[3], bs[3]];
+                    kind = self.info(b)?.kind;
+                    sources.push(b);
+                    if depthwise { 58 } else { 56 }
+                }
+            }
+            "ggml_conv_3d_direct" => {
+                let b = tensor(args, 2)?;
+                let bs = self.info(b)?.shape;
+                let channels = usize_arg(args, 12)?;
+                let batches = usize_arg(args, 13)?;
+                let output_channels = usize_arg(args, 14)?;
+                if shape[3] != channels * output_channels || bs[3] != channels * batches {
+                    return Err(invalid("CPU 3D convolution channel geometry differs"));
+                }
+                for axis in 0..3 {
+                    shape[axis] = convolution_extent(
+                        bs[axis],
+                        shape[axis],
+                        int(args, 3 + axis)?,
+                        int(args, 6 + axis)?,
+                        int(args, 9 + axis)?,
+                    )?;
+                }
+                shape[3] = output_channels * batches;
+                kind = 0;
+                sources.push(b);
+                for index in 0..12 {
+                    put_int(&mut p, index, i32::try_from(int(args, 3 + index)?)?);
+                }
+                57
+            }
+            "ggml_conv_transpose_2d_p0" => {
+                let b = tensor(args, 2)?;
+                let bs = self.info(b)?.shape;
+                let stride = usize_arg(args, 3)?;
+                if stride == 0 || shape[3] != bs[2] {
+                    return Err(invalid("CPU 2D transposed convolution geometry differs"));
+                }
+                shape = [
+                    (bs[0] - 1) * stride + shape[0],
+                    (bs[1] - 1) * stride + shape[1],
+                    shape[2],
+                    bs[3],
+                ];
+                kind = 0;
+                sources.push(b);
+                put_int(&mut p, 0, i32::try_from(stride)?);
+                59
+            }
+            "ggml_pool_1d" | "ggml_pool_2d" => {
+                let two_dimensional = name == "ggml_pool_2d";
+                let pool = int(args, 2)?;
+                if !(0..=1).contains(&pool) {
+                    return Err(invalid("CPU pool operation differs"));
+                }
+                put_int(&mut p, 0, i32::try_from(pool)?);
+                let kernel_width = int(args, 3)?;
+                let kernel_height = if two_dimensional { int(args, 4)? } else { 1 };
+                let stride_width = int(args, if two_dimensional { 5 } else { 4 })?;
+                let stride_height = if two_dimensional { int(args, 6)? } else { 1 };
+                let padding_width = if two_dimensional {
+                    float(args, 7)?
+                } else {
+                    int(args, 5)? as f32
+                };
+                let padding_height = if two_dimensional {
+                    float(args, 8)?
+                } else {
+                    0.0
+                };
+                if kernel_width <= 0
+                    || kernel_height <= 0
+                    || stride_width <= 0
+                    || stride_height <= 0
+                {
+                    return Err(invalid("CPU pool kernel or stride differs"));
+                }
+                let width = ((shape[0] as f32 + 2.0 * padding_width - kernel_width as f32)
+                    / stride_width as f32
+                    + 1.0) as i64;
+                let height = if two_dimensional {
+                    ((shape[1] as f32 + 2.0 * padding_height - kernel_height as f32)
+                        / stride_height as f32
+                        + 1.0) as i64
+                } else {
+                    shape[1] as i64
+                };
+                if width <= 0 || height <= 0 {
+                    return Err(invalid("CPU pool output extent differs"));
+                }
+                shape[0] = usize::try_from(width)?;
+                shape[1] = usize::try_from(height)?;
+                kind = 0;
+                if two_dimensional {
+                    for (index, value) in [
+                        kernel_width,
+                        kernel_height,
+                        stride_width,
+                        stride_height,
+                        padding_width as i64,
+                        padding_height as i64,
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        put_int(&mut p, index + 1, i32::try_from(value)?);
+                    }
+                    61
+                } else {
+                    for (index, value) in [kernel_width, stride_width, padding_width as i64]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        put_int(&mut p, index + 1, i32::try_from(value)?);
+                    }
+                    60
+                }
+            }
+            "ggml_upscale" | "ggml_interpolate" => {
+                let mode = if name == "ggml_upscale" {
+                    let factor = usize_arg(args, 2)?;
+                    if factor <= 1 {
+                        return Err(invalid("CPU upscale factor must exceed one"));
+                    }
+                    shape[0] *= factor;
+                    shape[1] *= factor;
+                    int(args, 3)?
+                } else {
+                    for (axis, dimension) in shape.iter_mut().enumerate() {
+                        *dimension = usize_arg(args, axis + 2)?;
+                    }
+                    int(args, 6)?
+                };
+                if !(0..=2).contains(&(mode & 255))
+                    || mode & 512 != 0 && mode & 255 != 1
+                    || shape.contains(&0)
+                {
+                    return Err(invalid("CPU interpolation mode or extent differs"));
+                }
+                put_int(&mut p, 0, i32::try_from(mode)?);
+                63
+            }
+            "ggml_pad_reflect_1d" => {
+                let left = usize_arg(args, 2)?;
+                let right = usize_arg(args, 3)?;
+                if left >= shape[0] || right >= shape[0] {
+                    return Err(invalid("CPU reflection padding exceeds input width"));
+                }
+                shape[0] += left + right;
+                put_int(&mut p, 0, i32::try_from(left)?);
+                put_int(&mut p, 1, i32::try_from(right)?);
+                65
             }
             "ggml_pad" | "ggml_pad_circular" | "ggml_pad_ext" | "ggml_pad_ext_circular" => {
                 for (axis, dimension) in shape.iter_mut().enumerate() {

@@ -357,4 +357,40 @@ mod tests {
         assert!(outcome?.is_some());
         Ok(())
     }
+
+    #[test]
+    fn rust_backend_first_original_geometry_preserves_source_controller() -> Result<()> {
+        use super::super::{
+            evaluate,
+            graph::Plan,
+            host::Production,
+            prepare::{self, Mode},
+            program,
+        };
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "prism-rust-original-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory)?;
+        let engine = Engine::new(Target::Rust, None, None, None, None, None)?;
+        let (program, geometries) = program::load().map_err(invalid)?;
+        let geometry = &geometries.eval[0];
+        let outcome = transport::with_session(&engine, &directory, |session| {
+            let mut host = Production::new(Plan::new(session), program, 0, 1, Mode::Eval.code());
+            let mut prepared = prepare::prepare(&mut host, geometry, Mode::Eval, None)?;
+            assert!(prepared.supported);
+            assert!(prepared.initialize);
+            evaluate::allocate(&mut host, &mut prepared, geometry, Mode::Eval, 0)?;
+            let result = evaluate::evaluate(&mut host, &mut prepared, geometry)?;
+            assert_eq!(result["Status"], "pass");
+            Ok(())
+        });
+        for entry in fs::read_dir(&directory)? {
+            fs::remove_file(entry?.path())?;
+        }
+        fs::remove_dir(&directory)?;
+        assert!(outcome?.is_some());
+        Ok(())
+    }
 }

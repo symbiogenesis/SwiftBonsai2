@@ -19,6 +19,7 @@ use crate::{Result, invalid};
 use bonsai_ternary::half_to_float;
 
 mod call;
+mod image;
 mod ops;
 mod rope;
 

@@ -140,3 +140,107 @@ fn unsupported_operation_never_reports_support_or_computes() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn image_extraction_convolution_and_pooling_preserve_axis_order() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let image = backend.tensor(1, 0, [3, 3, 1, 1])?;
+    backend.set_values(image, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])?;
+    let kernel = backend.tensor(1, 0, [2, 2, 1, 1])?;
+    backend.set_values(kernel, &[1.0; 4])?;
+    let mut arguments = vec![
+        Argument::Context(1),
+        Argument::Tensor(kernel),
+        Argument::Tensor(image),
+    ];
+    arguments.extend([1, 1, 0, 0, 1, 1].map(Argument::Integer));
+    let convolution = result_tensor(&backend.call("ggml_conv_2d_direct", &arguments)?)?;
+    evaluate(&mut backend, convolution)?;
+    assert_eq!(backend.values(convolution)?, [12.0, 16.0, 24.0, 28.0]);
+    arguments.extend([Argument::Bool(true), Argument::Integer(0)]);
+    let columns = result_tensor(&backend.call("ggml_im2col", &arguments)?)?;
+    evaluate(&mut backend, columns)?;
+    assert_eq!(
+        backend.values(columns)?,
+        [
+            1.0, 2.0, 4.0, 5.0, 2.0, 3.0, 5.0, 6.0, 4.0, 5.0, 7.0, 8.0, 5.0, 6.0, 8.0, 9.0
+        ]
+    );
+    let maximum = result_tensor(&backend.call(
+        "ggml_pool_2d",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(image),
+            Argument::Integer(0),
+            Argument::Integer(2),
+            Argument::Integer(2),
+            Argument::Integer(1),
+            Argument::Integer(1),
+            Argument::Float(0.0),
+            Argument::Float(0.0),
+        ],
+    )?)?;
+    evaluate(&mut backend, maximum)?;
+    assert_eq!(backend.values(maximum)?, [5.0, 6.0, 8.0, 9.0]);
+    Ok(())
+}
+
+#[test]
+fn interpolation_and_reflection_use_pinned_pixel_positions() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let image = backend.tensor(1, 0, [2, 2, 1, 1])?;
+    backend.set_values(image, &[1.0, 2.0, 3.0, 4.0])?;
+    let enlarged = result_tensor(&backend.call(
+        "ggml_upscale",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(image),
+            Argument::Integer(2),
+            Argument::Integer(1),
+        ],
+    )?)?;
+    evaluate(&mut backend, enlarged)?;
+    assert_eq!(
+        backend.values(enlarged)?,
+        [
+            1.0, 1.25, 1.75, 2.0, 1.5, 1.75, 2.25, 2.5, 2.5, 2.75, 3.25, 3.5, 3.0, 3.25, 3.75, 4.0
+        ]
+    );
+    let constant = backend.tensor(1, 0, [4, 4, 1, 1])?;
+    backend.set_values(constant, &[1.0; 16])?;
+    for mode in [2, 513] {
+        let interpolated = result_tensor(&backend.call(
+            "ggml_interpolate",
+            &[
+                Argument::Context(1),
+                Argument::Tensor(constant),
+                Argument::Integer(2),
+                Argument::Integer(2),
+                Argument::Integer(1),
+                Argument::Integer(1),
+                Argument::Integer(mode),
+            ],
+        )?)?;
+        evaluate(&mut backend, interpolated)?;
+        assert!(
+            backend
+                .values(interpolated)?
+                .iter()
+                .all(|value| (*value - 1.0).abs() < 1e-6)
+        );
+    }
+    let line = backend.tensor(1, 0, [3, 1, 1, 1])?;
+    backend.set_values(line, &[1.0, 2.0, 3.0])?;
+    let reflected = result_tensor(&backend.call(
+        "ggml_pad_reflect_1d",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(line),
+            Argument::Integer(2),
+            Argument::Integer(1),
+        ],
+    )?)?;
+    evaluate(&mut backend, reflected)?;
+    assert_eq!(backend.values(reflected)?, [3.0, 2.0, 1.0, 2.0, 3.0, 2.0]);
+    Ok(())
+}
