@@ -284,6 +284,9 @@ impl Engine {
             if let Some(response) = super::quant_selection::execute_runtime(request)? {
                 return Ok(Some(response));
             }
+            if let Some(response) = super::optimizer::execute_runtime(request)? {
+                return Ok(Some(response));
+            }
             if let Some(response) = super::engine_runtime::execute(request)? {
                 return Ok(Some(response));
             }

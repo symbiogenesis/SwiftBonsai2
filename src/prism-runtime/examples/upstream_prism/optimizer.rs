@@ -17,6 +17,10 @@ use super::windows_random::{Normal, Random};
 use super::{Result, invalid, result};
 use serde_json::{Value, json};
 
+#[path = "optimizer_runtime.rs"]
+mod runtime;
+pub(super) use runtime::execute_runtime;
+
 const ID: &str = "tests/test-opt.cpp";
 const SOURCE_SHA: &str = "24af6c26293d328ad42820cc817ab891869c93ec744950e6505018cfd33d04bb";
 const NDATA: usize = 6;

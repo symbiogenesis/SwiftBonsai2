@@ -827,12 +827,12 @@ fn dry(
 }
 
 #[derive(Clone)]
-struct Random {
+pub(crate) struct Random {
     state: [u32; 624],
     index: usize,
 }
 impl Random {
-    fn new(seed: u32) -> Self {
+    pub(crate) fn new(seed: u32) -> Self {
         let seed = if seed == u32::MAX {
             let mut hash = std::collections::hash_map::RandomState::new().build_hasher();
             hash.write_u32(std::process::id());
@@ -867,6 +867,20 @@ impl Random {
         value ^= (value << 7) & 0x9d2c_5680;
         value ^= (value << 15) & 0xefc6_0000;
         value ^ (value >> 18)
+    }
+    pub(crate) fn bounded(&mut self, bound: usize) -> Result<usize> {
+        let bound = u32::try_from(bound)?;
+        if bound == 0 {
+            return Err(invalid("random integer bound must be positive"));
+        }
+        let threshold = bound.wrapping_neg() % bound;
+        loop {
+            let product = u64::from(self.next()) * u64::from(bound);
+            let low = u32::from_le_bytes(product.to_le_bytes()[..4].try_into()?);
+            if low >= threshold {
+                return Ok(usize::try_from(product >> 32)?);
+            }
+        }
     }
     #[allow(
         clippy::as_conversions,

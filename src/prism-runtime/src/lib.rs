@@ -18,6 +18,7 @@ pub mod kernels;
 pub mod logging;
 pub mod media;
 pub mod model;
+pub mod optimization;
 #[cfg(feature = "cli")]
 pub mod peg;
 pub mod pretokenizer;
