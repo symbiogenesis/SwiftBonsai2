@@ -58,6 +58,95 @@ fn messages(fixture: &Value, case: &Value) -> Result<Vec<Value>> {
     Ok(messages)
 }
 
+pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
+    let Some(operations) = request.get("Operations").and_then(Value::as_array) else {
+        return Ok(None);
+    };
+    if !operations.iter().all(|operation| {
+        operation
+            .get("Kind")
+            .and_then(Value::as_str)
+            .is_some_and(|kind| {
+                matches!(
+                    kind,
+                    "common-chat-render" | "legacy-chat-render" | "chat-builtins"
+                )
+            })
+    }) {
+        return Ok(None);
+    }
+    let mut results = Vec::new();
+    for operation in operations {
+        let kind = text(operation, "Kind")?;
+        if kind == "chat-builtins" {
+            let capacity = usize::try_from(uint(operation, "Capacity")?)?;
+            if capacity > 4096 {
+                return Err(invalid("chat builtin capacity exceeds bound"));
+            }
+            let names = bonsai_prism_runtime::chat::builtin_template_names();
+            results.push(json!({"Count":names.len(),"Names":(0..capacity).map(|index|names.get(index).copied()).collect::<Vec<_>>()}));
+            continue;
+        }
+        let render = (|| -> Result<String> {
+            use bonsai_prism_runtime::chat::{ChatTemplate, Message};
+            let messages = array(operation, "Messages")?
+                .iter()
+                .map(|message| {
+                    Ok(Message {
+                        role: text(message, "Role")?.into(),
+                        content: text(message, "Content")?.into(),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let add = field(operation, "AddGeneration")?
+                .as_bool()
+                .ok_or("chat generation flag must be boolean")?;
+            if kind == "legacy-chat-render" || operation.get("UseJinja") != Some(&Value::Bool(true))
+            {
+                return bonsai_prism_runtime::chat::render_legacy(
+                    text(operation, "Template")?,
+                    &messages,
+                    add,
+                );
+            }
+            ChatTemplate::new(
+                text(operation, "Template")?,
+                text(operation, "Bos")?,
+                text(operation, "Eos")?,
+            )?
+            .render(&messages, add)
+        })();
+        if kind == "legacy-chat-render" {
+            let capacity = usize::try_from(uint(operation, "Capacity")?)?;
+            if capacity > 131_072 {
+                return Err(invalid("legacy chat buffer exceeds bound"));
+            }
+            let mut bytes = vec![0_u8; capacity];
+            let code = match render {
+                Ok(prompt) => {
+                    let count = prompt.len().min(capacity);
+                    bytes[..count].copy_from_slice(&prompt.as_bytes()[..count]);
+                    i64::try_from(prompt.len())?
+                }
+                Err(_) => -1,
+            };
+            let mut buffer_hex = String::with_capacity(2 * capacity);
+            let digits = b"0123456789abcdef";
+            for byte in bytes {
+                buffer_hex.push(char::from(digits[usize::from(byte >> 4)]));
+                buffer_hex.push(char::from(digits[usize::from(byte & 15)]));
+            }
+            results.push(json!({"ReturnCode":code,"BufferHex":buffer_hex}));
+            continue;
+        }
+        results.push(match render {
+            Ok(prompt) => json!({"Success":true,"Prompt":prompt,"Error":null}),
+            Err(error) => json!({"Success":false,"Prompt":null,"Error":error.to_string()}),
+        });
+    }
+    Ok(Some(json!({"SchemaVersion":1,"Results":results})))
+}
+
 pub(super) fn run(engine: &Engine) -> Result<Value> {
     let fixture: Value = serde_json::from_str(include_str!("chat-template-cases.json"))?;
     let cases = array(&fixture, "Cases")?;
@@ -161,6 +250,59 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn production_original_chat_templates() -> Result<()> {
+        let engine = Engine::new(
+            super::super::engine::Target::Rust,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        let report = run(&engine)?;
+        assert_eq!(report["Status"], "pass", "{report:?}");
+        Ok(())
+    }
+    #[test]
+    fn production_common_chat_templates() -> Result<()> {
+        let fixture: Value = serde_json::from_str(include_str!("chat-template-cases.json"))?;
+        let mut failures = Vec::new();
+        for case in array(&fixture, "Cases")?
+            .iter()
+            .filter(|case| case["SupportedWithJinja"] == true)
+        {
+            let operation = json!({"Kind":"common-chat-render","Template":text(case,"Template")?,"Bos":text(case,"Bos")?,"Eos":text(case,"Eos")?,"UseJinja":true,"AddGeneration":true,"Messages":messages(&fixture,case)?});
+            let result =
+                execute(&json!({"Operations":[operation]}))?.ok_or("chat result missing")?;
+            let actual = &result["Results"][0];
+            let alternate = text(case, "ExpectedJinja")?;
+            let expected = if alternate.is_empty() {
+                text(case, "Expected")?
+            } else {
+                alternate
+            }
+            .replace("\r\n", "\n");
+            if actual["Prompt"]
+                .as_str()
+                .map(|value| value.replace("\r\n", "\n"))
+                .as_deref()
+                != Some(&expected)
+            {
+                failures.push(format!(
+                    "{}: {actual:?} expected {expected:?}",
+                    text(case, "Name")?
+                ));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} failures:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+        Ok(())
+    }
 
     #[test]
     fn legacy_buffer_capacity_and_resize_preserve_original_byte_semantics() -> Result<()> {
