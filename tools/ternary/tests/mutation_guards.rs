@@ -53,7 +53,11 @@ fn guard_nonfinite_scale_boundary() {
     for scale in [0x7bff, 0xfbff] {
         assert_scale_round_trip(scale);
     }
-    for scale in [0x7c00, 0xfc00, 0x7c01, 0xfc01, 0x7fff, 0xffff] {
+    // Preserve both infinity signs and the reviewed signaling/quiet NaN
+    // payloads formerly repeated in the general codec regressions.
+    for scale in [
+        0x7c00, 0xfc00, 0x7c01, 0xfc01, 0x7e00, 0xfe00, 0x7fff, 0xffff, 0x7e01,
+    ] {
         assert_scale_rejected(scale);
     }
 }
