@@ -7,7 +7,7 @@ use std::sync::Arc;
 #[cfg(feature = "cli")]
 use bonsai_gguf::MetadataValueRef;
 use bonsai_gguf::{MetadataArray, MetadataValue};
-use bonsai_prism_runtime::graph::Qwen35;
+use bonsai_prism_runtime::graph::{Qwen35, StateComponent};
 use bonsai_prism_runtime::kernels::{MatvecBackend, MatvecFallbackReason, round_f16};
 use bonsai_prism_runtime::model::{Model, Tensor};
 use bonsai_prism_runtime::runtime::{Cancellation, Generation, Limits, Prefill, Runtime};
@@ -775,6 +775,48 @@ fn hybrid_state_checkpoint_restores_exact_recurrent_prefix() -> Result<()> {
     decoder.reset()?;
     let mut fresh = Qwen35::new(fixture(true), 16)?;
     assert_eq!(decoder.evaluate(1)?, fresh.evaluate(1)?);
+    Ok(())
+}
+
+#[test]
+fn qualification_observer_reports_committed_state_without_mutation() -> Result<()> {
+    for recurrent in [false, true] {
+        let mut graph = Qwen35::new(fixture(recurrent), 16)?;
+        graph.evaluate(0)?;
+        graph.evaluate(1)?;
+        let mut observations = Vec::new();
+        graph.visit_state(&mut |block, component, values| {
+            assert_eq!(block, 0);
+            observations.push((component, values.to_vec()));
+            Ok(())
+        })?;
+        if recurrent {
+            assert_eq!(observations[0].0, StateComponent::Convolution);
+            assert_eq!(observations[0].1.len(), 6);
+            assert_eq!(observations[1].0, StateComponent::Recurrent);
+            assert_eq!(observations[1].1.len(), 4);
+        } else {
+            assert_eq!(observations.len(), 4);
+            assert_eq!(observations[0].0, StateComponent::Key(0));
+            assert_eq!(observations[1].0, StateComponent::Key(1));
+            assert_eq!(observations[2].0, StateComponent::Value(0));
+            assert_eq!(observations[3].0, StateComponent::Value(1));
+            assert!(observations.iter().all(|(_, values)| values.len() == 2));
+            assert!(
+                observations
+                    .iter()
+                    .flat_map(|(_, values)| values)
+                    .all(|&value| value.to_bits() == round_f16(value).to_bits())
+            );
+        }
+        let checkpoint = graph.checkpoint()?;
+        let error = graph
+            .visit_state(&mut |_, _, _| Err(std::io::Error::other("observer rejected").into()));
+        assert!(error.is_err());
+        let after_observation = graph.evaluate(0)?;
+        graph.restore(&checkpoint)?;
+        assert_eq!(graph.evaluate(0)?, after_observation);
+    }
     Ok(())
 }
 
