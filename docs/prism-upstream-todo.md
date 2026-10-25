@@ -98,10 +98,12 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   Native-controlled attention dot, masked softmax and RoPE repairs are also
   implemented. The combined actual-model run at `7d49e43` matches all 248,320
   first-token logits and every first-step logical state file bit-for-bit.
-  Later supplied-token steps still exceed the unchanged tolerance, beginning
-  in block 1 convolution. History-dependent arithmetic, scalar/NEON replay and
-  the complete prefix/generated trajectory remain open; the follow-up receipt
-  records each tested revision and its separate result.
+  Later supplied-token steps initially still exceeded the unchanged tolerance.
+  Independent live-history convolution controls then proved native fused
+  multiply-add accumulation. With that repair at `d932dac`, all 483 state/logit
+  files across the three supplied-token steps match native byte-for-byte.
+  Current scalar/NEON replay and the complete prefix/generated trajectory remain
+  open; the follow-up receipt records each tested revision separately.
 
 - [x] **M3 — Connect Swift's chat prompt to the exact tokenizer.** Render the
   verified embedded template with the existing Jinja/chat APIs, current

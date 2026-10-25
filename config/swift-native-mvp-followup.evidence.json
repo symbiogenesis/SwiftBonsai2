@@ -203,6 +203,16 @@
       "path": "q8k-state-comparison.json",
       "bytes": 169539,
       "sha256": "47e6e765e5d237ddd7ed5eed99917da0df636d38d015e12824fc78fcc24b6f59"
+    },
+    {
+      "path": "convolution-three-token-exact-comparison.json",
+      "bytes": 140891,
+      "sha256": "76008d39da845dc5728006ff9a17065ca28ad08f805a8bdfadf25a4eab7c9831"
+    },
+    {
+      "path": "neon-conv-process.json",
+      "bytes": 780,
+      "sha256": "3a60dff5b9593419415980433770f40c5221ec2df36c785835c107e1d1319108"
     }
   ],
   "sessionFollowup": {
@@ -532,6 +542,33 @@
         "executableSha256": "86f1e82bd0477d5df8a0765e5fc73d1606a8a45b7a008f45a4e7d0d4b8ca6e37",
         "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
       }
+    },
+    {
+      "testedRevision": "d932dac4896fd14f3f1206b3be346e52c57ba947",
+      "repair": "Native fused convolution accumulation with live history",
+      "passed": true,
+      "scope": "Three supplied-token forward steps; all complete logical state and248320logits perstep byte-exact with pinned native",
+      "comparedFiles": 483,
+      "comparedBytes": 474445824,
+      "allFilesBitExact": true,
+      "process": {
+        "revision": "d932dac4896fd14f3f1206b3be346e52c57ba947",
+        "mode": "neon",
+        "exitCode": 0,
+        "violation": null,
+        "peakProcessCommitBytes": 7536070656,
+        "peakWorkingSetBytes": 7522627584,
+        "initialAvailablePhysicalBytes": 15655223296,
+        "minimumAvailablePhysicalBytes": 6849294336,
+        "requiredInitialAvailableBytes": 14656575898,
+        "standardServiceAdmissionBytes": 17179869184,
+        "ownerAuthorizedReducedAdmission": true,
+        "processThresholdBytes": 12884901888,
+        "physicalReserveBytes": 4294967296,
+        "executableSha256": "f2c619114fd45f6980b2ca04062be3bbdfc70aa3576e88ca01d98320287db145",
+        "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+      },
+      "remaining": "61-token prefix plus generated trajectory and current scalar/NEON replay"
     }
   ],
   "causalTrace": {
@@ -593,12 +630,12 @@
     "implementationRevision": "46599ba2ef35c9d5c1bbd6817bfe5b8636c68fc7"
   },
   "currentQualification": {
-    "implementationRevision": "7d49e43bf8ad248f7270ac252534db7e5cdeebb3",
-    "combinedActualModelRerun": "completed-three-supplied-token-diagnostic; first step bit exact, later steps fail unchanged tolerance",
-    "lastObservedAvailablePhysicalBytes": 13101268992,
-    "boundedDiagnosticStartFloorBytes": 12884901888,
+    "implementationRevision": "d932dac4896fd14f3f1206b3be346e52c57ba947",
+    "combinedActualModelRerun": "passed-byte-exact-three-supplied-token-diagnostic",
+    "lastObservedAvailablePhysicalBytes": 15655223296,
+    "boundedDiagnosticStartFloorBytes": 14656575898,
     "memoryAcceptableForPreviouslyObservedWorkload": true,
-    "M2": "unqualified: history-dependent steps and full-prefix/generated trajectory remain open",
+    "M2": "three-token native match; longer prefix/generated trajectory and scalar/NEON replay in progress",
     "M6": "owned HTTP recovery and current-revision device coverage remain open",
     "runtimeReleasePin": "0.1.1",
     "serviceStartupAdmissionBytes": 17179869184
