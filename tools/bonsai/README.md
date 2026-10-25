@@ -39,8 +39,6 @@ bonsai-tools credentials --request ABSOLUTE_JSON_PATH
 bonsai-tools memory --request ABSOLUTE_JSON_PATH
 bonsai-tools cpu-check-plan --request ABSOLUTE_JSON_PATH
 bonsai-tools server-policy --request ABSOLUTE_JSON_PATH
-bonsai-tools prism-source --request ABSOLUTE_JSON_PATH
-bonsai-tools prism-baseline --request ABSOLUTE_JSON_PATH
 bonsai-tools runtime-stage --request ABSOLUTE_JSON_PATH
 bonsai-tools runtime-verify --request ABSOLUTE_JSON_PATH
 bonsai-tools completion --request ABSOLUTE_JSON_PATH
@@ -70,29 +68,9 @@ only; values are never serialized. Planning remains launch-disabled and may use
 the tool resolver's external build/request storage without creating model or key
 storage.
 
-`prism-source` selects deterministic ordinary-source partitions and merges the
-four revision-bound C++/Rust result pairs. Rust validates numeric provenance,
-complete source membership and duplicates while preserving original results and
-failure evidence. Reads retain input and ancestor guards on Windows; receipt
-digests identify the same bounded bytes that were parsed. Source artifacts accept
-UTF-8 and BOM-marked UTF-8, UTF-16 or UTF-32 JSON. The partition wrapper returns
-the original PowerShell objects so caller properties and object identity survive.
-This command preserves the existing 100-level source JSON limit; response parsing
-also allows the additional merge envelopes.
-
-`prism-baseline` owns catalog validation and its canonical identity, complete
-target/reference reports, recomputed summaries and the recorded nonregression
-floor. Its `catalog`, `report` and `baseline` operations preserve the checked-in
-catalog digest and independently reject C++ reference regressions. PowerShell
-retains file reads and optional source discovery/hashing; Rust validates the
-complete supplied inventory against the catalog. The bridge projects policy
-fields so unrelated diagnostic payloads do not consume the request limit, and
-catalog imports retain the original metadata, including deeply nested extras.
-The three public PowerShell
-commands remain because upstream orchestration and focused regressions call them.
-The pre-port [fixture](../../tests/fixtures/prism-baseline-v1.json) binds the
-Unicode report, omitted-source defaults and regression diagnostics. A selected
-binary must advertise `prism-baseline` before the bridge writes its request.
+Upstream partitioning and baseline policy are owned by Prism's
+[conformance policy tool](https://github.com/symbiogenesis/prism-inference/blob/main/tools/conformance-policy/README.md).
+They are not maintenance commands in this application repository.
 
 Qualification `invocations` requests take `modelPath` and validated `controls`.
 They return all 24 paired and four zero-scale argument vectors with the same

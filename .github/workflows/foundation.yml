@@ -148,7 +148,7 @@ jobs:
   # Preserve the required check name and reject failure or skipping in any lane.
   foundation:
     if: always() && github.ref == 'refs/heads/main'
-    needs: [broker, standards, foundation-tests, lifecycle, runtime-policy]
+    needs: [broker, standards, foundation-tests, lifecycle, release-integration]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 2
     steps:
@@ -274,7 +274,7 @@ jobs:
           $plan = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-LoraQualification.ps1') -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime') -PlanOnly
           if ($plan.ModelProcessStarted -or $plan.PairedSamples -ne 24 -or $plan.ZeroScaleSamples -ne 4) { throw 'Invalid nonlaunching LoRA qualification plan.' }
           $plan | ConvertTo-Json
-  runtime-policy:
+  release-integration:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
     timeout-minutes: 10

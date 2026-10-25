@@ -143,7 +143,7 @@ The [SIMD plan](simd-plan.md) defines dispatch and numerical gates; the
 [algorithm map](inference-algorithms.md) covers lookup kernels, block prefill,
 Gated DeltaNet and hybrid checkpoints. The
 [pinned nightly](../rust-toolchain.toml) enables Polonius branch-sensitive
-lending in the broker. The [compiler probes](../tools/rust-trial/README.md)
+lending in the broker. The [compiler probes](https://github.com/symbiogenesis/prism-inference/blob/main/tools/rust-trial/README.md)
 retain stable as an isolated control; caller-owned reusable logits themselves
 already work on stable Rust.
 

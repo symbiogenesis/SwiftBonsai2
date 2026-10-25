@@ -196,7 +196,7 @@ profile-promotion requirements remain unchanged.
     allocation, an optimization also expressible on stable. In the broker,
     Polonius permits one helper to lend buffered bytes on success and close the
     owned reader on failure, centralizing duplicate I/O/deadline/EOF checks.
-    The [compiler probes](../tools/rust-trial/README.md) retain higher-ranked
+    The [compiler probes](https://github.com/symbiogenesis/prism-inference/blob/main/tools/rust-trial/README.md) retain higher-ranked
     associated-view normalization as a next-solver capability; no current
     production backend needs that abstraction. Reassess when a concrete new
     backend or stream interface requires it.
