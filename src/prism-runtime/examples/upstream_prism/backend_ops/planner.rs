@@ -78,6 +78,7 @@ pub(super) fn plan(
     let (program, geometries, geometry_hash) = extent(mode)?;
     let threads = std::thread::available_parallelism()?.get();
     let mut items = Vec::new();
+    let partition = transport::Partition::open(engine)?;
     for (case_index, geometry) in geometries
         .iter()
         .enumerate()
@@ -85,7 +86,7 @@ pub(super) fn plan(
     {
         let directory =
             engine.evidence_path(&format!("backend-{}-plan-{case_index:05}", mode.name()))?;
-        let observed = transport::with_session(engine, &directory, |session| {
+        let observed = partition.with_session(&directory, |session| {
             let mut host = Production::new(
                 Plan::new(session),
                 program,
@@ -108,6 +109,7 @@ pub(super) fn plan(
         super::driver::cleanup(&directory)?;
         items.push(observed);
     }
+    partition.finish()?;
     Ok(
         json!({"SchemaVersion":1,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Seed":1,"Partition":{"Index":index,"Count":count},"Status":"planned","ExpectedGeometries":geometries.len(),"Filter":filter,"Threads":threads,"Items":items}),
     )

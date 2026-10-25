@@ -123,7 +123,7 @@ pub(super) fn cleanup(directory: &Path) -> Result<()> {
 }
 
 fn one(
-    engine: &Engine,
+    partition: &transport::Partition,
     index: usize,
     geometry: &Geometry,
     mode: Mode,
@@ -144,7 +144,7 @@ fn one(
     let offset = row["CrtOffset"]
         .as_u64()
         .ok_or_else(|| invalid("backend planned CRT offset missing"))?;
-    transport::with_session(engine, directory, |session| {
+    partition.with_session(directory, |session| {
         let mut host = Production::new(
             Plan::new(session),
             program,
@@ -225,6 +225,7 @@ pub(super) fn run(
     let (_, geometries, geometry_hash) = planner::extent(mode)?;
     let mut items = Vec::new();
     let mut retention = super::retention::Budget::default();
+    let partition = transport::Partition::open(engine)?;
     for (case_index, geometry) in geometries
         .iter()
         .enumerate()
@@ -233,7 +234,7 @@ pub(super) fn run(
         let directory =
             engine.evidence_path(&format!("backend-{}-run-{case_index:05}", mode.name()))?;
         let observed = one(
-            engine,
+            &partition,
             case_index,
             geometry,
             mode,
@@ -269,7 +270,13 @@ pub(super) fn run(
             )?;
         }
         items.push(compact_result(&observed, &directory)?);
+        if !partition.healthy() {
+            return Err(invalid(
+                "backend native transport failed; retained the failed geometry and aborted the partition",
+            ));
+        }
     }
+    partition.finish()?;
     let passed = items.iter().all(|item| successful(&item["Status"], mode));
     Ok(
         json!({"SchemaVersion":1,"ItemFormatVersion":ITEM_FORMAT_VERSION,"SourceId":"test-backend-ops","SourceSha256":SOURCE_SHA256,"GeometrySha256":geometry_hash,"Mode":mode.name(),"CpuSelection":"explicit CPU","Partition":{"Index":index,"Count":count},"Status":if passed{"pass"}else{"fail"},"PlanSha256":plan["PlanSha256"],"ExpectedGeometries":geometries.len(),"Items":items}),

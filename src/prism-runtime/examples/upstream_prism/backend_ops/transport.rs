@@ -17,7 +17,55 @@ pub(super) const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
 type WorkerResult = Result<Option<Value>>;
 
-pub(super) struct Session {
+#[path = "pipe.rs"]
+mod pipe;
+pub(super) use pipe::Partition;
+
+pub(super) enum Session {
+    File(FileSession),
+    Pipe(pipe::Case),
+}
+
+impl Session {
+    pub(super) fn exchange(&mut self, actions: Vec<Value>) -> Result<Vec<Value>> {
+        match self {
+            Self::File(session) => session.exchange(actions),
+            Self::Pipe(session) => session.exchange(&actions),
+        }
+    }
+
+    fn directory(&self) -> &Path {
+        match self {
+            Self::File(session) => &session.directory,
+            Self::Pipe(session) => &session.directory,
+        }
+    }
+
+    pub(super) fn file(&self, name: &str) -> Result<PathBuf> {
+        let mut components = Path::new(name).components();
+        if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+            return Err(invalid(
+                "backend artifact name must be one normal path component",
+            ));
+        }
+        Ok(self.directory().join(name))
+    }
+
+    pub(super) fn checked_file(&self, path: &Path) -> Result<PathBuf> {
+        if !path.is_absolute() {
+            return Err(invalid("backend observation file must be absolute"));
+        }
+        let path = fs::canonicalize(path)?;
+        if !path.starts_with(self.directory()) || !path.is_file() {
+            return Err(invalid(
+                "backend observation file is outside its owned session directory",
+            ));
+        }
+        Ok(path)
+    }
+}
+
+pub(super) struct FileSession {
     directory: PathBuf,
     receiver: Receiver<WorkerResult>,
     completed: Option<WorkerResult>,
@@ -76,7 +124,7 @@ fn checkpoint(directory: &Path, sequence: usize, timeout: Duration) -> (PathBuf,
     (output, next, action)
 }
 
-impl Session {
+impl FileSession {
     fn poll_worker(&mut self) -> Result<()> {
         if self.completed.is_some() {
             return Ok(());
@@ -157,29 +205,6 @@ impl Session {
             return Err(invalid("backend action/observation count differs"));
         }
         Ok(trace)
-    }
-
-    pub(super) fn file(&self, name: &str) -> Result<PathBuf> {
-        let mut components = Path::new(name).components();
-        if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
-            return Err(invalid(
-                "backend artifact name must be one normal path component",
-            ));
-        }
-        Ok(self.directory.join(name))
-    }
-
-    pub(super) fn checked_file(&self, path: &Path) -> Result<PathBuf> {
-        if !path.is_absolute() {
-            return Err(invalid("backend observation file must be absolute"));
-        }
-        let path = fs::canonicalize(path)?;
-        if !path.starts_with(&self.directory) || !path.is_file() {
-            return Err(invalid(
-                "backend observation file is outside its owned session directory",
-            ));
-        }
-        Ok(path)
     }
 
     fn request_stop(&mut self) -> Result<()> {
@@ -265,7 +290,7 @@ pub(super) fn with_session<T>(
                 engine.execute_common_with_timeout("backend-session", &request, process_timeout);
             let _ = sender.send(outcome);
         });
-        let mut session = Session {
+        let mut session = Session::File(FileSession {
             directory: fs::canonicalize(directory)?,
             receiver,
             completed: None,
@@ -275,8 +300,11 @@ pub(super) fn with_session<T>(
             total_actions: 1,
             stopped: false,
             timeout,
+        });
+        let Session::File(file) = &mut session else {
+            return Err(invalid("backend file session differs"));
         };
-        let ready = session.wait_checkpoint();
+        let ready = file.wait_checkpoint();
         let result = match ready {
             Ok(Some(trace)) if trace.is_empty() => controller(&mut session),
             Ok(None) => {
@@ -288,7 +316,10 @@ pub(super) fn with_session<T>(
             Ok(Some(_)) => Err(invalid("backend initial checkpoint Trace is not empty")),
             Err(error) => Err(error),
         };
-        let completion = session.finish();
+        let Session::File(file) = &mut session else {
+            return Err(invalid("backend file session differs"));
+        };
+        let completion = file.finish();
         worker
             .join()
             .map_err(|_| invalid("backend worker panicked"))?;

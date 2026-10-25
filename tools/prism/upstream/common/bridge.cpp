@@ -38,6 +38,7 @@
 #include "dspark.hpp"
 #include "threadpool.hpp"
 #include "backend_ops.hpp"
+#include "backend_session.hpp"
 #include "public_c_abi.h"
 #include <nlohmann/json.hpp>
 
@@ -316,6 +317,13 @@ wire_json execute(const wire_json & operation) {
 
 int main(int argc, char ** argv) {
     try {
+        if (argc == 2 && std::strcmp(argv[1], "--backend-session") == 0) {
+#ifdef _WIN32
+            _setmode(_fileno(stdin), _O_BINARY);
+            _setmode(_fileno(stdout), _O_BINARY);
+#endif
+            return prism_backend_session::serve();
+        }
         if (argc == 2 && std::strcmp(argv[1], "--model-session") == 0) {
             return prism_model_runtime::serve();
         }
