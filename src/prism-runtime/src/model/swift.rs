@@ -349,28 +349,47 @@ fn expected_tensors() -> BTreeMap<String, (u32, Vec<u64>)> {
 }
 
 fn validate_inventory(tensors: &[TensorDescriptor]) -> Result<([usize; 3], usize, usize)> {
+    validate_layouts(
+        tensors.len(),
+        tensors.iter().map(|tensor| {
+            (
+                tensor.name.as_str(),
+                tensor.dimensions.as_slice(),
+                tensor.type_id,
+                tensor.bytes,
+            )
+        }),
+    )
+}
+
+fn validate_layouts<'a>(
+    count: usize,
+    tensors: impl IntoIterator<Item = (&'a str, &'a [u64], u32, u64)>,
+) -> Result<([usize; 3], usize, usize)> {
     let expected = expected_tensors();
-    if tensors.len() != expected.len() {
+    if count != expected.len() {
         return Err(invalid("Swift tensor inventory count mismatch"));
     }
     let mut counts = [0; 3];
     let mut bytes = 0_usize;
     let mut largest = 0;
-    for tensor in tensors {
-        if expected.get(&tensor.name) != Some(&(tensor.type_id, tensor.dimensions.clone())) {
-            return Err(invalid(format!(
-                "Swift tensor layout mismatch: {}",
-                tensor.name
-            )));
+    for (name, dimensions, kind, payload_bytes) in tensors {
+        if expected
+            .get(name)
+            .is_none_or(|(expected_kind, expected_dimensions)| {
+                *expected_kind != kind || expected_dimensions != dimensions
+            })
+        {
+            return Err(invalid(format!("Swift tensor layout mismatch: {name}")));
         }
-        let slot = match tensor.type_id {
+        let slot = match kind {
             0 => 0,
             30 => 1,
             142 => 2,
             _ => return Err(invalid("Swift tensor encoding mismatch")),
         };
         counts[slot] += 1;
-        let length = usize::try_from(tensor.bytes)?;
+        let length = usize::try_from(payload_bytes)?;
         bytes = bytes
             .checked_add(length)
             .ok_or_else(|| invalid("Swift tensor accounting overflow"))?;
@@ -398,25 +417,48 @@ mod tests {
                     142 => elements / 256 * 68,
                     _ => 0,
                 };
-                TensorDescriptor {
-                    name,
-                    dimensions,
-                    type_id,
-                    offset: 0,
-                    bytes,
-                    elements,
-                }
+                (name, dimensions, type_id, bytes)
             })
             .collect::<Vec<_>>();
         assert_eq!(
-            validate_inventory(&descriptors)?,
+            validate_layouts(
+                descriptors.len(),
+                descriptors.iter().map(|(name, dimensions, kind, bytes)| (
+                    name.as_str(),
+                    dimensions.as_slice(),
+                    *kind,
+                    *bytes
+                ))
+            )?,
             ([353, 96, 402], TENSOR_PAYLOAD_BYTES, 337_715_200)
         );
         let mut descriptors = descriptors;
-        descriptors[0].dimensions[0] += 1;
-        assert!(validate_inventory(&descriptors).is_err());
+        descriptors[0].1[0] += 1;
+        assert!(
+            validate_layouts(
+                descriptors.len(),
+                descriptors.iter().map(|(name, dimensions, kind, bytes)| (
+                    name.as_str(),
+                    dimensions.as_slice(),
+                    *kind,
+                    *bytes
+                ))
+            )
+            .is_err()
+        );
         descriptors.pop();
-        assert!(validate_inventory(&descriptors).is_err());
+        assert!(
+            validate_layouts(
+                descriptors.len(),
+                descriptors.iter().map(|(name, dimensions, kind, bytes)| (
+                    name.as_str(),
+                    dimensions.as_slice(),
+                    *kind,
+                    *bytes
+                ))
+            )
+            .is_err()
+        );
         Ok(())
     }
 
