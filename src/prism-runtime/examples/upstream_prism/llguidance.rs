@@ -503,6 +503,186 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    #[ignore = "requires BONSAI_BACKEND_TRANSPORT_BRIDGE naming the checked native common bridge"]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keeps the complete native field-import equivalence and malformed-input schedule together."
+    )]
+    fn native_candidate_templates_match_original_file_imports() -> super::Result<()> {
+        use super::super::engine::{Engine, Target};
+        use super::{ModelSession, call, handle, null, patch};
+        use std::{fs, path::PathBuf, time::SystemTime};
+
+        let bridge = PathBuf::from(std::env::var("BONSAI_BACKEND_TRANSPORT_BRIDGE")?);
+        let evidence = std::env::temp_dir().join(format!(
+            "prism-llg-candidate-equivalence-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos()
+        ));
+        let engine = Engine::new(Target::Cpp, None, Some(bridge), Some(evidence), None, None)?;
+        let session = ModelSession::open(&engine, "llguidance-candidate-equivalence")?
+            .ok_or_else(|| super::invalid("native candidate session unavailable"))?;
+        let client = session.client();
+        let count = 257;
+        let patterns = [
+            0_u32,
+            0x8000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0x7fa1_2345,
+            0x3f80_0000,
+            0xbf80_0000,
+        ];
+        let mut source = Vec::new();
+        let mut initial = Vec::new();
+        let mut logits = Vec::new();
+        let mut id_logits = Vec::new();
+        for index in 0..count {
+            let id = i32::try_from(count - index)?.to_le_bytes();
+            let logit = patterns[index % patterns.len()].to_le_bytes();
+            let probability = patterns[(index + 3) % patterns.len()].to_le_bytes();
+            source.extend([id, logit, probability].concat());
+            logits.extend(logit);
+            id_logits.extend([id, logit].concat());
+            initial.extend(
+                [
+                    i32::try_from(index)?.to_le_bytes(),
+                    patterns[(index + 1) % patterns.len()].to_le_bytes(),
+                    patterns[(index + 2) % patterns.len()].to_le_bytes(),
+                ]
+                .concat(),
+            );
+        }
+        let directory = session.evidence_directory();
+        let source_file = directory.join("source.bin");
+        let initial_file = directory.join("initial.bin");
+        fs::write(&source_file, &source)?;
+        fs::write(&initial_file, &initial)?;
+        let new = |file: &std::path::Path, count| {
+            handle(
+                &client,
+                json!({"Op":"llg-candidates-new","Count":count,"File":file,"Selected":-1,"Sorted":false}),
+                "Candidates",
+            )
+        };
+        let inspect = |candidates| {
+            call(
+                &client,
+                json!({"Op":"llg-candidates-inspect","Candidates":candidates,"Indices":(0..count).collect::<Vec<_>>()}),
+            )
+        };
+        let template = new(&source_file, count)?;
+        let untouched = inspect(template)?;
+        for (encoding, bytes) in [
+            ("candidate-le", &source),
+            ("id-logit-le", &id_logits),
+            ("logits-le", &logits),
+        ] {
+            let file = directory.join(format!("{encoding}.bin"));
+            fs::write(&file, bytes)?;
+            let expected = new(&initial_file, count)?;
+            let actual = new(&initial_file, count)?;
+            // Preserve a partial view and non-default selected/sorted metadata.
+            // A field-only reset must leave these and untouched P/ID bits intact.
+            for candidates in [expected, actual] {
+                null(
+                    &client,
+                    json!({"Op":"llg-candidates-load","Candidates":candidates,"File":initial_file,"Encoding":"candidate-le","Metadata":{"Offset":2,"Size":count-4,"Selected":5,"Sorted":true}}),
+                )?;
+            }
+            null(
+                &client,
+                json!({"Op":"llg-candidates-load","Candidates":expected,"File":file,"Encoding":encoding,"Metadata":null}),
+            )?;
+            null(
+                &client,
+                json!({"Op":"llg-candidates-copy","Candidates":actual,"Source":template,"Encoding":encoding,"Metadata":null}),
+            )?;
+            let observed = inspect(actual)?;
+            assert_eq!(observed, inspect(expected)?);
+            assert_eq!(inspect(template)?, untouched);
+            for (index, row) in super::array(&observed, "Probes")?.iter().enumerate() {
+                let value = &row["Candidate"];
+                assert_eq!(
+                    value["Id"],
+                    json!(if encoding == "logits-le" {
+                        index
+                    } else {
+                        count - index
+                    })
+                );
+                assert_eq!(value["LogitBits"], json!(patterns[index % patterns.len()]));
+                assert_eq!(
+                    value["ProbabilityBits"],
+                    json!(
+                        patterns[(index + if encoding == "candidate-le" { 3 } else { 2 })
+                            % patterns.len()]
+                    )
+                );
+            }
+            let cloned = handle(
+                &client,
+                json!({"Op":"llg-candidates-clone","Source":actual}),
+                "Candidates",
+            )?;
+            assert_eq!(inspect(cloned)?, observed);
+            patch(&client, cloned, 3, 100_f32.to_bits())?;
+            assert_eq!(inspect(actual)?, observed);
+            assert_ne!(inspect(cloned)?, observed);
+            null(
+                &client,
+                json!({"Op":"llg-candidates-copy","Candidates":actual,"Source":template,"Encoding":encoding,"Metadata":{"Offset":0,"Size":count,"Selected":-1,"Sorted":false}}),
+            )?;
+            let reset = inspect(actual)?;
+            assert_eq!(reset["Offset"], 0);
+            assert_eq!(reset["Size"], count);
+            assert_eq!(reset["Selected"], -1);
+            assert_eq!(reset["Sorted"], false);
+            assert!(call(&client, json!({"Op":"llg-candidates-copy","Candidates":actual,"Source":template,"Encoding":"invalid","Metadata":null})).is_err());
+            assert!(call(&client, json!({"Op":"llg-candidates-copy","Candidates":actual,"Source":template,"Encoding":encoding,"Metadata":{"Offset":count,"Size":1,"Selected":-1,"Sorted":false}})).is_err());
+            for candidates in [expected, actual, cloned] {
+                null(
+                    &client,
+                    json!({"Op":"llg-candidates-free","Candidates":candidates}),
+                )?;
+            }
+        }
+        let short_file = directory.join("short.bin");
+        fs::write(&short_file, &source[..12])?;
+        assert!(new(&short_file, count).is_err());
+        let short = new(&short_file, 1)?;
+        assert!(call(&client, json!({"Op":"llg-candidates-copy","Candidates":short,"Source":template,"Encoding":"logits-le","Metadata":null})).is_err());
+        let changed = new(&initial_file, count)?;
+        patch(&client, template, 7, 0x7fc0_dead)?;
+        null(
+            &client,
+            json!({"Op":"llg-candidates-copy","Candidates":changed,"Source":template,"Encoding":"candidate-le","Metadata":null}),
+        )?;
+        assert_eq!(inspect(changed)?, inspect(template)?);
+        assert_eq!(
+            inspect(changed)?["Probes"][7]["Candidate"]["LogitBits"],
+            0x7fc0_dead_u32
+        );
+        assert!(
+            call(
+                &client,
+                json!({"Op":"llg-candidates-clone","Source":999_999})
+            )
+            .is_err()
+        );
+        for candidates in [short, template, changed] {
+            null(
+                &client,
+                json!({"Op":"llg-candidates-free","Candidates":candidates}),
+            )?;
+        }
+        session.finish()
+    }
+
+    #[test]
     fn retained_template_contains_every_original_reset_field() -> super::Result<()> {
         // Initial candidates assign all three fields. The literal matcher then
         // restores only logits; the chain restores IDs and logits, retaining P.
