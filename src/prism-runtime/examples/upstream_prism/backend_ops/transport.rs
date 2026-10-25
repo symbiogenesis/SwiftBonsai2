@@ -24,6 +24,7 @@ pub(super) use pipe::Partition;
 pub(super) enum Session {
     File(FileSession),
     Pipe(pipe::Case),
+    Rust(super::rust::GraphSession),
 }
 
 impl Session {
@@ -31,6 +32,7 @@ impl Session {
         match self {
             Self::File(session) => session.exchange(actions),
             Self::Pipe(session) => session.exchange(&actions),
+            Self::Rust(session) => session.exchange(&actions),
         }
     }
 
@@ -38,6 +40,7 @@ impl Session {
         match self {
             Self::File(session) => &session.directory,
             Self::Pipe(session) => &session.directory,
+            Self::Rust(session) => session.directory(),
         }
     }
 
