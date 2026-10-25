@@ -11,21 +11,37 @@ batching local filters.
 
 [Foundation](../.github/workflows/foundation.yml) runs only on `main` pushes or
 manual dispatch, skipping documentation-only pushes (root Markdown and `docs/`).
-Its final `foundation` gate requires every app group to pass;
-failed, cancelled or skipped groups are not accepted.
+Its lightweight planner selects changed Cargo packages and every transitive
+workspace consumer, then starts only their Rust lanes and relevant app groups.
+The final `foundation` gate requires every selected group to pass; only skips
+explicitly authorized by the plan are accepted.
 
 | Group | Coverage |
 | --- | --- |
-| Broker core and maintenance | The six registered app packages: broker, artifact verification, CPU policy, Windows process/credentials and maintenance CLI |
+| Broker core and maintenance | Affected registered app packages and their workspace consumers |
 | Standards | Pinned PowerShell analysis, script contracts and strict embedded-C# analyzers |
 | Foundation/native scripts | Download/provisioning, invocation plans, native-process wrappers and packaged supervisor contracts |
 | Released-runtime integration | Pinned archive/install verification, profile/adapter/admission policy, released GGUF wrappers and server-help switching |
 
-The maintenance lane owns Windows Job lifetime/resource-limit tests and builds
-the maintenance CLI once. Script and released-runtime jobs download that run's
-checked executable and verify its revision, digest and ARM64 identity. They do
-not compile another copy. The standards job alone installs the .NET SDK; the
-script lanes use PowerShell's bundled compiler for `Add-Type` helpers.
+For example, `src/broker/**` runs only broker checks. A change to a shared Windows
+boundary crate also checks its broker/CLI consumers. A CLI change runs its own
+crate checks and app integration, without testing unrelated crate sources.
+PowerShell/C# standards run only for their own inputs. Embedded configuration
+and fixtures are mapped to their owning crates in
+[the routing configuration](../.github/ci/impact.json).
+
+The maintenance lane owns Windows Job lifetime/resource-limit tests when those
+packages are affected. It produces one CLI artifact for selected app groups;
+script-only changes reuse/build the CLI without running unrelated Rust suites.
+Consumers verify its revision, digest and ARM64 identity. The standards job alone
+installs the .NET SDK; script lanes use PowerShell's bundled `Add-Type` compiler.
+
+Each workflow compares against its most recent successful main-push ancestor,
+including changes left unvalidated by failed or cancelled runs. A missing base,
+unclassified input, or shared workspace/lockfile/toolchain/CI change selects full
+coverage. Manual Foundation dispatch also runs all packages and app groups.
+Revision-scoped concurrency keeps disjoint crate changes from cancelling each
+other. The small planner regression checks run before selection on every run.
 
 The workspace and [package registry](../config/rust-packages.psd1) contain only
 these app packages. Upstream source/backend catalogs, baseline policy, codec

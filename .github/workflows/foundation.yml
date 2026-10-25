@@ -8,18 +8,47 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 env:
   # Checkout timestamps change on every runner. Reuse compiled Rust only when
   # Cargo verifies the source contents, while every check and test still runs.
   CARGO_UNSTABLE_CHECKSUM_FRESHNESS: 'true'
   CARGO_BUILD_FINGERPRINT: content
 concurrency:
-  group: foundation-${{ github.event_name }}-${{ github.ref }}
+  group: foundation-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: ${{ github.event_name == 'push' }}
 jobs:
+  changes:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 3
+    outputs:
+      plan: ${{ steps.impact.outputs.plan }}
+      packages: ${{ steps.impact.outputs.packages }}
+      rust_lanes: ${{ steps.impact.outputs.rust_lanes }}
+      broker_lanes: ${{ steps.impact.outputs.broker_lanes }}
+      script_lanes: ${{ steps.impact.outputs.script_lanes }}
+      scripts: ${{ steps.impact.outputs.scripts }}
+      standards: ${{ steps.impact.outputs.standards }}
+      release: ${{ steps.impact.outputs.release }}
+      tools: ${{ steps.impact.outputs.tools }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check CI selection and gate regressions
+        run: python3 -B -m unittest discover -s .github/ci -p 'test_*.py'
+      - name: Select affected crates and app groups
+        id: impact
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+        run: python3 -B .github/ci/impact.py --workflow foundation.yml --before "$BEFORE" --after "$GITHUB_SHA"
   broker:
     name: broker / ${{ matrix.lane }}
-    if: github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.rust_lanes == 'true'
+    needs: changes
     runs-on: windows-11-arm
     timeout-minutes: 15
     strategy:
@@ -27,16 +56,39 @@ jobs:
       # package selections concurrently. Every lane must still pass the gate.
       fail-fast: false
       matrix:
-        lane: [core, maintenance]
+        lane: ${{ fromJSON(needs.changes.outputs.broker_lanes) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Select this lane's affected registered crates
+        id: packages
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          AFFECTED_PACKAGES: ${{ needs.changes.outputs.packages }}
+          BROKER_LANE: ${{ matrix.lane }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Rust.psm1')
+          $affected = @(ConvertFrom-Json -InputObject $env:AFFECTED_PACKAGES)
+          $registered = @(Get-BonsaiRustPackage -Group Broker)
+          foreach ($name in $affected) {
+            if ($name -cnotin $registered.Name) { throw "Affected crate is missing from the Rust registry: $name" }
+          }
+          $packages = @($registered | Where-Object {
+            $_.Name -cin $affected -and (($env:BROKER_LANE -ceq 'core') -eq ($_.Name -ceq 'bonsai-broker'))
+          } | ForEach-Object { $_.Name })
+          "has-packages=$($packages.Count -gt 0)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
+          "BROKER_PACKAGES=$(ConvertTo-Json -InputObject $packages -Compress)" >> $env:GITHUB_ENV
       - name: Reuse the pinned native Rust compiler
+        if: steps.packages.outputs.has-packages == 'true'
         uses: ./.github/actions/rust-toolchain
         with:
           toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
       - name: Select external Cargo cache paths
+        if: steps.packages.outputs.has-packages == 'true'
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
@@ -54,6 +106,7 @@ jobs:
           $hostIdentity = "$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)"
           "BROKER_CACHE_HOST=$hostIdentity" >> $env:GITHUB_ENV
       - name: Reuse locked Cargo downloads and build artifacts
+        if: steps.packages.outputs.has-packages == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           # Cache downloads, never credentials or the full Cargo home. The hosted
@@ -68,24 +121,20 @@ jobs:
             broker-v4-${{ matrix.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
             broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
       - name: Broker format, analyzer and full correctness suite
+        if: steps.packages.outputs.has-packages == 'true'
         shell: pwsh
         working-directory: ${{ runner.temp }}
-        env:
-          BROKER_LANE: ${{ matrix.lane }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-BrokerChecks-' + [guid]::NewGuid().ToString('N'))
           "BROKER_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
-          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Rust.psm1')
-          # Derive both selections from the registry so future Broker packages
-          # remain covered without another hard-coded package list.
-          $packages = @(Get-BonsaiRustPackage -Group Broker | Where-Object {
-            if ($env:BROKER_LANE -ceq 'core') { $_.Name -ceq 'bonsai-broker' }
-            else { $_.Name -cne 'bonsai-broker' }
-          } | ForEach-Object { $_.Name })
+          $packages = @(ConvertFrom-Json -InputObject $env:BROKER_PACKAGES)
           if (-not $packages.Count) { throw 'The Broker lane must select registered packages.' }
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Rust.ps1') -Group Broker -Package $packages -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
+      - name: Reuse a packaged CLI when only its script consumers changed
+        if: matrix.lane == 'maintenance' && needs.changes.outputs.tools == 'true' && steps.packages.outputs.has-packages != 'true'
+        uses: ./.github/actions/bonsai-tools
       - name: Retain broker and packaged tool check evidence
         if: always() && env.BROKER_CHECK_EVIDENCE != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -94,7 +143,7 @@ jobs:
           path: ${{ env.BROKER_CHECK_EVIDENCE }}
           if-no-files-found: error
       - name: Stage the checked maintenance CLI and revision receipt
-        if: matrix.lane == 'maintenance'
+        if: matrix.lane == 'maintenance' && needs.changes.outputs.tools == 'true'
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
@@ -103,21 +152,23 @@ jobs:
           $package = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-CheckedTools'
           [void][IO.Directory]::CreateDirectory($package)
           $tool = Join-Path $package 'bonsai-tools.exe'
-          Copy-Item -LiteralPath (Join-Path $env:CARGO_TARGET_DIR 'release/bonsai-tools.exe') -Destination $tool
+          $builtTool = if ($env:BONSAI_TOOLS_PATH) { $env:BONSAI_TOOLS_PATH } else { Join-Path $env:CARGO_TARGET_DIR 'release/bonsai-tools.exe' }
+          Copy-Item -LiteralPath $builtTool -Destination $tool
           @{
             SchemaVersion = 1
             Revision = $env:GITHUB_SHA
             Sha256 = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
           } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package 'receipt.json')
       - name: Share the checked native Windows ARM64 maintenance CLI
-        if: matrix.lane == 'maintenance'
+        if: matrix.lane == 'maintenance' && needs.changes.outputs.tools == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bonsai-tools-windows-arm64-${{ github.sha }}
           path: ${{ runner.temp }}/SwiftBonsai-CheckedTools
           if-no-files-found: error
   standards:
-    if: github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.standards == 'true'
+    needs: changes
     runs-on: windows-11-arm
     timeout-minutes: 15
     steps:
@@ -155,32 +206,30 @@ jobs:
           $tooling = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Standards-Tools'
           $analyzer = Join-Path $tooling 'PSScriptAnalyzer/1.25.0/PSScriptAnalyzer.psd1'
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Standards.ps1') -AnalyzerModulePath $analyzer
-  # Preserve the required check name and reject failure or skipping in any lane.
+  # Preserve the required check name; only the planner may authorize skips.
   foundation:
     if: always() && github.ref == 'refs/heads/main'
-    needs: [broker, standards, foundation-tests, release-integration]
+    needs: [changes, broker, standards, foundation-tests, release-integration]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 2
     steps:
-      - name: Require every Foundation test group
-        shell: bash
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require every selected Foundation test group
         env:
-          JOB_RESULTS: ${{ toJSON(needs) }}
-        run: |
-          if ! jq -e 'all(.[]; .result == "success")' <<< "$JOB_RESULTS"; then
-            echo "$JOB_RESULTS"
-            exit 1
-          fi
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 -B .github/ci/gate.py --workflow foundation
   foundation-tests:
     name: scripts / ${{ matrix.lane }}
-    if: github.ref == 'refs/heads/main'
-    needs: broker
+    if: needs.changes.outputs.scripts == 'true'
+    needs: [changes, broker]
     runs-on: windows-11-arm
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        lane: [foundation, native]
+        lane: ${{ fromJSON(needs.changes.outputs.script_lanes) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -264,8 +313,8 @@ jobs:
           if ($plan.ModelProcessStarted -or $plan.PairedSamples -ne 24 -or $plan.ZeroScaleSamples -ne 4) { throw 'Invalid nonlaunching LoRA qualification plan.' }
           $plan | ConvertTo-Json
   release-integration:
-    if: github.ref == 'refs/heads/main'
-    needs: broker
+    if: needs.changes.outputs.release == 'true'
+    needs: [changes, broker]
     runs-on: windows-11-arm
     timeout-minutes: 10
     steps:

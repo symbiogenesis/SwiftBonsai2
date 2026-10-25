@@ -1,0 +1,69 @@
+{
+  "shared": [
+    "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rustfmt.toml", ".cargo/**",
+    ".github/ci/**", ".github/workflows/foundation.yml", ".github/actions/rust-toolchain/**",
+    "config/rust-packages.psd1", "scripts/Bonsai.Rust.psm1", "tests/Test-Rust.ps1"
+  ],
+  "ignored": ["*.md", "docs/**", "LICENSE", "NOTICE", ".gitignore"],
+  "package_inputs": {
+    "bonsai-cpu-policy": ["config/runtime.lock.json", "config/swift-assessment.lock.json", "config/swift-lora.lock.json", "config/swift.ptq1-export.json", "config/profiles/reference-cpu.json"],
+    "bonsai-broker": ["config/runtime.lock.json", "config/swift-assessment.lock.json", "config/profiles/reference-cpu.json", "config/prism-inference.lock.json"],
+    "bonsai-tools": ["config/swift-assessment.lock.json", "config/swift-lora.lock.json", "config/swift.ptq1-export.json", "config/swift-lora.qualification.json", "config/swift.metadata.json", "tests/fixtures/lora-qualification-v1.json"]
+  },
+  "groups": {
+    "broker": {"packages": ["bonsai-broker"]},
+    "maintenance": {
+      "packages": ["*"], "exclude_packages": ["bonsai-broker"],
+      "groups": ["tools"]
+    },
+    "tools": {
+      "packages": ["bonsai-tools"], "groups": ["scripts", "release"],
+      "paths": [".github/actions/bonsai-tools/**", ".github/actions/use-bonsai-tools/**"]
+    },
+    "rust_lanes": {"groups": ["broker", "maintenance"]},
+    "foundation_scripts": {
+      "packages": ["bonsai-tools"],
+      "paths": [
+        "scripts/Doctor.ps1", "scripts/Get-Inference.ps1", "scripts/New-InferenceLock.ps1",
+        "scripts/Read-Gguf.ps1", "scripts/Get-Pq2Census.ps1", "scripts/Export-Ptq1.ps1",
+        "scripts/New-DevelopmentKeys.ps1", "scripts/Bonsai.Inference.psm1",
+        "scripts/Bonsai.Common.psm1", "scripts/Bonsai.Tools.psm1", "scripts/Bonsai.Native.psm1",
+        "tests/Test-Foundation.ps1", "tests/Test-Inference*.ps1", "tests/Test-Gguf.ps1",
+        "tests/Test-Pq2Census.ps1", "tests/Test-Ptq1Export.ps1", "tests/Test-DevelopmentKeys.ps1",
+        "tests/Test-RustTooling.ps1", "tests/*Support*", "tests/fixtures/**",
+        "config/prism-inference.lock.json", "config/model.metadata.json"
+      ]
+    },
+    "native_scripts": {
+      "packages": ["bonsai-tools"],
+      "paths": [
+        "scripts/Bonsai.Common.psm1", "scripts/Bonsai.Tools.psm1", "scripts/Bonsai.Native.psm1",
+        "scripts/Build-Engine.ps1", "scripts/Invoke-*Completion.ps1", "scripts/Invoke-Lora*.ps1",
+        "scripts/Bonsai.Lora*.psm1", "tests/Test-NativeProcess.ps1", "tests/Test-CompletionSupervision.ps1",
+        "tests/Test-EngineBuild.ps1", "tests/Test-Lora*.ps1", "tests/*Support*", "tests/fixtures/**",
+        ".github/workflows/swift-lora-qualification.yml"
+      ]
+    },
+    "scripts": {"groups": ["foundation_scripts", "native_scripts"]},
+    "release": {
+      "packages": ["bonsai-tools"],
+      "paths": [
+        "scripts/Get-Engine.ps1", "scripts/Get-Adapter.ps1", "scripts/Invoke-CpuCheck.ps1",
+        "scripts/Get-ServerPlan.ps1", "scripts/Bonsai.ServerPolicy.psm1", "scripts/Bonsai.Common.psm1",
+        "scripts/Bonsai.Tools.psm1", "scripts/Bonsai.Native.psm1", "tests/Test-CpuCheckPolicy.ps1",
+        "tests/*Support*", "config/runtime.lock.json", "config/swift-assessment.lock.json",
+        "config/swift-lora.lock.json", "config/swift.ptq1-export.json", "config/profiles/**"
+      ]
+    },
+    "standards": {
+      "paths": ["**/*.ps1", "**/*.psm1", "**/*.psd1", "tools/validation/**", "global.json", "PSScriptAnalyzerSettings.psd1", ".editorconfig"]
+    }
+  },
+  "matrices": {
+    "broker_lanes": {"core": "broker", "maintenance": "maintenance"},
+    "script_lanes": {"foundation": "foundation_scripts", "native": "native_scripts"}
+  },
+  "workflows": {
+    "foundation": {"broker": "rust_lanes", "standards": "standards", "foundation-tests": "scripts", "release-integration": "release"}
+  }
+}
