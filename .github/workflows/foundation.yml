@@ -680,6 +680,7 @@ jobs:
           path: |
             ${{ env.PRISM_BACKEND_TOOLS_EVIDENCE }}/receipt.json
             ${{ env.PRISM_BACKEND_TOOLS_EVIDENCE }}/*.log
+            ${{ env.PRISM_BACKEND_TOOLS_EVIDENCE }}/native-*/**
             ${{ env.PRISM_BACKEND_TOOLS_EVIDENCE }}/transport-checks
           if-no-files-found: error
   prism-backend-plan:
