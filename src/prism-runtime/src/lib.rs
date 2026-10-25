@@ -164,5 +164,3 @@ pub trait Decoder {
     /// Rejects foreign or malformed snapshots and allocation failures.
     fn restore(&mut self, checkpoint: &Self::Checkpoint) -> Result<()>;
 }
-
-

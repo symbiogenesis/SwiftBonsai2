@@ -266,6 +266,12 @@ impl Engine {
             ));
         }
         if matches!(self.target, Target::Rust) {
+            if let Some(response) = super::engine_runtime::execute(request)? {
+                return Ok(Some(response));
+            }
+            if let Some(response) = super::reasoning_budget::execute_runtime(request)? {
+                return Ok(Some(response));
+            }
             return super::engine_vocab::execute(request);
         }
         let bridge = self
