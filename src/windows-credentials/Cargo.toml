@@ -6,6 +6,8 @@ rust-version.workspace = true
 publish = ["crates-io"]
 license.workspace = true
 repository.workspace = true
+keywords = ["windows", "credentials", "security"]
+categories = ["os::windows-apis"]
 description = "Private Windows credential provisioning for the Bonsai development launcher"
 
 [dependencies]

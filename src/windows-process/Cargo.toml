@@ -6,6 +6,8 @@ rust-version.workspace = true
 publish = ["crates-io"]
 license.workspace = true
 repository.workspace = true
+keywords = ["windows", "process", "job-object", "supervision"]
+categories = ["os::windows-apis"]
 description = "Windows Job ownership and bounded native process lifecycle for Bonsai"
 
 [target.'cfg(windows)'.dependencies]
