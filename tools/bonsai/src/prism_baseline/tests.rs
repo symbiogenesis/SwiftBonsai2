@@ -47,8 +47,9 @@ fn gate(report: &Value) -> Result<Value> {
 #[test]
 fn pinned_catalog_identity_matches_powershell_and_ignores_extensions() -> Result<()> {
     let mut catalog: Value =
-        serde_json::from_str(include_str!("../../../prism/upstream/catalog.json"))
+        serde_json::from_str(include_str!("../../tests/fixtures/prism-catalog-v1.json"))
             .map_err(|error| error.to_string())?;
+    assert_eq!(catalog["Cases"].as_array().map(Vec::len), Some(71));
     catalog["CatalogSha256"] = json!("stale digest");
     catalog["Provenance"] = json!({"Extra":"é, λ, 😀, \" and \\"});
     catalog["Cases"][0]["Extra"] = json!([true, "retained"]);
