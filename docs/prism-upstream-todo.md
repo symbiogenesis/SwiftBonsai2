@@ -2,10 +2,9 @@
 
 Original handoff at code revision `9332b01cd8b7102ce1f05d6858dc9d75ccf48a03`.
 Implementation and qualification are tracked independently below.
-Wrap-up update: completed in-flight work is committed to local `main`.
-The user explicitly requested **no further push**. Remote `main` was last
-published at `5ede838409461f6d8385ad20167288a44f519946`; subsequent local commits
-have no hosted verdict. The migration is **not complete**.
+The migration is **not complete**. The October 25 parallel implementation adds
+owned model storage, symbolic CPU backward graphs and three IQ encoders, with
+focused local evidence below. Complete hosted qualification remains open.
 The target is Snapdragon X Elite on Windows ARM64. Apple work is excluded.
 See the [migration guide](prism-upstream-tests.md),
 [71-source catalog](../tools/prism/upstream/catalog.json), and
@@ -120,6 +119,16 @@ are not a complete hosted run and do not ratchet the accepted baseline.
 | HF model resolution | All 94 listing variants/13 handler assemblies, 757 original predicates, 358 guards and 228 live loopback GETs; complete CLI parser remains separate |
 | Legacy, K, IQ4, TQ and FP4 codecs | Independent native reference/importance encodings, arbitrary packed decoders and generic packed activation dots; complete source/benchmark qualification remains open |
 | Codec traits and owned buffers | All 144 trait slots match the pinned C++ inventory; eight focused ownership/codec checks and two adapter guards pass. CPU/reference capabilities stay distinct; persistent model-session transport remains open. |
+| Owned generated models and streaming saver | Eight focused storage/callback/serialization contracts, including all 32 production decoder kinds; an additional Q8_K overflow regression covers generation, verified loading and prevalidated saving |
+| Symbolic CPU backward graphs | Eight focused graph contracts covering derivatives, finite differences, strided views, accumulation/reset and failure rollback; the adapter exports readable gradient handles and preserves explicit aliases |
+| IQ3_XXS, IQ3_S and IQ2_S encoding | All 144 pinned native reference/importance records match byte for byte, including mixed zero groups; 36 overlapping persistent-buffer calls pass. Native CPU encoder availability is unchanged |
+
+The original `test-model-load-cancel.cpp` now runs against the production Rust
+loader. Its focused ARM64 result matches the retained x64 C++ control exactly:
+two source predicates, four additional guards, and cancellation at the first
+`0.0` progress callback under the original `progress > 0.50` policy. Both use the
+unchanged, hash-verified stories15M model. This qualifies that cancellation
+schedule locally, not architecture execution or a complete hosted source run.
 
 The CPU backend now has typed production tensor storage, strided views, graph
 operations and a source-controller adapter. Advanced operations and unsupported
@@ -164,8 +173,9 @@ the earlier failure rather than the final session status.
   C++, preserving geometry seed, CRT offset **7,748,238**, **262,400** draws,
   original inputs and comparisons. This does not qualify the remaining matrix.
 - [Run 40156509200](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40156509200)
-  tests the last published `5ede838`; it was pending when inspected. No passing
-  verdict is claimed. Later local wrap-up commits are intentionally unpublished.
+  tested the previously published `5ede838`; it was pending when inspected. No
+  passing verdict is claimed. Later wrap-up commits were unpublished at that
+  handoff.
 
 ## Remaining implementation work
 
@@ -187,15 +197,20 @@ record of its tested revision, not a current capability inventory.
   is not a passing public reference. Preserve actual
   shape, stride, alias and arithmetic contracts; extraction-source restrictions
   are explicit in the [reuse review](prism-reuse-review.md).
-  `ggml_build_backward_expand`, gradient snapshots and
-  reset remain incomplete; keep these separate from default eval/support
-  acceptance and from the excluded GEGLU gradient diagnostic.
+  `ggml_build_backward_expand`, gradient snapshots and reset now support the
+  implemented CPU derivative families, with transactional expansion and owned
+  accumulators. Unsupported derivatives remain explicit errors. Cross-entropy
+  normalizes over every trailing batch axis. Complete gradient qualification
+  remains separate from default eval/support acceptance and from the excluded
+  GEGLU gradient diagnostic.
 - [ ] **Finish packed formats.** Types 16 `IQ2_XXS`, 17 `IQ2_XS`, 18 `IQ3_XXS`,
   19 `IQ1_S`, 21 `IQ3_S`, 22 `IQ2_S` and 29 `IQ1_M` now have checked layouts,
   arbitrary-byte decoding, native packed-activation dots and CPU graph routing,
   with focused native evidence. Types 41 `Q1_0` and 42 `Q2_0` also provide
-  encoding. Full source qualification remains open. Complete reference and
-  importance encoders where native traits expose them; preserve the unavailable
+  encoding. Types 18 `IQ3_XXS`, 21 `IQ3_S` and 22 `IQ2_S` now also implement
+  native reference and importance encoding with pinned differential fixtures.
+  Full source qualification remains open. Complete the remaining importance
+  encoders, including IQ2_XXS/XS and IQ1; preserve the unavailable
   native CPU encoder entries. See the [direct-port evidence](prism-reuse-review.md#direct-port-continuation).
   IQ4_NL's native zero-scale reference path packs uninitialized payload nibbles;
   Rust canonicalizes those unused nibbles and preserves numeric zero. Do not
@@ -264,8 +279,10 @@ record of its tested revision, not a current capability inventory.
   metadata-inferred draft resolution. Quant-tag patterns currently use Rust
   regex syntax; support or explicitly reject native ECMAScript-only syntax
   rather than claiming complete regex-domain equivalence from these fixtures.
-- [ ] **Provide the shared model/context/session APIs.** Build an owned model
-  loader, generated-tensor/progress callbacks, encoder/decoder contexts,
+- [ ] **Provide the shared model/context/session APIs.** The owned model loader,
+  generated-tensor/progress callbacks and complete streaming GGUF saver now have
+  focused local contracts. Decoded nonfinite payloads are rejected even when
+  their stored codec scales are finite. Still implement encoder/decoder contexts,
   vocabulary/logit ownership, graph reservation/export, sequence/KV state,
   independent checkpoints and file/buffer save/restore. Implement a persistent
   Rust model-session transport with concurrent ownership and callback errors.
