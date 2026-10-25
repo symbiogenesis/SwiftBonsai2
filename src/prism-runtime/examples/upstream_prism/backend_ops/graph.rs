@@ -290,7 +290,7 @@ impl<'a> Plan<'a> {
             return Ok(Vec::new());
         }
         let actions = std::mem::take(&mut self.pending);
-        let observed = self.session.exchange(actions.clone())?;
+        let observed = self.session.exchange(&actions)?;
         for (action, value) in actions.iter().zip(&observed) {
             match action["Op"].as_str() {
                 Some("context-snapshot") => {

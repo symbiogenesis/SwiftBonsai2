@@ -4,6 +4,7 @@
 use super::super::super::engine::Engine;
 use super::super::super::{Result, invalid};
 use super::{MAX_ACTION_FILE, MAX_ACTIONS, MAX_FILE_BYTES, MAX_OBSERVATION, Session};
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::fs::{self, File};
@@ -15,6 +16,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct Request<'a, T> {
+    operation: &'a T,
+    sequence: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct Actions<'a> {
+    actions: &'a [Value],
+    op: &'static str,
+}
 
 fn lock<T>(value: &Mutex<T>) -> MutexGuard<'_, T> {
     value
@@ -162,7 +177,7 @@ impl Worker {
         }))
     }
 
-    fn call(&mut self, operation: &Value, deadline: Instant) -> Result<Value> {
+    fn call(&mut self, operation: &impl Serialize, deadline: Instant) -> Result<Value> {
         if self.poisoned {
             return Err(invalid("backend pipe is poisoned by an earlier failure"));
         }
@@ -175,7 +190,10 @@ impl Worker {
                 return Err(invalid(error.clone()));
             }
             let sequence = self.sequence + 1;
-            let request = json!({"Sequence":sequence,"Operation":operation});
+            let request = Request {
+                operation,
+                sequence,
+            };
             let bytes = serde_json::to_vec(&request)?;
             if bytes.is_empty() || bytes.len() > MAX_ACTION_FILE {
                 return Err(invalid("backend pipe request exceeds128MiB"));
@@ -306,21 +324,26 @@ impl Case {
         serde_json::to_writer(&mut self.requests, &actions)?;
         self.requests.write_all(b"\n")?;
         self.requests.flush()?;
-        let value = self
-            .worker
-            .borrow_mut()
-            .call(&json!({"Op":"actions","Actions":actions}), self.deadline)?;
+        let value = self.worker.borrow_mut().call(
+            &Actions {
+                actions,
+                op: "actions",
+            },
+            self.deadline,
+        )?;
         serde_json::to_writer(&mut self.responses, &value)?;
         self.responses.write_all(b"\n")?;
         self.responses.flush()?;
         if value.as_object().is_none_or(|object| object.len() != 1) {
             return Err(invalid("backend pipe observation fields differ"));
         }
-        let trace = value["Trace"]
-            .as_array()
-            .filter(|trace| trace.len() == actions.len())
-            .ok_or_else(|| invalid("backend action/observation count differs"))?;
-        Ok(trace.clone())
+        let Value::Object(mut object) = value else {
+            return Err(invalid("backend pipe observation must be an object"));
+        };
+        match object.remove("Trace") {
+            Some(Value::Array(trace)) if trace.len() == actions.len() => Ok(trace),
+            _ => Err(invalid("backend action/observation count differs")),
+        }
     }
 }
 
@@ -752,6 +775,19 @@ mod tests {
 
     #[test]
     fn bounded_frames_reject_truncation_oversize_and_wrong_identity() -> Result<()> {
+        let actions = vec![
+            json!({"Op":"call","Arguments":[{"Tensor":7},{"I64Array":[1,2,3]}],"Result":{"Tensor":8}}),
+        ];
+        let operation = Actions {
+            actions: &actions,
+            op: "actions",
+        };
+        let borrowed = Request {
+            operation: &operation,
+            sequence: 7,
+        };
+        let owned = json!({"Sequence":7,"Operation":{"Op":"actions","Actions":actions}});
+        assert_eq!(serde_json::to_vec(&borrowed)?, serde_json::to_vec(&owned)?);
         let value = json!({"Sequence":7,"Result":{"Trace":[{}]}});
         let mut bytes = serde_json::to_vec(&value)?;
         let mut frame = u32::try_from(bytes.len())?.to_le_bytes().to_vec();
