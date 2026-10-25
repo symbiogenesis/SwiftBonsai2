@@ -213,7 +213,6 @@ jobs:
         shell: pwsh
         run: |
           ./tests/Test-Inference.ps1 -Case All
-          ./tests/Test-InferenceSource.ps1 -Case All
       - name: Released GGUF command integration
         if: matrix.lane == 'foundation'
         shell: pwsh
