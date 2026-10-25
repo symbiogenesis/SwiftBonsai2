@@ -469,6 +469,139 @@ pub fn quantize_row(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
 }
 
 #[allow(
+    clippy::suboptimal_flops,
+    clippy::suspicious_operation_groupings,
+    reason = "Preserve weighted native quantizer search arithmetic association."
+)]
+fn weighted_q4_block(input: &[f32; 32], weights: &[f32; 32]) -> Result<(u16, [u8; 16])> {
+    let mut maximum = 0.0_f32;
+    for &value in input {
+        if value.abs() > maximum.abs() {
+            maximum = value;
+        }
+    }
+    if maximum.abs() < 1e-15 {
+        return Ok((0, [0; 16]));
+    }
+    let mut codes = [0_u8; 32];
+    let mut inverse = finite(-8.0 / maximum)?;
+    let sums = |inverse: f32| -> Result<(f32, f32)> {
+        let mut weighted_values = 0.0;
+        let mut weighted_codes = 0.0;
+        for (&value, &weight) in input.iter().zip(weights) {
+            let code = f32::from(quantized(
+                (inverse * value).round_ties_even().clamp(-8.0, 7.0),
+            )?);
+            weighted_values += weight * value * code;
+            weighted_codes += weight * code * code;
+        }
+        Ok((finite(weighted_values)?, finite(weighted_codes)?))
+    };
+    let assign = |codes: &mut [u8; 32], inverse: f32| -> Result<()> {
+        for (code, &value) in codes.iter_mut().zip(input) {
+            *code = u8::try_from(
+                8_i16
+                    + i16::from(quantized(
+                        (inverse * value).round_ties_even().clamp(-8.0, 7.0),
+                    )?),
+            )?;
+        }
+        Ok(())
+    };
+    assign(&mut codes, inverse)?;
+    let (values, codes_squared) = sums(inverse)?;
+    let mut scale = if codes_squared == 0.0 {
+        0.0
+    } else {
+        values / codes_squared
+    };
+    let mut best = scale * values;
+    for step in -9_i16..=9 {
+        if step == 0 {
+            continue;
+        }
+        inverse = finite(-(8.0 + 0.1 * f32::from(step)) / maximum)?;
+        let (values, codes_squared) = sums(inverse)?;
+        if codes_squared > 0.0 && values * values > best * codes_squared {
+            assign(&mut codes, inverse)?;
+            scale = values / codes_squared;
+            best = scale * values;
+        }
+    }
+    let scale = half_bits(finite(scale)?);
+    finite(half_to_float(scale))?;
+    Ok((
+        scale,
+        std::array::from_fn(|index| codes[index] | (codes[index + 16] << 4)),
+    ))
+}
+
+/// Encodes one row with an explicit per-element importance vector.
+///
+/// `Q4_0` uses the native weighted scale search, including row-wide variance.
+/// Scalar formats, `Q8_0`, PQ2 and PTQ1 retain their native behavior in which
+/// importance does not alter the output. The same row importance vector may
+/// be reused by the caller for subsequent rows.
+///
+/// # Errors
+/// Rejects unequal or empty extents, negative/nonfinite importance, malformed
+/// blocks, nonfinite inputs, numerical overflow and unsupported kinds.
+#[allow(
+    clippy::suboptimal_flops,
+    reason = "Preserve source row-wide sum of squares and per-element weighting association."
+)]
+pub fn quantize_row_weighted(kind: u32, input: &[f32], importance: &[f32]) -> Result<Vec<u8>> {
+    if input.is_empty()
+        || input.len() != importance.len()
+        || importance
+            .iter()
+            .any(|value| !value.is_finite() || *value < 0.0)
+    {
+        return Err(invalid(
+            "quantization importance must be finite, nonnegative and match the row",
+        ));
+    }
+    if kind != Q4_0 {
+        return quantize_row(kind, input);
+    }
+    if !input.len().is_multiple_of(32) || input.iter().any(|value| !value.is_finite()) {
+        return Err(invalid("weighted Q4_0 requires complete finite blocks"));
+    }
+    let mut sum_squared = 0.0;
+    for &value in input {
+        sum_squared += value * value;
+    }
+    let count = u32::try_from(input.len())?;
+    let sigma = finite(sum_squared / bounded_count_float(count))?;
+    let mut output = Vec::new();
+    output.try_reserve_exact(input.len() / 32 * 18)?;
+    for (values, importance) in input
+        .as_chunks::<32>()
+        .0
+        .iter()
+        .zip(importance.as_chunks::<32>().0)
+    {
+        let mut weights = [0.0; 32];
+        for (index, weight) in weights.iter_mut().enumerate() {
+            *weight = finite(importance[index] * (sigma + values[index] * values[index]).sqrt())?;
+        }
+        let (scale, codes) = weighted_q4_block(values, &weights)?;
+        output.extend(scale.to_le_bytes());
+        output.extend(codes);
+    }
+    Ok(output)
+}
+
+#[allow(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "Native row variance divides by a float-converted bounded element count."
+)]
+const fn bounded_count_float(count: u32) -> f32 {
+    count as f32
+}
+
+#[allow(
     clippy::as_conversions,
     clippy::cast_precision_loss,
     reason = "Bounded dot sums and power-of-two transform lengths are exactly representable."

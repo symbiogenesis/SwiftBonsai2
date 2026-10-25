@@ -1,7 +1,9 @@
 //! Immutable native-production bytes for focused row-quantizer verification.
 #![forbid(unsafe_code)]
 
-use bonsai_prism_runtime::kernels::{packed_dot, quantize_row, row, validate_tensor};
+use bonsai_prism_runtime::kernels::{
+    packed_dot, quantize_row, quantize_row_weighted, row, validate_tensor,
+};
 use bonsai_prism_runtime::model::Tensor;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -87,4 +89,50 @@ fn row_quantizers_reject_incomplete_nonfinite_and_unrepresentable_packed_scales(
         assert!(quantize_row(kind, &[f32::MAX; 256]).is_err());
     }
     assert!(packed_dot(15, 256, &[0; 292], &[0; 292]).is_err());
+}
+
+#[test]
+fn weighted_q4_matches_original_native_scale_search_with_ones_and_varied_importance() -> TestResult
+{
+    let expected_hash = unhex(&Value::String(
+        "78cecc196fc25aff174a03c69df01bd90d4ad5357f793c41b547a3abeb866994".to_owned(),
+    ))?;
+    assert_eq!(
+        Sha256::digest(include_bytes!("fixtures/weighted-q4.json")).as_slice(),
+        expected_hash
+    );
+    let fixture: Value = serde_json::from_str(include_str!("fixtures/weighted-q4.json"))?;
+    let cases = fixture["Cases"]
+        .as_array()
+        .ok_or("weighted cases must be array")?;
+    assert_eq!(cases.len(), 8);
+    let mut differs = false;
+    for case in cases {
+        let floats = |field: &str| -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+            Ok(unhex(&case[field])?
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| f32::from_le_bytes(*bytes))
+                .collect())
+        };
+        let input = floats("InputHex")?;
+        let importance = floats("ImportanceHex")?;
+        let output = quantize_row_weighted(2, &input, &importance)?;
+        assert_eq!(output, unhex(&case["OutputHex"])?, "case={}", case["Name"]);
+        differs |= output != quantize_row(2, &input)?;
+        for kind in [8, 142, 143] {
+            assert_eq!(
+                quantize_row_weighted(kind, &input, &importance)?,
+                quantize_row(kind, &input)?
+            );
+        }
+    }
+    assert!(
+        differs,
+        "all-ones importance must still invoke native Q4_0 scale optimization"
+    );
+    assert!(quantize_row_weighted(2, &[1.0; 32], &[1.0; 31]).is_err());
+    assert!(quantize_row_weighted(2, &[1.0; 32], &[-1.0; 32]).is_err());
+    Ok(())
 }
