@@ -2,7 +2,6 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
-Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 
 function Resolve-ExternalPath {
     <#
@@ -235,29 +234,4 @@ function Assert-Arm64PE {
     finally { $reader.Dispose() }
 }
 
-function Assert-EngineVersion {
-    <#
-    .SYNOPSIS
-    Checks a bounded ARM64 runtime version probe against the locked commit.
-    #>
-    [CmdletBinding()]
-    [OutputType([string])]
-    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$Commit)
-    Assert-Arm64PE $Path
-    if ($Commit -notmatch '^[a-f0-9]{40}$') { throw 'Expected a full runtime commit.' }
-    $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Version-' + [Guid]::NewGuid().ToString('N')))
-    [void][IO.Directory]::CreateDirectory($scratch)
-    try {
-        $result = Invoke-BonsaiNativeProcess -Executable $Path -ArgumentList @('--version') -WorkingDirectory $scratch -TimeoutSeconds 10
-        $version = $result.StandardOutput + $result.StandardError
-        $match = [regex]::Match($version, '\bcommit ([a-f0-9]{7,40})\)')
-        if ($result.ExitCode -ne 0 -or -not $match.Success -or -not $Commit.StartsWith($match.Groups[1].Value, [StringComparison]::Ordinal)) {
-            throw 'Runtime reported build identity differs from the lock file.'
-        }
-        return $version.Trim()
-    } finally {
-        if (-not [IO.Directory]::EnumerateFileSystemEntries($scratch).GetEnumerator().MoveNext()) { [IO.Directory]::Delete($scratch, $false) }
-    }
-}
-
-Export-ModuleMember -Function Resolve-ExternalPath, Read-BonsaiLock, Test-LockedArtifact, Receive-LockedArtifact, Assert-Arm64PE, Assert-EngineVersion
+Export-ModuleMember -Function Resolve-ExternalPath, Read-BonsaiLock, Test-LockedArtifact, Receive-LockedArtifact, Assert-Arm64PE
