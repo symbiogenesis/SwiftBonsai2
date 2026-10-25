@@ -396,24 +396,28 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
     let mut chain_checks = 0;
     let mut failures = Vec::new();
     let mut summaries = Vec::new();
+    // The source main owns one vocabulary/model/context across every group.
+    // The production LLGuidance sampler caches its tokenizer by vocabulary
+    // pointer, so retaining that scope also avoids rebuilding the 128K-token
+    // index for every grammar. Samplers and candidate vectors remain fresh at
+    // exactly the original boundaries; no matching decisions are cached.
+    let Some(session) = ModelSession::open(engine, "llguidance")? else {
+        return Ok(result(
+            ID,
+            false,
+            "Production LLGuidance/model-session API unavailable; full source unsupported".into(),
+        ));
+    };
+    let client = session.client();
+    let available = call(&client, json!({"Op":"llg-available"}))?;
+    exact_fields(&available, &["Enabled"])?;
+    if field(&available, "Enabled")?.as_bool() != Some(true) {
+        session.finish()?;
+        return Ok(result(ID,false,"Pinned production LLGuidance feature/dependency is required; disabled builds do not count as passing coverage".into()));
+    }
+    let loaded = load(&client, &verify_vocab(engine)?)?;
+    let template = candidate_template(&client, session.evidence_directory(), loaded.count)?;
     for group in 0..=42 {
-        let Some(session) = ModelSession::open(engine, &format!("llguidance-{group}"))? else {
-            return Ok(result(
-                ID,
-                false,
-                "Production LLGuidance/model-session API unavailable; full source unsupported"
-                    .into(),
-            ));
-        };
-        let client = session.client();
-        let available = call(&client, json!({"Op":"llg-available"}))?;
-        exact_fields(&available, &["Enabled"])?;
-        if field(&available, "Enabled")?.as_bool() != Some(true) {
-            session.finish()?;
-            return Ok(result(ID,false,"Pinned production LLGuidance feature/dependency is required; disabled builds do not count as passing coverage".into()));
-        }
-        let loaded = load(&client, &verify_vocab(engine)?)?;
-        let template = candidate_template(&client, session.evidence_directory(), loaded.count)?;
         if group == 42 {
             let (count, failed) = chain(&client, &loaded, template)?;
             chain_checks = count;
@@ -464,13 +468,13 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
                 json!({"Group":group,"Description":case["Description"],"Predicates":checks-before}),
             );
         }
-        null(
-            &client,
-            json!({"Op":"llg-candidates-free","Candidates":template}),
-        )?;
-        cleanup(&client, &loaded)?;
-        session.finish()?;
     }
+    null(
+        &client,
+        json!({"Op":"llg-candidates-free","Candidates":template}),
+    )?;
+    cleanup(&client, &loaded)?;
+    session.finish()?;
     if failures.is_empty() && (checks != 344 || chain_checks == 0 || summaries.len() != 42) {
         return Err(invalid("LLG full source condition extent differs"));
     }
@@ -486,6 +490,10 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
     output["SamplerChainPredicates"] = json!(chain_checks);
     output["DependencyRevision"] = json!("d795912fedc7d393de740177ea9ea761e7905774");
     output["VocabularySha256"] = json!(VOCAB_SHA);
+    output["ModelLoads"] = json!(1);
+    output["VocabularyScope"] = json!(
+        "One source model/context across all 42 grammar groups and the sampler chain; fresh source samplers and candidate vectors, with the production vocabulary tokenizer cache retained"
+    );
     Ok(output)
 }
 
@@ -511,7 +519,24 @@ mod tests {
         }
         // The fixture validator independently pins all 42 original groups and
         // all 344 passing/failing predicates, beyond the sampler-chain workload.
-        fixtures()?;
+        let fixture = fixtures()?;
+        let mut literal_bytes = 0;
+        for case in super::array(&fixture, "Cases")? {
+            for key in ["Passing", "Failing"] {
+                for input in super::array(case, key)? {
+                    literal_bytes += input
+                        .as_str()
+                        .ok_or_else(|| super::invalid("LLG fixture input is not text"))?
+                        .len();
+                }
+            }
+        }
+        assert_eq!(literal_bytes, 4430);
+        // Even a byte-fallback token for every byte requires fewer than 16K
+        // primitives including reset/tokenize/clone/EOS/free, group sampler
+        // construction/destruction and the chain. The bounded shared process
+        // retains its ordinary 65,536-request and 64MB stream limits.
+        assert!(3 * literal_bytes + 7 * 344 + 2 * 42 + 100 < 16_000);
         Ok(())
     }
 
