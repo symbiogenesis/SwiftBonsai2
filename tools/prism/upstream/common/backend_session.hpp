@@ -10,7 +10,13 @@
 #endif
 
 namespace prism_backend_session {
-using namespace prism_backend_ops;
+using prism_backend_ops::bounded;
+using prism_backend_ops::json;
+using prism_backend_ops::keys;
+using prism_backend_ops::require;
+using prism_backend_ops::state;
+using prism_backend_ops::text;
+using prism_backend_ops::u64;
 constexpr std::size_t max_request = 128 * 1024 * 1024;
 constexpr std::size_t max_response = 16 * 1024 * 1024;
 
