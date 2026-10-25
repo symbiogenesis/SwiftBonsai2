@@ -167,6 +167,17 @@ class RoutingPolicyTests(WorkspaceCase):
         self.assertTrue(plan["full"])
         self.assertEqual(plan["packages"], ["leaf", "other"])
 
+    def test_lint_observation_does_not_hide_unclassified_behavior(self):
+        self.config["groups"]["standards"] = {"observes": ["scripts/**/*.ps1"]}
+        self.config["groups"]["scripts"] = {"paths": ["scripts/known.ps1"]}
+        unknown = self.plan("scripts/new-helper.ps1")
+        self.assertTrue(unknown["full"])
+        known = self.plan("scripts/known.ps1")
+        self.assertFalse(known["full"])
+        self.assertEqual(known["packages"], [])
+        self.assertTrue(known["groups"]["scripts"])
+        self.assertTrue(known["groups"]["standards"])
+
     def test_explicit_full_validation_ignores_empty_diff(self):
         self.config["groups"]["scripts"] = {"paths": ["scripts/**"]}
         plan = self.plan(full=True)
@@ -231,6 +242,9 @@ class AggregateGateTests(unittest.TestCase):
         missing_job = copy.deepcopy(valid)
         del missing_job["build"]
         cases.append(missing_job)
+        unknown_job = copy.deepcopy(valid)
+        unknown_job["unchecked"] = {"result": "failure"}
+        cases.append(unknown_job)
         missing_plan = copy.deepcopy(valid)
         del missing_plan["changes"]["outputs"]["plan"]
         cases.append(missing_plan)

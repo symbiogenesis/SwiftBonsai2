@@ -132,6 +132,9 @@ def select(root, paths, full=False, config=None, reason="changed inputs"):
             if any_match(path, group.get("paths", [])):
                 selected[name] = True
                 known = True
+            if any_match(path, group.get("observes", [])):
+                # Linting a new helper does not establish behavioral coverage.
+                selected[name] = True
         if not known and not any_match(path, config.get("ignored", [])):
             full, reason = True, "unclassified input (conservative full validation)"
     pending = list(affected)

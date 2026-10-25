@@ -25,7 +25,8 @@
       "packages": ["bonsai-tools"],
       "paths": [
         "scripts/Doctor.ps1", "scripts/Get-Inference.ps1", "scripts/New-InferenceLock.ps1",
-        "scripts/Read-Gguf.ps1", "scripts/Get-Pq2Census.ps1", "scripts/Export-Ptq1.ps1",
+        "scripts/Read-Gguf.ps1", "scripts/Export-SwiftPtq1.ps1", "scripts/Bonsai.Gguf.psm1",
+        "scripts/Get-Model.ps1", "scripts/Get-ServerPlan.ps1", "scripts/Bonsai.ServerPolicy.psm1",
         "scripts/New-DevelopmentKeys.ps1", "scripts/Bonsai.Inference.psm1",
         "scripts/Bonsai.Common.psm1", "scripts/Bonsai.Tools.psm1", "scripts/Bonsai.Native.psm1",
         "tests/Test-Foundation.ps1", "tests/Test-Inference*.ps1", "tests/Test-Gguf.ps1",
@@ -39,7 +40,8 @@
       "paths": [
         "scripts/Bonsai.Common.psm1", "scripts/Bonsai.Tools.psm1", "scripts/Bonsai.Native.psm1",
         "scripts/Build-Engine.ps1", "scripts/Invoke-*Completion.ps1", "scripts/Invoke-Lora*.ps1",
-        "scripts/Bonsai.Lora*.psm1", "tests/Test-NativeProcess.ps1", "tests/Test-CompletionSupervision.ps1",
+        "scripts/Bonsai.Build.psm1", "scripts/Bonsai.Qualification.psm1", "scripts/Get-LoraQualification.ps1",
+        "tests/Test-NativeProcess.ps1", "tests/Test-CompletionSupervision.ps1",
         "tests/Test-EngineBuild.ps1", "tests/Test-Lora*.ps1", "tests/*Support*", "tests/fixtures/**",
         ".github/workflows/swift-lora-qualification.yml"
       ]
@@ -56,7 +58,8 @@
       ]
     },
     "standards": {
-      "paths": ["**/*.ps1", "**/*.psm1", "**/*.psd1", "tools/validation/**", "global.json", "PSScriptAnalyzerSettings.psd1", ".editorconfig"]
+      "paths": ["tests/Test-Standards.ps1", "tests/Test-ProcessLifecycle.ps1", "tools/validation/**", "global.json", "PSScriptAnalyzerSettings.psd1", ".editorconfig"],
+      "observes": ["**/*.ps1", "**/*.psm1", "**/*.psd1"]
     }
   },
   "matrices": {
