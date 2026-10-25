@@ -32,6 +32,10 @@ fn identifier(value: &str) -> bool {
         })
 }
 
+fn concrete_identifier(value: &str) -> bool {
+    identifier(value) && !value.eq_ignore_ascii_case("unknown")
+}
+
 /// Exact compiler target facts reported by the runtime, not host SKU inference.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -295,7 +299,13 @@ impl ProfileKey {
         }
         require(super::hex(&self.runtime.source_revision, 40))?;
         self.runtime.target.validate()?;
-        require(identifier(&self.graph_contract) && identifier(&self.state_layout))?;
+        require(
+            concrete_identifier(&self.runtime.target.architecture)
+                && concrete_identifier(&self.runtime.target.os)
+                && concrete_identifier(&self.runtime.target.environment)
+                && concrete_identifier(&self.graph_contract)
+                && concrete_identifier(&self.state_layout),
+        )?;
         let workload = &self.workload;
         require(
             workload.minimum_prompt_tokens > 0

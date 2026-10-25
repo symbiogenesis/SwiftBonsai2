@@ -58,7 +58,8 @@ portable state compatibility or a successful numerical/device qualification.
 ## Profile and evidence keys
 
 `ProfileCompatibilityKey::from_json` defines a concrete future evidence key.
-Every identity must be present; unknown facts cannot become a key. It binds:
+Every identity must be present; the reserved `unknown` sentinel (in any case)
+cannot become a concrete target, graph or state identity. It binds:
 
 - `objective`: `interactive` or `battery`.
 - `model_sha256`: the exact complete weight artifact, including derived exports.
