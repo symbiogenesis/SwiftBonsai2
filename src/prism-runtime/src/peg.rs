@@ -18,6 +18,8 @@ mod capture;
 mod grammar;
 #[path = "peg_parse.rs"]
 mod parse;
+#[path = "peg_tools.rs"]
+mod tools;
 pub use capture::{Capture, CapturedParse};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -71,6 +73,8 @@ enum Parser {
         child: usize,
         name: String,
         schema: Value,
+        #[serde(skip)]
+        schema_source: Option<String>,
         raw: bool,
     },
     Rule {
@@ -344,6 +348,7 @@ impl Arena {
                 .ok_or_else(|| invalid("PEG operation argument missing"))
         };
         match op {
+            "standard_json_tools" | "standard_constructed_tools" => self.tools(op, args),
             "reasoning_block"
             | "reasoning"
             | "content"
@@ -405,6 +410,7 @@ impl Arena {
                     child,
                     name: text(arg(1)?)?.into(),
                     schema,
+                    schema_source: Some(text(&arg(2)?["Json"])?.to_owned()),
                     raw: args.get(3).and_then(Value::as_bool).unwrap_or(false),
                 })
             }

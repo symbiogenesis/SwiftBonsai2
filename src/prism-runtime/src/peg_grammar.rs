@@ -4,6 +4,28 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt::Write as _;
 
 use super::{Arena, Parser, Result, invalid};
+fn schema_delegates(schema: &serde_json::Value, raw: bool) -> bool {
+    if schema.is_null() {
+        return true;
+    }
+    if !raw {
+        return false;
+    }
+    if let Some(kind) = schema.get("type") {
+        if kind == "string" {
+            return true;
+        }
+        if let Some(types) = kind.as_array() {
+            return types
+                .iter()
+                .find(|kind| kind.as_str().is_some_and(|value| value != "null"))
+                .is_some_and(|kind| kind == "string");
+        }
+        false
+    } else {
+        schema.get("enum").is_some()
+    }
+}
 
 fn literal(value: &str) -> String {
     let mut result = String::from("\"");
@@ -180,6 +202,9 @@ impl Arena {
         for _ in 0..256 {
             match &self.parsers[id] {
                 Parser::Tag { child, .. } | Parser::Atomic { child } => id = *child,
+                Parser::Schema {
+                    child, schema, raw, ..
+                } if schema_delegates(schema, *raw) => id = *child,
                 _ => return Ok(&self.parsers[id]),
             }
         }
@@ -228,6 +253,7 @@ impl Arena {
         &self,
         id: usize,
         rules: &mut BTreeMap<String, String>,
+        schemas: &mut crate::schema::RuleBuilder,
         depth: usize,
     ) -> Result<String> {
         if depth > 256 {
@@ -246,7 +272,7 @@ impl Arena {
                 let mut values = Vec::new();
                 let mut bytes = 0;
                 for &child in children {
-                    let value = self.gbnf(child, rules, depth + 1)?;
+                    let value = self.gbnf(child, rules, schemas, depth + 1)?;
                     bytes += value.len() + 3;
                     if bytes > 4 * 1024 * 1024 {
                         return Err(invalid("PEG grammar expansion exceeds byte bound"));
@@ -273,7 +299,7 @@ impl Arena {
                     if !result.is_empty() {
                         result.push_str(" | ");
                     }
-                    let value = self.gbnf(child, rules, depth + 1)?;
+                    let value = self.gbnf(child, rules, schemas, depth + 1)?;
                     if matches!(self.effective(child)?, Parser::Choice { .. }) {
                         write!(result, "({value})")?;
                     } else {
@@ -290,7 +316,7 @@ impl Arena {
                 min_count,
                 max_count,
             } => {
-                let value = self.gbnf(*child, rules, depth + 1)?;
+                let value = self.gbnf(*child, rules, schemas, depth + 1)?;
                 repeated(
                     &if matches!(
                         self.effective(*child)?,
@@ -325,13 +351,25 @@ impl Arena {
             }
             Parser::Rule { name, .. } | Parser::Ref { name } => name.clone(),
             Parser::Tag { child, .. } | Parser::Atomic { child } => {
-                self.gbnf(*child, rules, depth + 1)?
+                self.gbnf(*child, rules, schemas, depth + 1)?
             }
             Parser::Gbnf { grammar, .. } => grammar.clone(),
-            Parser::Schema { .. } => {
-                return Err(invalid(
-                    "PEG schema nodes require explicit schema grammar lowering",
-                ));
+            Parser::Schema {
+                child,
+                name,
+                schema,
+                schema_source,
+                raw,
+            } => {
+                if schema_delegates(schema, *raw) {
+                    self.gbnf(*child, rules, schemas, depth + 1)?
+                } else {
+                    let source = schema_source.as_ref().map_or_else(
+                        || serde_json::to_string(schema),
+                        |source| Ok(source.clone()),
+                    )?;
+                    schemas.add(name, &source)?
+                }
             }
         };
         if result.len() > 4 * 1024 * 1024 {
@@ -343,6 +381,20 @@ impl Arena {
     /// # Errors
     /// Rejects cyclic expansion, missing rules and grammar resource limits.
     pub fn grammar(&self, lazy: bool) -> Result<String> {
+        self.grammar_with_refs(lazy, &[])
+    }
+    /// Generates a composed grammar after resolving shared source schema documents.
+    ///
+    /// # Errors
+    /// Rejects malformed references, unsupported schemas and grammar resource limits.
+    pub fn grammar_with_refs(&self, lazy: bool, references: &[String]) -> Result<String> {
+        let mut schemas = crate::schema::RuleBuilder::new();
+        if references.len() > 128 {
+            return Err(invalid("PEG schema reference count bound exceeded"));
+        }
+        for reference in references {
+            schemas.resolve(reference)?;
+        }
         let mut reachable = BTreeSet::new();
         let mut triggers = Vec::new();
         for (name, &id) in &self.rules {
@@ -365,16 +417,19 @@ impl Arena {
                 continue;
             }
             if let Parser::Rule { child, .. } = &self.parsers[id] {
-                let rule = self.gbnf(*child, &mut rules, 0)?;
+                let rule = self.gbnf(*child, &mut rules, &mut schemas, 0)?;
                 rules.insert(name.clone(), rule);
             }
         }
         let root = if lazy {
             triggers.join(" | ")
         } else {
-            self.gbnf(self.root, &mut rules, 0)?
+            self.gbnf(self.root, &mut rules, &mut schemas, 0)?
         };
         rules.insert("root".into(), root);
+        for (name, rule) in schemas.into_rules() {
+            rules.entry(name).or_insert(rule);
+        }
         let mut result = String::new();
         for (name, rule) in rules {
             writeln!(result, "{name} ::= {rule}")?;

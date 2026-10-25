@@ -7,7 +7,9 @@
 
 use std::ffi::OsStr;
 
+use bonsai_prism_runtime::peg::Capture;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 
 use super::engine::Engine;
 use super::llama_grammar::{array, exact_fields, field, uint};
@@ -17,6 +19,203 @@ const ID: &str = "tests/test-chat-peg-parser.cpp";
 const SOURCE_SHA256: &str = "c0583c716c65fa7c06fc9b282fc8d24aecde29fa55271536e8c23dfbbc0429e0";
 const CASES: &str = include_str!("chat-peg-cases.json");
 
+pub(super) fn execute_operations(request: &Value) -> Result<Option<Value>> {
+    let Some(operations) = request.get("Operations").and_then(Value::as_array) else {
+        return Ok(None);
+    };
+    if !operations
+        .iter()
+        .all(|operation| operation.get("Kind").and_then(Value::as_str) == Some("chat-peg-trace"))
+    {
+        return Ok(None);
+    }
+    let results = operations
+        .iter()
+        .map(observe_trace)
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Some(json!({"SchemaVersion":1,"Results":results})))
+}
+fn wire_message(message: &bonsai_prism_runtime::chat::ChatMessage) -> Value {
+    json!({"Role":message.role,"Content":message.content,"ReasoningContent":message.reasoning_content,"ToolCalls":message.tool_calls.iter().map(|call|json!({"Name":call.name,"Arguments":call.arguments,"Id":call.id})).collect::<Vec<_>>()})
+}
+fn bytes(value: &Value) -> Result<Vec<u8>> {
+    value
+        .as_array()
+        .ok_or("chat input must be byte array")?
+        .iter()
+        .map(|byte| {
+            u8::try_from(byte.as_u64().ok_or("chat input byte must be unsigned")?)
+                .map_err(Into::into)
+        })
+        .collect()
+}
+fn tags(nodes: &[Capture], input: &[u8], output: &mut BTreeMap<String, String>) -> Result<()> {
+    for node in nodes {
+        if !node.tag.is_empty() {
+            output.insert(
+                node.tag.clone(),
+                String::from_utf8(
+                    input
+                        .get(node.start..node.end)
+                        .ok_or("chat tag extent invalid")?
+                        .to_vec(),
+                )?,
+            );
+        }
+        tags(&node.children, input, output)?;
+    }
+    Ok(())
+}
+
+fn wire_diffs(diffs: Vec<bonsai_prism_runtime::chat::MessageDiff>) -> Value {
+    json!(diffs.into_iter().map(|diff|json!({
+        "ReasoningContentDelta":diff.reasoning_content_delta,
+        "ContentDelta":diff.content_delta,
+        "ToolCallIndex":diff.tool_call_index.map_or(u64::MAX,|index|u64::try_from(index).unwrap_or(u64::MAX)),
+        "ToolCallDelta":{"Name":diff.tool_call_delta.name,"Arguments":diff.tool_call_delta.arguments,"Id":diff.tool_call_delta.id}
+    })).collect::<Vec<_>>())
+}
+fn parse_action(
+    arena: &bonsai_prism_runtime::peg::Arena,
+    action: &Value,
+    input: &[u8],
+) -> Result<(Value, Option<bonsai_prism_runtime::chat::ChatMessage>)> {
+    let mapper = text(action, "Mapper")?;
+    let flags = if mapper == "tags-anywhere" {
+        0
+    } else {
+        u8::try_from(uint(action, "Flags")?)?
+    };
+    let mut parsed = arena.parse_captured(input, flags, 0)?;
+    if mapper == "tags-anywhere" && !input.is_empty() {
+        for start in 0..input.len() {
+            parsed = arena.parse_captured(input, 0, start)?;
+            if parsed.result.result_type == 1 {
+                break;
+            }
+        }
+    }
+    let mut message = Value::Null;
+    let mut tagged = Value::Null;
+    let mut retained = None;
+    if matches!(mapper, "chat" | "chat-unretained") {
+        let parsed_message = bonsai_prism_runtime::chat::map_captures(&parsed.nodes, input)?;
+        message = wire_message(&parsed_message);
+        if mapper == "chat" {
+            retained = Some(parsed_message);
+        }
+    } else if matches!(mapper, "tags" | "tags-anywhere") {
+        let mut values = BTreeMap::new();
+        tags(&parsed.nodes, input, &mut values)?;
+        tagged = json!(values);
+    }
+    Ok((
+        json!({"Result":parsed.result,"Message":message,"Tags":tagged,"ExceptionKind":null,"ExceptionMessage":""}),
+        retained,
+    ))
+}
+fn observe_trace(operation: &Value) -> Result<Value> {
+    use bonsai_prism_runtime::{chat::ChatMessage, peg::Arena};
+    let arena = Arena::from_graph(field(operation, "Graph")?)?;
+    let references = operation
+        .get("ResolveRefs")
+        .and_then(Value::as_array)
+        .map_or_else(
+            || Ok(Vec::new()),
+            |values| {
+                values
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(str::to_owned)
+                            .ok_or_else(|| invalid("chat schema reference must be JSON text"))
+                    })
+                    .collect::<Result<Vec<_>>>()
+            },
+        )?;
+    let mut messages: BTreeMap<usize, ChatMessage> = BTreeMap::new();
+    let mut inputs: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
+    let mut trace = Vec::new();
+    let clock = std::time::Instant::now();
+    for action in array(operation, "Actions")? {
+        let index = trace.len();
+        match text(action, "Kind")? {
+            "grammar" => {
+                let lazy = field(action, "Lazy")?
+                    .as_bool()
+                    .ok_or("chat grammar Lazy must be boolean")?;
+                trace.push(json!({"GrammarText":arena.grammar_with_refs(lazy,&references)?}));
+            }
+            "diff" => {
+                let before = if action["Before"].is_null() {
+                    ChatMessage::default()
+                } else {
+                    messages
+                        .get(&usize::try_from(uint(action, "Before")?)?)
+                        .ok_or("chat previous parse missing")?
+                        .clone()
+                };
+                let after = messages
+                    .get(&usize::try_from(uint(action, "After")?)?)
+                    .ok_or("chat current parse missing")?;
+                trace.push(match before.diff(after) {
+                    Ok(diffs) => {
+                        json!({"ExceptionKind":null,"Message":"","Diffs":wire_diffs(diffs)})
+                    }
+                    Err(error) => {
+                        json!({"ExceptionKind":"standard","Message":error.to_string(),"Diffs":[]})
+                    }
+                });
+            }
+            "parse" => {
+                let input = if action.get("Input").is_some() {
+                    inputs
+                        .get(&usize::try_from(uint(action, "Input")?)?)
+                        .ok_or("chat input handle missing")?
+                        .clone()
+                } else {
+                    bytes(field(action, "Bytes")?)?
+                };
+                let value = match parse_action(&arena, action, &input) {
+                    Ok((value, retained)) => {
+                        if let Some(message) = retained {
+                            messages.insert(index, message);
+                        }
+                        value
+                    }
+                    Err(error) => {
+                        json!({"Result":null,"Message":null,"Tags":null,"ExceptionKind":"standard","ExceptionMessage":error.to_string()})
+                    }
+                };
+                trace.push(value);
+            }
+            "init-input" | "append-input" => {
+                let handle = usize::try_from(uint(action, "Input")?)?;
+                if text(action, "Kind")? == "init-input" {
+                    inputs.insert(handle, Vec::new());
+                }
+                let input = inputs.get_mut(&handle).ok_or("chat input handle missing")?;
+                input.extend(bytes(field(action, "Bytes")?)?);
+                if input.len() > 1024 * 1024 {
+                    return Err(invalid("chat assembled input exceeds byte bound"));
+                }
+                trace.push(json!({}));
+            }
+            "free-input" => {
+                inputs
+                    .remove(&usize::try_from(uint(action, "Input")?)?)
+                    .ok_or("chat input handle missing")?;
+                trace.push(json!({}));
+            }
+            "clock" => {
+                trace.push(json!({"Microseconds":u64::try_from(clock.elapsed().as_micros())?}));
+            }
+            _ => return Err(invalid("unsupported chat PEG trace action")),
+        }
+    }
+    Ok(json!({"Trace":trace}))
+}
 pub(super) fn text<'a>(value: &'a Value, name: &str) -> Result<&'a str> {
     field(value, name)?
         .as_str()
@@ -692,6 +891,65 @@ pub(super) fn benchmark(engine: &Engine) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn production_original_chat_peg() -> Result<()> {
+        let engine = Engine::new(
+            super::super::engine::Target::Rust,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        let report = run(&engine)?;
+        assert_eq!(report["Status"], "pass", "{report:?}");
+        Ok(())
+    }
+    #[test]
+    fn production_original_chat_tags_and_permutations() -> Result<()> {
+        let engine = Engine::new(
+            super::super::engine::Target::Rust,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        let fixture = fixture()?;
+        let mut assertions = Assertions::default();
+        run_tagged(&engine, &fixture, &mut assertions)?;
+        run_permute(&engine, &fixture, &mut assertions)?;
+        assert!(
+            assertions.failures.is_empty(),
+            "{}",
+            assertions.failures.join("\n")
+        );
+        Ok(())
+    }
+    #[test]
+    fn production_original_chat_native_text() -> Result<()> {
+        let fixture = fixture()?;
+        let mut assertions = Assertions::default();
+        for case in array(&fixture, "Native")?.iter().take(6) {
+            let operation = json!({"Kind":"chat-peg-trace","Graph":case["Graph"],"ResolveRefs":[],"Actions":[{"Kind":"parse","Bytes":text(case,"Input")?.as_bytes(),"Flags":0,"Mapper":"chat"}]});
+            let response = execute_operations(&json!({"Operations":[operation]}))?
+                .ok_or("chat response missing")?;
+            let value = &response["Results"][0]["Trace"][0];
+            assert_eq!(parsed(value)?["Type"], 1);
+            check_message(
+                field(case, "Expected")?,
+                message(value)?,
+                text(case, "Name")?,
+                &mut assertions,
+            )?;
+        }
+        assert!(
+            assertions.failures.is_empty(),
+            "{}",
+            assertions.failures.join("\n")
+        );
+        Ok(())
+    }
     #[test]
     fn byte_token_boundaries_and_source_assertion_paths_are_exact() -> Result<()> {
         assert_eq!(

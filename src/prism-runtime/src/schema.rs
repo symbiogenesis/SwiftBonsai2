@@ -920,6 +920,28 @@ pub fn to_grammar(schema_json: &str, force_gbnf: bool) -> Result<String> {
     Ok(grammar)
 }
 
+/// Shared schema lowering state used by composed production PEG grammars.
+pub(crate) struct RuleBuilder {
+    converter: Converter,
+}
+impl RuleBuilder {
+    pub(crate) fn new() -> Self {
+        Self {
+            converter: Converter::new(),
+        }
+    }
+    pub(crate) fn resolve(&mut self, schema_json: &str) -> Result<()> {
+        self.converter.resolve(&parse(schema_json)?)
+    }
+    pub(crate) fn add(&mut self, name: &str, schema_json: &str) -> Result<String> {
+        self.converter
+            .visit(&parse(schema_json)?, if name == "root" { "" } else { name })
+    }
+    pub(crate) fn into_rules(self) -> BTreeMap<String, String> {
+        self.converter.rules
+    }
+}
+
 /// Ordered schema inspection with reusable resolved local references.
 pub struct SchemaInfo {
     schema: Node,

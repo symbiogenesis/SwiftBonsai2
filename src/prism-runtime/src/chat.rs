@@ -16,6 +16,8 @@ pub use message::{ChatMessage, ContentPart, MessageDiff, ToolCall};
 #[path = "chat_mapper.rs"]
 mod mapper;
 pub use mapper::map_captures;
+#[path = "chat_json.rs"]
+pub(crate) mod json;
 
 /// Registered legacy formatter names in the source map's lexical order.
 #[must_use]

@@ -311,6 +311,9 @@ impl Engine {
             if let Some(response) = super::chat_template::execute(request)? {
                 return Ok(Some(response));
             }
+            if let Some(response) = super::chat_peg::execute_operations(request)? {
+                return Ok(Some(response));
+            }
             return super::engine_vocab::execute(request);
         }
         let bridge = self
