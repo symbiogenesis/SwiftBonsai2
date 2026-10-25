@@ -86,3 +86,33 @@ fn cpu_graph_iq1_iq2_matmul_matches_native_fixture_results() -> Result<()> {
     assert_eq!(seen, BTreeSet::from([16, 17, 19, 22, 29]));
     Ok(())
 }
+
+#[test]
+fn iq_copy_support_distinguishes_raw_storage_from_unavailable_encoding() -> Result<()> {
+    for kind in [16, 17, 18, 19, 21, 22, 29] {
+        let mut backend = CpuBackend::new();
+        let input = backend.tensor(1, 0, [256, 1, 1, 1])?;
+        let packed = backend.tensor(1, kind, [256, 1, 1, 1])?;
+        let Observation::Tensor(Some(converted)) = backend.call(
+            "ggml_cpy",
+            &[
+                Argument::Context(1),
+                Argument::Tensor(input),
+                Argument::Tensor(packed),
+            ],
+        )?
+        else {
+            return Err(std::io::Error::other("expected conversion").into());
+        };
+        assert!(!backend.supports(converted)?);
+        let Observation::Tensor(Some(copied)) = backend.call(
+            "ggml_dup",
+            &[Argument::Context(1), Argument::Tensor(packed)],
+        )?
+        else {
+            return Err(std::io::Error::other("expected raw copy").into());
+        };
+        assert!(backend.supports(copied)?);
+    }
+    Ok(())
+}

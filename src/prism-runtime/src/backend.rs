@@ -779,6 +779,17 @@ impl CpuBackend {
     /// Rejects an unknown tensor.
     pub fn supports(&self, tensor: TensorId) -> Result<bool> {
         let info = self.info(tensor)?;
+        if matches!(info.kind, 16..=19 | 21 | 22 | 29)
+            && matches!(info.operation, 1 | 34 | 35)
+            && !info.sources.first().is_some_and(|&source| {
+                self.info(source)
+                    .is_ok_and(|source| source.kind == info.kind)
+            })
+        {
+            // These formats can copy packed bytes, but have no encoder for a
+            // numeric conversion from another storage type.
+            return Ok(false);
+        }
         if matches!(info.operation, 29 | 30 | 74)
             && !info
                 .sources
