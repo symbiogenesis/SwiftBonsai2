@@ -10,7 +10,7 @@
 //! pinned `Q8_0` fallback for odd numbers of 128-element groups. PTQ1 uses
 //! `Q8_0` activations in groups of 32. Neither path expands a matrix to floats.
 
-use bonsai_ternary::{Q8KBlock, half_to_float, unpack_ptq};
+use bonsai_ternary::{Q8KBlock, decode_ptq_trits, half_to_float};
 
 use crate::model::Tensor;
 use crate::{Result, invalid};
@@ -106,18 +106,14 @@ fn pq2_values(block: &[u8]) -> [i16; 128] {
 }
 
 fn ptq1_values(block: &[u8]) -> Result<[i16; 128]> {
-    let mut packed = <[u8; 28]>::try_from(block)?;
-    // The codec validates a nonzero scale. Scale zero is valid in a native
-    // tensor, so validate the trit bytes with a neutral scale, independently.
-    packed[26..].copy_from_slice(&0x3c00_u16.to_le_bytes());
-    Ok(pq2_values(&unpack_ptq(&packed)?))
+    Ok(decode_ptq_trits(<&[u8; 28]>::try_from(block)?))
 }
 
 /// Validates a supported tensor without retaining decoded rows or matrices.
 ///
 /// # Errors
 /// Rejects unsupported kinds, malformed dimensions and byte extents, nonfinite
-/// scalar values or scales, and noncanonical PTQ1 trit encodings.
+/// scalar values or scales. Every native PTQ1 trit byte is decodable.
 pub fn validate_tensor(tensor: &Tensor) -> Result<()> {
     dimensions(tensor)?;
     match tensor.kind {
@@ -157,7 +153,7 @@ pub fn validate_tensor(tensor: &Tensor) -> Result<()> {
 /// Only the selected row is expanded; the packed tensor remains immutable.
 ///
 /// # Errors
-/// Rejects unsupported kinds, incomplete blocks, invalid PTQ1 encodings,
+/// Rejects unsupported kinds, incomplete blocks,
 /// nonfinite values, malformed byte extents, and an out-of-range row.
 pub fn row(tensor: &Tensor, index: usize) -> Result<Vec<f32>> {
     let mut output = Vec::new();
@@ -484,6 +480,100 @@ fn float_dot(weights: &[f32], input: &[f32]) -> f32 {
         .zip(input)
         .map(|(&a, &b)| f64::from(a * b))
         .sum::<f64>() as f32
+}
+
+/// Computes a scalar dot directly from native packed weight and activation bytes.
+///
+/// Activations use `Q8_K` for PQ2, `Q8_0` for PTQ1/`Q4_0`/`Q8_0`, and the
+/// weight's own scalar format for F32/F16/BF16. Supplied integer activations
+/// and scales are consumed exactly; no float activation quantization occurs.
+///
+/// # Errors
+/// Rejects unsupported kinds, empty or incomplete blocks, mismatched byte
+/// extents, nonfinite stored values/scales, and nonfinite accumulated results.
+pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -> Result<f32> {
+    let (group, block_bytes) = layout(kind)?;
+    if count == 0
+        || !count.is_multiple_of(group)
+        || count
+            .checked_div(group)
+            .and_then(|blocks| blocks.checked_mul(block_bytes))
+            != Some(weights.len())
+    {
+        return Err(invalid("packed dot weight extent mismatch"));
+    }
+    let (activation_group, activation_bytes) = match kind {
+        PQ2 => (256, 292),
+        PTQ1 | Q4_0 | Q8_0 => (32, 34),
+        _ => (group, block_bytes),
+    };
+    if !count.is_multiple_of(activation_group)
+        || (count / activation_group).checked_mul(activation_bytes) != Some(activations.len())
+    {
+        return Err(invalid("packed dot activation extent mismatch"));
+    }
+    match kind {
+        PQ2 => {
+            let input = activations
+                .as_chunks::<292>()
+                .0
+                .iter()
+                .map(|block| {
+                    Ok(Q8KBlock {
+                        scale: finite(f32::from_le_bytes(block[..4].try_into()?))?,
+                        values: std::array::from_fn(|index| i8::from_ne_bytes([block[4 + index]])),
+                        sums: std::array::from_fn(|index| {
+                            i16::from_le_bytes([block[260 + 2 * index], block[261 + 2 * index]])
+                        }),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            dot_pq2(weights, &input)
+        }
+        PTQ1 | Q4_0 | Q8_0 => {
+            let input = activations
+                .as_chunks::<34>()
+                .0
+                .iter()
+                .map(|block| {
+                    Ok(Q8Block {
+                        scale: scale(block)?,
+                        values: std::array::from_fn(|index| i8::from_ne_bytes([block[2 + index]])),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if kind == PTQ1 {
+                dot_q8_groups(kind, weights, &input)
+            } else {
+                dot_legacy(kind, weights, &input)
+            }
+        }
+        _ => {
+            let decode = |data: &[u8]| -> Result<Vec<f32>> {
+                if kind == F32 {
+                    data.as_chunks::<4>()
+                        .0
+                        .iter()
+                        .map(|bytes| finite(f32::from_le_bytes(*bytes)))
+                        .collect()
+                } else {
+                    data.as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|bytes| {
+                            let bits = u16::from_le_bytes(*bytes);
+                            finite(if kind == F16 {
+                                half_to_float(bits)
+                            } else {
+                                f32::from_bits(u32::from(bits) << 16)
+                            })
+                        })
+                        .collect()
+                }
+            };
+            finite(float_dot(&decode(weights)?, &decode(activations)?))
+        }
+    }
 }
 
 /// Reusable activation and decoded-row storage for [`matvec_into`].

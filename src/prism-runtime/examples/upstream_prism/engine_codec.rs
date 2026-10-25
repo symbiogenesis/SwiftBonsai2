@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use bonsai_prism_runtime::kernels::row;
+use bonsai_prism_runtime::kernels::{packed_dot, row};
 use bonsai_prism_runtime::model::Tensor;
 use serde_json::{Value, json};
 
@@ -64,28 +64,59 @@ pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
     }
     let results = operations
         .iter()
-        .map(|operation| {
-            match operation["Kind"].as_str() {
-                Some("codec-vec-dot") => Ok(json!({"Error":"Rust production API has no packed-activation dot entry point; float matvec would requantize the original inputs."})),
-                Some("codec-dequantize") => {
-                    let kind = u32::try_from(operation["TypeId"].as_u64().ok_or_else(|| invalid("Rust codec TypeId must be unsigned"))?)?;
-                    let count = usize::try_from(operation["Count"].as_u64().ok_or_else(|| invalid("Rust codec Count must be unsigned"))?)?;
-                    if count == 0 || count > 8192 {
-                        return Err(invalid("Rust codec Count outside bound"));
-                    }
-                    let tensor = Tensor {
-                        name: "upstream-codec-row".to_owned(),
-                        kind,
-                        dimensions: vec![count],
-                        data: Arc::from(bytes(&operation["DataHex"])?),
-                    };
-                    Ok(match row(&tensor, 0) {
-                        Ok(values) => json!({"DataHex":hex(&values)}),
-                        Err(error) => json!({"Error":error.to_string()}),
-                    })
+        .map(|operation| match operation["Kind"].as_str() {
+            Some("codec-vec-dot") => {
+                let kind = u32::try_from(
+                    operation["TypeId"]
+                        .as_u64()
+                        .ok_or_else(|| invalid("Rust codec TypeId must be unsigned"))?,
+                )?;
+                let count = usize::try_from(
+                    operation["Count"]
+                        .as_u64()
+                        .ok_or_else(|| invalid("Rust codec Count must be unsigned"))?,
+                )?;
+                if count == 0 || count > 8192 {
+                    return Err(invalid("Rust codec Count outside bound"));
                 }
-                _ => Err(invalid("unknown Rust codec operation")),
+                Ok(
+                    match packed_dot(
+                        kind,
+                        count,
+                        &bytes(&operation["WeightsHex"])?,
+                        &bytes(&operation["ActivationsHex"])?,
+                    ) {
+                        Ok(value) => json!({"DataHex":hex(&[value])}),
+                        Err(error) => json!({"Error":error.to_string()}),
+                    },
+                )
             }
+            Some("codec-dequantize") => {
+                let kind = u32::try_from(
+                    operation["TypeId"]
+                        .as_u64()
+                        .ok_or_else(|| invalid("Rust codec TypeId must be unsigned"))?,
+                )?;
+                let count = usize::try_from(
+                    operation["Count"]
+                        .as_u64()
+                        .ok_or_else(|| invalid("Rust codec Count must be unsigned"))?,
+                )?;
+                if count == 0 || count > 8192 {
+                    return Err(invalid("Rust codec Count outside bound"));
+                }
+                let tensor = Tensor {
+                    name: "upstream-codec-row".to_owned(),
+                    kind,
+                    dimensions: vec![count],
+                    data: Arc::from(bytes(&operation["DataHex"])?),
+                };
+                Ok(match row(&tensor, 0) {
+                    Ok(values) => json!({"DataHex":hex(&values)}),
+                    Err(error) => json!({"Error":error.to_string()}),
+                })
+            }
+            _ => Err(invalid("unknown Rust codec operation")),
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(Some(json!({"SchemaVersion":1,"Results":results})))

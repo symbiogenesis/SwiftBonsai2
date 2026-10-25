@@ -711,7 +711,7 @@ fn simd_q8_groups_preserve_ordered_float_sums() -> TestResult {
 }
 
 #[test]
-fn simd_q8_groups_reject_noncanonical_and_nonfinite_payloads() -> TestResult {
+fn simd_q8_groups_accept_native_aliases_and_reject_nonfinite_payloads() -> TestResult {
     let mut scratch = MatvecScratch::with_backend(MatvecBackend::ExperimentalNeon);
     let mut scalar = MatvecScratch::with_backend(MatvecBackend::Scalar);
     let mut output = vec![99.0; 16];
@@ -721,10 +721,16 @@ fn simd_q8_groups_reject_noncanonical_and_nonfinite_payloads() -> TestResult {
     let mut cases = Vec::new();
     for position in 0..26 {
         let mut data = valid.data.to_vec();
-        // Byte 1 is noncanonical in both five-digit and four-digit positions.
-        // A later zero-scale block must still reject its malformed trit byte.
+        // Native decoding accepts fractional aliases in every packed lane,
+        // including in later blocks with zero scale.
         data[84 + position] = 1;
-        cases.push((tensor(143, 384, 3, data), vec![0.0; 384]));
+        compare(
+            &tensor(143, 384, 3, data),
+            &activations(384, true),
+            &mut scratch,
+            &mut output,
+            eligible_backend(),
+        )?;
     }
     for kind in [142, 143] {
         let weights = if kind == 142 {

@@ -184,6 +184,25 @@ const fn ptq_digits() -> [PtqDigits; 256] {
 
 const PTQ_DIGITS: [PtqDigits; 256] = ptq_digits();
 
+/// Decodes the 128 signed trits in a native PTQ block.
+///
+/// Every packed byte has defined native decoder semantics, including alternate
+/// fractional encodings. The scale bytes are not read. Use [`unpack_ptq`] when
+/// validating a lossless, canonical wire conversion instead of a runtime tensor.
+#[must_use]
+pub fn decode_ptq_trits(source: &PtqBlock) -> [i16; 128] {
+    std::array::from_fn(|index| {
+        let (lane, digit) = if index < 80 {
+            (index % 16, index / 16)
+        } else if index < 120 {
+            (16 + (index - 80) % 8, (index - 80) / 8)
+        } else {
+            (24 + (index - 120) % 2, (index - 120) / 2)
+        };
+        i16::from(PTQ_DIGITS[usize::from(source[lane])].digits[digit]) - 1
+    })
+}
+
 /// Unpacks one native PTQ group to PQ2.
 ///
 /// Unlike the C++ reference, this boundary rejects alternate encodings that

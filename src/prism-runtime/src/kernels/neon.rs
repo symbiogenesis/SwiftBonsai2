@@ -130,21 +130,7 @@ fn join_low8(low: i8x16<Neon>, high: i8x16<Neon>) -> i8x16<Neon> {
         .bitcast()
 }
 
-fn validate_trits(packed: &[u8; 28]) -> Result<()> {
-    for (index, &byte) in packed[..26].iter().enumerate() {
-        // Five fractional digits form floor(byte * 243 / 256). The final
-        // two bytes encode four digits followed by zero. Repacking must
-        // reproduce the original byte, including for zero-scale blocks.
-        let value = (u32::from(byte) * 243) >> 8;
-        let value = if index < 24 { value } else { value / 3 * 3 };
-        if (value * 256).div_ceil(243) != u32::from(byte) {
-            return Err(bonsai_ternary::Error::NoncanonicalPtq.into());
-        }
-    }
-    Ok(())
-}
-
-/// Decodes checked native PTQ1 bytes directly, without a temporary PQ2 block.
+/// Decodes all native PTQ1 bytes directly, without a temporary PQ2 block.
 ///
 /// Bytes 0..16 contain five stride-16 digits, 16..24 five stride-8 digits,
 /// and 24..26 four stride-2 digits. Every load stays within the 28-byte block.
@@ -152,7 +138,6 @@ fn validate_trits(packed: &[u8; 28]) -> Result<()> {
 /// fit i16 and each 32-element sum has absolute magnitude at most 4,096.
 #[inline]
 pub(super) fn dot_ptq1_groups(packed: &[u8; 28], activations: [&[i8; 32]; 4]) -> Result<[i32; 4]> {
-    validate_trits(packed)?;
     let Some(neon) = fearless_simd::Level::baseline().as_neon() else {
         let weights = super::ptq1_values(packed)?;
         return Ok(std::array::from_fn(|group| {
@@ -304,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn simd_neon_ptq1_exhaustive_bytes_and_canonicality() -> TestResult {
+    fn simd_neon_ptq1_exhaustive_native_bytes() -> TestResult {
         let values = std::array::from_fn(|group: usize| {
             std::array::from_fn(|lane: usize| {
                 i8::from_ne_bytes([(group * 32 + lane).to_le_bytes()[0].wrapping_mul(197)])
