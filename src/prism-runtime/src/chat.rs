@@ -10,6 +10,12 @@ use crate::{
 use serde_json::{Value, json};
 #[path = "chat_legacy.rs"]
 mod legacy;
+#[path = "chat_message.rs"]
+mod message;
+pub use message::{ChatMessage, ContentPart, MessageDiff, ToolCall};
+#[path = "chat_mapper.rs"]
+mod mapper;
+pub use mapper::map_captures;
 
 /// Registered legacy formatter names in the source map's lexical order.
 #[must_use]
