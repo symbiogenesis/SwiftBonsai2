@@ -49,7 +49,11 @@ fn library() -> Result<&'static Library> {
 }
 
 pub(super) fn return_type(name: &str) -> Result<&'static str> {
-    library()?.intrinsics.get(name).map(|intrinsic| intrinsic.result.as_str()).ok_or_else(|| invalid("Rust backend call is absent from pinned signatures"))
+    library()?
+        .intrinsics
+        .get(name)
+        .map(|intrinsic| intrinsic.result.as_str())
+        .ok_or_else(|| invalid("Rust backend call is absent from pinned signatures"))
 }
 
 fn scalar(value: &Json) -> Result<Value> {
