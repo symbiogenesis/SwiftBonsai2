@@ -101,6 +101,8 @@ pub struct Arena {
     parsers: Vec<Parser>,
     rules: BTreeMap<String, usize>,
     root: usize,
+    #[serde(skip)]
+    retained_bytes: usize,
 }
 
 /// Streaming parse status and byte extent, independent of UTF-8 scalar length.
@@ -127,9 +129,13 @@ impl ParseResult {
 }
 
 fn text(value: &Value) -> Result<&str> {
-    value
+    let text = value
         .as_str()
-        .ok_or_else(|| invalid("PEG string argument missing"))
+        .ok_or_else(|| invalid("PEG string argument missing"))?;
+    if text.len() > 65536 {
+        return Err(invalid("PEG string argument exceeds bound"));
+    }
+    Ok(text)
 }
 fn array(value: &Value) -> Result<&[Value]> {
     value
@@ -170,6 +176,7 @@ impl Arena {
             parsers: Vec::new(),
             rules: BTreeMap::new(),
             root: usize::MAX,
+            retained_bytes: 0,
         };
         arena.root = arena.graph(graph, &HashMap::new(), 0)?;
         arena.resolve()?;
@@ -205,6 +212,11 @@ impl Arena {
         if self.parsers.len() >= 16384 {
             return Err(invalid("PEG node count exceeds bound"));
         }
+        let retained_bytes = serde_json::to_vec(&parser)?.len();
+        if self.retained_bytes + retained_bytes > 8 * 1024 * 1024 {
+            return Err(invalid("PEG retained arena exceeds byte bound"));
+        }
+        self.retained_bytes += retained_bytes;
         let id = self.parsers.len();
         self.parsers.push(parser);
         Ok(id)
@@ -237,6 +249,9 @@ impl Arena {
         })
     }
     fn repeat(&mut self, child: usize, min_count: i32, max_count: i32) -> Result<usize> {
+        if !(0..=65536).contains(&min_count) || !(-1..=65536).contains(&max_count) {
+            return Err(invalid("PEG repetition extent exceeds bound"));
+        }
         self.add(Parser::Repetition {
             child,
             min_count,
@@ -244,6 +259,12 @@ impl Arena {
         })
     }
     fn chars(&mut self, pattern: &str, min_count: i32, max_count: i32) -> Result<usize> {
+        if pattern.len() > 65536
+            || !(0..=65536).contains(&min_count)
+            || !(-1..=65536).contains(&max_count)
+        {
+            return Err(invalid("PEG class extent exceeds bound"));
+        }
         let (ranges, negated) = parse::classes(pattern)?;
         self.add(Parser::Chars {
             pattern: pattern.to_owned(),
@@ -680,6 +701,26 @@ impl Arena {
                 return Err(invalid("PEG child ID outside arena"));
             }
         }
+        Ok(())
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn restored_arenas_reject_invalid_ids_and_bound_recursive_parsing() -> Result<()> {
+        assert!(
+            Arena::load(r#"{"parsers":[{"type":"literal","literal":"x"}],"rules":{},"root":1}"#)
+                .is_err()
+        );
+        assert!(
+            Arena::load(r#"{"parsers":[{"type":"sequence","children":[1]}],"rules":{},"root":0}"#)
+                .is_err()
+        );
+        let recursive = Arena::load(
+            r#"{"parsers":[{"type":"rule","name":"cycle","child":0,"trigger":false}],"rules":{"cycle":0},"root":0}"#,
+        )?;
+        assert!(recursive.parse(b"x", 0).is_err());
         Ok(())
     }
 }

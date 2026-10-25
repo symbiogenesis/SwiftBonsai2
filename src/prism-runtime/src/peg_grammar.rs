@@ -220,6 +220,10 @@ impl Arena {
         }
         Ok(())
     }
+    #[allow(
+        clippy::too_many_lines,
+        reason = "One exhaustive lowering match preserves all PEG variant grouping and quantifier rules"
+    )]
     fn gbnf(
         &self,
         id: usize,
@@ -229,7 +233,7 @@ impl Arena {
         if depth > 256 {
             return Err(invalid("PEG grammar expansion depth exceeded"));
         }
-        Ok(match &self.parsers[id] {
+        let result = match &self.parsers[id] {
             Parser::Epsilon
             | Parser::Start
             | Parser::End
@@ -240,8 +244,13 @@ impl Arena {
             Parser::Literal { literal: value } => literal(value),
             Parser::Sequence { children } => {
                 let mut values = Vec::new();
+                let mut bytes = 0;
                 for &child in children {
                     let value = self.gbnf(child, rules, depth + 1)?;
+                    bytes += value.len() + 3;
+                    if bytes > 4 * 1024 * 1024 {
+                        return Err(invalid("PEG grammar expansion exceeds byte bound"));
+                    }
                     if value.is_empty() {
                         continue;
                     }
@@ -269,6 +278,9 @@ impl Arena {
                         write!(result, "({value})")?;
                     } else {
                         result.push_str(&value);
+                    }
+                    if result.len() > 4 * 1024 * 1024 {
+                        return Err(invalid("PEG grammar expansion exceeds byte bound"));
                     }
                 }
                 result
@@ -321,7 +333,11 @@ impl Arena {
                     "PEG schema nodes require explicit schema grammar lowering",
                 ));
             }
-        })
+        };
+        if result.len() > 4 * 1024 * 1024 {
+            return Err(invalid("PEG grammar expansion exceeds byte bound"));
+        }
+        Ok(result)
     }
     /// Generates deterministic GBNF from reachable rules or lazy trigger rules.
     /// # Errors
