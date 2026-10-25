@@ -53,7 +53,16 @@ pub struct MessageDiff {
     pub tool_call_delta: ToolCall,
 }
 fn string_diff(previous: &str, current: &str) -> Result<String> {
-    current.strip_prefix(previous).map_or_else(||if previous.starts_with(current){Ok(String::new())}else{Err(invalid("chat delta is not a prefix extension"))},|suffix|Ok(suffix.to_owned()))
+    current.strip_prefix(previous).map_or_else(
+        || {
+            if previous.starts_with(current) {
+                Ok(String::new())
+            } else {
+                Err(invalid("chat delta is not a prefix extension"))
+            }
+        },
+        |suffix| Ok(suffix.to_owned()),
+    )
 }
 impl ChatMessage {
     /// Compute source-compatible deltas for growing messages and call arguments.

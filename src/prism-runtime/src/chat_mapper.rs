@@ -129,7 +129,10 @@ impl Mapper {
             _ => &mut self.buffer,
         }
     }
-    #[allow(clippy::too_many_lines,reason="Preserve source semantic tag order and tool/argument streaming transitions together")]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Preserve source semantic tag order and tool/argument streaming transitions together"
+    )]
     fn visit(&mut self, node: &Capture, input: &[u8]) -> Result<()> {
         let text = std::str::from_utf8(
             input
@@ -267,15 +270,16 @@ pub fn map_captures(nodes: &[Capture], input: &[u8]) -> Result<ChatMessage> {
     }
     if mapper.index.is_none()
         && let Some(mut call) = mapper.current
-            && !call.name.is_empty() {
-                if !mapper.buffer.is_empty() {
-                    call.arguments = mapper.buffer;
-                }
-                if mapper.quote && !call.arguments.is_empty() {
-                    call.arguments.push('"');
-                }
-                mapper.message.tool_calls.push(call);
-            }
+        && !call.name.is_empty()
+    {
+        if !mapper.buffer.is_empty() {
+            call.arguments = mapper.buffer;
+        }
+        if mapper.quote && !call.arguments.is_empty() {
+            call.arguments.push('"');
+        }
+        mapper.message.tool_calls.push(call);
+    }
     if mapper
         .message
         .reasoning_content
