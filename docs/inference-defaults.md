@@ -46,7 +46,7 @@ sampler/RNG parity; it is not the chat backend.
 
 ## Planned experimental extra effort mode
 
-The planned UI may offer **Standard** (the default) and **Extra effort
+The [native Rust UI](ui-architecture.md) may later offer **Standard** (the default) and **Extra effort
 (experimental)**. This is a documented design only: no UI control, orchestration
 code or new broker option is implemented. The experimental label should explain:
 "Uses extra passes; takes longer; quality improvements are unproven."
@@ -82,7 +82,8 @@ behavior, stage order, bounds, cancellation and draft retention. An extensive
 quality/performance benchmark campaign is not a prerequisite for exposing this
 opt-in experimental mode. Do not claim an established quality or speed gain, or
 promote it to the default, without appropriate evidence. Any benchmarks remain
-CI-only; existing service/security requirements still apply when the UI ships.
+CI-only; existing service/security requirements apply independently of the
+native MVP UI's availability.
 The GVS5H coding results do not establish a Swift creative-writing improvement.
 
 ## What the benchmarks establish

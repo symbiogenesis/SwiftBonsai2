@@ -23,6 +23,11 @@ Runner still provisions its immutable `0.1.1` release lock; source repairs requi
 a separately reviewed binary release and lock update before that provisioned
 runtime includes them.
 
+The application separately provides a [pure-Rust native chat UI](ui-architecture.md).
+That client consumes the broker's HTTP/JSON/SSE contract and is not part of this
+engine migration's runtime acceptance scope. UI implementation and protocol
+interoperability do not require a browser frontend.
+
 ## MVP boundary
 
 | Area | Required for this MVP |
@@ -137,7 +142,8 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   subsequent successful request; failure must restore consistent KV,
   recurrent/convolution and sampler state or close admission until reset.
   Generic transport, multi-sequence scheduling, portable state files, cache
-  reuse and new UI/client features remain deferred.
+  reuse and runtime-level client expansion remain deferred. The separate
+  native Rust application UI follows [its own contract](ui-architecture.md).
 
   The source `SwiftSession`, worker/client and owned `--native-engine` path are
   connected. Dropping an in-flight private request signals its exact model
@@ -202,7 +208,7 @@ dependency.
 | Chat and grammar ecosystem | Non-Swift templates, general chat analysis/auto-parser parity, tool calls, multimodal content, grammar/schema/LLGuidance integration and full server API compatibility |
 | CLI and remote acquisition | All upstream example option contexts, broad CLI parity, general HF resolution, HTTPS/download/multi-shard compatibility; the MVP uses the existing pinned artifact setup |
 | Adapter and accelerator paths | LoRA forward execution and standard-profile qualification, per-device X1/X2 Adreno/Vulkan and Hexagon/NPU execution, automatic hardware profiles and other offload paths |
-| Application expansion | New UI, agent automation and writing/retrieval workflows beyond the minimal existing broker interface |
+| Application expansion | Native Rust UI features beyond the minimal chat demo, agent automation and writing/retrieval workflows; the separate application UI is not an engine-MVP dependency |
 
 The [deferred migration backlog and evidence](prism-migration-backlog.md)
 preserves the previous detailed contracts, focused implementation results,

@@ -7,6 +7,11 @@ assessment backend.
 The PowerShell preflight and daily profile remain launch-disabled. Development
 controls do not establish daily security or real-model qualification.
 
+The first-party `bonsai-chat` interface is a separate pure-Rust native Windows
+client. The broker serves the HTTP API; it supplies no browser UI or WebView.
+The permanent [UI architecture](ui-architecture.md) keeps presentation native
+while preserving the language-independent local LLM protocol boundary.
+
 ## Public request contract
 
 Only HTTP/1.1 origin-form `POST /v1/chat/completions` is accepted. Host must be
@@ -41,6 +46,12 @@ refreshed by progress. Expiry is checked around I/O and after bounded synchronou
 parsing; it is not a preemptive CPU limit. Errors expose value-free categories.
 
 ## Text-chat admission
+
+The API uses familiar local LLM chat JSON and SSE conventions, with a strict
+supported subset. Generic OpenAI-style clients need an adapter if they send
+fields such as `model`, sampling controls or tool definitions. Native Rust UI
+implementation does not widen that public schema or claim unrestricted SDK
+compatibility.
 
 The entire public JSON schema is:
 
@@ -311,7 +322,8 @@ These are recorded diagnostic binaries; ordinary release pins and 16 GiB Swift
 startup admission remain unchanged.
 
 Restricted tokens, filesystem/egress isolation, same-user backend bypass
-prevention, daily UI and real-model quality/performance remain unqualified.
+prevention, everyday native UI acceptance and real-model quality/performance
+remain unqualified.
 Synthetic loopback/stream regressions establish broker behavior, not those gates.
 See [launch commands](development-guide.md#owned-windows-development-backend) and
 [validation](validation.md). Dependency/toolchain pins live in the Cargo workspace

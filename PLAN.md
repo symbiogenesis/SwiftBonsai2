@@ -35,7 +35,11 @@ token accounting and native sampler parity are implemented, as is the
 experimental owned service path. Bounded full-model forward parity and owned
 HTTP recovery are qualified in the source runtime. A reviewed prebuilt runtime
 release and lock update remain before ordinary Runner consumes those changes.
-Broader acceleration, adapters, UI and optimization remain deferred.
+Broader acceleration, adapters and runtime optimization remain deferred. The
+application MVP adds a separate pure-Rust native chat UI; it does not expand the
+engine MVP's runtime acceptance scope. The permanent
+[UI architecture](docs/ui-architecture.md) keeps first-party presentation in
+Rust and local LLM interoperability at the HTTP/JSON/SSE boundary.
 
 The approved abliteration LoRA is intended for the standard profile. Acceptance
 requires **decode tokens/second and output quality each to match or exceed the
@@ -121,9 +125,16 @@ a Windows Job. The source native Swift path has bounded owned HTTP recovery evid
 explicit diagnostic binaries. Released packaging, same-user backend bypass
 prevention and restricted daily execution remain unqualified. See the [broker contract](docs/broker-policy.md).
 
-Daily chat and its UI are not enabled. The first user flow is authenticated,
-offline creative chat, using the pinned server's UI where it can satisfy the
-complete policy. Qualify:
+The native `bonsai-chat` MVP provides the first-party chat interface through
+the existing authenticated broker. UI application code must remain pure Rust,
+using native controls or a native Rust toolkit; JavaScript/TypeScript,
+HTML/CSS frontends, browser shells, WebViews, Electron and Tauri HTML frontends
+are excluded. Do not substitute the pinned server's browser UI. Preserve local
+LLM conventions through the documented OpenAI-style chat JSON/SSE API and
+explicit adapters for the broker's strict subset. See
+[UI architecture and compatibility](docs/ui-architecture.md).
+
+Everyday service acceptance remains open. Qualify:
 
 - Numeric-loopback binding, private credentials, exact Host/Origin and required
   routes; reject tools/MCP, dynamic loading and inherited capability overrides.
@@ -179,7 +190,7 @@ Start with manual excerpts or lexical search; add embeddings only for a
 demonstrated retrieval need. Image critique needs a matching qualified vision
 path; image generation needs a separate model and shared-memory budget.
 
-The planned UI should retain Standard as its default and offer an opt-in
+The native Rust UI should retain Standard as its default and may later offer an opt-in
 **Extra effort (experimental)** mode: up to three sequential plan, draft and
 review/revision calls, with compact working state and the original draft kept.
 Prepare this as a small client workflow above the broker, retaining existing
@@ -343,6 +354,7 @@ Promote each profile only when:
 | --- | --- |
 | `config/` | Immutable artifacts, metadata, explicit profiles and qualification inputs |
 | `src/broker/`, `src/windows-*/` | Request policy, service, credentials and process ownership |
+| `src/chat-ui/` | Pure-Rust native chat UI and local HTTP/JSON/SSE client |
 | [Prism Inference](https://github.com/symbiogenesis/prism-inference) | Independent CPU engine, codecs, GGUF tools and storage overlay; consumed as pinned releases |
 | `tools/` | Application maintenance CLI and embedded-C# validation support |
 | `scripts/` | Provisioning, builds, planning and development checks |
@@ -360,7 +372,7 @@ when authorized, uses only `main`. Git history holds implementation chronology.
 | --- | --- | --- |
 | M0a — literature selection | Qwen decision recorded; Swift is current memory priority | Reopen only on documented support, quality or resource failure |
 | M0 — reproducibility | Inventory, locks, provisioning and GGUF inspection implemented | Extend shared capability discovery for X1/X2; keep identities and evidence current |
-| M1 — CPU creative chat | Swift bounded decode and experimental owned native broker streaming implemented | Complete service recovery, offline UI, bypass prevention and restricted daily process |
+| M1 — CPU creative chat | Swift bounded decode, experimental owned broker streaming and a pure-Rust native chat UI | Complete service/UI acceptance, bypass prevention and restricted daily process |
 | M1a — creative/comfort | Pending | Useful creative output, standard LoRA qualification, latency and sustained device acceptance |
 | M1b — optional agents | Pending | Qualified client and whole-agent containment before tools are enabled |
 | M2 — Adreno | G0–G5 pending | Per-device X1/X2 exact-model correctness and useful benefit, or documented no-go |

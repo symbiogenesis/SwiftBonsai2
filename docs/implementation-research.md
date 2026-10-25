@@ -5,6 +5,20 @@ Use the [development guide](development-guide.md) for commands,
 [validation](validation.md) for checks and [PLAN.md](../PLAN.md) for remaining
 delivery work. Implementation chronology and individual check runs live in Git.
 
+## Native UI and interoperability
+
+The first-party UI is `bonsai-chat` in `src/chat-ui/`: Rust application code
+using native Windows controls and a Rust HTTP/SSE client. Keep the UI pure Rust
+through future changes; browser frontends, JavaScript/TypeScript, HTML/CSS,
+WebViews, Electron and Tauri HTML frontends are excluded. Native operating-system
+bindings are permitted. See the permanent [UI architecture](ui-architecture.md).
+
+Compatibility with local LLM tools belongs at the protocol boundary: the
+OpenAI-style chat endpoint, JSON text messages, bearer authentication and SSE.
+The broker's strict schema remains authoritative, so generic clients need
+adaptation when they send unsupported fields such as `model`. A native UI
+changes neither the pinned engine nor its independent qualification gates.
+
 ## Model and runtime evidence
 
 | Area | Current evidence | Limit |

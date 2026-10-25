@@ -12,6 +12,11 @@ comparison and fallback engine. The [active MVP checklist](prism-upstream-todo.m
 records the narrower Swift evidence; the historical R0–R7 entries below retain
 their broader scope.
 
+The application UI is a separate [pure-Rust native client](ui-architecture.md)
+of the broker's local HTTP/JSON/SSE contract. Its availability does not change
+this runtime's release pins or qualification scope. UI code remains native Rust;
+server/browser UI parity is not an engine acceptance requirement.
+
 ## Scope
 
 Preserve model weights, decoded scales, activation/cache precision, transforms,

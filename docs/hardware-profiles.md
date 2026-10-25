@@ -67,7 +67,8 @@ Keep the existing explicit CPU controls reproducible. Automatic mode must:
 5. Report requested/effective profile, device class, phase placement, profile
    evidence/build identity and a value-free fallback reason. Keep prompts and
    tensor payloads out of technical logs. Expose a simple automatic choice in the
-   eventual UI; hardware tuning remains trusted configuration, not public arbitrary
+   pure-Rust native UI under the [UI architecture](ui-architecture.md); hardware
+   tuning remains trusted configuration, not public arbitrary
    backend arguments, paths or inherited environment overrides.
 
 Runner owns discovery, policy selection, artifact verification and admission.

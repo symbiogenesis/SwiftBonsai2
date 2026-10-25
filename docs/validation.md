@@ -1,11 +1,18 @@
 # Validation
 
-Runner CI owns this application's broker, process ownership, artifact provisioning
-and released-runtime integration. Runtime algorithms and upstream conformance
+Runner CI owns this application's native Rust UI, broker, process ownership,
+artifact provisioning and released-runtime integration. Runtime algorithms and upstream conformance
 belong to [Prism Inference](https://github.com/symbiogenesis/prism-inference/blob/main/docs/build-and-validation.md).
 Local builds, Release analyzers and focused named tests are allowed. Complete
 suites and every benchmark run only in CI; do not approximate a full suite by
 batching local filters.
+
+The [UI architecture](ui-architecture.md) requires first-party UI application
+code to remain pure Rust and native. Native UI builds and focused client checks
+must preserve the broker's documented HTTP/JSON/SSE subset. Window launch and
+streaming checks do not establish broad SDK compatibility, model quality or
+runtime performance. Browser assets and browser-runtime UI dependencies are not
+an accepted implementation path.
 
 ## Runner gates
 

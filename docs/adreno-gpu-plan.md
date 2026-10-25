@@ -171,7 +171,8 @@ G2 state/logit, adapter and lifecycle checks after scheduling/reduction changes.
   results. Repeat/interleave CPU/GPU trials with predeclared per-metric criteria.
 - [ ] Capture cold load/compile/repack, warm prefill, first streamed/useful answer
   token, decode TPS and completed-task time. Include peak/resident memory, commit,
-  available RAM, hard faults/evictions, energy/task, thermals, UI responsiveness,
+  available RAM, hard faults/evictions, energy/task, thermals,
+  [native Rust UI](ui-architecture.md) responsiveness,
   sustained behavior and failures. Mark unavailable counters; use scoped energy
   measurement rather than utilization as a proxy.
 - [ ] Require correctness, creative quality, headroom and sustained comfort.
