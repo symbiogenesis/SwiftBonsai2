@@ -5,6 +5,7 @@ use super::number::{Kind, Number};
 use super::program::{Parameter, Statement};
 use super::random::Mt19937;
 use serde_json::Value as Json;
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -195,8 +196,8 @@ impl Place {
     pub(super) fn set(&self, value: Value) -> Result<(), String> {
         match self {
             Self::Variable(cell) => {
-                let kind = cell.borrow().kind.clone();
-                cell.borrow_mut().value = value.coerce(&kind)?;
+                let value = value.coerce(&cell.borrow().kind)?;
+                cell.borrow_mut().value = value;
             }
             Self::Array(array, index) => {
                 *array
@@ -422,10 +423,17 @@ impl Value {
     }
 
     pub(super) fn coerce(self, kind: &str) -> Result<Self, String> {
-        let clean = kind
-            .replace("constexpr", "")
-            .replace("const", "")
-            .replace("static", "");
+        // Scalar initializer loops repeatedly assign the same plain type.
+        // Only qualified spellings need an owned normalization buffer.
+        let clean = if kind.contains("const") || kind.contains("static") {
+            Cow::Owned(
+                kind.replace("constexpr", "")
+                    .replace("const", "")
+                    .replace("static", ""),
+            )
+        } else {
+            Cow::Borrowed(kind)
+        };
         if clean.starts_with("std::array<") {
             let definition = clean
                 .strip_prefix("std::array<")
@@ -553,6 +561,39 @@ mod tests {
             assert!(buffer.set(usize::MAX, value).is_err());
             assert_eq!(buffer.bytes, unchanged);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn qualified_scalar_assignments_preserve_casts_and_self_borrows() -> Result<(), String> {
+        for (kind, value, expected) in [
+            ("int32_t", Number::F64(-2.75), Number::I32(-2)),
+            ("uint32_t", Number::I32(-1), Number::U32(u32::MAX)),
+            (
+                "int64_t",
+                Number::U32(u32::MAX),
+                Number::I64(i64::from(u32::MAX)),
+            ),
+            ("uint64_t", Number::I32(-1), Number::U64(u64::MAX)),
+            ("float", Number::F64(-0.0), Number::F32(-0.0)),
+            (
+                "double",
+                Number::F64(f64::from_bits(0x7ff0_0000_0000_0042)),
+                Number::F64(f64::from_bits(0x7ff0_0000_0000_0042)),
+            ),
+        ] {
+            for qualifier in ["", "const", "constexpr", "static", "staticconstexprconst"] {
+                let cell = variable(format!("{qualifier}{kind}"), Value::Null);
+                let place = Place::Variable(cell);
+                place.set(Value::Number(value))?;
+                assert_eq!(place.get()?.number()?.wire(), expected.wire());
+                place.set(place.get()?)?;
+                assert_eq!(place.get()?.number()?.wire(), expected.wire());
+            }
+        }
+        let place = Place::Variable(variable("bool".into(), Value::Bool(true)));
+        place.set(Value::Reference(place.clone()))?;
+        assert!(place.get()?.truth()?);
         Ok(())
     }
 }

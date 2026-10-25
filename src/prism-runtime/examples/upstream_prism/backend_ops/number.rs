@@ -2,6 +2,7 @@
 //! Explicit C++ scalar promotions for the source-owned graph/input interpreter.
 
 use serde_json::{Value, json};
+use std::borrow::Cow;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Number {
@@ -25,8 +26,12 @@ pub(super) enum Kind {
 
 impl Kind {
     pub(super) fn from_type(name: &str) -> Self {
-        let name = name.replace("const", "").replace("constexpr", "");
-        match name.as_str() {
+        let name = if name.contains("const") {
+            Cow::Owned(name.replace("const", "").replace("constexpr", ""))
+        } else {
+            Cow::Borrowed(name)
+        };
+        match name.as_ref() {
             "float" => Self::F32,
             "double" => Self::F64,
             "size_t" | "uint64_t" => Self::U64,
@@ -279,5 +284,32 @@ impl Number {
             Self::U64(value) => Self::U64(!value),
             _ => return Err("source complement requires integer".into()),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scalar_type_mapping_keeps_plain_qualified_and_default_kinds() {
+        for (name, expected) in [
+            ("float", Kind::F32),
+            ("double", Kind::F64),
+            ("int", Kind::I32),
+            ("int32_t", Kind::I32),
+            ("uint32_t", Kind::U32),
+            ("int64_t", Kind::I64),
+            ("uint64_t", Kind::U64),
+            ("size_t", Kind::U64),
+            ("bool", Kind::I32),
+            ("ggml_type", Kind::I32),
+        ] {
+            assert_eq!(Kind::from_type(name), expected);
+            assert_eq!(Kind::from_type(&format!("const{name}")), expected);
+        }
+        // Declarations normalize constexpr before this mapper. Preserve its
+        // existing direct-call fallback when const is removed first.
+        assert_eq!(Kind::from_type("constexprfloat"), Kind::I32);
     }
 }
