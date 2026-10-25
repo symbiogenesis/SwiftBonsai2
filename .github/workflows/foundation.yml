@@ -526,6 +526,27 @@ jobs:
           $prepared = & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -Case BackendOps -PrepareBackendToolsOnly -SourceArchive $archive -EvidenceDirectory $evidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -NativeBuildDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamNative') -Generator 'Visual Studio 18 2026' -NativePlatform ARM64 -Toolchain nightly-2026-10-22-aarch64-pc-windows-msvc -Parallel 4 -CaseParallel 1
           if ($prepared.Status -cne 'backend-tools-ready' -or $prepared.ProjectRevision -cne $env:GITHUB_SHA -or $prepared.FullSourceGate -isnot [bool] -or $prepared.FullSourceGate -ne $false) { throw 'Backend preparation did not produce the expected revision-bound tool handoff.' }
           $prepared | ConvertTo-Json -Depth 12
+      - name: Require native transport equivalence and geometry isolation
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.PrismBackendBundle.psm1')
+          $bundle = Import-BonsaiPrismBackendBundle -Directory (Join-Path $env:PRISM_BACKEND_TOOLS_EVIDENCE 'backend-tools') -Repository $env:GITHUB_WORKSPACE
+          $env:BONSAI_BACKEND_TRANSPORT_BRIDGE = $bundle.CommonBridgePath
+          $env:BONSAI_BACKEND_TRANSPORT_EVIDENCE = Join-Path $env:PRISM_BACKEND_TOOLS_EVIDENCE 'transport-checks'
+          [void][IO.Directory]::CreateDirectory($env:BONSAI_BACKEND_TRANSPORT_EVIDENCE)
+          $checks = @(
+            'backend_ops::transport::pipe::tests::native_file_and_pipe_observations_match_and_geometry_state_is_fresh',
+            'llguidance::tests::native_candidate_templates_match_original_file_imports'
+          )
+          foreach ($check in $checks) {
+            $log = Join-Path $env:PRISM_BACKEND_TOOLS_EVIDENCE (($check -replace '::', '-') + '.log')
+            cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-prism-runtime --example upstream_prism --target-dir (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') --locked --offline --release $check -- --ignored --exact 2>&1 | Tee-Object -FilePath $log
+            if (-not (Select-String -LiteralPath $log -SimpleMatch 'test result: ok. 1 passed; 0 failed;')) { throw "Required native equivalence check did not run exactly once: $check" }
+          }
       - name: Publish revision-bound native backend shard tools
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -540,6 +561,7 @@ jobs:
           path: |
             ${{ env.PRISM_BACKEND_TOOLS_EVIDENCE }}/receipt.json
             ${{ env.PRISM_BACKEND_TOOLS_EVIDENCE }}/*.log
+            ${{ env.PRISM_BACKEND_TOOLS_EVIDENCE }}/transport-checks
           if-no-files-found: error
   prism-backend-plan:
     if: github.ref == 'refs/heads/main'
@@ -590,6 +612,7 @@ jobs:
             ${{ env.BACKEND_STAGE }}/**/input-state.json
             ${{ env.BACKEND_STAGE }}/**/checkpoint-*.json
             ${{ env.BACKEND_STAGE }}/**/actions-*.json
+            ${{ env.BACKEND_STAGE }}/**/*.jsonl
             ${{ env.BACKEND_STAGE }}/**/*.bin
             ${{ env.BACKEND_STAGE }}/**/*.log
           if-no-files-found: error
@@ -679,6 +702,7 @@ jobs:
             ${{ env.BACKEND_STAGE }}/**/input-state.json
             ${{ env.BACKEND_STAGE }}/**/checkpoint-*.json
             ${{ env.BACKEND_STAGE }}/**/actions-*.json
+            ${{ env.BACKEND_STAGE }}/**/*.jsonl
             ${{ env.BACKEND_STAGE }}/**/*.bin
             ${{ env.BACKEND_STAGE }}/**/*.log
           if-no-files-found: error

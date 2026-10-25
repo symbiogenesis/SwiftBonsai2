@@ -32,3 +32,30 @@ bounded by K<=8192, M<=4096, N<=256 and K*M<=8,388,608. PTQ1 batches have at mos
 relative paths are rejected before execution. Each operation receives a separate
 128 MiB ggml context and matmul uses four threads. Process timeout and scratch-file
 lifecycle belong to the caller.
+
+## Backend partition sessions
+
+`prism-upstream-common-bridge --backend-session` accepts a sequence of framed
+JSON messages on binary stdin and writes framed JSON replies to binary stdout.
+Each frame starts with a four-byte little-endian byte count. Requests are bounded
+by 128 MiB, replies by 16 MiB; zero-length, truncated and oversized frames fail.
+Requests contain exactly `Sequence` and `Operation`; replies contain exactly
+`Sequence` and `Result`. Sequence numbers start at one and increase by one.
+Unknown fields, duplicate request keys and invalid sequences fail the process.
+
+The Rust controller opens a geometry with `open` (`Directory`, `MaxFileBytes`),
+sends batches through `actions` (`Actions`), and calls `close` before opening the
+next geometry. Each geometry receives a fresh production state; closing destroys
+all tensors, contexts, buffers and backends before acknowledging completion.
+No handles or graph state survive between geometries. A partition accepts at
+most 22,817 geometry scopes, each with at most 524,288 actions and the existing
+4 GiB file bound. `shutdown` requires no open geometry and exits successfully.
+Production actions and their observations use the existing backend schema.
+
+Rust retains per-geometry `actions.jsonl` and `observations.jsonl` until the
+existing successful-case cleanup or failed-case digest/retention policy applies.
+Partition stderr and process-exit receipts remain separate diagnostics. Framing,
+count, I/O, deadline or process failures poison the session and abort further
+geometries. The original file/checkpoint transport remains available to focused
+equivalence checks. Foundation requires native old/new observation, output-byte,
+input-receipt, seed and state-isolation checks before publishing shard tools.

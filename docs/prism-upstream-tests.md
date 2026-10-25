@@ -118,6 +118,13 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   separate `prism-backend-evidence-plan-*` and `prism-backend-evidence-run-*`
   artifacts. Fan-in jobs read the compact records and retain every identity,
   digest, ordering and completeness check.
+  Each C++ plan/execution partition reuses one bounded pipe process while every
+  geometry receives fresh production state. Default evaluation/support planning
+  and execution use 64 native partition workers instead of 91,268 per-geometry
+  process launches. Source-order random offsets, input receipts, geometry counts,
+  tolerances and result hashes remain required. CI compares the original file
+  transport with the pipe transport on focused numerical/source geometries and
+  checks state isolation and malformed-protocol rejection before shard execution.
 - `test-tokenizers-repo.sh`: all six publisher vocabulary/input/output triples
   in the complete compatible 2026-05-22 repository snapshot,
   with every corpus attempted even after a failure. The existing Rust corpus
@@ -174,6 +181,12 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   predicates, and every token/EOS sampler-chain check. Rust owns candidate
   construction and matching decisions. The reference links the exact production
   LLGuidance commit pinned by upstream, with its unchanged Cargo lock.
+  One model/context spans every group and the sampler chain, matching the
+  original source and retaining the production vocabulary tokenizer cache.
+  Rust supplies one complete candidate template; field-selective restores
+  preserve logits-only versus ID/logit resets and the original probability and
+  active-view metadata. Native equivalence checks compare all three encodings
+  with the original file imports, including exceptional float bit patterns.
 - `test-dspark-logsnr-meta.cpp`: all eight generated checkpoint variants and
   fourteen original loader predicates, including required error-log checks.
   Safe Rust writes every GGUF byte; an input-only tensor corpus preserves the
