@@ -308,6 +308,10 @@ lowest token ID ties for both UTF-8 and raw SPM input. Large tables retain the
 original search path. The index uses an already locked dependency. Decoding
 appends token bytes into one output buffer, and reference decode validation
 retains valid token IDs instead of cloning token strings for each check.
+GGUF BPE fallback follows the pinned engine's raw UTF-8 byte-key lookup and
+omission of absent byte keys, including unmatched merged symbols. A focused
+Falcon control-byte reproducer matches the retained native `[187]` result for
+input `0103`.
 
 Native bridge CMake inputs are mirrored into a content-verified stable directory,
 so checkout timestamps do not force unchanged adapter sources to compile again.

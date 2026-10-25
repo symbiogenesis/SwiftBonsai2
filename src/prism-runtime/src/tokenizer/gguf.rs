@@ -845,13 +845,18 @@ impl GgufTokenizer {
             if let Some(&id) = self.lookup.get(piece) {
                 output.push(id);
             } else if ranked && self.pre != "gemma4" {
-                for value in piece.chars() {
-                    output.push(
-                        *self
-                            .lookup
-                            .get(&value.to_string())
-                            .ok_or_else(|| invalid("BPE byte alphabet token unavailable"))?,
-                    );
+                // The pinned BPE fallback looks up each raw UTF-8 byte of
+                // the encoded symbol and emits only existing spellings. Some
+                // vocabularies (Falcon's control bytes) omit alphabet symbols;
+                // they do not reject those inputs. GGUF spellings are valid
+                // UTF-8, so an isolated non-ASCII byte cannot have an entry.
+                for byte in piece.bytes() {
+                    let key = [byte];
+                    if let Ok(key) = std::str::from_utf8(&key)
+                        && let Some(&id) = self.lookup.get(key)
+                    {
+                        output.push(id);
+                    }
                 }
             } else {
                 for &value in piece.as_bytes() {
@@ -1434,6 +1439,22 @@ mod tests {
         assert_eq!(bpe.decode(&[1, 2], false, false)?, b" a\xe9");
         let rwkv = tokenizer("rwkv", &["?", "\\xFF", "é"], &[0.0; 3])?;
         assert_eq!(rwkv.decode(&[1, 2], false, false)?, b"\xff\xc3\xa9");
+        Ok(())
+    }
+
+    #[test]
+    fn bpe_missing_symbols_follow_raw_byte_lookup_without_inventing_tokens() -> Result<()> {
+        let bpe = tokenizer("gpt2", &["?", "ā", "a", "b", "Ġ"], &[0.0; 5])?;
+        assert_eq!(bpe.encode(b"\x01\x03", false, false)?, [1]);
+        assert_eq!(bpe.encode(b"\x03", false, false)?, Vec::<u32>::new());
+        // A merge can name a symbol absent from the vocabulary. The source
+        // fallback then queries raw bytes, rather than splitting back into
+        // existing Unicode alphabet symbols (which would insert token4).
+        let mut bpe = bpe;
+        bpe.ranks.insert("a Ġ".into(), 0);
+        let mut output = Vec::new();
+        bpe.merge("aĠb", true, &mut output)?;
+        assert_eq!(output, [2, 3]);
         Ok(())
     }
 
