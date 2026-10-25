@@ -69,6 +69,16 @@ $otherReceipt.NativeBuilds[0].ExecutableSha256 = 'e' * 64
 [IO.File]::WriteAllText($otherReceiptPath, $otherOriginal)
 $receiptPath = Join-Path $scratch 'prism-ordinary-results-0/receipt.json'
 $original = [IO.File]::ReadAllText($receiptPath)
+$deep = 'survives'
+for ($level = 0; $level -lt 97; $level++) { $deep = @{ Nested=$deep } }
+$changed = $original | ConvertFrom-Json -AsHashtable
+$changed.CaseRuns[0]['Deep'] = $deep
+[IO.File]::WriteAllText($receiptPath, ($changed | ConvertTo-Json -Depth 100))
+$deepMerged = Merge-BonsaiPrismSourceResult @parameters
+$retained = $deepMerged.Receipt.SourcePartitions[0].CaseRuns[0].Deep
+for ($level = 0; $level -lt 97; $level++) { $retained = $retained.Nested }
+Assert ($retained -ceq 'survives') 'Fan-in lost evidence at the supported source artifact depth.'
+[IO.File]::WriteAllText($receiptPath, $original)
 foreach ($mutation in @(
     @{ Field='SchemaVersion'; Value='1' },
     @{ Field='SchemaVersion'; Value=1.0 },

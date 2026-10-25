@@ -76,7 +76,8 @@ failure evidence. Reads retain input and ancestor guards on Windows; receipt
 digests identify the same bounded bytes that were parsed. Source artifacts accept
 UTF-8 and BOM-marked UTF-8, UTF-16 or UTF-32 JSON. The partition wrapper returns
 the original PowerShell objects so caller properties and object identity survive.
-This command preserves the existing 100-level source JSON limit.
+This command preserves the existing 100-level source JSON limit; response parsing
+also allows the additional merge envelopes.
 
 Qualification `invocations` requests take `modelPath` and validated `controls`.
 They return all 24 paired and four zero-scale argument vectors with the same
