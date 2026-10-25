@@ -4,7 +4,7 @@ use super::{CpuBackend, TensorId, coordinates, linear};
 use crate::{Result, invalid};
 
 pub(super) const fn supports(operation: i32) -> bool {
-    matches!(operation, 0..=2 | 6..=29 | 31..=47 | 50 | 64 | 66..=73 | 85 | 91 | 96..=97 | 100)
+    matches!(operation, 0..=2 | 6..=29 | 31..=51 | 55 | 64 | 66..=73 | 85 | 91 | 96..=97 | 100)
 }
 
 fn integer(parameters: &[u8; 64], index: usize) -> i32 {
@@ -87,7 +87,7 @@ fn unary(op: i32, x: f32, p: &[u8; 64]) -> Result<f32> {
             if x > 0.0 {
                 ap * x * x + beta * x
             } else {
-                an * (x.exp_m1() - x) + beta * x + eps * x
+                an * (x.min(eps).exp_m1() - x) + beta * x
             }
         }
         18 => x.floor(),
@@ -354,6 +354,9 @@ impl CpuBackend {
                     for group in 0..groups {
                         let first = group * group_channels * shape[0] * shape[1]
                             + batch * shape[0] * shape[1] * shape[2];
+                        if group * group_channels >= shape[2] {
+                            continue;
+                        }
                         let count = (shape[2] - group * group_channels).min(group_channels)
                             * shape[0]
                             * shape[1];
@@ -466,16 +469,28 @@ impl CpuBackend {
                 }
             }
             42 => {
-                let b = self.values(source(1)?)?;
-                let ids = self.values(source(2)?)?;
+                let b = self.values(source(2)?)?;
+                let ids_id = source(1)?;
+                let ids = self.values(ids_id)?;
+                let ids_shape = self.info(ids_id)?.shape;
                 out.copy_from_slice(&b);
                 for row in 0..a.len() / a_shape[0] {
-                    let id = ids[row % ids.len()] as usize;
+                    let coord = coordinates(row, [a_shape[1], a_shape[2], a_shape[3], 1]);
+                    let id = ids[linear(
+                        [
+                            coord[0],
+                            coord[1] % ids_shape[1],
+                            coord[2] % ids_shape[2],
+                            0,
+                        ],
+                        ids_shape,
+                    )] as usize;
                     if id >= shape[1] {
                         return Err(invalid("CPU row assignment exceeds extent"));
                     }
                     for column in 0..shape[0] {
-                        out[column + shape[0] * id] = a[column + a_shape[0] * row];
+                        out[linear([column, id, coord[1], coord[2]], shape)] =
+                            a[column + a_shape[0] * row];
                     }
                 }
             }
@@ -573,6 +588,51 @@ impl CpuBackend {
                     }
                 }
             }
+            48 | 49 => out = self.rope_values(&info, &a)?,
+            51 => {
+                let b_id = source(1)?;
+                let b_shape = self.info(b_id)?.shape;
+                let b = self.values(b_id)?;
+                let stride = integer(p, 0) as usize;
+                for channel in 0..a_shape[1] {
+                    for input_time in 0..b_shape[0] {
+                        for kernel in 0..a_shape[0] {
+                            let mut dot = 0.0_f64;
+                            for input_channel in 0..a_shape[2] {
+                                dot += f64::from(
+                                    a[linear([kernel, channel, input_channel, 0], a_shape)],
+                                ) * f64::from(
+                                    b[linear([input_time, input_channel, 0, 0], b_shape)],
+                                );
+                            }
+                            out[input_time * stride + kernel + channel * shape[0]] += dot as f32;
+                        }
+                    }
+                }
+            }
+            55 => {
+                let stride = i64::from(integer(p, 0));
+                let channels = integer(p, 1) as usize;
+                let padding = i64::from(integer(p, 2));
+                let kernel_width = a_shape[0] / channels;
+                for channel in 0..channels {
+                    for time in 0..shape[0] {
+                        let absolute = time as i64 + padding;
+                        let first = ((absolute - kernel_width as i64 + stride) / stride).max(0);
+                        let last = (absolute / stride).min(a_shape[1] as i64 - 1);
+                        let mut sum = 0.0_f32;
+                        for input in first..=last {
+                            let kernel = absolute - input * stride;
+                            if kernel >= 0 && kernel < kernel_width as i64 {
+                                sum += a[channel * kernel_width
+                                    + kernel as usize
+                                    + input as usize * a_shape[0]];
+                            }
+                        }
+                        out[time + channel * shape[0]] = sum;
+                    }
+                }
+            }
             64 => {
                 let circular = integer(p, 8) != 0;
                 for (index, value) in out.iter_mut().enumerate() {
@@ -641,10 +701,10 @@ impl CpuBackend {
                 for (index, value) in out.iter_mut().enumerate() {
                     let c = coordinates(index, shape);
                     let keep = match integer(p, 0) {
-                        0 => c[0] <= c[1],
-                        1 => c[0] >= c[1],
-                        2 => c[0] < c[1],
-                        3 => c[0] > c[1],
+                        0 => c[0] >= c[1],
+                        1 => c[0] > c[1],
+                        2 => c[0] <= c[1],
+                        3 => c[0] < c[1],
                         _ => return Err(invalid("unknown CPU triangular operation")),
                     };
                     if keep {
@@ -655,35 +715,23 @@ impl CpuBackend {
             85 => {
                 let b_id = source(1)?;
                 let b = self.values(b_id)?;
-                let left = integer(p, 0) != 0;
-                let lower = integer(p, 1) != 0;
-                let unit = integer(p, 2) != 0;
                 let width = a_shape[0];
                 out.copy_from_slice(&b);
-                if !left {
-                    return Err(invalid("right triangular solve is unsupported"));
-                }
                 for batch in 0..shape[2] * shape[3] {
-                    for column in 0..shape[1] {
+                    for column in 0..shape[0] {
                         for step in 0..width {
-                            let row = if lower { step } else { width - 1 - step };
-                            let output_index = row + shape[0] * (column + shape[1] * batch);
+                            let row = step;
+                            let output_index = column + shape[0] * (row + shape[1] * batch);
                             let mut value = out[output_index];
                             for previous in 0..step {
-                                let k = if lower {
-                                    previous
-                                } else {
-                                    width - 1 - previous
-                                };
+                                let k = previous;
                                 value -= a[k + a_shape[0]
                                     * (row + a_shape[1] * (batch % (a_shape[2] * a_shape[3])))]
-                                    * out[k + shape[0] * (column + shape[1] * batch)];
+                                    * out[column + shape[0] * (k + shape[1] * batch)];
                             }
-                            if !unit {
-                                value /= a[row
-                                    + a_shape[0]
-                                        * (row + a_shape[1] * (batch % (a_shape[2] * a_shape[3])))];
-                            }
+                            value /= a[row
+                                + a_shape[0]
+                                    * (row + a_shape[1] * (batch % (a_shape[2] * a_shape[3])))];
                             out[output_index] = value;
                         }
                     }

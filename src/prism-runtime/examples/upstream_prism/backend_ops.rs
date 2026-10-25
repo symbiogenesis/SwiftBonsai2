@@ -73,6 +73,12 @@ pub(super) fn run(engine: &super::engine::Engine) -> super::Result<serde_json::V
 }
 #[path = "backend_ops/diagnostic.rs"]
 mod diagnostic;
+#[path = "backend_ops/rust.rs"]
+mod rust;
+
+pub(super) fn execute(request: &serde_json::Value) -> super::Result<Option<serde_json::Value>> {
+    rust::execute(request)
+}
 #[path = "backend_ops/reload.rs"]
 mod reload;
 

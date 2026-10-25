@@ -392,6 +392,15 @@ impl CpuBackend {
                 self.graph_nodes(graph(args, 0)?)?;
                 return Ok(Observation::Void);
             }
+            "ggml_rope_set_offset" => {
+                let id = tensor(args, 0)?;
+                let offset = i32::try_from(int(args, 1)?)?;
+                if offset < 0 || offset % 2 != 0 {
+                    return Err(invalid("CPU rotary offset differs"));
+                }
+                put_int(&mut self.info_mut(id)?.parameters, 15, offset);
+                return Ok(Observation::Tensor(Some(id)));
+            }
             "ggml_backend_graph_compute" => {
                 self.compute(graph(args, 1)?)?;
                 return Ok(Observation::Integer(0));
@@ -677,11 +686,18 @@ impl CpuBackend {
             "ggml_set_rows" => {
                 let b = tensor(args, 2)?;
                 let bi = self.info(b)?.clone();
-                sources.push(b);
-                sources.push(tensor(args, 3)?);
-                shape = bi.shape;
-                kind = bi.kind;
-                view = Some((b, bi.strides, 0));
+                let ids = tensor(args, 3)?;
+                let index_shape = self.info(ids)?.shape;
+                if shape[0] != bi.shape[0]
+                    || shape[2..] != bi.shape[2..]
+                    || bi.shape[1] != index_shape[0]
+                    || !bi.shape[2].is_multiple_of(index_shape[1])
+                    || !bi.shape[3].is_multiple_of(index_shape[2])
+                {
+                    return Err(invalid("CPU row assignment shapes differ"));
+                }
+                sources = vec![b, ids, a];
+                view = Some((a, a_info.strides, 0));
                 42
             }
             "ggml_diag" => {
@@ -715,6 +731,112 @@ impl CpuBackend {
                 put_float(&mut p, 0, float(args, 2)?);
                 put_float(&mut p, 1, float(args, 3)?);
                 50
+            }
+            "ggml_rope"
+            | "ggml_rope_ext"
+            | "ggml_rope_ext_inplace"
+            | "ggml_rope_ext_back"
+            | "ggml_rope_multi"
+            | "ggml_rope_multi_inplace"
+            | "ggml_rope_multi_back" => {
+                sources.push(tensor(args, 2)?);
+                let ordinary = name == "ggml_rope";
+                let multi = name.contains("multi");
+                let dimension_index = if ordinary { 3 } else { 4 };
+                let dims = usize_arg(args, dimension_index)?;
+                let mode_index = dimension_index + if multi { 2 } else { 1 };
+                let mode = i32::try_from(int(args, mode_index)?)?;
+                if dims == 0
+                    || !dims.is_multiple_of(2)
+                    || dims > shape[0]
+                    || !matches!(mode, 0 | 2 | 8 | 24 | 40)
+                {
+                    return Err(invalid("CPU rotary dimensions or mode differ"));
+                }
+                put_int(&mut p, 1, i32::try_from(dims)?);
+                put_int(&mut p, 2, mode);
+                if ordinary {
+                    put_float(&mut p, 5, 10000.0);
+                    put_float(&mut p, 6, 1.0);
+                    put_float(&mut p, 8, 1.0);
+                } else {
+                    if let Argument::Tensor(factors) = at(args, 3)? {
+                        sources.push(*factors);
+                    } else if !matches!(at(args, 3)?, Argument::Null) {
+                        return Err(invalid("CPU rotary factor type differs"));
+                    }
+                    put_int(&mut p, 4, i32::try_from(int(args, mode_index + 1)?)?);
+                    for index in 0..6 {
+                        put_float(&mut p, 5 + index, float(args, mode_index + 2 + index)?);
+                    }
+                }
+                if multi {
+                    let Argument::Integers(sections) = at(args, dimension_index + 1)? else {
+                        return Err(invalid("CPU rotary sections require an integer list"));
+                    };
+                    if sections.len() != 4 || sections.iter().any(|&x| x < 0) {
+                        return Err(invalid("CPU rotary section extent differs"));
+                    }
+                    for (index, &section) in sections.iter().enumerate() {
+                        put_int(&mut p, 11 + index, i32::try_from(section)?);
+                    }
+                }
+                if name.ends_with("_back") { 49 } else { 48 }
+            }
+            "ggml_conv_transpose_1d" => {
+                let b = tensor(args, 2)?;
+                let bs = self.info(b)?.shape;
+                let stride = usize_arg(args, 3)?;
+                if stride == 0
+                    || int(args, 4)? != 0
+                    || int(args, 5)? != 1
+                    || shape[2] != bs[1]
+                    || shape[3] != 1
+                    || bs[2] != 1
+                    || bs[3] != 1
+                {
+                    return Err(invalid("CPU transposed convolution geometry differs"));
+                }
+                shape = [
+                    (bs[0] - 1)
+                        .checked_mul(stride)
+                        .and_then(|x| x.checked_add(shape[0]))
+                        .ok_or_else(|| invalid("CPU convolution extent overflow"))?,
+                    shape[1],
+                    1,
+                    1,
+                ];
+                kind = 0;
+                sources.push(b);
+                put_int(&mut p, 0, i32::try_from(stride)?);
+                51
+            }
+            "ggml_col2im_1d" => {
+                let stride = usize_arg(args, 2)?;
+                let channels = usize_arg(args, 3)?;
+                let padding = usize_arg(args, 4)?;
+                if stride == 0
+                    || channels == 0
+                    || !a_info.contiguous()
+                    || shape[2] != 1
+                    || shape[3] != 1
+                    || !shape[0].is_multiple_of(channels)
+                {
+                    return Err(invalid("CPU col2im geometry differs"));
+                }
+                let extent = (shape[1] - 1)
+                    .checked_mul(stride)
+                    .and_then(|x| x.checked_add(shape[0] / channels))
+                    .and_then(|x| x.checked_sub(2 * padding))
+                    .ok_or_else(|| invalid("CPU col2im extent overflow"))?;
+                if extent == 0 {
+                    return Err(invalid("CPU col2im crop removes output"));
+                }
+                shape = [extent, channels, 1, 1];
+                for (index, value) in [stride, channels, padding].into_iter().enumerate() {
+                    put_int(&mut p, index, i32::try_from(value)?);
+                }
+                55
             }
             "ggml_pad" | "ggml_pad_circular" | "ggml_pad_ext" | "ggml_pad_ext_circular" => {
                 for (axis, dimension) in shape.iter_mut().enumerate() {
@@ -784,8 +906,13 @@ impl CpuBackend {
             "ggml_solve_tri" => {
                 sources.push(tensor(args, 2)?);
                 shape = self.info(sources[1])?.shape;
-                for i in 0..3 {
-                    put_int(&mut p, i, i32::from(boolean(args, i + 3)?));
+                if !boolean(args, 3)?
+                    || !boolean(args, 4)?
+                    || boolean(args, 5)?
+                    || a_info.shape[0] != a_info.shape[1]
+                    || a_info.shape[1..] != shape[1..]
+                {
+                    return Err(invalid("CPU triangular solve geometry differs"));
                 }
                 85
             }
@@ -810,9 +937,16 @@ impl CpuBackend {
                 }
                 put_int(&mut p, 0, unary);
                 if name == "ggml_xielu" {
-                    for i in 1..5 {
-                        put_float(&mut p, i, float(args, i + 1)?);
-                    }
+                    #[allow(
+                        clippy::imprecise_flops,
+                        reason = "The pinned softplus parameter transformation rounds the addition before logf."
+                    )]
+                    let softplus = |x: f32| if x > 20.0 { x } else { (1.0 + x.exp()).ln() };
+                    let beta = float(args, 4)?;
+                    put_float(&mut p, 1, beta + softplus(float(args, 2)?));
+                    put_float(&mut p, 2, softplus(float(args, 3)?));
+                    put_float(&mut p, 3, beta);
+                    put_float(&mut p, 4, float(args, 5)?);
                 }
                 91
             }

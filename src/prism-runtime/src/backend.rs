@@ -20,6 +20,7 @@ use bonsai_ternary::half_to_float;
 
 mod call;
 mod ops;
+mod rope;
 
 pub use call::{operation_name, unary_name};
 
@@ -333,6 +334,74 @@ impl CpuBackend {
     pub fn allocate(&mut self, context: u32) -> Result<()> {
         for id in self.context_tensors(context) {
             self.ensure_storage(id)?;
+        }
+        Ok(())
+    }
+
+    /// Place non-view tensors in one shared byte arena at explicit offsets.
+    ///
+    /// Placements may overlap. Numerical operations snapshot their inputs before
+    /// writing their outputs, so legal input/output aliases remain well defined.
+    /// Existing tensor payloads are discarded; initialize inputs after placement.
+    ///
+    /// # Errors
+    /// Rejects unknown tensors, placements of existing views, overflowing bounds,
+    /// and allocation failures.
+    pub fn allocate_arena(&mut self, bytes: usize, placements: &[(TensorId, usize)]) -> Result<()> {
+        for &(id, offset) in placements {
+            let info = self.info(id)?;
+            if info.view.is_some()
+                || offset
+                    .checked_add(info.bytes()?)
+                    .is_none_or(|end| end > bytes)
+            {
+                return Err(invalid(
+                    "CPU arena placement exceeds bounds or replaces a view",
+                ));
+            }
+        }
+        let arena = self.tensor(u32::MAX, 24, [bytes, 1, 1, 1])?;
+        self.ensure_storage(arena)?;
+        for &(id, offset) in placements {
+            self.tensors[id.0].data.clear();
+            let info = self.info_mut(id)?;
+            info.view = Some(arena);
+            info.offset = offset;
+        }
+        Ok(())
+    }
+
+    /// Execute two independently owned copies and observe each numerical node.
+    ///
+    /// Both copies use the reference CPU kernel. This checks graph/alias behavior
+    /// across backend instances; it does not provide an independent numerical
+    /// implementation. Independent source references remain necessary for parity.
+    ///
+    /// # Errors
+    /// Rejects graph/kernel/storage failures and propagates observer errors.
+    pub fn compare(
+        &mut self,
+        graph: GraphId,
+        mut observer: impl FnMut(usize, TensorId, &Self, &Self) -> Result<()>,
+    ) -> Result<()> {
+        let mut reference = Self::new();
+        for node in &self.tensors {
+            let mut data = Vec::new();
+            data.try_reserve_exact(node.data.len())?;
+            data.extend_from_slice(&node.data);
+            reference.tensors.push(Node {
+                info: node.info.clone(),
+                data,
+            });
+        }
+        let nodes = self.graph_nodes(graph)?.0.to_vec();
+        for (index, tensor) in nodes.into_iter().enumerate() {
+            if !self.supports(tensor)? {
+                return Err(invalid("unsupported CPU comparison operation"));
+            }
+            self.evaluate(tensor)?;
+            reference.evaluate(tensor)?;
+            observer(index, tensor, self, &reference)?;
         }
         Ok(())
     }
