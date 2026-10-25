@@ -1,8 +1,9 @@
-//! Offline, bounded artifact verification shared by launch and maintenance tools.
+//! Offline, bounded artifact verification and archive staging for maintenance tools.
 //!
 //! Retain verification guards until the child has exited. On Windows, their read
 //! handles deny file writes and deletion while the verified artifacts are in use.
-//! Verification never downloads, writes, or executes code.
+//! Verification never downloads, writes, or executes code. Staging writes
+//! only validated archive entries and never executes code.
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,9 @@ use zip::ZipArchive;
 
 const MAX_EXPANDED_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ENTRIES: usize = 4096;
+
+mod install;
+pub use install::stage_runtime;
 
 /// Value-free artifact rejection; no filesystem contents enter diagnostics.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,7 +72,8 @@ pub struct RuntimeSpec {
     pub archive_sha256: String,
 }
 
-/// Identity of one installed file held stable by a runtime verification guard.
+/// Identity of one installed file established by verification or installation.
+/// A runtime verification guard retains file ownership; installation receipts do not.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VerifiedRuntimeFile {
     path: PathBuf,
@@ -76,7 +81,7 @@ pub struct VerifiedRuntimeFile {
     sha256: String,
 }
 impl VerifiedRuntimeFile {
-    /// Exact installed file path held stable by the runtime guard.
+    /// Exact installed file path recorded by verification or installation.
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path

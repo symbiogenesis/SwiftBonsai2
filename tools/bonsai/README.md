@@ -40,6 +40,7 @@ bonsai-tools memory --request ABSOLUTE_JSON_PATH
 bonsai-tools cpu-check-plan --request ABSOLUTE_JSON_PATH
 bonsai-tools server-policy --request ABSOLUTE_JSON_PATH
 bonsai-tools prism-source --request ABSOLUTE_JSON_PATH
+bonsai-tools runtime-stage --request ABSOLUTE_JSON_PATH
 bonsai-tools runtime-verify --request ABSOLUTE_JSON_PATH
 bonsai-tools completion --request ABSOLUTE_JSON_PATH
 bonsai-tools qualification --request ABSOLUTE_JSON_PATH
@@ -96,8 +97,16 @@ It returns the runtime descriptor and file identities. These receipts do not
 retain handles across the JSON boundary: completion receives the descriptor,
 verifies it again in Rust and keeps the resulting guard until all children exit.
 The selected completion executable must belong to that verified installation.
-Downloads and installation remain in PowerShell; installation still validates
-archive paths before writing staging files.
+
+`runtime-stage` verifies the locked archive and uses the same Rust archive policy
+to extract and verify a fresh external staging directory. It rejects unsafe
+directory entries, Windows filename aliases, collisions, incorrect ARM64 PE
+headers, and archives exceeding 4096 entries or 512 MiB expanded. It runs no probes
+and publishes no installation. Failed staging is retained for inspection.
+PowerShell downloads the archive, publishes staging with its existing
+no-overwrite directory move, then calls `runtime-verify`. Staging receipts do not
+retain handles across that boundary; the published runtime is verified again
+before probes or execution.
 
 Completed CI samples publish a single `capture.json` containing exact response
 text, its UTF-8 SHA-256 and diagnostics. Rust decodes stdout strictly and retains

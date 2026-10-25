@@ -21,3 +21,6 @@ pub mod server;
 
 /// Ordinary Prism source partitioning and bounded revision-bound result merging.
 pub mod prism_source;
+
+/// Offline runtime archive staging through the shared artifact policy.
+pub mod install;
