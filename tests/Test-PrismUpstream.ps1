@@ -24,6 +24,7 @@ param(
     [ValidateRange(1, 12)][int]$CaseParallel = 2,
     [ValidateRange(-1, 3)][int]$SourcePartition = -1,
     [string]$NativeBuildDirectory,
+    [string]$CommonToolsBundleDirectory,
     [switch]$DeferBackend,
     [switch]$PrepareBackendToolsOnly
 )
@@ -42,6 +43,12 @@ if ($PrepareBackendToolsOnly -and ($Case -cne 'BackendOps' -or $DeferBackend -or
 if ($DeferBackend -and $Case -cne 'All') { throw 'Only the complete CI catalog can defer its backend source to checked shards.' }
 if ($SourcePartition -ge 0 -and ($Case -cne 'All' -or -not $DeferBackend)) {
     throw 'Ordinary source partitions require the complete deferred main CI catalog.'
+}
+if ($CommonToolsBundleDirectory -and ($Case -cne 'All' -or -not $DeferBackend -or
+    $SourcePartition -notin @(0, 1, 3) -or $PrepareBackendToolsOnly -or $NativePlatform -cne 'ARM64' -or
+    $env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main' -or -not $IsWindows -or
+    [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne [Runtime.InteropServices.Architecture]::Arm64)) {
+    throw 'Shared native tools require ordinary partition 0, 1 or 3 on native Windows ARM64 main GitHub Actions.'
 }
 $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1')
@@ -71,7 +78,12 @@ try {
 $source = Join-Path (Join-Path $evidence 'source') $lock.ArchiveRoot
 $nativeBuildRoot = $evidence
 $nativeSource = $source
-if ($NativeBuildDirectory) {
+$sharedTools = $null
+if ($CommonToolsBundleDirectory) {
+    Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackendBundle.psm1')
+    $sharedTools = Import-BonsaiPrismBackendBundle -Directory $CommonToolsBundleDirectory -Repository $repo -Toolchain $Toolchain -RequireCommonTools
+}
+if ($NativeBuildDirectory -and -not $sharedTools) {
     $nativeBuildRoot = Resolve-ExternalPath $NativeBuildDirectory
     foreach ($other in @($evidence, $target)) {
         $prefix = $other.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
@@ -85,7 +97,7 @@ if ($NativeBuildDirectory) {
 }
 $upstream = Join-Path $repo 'tools/prism/upstream'
 $nativeAdapter = $upstream
-if ($NativeBuildDirectory) {
+if ($NativeBuildDirectory -and -not $sharedTools) {
     $nativeAdapter = Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $upstream -BuildDirectory $nativeBuildRoot
 }
 $catalog = Import-BonsaiPrismCatalog -Path (Join-Path $upstream 'catalog.json') -SourceDirectory $source
@@ -115,14 +127,20 @@ $receipt = [ordered]@{
     CaseParallelJobs = $CaseParallel
     Status = 'building'
 }
+if ($sharedTools) {
+    $receipt.SharedTools = @{ Directory=$CommonToolsBundleDirectory; ManifestSha256=$sharedTools.ManifestSha256; SameRevision=$true }
+    $receipt.ReferenceProductionFix = $sharedTools.ReferenceProductionFix
+}
 $receiptPath = Join-Path $evidence 'receipt.json'
 [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 8))
-if (-not $CMakePath) { $CMakePath = (Get-Command cmake -CommandType Application -ErrorAction Stop).Source }
-if (-not [IO.Path]::IsPathFullyQualified($CMakePath) -or $CMakePath -match '%[^%]+%' -or -not [IO.File]::Exists($CMakePath)) {
-    throw 'CMakePath must name an existing expanded absolute executable.'
+if (-not $sharedTools) {
+    if (-not $CMakePath) { $CMakePath = (Get-Command cmake -CommandType Application -ErrorAction Stop).Source }
+    if (-not [IO.Path]::IsPathFullyQualified($CMakePath) -or $CMakePath -match '%[^%]+%' -or -not [IO.File]::Exists($CMakePath)) {
+        throw 'CMakePath must name an existing expanded absolute executable.'
+    }
+    $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
 }
 if ($Generator -ne 'Ninja' -and -not $IsWindows) { throw 'Visual Studio generators require Windows.' }
-$cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
 $script:upstreamCommandNumber = 0
 function Invoke-UpstreamCommand {
     [CmdletBinding()]
@@ -309,20 +327,32 @@ if ($selected -contains 'LlGuidance') {
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
 }
 $referencePatch = $null
-if (@($selected | Where-Object { $adapters[$_].Family -eq 'common' }).Count) {
+if (-not $sharedTools -and @($selected | Where-Object { $adapters[$_].Family -eq 'common' }).Count) {
     Import-Module (Join-Path $repo 'scripts/Bonsai.PrismReferencePatch.psm1')
     $referencePatch = Initialize-BonsaiPrismReferencePatch -Repository $repo -SourceDirectory $nativeSource -Directory (Join-Path $nativeBuildRoot 'reference-patches')
     $receipt.ReferenceProductionFix = $referencePatch
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
 }
-foreach ($family in @($selected | ForEach-Object { $adapters[$_].Family } | Select-Object -Unique)) {
+$families = @($selected | ForEach-Object { $adapters[$_].Family } | Select-Object -Unique)
+if ($PrepareBackendToolsOnly) { $families = @('common', 'ggml') }
+foreach ($family in $families) {
     if ($family -eq 'independent') { continue }
     $definition = $bridgeFamilies[$family]
-    $build = Join-Path $nativeBuildRoot ("build-$family")
+    if ($sharedTools) {
+        $prepared = @($sharedTools.NativeBuilds | Where-Object { $_.Family -ceq $family })
+        if ($prepared.Count -ne 1) { throw "Shared tool bundle lacks the $family production-call bridge." }
+        $bridges[$family] = $prepared[0].Executable
+        $nativeBuilds.Add($prepared[0])
+        if ($family -ceq 'common' -and $selected -contains 'LoraConversion') { $receipt.LoraMergeTool = $sharedTools.LoraMergeTool }
+        continue
+    }
+    $buildFamily = if ($PrepareBackendToolsOnly) { 'common' } else { $family }
+    $build = Join-Path $nativeBuildRoot ("build-$buildFamily")
     $null = Resolve-ExternalPath $build
-    $configureArguments = @('-S', $definition.Source, '-B', $build, "-DPRISM_SOURCE_DIR=$nativeSource", '-DCMAKE_BUILD_TYPE=Release',
+    $buildSource = $bridgeFamilies[$buildFamily].Source
+    $configureArguments = @('-S', $buildSource, '-B', $build, "-DPRISM_SOURCE_DIR=$nativeSource", '-DCMAKE_BUILD_TYPE=Release',
         '-DLLAMA_BUILD_NUMBER=0', "-DLLAMA_BUILD_COMMIT=$($lock.Commit)") + $generatorArguments
-    if ($family -eq 'common' -and $referencePatch) {
+    if ($buildFamily -eq 'common' -and $referencePatch) {
         foreach ($patch in $referencePatch.Patches) {
             $setting = switch -CaseSensitive ($patch.RelativeSource) {
                 'src/llama-model-saver.cpp' { 'PRISM_PATCHED_SAVER' }
@@ -336,8 +366,12 @@ foreach ($family in @($selected | ForEach-Object { $adapters[$_].Family } | Sele
         $configureArguments += @("-DPRISM_LLGUIDANCE_LIBRARY=$($grammarDependency.Library)", "-DPRISM_LLGUIDANCE_INCLUDE_DIR=$($grammarDependency.IncludeDirectory)")
     }
     try {
-        $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments $configureArguments
-        $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments @('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target', $definition.Target)
+        if (-not $PrepareBackendToolsOnly -or $family -ceq 'common') {
+            $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments $configureArguments
+            $targets = @($definition.Target)
+            if ($PrepareBackendToolsOnly) { $targets += @('prism-upstream-bridge', 'llama-export-lora') }
+            $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments (@('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target') + $targets)
+        }
     } finally {
         if ($NativeBuildDirectory) {
             $diagnostics = Join-Path $evidence ("native-$family")
@@ -352,20 +386,24 @@ foreach ($family in @($selected | ForEach-Object { $adapters[$_].Family } | Sele
     if ($executables.Count -ne 1) { throw "Expected exactly one $family production-call bridge." }
     $bridges[$family] = $executables[0].FullName
     if ($IsWindows -and $NativePlatform -eq 'ARM64') { Assert-Arm64PE -Path $bridges[$family] }
-    if ($family -eq 'common' -and $selected -contains 'LoraConversion') {
-        $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments @('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target', 'llama-export-lora')
+    if ($family -eq 'common' -and ($selected -contains 'LoraConversion' -or $PrepareBackendToolsOnly)) {
+        if (-not $PrepareBackendToolsOnly) {
+            $null = Invoke-UpstreamCommand -Executable $CMakePath -Arguments @('--build', $build, '--config', 'Release', '--parallel', [string]$Parallel, '--target', 'llama-export-lora')
+        }
         $tools = @(Get-ChildItem -LiteralPath $build -Recurse -File -Filter ('llama-export-lora' + $extension))
         if ($tools.Count -ne 1 -or $tools[0].DirectoryName -cne [IO.Path]::GetDirectoryName($bridges[$family])) {
             throw 'Expected exactly one production LoRA export tool next to its common bridge.'
         }
         if ($IsWindows -and $NativePlatform -eq 'ARM64') { Assert-Arm64PE -Path $tools[0].FullName }
         $receipt.LoraMergeTool = @{
+            ProjectRevision = $env:GITHUB_SHA
             Target = 'llama-export-lora'; Executable = $tools[0].FullName
             Sha256 = (Get-FileHash -LiteralPath $tools[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             VerifiedPeMachine = if ($IsWindows -and $NativePlatform -eq 'ARM64') { '0xAA64' } else { $null }
         }
     }
     $nativeBuilds.Add([ordered]@{
+        ProjectRevision = $env:GITHUB_SHA
         Family = $family
         ConfigureArguments = $configureArguments
         Target = $definition.Target
@@ -377,18 +415,22 @@ foreach ($family in @($selected | ForEach-Object { $adapters[$_].Family } | Sele
 }
 $receipt.NativeBuilds = $nativeBuilds.ToArray()
 [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 10))
-$compiled = Invoke-UpstreamCommand -Executable $cargo -Arguments @("+$Toolchain", 'build', '--manifest-path', (Join-Path $repo 'Cargo.toml'), '--package', 'bonsai-prism-runtime', '--example', 'upstream_prism', '--locked', '--offline', '--release', '--target-dir', $target, '--message-format=json')
-$executables = @($compiled.StandardOutput -split "`n" | Where-Object { $_.StartsWith('{') } | ForEach-Object {
-    $record = $_ | ConvertFrom-Json -AsHashtable
-    if ($record.reason -eq 'compiler-artifact' -and $record.target.name -eq 'upstream_prism' -and $record.executable) { $record.executable }
-})
-if ($executables.Count -ne 1) { throw 'Expected exactly one compiled shared-assertion Rust harness.' }
-$harness = $executables[0]
+if ($sharedTools) {
+    $harness = $sharedTools.HarnessPath
+} else {
+    $compiled = Invoke-UpstreamCommand -Executable $cargo -Arguments @("+$Toolchain", 'build', '--manifest-path', (Join-Path $repo 'Cargo.toml'), '--package', 'bonsai-prism-runtime', '--example', 'upstream_prism', '--locked', '--offline', '--release', '--target-dir', $target, '--message-format=json')
+    $executables = @($compiled.StandardOutput -split "`n" | Where-Object { $_.StartsWith('{') } | ForEach-Object {
+        $record = $_ | ConvertFrom-Json -AsHashtable
+        if ($record.reason -eq 'compiler-artifact' -and $record.target.name -eq 'upstream_prism' -and $record.executable) { $record.executable }
+    })
+    if ($executables.Count -ne 1) { throw 'Expected exactly one compiled shared-assertion Rust harness.' }
+    $harness = $executables[0]
+}
 if ($IsWindows -and $NativePlatform -eq 'ARM64') { Assert-Arm64PE -Path $harness }
 $receipt.HarnessExecutable = $harness
 $receipt.HarnessSha256 = (Get-FileHash -LiteralPath $harness -Algorithm SHA256).Hash.ToLowerInvariant()
 $receipt.HarnessVerifiedPeMachine = if ($IsWindows -and $NativePlatform -eq 'ARM64') { '0xAA64' } else { $null }
-if (($DeferBackend -and $SourcePartition -le 0) -or $PrepareBackendToolsOnly) {
+if (($DeferBackend -and $SourcePartition -le 0 -and -not $sharedTools) -or $PrepareBackendToolsOnly) {
     Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackendBundle.psm1')
     $receipt.BackendBundleDirectory = Join-Path $evidence 'backend-tools'
     $receipt.BackendBundle = New-BonsaiPrismBackendBundle -Receipt $receipt -Directory $receipt.BackendBundleDirectory
