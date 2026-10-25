@@ -9,6 +9,7 @@
 pub mod bpe;
 pub mod graph;
 pub mod kernels;
+pub mod logging;
 pub mod media;
 pub mod model;
 pub mod pretokenizer;
