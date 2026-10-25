@@ -51,7 +51,10 @@ fn layout(kind: u32) -> Result<(usize, usize)> {
         Q8_0 => Ok((32, 34)),
         Q8_1 => Ok((32, 36)),
         Q8_K => Ok((256, 292)),
-        10..=14 => Ok((256, kquants::block_bytes(kind).ok_or_else(|| invalid("unknown K quantization type"))?)),
+        10..=14 => Ok((
+            256,
+            kquants::block_bytes(kind).ok_or_else(|| invalid("unknown K quantization type"))?,
+        )),
         PQ2 => Ok((128, 34)),
         PTQ1 => Ok((128, 28)),
         _ => Err(invalid(format!("unsupported runtime tensor type {kind}"))),
