@@ -36,8 +36,16 @@ the inference engine. Provision it with `./scripts/Get-Inference.ps1 -DataDirect
 
 
 > [!IMPORTANT]
-> **Early development.** Model setup, CPU checks, and a development API are
-> available. Everyday chat and a user interface are still being built.
+> **Early development.** Model setup, CPU checks, a development API and a native
+> Rust chat demo are available. Daily-service acceptance remains pending.
+
+After provisioning Swift's model and CPU runtime, run `./scripts/Start-Demo.ps1`
+to open the native Windows chat window. See the
+[demo setup](docs/development-guide.md#native-chat-demo) for requirements.
+The lasting [UI architecture policy](docs/ui-architecture.md) keeps application
+UI code in Rust, using native system bindings without a WebView, JavaScript,
+TypeScript, HTML or CSS. The local JSON/SSE API preserves its documented strict
+subset of OpenAI-style chat conventions.
 
 ## At a glance
 
@@ -46,7 +54,7 @@ the inference engine. Provision it with `./scripts/Get-Inference.ps1 -DataDirect
 | **Hardware** | Snapdragon X Elite · 32 GB RAM |
 | **Model** | Swift Bonsai 2 · `PQ2_0` |
 | **CPU profile** | One conversation · 8K-token context · FP16 attention caches |
-| **Next milestones** | Everyday chat, a user interface, and quality/performance qualification |
+| **Next milestones** | Daily-service acceptance and quality/performance qualification |
 
 ## Memory footprint
 

@@ -22,9 +22,47 @@ Prism inference support remains future work.
 [Adreno](adreno-gpu-plan.md) and [Hexagon](hexagon-npu-plan.md) integration remain
 planned. Current launch policies select CPU execution.
 
-Daily model chat and an offline UI are not enabled. Development ownership and
-memory controls do not qualify restricted inference identity, filesystem/egress
+A native Rust chat demo is available through the explicit development launcher.
+Daily-service acceptance remains pending. Development ownership and memory
+controls do not qualify restricted inference identity, filesystem/egress
 isolation or same-user backend bypass prevention.
+
+## Native chat demo
+
+Use native Windows ARM64 PowerShell 7.6+, the pinned Rust toolchain, an existing
+Swift PQ2 model/runtime installation and at least **16 GiB of available RAM**.
+For a new installation, provision both artifacts with Swift's assessment lock:
+
+```powershell
+$data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
+./scripts/Get-Engine.ps1 -DataDirectory $data -LockPath ./config/swift-assessment.lock.json
+./scripts/Get-Model.ps1 -DataDirectory $data -LockPath ./config/swift-assessment.lock.json
+./scripts/Start-Demo.ps1 -DataDirectory $data
+```
+
+The native Win32 window follows the lasting [UI architecture policy](ui-architecture.md):
+application UI code stays in Rust; native system bindings are permitted, while
+WebViews, JavaScript, TypeScript, HTML and CSS are excluded. It starts and owns the development broker,
+shows startup status and streams responses. Conversation history stays in memory.
+Stopping an active response closes backend admission; restart the demo before
+sending again. Closing the window stops its owned broker and inference process.
+
+`Start-Demo.ps1` builds the chat app and broker in a fresh system-temp lane.
+Pass absolute `-ChatPath` and `-BrokerPath` values to reuse existing builds.
+`-FrontendPort` and `-BackendPort` select distinct local API ports when the
+defaults are occupied. The script downloads no model/runtime artifacts and
+retains credentials and technical evidence in external temp storage. Do not
+share those credentials or the complete evidence directory.
+
+The app uses the broker's documented strict subset of OpenAI-style JSON/SSE
+chat conventions. Unsupported fields remain rejected; this is not a claim of
+drop-in compatibility with every OpenAI client.
+
+The demo uses the pinned Prism/llama CPU backend with original Swift PQ2 weights
+and no adapter. The separate native inference release `0.1.1` predates the
+verified source fixes and is not selected. Thinking remains enabled, so even a
+short prompt can take time to produce a finished answer. Quality, throughput and
+daily-service qualification remain pending.
 
 ## Planned X1/X2 configuration
 
