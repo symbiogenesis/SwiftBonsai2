@@ -2,17 +2,16 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
 
 function Get-BonsaiPrismSourcePartition {
     <#
     .SYNOPSIS
     Selects one deterministic shard of the complete ordinary Prism catalog.
     .DESCRIPTION
-    Hosted receipts identify four dominant sources. Isolating tokenizer-random
-    and thread-safety, pairing quantize-stats with llguidance, and placing every
-    remaining source in the fourth shard bounds the existing catalog's work.
-    Unknown future sources stay included. The original objects and catalog order
-    survive partitioning; this selector does not execute or alter workloads.
+    Rust owns shard membership and validates unique source IDs and ordinals.
+    Returning the selected original PowerShell objects preserves arbitrary caller
+    properties and object identity. Unknown future sources enter the final shard.
     #>
     [CmdletBinding()]
     [OutputType([object])]
@@ -20,27 +19,19 @@ function Get-BonsaiPrismSourcePartition {
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Cases,
         [Parameter(Mandatory)][ValidateRange(0, 3)][int]$Index
     )
-    $ids = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    $ordinals = [Collections.Generic.HashSet[int]]::new()
-    $selected = [Collections.Generic.List[object]]::new()
-    foreach ($source in $Cases) {
-        if ($null -eq $source -or $source.Id -isnot [string] -or [string]::IsNullOrWhiteSpace($source.Id) -or
-            $source.Ordinal -isnot [int] -or $source.Ordinal -lt 0) {
-            throw 'Each ordinary source requires an Id and nonnegative integer Ordinal.'
+    $originals = [Collections.Generic.Dictionary[int,object]]::new()
+    $identities = @(foreach ($source in $Cases) {
+        # Preserve the caller's string/Int32 contract across the JSON boundary.
+        if ($null -eq $source -or $source.Id -isnot [string] -or $source.Ordinal -isnot [int]) {
+            throw 'Each ordinary source requires a string Id and integer Ordinal.'
         }
-        if (-not $ids.Add($source.Id) -or -not $ordinals.Add($source.Ordinal)) {
-            throw 'Ordinary source Ids and Ordinals must be unique before partitioning.'
-        }
-        $partition = switch -CaseSensitive ($source.Id) {
-            'tests/test-tokenizer-random.py' { 0 }
-            'tests/test-thread-safety.cpp' { 1 }
-            'tests/test-quantize-stats.cpp' { 2 }
-            'tests/test-grammar-llguidance.cpp' { 2 }
-            default { 3 }
-        }
-        if ($partition -eq $Index) { $selected.Add($source) }
+        if (-not $originals.TryAdd($source.Ordinal, $source)) { throw 'Ordinary source Ordinals must be unique.' }
+        @{ Id=$source.Id; Ordinal=$source.Ordinal }
+    })
+    $selection = Invoke-BonsaiTool -Command prism-source -Request @{
+        Operation='partition'; Cases=$identities; Index=$Index
     }
-    return $selected | Sort-Object Ordinal
+    foreach ($ordinal in $selection.Ordinals) { $originals[[int]$ordinal] }
 }
 
 Export-ModuleMember -Function Get-BonsaiPrismSourcePartition

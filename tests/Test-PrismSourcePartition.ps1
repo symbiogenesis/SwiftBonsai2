@@ -59,4 +59,13 @@ $badOrdinal = [pscustomobject]@{ Id = 'tests/test-other.cpp'; Ordinal = -1 }
 Assert-Failure { Get-BonsaiPrismSourcePartition -Cases @($badOrdinal) -Index 3 } 'A negative catalog ordinal was accepted.'
 $blankId = [pscustomobject]@{ Id = ''; Ordinal = 0 }
 Assert-Failure { Get-BonsaiPrismSourcePartition -Cases @($blankId) -Index 3 } 'An empty source identity was accepted.'
+foreach ($ordinal in @('0', 0.0, [long]0)) {
+    $mistypedOrdinal = [pscustomobject]@{ Id = 'tests/test-other.cpp'; Ordinal = $ordinal }
+    Assert-Failure { Get-BonsaiPrismSourcePartition -Cases @($mistypedOrdinal) -Index 3 } 'A non-Int32 PowerShell ordinal was accepted.'
+}
+$numericId = [pscustomobject]@{ Id = 42; Ordinal = 0 }
+Assert-Failure { Get-BonsaiPrismSourcePartition -Cases @($numericId) -Index 3 } 'A numeric source identity was accepted.'
+$characterId = [pscustomobject]@{ Id = [char]'x'; Ordinal = 0 }
+Assert-Failure { Get-BonsaiPrismSourcePartition -Cases @($characterId) -Index 3 } 'A character source identity was accepted as JSON text.'
+Assert-Failure { Get-BonsaiPrismSourcePartition -Cases @($null) -Index 3 } 'A null source object was accepted.'
 return "Prism ordinary source partitions cover all $($sources.Count) catalog sources exactly once in stable order."

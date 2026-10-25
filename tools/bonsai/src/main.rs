@@ -15,6 +15,7 @@ const COMMANDS: &[&str] = &[
     "memory",
     "cpu-check-plan",
     "server-policy",
+    "prism-source",
     "runtime-verify",
     "completion",
     "qualification",
@@ -59,7 +60,7 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
         }));
     }
     if arguments.len() != 3 || arguments[1] != "--request" {
-        return Err("Usage: bonsai-tools <credentials|memory|cpu-check-plan|server-policy|runtime-verify|completion|qualification> --request ABSOLUTE_JSON_PATH; or --version".into());
+        return Err("Usage: bonsai-tools <credentials|memory|cpu-check-plan|server-policy|prism-source|runtime-verify|completion|qualification> --request ABSOLUTE_JSON_PATH; or --version".into());
     }
     let maximum = if arguments[0] == "qualification" {
         MAX_QUALIFICATION_REQUEST_BYTES
@@ -72,6 +73,7 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
         Some("completion") => bonsai_tools::completion::run(request),
         Some("cpu-check-plan") => bonsai_tools::completion::cpu_check_plan(request),
         Some("server-policy") => bonsai_tools::server::run(request),
+        Some("prism-source") => bonsai_tools::prism_source::run(request),
         Some("runtime-verify") => bonsai_tools::runtime::run(request),
         Some("memory") if request.as_object().is_some_and(serde_json::Map::is_empty) => {
             bonsai_tools::completion::available_memory()

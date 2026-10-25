@@ -39,6 +39,7 @@ bonsai-tools credentials --request ABSOLUTE_JSON_PATH
 bonsai-tools memory --request ABSOLUTE_JSON_PATH
 bonsai-tools cpu-check-plan --request ABSOLUTE_JSON_PATH
 bonsai-tools server-policy --request ABSOLUTE_JSON_PATH
+bonsai-tools prism-source --request ABSOLUTE_JSON_PATH
 bonsai-tools runtime-verify --request ABSOLUTE_JSON_PATH
 bonsai-tools completion --request ABSOLUTE_JSON_PATH
 bonsai-tools qualification --request ABSOLUTE_JSON_PATH
@@ -66,6 +67,15 @@ storage and matches advertised help switches. Requests carry environment names
 only; values are never serialized. Planning remains launch-disabled and may use
 the tool resolver's external build/request storage without creating model or key
 storage.
+
+`prism-source` selects deterministic ordinary-source partitions and merges the
+four revision-bound C++/Rust result pairs. Rust validates numeric provenance,
+complete source membership and duplicates while preserving original results and
+failure evidence. Reads retain input and ancestor guards on Windows; receipt
+digests identify the same bounded bytes that were parsed. Source artifacts accept
+UTF-8 and BOM-marked UTF-8, UTF-16 or UTF-32 JSON. The partition wrapper returns
+the original PowerShell objects so caller properties and object identity survive.
+This command preserves the existing 100-level source JSON limit.
 
 Qualification `invocations` requests take `modelPath` and validated `controls`.
 They return all 24 paired and four zero-scale argument vectors with the same

@@ -18,3 +18,6 @@ pub mod qualification;
 
 /// Pure server preflight policy shared with the development broker.
 pub mod server;
+
+/// Ordinary Prism source partitioning and bounded revision-bound result merging.
+pub mod prism_source;

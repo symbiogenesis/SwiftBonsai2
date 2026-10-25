@@ -30,14 +30,15 @@ foreach ($index in 0..3) {
         SourceArchiveSha256=$catalog.ArchiveSha256; Status='awaiting-backend'; Selection='All'
         SourcePartition=$index; SourcePartitionCount=4; NativePlatform='ARM64'; Architecture='Arm64'
         DeferredSource='tests/test-backend-ops.cpp'; HarnessSha256=$harness
-        NativeBuilds=@(@{ Family='common'; ExecutableSha256=$bridge }); CaseRuns=@()
+        NativeBuilds=@(@{ Family='common'; ExecutableSha256=$bridge }); CaseRuns=@(@{ Partition=$index })
+        AdditionalReceipt=@{ Retained=$true }
     }
     [IO.File]::WriteAllText((Join-Path $directory 'receipt.json'), ($receipt | ConvertTo-Json -Depth 10))
     foreach ($target in @('cpp','rust')) {
         $report = @{
             SchemaVersion=1; UpstreamCommit=$catalog.UpstreamCommit
             Cases=@(Get-BonsaiPrismSourcePartition -Cases $cases -Index $index | ForEach-Object {
-                @{ Id=$_.Id; Status=if ($target -ceq 'cpp') { 'pass' } else { 'fail' }; Detail='Synthetic source result.' }
+                @{ Id=$_.Id; Status=if ($target -ceq 'cpp') { 'pass' } else { 'fail' }; Detail='Synthetic source result.'; ExtraCase=@{ Retained=$true } }
             })
         }
         [IO.File]::WriteAllText((Join-Path $directory "$target-results.json"), ($report | ConvertTo-Json -Depth 10))
@@ -48,9 +49,16 @@ $merged = Merge-BonsaiPrismSourceResult @parameters
 foreach ($target in @('cpp','rust')) {
     Assert ($merged[$target].Cases.Count -eq $cases.Count) 'The source fan-in dropped an ordinary source.'
     Assert (($merged[$target].Cases.Id -join ',') -ceq ($cases.Id -join ',')) 'The source fan-in lost catalog order.'
+    Assert (@($merged[$target].Cases | Where-Object { -not $_.ExtraCase.Retained }).Count -eq 0) 'The source fan-in lost additional case evidence.'
 }
 Assert (@($merged.rust.Cases | Where-Object Status -CEQ 'fail').Count -eq $cases.Count) 'Fan-in changed Rust failures into passes.'
 Assert ($merged.Receipt.SourcePartitions.Count -eq 4) 'The merged receipt omitted partition provenance.'
+Assert ($merged.Receipt.AdditionalReceipt.Retained) 'The merged receipt lost partition zero evidence.'
+Assert (($merged.Receipt.CaseRuns.Partition -join ',') -ceq '0,1,2,3') 'The merged receipt lost or nested the case runs.'
+foreach ($index in 0..3) {
+    $receiptDigest = (Get-FileHash -LiteralPath (Join-Path $scratch "prism-ordinary-results-$index/receipt.json") -Algorithm SHA256).Hash.ToLowerInvariant()
+    Assert ($merged.Receipt.SourcePartitions[$index].ReceiptSha256 -ceq $receiptDigest) 'The merged receipt hash differs from the parsed artifact bytes.'
+}
 $otherReceiptPath = Join-Path $scratch 'prism-ordinary-results-1/receipt.json'
 $otherOriginal = [IO.File]::ReadAllText($otherReceiptPath)
 $otherReceipt = $otherOriginal | ConvertFrom-Json -AsHashtable
@@ -62,15 +70,20 @@ $otherReceipt.NativeBuilds[0].ExecutableSha256 = 'e' * 64
 $receiptPath = Join-Path $scratch 'prism-ordinary-results-0/receipt.json'
 $original = [IO.File]::ReadAllText($receiptPath)
 foreach ($mutation in @(
+    @{ Field='SchemaVersion'; Value='1' },
+    @{ Field='SchemaVersion'; Value=1.0 },
     @{ Field='ProjectRevision'; Value=('d' * 40) },
     @{ Field='SourcePartition'; Value=1 },
     @{ Field='SourcePartition'; Value='0' },
     @{ Field='SourcePartitionCount'; Value=3 },
     @{ Field='SourcePartitionCount'; Value='4' },
+    @{ Field='SourcePartitionCount'; Value=4.0 },
     @{ Field='Status'; Value='building' },
     @{ Field='SourceCommit'; Value=('d' * 40) },
     @{ Field='SourceArchiveSha256'; Value=('d' * 64) },
-    @{ Field='HarnessSha256'; Value=('d' * 64) }
+    @{ Field='HarnessSha256'; Value=('d' * 64) },
+    @{ Field='CaseRuns'; Value=@{} },
+    @{ Field='NativeBuilds'; Value=@() }
 )) {
     $changed = $original | ConvertFrom-Json -AsHashtable
     $changed[$mutation.Field] = $mutation.Value
@@ -85,13 +98,15 @@ Assert-Failure { Merge-BonsaiPrismSourceResult @parameters } 'Source fan-in acce
 [IO.File]::WriteAllText($receiptPath, $original)
 $resultPath = Join-Path $scratch 'prism-ordinary-results-3/rust-results.json'
 $original = [IO.File]::ReadAllText($resultPath)
-foreach ($mode in @('missing','duplicate','misplaced','foreign-revision')) {
+foreach ($mode in @('missing','duplicate','misplaced','foreign-revision','mistyped-schema','nonarray-cases')) {
     $changed = $original | ConvertFrom-Json -AsHashtable
     switch ($mode) {
         'missing' { $changed.Cases = @($changed.Cases | Select-Object -Skip 1) }
         'duplicate' { $changed.Cases[1] = $changed.Cases[0] }
         'misplaced' { $changed.Cases[0].Id = 'tests/test-tokenizer-random.py' }
         'foreign-revision' { $changed.UpstreamCommit = 'd' * 40 }
+        'mistyped-schema' { $changed.SchemaVersion = '1' }
+        'nonarray-cases' { $changed.Cases = @{} }
     }
     [IO.File]::WriteAllText($resultPath, ($changed | ConvertTo-Json -Depth 10))
     Assert-Failure { Merge-BonsaiPrismSourceResult @parameters } "Source fan-in accepted $mode results."
