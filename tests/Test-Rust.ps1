@@ -3,7 +3,7 @@
 .SYNOPSIS
 Runs registered Rust format, Release analyzer, documentation and optional CI suites.
 .DESCRIPTION
-Uses the same package/feature registry as Foundation and the nightly trial.
+Uses Foundation's registry of Runner application and process-boundary packages.
 Packages share Cargo invocations by phase; restricted feature profiles remain
 separate. Receipts retain package coverage and command durations for each batch.
 Targets, command logs and receipts remain external. Complete suites require
@@ -13,7 +13,7 @@ main-branch GitHub Actions. No toolchain installation or benchmark is performed.
 [OutputType([Collections.IDictionary])]
 param(
     [string[]]$Package = @(),
-    [ValidateSet('All', 'Runtime', 'Broker')][string]$Group = 'All',
+    [ValidateSet('All', 'Broker')][string]$Group = 'All',
     [string]$Toolchain = 'nightly-2026-10-22-aarch64-pc-windows-msvc',
     [Parameter(Mandatory)][string]$TargetDirectory,
     [Parameter(Mandatory)][string]$EvidenceDirectory,

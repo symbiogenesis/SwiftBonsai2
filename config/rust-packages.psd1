@@ -2,8 +2,6 @@
     # Runtime implementation packages live in the prism-inference repository.
     # This registry owns only SwiftBonsai packages; '*' means all features for one package.
     Packages = @(
-        @{ Name = 'bonsai-codec-probe'; Manifest = 'tools/codec-probe/Cargo.toml'; Group = 'Runtime'; Features = @('*') }
-        @{ Name = 'bonsai-rust-trial'; Manifest = 'tools/rust-trial/Cargo.toml'; Group = 'Runtime'; Features = @('*') }
         @{ Name = 'bonsai-windows-process'; Manifest = 'src/windows-process/Cargo.toml'; Group = 'Broker'; Features = @('*') }
         @{ Name = 'bonsai-windows-credentials'; Manifest = 'src/windows-credentials/Cargo.toml'; Group = 'Broker'; Features = @('*') }
         @{ Name = 'bonsai-broker'; Manifest = 'src/broker/Cargo.toml'; Group = 'Broker'; Features = @('*') }

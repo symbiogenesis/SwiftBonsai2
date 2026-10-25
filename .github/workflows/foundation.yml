@@ -282,24 +282,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Reuse packaged maintenance tools and prepare the codec compiler
+      - name: Reuse packaged maintenance tools
         uses: ./.github/actions/bonsai-tools
-        with:
-          require-compiler: 'true'
-      - name: Build and check the released native codec probe
-        shell: pwsh
-        working-directory: ${{ runner.temp }}
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-CodecProbeChecks-' + [guid]::NewGuid().ToString('N'))
-          "CODEC_PROBE_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
-          $corpus = Join-Path $env:GITHUB_WORKSPACE 'tools/codec-probe/tests/fixtures/random-pq2.bin'
-          if ((Get-FileHash -LiteralPath $corpus -Algorithm SHA256).Hash.ToLowerInvariant() -cne '0f0405ee9d335b5cb42df4c2ac95c1adb6bf272fb6380f1c9ba890e7c725b64f') { throw 'Preserved native codec corpus digest changed.' }
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Rust.ps1') -Package bonsai-codec-probe -TargetDirectory $env:BONSAI_TOOLS_TARGET -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
-          "BONSAI_CODEC_PROBE_PATH=$(Join-Path $env:BONSAI_TOOLS_TARGET 'release/bonsai-codec-probe.exe')" >> $env:GITHUB_ENV
-          "CODEC_PROBE_NATIVE_EVIDENCE=$(Join-Path $env:RUNNER_TEMP ('SwiftBonsai-NativeCodec-' + [guid]::NewGuid().ToString('N')))" >> $env:GITHUB_ENV
       - name: Swift assessment policy and pinned ARM64 runtime
         shell: pwsh
         run: |
@@ -310,7 +294,6 @@ jobs:
           $data = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime'
           $lockPath = Join-Path $env:GITHUB_WORKSPACE 'config/swift-assessment.lock.json'
           ./scripts/Get-Engine.ps1 -DataDirectory $data -LockPath $lockPath
-          ./tests/Test-PrismCodec.ps1 -DataDirectory $data -ProbeToolPath $env:BONSAI_CODEC_PROBE_PATH -EvidenceDirectory $env:CODEC_PROBE_NATIVE_EVIDENCE
           ./scripts/Get-Adapter.ps1 -DataDirectory $data
           ./scripts/Get-Adapter.ps1 -DataDirectory $data -VerifyOnly
           $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -ProfileName swift-pq2-assessment -CheckOnly
@@ -333,13 +316,3 @@ jobs:
               $plan.RuntimeHelpVerification -notlike 'all-planned-switches-advertised*' -or
               $plan.ArtifactVerification -notlike '*model-not-checked') { throw 'Invalid runtime-only preflight result.' }
           $plan | Select-Object Status, ArtifactVerification, RuntimeHelpVerification | ConvertTo-Json
-      - name: Retain released codec probe and native parity evidence
-        if: always() && env.CODEC_PROBE_CHECK_EVIDENCE != ''
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: codec-probe-${{ github.sha }}
-          path: |
-            ${{ env.CODEC_PROBE_CHECK_EVIDENCE }}
-            ${{ env.CODEC_PROBE_NATIVE_EVIDENCE }}
-            ${{ env.BONSAI_CODEC_PROBE_PATH }}
-          if-no-files-found: error

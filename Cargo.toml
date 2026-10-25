@@ -6,8 +6,6 @@ members = [
     "src/cpu-policy",
     "src/windows-process",
     "src/windows-credentials",
-    "tools/codec-probe",
-    "tools/rust-trial",
     "tools/bonsai",
 ]
 

@@ -13,7 +13,7 @@ function Get-BonsaiRustPackage {
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
     param(
-        [ValidateSet('All', 'Runtime', 'Broker')][string]$Group = 'All',
+        [ValidateSet('All', 'Broker')][string]$Group = 'All',
         [string[]]$Name = @()
     )
     $registry = Import-PowerShellDataFile (Join-Path $PSScriptRoot '../config/rust-packages.psd1')
@@ -129,7 +129,7 @@ function Invoke-BonsaiRustCheck {
     [OutputType([Collections.IDictionary], [Collections.Specialized.OrderedDictionary])]
     param(
         [string[]]$Package = @(),
-        [ValidateSet('All', 'Runtime', 'Broker')][string]$Group = 'All',
+        [ValidateSet('All', 'Broker')][string]$Group = 'All',
         [string]$Toolchain = 'nightly-2026-10-22-aarch64-pc-windows-msvc',
         [Parameter(Mandatory)][string]$TargetDirectory,
         [Parameter(Mandatory)][string]$EvidenceDirectory,

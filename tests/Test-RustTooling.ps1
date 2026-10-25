@@ -13,9 +13,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Rust.psm1') -Force
-$configuration = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/rust-nightly-trial.json') -Raw |
-    ConvertFrom-Json -DateKind String -NoEnumerate
-
+$toolchainSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../rust-toolchain.toml') -Raw
+$channel = [regex]::Match($toolchainSource, '(?m)^channel = "(nightly-\d{4}-\d{2}-\d{2})"\r?$')
+if (-not $channel.Success) { throw 'Rust tooling requires the pinned nightly from rust-toolchain.toml.' }
+$productionToolchain = $channel.Groups[1].Value + '-aarch64-pc-windows-msvc'
 # Exercise optional native feature policy without registering external packages
 # as local source. This fixture never invokes Cargo or resolves a manifest.
 $restricted = @{
@@ -37,7 +38,7 @@ if ('--features' -cin $arguments -or '--all-features' -cin $arguments) {
 $arguments = @(Get-BonsaiRustArgument -Package $restricted -Phase clippy -CheckProfile Native)
 if ('--all-features' -cnotin $arguments) { throw 'The configured native lane omitted its full feature audit.' }
 $arguments = @(Get-BonsaiRustArgument -Package $restricted -Phase fmt -CheckProfile Native)
-if ($arguments[0] -cne ('+' + $configuration.NightlyToolchain)) {
+if ($arguments[0] -cne ('+' + $productionToolchain)) {
     throw 'Default Rust commands must select the configured production nightly.'
 }
 if ('--package' -cnotin $arguments -or 'policy-restricted' -cnotin $arguments -or '--all' -cin $arguments) {
@@ -45,7 +46,7 @@ if ('--package' -cnotin $arguments -or 'policy-restricted' -cnotin $arguments -o
 }
 
 $phases = @('fmt', 'clippy', 'doc', 'test', 'build')
-foreach ($group in @('All', 'Runtime', 'Broker')) {
+foreach ($group in @('All', 'Broker')) {
     $packages = @(Get-BonsaiRustPackage -Group $group)
     foreach ($checkProfile in @('Foundation', 'Compatibility', 'Native')) {
         $plan = @(Get-BonsaiRustCheckPlan -Package $packages -Phase ($phases + 'fmt') -CheckProfile $checkProfile -Offline)
@@ -83,7 +84,7 @@ foreach ($group in @('All', 'Runtime', 'Broker')) {
         }
     }
 }
-$selection = @(Get-BonsaiRustPackage -Name bonsai-codec-probe,bonsai-rust-trial)
+$selection = @(Get-BonsaiRustPackage -Name bonsai-windows-process,bonsai-windows-credentials)
 $plan = @(Get-BonsaiRustCheckPlan -Package $selection -Phase fmt,test -CheckProfile Compatibility)
 if ($plan.Count -ne 2 -or @($plan.Packages | Sort-Object -Unique).Count -ne 2) {
     throw 'A partial package selection expanded to the full workspace.'
@@ -105,47 +106,13 @@ try {
     foreach ($selection in @(@{ Phase = @('test') }, @{ FullTests = $true })) {
         $rejected = $false
         try {
-            $null = Invoke-BonsaiRustCheck -Package bonsai-codec-probe -TargetDirectory (Join-Path $scratch 'target') `
+            $null = Invoke-BonsaiRustCheck -Package bonsai-tools -TargetDirectory (Join-Path $scratch 'target') `
                 -EvidenceDirectory (Join-Path $scratch 'evidence') @selection
         } catch {
             $rejected = $_.Exception.Message -ceq 'Complete Rust suites run only in GitHub Actions on main.'
         }
         if (-not $rejected) { throw 'A local complete-suite selection bypassed its CI guard.' }
     }
-    $rejected = $false
-    try {
-        $null = & (Join-Path $PSScriptRoot 'Test-RustNightly.ps1') -Mode Compatibility `
-            -Toolchain $configuration.StableToolchain -TargetDirectory (Join-Path $scratch 'target') `
-            -EvidenceDirectory (Join-Path $scratch 'evidence')
-    } catch {
-        $rejected = $_.Exception.Message -ceq 'Compatibility requires the pinned production nightly; stable is an isolated probe control.'
-    }
-    if (-not $rejected) { throw 'Workspace compatibility accepted the stable probe compiler.' }
-    foreach ($selection in @(
-        @{ Arguments = @{ Mode = 'Compatibility'; PackageGroup = 'Runtime'; Package = @('bonsai-broker') }; Error = 'Unknown Rust package in group Runtime: bonsai-broker' }
-        @{ Arguments = @{ Mode = 'Compatibility'; PackageGroup = 'Broker'; Package = @('bonsai-missing') }; Error = 'Unknown Rust package in group Broker: bonsai-missing' }
-        @{ Arguments = @{ Mode = 'Probe'; ProbeCase = 'Polonius'; Package = @('bonsai-rust-trial') }; Error = 'PackageGroup and Package apply only to Compatibility.' }
-        @{ Arguments = @{ Mode = 'Probe'; ProbeCase = 'Polonius'; PackageGroup = 'Runtime' }; Error = 'PackageGroup and Package apply only to Compatibility.' }
-        @{ Arguments = @{ Mode = 'Compatibility'; PackageGroup = 'Runtime'; Package = @('bonsai-codec-probe'); FullTests = $true }; Error = 'Complete suites run only in GitHub Actions on main.' }
-    )) {
-        $rejected = $false
-        try {
-            $arguments = $selection.Arguments
-            $null = & (Join-Path $PSScriptRoot 'Test-RustNightly.ps1') @arguments `
-                -TargetDirectory (Join-Path $scratch 'target') -EvidenceDirectory (Join-Path $scratch 'evidence')
-        } catch {
-            $rejected = $_.Exception.Message -ceq $selection.Error
-        }
-        if (-not $rejected) { throw 'Nightly package selection bypassed its group, probe or local-suite policy.' }
-    }
-    $rejected = $false
-    try {
-        $null = & (Join-Path $PSScriptRoot 'Test-RustNightly.ps1') -Mode Compatibility -Package @() `
-            -TargetDirectory (Join-Path $scratch 'target') -EvidenceDirectory (Join-Path $scratch 'evidence')
-    } catch {
-        $rejected = $_.FullyQualifiedErrorId -like 'ParameterArgumentValidationError*'
-    }
-    if (-not $rejected) { throw 'An empty explicit nightly package selection expanded to a complete group.' }
     if ([IO.Directory]::Exists($scratch)) { throw 'A rejected suite or package selection created scratch or build outputs.' }
 } finally {
     $env:GITHUB_ACTIONS = $previousActions
