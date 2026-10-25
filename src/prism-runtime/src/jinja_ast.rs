@@ -134,7 +134,7 @@ fn lex(text: &str) -> Result<Vec<Token>> {
             let op = &text[position..position + length];
             if !op
                 .bytes()
-                .all(|value| b"+-~*/%<>=()[]{}.,:|".contains(&value))
+                .all(|value| b"+-~*/%<>=!()[]{}.,:|".contains(&value))
             {
                 return Err(invalid("unknown Jinja expression character"));
             }
