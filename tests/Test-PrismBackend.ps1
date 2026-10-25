@@ -11,6 +11,7 @@ param(
     [string]$InputDirectory,
     [string]$PlanPath,
     [string]$OrdinaryEvidenceDirectory,
+    [switch]$PartitionedOrdinary,
     [ValidateRange(0,15)][int]$Index = 0,
     [switch]$Benchmarks,
     [switch]$Gradients
@@ -138,24 +139,35 @@ foreach ($target in @('cpp','rust')) {
 }
 Write-BackendStage -Name 'record.json' -Value $record
 $combined = @{}
-$ordinaryReceiptPath = Resolve-ExternalPath (Join-Path $OrdinaryEvidenceDirectory 'receipt.json')
-if ((Get-Item -LiteralPath $ordinaryReceiptPath).Length -gt 1MB) { throw 'Ordinary source receipt exceeds1MiB.' }
-$ordinaryReceipt = Get-Content -LiteralPath $ordinaryReceiptPath -Raw | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
+$catalog = Import-BonsaiPrismCatalog -Path (Join-Path $repo 'tools/prism/upstream/catalog.json')
+$ordinarySources = $null
+if ($PartitionedOrdinary) {
+    Import-Module (Join-Path $repo 'scripts/Bonsai.PrismSourceResults.psm1')
+    $ordinarySources = Merge-BonsaiPrismSourceResult -InputDirectory $OrdinaryEvidenceDirectory -Catalog $catalog -ProjectRevision $env:GITHUB_SHA -HarnessSha256 $bundle.HarnessSha256 -CommonBridgeSha256 $bundle.CommonBridgeSha256
+    $ordinaryReceipt = $ordinarySources.Receipt
+    Write-BackendStage -Name 'ordinary-partitions.json' -Value $ordinaryReceipt
+} else {
+    $ordinaryReceiptPath = Resolve-ExternalPath (Join-Path $OrdinaryEvidenceDirectory 'receipt.json')
+    if ((Get-Item -LiteralPath $ordinaryReceiptPath).Length -gt 1MB) { throw 'Ordinary source receipt exceeds1MiB.' }
+    $ordinaryReceipt = Get-Content -LiteralPath $ordinaryReceiptPath -Raw | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
+}
 $ordinaryCommon = @($ordinaryReceipt.NativeBuilds | Where-Object { $_.Family -ceq 'common' })
 if ($ordinaryReceipt.ProjectRevision -cne $env:GITHUB_SHA -or $ordinaryReceipt.Status -cne 'awaiting-backend' -or
     $ordinaryReceipt.DeferredSource -cne 'tests/test-backend-ops.cpp' -or
     $ordinaryReceipt.HarnessSha256 -cne $bundle.HarnessSha256 -or $ordinaryCommon.Count -ne 1 -or
     $ordinaryCommon[0].ExecutableSha256 -cne $bundle.CommonBridgeSha256) { throw 'Ordinary results are not the matching deferred source handoff.' }
 foreach ($target in @('cpp','rust')) {
-    $path = Resolve-ExternalPath (Join-Path $OrdinaryEvidenceDirectory "$target-results.json")
-    if ((Get-Item -LiteralPath $path).Length -gt 128MB) { throw 'Ordinary source result exceeds128MiB.' }
-    $ordinary = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
+    if ($PartitionedOrdinary) { $ordinary = $ordinarySources[$target] }
+    else {
+        $path = Resolve-ExternalPath (Join-Path $OrdinaryEvidenceDirectory "$target-results.json")
+        if ((Get-Item -LiteralPath $path).Length -gt 128MB) { throw 'Ordinary source result exceeds128MiB.' }
+        $ordinary = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
+    }
     if (@($ordinary.Cases | Where-Object Id -CEQ 'tests/test-backend-ops.cpp').Count) { throw 'Backend source was already counted.' }
     $ordinary.Cases = @($ordinary.Cases) + @($sources[$target].Payload)
     $combined[$target] = $ordinary
     Write-BackendStage -Name "$target-results.json" -Value $ordinary
 }
-$catalog = Import-BonsaiPrismCatalog -Path (Join-Path $repo 'tools/prism/upstream/catalog.json')
 $report = New-BonsaiPrismReport -Catalog $catalog -TargetResults $combined.rust -ReferenceResults $combined.cpp
 Write-BackendStage -Name 'report.json' -Value $report
 $gate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath (Join-Path $repo 'tools/prism/upstream/baseline.json')
