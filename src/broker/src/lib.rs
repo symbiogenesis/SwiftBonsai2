@@ -20,6 +20,12 @@ pub mod launch_policy;
 #[cfg(windows)]
 pub mod launcher;
 #[cfg(feature = "native-swift")]
+pub mod native_backend;
+#[cfg(all(windows, feature = "native-swift"))]
+pub mod native_child;
+#[cfg(feature = "native-swift")]
+pub mod native_response;
+#[cfg(feature = "native-swift")]
 pub mod native_swift;
 pub mod reception;
 pub mod response;
