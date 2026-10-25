@@ -268,8 +268,11 @@ See [commands](development-guide.md#explicit-development-broker).
 Only compiled-in pins and fixed arguments are accepted: `reference-cpu` is the
 default, and `--profile swift-pq2-assessment` explicitly selects Swift's separate
 model/runtime lock. Arbitrary executables, models, profile JSON and overrides
-are rejected. Swift uses the original PQ2 weights without an adapter or PTQ1
-substitution. `--check-only`
+are rejected. Swift uses the original PQ2 weights without PTQ1 substitution.
+`--use-abliterate-lora` selects only the pinned adapter at scale 1 with the Prism
+CPU backend; it is rejected for the reference profile and `--native-engine`.
+The demo requests it by default and offers `-NoAbliterateLora`; direct broker
+launches omit it by default. `--check-only`
 verifies policy/artifacts and reports memory admission without credentials or a
 process. Neither selection establishes real-model service qualification. Inherited
 LLAMA/LLAMACPP/GGML/AIP/MTMD and model-endpoint/token overrides are rejected;
@@ -278,6 +281,8 @@ Windows/profile environment variables are preserved.
 `artifacts::VerifiedArtifacts` verifies complete model/ZIP size/hash, safe archive
 paths/expansion, exact installed runtime contents and ARM64 PE images. Retained
 Windows handles deny write/delete access to artifacts and ancestors during use.
+When selected, the adapter's pinned size/SHA-256 is also verified and its handle
+retained through backend shutdown; missing or altered files fail startup.
 This does not attest source-to-binary builds or restricted execution.
 
 Safe broker code delegates Win32 ownership to the audited

@@ -31,12 +31,14 @@ isolation or same-user backend bypass prevention.
 
 Use native Windows ARM64 PowerShell 7.6+, the pinned Rust toolchain, an existing
 Swift PQ2 model/runtime installation and at least **16 GiB of available RAM**.
-For a new installation, provision both artifacts with Swift's assessment lock:
+For a new installation, provision the model/runtime with Swift's assessment lock
+and the pinned abliteration adapter:
 
 ```powershell
 $data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
 ./scripts/Get-Engine.ps1 -DataDirectory $data -LockPath ./config/swift-assessment.lock.json
 ./scripts/Get-Model.ps1 -DataDirectory $data -LockPath ./config/swift-assessment.lock.json
+./scripts/Get-Adapter.ps1 -DataDirectory $data
 ./scripts/Start-Demo.ps1 -DataDirectory $data
 ```
 
@@ -52,6 +54,10 @@ sending again. Closing the window stops its owned broker and inference process.
 
 `Start-Demo.ps1` builds the chat app and broker in a fresh system-temp lane.
 Pass absolute `-ChatPath` and `-BrokerPath` values to reuse existing builds.
+The pinned abliteration LoRA is enabled at scale 1 by default. Pass
+`-NoAbliterateLora` to run without it; direct `bonsai-chat` launches accept
+`--no-abliterate-lora`. Missing or altered adapter bytes fail startup with
+provisioning guidance; there is no automatic download or fallback.
 `-FrontendPort` and `-BackendPort` select distinct local API ports when the
 defaults are occupied. The script downloads no model/runtime artifacts and
 retains credentials and technical evidence in external temp storage. Do not
@@ -62,7 +68,9 @@ chat conventions. Unsupported fields remain rejected; this is not a claim of
 drop-in compatibility with every OpenAI client.
 
 The demo uses the pinned Prism/llama CPU backend with original Swift PQ2 weights
-and no adapter. The separate native inference release `0.1.1` predates the
+and the pinned adapter unless opted out. This development default does not
+qualify the [standard LoRA profile](swift-lora.md#required-standard-profile-qualification).
+The separate native inference release `0.1.1` predates the
 verified source fixes and is not selected. Thinking remains enabled, so even a
 short prompt can take time to produce a finished answer. Quality, throughput and
 daily-service qualification remain pending.
@@ -303,8 +311,11 @@ The default selection remains `reference-cpu`. Pass
 `--profile swift-pq2-assessment` to select Swift's separately pinned Prism runtime
 and original PQ2 model, provisioned with `config/swift-assessment.lock.json`.
 That selection fixes batch/microbatch to 128/64, a 12 GiB Job cap and 16 GiB
-available-RAM admission including the 4 GiB reserve. Derived PTQ1 and adapters
-are unavailable through this launcher. Profile names are exact; arbitrary
+available-RAM admission including the 4 GiB reserve. Add `--use-abliterate-lora`
+to select the pinned scale-one adapter with the Prism CPU server; the demo
+requests this automatically. Direct broker launches omit it by default.
+The native inference backend and derived PTQ1 do not support this option.
+Profile names are exact; arbitrary adapters,
 models, runtimes and inference overrides remain rejected.
 
 The launcher retains verified model/runtime handles, creates fresh protected

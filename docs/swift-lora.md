@@ -4,7 +4,10 @@ The approved OrcaRouter adapter is pinned, provisioned and passes bounded native
 ARM64 loading/decode. **Its effectiveness and quality on Swift remain
 unqualified.** The owner intends it for the standard profile after independent
 throughput and output-quality parity gates pass. Until then it is an explicit
-development option; daily chat stays disabled. Using this pretrained artifact
+development option in the broker. The native development demo enables it by
+default at scale 1; use `Start-Demo.ps1 -NoAbliterateLora` to opt out.
+This demo default does not promote the qualified standard profile; daily chat
+stays disabled. Using this pretrained artifact
 requires no local training or fine-tuning.
 
 ## Artifact and published evidence

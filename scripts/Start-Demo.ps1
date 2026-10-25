@@ -4,6 +4,7 @@
 Builds and opens the native Rust Swift Bonsai 2 chat demo.
 .DESCRIPTION
 Uses the existing Swift model and pinned CPU runtime; downloads no artifacts.
+Enables the pinned abliteration LoRA at scale 1 unless NoAbliterateLora is set.
 Builds missing app executables with the pinned Rust compiler in external temp.
 The native window owns its broker and inference-process lifetime. Build outputs,
 credentials and logs remain in the unique external demo directory.
@@ -11,6 +12,8 @@ credentials and logs remain in the unique external demo directory.
 ./scripts/Start-Demo.ps1
 .EXAMPLE
 ./scripts/Start-Demo.ps1 -ChatPath C:\Demo\bonsai-chat.exe -BrokerPath C:\Demo\bonsai-broker.exe
+.EXAMPLE
+./scripts/Start-Demo.ps1 -NoAbliterateLora
 #>
 [CmdletBinding()]
 [OutputType([string])]
@@ -18,6 +21,7 @@ param(
     [string]$DataDirectory = (Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'),
     [string]$ChatPath,
     [string]$BrokerPath,
+    [switch]$NoAbliterateLora,
     [ValidateRange(1024, 65535)][int]$FrontendPort = 5173,
     [ValidateRange(1024, 65535)][int]$BackendPort = 8081
 )
@@ -74,6 +78,7 @@ try {
             '--backend-port', [string]$BackendPort)) {
         [void]$start.ArgumentList.Add($argument)
     }
+    if ($NoAbliterateLora) { [void]$start.ArgumentList.Add('--no-abliterate-lora') }
     $process = [Diagnostics.Process]::Start($start)
     if ($null -eq $process) { throw 'The native demo process could not start.' }
     try {

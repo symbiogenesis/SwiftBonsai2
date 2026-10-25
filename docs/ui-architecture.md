@@ -28,6 +28,8 @@ repeats the ordinary artifact, identity and 16 GiB admission checks. There is no
 automatic retry or reduced-memory profile.
 
 The demo uses the existing pinned Swift PQ2 CPU backend through the broker.
+Its pinned abliteration LoRA is enabled by default, with an explicit
+`-NoAbliterateLora` opt-out; the broker verifies and holds the selected adapter.
 The UI does not load model weights, select arbitrary runtime arguments, bypass
 artifact verification or change model, memory, context, sampler or thinking
 policy. A native UI does not by itself qualify runtime correctness, LoRA,

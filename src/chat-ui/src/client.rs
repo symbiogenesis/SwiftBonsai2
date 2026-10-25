@@ -38,6 +38,7 @@ pub(crate) struct Config {
     pub(crate) evidence: PathBuf,
     pub(crate) frontend_port: u16,
     pub(crate) backend_port: u16,
+    pub(crate) use_abliterate_lora: bool,
 }
 
 /// Commands sent from the native UI to its single background worker.
@@ -156,6 +157,9 @@ fn worker(config: &Config, commands: &Receiver<Command>, events: &Sender<Event>)
     let stdout = new_log(&stdout_path)?;
     let stderr = new_log(&stderr_path)?;
     let mut process = ProcessCommand::new(&config.broker);
+    if config.use_abliterate_lora {
+        process.arg("--use-abliterate-lora");
+    }
     process
         .args([
             "--launch-development",
@@ -295,6 +299,10 @@ fn startup_failure(diagnostic: &[u8]) -> Failure {
     } else if text.contains("Port") || text.contains("Service") {
         Failure::Message(
             "A local demo port is unavailable. Close the previous demo instance and restart.",
+        )
+    } else if text.contains("Adapter") {
+        Failure::Message(
+            "The pinned abliteration LoRA could not be verified. Run scripts/Get-Adapter.ps1 for this data directory, or restart with -NoAbliterateLora.",
         )
     } else if text.contains("Artifacts") {
         Failure::Message(
@@ -935,6 +943,13 @@ mod tests {
             startup_failure(b"Development backend launch failed: Memory."),
             Failure::Memory
         );
+        let Failure::Message(message) =
+            startup_failure(b"Development backend launch failed: Adapter.")
+        else {
+            return Err(Failure::Message("Missing adapter startup guidance"));
+        };
+        assert!(message.contains("Get-Adapter.ps1"));
+        assert!(message.contains("-NoAbliterateLora"));
         Ok(())
     }
 
