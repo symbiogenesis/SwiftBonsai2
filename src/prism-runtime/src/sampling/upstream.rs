@@ -360,7 +360,13 @@ impl State {
             Config::TopK(k) => {
                 if *k > 0 {
                     if !candidates.sorted {
-                        candidates.sort();
+                        let keep = candidates.size.min(usize::try_from(*k)?);
+                        if keep <= 128 {
+                            partial_top_k(candidates.data_mut(), keep);
+                            candidates.sorted = true;
+                        } else {
+                            candidates.sort();
+                        }
                     }
                     candidates.size = candidates.size.min(usize::try_from(*k)?);
                 }
@@ -424,6 +430,58 @@ impl State {
         }
         Ok(())
     }
+}
+
+// The pinned small-k CPU path uses libstdc++ partial_sort's heap schedule.
+// Equal logits compare neither way: child choice, replacement in original token
+// order and sort_heap therefore all matter to seeded token identity. A Rust
+// unstable full sort has different ties even for a completely uniform input.
+fn partial_top_k(data: &mut [Candidate], keep: usize) {
+    if keep > 1 {
+        for parent in (0..=(keep - 2) / 2).rev() {
+            let value = data[parent];
+            adjust_heap(data, parent, keep, value);
+        }
+    }
+    for index in keep..data.len() {
+        if data[index].logit > data[0].logit {
+            let value = data[index];
+            data[index] = data[0];
+            adjust_heap(data, 0, keep, value);
+        }
+    }
+    for end in (1..keep).rev() {
+        let value = data[end];
+        data[end] = data[0];
+        adjust_heap(data, 0, end, value);
+    }
+}
+
+fn adjust_heap(data: &mut [Candidate], mut hole: usize, length: usize, value: Candidate) {
+    let top = hole;
+    let mut child = hole;
+    while child < (length - 1) / 2 {
+        child = 2 * (child + 1);
+        if data[child].logit > data[child - 1].logit {
+            child -= 1;
+        }
+        data[hole] = data[child];
+        hole = child;
+    }
+    if length.is_multiple_of(2) && child == (length - 2) / 2 {
+        child = 2 * (child + 1);
+        data[hole] = data[child - 1];
+        hole = child - 1;
+    }
+    while hole > top {
+        let parent = (hole - 1) / 2;
+        if data[parent].logit.partial_cmp(&value.logit) != Some(Ordering::Greater) {
+            break;
+        }
+        data[hole] = data[parent];
+        hole = parent;
+    }
+    data[hole] = value;
 }
 
 fn temperature_filter(candidates: &mut Candidates, temperature: f32) {
