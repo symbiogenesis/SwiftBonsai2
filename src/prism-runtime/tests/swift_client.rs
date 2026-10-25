@@ -14,7 +14,7 @@ use bonsai_prism_runtime::{
 };
 use serde_json::{Value, json};
 use std::{
-    io::{self, BufReader, Cursor, Write},
+    io::{self, BufRead, BufReader, Cursor, Read, Write},
     time::{Duration, Instant},
 };
 
@@ -384,5 +384,69 @@ fn transport_and_total_stream_bounds_fail_closed_without_private_diagnostics() -
     assert_eq!(delivered, MAX_OUTPUT_BYTES);
     assert!(!client.is_usable());
     assert!(!ClientError::Transport.to_string().contains("private"));
+    Ok(())
+}
+
+struct DelayedReader {
+    input: Cursor<Vec<u8>>,
+    reads: usize,
+}
+impl Read for DelayedReader {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.input.read(bytes)
+    }
+}
+impl BufRead for DelayedReader {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        self.reads += 1;
+        if self.reads == 3 {
+            // Simulate an owned transport returning after its request deadline.
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        self.input.fill_buf()
+    }
+    fn consume(&mut self, amount: usize) {
+        self.input.consume(amount);
+    }
+}
+
+#[test]
+fn expiry_after_blocking_response_read_and_oversized_frames_require_worker_shutdown() -> Result<()>
+{
+    let input = DelayedReader {
+        input: Cursor::new(script(&[
+            count(0),
+            json!({"type":"delta","id":1,"text":"late output"}),
+            terminal(1, 1, "stop"),
+        ])?),
+        reads: 0,
+    };
+    let mut client = SwiftClient::connect(input, Vec::new(), expected())?;
+    let mut delivered = false;
+    assert_eq!(
+        client.complete(
+            &messages(),
+            3,
+            &Cancellation::default(),
+            Instant::now() + Duration::from_millis(50),
+            |_| {
+                delivered = true;
+                Ok(())
+            }
+        ),
+        Err(ClientError::Deadline)
+    );
+    assert!(!delivered);
+    assert!(!client.is_usable());
+    assert_eq!(client.reset(), Err(ClientError::Unavailable));
+
+    let oversized = json!({"type":"error","id":0,"error":"x".repeat(DEFAULT_RESPONSE_FRAME_BYTES)});
+    let mut client =
+        SwiftClient::connect(Cursor::new(script(&[oversized])?), Vec::new(), expected())?;
+    assert_eq!(
+        client.count(&messages(), 3),
+        Err(ClientError::InvalidResponse)
+    );
+    assert!(!client.is_usable());
     Ok(())
 }
