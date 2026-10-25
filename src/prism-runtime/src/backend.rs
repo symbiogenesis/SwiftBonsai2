@@ -95,6 +95,7 @@ pub fn type_layout(kind: i32) -> Result<TypeLayout> {
         1 => (1, 2, "f16"),
         2 => (32, 18, "q4_0"),
         8 => (32, 34, "q8_0"),
+        15 => (256, 292, "q8_K"),
         24 => (1, 1, "i8"),
         25 => (1, 2, "i16"),
         26 => (1, 4, "i32"),
@@ -608,17 +609,34 @@ impl CpuBackend {
         })
     }
 
-    /// Replace tensor values in logical order, applying its scalar storage format.
+    /// Replace tensor values in logical order, applying its scalar or packed format.
     ///
     /// # Errors
-    /// Rejects packed output types, wrong element counts and invalid storage.
+    /// Rejects wrong element counts, unavailable encoders and invalid storage.
     pub fn set_values(&mut self, tensor: TensorId, values: &[f32]) -> Result<()> {
         let info = self.info(tensor)?.clone();
         let layout = type_layout(info.kind)?;
-        if layout.block != 1 || values.len() != info.elements() {
+        if values.len() != info.elements() {
             return Err(invalid("CPU scalar output extent or type differs"));
         }
         self.ensure_storage(tensor)?;
+        if info.elements() == 0 {
+            return Ok(());
+        }
+        if layout.block != 1 {
+            for (row, values) in values.chunks_exact(info.shape[0]).enumerate() {
+                let row_indices =
+                    coordinates(row, [info.shape[1], info.shape[2], info.shape[3], 1]);
+                let row_offset = row_indices[0] * info.strides[1]
+                    + row_indices[1] * info.strides[2]
+                    + row_indices[2] * info.strides[3];
+                let bytes = crate::kernels::quantize_row(u32::try_from(info.kind)?, values)?;
+                for (block, bytes) in bytes.chunks_exact(layout.bytes).enumerate() {
+                    self.set(tensor, row_offset + block * info.strides[0], bytes)?;
+                }
+            }
+            return Ok(());
+        }
         for (index, &value) in values.iter().enumerate() {
             let coordinate = coordinates(index, info.shape);
             let offset: usize = coordinate
@@ -702,14 +720,30 @@ impl CpuBackend {
     /// Rejects an unknown tensor.
     pub fn supports(&self, tensor: TensorId) -> Result<bool> {
         let info = self.info(tensor)?;
+        if matches!(info.operation, 29 | 30 | 74)
+            && !info
+                .sources
+                .get(usize::from(info.operation == 74))
+                .is_some_and(|&source| {
+                    self.info(source).is_ok_and(|source| {
+                        matches!(source.kind, 0 | 1 | 2 | 8 | 15 | 30 | 142 | 143)
+                    })
+                })
+        {
+            return Ok(false);
+        }
+        if info.kind == 28 && !matches!(info.operation, 0 | 1 | 34..=39) {
+            return Ok(false);
+        }
+        if matches!(info.kind, 24..=27)
+            && !matches!(info.operation, 0 | 1 | 18 | 19 | 34..=40 | 69 | 70)
+        {
+            return Ok(false);
+        }
         Ok(ops::supports(info.operation)
             && (type_layout(info.kind)?.block == 1
                 || matches!(info.operation, 0 | 36..=39)
-                || matches!(info.operation, 1 | 34 | 35)
-                    && info.sources.first().is_some_and(|&source| {
-                        self.info(source)
-                            .is_ok_and(|source| source.kind == info.kind)
-                    })))
+                || matches!(info.operation, 1 | 34 | 35)))
     }
 
     /// Evaluate the graph in topological order using production CPU kernels.

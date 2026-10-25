@@ -779,7 +779,7 @@ impl CpuBackend {
                     return Err(invalid("CPU gather batch shapes differ"));
                 }
                 shape = [shape[0], bs[0], bs[1], bs[2]];
-                kind = 0;
+                kind = if a_info.kind == 26 { 26 } else { 0 };
                 sources.push(b);
                 40
             }

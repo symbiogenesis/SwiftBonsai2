@@ -393,4 +393,53 @@ mod tests {
         assert!(outcome?.is_some());
         Ok(())
     }
+
+    #[test]
+    fn rust_backend_original_quantized_cpy_has_zero_crt_draws() -> Result<()> {
+        use super::super::{
+            evaluate,
+            graph::Plan,
+            host::Production,
+            prepare::{self, Mode},
+            program,
+        };
+        // Exact catalog entry: Q4_0 -> Q4_0, original 32x2x3x4 geometry.
+        // Its source initializer consumes no global CRT draws, so the global
+        // offset cannot affect this focused check. Geometry-index seeds remain
+        // exactly those used by complete ordered execution.
+        const INDEX: usize = 7527;
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("prism-rust-q4-cpy-{}-{nonce}", std::process::id()));
+        fs::create_dir(&directory)?;
+        let engine = Engine::new(Target::Rust, None, None, None, None, None)?;
+        let (program, geometries) = program::load().map_err(invalid)?;
+        let geometry = &geometries.eval[INDEX];
+        assert_eq!(geometry.class, "test_cpy");
+        assert_eq!(geometry.arguments[0], 2);
+        assert_eq!(geometry.arguments[1], 2);
+        let outcome = transport::with_session(&engine, &directory, |session| {
+            let mut host = Production::new(
+                Plan::new(session),
+                program,
+                INDEX as u64,
+                1,
+                Mode::Eval.code(),
+            );
+            let mut prepared = prepare::prepare(&mut host, geometry, Mode::Eval, None)?;
+            assert!(prepared.supported);
+            assert!(prepared.initialize);
+            assert_eq!(prepared.crt_draws, 0);
+            evaluate::allocate(&mut host, &mut prepared, geometry, Mode::Eval, 0)?;
+            let result = evaluate::evaluate(&mut host, &mut prepared, geometry)?;
+            assert_eq!(result["Status"], "pass");
+            Ok(())
+        });
+        for entry in fs::read_dir(&directory)? {
+            fs::remove_file(entry?.path())?;
+        }
+        fs::remove_dir(&directory)?;
+        assert!(outcome?.is_some());
+        Ok(())
+    }
 }

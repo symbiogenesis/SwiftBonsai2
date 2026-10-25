@@ -128,7 +128,7 @@ impl CpuBackend {
             return self.copy_storage(tensor, info.sources[0]);
         }
         let a_id = source(0).ok();
-        let a = if let Some(id) = a_id {
+        let a = if let Some(id) = a_id.filter(|_| !matches!(op, 29 | 30)) {
             self.values(id)?
         } else {
             Vec::new()
@@ -430,16 +430,19 @@ impl CpuBackend {
                 {
                     return Err(invalid("CPU matmul shapes differ"));
                 }
-                for (index, value) in out.iter_mut().enumerate() {
-                    let [m, n, batch2, batch3] = coordinates(index, shape);
-                    let a2 = batch2 / (b_shape[2] / a_shape[2]);
-                    let a3 = batch3 / (b_shape[3] / a_shape[3]);
-                    let mut sum = 0.0_f64;
-                    for k in 0..a_shape[0] {
-                        sum += f64::from(a[linear([k, m, a2, a3], a_shape)])
-                            * f64::from(b[linear([k, n, batch2, batch3], b_shape)]);
+                for batch3 in 0..shape[3] {
+                    for batch2 in 0..shape[2] {
+                        let a2 = batch2 / (b_shape[2] / a_shape[2]);
+                        let a3 = batch3 / (b_shape[3] / a_shape[3]);
+                        let matrix = self.matrix(source(0)?, a2, a3)?;
+                        for column in 0..shape[1] {
+                            let start = linear([0, column, batch2, batch3], b_shape);
+                            let values =
+                                crate::kernels::matvec(&matrix, &b[start..start + b_shape[0]])?;
+                            let output_start = linear([0, column, batch2, batch3], shape);
+                            out[output_start..output_start + shape[0]].copy_from_slice(&values);
+                        }
                     }
-                    *value = sum as f32;
                 }
             }
             30 => {
@@ -449,18 +452,19 @@ impl CpuBackend {
                 let ids_id = source(2)?;
                 let ids = self.integer_values(ids_id)?;
                 let ids_shape = self.info(ids_id)?.shape;
-                for (index, value) in out.iter_mut().enumerate() {
-                    let [row, slot, token, _] = coordinates(index, shape);
-                    let expert = usize::try_from(ids[linear([slot, token, 0, 0], ids_shape)])?;
-                    if expert >= a_shape[2] {
-                        return Err(invalid("CPU matmul expert exceeds expert count"));
+                for token in 0..shape[2] {
+                    for slot in 0..shape[1] {
+                        let expert = usize::try_from(ids[linear([slot, token, 0, 0], ids_shape)])?;
+                        if expert >= a_shape[2] {
+                            return Err(invalid("CPU matmul expert exceeds expert count"));
+                        }
+                        let matrix = self.matrix(source(0)?, expert, 0)?;
+                        let start = linear([0, slot % b_shape[1], token, 0], b_shape);
+                        let values =
+                            crate::kernels::matvec(&matrix, &b[start..start + b_shape[0]])?;
+                        let output_start = linear([0, slot, token, 0], shape);
+                        out[output_start..output_start + shape[0]].copy_from_slice(&values);
                     }
-                    let mut sum = 0.0_f64;
-                    for column in 0..a_shape[0] {
-                        sum += f64::from(a[linear([column, row, expert, 0], a_shape)])
-                            * f64::from(b[linear([column, slot % b_shape[1], token, 0], b_shape)]);
-                    }
-                    *value = sum as f32;
                 }
             }
             31 => {
@@ -511,11 +515,34 @@ impl CpuBackend {
             }
             40 => {
                 let ids_id = source(1)?;
-                let ids = self.values(ids_id)?;
+                let ids = self.integer_values(ids_id)?;
                 let ids_shape = self.info(ids_id)?.shape;
+                if info.kind == 26 {
+                    let source_info = self.info(source(0)?)?.clone();
+                    let mut bytes = Vec::new();
+                    bytes.try_reserve_exact(n * 4)?;
+                    for index in 0..n {
+                        let coord = coordinates(index, shape);
+                        let row = usize::try_from(
+                            ids[linear([coord[1], coord[2], coord[3], 0], ids_shape)],
+                        )?;
+                        if row >= a_shape[1] {
+                            return Err(invalid("CPU gather index exceeds row count"));
+                        }
+                        let coordinate = [coord[0], row, coord[2], coord[3]];
+                        let offset: usize = coordinate
+                            .iter()
+                            .zip(source_info.strides)
+                            .map(|(&index, stride)| index * stride)
+                            .sum();
+                        bytes.extend_from_slice(self.get(source(0)?, offset, 4)?);
+                    }
+                    return self.set(tensor, 0, &bytes);
+                }
                 for (index, value) in out.iter_mut().enumerate() {
                     let coord = coordinates(index, shape);
-                    let row = ids[linear([coord[1], coord[2], coord[3], 0], ids_shape)] as usize;
+                    let row =
+                        usize::try_from(ids[linear([coord[1], coord[2], coord[3], 0], ids_shape)])?;
                     if row >= a_shape[1] {
                         return Err(invalid("CPU gather index exceeds row count"));
                     }
@@ -523,9 +550,9 @@ impl CpuBackend {
                 }
             }
             41 => {
-                let ids = self.values(source(1)?)?;
+                let ids = self.integer_values(source(1)?)?;
                 for (row, &id) in ids.iter().enumerate() {
-                    let id = id as usize;
+                    let id = usize::try_from(id)?;
                     if id >= shape[1] {
                         return Err(invalid("CPU scatter index exceeds row count"));
                     }
@@ -537,20 +564,22 @@ impl CpuBackend {
             42 => {
                 let b = self.values(source(2)?)?;
                 let ids_id = source(1)?;
-                let ids = self.values(ids_id)?;
+                let ids = self.integer_values(ids_id)?;
                 let ids_shape = self.info(ids_id)?.shape;
                 out.copy_from_slice(&b);
                 for row in 0..a.len() / a_shape[0] {
                     let coord = coordinates(row, [a_shape[1], a_shape[2], a_shape[3], 1]);
-                    let id = ids[linear(
-                        [
-                            coord[0],
-                            coord[1] % ids_shape[1],
-                            coord[2] % ids_shape[2],
-                            0,
-                        ],
-                        ids_shape,
-                    )] as usize;
+                    let id = usize::try_from(
+                        ids[linear(
+                            [
+                                coord[0],
+                                coord[1] % ids_shape[1],
+                                coord[2] % ids_shape[2],
+                                0,
+                            ],
+                            ids_shape,
+                        )],
+                    )?;
                     if id >= shape[1] {
                         return Err(invalid("CPU row assignment exceeds extent"));
                     }

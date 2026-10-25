@@ -487,9 +487,7 @@ impl State {
             }
             "quantize-file" => {
                 let kind = i32::try_from(integer(&action["Type"])?)?;
-                if type_layout(kind)?.block != 1 {
-                    return Err(invalid("Rust CPU backend packed quantizer is unsupported"));
-                }
+                let layout = type_layout(kind)?;
                 let path = self.file(&action["InputFile"])?;
                 let start = unsigned(&action["Start"])?;
                 let rows = unsigned(&action["Rows"])?;
@@ -497,6 +495,13 @@ impl State {
                 let count = rows
                     .checked_mul(width)
                     .ok_or_else(|| invalid("Rust quantize extent overflow"))?;
+                if rows == 0
+                    || width == 0
+                    || !start.is_multiple_of(width)
+                    || !width.is_multiple_of(layout.block)
+                {
+                    return Err(invalid("Rust quantizer row/block extent differs"));
+                }
                 let data = self.read(&path, start * 4, count * 4)?;
                 let input = self.backend.tensor(u32::MAX, kind, [width, rows, 1, 1])?;
                 let values = data
@@ -505,12 +510,38 @@ impl State {
                     .iter()
                     .map(|bytes| f32::from_le_bytes(*bytes))
                     .collect::<Vec<_>>();
-                self.backend.set_values(input, &values)?;
-                let bytes = self.backend.info(input)?.bytes()?;
+                let importance = if action["ImportanceFile"].is_null() {
+                    None
+                } else {
+                    let path = self.file(&action["ImportanceFile"])?;
+                    let data = self.read(&path, 0, width * 4)?;
+                    Some(
+                        data.as_chunks::<4>()
+                            .0
+                            .iter()
+                            .map(|bytes| f32::from_le_bytes(*bytes))
+                            .collect::<Vec<_>>(),
+                    )
+                };
+                let mut data = Vec::new();
+                for row in values.chunks_exact(width) {
+                    let bytes = if let Some(importance) = &importance {
+                        bonsai_prism_runtime::kernels::quantize_row_weighted(
+                            u32::try_from(kind)?,
+                            row,
+                            importance,
+                        )?
+                    } else {
+                        bonsai_prism_runtime::kernels::quantize_row(u32::try_from(kind)?, row)?
+                    };
+                    data.extend_from_slice(&bytes);
+                }
+                self.backend.set(input, 0, &data)?;
+                let bytes = data.len();
                 let output = self.file(&action["OutputFile"])?;
                 self.write(
                     &output,
-                    start * type_layout(kind)?.bytes,
+                    start / layout.block * layout.bytes,
                     self.backend.get(input, 0, bytes)?,
                     false,
                 )?;
