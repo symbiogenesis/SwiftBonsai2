@@ -71,7 +71,7 @@ For bounded GGUF v3 metadata inspection after full size/SHA-256 verification:
 ./scripts/Read-Gguf.ps1 -ModelPath (Join-Path $data 'models/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-Q3_K_XL.gguf')
 ```
 
-The [GGUF tool](../tools/gguf/README.md) also supports explicit Prism census and
+The [GGUF tool](https://github.com/symbiogenesis/prism-inference/blob/main/tools/gguf/README.md) also supports explicit Prism census and
 streaming PQ2-to-PTQ1 export. `-GgufToolPath` selects a prebuilt executable;
 otherwise the wrapper builds pinned Rust sources in external temp storage.
 Metadata inspection skips tensor payloads; census and export read them.
@@ -277,12 +277,14 @@ ARM64 executable architecture and installs under
 `inference/<commit>/aarch64-pc-windows-msvc/` in the external data directory.
 `Get-Inference.ps1` and the launcher consume these binaries without invoking
 Cargo. Updating the runtime means reviewing a new release lock and provisioning
-that release. The crates.io packages provide the Rust source distribution;
+that release. For GGUF commands using a custom data directory, set
+`BONSAI_DATA_DIRECTORY` to the same absolute path, or supply `-GgufToolPath`.
+The crates.io packages provide the Rust source distribution;
 ordinary `cargo install` compiles that source.
 
 Run the broker from an external native working directory as above. The
-selection requires the original pinned Swift artifact and its verified Prism
-installation; it accepts no adapter, alternate model or inference overrides.
+selection requires the original pinned Swift model and verified Prism Inference
+release; it accepts no adapter, alternate model or inference overrides.
 The separately installed server executable is verified against the release lock
 and retained against replacement. Its child process
 receives the existing 12 GiB Job, 16 GiB available-memory admission, 4 GiB

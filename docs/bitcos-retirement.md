@@ -2,7 +2,7 @@
 
 BITCOS is retired; its implementation, tests and dedicated CI were removed.
 Current-weight PTQ1 is the supported lossless packing option. Shared PQ2/PTQ1
-utilities remain in [`bonsai-ternary`](../tools/ternary/README.md) for the exporter
+utilities remain in [`bonsai-ternary`](https://github.com/symbiogenesis/prism-inference/blob/main/tools/ternary/README.md) for the exporter
 and native Rust runtime.
 
 The actual Swift [census](../config/swift.pq2-census.json) contains **32.76154%

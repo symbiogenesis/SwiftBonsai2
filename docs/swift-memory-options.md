@@ -39,8 +39,8 @@ checkpoint sharing remains pending. Both are separate from weight packing.
 
 The [native layout](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-common.h)
 and [codec](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-quants.c)
-define the representation. The [Rust ternary crate](../tools/ternary/README.md)
-and [GGUF exporter](../tools/gguf/README.md) copy symbols/raw scales without
+define the representation. The [Rust ternary crate](https://github.com/symbiogenesis/prism-inference/blob/main/tools/ternary/README.md)
+and [GGUF exporter](https://github.com/symbiogenesis/prism-inference/blob/main/tools/gguf/README.md) copy symbols/raw scales without
 floating-point quantization, using bounded caller-owned buffers and exact PQ2
 reconstruction checks.
 

@@ -13,8 +13,8 @@ owned model storage, symbolic CPU backward graphs and three IQ encoders, with
 focused local evidence below. Complete hosted qualification remains open.
 The target is Snapdragon X Elite on Windows ARM64. Apple work is excluded.
 See the [migration guide](prism-upstream-tests.md),
-[71-source catalog](../tools/prism/upstream/catalog.json), and
-[migration inventory](../tools/prism/upstream/migration.json).
+[71-source catalog](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/catalog.json), and
+[migration inventory](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/migration.json).
 
 ## Completed and measured
 
@@ -71,7 +71,7 @@ These are production capability gaps exposed by the imported suite, separate
 from completing the suite's upstream reference qualification.
 
 - [x] Triage the retained `rust-results.json`: all 65 failures are indexed in
-  [runtime-triage.json](../tools/prism/upstream/runtime-triage.json), bound to
+  [runtime-triage.json](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/runtime-triage.json), bound to
   the retained artifact hash and tested revision. Sixty failures report
   unavailable production APIs or wrapper failures; five are measured
   decoder/loader defects. The inventory preserves the original failed verdicts.
@@ -86,7 +86,7 @@ from completing the suite's upstream reference qualification.
 - [ ] Provide the missing Rust backend operation API and run the same complete
   backend contracts against it. Backend planning currently reports unsupported
   Rust operations; it supplies no passing numerical qualification.
-- [ ] Ratchet [baseline.json](../tools/prism/upstream/baseline.json) after complete
+- [ ] Ratchet [baseline.json](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/baseline.json) after complete
   hosted evidence proves new passing source identities. Preserve the existing
   required green IDs. Of the four observed ordinary passes, PQ2 exercises the
   runtime; the others are a zero-assertion file workload, a model-data helper,

@@ -29,7 +29,7 @@ The sharing policy remains safe Rust; the external Prism/llama.cpp engine remain
 C/C++. The separate [released codec probe](../tools/codec-probe/README.md) confines
 dynamic DLL loading and codec calls to a reviewed native boundary. The C# build
 now checks only the embedded HTTP transport test helper. See the
-[Prism boundary](../tools/prism/README.md#native-boundary).
+[Prism boundary](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/README.md#native-boundary).
 
 Scoped unsafe allowances do not waive checks for unsafe operations in unsafe
 functions, invalid reference casts or mutable-static references. Unwinding FFI
@@ -394,6 +394,13 @@ these device verdicts. See [paired qualification](lora-qualification.md).
 
 GPU, NPU and native Rust promotion follow their [GPU](adreno-gpu-plan.md),
 [NPU](hexagon-npu-plan.md) and [native engine](native-rust-engine.md) plans.
+The inference implementation and its complete runtime/support suites now live in
+[Prism Inference](https://github.com/symbiogenesis/prism-inference). This checkout
+retains consumer and upstream conformance orchestration against the exact source
+archive pinned in `config/prism-inference.lock.json`. Runtime provisioning never
+compiles those sources. Both repositories require their main-branch Foundation
+gates for this extraction.
+
 All timing/profile captures and benchmarks remain CI-only. Backend bypass
 prevention, restricted inference identity/filesystem/egress, offline UI and daily
 security acceptance remain open even where development ownership checks pass.

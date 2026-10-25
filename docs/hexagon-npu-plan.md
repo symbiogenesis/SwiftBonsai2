@@ -2,7 +2,7 @@
 
 This expands [M5](../PLAN.md) for Snapdragon X Elite X1E-78-100. **All N0–N7
 exits are pending.** Current builds/launch policies use CPU execution, including
-scalar/NEON in the [Rust reference](../src/prism-runtime/README.md). No NPU
+scalar/NEON in the [Rust reference](https://github.com/symbiogenesis/prism-inference/blob/main/README.md). No NPU
 performance or deployment qualification is established.
 
 ## Scope and route selection

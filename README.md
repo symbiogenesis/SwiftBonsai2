@@ -24,6 +24,11 @@ This repository provides the setup and runtime tooling to run Swift on a
 **32 GB Snapdragon X Elite laptop with Windows ARM64**. A local creative
 assistant is being built around that setup.
 
+The native Rust engine lives in [Prism Inference](https://github.com/symbiogenesis/prism-inference).
+This project consumes a pinned prebuilt server; ordinary builds do not compile
+the inference engine. Provision it with `./scripts/Get-Inference.ps1 -DataDirectory <absolute-path>`.
+
+
 > [!IMPORTANT]
 > **Early development.** Model setup, CPU checks, and a development API are
 > available. Everyday chat and a user interface are still being built.
@@ -99,7 +104,7 @@ evaluation. See [benchmark context and current limits](docs/performance-expectat
 
 | Guide | What you'll find |
 | --- | --- |
-| [Native Rust CPU reference](src/prism-runtime/README.md) | Experimental token-level Prism execution and remaining parity gates |
+| [Prism Inference](https://github.com/symbiogenesis/prism-inference) | Independent Rust runtime, published crates and prebuilt server binaries |
 | [CPU SIMD plan](docs/simd-plan.md) | Packed NEON kernels, numerical contracts, safe dispatch, and qualification |
 | [Adreno GPU plan](docs/adreno-gpu-plan.md) | CPU-only status, native Vulkan bring-up, placement, and device qualification |
 | [Hexagon NPU plan](docs/hexagon-npu-plan.md) | Signed runtime access, exact Swift kernels/state, placement, and qualification |

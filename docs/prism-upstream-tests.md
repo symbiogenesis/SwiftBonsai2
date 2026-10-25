@@ -9,14 +9,14 @@ a prerequisite for the Swift-only engine MVP. Existing CI workflows and required
 green source identities are unchanged.
 
 [Foundation](../.github/workflows/foundation.yml) imports tests from the exact
-Prism archive in [source.lock.json](../tools/prism/source.lock.json), verifies its
+Prism archive in [source.lock.json](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/source.lock.json), verifies its
 length and SHA-256, and extracts it into fresh external storage. The reference
 build verifies the archive and records the explicit production corrections
 described below. No engine source or build tree is
 vendored here.
-The upstream MIT terms remain in [PRISM-LICENSE.txt](../tools/prism/PRISM-LICENSE.txt).
+The upstream MIT terms remain in [PRISM-LICENSE.txt](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/PRISM-LICENSE.txt).
 
-The [catalog](../tools/prism/upstream/catalog.json) records all **71** recursive
+The [catalog](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/catalog.json) records all **71** recursive
 `tests/**/test-*.cpp`, `.c`, `.py` and `.sh` source files, their full relative
 identities and SHA-256 digests, plus the test-registration CMake digest. This is
 a source-file coverage measure: files contain different numbers of assertions,
@@ -52,29 +52,29 @@ The Apple-only source remains visible as unsupported and outside the selected ta
 The pinned C++ saver advertises DSpark support but omits required metadata and
 global tensors. A focused load/save/reload reproduction confirms that its saved
 model cannot reload. The reference applies an explicit, hash-verified
-[production saver correction](../tools/prism/upstream/patches/dspark-saver.patch)
+[production saver correction](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/patches/dspark-saver.patch)
 to an external copy of that translation unit. The immutable archive stays
 unchanged, and receipts identify the patch and resulting source. All architecture
 save/load assertions remain required; this reference is qualified with the
 recorded production correction.
 The original Llama-BPE roundtrip also exposes inherited punctuation cleanup:
 token 24268 decodes from ` !$` to `!$`, then retokenizes into two tokens. The
-explicit [Llama 3 decoding correction](../tools/prism/upstream/patches/llama3-cleanup.patch)
+explicit [Llama 3 decoding correction](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/patches/llama3-cleanup.patch)
 preserves bytes for the canonical `llama3`, `llama-v3` and `llama-bpe` metadata
 names, following the publisher's tokenizer. Other pretokenizer aliases retain
 their behavior. Both fixes use verified external translation units, and every
 original assertion remains required.
-The [migration inventory](../tools/prism/upstream/migration.json) lists every
+The [migration inventory](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/migration.json) lists every
 source's assertions and prerequisites, bound to its pinned digest. Its port flags
 must match the executable adapter list; they are not test verdicts.
 
 The Rust harness, adapters and fixtures live together under
-[`src/prism-runtime/tests/upstream_prism/`](../src/prism-runtime/tests/upstream_prism/).
+[`src/prism-runtime/tests/upstream_prism/`](https://github.com/symbiogenesis/prism-inference/blob/main/tests/upstream_prism/).
 An explicit Cargo example target retains the `upstream_prism` command-line runner
 and its embedded unit tests, so the existing build and CI commands remain valid.
 
 Seventy Windows-applicable source contracts currently have safe Rust adapters in
-[harness.rs](../src/prism-runtime/tests/upstream_prism/harness.rs):
+[harness.rs](https://github.com/symbiogenesis/prism-inference/blob/main/tests/upstream_prism/harness.rs):
 
 - `test-tokenizer-0.py`, `test-tokenizer-0.sh` and `test-tokenizer-random.py`:
   independent safe Rust HF/SentencePiece references, all 26 original families,
@@ -258,7 +258,7 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   coverage. A CI-only diagnostic accepts grammar and input paths.
 - Both tokenizer roundtrip sources traverse every token and the entire original
   Unicode domain in two SPM and seven explicitly selected BPE fixtures. The
-  [versioned acceptance inputs](../tools/prism/upstream/BPE-ACCEPTANCE.md)
+  [versioned acceptance inputs](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/BPE-ACCEPTANCE.md)
   preserve both optional-flag branches, including the corrected original
   Llama-BPE input with `--ignore-merges`; other named variants remain
   available as diagnostics with their actual verdicts. Per fixture this retains 456,703 Unicode calls and
@@ -277,7 +277,7 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   state-file continuation, sequence isolation and host/device state copies,
   fragmented-cache restoration, and concurrent model/context decoding. Their
   TinyStories fixture has pinned length and SHA-256 in
-  [model-assets.lock.json](../tools/prism/upstream/model-assets.lock.json).
+  [model-assets.lock.json](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/model-assets.lock.json).
   Rust verifies its bytes before each schedule and controls individual native
   operations and progress callbacks through a bounded persistent process.
 - `test-json-schema-to-grammar.cpp`: all 269 mandatory conditions and the
@@ -430,7 +430,7 @@ including all694 tokenizer predicates and the complete GGUF replacement.
 Rust recorded one passing source,32 failed ports and38 unsupported sources.
 This provided the final evidence needed to retire the original C++ replay.
 
-[baseline.json](../tools/prism/upstream/baseline.json) holds the recorded minimum
+[baseline.json](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/baseline.json) holds the recorded minimum
 green count and every required green source ID. `RequiredReferencePassedIds`
 also preserves each already-passing C++ control independently of Rust progress.
 Its integer fraction is the

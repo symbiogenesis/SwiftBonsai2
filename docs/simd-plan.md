@@ -43,13 +43,13 @@ noncanonical PTQ1 bytes remain errors even at zero scale. Integer/differential
 fixtures cover packed bytes/offsets, lane extrema, deterministic unaligned blocks,
 immutable C++ codec bytes, bitwise matvec outputs, scale/quantization edges,
 ordered sums, fallback and error recovery. These fixtures establish synthetic
-parity, not full-model performance. See [tests](../src/prism-runtime/tests/simd.rs).
+parity, not full-model performance. See [tests](https://github.com/symbiogenesis/prism-inference/blob/main/tests/simd.rs).
 
 ## Existing contracts and first targets
 
-Start from [kernels.rs](../src/prism-runtime/src/kernels.rs),
-[graph.rs](../src/prism-runtime/src/graph.rs), the
-[ternary codec](../tools/ternary/src/lib.rs) and the pinned Prism source identities
+Start from [kernels.rs](https://github.com/symbiogenesis/prism-inference/blob/main/src/kernels.rs),
+[graph.rs](https://github.com/symbiogenesis/prism-inference/blob/main/src/graph.rs), the
+[ternary codec](https://github.com/symbiogenesis/prism-inference/blob/main/tools/ternary/src/lib.rs) and the pinned Prism source identities
 in the kernel module. [Swift metadata](../config/swift.metadata.json) and the
 [symbol census](../config/swift.pq2-census.json) describe the current PQ2 artifact.
 Q4_0/Q8_0/F16 kernel helpers do not establish loader support for every comparison
@@ -191,7 +191,7 @@ benefit criterion, retain evidence and reprofile before expanding the inventory.
 
 ## Validation and performance evidence
 
-Extend [kernel fixtures](../src/prism-runtime/tests/kernels.rs) and SIMD fixtures
+Extend [kernel fixtures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/kernels.rs) and SIMD fixtures
 with all codes, valid/invalid encodings, scales/ties/extremes, unaligned slices,
 block boundaries, awkward rows, malformed extents, format changes and error/rollback
 recovery. Incomplete packed blocks remain invalid. Verify non-ARM fallback and

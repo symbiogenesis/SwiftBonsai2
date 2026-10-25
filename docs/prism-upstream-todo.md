@@ -79,13 +79,13 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   native template bytes and tokenizer IDs (61/104/63 tokens), including supplied
   reasoning, Unicode and control spellings. BOS/EOS policy, the full 4K output
   reservation, overflow rejection and reuse after rejection are covered by
-  [retained captures](../src/prism-runtime/tests/fixtures/swift-prompt-parity.json).
+  [retained captures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/swift-prompt-parity.json).
 
 - [x] **M4 — Wire the Swift sampler and generation termination.** Connect the
   production sampler to the Swift runtime with temperature 1, top-p 0.95,
   top-k 20, min-p 0, repetition penalty 1 and presence/frequency penalties 0.
   Support Swift's full 248,320-token vocabulary within bounded allocations;
-  the [production candidate storage](../src/prism-runtime/src/sampling/upstream.rs)
+  the [production candidate storage](https://github.com/symbiogenesis/prism-inference/blob/main/src/sampling/upstream.rs)
   now admits the complete vocabulary before top-k filtering, with a hard
   1,048,576-candidate bound.
   Qualify Prism RNG/draw ordering and seeded sampling against the same logits;
@@ -98,7 +98,7 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   across four full-vocabulary distributions and four seeds, including native
   top-k ties. The verified native five-token EOG policy is applied; focused
   regressions cover cancellation/delivery rollback, stop draws and reset.
-  [Sampler captures](../src/prism-runtime/tests/fixtures/swift-sampler.json)
+  [Sampler captures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/swift-sampler.json)
   are independent of the driver's SplitMix64 reference sampler.
 
 - [ ] **M5 — Complete the minimal Swift session and broker wiring.** Reuse
@@ -162,8 +162,8 @@ The [deferred migration backlog and evidence](prism-migration-backlog.md)
 preserves the previous detailed contracts, focused implementation results,
 historical CI failures/repairs and pending qualification. The
 [conformance guide](prism-upstream-tests.md),
-[71-source catalog](../tools/prism/upstream/catalog.json) and
-[migration inventory](../tools/prism/upstream/migration.json) remain the record
+[71-source catalog](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/catalog.json) and
+[migration inventory](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/migration.json) remain the record
 of broader migration scope. Deferred does not mean passed, removed or complete.
 
 This is a work-priority change. Keep existing required green source identities,

@@ -1,6 +1,6 @@
 # Immutable LoRA B storage sharing
 
-The [Rust Prism overlay](../tools/prism/README.md) reduces CPU allocation for the
+The [Rust Prism overlay](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/README.md) reduces CPU allocation for the
 approved adapter by sharing identical immutable B payloads. Each target retains
 its tensor metadata/name over a same-context view of one allocation; aliases
 skip loading. Model weights, adapter bytes, scales and graph arithmetic remain
@@ -32,7 +32,7 @@ call sites and exception translation; optional cbindgen generates declarations
 outside the repository. Full inference replacement is separate
 [native Rust engine work](native-rust-engine.md).
 
-[source.lock.json](../tools/prism/source.lock.json) pins Prism commit
+[source.lock.json](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/source.lock.json) pins Prism commit
 `b87ca7225456b06b0975b8239c66b5aecf07e37c`, archive size **39,429,253 bytes**,
 SHA-256 `333ab1cc57bdb1be0b52f894fe8c6822eb7da667a239d7a587dce79283782e58`,
 and before/after loader/CMake hashes. This source is seven commits beyond the
@@ -41,14 +41,14 @@ and null-callback fixes. Those source fixes are absent from the pinned binary.
 Prism also diverges from ggml upstream; the pinned source does not contain all
 upstream fixes. See the [revision comparison](https://github.com/ggml-org/llama.cpp/compare/b87ca7225456b06b0975b8239c66b5aecf07e37c...1a24df163920a4744a95373d178d790b72a9bb2f).
 
-The [applicator](../tools/prism/Apply-Overlay.ps1) rejects source drift,
+The [applicator](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/Apply-Overlay.ps1) rejects source drift,
 ambiguous insertion points and repeat application. The
 [builder](../scripts/Build-PrismEngine.ps1) verifies the archive, creates a fresh
 external lane, applies the overlay and records source/compiler/configuration,
 Rust static library and binary identities. It never installs a runtime,
 loads a model or promotes a profile. `-PrepareOnly` still builds Rust and its
 header but needs no C++ compiler. Full ARM CPU builds require Clang. See the
-[crate's build commands](../tools/prism/README.md#build-and-checks).
+[crate's build commands](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/README.md#build-and-checks).
 
 Foundation CI builds the modified completion/server linked to Rust and the
 focused native ggml regression with Clang on Ubuntu ARM64, then runs correctness

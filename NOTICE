@@ -5,11 +5,10 @@ Original project code, documentation, and configuration are licensed under
 the Apache License, Version 2.0. See LICENSE.
 
 Third-party material retains its original license and attribution. This
-project includes Prism/ggml-derived codec and loader portions, including in
-tools/ternary, tools/codec-probe, tools/prism (including Apply-Overlay.ps1),
-and src/prism-runtime.
-Their upstream MIT terms are reproduced below and retained separately in
-tools/ternary/PRISM-NOTICE.txt and tools/prism/PRISM-LICENSE.txt.
+project retains the Prism/ggml-derived native codec probe in tools/codec-probe.
+The Rust runtime, codecs, GGUF tooling and storage adapter are maintained in
+https://github.com/symbiogenesis/prism-inference. Released binaries retain
+their bundled Apache and third-party notices.
 
 Upstream: https://github.com/PrismML-Eng/llama.cpp
 Codec reference: 73bfe6cc485554822f80c473a3c0c4f25e80f41b
@@ -45,5 +44,5 @@ Revision: 1829a7e73775eb829efe8fabf46a6680897a975b
 Source: src/fabric/http.rs and src/tensor/mod.rs
 Copyright (c) 2026 Tim Toole
 Licensed under the MIT License, reproduced in
-src/prism-runtime/CAMELID-LICENSE.txt.
+https://github.com/symbiogenesis/prism-inference/blob/main/CAMELID-LICENSE.txt.
 The exact Prism/ggml layouts and arithmetic remain the conformance authority.

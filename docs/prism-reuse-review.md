@@ -15,7 +15,7 @@ licenses and the pinned Prism contracts determine what can be reused.
 | [Prism/ggml, `b87ca72`](https://github.com/PrismML-Eng/llama.cpp/tree/b87ca7225456b06b0975b8239c66b5aecf07e37c), MIT | [`ggml.c`](https://github.com/PrismML-Eng/llama.cpp/blob/b87ca7225456b06b0975b8239c66b5aecf07e37c/ggml/src/ggml.c), [`ggml-cpu/ops.cpp`](https://github.com/PrismML-Eng/llama.cpp/blob/b87ca7225456b06b0975b8239c66b5aecf07e37c/ggml/src/ggml-cpu/ops.cpp) | Adapt original scalar CPU contracts for windows, relative positions, scalar addition, im2col backward and pooling backward. |
 
 Camelid attribution is retained in [NOTICE](../NOTICE) and its complete
-[MIT license](../src/prism-runtime/CAMELID-LICENSE.txt). Existing ggml attribution
+[MIT license](https://github.com/symbiogenesis/prism-inference/blob/main/CAMELID-LICENSE.txt). Existing ggml attribution
 covers the direct Prism adaptations. No framework dependency was added.
 
 ## Integrated behavior and focused evidence

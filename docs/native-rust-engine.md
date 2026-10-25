@@ -1,6 +1,6 @@
 # Native Rust Prism engine
 
-The experimental [Rust CPU reference](../src/prism-runtime/README.md) implements
+The experimental [Rust CPU reference](https://github.com/symbiogenesis/prism-inference/blob/main/README.md) implements
 verified loading, the Qwen35 hybrid graph and transactional token generation
 from token IDs, without a C/C++ inference library. Eligible Windows ARM64
 PQ2/PTQ1 operations use baseline NEON automatically; scalar remains the reference

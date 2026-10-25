@@ -40,10 +40,10 @@ declarations to adopt MPL. See its
 [license](https://github.com/mozilla/cbindgen/blob/v0.29.4/LICENSE) and the
 [MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
 
-The [native Rust reference](../src/prism-runtime/README.md) reuses local
+The [native Rust reference](https://github.com/symbiogenesis/prism-inference/blob/main/README.md) uses independently published
 GGUF/ternary/Prism crates. Its graph/scalar numerical code follows pinned Prism
 sources; notices are retained in
-[PRISM-LICENSE.txt](../src/prism-runtime/PRISM-LICENSE.txt) and root NOTICE.
+[PRISM-LICENSE.txt](https://github.com/symbiogenesis/prism-inference/blob/main/PRISM-LICENSE.txt) and root NOTICE.
 Optional `fearless_simd` 1.1.0 is pinned to source revision
 `b8a50a2c9ce03ee5384038ae8e6f45749662e2f6`, crate SHA-256
 `3296eb97d869113eaf148a6bdf01884e90b3828ad7ae2340b0f93362fc158611`

@@ -19,11 +19,11 @@ promotion gates. Pin implementation sources/licenses during R0 before reuse.
 | R5.2: checkpoints | Snapshots share sealed immutable KV pages and copy mutable tails plus complete convolution/GDN state | Qualify full-model process-memory benefit while retaining conservative snapshot budgets |
 | M6: speculation | Native decoder supports greedy and explicit seeded reference sampling, without a block verifier | Qualify Prism sampler/RNG parity and verification before suffix proposals and compact recurrent recovery; keep separate from ordinary decoding |
 
-Source map: [runtime](../src/prism-runtime/src/runtime.rs),
-[decoder API](../src/prism-runtime/src/lib.rs),
-[graph/state/transforms](../src/prism-runtime/src/graph.rs),
-[kernels](../src/prism-runtime/src/kernels.rs) and
-[codecs](../tools/ternary/src/lib.rs).
+Source map: [runtime](https://github.com/symbiogenesis/prism-inference/blob/main/src/runtime.rs),
+[decoder API](https://github.com/symbiogenesis/prism-inference/blob/main/src/lib.rs),
+[graph/state/transforms](https://github.com/symbiogenesis/prism-inference/blob/main/src/graph.rs),
+[kernels](https://github.com/symbiogenesis/prism-inference/blob/main/src/kernels.rs) and
+[codecs](https://github.com/symbiogenesis/prism-inference/blob/main/tools/ternary/src/lib.rs).
 
 Retained scratch is storage reuse, not proof that repeated computation or
 model-level allocation costs are removed; R4.2 remains open. Qwen35 state-only

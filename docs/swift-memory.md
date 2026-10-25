@@ -47,7 +47,7 @@ conversion is involved.
 
 Prism **PTQ1_0** uses group-128 base-3 packing. It is distinct from the
 weight-changing PTQ1.61 research algorithm and the older published PTQ model.
-The [Rust exporter](../tools/gguf/README.md), exposed through
+The [Rust exporter](https://github.com/symbiogenesis/prism-inference/blob/main/tools/gguf/README.md), exposed through
 [Export-SwiftPtq1.ps1](../scripts/Export-SwiftPtq1.ps1), preserves current symbols,
 raw scale bits, other tensor bytes and tokenizer/template/transform metadata.
 It verifies byte-identical PQ2 reconstruction for every converted batch.
