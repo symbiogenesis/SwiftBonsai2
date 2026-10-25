@@ -56,4 +56,38 @@ function Invoke-BonsaiPrismCaseBatch {
     return $completed | Sort-Object Ordinal
 }
 
-Export-ModuleMember -Function Invoke-BonsaiPrismCaseBatch
+function Invoke-BonsaiPrismTaskBatch {
+    <#
+    .SYNOPSIS
+    Runs independent module commands with bounded concurrency and ordered results.
+    .DESCRIPTION
+    Each task passes explicit parameters to a fresh module session. The invoked
+    command owns its absolute native working directories, evidence paths,
+    validation and native process cleanup.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][object[]]$Tasks,
+        [Parameter(Mandatory)][string]$ModulePath,
+        [Parameter(Mandatory)][string]$CommandName,
+        [ValidateRange(1, 2)][int]$Parallel = 2
+    )
+    $completed = @($Tasks | ForEach-Object -Parallel {
+        Set-StrictMode -Version Latest
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $true
+        $task = $_
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        $module = Import-Module -Name $using:ModulePath -PassThru -Force
+        $command = Get-Command -Name $using:CommandName -Module $module.Name -CommandType Function
+        $parameters = $task.Parameters
+        $value = & $command @parameters
+        $timer.Stop()
+        [pscustomobject]@{ Ordinal = $task.Ordinal; Id = $task.Id; Value = $value; ElapsedMilliseconds = $timer.ElapsedMilliseconds }
+    } -ThrottleLimit $Parallel)
+    if ($completed.Count -ne $Tasks.Count) { throw 'An independent Prism task did not complete.' }
+    return $completed | Sort-Object Ordinal
+}
+
+Export-ModuleMember -Function Invoke-BonsaiPrismCaseBatch, Invoke-BonsaiPrismTaskBatch

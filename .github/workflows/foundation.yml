@@ -369,6 +369,9 @@ jobs:
           foreach ($case in @('Scheduling', 'Identity', 'ProcessFailure')) {
             & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismRunner.ps1') -Case $case
           }
+          foreach ($case in @('Scheduling', 'ProcessFailure')) {
+            & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismTaskRunner.ps1') -Case $case
+          }
           foreach ($case in @('Catalog', 'Ratchet', 'Evidence')) {
             & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBaseline.ps1') -Case $case
           }
