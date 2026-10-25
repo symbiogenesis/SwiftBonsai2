@@ -542,6 +542,28 @@ pub(crate) fn inspect_retained(
     dialect: &str,
     memory_limit: Option<usize>,
 ) -> Result<Inspection> {
+    inspect_with_vocabulary_version(file, path, dialect, memory_limit, false)
+}
+
+pub(crate) fn inspect_vocabulary(
+    file: &mut File,
+    path: &Path,
+    memory_limit: usize,
+) -> Result<Inspection> {
+    inspect_with_vocabulary_version(file, path, "Stock", Some(memory_limit), true)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep descriptor validation and report assembly together in serialized order."
+)]
+fn inspect_with_vocabulary_version(
+    file: &mut File,
+    path: &Path,
+    dialect: &str,
+    memory_limit: Option<usize>,
+    legacy_vocabulary: bool,
+) -> Result<Inspection> {
     if dialect != "Stock" && dialect != PRISM_DIALECT {
         return Err(bad(
             "unknown dialect; use Stock or the explicitly pinned Prism dialect.",
@@ -560,10 +582,16 @@ pub(crate) fn inspect_retained(
     if parser.u32()? != 0x4655_4747 {
         return Err(bad("invalid magic."));
     }
-    if parser.u32()? != 3 {
+    let version = parser.u32()?;
+    if version != 3 && !(legacy_vocabulary && version == 2) {
         return Err(bad("only little-endian version 3 is supported."));
     }
     let tensor_count = parser.u64()?;
+    if version == 2 && tensor_count != 0 {
+        return Err(bad(
+            "legacy vocabulary files must not contain model tensors.",
+        ));
+    }
     let metadata_count = parser.u64()?;
     if tensor_count > 100_000 || metadata_count > 10_000 {
         return Err(bad("tensor/KV count exceeds inspection limit."));

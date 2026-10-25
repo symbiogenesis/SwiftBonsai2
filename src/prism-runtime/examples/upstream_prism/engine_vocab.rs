@@ -12,7 +12,7 @@ use std::path::Path;
 use std::thread;
 use std::time::Instant;
 
-use bonsai_gguf::{Metadata, MetadataArray, VerifiedModel};
+use bonsai_gguf::{Metadata, MetadataArray};
 
 use bonsai_prism_runtime::tokenizer::gguf::GgufTokenizer;
 
@@ -119,7 +119,7 @@ pub(super) fn metadata(path: &Path) -> Result<Metadata> {
     for byte in hash.finalize() {
         write!(digest, "{byte:02x}")?;
     }
-    Ok(VerifiedModel::open(path, "Stock", bytes, &digest, 128 * 1024 * 1024)?.into_metadata())
+    bonsai_gguf::read_vocabulary(path, bytes, &digest, 128 * 1024 * 1024)
 }
 
 struct Objects {

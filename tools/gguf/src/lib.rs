@@ -99,6 +99,26 @@ fn verify(file: &mut File, expected_bytes: u64, expected_sha256: &str) -> Result
     Ok(())
 }
 
+/// Verifies and retains bounded vocabulary metadata, including legacy GGUF v2.
+///
+/// Version 2 is admitted only for files without model tensors. Version 3 retains
+/// the ordinary stock descriptor checks; no tensor payload is read. Verified
+/// model execution and artifact inspection retain their strict v3 contract.
+///
+/// # Errors
+/// Rejects identity mismatches, unsupported versions, v2 model tensors, malformed
+/// metadata, invalid extents and metadata exceeding `memory_limit`.
+pub fn read_vocabulary(
+    path: &Path,
+    expected_bytes: u64,
+    expected_sha256: &str,
+    memory_limit: usize,
+) -> Result<Metadata> {
+    let mut file = open_read(path)?;
+    verify(&mut file, expected_bytes, expected_sha256)?;
+    Ok(inspect::inspect_vocabulary(&mut file, path, memory_limit)?.metadata)
+}
+
 /// A bounded model header and the exact file handle whose identity was checked.
 ///
 /// Unlike the inspection report, this retains tokenizer strings and complete
