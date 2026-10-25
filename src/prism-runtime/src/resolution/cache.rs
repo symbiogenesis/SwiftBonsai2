@@ -7,6 +7,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Component, Path, PathBuf};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
@@ -82,7 +83,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     }
     Ok(outcome?)
 }
-fn decode_response(bytes: &[u8]) -> Result<(u16, Vec<u8>)> {
+fn decode_response(bytes: &[u8], max_body: usize) -> Result<(u16, Vec<u8>)> {
     let end = bytes
         .windows(4)
         .position(|w| w == b"\r\n\r\n")
@@ -91,20 +92,56 @@ fn decode_response(bytes: &[u8]) -> Result<(u16, Vec<u8>)> {
         return Err(invalid("HTTP response headers exceed bound"));
     }
     let header = std::str::from_utf8(&bytes[..end])?;
-    let status = header
-        .lines()
+    let mut lines = header.split("\r\n");
+    let mut status_line = lines
         .next()
-        .and_then(|line| line.split_whitespace().nth(1))
         .ok_or_else(|| invalid("HTTP status missing"))?
-        .parse()?;
+        .split_whitespace();
+    let version = status_line.next().unwrap_or("");
+    let code = status_line.next().unwrap_or("");
+    if !matches!(version, "HTTP/1.0" | "HTTP/1.1")
+        || code.len() != 3
+        || !code.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(invalid("invalid HTTP status line"));
+    }
+    let status = code.parse()?;
+    let mut content_length = None;
+    let mut chunked = false;
+    for line in lines {
+        let (key, value) = line
+            .split_once(':')
+            .filter(|(key, value)| valid_header(key, value))
+            .ok_or_else(|| invalid("invalid HTTP header"))?;
+        let value = value.trim();
+        if key.eq_ignore_ascii_case("content-length") {
+            if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(invalid("invalid HTTP Content-Length"));
+            }
+            let length = value.parse::<usize>()?;
+            if length > max_body || content_length.replace(length).is_some() {
+                return Err(invalid("HTTP Content-Length exceeds bound or is repeated"));
+            }
+        } else if key.eq_ignore_ascii_case("transfer-encoding") {
+            if chunked || !value.eq_ignore_ascii_case("chunked") {
+                return Err(invalid("unsupported or repeated HTTP Transfer-Encoding"));
+            }
+            chunked = true;
+        }
+    }
+    if chunked && content_length.is_some() {
+        return Err(invalid("ambiguous HTTP response framing"));
+    }
     let body = &bytes[end + 4..];
-    let chunked = header.lines().any(|line| {
-        line.split_once(':').is_some_and(|(key, value)| {
-            key.eq_ignore_ascii_case("transfer-encoding")
-                && value.trim().eq_ignore_ascii_case("chunked")
-        })
-    });
+    // Content-Length framing and decoded-body bounds adapt Camelid's
+    // src/fabric/http.rs parse_response/dechunk at 1829a7e73775eb829efe8fabf46a6680897a975b.
+    // Copyright (c) 2026 Tim Toole, MIT; see the root NOTICE.
     if !chunked {
+        if body.len() > max_body || content_length.is_some_and(|length| body.len() != length) {
+            return Err(invalid(
+                "HTTP body exceeds bound or differs from Content-Length",
+            ));
+        }
         return Ok((status, body.to_vec()));
     }
     let mut result = Vec::new();
@@ -115,16 +152,21 @@ fn decode_response(bytes: &[u8]) -> Result<(u16, Vec<u8>)> {
             .position(|w| w == b"\r\n")
             .ok_or_else(|| invalid("HTTP chunk header truncated"))?
             + at;
-        let length = usize::from_str_radix(
-            std::str::from_utf8(&body[at..end])?
-                .split(';')
-                .next()
-                .unwrap_or(""),
-            16,
-        )?;
+        let size = std::str::from_utf8(&body[at..end])?
+            .split(';')
+            .next()
+            .unwrap_or("");
+        if size.is_empty() || !size.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(invalid("invalid HTTP chunk size"));
+        }
+        let length = usize::from_str_radix(size, 16)?;
         at = end + 2;
         if length == 0 {
+            validate_trailers(&body[at..])?;
             break;
+        }
+        if length > max_body.saturating_sub(result.len()) {
+            return Err(invalid("decoded HTTP body exceeds bound"));
         }
         let end = at
             .checked_add(length)
@@ -139,6 +181,45 @@ fn decode_response(bytes: &[u8]) -> Result<(u16, Vec<u8>)> {
         at = after;
     }
     Ok((status, result))
+}
+fn valid_header(key: &str, value: &str) -> bool {
+    !key.is_empty()
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
+        && value
+            .bytes()
+            .all(|byte| byte == b'\t' || (byte >= b' ' && byte != 127))
+}
+fn validate_trailers(bytes: &[u8]) -> Result<()> {
+    if bytes.len() > MAX_HEADER {
+        return Err(invalid("HTTP trailers exceed bound"));
+    }
+    let trailers = std::str::from_utf8(bytes)?;
+    let mut lines = trailers.split("\r\n");
+    loop {
+        let line = lines
+            .next()
+            .ok_or_else(|| invalid("HTTP terminal chunk lacks trailer terminator"))?;
+        if line.is_empty() {
+            return if lines.next() == Some("") && lines.next().is_none() {
+                Ok(())
+            } else {
+                Err(invalid(
+                    "HTTP trailers truncated or followed by unexpected bytes",
+                ))
+            };
+        }
+        let (key, value) = line
+            .split_once(':')
+            .ok_or_else(|| invalid("invalid HTTP trailer"))?;
+        if !valid_header(key, value)
+            || key.eq_ignore_ascii_case("content-length")
+            || key.eq_ignore_ascii_case("transfer-encoding")
+        {
+            return Err(invalid("invalid HTTP trailer"));
+        }
+    }
 }
 fn valid_token(token: &str) -> bool {
     (37..=256).contains(&token.len())
@@ -170,15 +251,30 @@ fn http_get(url: &str, token: &str, depth: usize) -> Result<Vec<u8>> {
         if valid_token(token) {
             command.args(["--header", &format!("Authorization: Bearer {token}")]);
         }
-        let output = command
+        let mut child = command
             .arg("--")
             .arg(url)
             .current_dir(std::env::temp_dir())
-            .output()?;
-        if !output.status.success() || u64::try_from(output.stdout.len())? > MAX_HTTP {
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?;
+        let mut bytes = Vec::new();
+        let Some(stdout) = child.stdout.take() else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(invalid("HTTPS response pipe missing"));
+        };
+        let read = stdout.take(MAX_HTTP + 1).read_to_end(&mut bytes);
+        let exceeded = u64::try_from(bytes.len())? > MAX_HTTP;
+        if read.is_err() || exceeded {
+            let _ = child.kill();
+        }
+        let status = child.wait()?;
+        read?;
+        if !status.success() || exceeded {
             return Err(invalid("HTTPS request failed or exceeded body bound"));
         }
-        return Ok(output.stdout);
+        return Ok(bytes);
     }
     let authority = url
         .strip_prefix("http://")
@@ -222,7 +318,7 @@ fn http_get(url: &str, token: &str, depth: usize) -> Result<Vec<u8>> {
     if u64::try_from(bytes.len())? > MAX_HTTP + u64::try_from(MAX_HEADER)? {
         return Err(invalid("HTTP response exceeds bound"));
     }
-    let (status, body) = decode_response(&bytes)?;
+    let (status, body) = decode_response(&bytes, usize::try_from(MAX_HTTP)?)?;
     if status != 200 {
         return Err(invalid(format!("HTTP GET failed with status {status}")));
     }
@@ -478,6 +574,35 @@ impl Resolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
+
+    fn with_loopback<T>(response: &[u8], request: impl FnOnce(&str) -> Result<T>) -> Result<T> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let address = listener.local_addr()?;
+        let response = response.to_vec();
+        let server = std::thread::spawn(move || -> std::io::Result<()> {
+            let (mut stream, _) = listener.accept()?;
+            stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 512];
+            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let count = stream.read(&mut buffer)?;
+                if count == 0 || request.len() > MAX_HEADER {
+                    return Err(std::io::Error::other("invalid test request"));
+                }
+                request.extend_from_slice(&buffer[..count]);
+            }
+            stream.write_all(&response)
+        });
+        let body = request(&format!("http://{address}/model.gguf"));
+        server
+            .join()
+            .map_err(|_| invalid("loopback response worker failed"))??;
+        body
+    }
+    fn loopback_get(response: &[u8]) -> Result<Vec<u8>> {
+        with_loopback(response, |url| http_get(url, "", 0))
+    }
     #[test]
     fn hostile_repository_paths_and_hashes_are_rejected() {
         assert!(valid_repo("owner/model-v1.0"));
@@ -498,12 +623,91 @@ mod tests {
     }
     #[test]
     fn chunked_binary_response_is_decoded_without_text_conversion() -> Result<()> {
-        let (_, bytes) = decode_response(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\na\0b\r\n2;ext=x\r\ncd\r\n0\r\n\r\n")?;
+        let (_, bytes) = decode_response(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\na\0b\r\n2;ext=x\r\ncd\r\n0\r\n\r\n", 5)?;
         assert_eq!(bytes, b"a\0bcd");
         assert!(
-            decode_response(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n9\r\nshort\r\n")
-                .is_err()
+            decode_response(
+                b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n9\r\nshort\r\n",
+                64
+            )
+            .is_err()
         );
+        Ok(())
+    }
+    #[test]
+    fn live_http_preserves_binary_content_and_complete_chunk_trailers() -> Result<()> {
+        assert_eq!(
+            loopback_get(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\na\0b")?,
+            b"a\0b"
+        );
+        assert_eq!(
+            loopback_get(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3;ext=x\r\na\0b\r\n0\r\nDigest: opaque\r\n\r\n")?,
+            b"a\0b"
+        );
+        assert_eq!(
+            loopback_get(b"HTTP/1.0 200 OK\r\n\r\nclose-delimited")?,
+            b"close-delimited"
+        );
+        Ok(())
+    }
+    #[test]
+    fn live_http_rejects_truncated_oversized_or_ambiguous_framing() {
+        for response in [
+            &b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nabc"[..],
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nabc",
+            b"HTTP/1.1 200 OK\r\nContent-Length: 67108865\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\na",
+            b"HTTP/1.1 200 OK\r\nContent-Length: invalid\r\n\r\na",
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\na",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n0\r\n",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\naXX0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nDigest: incomplete",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nContent-Length: 0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n+1\r\na\r\n0\r\n\r\n",
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n",
+            b"NOT-HTTP 200 OK\r\nContent-Length: 0\r\n\r\n",
+        ] {
+            assert!(loopback_get(response).is_err(), "accepted {response:?}");
+        }
+    }
+    #[test]
+    fn decoded_body_limit_applies_to_every_framing_mode() {
+        for response in [
+            &b"HTTP/1.1 200 OK\r\n\r\nabc"[..],
+            b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabc",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nab\r\n1\r\nc\r\n0\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nffffffffffffffff\r\n",
+        ] {
+            assert!(decode_response(response, 2).is_err());
+        }
+    }
+    #[test]
+    fn rejected_transfer_never_publishes_a_cached_model() -> Result<()> {
+        let cache = std::env::temp_dir().join(format!(
+            "prism-http-{}-{}",
+            std::process::id(),
+            NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+        ));
+        assert!(!cache.exists());
+        with_loopback(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\npartial",
+            |url| {
+                let resolver = Resolver::new(cache.clone(), "http://127.0.0.1/".into())?;
+                let file = File {
+                    path: "model.gguf".into(),
+                    url: url.into(),
+                    local_path: cache.join("blobs").join("model"),
+                    final_path: cache.join("snapshots").join("model.gguf"),
+                    ..File::default()
+                };
+                assert!(resolver.finalize(&file, false, "").is_err());
+                assert!(!file.local_path.exists());
+                assert!(!file.final_path.exists());
+                Ok(())
+            },
+        )?;
+        assert!(!cache.exists());
         Ok(())
     }
 }
