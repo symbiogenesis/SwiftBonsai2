@@ -35,6 +35,20 @@ fn native_k_blocks_decode_and_dot_without_requantizing_activations() -> Result<(
                 .ok_or_else(|| std::io::Error::other("fixture count missing"))?,
         )?;
         let weights = bytes(&case["OutputHex"])?;
+        if case["InputHex"].is_string() {
+            let input = bytes(&case["InputHex"])?
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| f32::from_le_bytes(*bytes))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                kernels::quantize_row(kind, &input)?,
+                weights,
+                "quantize {kind}: {}",
+                case["Name"]
+            );
+        }
         let tensor = Tensor {
             name: case["Name"].to_string(),
             kind,
@@ -62,4 +76,14 @@ fn native_k_blocks_decode_and_dot_without_requantizing_activations() -> Result<(
         );
     }
     Ok(())
+}
+
+#[test]
+fn k_quantizers_reject_partial_nonfinite_and_overflowing_blocks() {
+    for kind in 10..=14 {
+        assert!(kernels::quantize_row(kind, &[0.0; 255]).is_err());
+        assert!(kernels::quantize_row(kind, &[f32::NAN; 256]).is_err());
+        assert!(kernels::quantize_row(kind, &[f32::INFINITY; 256]).is_err());
+        assert!(kernels::quantize_row(kind, &[f32::MAX; 256]).is_err());
+    }
 }

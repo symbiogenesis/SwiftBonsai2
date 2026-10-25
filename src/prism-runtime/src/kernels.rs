@@ -407,6 +407,9 @@ fn quantize_ternary(input: &[f32]) -> Result<[u8; 34]> {
     reason = "Preserve native reference quantizer multiply-then-add rounding."
 )]
 pub fn quantize_row(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
+    if matches!(kind, 10..=14) {
+        return kquants::quantize(kind, input);
+    }
     let (group, bytes) = layout(kind)?;
     if input.is_empty()
         || !input.len().is_multiple_of(group)

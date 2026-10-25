@@ -15,6 +15,11 @@
 
 use super::{Q8KBlock, finite, scale};
 use crate::{Result, invalid};
+mod encode;
+
+pub(super) fn quantize(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
+    encode::quantize(kind, input)
+}
 
 pub(super) const fn block_bytes(kind: u32) -> Option<usize> {
     match kind {
