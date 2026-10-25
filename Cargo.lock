@@ -134,7 +134,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "spm_precompiled",
  "tokenizers",
+ "unicode-normalization-alignments",
 ]
 
 [[package]]
