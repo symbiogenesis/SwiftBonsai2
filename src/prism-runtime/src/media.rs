@@ -6,6 +6,8 @@
 
 use crate::{Result, invalid};
 
+pub mod chunks;
+
 /// A multimodal input part with independently owned metadata.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Part {
