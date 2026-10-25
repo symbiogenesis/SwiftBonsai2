@@ -10,16 +10,22 @@ batching local filters.
 ## Runner gates
 
 [Foundation](../.github/workflows/foundation.yml) runs only on `main` pushes or
-manual dispatch. Its final `foundation` gate requires every app group to pass;
+manual dispatch, skipping documentation-only pushes (root Markdown and `docs/`).
+Its final `foundation` gate requires every app group to pass;
 failed, cancelled or skipped groups are not accepted.
 
 | Group | Coverage |
 | --- | --- |
 | Broker core and maintenance | The six registered app packages: broker, artifact verification, CPU policy, Windows process/credentials and maintenance CLI |
 | Standards | Pinned PowerShell analysis, script contracts and strict embedded-C# analyzers |
-| Lifecycle | Owned Windows Job lifetime, handles, credentials and process cleanup |
-| Foundation/native scripts | Download/provisioning, invocation plans and native-process wrapper contracts |
+| Foundation/native scripts | Download/provisioning, invocation plans, native-process wrappers and packaged supervisor contracts |
 | Released-runtime integration | Pinned archive/install verification, profile/adapter/admission policy, released GGUF wrappers and server-help switching |
+
+The maintenance lane owns Windows Job lifetime/resource-limit tests and builds
+the maintenance CLI once. Script and released-runtime jobs download that run's
+checked executable and verify its revision, digest and ARM64 identity. They do
+not compile another copy. The standards job alone installs the .NET SDK; the
+script lanes use PowerShell's bundled compiler for `Add-Type` helpers.
 
 The workspace and [package registry](../config/rust-packages.psd1) contain only
 these app packages. Upstream source/backend catalogs, baseline policy, codec
@@ -34,6 +40,7 @@ The optional [LoRA device workflow](../.github/workflows/swift-lora-qualificatio
 remains here because it qualifies the application's selected model/profile. It
 requires the owner-managed runner, reviewed artifacts and explicit dispatch;
 hosted app checks do not establish throughput or creative quality.
+Its standalone tool build remains separate from Foundation's artifact handoff.
 
 ## Standards
 
@@ -73,6 +80,14 @@ Select a regression relevant to the change, such as
 `./tests/Test-NativeProcess.ps1 -Case Capture`. Direct Cargo tests should name one
 regression and use an external target/working directory. `-FullTests` is reserved
 for main-branch GitHub Actions; benchmark execution is always CI-only.
+
+For prebuilt runtime promotion tooling, use
+`./tests/Test-Inference.ps1 -Case ReleaseLock`. It checks candidate generation
+and rejection with synthetic bundles without loading a model. The normal
+Foundation `-Case All` invocation includes that case. Follow the
+[runtime lock update procedure](development-guide.md#prepare-a-runtime-lock-update)
+for independent source/run review and real checked artifacts; generating a
+candidate alone does not promote the compiled runtime pin.
 
 ## Acceptance limits
 

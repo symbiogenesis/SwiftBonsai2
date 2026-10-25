@@ -2,6 +2,9 @@ name: Foundation
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,15 +36,6 @@ jobs:
         uses: ./.github/actions/rust-toolchain
         with:
           toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
-      - name: Identify the native Rust toolchain in CI
-        shell: pwsh
-        working-directory: ${{ runner.temp }}
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          $identity = rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV
-          if ($LASTEXITCODE -or $identity -notcontains 'host: aarch64-pc-windows-msvc') { throw 'Expected native ARM64 Rust.' }
-          $identity
       - name: Select external Cargo cache paths
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -99,12 +93,28 @@ jobs:
           name: broker-checks-${{ matrix.lane }}-${{ github.run_id }}
           path: ${{ env.BROKER_CHECK_EVIDENCE }}
           if-no-files-found: error
-      - name: Package the native Windows ARM64 maintenance CLI
+      - name: Stage the checked maintenance CLI and revision receipt
+        if: matrix.lane == 'maintenance'
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $package = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-CheckedTools'
+          [void][IO.Directory]::CreateDirectory($package)
+          $tool = Join-Path $package 'bonsai-tools.exe'
+          Copy-Item -LiteralPath (Join-Path $env:CARGO_TARGET_DIR 'release/bonsai-tools.exe') -Destination $tool
+          @{
+            SchemaVersion = 1
+            Revision = $env:GITHUB_SHA
+            Sha256 = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package 'receipt.json')
+      - name: Share the checked native Windows ARM64 maintenance CLI
         if: matrix.lane == 'maintenance'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bonsai-tools-windows-arm64-${{ github.sha }}
-          path: ${{ env.CARGO_TARGET_DIR }}/release/bonsai-tools.exe
+          path: ${{ runner.temp }}/SwiftBonsai-CheckedTools
           if-no-files-found: error
   standards:
     if: github.ref == 'refs/heads/main'
@@ -148,7 +158,7 @@ jobs:
   # Preserve the required check name and reject failure or skipping in any lane.
   foundation:
     if: always() && github.ref == 'refs/heads/main'
-    needs: [broker, standards, foundation-tests, lifecycle, release-integration]
+    needs: [broker, standards, foundation-tests, release-integration]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 2
     steps:
@@ -161,33 +171,10 @@ jobs:
             echo "$JOB_RESULTS"
             exit 1
           fi
-  lifecycle:
-    if: github.ref == 'refs/heads/main'
-    runs-on: windows-11-arm
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Reuse maintenance tools and the shared lifecycle probe build cache
-        uses: ./.github/actions/bonsai-tools
-        with:
-          require-compiler: 'true'
-      - name: Windows owned process lifecycle and resource limits
-        shell: pwsh
-        run: |
-          ./tests/Test-ProcessLifecycle.ps1 -Case Lifetime -TargetDirectory $env:BONSAI_TOOLS_TARGET
-          ./tests/Test-ProcessLifecycle.ps1 -Case Limits -TargetDirectory $env:BONSAI_TOOLS_TARGET
-          ./tests/Test-ProcessLifecycle.ps1 -Case LaunchContract -TargetDirectory $env:BONSAI_TOOLS_TARGET
-      - name: Packaged supervisor caller death and failure contracts
-        shell: pwsh
-        run: |
-          foreach ($case in @('ParentDeath', 'Timeout', 'ExitCode')) {
-            ./tests/Test-CompletionSupervision.ps1 -Case $case -ToolPath $env:BONSAI_TOOLS_PATH
-          }
   foundation-tests:
     name: scripts / ${{ matrix.lane }}
     if: github.ref == 'refs/heads/main'
+    needs: broker
     runs-on: windows-11-arm
     timeout-minutes: 15
     strategy:
@@ -198,12 +185,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install the Foundation test SDK
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: '10.0.4xx'
-      - name: Build packaged maintenance tools once for script checks
-        uses: ./.github/actions/bonsai-tools
+      - name: Use the maintenance CLI checked by the broker job
+        uses: ./.github/actions/use-bonsai-tools
       - name: Full foundation suite
         if: matrix.lane == 'foundation'
         shell: pwsh
@@ -233,6 +216,13 @@ jobs:
         run: |
           foreach ($case in @('Capture','Failure','Environment','Timeout','Drain')) {
             ./tests/Test-NativeProcess.ps1 -Case $case
+          }
+      - name: Packaged supervisor caller death and failure contracts
+        if: matrix.lane == 'native'
+        shell: pwsh
+        run: |
+          foreach ($case in @('ParentDeath', 'Timeout', 'ExitCode')) {
+            ./tests/Test-CompletionSupervision.ps1 -Case $case -ToolPath $env:BONSAI_TOOLS_PATH
           }
       - name: Engine build scheduling correctness
         if: matrix.lane == 'native'
@@ -275,14 +265,15 @@ jobs:
           $plan | ConvertTo-Json
   release-integration:
     if: github.ref == 'refs/heads/main'
+    needs: broker
     runs-on: windows-11-arm
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Reuse packaged maintenance tools
-        uses: ./.github/actions/bonsai-tools
+      - name: Use the maintenance CLI checked by the broker job
+        uses: ./.github/actions/use-bonsai-tools
       - name: Swift assessment policy and pinned ARM64 runtime
         shell: pwsh
         run: |

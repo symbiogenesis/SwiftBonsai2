@@ -1,9 +1,5 @@
 name: Reuse packaged Bonsai tools
 description: Reuse an exact native Windows ARM64 CLI; build it only when its inputs change.
-inputs:
-  require-compiler:
-    description: Also prepare the Rust compiler and Cargo target cache for subsequent builds.
-    default: 'false'
 runs:
   using: composite
   steps:
@@ -12,12 +8,10 @@ runs:
       working-directory: ${{ runner.temp }}
       env:
         TOOLS_SOURCE_ID: ${{ hashFiles('Cargo.toml', 'Cargo.lock', '**/Cargo.toml', 'tools/bonsai/**', 'src/artifacts/**', 'src/cpu-policy/**', 'src/windows-*/**', '.cargo/**', 'rust-toolchain.toml', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/**', '.github/actions/bonsai-tools/action.yml') }}
-        REQUIRE_COMPILER: ${{ inputs.require-compiler }}
         RUNNER_ENVIRONMENT: ${{ runner.environment }}
       run: |
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'
-        if ($env:REQUIRE_COMPILER -cnotin @('true', 'false')) { throw 'require-compiler must be true or false.' }
         if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') { throw 'Packaged tools require native Windows ARM64.' }
         if ($env:TOOLS_SOURCE_ID -cnotmatch '^[a-f0-9]{64}$') { throw 'An exact source identity is required.' }
         if ($env:RUNNER_ENVIRONMENT -ceq 'github-hosted' -and (-not $env:ImageOS -or -not $env:ImageVersion)) { throw 'Hosted executable caching requires the runner image identity.' }
@@ -37,12 +31,12 @@ runs:
         # No fallback keys: skipping compilation requires identical build inputs.
         key: bonsai-tools-executable-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-${{ env.BONSAI_TOOLS_SOURCE_ID }}
     - name: Reuse the pinned native Rust compiler when compilation is needed
-      if: steps.executable-cache.outputs.cache-hit != 'true' || inputs.require-compiler == 'true'
+      if: steps.executable-cache.outputs.cache-hit != 'true'
       uses: ./.github/actions/rust-toolchain
       with:
         toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
     - name: Reuse Cargo downloads and native tool build artifacts
-      if: steps.executable-cache.outputs.cache-hit != 'true' || inputs.require-compiler == 'true'
+      if: steps.executable-cache.outputs.cache-hit != 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |

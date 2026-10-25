@@ -1,0 +1,26 @@
+name: Use checked Bonsai tools
+description: Download the current run's checked Windows ARM64 CLI and verify its revision and digest.
+runs:
+  using: composite
+  steps:
+    - name: Download the maintenance lane's checked CLI
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: bonsai-tools-windows-arm64-${{ github.sha }}
+        path: ${{ runner.temp }}/SwiftBonsai-CheckedTools
+    - name: Verify and select the checked CLI
+      shell: pwsh
+      working-directory: ${{ runner.temp }}
+      run: |
+        Set-StrictMode -Version Latest
+        $ErrorActionPreference = 'Stop'
+        $package = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-CheckedTools'
+        $tool = Join-Path $package 'bonsai-tools.exe'
+        $receipt = Get-Content -LiteralPath (Join-Path $package 'receipt.json') -Raw | ConvertFrom-Json
+        if ($receipt.SchemaVersion -ne 1 -or $receipt.Revision -cne $env:GITHUB_SHA -or
+            $receipt.Sha256 -cne (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()) {
+          throw 'Checked maintenance CLI revision or digest differs.'
+        }
+        Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1')
+        Assert-Arm64PE -Path $tool
+        "BONSAI_TOOLS_PATH=$tool" >> $env:GITHUB_ENV
