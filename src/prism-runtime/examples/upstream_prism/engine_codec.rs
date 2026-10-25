@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use bonsai_prism_runtime::kernels::{packed_dot, row};
+use bonsai_prism_runtime::kernels::{packed_dot, quantize_row, row};
 use bonsai_prism_runtime::model::Tensor;
 use serde_json::{Value, json};
 
@@ -30,11 +30,10 @@ fn bytes(value: &Value) -> Result<Vec<u8>> {
         .collect()
 }
 
-fn hex(values: &[f32]) -> String {
+fn byte_hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8] = b"0123456789abcdef";
-    values
+    bytes
         .iter()
-        .flat_map(|value| value.to_le_bytes())
         .flat_map(|byte| {
             [
                 char::from(DIGITS[usize::from(byte >> 4)]),
@@ -42,6 +41,32 @@ fn hex(values: &[f32]) -> String {
             ]
         })
         .collect()
+}
+
+fn hex(values: &[f32]) -> String {
+    byte_hex(
+        &values
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn header(operation: &Value) -> Result<(u32, usize)> {
+    let kind = u32::try_from(
+        operation["TypeId"]
+            .as_u64()
+            .ok_or_else(|| invalid("Rust codec TypeId must be unsigned"))?,
+    )?;
+    let count = usize::try_from(
+        operation["Count"]
+            .as_u64()
+            .ok_or_else(|| invalid("Rust codec Count must be unsigned"))?,
+    )?;
+    if count == 0 || count > 8192 {
+        return Err(invalid("Rust codec Count outside bound"));
+    }
+    Ok((kind, count))
 }
 
 pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
@@ -54,31 +79,39 @@ pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
     if operations.is_empty() || operations.len() > 128 {
         return Err(invalid("Rust codec operation count outside bound"));
     }
-    if operations.iter().any(|operation| {
-        matches!(
-            operation["Kind"].as_str(),
-            Some("codec-inventory" | "codec-quantize")
-        )
-    }) {
+    if operations
+        .iter()
+        .any(|operation| matches!(operation["Kind"].as_str(), Some("codec-inventory")))
+    {
         return Ok(None);
     }
     let results = operations
         .iter()
         .map(|operation| match operation["Kind"].as_str() {
-            Some("codec-vec-dot") => {
-                let kind = u32::try_from(
-                    operation["TypeId"]
-                        .as_u64()
-                        .ok_or_else(|| invalid("Rust codec TypeId must be unsigned"))?,
-                )?;
-                let count = usize::try_from(
-                    operation["Count"]
-                        .as_u64()
-                        .ok_or_else(|| invalid("Rust codec Count must be unsigned"))?,
-                )?;
-                if count == 0 || count > 8192 {
-                    return Err(invalid("Rust codec Count outside bound"));
+            Some("codec-quantize") => {
+                let (kind, count) = header(operation)?;
+                if !matches!(operation["Mode"].as_str(), Some("cpu" | "reference")) {
+                    return Err(invalid(
+                        "Rust codec Count or quantization Mode outside bound",
+                    ));
                 }
+                let raw = bytes(&operation["DataHex"])?;
+                if count.checked_mul(4) != Some(raw.len()) {
+                    return Err(invalid("Rust codec float input extent differs"));
+                }
+                let values = raw
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|bytes| f32::from_le_bytes(*bytes))
+                    .collect::<Vec<_>>();
+                Ok(match quantize_row(kind, &values) {
+                    Ok(bytes) => json!({"DataHex":byte_hex(&bytes)}),
+                    Err(error) => json!({"Error":error.to_string()}),
+                })
+            }
+            Some("codec-vec-dot") => {
+                let (kind, count) = header(operation)?;
                 Ok(
                     match packed_dot(
                         kind,
@@ -92,19 +125,7 @@ pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
                 )
             }
             Some("codec-dequantize") => {
-                let kind = u32::try_from(
-                    operation["TypeId"]
-                        .as_u64()
-                        .ok_or_else(|| invalid("Rust codec TypeId must be unsigned"))?,
-                )?;
-                let count = usize::try_from(
-                    operation["Count"]
-                        .as_u64()
-                        .ok_or_else(|| invalid("Rust codec Count must be unsigned"))?,
-                )?;
-                if count == 0 || count > 8192 {
-                    return Err(invalid("Rust codec Count outside bound"));
-                }
+                let (kind, count) = header(operation)?;
                 let tensor = Tensor {
                     name: "upstream-codec-row".to_owned(),
                     kind,

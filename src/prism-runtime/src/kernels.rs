@@ -28,6 +28,7 @@ const F32: u32 = 0;
 const F16: u32 = 1;
 const Q4_0: u32 = 2;
 const Q8_0: u32 = 8;
+const Q8_K: u32 = 15;
 const BF16: u32 = 30;
 const PQ2: u32 = 142;
 const PTQ1: u32 = 143;
@@ -38,6 +39,7 @@ fn layout(kind: u32) -> Result<(usize, usize)> {
         F16 | BF16 => Ok((1, 2)),
         Q4_0 => Ok((32, 18)),
         Q8_0 => Ok((32, 34)),
+        Q8_K => Ok((256, 292)),
         PQ2 => Ok((128, 34)),
         PTQ1 => Ok((128, 28)),
         _ => Err(invalid(format!("unsupported runtime tensor type {kind}"))),
@@ -138,6 +140,11 @@ pub fn validate_tensor(tensor: &Tensor) -> Result<()> {
                 ptq1_values(block)?;
             }
         }
+        Q8_K => {
+            for block in tensor.data.as_chunks::<292>().0 {
+                finite(f32::from_le_bytes(block[..4].try_into()?))?;
+            }
+        }
         _ => {
             let (_, block_bytes) = layout(tensor.kind)?;
             for block in tensor.data.chunks_exact(block_bytes) {
@@ -224,6 +231,16 @@ fn row_impl(tensor: &Tensor, index: usize, output: &mut Vec<f32>) -> Result<()> 
                 let d = scale(block)?;
                 output.extend(
                     block[2..]
+                        .iter()
+                        .map(|&byte| f32::from(i8::from_ne_bytes([byte])) * d),
+                );
+            }
+        }
+        Q8_K => {
+            for block in bytes.as_chunks::<292>().0 {
+                let d = finite(f32::from_le_bytes(block[..4].try_into()?))?;
+                output.extend(
+                    block[4..260]
                         .iter()
                         .map(|&byte| f32::from(i8::from_ne_bytes([byte])) * d),
                 );
@@ -321,6 +338,134 @@ fn q8_into(input: &[f32], output: &mut Vec<Q8Block>) -> Result<()> {
         }),
         output,
     )
+}
+
+fn quantize_ternary(input: &[f32]) -> Result<[u8; 34]> {
+    let maximum = input.iter().try_fold(0.0_f32, |maximum, &value| {
+        Ok::<_, crate::Error>(maximum.max(finite(value)?.abs()))
+    })?;
+    let inverse = if maximum > 0.0 {
+        finite(1.0 / maximum)?
+    } else {
+        0.0
+    };
+    let scale = half_bits(maximum);
+    finite(half_to_float(scale))?;
+    let mut block = [0; 34];
+    block[..2].copy_from_slice(&scale.to_le_bytes());
+    for (index, &value) in input.iter().enumerate() {
+        let code = u8::try_from(i16::from(quantized((value * inverse).round())?) + 1)?;
+        block[2 + index / 4] |= code.min(3) << (2 * (index % 4));
+    }
+    Ok(block)
+}
+
+/// Encodes one or more complete native blocks using deterministic reference quantizers.
+///
+/// Supported kinds are F32, F16, BF16, `Q4_0`, `Q8_0`, `Q8_K`, PQ2 and PTQ1.
+/// Binary16 and bfloat16 use ties-to-even; ternary and `Q8_0` integer rounding
+/// uses ties away from zero. PQ2/PTQ1 share identical scales and ternary values.
+/// Zero scales retain each native format's original signed-zero representation.
+///
+/// # Errors
+/// Rejects unsupported kinds, empty or incomplete blocks, nonfinite inputs,
+/// unrepresentable packed scales, inverse-scale overflow and allocation errors.
+#[allow(
+    clippy::suboptimal_flops,
+    reason = "Preserve native reference quantizer multiply-then-add rounding."
+)]
+pub fn quantize_row(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
+    let (group, bytes) = layout(kind)?;
+    if input.is_empty()
+        || !input.len().is_multiple_of(group)
+        || input.iter().any(|value| !value.is_finite())
+    {
+        return Err(invalid(
+            "quantizer requires complete nonempty finite blocks",
+        ));
+    }
+    let size = (input.len() / group)
+        .checked_mul(bytes)
+        .ok_or_else(|| invalid("quantizer byte extent overflow"))?;
+    let mut output = Vec::new();
+    output.try_reserve_exact(size)?;
+    match kind {
+        F32 => output.extend(input.iter().flat_map(|value| value.to_le_bytes())),
+        F16 | BF16 => {
+            for &value in input {
+                let bits = if kind == F16 {
+                    let bits = half_bits(value);
+                    finite(half_to_float(bits))?;
+                    bits
+                } else {
+                    let rounded = round_bf16(value);
+                    finite(rounded)?;
+                    u16::try_from(rounded.to_bits() >> 16)?
+                };
+                output.extend(bits.to_le_bytes());
+            }
+        }
+        PQ2 | PTQ1 => {
+            for values in input.as_chunks::<128>().0 {
+                let mut block = quantize_ternary(values)?;
+                if kind == PQ2 {
+                    output.extend(block);
+                } else {
+                    // Canonical conversion validates a nonzero scale; runtime
+                    // quantization also defines zero-scale blocks. Pack trits
+                    // under a neutral scale, then retain the original scale.
+                    let scale = [block[0], block[1]];
+                    block[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
+                    let mut packed = bonsai_ternary::pack_ptq(&block)?;
+                    packed[26..].copy_from_slice(&scale);
+                    output.extend(packed);
+                }
+            }
+        }
+        Q8_0 => {
+            let mut blocks = Vec::new();
+            q8_into(input, &mut blocks)?;
+            for block in blocks {
+                output.extend(half_bits(block.scale).to_le_bytes());
+                output.extend(block.values.iter().flat_map(|value| value.to_le_bytes()));
+            }
+        }
+        Q8_K => {
+            let mut blocks = Vec::new();
+            q8k_into(input, &mut blocks)?;
+            for block in blocks {
+                output.extend(block.scale.to_le_bytes());
+                output.extend(block.values.iter().flat_map(|value| value.to_le_bytes()));
+                output.extend(block.sums.iter().flat_map(|sum| sum.to_le_bytes()));
+            }
+        }
+        Q4_0 => {
+            for values in input.as_chunks::<32>().0 {
+                let mut maximum = 0.0_f32;
+                for &value in values {
+                    if value.abs() > maximum.abs() {
+                        maximum = value;
+                    }
+                }
+                let d = maximum / -8.0;
+                let inverse = if d == 0.0 { 0.0 } else { finite(1.0 / d)? };
+                let scale = half_bits(d);
+                finite(half_to_float(scale))?;
+                output.extend(scale.to_le_bytes());
+                for index in 0..16 {
+                    let low = u8::try_from(quantized(
+                        (values[index] * inverse + 8.5).trunc().min(15.0),
+                    )?)?;
+                    let high = u8::try_from(quantized(
+                        (values[index + 16] * inverse + 8.5).trunc().min(15.0),
+                    )?)?;
+                    output.push(low | (high << 4));
+                }
+            }
+        }
+        _ => return Err(invalid("unsupported reference row quantizer")),
+    }
+    Ok(output)
 }
 
 #[allow(
@@ -492,6 +637,9 @@ fn float_dot(weights: &[f32], input: &[f32]) -> f32 {
 /// Rejects unsupported kinds, empty or incomplete blocks, mismatched byte
 /// extents, nonfinite stored values/scales, and nonfinite accumulated results.
 pub fn packed_dot(kind: u32, count: usize, weights: &[u8], activations: &[u8]) -> Result<f32> {
+    if kind == Q8_K {
+        return Err(invalid("native Q8_K has no packed weight dot entry point"));
+    }
     let (group, block_bytes) = layout(kind)?;
     if count == 0
         || !count.is_multiple_of(group)
