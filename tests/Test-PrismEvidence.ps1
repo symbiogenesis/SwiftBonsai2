@@ -11,7 +11,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PrismEvidence-' + [guid]::NewGuid().ToString('N'))
 $evidence = Join-Path $scratch 'evidence'
-$names = @('report.json', 'command.log', 'ignored.txt', 'source/code.cpp', 'build/engine.exe',
+$names = @('report.json', 'command.log', '.hidden.log', 'ignored.txt', 'source/code.cpp', 'build/engine.exe',
     'native-case/input.bin', 'native-case/response.json', 'case-bridge/nested/output.json',
     'cpp/phase-record.json', 'cpp/case/actions-0001.json', 'cpp/case/checkpoint-0001.json',
     'cpp/case/input-state.json', 'cpp/case/result.bin', 'cpp/case/frame.jsonl', 'cpp/case/command.log', 'cpp/case/unselected.json')
@@ -21,10 +21,11 @@ foreach ($name in $names) {
     [IO.File]::WriteAllBytes($path, [Text.Encoding]::UTF8.GetBytes("retained bytes: $name`n"))
 }
 [IO.File]::WriteAllBytes((Join-Path $evidence 'native-case/input.bin'), [byte[]]@(0, 255, 128, 13, 10, 0))
+if ($IsWindows) { [IO.File]::SetAttributes((Join-Path $evidence '.hidden.log'), [IO.FileAttributes]::Hidden) }
 $expected = if ($Case -ceq 'Ordinary') {
-    @('report.json', 'command.log', 'native-case/input.bin', 'native-case/response.json', 'case-bridge/nested/output.json')
+    @('report.json', 'command.log', '.hidden.log', 'native-case/input.bin', 'native-case/response.json', 'case-bridge/nested/output.json')
 } else {
-    @('report.json', 'command.log', 'native-case/input.bin', 'cpp/phase-record.json', 'cpp/case/actions-0001.json',
+    @('report.json', 'command.log', '.hidden.log', 'native-case/input.bin', 'cpp/phase-record.json', 'cpp/case/actions-0001.json',
         'cpp/case/checkpoint-0001.json', 'cpp/case/input-state.json', 'cpp/case/result.bin', 'cpp/case/frame.jsonl', 'cpp/case/command.log')
 }
 $scriptPath = Join-Path $PSScriptRoot '../scripts/Compress-PrismEvidence.ps1'
@@ -48,4 +49,14 @@ try {
 } finally { $archive.Dispose() }
 Assert-Failure { & $scriptPath -EvidenceDirectory $evidence -ArchivePath $archivePath -EvidenceKind $Case } 'An existing evidence archive must not be overwritten.'
 Assert-Failure { & $scriptPath -EvidenceDirectory $evidence -ArchivePath (Join-Path $evidence 'recursive.zip') -EvidenceKind $Case } 'An archive must not recursively select itself.'
+if ($IsWindows) {
+    $target = Join-Path $scratch 'link-target'
+    [void][IO.Directory]::CreateDirectory($target)
+    $link = Join-Path $evidence 'native-hidden-link'
+    [void](New-Item -ItemType Junction -Path $link -Value $target)
+    [IO.File]::SetAttributes($link, [IO.File]::GetAttributes($link) -bor [IO.FileAttributes]::Hidden)
+    $rejectedArchive = Join-Path $scratch 'hidden-link.zip'
+    Assert-Failure { & $scriptPath -EvidenceDirectory $evidence -ArchivePath $rejectedArchive -EvidenceKind $Case } 'Hidden filesystem links must be rejected.'
+    Assert (-not [IO.File]::Exists($rejectedArchive)) 'Link rejection must happen before archive publication.'
+}
 return "Prism evidence $Case passed; evidence: $scratch"

@@ -25,7 +25,7 @@ $directories = [Collections.Generic.Stack[string]]::new()
 $directories.Push($source)
 while ($directories.Count) {
     $directory = $directories.Pop()
-    foreach ($item in (Get-ChildItem -LiteralPath $directory)) {
+    foreach ($item in (Get-ChildItem -LiteralPath $directory -Force)) {
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Prism evidence must not contain filesystem links.' }
         $rootItem = $directory -ceq $source
         if ($item.PSIsContainer) {
