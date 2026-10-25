@@ -523,7 +523,7 @@ mod tests {
         let cases = ordered_cases(3, |index| if index == 1 { None } else { Some(index) })?;
         assert_eq!(cases, [Some(0), None, Some(2)]);
         assert_eq!(ordered_cases(1, |index| index)?, [0]);
-        assert!(ordered_cases(0, |index| index)?.is_empty());
+        assert_eq!(ordered_cases(0, |index| index)?, [0_usize; 0]);
         Ok(())
     }
 }
