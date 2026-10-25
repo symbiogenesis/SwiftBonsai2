@@ -379,8 +379,8 @@ function Invoke-BonsaiPrismBackendTarget {
         [Parameter(Mandatory)][Collections.IDictionary]$Context,
         [Parameter(Mandatory)][ValidateSet('Plan', 'JoinPlan', 'Run')][string]$Phase,
         [Parameter(Mandatory)][string[]]$Modes,
-        [ValidateRange(0,15)][int]$Index = 0,
-        [ValidateRange(1,16)][int]$Count = 16,
+        [ValidateRange(0,4095)][int]$Index = 0,
+        [ValidateRange(1,4096)][int]$Count = 16,
         [object[]]$Parts,
         [Collections.IDictionary]$Plan
     )

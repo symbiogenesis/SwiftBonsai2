@@ -12,7 +12,8 @@ param(
     [string]$PlanPath,
     [string]$OrdinaryEvidenceDirectory,
     [switch]$PartitionedOrdinary,
-    [ValidateRange(0,15)][int]$Index = 0,
+    [ValidateRange(0,4095)][int]$Index = 0,
+    [ValidateRange(1,4096)][int]$ExecutionCount = 16,
     [switch]$Benchmarks,
     [switch]$Gradients
 )
@@ -22,6 +23,8 @@ $PSNativeCommandUseErrorActionPreference = $true
 if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main') {
     throw 'Complete backend source stages run only in main GitHub Actions.'
 }
+$partitionCount = if ($Phase -cin @('Run','Gate')) { $ExecutionCount } else { 16 }
+if ($Index -ge $partitionCount) { throw 'Backend stage index must be below its partition count.' }
 $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackend.psm1')
@@ -56,11 +59,12 @@ function Read-BackendStage {
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
     param([string]$Path, [string]$ExpectedPhase)
+    $expectedCount = if ($ExpectedPhase -ceq 'Run') { $ExecutionCount } else { 16 }
     $path = Resolve-ExternalPath $Path
     if ((Get-Item -LiteralPath $path).Length -gt 128MB) { throw 'Backend stage artifact exceeds128MiB.' }
     $record = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable -Depth 100 -DateKind String
     if ($record.SchemaVersion -ne 1 -or $record.ProjectRevision -cne $env:GITHUB_SHA -or
-        $record.Phase -cne $ExpectedPhase -or $record.Count -ne 16 -or
+        $record.Phase -cne $ExpectedPhase -or $record.Count -ne $expectedCount -or
         $record.Benchmarks -isnot [bool] -or $record.Benchmarks -ne $Benchmarks.IsPresent -or
         $record.Gradients -isnot [bool] -or $record.Gradients -ne $Gradients.IsPresent -or
         ($record.Modes -join ',') -cne ($modes -join ',')) { throw 'Backend stage identity or workload selection differs.' }
@@ -78,7 +82,7 @@ function Write-BackendStage {
     [IO.File]::WriteAllBytes((Join-Path $evidence $Name), $bytes)
 }
 $record = @{
-    SchemaVersion=1; ProjectRevision=$env:GITHUB_SHA; Phase=$Phase; Count=16
+    SchemaVersion=1; ProjectRevision=$env:GITHUB_SHA; Phase=$Phase; Count=$partitionCount
     Index=$Index; Benchmarks=$Benchmarks.IsPresent; Gradients=$Gradients.IsPresent; Modes=$modes; Targets=@{}
 }
 if ($Phase -cne 'Gate') {
@@ -101,7 +105,7 @@ if ($Phase -cne 'Gate') {
         $target = @('cpp','rust')[$ordinal]
         [pscustomobject]@{
             Ordinal=$ordinal; Id=$target
-            Parameters=@{ Context=$contexts[$target]; Phase=$Phase; Modes=$parallelModes; Index=$Index; Count=16; Parts=$parts; Plan=$plan }
+            Parameters=@{ Context=$contexts[$target]; Phase=$Phase; Modes=$parallelModes; Index=$Index; Count=$partitionCount; Parts=$parts; Plan=$plan }
         }
     })
     $results = @(Invoke-BonsaiPrismTaskBatch -Tasks $tasks -ModulePath (Join-Path $repo 'scripts/Bonsai.PrismBackend.psm1') -CommandName Invoke-BonsaiPrismBackendTarget)
@@ -114,7 +118,7 @@ if ($Phase -cne 'Gate') {
     # correctness tasks finish; concurrency must not contaminate benchmark data.
     if ($Phase -ceq 'Run' -and $Benchmarks) {
         foreach ($target in @('cpp','rust')) {
-            $performance = Invoke-BonsaiPrismBackendTarget -Context $contexts[$target] -Phase Run -Modes @('perf') -Index $Index -Count 16 -Plan $plan
+            $performance = Invoke-BonsaiPrismBackendTarget -Context $contexts[$target] -Phase Run -Modes @('perf') -Index $Index -Count $partitionCount -Plan $plan
             $record.Targets[$target]['perf'] = $performance.perf
         }
     }
@@ -123,7 +127,7 @@ if ($Phase -cne 'Gate') {
     return $record
 }
 $plan = Read-BackendStage -Path $PlanPath -ExpectedPhase 'JoinPlan'
-$parts = @(foreach ($part in 0..15) {
+$parts = @(foreach ($part in 0..($ExecutionCount - 1)) {
     $item = Read-BackendStage -Path (Join-Path $InputDirectory "prism-backend-run-$part/record.json") -ExpectedPhase 'Run'
     if ($item.Index -ne $part) { throw 'Backend execution artifact index differs.' }
     $item
