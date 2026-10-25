@@ -28,11 +28,12 @@ pub(super) enum Session {
 }
 
 impl Session {
-    pub(super) fn exchange(&mut self, actions: Vec<Value>) -> Result<Vec<Value>> {
+    pub(super) fn exchange(&mut self, actions: impl AsRef<[Value]>) -> Result<Vec<Value>> {
+        let actions = actions.as_ref();
         match self {
-            Self::File(session) => session.exchange(actions),
-            Self::Pipe(session) => session.exchange(&actions),
-            Self::Rust(session) => session.exchange(&actions),
+            Self::File(session) => session.exchange(actions.to_vec()),
+            Self::Pipe(session) => session.exchange(actions),
+            Self::Rust(session) => session.exchange(actions),
         }
     }
 
