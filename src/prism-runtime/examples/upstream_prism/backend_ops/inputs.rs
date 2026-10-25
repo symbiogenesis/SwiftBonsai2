@@ -13,6 +13,20 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
+fn write_floats(writer: &mut impl Write, values: &[f32]) -> Result<String> {
+    let mut hash = Sha256::new();
+    let mut bytes = vec![0_u8; 64 * 1024];
+    for values in values.chunks(bytes.len() / 4) {
+        for (value, destination) in values.iter().zip(bytes.as_chunks_mut::<4>().0) {
+            destination.copy_from_slice(&value.to_le_bytes());
+        }
+        let encoded = &bytes[..values.len() * 4];
+        writer.write_all(encoded)?;
+        hash.update(encoded);
+    }
+    Ok(super::host::encode_hex(&hash.finalize()))
+}
+
 pub(super) struct Inputs {
     pub(super) ledger: SeedLedger,
     pub(super) receipts: Vec<Json>,
@@ -59,7 +73,16 @@ impl Inputs {
             }
             hash.update(&buffer[..count]);
         }
-        self.receipts.push(json!({"File":path.file_name().and_then(|name|name.to_str()).ok_or_else(||invalid("source input name is not UTF-8"))?,"Bytes":size,"Sha256":super::host::encode_hex(&hash.finalize()),"Purpose":purpose}));
+        self.record_digest(
+            path,
+            purpose,
+            size,
+            &super::host::encode_hex(&hash.finalize()),
+        )
+    }
+
+    fn record_digest(&mut self, path: &Path, purpose: &str, size: u64, digest: &str) -> Result<()> {
+        self.receipts.push(json!({"File":path.file_name().and_then(|name|name.to_str()).ok_or_else(||invalid("source input name is not UTF-8"))?,"Bytes":size,"Sha256":digest,"Purpose":purpose}));
         Ok(())
     }
 
@@ -76,7 +99,12 @@ impl Inputs {
         let mut file = File::options().create_new(true).write(true).open(&path)?;
         file.write_all(bytes)?;
         drop(file);
-        self.record(&path, purpose)?;
+        self.record_digest(
+            &path,
+            purpose,
+            bytes.len() as u64,
+            &super::host::encode_hex(&Sha256::digest(bytes)),
+        )?;
         Ok(path)
     }
 
@@ -90,14 +118,12 @@ impl Inputs {
             return Err(invalid("source float input exceeds bounded file extent"));
         }
         let path = self.name(plan, purpose)?;
-        let mut file =
-            std::io::BufWriter::new(File::options().create_new(true).write(true).open(&path)?);
-        for value in values {
-            file.write_all(&value.to_le_bytes())?;
-        }
-        file.flush()?;
+        let mut file = File::options().create_new(true).write(true).open(&path)?;
+        // Serialize and hash bounded blocks once. Per-scalar buffered writes
+        // and a second full-file read dominate large source input tensors.
+        let digest = write_floats(&mut file, values)?;
         drop(file);
-        self.record(&path, purpose)?;
+        self.record_digest(&path, purpose, values.len() as u64 * 4, &digest)?;
         Ok(path)
     }
 
@@ -353,5 +379,44 @@ impl Inputs {
         }
         let path = self.stage_floats(plan, &values, "lower-triangular")?;
         Self::set_file(plan, id, &path, 0, tensor.bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn staged_float_blocks_preserve_all_bits_and_receipt_digest() -> Result<()> {
+        for count in [0, 1, 16_383, 16_384, 16_385, 32_771] {
+            let values = (0..count)
+                .map(|index| {
+                    f32::from_bits(
+                        [
+                            0,
+                            0x8000_0000,
+                            1,
+                            0x7f80_0000,
+                            0xff80_0000,
+                            0x7fc0_1234,
+                            0xff80_0042,
+                            0x3f80_0000,
+                        ][index % 8],
+                    )
+                })
+                .collect::<Vec<_>>();
+            let expected = values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>();
+            let mut observed = Vec::new();
+            let digest = write_floats(&mut observed, &values)?;
+            assert_eq!(observed, expected);
+            assert_eq!(
+                digest,
+                super::super::host::encode_hex(&Sha256::digest(&expected))
+            );
+        }
+        Ok(())
     }
 }
