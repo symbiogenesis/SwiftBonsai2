@@ -56,9 +56,16 @@ pub(crate) enum Event {
     Ready,
     Text(String),
     Reasoning(String),
-    Complete,
+    Complete(Completion),
     Failed(String),
     Retryable(String),
+}
+
+/// Why a successfully framed generation ended; a token cap can leave partial prose.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Completion {
+    Finished,
+    TokenLimit,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -216,9 +223,10 @@ fn worker(config: &Config, commands: &Receiver<Command>, events: &Sender<Event>)
                     reasoning_content: None,
                 });
                 let request = serialize_request(&history)?;
-                let answer = generate(config.frontend_port, &key, &request, commands, events)?;
+                let (answer, completion) =
+                    generate(config.frontend_port, &key, &request, commands, events)?;
                 history.push(answer);
-                notify(events, Event::Complete)?;
+                notify(events, Event::Complete(completion))?;
             }
             Ok(Command::Retry) | Err(RecvTimeoutError::Timeout) => {}
         }
@@ -472,7 +480,7 @@ fn generate(
     request: &[u8],
     commands: &Receiver<Command>,
     events: &Sender<Event>,
-) -> Result<Message> {
+) -> Result<(Message, Completion)> {
     let address = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
     let stream = TcpStream::connect_timeout(&address, Duration::from_secs(1)).map_err(|_| {
         Failure::Message("Could not connect to the owned local broker. Restart the demo.")
@@ -499,7 +507,7 @@ fn exchange(
     key: &str,
     request: &[u8],
     events: &Sender<Event>,
-) -> Result<Message> {
+) -> Result<(Message, Completion)> {
     let header = format!(
         "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {key}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         request.len()
@@ -522,12 +530,15 @@ fn exchange(
             Ok(())
         })?;
     }
-    sse.finish()?;
-    Ok(Message {
-        role: "assistant",
-        content: sse.text,
-        reasoning_content: (!sse.reasoning.is_empty()).then_some(sse.reasoning),
-    })
+    let completion = sse.finish()?;
+    Ok((
+        Message {
+            role: "assistant",
+            content: sse.text,
+            reasoning_content: (!sse.reasoning.is_empty()).then_some(sse.reasoning),
+        },
+        completion,
+    ))
 }
 
 #[derive(Clone, Copy)]
@@ -704,7 +715,7 @@ fn parse_head(head: &[u8]) -> Result<Framing> {
             return Err(Failure::Message("Encoded local responses are unsupported."));
         }
     }
-    if content_type != Some(b"text/event-stream".as_slice()) {
+    if !content_type.is_some_and(is_event_stream) {
         return Err(Failure::Message(
             "The broker did not return a text event stream.",
         ));
@@ -727,12 +738,40 @@ fn parse_head(head: &[u8]) -> Result<Framing> {
     }
 }
 
+fn is_event_stream(value: &[u8]) -> bool {
+    let Ok(value) = std::str::from_utf8(value) else {
+        return false;
+    };
+    let mut parts = value.split(';');
+    if !parts
+        .next()
+        .is_some_and(|media| media.trim().eq_ignore_ascii_case("text/event-stream"))
+    {
+        return false;
+    }
+    let Some(parameter) = parts.next() else {
+        return true;
+    };
+    let Some((name, charset)) = parameter.trim().split_once('=') else {
+        return false;
+    };
+    name.trim().eq_ignore_ascii_case("charset")
+        && (charset.trim().eq_ignore_ascii_case("utf-8")
+            || charset.trim().eq_ignore_ascii_case("\"utf-8\""))
+        && parts.next().is_none()
+}
+
 #[derive(Default)]
 struct Sse {
+    initial: Vec<u8>,
+    started: bool,
+    after_cr: bool,
     line: Vec<u8>,
     data: Vec<u8>,
+    event: Vec<u8>,
     text: String,
     reasoning: String,
+    completion: Option<Completion>,
     done: bool,
 }
 
@@ -746,6 +785,8 @@ struct Chunk {
 struct Choice {
     #[serde(default)]
     delta: Delta,
+    index: Option<u32>,
+    finish_reason: Option<String>,
 }
 #[derive(Default, Deserialize)]
 struct Delta {
@@ -760,31 +801,84 @@ impl Sse {
         bytes: &[u8],
         delta: &mut impl FnMut(&str, &str) -> Result<()>,
     ) -> Result<()> {
-        for byte in bytes {
-            if *byte == b'\n' {
-                if self.line.last() == Some(&b'\r') {
-                    self.line.pop();
-                }
-                if self.line.is_empty() {
-                    self.dispatch(delta)?;
-                } else if let Some(mut data) = self.line.strip_prefix(b"data:") {
-                    if let Some(rest) = data.strip_prefix(b" ") {
-                        data = rest;
+        for &byte in bytes {
+            if !self.started {
+                self.initial.push(byte);
+                if b"\xEF\xBB\xBF".starts_with(&self.initial) {
+                    if self.initial.len() < 3 {
+                        continue;
                     }
-                    if self.data.len() + data.len() + 1 > MAX_EVENT {
-                        return Err(Failure::Message("A streaming event exceeded its limit."));
-                    }
-                    self.data.extend_from_slice(data);
-                    self.data.push(b'\n');
+                    self.initial.clear();
+                    self.started = true;
+                    continue;
                 }
-                self.line.clear();
-            } else {
-                if self.line.len() == MAX_EVENT {
-                    return Err(Failure::Message("A streaming line exceeded its limit."));
+                self.started = true;
+                for initial in std::mem::take(&mut self.initial) {
+                    self.push_byte(initial, delta)?;
                 }
-                self.line.push(*byte);
+                continue;
+            }
+            self.push_byte(byte, delta)?;
+        }
+        Ok(())
+    }
+
+    fn push_byte(
+        &mut self,
+        byte: u8,
+        delta: &mut impl FnMut(&str, &str) -> Result<()>,
+    ) -> Result<()> {
+        if self.after_cr {
+            self.after_cr = false;
+            if byte == b'\n' {
+                return Ok(());
             }
         }
+        if matches!(byte, b'\r' | b'\n') {
+            self.process_line(delta)?;
+            self.after_cr = byte == b'\r';
+        } else {
+            if self.line.len() == MAX_EVENT {
+                return Err(Failure::Message("A streaming line exceeded its limit."));
+            }
+            self.line.push(byte);
+        }
+        Ok(())
+    }
+
+    fn process_line(&mut self, delta: &mut impl FnMut(&str, &str) -> Result<()>) -> Result<()> {
+        if self.line.is_empty() {
+            self.dispatch(delta)?;
+            self.event.clear();
+        } else if self.line.first() != Some(&b':') {
+            let (field, value) = self.line.iter().position(|&byte| byte == b':').map_or(
+                (self.line.as_slice(), b"".as_slice()),
+                |colon| {
+                    let value = &self.line[colon + 1..];
+                    (
+                        &self.line[..colon],
+                        value.strip_prefix(b" ").unwrap_or(value),
+                    )
+                },
+            );
+            match field {
+                b"data" => {
+                    if self.data.len() + value.len() + 1 > MAX_EVENT {
+                        return Err(Failure::Message("A streaming event exceeded its limit."));
+                    }
+                    self.data.extend_from_slice(value);
+                    self.data.push(b'\n');
+                }
+                b"event" => {
+                    self.event.clear();
+                    self.event.extend_from_slice(value);
+                }
+                // id/retry affect reconnection only. Requests are never replayed:
+                // the owned broker treats interruption as a cancelled generation.
+                _ => {}
+            }
+        }
+        self.line.clear();
         Ok(())
     }
 
@@ -793,10 +887,18 @@ impl Sse {
             return Ok(());
         }
         self.data.pop();
+        if self.event == b"error" {
+            return Err(Failure::Message("The model reported a streaming error."));
+        }
+        if !self.event.is_empty() && self.event != b"message" {
+            return Err(Failure::Message(
+                "The model returned an unsupported event type.",
+            ));
+        }
         if self.data == b"[DONE]" {
-            if self.done {
+            if self.done || self.completion.is_none() {
                 return Err(Failure::Message(
-                    "The response repeated its completion marker.",
+                    "The response had an invalid terminal completion marker.",
                 ));
             }
             self.done = true;
@@ -814,6 +916,11 @@ impl Sse {
                 ));
             }
             if let Some(choice) = chunk.choices.into_iter().next() {
+                if self.completion.is_some() || choice.index.is_some_and(|index| index != 0) {
+                    return Err(Failure::Message(
+                        "The model returned an unexpected completion choice.",
+                    ));
+                }
                 let text = choice.delta.content.unwrap_or_default();
                 let reasoning = choice
                     .delta
@@ -823,14 +930,28 @@ impl Sse {
                 self.text.push_str(&text);
                 self.reasoning.push_str(&reasoning);
                 delta(&text, &reasoning)?;
+                if let Some(reason) = choice.finish_reason {
+                    self.completion = Some(match reason.as_str() {
+                        "stop" => Completion::Finished,
+                        "length" => Completion::TokenLimit,
+                        "content_filter" => {
+                            return Err(Failure::Message("The model filtered this response."));
+                        }
+                        _ => {
+                            return Err(Failure::Message(
+                                "The model ended with an unsupported completion reason.",
+                            ));
+                        }
+                    });
+                }
             }
         }
         self.data.clear();
         Ok(())
     }
 
-    const fn finish(&self) -> Result<()> {
-        if !self.done || !self.line.is_empty() || !self.data.is_empty() {
+    fn finish(&self) -> Result<Completion> {
+        if !self.done {
             return Err(Failure::Message(
                 "The response ended before generation completed. Restart the demo.",
             ));
@@ -840,14 +961,18 @@ impl Sse {
                 "The model returned no text. Restart the demo to try again.",
             ));
         }
-        Ok(())
+        // SSE discards any final event lacking a blank-line terminator. The
+        // explicit terminal event and [DONE] above must both have dispatched.
+        self.completion.ok_or(Failure::Message(
+            "The response omitted its terminal completion reason.",
+        ))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, Failure, HttpBody, Message, Sse, evidence_directory, parse_head,
+        Command, Completion, Failure, HttpBody, Message, Sse, evidence_directory, parse_head,
         serialize_request, startup_failure, wait_for_retry,
     };
     use std::io::{self, Read};
@@ -931,6 +1056,112 @@ mod tests {
         assert!(parse_head(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n").is_err());
         assert!(parse_head(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 1\r\nContent-Length: 1\r\n\r\n").is_err());
         Ok(())
+    }
+
+    #[test]
+    fn event_stream_conformance_handles_bom_cr_lines_and_split_fields() -> Result<(), Failure> {
+        for ending in ["\r", "\n", "\r\n"] {
+            let events = [
+                ": keepalive",
+                "id: ignored-without-reconnect",
+                "retry: 1000",
+                "event: message",
+                // A colonless field is a field whose value is empty. The data
+                // lines concatenate with LF before JSON decoding.
+                "data",
+                "data: {\"choices\":[{\"delta\":",
+                "data: {\"content\":\"Rain 雨\"},\"index\":0,\"finish_reason\":\"stop\"}]}",
+                "",
+                "data: [DONE]",
+                "",
+                ": unterminated comment is discarded at EOF",
+            ]
+            .join(ending);
+            let mut wire = b"\xEF\xBB\xBF".to_vec();
+            wire.extend_from_slice(events.as_bytes());
+            let mut sse = Sse::default();
+            let mut text = String::new();
+            for byte in wire {
+                sse.push(&[byte], &mut |content, _| {
+                    text.push_str(content);
+                    Ok(())
+                })?;
+            }
+            assert_eq!(sse.finish()?, Completion::Finished);
+            assert_eq!(text, "Rain 雨");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn terminal_reasons_distinguish_token_limits_and_reject_false_success() -> Result<(), Failure> {
+        let mut capped = Sse::default();
+        capped.push(
+            concat!(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"Partial answer\"},\"finish_reason\":\"length\"}]}\n\n",
+                "data: {\"choices\":[],\"usage\":{\"completion_tokens\":4096}}\n\n",
+                "data: [DONE]\n\n"
+            ).as_bytes(),
+            &mut |_, _| Ok(()),
+        )?;
+        assert_eq!(capped.finish()?, Completion::TokenLimit);
+        assert_eq!(capped.text, "Partial answer");
+        for reason in [
+            "null",
+            "\"tool_calls\"",
+            "\"content_filter\"",
+            "\"unknown\"",
+        ] {
+            let mut sse = Sse::default();
+            let events = format!(
+                "data: {{\"choices\":[{{\"delta\":{{\"content\":\"partial\"}},\"finish_reason\":{reason}}}]}}\n\ndata: [DONE]\n\n"
+            );
+            assert!(sse.push(events.as_bytes(), &mut |_, _| Ok(())).is_err());
+        }
+        for invalid in [
+            "data: {\"choices\":[{\"delta\":{\"content\":\"unexpected\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "event: error\ndata: {\"message\":\"backend failed\"}\n\n",
+        ] {
+            let mut sse = Sse::default();
+            sse.push(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\n",
+                &mut |_, _| Ok(()),
+            )?;
+            assert!(sse.push(invalid.as_bytes(), &mut |_, _| Ok(())).is_err());
+        }
+        let mut missing_done = Sse::default();
+        missing_done.push(
+            b"data: {\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\n",
+            &mut |_, _| Ok(()),
+        )?;
+        assert!(missing_done.finish().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn event_stream_media_type_accepts_utf8_parameters_and_rejects_ambiguity() {
+        for media in [
+            "text/event-stream",
+            "TEXT/EVENT-STREAM",
+            "Text/Event-Stream; CHARSET=UTF-8",
+            "text/event-stream ; charset = \"utf-8\"",
+        ] {
+            let head =
+                format!("HTTP/1.1 200 OK\r\nContent-Type: {media}\r\nContent-Length: 0\r\n\r\n");
+            assert!(parse_head(head.as_bytes()).is_ok());
+        }
+        for media in [
+            "text/event-stream-extra",
+            "text/event-stream; charset=latin1",
+            "text/event-stream; charset=utf-8; charset=utf-8",
+            "text/event-stream; charset=\"utf-8",
+            "application/json",
+        ] {
+            let head =
+                format!("HTTP/1.1 200 OK\r\nContent-Type: {media}\r\nContent-Length: 0\r\n\r\n");
+            assert!(parse_head(head.as_bytes()).is_err());
+        }
     }
 
     #[test]
