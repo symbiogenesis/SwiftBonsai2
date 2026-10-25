@@ -819,6 +819,12 @@ jobs:
         if: matrix.lane == 'foundation'
         shell: pwsh
         run: ./tests/Test-Foundation.ps1 -Case All
+      - name: Pinned inference binary and source archive contracts
+        if: matrix.lane == 'foundation'
+        shell: pwsh
+        run: |
+          ./tests/Test-Inference.ps1 -Case All
+          ./tests/Test-InferenceSource.ps1 -Case All
       - name: Released GGUF command integration
         if: matrix.lane == 'foundation'
         shell: pwsh
