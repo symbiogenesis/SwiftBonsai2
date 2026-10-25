@@ -567,6 +567,96 @@ impl CpuBackend {
         let op = match name {
             "ggml_dup" => 1,
             "ggml_add" | "ggml_add_inplace" => 2,
+            "ggml_add1" | "ggml_add1_inplace" => {
+                let b = tensor(args, 2)?;
+                let scalar = self.info(b)?;
+                if scalar.elements() != 1
+                    || !matches!((kind, scalar.kind), (0, 0) | (1, 0 | 1) | (30, 0 | 30))
+                    || a_info.strides[0] != type_layout(kind)?.bytes
+                {
+                    return Err(invalid(
+                        "CPU scalar add requires a padded floating tensor and compatible scalar",
+                    ));
+                }
+                sources.push(b);
+                4
+            }
+            "ggml_win_part" => {
+                let window = usize_arg(args, 2)?;
+                if window == 0 || kind != 0 || shape[3] != 1 || !a_info.contiguous() {
+                    return Err(invalid("CPU window partition geometry differs"));
+                }
+                let columns = shape[1].div_ceil(window);
+                let rows = shape[2].div_ceil(window);
+                shape = [
+                    shape[0],
+                    window,
+                    window,
+                    columns
+                        .checked_mul(rows)
+                        .ok_or_else(|| invalid("CPU window partition count overflow"))?,
+                ];
+                put_int(&mut p, 0, i32::try_from(columns)?);
+                put_int(&mut p, 1, i32::try_from(rows)?);
+                put_int(&mut p, 2, i32::try_from(window)?);
+                78
+            }
+            "ggml_win_unpart" => {
+                let width = usize_arg(args, 2)?;
+                let height = usize_arg(args, 3)?;
+                let window = usize_arg(args, 4)?;
+                if window == 0
+                    || width == 0
+                    || height == 0
+                    || kind != 0
+                    || shape[1] != window
+                    || shape[2] != window
+                    || width.div_ceil(window).checked_mul(height.div_ceil(window)) != Some(shape[3])
+                    || !a_info.contiguous()
+                {
+                    return Err(invalid("CPU window unpartition geometry differs"));
+                }
+                shape = [shape[0], width, height, 1];
+                put_int(&mut p, 0, i32::try_from(window)?);
+                79
+            }
+            "ggml_get_rel_pos" => {
+                let query = usize_arg(args, 2)?;
+                let key = usize_arg(args, 3)?;
+                if query == 0
+                    || query != key
+                    || query.checked_mul(2).and_then(|n| n.checked_sub(1)) != Some(shape[1])
+                    || !matches!(kind, 1 | 30)
+                    || !a_info.contiguous()
+                {
+                    return Err(invalid("CPU relative position geometry differs"));
+                }
+                shape = [shape[0], key, query, 1];
+                kind = 1;
+                80
+            }
+            "ggml_add_rel_pos" | "ggml_add_rel_pos_inplace" => {
+                let width = tensor(args, 2)?;
+                let height = tensor(args, 3)?;
+                let wi = self.info(width)?;
+                let hi = self.info(height)?;
+                if kind != 0
+                    || wi.kind != 0
+                    || hi.kind != 0
+                    || wi.shape != hi.shape
+                    || !a_info.contiguous()
+                    || !wi.contiguous()
+                    || !hi.contiguous()
+                    || wi.shape[3] != shape[2]
+                    || wi.shape[0].checked_mul(wi.shape[0]) != Some(shape[0])
+                    || wi.shape[1].checked_mul(wi.shape[2]) != Some(shape[1])
+                {
+                    return Err(invalid("CPU relative position addition geometry differs"));
+                }
+                sources.extend([width, height]);
+                put_int(&mut p, 0, i32::from(inplace));
+                81
+            }
             "ggml_add_id" => {
                 let b = tensor(args, 2)?;
                 let ids = tensor(args, 3)?;
@@ -1018,6 +1108,43 @@ impl CpuBackend {
                     put_int(&mut p, index, i32::try_from(value)?);
                 }
                 55
+            }
+            "ggml_im2col_back" => {
+                let kernel = tensor(args, 2)?;
+                if kind != 0 || !matches!(self.info(kernel)?.kind, 0 | 1) {
+                    return Err(invalid("CPU im2col backward storage types differ"));
+                }
+                let Argument::Integers(dimensions) = at(args, 3)? else {
+                    return Err(invalid("CPU im2col backward shape missing"));
+                };
+                if dimensions.len() != 4 {
+                    return Err(invalid("CPU im2col backward rank differs"));
+                }
+                for axis in 0..4 {
+                    shape[axis] = usize::try_from(dimensions[axis])?;
+                }
+                kind = 0;
+                sources.push(kernel);
+                for index in 0..6 {
+                    put_int(&mut p, index, i32::try_from(int(args, index + 4)?)?);
+                }
+                put_int(&mut p, 6, i32::from(boolean(args, 10)?));
+                53
+            }
+            "ggml_pool_2d_back" => {
+                let forward = tensor(args, 2)?;
+                if kind != 0 || self.info(forward)?.kind != 0 {
+                    return Err(invalid("CPU pooling backward requires binary32 storage"));
+                }
+                shape = self.info(forward)?.shape;
+                kind = 0;
+                sources.push(forward);
+                for index in 0..5 {
+                    put_int(&mut p, index, i32::try_from(int(args, index + 3)?)?);
+                }
+                put_int(&mut p, 5, float(args, 8)? as i32);
+                put_int(&mut p, 6, float(args, 9)? as i32);
+                62
             }
             "ggml_im2col" | "ggml_conv_2d_direct" | "ggml_conv_2d_dw_direct" => {
                 let b = tensor(args, 2)?;

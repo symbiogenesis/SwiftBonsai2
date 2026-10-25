@@ -20,12 +20,14 @@ use bonsai_ternary::half_to_float;
 
 pub mod allocator;
 mod attention;
+mod backward_image;
 mod call;
 mod gdn;
 mod image;
 mod ops;
 mod recurrent;
 mod rope;
+mod spatial;
 pub mod threadpool;
 
 pub use call::{operation_name, unary_name};
@@ -115,6 +117,8 @@ pub fn type_layout(kind: i32) -> Result<TypeLayout> {
         35 => (256, 66, "tq2_0"),
         39 => (32, 17, "mxfp4"),
         40 => (64, 36, "nvfp4"),
+        41 => (128, 18, "q1_0"),
+        42 => (64, 18, "q2_0"),
         24 => (1, 1, "i8"),
         25 => (1, 2, "i16"),
         26 => (1, 4, "i32"),
@@ -774,7 +778,7 @@ impl CpuBackend {
                 .get(usize::from(info.operation == 74))
                 .is_some_and(|&source| {
                     self.info(source).is_ok_and(
-                        |source| matches!(source.kind, 0..=3 | 6..=8 | 10..=15 | 20 | 23 | 30 | 34 | 35 | 39 | 40 | 142 | 143),
+                        |source| matches!(source.kind, 0..=3 | 6..=8 | 10..=15 | 20 | 23 | 30 | 34 | 35 | 39..=42 | 142 | 143),
                     )
                 })
         {

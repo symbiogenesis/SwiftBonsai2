@@ -245,7 +245,7 @@ fn backward_image_rejects_malformed_geometry_and_nonscalar_storage() -> Result<(
     backend.info_mut(backward)?.parameters[..4].copy_from_slice(&2_i32.to_le_bytes());
     assert!(evaluate(&mut backend, backward).is_err());
     let half_gradient = backend.tensor(1, 1, [1; 4])?;
-    let backward = im2col_backward(
+    let rejected = im2col_backward(
         &mut backend,
         half_gradient,
         kernel,
@@ -253,8 +253,20 @@ fn backward_image_rejects_malformed_geometry_and_nonscalar_storage() -> Result<(
         [1, 0, 0, 0, 1, 0],
         false,
     );
-    if let Ok(backward) = backward {
-        assert!(evaluate(&mut backend, backward).is_err());
-    }
+    assert!(rejected.is_err());
+    let integer_kernel = backend.tensor(1, 26, [1; 4])?;
+    assert!(
+        im2col_backward(
+            &mut backend,
+            gradient,
+            integer_kernel,
+            [1; 4],
+            [1, 0, 0, 0, 1, 0],
+            false,
+        )
+        .is_err()
+    );
+    assert!(pool_backward(&mut backend, half_gradient, kernel, false, [1, 1], 0.0).is_err());
+    assert!(pool_backward(&mut backend, gradient, half_gradient, false, [1, 1], 0.0).is_err());
     Ok(())
 }

@@ -4,7 +4,7 @@ use super::{CpuBackend, TensorId, coordinates, linear};
 use crate::{Result, invalid};
 
 pub(super) const fn supports(operation: i32) -> bool {
-    matches!(operation, 0..=3 | 5..=52 | 54..=61 | 63..=74 | 76..=77 | 82..=91 | 96..=101)
+    matches!(operation, 0..=74 | 76..=91 | 96..=101)
 }
 
 fn integer(parameters: &[u8; 64], index: usize) -> i32 {
@@ -127,6 +127,9 @@ impl CpuBackend {
         {
             return self.copy_storage(tensor, info.sources[0]);
         }
+        if op == 80 {
+            return self.relative_positions(tensor);
+        }
         let a_id = source(0).ok();
         let a = if let Some(id) = a_id.filter(|_| !matches!(op, 29 | 30)) {
             self.values(id)?
@@ -174,6 +177,16 @@ impl CpuBackend {
                     };
                 }
             }
+            4 => {
+                let scalar = self.values(source(1)?)?;
+                if scalar.len() != 1 || a.len() != n {
+                    return Err(invalid("CPU scalar add shapes differ"));
+                }
+                for (&input, output) in a.iter().zip(&mut out) {
+                    *output = input + scalar[0];
+                }
+            }
+            78 | 79 | 81 => out = self.spatial_values(&info, &a)?,
             3 => {
                 let b_id = source(1)?;
                 let b = self.values(b_id)?;
@@ -726,6 +739,7 @@ impl CpuBackend {
                     }
                 }
             }
+            53 | 62 => out = self.backward_image_values(&info, &a)?,
             52 | 54 | 56..=61 | 63 | 65 => out = self.image_values(&info, &a)?,
             64 => {
                 let circular = integer(p, 8) != 0;
