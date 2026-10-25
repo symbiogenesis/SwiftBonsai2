@@ -18,7 +18,11 @@ use crate::{Result, invalid};
 mod encode;
 
 pub(super) fn quantize(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
-    encode::quantize(kind, input)
+    encode::quantize(kind, input, None)
+}
+
+pub(super) fn quantize_weighted(kind: u32, input: &[f32], importance: &[f32]) -> Result<Vec<u8>> {
+    encode::quantize(kind, input, Some(importance))
 }
 
 pub(super) const fn block_bytes(kind: u32) -> Option<usize> {

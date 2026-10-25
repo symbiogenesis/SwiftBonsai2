@@ -49,6 +49,7 @@ fn affine(
     weights: &[f32],
     nmax: i32,
     rmin: f32,
+    rdelta: f32,
     steps: usize,
     mad: bool,
 ) -> Result<(f32, f32, Vec<u8>)> {
@@ -88,7 +89,7 @@ fn affine(
     }
     let mut candidate = vec![0; input.len()];
     for step in 0..=steps {
-        let inverse = (rmin + 0.1 * step as f32 + nmax as f32) / (maximum - minimum);
+        let inverse = (rmin + rdelta * step as f32 + nmax as f32) / (maximum - minimum);
         let mut sum_l = 0.0_f32;
         let mut sum_l2 = 0.0_f32;
         let mut sum_xl = 0.0_f32;
@@ -129,7 +130,12 @@ fn affine(
     Ok((finite(scale)?, finite(-minimum)?, codes))
 }
 
-fn symmetric(input: &[f32], nmax: i32, three: bool) -> Result<(f32, Vec<u8>)> {
+fn symmetric(
+    input: &[f32],
+    nmax: i32,
+    three: bool,
+    weights: Option<&[f32]>,
+) -> Result<(f32, Vec<u8>)> {
     let maximum = signed_maximum(input);
     let mut levels = vec![0_i32; input.len()];
     if maximum.abs() < 1.0e-15 {
@@ -138,9 +144,9 @@ fn symmetric(input: &[f32], nmax: i32, three: bool) -> Result<(f32, Vec<u8>)> {
     let inverse = -(nmax as f32) / maximum;
     let mut sum_lx = 0.0_f32;
     let mut sum_l2 = 0.0_f32;
-    for (&value, level) in input.iter().zip(&mut levels) {
+    for (index, (&value, level)) in input.iter().zip(&mut levels).enumerate() {
         *level = nearest(inverse * value)?.clamp(-nmax, nmax - 1);
-        let weight = value * value;
+        let weight = weights.map_or(value * value, |weights| weights[index]);
         sum_lx += weight * value * *level as f32;
         sum_l2 += weight * *level as f32 * *level as f32;
     }
@@ -186,9 +192,9 @@ fn symmetric(input: &[f32], nmax: i32, three: bool) -> Result<(f32, Vec<u8>)> {
         let inverse = -(nmax as f32 + 0.1 * step as f32) / maximum;
         let mut sum_lx = 0.0_f32;
         let mut sum_l2 = 0.0_f32;
-        for &value in input {
+        for (index, &value) in input.iter().enumerate() {
             let level = nearest(inverse * value)?.clamp(-nmax, nmax - 1) as f32;
-            let weight = value * value;
+            let weight = weights.map_or(value * value, |weights| weights[index]);
             sum_lx += weight * value * level;
             sum_l2 += weight * level * level;
         }
@@ -206,6 +212,77 @@ fn symmetric(input: &[f32], nmax: i32, three: bool) -> Result<(f32, Vec<u8>)> {
     ))
 }
 
+fn positive(input: &[f32], nmax: i32, weights: &[f32]) -> Result<(f32, Vec<u8>)> {
+    let maximum = input.iter().copied().fold(0.0_f32, f32::max);
+    let mut levels = vec![0_u8; input.len()];
+    if maximum < 1.0e-15 {
+        return Ok((0.0, levels));
+    }
+    let mut inverse = nmax as f32 / maximum;
+    for (&value, level) in input.iter().zip(&mut levels) {
+        *level = nearest(inverse * value)? as u8;
+    }
+    let scale = 1.0 / inverse;
+    let mut best_error = 0.0_f32;
+    for ((&value, &level), &weight) in input.iter().zip(&levels).zip(weights) {
+        let delta = value - scale * f32::from(level);
+        best_error += weight * delta * delta;
+    }
+    for step in -4..=4 {
+        if step == 0 {
+            continue;
+        }
+        let candidate_inverse = (0.1 * step as f32 + nmax as f32) / maximum;
+        let candidate_scale = 1.0 / candidate_inverse;
+        let mut error = 0.0_f32;
+        for (&value, &weight) in input.iter().zip(weights) {
+            let level = nearest(candidate_inverse * value)?.min(nmax);
+            let delta = value - candidate_scale * level as f32;
+            error += weight * delta * delta;
+        }
+        if error < best_error {
+            best_error = error;
+            inverse = candidate_inverse;
+        }
+    }
+    let mut sum_lx = 0.0_f32;
+    let mut sum_l2 = 0.0_f32;
+    for ((&value, &weight), level) in input.iter().zip(weights).zip(&mut levels) {
+        *level = nearest(inverse * value)?.min(nmax) as u8;
+        sum_lx += weight * value * f32::from(*level);
+        sum_l2 += weight * f32::from(*level) * f32::from(*level);
+    }
+    for _ in 0..5 {
+        let mut changed = false;
+        for ((&value, &weight), level) in input.iter().zip(weights).zip(&mut levels) {
+            let mut next_lx = sum_lx - weight * value * f32::from(*level);
+            let mut next_l2 = sum_l2 - weight * f32::from(*level) * f32::from(*level);
+            if next_lx <= 0.0 || next_l2 <= 0.0 {
+                continue;
+            }
+            let next_level = nearest(value * next_l2 / next_lx)?.min(nmax) as u8;
+            if next_level == *level {
+                continue;
+            }
+            next_lx += weight * value * f32::from(next_level);
+            next_l2 += weight * f32::from(next_level) * f32::from(next_level);
+            if next_lx * next_lx * sum_l2 > sum_lx * sum_lx * next_l2 {
+                *level = next_level;
+                sum_lx = next_lx;
+                sum_l2 = next_l2;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    Ok((
+        finite(if sum_l2 > 0.0 { sum_lx / sum_l2 } else { 0.0 })?,
+        levels,
+    ))
+}
+
 fn pack_affine(
     kind: u32,
     input: &[f32],
@@ -213,6 +290,7 @@ fn pack_affine(
     scales: &[f32; 16],
     minima: &[f32; 16],
     output: &mut [u8],
+    fitted: Option<&(f32, f32, Vec<u8>, Vec<u8>)>,
 ) -> Result<()> {
     let groups = if kind == 10 { 16 } else { 8 };
     let group_size = 256 / groups;
@@ -239,8 +317,16 @@ fn pack_affine(
         0.0
     };
     for group in 0..groups {
-        let scale = nearest(inverse_scale * scales[group])?.min(limit as i32) as u8;
-        let minimum = nearest(inverse_minimum * minima[group])?.min(limit as i32) as u8;
+        let scale = if let Some((_, _, levels, _)) = &fitted {
+            levels[group]
+        } else {
+            nearest(inverse_scale * scales[group])?.min(limit as i32) as u8
+        };
+        let minimum = if let Some((_, _, _, levels)) = &fitted {
+            levels[group]
+        } else {
+            nearest(inverse_minimum * minima[group])?.min(limit as i32) as u8
+        };
         if kind == 10 {
             output[group] = scale | (minimum << 4);
         } else if group < 4 {
@@ -252,8 +338,8 @@ fn pack_affine(
             output[4 + group] |= (minimum >> 4) << 6;
         }
     }
-    let d = half(max_scale / limit)?;
-    let m = half(max_minimum / limit)?;
+    let d = half(fitted.as_ref().map_or(max_scale / limit, |fit| fit.0))?;
+    let m = half(fitted.as_ref().map_or(max_minimum / limit, |fit| fit.1))?;
     let d_offset = if kind == 10 { 80 } else { 0 };
     output[d_offset..d_offset + 2].copy_from_slice(&d.to_le_bytes());
     output[d_offset + 2..d_offset + 4].copy_from_slice(&m.to_le_bytes());
@@ -295,7 +381,7 @@ fn pack_affine(
     clippy::too_many_lines,
     reason = "Keep all native scale/code/bit-packing phases in one source-ordered dispatcher."
 )]
-pub(super) fn quantize(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
+pub(super) fn quantize(kind: u32, input: &[f32], importance: Option<&[f32]>) -> Result<Vec<u8>> {
     let size = block_bytes(kind).ok_or_else(|| invalid("unknown K quant type"))?;
     if input.is_empty()
         || !input.len().is_multiple_of(256)
@@ -303,16 +389,39 @@ pub(super) fn quantize(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
     {
         return Err(invalid("K quantizer requires complete finite blocks"));
     }
-    let mut output = vec![0_u8; input.len() / 256 * size];
-    for (input, output) in input
+    if importance.is_some_and(|weights| {
+        weights.len() != input.len()
+            || weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight < 0.0)
+    }) {
+        return Err(invalid("K quantizer importance extent or values differ"));
+    }
+    let bytes = input.len() / 256 * size;
+    let mut output = Vec::new();
+    output.try_reserve_exact(bytes)?;
+    output.resize(bytes, 0);
+    for (block, (input, output)) in input
         .as_chunks::<256>()
         .0
         .iter()
         .zip(output.chunks_exact_mut(size))
+        .enumerate()
     {
         let mut codes = [0_u8; 256];
         let mut scales = [0.0_f32; 16];
         let mut minima = [0.0_f32; 16];
+        let importance = importance.map(|weights| &weights[block * 256..(block + 1) * 256]);
+        let mut square_sum = 0.0_f32;
+        for &value in input {
+            square_sum += value * value;
+        }
+        let sigma2 = if kind == 10 {
+            square_sum / 256.0
+        } else {
+            2.0 * square_sum / 256.0
+        };
+        let mut group_weights = [0.0_f32; 16];
         if matches!(kind, 10 | 12 | 13) {
             let group_size = if kind == 10 { 16 } else { 32 };
             let nmax = match kind {
@@ -328,32 +437,100 @@ pub(super) fn quantize(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
                 let average = (squares / 32.0).sqrt();
                 let weights = values
                     .iter()
-                    .map(|value| {
-                        if kind == 10 {
-                            value.abs()
-                        } else {
-                            average + value.abs()
-                        }
+                    .enumerate()
+                    .map(|(index, value)| {
+                        importance.map_or_else(
+                            || {
+                                if kind == 10 {
+                                    value.abs()
+                                } else {
+                                    average + value.abs()
+                                }
+                            },
+                            |importance| {
+                                importance[group * group_size + index]
+                                    * (sigma2 + value * value).sqrt()
+                            },
+                        )
                     })
                     .collect::<Vec<_>>();
                 let (scale, minimum, levels) = affine(
                     values,
                     &weights,
                     nmax,
-                    if kind == 12 { -1.0 } else { -0.5 },
-                    if kind == 12 { 20 } else { 15 },
-                    kind == 10,
+                    if importance.is_some() {
+                        -0.9
+                    } else if kind == 12 {
+                        -1.0
+                    } else {
+                        -0.5
+                    },
+                    if importance.is_some() { 0.05 } else { 0.1 },
+                    if importance.is_some() {
+                        36
+                    } else if kind == 12 {
+                        20
+                    } else {
+                        15
+                    },
+                    kind == 10 && importance.is_none(),
                 )?;
                 scales[group] = scale;
                 minima[group] = minimum;
+                for &weight in &weights {
+                    group_weights[group] += weight;
+                }
                 codes[group * group_size..(group + 1) * group_size].copy_from_slice(&levels);
             }
-            pack_affine(kind, input, &mut codes, &scales, &minima, output)?;
+            let groups = 256 / group_size;
+            let fitted = if importance.is_some() {
+                let maximum = if kind == 10 { 15 } else { 63 };
+                let (scale, scale_levels) =
+                    positive(&scales[..groups], maximum, &group_weights[..groups])?;
+                let (minimum, minimum_levels) =
+                    positive(&minima[..groups], maximum, &group_weights[..groups])?;
+                Some((scale, minimum, scale_levels, minimum_levels))
+            } else {
+                None
+            };
+            pack_affine(
+                kind,
+                input,
+                &mut codes,
+                &scales,
+                &minima,
+                output,
+                fitted.as_ref(),
+            )?;
             continue;
         }
         let mut maximum = 0.0_f32;
         for (group, values) in input.as_chunks::<16>().0.iter().enumerate() {
-            let (scale, levels) = symmetric(values, if kind == 11 { 4 } else { 32 }, kind == 11)?;
+            let weights = importance.map(|importance| {
+                values
+                    .iter()
+                    .enumerate()
+                    .map(|(index, &value)| {
+                        let weight = importance[group * 16 + index];
+                        if kind == 11 {
+                            weight * (sigma2 + value * value).sqrt()
+                        } else {
+                            weight
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            });
+            if let Some(weights) = &weights {
+                for &weight in weights {
+                    group_weights[group] += weight;
+                }
+            }
+            let (scale, levels) = symmetric(
+                values,
+                if kind == 11 { 4 } else { 32 },
+                kind == 11 && importance.is_none(),
+                weights.as_deref(),
+            )?;
             scales[group] = scale;
             if scale.abs() > maximum.abs() {
                 maximum = scale;
@@ -368,12 +545,25 @@ pub(super) fn quantize(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
         } else {
             (if kind == 11 { -32.0 } else { -128.0 }) / maximum
         };
-        let d = half(if maximum == 0.0 { 0.0 } else { 1.0 / inverse })?;
+        let fitted = if kind == 11 && importance.is_some() {
+            Some(symmetric(&scales, 32, false, Some(&group_weights))?)
+        } else {
+            None
+        };
+        let d = half(
+            fitted
+                .as_ref()
+                .map_or(if maximum == 0.0 { 0.0 } else { 1.0 / inverse }, |fit| {
+                    fit.0
+                }),
+        )?;
         let d_offset = if kind == 11 { 108 } else { 208 };
         output[d_offset..d_offset + 2].copy_from_slice(&d.to_le_bytes());
         let mut subscales = [0_i32; 16];
         for group in 0..16 {
-            let scale = if kind == 11 {
+            let scale = if let Some((_, levels)) = &fitted {
+                i32::from(levels[group]) - 32
+            } else if kind == 11 {
                 nearest(inverse * scales[group])?.clamp(-32, 31)
             } else {
                 nearest(inverse * scales[group])?.min(127)
@@ -387,7 +577,7 @@ pub(super) fn quantize(kind: u32, input: &[f32]) -> Result<Vec<u8>> {
                 output[192 + group] = scale as i8 as u8;
             }
         }
-        if kind == 11 && maximum == 0.0 {
+        if kind == 11 && maximum == 0.0 && importance.is_none() {
             output[96..108].fill(0);
             subscales.fill(-32);
         }

@@ -87,3 +87,39 @@ fn k_quantizers_reject_partial_nonfinite_and_overflowing_blocks() {
         assert!(kernels::quantize_row(kind, &[f32::MAX; 256]).is_err());
     }
 }
+
+#[test]
+fn native_importance_weighted_k_encoders_preserve_every_packed_byte() -> Result<()> {
+    let fixture: Value =
+        serde_json::from_str(include_str!("fixtures/upstream-kquants-weighted.json"))?;
+    let cases = fixture["Cases"]
+        .as_array()
+        .ok_or_else(|| std::io::Error::other("weighted fixture cases missing"))?;
+    assert_eq!(cases.len(), 40);
+    for case in cases {
+        let kind = u32::try_from(
+            case["TypeId"]
+                .as_u64()
+                .ok_or_else(|| std::io::Error::other("weighted fixture type missing"))?,
+        )?;
+        let floats = |value: &Value| -> Result<Vec<f32>> {
+            Ok(bytes(value)?
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|bytes| f32::from_le_bytes(*bytes))
+                .collect())
+        };
+        assert_eq!(
+            kernels::quantize_row_weighted(
+                kind,
+                &floats(&case["InputHex"])?,
+                &floats(&case["ImportanceHex"])?
+            )?,
+            bytes(&case["OutputHex"])?,
+            "weighted {kind}:{}",
+            case["Name"]
+        );
+    }
+    Ok(())
+}

@@ -275,5 +275,7 @@
   ],
   "Scope": "25 focused native K decoder/dot records including arbitrary two-block bit fields; x64-emulated correctness only",
   "UpstreamCommit": "b87ca7225456b06b0975b8239c66b5aecf07e37c",
-  "GenericDotReference": "Production ggml_vec_dot_qN_K_q8_K_generic, directly linked unchanged pinned x64 static libraries; optimized CPU capture retained independently as DotHex"
+  "GenericDotReference": "Production ggml_vec_dot_qN_K_q8_K_generic, directly linked unchanged pinned x64 static libraries; optimized CPU capture retained independently as DotHex",
+  "QuantizersSourceSha256": "46dd353f30e7f1c42c7d82d88d91fad64dbe5d6e680b234de25355d9fb482d13",
+  "CpuQuantsSourceSha256": "b8dd3a7c7da1ff702908d5b71c7c7791eb11e2481f6ce3d0ca91e4705f33bb65"
 }

@@ -594,7 +594,7 @@ fn weighted_symmetric_block(
 )]
 pub fn quantize_row_weighted(kind: u32, input: &[f32], importance: &[f32]) -> Result<Vec<u8>> {
     if matches!(kind, 10..=14) {
-        return Err(invalid("weighted K quantizers are not available"));
+        return kquants::quantize_weighted(kind, input, importance);
     }
     if input.is_empty()
         || input.len() != importance.len()
