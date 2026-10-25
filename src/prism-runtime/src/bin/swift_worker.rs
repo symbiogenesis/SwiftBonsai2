@@ -16,30 +16,12 @@ use bonsai_prism_runtime::{
     runtime::{Cancellation, Finish},
     swift_session::{SwiftSession, TextEvent},
 };
-use serde::Deserialize;
 use serde_json::{Value, json};
 
-const MAX_FRAME_BYTES: usize = 1024 * 1024;
+#[path = "../swift_worker_request.rs"]
+mod request;
+use request::{MAX_FRAME_BYTES, Request};
 const USAGE: &[u8] = b"Usage: bonsai-swift-worker --model <absolute-pinned-swift-gguf> --seed <u32> [--backend <auto|scalar>]\nJSONL: {\"op\":\"count\",\"id\":1,\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}],\"max_tokens\":16}\nUse op=complete with timeout_seconds (1..600), or {\"op\":\"reset\",\"id\":2}.\nInput frames require LF and are bounded to 1 MiB. Output is flushed JSONL.\nDeltas are provisional until complete. Close the worker for transport cancellation;\nlibrary owners can also cancel cooperatively through the session Cancellation.\nExisting process admission and ownership policies must wrap this worker.\nFull-model correctness and device qualification require retained comparison evidence.\n";
-
-#[derive(Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
-enum Request {
-    Count {
-        id: u64,
-        messages: Value,
-        max_tokens: usize,
-    },
-    Complete {
-        id: u64,
-        messages: Value,
-        max_tokens: usize,
-        timeout_seconds: u64,
-    },
-    Reset {
-        id: u64,
-    },
-}
 
 fn bad() -> bonsai_prism_runtime::Error {
     io::Error::new(io::ErrorKind::InvalidInput, "invalid Swift worker options").into()
@@ -161,7 +143,7 @@ fn serve(
     write_readiness(session, output)?;
     let mut bytes = Vec::new();
     while frame(input, &mut bytes)? {
-        let Ok(request) = serde_json::from_slice::<Request>(&bytes) else {
+        let Ok(request) = request::parse(&bytes) else {
             write_record(
                 output,
                 &json!({"type":"error","id":null,"error":"invalid_request"}),
