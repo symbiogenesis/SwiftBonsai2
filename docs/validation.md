@@ -259,8 +259,10 @@ target chains with a limit of two workers. Each target retains its sequential
 mode order, source random offsets, isolated process state and evidence paths.
 Stage receipts record each concurrent chain's elapsed milliseconds. Optional benchmark
 execution starts only after both correctness chains finish and stays sequential.
-The interpreter writes typed scalars directly into existing storage, and input
-staging serializes bounded blocks while computing their digest. Tensor snapshot
+The interpreter writes typed scalars directly into existing storage and borrows
+plain scalar type names. Backend frames borrow action batches and move response
+traces; the serialized bytes and legacy file protocol remain covered by focused
+equivalence checks. Input staging serializes bounded blocks while computing its digest. Tensor snapshot
 alias indexes replace repeated full-handle scans while retaining canonical IDs
 and alias order. Exact-bit, bounds, digest and scheduler regressions cover these
 changes; full matrices and performance measurements remain CI-only.
