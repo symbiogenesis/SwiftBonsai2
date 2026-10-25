@@ -724,3 +724,86 @@ fn raw_delta_gates_preserve_nullable_row_slot_and_apply_activations() -> Result<
     assert_eq!(&actual[2..], &[1.0, 0.0, 2.0, 0.0]);
     Ok(())
 }
+
+#[test]
+fn lightning_indexer_combines_relu_heads_and_half_mask() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let queries = backend.tensor(1, 0, [2, 2, 1, 1])?;
+    backend.set_values(queries, &[1.0, 2.0, -1.0, 1.0])?;
+    let keys = backend.tensor(1, 1, [2, 1, 2, 1])?;
+    backend.set_values(keys, &[2.0, 0.0, 0.0, 3.0])?;
+    let weights = backend.tensor(1, 0, [2, 1, 1, 1])?;
+    backend.set_values(weights, &[0.5, 2.0])?;
+    let mask = backend.tensor(1, 1, [2, 1, 1, 1])?;
+    backend.set_values(mask, &[0.0, -1.0])?;
+    let scores = result_tensor(&backend.call(
+        "ggml_lightning_indexer",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(queries),
+            Argument::Tensor(keys),
+            Argument::Tensor(weights),
+            Argument::Tensor(mask),
+        ],
+    )?)?;
+    evaluate(&mut backend, scores)?;
+    assert_eq!(backend.values(scores)?, [1.0, 8.0]);
+    Ok(())
+}
+
+#[test]
+fn volume_extraction_and_channel_contiguous_depthwise_keep_strides() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let volume = backend.tensor(1, 0, [3, 1, 3, 1])?;
+    backend.set_values(volume, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])?;
+    let kernel = backend.tensor(1, 0, [2, 1, 2, 1])?;
+    backend.set_values(kernel, &[1.0; 4])?;
+    let mut arguments = vec![
+        Argument::Context(1),
+        Argument::Tensor(kernel),
+        Argument::Tensor(volume),
+        Argument::Integer(1),
+    ];
+    arguments.extend([1, 1, 1, 0, 0, 0, 1, 1, 1, 0].map(Argument::Integer));
+    let columns = result_tensor(&backend.call("ggml_im2col_3d", &arguments)?)?;
+    evaluate(&mut backend, columns)?;
+    assert_eq!(backend.info(columns)?.shape, [4, 2, 1, 2]);
+    assert_eq!(
+        backend.values(columns)?,
+        [
+            1.0, 2.0, 4.0, 5.0, 2.0, 3.0, 5.0, 6.0, 4.0, 5.0, 7.0, 8.0, 5.0, 6.0, 8.0, 9.0
+        ]
+    );
+    let channels = backend.tensor(1, 0, [2, 3, 2, 1])?;
+    backend.set_values(
+        channels,
+        &[1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0],
+    )?;
+    let permuted = result_tensor(&backend.call(
+        "ggml_permute",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(channels),
+            Argument::Integer(2),
+            Argument::Integer(0),
+            Argument::Integer(1),
+            Argument::Integer(3),
+        ],
+    )?)?;
+    let channel_kernel = backend.tensor(1, 0, [1, 1, 1, 2])?;
+    backend.set_values(channel_kernel, &[3.0, 4.0])?;
+    let mut arguments = vec![
+        Argument::Context(1),
+        Argument::Tensor(channel_kernel),
+        Argument::Tensor(permuted),
+    ];
+    arguments.extend([1, 1, 0, 0, 1, 1].map(Argument::Integer));
+    let convolved = result_tensor(&backend.call("ggml_conv_2d_dw_direct", &arguments)?)?;
+    evaluate(&mut backend, convolved)?;
+    assert_eq!(backend.info(convolved)?.strides, [8, 24, 4, 48]);
+    assert_eq!(
+        backend.values(convolved)?,
+        [3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 8.0, 8.0, 8.0, 8.0, 8.0, 8.0]
+    );
+    Ok(())
+}

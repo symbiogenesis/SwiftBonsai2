@@ -1091,6 +1091,37 @@ impl CpuBackend {
                 }
                 57
             }
+            "ggml_im2col_3d" => {
+                let image = tensor(args, 2)?;
+                let image_shape = self.info(image)?.shape;
+                let channels = usize_arg(args, 3)?;
+                if channels == 0 || !image_shape[3].is_multiple_of(channels) {
+                    return Err(invalid("CPU 3D im2col channel geometry differs"));
+                }
+                let mut spatial = [0; 3];
+                for axis in 0..3 {
+                    spatial[axis] = convolution_extent(
+                        image_shape[axis],
+                        shape[axis],
+                        int(args, 4 + axis)?,
+                        int(args, 7 + axis)?,
+                        int(args, 10 + axis)?,
+                    )?;
+                }
+                shape = [
+                    shape[0] * shape[1] * shape[2] * channels,
+                    spatial[0],
+                    spatial[1],
+                    spatial[2] * (image_shape[3] / channels),
+                ];
+                sources.push(image);
+                kind = i32::try_from(int(args, 13)?)?;
+                for index in 0..9 {
+                    put_int(&mut p, index, i32::try_from(int(args, 4 + index)?)?);
+                }
+                put_int(&mut p, 9, i32::try_from(channels)?);
+                54
+            }
             "ggml_conv_transpose_2d_p0" => {
                 let b = tensor(args, 2)?;
                 let bs = self.info(b)?.shape;
@@ -1546,6 +1577,35 @@ impl CpuBackend {
                 shape = [shape[0], shape[2], 1, 1];
                 89
             }
+            "ggml_lightning_indexer" => {
+                let keys = tensor(args, 2)?;
+                let weights = tensor(args, 3)?;
+                let mask = tensor(args, 4)?;
+                let ki = self.info(keys)?;
+                let wi = self.info(weights)?;
+                let mi = self.info(mask)?;
+                if kind != 0
+                    || wi.kind != 0
+                    || mi.kind != 1
+                    || shape[0] != ki.shape[0]
+                    || ki.shape[1] != 1
+                    || shape[1] != wi.shape[0]
+                    || shape[2] != wi.shape[1]
+                    || wi.shape[2] != 1
+                    || mi.shape[0] != ki.shape[2]
+                    || mi.shape[1] != shape[2]
+                    || mi.shape[2] != 1
+                    || shape[3] != ki.shape[3]
+                    || shape[3] != wi.shape[3]
+                    || mi.shape[3] == 0
+                    || !shape[3].is_multiple_of(mi.shape[3])
+                {
+                    return Err(invalid("CPU lightning indexer geometry differs"));
+                }
+                shape = [ki.shape[2], shape[2], 1, shape[3]];
+                sources.extend([keys, weights, mask]);
+                87
+            }
             "ggml_dsv4_hc_post" => {
                 let residual = tensor(args, 2)?;
                 let post = tensor(args, 3)?;
@@ -1685,6 +1745,23 @@ impl CpuBackend {
         if inplace {
             view = Some((a, a_info.strides, 0));
         }
-        self.derived(ctx, kind, shape, op, sources, p, view)
+        let channel_contiguous = if op == 58 {
+            let input = self.info(sources[1])?;
+            let width = type_layout(input.kind)?.bytes;
+            input.strides[2] == width
+                && input.strides[0] == input.shape[2] * width
+                && input.strides[1] == input.shape[0] * input.shape[2] * width
+        } else {
+            false
+        };
+        let observation = self.derived(ctx, kind, shape, op, sources, p, view)?;
+        if channel_contiguous && let Observation::Tensor(Some(id)) = observation {
+            let info = self.info_mut(id)?;
+            let width = type_layout(kind)?.bytes;
+            info.strides[0] = shape[2] * width;
+            info.strides[1] = shape[0] * shape[2] * width;
+            info.strides[2] = width;
+        }
+        Ok(observation)
     }
 }

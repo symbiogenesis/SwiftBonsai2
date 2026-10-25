@@ -10,6 +10,38 @@ fn float(params: &[u8; 64], index: usize) -> f32 {
 }
 
 impl CpuBackend {
+    pub(super) fn indexer_values(&self, info: &TensorInfo, queries: &[f32]) -> Result<Vec<f32>> {
+        let query_shape = self.info(info.sources[0])?.shape;
+        let key_shape = self.info(info.sources[1])?.shape;
+        let weight_shape = self.info(info.sources[2])?.shape;
+        let mask_shape = self.info(info.sources[3])?.shape;
+        let keys = self.values(info.sources[1])?;
+        let weights = self.values(info.sources[2])?;
+        let mask = self.values(info.sources[3])?;
+        let mut output = vec![0.0; info.elements()];
+        for stream in 0..query_shape[3] {
+            for token in 0..query_shape[2] {
+                for key in 0..key_shape[2] {
+                    let key_start = linear([0, 0, key, stream], key_shape);
+                    let mut score = 0.0_f32;
+                    for head in 0..query_shape[1] {
+                        let query_start = linear([0, head, token, stream], query_shape);
+                        let dot = queries[query_start..query_start + query_shape[0]]
+                            .iter()
+                            .zip(&keys[key_start..key_start + query_shape[0]])
+                            .map(|(&query, &key)| f64::from(query) * f64::from(key))
+                            .sum::<f64>() as f32;
+                        score +=
+                            dot.max(0.0) * weights[linear([head, token, 0, stream], weight_shape)];
+                    }
+                    output[linear([key, token, 0, stream], info.shape)] =
+                        score + mask[linear([key, token, 0, stream % mask_shape[3]], mask_shape)];
+                }
+            }
+        }
+        Ok(output)
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "The pinned online softmax, half accumulator and sink updates retain their operation order."

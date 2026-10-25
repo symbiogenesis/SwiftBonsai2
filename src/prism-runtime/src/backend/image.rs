@@ -82,6 +82,46 @@ impl CpuBackend {
                     }
                 }
             }
+            54 => {
+                let image = *info
+                    .sources
+                    .get(1)
+                    .ok_or_else(|| invalid("CPU 3D im2col image missing"))?;
+                let image_shape = self.info(image)?.shape;
+                let image = self.values(image)?;
+                let channels = integer(p, 9) as usize;
+                let batches = image_shape[3] / channels;
+                let depth = shape[3] / batches;
+                for (index, value) in output.iter_mut().enumerate() {
+                    let coordinate = coordinates(index, shape);
+                    let kernel = coordinates(
+                        coordinate[0],
+                        [source_shape[0], source_shape[1], source_shape[2], channels],
+                    );
+                    let position = [coordinate[1], coordinate[2], coordinate[3] % depth];
+                    let batch = coordinate[3] / depth;
+                    let source_index: [i64; 3] = std::array::from_fn(|axis| {
+                        position[axis] as i64 * i64::from(integer(p, axis))
+                            + kernel[axis] as i64 * i64::from(integer(p, axis + 6))
+                            - i64::from(integer(p, axis + 3))
+                    });
+                    if source_index
+                        .iter()
+                        .zip(image_shape)
+                        .all(|(&index, dimension)| index >= 0 && index < dimension as i64)
+                    {
+                        *value = image[linear(
+                            [
+                                source_index[0] as usize,
+                                source_index[1] as usize,
+                                source_index[2] as usize,
+                                kernel[3] + channels * batch,
+                            ],
+                            image_shape,
+                        )];
+                    }
+                }
+            }
             56 | 58 => {
                 let image = *info
                     .sources
