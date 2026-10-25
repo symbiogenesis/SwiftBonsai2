@@ -74,6 +74,77 @@ const SOURCES: [Source; 6] = [
     },
 ];
 
+/// Thin observations over the reusable production PEG arena API.
+pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
+    use bonsai_prism_runtime::peg::Arena;
+    exact_fields(request, &["SchemaVersion", "Operations"])?;
+    let operations = array(request, "Operations")?;
+    if uint(request, "SchemaVersion")? != 1 || operations.len() > 128 {
+        return Err(invalid("PEG request framing exceeds bound"));
+    }
+    if operations.iter().any(|operation| {
+        !matches!(
+            operation["Kind"].as_str(),
+            Some("peg-evaluate" | "peg-serialize" | "peg-deserialize")
+        )
+    }) {
+        return Ok(None);
+    }
+    let mut results = Vec::new();
+    for operation in operations {
+        let kind = text(operation, "Kind")?;
+        if kind == "peg-deserialize" {
+            exact_fields(operation, &["Kind", "SerializedJson"])?;
+            results.push(json!({"Root":Arena::load(text(operation,"SerializedJson")?)?.root()}));
+            continue;
+        }
+        let arena = Arena::from_graph(field(operation, "Graph")?)?;
+        if kind == "peg-serialize" {
+            exact_fields(operation, &["Kind", "Graph"])?;
+            results.push(json!({"SerializedJson":arena.save()?}));
+            continue;
+        }
+        exact_fields(
+            operation,
+            &["Kind", "Graph", "Inputs", "GenerateGrammar", "RoundTrip"],
+        )?;
+        let parse = |arena: &Arena| -> Result<Vec<Value>> {
+            array(operation, "Inputs")?
+                .iter()
+                .map(|input| {
+                    exact_fields(input, &["Bytes", "Flags"])?;
+                    let observation = arena.parse(
+                        &bytes(field(input, "Bytes")?)?,
+                        u8::try_from(uint(input, "Flags")?)?,
+                    )?;
+                    Ok(serde_json::to_value(observation)?)
+                })
+                .collect()
+        };
+        let observations = parse(&arena)?;
+        let grammars = array(operation, "GenerateGrammar")?
+            .iter()
+            .map(|value| {
+                arena.grammar(
+                    value
+                        .as_bool()
+                        .ok_or_else(|| invalid("PEG grammar lazy flag missing"))?,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let serialized = boolean(operation, "RoundTrip")?
+            .then(|| arena.save())
+            .transpose()?;
+        let roundtrip = serialized
+            .as_deref()
+            .map(|value| Arena::load(value).and_then(|arena| parse(&arena)))
+            .transpose()?
+            .unwrap_or_default();
+        results.push(json!({"Results":observations,"GrammarTexts":grammars,"SerializedJson":serialized,"RoundTripResults":roundtrip}));
+    }
+    Ok(Some(json!({"SchemaVersion":1,"Results":results})))
+}
+
 fn text<'a>(value: &'a Value, name: &str) -> Result<&'a str> {
     field(value, name)?
         .as_str()
@@ -474,6 +545,60 @@ pub(super) fn benchmark_deserialization(engine: &Engine) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn original_source(index: usize) -> Result<()> {
+        let source = &SOURCES[index];
+        let fixture = fixture(source)?;
+        let response = execute(&json!({"SchemaVersion":1,"Operations":fixture["Operations"]}))?
+            .ok_or("PEG production response missing")?;
+        let values = array(&response, "Results")?;
+        let mut executed = 0;
+        let mut failures = Vec::new();
+        for (operation, value) in array(&fixture, "Operations")?.iter().zip(values) {
+            validate_observation(operation, value)?;
+        }
+        for assertion in array(&fixture, "Assertions")? {
+            if !evaluate(field(assertion, "When")?, values, 0)?.boolean()? {
+                continue;
+            }
+            executed += 1;
+            let left = evaluate(field(assertion, "Left")?, values, 0)?;
+            let right = evaluate(field(assertion, "Right")?, values, 0)?;
+            if left != right {
+                failures.push(format!(
+                    "{}: {left:?} != {right:?}",
+                    text(assertion, "Name")?
+                ));
+            }
+        }
+        assert_eq!(executed, source.expected_executed);
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+        Ok(())
+    }
+    #[test]
+    fn production_original_peg_basic() -> Result<()> {
+        original_source(0)
+    }
+    #[test]
+    fn production_original_peg_gbnf() -> Result<()> {
+        original_source(1)
+    }
+    #[test]
+    fn production_original_peg_json() -> Result<()> {
+        original_source(2)
+    }
+    #[test]
+    fn production_original_peg_serialization() -> Result<()> {
+        original_source(3)
+    }
+    #[test]
+    fn production_original_peg_python() -> Result<()> {
+        original_source(4)
+    }
+    #[test]
+    fn production_original_peg_unicode() -> Result<()> {
+        original_source(5)
+    }
 
     #[test]
     fn assertion_slices_and_native_types_are_bounded_and_byte_exact() -> Result<()> {
