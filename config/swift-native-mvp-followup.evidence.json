@@ -238,6 +238,11 @@
       "path": "neon-chat61-vs-neon-chat61-attention42-exact-comparison.json",
       "bytes": 2493565,
       "sha256": "bcf89fe170b070a746c605eaf4c526ab35393e66ad0c269affd8b9d37cfca70a"
+    },
+    {
+      "path": "neon-chat61-inplace-comparison.json",
+      "bytes": 3507844,
+      "sha256": "7994a0fbfb72d416bb5542222ce5458d6e89e95947fa68764da30740f4ddac45"
     }
   ],
   "sessionFollowup": {
@@ -651,8 +656,10 @@
           "reference": -0.28960365056991577
         }
       },
-      "hypothesis": "Production in-place/fused RoPE execution differs from standalone operator controls; no additional repair yet",
-      "rawComparison": "attention42-trace-comparison.json"
+      "rawComparison": "attention42-trace-comparison.json",
+      "causeConfirmed": true,
+      "cause": "Pinned native in-place RoPE uses LEFT/RIGHT FMA; standalone out-of-place uses RIGHT/RIGHT",
+      "correctionRevision": "9899a253633568b4cb870cdaf9e4df795c7cc0d8"
     }
   },
   "downProjectionDiagnosis": {
@@ -685,12 +692,12 @@
     "implementationRevision": "46599ba2ef35c9d5c1bbd6817bfe5b8636c68fc7"
   },
   "currentQualification": {
-    "implementationRevision": "d932dac4896fd14f3f1206b3be346e52c57ba947",
-    "combinedActualModelRerun": "passed-byte-exact-three-supplied-token-diagnostic",
+    "implementationRevision": "9899a253633568b4cb870cdaf9e4df795c7cc0d8",
+    "combinedActualModelRerun": "passed-61-token-prefix-and-three-greedy-steps",
     "lastObservedAvailablePhysicalBytes": 15655223296,
     "boundedDiagnosticStartFloorBytes": 14656575898,
     "memoryAcceptableForPreviouslyObservedWorkload": true,
-    "M2": "unqualified: 61-token prefix and three generated steps exceed native tolerance; greedy IDs match; scalar and NEON are byte-exact across all 8,388 files",
+    "M2": "NEON native prefix/greedy parity passed byte-exact; focused corrected-revision scalar check pending",
     "M6": "owned HTTP recovery and current-revision device coverage remain open",
     "runtimeReleasePin": "0.1.1",
     "serviceStartupAdmissionBytes": 17179869184
@@ -861,6 +868,42 @@
           "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
         }
       }
+    },
+    {
+      "passed": true,
+      "all_files_bit_exact": true,
+      "total_elements": 166078464,
+      "failed_elements": 0,
+      "generated_actual": [
+        1596,
+        1144,
+        310
+      ],
+      "generated_reference": [
+        1596,
+        1144,
+        310
+      ],
+      "prompt_sha256": "44cd6ec653c260c947714315045668b45392811dbda036cacf8374e0dec13c42",
+      "actual_process": {
+        "revision": "9899a253633568b4cb870cdaf9e4df795c7cc0d8",
+        "mode": "neon",
+        "exitCode": 0,
+        "violation": null,
+        "peakProcessCommitBytes": 7540047872,
+        "peakWorkingSetBytes": 7526592512,
+        "initialAvailablePhysicalBytes": 15462383616,
+        "minimumAvailablePhysicalBytes": 5756149760,
+        "requiredInitialAvailableBytes": 14656575898,
+        "standardServiceAdmissionBytes": 17179869184,
+        "ownerAuthorizedReducedAdmission": true,
+        "processThresholdBytes": 12884901888,
+        "physicalReserveBytes": 4294967296,
+        "executableSha256": "03eefba5a6494f4b4e4b200ae1962197cf9c528844528feaf919eb1b1ba2ef83",
+        "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+      },
+      "comparedFiles": 8388,
+      "scope": "61-token pinned chat prefix plus three generated greedy steps; all 64 blocks and complete logical state at positions 60 through 63"
     }
   ]
 }
