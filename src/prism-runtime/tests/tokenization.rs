@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bonsai_prism_runtime::Result;
-use bonsai_prism_runtime::model::Model;
+use bonsai_prism_runtime::model::{Model, ModelMetadata};
 use bonsai_prism_runtime::special_input::SpecialInputPolicy;
 use bonsai_prism_runtime::tokenization::{
     MAX_TOKENIZATION_CONTEXT, SpecialTokenInsertion, TextTokenizationPolicy, TokenBudget,
@@ -79,6 +79,37 @@ fn error<T>(result: Result<T>) -> Result<String> {
         .err()
         .ok_or("invalid request was accepted")?
         .to_string())
+}
+
+#[test]
+fn session_from_verified_metadata_reuses_exact_tokenizer_without_reopening_artifact() -> Result<()>
+{
+    let artifact = Artifact::new(260, 258, "qwen35")?;
+    let metadata = ModelMetadata::load(
+        &artifact.path,
+        u64::try_from(artifact.bytes.len())?,
+        &artifact.hash(),
+        HEADER_BUDGET,
+    )?;
+    let loaded = artifact.load()?;
+    fs::remove_file(&artifact.path)?;
+    let session = TokenizationSession::from_metadata(&metadata)?;
+    assert_eq!(session.identity(), loaded.identity());
+    assert_eq!(session.special_tokens(), loaded.special_tokens());
+    assert_eq!(session.vocab_size(), loaded.vocab_size());
+    let request = TextTokenizationPolicy {
+        special_input: SpecialInputPolicy::Parse,
+        insert_special: SpecialTokenInsertion::Model,
+        budget: TokenBudget {
+            context: 32,
+            reserved_output_tokens: 8,
+        },
+    };
+    assert_eq!(
+        session.encode("ab\r\né<tag><stop>", request)?,
+        loaded.encode("ab\r\né<tag><stop>", request)?
+    );
+    Ok(())
 }
 
 #[test]
