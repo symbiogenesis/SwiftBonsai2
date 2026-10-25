@@ -29,6 +29,18 @@ struct ReleasePin {
     release: String,
     asset: Object<Asset>,
     files: Vec<Object<File>>,
+    #[serde(rename = "Source")]
+    source: Object<Source>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+struct Source {
+    repository: String,
+    commit: String,
+    url: String,
+    bytes: u64,
+    sha256: String,
 }
 
 #[derive(Deserialize)]
@@ -78,6 +90,12 @@ fn release(input: &str) -> Result<ReleasePin, LaunchError> {
             )
         || release.asset.bytes == 0
         || !hex(&release.asset.sha256, 64)
+        || release.source.repository != release.repository
+        || release.source.commit != release.commit
+        || release.source.url != format!("{}/archive/{}.zip", release.repository, release.commit)
+        || release.source.bytes == 0
+        || release.source.bytes > 256 * 1024 * 1024
+        || !hex(&release.source.sha256, 64)
         || release.files.is_empty()
     {
         return Err(LaunchError::Artifacts);
@@ -92,6 +110,7 @@ fn release(input: &str) -> Result<ReleasePin, LaunchError> {
                 "bonsai-token-worker.exe",
                 "bonsai-swift-worker.exe",
                 "prism-inference-server.exe",
+                "bonsai-gguf.exe",
                 "LICENSE",
                 "NOTICE",
                 "PRISM-LICENSE.txt",
@@ -151,6 +170,27 @@ mod tests {
         }
         let mut changed = value.clone();
         changed["files"][0]["name"] = serde_json::json!("../prism-inference-server.exe");
+        assert!(release(&serde_json::to_string(&changed)?).is_err());
+        for (field, replacement) in [
+            ("Repository", serde_json::json!("https://example.com/prism")),
+            ("Commit", serde_json::json!("../escape")),
+            ("Url", serde_json::json!("https://example.com/source.zip")),
+            ("Bytes", serde_json::json!(0)),
+            ("Bytes", serde_json::json!(268_435_457_u64)),
+            ("Sha256", serde_json::json!("not-a-hash")),
+        ] {
+            let mut changed = value.clone();
+            changed["Source"][field] = replacement;
+            assert!(
+                release(&serde_json::to_string(&changed)?).is_err(),
+                "Source.{field}"
+            );
+        }
+        let mut changed = value.clone();
+        changed["Source"] = serde_json::json!([]);
+        assert!(release(&serde_json::to_string(&changed)?).is_err());
+        let mut changed = value.clone();
+        changed["Source"]["unexpected"] = serde_json::json!(true);
         assert!(release(&serde_json::to_string(&changed)?).is_err());
         let mut changed = value;
         changed["asset"]["url"] = serde_json::json!("https://example.com/runtime.zip");
