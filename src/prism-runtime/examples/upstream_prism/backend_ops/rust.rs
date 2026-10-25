@@ -327,7 +327,7 @@ mod tests {
         let engine = Engine::new(Target::Rust, None, None, None, None, None)?;
         let outcome = transport::with_session(&engine, &directory, |session| {
             let observed=session.exchange(vec![
-                json!({"Op":"context-init","Id":1,"MemoryBytes":1048576,"NoAlloc":true}),
+                json!({"Op":"context-init","Id":1,"MemoryBytes":1_048_576,"NoAlloc":true}),
                 json!({"Op":"backend-init","Id":1,"Device":"CPU","Threads":1,"UseRef":false}),
                 json!({"Op":"call","Function":"ggml_new_tensor_1d","Arguments":[{"Context":1},{"I32":0},{"I64":4}],"Result":{"Tensor":1}}),
                 json!({"Op":"call","Function":"ggml_scale_bias","Arguments":[{"Context":1},{"Tensor":1},{"F32Bits":2.0_f32.to_bits()},{"F32Bits":1.0_f32.to_bits()}],"Result":{"Tensor":2}}),
