@@ -1284,6 +1284,161 @@ impl CpuBackend {
                 sources.push(weights);
                 76
             }
+            "ggml_ssm_scan" => {
+                for index in 2..=7 {
+                    sources.push(tensor(args, index)?);
+                }
+                let xs = self.info(sources[1])?.shape;
+                let ds = self.info(sources[2])?.shape;
+                let decay = self.info(sources[3])?.shape;
+                let bs = self.info(sources[4])?.shape;
+                let cs = self.info(sources[5])?.shape;
+                let ids = self.info(sources[6])?;
+                let snapshots = int(args, 8)?;
+                if snapshots < 1
+                    || shape[1] != xs[0]
+                    || shape[2] != xs[1]
+                    || ds != [xs[1], xs[2], xs[3], 1]
+                    || (decay[0] != 1 && (decay[0] != shape[0] || snapshots != 1))
+                    || decay[1..] != [xs[1], 1, 1]
+                    || bs != cs
+                    || bs[0] != shape[0]
+                    || bs[2..] != xs[2..]
+                    || bs[1] == 0
+                    || !xs[1].is_multiple_of(bs[1])
+                    || ids.shape != [xs[3], 1, 1, 1]
+                    || ids.kind != 26
+                    || sources[..6]
+                        .iter()
+                        .any(|&id| self.info(id).is_ok_and(|info| info.kind != 0))
+                {
+                    return Err(invalid("CPU state scan geometry differs"));
+                }
+                shape = [
+                    product(xs)?
+                        + usize::try_from(snapshots)? * shape[0] * shape[1] * shape[2] * xs[3],
+                    1,
+                    1,
+                    1,
+                ];
+                kind = 0;
+                put_int(&mut p, 0, i32::try_from(snapshots)?);
+                77
+            }
+            "ggml_rwkv_wkv6" | "ggml_gated_linear_attn" | "ggml_rwkv_wkv7" => {
+                let operation = match name {
+                    "ggml_rwkv_wkv6" => 82,
+                    "ggml_gated_linear_attn" => 83,
+                    _ => 84,
+                };
+                let state_argument = match operation {
+                    82 => 6,
+                    83 => 5,
+                    _ => 7,
+                };
+                for index in 2..=state_argument {
+                    sources.push(tensor(args, index)?);
+                }
+                let state_info = self.info(sources[state_argument - 1])?;
+                let sequences = state_info.shape[1];
+                let width = shape[0];
+                let heads = shape[1];
+                let tokens = shape[2];
+                if sequences == 0
+                    || tokens == 0
+                    || !tokens.is_multiple_of(sequences)
+                    || state_info.elements() != width * width * heads * sequences
+                    || sources
+                        .iter()
+                        .any(|&id| self.info(id).is_ok_and(|info| info.kind != 0))
+                {
+                    return Err(invalid("CPU recurrent attention state geometry differs"));
+                }
+                for (index, &source) in sources.iter().enumerate().take(state_argument - 1) {
+                    let actual = self.info(source)?.shape;
+                    if operation == 82 && index == 3 {
+                        if self.info(source)?.elements() < width * heads {
+                            return Err(invalid("CPU WKV time weight extent differs"));
+                        }
+                    } else if actual != shape {
+                        return Err(invalid("CPU recurrent attention vector geometry differs"));
+                    }
+                }
+                if operation == 83 {
+                    put_float(&mut p, 0, float(args, 6)?);
+                }
+                shape = [width * heads, tokens + width * sequences, 1, 1];
+                kind = 0;
+                operation
+            }
+            "ggml_dsv4_hc_comb" => {
+                let scale = tensor(args, 2)?;
+                let base = tensor(args, 3)?;
+                let scales = self.info(scale)?;
+                let bases = self.info(base)?;
+                let iterations = int(args, 5)?;
+                if shape[0] != 24
+                    || shape[2..] != [1, 1]
+                    || scales.shape[0] < 3
+                    || scales.shape[1..] != [1, 1, 1]
+                    || bases.shape != [24, 1, 1, 1]
+                    || iterations <= 0
+                    || [a, scale, base]
+                        .iter()
+                        .any(|&id| self.info(id).is_ok_and(|info| info.kind != 0))
+                {
+                    return Err(invalid("CPU hyperconnection mixture geometry differs"));
+                }
+                sources.push(scale);
+                sources.push(base);
+                shape = [4, 4, shape[1], 1];
+                kind = 0;
+                put_float(&mut p, 0, float(args, 4)?);
+                put_int(&mut p, 1, i32::try_from(iterations)?);
+                88
+            }
+            "ggml_dsv4_hc_pre" => {
+                let weights = tensor(args, 2)?;
+                let wi = self.info(weights)?;
+                if shape[1] == 0
+                    || shape[3] != 1
+                    || wi.shape != [shape[1], shape[2], 1, 1]
+                    || wi.kind != 0
+                    || kind != 0
+                {
+                    return Err(invalid(
+                        "CPU hyperconnection pre-projection geometry differs",
+                    ));
+                }
+                sources.push(weights);
+                shape = [shape[0], shape[2], 1, 1];
+                89
+            }
+            "ggml_dsv4_hc_post" => {
+                let residual = tensor(args, 2)?;
+                let post = tensor(args, 3)?;
+                let combination = tensor(args, 4)?;
+                let rs = self.info(residual)?.shape;
+                let ps = self.info(post)?.shape;
+                let cs = self.info(combination)?.shape;
+                if shape[2..] != [1, 1]
+                    || rs[0] != shape[0]
+                    || rs[1] == 0
+                    || rs[2..] != [shape[1], 1]
+                    || ps != [rs[1], shape[1], 1, 1]
+                    || cs != [rs[1], rs[1], shape[1], 1]
+                    || [a, residual, post, combination]
+                        .iter()
+                        .any(|&id| self.info(id).is_ok_and(|info| info.kind != 0))
+                {
+                    return Err(invalid(
+                        "CPU hyperconnection post-projection geometry differs",
+                    ));
+                }
+                sources.extend([residual, post, combination]);
+                shape = [shape[0], rs[1], shape[1], 1];
+                90
+            }
             "ggml_opt_step_adamw" | "ggml_opt_step_sgd" => {
                 let adam = name == "ggml_opt_step_adamw";
                 if a_info.flags & 16 == 0 || kind != 0 {

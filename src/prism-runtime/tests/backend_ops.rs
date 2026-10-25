@@ -435,3 +435,165 @@ fn attention_and_softmax_sinks_preserve_absent_mask_slots() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn recurrent_attention_retains_exact_sequence_state_updates() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let mut vector = |values: &[f32]| -> Result<TensorId> {
+        let id = backend.tensor(1, 0, [1, 1, values.len(), 1])?;
+        backend.set_values(id, values)?;
+        Ok(id)
+    };
+    let keys = vector(&[1.0, 2.0])?;
+    let values = vector(&[3.0, 4.0])?;
+    let query = vector(&[1.0, 1.0])?;
+    let gates = vector(&[0.25, 0.5])?;
+    let coefficient = vector(&[0.5, 0.5])?;
+    let state = backend.tensor(1, 0, [1, 1, 1, 1])?;
+    backend.set_values(state, &[2.0])?;
+    let time_weight = backend.tensor(1, 0, [1, 1, 1, 1])?;
+    backend.set_values(time_weight, &[0.5])?;
+    let wkv = result_tensor(&backend.call(
+        "ggml_rwkv_wkv6",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(keys),
+            Argument::Tensor(values),
+            Argument::Tensor(query),
+            Argument::Tensor(time_weight),
+            Argument::Tensor(gates),
+            Argument::Tensor(state),
+        ],
+    )?)?;
+    evaluate(&mut backend, wkv)?;
+    assert_eq!(backend.values(wkv)?, [3.5, 7.5, 9.75]);
+    let linear = result_tensor(&backend.call(
+        "ggml_gated_linear_attn",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(keys),
+            Argument::Tensor(values),
+            Argument::Tensor(query),
+            Argument::Tensor(gates),
+            Argument::Tensor(state),
+            Argument::Float(2.0),
+        ],
+    )?)?;
+    evaluate(&mut backend, linear)?;
+    assert_eq!(backend.values(linear)?, [7.0, 19.5, 9.75]);
+    let newer = result_tensor(&backend.call(
+        "ggml_rwkv_wkv7",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(query),
+            Argument::Tensor(gates),
+            Argument::Tensor(keys),
+            Argument::Tensor(values),
+            Argument::Tensor(coefficient),
+            Argument::Tensor(coefficient),
+            Argument::Tensor(state),
+        ],
+    )?)?;
+    evaluate(&mut backend, newer)?;
+    assert_eq!(backend.values(newer)?, [4.0, 11.0, 11.0]);
+    assert_eq!(backend.values(state)?, [2.0]);
+    Ok(())
+}
+
+#[test]
+fn state_scan_keeps_reverse_chronological_snapshot_slots() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let state = backend.tensor(1, 0, [1, 1, 1, 1])?;
+    backend.set_values(state, &[2.0])?;
+    let input = backend.tensor(1, 0, [1, 1, 2, 1])?;
+    backend.set_values(input, &[1.0, 2.0])?;
+    let delta = backend.tensor(1, 0, [1, 2, 1, 1])?;
+    backend.set_values(delta, &[0.0, 0.0])?;
+    let decay = backend.tensor(1, 0, [1, 1, 1, 1])?;
+    backend.set_values(decay, &[0.0])?;
+    let projection = backend.tensor(1, 0, [1, 1, 2, 1])?;
+    backend.set_values(projection, &[1.0, 1.0])?;
+    let rows = backend.tensor(1, 26, [1, 1, 1, 1])?;
+    backend.set_values(rows, &[0.0])?;
+    let scan = result_tensor(&backend.call(
+        "ggml_ssm_scan",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(state),
+            Argument::Tensor(input),
+            Argument::Tensor(delta),
+            Argument::Tensor(decay),
+            Argument::Tensor(projection),
+            Argument::Tensor(projection),
+            Argument::Tensor(rows),
+            Argument::Integer(2),
+        ],
+    )?)?;
+    evaluate(&mut backend, scan)?;
+    let first = 2.0 + 2.0_f32.ln();
+    let second = 3.0_f32.mul_add(2.0_f32.ln(), 2.0);
+    for (&actual, expected) in backend
+        .values(scan)?
+        .iter()
+        .zip([first, second, second, first])
+    {
+        assert!((actual - expected).abs() < 1e-6);
+    }
+    assert_eq!(backend.values(state)?, [2.0]);
+    Ok(())
+}
+
+#[test]
+fn hyperconnections_preserve_channel_matrix_orientation() -> Result<()> {
+    let mut backend = CpuBackend::new();
+    let residual = backend.tensor(1, 0, [2, 2, 1, 1])?;
+    backend.set_values(residual, &[1.0, 2.0, 3.0, 4.0])?;
+    let weights = backend.tensor(1, 0, [2, 1, 1, 1])?;
+    backend.set_values(weights, &[0.25, 0.75])?;
+    let reduced = result_tensor(&backend.call(
+        "ggml_dsv4_hc_pre",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(residual),
+            Argument::Tensor(weights),
+        ],
+    )?)?;
+    evaluate(&mut backend, reduced)?;
+    assert_eq!(backend.values(reduced)?, [2.5, 3.5]);
+    let signal = backend.tensor(1, 0, [2, 1, 1, 1])?;
+    backend.set_values(signal, &[10.0, 20.0])?;
+    let post = backend.tensor(1, 0, [2, 1, 1, 1])?;
+    backend.set_values(post, &[2.0, 3.0])?;
+    let combination = backend.tensor(1, 0, [2, 2, 1, 1])?;
+    backend.set_values(combination, &[1.0, 0.0, 0.0, 1.0])?;
+    let expanded = result_tensor(&backend.call(
+        "ggml_dsv4_hc_post",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(signal),
+            Argument::Tensor(residual),
+            Argument::Tensor(post),
+            Argument::Tensor(combination),
+        ],
+    )?)?;
+    evaluate(&mut backend, expanded)?;
+    assert_eq!(backend.values(expanded)?, [21.0, 42.0, 33.0, 64.0]);
+    let mixes = backend.tensor(1, 0, [24, 1, 1, 1])?;
+    backend.set_values(mixes, &[0.0; 24])?;
+    let scale = backend.tensor(1, 0, [3, 1, 1, 1])?;
+    backend.set_values(scale, &[1.0; 3])?;
+    let balanced = result_tensor(&backend.call(
+        "ggml_dsv4_hc_comb",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(mixes),
+            Argument::Tensor(scale),
+            Argument::Tensor(mixes),
+            Argument::Float(0.0),
+            Argument::Integer(2),
+        ],
+    )?)?;
+    evaluate(&mut backend, balanced)?;
+    assert_eq!(backend.values(balanced)?, [0.25; 16]);
+    Ok(())
+}

@@ -22,6 +22,7 @@ mod attention;
 mod call;
 mod image;
 mod ops;
+mod recurrent;
 mod rope;
 
 pub use call::{operation_name, unary_name};
