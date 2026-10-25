@@ -245,8 +245,10 @@ ARM64 PE headers, compiler identity and build provenance. LLGuidance requires a
 distinct native feature build and starts independently. Every runner extracts
 and verifies fresh source, runs every assigned workload and retains its own
 results. Each runs up to two independent adapters concurrently, starting the
-largest timeout budgets first. Each adapter retains sequential C++ and Rust controls, separate
-logs and bridge evidence. The final gate requires all four revision-bound
+largest timeout budgets first. The single-source thread-safety partition shares
+that two-process budget between its independent C++ and Rust controls. Other
+partitions retain sequential controls per adapter. Logs and bridge evidence are
+isolated for every target. The final gate requires all four revision-bound
 receipts and exactly one result for every assigned source on each target before
 combining the backend partitions and applying the unchanged complete baseline.
 Results return to catalog order. Focused regressions reject missing, duplicate,
@@ -254,13 +256,21 @@ misplaced and foreign-revision handoffs. Exhaustive workloads remain CI-only.
 
 Randomized tokenizer references use parallel IDs-only encoding and decoding
 batches, retaining the same inputs, RNG order, per-item error order, batch bounds
-and source early-stop policy. Quantization statistics retain every original
+and source early-stop policy. Two bounded workers run the 26 independent
+tokenizer cases; each owns its reference, production session and evidence.
+Results and errors return in the original case order, while every case retains
+its generator order and early-stop policy. Quantization statistics retain every original
 16,384-element codec call and each worker's scalar accumulation order, grouping
 up to 16 consecutive chunks into one bounded file transport handshake. The
 default fixture uses 5,434 transport groups for 78,342 source chunks. This reduces
 transport overhead without removing codec calls or numerical assertions. Action
 JSON is serialized in memory before a single file write.
 
+Backend planning still proves all geometries and source-order random offsets
+with 16 partitions. Execution uses 32 finer partitions from that same complete
+plan to reduce the slowest runner's workload without repeating planning. The
+final gate requires all 32 matching execution receipts and the unchanged complete
+geometry coverage. The execution count is explicit in the workflow and receipts.
 Backend Plan, JoinPlan and Run stages overlap the independent C++ and Rust
 target chains with a limit of two workers. Each target retains its sequential
 mode order, source random offsets, isolated process state and evidence paths.

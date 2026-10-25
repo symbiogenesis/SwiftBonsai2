@@ -19,6 +19,9 @@ env:
   # Cargo verifies the source contents, while every check and test still runs.
   CARGO_UNSTABLE_CHECKSUM_FRESHNESS: 'true'
   CARGO_BUILD_FINGERPRINT: content
+  # Execution can use finer partitions than the unchanged 16-part planning
+  # proof. Keep this in sync with the prism-backend-run matrix below.
+  PRISM_BACKEND_EXECUTION_COUNT: '32'
 concurrency:
   group: foundation-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'push' }}
@@ -483,7 +486,7 @@ jobs:
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismNativeCache.ps1')
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismSourcePartition.ps1')
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismSourceResults.ps1')
-          foreach ($case in @('Scheduling', 'Identity', 'ProcessFailure')) {
+          foreach ($case in @('Scheduling', 'ParallelTargets', 'Identity', 'ProcessFailure')) {
             & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismRunner.ps1') -Case $case
           }
           foreach ($case in @('Scheduling', 'ProcessFailure')) {
@@ -777,7 +780,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        partition: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        partition: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -800,7 +803,7 @@ jobs:
         run: |
           $evidence = Join-Path $env:RUNNER_TEMP ('prism-backend-run-' + $env:PARTITION)
           "BACKEND_STAGE=$evidence" >> $env:GITHUB_ENV
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Run -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory $evidence -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -Index ([int]$env:PARTITION) -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') -Gradients:($env:RUN_GRADIENTS -ceq 'true') | Out-Null
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Run -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory $evidence -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -Index ([int]$env:PARTITION) -ExecutionCount ([int]$env:PRISM_BACKEND_EXECUTION_COUNT) -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') -Gradients:($env:RUN_GRADIENTS -ceq 'true') | Out-Null
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && env.BACKEND_STAGE != ''
         with:
@@ -857,7 +860,7 @@ jobs:
           RUN_BENCHMARKS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks }}
           RUN_GRADIENTS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_gradients }}
         run: |
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Gate -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-upstream-gate') -InputDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-runs') -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -OrdinaryEvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-ordinary-results') -PartitionedOrdinary -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') -Gradients:($env:RUN_GRADIENTS -ceq 'true') | ConvertTo-Json -Depth 12
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Gate -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-upstream-gate') -InputDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-runs') -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -ExecutionCount ([int]$env:PRISM_BACKEND_EXECUTION_COUNT) -OrdinaryEvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-ordinary-results') -PartitionedOrdinary -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') -Gradients:($env:RUN_GRADIENTS -ceq 'true') | ConvertTo-Json -Depth 12
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

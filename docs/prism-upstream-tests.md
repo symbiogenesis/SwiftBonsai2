@@ -100,8 +100,8 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
 - `test-backend-ops.cpp`: all 112 active CPU classes and 22,817 ordered
   geometries in each of evaluation and support modes. Rust interprets
   the complete pinned source program, builds inputs and computes every reference
-  and metric. Sixteen hosted partitions require complete plans and source-order
-  random offsets before execution. A final gate rejects missing or duplicate
+  and metric. Sixteen hosted planning partitions require complete plans and
+  source-order random offsets before 32 execution partitions run. A final gate rejects missing or duplicate
   results. The 1,530 original performance workloads remain a separate requested
   CI measurement. CPU selection is explicit; source random-device seeds become
   logged reproducible Rust seeds.
@@ -125,7 +125,7 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   digest, ordering and completeness check.
   Each C++ plan/execution partition reuses one bounded pipe process while every
   geometry receives fresh production state. Default evaluation/support planning
-  and execution use 64 native partition workers instead of 91,268 per-geometry
+  and execution use 96 native partition workers instead of 91,268 per-geometry
   process launches. Source-order random offsets, input receipts, geometry counts,
   tolerances and result hashes remain required. CI compares the original file
   transport with the pipe transport on focused numerical/source geometries and
