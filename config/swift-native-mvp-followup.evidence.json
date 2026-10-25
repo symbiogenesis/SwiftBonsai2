@@ -218,6 +218,11 @@
       "path": "neon-chat61-comparison.json",
       "bytes": 3591276,
       "sha256": "b9df8f76bd52b45e8f06a40855ff15aa0d044b6882b96a17a33d41c9478dc596"
+    },
+    {
+      "path": "neon-chat61-vs-scalar-chat61-exact-comparison.json",
+      "bytes": 2493555,
+      "sha256": "9b830d1d7f99cea13e3e9f71c04fa94db5da2d87edf8b1d4ac5b4b5370e565d0"
     }
   ],
   "sessionFollowup": {
@@ -640,7 +645,7 @@
     "lastObservedAvailablePhysicalBytes": 15655223296,
     "boundedDiagnosticStartFloorBytes": 14656575898,
     "memoryAcceptableForPreviouslyObservedWorkload": true,
-    "M2": "unqualified:61-token prefix and three generated steps exceed unchanged numerical tolerance;greedy IDs match;scalar/NEON replay in progress",
+    "M2": "unqualified: 61-token prefix and three generated steps exceed native tolerance; greedy IDs match; scalar and NEON are byte-exact across all 8,388 files",
     "M6": "owned HTTP recovery and current-revision device coverage remain open",
     "runtimeReleasePin": "0.1.1",
     "serviceStartupAdmissionBytes": 17179869184
@@ -787,7 +792,30 @@
           "reference_sha256": "2c6578e32a0e61d24acf1177c595e20cc85dd523f9fb74d5780d253944a3ec82"
         }
       ],
-      "localization": "At position60 complete block0,1,2 recurrent/convolution states are byte-exact; block3 KV rows match except one F16 word in key42. Later attention-path divergence remains under audit."
+      "localization": "At position60 complete block0,1,2 recurrent/convolution states are byte-exact; block3 KV rows match except one F16 word in key42. Later attention-path divergence remains under audit.",
+      "scalarVsNeon": {
+        "passed": true,
+        "comparedFiles": 8388,
+        "comparedBytes": 664313856,
+        "allFilesBitExact": true,
+        "scalarProcess": {
+          "revision": "d932dac4896fd14f3f1206b3be346e52c57ba947",
+          "mode": "scalar",
+          "exitCode": 0,
+          "violation": null,
+          "peakProcessCommitBytes": 7539929088,
+          "peakWorkingSetBytes": 7526514688,
+          "initialAvailablePhysicalBytes": 15647485952,
+          "minimumAvailablePhysicalBytes": 6334689280,
+          "requiredInitialAvailableBytes": 14656575898,
+          "standardServiceAdmissionBytes": 17179869184,
+          "ownerAuthorizedReducedAdmission": true,
+          "processThresholdBytes": 12884901888,
+          "physicalReserveBytes": 4294967296,
+          "executableSha256": "f2c619114fd45f6980b2ca04062be3bbdfc70aa3576e88ca01d98320287db145",
+          "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+        }
+      }
     }
   ]
 }
