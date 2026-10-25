@@ -1073,7 +1073,8 @@ mod tests {
             "{}",
             assertions.failures.join("\n")
         );
-        assert_eq!(assertions.count, 56);
+        //56 original observations plus16 additional all-byte streaming checks.
+        assert_eq!(assertions.count, 72);
         Ok(())
     }
     #[test]
