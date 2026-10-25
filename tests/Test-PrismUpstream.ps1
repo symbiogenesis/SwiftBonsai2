@@ -22,6 +22,7 @@ param(
     [string]$CompilerLauncher,
     [ValidateRange(1, 12)][int]$Parallel = 2,
     [ValidateRange(1, 12)][int]$CaseParallel = 2,
+    [ValidateRange(-1, 3)][int]$SourcePartition = -1,
     [string]$NativeBuildDirectory,
     [switch]$DeferBackend,
     [switch]$PrepareBackendToolsOnly
@@ -39,6 +40,9 @@ if ($PrepareBackendToolsOnly -and ($Case -cne 'BackendOps' -or $DeferBackend -or
     throw 'Backend tool preparation requires exact Case BackendOps without DeferBackend on native Windows ARM64 main GitHub Actions.'
 }
 if ($DeferBackend -and $Case -cne 'All') { throw 'Only the complete CI catalog can defer its backend source to checked shards.' }
+if ($SourcePartition -ge 0 -and ($Case -cne 'All' -or -not $DeferBackend)) {
+    throw 'Ordinary source partitions require the complete deferred main CI catalog.'
+}
 $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.Native.psm1')
@@ -97,6 +101,8 @@ $receipt = [ordered]@{
     LogicalProcessors = [Environment]::ProcessorCount
     Toolchain = $Toolchain
     Selection = $Case
+    SourcePartition = $SourcePartition
+    SourcePartitionCount = if ($SourcePartition -ge 0) { 4 } else { 1 }
     Generator = $Generator
     NativePlatform = $NativePlatform
     SourceDirectory = $source
@@ -212,6 +218,18 @@ $adapters = @{
 }
 $selected = if ($Case -eq 'All') { @('Pq2RowShapes', 'Ptq1ElementMap', 'Unicode', 'MtpCatchupBatch', 'Jinja', 'MtmdImpl', 'GrammarParser', 'ReasoningBudget', 'Col2im', 'Dfly', 'Rope', 'LlamaGrammar', 'LlGuidance', 'GrammarIntegration', 'Quantize', 'QuantizePerf', 'QuantizeStats', 'PtqCuda', 'Log', 'MoeReduce', 'PegBasic', 'PegGbnf', 'PegJson', 'PegSerialization', 'PegPythonDict', 'PegUnicode', 'PegParser', 'BatchAllocator', 'Allocator', 'Barrier', 'BackendSampler', 'BackendOps', 'ExportGraph', 'LoraConversion', 'TokenizersRepo', 'TokenizerPython', 'TokenizerShell', 'TokenizerRandom', 'ChatTemplate', 'MtmdCApi', 'Sampling', 'ChatPeg', 'Gguf', 'ChatAuto', 'Tokenizer0', 'ChatAnalysis', 'PublicC', 'DsparkLogSnr', 'DsparkForward', 'DsparkLoop', 'DsparkRealEval', 'GgufMetadata', 'QuantSelection', 'Architectures', 'RecurrentRollback', 'KvMeanCenter', 'Optimizer', 'DoubleFloat', 'GbnfValidator', 'ArgParser', 'Chat', 'ModelResolution', 'TokenizerSpm', 'TokenizerBpe', 'JsonSchema', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety') } else { @($Case) }
 if ($DeferBackend) { $selected = @($selected | Where-Object { $_ -cne 'BackendOps' }) }
+if ($SourcePartition -ge 0) {
+    Import-Module (Join-Path $repo 'scripts/Bonsai.PrismSourcePartition.psm1')
+    $partitionCases = @(for ($ordinal = 0; $ordinal -lt $selected.Count; $ordinal++) {
+        $selection = $selected[$ordinal]
+        $adapter = $adapters[$selection]
+        [pscustomobject]@{
+            Ordinal = $ordinal; Selection = $selection
+            Id = if ($adapter.ContainsKey('Id')) { $adapter.Id } else { "tests/$($adapter.Name).cpp" }
+        }
+    })
+    $selected = @((Get-BonsaiPrismSourcePartition -Cases $partitionCases -Index $SourcePartition).Selection)
+}
 $modelSelections = @('ExportGraph', 'BackendSampler', 'Autorelease', 'ModelLoadCancel', 'SaveLoadState', 'StateRestoreFragmented', 'ThreadSafety')
 $assetDirectory = $null
 if (@($selected | Where-Object { $_ -in $modelSelections }).Count) {
@@ -370,7 +388,7 @@ if ($IsWindows -and $NativePlatform -eq 'ARM64') { Assert-Arm64PE -Path $harness
 $receipt.HarnessExecutable = $harness
 $receipt.HarnessSha256 = (Get-FileHash -LiteralPath $harness -Algorithm SHA256).Hash.ToLowerInvariant()
 $receipt.HarnessVerifiedPeMachine = if ($IsWindows -and $NativePlatform -eq 'ARM64') { '0xAA64' } else { $null }
-if ($DeferBackend -or $PrepareBackendToolsOnly) {
+if (($DeferBackend -and $SourcePartition -le 0) -or $PrepareBackendToolsOnly) {
     Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackendBundle.psm1')
     $receipt.BackendBundleDirectory = Join-Path $evidence 'backend-tools'
     $receipt.BackendBundle = New-BonsaiPrismBackendBundle -Receipt $receipt -Directory $receipt.BackendBundleDirectory

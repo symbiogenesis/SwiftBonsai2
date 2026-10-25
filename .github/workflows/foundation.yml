@@ -275,11 +275,14 @@ jobs:
           path: ${{ env.PRISM_CHECK_EVIDENCE }}
           if-no-files-found: error
   prism-upstream:
+    name: prism-upstream / ${{ matrix.partition }}
     if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
     timeout-minutes: 330
-    outputs:
-      backend-tools-artifact-id: ${{ steps.backend-tools.outputs.artifact-id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -338,12 +341,15 @@ jobs:
           # Orchestration changes can reuse the same native source/compiler tree.
           # Never restore across source pins, adapter code or compiler identities;
           # source verification and CMake still run before every correctness test.
-          key: prism-upstream-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_NATIVE_HOST }}-vs18-clangcl-arm64-${{ hashFiles('tools/prism/source.lock.json', 'tools/prism/upstream/*.lock.json', 'tools/prism/upstream/**/CMakeLists.txt', 'tools/prism/upstream/**/*.cmake', 'tools/prism/upstream/**/*.c', 'tools/prism/upstream/**/*.cpp', 'tools/prism/upstream/**/*.h', 'tools/prism/upstream/**/*.hpp', 'tools/prism/upstream/**/*.inc') }}-${{ hashFiles('tests/Test-PrismUpstream.ps1', 'scripts/Bonsai.PrismNativeCache.psm1') }}
+          key: prism-upstream-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_NATIVE_HOST }}-vs18-clangcl-arm64-${{ hashFiles('tools/prism/source.lock.json', 'tools/prism/upstream/*.lock.json', 'tools/prism/upstream/**/CMakeLists.txt', 'tools/prism/upstream/**/*.cmake', 'tools/prism/upstream/**/*.c', 'tools/prism/upstream/**/*.cpp', 'tools/prism/upstream/**/*.h', 'tools/prism/upstream/**/*.hpp', 'tools/prism/upstream/**/*.inc') }}-source-${{ matrix.partition }}-${{ hashFiles('tests/Test-PrismUpstream.ps1', 'scripts/Bonsai.PrismNativeCache.psm1') }}
           restore-keys: |
+            prism-upstream-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_NATIVE_HOST }}-vs18-clangcl-arm64-${{ hashFiles('tools/prism/source.lock.json', 'tools/prism/upstream/*.lock.json', 'tools/prism/upstream/**/CMakeLists.txt', 'tools/prism/upstream/**/*.cmake', 'tools/prism/upstream/**/*.c', 'tools/prism/upstream/**/*.cpp', 'tools/prism/upstream/**/*.h', 'tools/prism/upstream/**/*.hpp', 'tools/prism/upstream/**/*.inc') }}-source-${{ matrix.partition }}-
             prism-upstream-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.PRISM_UPSTREAM_NATIVE_HOST }}-vs18-clangcl-arm64-${{ hashFiles('tools/prism/source.lock.json', 'tools/prism/upstream/*.lock.json', 'tools/prism/upstream/**/CMakeLists.txt', 'tools/prism/upstream/**/*.cmake', 'tools/prism/upstream/**/*.c', 'tools/prism/upstream/**/*.cpp', 'tools/prism/upstream/**/*.h', 'tools/prism/upstream/**/*.hpp', 'tools/prism/upstream/**/*.inc') }}-
       - name: Run safe Rust conformance on upstream and Rust
         shell: pwsh
         working-directory: ${{ runner.temp }}
+        env:
+          SOURCE_PARTITION: ${{ matrix.partition }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
@@ -358,16 +364,18 @@ jobs:
           $null = Receive-LockedArtifact -Uri $lock.ArchiveUrl -Path $archive -Bytes $lock.ArchiveBytes -Sha256 $lock.ArchiveSha256 -TimeoutSeconds 600
           cargo +nightly-2026-10-22-aarch64-pc-windows-msvc fetch --locked --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml')
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismNativeCache.ps1')
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismSourcePartition.ps1')
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismSourceResults.ps1')
           foreach ($case in @('Scheduling', 'Identity', 'ProcessFailure')) {
             & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismRunner.ps1') -Case $case
           }
           foreach ($case in @('Catalog', 'Ratchet', 'Evidence')) {
             & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBaseline.ps1') -Case $case
           }
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -SourceArchive $archive -EvidenceDirectory $evidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -NativeBuildDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamNative') -Generator 'Visual Studio 18 2026' -NativePlatform ARM64 -Toolchain nightly-2026-10-22-aarch64-pc-windows-msvc -Parallel 4 -CaseParallel 2 -DeferBackend | ConvertTo-Json -Depth 12
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -SourceArchive $archive -EvidenceDirectory $evidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -NativeBuildDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamNative') -Generator 'Visual Studio 18 2026' -NativePlatform ARM64 -Toolchain nightly-2026-10-22-aarch64-pc-windows-msvc -Parallel 4 -CaseParallel 2 -DeferBackend -SourcePartition ([int]$env:SOURCE_PARTITION) | ConvertTo-Json -Depth 12
       - name: Publish revision-bound native backend shard tools
         id: backend-tools
-        if: always() && !cancelled() && env.PRISM_UPSTREAM_EVIDENCE != ''
+        if: always() && !cancelled() && matrix.partition == 0 && env.PRISM_UPSTREAM_EVIDENCE != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: prism-backend-tools
@@ -376,14 +384,14 @@ jobs:
       - name: Publish ordinary source results for the complete gate
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: prism-ordinary-results
+          name: prism-ordinary-results-${{ matrix.partition }}
           path: |
             ${{ env.PRISM_UPSTREAM_EVIDENCE }}/cpp-results.json
             ${{ env.PRISM_UPSTREAM_EVIDENCE }}/rust-results.json
             ${{ env.PRISM_UPSTREAM_EVIDENCE }}/receipt.json
           if-no-files-found: error
       - name: Run explicitly requested safe Rust benchmark workloads
-        if: github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks
+        if: matrix.partition == 3 && github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
@@ -430,7 +438,7 @@ jobs:
         if: always() && env.PRISM_UPSTREAM_EVIDENCE != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: prism-upstream-${{ github.sha }}-${{ github.run_id }}
+          name: prism-upstream-${{ matrix.partition }}-${{ github.sha }}-${{ github.run_id }}
           path: |
             ${{ env.PRISM_UPSTREAM_EVIDENCE }}/*.json
             ${{ env.PRISM_UPSTREAM_EVIDENCE }}/*.log
@@ -441,7 +449,11 @@ jobs:
           # level so packaging it does not extend the correctness critical path.
           compression-level: 1
   prism-backend-plan:
-    if: always() && !cancelled() && github.ref == 'refs/heads/main' && needs.prism-upstream.outputs.backend-tools-artifact-id != ''
+    # Partition zero alone publishes the named tools artifact. Do not depend on
+    # an output shared by matrix jobs; a later empty output can obscure it.
+    # A missing or invalid bundle fails download/verification, while unrelated
+    # ordinary-source failures still allow independent backend diagnostics.
+    if: always() && !cancelled() && github.ref == 'refs/heads/main'
     needs: prism-upstream
     runs-on: windows-11-arm
     timeout-minutes: 120
@@ -601,7 +613,7 @@ jobs:
           path: ${{ runner.temp }}/prism-backend-complete-plans
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: prism-ordinary-results
+          pattern: prism-ordinary-results-*
           path: ${{ runner.temp }}/prism-ordinary-results
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -614,7 +626,7 @@ jobs:
           RUN_BENCHMARKS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks }}
           RUN_GRADIENTS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_gradients }}
         run: |
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Gate -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-upstream-gate') -InputDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-runs') -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -OrdinaryEvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-ordinary-results') -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') -Gradients:($env:RUN_GRADIENTS -ceq 'true') | ConvertTo-Json -Depth 12
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Gate -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-upstream-gate') -InputDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-runs') -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -OrdinaryEvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-ordinary-results') -PartitionedOrdinary -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') -Gradients:($env:RUN_GRADIENTS -ceq 'true') | ConvertTo-Json -Depth 12
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
