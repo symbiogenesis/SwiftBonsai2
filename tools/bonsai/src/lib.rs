@@ -19,11 +19,5 @@ pub mod qualification;
 /// Pure server preflight policy shared with the development broker.
 pub mod server;
 
-/// Ordinary Prism source partitioning and bounded revision-bound result merging.
-pub mod prism_source;
-
-/// Catalog identities, complete source reports, and nonregression baseline gates.
-pub mod prism_baseline;
-
 /// Offline runtime archive staging through the shared artifact policy.
 pub mod install;

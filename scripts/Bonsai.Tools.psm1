@@ -56,7 +56,7 @@ function Invoke-BonsaiTool {
     #>
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
-    param([Parameter(Mandatory)][ValidateSet('credentials','memory','cpu-check-plan','server-policy','prism-source','prism-baseline','runtime-stage','runtime-verify','completion','qualification')][string]$Command,
+    param([Parameter(Mandatory)][ValidateSet('credentials','memory','cpu-check-plan','server-policy','runtime-stage','runtime-verify','completion','qualification')][string]$Command,
           [Collections.IDictionary]$Request = @{}, [string]$ToolPath,
           [ValidateRange(0,86400)][int]$TimeoutSeconds = 60)
     if (-not $ToolPath -and $env:BONSAI_TOOLS_PATH) { $ToolPath = $env:BONSAI_TOOLS_PATH }
@@ -92,15 +92,12 @@ function Invoke-BonsaiTool {
             $payload['parentCreationTimeFileTime'] = $currentProcess.StartTime.ToUniversalTime().ToFileTimeUtc()
         } finally { $currentProcess.Dispose() }
     }
-    $requestDepth = if ($Command -eq 'prism-source') { 100 } else { 64 }
-    # Fan-in wraps a source artifact in the receipt and partition envelopes.
-    $responseDepth = if ($Command -eq 'prism-source') { 104 } else { 64 }
-    $json = ConvertTo-Json -InputObject $payload -Depth $requestDepth -Compress
+    $json = ConvertTo-Json -InputObject $payload -Depth 64 -Compress
     [IO.File]::WriteAllText($requestPath, $json, [Text.UTF8Encoding]::new($false))
     $result = Invoke-BonsaiNativeProcess -Executable $tool -ArgumentList @($Command, '--request', $requestPath) -WorkingDirectory $lane -TimeoutSeconds $TimeoutSeconds
     if ($result.ExitCode -ne 0) { throw "Maintenance command '$Command' failed: $($result.StandardError.Trim()) Evidence: $lane" }
     if ($result.StandardError) { Write-Verbose -Message $result.StandardError.TrimEnd() }
-    $value = ConvertFrom-Json -InputObject $result.StandardOutput -AsHashtable -NoEnumerate -DateKind String -Depth $responseDepth
+    $value = ConvertFrom-Json -InputObject $result.StandardOutput -AsHashtable -NoEnumerate -DateKind String -Depth 64
     if ($value -isnot [Collections.IDictionary]) { throw 'The maintenance tool returned no JSON object.' }
     [IO.File]::Delete($requestPath)
     [IO.Directory]::Delete($lane, $false)
