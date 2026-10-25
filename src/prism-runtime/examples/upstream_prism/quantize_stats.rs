@@ -7,13 +7,18 @@ use super::quant_buffers::{Driver, Type, call, integer, pointer, row_size, verif
 use super::{Result, invalid, result};
 use serde_json::{Value, json};
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Condvar, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 const ID: &str = "tests/test-quantize-stats.cpp";
 const CHUNK: usize = 32 * 512;
+// Coalesce transport, retaining every original CHUNK-sized production call.
+// The source mutex permits a worker to claim these consecutive chunks while
+// the other workers are paused. Reserve that valid schedule up front, then
+// accumulate its elements in their original order before reserving more work.
+const TRANSPORT_CHUNKS: usize = 16;
 const BUCKETS: usize = 150;
 const RANGE: f64 = 0.03;
 #[derive(Default)]
@@ -303,6 +308,24 @@ struct Queue {
     counter: usize,
     target: Stats,
 }
+impl Queue {
+    fn claim(&mut self, elements: usize, local: &Stats) -> Result<Option<(usize, usize)>> {
+        let offset = self.counter;
+        self.counter = self
+            .counter
+            .checked_add(CHUNK * TRANSPORT_CHUNKS)
+            .ok_or_else(|| invalid("statistics chunk counter overflow"))?;
+        if offset >= elements {
+            self.target.combine(local);
+            Ok(None)
+        } else {
+            Ok(Some((
+                offset,
+                (elements - offset).min(CHUNK * TRANSPORT_CHUNKS),
+            )))
+        }
+    }
+}
 struct Lanes {
     free: Mutex<Vec<u32>>,
     changed: Condvar,
@@ -342,7 +365,23 @@ struct ChunkFiles {
     input: PathBuf,
     decoded: PathBuf,
 }
-fn chunk_actions(work: &Work<'_>, offset: usize, count: usize) -> (Vec<Value>, ChunkFiles) {
+fn codec_chunks(
+    offset: usize,
+    count: usize,
+    grouped: bool,
+) -> impl Iterator<Item = (usize, usize)> {
+    // Source single-thread execution calls the codec once for the entire layer.
+    let chunk = if grouped { CHUNK } else { count };
+    (0..count)
+        .step_by(chunk)
+        .map(move |relative| (offset + relative, (count - relative).min(chunk)))
+}
+fn chunk_actions(
+    work: &Work<'_>,
+    offset: usize,
+    count: usize,
+    grouped: bool,
+) -> (Vec<Value>, ChunkFiles) {
     let (driver, model, layer, t, reference, buffers) = (
         work.driver,
         work.model,
@@ -367,30 +406,34 @@ fn chunk_actions(work: &Work<'_>, offset: usize, count: usize) -> (Vec<Value>, C
     } else {
         60_000
     };
-    let actions = vec![
-        json!({"Op":"qb-model-copy-f32","Model":model,"Name":layer.name,"ElementOffset":offset,"Count":count,"Buffer":input,"BufferOffset":byte_offset}),
-        call(
+    let mut actions = Vec::with_capacity(3 * count.div_ceil(CHUNK) + 3);
+    for (chunk_offset, chunk_count) in codec_chunks(offset, count, grouped) {
+        let chunk_bytes = 4 * chunk_offset;
+        actions.push(json!({"Op":"qb-model-copy-f32","Model":model,"Name":layer.name,"ElementOffset":chunk_offset,"Count":chunk_count,"Buffer":input,"BufferOffset":chunk_bytes}));
+        actions.push(call(
             if reference {
                 "from-float-reference"
             } else {
                 "from-float-cpu"
             },
             t.id,
-            count,
-            pointer(input, byte_offset),
-            pointer(quantized, byte_offset),
-        ),
-        call(
+            chunk_count,
+            pointer(input, chunk_bytes),
+            pointer(quantized, chunk_bytes),
+        ));
+        actions.push(call(
             "to-float",
             t.id,
-            count,
-            pointer(quantized, byte_offset),
-            pointer(decoded, byte_offset),
-        ),
+            chunk_count,
+            pointer(quantized, chunk_bytes),
+            pointer(decoded, chunk_bytes),
+        ));
+    }
+    actions.extend([
         json!({"Op":"qb-buffer-store","Buffer":input,"Offset":byte_offset,"File":files.input,"FileOffset":0,"Bytes":bytes,"Truncate":true}),
         json!({"Op":"qb-buffer-store","Buffer":decoded,"Offset":byte_offset,"File":files.decoded,"FileOffset":0,"Bytes":bytes,"Truncate":true}),
         json!({"Op":"qb-checkpoint","OutputFile":files.output,"NextFile":files.next,"TimeoutMilliseconds":timeout}),
-    ];
+    ]);
     (actions, files)
 }
 fn publish(path: &Path, actions: &[Value]) -> Result<()> {
@@ -399,7 +442,12 @@ fn publish(path: &Path, actions: &[Value]) -> Result<()> {
         .create_new(true)
         .write(true)
         .open(&temporary)?;
-    serde_json::to_writer(&mut file, actions)?;
+    let encoded = serde_json::to_vec(actions)?;
+    verify(
+        encoded.len() <= 128 * 1024 * 1024,
+        "statistics action payload exceeds bound",
+    )?;
+    file.write_all(&encoded)?;
     drop(file);
     fs::rename(temporary, path)?;
     Ok(())
@@ -425,7 +473,7 @@ fn consume(files: &ChunkFiles, expected: usize) -> Result<(Vec<u8>, Vec<u8>)> {
     exact_fields(&checkpoint, &["Trace"])?;
     let trace = array(&checkpoint, "Trace")?;
     verify(
-        trace.len() == 6 && trace.iter().all(Value::is_null),
+        trace.len() == 3 * expected.div_ceil(CHUNK) + 3 && trace.iter().all(Value::is_null),
         "statistics checkpoint acknowledgement differs",
     )?;
     let input = read_bounded(&files.input, 4 * expected)?;
@@ -492,8 +540,8 @@ struct Work<'a> {
     reference: bool,
     buffers: [u64; 3],
 }
-/// One source compute closure, on a retained native lane. Each next chunk is
-/// claimed only after Rust has updated this worker's local error statistics.
+/// One source compute closure, on a retained native lane. Each bounded transport
+/// group follows a valid source assignment of consecutive CHUNK-sized jobs.
 fn worker(work: &Work<'_>, queue: &Mutex<Queue>, lanes: &Lanes) -> Result<()> {
     let lane = lanes.acquire()?;
     let mut local = Stats::default();
@@ -501,25 +549,14 @@ fn worker(work: &Work<'_>, queue: &Mutex<Queue>, lanes: &Lanes) -> Result<()> {
         let mut q = queue
             .lock()
             .map_err(|_| invalid("statistics source mutex poisoned"))?;
-        let offset = q.counter;
-        q.counter = q
-            .counter
-            .checked_add(CHUNK)
-            .ok_or_else(|| invalid("statistics chunk counter overflow"))?;
-        if offset >= work.layer.elements {
-            q.target.combine(local);
-            drop(q);
-            Ok(None)
-        } else {
-            Ok(Some((offset, (work.layer.elements - offset).min(CHUNK))))
-        }
+        q.claim(work.layer.elements, local)
     };
     let Some((offset, mut count)) = claim(&local)? else {
         return Ok(());
     };
-    let (actions, mut files) = chunk_actions(work, offset, count);
+    let (actions, mut files) = chunk_actions(work, offset, count, true);
     let initial = work.driver.path("stats-initial-actions");
-    serde_json::to_writer(fs::File::create(&initial)?, &actions)?;
+    fs::write(&initial, serde_json::to_vec(&actions)?)?;
     let initial_for_cleanup = initial.clone();
     thread::scope(|scope| -> Result<()> {
         let (sender, receiver) = mpsc::channel();
@@ -552,7 +589,7 @@ fn worker(work: &Work<'_>, queue: &Mutex<Queue>, lanes: &Lanes) -> Result<()> {
                     publish(&files.next, &[])?;
                     break;
                 };
-                let (actions, next_files) = chunk_actions(work, offset, next_count);
+                let (actions, next_files) = chunk_actions(work, offset, next_count, true);
                 publish(&files.next, &actions)?;
                 previous_next = Some(files.next.clone());
                 files = next_files;
@@ -573,7 +610,7 @@ fn worker(work: &Work<'_>, queue: &Mutex<Queue>, lanes: &Lanes) -> Result<()> {
 fn roundtrip_layer(work: &Work<'_>, target: Stats, max_thread: usize) -> Result<(Stats, usize)> {
     let chunks = work.layer.elements.div_ceil(CHUNK);
     if chunks < 2 || max_thread < 2 {
-        let (mut actions, files) = chunk_actions(work, 0, work.layer.elements);
+        let (mut actions, files) = chunk_actions(work, 0, work.layer.elements, false);
         actions.pop();
         let trace = work.driver.trace(&actions)?;
         verify(
@@ -707,6 +744,7 @@ pub(super) fn run_with_options(engine: &Engine, options: &Options) -> Result<Val
     let mut reports = Vec::new();
     let mut assertions = 0;
     let mut total_chunks = 0_u64;
+    let mut transport_groups = 0_u64;
     for t in &types {
         if !options.types.is_empty() && !t.name.as_ref().is_some_and(|n| options.types.contains(n))
         {
@@ -747,6 +785,11 @@ pub(super) fn run_with_options(engine: &Engine, options: &Options) -> Result<Val
                 1
             } else {
                 layer.elements.div_ceil(CHUNK)
+            })?;
+            transport_groups += u64::try_from(if workers == 1 {
+                1
+            } else {
+                layer.elements.div_ceil(CHUNK * TRANSPORT_CHUNKS)
             })?;
             if options.per_layer_stats {
                 layer_reports.push(json!({"Name":format!("{type_name}::{}",layer.name),"Workers":workers,"Statistics":stats.report(false)}));
@@ -797,13 +840,63 @@ pub(super) fn run_with_options(engine: &Engine, options: &Options) -> Result<Val
     ));
     output["ModelPath"] = json!(path);
     output["Scheduling"] = json!(
-        "Original Rust worker count, mutex chunk counter and local reductions; up to16 persistent native production lanes, with caller-directed continuation after each error update"
+        "Original Rust worker count, CHUNK-sized codec calls and local element/reduction order; mutex reserves up to16 consecutive chunks per transport group as a valid source schedule; up to16 persistent native production lanes, caller-directed continuation after each group error update"
     );
+    output["TransportChunksPerGroup"] = json!(TRANSPORT_CHUNKS);
+    output["TransportGroups"] = json!(transport_groups);
     Ok(output)
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn grouped_transport_retains_source_calls_and_scalar_accumulation() -> Result<()> {
+        for elements in [
+            256,
+            CHUNK,
+            CHUNK + 256,
+            TRANSPORT_CHUNKS * CHUNK,
+            TRANSPORT_CHUNKS * CHUNK + 256,
+        ] {
+            let mut queue = Queue {
+                counter: 0,
+                target: Stats::default(),
+            };
+            let mut input = Vec::with_capacity(elements * 4);
+            let mut decoded = Vec::with_capacity(elements * 4);
+            let samples = [1.0_f32, 0.02, -0.04, 1.0e-12, 0.003, -0.0001, 1.0e5];
+            for index in 0..elements {
+                input.extend(samples[index % samples.len()].to_le_bytes());
+                decoded.extend(0.0_f32.to_le_bytes());
+            }
+            let mut scalar = Stats::default();
+            for (before, after) in input.chunks(4 * CHUNK).zip(decoded.chunks(4 * CHUNK)) {
+                scalar.update(before, after)?;
+            }
+            let mut grouped = Stats::default();
+            let mut calls = Vec::new();
+            while let Some((offset, count)) = queue.claim(elements, &grouped)? {
+                assert!(count <= TRANSPORT_CHUNKS * CHUNK);
+                calls.extend(codec_chunks(offset, count, true));
+                grouped.update(
+                    &input[4 * offset..4 * (offset + count)],
+                    &decoded[4 * offset..4 * (offset + count)],
+                )?;
+            }
+            assert_eq!(calls.len(), elements.div_ceil(CHUNK));
+            for (index, (offset, count)) in calls.into_iter().enumerate() {
+                assert_eq!(offset, index * CHUNK);
+                assert_eq!(count, (elements - offset).min(CHUNK));
+            }
+            assert_eq!(queue.target.report(true), scalar.report(true));
+            // A requested single thread retains the source whole-layer call.
+            assert_eq!(
+                codec_chunks(0, elements, false).collect::<Vec<_>>(),
+                vec![(0, elements)]
+            );
+        }
+        Ok(())
+    }
     #[test]
     fn worker_completion_preserves_native_error() -> Result<()> {
         let path = std::env::temp_dir().join(format!(

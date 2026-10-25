@@ -143,11 +143,15 @@ impl Driver {
     }
     pub(super) fn trace(&self, actions: &[Value]) -> Result<Vec<Value>> {
         let path = self.path("quantize-actions");
-        serde_json::to_writer(fs::File::create(&path)?, actions)?;
+        let encoded = serde_json::to_vec(actions)?;
         verify(
-            fs::metadata(&path)?.len() <= 128 * 1024 * 1024,
+            encoded.len() <= 128 * 1024 * 1024,
             "quantization explicit trace exceeds file bound",
         )?;
+        // File is unbuffered: streaming JSON into it emits a native write for
+        // almost every key, delimiter and digit. Publish the bounded batch with
+        // one write instead of thousands of tiny writes.
+        fs::write(&path, encoded)?;
         let value = self.call(0, json!({"Op":"qb-trace","ActionsFile":path}))?;
         exact_fields(&value, &["Trace"])?;
         let trace = array(&value, "Trace")?;
