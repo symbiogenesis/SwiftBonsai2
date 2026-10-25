@@ -487,7 +487,7 @@ fn accepts_all_native_pq2_codes_with_finite_scales() -> Result<()> {
 }
 
 #[test]
-fn rejects_nonfinite_prism_scales_and_noncanonical_zero_scale_ptq1() -> Result<()> {
+fn rejects_nonfinite_prism_scales_and_accepts_native_zero_scale_ptq1_aliases() -> Result<()> {
     let mut source = [0; 34];
     source[..2].copy_from_slice(&0x3c00_u16.to_le_bytes());
     let canonical = bonsai_ternary::pack_ptq(&source)?;
@@ -515,7 +515,7 @@ fn rejects_nonfinite_prism_scales_and_noncanonical_zero_scale_ptq1() -> Result<(
     for scale in [0_u16, 0x8000] {
         let mut ptq = canonical;
         ptq[26..].copy_from_slice(&scale.to_le_bytes());
-        // A noncanonical final byte must fail even with an all-zero result.
+        // Runtime tensor decoding accepts fractional aliases at zero scale.
         ptq[25] = 1;
         assert!(
             Artifact::new(
@@ -528,7 +528,7 @@ fn rejects_nonfinite_prism_scales_and_noncanonical_zero_scale_ptq1() -> Result<(
                 false,
             )?
             .load(BUDGET)
-            .is_err()
+            .is_ok()
         );
     }
     Ok(())

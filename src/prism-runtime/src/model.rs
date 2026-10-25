@@ -101,11 +101,12 @@ impl Model {
     /// one tensor. This is a storage budget, not a process resident-set limit.
     /// Executable payloads currently support F32, F16, BF16, PQ2 and PTQ1.
     /// Finite native PQ2/PTQ1 scales include both signed zeroes.
-    /// Native PQ2 supports all four two-bit codes, decoding to -1, 0, 1, 2.
+    /// Native PQ2 supports all four two-bit codes, decoding to -1, 0, 1, 2;
+    /// native PTQ1 supports every fractional trit byte, including aliases.
     ///
     /// # Errors
     /// Rejects identity mismatches, malformed GGUF, unsupported encodings,
-    /// nonfinite values, noncanonical PTQ1 quantization, insufficient
+    /// nonfinite values, insufficient
     /// memory budgets, allocation failures, and I/O failures.
     pub fn load(
         path: &Path,
@@ -257,12 +258,8 @@ fn validate_payload(kind: u32, bytes: &[u8]) -> Result<()> {
         143 => {
             for block in bytes.as_chunks::<28>().0 {
                 validate_prism_scale([block[26], block[27]])?;
-                // Export requires a nonzero scale, but native execution accepts
-                // both signed zeroes. Validate canonical trits with a neutral
-                // scale without changing the retained model bytes.
-                let mut symbols = *block;
-                symbols[26..].copy_from_slice(&0x3c00_u16.to_le_bytes());
-                let _ = bonsai_ternary::unpack_ptq(&symbols)?;
+                // Every fractional trit byte has native decoder semantics;
+                // canonical conversion constraints belong to the exporter.
             }
             true
         }
