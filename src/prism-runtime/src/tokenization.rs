@@ -122,11 +122,33 @@ impl TokenizationSession {
         memory_limit: usize,
     ) -> Result<Self> {
         let model = ModelMetadata::load(path, expected_bytes, expected_sha256, memory_limit)?;
-        let special_tokens = SpecialTokens::from_metadata(&model.metadata, model.vocab_size)?;
-        let tokenizer = Tokenizer::from_metadata(&model.metadata, model.vocab_size)?;
+        Self::from_metadata(&model)
+    }
+
+    /// Prepare tokenization from metadata whose artifact was already verified.
+    ///
+    /// This avoids hashing or opening the model again when a caller also owns
+    /// its executable weights. The caller retains responsibility for the
+    /// provenance of the supplied metadata and identity; this constructor
+    /// validates the tokenizer and special declarations, not artifact bytes.
+    ///
+    /// # Errors
+    /// Rejects malformed or unsupported tokenizer/special metadata and bounded
+    /// tokenizer allocation failures.
+    pub fn from_metadata(model: &ModelMetadata) -> Result<Self> {
+        Self::from_parts(&model.metadata, model.vocab_size, &model.identity)
+    }
+
+    pub(crate) fn from_parts(
+        metadata: &bonsai_gguf::Metadata,
+        vocab_size: usize,
+        identity: &str,
+    ) -> Result<Self> {
+        let special_tokens = SpecialTokens::from_metadata(metadata, vocab_size)?;
+        let tokenizer = Tokenizer::from_metadata(metadata, vocab_size)?;
         Ok(Self {
-            identity: model.identity,
-            vocab_size: model.vocab_size,
+            identity: identity.to_owned(),
+            vocab_size,
             tokenizer,
             special_tokens,
         })
