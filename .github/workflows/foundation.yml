@@ -290,6 +290,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Reuse maintenance tools for ordinary source partition policy
+        uses: ./.github/actions/bonsai-tools
       - name: Reuse the pinned upstream archive
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -404,6 +406,8 @@ jobs:
         uses: ./.github/actions/rust-toolchain
         with:
           toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Reuse maintenance tools for source policy regressions
+        uses: ./.github/actions/bonsai-tools
       - name: Verify the native acceptance host and identify the Rust cache
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -828,6 +832,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Reuse maintenance tools for ordinary source result fan-in
+        uses: ./.github/actions/bonsai-tools
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: prism-backend-tools
