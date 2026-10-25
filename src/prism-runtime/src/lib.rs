@@ -36,6 +36,8 @@ pub mod speculative;
 #[cfg(feature = "cli")]
 pub mod swift_chat;
 #[cfg(feature = "cli")]
+pub mod swift_client;
+#[cfg(feature = "cli")]
 pub mod swift_session;
 pub mod text_output;
 pub mod text_session;

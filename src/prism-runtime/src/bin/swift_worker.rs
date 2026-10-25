@@ -82,6 +82,18 @@ fn write_record(output: &mut impl Write, value: &Value) -> Result<()> {
     Ok(())
 }
 
+fn write_delta(output: &mut impl Write, id: u64, mut text: &str) -> Result<()> {
+    while !text.is_empty() {
+        let mut end = text.len().min(16 * 1024);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        write_record(output, &json!({"type":"delta","id":id,"text":&text[..end]}))?;
+        text = &text[end..];
+    }
+    Ok(())
+}
+
 fn frame(input: &mut impl BufRead, bytes: &mut Vec<u8>) -> Result<bool> {
     bytes.clear();
     loop {
@@ -113,15 +125,22 @@ fn frame(input: &mut impl BufRead, bytes: &mut Vec<u8>) -> Result<bool> {
     }
 }
 
-fn serve(
-    session: &mut SwiftSession,
-    input: &mut impl BufRead,
-    output: &mut impl Write,
-) -> Result<()> {
+fn write_readiness(session: &SwiftSession, output: &mut impl Write) -> Result<()> {
+    let backend = match session.requested_backend() {
+        MatvecBackend::Auto => "auto",
+        MatvecBackend::Scalar => "scalar",
+        MatvecBackend::ExperimentalNeon => "neon",
+    };
     write_record(
         output,
         &json!({
             "type":"ready", "model_sha256":swift::MODEL_SHA256,
+            "protocol":"bonsai-swift-worker-v1", "template_sha256":swift::TEMPLATE_SHA256,
+            "vocab_size":swift::VOCAB_SIZE,
+            "prism_commit":"73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+            "seed":session.seed(), "backend":backend,
+            "max_frame_bytes":MAX_FRAME_BYTES,
+            "max_output_bytes":bonsai_prism_runtime::swift_session::MAX_OUTPUT_BYTES,
             "runtime":"bonsai-prism-runtime", "context_tokens":swift::CONTEXT_TOKENS,
             "max_output_tokens":swift::MAX_OUTPUT_TOKENS,
             "temperature":1, "top_p":0.95, "top_k":20, "min_p":0,
@@ -131,6 +150,15 @@ fn serve(
             "qualification":"pending-full-model-parity-and-device-evidence",
         }),
     )?;
+    Ok(())
+}
+
+fn serve(
+    session: &mut SwiftSession,
+    input: &mut impl BufRead,
+    output: &mut impl Write,
+) -> Result<()> {
+    write_readiness(session, output)?;
     let mut bytes = Vec::new();
     while frame(input, &mut bytes)? {
         let Ok(request) = serde_json::from_slice::<Request>(&bytes) else {
@@ -186,13 +214,12 @@ fn serve(
                 };
                 let mut transport_failed = false;
                 let result = session.complete(&prompt, &Cancellation::default(), deadline, |event| {
-                    let value = match event {
-                        TextEvent::Delta(text) => json!({"type":"delta","id":id,"text":text}),
-                        TextEvent::Complete(completion) => json!({"type":"complete","id":id,
+                    let result = match event {
+                        TextEvent::Delta(text) => write_delta(output, id, text),
+                        TextEvent::Complete(completion) => write_record(output, &json!({"type":"complete","id":id,
                             "prompt_tokens":completion.prompt_tokens,"generated_tokens":completion.generated_tokens,
-                            "finish_reason":if completion.finish == Finish::Stop {"stop"} else {"length"}}),
+                            "finish_reason":if completion.finish == Finish::Stop {"stop"} else {"length"}})),
                     };
-                    let result = write_record(output, &value);
                     transport_failed |= result.is_err();
                     result
                 });
