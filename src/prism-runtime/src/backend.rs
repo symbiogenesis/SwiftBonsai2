@@ -20,6 +20,7 @@ use bonsai_ternary::half_to_float;
 
 pub mod allocator;
 mod attention;
+mod backward;
 mod backward_image;
 mod call;
 mod gdn;
@@ -221,11 +222,14 @@ struct Node {
     allocation: Option<(TensorId, usize)>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Graph {
     nodes: Vec<TensorId>,
     leaves: Vec<TensorId>,
     capacity: usize,
+    gradients_enabled: bool,
+    gradients: std::collections::BTreeMap<TensorId, TensorId>,
+    gradient_accumulators: std::collections::BTreeMap<TensorId, TensorId>,
 }
 
 /// Safe reference CPU backend with owned graph metadata and checked storage.

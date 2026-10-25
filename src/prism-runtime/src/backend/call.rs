@@ -239,7 +239,7 @@ impl CpuBackend {
         clippy::too_many_arguments,
         reason = "Tensor construction keeps the complete pinned metadata contract explicit."
     )]
-    fn derived(
+    pub(super) fn derived(
         &mut self,
         ctx: u32,
         kind: i32,
@@ -362,8 +362,18 @@ impl CpuBackend {
                 return Ok(Observation::Tensor(Some(id)));
             }
             "ggml_set_param" | "ggml_set_loss" => {
-                self.info_mut(tensor(args, 0)?)?.flags |=
-                    if name == "ggml_set_param" { 16 } else { 8 };
+                let info = self.info_mut(tensor(args, 0)?)?;
+                if name == "ggml_set_param" {
+                    if info.operation != 0 {
+                        return Err(invalid("CPU parameter must be a leaf tensor"));
+                    }
+                    info.flags |= 16;
+                } else {
+                    if info.kind != 0 || info.elements() != 1 {
+                        return Err(invalid("CPU loss must be scalar F32"));
+                    }
+                    info.flags |= 8;
+                }
                 return Ok(Observation::Void);
             }
             "ggml_new_graph" | "ggml_new_graph_custom" => {
@@ -380,12 +390,32 @@ impl CpuBackend {
                     nodes: Vec::new(),
                     leaves: Vec::new(),
                     capacity,
+                    gradients_enabled: name == "ggml_new_graph_custom" && boolean(args, 2)?,
+                    ..Graph::default()
                 });
                 return Ok(Observation::Graph(id));
             }
             "ggml_build_forward_expand" => {
                 self.expand(graph(args, 0)?, tensor(args, 1)?)?;
                 return Ok(Observation::Void);
+            }
+            "ggml_build_backward_expand" => {
+                if !matches!(at(args, 2)?, Argument::Null) {
+                    return Err(invalid(
+                        "CPU typed backward dispatch requires null accumulators; use build_backward for owned accumulators",
+                    ));
+                }
+                self.build_backward(context(args, 0)?, graph(args, 1)?, None)?;
+                return Ok(Observation::Void);
+            }
+            "ggml_graph_get_grad" | "ggml_graph_get_grad_acc" => {
+                let id = graph(args, 0)?;
+                let tensor = tensor(args, 1)?;
+                return Ok(Observation::Tensor(if name == "ggml_graph_get_grad" {
+                    self.graph_gradient(id, tensor)?
+                } else {
+                    self.graph_gradient_accumulator(id, tensor)?
+                }));
             }
             "ggml_graph_add_node" => {
                 let id = tensor(args, 1)?;
@@ -414,6 +444,9 @@ impl CpuBackend {
                 let (nodes, leaves) = self.graph_nodes(source)?;
                 let nodes = nodes.to_vec();
                 let leaves = leaves.to_vec();
+                let gradients = self.graphs[source.0].gradients.clone();
+                let accumulators = self.graphs[source.0].gradient_accumulators.clone();
+                let gradients_enabled = self.graphs[source.0].gradients_enabled;
                 let graph = self
                     .graphs
                     .get_mut(destination.0)
@@ -421,12 +454,17 @@ impl CpuBackend {
                 if nodes.len() > graph.capacity {
                     return Err(invalid("CPU graph copy exceeds capacity"));
                 }
+                if gradients_enabled && !graph.gradients_enabled {
+                    return Err(invalid("CPU graph copy requires gradient storage"));
+                }
                 graph.nodes = nodes;
                 graph.leaves = leaves;
+                graph.gradients = gradients;
+                graph.gradient_accumulators = accumulators;
                 return Ok(Observation::Void);
             }
             "ggml_graph_reset" => {
-                self.graph_nodes(graph(args, 0)?)?;
+                self.reset_graph(graph(args, 0)?)?;
                 return Ok(Observation::Void);
             }
             "ggml_rope_set_offset" => {
@@ -883,7 +921,9 @@ impl CpuBackend {
                         .checked_mul(shape[axis - 1])
                         .ok_or_else(|| invalid("CPU view trailing stride overflow"))?;
                 }
-                view = Some((a, strides, usize_arg(args, args.len() - 1)?));
+                let offset = usize_arg(args, args.len() - 1)?;
+                p[..8].copy_from_slice(&(offset as u64).to_le_bytes());
+                view = Some((a, strides, offset));
                 37
             }
             "ggml_permute" => {
@@ -896,6 +936,7 @@ impl CpuBackend {
                         return Err(invalid("CPU permutation axes differ"));
                     }
                     seen[destination] = true;
+                    put_int(&mut p, axis, destination as i32);
                     output[destination] = shape[axis];
                     strides[destination] = a_info.strides[axis];
                 }
@@ -1847,6 +1888,10 @@ impl CpuBackend {
                 sources.push(tensor(args, 2)?);
                 if name.ends_with("_back") {
                     sources.push(tensor(args, 3)?);
+                    shape = self.info(sources[1])?.shape;
+                    if a_info.elements() != 1 || shape != self.info(sources[2])?.shape {
+                        return Err(invalid("CPU cross-entropy backward inputs differ"));
+                    }
                     97
                 } else {
                     shape = [1; 4];

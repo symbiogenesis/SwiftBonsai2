@@ -344,7 +344,7 @@ impl CpuBackend {
                 if a.len() != n || b.len() != n {
                     return Err(invalid("CPU silu backward shapes differ"));
                 }
-                for ((&x, &dy), value) in a.iter().zip(&b).zip(&mut out) {
+                for ((&dy, &x), value) in a.iter().zip(&b).zip(&mut out) {
                     let sigmoid = 1.0 / (1.0 + (-x).exp());
                     *value = dy * sigmoid * (1.0 + x * (1.0 - sigmoid));
                 }
@@ -383,7 +383,7 @@ impl CpuBackend {
                 if a.len() != n || b.len() != n {
                     return Err(invalid("CPU rms backward shapes differ"));
                 }
-                for ((input, gradient), output) in a
+                for ((gradient, input), output) in a
                     .chunks_exact(a_shape[0])
                     .zip(b.chunks_exact(a_shape[0]))
                     .zip(out.chunks_exact_mut(shape[0]))
@@ -874,33 +874,38 @@ impl CpuBackend {
                 }
             }
             96 | 97 => {
-                let targets = self.values(source(1)?)?;
-                let mut loss = 0.0_f64;
-                let gradient = if op == 97 {
-                    self.values(source(2)?)?[0]
+                let (logits, logits_shape, targets, gradient) = if op == 97 {
+                    let logits = source(1)?;
+                    (
+                        self.values(logits)?,
+                        self.info(logits)?.shape,
+                        self.values(source(2)?)?,
+                        a[0],
+                    )
                 } else {
-                    1.0
+                    (a.clone(), a_shape, self.values(source(1)?)?, 1.0)
                 };
-                for (row, logits) in a.chunks_exact(a_shape[0]).enumerate() {
+                let mut loss = 0.0_f64;
+                for (row, logits) in logits.chunks_exact(logits_shape[0]).enumerate() {
                     let maximum = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
                     let sum = logits
                         .iter()
                         .map(|&x| f64::from((x - maximum).exp()))
                         .sum::<f64>();
                     for (column, &logit) in logits.iter().enumerate() {
-                        let index = row * a_shape[0] + column;
+                        let index = row * logits_shape[0] + column;
                         let probability = f64::from((logit - maximum).exp()) / sum;
                         if op == 96 {
                             loss -=
                                 f64::from(targets[index]) * (f64::from(logit - maximum) - sum.ln());
                         } else {
                             out[index] = gradient * (probability as f32 - targets[index])
-                                / a_shape[1] as f32;
+                                / logits_shape[1] as f32;
                         }
                     }
                 }
                 if op == 96 {
-                    out[0] = (loss / a_shape[1] as f64) as f32;
+                    out[0] = (loss / logits_shape[1] as f64) as f32;
                 }
             }
             100 => {
