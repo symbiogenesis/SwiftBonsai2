@@ -30,7 +30,7 @@ impl Hasher {
         }
     }
 
-    fn block(&mut self, block: [u8; 8]) {
+    const fn block(&mut self, block: [u8; 8]) {
         self.state = (self.state ^ u64::from_le_bytes(block)).wrapping_mul(PRIME);
     }
 

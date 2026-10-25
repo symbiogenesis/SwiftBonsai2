@@ -10,6 +10,8 @@ pub mod backend;
 pub mod bpe;
 pub mod grammar;
 pub mod graph;
+#[cfg(feature = "cli")]
+pub mod jinja;
 pub mod kernels;
 pub mod logging;
 pub mod media;
