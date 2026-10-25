@@ -113,7 +113,9 @@ impl CpuBackend {
     pub(super) fn evaluate(&mut self, tensor: TensorId) -> Result<()> {
         let info = self.info(tensor)?.clone();
         let op = info.operation;
-        if matches!(op, 0 | 36..=39) {
+        // The pinned CPU dispatcher skips empty nodes before reading operands
+        // or interpreting kernel parameters (some derive divisors from shape).
+        if matches!(op, 0 | 36..=39) || info.elements() == 0 {
             return Ok(());
         }
         let source = |index: usize| {

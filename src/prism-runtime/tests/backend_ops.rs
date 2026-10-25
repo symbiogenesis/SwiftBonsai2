@@ -796,6 +796,95 @@ fn lightning_indexer_combines_relu_heads_and_half_mask() -> Result<()> {
 }
 
 #[test]
+fn volume_extraction_preserves_empty_source_view_geometry_1843() -> Result<()> {
+    // Unchanged source geometry 1843: viewing [20,20,10,3] removes two
+    // elements from every axis. IC=3 therefore gives zero complete batches.
+    let mut backend = CpuBackend::new();
+    let input = backend.tensor(1, 0, [20, 20, 10, 3])?;
+    let strides = backend.info(input)?.strides;
+    let view = result_tensor(&backend.call(
+        "ggml_view_4d",
+        &[
+            Argument::Context(1),
+            Argument::Tensor(input),
+            Argument::Integer(18),
+            Argument::Integer(18),
+            Argument::Integer(8),
+            Argument::Integer(1),
+            Argument::Integer(i64::try_from(strides[1])?),
+            Argument::Integer(i64::try_from(strides[2])?),
+            Argument::Integer(i64::try_from(strides[3])?),
+            Argument::Integer(0),
+        ],
+    )?)?;
+    let kernel = backend.tensor(1, 0, [3, 3, 3, 3])?;
+    let mut arguments = vec![
+        Argument::Context(1),
+        Argument::Tensor(kernel),
+        Argument::Tensor(view),
+        Argument::Integer(3),
+    ];
+    arguments.extend([1, 1, 1, 0, 0, 0, 1, 3, 1, 0].map(Argument::Integer));
+    let columns = result_tensor(&backend.call("ggml_im2col_3d", &arguments)?)?;
+    let info = backend.info(columns)?;
+    assert_eq!(info.shape, [81, 16, 12, 0]);
+    assert_eq!(info.strides, [4, 324, 5184, 62208]);
+    assert_eq!(info.bytes()?, 0);
+    assert_eq!(info.elements(), 0);
+    assert_eq!(
+        info.parameters[..40],
+        [1_i32, 1, 1, 0, 0, 0, 1, 3, 1, 3]
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect::<Vec<_>>()
+    );
+    assert!(backend.supports(columns)?);
+    // Inputs deliberately have no allocated payload: an empty native node
+    // does not touch them or divide by its zero batch count.
+    evaluate(&mut backend, columns)?;
+    assert_eq!(backend.values(columns)?, [0.0_f32; 0]);
+    arguments[3] = Argument::Integer(0);
+    assert!(backend.call("ggml_im2col_3d", &arguments).is_err());
+    arguments[3] = Argument::Integer(3);
+    arguments[4] = Argument::Integer(0);
+    assert!(backend.call("ggml_im2col_3d", &arguments).is_err());
+    Ok(())
+}
+
+#[test]
+fn volume_extraction_uses_complete_batches_and_ignores_trailing_channel_planes() -> Result<()> {
+    for output_kind in [0, 1] {
+        let mut backend = CpuBackend::new();
+        let input = backend.tensor(1, 0, [2, 1, 1, 7])?;
+        backend.set_values(
+            input,
+            &[
+                1.0, 2.0, 11.0, 12.0, 21.0, 22.0, 31.0, 32.0, 41.0, 42.0, 51.0, 52.0, 999.0, 999.0,
+            ],
+        )?;
+        let kernel = backend.tensor(1, 0, [1, 1, 1, 3])?;
+        backend.set_values(kernel, &[0.0; 3])?;
+        let mut arguments = vec![
+            Argument::Context(1),
+            Argument::Tensor(kernel),
+            Argument::Tensor(input),
+            Argument::Integer(3),
+        ];
+        arguments.extend([1, 1, 1, 0, 0, 0, 1, 1, 1, output_kind].map(Argument::Integer));
+        let columns = result_tensor(&backend.call("ggml_im2col_3d", &arguments)?)?;
+        assert_eq!(backend.info(columns)?.shape, [3, 2, 1, 2]);
+        evaluate(&mut backend, columns)?;
+        assert_eq!(
+            backend.values(columns)?,
+            [
+                1.0, 11.0, 21.0, 2.0, 12.0, 22.0, 31.0, 41.0, 51.0, 32.0, 42.0, 52.0
+            ]
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn volume_extraction_and_channel_contiguous_depthwise_keep_strides() -> Result<()> {
     let mut backend = CpuBackend::new();
     let volume = backend.tensor(1, 0, [3, 1, 3, 1])?;

@@ -1246,9 +1246,13 @@ impl CpuBackend {
                 let image = tensor(args, 2)?;
                 let image_shape = self.info(image)?.shape;
                 let channels = usize_arg(args, 3)?;
-                if channels == 0 || !image_shape[3].is_multiple_of(channels) {
+                if channels == 0 {
                     return Err(invalid("CPU 3D im2col channel geometry differs"));
                 }
+                // Native IM2COL_3D counts complete channel groups with integer
+                // division. A trailing group is ignored; fewer than IC planes
+                // produces an empty output, including source strided views.
+                let batches = image_shape[3] / channels;
                 let mut spatial = [0; 3];
                 for axis in 0..3 {
                     spatial[axis] = convolution_extent(
@@ -1260,10 +1264,12 @@ impl CpuBackend {
                     )?;
                 }
                 shape = [
-                    shape[0] * shape[1] * shape[2] * channels,
+                    product([shape[0], shape[1], shape[2], channels])?,
                     spatial[0],
                     spatial[1],
-                    spatial[2] * (image_shape[3] / channels),
+                    spatial[2]
+                        .checked_mul(batches)
+                        .ok_or_else(|| invalid("CPU 3D im2col batch extent overflow"))?,
                 ];
                 sources.push(image);
                 kind = i32::try_from(int(args, 13)?)?;
