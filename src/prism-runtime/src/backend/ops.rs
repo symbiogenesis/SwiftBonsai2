@@ -885,6 +885,7 @@ impl CpuBackend {
                 } else {
                     (a.clone(), a_shape, self.values(source(1)?)?, 1.0)
                 };
+                let rows = logits.len() / logits_shape[0];
                 let mut loss = 0.0_f64;
                 for (row, logits) in logits.chunks_exact(logits_shape[0]).enumerate() {
                     let maximum = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
@@ -899,13 +900,13 @@ impl CpuBackend {
                             loss -=
                                 f64::from(targets[index]) * (f64::from(logit - maximum) - sum.ln());
                         } else {
-                            out[index] = gradient * (probability as f32 - targets[index])
-                                / logits_shape[1] as f32;
+                            out[index] =
+                                gradient * (probability as f32 - targets[index]) / rows as f32;
                         }
                     }
                 }
                 if op == 96 {
-                    out[0] = (loss / logits_shape[1] as f64) as f32;
+                    out[0] = (loss / rows as f64) as f32;
                 }
             }
             100 => {

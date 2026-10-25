@@ -262,52 +262,65 @@ fn rms_silu_scaled_softmax_chain_matches_finite_differences() -> Result<()> {
 
 #[test]
 fn cross_entropy_backward_uses_gradient_logits_labels_source_order() -> Result<()> {
-    let mut backend = CpuBackend::new();
-    let logits = input(
-        &mut backend,
-        [3, 2, 1, 1],
-        &[0.2, -0.4, 0.7, 0.3, 1.0, -0.2],
-        true,
-    )?;
-    let labels = input(
-        &mut backend,
-        [3, 2, 1, 1],
-        &[0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
-        false,
-    )?;
-    let loss = binary(&mut backend, "ggml_cross_entropy_loss", logits, labels)?;
-    let graph = make_graph(&mut backend, loss)?;
-    backend.build_backward(1, graph, None)?;
-    backend.reset_graph(graph)?;
-    backend.compute(graph)?;
-    let actual = gradient(&backend, graph, logits)?;
-    let mut expected = Vec::new();
-    for (row, targets) in backend
-        .values(logits)?
-        .as_chunks::<3>()
-        .0
-        .iter()
-        .zip(backend.values(labels)?.as_chunks::<3>().0.iter())
-    {
-        let total = row.iter().map(|value| value.exp()).sum::<f32>();
-        expected.extend(
-            row.iter()
+    for (shape, repeats, rows) in [
+        ([3, 2, 1, 1], 1, 2.0_f32),
+        ([3, 2, 2, 1], 2, 4.0),
+        ([3, 2, 2, 2], 4, 8.0),
+    ] {
+        let mut backend = CpuBackend::new();
+        let logits_values: Vec<_> = [0.2, -0.4, 0.7, 0.3, 1.0, -0.2]
+            .into_iter()
+            .cycle()
+            .take(6 * repeats)
+            .collect();
+        let label_values: Vec<_> = [0.0, 1.0, 0.0, 1.0, 0.0, 0.0]
+            .into_iter()
+            .cycle()
+            .take(6 * repeats)
+            .collect();
+        let logits = input(&mut backend, shape, &logits_values, true)?;
+        let labels = input(&mut backend, shape, &label_values, false)?;
+        let loss = binary(&mut backend, "ggml_cross_entropy_loss", logits, labels)?;
+        let graph = make_graph(&mut backend, loss)?;
+        backend.build_backward(1, graph, None)?;
+        backend.reset_graph(graph)?;
+        backend.compute(graph)?;
+        let actual = gradient(&backend, graph, logits)?;
+        let mut expected = Vec::new();
+        let mut expected_loss = 0.0;
+        for (row, targets) in backend
+            .values(logits)?
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .zip(backend.values(labels)?.as_chunks::<3>().0.iter())
+        {
+            let total = row.iter().map(|value| value.exp()).sum::<f32>();
+            expected_loss -= row
+                .iter()
                 .zip(targets)
-                .map(|(value, target)| (value.exp() / total - target) / 2.0),
+                .map(|(value, target)| target * (value - total.ln()) / rows)
+                .sum::<f32>();
+            expected.extend(
+                row.iter()
+                    .zip(targets)
+                    .map(|(value, target)| (value.exp() / total - target) / rows),
+            );
+        }
+        close(&actual, &expected, 0.000_001);
+        close(&backend.values(loss)?, &[expected_loss], 0.000_001);
+        assert_eq!(
+            backend
+                .info(
+                    backend
+                        .graph_gradient(graph, logits)?
+                        .ok_or("gradient missing")?
+                )?
+                .sources
+                .len(),
+            3
         );
     }
-    close(&actual, &expected, 0.000_001);
-    assert_eq!(
-        backend
-            .info(
-                backend
-                    .graph_gradient(graph, logits)?
-                    .ok_or("gradient missing")?
-            )?
-            .sources
-            .len(),
-        3
-    );
     Ok(())
 }
 
