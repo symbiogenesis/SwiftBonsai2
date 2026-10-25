@@ -108,6 +108,7 @@ are not a complete hosted run and do not ratchet the accepted baseline.
 | Grammar/schema integration | All 504 grammar integration conditions and all 269 JSON-schema source assertions |
 | PEG parsing and serialization | All six inherited groups, 241 source assertions; owned captures and atomic/partial parsing added |
 | Jinja execution | All 278 literal renders, 56 original observations, 16 additional streaming-hash checks and original no-crash fuzz calls |
+| Jinja chat capabilities | Five focused probe/fallback tests pass; six capability flags match native observations for 31 of 37 pinned templates. Six templates retain Rust execution gaps; complete parity remains open. |
 | Chat templates and chat PEG | All 36 legacy and 35 common Jinja renders; all seven chat-PEG correctness groups, 30 subgroups and 105 incremental prefixes; embedded benchmarks not run locally |
 | Multimodal chunks | All 46 source factory/traversal/serialization conditions |
 | Stateful sampling | All 343 original correctness conditions; 20 independent native seeded RNG/XTC observations and clone/reset/offset regressions |
@@ -219,9 +220,13 @@ record of its tested revision, not a current capability inventory.
   analysis retains 37 diagnostic templates/19 variable probes and zero original
   expected-output assertions. General chat retains all 14 groups, 431 parser
   cases, 363 fixed checks and every original byte-prefix parse/diff/reconstruction.
-  Analysis also needs the full six capability flags, supplied-time direct apply
-  and undefined-variable statistics; typed/string capability probing alone is
-  insufficient. Server conversion must retain request reasoning budgets,
+  The six capability probes are implemented, including object/string argument
+  fallback and usage after exceptions. Native comparison matches 31 of 37
+  templates; Apertus, Mistral-Small-3.2, Firefunction-v2, IBM Granite 3.3,
+  Llama 3.2 and GPT-OSS retain execution gaps, also visible in the existing
+  string-content probe. The ignored `jinja_capabilities` native differential
+  reproduces those limits. Analysis still needs supplied-time direct apply and
+  undefined-variable statistics. Server conversion must retain request reasoning budgets,
   template kwargs, Responses conversion, developer-role and model-specific
   thinking/tool-order workarounds. Byte-regex captures/offsets and malformed
   UTF-8 retry/partial-input handling are distinct from Unicode regex splitting.

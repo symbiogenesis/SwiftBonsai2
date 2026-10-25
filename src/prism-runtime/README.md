@@ -96,6 +96,11 @@ pending.** Pinned publisher Prism remains the assessment and fallback engine.
   Strict framing, response schemas and correlation fail closed after transport faults.
 - Library callers share the driver's bounded UTF-8 prompt and JSON token-array
   readers and checked model-plus-caller generation-stop policy.
+- `jinja::Template::chat_capabilities` probes tool definitions, tool calls, system
+  roles, parallel tool calls, typed content and string content using the pinned
+  Prism markers, usage observations and exception/fallback rules. The existing
+  content-only API remains available. These probes do not qualify general chat
+  conversion or template behavior for every input.
 
 The graph/quantizer reference is Prism
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, matching the assessment runtime.

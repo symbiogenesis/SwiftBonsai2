@@ -22,6 +22,7 @@ mod inventory;
 mod value;
 use crate::{Result, invalid};
 use ast::{Arg, Expr, Literal, Stmt};
+pub use caps::ChatCapabilities;
 pub use hash::Hasher;
 use std::collections::BTreeMap;
 use value::{Kind, Part, Val};
@@ -200,6 +201,17 @@ impl Template {
                 ]),
             })
         })
+    }
+    /// Observe the six chat flags using the pinned native capability probes.
+    ///
+    /// Object/string tool arguments and parallel calls follow the source's
+    /// fallback rules. Runtime exceptions are retained as probe observations;
+    /// capability flags do not promise support outside the fixed probe inputs.
+    ///
+    /// # Errors
+    /// Returns an error if the fixed probe variables cannot be prepared.
+    pub fn chat_capabilities(&self) -> Result<ChatCapabilities> {
+        caps::chat_capabilities(self)
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
