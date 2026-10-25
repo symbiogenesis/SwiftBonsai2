@@ -6,11 +6,7 @@ members = [
     "src/cpu-policy",
     "src/windows-process",
     "src/windows-credentials",
-    "src/prism-runtime",
-    "tools/ternary",
     "tools/codec-probe",
-    "tools/gguf",
-    "tools/prism",
     "tools/rust-trial",
     "tools/bonsai",
 ]
