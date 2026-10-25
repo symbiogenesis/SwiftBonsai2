@@ -3,21 +3,20 @@
 #![cfg(windows)]
 
 use std::fs;
+#[cfg(target_arch = "aarch64")]
 use std::os::windows::process::CommandExt as _;
 use std::path::PathBuf;
+#[cfg(target_arch = "aarch64")]
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+#[path = "support/windows.rs"]
+mod windows;
+use windows::{caller_identity, shell};
 
-fn shell() -> Result<PathBuf> {
-    Ok(
-        PathBuf::from(std::env::var_os("SystemRoot").ok_or("Missing Windows system root.")?)
-            .join("System32/WindowsPowerShell/v1.0/powershell.exe"),
-    )
-}
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn fixture(name: &str) -> Result<(PathBuf, Value)> {
     let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
@@ -26,25 +25,7 @@ fn fixture(name: &str) -> Result<(PathBuf, Value)> {
         std::process::id()
     ));
     fs::create_dir(&lane)?;
-    let identity = Command::new(shell()?)
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            &format!(
-                "(Get-Process -Id {}).StartTime.ToUniversalTime().ToFileTimeUtc()",
-                std::process::id()
-            ),
-        ])
-        .current_dir(&lane)
-        .creation_flags(0x0800_0000)
-        .stdin(Stdio::null())
-        .output()?;
-    if !identity.status.success() {
-        return Err("Cannot observe test caller identity.".into());
-    }
-    let creation = String::from_utf8(identity.stdout)?.trim().parse::<u64>()?;
+    let creation = caller_identity(&lane)?;
     let request = json!({
         "schemaVersion": 1, "executable": shell()?, "arguments": ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Console]::Out.Write('bounded-response')"],
         "workingDirectory": lane, "evidenceDirectory": lane, "artifacts": [],

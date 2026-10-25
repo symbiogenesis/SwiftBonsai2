@@ -4,15 +4,17 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Write as _, stdout};
-use std::os::windows::process::CommandExt as _;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bonsai_artifacts::RuntimeSpec;
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use zip::{ZipWriter, write::SimpleFileOptions};
+
+#[path = "support/windows.rs"]
+mod windows;
+use windows::caller_identity;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -58,29 +60,6 @@ fn fixture() -> Result<(PathBuf, RuntimeSpec)> {
         archive_sha256: digest(&bytes),
     };
     Ok((root, spec))
-}
-
-fn caller_identity(root: &Path) -> Result<u64> {
-    let shell = PathBuf::from(std::env::var_os("SystemRoot").ok_or("Missing system root")?)
-        .join("System32/WindowsPowerShell/v1.0/powershell.exe");
-    let output = Command::new(shell)
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            &format!(
-                "(Get-Process -Id {}).StartTime.ToUniversalTime().ToFileTimeUtc()",
-                std::process::id()
-            ),
-        ])
-        .current_dir(root)
-        .creation_flags(0x0800_0000)
-        .output()?;
-    if !output.status.success() {
-        return Err("Cannot observe caller identity".into());
-    }
-    Ok(String::from_utf8(output.stdout)?.trim().parse()?)
 }
 
 #[test]
