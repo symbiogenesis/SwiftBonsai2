@@ -36,7 +36,6 @@ serde_json = { workspace = true, optional = true }
 serde = { workspace = true, optional = true, features = ["derive"] }
 regex = "=1.13.1"
 fancy-regex = "=0.14.0"
-spm_precompiled = "=0.1.4"
 unicode-normalization-alignments = "=0.1.12"
 
 [target.'cfg(all(target_arch = "aarch64", target_os = "windows", target_env = "msvc"))'.dependencies]

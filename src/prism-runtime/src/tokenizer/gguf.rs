@@ -12,8 +12,11 @@ use std::collections::{BinaryHeap, HashMap};
 
 use bonsai_gguf::{Metadata, MetadataArray, MetadataValue};
 use fancy_regex::Regex;
-use spm_precompiled::Precompiled;
 use unicode_normalization_alignments::UnicodeNormalization;
+
+#[path = "gguf_charsmap.rs"]
+mod charsmap;
+use charsmap::CharsMap;
 
 use crate::pretokenizer::Qwen35PreTokenizer;
 use crate::vocabulary::{
@@ -86,7 +89,7 @@ pub struct GgufTokenizer {
     prefixes: Vec<Vec<u32>>,
     raw: Vec<Vec<u8>>,
     regexes: Vec<Regex>,
-    charsmap: Option<Precompiled>,
+    charsmap: Option<CharsMap>,
     bos: Option<u32>,
     eos: Option<u32>,
     unknown: Option<u32>,
@@ -246,8 +249,8 @@ impl GgufTokenizer {
             .get("tokenizer.ggml.precompiled_charsmap")
             .and_then(MetadataValue::as_array)
         {
-            Some(MetadataArray::U8(bytes)) => Some(Precompiled::from(bytes)?),
-            Some(MetadataArray::I8(bytes)) => Some(Precompiled::from(
+            Some(MetadataArray::U8(bytes)) => Some(CharsMap::from_bytes(bytes)?),
+            Some(MetadataArray::I8(bytes)) => Some(CharsMap::from_bytes(
                 &bytes.iter().map(|v| v.to_ne_bytes()[0]).collect::<Vec<_>>(),
             )?),
             None => None,
@@ -813,9 +816,9 @@ impl GgufTokenizer {
 
     fn unigram(&self, input: &str, output: &mut Vec<u32>) -> Result<()> {
         let mut text = self.charsmap.as_ref().map_or_else(
-            || input.to_owned(),
-            |charsmap| charsmap.normalize_string(input),
-        );
+            || Ok(input.to_owned()),
+            |charsmap| charsmap.normalize(input),
+        )?;
         if self.remove_spaces {
             text = text
                 .split(' ')
