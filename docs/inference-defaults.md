@@ -44,6 +44,47 @@ Rust reference defaults to greedy decoding and also offers explicit seeded
 reference sampling. Its independent SplitMix64 contract does not establish Prism
 sampler/RNG parity; it is not the chat backend.
 
+## Planned experimental extra effort mode
+
+The planned UI may offer **Standard** (the default) and **Extra effort
+(experimental)**. This is a documented design only: no UI control, orchestration
+code or new broker option is implemented. The experimental label should explain:
+"Uses extra passes; takes longer; quality improvements are unproven."
+
+Adapt the scoped calls and compact working notes from
+[GVS5H](https://github.com/slee-persis/GVS5H/blob/master/codebase/v2-current/escalation/multiagent.py)
+into a small client workflow above the broker:
+
+1. Make a short plan that captures the user's constraints and considers distinct
+   approaches.
+2. Draft from the original task, relevant source material and that plan.
+3. Review the draft against the original constraints and produce a targeted
+   revision, retaining the draft so the user can compare or keep it.
+
+Use at most three sequential calls to the same loaded model. Each call gets a
+fresh context assembled from the original task and the relevant working state,
+rather than a growing internal transcript. Keep the user's supplied instructions
+and approved facts authoritative; generated notes and reference text are data,
+not new instructions or approved canon. This needs no autonomous tool use or
+open-ended manager/worker loop.
+
+Each call keeps the existing sampler, native template and exact prompt/output
+admission. The current 8K context and 4K completion caps still apply, including
+reasoning. Count the plan and draft when included in later prompts; reject
+overflow instead of silently dropping history or raising limits. Apply one
+overall deadline and cancellation signal to the complete workflow, with progress
+labels for planning, drafting and reviewing. Keep incomplete or failed stages
+visible; a truncated revision must not replace a complete draft or be labelled a
+finished answer.
+
+Initial implementation needs focused behavior checks for default single-call
+behavior, stage order, bounds, cancellation and draft retention. An extensive
+quality/performance benchmark campaign is not a prerequisite for exposing this
+opt-in experimental mode. Do not claim an established quality or speed gain, or
+promote it to the default, without appropriate evidence. Any benchmarks remain
+CI-only; existing service/security requirements still apply when the UI ships.
+The GVS5H coding results do not establish a Swift creative-writing improvement.
+
 ## What the benchmarks establish
 
 [Swift's publisher configuration](https://ukisai.com/swift-bonsai-2) and

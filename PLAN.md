@@ -154,6 +154,16 @@ Start with manual excerpts or lexical search; add embeddings only for a
 demonstrated retrieval need. Image critique needs a matching qualified vision
 path; image generation needs a separate model and shared-memory budget.
 
+The planned UI should retain Standard as its default and offer an opt-in
+**Extra effort (experimental)** mode: up to three sequential plan, draft and
+review/revision calls, with compact working state and the original draft kept.
+Prepare this as a small client workflow above the broker, retaining existing
+inference settings and per-call limits, plus a shared deadline and cancellation.
+Focused behavior checks suffice for initial experimental exposure; an extensive
+benchmark campaign is not a prerequisite. Quality gains remain unproven. This is
+currently a documentation-only design, not an implemented mode. See the
+[mode contract](docs/inference-defaults.md#planned-experimental-extra-effort-mode).
+
 ## 7. Memory and storage budgets
 
 | Development CPU profile | Weight file | Service allowance | Available physical RAM required |
