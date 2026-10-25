@@ -21,6 +21,12 @@ HTTP client. The UI runs separately from the broker and inference process;
 network work runs off the native event loop. It adds no GUI framework or browser
 runtime dependency.
 
+The native window uses a dark palette and keeps conversation history in memory.
+An insufficient-memory startup failure offers **Retry model** after RAM is
+freed. Retrying creates a fresh broker attempt with new diagnostic storage and
+repeats the ordinary artifact, identity and 16 GiB admission checks. There is no
+automatic retry or reduced-memory profile.
+
 The demo uses the existing pinned Swift PQ2 CPU backend through the broker.
 The UI does not load model weights, select arbitrary runtime arguments, bypass
 artifact verification or change model, memory, context, sampler or thinking

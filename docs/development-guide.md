@@ -43,7 +43,10 @@ $data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
 The native Win32 window follows the lasting [UI architecture policy](ui-architecture.md):
 application UI code stays in Rust; native system bindings are permitted, while
 WebViews, JavaScript, TypeScript, HTML and CSS are excluded. It starts and owns the development broker,
-shows startup status and streams responses. Conversation history stays in memory.
+uses a dark appearance, shows startup status and streams responses. If startup
+reports insufficient RAM, free memory and select **Retry model**. Each retry
+starts a fresh owned broker and repeats artifact verification and the standard
+16 GiB memory admission check. Conversation history stays in memory.
 Stopping an active response closes backend admission; restart the demo before
 sending again. Closing the window stops its owned broker and inference process.
 
@@ -418,7 +421,7 @@ The builder fetches only the pinned commit, requires an exact clean checkout on
 reuse, and builds Release `llama-server` under `builds/<commit>/cpu/`. External
 receipts record configuration, compiler, hashes and version. Subprocess tools,
 accelerators and automatic dependency/UI downloads are disabled. No test suite,
-inference or benchmark runs; reviewed offline UI assets remain separate work.
+inference or benchmark runs; the native Rust UI is built separately from inference.
 
 Default parallelism reserves two CPU threads and 2 GiB, budgets 1 GiB per compiler,
 and caps project/shared compiler workers at eight. If memory is unavailable it
