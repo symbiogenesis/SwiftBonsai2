@@ -1,7 +1,7 @@
 # Prism migration TODO
 
-Handoff at code revision `9332b01cd8b7102ce1f05d6858dc9d75ccf48a03`.
-CI is continuing independently; this handoff does not wait for its verdict.
+Original handoff at code revision `9332b01cd8b7102ce1f05d6858dc9d75ccf48a03`.
+Implementation and qualification are tracked independently below.
 The target is Snapdragon X Elite on Windows ARM64. Apple work is excluded.
 See the [migration guide](prism-upstream-tests.md),
 [71-source catalog](../tools/prism/upstream/catalog.json), and
@@ -26,9 +26,11 @@ See the [migration guide](prism-upstream-tests.md),
 
 ## Finish reference qualification first
 
-- [ ] Collect the result of [run 40150402106](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40150402106),
+- [x] Collect the result of [run 40150402106](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40150402106),
   which tests `9332b01` with benchmarks enabled and optional gradients disabled.
-  Its verdict was pending at handoff. Do not treat a pending run as passed.
+  Its verdict was pending at handoff. The run was subsequently cancelled during
+  the ordinary source job, before backend plan joining or numerical execution.
+  It provides no complete-source or benchmark qualification.
 - [ ] Verify the compact plan and execution handoffs avoid the extraction failure,
   and that the separate `prism-backend-evidence-plan-*` and
   `prism-backend-evidence-run-*` artifacts retain complete diagnostics.
@@ -53,8 +55,12 @@ See the [migration guide](prism-upstream-tests.md),
 These are production capability gaps exposed by the imported suite, separate
 from completing the suite's upstream reference qualification.
 
-- [ ] Triage the retained `rust-results.json`: 60 of the 65 ordinary failures
-  report unavailable production APIs or wrapper failures. Implement the required
+- [x] Triage the retained `rust-results.json`: all 65 failures are indexed in
+  [runtime-triage.json](../tools/prism/upstream/runtime-triage.json), bound to
+  the retained artifact hash and tested revision. Sixty failures report
+  unavailable production APIs or wrapper failures; five are measured
+  decoder/loader defects. The inventory preserves the original failed verdicts.
+- [ ] Implement the remaining required
   safe Rust runtime operations and connect adapters to those operations; do not
   put replacement implementations of the runtime inside the tests.
 - [ ] Resolve the five measured decoder/loader failures, retaining their original
@@ -70,6 +76,42 @@ from completing the suite's upstream reference qualification.
   required green IDs. Of the four observed ordinary passes, PQ2 exercises the
   runtime; the others are a zero-assertion file workload, a model-data helper,
   and pure arithmetic. Keep those scopes explicit when reporting progress.
+
+## Focused implementation evidence
+
+The following production changes have passed focused local source checks. They
+are not a complete hosted run and do not ratchet the accepted baseline.
+
+| Production capability | Original focused scope |
+| --- | --- |
+| Native PTQ byte decoding and packed activation dots | 20,000 arbitrary-byte blocks, 2,560,000 element predicates, and all 14,096 production decoder/dot checks; zero rejected blocks or mismatches |
+| GGUF vocabulary tokenizer families | All 15 bundled vocabularies and 694 token-vector predicates; all six immutable repository corpora |
+| MTP batch bounds | All six source conditions, plus widened-sum boundary regression |
+| Unicode regex splitting | Original regex/input/piece assertion; reversible GPT byte encoding regression |
+| Multimodal tiling and temporal grouping | All 29 source assertions, including ties-to-even alignment and mutation of remaining parts |
+| Concurrent logger | Eight workers, 8,000 messages, format changes, joins, flush and explicit close; source has no output-content assertions |
+| Reasoning-budget sampler | All 71 original semantic conditions, including clone/reset and UTF-8 boundaries |
+| Owned batch allocator | All 26 source cases and 198 original assertions |
+| GBNF parser | All 23 variants and 274 original symbol/rule-element assertions |
+| Grammar stack execution | All 174 original stack-pointer/candidate-rejection conditions; independently owned clone storage |
+| CPU tensor graph and manual arena storage | Original col2im geometries at all three precisions, all three DFly contracts, all five RoPE modes, and all 48 MoE alias layouts |
+
+The CPU backend now has typed production tensor storage, strided views, graph
+operations and a source-controller adapter. Advanced operations and unsupported
+packed formats still return explicit failures. Complete backend qualification,
+the 1,530 performance workloads, and the remaining ordinary API families above
+remain open. Persistent Rust vocabulary sessions now call the same production
+tokenizer, without a separate tokenizer implementation in the test harness.
+
+The scalar and native runtime lanes in
+[run 40153248553](https://github.com/symbiogenesis/SwiftBonsai2/actions/runs/40153248553)
+tested `e62b81556e266b927ad11632c93ee73805d3badb` and failed compilation/analyzer
+checks. The retained logs identify backend test naming/value-argument lints, an
+unwired reasoning adapter, and extra trailing whitespace in `lib.rs`; no runtime
+assertion verdict was obtained. Those defects were repaired through `8aca3a1`.
+Release all-target analyzers pass locally for ARM64 and x64, formatting passes,
+and the runtime builds without default features. A new hosted verdict is still
+required.
 
 ## Constraints to preserve
 
