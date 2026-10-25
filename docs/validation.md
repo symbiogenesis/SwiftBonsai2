@@ -234,12 +234,25 @@ killed mutants. The PTQ1 export oracle compares the entire expected byte payload
 including padding and gaps, in one native comparison. These changes add no test
 framework or worker-pool dependency. All exhaustive runs remain CI-only.
 
-Prism conformance runs two independent adapters concurrently, starting the largest
-timeout budgets first; each adapter retains sequential C++ and Rust controls and
-separate logs and bridge evidence. Results return to catalog order before the
-unchanged complete baseline gate runs. Command and adapter durations identify
-remaining hosted bottlenecks. The scheduler has synthetic overlap, identity and
-failure regressions; exhaustive workloads remain CI-only.
+Prism ordinary conformance uses four Windows ARM64 runners: randomized
+tokenization, thread safety, quantization statistics with LLGuidance, and the
+remaining sources. Each runner builds its selected pinned native features and
+runs up to two independent adapters concurrently, starting the largest timeout
+budgets first. Each adapter retains sequential C++ and Rust controls, separate
+logs and bridge evidence. The final gate requires all four revision-bound
+receipts and exactly one result for every assigned source on each target before
+combining the backend partitions and applying the unchanged complete baseline.
+Results return to catalog order. Focused regressions reject missing, duplicate,
+misplaced and foreign-revision handoffs. Exhaustive workloads remain CI-only.
+
+Randomized tokenizer references use parallel IDs-only encoding and decoding
+batches, retaining the same inputs, RNG order, per-item error order, batch bounds
+and source early-stop policy. Quantization statistics retain every original
+16,384-element codec call and each worker's scalar accumulation order, grouping
+up to 16 consecutive chunks into one bounded file transport handshake. The
+default fixture uses 5,434 transport groups for 78,342 source chunks. This reduces
+transport overhead without removing codec calls or numerical assertions. Action
+JSON is serialized in memory before a single file write.
 
 Native bridge CMake inputs are mirrored into a content-verified stable directory,
 so checkout timestamps do not force unchanged adapter sources to compile again.

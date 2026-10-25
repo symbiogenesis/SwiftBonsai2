@@ -433,8 +433,13 @@ per-run observations under the repository's normal artifact retention policy.
 The Windows ARM64 lane verifies the archive and cached source/adapter bytes
 before configuring production libraries with ClangCL. Rust inputs and results
 are fresh. Receipts record compiler arguments, binary hashes and ARM64 PE
-identities. The ordinary source results are combined with every checked backend
-partition by the final unified source gate; no deferred result counts as passed.
+identities. Ordinary workloads run in four independent groups: randomized
+tokenization, thread safety, quantization statistics with LLGuidance, and every
+remaining adapter. Each group retains its own result files and receipt. Fan-in
+checks the revision, exact assigned source set and both targets for all four
+groups before combining every checked backend partition and applying the final
+unified source gate; no deferred result counts as passed. Native feature builds
+may differ between groups; group zero supplies the checked backend tools.
 If an ordinary source fails after the verified backend tools have been built,
 backend partitions can still retain independent results. Missing tools prevent
 their execution; a failed ordinary job still fails final Foundation acceptance.
