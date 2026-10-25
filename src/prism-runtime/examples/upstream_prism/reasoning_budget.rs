@@ -19,6 +19,220 @@ const COUNTING: u32 = 1;
 const FORCING: u32 = 2;
 const DONE: u32 = 4;
 
+// Protocol adaptation only: all matching, budget state and logit mutation are
+// implemented by the independently usable production runtime sampler.
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep typed action validation and handle ownership together; behavior is in the production sampler."
+)]
+pub(super) fn execute_runtime(request: &Value) -> Result<Option<Value>> {
+    use bonsai_prism_runtime::sampling::reasoning_budget::{
+        ReasoningBudget, State, utf8_is_complete,
+    };
+
+    exact_fields(request, &["SchemaVersion", "Operations"])?;
+    if uint(request, "SchemaVersion")? != 1 {
+        return Err(invalid("reasoning request version mismatch"));
+    }
+    let operations = array(request, "Operations")?;
+    if operations.is_empty() || operations.len() > 128 {
+        return Err(invalid("reasoning operation count outside bound"));
+    }
+    if operations.iter().any(|operation| {
+        !matches!(
+            operation["Kind"].as_str(),
+            Some("reasoning-budget-trace" | "utf8-is-complete")
+        )
+    }) {
+        return Ok(None);
+    }
+    let tokens = |value: &Value| -> Result<Vec<i32>> {
+        let values = value
+            .as_array()
+            .filter(|values| values.len() <= 1024)
+            .ok_or_else(|| invalid("reasoning token sequence outside bound"))?;
+        values
+            .iter()
+            .map(|value| {
+                Ok(i32::try_from(value.as_i64().ok_or_else(|| {
+                    invalid("reasoning token must be int32")
+                })?)?)
+            })
+            .collect()
+    };
+    let sequences = |value: &Value| -> Result<Vec<Vec<i32>>> {
+        value
+            .as_array()
+            .filter(|values| values.len() <= 64)
+            .ok_or_else(|| invalid("reasoning sequence collection outside bound"))?
+            .iter()
+            .map(tokens)
+            .collect()
+    };
+    let mut results = Vec::with_capacity(operations.len());
+    for operation in operations {
+        if text(operation, "Kind")? == "utf8-is-complete" {
+            exact_fields(operation, &["Kind", "Bytes"])?;
+            let values = array(operation, "Bytes")?;
+            if values.len() > 65536 {
+                return Err(invalid("UTF-8 bytes exceed bound"));
+            }
+            let bytes = values
+                .iter()
+                .map(|value| {
+                    Ok(u8::try_from(
+                        value
+                            .as_u64()
+                            .ok_or_else(|| invalid("UTF-8 byte must be unsigned"))?,
+                    )?)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            results.push(json!({"Complete":utf8_is_complete(&bytes)}));
+            continue;
+        }
+        exact_fields(operation, &["Kind", "Actions"])?;
+        let actions = array(operation, "Actions")?;
+        if actions.is_empty() || actions.len() > 4096 {
+            return Err(invalid("reasoning trace outside action bound"));
+        }
+        let mut samplers: [Option<ReasoningBudget>; 32] = std::array::from_fn(|_| None);
+        let mut trace = Vec::with_capacity(actions.len());
+        let mut total_candidates = 0;
+        for action in actions {
+            let kind = text(action, "Kind")?;
+            let handle = field(action, "Sampler")?;
+            let index = if handle.is_null() {
+                None
+            } else {
+                Some(usize::try_from(
+                    handle
+                        .as_u64()
+                        .filter(|index| *index < 32)
+                        .ok_or_else(|| invalid("reasoning sampler handle outside bound"))?,
+                )?)
+            };
+            let mut event = json!({});
+            if kind == "init" {
+                exact_fields(
+                    action,
+                    &[
+                        "Kind",
+                        "Sampler",
+                        "Vocabulary",
+                        "StartSequences",
+                        "EndSequences",
+                        "ForcedTokens",
+                        "Budget",
+                        "InitialState",
+                    ],
+                )?;
+                let index = index.ok_or_else(|| invalid("reasoning init requires a handle"))?;
+                if samplers[index].is_some() || !field(action, "Vocabulary")?.is_null() {
+                    return Err(invalid(
+                        "reasoning init requires vacant handle and null vocabulary",
+                    ));
+                }
+                samplers[index] = Some(ReasoningBudget::new(
+                    sequences(field(action, "StartSequences")?)?,
+                    sequences(field(action, "EndSequences")?)?,
+                    tokens(field(action, "ForcedTokens")?)?,
+                    integer(action, "Budget")?,
+                    State::try_from(u32::try_from(uint(action, "InitialState")?)?)?,
+                )?);
+            } else {
+                if index.is_some_and(|index| samplers[index].is_none()) {
+                    return Err(invalid("unknown or freed reasoning sampler"));
+                }
+                match kind {
+                    "apply" => {
+                        exact_fields(
+                            action,
+                            &["Kind", "Sampler", "Candidates", "Selected", "Sorted"],
+                        )?;
+                        let candidates = array(action, "Candidates")?;
+                        total_candidates += candidates.len();
+                        if candidates.len() > 4096 || total_candidates > 65536 {
+                            return Err(invalid("reasoning candidate bound exceeded"));
+                        }
+                        let selected = field(action, "Selected")?
+                            .as_i64()
+                            .ok_or_else(|| invalid("reasoning Selected must be signed"))?;
+                        if selected < -1
+                            || (selected >= 0 && usize::try_from(selected)? >= candidates.len())
+                        {
+                            return Err(invalid("reasoning Selected outside candidates"));
+                        }
+                        let sorted = field(action, "Sorted")?
+                            .as_bool()
+                            .ok_or_else(|| invalid("reasoning Sorted must be boolean"))?;
+                        let mut ids = Vec::with_capacity(candidates.len());
+                        let mut logits = Vec::with_capacity(candidates.len());
+                        for candidate in candidates {
+                            exact_fields(candidate, &["Id", "LogitBits", "ProbabilityBits"])?;
+                            ids.push(integer(candidate, "Id")?);
+                            logits.push(f32::from_bits(u32::try_from(uint(
+                                candidate,
+                                "LogitBits",
+                            )?)?));
+                            u32::try_from(uint(candidate, "ProbabilityBits")?)?;
+                        }
+                        if let Some(sampler) = index.and_then(|index| samplers[index].as_ref()) {
+                            sampler.apply(&ids, &mut logits)?;
+                        }
+                        let mut values = candidates.to_vec();
+                        for (candidate, logit) in values.iter_mut().zip(logits) {
+                            candidate["LogitBits"] = json!(logit.to_bits());
+                        }
+                        event = json!({"Candidates":values,"Selected":selected,"Sorted":sorted});
+                    }
+                    "accept" => {
+                        exact_fields(action, &["Kind", "Sampler", "Token"])?;
+                        let token = integer(action, "Token")?;
+                        if let Some(sampler) = index.and_then(|index| samplers[index].as_mut()) {
+                            sampler.accept(token);
+                        }
+                    }
+                    "clone" => {
+                        exact_fields(action, &["Kind", "Sampler", "Target"])?;
+                        let target = usize::try_from(uint(action, "Target")?)?;
+                        if target >= 32 || samplers[target].is_some() {
+                            return Err(invalid("reasoning clone target not vacant"));
+                        }
+                        samplers[target] = index.and_then(|index| samplers[index].clone());
+                    }
+                    "state" | "force" | "end-match" | "free" => {
+                        exact_fields(action, &["Kind", "Sampler"])?;
+                        let sampler = index.and_then(|index| samplers[index].as_mut());
+                        event = match kind {
+                            "state" => {
+                                json!({"State":match sampler.map_or(State::Idle, |sampler| sampler.state()) {
+                                    State::Idle => 0, State::Counting => 1, State::Forcing => 2, State::WaitingUtf8 => 3, State::Done => 4,
+                                }})
+                            }
+                            "force" => {
+                                json!({"Forced":sampler.is_some_and(ReasoningBudget::force)})
+                            }
+                            "end-match" => {
+                                json!({"EndMatch":sampler.and_then(|sampler| sampler.end_match())})
+                            }
+                            _ => {
+                                if let Some(index) = index {
+                                    samplers[index] = None;
+                                }
+                                json!({})
+                            }
+                        };
+                    }
+                    _ => return Err(invalid("unknown reasoning action")),
+                }
+            }
+            trace.push(event);
+        }
+        results.push(json!({"Trace":trace}));
+    }
+    Ok(Some(json!({"SchemaVersion":1,"Results":results})))
+}
+
 #[derive(Default)]
 struct Assertions {
     count: usize,

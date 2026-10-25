@@ -6,6 +6,8 @@
 
 use crate::{Result, invalid, runtime::greedy};
 
+pub mod reasoning_budget;
+
 /// Select a token from the complete next-token logits.
 ///
 /// A sampler may retain mutable state. Runtime requests that accept a sampler
