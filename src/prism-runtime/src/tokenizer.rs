@@ -14,6 +14,8 @@ use crate::special_input::{InputSegment, SpecialInput, SpecialInputPolicy};
 use crate::special_tokens::SpecialTokens;
 use crate::{Result, invalid};
 
+pub mod gguf;
+
 /// Validated, bounded plain-text encoder without implicit template or insertion.
 ///
 /// Special spellings become token IDs only with [`SpecialInputPolicy::Parse`].

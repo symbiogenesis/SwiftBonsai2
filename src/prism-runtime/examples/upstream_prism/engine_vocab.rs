@@ -13,10 +13,9 @@ use std::thread;
 use std::time::Instant;
 
 use bonsai_gguf::{Metadata, MetadataArray, VerifiedModel};
-use bonsai_prism_runtime::special_input::SpecialInputPolicy;
-use bonsai_prism_runtime::special_tokens::SpecialTokens;
-use bonsai_prism_runtime::tokenizer::Tokenizer;
-use bonsai_prism_runtime::vocabulary::Vocabulary;
+
+use bonsai_prism_runtime::tokenizer::gguf::GgufTokenizer;
+
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -124,12 +123,10 @@ fn metadata(path: &Path) -> Result<Metadata> {
 }
 
 struct Objects {
-    tokenizer: Tokenizer,
-    pieces: Vocabulary,
-    specials: Option<SpecialTokens>,
+    tokenizer: GgufTokenizer,
 }
 
-fn objects(metadata: &Metadata, insert_specials: bool) -> Result<Objects> {
+fn objects(metadata: &Metadata, _insert_specials: bool) -> Result<Objects> {
     let Some(MetadataArray::String(tokens)) = metadata
         .get("tokenizer.ggml.tokens")
         .and_then(bonsai_gguf::MetadataValue::as_array)
@@ -138,18 +135,10 @@ fn objects(metadata: &Metadata, insert_specials: bool) -> Result<Objects> {
             "production vocabulary requires a STRING token array",
         ));
     };
-    let tokenizer = Tokenizer::from_metadata(metadata, tokens.len())?;
-    let pieces = Vocabulary::from_metadata(metadata, tokens.len())?;
-    let specials = insert_specials
-        .then(|| SpecialTokens::from_metadata(metadata, tokens.len()))
-        .transpose()?;
     Ok(Objects {
-        tokenizer,
-        pieces,
-        specials,
+        tokenizer: GgufTokenizer::from_metadata(metadata, tokens.len())?,
     })
 }
-
 fn input_bytes(input: &Value) -> Result<Vec<u8>> {
     array(input, "Bytes")?
         .iter()
@@ -162,52 +151,21 @@ fn input_bytes(input: &Value) -> Result<Vec<u8>> {
 }
 
 fn encode(objects: &Objects, input: &Value) -> Result<Vec<u32>> {
-    let bytes = input_bytes(input)?;
-    let text = std::str::from_utf8(&bytes)?; // The production encoder requires UTF-8.
-    let policy = if boolean(input, "ParseSpecial")? {
-        SpecialInputPolicy::Parse
-    } else {
-        SpecialInputPolicy::Literal
-    };
-    if boolean(input, "AddSpecial")? {
-        objects.tokenizer.encode_with_special_tokens(
-            text,
-            262_144,
-            policy,
-            objects
-                .specials
-                .as_ref()
-                .ok_or_else(|| invalid("production insertion declarations unavailable"))?,
-        )
-    } else {
-        objects.tokenizer.encode(text, 262_144, policy)
-    }
+    objects.tokenizer.encode(
+        &input_bytes(input)?,
+        boolean(input, "AddSpecial")?,
+        boolean(input, "ParseSpecial")?,
+    )
 }
 
 fn detokenize(objects: &Objects, tokens: &[u32]) -> Result<String> {
-    // The requested source semantics render controls (Special=true). This only
-    // gathers the production Vocabulary::piece bytes; no alternate decoder,
-    // control filtering, normalization or UTF-8 repair is implemented here.
-    let mut bytes = Vec::new();
-    for &token in tokens {
-        let piece = objects.pieces.piece(token)?;
-        if bytes
-            .len()
-            .checked_add(piece.len())
-            .is_none_or(|size| size > 1024 * 1024)
-        {
-            return Err(invalid("production diagnostic pieces exceed bound"));
-        }
-        bytes.try_reserve(piece.len())?;
-        bytes.extend_from_slice(piece);
-    }
+    let bytes = objects.tokenizer.decode(tokens, false, true)?;
     Ok(bytes
         .into_iter()
         .flat_map(|byte| [byte >> 4, byte & 15])
         .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
         .collect())
 }
-
 fn worker(
     objects: &Objects,
     inputs: &[Value],
