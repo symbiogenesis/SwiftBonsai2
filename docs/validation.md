@@ -236,8 +236,15 @@ framework or worker-pool dependency. All exhaustive runs remain CI-only.
 
 Prism ordinary conformance uses four Windows ARM64 runners: randomized
 tokenization, thread safety, quantization statistics with LLGuidance, and the
-remaining sources. Each runner builds its selected pinned native features and
-runs up to two independent adapters concurrently, starting the largest timeout
+remaining sources. The backend tool job builds the Rust harness, common bridge,
+ggml bridge and LoRA exporter once. The ggml bridge links the same production
+libraries as the common bridge. Three ordinary runners download those exact
+revision-bound tools instead of independently restoring compilers and rebuilding
+them. Each consumer verifies source pins, executable lengths and SHA-256 hashes,
+ARM64 PE headers, compiler identity and build provenance. LLGuidance requires a
+distinct native feature build and starts independently. Every runner extracts
+and verifies fresh source, runs every assigned workload and retains its own
+results. Each runs up to two independent adapters concurrently, starting the largest timeout
 budgets first. Each adapter retains sequential C++ and Rust controls, separate
 logs and bridge evidence. The final gate requires all four revision-bound
 receipts and exactly one result for every assigned source on each target before
@@ -270,6 +277,12 @@ Rust partitions use a fresh in-memory production graph session per geometry,
 retaining the file protocol's action/response limits, deadline, failure poisoning
 and evidence. Focused parity checks compare numerical outputs, metadata, source
 planning receipts, random draws and input digests with the existing file protocol.
+Single-tensor field reads now observe only that tensor instead of serializing
+every tensor in every arena. Complete source receipts still take ordered full
+snapshots. Native runtime discovery runs once per bridge process while each
+geometry retains fresh graph state. The source interpreter indexes classes and
+overloads once rather than scanning the complete class list for every call;
+dispatch equivalence covers inheritance, overload order and default arguments.
 
 The production GGUF tokenizer narrows a sorted vocabulary index by input bytes
 instead of scanning every token with the same first byte. Longest-match,
@@ -281,14 +294,25 @@ Focused validation uses all 694 original corpus predicates across 15 pinned
 vocabularies and 230 predicates in the five affected external tokenizer families.
 The external repository source retains its pre-existing HybridDNA decoding
 failure; its complete result matches the pre-optimization baseline. These checks
-establish correctness, not a measured CI speedup.
+establish correctness, not a measured CI speedup. Special spellings now use a
+bounded Aho-Corasick index, preserving earliest position, longest match and
+lowest token ID ties for both UTF-8 and raw SPM input. Large tables retain the
+original search path. The index uses an already locked dependency. Decoding
+appends token bytes into one output buffer, and reference decode validation
+retains valid token IDs instead of cloning token strings for each check.
 
 Native bridge CMake inputs are mirrored into a content-verified stable directory,
 so checkout timestamps do not force unchanged adapter sources to compile again.
 Native cache fallback keys retain the exact source and compiler identity while
 allowing orchestration changes. Fresh extraction, source verification, CMake
-configuration and every correctness check still run. Evidence uses faster
-compression without dropping request/response files. The pinned grammar dependency
+configuration and every correctness check still run. Ordinary and backend
+diagnostics stream into a fast-compressed ZIP before upload, retaining the same
+selected files and their bytes. The upload action sends that single file with
+`archive: false`, avoiding a second ZIP pass and per-file JavaScript packaging.
+Compact gate handoffs remain separately addressable. Focused archive regressions
+check selection, binary bytes and exclusive publication. See the
+[pinned upload action's inputs](https://github.com/actions/upload-artifact/blob/cf430e030ddbb5b0abf93d22962f4752f3646cd9/action.yml).
+The pinned grammar dependency
 also compiles from a stable source mirror verified against each fresh archive
 extraction, keeping its Cargo inputs and CMake header include paths reusable.
 
