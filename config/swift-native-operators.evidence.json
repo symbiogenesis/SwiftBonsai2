@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-25",
+  "purpose": "Focused same-input operator diagnosis following the failed Swift full-model comparison",
+  "qualification": "Diagnostic discrepancy only; no production repair or new full-model qualification",
+  "modelLoaded": false,
+  "runtimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+  "runtimeVerification": "Each existing installed DLL SHA256 rechecked against the verified runtime receipt before loading native operators.",
+  "rustRevision": "2bdcb982adcd830fcbcaaed6a4d8907d6d861b39",
+  "scope": {
+    "inputWidth": 5120,
+    "inputGeneration": "Python random.Random(123), every input rounded to binary32 before both paths",
+    "nativeGraphArenaBytes": 16777216,
+    "target": "Windows ARM64 Snapdragon X Elite",
+    "operators": [
+      "weighted RMS",
+      "SiLU",
+      "SwiGLU",
+      "1024-wide normalized Hadamard",
+      "F32/BF16/PQ2 row dot",
+      "Q8_K preparation"
+    ],
+    "rustFeatures": "default-features=false; safe public production kernels",
+    "nativeGraphThreads": 1
+  },
+  "comparisons": [
+    {
+      "operator": "rms",
+      "count": 5120,
+      "different_values": 1814,
+      "maximum_absolute_error": 2.384185791015625E-07,
+      "maximum_index": 13,
+      "rust": -2.0925705432891846,
+      "native": -2.0925703048706055
+    },
+    {
+      "operator": "silu",
+      "count": 5120,
+      "different_values": 1337,
+      "maximum_absolute_error": 4.76837158203125E-07,
+      "maximum_index": 134,
+      "rust": 3.2651479244232178,
+      "native": 3.265148401260376
+    },
+    {
+      "operator": "swiglu",
+      "count": 5120,
+      "different_values": 2499,
+      "maximum_absolute_error": 9.5367431640625E-07,
+      "maximum_index": 20,
+      "rust": 10.2821044921875,
+      "native": 10.282103538513184
+    },
+    {
+      "operator": "hadamard",
+      "count": 5120,
+      "different_values": 0,
+      "maximum_absolute_error": 0.0,
+      "maximum_index": 0,
+      "rust": -7.383609771728516,
+      "native": -7.383609771728516
+    },
+    {
+      "operator": "dot-0",
+      "count": 2,
+      "different_values": 2,
+      "maximum_absolute_error": 9.5367431640625E-07,
+      "maximum_index": 1,
+      "rust": -4.3466691970825195,
+      "native": -4.346670150756836
+    },
+    {
+      "operator": "dot-30",
+      "count": 2,
+      "different_values": 0,
+      "maximum_absolute_error": 0.0,
+      "maximum_index": 0,
+      "rust": 0.7210732102394104,
+      "native": 0.7210732102394104
+    },
+    {
+      "operator": "dot-142",
+      "count": 3,
+      "different_values": 3,
+      "maximum_absolute_error": 9.5367431640625E-07,
+      "maximum_index": 2,
+      "rust": 4.399291515350342,
+      "native": 4.399290561676025
+    },
+    {
+      "operator": "q8k",
+      "bytes": 5840,
+      "different_bytes": 0
+    }
+  ],
+  "rmsArithmeticDiagnosis": {
+    "nativeMatchingGrouping": "(input * weight) * scale",
+    "currentRustDifferentValues": 1814,
+    "nativeValues": 5120,
+    "matchingGroupingDifferentValues": 0,
+    "currentRustGrouping": "(input * scale) * weight",
+    "maximumAbsoluteError": 2.384185791015625E-07,
+    "status": "Concrete same-input grouping discrepancy; applicability of a production target/fusion-specific repair remains unqualified."
+  },
+  "interpretation": [
+    "The retained full-model tolerance remains unchanged and failed.",
+    "Tiny SiLU, SwiGLU and PQ2 dot discrepancies are measured; their contribution to the full-model mismatch has not been isolated.",
+    "No tensor-layout mismatch was demonstrated by this focused probe.",
+    "Hadamard and Q8_K outputs match exactly on this deterministic input; this is not a universal or full-model proof."
+  ],
+  "retainedEvidence": {
+    "manifest": [
+      {
+        "sha256": "a1b56f41e0bde6ab5708d3e599c7a09e3e864684adb2c1f28feaf110ab5410a5",
+        "path": "operator-native.py",
+        "bytes": 5068
+      },
+      {
+        "sha256": "71c436bb4b8ca903a32607affee15cce908ac0c6476b1a0e37324e43b46cf5bb",
+        "path": "operator-compare.py",
+        "bytes": 1007
+      },
+      {
+        "sha256": "2cca0328485dbb03036cbffaf2aca8cfebbc51a7a6e66121133b647bbf8f4563",
+        "path": "operator-rms-analysis.py",
+        "bytes": 1825
+      },
+      {
+        "sha256": "56fc7fa62cca5c86428a1ad71166505485bc6ee26b89bb914cda728f93795272",
+        "path": "operator-probe/comparison.json",
+        "bytes": 1664
+      },
+      {
+        "sha256": "bec023af1acb3baf3e202d0c01482c31c9d3baf59a73634b71eef4a595986c19",
+        "path": "operator-probe/input.f32le",
+        "bytes": 20480
+      },
+      {
+        "sha256": "ef3cfeff65ee73343963f482d78d32b386401dace39fbe2f80d7e4e77bb8c608",
+        "path": "operator-probe/rms-weight.f32le",
+        "bytes": 20480
+      },
+      {
+        "sha256": "40323a0cd96bf67f10ec592ae9cc3a93043c8384148b938a216588da882f8eab",
+        "path": "operator-probe/src/main.rs",
+        "bytes": 1421
+      },
+      {
+        "sha256": "ef6137928446f83dae82a1d939cea091f4240e3806f45eeac1e8d895fce5ed40",
+        "path": "operator-probe/Cargo.toml",
+        "bytes": 279
+      },
+      {
+        "sha256": "7b675d811f71df9196d489af2850c9b527877ba8eb70e479be06eeebb7d07622",
+        "path": "operator-target/release/swift-operator-probe.exe",
+        "bytes": 351744
+      },
+      {
+        "sha256": "926330bae1c5d003bd654035426e31381fafcdca23ffcc23201d219dbb97cbeb",
+        "path": "exact73-ggml-src-ggml-cpu-vec.h",
+        "bytes": 66060
+      },
+      {
+        "sha256": "c92bbf3e47c3b1c17bb92a675549ce219488bd0ad8e414570096c94c28636793",
+        "path": "exact73-ggml-src-ggml-cpu-ops.cpp",
+        "bytes": 428382
+      },
+      {
+        "sha256": "c41f66f75c81845ea73b0fbf9a7b4502cc4752e1958b5c5668a580d3d4efda37",
+        "path": "exact73-ggml-src-ggml-cpu-arch-arm-quants.c",
+        "bytes": 229037
+      }
+    ],
+    "temporaryCompiledSources": "The temporary Rust probe manifest, lockfile and source were removed after retaining their hashes and outputs. Native Python diagnostics and raw operator inputs/outputs remain external.",
+    "directory": "C:\\Users\\symbi\\AppData\\Local\\Temp\\SwiftBonsai-PrismMvp-a437b701d771454ea2ff96f812fb7739\\model-evidence"
+  },
+  "nextWork": "Prove any narrowly scoped numerical alignment against same-input native controls, retain existing upstream assertions, then repeat actual-model qualification before promoting M2."
+}
