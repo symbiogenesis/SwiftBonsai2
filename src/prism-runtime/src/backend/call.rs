@@ -570,12 +570,19 @@ impl CpuBackend {
             "ggml_add1" | "ggml_add1_inplace" => {
                 let b = tensor(args, 2)?;
                 let scalar = self.info(b)?;
+                let packed = super::ops::packed_add1(kind) && scalar.kind == 0;
                 if scalar.elements() != 1
-                    || !matches!((kind, scalar.kind), (0, 0) | (1, 0 | 1) | (30, 0 | 30))
+                    || !(packed
+                        || matches!((kind, scalar.kind), (0, 0) | (1, 0 | 1) | (30, 0 | 30)))
                     || a_info.strides[0] != type_layout(kind)?.bytes
+                    || a_info.strides[1].checked_mul(shape[1]) != Some(a_info.strides[2])
+                    || a_info.strides[2].checked_mul(shape[2]) != Some(a_info.strides[3])
+                    // Pinned packed ADD1 uses i3*nb0 for the destination's
+                    // fourth axis. Restrict that unqualified native domain.
+                    || packed && shape[3] != 1
                 {
                     return Err(invalid(
-                        "CPU scalar add requires a padded floating tensor and compatible scalar",
+                        "CPU scalar add requires compatible padded storage and a supported scalar",
                     ));
                 }
                 sources.push(b);
@@ -870,6 +877,11 @@ impl CpuBackend {
                 let mut strides = super::contiguous_strides(kind, shape)?;
                 for (axis, stride) in strides.iter_mut().enumerate().take(dims).skip(1) {
                     *stride = usize_arg(args, 1 + dims + axis)?;
+                }
+                for axis in dims..4 {
+                    strides[axis] = strides[axis - 1]
+                        .checked_mul(shape[axis - 1])
+                        .ok_or_else(|| invalid("CPU view trailing stride overflow"))?;
                 }
                 view = Some((a, strides, usize_arg(args, args.len() - 1)?));
                 37

@@ -7,6 +7,12 @@ pub(super) const fn supports(operation: i32) -> bool {
     matches!(operation, 0..=74 | 76..=91 | 96..=101)
 }
 
+pub(super) const fn packed_add1(kind: i32) -> bool {
+    // Only advertise formats with both a decoder and a native CPU encoder.
+    // Q8_1 has no native decoder; Q8_K is absent from pinned ADD1 dispatch.
+    matches!(kind, 2 | 3 | 6..=8 | 10..=14 | 20 | 23 | 34 | 35 | 39..=42 | 142 | 143)
+}
+
 fn integer(parameters: &[u8; 64], index: usize) -> i32 {
     i32::from_le_bytes(std::array::from_fn(|offset| parameters[index * 4 + offset]))
 }

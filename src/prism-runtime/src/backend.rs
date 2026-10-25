@@ -794,6 +794,7 @@ impl CpuBackend {
         }
         Ok(ops::supports(info.operation)
             && (type_layout(info.kind)?.block == 1
+                || info.operation == 4 && ops::packed_add1(info.kind)
                 || matches!(info.operation, 0 | 36..=39)
                 || matches!(info.operation, 1 | 34 | 35)))
     }
