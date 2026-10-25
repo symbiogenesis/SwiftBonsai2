@@ -62,6 +62,24 @@ pub struct LoadReceipt {
 /// Rejects artifact drift, unsupported/malformed metadata, any extra or missing
 /// tensor, encoding/dimension drift, insufficient storage budgets and I/O errors.
 pub fn load(path: &Path, memory_limit: usize) -> Result<(Model, LoadReceipt)> {
+    let (reader, receipt) = verify(path, memory_limit)?;
+    let model = Model::load_verified(reader, MODEL_SHA256, memory_limit, &mut |_| Ok(true))?;
+    Ok((model, receipt))
+}
+
+/// Verifies the full artifact and its strict header without retaining weights.
+///
+/// The returned receipt describes storage a subsequent load would retain. It is
+/// not evidence that tensor payloads have been loaded or executable values are
+/// valid. Hashing still reads the entire pinned file.
+///
+/// # Errors
+/// Rejects changed identity, declarations, inventory or the model storage budget.
+pub fn inspect(path: &Path, memory_limit: usize) -> Result<LoadReceipt> {
+    Ok(verify(path, memory_limit)?.1)
+}
+
+fn verify(path: &Path, memory_limit: usize) -> Result<(VerifiedModel, LoadReceipt)> {
     let reader = VerifiedModel::open(path, PRISM_DIALECT, MODEL_BYTES, MODEL_SHA256, memory_limit)?;
     validate_metadata(reader.metadata())?;
     let (tensor_counts, tensor_payload_bytes, largest_tensor_bytes) =
@@ -73,9 +91,8 @@ pub fn load(path: &Path, memory_limit: usize) -> Result<(Model, LoadReceipt)> {
     if retained_storage_bytes > memory_limit {
         return Err(invalid("Swift retained model storage exceeds its budget"));
     }
-    let model = Model::load_verified(reader, MODEL_SHA256, memory_limit, &mut |_| Ok(true))?;
     Ok((
-        model,
+        reader,
         LoadReceipt {
             header_charge_bytes,
             tensor_payload_bytes,
