@@ -16,6 +16,7 @@ pub mod runtime;
 pub mod sampling;
 pub mod special_input;
 pub mod special_tokens;
+pub mod speculative;
 pub mod text_output;
 pub mod text_session;
 #[cfg(feature = "cli")]
@@ -159,3 +160,4 @@ pub trait Decoder {
     /// Rejects foreign or malformed snapshots and allocation failures.
     fn restore(&mut self, checkpoint: &Self::Checkpoint) -> Result<()>;
 }
+
