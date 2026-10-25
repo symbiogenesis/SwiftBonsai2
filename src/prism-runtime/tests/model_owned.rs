@@ -298,6 +298,45 @@ fn callback_errors_and_nonfinite_generated_payloads_never_publish_partial_models
 }
 
 #[test]
+fn decoded_q8k_overflow_is_rejected_by_generation_loading_and_saving() -> Result<()> {
+    let specifications = [spec("a", &[256], 15)];
+    let mut model = Model::generate(metadata(), &specifications, BUDGET, |_, bytes| {
+        bytes[..4].copy_from_slice(&f32::MAX.to_le_bytes());
+        bytes[4] = 1;
+        Ok(())
+    })?;
+    let mut overflowing = model
+        .tensors
+        .get("a")
+        .ok_or("missing Q8_K tensor")?
+        .data
+        .to_vec();
+    overflowing[4] = 2;
+    assert!(
+        Model::generate(metadata(), &specifications, BUDGET, |_, bytes| {
+            bytes.copy_from_slice(&overflowing);
+            Ok(())
+        })
+        .is_err()
+    );
+    let mut serialized = encoded(&model)?;
+    // One tensor, with the fixture's 64-byte alignment and padded final payload.
+    let offset = serialized.len() - overflowing.len().div_ceil(64) * 64;
+    serialized[offset..offset + overflowing.len()].copy_from_slice(&overflowing);
+    let fixture = Artifact::new(serialized)?;
+    assert!(fixture.load(&mut |_| Ok(true)).is_err());
+    model
+        .tensors
+        .get_mut("a")
+        .ok_or("missing Q8_K tensor")?
+        .data = std::sync::Arc::from(overflowing);
+    let mut output = Vec::new();
+    assert!(model.write_to(&mut output).is_err());
+    assert!(output.is_empty());
+    Ok(())
+}
+
+#[test]
 fn file_progress_is_byte_weighted_and_cancellation_includes_the_final_callback() -> Result<()> {
     let fixture = Artifact::new(encoded(&generated()?)?)?;
     let mut progress = Vec::new();

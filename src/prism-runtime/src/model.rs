@@ -313,6 +313,9 @@ fn validate_payload(kind: u32, bytes: &[u8]) -> Result<()> {
                     block,
                     &mut decoded,
                 )?;
+                if decoded.iter().any(|value| !value.is_finite()) {
+                    return Err(invalid("nonfinite executable tensor payload"));
+                }
             }
             true
         }
