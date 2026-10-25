@@ -285,6 +285,12 @@ overloads once rather than scanning the complete class list for every call;
 dispatch equivalence covers inheritance, overload order and default arguments.
 Harness failures include a bounded error tail directly in the workflow log as
 well as the complete retained diagnostic log.
+The CPU graph builder uses iterative depth-first expansion with indexed visit
+states, preserving source order, shared-node reuse, cycle detection and node
+capacity checks without a native stack frame per tensor. A small-stack
+correctness regression covers chains longer than the barrier source's 2,000
+operations; the timed source remains CI-only. Odd-width GLU construction follows
+the pinned native floor split, including swapped gates and the unused row tail.
 
 The production GGUF tokenizer narrows a sorted vocabulary index by input bytes
 instead of scanning every token with the same first byte. Longest-match,
