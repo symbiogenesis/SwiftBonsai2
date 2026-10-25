@@ -1,7 +1,12 @@
 # Safe Rust Prism conformance migration
 
-The [remaining-work handoff](prism-upstream-todo.md) records the latest measured
-coverage, pending backend qualification, and Rust runtime gaps.
+The [active migration TODO](prism-upstream-todo.md) prioritizes only the engine
+needed for the Swift Bonsai 2 MVP. Full Prism parity and unrelated implementation
+work are deferred. The [deferred backlog](prism-migration-backlog.md) retains
+measured coverage, historical CI evidence and broader runtime gaps. This guide
+documents the full conformance contract; completing that entire contract is not
+a prerequisite for the Swift-only engine MVP. Existing CI workflows and required
+green source identities are unchanged.
 
 [Foundation](../.github/workflows/foundation.yml) imports tests from the exact
 Prism archive in [source.lock.json](../tools/prism/source.lock.json), verifies its
@@ -364,9 +369,10 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
 The Rust runtime adapters use production tokenizer, Unicode, MTP, Jinja,
 multimodal, grammar/schema/PEG, sampling, graph allocator, optimizer and codec
 APIs. Focused implementation evidence and the remaining production families are
-listed in [the migration TODO](prism-upstream-todo.md). Complete hosted source,
-numerical and performance qualification remains separate; unavailable operations
-continue to fail explicitly rather than testing substitute helpers.
+listed in [the deferred migration backlog](prism-migration-backlog.md). Complete
+hosted source, numerical and performance qualification remains separate;
+unavailable operations continue to fail explicitly rather than testing substitute
+helpers.
 
 For each port, the same safe Rust inputs and assertions run against pinned Prism
 first, then against the Rust runtime. A native process bridge performs bounded

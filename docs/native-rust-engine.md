@@ -22,6 +22,13 @@ task time separately, accounting for bandwidth and the measured critical path.
 
 ## Ordered work
 
+For the current Swift-only engine MVP, follow the
+[active Prism migration TODO](prism-upstream-todo.md). Only the parts needed to
+load, execute and serve the pinned Swift PQ2 model are active; the broader
+profiling, optimization, adapter, accelerator and compatibility work below is
+deferred until after that MVP. Existing implementation evidence and separate
+profile-promotion requirements remain unchanged.
+
 - [ ] **R0 — Pin the comparison and audit reusable techniques.** Record exact
   model/adapter identities, tensor types, dimensions, transforms and adapter
   contracts. Audit Camelid, Orangu and packed-kernel sources at immutable
