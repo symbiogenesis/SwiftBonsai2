@@ -22,6 +22,50 @@ fn evaluate(backend: &mut CpuBackend, tensor: TensorId) -> Result<()> {
 }
 
 #[test]
+fn glu_odd_rows_preserve_floor_split_swapping_and_separate_inputs() -> Result<()> {
+    for kind in [0, 1] {
+        let mut backend = CpuBackend::new();
+        let a = backend.tensor(1, kind, [5, 2, 1, 1])?;
+        backend.set_values(a, &[1.0, -2.0, 3.0, 4.0, 99.0, -5.0, 6.0, 7.0, -8.0, 88.0])?;
+        for (swapped, expected) in [
+            (false, [3.0, 0.0, 0.0, -48.0]),
+            (true, [3.0, -8.0, -35.0, 0.0]),
+        ] {
+            let glu = result_tensor(&backend.call(
+                "ggml_glu",
+                &[
+                    Argument::Context(1),
+                    Argument::Tensor(a),
+                    Argument::Integer(0),
+                    Argument::Bool(swapped),
+                ],
+            )?)?;
+            assert_eq!(backend.info(glu)?.shape, [2, 2, 1, 1]);
+            evaluate(&mut backend, glu)?;
+            assert_eq!(backend.values(glu)?, expected);
+        }
+        let b = backend.tensor(1, kind, [5, 2, 1, 1])?;
+        backend.set_values(b, &[3.0, 4.0, -1.0, 2.0, 0.0, 3.0, -1.0, 2.0, 4.0, 0.0])?;
+        let glu = result_tensor(&backend.call(
+            "ggml_glu_split",
+            &[
+                Argument::Context(1),
+                Argument::Tensor(a),
+                Argument::Tensor(b),
+                Argument::Integer(0),
+            ],
+        )?)?;
+        assert_eq!(backend.info(glu)?.shape, [5, 2, 1, 1]);
+        evaluate(&mut backend, glu)?;
+        assert_eq!(
+            backend.values(glu)?,
+            [3.0, 0.0, -3.0, 8.0, 0.0, 0.0, -6.0, 14.0, 0.0, 0.0]
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn strided_transpose_and_broadcast_preserve_logical_values() -> Result<()> {
     let mut backend = CpuBackend::new();
     let a = backend.tensor(1, 0, [2, 3, 1, 1])?;

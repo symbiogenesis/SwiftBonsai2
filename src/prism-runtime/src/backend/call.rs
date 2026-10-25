@@ -1850,9 +1850,8 @@ impl CpuBackend {
             "ggml_glu" | "ggml_glu_split" | "ggml_swiglu_split" | "ggml_swiglu_oai" => {
                 let glu = if name == "ggml_glu" {
                     let glu = i32::try_from(int(args, 2)?)?;
-                    if !shape[0].is_multiple_of(2) {
-                        return Err(invalid("CPU GLU row width must be even"));
-                    }
+                    // The pinned constructor and CPU kernels use floor(n/2),
+                    // leaving an odd row's final element unused.
                     shape[0] /= 2;
                     put_int(&mut p, 1, i32::from(boolean(args, 3)?));
                     glu
