@@ -25,8 +25,18 @@ byte correctness preceded timing; complete broker correctness also passed in CI.
 
 SIMD-JSON's Serde adapter accepted `{"messages":[{"role":"user","content":"\ud800"}]}`
 and canonicalized the lone surrogate to `\u0000`; production serde_json rejects
-it as value-free `ChatSchema`. That contract violation excludes it regardless
-of speed. The rejected experiment remains in `31d8b2c`.
+it as value-free `ChatSchema`. That contract violation excluded the tested
+release regardless of speed. The rejected experiment remains in `31d8b2c`.
+
+Upstream [PR #482](https://github.com/simd-lite/simd-json/pull/482) merged on
+2026-10-25 as [`ff8f5c8`](https://github.com/simd-lite/simd-json/commit/ff8f5c8bb75dfc56803321c2f5a92656c7de842f).
+It rejects lone high surrogates, malformed surrogate escapes and second escapes
+outside the low-surrogate range, including the upper-bound case we reported.
+The fix is newer than the `v0.18.1` tag; upstream's package version at merge was
+also `0.18.1`, so identify any new trial by its exact revision. The fixed revision
+can be reconsidered after passing the same strict correctness checks and then
+the original CI performance gates above. No post-fix broker timing or production
+replacement is established.
 
 Sonic's 3.5–4.7% history-case gains and the fused visitor's 6.9% gain at 128
 messages did not offset other regressions. These results reject the tested
