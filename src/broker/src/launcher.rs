@@ -40,6 +40,7 @@ pub const LAUNCH_USAGE: &str = concat!(
     "  --evidence-parent <existing-external-directory>\n",
     "  --frontend-port <0-or-1024..65535> --backend-port <1024..65535>\n",
     "  [--profile <reference-cpu|swift-pq2-assessment>]\n",
+    "  [--native-engine] (requires native-swift build and swift-pq2-assessment)\n",
     "  [--max-waiting <0..8>] [--check-only]\n",
     "Default: reference-cpu. Only compiled model/runtime pins and fixed CPU policies are accepted.\n",
     "Swift selects original PQ2 weights without an adapter; daily use remains unqualified.\n",
@@ -89,6 +90,7 @@ pub struct LaunchConfig {
     max_waiting: usize,
     check_only: bool,
     profile: LaunchProfile,
+    native_engine: bool,
 }
 
 /// Offline verification result; checking never creates credentials or a process.
@@ -107,6 +109,7 @@ impl LaunchConfig {
         let mut args = args.into_iter();
         let (mut launch, mut unisolated) = (false, false);
         let mut check_only = false;
+        let mut native_engine = false;
         let mut profile = None;
         let (mut data, mut evidence_parent) = (None, None);
         let (mut frontend_port, mut backend_port, mut max_waiting) = (None, None, None);
@@ -115,6 +118,9 @@ impl LaunchConfig {
                 Some("--launch-development") if !launch => launch = true,
                 Some("--allow-unisolated-backend") if !unisolated => unisolated = true,
                 Some("--check-only") if !check_only => check_only = true,
+                Some("--native-engine") if !native_engine && cfg!(feature = "native-swift") => {
+                    native_engine = true;
+                }
                 Some("--profile") if profile.is_none() => {
                     profile = Some(
                         args.next()
@@ -144,12 +150,14 @@ impl LaunchConfig {
         let frontend_port = frontend_port.ok_or(LaunchError::Arguments)?;
         let backend_port = backend_port.ok_or(LaunchError::Arguments)?;
         let max_waiting = max_waiting.unwrap_or(2);
+        let profile = profile.unwrap_or_default();
         if !launch
             || !unisolated
             || (frontend_port != 0 && frontend_port < 1024)
             || backend_port < 1024
             || backend_port == frontend_port
             || max_waiting > MAX_WAITING
+            || (native_engine && profile != LaunchProfile::SwiftPq2Assessment)
         {
             return Err(LaunchError::Arguments);
         }
@@ -160,7 +168,8 @@ impl LaunchConfig {
             backend_port,
             max_waiting,
             check_only,
-            profile: profile.unwrap_or_default(),
+            profile,
+            native_engine,
         })
     }
 
@@ -174,6 +183,12 @@ impl LaunchConfig {
     #[must_use]
     pub const fn profile(&self) -> LaunchProfile {
         self.profile
+    }
+
+    /// Whether the explicit native Swift child replaces the pinned Prism server.
+    #[must_use]
+    pub const fn uses_native_engine(&self) -> bool {
+        self.native_engine
     }
 
     /// Verify the fixed policy and complete artifacts without creating state.
@@ -191,6 +206,7 @@ impl LaunchConfig {
         )
         .map_err(|_| LaunchError::Policy)?;
         let _artifacts = self.verify_artifacts(&plan)?;
+        let _native_executable = self.native_executable_guard()?;
         Ok(LaunchCheck {
             memory_admitted: available_memory_bytes().map_err(|_| LaunchError::Memory)?
                 >= plan.required_available_bytes,
@@ -218,6 +234,66 @@ impl LaunchConfig {
             }
         }
         Ok(())
+    }
+
+    fn native_executable_guard(&self) -> Result<Option<(PathBuf, std::fs::File)>, LaunchError> {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        if !self.native_engine {
+            return Ok(None);
+        }
+        let executable = std::env::current_exe().map_err(|_| LaunchError::Path)?;
+        validate_external_path(&executable).map_err(|_| LaunchError::Path)?;
+        // FILE_SHARE_READ only: retain this exact self-executable against write,
+        // delete and replacement for the complete owned child's lifetime.
+        let guard = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&executable)
+            .map_err(|_| LaunchError::Artifacts)?;
+        if !guard
+            .metadata()
+            .map_err(|_| LaunchError::Artifacts)?
+            .is_file()
+        {
+            return Err(LaunchError::Artifacts);
+        }
+        Ok(Some((executable, guard)))
+    }
+
+    fn specification(
+        &self,
+        plan: LaunchPlan,
+        credentials: &PrivateCredentials,
+    ) -> Result<(ProcessSpec, Option<std::fs::File>), LaunchError> {
+        let native = self.native_executable_guard()?;
+        let (executable, arguments, guard) = if let Some((executable, guard)) = native {
+            let arguments = vec![
+                OsString::from("--native-engine-child"),
+                OsString::from("--model"),
+                plan.model_path.into_os_string(),
+                OsString::from("--port"),
+                OsString::from(self.backend_port.to_string()),
+                OsString::from("--key-file"),
+                credentials.backend_path().as_os_str().to_owned(),
+                OsString::from("--seed"),
+                OsString::from("42"),
+            ];
+            (executable, arguments, Some(guard))
+        } else {
+            (plan.executable, plan.arguments, None)
+        };
+        Ok((
+            ProcessSpec {
+                executable,
+                arguments,
+                working_directory: credentials.directory().to_path_buf(),
+                stdout: credentials.directory().join("backend.stdout"),
+                stderr: credentials.directory().join("backend.stderr"),
+                memory_limit_bytes: plan.memory_limit_bytes,
+                active_process_limit: 1,
+            },
+            guard,
+        ))
     }
 
     /// Verify pinned artifacts, create credentials, launch and await authenticated readiness.
@@ -270,15 +346,7 @@ impl LaunchConfig {
         let reservation =
             bound_loopback_socket(self.backend_port).map_err(|_| LaunchError::Port)?;
         admit(plan.required_available_bytes)?;
-        let specification = ProcessSpec {
-            executable: plan.executable,
-            arguments: plan.arguments,
-            working_directory: credentials.directory().to_path_buf(),
-            stdout: credentials.directory().join("backend.stdout"),
-            stderr: credentials.directory().join("backend.stderr"),
-            memory_limit_bytes: plan.memory_limit_bytes,
-            active_process_limit: 1,
-        };
+        let (specification, native_executable) = self.specification(plan, &credentials)?;
         drop(reservation);
         let process = OwnedProcess::start(&specification).map_err(|_| LaunchError::Process)?;
         let startup = wait_ready(
@@ -308,6 +376,7 @@ impl LaunchConfig {
             process,
             credentials,
             _artifacts: artifacts,
+            _native_executable: native_executable,
             memory_limit_bytes: specification.memory_limit_bytes,
             backend_port: self.backend_port,
         })
@@ -320,6 +389,7 @@ pub struct LaunchedService {
     process: OwnedProcess,
     credentials: PrivateCredentials,
     _artifacts: VerifiedArtifacts,
+    _native_executable: Option<std::fs::File>,
     memory_limit_bytes: usize,
     backend_port: u16,
 }
@@ -641,6 +711,41 @@ mod tests {
         collision[7] = OsString::from("8081");
         assert_eq!(
             LaunchConfig::parse(collision).err(),
+            Some(LaunchError::Arguments)
+        );
+    }
+
+    #[test]
+    fn native_engine_is_explicit_feature_gated_and_swift_only() {
+        let mut args = arguments();
+        args.push(OsString::from("--native-engine"));
+        assert_eq!(
+            LaunchConfig::parse(args).err(),
+            Some(LaunchError::Arguments)
+        );
+        let mut args = arguments();
+        args.extend(["--profile", "swift-pq2-assessment", "--native-engine"].map(OsString::from));
+        if cfg!(feature = "native-swift") {
+            let config = LaunchConfig::parse(args).ok();
+            assert!(config.is_some_and(|value| value.uses_native_engine()));
+        } else {
+            assert_eq!(
+                LaunchConfig::parse(args).err(),
+                Some(LaunchError::Arguments)
+            );
+        }
+        let mut args = arguments();
+        args.extend(
+            [
+                "--profile",
+                "swift-pq2-assessment",
+                "--native-engine",
+                "--native-engine",
+            ]
+            .map(OsString::from),
+        );
+        assert_eq!(
+            LaunchConfig::parse(args).err(),
             Some(LaunchError::Arguments)
         );
     }

@@ -19,6 +19,17 @@ fn main() -> ExitCode {
         };
     }
     let args: Vec<_> = args.collect();
+    #[cfg(all(windows, feature = "native-swift"))]
+    if args
+        .iter()
+        .any(|argument| argument == "--native-engine-child")
+    {
+        return if bonsai_broker::native_child::run(args).is_ok() {
+            ExitCode::SUCCESS
+        } else {
+            failure(b"Native Swift child failed; admission remains closed.\n")
+        };
+    }
     if args
         .iter()
         .any(|argument| argument == "--launch-development")
@@ -66,7 +77,11 @@ fn launched(args: Vec<OsString>) -> ExitCode {
     let Ok(configuration) = LaunchConfig::parse(args) else {
         return failure(LAUNCH_USAGE.as_bytes());
     };
-    let profile_name = configuration.profile().name();
+    let profile_name = if configuration.uses_native_engine() {
+        "swift-native"
+    } else {
+        configuration.profile().name()
+    };
     if configuration.is_check_only() {
         return match configuration.check() {
             Ok(check) => {

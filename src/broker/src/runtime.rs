@@ -184,7 +184,7 @@ fn key_path(value: Option<OsString>) -> Result<PathBuf, ConfigurationError> {
     Ok(value)
 }
 
-fn read_key(path: &Path) -> Result<(File, String), ConfigurationError> {
+pub(crate) fn read_key(path: &Path) -> Result<(File, String), ConfigurationError> {
     for ancestor in path.ancestors() {
         let metadata = fs::symlink_metadata(ancestor).map_err(|_| ConfigurationError::KeyFile)?;
         if metadata.file_type().is_symlink() {
