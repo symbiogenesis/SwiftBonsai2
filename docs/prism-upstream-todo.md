@@ -102,8 +102,11 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   Independent live-history convolution controls then proved native fused
   multiply-add accumulation. With that repair at `d932dac`, all 483 state/logit
   files across the three supplied-token steps match native byte-for-byte.
-  Current scalar/NEON replay and the complete prefix/generated trajectory remain
-  open; the follow-up receipt records each tested revision separately.
+  The subsequent 61-token chat prefix and three generated greedy steps still
+  exceed the unchanged tolerance (maximum logit error about 0.166), while the
+  generated IDs `1596, 1144, 310` match. Early recurrent blocks remain byte-exact;
+  the attention path is under audit. Current scalar/NEON replay remains open;
+  the follow-up receipt records each tested revision separately.
 
 - [x] **M3 — Connect Swift's chat prompt to the exact tokenizer.** Render the
   verified embedded template with the existing Jinja/chat APIs, current

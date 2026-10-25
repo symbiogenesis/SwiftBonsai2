@@ -213,6 +213,11 @@
       "path": "neon-conv-process.json",
       "bytes": 780,
       "sha256": "3a60dff5b9593419415980433770f40c5221ec2df36c785835c107e1d1319108"
+    },
+    {
+      "path": "neon-chat61-comparison.json",
+      "bytes": 3591276,
+      "sha256": "b9df8f76bd52b45e8f06a40855ff15aa0d044b6882b96a17a33d41c9478dc596"
     }
   ],
   "sessionFollowup": {
@@ -547,7 +552,7 @@
       "testedRevision": "d932dac4896fd14f3f1206b3be346e52c57ba947",
       "repair": "Native fused convolution accumulation with live history",
       "passed": true,
-      "scope": "Three supplied-token forward steps; all complete logical state and248320logits perstep byte-exact with pinned native",
+      "scope": "Three supplied-token forward steps; all complete logical state and 248,320 logits per step byte-exact with pinned native",
       "comparedFiles": 483,
       "comparedBytes": 474445824,
       "allFilesBitExact": true,
@@ -635,9 +640,154 @@
     "lastObservedAvailablePhysicalBytes": 15655223296,
     "boundedDiagnosticStartFloorBytes": 14656575898,
     "memoryAcceptableForPreviouslyObservedWorkload": true,
-    "M2": "three-token native match; longer prefix/generated trajectory and scalar/NEON replay in progress",
+    "M2": "unqualified:61-token prefix and three generated steps exceed unchanged numerical tolerance;greedy IDs match;scalar/NEON replay in progress",
     "M6": "owned HTTP recovery and current-revision device coverage remain open",
     "runtimeReleasePin": "0.1.1",
     "serviceStartupAdmissionBytes": 17179869184
-  }
+  },
+  "prefixFollowups": [
+    {
+      "passed": false,
+      "all_files_bit_exact": false,
+      "total_elements": 166078464,
+      "failed_elements": 10016723,
+      "generated_actual": [
+        1596,
+        1144,
+        310
+      ],
+      "generated_reference": [
+        1596,
+        1144,
+        310
+      ],
+      "prompt_sha256": "44cd6ec653c260c947714315045668b45392811dbda036cacf8374e0dec13c42",
+      "actual_process": {
+        "revision": "d932dac4896fd14f3f1206b3be346e52c57ba947",
+        "mode": "neon",
+        "exitCode": 0,
+        "violation": null,
+        "peakProcessCommitBytes": 7539986432,
+        "peakWorkingSetBytes": 7526539264,
+        "initialAvailablePhysicalBytes": 15729745920,
+        "minimumAvailablePhysicalBytes": 6602301440,
+        "requiredInitialAvailableBytes": 14656575898,
+        "standardServiceAdmissionBytes": 17179869184,
+        "ownerAuthorizedReducedAdmission": true,
+        "processThresholdBytes": 12884901888,
+        "physicalReserveBytes": 4294967296,
+        "executableSha256": "f2c619114fd45f6980b2ca04062be3bbdfc70aa3576e88ca01d98320287db145",
+        "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+      },
+      "logits": [
+        {
+          "position": 60,
+          "component": "logits",
+          "block": null,
+          "elements": 248320,
+          "bit_exact": false,
+          "different_words": 248320,
+          "failed_elements": 228695,
+          "max_absolute_error": 0.12624812126159668,
+          "actual_sha256": "be38e38d83937c7e2b3244adf553113b4f1b3e5bbe892db3d66c3b501bbbc71d",
+          "reference_sha256": "c924770e4444cdbf10dab4f0ae8c4fdb9551a2ba5e05c802e6e1179e5f9cb4bf",
+          "greedy_actual": 1596,
+          "greedy_reference": 1596
+        },
+        {
+          "position": 61,
+          "component": "logits",
+          "block": null,
+          "elements": 248320,
+          "bit_exact": false,
+          "different_words": 248319,
+          "failed_elements": 223970,
+          "max_absolute_error": 0.16590040549635887,
+          "actual_sha256": "d39e6492e596c48fec1d85dbb7251e557d627cd3d45faf8b131d9889603e10e5",
+          "reference_sha256": "153772b7ca3378f161ef3eb3da98abcfe219b308b72e47c3825bcd072daa1a15",
+          "greedy_actual": 1144,
+          "greedy_reference": 1144
+        },
+        {
+          "position": 62,
+          "component": "logits",
+          "block": null,
+          "elements": 248320,
+          "bit_exact": false,
+          "different_words": 248318,
+          "failed_elements": 217605,
+          "max_absolute_error": 0.13360166549682617,
+          "actual_sha256": "5d61873d47e105fa1be0ae6aaf6a1c407db57dc1dbccf75d961fd436532d268d",
+          "reference_sha256": "b7a7732c53dba9e5aaceab7e704d789b50a024f2f1c116fccb0fc8ef80f47dee",
+          "greedy_actual": 310,
+          "greedy_reference": 310
+        },
+        {
+          "position": 63,
+          "component": "logits",
+          "block": null,
+          "elements": 248320,
+          "bit_exact": false,
+          "different_words": 248320,
+          "failed_elements": 210848,
+          "max_absolute_error": 0.10702919960021973,
+          "actual_sha256": "86945d96f55c0d02f8a258faa72f5e5cdd2a0dd3a76780438874aefb3266c19e",
+          "reference_sha256": "2a42fc9c336c425f113c2249b4706ad30397259dc8a5a4f87598a4df16eacfe8",
+          "greedy_actual": 5707,
+          "greedy_reference": 5707
+        }
+      ],
+      "firstStateFailure": [
+        {
+          "position": 60,
+          "component": "convolution",
+          "block": 5,
+          "elements": 30720,
+          "bit_exact": false,
+          "different_words": 30720,
+          "failed_elements": 11804,
+          "max_absolute_error": 0.008874654769897461,
+          "actual_sha256": "d7151d60274924b8d3841a2f886792083dbe45624edc0c568b25a337b66bf430",
+          "reference_sha256": "b1b2a59c1d622f314475e4725975ae4c12ed7a2a8063397fe398de24aed00c90"
+        },
+        {
+          "position": 61,
+          "component": "convolution",
+          "block": 5,
+          "elements": 30720,
+          "bit_exact": false,
+          "different_words": 30720,
+          "failed_elements": 11586,
+          "max_absolute_error": 0.0060454607009887695,
+          "actual_sha256": "5ba86acc971abda18c56d5f60bd8573fc83d01fcddc9b96ea37b5cb939a6cb77",
+          "reference_sha256": "9cebc669de3231c12bf859902a0d3bcf25e2ecd102bddbe85f1cd52e0205d8b5"
+        },
+        {
+          "position": 62,
+          "component": "convolution",
+          "block": 5,
+          "elements": 30720,
+          "bit_exact": false,
+          "different_words": 30720,
+          "failed_elements": 12837,
+          "max_absolute_error": 0.007155418395996094,
+          "actual_sha256": "d5b9df519548d25e74f1f557be0ed0c2b4a6c8e68f785d1f9000e1c2794ca2f5",
+          "reference_sha256": "8e868c43c3dd5a31871ca0e23fa3915362f398e7eb69dfaa73bdb98f01c0c3cf"
+        },
+        {
+          "position": 63,
+          "component": "convolution",
+          "block": 5,
+          "elements": 30720,
+          "bit_exact": false,
+          "different_words": 30720,
+          "failed_elements": 12632,
+          "max_absolute_error": 0.007495403289794922,
+          "actual_sha256": "b94efd7d9f01afa9c94f68635c18acbe7fae265bad38b2304d6b9edb9e5bc2d2",
+          "reference_sha256": "2c6578e32a0e61d24acf1177c595e20cc85dd523f9fb74d5780d253944a3ec82"
+        }
+      ],
+      "localization": "At position60 complete block0,1,2 recurrent/convolution states are byte-exact; block3 KV rows match except one F16 word in key42. Later attention-path divergence remains under audit."
+    }
+  ]
 }
