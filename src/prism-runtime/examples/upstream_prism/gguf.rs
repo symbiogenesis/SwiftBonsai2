@@ -10,6 +10,352 @@ use serde_json::{Value, json};
 const ID: &str = "tests/test-gguf.cpp";
 const SOURCE_SHA: &str = "38515758a58762f3084db5cd0ce8ddf28d84c78774598a0bbae0fd4c612ea023";
 const SEED: u32 = 12345;
+
+use bonsai_prism_runtime::model::gguf_context::{Context as RuntimeContext, Entry as RuntimeEntry};
+
+struct RuntimeScratch {
+    directory: std::path::PathBuf,
+    path: std::path::PathBuf,
+}
+impl RuntimeScratch {
+    fn new() -> Result<Self> {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "SwiftBonsai-GgufContext-{}-{nonce}-{sequence}",
+            std::process::id()
+        ));
+        if !directory.is_absolute() {
+            return Err(invalid("GGUF scratch directory must be absolute"));
+        }
+        std::fs::create_dir(&directory)?;
+        let path = directory.join("context.gguf");
+        Ok(Self { directory, path })
+    }
+}
+impl Drop for RuntimeScratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+        let _ = std::fs::remove_dir(&self.directory);
+    }
+}
+
+fn runtime_unhex(value: &Value) -> Result<Vec<u8>> {
+    let source = value
+        .as_str()
+        .ok_or_else(|| invalid("GGUF DataHex must be text"))?;
+    if !source.len().is_multiple_of(2) || source.len() > 16 * 1024 * 1024 {
+        return Err(invalid("GGUF byte extent outside bound"));
+    }
+    source
+        .as_bytes()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| {
+            if pair
+                .iter()
+                .any(|byte| !byte.is_ascii_digit() && !(b'a'..=b'f').contains(byte))
+            {
+                return Err(invalid("GGUF hex requires lowercase digits"));
+            }
+            Ok(u8::from_str_radix(std::str::from_utf8(pair)?, 16)?)
+        })
+        .collect()
+}
+
+fn runtime_read(bytes: &[u8], mode: &str, load: bool) -> Result<RuntimeContext> {
+    match mode {
+        "file" => {
+            let file = RuntimeScratch::new()?;
+            std::fs::write(&file.path, bytes)?;
+            RuntimeContext::read_file(&file.path, load)
+        }
+        "buffer" => RuntimeContext::read_buffer(bytes, load),
+        "callback" => {
+            RuntimeContext::read_callback(u64::try_from(bytes.len())?, load, |offset, output| {
+                let offset = usize::try_from(offset)?;
+                let source = bytes
+                    .get(offset..)
+                    .ok_or_else(|| invalid("GGUF callback offset outside extent"))?;
+                let count = source.len().min(output.len());
+                output[..count].copy_from_slice(&source[..count]);
+                Ok(count)
+            })
+        }
+        _ => Err(invalid("unknown GGUF ReadMode")),
+    }
+}
+
+fn runtime_context(descriptor: &Value) -> Result<RuntimeContext> {
+    fields(descriptor, &["Entries", "Tensors"])?;
+    let entries = array(&descriptor["Entries"])?;
+    let tensors = array(&descriptor["Tensors"])?;
+    if entries.len() > 256 || tensors.len() > 256 {
+        return Err(invalid("GGUF descriptor collection exceeds bound"));
+    }
+    let mut context = RuntimeContext::new();
+    let mut total = 0;
+    for entry in entries {
+        fields(
+            entry,
+            &["Key", "Type", "ArrayType", "Count", "DataHex", "StringsHex"],
+        )?;
+        let key = text(&entry["Key"])?;
+        if key.len() > 4096 || key.contains('\0') {
+            return Err(invalid("GGUF descriptor key outside bound"));
+        }
+        let strings = array(&entry["StringsHex"])?;
+        let strings = strings
+            .iter()
+            .map(runtime_unhex)
+            .collect::<Result<Vec<_>>>()?;
+        let data = runtime_unhex(&entry["DataHex"])?;
+        total += data.len() + strings.iter().map(Vec::len).sum::<usize>();
+        if total > 8 * 1024 * 1024 {
+            return Err(invalid("GGUF descriptor bytes outside bound"));
+        }
+        context.set_entry(RuntimeEntry {
+            key: key.to_owned(),
+            kind: u32::try_from(number(&entry["Type"])?)?,
+            array_kind: if entry["ArrayType"].is_null() {
+                None
+            } else {
+                Some(u32::try_from(number(&entry["ArrayType"])?)?)
+            },
+            count: usize::try_from(number(&entry["Count"])?)?,
+            data,
+            strings,
+        })?;
+    }
+    for tensor in tensors {
+        fields(tensor, &["Name", "Type", "Dimensions", "DataHex"])?;
+        let shape = array(&tensor["Dimensions"])?;
+        if shape.len() != 4 {
+            return Err(invalid("GGUF descriptor needs four dimensions"));
+        }
+        let dimensions = shape.iter().map(number).collect::<Result<Vec<_>>>()?;
+        let data = runtime_unhex(&tensor["DataHex"])?;
+        total += data.len();
+        if total > 8 * 1024 * 1024 {
+            return Err(invalid("GGUF descriptor data outside bound"));
+        }
+        context.add_tensor(
+            text(&tensor["Name"])?.to_owned(),
+            u32::try_from(number(&tensor["Type"])?)?,
+            dimensions
+                .try_into()
+                .map_err(|_| invalid("GGUF shape requires four dimensions"))?,
+            data,
+        )?;
+    }
+    Ok(context)
+}
+
+fn runtime_snapshot(context: Option<&RuntimeContext>, selection: &Value) -> Result<Value> {
+    let indices = array(selection)?;
+    if indices.len() > 256 {
+        return Err(invalid("GGUF data selection exceeds bound"));
+    }
+    let Some(context) = context else {
+        return Ok(
+            json!({"ContextExists":false,"GgmlContextExists":false,"Header":null,"ContextTensors":null}),
+        );
+    };
+    let mut selected = std::collections::BTreeSet::new();
+    for index in indices {
+        let index = usize::try_from(number(index)?)?;
+        if index >= context.tensors().len() || !selected.insert(index) {
+            return Err(invalid(
+                "GGUF tensor selection outside extent or duplicated",
+            ));
+        }
+    }
+    let keys=context.entries().iter().enumerate().map(|(index,entry)|json!({"Index":index,"LookupIndex":index,"Key":entry.key,"Type":entry.kind,"ArrayType":entry.array_kind,"Count":entry.count,"DataHex":hex(&entry.data),"StringsHex":entry.strings.iter().map(|string|hex(string.split(|&byte|byte==0).next().unwrap_or_default())).collect::<Vec<_>>()})).collect::<Vec<_>>();
+    let tensors=context.tensors().iter().enumerate().map(|(index,tensor)|json!({"Index":index,"LookupIndex":index,"Name":tensor.name,"Type":tensor.kind,"Dimensions":tensor.dimensions,"Offset":tensor.offset,"Bytes":tensor.bytes})).collect::<Vec<_>>();
+    let context_tensors = if context.has_tensor_context() {
+        let mut values = Vec::new();
+        if let Some(blob) = context.blob() {
+            values.push(
+                json!({"Name":"GGUF tensor data binary blob","Bytes":blob.len(),"DataHex":null}),
+            );
+        }
+        let mut captured = 0;
+        for (index, tensor) in context.tensors().iter().enumerate() {
+            let data = if selected.contains(&index) {
+                let data = tensor
+                    .data
+                    .as_ref()
+                    .ok_or_else(|| invalid("GGUF selected tensor data is unavailable"))?;
+                captured += data.len();
+                if captured > 2 * 1024 * 1024 {
+                    return Err(invalid("GGUF selected tensor bytes exceed bound"));
+                }
+                Some(hex(data))
+            } else {
+                None
+            };
+            values.push(json!({"Name":tensor.name,"Bytes":tensor.bytes,"DataHex":data}));
+        }
+        Some(values)
+    } else {
+        None
+    };
+    Ok(
+        json!({"ContextExists":true,"GgmlContextExists":context.has_tensor_context(),"Header":{"Version":context.version(),"Alignment":context.alignment(),"DataOffset":context.data_offset(),"NKeys":keys.len(),"NTensors":tensors.len(),"Keys":keys,"Tensors":tensors},"ContextTensors":context_tensors}),
+    )
+}
+
+fn runtime_operation(operation: &Value) -> Result<Value> {
+    match text(&operation["Kind"])? {
+        "gguf-inventory" => {
+            fields(operation, &["Kind"])?;
+            Ok(json!({"Devices":[{"Index":0,"Name":"Rust CPU","Type":0}]}))
+        }
+        "gguf-read" => {
+            fields(
+                operation,
+                &[
+                    "Kind",
+                    "DataHex",
+                    "ReadMode",
+                    "LoadTensors",
+                    "TensorDataIndices",
+                ],
+            )?;
+            let bytes = runtime_unhex(&operation["DataHex"])?;
+            let mode = text(&operation["ReadMode"])?;
+            if !matches!(mode, "file" | "buffer" | "callback") {
+                return Err(invalid("unknown GGUF read mode"));
+            }
+            let context = runtime_read(&bytes, mode, boolean(&operation["LoadTensors"])?).ok();
+            runtime_snapshot(context.as_ref(), &operation["TensorDataIndices"])
+        }
+        "gguf-context-trace" => runtime_trace(operation),
+        _ => Err(invalid("unknown GGUF runtime operation")),
+    }
+}
+
+fn runtime_trace(operation: &Value) -> Result<Value> {
+    fields(operation, &["Kind", "Backend", "Contexts", "Actions"])?;
+    if number(&operation["Backend"])? != 0 {
+        return Err(invalid("GGUF CPU device index outside inventory"));
+    }
+    let descriptors = array(&operation["Contexts"])?;
+    if descriptors.is_empty() || descriptors.len() > 8 {
+        return Err(invalid("GGUF context count outside bound"));
+    }
+    let mut contexts = descriptors
+        .iter()
+        .map(|descriptor| {
+            if descriptor.is_null() {
+                Ok(None)
+            } else {
+                Ok(Some(runtime_context(descriptor)?))
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let actions = array(&operation["Actions"])?;
+    if actions.is_empty() || actions.len() > 32 {
+        return Err(invalid("GGUF action count outside bound"));
+    }
+    let context_count = contexts.len();
+    let index = |value: &Value| -> Result<usize> {
+        let index = usize::try_from(number(value)?)?;
+        if index >= context_count {
+            return Err(invalid("GGUF context index outside extent"));
+        }
+        Ok(index)
+    };
+    let mut events = Vec::with_capacity(actions.len());
+    for action in actions {
+        let mut event = json!({"Snapshot":null,"WriteResult":null});
+        match text(&action["Op"])? {
+            "snapshot" => {
+                fields(action, &["Op", "Context", "TensorDataIndices"])?;
+                event["Snapshot"] = runtime_snapshot(
+                    contexts[index(&action["Context"])?].as_ref(),
+                    &action["TensorDataIndices"],
+                )?;
+            }
+            "copy-kv" => {
+                fields(action, &["Op", "Source", "Destination"])?;
+                let source = index(&action["Source"])?;
+                let destination = index(&action["Destination"])?;
+                if source == destination {
+                    return Err(invalid("GGUF metadata copy requires distinct contexts"));
+                }
+                let copied = contexts[source]
+                    .as_ref()
+                    .ok_or_else(|| invalid("GGUF metadata source is missing"))?
+                    .clone();
+                contexts[destination]
+                    .as_mut()
+                    .ok_or_else(|| invalid("GGUF metadata destination is missing"))?
+                    .copy_metadata(&copied)?;
+            }
+            "write-read" => {
+                fields(
+                    action,
+                    &["Op", "Context", "Destination", "OnlyMetadata", "ReadMode"],
+                )?;
+                let source = index(&action["Context"])?;
+                let destination = index(&action["Destination"])?;
+                if source == destination {
+                    return Err(invalid("GGUF roundtrip needs distinct contexts"));
+                }
+                let metadata = boolean(&action["OnlyMetadata"])?;
+                let scratch = RuntimeScratch::new()?;
+                {
+                    let mut file = std::fs::File::create(&scratch.path)?;
+                    contexts[source]
+                        .as_ref()
+                        .ok_or_else(|| invalid("GGUF write source is missing"))?
+                        .write_to(&mut file, metadata)?;
+                }
+                let mode = text(&action["ReadMode"])?;
+                if !matches!(mode, "file" | "buffer" | "callback") {
+                    return Err(invalid("unknown GGUF read mode"));
+                }
+                contexts[destination] = if mode == "file" {
+                    RuntimeContext::read_file(&scratch.path, !metadata).ok()
+                } else {
+                    runtime_read(&std::fs::read(&scratch.path)?, mode, !metadata).ok()
+                };
+                event["WriteResult"] = json!(true);
+            }
+            _ => return Err(invalid("unknown GGUF context action")),
+        }
+        events.push(event);
+    }
+    Ok(json!({"Actions":events}))
+}
+
+pub(super) fn execute_runtime(request: &Value) -> Result<Option<Value>> {
+    fields(request, &["SchemaVersion", "Operations"])?;
+    if request["SchemaVersion"] != 1 {
+        return Err(invalid("GGUF protocol version differs"));
+    }
+    let operations = array(&request["Operations"])?;
+    if operations.is_empty() || operations.len() > 128 {
+        return Err(invalid("GGUF operation count outside bound"));
+    }
+    if operations.iter().any(|operation| {
+        !matches!(
+            operation["Kind"].as_str(),
+            Some("gguf-inventory" | "gguf-read" | "gguf-context-trace")
+        )
+    }) {
+        return Ok(None);
+    }
+    Ok(Some(
+        json!({"SchemaVersion":1,"Results":operations.iter().map(runtime_operation).collect::<Result<Vec<_>>>()?}),
+    ))
+}
+
 const VARIANTS: [u32; 34] = [
     10, 15, 20, 30, 50, 40, 800, 1010, 1015, 1020, 1040, 1050, 1055, 1800, 2010, 2020, 2030, 2035,
     2040, 2045, 2050, 2060, 2070, 2075, 2080, 2800, 2810, 2820, 3010, 3015, 3020, 3030, 3800, 3810,
