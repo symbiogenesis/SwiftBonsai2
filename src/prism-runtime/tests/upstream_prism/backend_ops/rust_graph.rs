@@ -506,9 +506,50 @@ impl State {
             "graph-snapshot" => {
                 let graph = lookup(&self.graphs, &action["Graph"])?;
                 let (nodes, leaves) = self.backend.graph_nodes(graph)?;
-                let aliases = tensor_aliases(&self.tensors);
+                let gradients = nodes
+                    .iter()
+                    .map(|&tensor| {
+                        Ok((
+                            tensor,
+                            self.backend.graph_gradient(graph, tensor)?,
+                            self.backend.graph_gradient_accumulator(graph, tensor)?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                let mut aliases = tensor_aliases(&self.tensors);
+                let exposed = nodes.iter().chain(leaves).copied().chain(
+                    gradients
+                        .iter()
+                        .flat_map(|&(_, gradient, accumulator)| [gradient, accumulator])
+                        .flatten(),
+                );
+                for tensor in exposed {
+                    if aliases.contains_key(&tensor) {
+                        continue;
+                    }
+                    let mut handle = canonical(&aliases, tensor);
+                    while self.tensors.contains_key(&handle) {
+                        handle = handle
+                            .checked_add(1)
+                            .ok_or_else(|| invalid("Rust snapshot tensor handles exhausted"))?;
+                    }
+                    self.tensors.insert(handle, Some(tensor));
+                    aliases.insert(tensor, vec![handle]);
+                }
+                let gradients = nodes
+                    .iter()
+                    .map(|&tensor| {
+                        let gradient = self.backend.graph_gradient(graph, tensor)?;
+                        let accumulator = self.backend.graph_gradient_accumulator(graph, tensor)?;
+                        Ok(json!({
+                            "Tensor": canonical(&aliases, tensor),
+                            "Gradient": gradient.map(|id| canonical(&aliases, id)),
+                            "GradientAccumulator": accumulator.map(|id| canonical(&aliases, id)),
+                        }))
+                    })
+                    .collect::<Result<Vec<_>>>()?;
                 Ok(
-                    json!({"Nodes":nodes.iter().map(|&id|canonical(&aliases,id)).collect::<Vec<_>>(),"Leaves":leaves.iter().map(|&id|canonical(&aliases,id)).collect::<Vec<_>>(),"Gradients":nodes.iter().map(|&id|json!({"Tensor":canonical(&aliases,id),"Gradient":Value::Null,"GradientAccumulator":Value::Null})).collect::<Vec<_>>()}),
+                    json!({"Nodes":nodes.iter().map(|&id|canonical(&aliases,id)).collect::<Vec<_>>(),"Leaves":leaves.iter().map(|&id|canonical(&aliases,id)).collect::<Vec<_>>(),"Gradients":gradients}),
                 )
             }
             "allocate" => {
@@ -831,6 +872,86 @@ mod tests {
         assert_eq!(canonical(&aliases, TensorId(0)), 3);
         assert_eq!(canonical(&aliases, TensorId(1)), 2);
         assert_eq!(canonical(&aliases, TensorId(17)), 0x8000_0011);
+    }
+
+    #[test]
+    fn graph_snapshot_exports_owned_gradients_with_registered_aliases() -> Result<()> {
+        let mut state = State::open(&std::env::temp_dir(), 1024)?;
+        let parameter = state.backend.tensor(1, 0, [2, 1, 1, 1])?;
+        state
+            .backend
+            .call("ggml_set_param", &[Argument::Tensor(parameter)])?;
+        let Observation::Tensor(Some(square)) = state.backend.call(
+            "ggml_sqr",
+            &[Argument::Context(1), Argument::Tensor(parameter)],
+        )?
+        else {
+            return Err(invalid("square tensor missing"));
+        };
+        let Observation::Tensor(Some(loss)) = state.backend.call(
+            "ggml_sum",
+            &[Argument::Context(1), Argument::Tensor(square)],
+        )?
+        else {
+            return Err(invalid("loss tensor missing"));
+        };
+        state
+            .backend
+            .call("ggml_set_loss", &[Argument::Tensor(loss)])?;
+        let Observation::Graph(graph) = state.backend.call(
+            "ggml_new_graph_custom",
+            &[
+                Argument::Context(1),
+                Argument::Integer(64),
+                Argument::Bool(true),
+            ],
+        )?
+        else {
+            return Err(invalid("gradient graph missing"));
+        };
+        state.backend.call(
+            "ggml_build_forward_expand",
+            &[Argument::Graph(graph), Argument::Tensor(loss)],
+        )?;
+        state.graphs.insert(4, graph);
+        state.tensors.insert(10, Some(parameter));
+        state.tensors.insert(11, Some(loss));
+        let before = state.run(&json!({"Op":"graph-snapshot","Graph":4}))?;
+        assert!(array(&before["Gradients"])?.iter().all(|entry| {
+            entry["Gradient"].is_null() && entry["GradientAccumulator"].is_null()
+        }));
+        state.backend.call(
+            "ggml_build_backward_expand",
+            &[Argument::Context(1), Argument::Graph(graph), Argument::Null],
+        )?;
+        let gradient = state
+            .backend
+            .graph_gradient(graph, parameter)?
+            .ok_or_else(|| invalid("parameter gradient missing"))?;
+        let occupied = canonical(&TensorAliases::new(), gradient);
+        state.tensors.insert(occupied, Some(loss));
+        let after = state.run(&json!({"Op":"graph-snapshot","Graph":4}))?;
+        let entries = array(&after["Gradients"])?;
+        let parameter = entries
+            .iter()
+            .find(|entry| entry["Tensor"] == 10)
+            .ok_or_else(|| invalid("parameter snapshot missing"))?;
+        assert_eq!(state.tensor(&parameter["Gradient"])?, gradient);
+        assert_eq!(state.tensor(&json!(occupied))?, loss);
+        state.tensors.insert(20, Some(gradient));
+        let aliased = state.run(&json!({"Op":"graph-snapshot","Graph":4}))?;
+        let aliased_parameter = array(&aliased["Gradients"])?
+            .iter()
+            .find(|entry| entry["Tensor"] == 10)
+            .ok_or_else(|| invalid("aliased parameter snapshot missing"))?;
+        assert_eq!(aliased_parameter["Gradient"], 20);
+        let loss = entries
+            .iter()
+            .find(|entry| entry["Tensor"] == 11)
+            .ok_or_else(|| invalid("loss snapshot missing"))?;
+        assert!(loss["Gradient"].is_u64());
+        assert_eq!(loss["Gradient"], loss["GradientAccumulator"]);
+        Ok(())
     }
 
     #[test]
