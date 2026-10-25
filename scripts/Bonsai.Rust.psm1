@@ -57,8 +57,8 @@ function Get-BonsaiRustArgument {
     $arguments = @(('+' + $Toolchain), $Phase, '--manifest-path', $manifest)
     foreach ($selected in $Package) { $arguments += @('--package', $selected.Name) }
     if ($Phase -eq 'fmt') { return $arguments + '--check' }
-    # --all-features covers selected packages only. Restricted feature profiles
-    # need separate Cargo invocations, including when they are path dependencies.
+    # --all-features covers selected local packages only. The registry excludes
+    # external runtime packages; any future restricted profile stays isolated.
     if ($Package.Count -gt 1) {
         foreach ($selected in $Package) {
             $selectedFeatures = @(Get-BonsaiRustFeature -Package $selected -Phase $Phase -CheckProfile $CheckProfile)

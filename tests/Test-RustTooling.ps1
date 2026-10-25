@@ -16,24 +16,31 @@ Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Rust.psm1') -Force
 $configuration = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/rust-nightly-trial.json') -Raw |
     ConvertFrom-Json -DateKind String -NoEnumerate
 
-$prism = Get-BonsaiRustPackage -Name bonsai-prism
+# Exercise optional native feature policy without registering external packages
+# as local source. This fixture never invokes Cargo or resolves a manifest.
+$restricted = @{
+    Name = 'policy-restricted'
+    Features = @()
+    CompatibilityCompileFeatures = @('native-loader')
+    NativeFeatures = @('*')
+}
 foreach ($phase in @('clippy', 'doc', 'build')) {
-    $arguments = @(Get-BonsaiRustArgument -Package $prism -Phase $phase -CheckProfile Compatibility)
-    if ('engine-loader' -cnotin $arguments -or '--all-features' -cin $arguments) {
+    $arguments = @(Get-BonsaiRustArgument -Package $restricted -Phase $phase -CheckProfile Compatibility)
+    if ('native-loader' -cnotin $arguments -or '--all-features' -cin $arguments) {
         throw "Compatibility $phase must compile the loader without native-test linking."
     }
 }
-$arguments = @(Get-BonsaiRustArgument -Package $prism -Phase test -CheckProfile Compatibility)
+$arguments = @(Get-BonsaiRustArgument -Package $restricted -Phase test -CheckProfile Compatibility)
 if ('--features' -cin $arguments -or '--all-features' -cin $arguments) {
     throw 'Compatibility correctness must exclude optional native-test linking.'
 }
-$arguments = @(Get-BonsaiRustArgument -Package $prism -Phase clippy -CheckProfile Native)
+$arguments = @(Get-BonsaiRustArgument -Package $restricted -Phase clippy -CheckProfile Native)
 if ('--all-features' -cnotin $arguments) { throw 'The configured native lane omitted its full feature audit.' }
-$arguments = @(Get-BonsaiRustArgument -Package $prism -Phase fmt -CheckProfile Native)
+$arguments = @(Get-BonsaiRustArgument -Package $restricted -Phase fmt -CheckProfile Native)
 if ($arguments[0] -cne ('+' + $configuration.NightlyToolchain)) {
     throw 'Default Rust commands must select the configured production nightly.'
 }
-if ('--package' -cnotin $arguments -or 'bonsai-prism' -cnotin $arguments -or '--all' -cin $arguments) {
+if ('--package' -cnotin $arguments -or 'policy-restricted' -cnotin $arguments -or '--all' -cin $arguments) {
     throw 'Formatting expanded beyond the selected package.'
 }
 
@@ -42,7 +49,7 @@ foreach ($group in @('All', 'Runtime', 'Broker')) {
     $packages = @(Get-BonsaiRustPackage -Group $group)
     foreach ($checkProfile in @('Foundation', 'Compatibility', 'Native')) {
         $plan = @(Get-BonsaiRustCheckPlan -Package $packages -Phase ($phases + 'fmt') -CheckProfile $checkProfile -Offline)
-        $expectedCount = if ($group -ne 'Broker' -and $checkProfile -ne 'Native') { 9 } else { 5 }
+        $expectedCount = 5
         if ($plan.Count -ne $expectedCount) { throw "Unexpected Cargo process count for $group/$checkProfile." }
         foreach ($phase in $phases) {
             $checks = @($plan | Where-Object Phase -CEQ $phase)
@@ -71,22 +78,23 @@ foreach ($group in @('All', 'Runtime', 'Broker')) {
                 if ($phase -eq 'test' -and '--no-fail-fast' -cnotin $check.Arguments) {
                     throw 'One failed test binary must not suppress later package suites in a Cargo batch.'
                 }
-                if ('bonsai-prism' -cin $check.Packages -and $checkProfile -ne 'Native') {
-                    if ($check.Packages.Count -ne 1 -or '--all-features' -cin $check.Arguments) {
-                        throw 'Restricted Prism feature checks must remain isolated from all-feature packages.'
-                    }
-                } elseif ('--all-features' -cnotin $check.Arguments) { throw 'An all-feature package lost its feature audit.' }
+                if ('--all-features' -cnotin $check.Arguments) { throw 'An all-feature package lost its feature audit.' }
             }
         }
     }
 }
-$selection = @(Get-BonsaiRustPackage -Name bonsai-ternary,bonsai-prism)
+$selection = @(Get-BonsaiRustPackage -Name bonsai-codec-probe,bonsai-rust-trial)
 $plan = @(Get-BonsaiRustCheckPlan -Package $selection -Phase fmt,test -CheckProfile Compatibility)
-if ($plan.Count -ne 3 -or @($plan.Packages | Sort-Object -Unique).Count -ne 2) {
+if ($plan.Count -ne 2 -or @($plan.Packages | Sort-Object -Unique).Count -ne 2) {
     throw 'A partial package selection expanded to the full workspace.'
 }
+$mixed = @($selection[0], $restricted)
+$plan = @(Get-BonsaiRustCheckPlan -Package $mixed -Phase fmt,test -CheckProfile Compatibility)
+if ($plan.Count -ne 3 -or @($plan.Packages | Sort-Object -Unique).Count -ne 2) {
+    throw 'Restricted feature policy did not isolate its correctness command.'
+}
 $rejected = $false
-try { $null = Get-BonsaiRustArgument -Package $selection -Phase test -CheckProfile Compatibility }
+try { $null = Get-BonsaiRustArgument -Package $mixed -Phase test -CheckProfile Compatibility }
 catch { $rejected = $_.Exception.Message -ceq 'Only all-feature packages can share a Cargo compile command.' }
 if (-not $rejected) { throw 'A direct Cargo argument request mixed restricted and all-feature packages.' }
 
@@ -97,7 +105,7 @@ try {
     foreach ($selection in @(@{ Phase = @('test') }, @{ FullTests = $true })) {
         $rejected = $false
         try {
-            $null = Invoke-BonsaiRustCheck -Package bonsai-ternary -TargetDirectory (Join-Path $scratch 'target') `
+            $null = Invoke-BonsaiRustCheck -Package bonsai-codec-probe -TargetDirectory (Join-Path $scratch 'target') `
                 -EvidenceDirectory (Join-Path $scratch 'evidence') @selection
         } catch {
             $rejected = $_.Exception.Message -ceq 'Complete Rust suites run only in GitHub Actions on main.'
@@ -118,7 +126,7 @@ try {
         @{ Arguments = @{ Mode = 'Compatibility'; PackageGroup = 'Broker'; Package = @('bonsai-missing') }; Error = 'Unknown Rust package in group Broker: bonsai-missing' }
         @{ Arguments = @{ Mode = 'Probe'; ProbeCase = 'Polonius'; Package = @('bonsai-rust-trial') }; Error = 'PackageGroup and Package apply only to Compatibility.' }
         @{ Arguments = @{ Mode = 'Probe'; ProbeCase = 'Polonius'; PackageGroup = 'Runtime' }; Error = 'PackageGroup and Package apply only to Compatibility.' }
-        @{ Arguments = @{ Mode = 'Compatibility'; PackageGroup = 'Runtime'; Package = @('bonsai-prism-runtime'); FullTests = $true }; Error = 'Complete suites run only in GitHub Actions on main.' }
+        @{ Arguments = @{ Mode = 'Compatibility'; PackageGroup = 'Runtime'; Package = @('bonsai-codec-probe'); FullTests = $true }; Error = 'Complete suites run only in GitHub Actions on main.' }
     )) {
         $rejected = $false
         try {
