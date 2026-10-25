@@ -450,5 +450,33 @@
       "block-trace-comparison.json",
       "gdn-block-trace-comparison.json"
     ]
+  },
+  "downProjectionDiagnosis": {
+    "status": "same-input causal discrepancy proven; private repair pending",
+    "modelMaterialized": false,
+    "transformed17408InputBitExact": true,
+    "sourceVsNativeQ8kDifferentBytes": 2,
+    "cause": "Pinned compiled quantizer fuses inverse_scale * value + 12582912 before nearest-integer mantissa extraction; source path first rounds the product to binary32.",
+    "boundary": [
+      {
+        "group": 33,
+        "lane": 131,
+        "global_input_index": 8579,
+        "value_bits": "be010f7e",
+        "maximum_bits": "3e653d88",
+        "inverse_bits": "c40dd32f",
+        "rounded_product_bits": "428f0000",
+        "rounded_product": 71.5,
+        "exact_binary64_product": 71.49999789570757,
+        "native_integer": 71,
+        "source_integer": 72,
+        "fused_magic_integer": 71
+      }
+    ],
+    "projectionRowsChecked": 13,
+    "sourceQuantizationReproducesRustProjectionRowsExactly": true,
+    "nativeQuantizationReproducesNativeProjectionRowsExactly": true,
+    "rawEvidenceDirectory": "C:\\Users\\symbi\\AppData\\Local\\Temp\\SwiftMvp-8da0ada7fcf648059cb3cc9282112d3d\\ffn-down-evidence-c2ced959b48b4b5597a30553e562f6cb",
+    "controlSha256": "bfc3ca704fc2db9abf3cbc3f09ee21c36bc78d59b8292e772ce4ce9f9f709f9e"
   }
 }
