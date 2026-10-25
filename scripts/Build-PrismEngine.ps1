@@ -3,8 +3,9 @@
 .SYNOPSIS
 Builds the pinned Prism storage overlay in a fresh external source/build lane.
 .DESCRIPTION
-Requires the exact source ZIP identified by tools/prism/source.lock.json. No
-downloads, tests, benchmarks, model loading, installation, or profile promotion.
+Requires the exact upstream ZIP identified by the independent runtime's
+tools/prism/source.lock.json. Fetches only the locked Prism Inference source
+archive; no tests, benchmarks, model loading, installation, or profile promotion.
 PrepareOnly builds Rust and its generated ABI header, then returns verified patched source.
 Probe builds ggml and the Rust native alias test; Engine builds completion and server.
 The pinned Rust toolchain builds the storage policy as a static library.
@@ -30,8 +31,10 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.InferenceSource.psm1')
 $archive = Resolve-ExternalPath -Path $SourceArchive
-$overlay = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../tools/prism'))
+$runtimeSource = Resolve-BonsaiInferenceSource
+$overlay = Join-Path $runtimeSource 'tools/prism'
 $lock = Get-Content -LiteralPath (Join-Path $overlay 'source.lock.json') -Raw | ConvertFrom-Json -DateKind String
 $scratch = Resolve-ExternalPath -Path (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PrismBuild-' + [guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)
@@ -92,8 +95,8 @@ $rustReceipt = [ordered]@{
     Library = $rustLibrary
     LibrarySha256 = (Get-FileHash -LiteralPath $rustLibrary -Algorithm SHA256).Hash.ToLowerInvariant()
     ManifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
-    WorkspaceManifestSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot '../Cargo.toml') -Algorithm SHA256).Hash.ToLowerInvariant()
-    LockSha256 = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot '../Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
+    WorkspaceManifestSha256 = (Get-FileHash -LiteralPath (Join-Path $runtimeSource 'Cargo.toml') -Algorithm SHA256).Hash.ToLowerInvariant()
+    LockSha256 = (Get-FileHash -LiteralPath (Join-Path $runtimeSource 'Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
 $source = Join-Path $scratch ('source/' + $lock.ArchiveRoot)

@@ -31,10 +31,12 @@ Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackend.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismRunner.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackendBundle.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBaseline.psm1')
+Import-Module (Join-Path $repo 'scripts/Bonsai.InferenceSource.psm1')
+$runtimeSource = Resolve-BonsaiInferenceSource
 $evidence = Resolve-ExternalPath $EvidenceDirectory
 if (Test-Path -LiteralPath $evidence) { throw 'Backend stage evidence must be fresh.' }
 [void][IO.Directory]::CreateDirectory($evidence)
-$bundle = Import-BonsaiPrismBackendBundle -Directory $BundleDirectory -Repository $repo
+$bundle = Import-BonsaiPrismBackendBundle -Directory $BundleDirectory -Repository $runtimeSource
 $correctnessModes = @('eval','support')
 if ($Gradients) { $correctnessModes += 'grad' }
 $modes = $correctnessModes
@@ -149,7 +151,7 @@ foreach ($target in @('cpp','rust')) {
 }
 Write-BackendStage -Name 'record.json' -Value $record
 $combined = @{}
-$catalog = Import-BonsaiPrismCatalog -Path (Join-Path $repo 'tools/prism/upstream/catalog.json')
+$catalog = Import-BonsaiPrismCatalog -Path (Join-Path $runtimeSource 'tools/prism/upstream/catalog.json')
 $ordinarySources = $null
 if ($PartitionedOrdinary) {
     Import-Module (Join-Path $repo 'scripts/Bonsai.PrismSourceResults.psm1')
@@ -180,7 +182,7 @@ foreach ($target in @('cpp','rust')) {
 }
 $report = New-BonsaiPrismReport -Catalog $catalog -TargetResults $combined.rust -ReferenceResults $combined.cpp
 Write-BackendStage -Name 'report.json' -Value $report
-$gate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath (Join-Path $repo 'tools/prism/upstream/baseline.json')
+$gate = Test-BonsaiPrismBaseline -Catalog $catalog -Report $report -BaselinePath (Join-Path $runtimeSource 'tools/prism/upstream/baseline.json')
 Write-BackendStage -Name 'gate.json' -Value $gate
 if (-not $gate.Passed) { throw 'The complete source gate failed; every reference and target outcome is retained.' }
 if ($Benchmarks -and $record.Targets.cpp.perf.Payload.Status -cne 'measured') { throw 'The requested complete C++ backend benchmark workload did not complete.' }

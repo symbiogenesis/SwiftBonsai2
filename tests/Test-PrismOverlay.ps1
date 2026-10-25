@@ -17,8 +17,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$overlay = Join-Path $repo 'tools/prism/Apply-Overlay.ps1'
-$lock = Get-Content -LiteralPath (Join-Path $repo 'tools/prism/source.lock.json') -Raw | ConvertFrom-Json -DateKind String
+Import-Module (Join-Path $repo 'scripts/Bonsai.InferenceSource.psm1')
+$runtimeSource = Resolve-BonsaiInferenceSource
+$overlay = Join-Path $runtimeSource 'tools/prism/Apply-Overlay.ps1'
+$lock = Get-Content -LiteralPath (Join-Path $runtimeSource 'tools/prism/source.lock.json') -Raw | ConvertFrom-Json -DateKind String
 $result = & (Join-Path $repo 'scripts/Build-PrismEngine.ps1') -SourceArchive $SourceArchive -RustTargetDirectory $RustTargetDirectory -PrepareOnly
 $adapter = Join-Path $result.SourceDirectory 'src/llama-adapter.cpp'
 $header = Join-Path $result.SourceDirectory 'src/bonsai_prism.h'

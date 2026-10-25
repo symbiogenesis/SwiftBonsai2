@@ -25,8 +25,9 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Native.psm1')
+Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.InferenceSource.psm1')
 
-$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$runtimeSource = Resolve-BonsaiInferenceSource
 $evidence = Resolve-ExternalPath -Path $EvidenceDirectory
 if (Test-Path -LiteralPath $evidence) { throw 'Use a new evidence directory for each mutation run.' }
 [void][IO.Directory]::CreateDirectory($evidence)
@@ -37,17 +38,21 @@ $sourceDirectory = Join-Path $crate 'src'
 $testsDirectory = Join-Path $crate 'tests'
 [void][IO.Directory]::CreateDirectory($sourceDirectory)
 [void][IO.Directory]::CreateDirectory($testsDirectory)
-[IO.File]::Copy((Join-Path $repoRoot 'tools/ternary/Cargo.toml'), (Join-Path $crate 'Cargo.toml'))
+[IO.File]::Copy((Join-Path $runtimeSource 'tools/ternary/Cargo.toml'), (Join-Path $crate 'Cargo.toml'))
 # Retain inherited package/profile/lint policy in a minimal isolated workspace.
 # Its lock is generated offline; unrelated workspace packages are never copied,
 # mutated, compiled or executed by this finite catalog.
-$workspaceSource = Join-Path $repoRoot 'Cargo.toml'
+$workspaceSource = Join-Path $runtimeSource 'Cargo.toml'
 $workspace = [IO.File]::ReadAllText($workspaceSource)
-$workspace = [regex]::Replace($workspace, '(?s)^\[workspace\].*?(?=\[workspace\.package\])', "[workspace]`nresolver = `"3`"`nmembers = [`"ternary`"]`n`n")
+$policySections = [regex]::Matches($workspace, '(?ms)^\[(?<Name>[^\]\r\n]+)\]\r?\n.*?(?=^\[|\z)') |
+    Where-Object { $_.Groups['Name'].Value.StartsWith('workspace.', [StringComparison]::Ordinal) -or
+        $_.Groups['Name'].Value.StartsWith('profile.', [StringComparison]::Ordinal) } |
+    ForEach-Object { $_.Value }
+$workspace = "[workspace]`nresolver = `"3`"`nmembers = [`"ternary`"]`n`n" + ($policySections -join "`n")
 [IO.File]::WriteAllText((Join-Path $work 'Cargo.toml'), $workspace)
 $sourcePath = Join-Path $sourceDirectory 'lib.rs'
-[IO.File]::Copy((Join-Path $repoRoot 'tools/ternary/src/lib.rs'), $sourcePath)
-[IO.File]::Copy((Join-Path $repoRoot 'tools/ternary/tests/mutation_guards.rs'), (Join-Path $testsDirectory 'mutation_guards.rs'))
+[IO.File]::Copy((Join-Path $runtimeSource 'tools/ternary/src/lib.rs'), $sourcePath)
+[IO.File]::Copy((Join-Path $runtimeSource 'tools/ternary/tests/mutation_guards.rs'), (Join-Path $testsDirectory 'mutation_guards.rs'))
 $original = [IO.File]::ReadAllText($sourcePath)
 $catalog = @(
     [pscustomobject]@{

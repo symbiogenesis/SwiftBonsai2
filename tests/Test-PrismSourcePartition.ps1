@@ -11,7 +11,9 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.PrismSourcePartition.psm1')
-$catalog = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../tools/prism/upstream/catalog.json') -Raw | ConvertFrom-Json
+Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.InferenceSource.psm1')
+$runtimeSource = Resolve-BonsaiInferenceSource
+$catalog = Get-Content -LiteralPath (Join-Path $runtimeSource 'tools/prism/upstream/catalog.json') -Raw | ConvertFrom-Json
 $sources = @(
     foreach ($entry in $catalog.Cases) {
         if ($entry.Id -ceq 'tests/test-backend-ops.cpp') { continue }

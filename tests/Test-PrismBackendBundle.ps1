@@ -12,7 +12,9 @@ $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackendBundle.psm1')
-$lock = Get-Content -LiteralPath (Join-Path $repo 'tools/prism/source.lock.json') -Raw | ConvertFrom-Json -AsHashtable
+Import-Module (Join-Path $repo 'scripts/Bonsai.InferenceSource.psm1')
+$runtimeSource = Resolve-BonsaiInferenceSource
+$lock = Get-Content -LiteralPath (Join-Path $runtimeSource 'tools/prism/source.lock.json') -Raw | ConvertFrom-Json -AsHashtable
 $archive = Resolve-ExternalPath $SourceArchive
 Test-LockedArtifact -Path $archive -Bytes $lock.ArchiveBytes -Sha256 $lock.ArchiveSha256
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PrismBundleTest-' + [guid]::NewGuid().ToString('N'))
@@ -36,7 +38,7 @@ foreach ($name in @('harness', 'common', 'ggml', 'lora')) {
 $digest = (Get-FileHash -LiteralPath $paths.harness -Algorithm SHA256).Hash.ToLowerInvariant()
 $revision = 'a' * 40
 $toolchain = 'nightly-2026-10-22-aarch64-pc-windows-msvc'
-$patchLock = Get-Content -LiteralPath (Join-Path $repo 'tools/prism/upstream/reference-patches.lock.json') -Raw | ConvertFrom-Json -AsHashtable
+$patchLock = Get-Content -LiteralPath (Join-Path $runtimeSource 'tools/prism/upstream/reference-patches.lock.json') -Raw | ConvertFrom-Json -AsHashtable
 $receipt = [ordered]@{
     NativePlatform='ARM64'; ProjectRevision=$revision; SourceCommit=$lock.Commit
     SourceArchiveSha256=$lock.ArchiveSha256; SourceDirectory=$source; Toolchain=$toolchain
@@ -56,20 +58,20 @@ $originalManifest = [IO.File]::ReadAllText($manifestPath)
 $previousRevision = $env:GITHUB_SHA
 try {
     $env:GITHUB_SHA = $revision
-    $bundle = Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $repo -Toolchain $toolchain -RequireCommonTools
+    $bundle = Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $runtimeSource -Toolchain $toolchain -RequireCommonTools
     Assert ($bundle.NativeBuilds.Count -eq 2 -and $bundle.ManifestSha256 -cmatch '^[a-f0-9]{64}$') 'Shared tool provenance was lost.'
     foreach ($build in $bundle.NativeBuilds) {
         Assert ($build.Executable.StartsWith($bundlePath + [IO.Path]::DirectorySeparatorChar, [StringComparison]::Ordinal)) 'A build path still points to the producer runner.'
     }
     Assert ($bundle.LoraMergeTool.Executable -ceq (Join-Path $bundlePath 'llama-export-lora.exe')) 'The LoRA executable was not rebased.'
     $env:GITHUB_SHA = 'c' * 40
-    Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $repo -RequireCommonTools } 'Foreign revision tools were accepted.'
+    Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $runtimeSource -RequireCommonTools } 'Foreign revision tools were accepted.'
     $env:GITHUB_SHA = $revision
-    Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $repo -Toolchain 'wrong' -RequireCommonTools } 'A foreign compiler toolchain was accepted.'
+    Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $runtimeSource -Toolchain 'wrong' -RequireCommonTools } 'A foreign compiler toolchain was accepted.'
     $executable = Join-Path $bundlePath 'prism-upstream-common-bridge.exe'
     $changed = $image.Clone(); $changed[100] = 1
     [IO.File]::WriteAllBytes($executable, $changed)
-    Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $repo -RequireCommonTools } 'Modified same-length executable bytes were accepted.'
+    Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $runtimeSource -RequireCommonTools } 'Modified same-length executable bytes were accepted.'
     [IO.File]::WriteAllBytes($executable, $image)
     foreach ($mutation in @('Duplicate', 'BuildDigest', 'Architecture', 'SourcePin', 'BuildRevision', 'ProductionFix')) {
         $record = $originalManifest | ConvertFrom-Json -AsHashtable
@@ -82,18 +84,18 @@ try {
             'ProductionFix' { $record.ReferenceProductionFix.Patches[0].AfterSha256 = '0' * 64 }
         }
         [IO.File]::WriteAllText($manifestPath, ($record | ConvertTo-Json -Depth 10))
-        Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $repo -RequireCommonTools } "Invalid $mutation provenance was accepted."
+        Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $runtimeSource -RequireCommonTools } "Invalid $mutation provenance was accepted."
     }
     [IO.File]::WriteAllText($manifestPath, $originalManifest)
     $backendSource = Join-Path $bundlePath 'source/tests/test-backend-ops.cpp'
     [IO.File]::AppendAllText($backendSource, '// tampered')
-    Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $repo -RequireCommonTools } 'Modified pinned source was accepted.'
+    Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $bundlePath -Repository $runtimeSource -RequireCommonTools } 'Modified pinned source was accepted.'
     $legacy = Join-Path $scratch 'legacy'
     $receipt.NativeBuilds = @($receipt.NativeBuilds | Where-Object { $_.Family -ceq 'common' })
     $receipt.Remove('LoraMergeTool')
     $legacyManifest = New-BonsaiPrismBackendBundle -Receipt $receipt -Directory $legacy
     Assert ($legacyManifest.SchemaVersion -eq 1) 'Backend-only tool publication changed schema.'
-    $null = Import-BonsaiPrismBackendBundle -Directory $legacy -Repository $repo
-    Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $legacy -Repository $repo -RequireCommonTools } 'A backend-only bundle replaced ordinary source tools.'
+    $null = Import-BonsaiPrismBackendBundle -Directory $legacy -Repository $runtimeSource
+    Assert-Failure { Import-BonsaiPrismBackendBundle -Directory $legacy -Repository $runtimeSource -RequireCommonTools } 'A backend-only bundle replaced ordinary source tools.'
 } finally { $env:GITHUB_SHA = $previousRevision }
 Write-Output "Prism compiled tool handoff and provenance checks passed. Evidence: $scratch"

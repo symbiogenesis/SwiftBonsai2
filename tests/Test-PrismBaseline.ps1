@@ -11,6 +11,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.PrismBaseline.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.InferenceSource.psm1')
 $scratch = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PrismBaselineTest-' + [guid]::NewGuid().ToString('N'))))
 [void][IO.Directory]::CreateDirectory($scratch)
 $catalogPath = Join-Path $scratch 'catalog.json'
@@ -78,13 +79,14 @@ switch ($Case) {
         $invalid = New-TestResult -Ids @($ids[0]) -Statuses @('pass')
         $invalid.Cases[0].Detail = [DateTime]::UtcNow
         Assert-Failure { New-BonsaiPrismReport -Catalog $preserved -TargetResults $invalid -ReferenceResults $reference } 'Serialization repaired a non-string result detail.'
-        $real = Import-BonsaiPrismCatalog -Path (Join-Path $PSScriptRoot '../tools/prism/upstream/catalog.json')
+        $runtimeSource = Resolve-BonsaiInferenceSource
+        $real = Import-BonsaiPrismCatalog -Path (Join-Path $runtimeSource 'tools/prism/upstream/catalog.json')
         Assert ($real.Cases.Count -eq 71) 'Pinned upstream inventory must include all 71 test source files.'
         Assert (@($real.Cases | Where-Object { $_.Id -ceq 'tests/test-tokenizer-0.cpp' }).Count -eq 1) 'C++ tokenizer ID is absent.'
         Assert (@($real.Cases | Where-Object { $_.Id -ceq 'tests/test-tokenizer-0.py' }).Count -eq 1) 'Python tokenizer ID must remain separate.'
         Assert (@($real.Cases | Where-Object { $_.Id -ceq 'tests/peg-parser/test-unicode.cpp' }).Count -eq 1) 'Nested parser source was omitted.'
-        $migration = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../tools/prism/upstream/migration.json') | ConvertFrom-Json -AsHashtable
-        $required = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '../tools/prism/upstream/baseline.json') | ConvertFrom-Json -AsHashtable
+        $migration = Get-Content -Raw -LiteralPath (Join-Path $runtimeSource 'tools/prism/upstream/migration.json') | ConvertFrom-Json -AsHashtable
+        $required = Get-Content -Raw -LiteralPath (Join-Path $runtimeSource 'tools/prism/upstream/baseline.json') | ConvertFrom-Json -AsHashtable
         Assert ($migration.SchemaVersion -eq 1 -and $migration.UpstreamCommit -ceq $real.UpstreamCommit -and
             $migration.Total -eq $real.Cases.Count -and $migration.Cases.Count -eq $real.Cases.Count) 'Migration inventory must cover the exact pinned catalog.'
         $migrationIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)

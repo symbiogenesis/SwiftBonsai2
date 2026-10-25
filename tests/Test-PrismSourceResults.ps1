@@ -12,8 +12,10 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.PrismSourceResults.psm1')
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.PrismBaseline.psm1')
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.PrismSourcePartition.psm1')
+Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.InferenceSource.psm1')
+$runtimeSource = Resolve-BonsaiInferenceSource
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-PrismSourceResults-' + [guid]::NewGuid().ToString('N'))
-$catalog = Import-BonsaiPrismCatalog -Path (Join-Path $PSScriptRoot '../tools/prism/upstream/catalog.json')
+$catalog = Import-BonsaiPrismCatalog -Path (Join-Path $runtimeSource 'tools/prism/upstream/catalog.json')
 $cases = @(for ($ordinal = 0; $ordinal -lt $catalog.AdapterIds.Count; $ordinal++) {
     if ($catalog.AdapterIds[$ordinal] -cne 'tests/test-backend-ops.cpp') {
         [pscustomobject]@{ Id=$catalog.AdapterIds[$ordinal]; Ordinal=$ordinal }
