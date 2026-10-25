@@ -113,7 +113,7 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   new UI/client features are deferred.
 
   Implementation is connected through `SwiftSession`, bounded Swift worker/client,
-  and `--native-engine` in a `native-swift` broker build. The existing 12 GiB Job,
+  and `--native-engine` with the independently released server in an ordinary broker build. The existing 12 GiB Job,
   16 GiB startup admission, 4 GiB reserve, private credentials and listener-PID
   checks remain in force. Focused lifecycle and protocol regressions pass, and
   the actual owned path counted/prefilled 53 prompt tokens and streamed one

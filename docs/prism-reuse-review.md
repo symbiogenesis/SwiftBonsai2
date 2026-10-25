@@ -25,7 +25,7 @@ covers the direct Prism adaptations. No framework dependency was added.
   Eighteen native scenarios compare encoded bytes, decoded float bytes and dots.
   Native hashes cover every payload-byte value at every payload position:
   8,192 blocks and 786,432 decoded values. The retained fixture in
-  `src/prism-runtime/tests/fixtures/upstream-signquants.json` records provenance.
+  [the preserved fixture](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/upstream-signquants.json) records provenance.
 - CPU graphs: F32/F16/BF16 `ADD1`, `WIN_PART`, `WIN_UNPART`, `GET_REL_POS`,
   `ADD_REL_POS`, `IM2COL_BACK` and `POOL_2D_BACK`. Checks cover padded rows/windows,
   both patch axes, channels/batches, strided gradients, overlapping pooling,

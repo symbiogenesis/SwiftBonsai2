@@ -69,7 +69,7 @@ source's assertions and prerequisites, bound to its pinned digest. Its port flag
 must match the executable adapter list; they are not test verdicts.
 
 The Rust harness, adapters and fixtures live together under
-[`src/prism-runtime/tests/upstream_prism/`](https://github.com/symbiogenesis/prism-inference/blob/main/tests/upstream_prism/).
+[`prism-inference/tests/upstream_prism/`](https://github.com/symbiogenesis/prism-inference/blob/main/tests/upstream_prism/).
 An explicit Cargo example target retains the `upstream_prism` command-line runner
 and its embedded unit tests, so the existing build and CI commands remain valid.
 
