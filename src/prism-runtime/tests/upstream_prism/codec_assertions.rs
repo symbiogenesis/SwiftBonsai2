@@ -58,13 +58,12 @@ impl Checks {
     }
 }
 
-fn unsupported(id: &str) -> Value {
-    result(
-        id,
-        false,
-        "unsupported: required production codec/CPU-dot API is missing; no reference fallback"
-            .to_owned(),
-    )
+const UNSUPPORTED: &str =
+    "unsupported: required production codec/CPU-dot API is missing; no reference fallback";
+
+enum CodecResponse {
+    Observations(Vec<Value>),
+    Rejected(String),
 }
 fn fields(value: &Value, names: &[&str]) -> Result<()> {
     let object = value
@@ -159,12 +158,31 @@ fn float_hex(values: &[f32]) -> String {
         .flat_map(|value| value.to_le_bytes())
         .collect::<Vec<_>>())
 }
-fn exchange(engine: &Engine, name: &str, operations: &[Value]) -> Result<Option<Vec<Value>>> {
+fn operation_rejections(
+    name: &str,
+    operations: &[Value],
+    observations: &[Value],
+) -> Result<Option<String>> {
+    let mut detail = None;
+    for (index, (operation, observation)) in operations.iter().zip(observations).enumerate() {
+        if let Some(error) = rejection(observation)? {
+            detail.get_or_insert_with(|| {
+                format!(
+                    "{name} operation={index} kind={} type={} mode={}: production codec rejected: {error}",
+                    operation["Kind"], operation["TypeId"], operation["Mode"]
+                )
+            });
+        }
+    }
+    Ok(detail)
+}
+
+fn exchange(engine: &Engine, name: &str, operations: &[Value]) -> Result<CodecResponse> {
     let mut results = Vec::with_capacity(operations.len());
     for (batch, operations) in operations.chunks(128).enumerate() {
         let request = json!({"SchemaVersion":1,"Operations":operations});
         let Some(response) = engine.execute_codec(&format!("{name}-{batch}"), &request)? else {
-            return Ok(None);
+            return Ok(CodecResponse::Rejected(UNSUPPORTED.to_owned()));
         };
         fields(&response, &["SchemaVersion", "Results"])?;
         if response["SchemaVersion"] != 1 {
@@ -174,9 +192,16 @@ fn exchange(engine: &Engine, name: &str, operations: &[Value]) -> Result<Option<
         if observations.len() != operations.len() {
             return Err(invalid("codec result count mismatch"));
         }
+        // A valid target rejection is a failed source contract. It must not be
+        // parsed as DataHex and promoted to an infrastructure/schema failure.
+        // Validate every Error in the batch, retaining malformed responses as
+        // infrastructure failures even after a preceding legitimate rejection.
+        if let Some(detail) = operation_rejections(name, operations, observations)? {
+            return Ok(CodecResponse::Rejected(detail));
+        }
         results.extend_from_slice(observations);
     }
-    Ok(Some(results))
+    Ok(CodecResponse::Observations(results))
 }
 fn small(value: usize) -> Result<f32> {
     Ok(f32::from(u16::try_from(value)?))
@@ -353,13 +378,13 @@ fn dot(id: usize, count: usize, weights: &[u8], activations: &[u8]) -> Value {
 }
 
 pub(super) fn run_quantize(engine: &Engine) -> Result<Value> {
-    let Some(metadata) = exchange(
+    let metadata = match exchange(
         engine,
         "codec-inventory",
         &[json!({"Kind":"codec-inventory"})],
-    )?
-    else {
-        return Ok(unsupported(QUANTIZE_ID));
+    )? {
+        CodecResponse::Observations(values) => values,
+        CodecResponse::Rejected(detail) => return Ok(result(QUANTIZE_ID, false, detail)),
     };
     let traits = inventory(&metadata[0])?;
     let mut checks = Checks::default();
@@ -387,8 +412,9 @@ pub(super) fn run_quantize(engine: &Engine) -> Result<Value> {
         }
         operations.push(quantize(activation, "cpu", &data2));
     }
-    let Some(encoded) = exchange(engine, "codec-quantize", &operations)? else {
-        return Ok(unsupported(QUANTIZE_ID));
+    let encoded = match exchange(engine, "codec-quantize", &operations)? {
+        CodecResponse::Observations(values) => values,
+        CodecResponse::Rejected(detail) => return Ok(result(QUANTIZE_ID, false, detail)),
     };
     for (index, count) in tails.into_iter().enumerate() {
         let target = floats(&encoded[index], 1)?[0];
@@ -409,8 +435,9 @@ pub(super) fn run_quantize(engine: &Engine) -> Result<Value> {
         }
         operations.push(dot(id, 4096, &packed[3], &activations));
     }
-    let Some(decoded) = exchange(engine, "codec-errors", &operations)? else {
-        return Ok(unsupported(QUANTIZE_ID));
+    let decoded = match exchange(engine, "codec-errors", &operations)? {
+        CodecResponse::Observations(values) => values,
+        CodecResponse::Rejected(detail) => return Ok(result(QUANTIZE_ID, false, detail)),
     };
     for (index, id) in ELIGIBLE.into_iter().enumerate() {
         let values = &decoded[index * 4..index * 4 + 4];
@@ -430,8 +457,8 @@ pub(super) fn run_quantize(engine: &Engine) -> Result<Value> {
             format!("type={id}: dot error={dot_error}"),
         );
     }
-    if !packed_patterns(engine, &mut checks)? {
-        return Ok(unsupported(QUANTIZE_ID));
+    if let Some(detail) = packed_patterns(engine, &mut checks)? {
+        return Ok(result(QUANTIZE_ID, false, detail));
     }
     if checks.count != 1108 {
         return Err(invalid("quantize source assertion count mismatch"));
@@ -529,7 +556,7 @@ fn pattern(id: usize, blocks: usize, value: usize) -> Result<Pattern> {
     clippy::float_cmp,
     reason = "The original packed-dot contract requires exact equality using power-of-two scales."
 )]
-fn packed_patterns(engine: &Engine, checks: &mut Checks) -> Result<bool> {
+fn packed_patterns(engine: &Engine, checks: &mut Checks) -> Result<Option<String>> {
     let mut cases = Vec::new();
     for id in [142, 143] {
         for blocks in if id == 142 { [2, 4] } else { [1, 3] } {
@@ -552,9 +579,10 @@ fn packed_patterns(engine: &Engine, checks: &mut Checks) -> Result<bool> {
                 &case.activations,
             ));
         }
-        let Some(observations) = exchange(engine, &format!("codec-patterns-{batch}"), &operations)?
-        else {
-            return Ok(false);
+        let observations = match exchange(engine, &format!("codec-patterns-{batch}"), &operations)?
+        {
+            CodecResponse::Observations(values) => values,
+            CodecResponse::Rejected(detail) => return Ok(Some(detail)),
         };
         let mut index = 0;
         for case in cases {
@@ -579,7 +607,7 @@ fn packed_patterns(engine: &Engine, checks: &mut Checks) -> Result<bool> {
             );
         }
     }
-    Ok(true)
+    Ok(None)
 }
 
 // Host-only C++ CUDA-intrinsic stubs are transcribed below in safe integer Rust.
@@ -984,9 +1012,10 @@ pub(super) fn run_ptq_cuda(engine: &Engine) -> Result<Value> {
     }
     for (batch, cases) in cases.chunks(64).enumerate() {
         let operations: Vec<Value> = cases.iter().flat_map(production_host_ops).collect();
-        let Some(observations) = exchange(engine, &format!("codec-ptq-host-{batch}"), &operations)?
-        else {
-            return Ok(unsupported(CUDA_ID));
+        let observations = match exchange(engine, &format!("codec-ptq-host-{batch}"), &operations)?
+        {
+            CodecResponse::Observations(values) => values,
+            CodecResponse::Rejected(detail) => return Ok(result(CUDA_ID, false, detail)),
         };
         for (index, case) in cases.iter().enumerate() {
             check_production(
@@ -1006,13 +1035,13 @@ pub(super) fn run_ptq_cuda(engine: &Engine) -> Result<Value> {
             .map(|value| native_byte_domain(position, value))
             .collect();
         let operations: Vec<Value> = cases.iter().flat_map(production_host_ops).collect();
-        let Some(observations) = exchange(
+        let observations = match exchange(
             engine,
             &format!("codec-ptq-byte-domain-{position}"),
             &operations,
-        )?
-        else {
-            return Ok(unsupported(CUDA_ID));
+        )? {
+            CodecResponse::Observations(values) => values,
+            CodecResponse::Rejected(detail) => return Ok(result(CUDA_ID, false, detail)),
         };
         for (value, case) in cases.iter().enumerate() {
             check_production(
@@ -1048,6 +1077,65 @@ pub(super) fn run_ptq_cuda(engine: &Engine) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn available_inventory_and_unavailable_cpu_quantizer_report_failed_source() -> Result<()> {
+        let engine = Engine::new(
+            super::super::engine::Target::Rust,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        let report = run_quantize(&engine)?;
+        assert_eq!(report["Id"], QUANTIZE_ID);
+        assert_eq!(report["Status"], "fail");
+        let detail = report["Detail"]
+            .as_str()
+            .ok_or_else(|| invalid("codec source report detail missing"))?;
+        assert!(detail.contains("codec-quantize operation=18"));
+        assert!(detail.contains("type=1 mode=\"cpu\""));
+        assert!(detail.contains("requested Rust codec operation is unavailable"));
+        Ok(())
+    }
+
+    #[test]
+    fn target_rejections_retain_operation_context_and_malformed_errors_reject() -> Result<()> {
+        let operations = [quantize(2, "cpu", &[0.0; 32]), decode(2, 32, &[0; 18])];
+        let observations = [
+            json!({"Error":"CPU quantizer unavailable"}),
+            json!({"Error":"decoder unavailable"}),
+        ];
+        let detail = operation_rejections("focused", &operations, &observations)?
+            .ok_or_else(|| invalid("codec target rejection was lost"))?;
+        assert!(detail.contains("operation=0 kind=\"codec-quantize\" type=2 mode=\"cpu\""));
+        assert!(detail.contains("CPU quantizer unavailable"));
+        for malformed in [
+            json!({"Error":""}),
+            json!({"Error":5}),
+            json!({"Error":"unavailable","DataHex":"00"}),
+            json!({"Error":"x".repeat(8193)}),
+        ] {
+            assert!(
+                operation_rejections(
+                    "focused",
+                    &operations,
+                    &[observations[0].clone(), malformed],
+                )
+                .is_err()
+            );
+        }
+        assert!(
+            operation_rejections(
+                "focused",
+                &operations[..1],
+                &[json!({"DataHex":"00000000"})],
+            )?
+            .is_none()
+        );
+        Ok(())
+    }
 
     #[test]
     fn rejects_malformed_codec_and_detects_host_lane_error() -> Result<()> {
