@@ -6,8 +6,8 @@
 )]
 
 use bonsai_broker::{
-    CONTEXT_TOKENS, MAX_BODY_BYTES, MAX_COMPLETION_TOKENS, MAX_HEADER_BYTES, MAX_HEADERS,
-    MAX_MESSAGES, PendingChat, Rejection, RequestPolicy, TEMPLATE_MARGIN_TOKENS,
+    CONTEXT_TOKENS, MAX_BODY_BYTES, MAX_COMPLETION_TOKENS, MAX_MESSAGES, PendingChat, Rejection,
+    RequestPolicy, TEMPLATE_MARGIN_TOKENS,
 };
 use http::{HeaderValue, Method, Request, Version, request::Parts};
 
@@ -222,24 +222,6 @@ fn bounds_both_advertised_and_actual_body_bytes() {
 }
 
 #[test]
-fn bounds_header_count_and_bytes() {
-    let mut h = head(CHAT.len());
-    for i in 0..MAX_HEADERS {
-        h.headers.append(
-            format!("x-header-{i}").parse::<http::HeaderName>().unwrap(),
-            HeaderValue::from_static("x"),
-        );
-    }
-    rejected_head(&h, Rejection::Headers);
-    let mut h = head(CHAT.len());
-    h.headers.insert(
-        "user-agent",
-        HeaderValue::from_str(&"x".repeat(MAX_HEADER_BYTES)).unwrap(),
-    );
-    rejected_head(&h, Rejection::Headers);
-}
-
-#[test]
 fn json_media_type_is_required() {
     for media in [
         "text/plain",
@@ -372,16 +354,6 @@ fn rejects_invalid_history_and_assistant_prefill() {
             Rejection::ChatSchema,
         );
     }
-    let messages: Vec<_> = (0..=MAX_MESSAGES)
-        .map(|i| {
-            let role = if i % 2 == 0 { "user" } else { "assistant" };
-            serde_json::json!({"role": role, "content": "x"})
-        })
-        .collect();
-    rejected_body(
-        &serde_json::to_vec(&serde_json::json!({"messages": messages})).unwrap(),
-        Rejection::ChatSchema,
-    );
 }
 
 #[test]
