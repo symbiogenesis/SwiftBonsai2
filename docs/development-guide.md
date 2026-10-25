@@ -68,7 +68,8 @@ local paths; review them before sharing.
 For bounded GGUF v3 metadata inspection after full size/SHA-256 verification:
 
 ```powershell
-./scripts/Read-Gguf.ps1 -ModelPath (Join-Path $data 'models/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-Q3_K_XL.gguf')
+$inference = ./scripts/Get-Inference.ps1 -DataDirectory $data
+./scripts/Read-Gguf.ps1 -ModelPath (Join-Path $data 'models/4ca720788d1e01f1bff70c033e0d0028fd02e502/Qwen3.8-27B-UD-Q3_K_XL.gguf') -GgufToolPath $inference.Gguf
 ```
 
 The [GGUF tool](https://github.com/symbiogenesis/prism-inference/blob/main/tools/gguf/README.md) also supports explicit Prism census and
