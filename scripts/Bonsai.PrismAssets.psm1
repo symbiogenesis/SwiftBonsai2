@@ -2,6 +2,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.InferenceSource.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 
 function Save-BonsaiPrismMetadataAsset {
@@ -16,7 +17,8 @@ function Save-BonsaiPrismMetadataAsset {
           [Parameter(Mandatory)][string]$Directory)
     $root = Resolve-ExternalPath $Directory
     [void][IO.Directory]::CreateDirectory($root)
-    $lockPath = Join-Path $Repository 'tools/prism/upstream/metadata-assets.lock.json'
+    $runtimeSource = Resolve-BonsaiInferenceSource -LockPath (Join-Path $Repository 'config/prism-inference.lock.json')
+    $lockPath = Join-Path $runtimeSource 'tools/prism/upstream/metadata-assets.lock.json'
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json -AsHashtable
     if ($lock.SchemaVersion -ne 1 -or $lock.Models.Count -ne 11) { throw 'Unexpected metadata fixture lock schema.' }
     $client = [Net.Http.HttpClient]::new()
@@ -46,7 +48,7 @@ function Save-BonsaiPrismMetadataAsset {
                     }
                     # API listings include changing activity fields even at a revision URL.
                     # Use the original raw response corpus, never a decoded expected schema.
-                    Copy-Item -LiteralPath (Join-Path $Repository $asset.CorpusPath) -Destination $destination
+                    Copy-Item -LiteralPath (Join-Path $runtimeSource $asset.CorpusPath) -Destination $destination
                 } else {
                     if ($asset.Filename -cnotmatch '^[A-Za-z0-9_./-]+\.gguf$' -or
                         $asset.Filename.Split('/') -ccontains '..' -or
@@ -133,7 +135,8 @@ function Save-BonsaiPrismTokenizerRepository {
     [OutputType([hashtable])]
     param([Parameter(Mandatory)][string]$Repository,
           [Parameter(Mandatory)][string]$Directory)
-    $lockPath = Join-Path $Repository 'src/prism-runtime/tests/upstream_prism/tokenizer-repository-assets.json'
+    $runtimeSource = Resolve-BonsaiInferenceSource -LockPath (Join-Path $Repository 'config/prism-inference.lock.json')
+    $lockPath = Join-Path $runtimeSource 'tests/upstream_prism/tokenizer-repository-assets.json'
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json -AsHashtable
     $revision = 'cee4b7a68518c579bb758fca46bb149cd109348e'
     if ($lock.Repository -cne 'ggml-org/vocabs' -or $lock.Revision -cne $revision -or
@@ -165,7 +168,8 @@ function Save-BonsaiPrismTokenizerReference {
     [OutputType([hashtable])]
     param([Parameter(Mandatory)][string]$Repository,
           [Parameter(Mandatory)][string]$Directory)
-    $lockPath = Join-Path $Repository 'src/prism-runtime/tests/upstream_prism/tokenizer-reference-assets.json'
+    $runtimeSource = Resolve-BonsaiInferenceSource -LockPath (Join-Path $Repository 'config/prism-inference.lock.json')
+    $lockPath = Join-Path $runtimeSource 'tests/upstream_prism/tokenizer-reference-assets.json'
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json -AsHashtable
     if ($lock.SchemaVersion -ne 1 -or $lock.UpstreamRevision -cne 'b87ca7225456b06b0975b8239c66b5aecf07e37c' -or
         $lock.AssetPrefix -cne 'tokenizer-reference/' -or $lock.Files.Count -ne 122 -or $lock.Cases.Count -ne 26) {
@@ -195,7 +199,8 @@ function Save-BonsaiPrismLoraAsset {
     [OutputType([hashtable])]
     param([Parameter(Mandatory)][string]$Repository,
           [Parameter(Mandatory)][string]$Directory)
-    $lockPath = Join-Path $Repository 'src/prism-runtime/tests/upstream_prism/lora-assets.json'
+    $runtimeSource = Resolve-BonsaiInferenceSource -LockPath (Join-Path $Repository 'config/prism-inference.lock.json')
+    $lockPath = Join-Path $runtimeSource 'tests/upstream_prism/lora-assets.json'
     $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json -AsHashtable
     $revision = 'c26d5fb85b4070a9e9c4e65d132c783b98086890'
     if ($lock.Repository -cne 'ggml-org/lora-tests' -or $lock.Revision -cne $revision -or

@@ -57,6 +57,8 @@ Import-Module (Join-Path $repo 'scripts/Bonsai.Native.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBaseline.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismNativeCache.psm1')
 Import-Module (Join-Path $repo 'scripts/Bonsai.PrismRunner.psm1')
+Import-Module (Join-Path $repo 'scripts/Bonsai.InferenceSource.psm1')
+$runtimeSource = Resolve-BonsaiInferenceSource -LockPath (Join-Path $repo 'config/prism-inference.lock.json')
 $archive = Resolve-ExternalPath $SourceArchive
 $evidence = Resolve-ExternalPath $EvidenceDirectory
 $target = Resolve-ExternalPath $TargetDirectory
@@ -67,7 +69,7 @@ if ($CompilerLauncher -and ($Generator -ne 'Ninja' -or
 }
 if (Test-Path -LiteralPath $evidence) { throw 'Use a fresh evidence directory for each Prism import.' }
 [void][IO.Directory]::CreateDirectory($evidence)
-$lock = Get-Content -LiteralPath (Join-Path $repo 'tools/prism/source.lock.json') -Raw | ConvertFrom-Json -AsHashtable
+$lock = Get-Content -LiteralPath (Join-Path $runtimeSource 'tools/prism/source.lock.json') -Raw | ConvertFrom-Json -AsHashtable
 $guard = [IO.FileStream]::new($archive, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
 try {
     if ($guard.Length -ne $lock.ArchiveBytes -or
@@ -82,7 +84,7 @@ $nativeSource = $source
 $sharedTools = $null
 if ($CommonToolsBundleDirectory) {
     Import-Module (Join-Path $repo 'scripts/Bonsai.PrismBackendBundle.psm1')
-    $sharedTools = Import-BonsaiPrismBackendBundle -Directory $CommonToolsBundleDirectory -Repository $repo -Toolchain $Toolchain -RequireCommonTools
+    $sharedTools = Import-BonsaiPrismBackendBundle -Directory $CommonToolsBundleDirectory -Repository $runtimeSource -Toolchain $Toolchain -RequireCommonTools
 }
 if ($NativeBuildDirectory -and -not $sharedTools) {
     $nativeBuildRoot = Resolve-ExternalPath $NativeBuildDirectory
@@ -96,7 +98,7 @@ if ($NativeBuildDirectory -and -not $sharedTools) {
     }
     $nativeSource = Initialize-BonsaiPrismNativeSource -SourceDirectory $source -BuildDirectory $nativeBuildRoot
 }
-$upstream = Join-Path $repo 'tools/prism/upstream'
+$upstream = Join-Path $runtimeSource 'tools/prism/upstream'
 $nativeAdapter = $upstream
 if ($NativeBuildDirectory -and -not $sharedTools) {
     $nativeAdapter = Initialize-BonsaiPrismNativeAdapter -AdapterDirectory $upstream -BuildDirectory $nativeBuildRoot
@@ -119,6 +121,8 @@ $receipt = [ordered]@{
     Generator = $Generator
     NativePlatform = $NativePlatform
     SourceDirectory = $source
+    RuntimeSourceDirectory = $runtimeSource
+    RuntimeManifestSha256 = (Get-FileHash -LiteralPath (Join-Path $runtimeSource 'Cargo.toml') -Algorithm SHA256).Hash.ToLowerInvariant()
     NativeSourceDirectory = $nativeSource
     NativeAdapterDirectory = $nativeAdapter
     NativeBuildDirectory = $nativeBuildRoot
@@ -319,14 +323,14 @@ if ($selected -contains 'LlGuidance') {
     if (-not $IsWindows) { throw 'The pinned grammar dependency acceptance lane targets Windows.' }
     Import-Module (Join-Path $repo 'scripts/Bonsai.PrismGrammar.psm1')
     $grammarTarget = if ($NativePlatform -eq 'ARM64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
-    $grammarDependency = Initialize-BonsaiPrismGrammarDependency -Repository $repo -Directory (Join-Path $nativeBuildRoot 'grammar') -Toolchain $Toolchain -TargetTriple $grammarTarget
+    $grammarDependency = Initialize-BonsaiPrismGrammarDependency -Repository $runtimeSource -Directory (Join-Path $nativeBuildRoot 'grammar') -Toolchain $Toolchain -TargetTriple $grammarTarget
     $receipt.GrammarDependency = $grammarDependency
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
 }
 $referencePatch = $null
 if (-not $sharedTools -and @($selected | Where-Object { $adapters[$_].Family -eq 'common' }).Count) {
     Import-Module (Join-Path $repo 'scripts/Bonsai.PrismReferencePatch.psm1')
-    $referencePatch = Initialize-BonsaiPrismReferencePatch -Repository $repo -SourceDirectory $nativeSource -Directory (Join-Path $nativeBuildRoot 'reference-patches')
+    $referencePatch = Initialize-BonsaiPrismReferencePatch -Repository $runtimeSource -SourceDirectory $nativeSource -Directory (Join-Path $nativeBuildRoot 'reference-patches')
     $receipt.ReferenceProductionFix = $referencePatch
     [IO.File]::WriteAllText($receiptPath, ($receipt | ConvertTo-Json -Depth 12))
 }
@@ -415,7 +419,7 @@ $receipt.NativeBuilds = $nativeBuilds.ToArray()
 if ($sharedTools) {
     $harness = $sharedTools.HarnessPath
 } else {
-    $compiled = Invoke-UpstreamCommand -Executable $cargo -Arguments @("+$Toolchain", 'build', '--manifest-path', (Join-Path $repo 'Cargo.toml'), '--package', 'bonsai-prism-runtime', '--example', 'upstream_prism', '--locked', '--offline', '--release', '--target-dir', $target, '--message-format=json')
+    $compiled = Invoke-UpstreamCommand -Executable $cargo -Arguments @("+$Toolchain", 'build', '--manifest-path', (Join-Path $runtimeSource 'Cargo.toml'), '--package', 'prism-inference', '--example', 'upstream_prism', '--locked', '--offline', '--release', '--target-dir', $target, '--message-format=json')
     $executables = @($compiled.StandardOutput -split "`n" | Where-Object { $_.StartsWith('{') } | ForEach-Object {
         $record = $_ | ConvertFrom-Json -AsHashtable
         if ($record.reason -eq 'compiler-artifact' -and $record.target.name -eq 'upstream_prism' -and $record.executable) { $record.executable }

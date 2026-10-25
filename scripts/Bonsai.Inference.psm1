@@ -28,7 +28,7 @@ function Read-BonsaiInferenceLock {
         throw 'Invalid Prism Inference archive identity.'
     }
     $required = @('prism-inference.exe', 'bonsai-token-worker.exe', 'bonsai-swift-worker.exe', 'prism-inference-server.exe')
-    $allowed = $required + @('LICENSE', 'NOTICE', 'PRISM-LICENSE.txt', 'CAMELID-LICENSE.txt')
+    $allowed = $required + @('bonsai-gguf.exe', 'LICENSE', 'NOTICE', 'PRISM-LICENSE.txt', 'CAMELID-LICENSE.txt')
     $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     [long]$total = 0
     foreach ($file in $lock.files) {
@@ -67,6 +67,7 @@ function Test-BonsaiInferenceDirectory {
         Test-LockedArtifact -Path $path -Bytes $file.bytes -Sha256 $file.sha256
         if ($file.name.EndsWith('.exe', [StringComparison]::Ordinal)) { Assert-Arm64PE -Path $path }
     }
+    $ggufPath = if ('bonsai-gguf.exe' -cin $expected) { Join-Path $directoryPath 'bonsai-gguf.exe' } else { $null }
     return [pscustomobject]@{
         Package = $Lock.package; Version = $Lock.version; Commit = $Lock.commit; Target = $Lock.target
         Directory = $directoryPath
@@ -74,6 +75,7 @@ function Test-BonsaiInferenceDirectory {
         TokenWorker = Join-Path $directoryPath 'bonsai-token-worker.exe'
         SwiftWorker = Join-Path $directoryPath 'bonsai-swift-worker.exe'
         Server = Join-Path $directoryPath 'prism-inference-server.exe'
+        Gguf = $ggufPath
         Verified = $true
     }
 }
