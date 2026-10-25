@@ -12,6 +12,13 @@ use super::{Result, invalid, result};
 
 const ID: &str = "tests/test-mtmd-c-api.c";
 
+#[path = "mtmd_chunks_runtime.rs"]
+mod runtime;
+
+pub(super) fn execute_runtime(request: &Value) -> Result<Option<Value>> {
+    runtime::execute(request)
+}
+
 #[derive(Default)]
 struct Checks {
     count: usize,
