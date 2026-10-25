@@ -285,6 +285,7 @@ pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
                     | "cpu-buffer-info"
                     | "cpu-arena-graph"
                     | "allocation-graph"
+                    | "cpu-threadpool"
             )
         )
     }) {
@@ -295,6 +296,7 @@ pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
         .map(|operation| match operation["Kind"].as_str() {
             Some("backend-graph") => graph::execute(operation),
             Some("allocation-graph") => super::super::allocation::execute(operation),
+            Some("cpu-threadpool") => super::super::barrier::execute(operation),
             Some("tensor-graph") => tensor_graph(operation, None, None),
             Some("cpu-buffer-info") => Ok(json!({"Alignment":64})),
             Some("cpu-arena-graph") => tensor_graph(

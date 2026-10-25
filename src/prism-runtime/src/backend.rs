@@ -26,6 +26,7 @@ mod image;
 mod ops;
 mod recurrent;
 mod rope;
+pub mod threadpool;
 
 pub use call::{operation_name, unary_name};
 
@@ -346,7 +347,11 @@ impl CpuBackend {
         let mut current = tensor;
         let mut offset = 0_usize;
         for _ in 0..=self.tensors.len() {
-            if let Some((arena, relative)) = self.tensors[current.0].allocation {
+            let node = self
+                .tensors
+                .get(current.0)
+                .ok_or_else(|| invalid("unknown CPU storage identity"))?;
+            if let Some((arena, relative)) = node.allocation {
                 offset = offset
                     .checked_add(relative)
                     .ok_or_else(|| invalid("CPU allocation offset overflow"))?;
