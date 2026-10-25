@@ -137,6 +137,52 @@ pub(super) fn run_mtp(engine: &Engine) -> Result<Value> {
 mod tests {
     use super::*;
 
+    fn rust_engine() -> Result<Engine> {
+        Engine::new(
+            super::super::engine::Target::Rust,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn rust_mtp_source_bounds_and_widened_sum() -> Result<()> {
+        let report = run_mtp(&rust_engine()?)?;
+        assert_eq!(report["Status"], "pass", "{report}");
+        // Preserve the additional Rust signed-domain and overflow regressions
+        // beside the original six checks, without changing the native schedule.
+        for (batch, catchup, anchors, expected) in [
+            (32, 0, -1, false),
+            (i32::MAX, i32::MAX, 0, true),
+            (i32::MAX, i32::MAX, i32::MAX, false),
+        ] {
+            assert_eq!(
+                bonsai_prism_runtime::speculative::mtp_first_decode_fits(batch, catchup, anchors),
+                expected,
+                "batch={batch} catchup={catchup} anchors={anchors}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rust_unicode_source_split_subdivision_encoding_and_errors() -> Result<()> {
+        use bonsai_prism_runtime::unicode::regex_split;
+
+        let report = run_unicode(&rust_engine()?)?;
+        assert_eq!(report["Status"], "pass", "{report}");
+        assert_eq!(
+            regex_split("ab12 cd", &[r"\w+", r"[0-9]+"], false)?.concat(),
+            "ab12 cd"
+        );
+        assert_eq!(regex_split(" ", &[r"\s+"], true)?, ["Ġ"]);
+        assert!(regex_split("text", &["["], false).is_err());
+        Ok(())
+    }
+
     #[test]
     fn rejects_malformed_common_responses() -> Result<()> {
         assert!(response_results(&json!({"SchemaVersion": 2, "Results": []}), 0).is_err());

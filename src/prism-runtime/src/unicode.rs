@@ -178,19 +178,4 @@ mod tests {
         assert_eq!(codepoints_from_utf8(&[0xc0, 0x80])?, [0]);
         Ok(())
     }
-
-    #[test]
-    fn regex_keeps_unmatched_text_and_subdivides_without_loss() -> Result<()> {
-        assert_eq!(
-            regex_split(" ~foo", &[r"[~][A-Za-z]+| ?[\p{S}]+|\s+"], false)?,
-            [" ~", "foo"]
-        );
-        assert_eq!(
-            regex_split("ab12 cd", &[r"\w+", r"[0-9]+"], false)?.concat(),
-            "ab12 cd"
-        );
-        assert_eq!(regex_split(" ", &[r"\s+"], true)?, ["Ġ"]);
-        assert!(regex_split("text", &["["], false).is_err());
-        Ok(())
-    }
 }
