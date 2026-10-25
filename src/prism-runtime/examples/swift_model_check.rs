@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use bonsai_prism_runtime::graph::Qwen35;
+use bonsai_prism_runtime::graph::{Qwen35, StateComponent};
 use bonsai_prism_runtime::kernels::MatvecBackend;
 use bonsai_prism_runtime::model::swift;
 use bonsai_prism_runtime::runtime::greedy;
@@ -107,19 +107,44 @@ fn run() -> Result<()> {
     for (position, token) in tokens.into_iter().enumerate() {
         graph.evaluate_into(token, &mut logits)?;
         let output = evidence.join(format!("logits-{position}.f32le"));
-        let mut file = std::fs::OpenOptions::new()
+        let file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&output)?;
+        let mut file = std::io::BufWriter::with_capacity(65_536, file);
         for value in &logits {
             file.write_all(&value.to_le_bytes())?;
         }
         file.flush()?;
+        let states = evidence.join(format!("state-{position}"));
+        std::fs::create_dir(&states)?;
+        dump_state(&graph, &states)?;
         emit(
             &json!({"event":"forward-step","position":position,"input_token":token,"greedy_token":greedy(&logits)?,"logits":output,"logit_count":logits.len(),"checkpoint_bytes":graph.checkpoint_bytes(),"identity":graph.identity(),"backend_requested":arguments[3]}),
         )?;
     }
     Ok(())
+}
+
+fn dump_state(graph: &Qwen35, states: &Path) -> Result<()> {
+    graph.visit_state(&mut |block, component, values| {
+        let label = match component {
+            StateComponent::Key(token) => format!("key-{token}"),
+            StateComponent::Value(token) => format!("value-{token}"),
+            StateComponent::Convolution => "convolution".to_owned(),
+            StateComponent::Recurrent => "recurrent".to_owned(),
+        };
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(states.join(format!("block-{block}-{label}.f32le")))?;
+        let mut file = std::io::BufWriter::with_capacity(65_536, file);
+        for value in values {
+            file.write_all(&value.to_le_bytes())?;
+        }
+        file.flush()?;
+        Ok(())
+    })
 }
 
 fn report(event: &str, receipt: swift::LoadReceipt) -> Result<()> {

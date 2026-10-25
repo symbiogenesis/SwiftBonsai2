@@ -562,6 +562,19 @@ pub struct Qwen35Checkpoint {
     layers: Vec<LayerState>,
 }
 
+/// One logical state component observed for full-model numerical qualification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StateComponent {
+    /// One cached key token, promoted exactly from stored binary16 bits.
+    Key(usize),
+    /// One cached value token, promoted exactly from stored binary16 bits.
+    Value(usize),
+    /// Channel-major convolution history, oldest value first per channel.
+    Convolution,
+    /// GDN state in value-head, value-row, contiguous-key-column order.
+    Recurrent,
+}
+
 /// Native decoder for the supported Qwen3.5 dense text graph.
 pub struct Qwen35 {
     provenance: Arc<()>,
@@ -580,6 +593,50 @@ pub struct Qwen35 {
 }
 
 impl Qwen35 {
+    /// Borrows each logical state component for numerical qualification.
+    ///
+    /// The callback receives the block index and component. Recurrent and
+    /// convolution slices borrow committed state directly. Each cached token
+    /// uses one reusable, fallibly allocated row to promote FP16 bits to F32.
+    /// No observation can mutate state, and callback errors leave state intact.
+    /// This supplies no state-import or portable checkpoint contract.
+    ///
+    /// # Errors
+    /// Returns allocation or observer errors without modifying decoder state.
+    pub fn visit_state(
+        &self,
+        observer: &mut impl FnMut(usize, StateComponent, &[f32]) -> Result<()>,
+    ) -> Result<()> {
+        let mut row = Vec::new();
+        for (index, state) in self.state.iter().enumerate() {
+            match state {
+                LayerState::Full { keys, values } => {
+                    for (cache, key) in [(keys, true), (values, false)] {
+                        for (position, values) in cache.tokens().enumerate() {
+                            row.clear();
+                            row.try_reserve_exact(values.len())?;
+                            row.extend(values.iter().copied().map(half_to_float));
+                            let component = if key {
+                                StateComponent::Key(position)
+                            } else {
+                                StateComponent::Value(position)
+                            };
+                            observer(index, component, &row)?;
+                        }
+                    }
+                }
+                LayerState::Recurrent {
+                    convolution,
+                    matrix,
+                } => {
+                    observer(index, StateComponent::Convolution, convolution)?;
+                    observer(index, StateComponent::Recurrent, matrix)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Validates model contracts and cache bounds before allocating decoder state.
     ///
     /// Uses [`MatvecBackend::Auto`] with per-operation scalar fallback.
