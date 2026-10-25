@@ -51,6 +51,61 @@ struct Pair {
     right: usize,
     size: usize,
 }
+
+// A lexicographic index narrows the vocabulary range one input byte at a time.
+// It retains one index per nonempty token, without a heap node per vocabulary
+// byte. Matches arrive shortest first, then in original ID order for duplicates.
+#[derive(Debug)]
+struct PrefixIndex(Vec<usize>);
+
+impl PrefixIndex {
+    fn new(raw: &[Vec<u8>]) -> Self {
+        let mut entries: Vec<_> = (0..raw.len()).filter(|&id| !raw[id].is_empty()).collect();
+        entries.sort_unstable_by(|&left, &right| {
+            raw[left].cmp(&raw[right]).then_with(|| left.cmp(&right))
+        });
+        Self(entries)
+    }
+
+    fn matching<'a>(&'a self, raw: &'a [Vec<u8>], input: &'a [u8]) -> PrefixMatches<'a> {
+        PrefixMatches {
+            entries: &self.0,
+            raw,
+            input,
+            depth: 0,
+        }
+    }
+}
+
+struct PrefixMatches<'a> {
+    entries: &'a [usize],
+    raw: &'a [Vec<u8>],
+    input: &'a [u8],
+    depth: usize,
+}
+
+impl Iterator for PrefixMatches<'_> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let &first = self.entries.first()?;
+            if self.raw[first].len() == self.depth {
+                self.entries = &self.entries[1..];
+                return Some(first);
+            }
+            let &byte = self.input.get(self.depth)?;
+            let start = self
+                .entries
+                .partition_point(|&id| self.raw[id][self.depth] < byte);
+            let end = self
+                .entries
+                .partition_point(|&id| self.raw[id][self.depth] <= byte);
+            self.entries = &self.entries[start..end];
+            self.depth += 1;
+        }
+    }
+}
 impl PartialEq for Pair {
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other) == Ordering::Equal
@@ -70,6 +125,13 @@ impl Ord for Pair {
     }
 }
 
+#[derive(Default)]
+struct MergeScratch {
+    nodes: Vec<Symbol>,
+    queue: BinaryHeap<Pair>,
+    rank_key: String,
+}
+
 /// Immutable production tokenizer loaded solely from bounded GGUF metadata.
 #[derive(Debug)]
 #[allow(
@@ -84,10 +146,14 @@ pub struct GgufTokenizer {
     types: Vec<i32>,
     specials: Vec<usize>,
     scores: Vec<f32>,
+    plamo_scores: Vec<Option<i32>>,
     lookup: HashMap<String, u32>,
     ranks: HashMap<String, usize>,
-    prefixes: Vec<Vec<u32>>,
+    prefixes: PrefixIndex,
     raw: Vec<Vec<u8>>,
+    byte_alphabet: [char; 256],
+    byte_tokens: [Option<u32>; 256],
+    minimum_score: f32,
     regexes: Vec<Regex>,
     charsmap: Option<CharsMap>,
     bos: Option<u32>,
@@ -199,26 +265,50 @@ impl GgufTokenizer {
         let mut lookup = HashMap::new();
         lookup.try_reserve(count)?;
         let mut raw = Vec::new();
-        raw.try_reserve_exact(count)?;
-        let mut prefixes = vec![Vec::new(); 256];
+        let indexed = matches!(
+            family,
+            Family::WordPiece | Family::Unigram | Family::Rwkv | Family::Plamo
+        );
+        if indexed {
+            raw.try_reserve_exact(count)?;
+        }
         for (index, token) in tokens.iter().enumerate() {
             let token_id = u32::try_from(index)?;
             lookup.insert(token.clone(), token_id);
-            let bytes = if family == Family::Rwkv {
-                unescape_rwkv(token)?
-            } else {
-                token.as_bytes().to_vec()
-            };
-            if let Some(first) = bytes.first() {
-                prefixes[usize::from(*first)].push(token_id);
+            if indexed {
+                raw.push(if family == Family::Rwkv {
+                    unescape_rwkv(token)?
+                } else {
+                    token.as_bytes().to_vec()
+                });
             }
-            raw.push(bytes);
         }
-        for entries in &mut prefixes {
-            entries.sort_by_key(|&token| {
-                std::cmp::Reverse(raw[usize::try_from(token).unwrap_or(0)].len())
-            });
-        }
+        let prefixes = PrefixIndex::new(&raw);
+        let byte_tokens = std::array::from_fn(|value| {
+            u8::try_from(value).ok().and_then(|value| {
+                lookup
+                    .get(&format!("<0x{value:02X}>"))
+                    .or_else(|| lookup.get(&char::from(value).to_string()))
+                    .copied()
+            })
+        });
+        let minimum_score = scores
+            .iter()
+            .zip(&types)
+            .filter(|(_, kind)| **kind == 1)
+            .map(|(score, _)| *score)
+            .reduce(f32::min)
+            .unwrap_or(0.0);
+        // Failed conversions retain the original lazy error: a vocabulary may
+        // contain an out-of-range score on a token that this request never uses.
+        let plamo_scores = if family == Family::Plamo {
+            scores
+                .iter()
+                .map(|&score| rounded_score(score).ok())
+                .collect()
+        } else {
+            Vec::new()
+        };
         let mut ranks = HashMap::new();
         if family == Family::Bpe {
             let Some(MetadataArray::String(merges)) = metadata
@@ -237,14 +327,14 @@ impl GgufTokenizer {
                 ranks.entry(merge.clone()).or_insert(rank);
             }
         }
-        let regexes = if family == Family::Bpe {
-            patterns(pre)?
-                .iter()
-                .map(|pattern| Regex::new(pattern).map_err(Into::into))
-                .collect::<Result<Vec<_>>>()?
-        } else {
-            Vec::new()
-        };
+        let regexes = match family {
+            Family::Bpe => patterns(pre)?,
+            Family::WordPiece => vec![r"\p{P}|[!-/:-@\[-`{-~]|[^\s\p{P}!-/:-@\[-`{-~]+"],
+            _ => Vec::new(),
+        }
+        .iter()
+        .map(|pattern| Regex::new(pattern).map_err(Into::into))
+        .collect::<Result<Vec<_>>>()?;
         let charsmap = match metadata
             .get("tokenizer.ggml.precompiled_charsmap")
             .and_then(MetadataValue::as_array)
@@ -281,10 +371,14 @@ impl GgufTokenizer {
             types,
             specials,
             scores,
+            plamo_scores,
             lookup,
             ranks,
             prefixes,
             raw,
+            byte_alphabet: byte_alphabet()?,
+            byte_tokens,
+            minimum_score,
             regexes,
             charsmap,
             bos: id(metadata, "bos", bos, count)?,
@@ -572,26 +666,20 @@ impl GgufTokenizer {
     }
 
     fn byte(&self, value: u8) -> Result<u32> {
-        self.lookup
-            .get(&format!("<0x{value:02X}>"))
-            .copied()
-            .or_else(|| self.lookup.get(&char::from(value).to_string()).copied())
+        self.byte_tokens[usize::from(value)]
             .ok_or_else(|| invalid(format!("tokenizer byte {value} unavailable")))
     }
 
     fn greedy(&self, bytes: &[u8], output: &mut Vec<u32>) -> Result<()> {
         let mut offset = 0;
         while offset < bytes.len() {
-            let found = self.prefixes[usize::from(bytes[offset])]
-                .iter()
-                .find(|&&id| {
-                    bytes[offset..].starts_with(&self.raw[usize::try_from(id).unwrap_or(0)])
-                });
-            let id = found
-                .copied()
+            let id = self
+                .prefixes
+                .matching(&self.raw, &bytes[offset..])
+                .max_by_key(|&id| (self.raw[id].len(), std::cmp::Reverse(id)))
                 .ok_or_else(|| invalid("tokenizer has no matching byte token"))?;
-            offset += self.raw[usize::try_from(id)?].len();
-            output.push(id);
+            offset += self.raw[id].len();
+            output.push(u32::try_from(id)?);
         }
         Ok(())
     }
@@ -635,11 +723,15 @@ impl GgufTokenizer {
             }
             pieces
         };
+        let mut scratch = MergeScratch::default();
         for piece in pieces {
             let encoded = if self.pre == "gemma4" || self.model == "whitespace" {
                 piece.to_owned()
             } else {
-                encode_bytes(piece.as_bytes())?
+                piece
+                    .bytes()
+                    .map(|byte| self.byte_alphabet[usize::from(byte)])
+                    .collect()
             };
             if self.ignore_merges
                 && let Some(&id) = self.lookup.get(&encoded)
@@ -647,30 +739,46 @@ impl GgufTokenizer {
                 output.push(id);
                 continue;
             }
-            self.merge(&encoded, true, output)?;
+            self.merge_with_scratch(&encoded, true, output, &mut scratch)?;
         }
         Ok(())
     }
 
     fn merge(&self, text: &str, ranked: bool, output: &mut Vec<u32>) -> Result<()> {
-        let mut nodes: Vec<_> = text
-            .char_indices()
-            .enumerate()
-            .map(|(index, (start, value))| Symbol {
-                start,
-                end: start + value.len_utf8(),
-                previous: index.checked_sub(1),
-                next: Some(index + 1),
-            })
-            .collect();
+        self.merge_with_scratch(text, ranked, output, &mut MergeScratch::default())
+    }
+
+    fn merge_with_scratch(
+        &self,
+        text: &str,
+        ranked: bool,
+        output: &mut Vec<u32>,
+        scratch: &mut MergeScratch,
+    ) -> Result<()> {
+        let MergeScratch {
+            nodes,
+            queue,
+            rank_key,
+        } = scratch;
+        nodes.clear();
+        queue.clear();
+        nodes.extend(
+            text.char_indices()
+                .enumerate()
+                .map(|(index, (start, value))| Symbol {
+                    start,
+                    end: start + value.len_utf8(),
+                    previous: index.checked_sub(1),
+                    next: Some(index + 1),
+                }),
+        );
         let count = nodes.len();
         if count == 0 {
             return Ok(());
         }
         nodes[count - 1].next = None;
-        let mut queue = BinaryHeap::new();
         for left in 0..count.saturating_sub(1) {
-            self.candidate(text, &nodes, left, ranked, &mut queue)?;
+            self.candidate(text, nodes, left, ranked, queue, rank_key)?;
         }
         while let Some(pair) = queue.pop() {
             if nodes[pair.left].start == nodes[pair.left].end
@@ -690,9 +798,9 @@ impl GgufTokenizer {
                 nodes[next].previous = Some(pair.left);
             }
             if let Some(previous) = nodes[pair.left].previous {
-                self.candidate(text, &nodes, previous, ranked, &mut queue)?;
+                self.candidate(text, nodes, previous, ranked, queue, rank_key)?;
             }
-            self.candidate(text, &nodes, pair.left, ranked, &mut queue)?;
+            self.candidate(text, nodes, pair.left, ranked, queue, rank_key)?;
         }
         let mut current = Some(0);
         while let Some(index) = current {
@@ -725,17 +833,17 @@ impl GgufTokenizer {
         left: usize,
         ranked: bool,
         queue: &mut BinaryHeap<Pair>,
+        rank_key: &mut String,
     ) -> Result<()> {
         let Some(right) = nodes[left].next else {
             return Ok(());
         };
         let priority = if ranked {
-            let key = format!(
-                "{} {}",
-                &text[nodes[left].start..nodes[left].end],
-                &text[nodes[right].start..nodes[right].end]
-            );
-            let Some(&rank) = self.ranks.get(&key) else {
+            rank_key.clear();
+            rank_key.push_str(&text[nodes[left].start..nodes[left].end]);
+            rank_key.push(' ');
+            rank_key.push_str(&text[nodes[right].start..nodes[right].end]);
+            let Some(&rank) = self.ranks.get(rank_key.as_str()) else {
                 return Ok(());
             };
             -f64::from(u32::try_from(rank)?)
@@ -783,24 +891,19 @@ impl GgufTokenizer {
                 }
             }
         }
-        let regex = Regex::new(r"\p{P}|[!-/:-@\[-`{-~]|[^\s\p{P}!-/:-@\[-`{-~]+")?;
+        let regex = &self.regexes[0];
         for word in regex.find_iter(&cleaned) {
             let word = format!("▁{}", word?.as_str());
             let start = output.len();
             let mut offset = 0;
             while offset < word.len() {
-                let found = (offset + 1..=word.len())
-                    .rev()
-                    .filter(|&end| word.is_char_boundary(end))
-                    .find_map(|end| {
-                        self.lookup
-                            .get(&word[offset..end])
-                            .copied()
-                            .map(|id| (end, id))
-                    });
-                if let Some((end, id)) = found {
-                    output.push(id);
-                    offset = end;
+                let found = self
+                    .prefixes
+                    .matching(&self.raw, &word.as_bytes()[offset..])
+                    .max_by_key(|&id| (self.raw[id].len(), id));
+                if let Some(id) = found {
+                    output.push(u32::try_from(id)?);
+                    offset += self.raw[id].len();
                 } else {
                     output.truncate(start);
                     output.push(
@@ -838,22 +941,16 @@ impl GgufTokenizer {
         let unknown = self
             .unknown
             .ok_or_else(|| invalid("Unigram unknown token unavailable"))?;
-        let minimum = self
-            .scores
-            .iter()
-            .zip(&self.types)
-            .filter(|(_, kind)| **kind == 1)
-            .map(|(score, _)| *score)
-            .reduce(f32::min)
-            .unwrap_or(0.0);
         let mut best = vec![(f64::NEG_INFINITY, 0_usize, unknown); text.len() + 1];
         best[0].0 = 0.0;
         for (offset, value) in text.char_indices() {
             let mut single = false;
-            for &id in &self.prefixes[usize::from(text.as_bytes()[offset])] {
-                let index = usize::try_from(id)?;
+            for index in self
+                .prefixes
+                .matching(&self.raw, &text.as_bytes()[offset..])
+            {
                 let token = &self.tokens[index];
-                if !matches!(self.types[index], 1 | 4 | 5) || !text[offset..].starts_with(token) {
+                if !matches!(self.types[index], 1 | 4 | 5) {
                     continue;
                 }
                 let end = offset + token.len();
@@ -865,12 +962,12 @@ impl GgufTokenizer {
                         f64::from(self.scores[index])
                     };
                 if score > best[end].0 {
-                    best[end] = (score, offset, id);
+                    best[end] = (score, offset, u32::try_from(index)?);
                 }
             }
             if !single {
                 let end = offset + value.len_utf8();
-                let score = best[offset].0 + f64::from(minimum - 10.0);
+                let score = best[offset].0 + f64::from(self.minimum_score - 10.0);
                 if score > best[end].0 {
                     best[end] = (score, offset, unknown);
                 }
@@ -900,22 +997,27 @@ impl GgufTokenizer {
         for index in (0..chars.len()).rev() {
             let (offset, value) = chars[index];
             best[index] = (best[index + 1].0 + 10_000_000, index + 1, None);
-            for &id in &self.prefixes[usize::from(text.as_bytes()[offset])] {
-                let token = &self.tokens[usize::try_from(id)?];
-                if token.is_empty() || !text[offset..].starts_with(token) {
-                    continue;
-                }
+            for id in self
+                .prefixes
+                .matching(&self.raw, &text.as_bytes()[offset..])
+            {
+                let token = &self.tokens[id];
                 let end = index + token.chars().count();
                 if end > chars.len() {
                     continue;
                 }
-                let score = rounded_score(self.scores[usize::try_from(id)?])?;
+                let score =
+                    self.plamo_scores[id].map_or_else(|| rounded_score(self.scores[id]), Ok)?;
                 if score <= -20_000_000 {
                     continue;
                 }
                 let total = best[end].0 - i64::from(score);
-                if total < best[index].0 {
-                    best[index] = (total, end, Some(id));
+                // The former length-sorted scan visited longer matches first.
+                // Keep that tie preference without visiting unrelated tokens.
+                if total < best[index].0
+                    || (total == best[index].0 && best[index].2.is_some() && end > best[index].1)
+                {
+                    best[index] = (total, end, Some(u32::try_from(id)?));
                 }
             }
             let _ = value;
@@ -1073,7 +1175,7 @@ fn parse_byte(token: &str) -> Result<u8> {
     )
     .map_err(Into::into)
 }
-fn encode_bytes(bytes: &[u8]) -> Result<String> {
+fn byte_alphabet() -> Result<[char; 256]> {
     let mut table = ['\0'; 256];
     let mut next = 256;
     for value in 0_u16..256 {
@@ -1087,8 +1189,9 @@ fn encode_bytes(bytes: &[u8]) -> Result<String> {
             value
         };
     }
-    Ok(bytes.iter().map(|&byte| table[usize::from(byte)]).collect())
+    Ok(table)
 }
+
 fn unescape_rwkv(token: &str) -> Result<Vec<u8>> {
     let mut output = Vec::new();
     let mut bytes = token.bytes();
@@ -1154,4 +1257,110 @@ fn patterns(pre: &str) -> Result<Vec<&'static str>> {
         "default" => vec![r"[\p{P}\$\+<=>\^~\|]+", gpt, r"\p{N}+", r"[0-9][0-9][0-9]"],
         other => return Err(invalid(format!("unsupported BPE pretokenizer {other}"))),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tokenizer(model: &str, tokens: &[&str], scores: &[f32]) -> Result<GgufTokenizer> {
+        let metadata = Metadata::from([
+            ("tokenizer.ggml.model".into(), model.into()),
+            ("tokenizer.ggml.tokens".into(), tokens.to_vec().into()),
+            ("tokenizer.ggml.scores".into(), scores.to_vec().into()),
+            ("tokenizer.ggml.unknown_token_id".into(), 0_u32.into()),
+            ("tokenizer.ggml.add_space_prefix".into(), false.into()),
+            ("tokenizer.ggml.add_bos_token".into(), false.into()),
+            ("tokenizer.ggml.add_eos_token".into(), false.into()),
+            ("tokenizer.ggml.normalizer.lowercase".into(), false.into()),
+            (
+                "tokenizer.ggml.normalizer.strip_accents".into(),
+                false.into(),
+            ),
+        ]);
+        GgufTokenizer::from_metadata(&metadata, tokens.len())
+    }
+
+    #[test]
+    fn prefix_ranges_retain_nested_and_duplicate_matches() {
+        let raw = ["", "a", "abc", "ab", "abc", "abx", "b", "é", "éa", "ê"]
+            .map(|token| token.as_bytes().to_vec());
+        let prefixes = PrefixIndex::new(&raw);
+        for (input, expected) in [
+            ("abcd", vec![1, 3, 2, 4]),
+            ("abx", vec![1, 3, 5]),
+            ("éab", vec![7, 8]),
+            ("ê", vec![9]),
+            ("z", vec![]),
+            ("", vec![]),
+        ] {
+            assert_eq!(
+                prefixes
+                    .matching(&raw, input.as_bytes())
+                    .collect::<Vec<_>>(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn indexed_tokenizers_keep_family_specific_duplicate_and_path_ties() -> Result<()> {
+        let rwkv = tokenizer(
+            "rwkv",
+            &["", "a", "abc", "ab", "abc", "\\xFF", "é"],
+            &[0.0; 7],
+        )?;
+        assert_eq!(
+            rwkv.encode("abcabaé".as_bytes(), false, false)?,
+            [2, 3, 1, 6]
+        );
+        let mut raw = Vec::new();
+        rwkv.greedy(b"\xffabc", &mut raw)?;
+        assert_eq!(raw, [5, 2]);
+
+        let wordpiece = tokenizer(
+            "bert",
+            &["<unk>", "▁", "▁a", "▁ab", "▁ab", "b", "!", "▁!", "▁é"],
+            &[0.0; 9],
+        )?;
+        assert_eq!(wordpiece.encode(b"ab!", false, false)?, [4, 7]);
+        assert_eq!(wordpiece.encode(b"abc!", false, false)?, [0, 7]);
+        assert_eq!(wordpiece.encode("é".as_bytes(), false, false)?, [8]);
+
+        let tokens = ["?", "a", "b", "ab", "ab", "é"];
+        let unigram = tokenizer("t5", &tokens, &[-2.0, -1.0, -1.0, -2.0, -2.0, -1.0])?;
+        assert_eq!(unigram.encode("abéx".as_bytes(), false, false)?, [3, 5, 0]);
+        let scored = tokenizer("t5", &tokens, &[-2.0, -1.0, -1.0, -2.0, -1.0, -1.0])?;
+        assert_eq!(scored.encode(b"ab", false, false)?, [4]);
+
+        let plamo = tokenizer(
+            "plamo2",
+            &["?", "a", "b", "ab", "ab", "é", "<0xC3>", "<0xA9>"],
+            &[0.0, 0.0, 0.0, 0.0, 0.0, -1000.0, 0.0, 0.0],
+        )?;
+        assert_eq!(plamo.encode("abaé".as_bytes(), false, false)?, [3, 1, 6, 7]);
+        Ok(())
+    }
+
+    #[test]
+    fn prepared_byte_tables_keep_alphabet_and_fallback_priority() -> Result<()> {
+        let alphabet = byte_alphabet()?;
+        for value in 0..=u8::MAX {
+            assert_eq!(decode_character(alphabet[usize::from(value)])?, value);
+        }
+        let tokenizer = tokenizer("llama", &["?", "A", "<0x41>"], &[0.0; 3])?;
+        assert_eq!(tokenizer.byte(b'A')?, 2);
+        assert!(tokenizer.byte(b'B').is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn plamo_score_preparation_preserves_lazy_out_of_range_errors() -> Result<()> {
+        for score in [f32::MIN, f32::MAX] {
+            let tokenizer = tokenizer("plamo2", &["?", "a", "b"], &[0.0, score, 0.0])?;
+            assert_eq!(tokenizer.encode(b"b", false, false)?, [2]);
+            assert!(tokenizer.encode(b"a", false, false).is_err());
+        }
+        Ok(())
+    }
 }
