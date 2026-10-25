@@ -384,7 +384,7 @@ impl CpuBackend {
                 return Ok(Observation::Graph(id));
             }
             "ggml_build_forward_expand" => {
-                self.expand(graph(args, 0)?, tensor(args, 1)?, &mut Vec::new())?;
+                self.expand(graph(args, 0)?, tensor(args, 1)?)?;
                 return Ok(Observation::Void);
             }
             "ggml_graph_add_node" => {

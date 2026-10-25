@@ -739,36 +739,49 @@ impl CpuBackend {
         Ok((&graph.nodes, &graph.leaves))
     }
 
-    fn expand(
-        &mut self,
-        graph: GraphId,
-        tensor: TensorId,
-        visiting: &mut Vec<TensorId>,
-    ) -> Result<()> {
+    fn expand(&mut self, graph: GraphId, tensor: TensorId) -> Result<()> {
         let graph_ref = self
             .graphs
             .get(graph.0)
             .ok_or_else(|| invalid("unknown CPU graph"))?;
-        if graph_ref.nodes.contains(&tensor) || graph_ref.leaves.contains(&tensor) {
-            return Ok(());
+        // Tensor identities are dense and bounded. Track unseen/active/complete
+        // states directly, rather than repeatedly searching nodes and the path.
+        let mut states = vec![0_u8; self.tensors.len()];
+        for id in graph_ref.nodes.iter().chain(&graph_ref.leaves) {
+            states[id.0] = 2;
         }
-        if visiting.contains(&tensor) || visiting.len() > 32768 {
-            return Err(invalid("cyclic or excessive CPU graph"));
-        }
-        visiting.push(tensor);
-        let info = self.info(tensor)?.clone();
-        for source in &info.sources {
-            self.expand(graph, *source, visiting)?;
-        }
-        visiting.pop();
-        let graph = &mut self.graphs[graph.0];
-        if info.operation == 0 && info.flags & 16 == 0 {
-            graph.leaves.push(tensor);
-        } else {
-            if graph.nodes.len() >= graph.capacity {
-                return Err(invalid("CPU graph exceeds requested node capacity"));
+        // Explicit DFS frames retain source-slot order and postorder insertion
+        // without a call-stack frame (or cloned TensorInfo) per dependency.
+        let mut pending = vec![(tensor, 0)];
+        while let Some(frame) = pending.last_mut() {
+            let (tensor, next_source) = *frame;
+            if states.get(tensor.0) == Some(&2) {
+                pending.pop();
+                continue;
             }
-            graph.nodes.push(tensor);
+            let info = self.info(tensor)?;
+            states[tensor.0] = 1;
+            if let Some(&source) = info.sources.get(next_source) {
+                frame.1 += 1;
+                match states.get(source.0) {
+                    Some(1) => return Err(invalid("cyclic or excessive CPU graph")),
+                    Some(2) => {}
+                    _ => pending.push((source, 0)),
+                }
+                continue;
+            }
+            let leaf = info.operation == 0 && info.flags & 16 == 0;
+            let graph = &mut self.graphs[graph.0];
+            if leaf {
+                graph.leaves.push(tensor);
+            } else {
+                if graph.nodes.len() >= graph.capacity {
+                    return Err(invalid("CPU graph exceeds requested node capacity"));
+                }
+                graph.nodes.push(tensor);
+            }
+            states[tensor.0] = 2;
+            pending.pop();
         }
         Ok(())
     }
