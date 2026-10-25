@@ -3,13 +3,12 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use bonsai_gguf::{MetadataArray, MetadataValue, Result, VerifiedModel};
 use sha2::{Digest, Sha256};
 
-static NEXT_ARTIFACT: AtomicU64 = AtomicU64::new(0);
+mod support;
+use support::ScratchDirectory;
 
 fn text(value: &str) -> Result<Vec<u8>> {
     let mut bytes = u64::try_from(value.len())?.to_le_bytes().to_vec();
@@ -25,7 +24,7 @@ fn array(kind: u32, count: u64, payload: impl IntoIterator<Item = u8>) -> Vec<u8
 }
 
 struct Artifact {
-    directory: PathBuf,
+    directory: Option<ScratchDirectory>,
     path: PathBuf,
     bytes: Vec<u8>,
     hash: String,
@@ -33,14 +32,8 @@ struct Artifact {
 
 impl Artifact {
     fn new(records: &[(&str, u32, Vec<u8>)]) -> Result<Self> {
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-        let directory = std::env::temp_dir().join(format!(
-            "Bonsai-TypedMetadata-{}-{nonce}-{}",
-            std::process::id(),
-            NEXT_ARTIFACT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&directory)?;
-        let path = directory.join("metadata.gguf");
+        let directory = ScratchDirectory::new()?;
+        let path = directory.path().join("metadata.gguf");
         let mut bytes = 0x4655_4747_u32.to_le_bytes().to_vec();
         bytes.extend(3_u32.to_le_bytes());
         bytes.extend(0_u64.to_le_bytes());
@@ -60,7 +53,7 @@ impl Artifact {
             .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
             .collect();
         Ok(Self {
-            directory,
+            directory: Some(directory),
             path,
             bytes,
             hash,
@@ -91,8 +84,9 @@ impl Artifact {
 
 impl Drop for Artifact {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
-        let _ = fs::remove_dir(&self.directory);
+        if let Some(directory) = self.directory.take() {
+            let _ = directory.close();
+        }
     }
 }
 
