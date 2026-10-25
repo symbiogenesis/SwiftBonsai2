@@ -1,10 +1,12 @@
 //! Bounded rotation of stateless production vocabulary observations.
 use super::engine::Engine;
-use super::model_session::{Client, ModelSession};
+#[path = "tokenizer_runtime.rs"]
+mod tokenizer_runtime;
 use super::{Result, invalid};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+pub(super) use tokenizer_runtime::{Client, ModelSession};
 
 const ROW_LIMIT: usize = 65536;
 const WIRE_LIMIT: usize = 16 * 1024 * 1024;

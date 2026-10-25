@@ -313,6 +313,25 @@ impl GgufTokenizer {
         self.tokens.len()
     }
 
+    /// Pinned GGUF vocabulary family discriminator (SPM=1 through PLaMo=6).
+    #[must_use]
+    pub const fn vocabulary_type(&self) -> u32 {
+        match self.family {
+            Family::Spm => 1,
+            Family::Bpe => 2,
+            Family::WordPiece => 3,
+            Family::Unigram => 4,
+            Family::Rwkv => 5,
+            Family::Plamo => 6,
+        }
+    }
+
+    /// Validated beginning-of-sequence ID, including family defaults.
+    #[must_use]
+    pub const fn bos_token(&self) -> Option<u32> {
+        self.bos
+    }
+
     /// Encodes a UTF-8 request, with explicit source special-token policies.
     ///
     /// User-defined tokens are always recognized; control tokens are recognized
@@ -326,7 +345,13 @@ impl GgufTokenizer {
         if bytes.len() > LIMIT {
             return Err(invalid("tokenizer input exceeds byte limit"));
         }
-        let text = std::str::from_utf8(bytes)?;
+        let text = match std::str::from_utf8(bytes) {
+            Ok(text) => text,
+            Err(_) if self.family == Family::Spm => {
+                return self.encode_spm_bytes(bytes, add_special, parse_special);
+            }
+            Err(error) => return Err(error.into()),
+        };
         let mut output = Vec::new();
         if add_special && (self.add_bos || self.family == Family::WordPiece) {
             output.push(
@@ -381,6 +406,143 @@ impl GgufTokenizer {
             return Err(invalid("tokenizer output exceeds token bound"));
         }
         Ok(output)
+    }
+
+    fn encode_spm_bytes(
+        &self,
+        bytes: &[u8],
+        add_special: bool,
+        parse_special: bool,
+    ) -> Result<Vec<u32>> {
+        let mut output = Vec::new();
+        if add_special && self.add_bos {
+            output.push(self.bos.ok_or_else(|| invalid("SPM BOS unavailable"))?);
+        }
+        let mut offset = 0;
+        while offset < bytes.len() {
+            let special = self
+                .specials
+                .iter()
+                .copied()
+                .filter(|&index| {
+                    !self.tokens[index].is_empty() && (self.types[index] == 4 || parse_special)
+                })
+                .filter_map(|index| {
+                    bytes[offset..]
+                        .windows(self.tokens[index].len())
+                        .position(|part| part == self.tokens[index].as_bytes())
+                        .map(|position| {
+                            (position, std::cmp::Reverse(self.tokens[index].len()), index)
+                        })
+                })
+                .min();
+            let end = special.map_or(bytes.len(), |(position, _, _)| offset + position);
+            if end > offset {
+                let mut escaped = Vec::new();
+                if self.prefix_space {
+                    escaped.extend_from_slice("▁".as_bytes());
+                }
+                for &byte in &bytes[offset..end] {
+                    if byte == b' ' {
+                        escaped.extend_from_slice("▁".as_bytes());
+                    } else {
+                        escaped.push(byte);
+                    }
+                }
+                self.merge_spm_bytes(&escaped, &mut output)?;
+            }
+            if let Some((_, _, index)) = special {
+                output.push(u32::try_from(index)?);
+                offset = end + self.tokens[index].len();
+            } else {
+                break;
+            }
+        }
+        if add_special && self.add_eos {
+            output.push(self.eos.ok_or_else(|| invalid("SPM EOS unavailable"))?);
+        }
+        if output.len() > 262_144 {
+            return Err(invalid("tokenizer output exceeds token bound"));
+        }
+        Ok(output)
+    }
+
+    fn merge_spm_bytes(&self, bytes: &[u8], output: &mut Vec<u32>) -> Result<()> {
+        let mut nodes: Vec<Symbol> = Vec::new();
+        let mut offset = 0;
+        while offset < bytes.len() {
+            let length = match bytes[offset] {
+                0..=0xbf => 1,
+                0xc0..=0xdf => 2,
+                0xe0..=0xef => 3,
+                _ => 4,
+            };
+            let index = nodes.len();
+            let end = (offset + length).min(bytes.len());
+            nodes.push(Symbol {
+                start: offset,
+                end,
+                previous: index.checked_sub(1),
+                next: (end < bytes.len()).then_some(index + 1),
+            });
+            offset = end;
+        }
+        let mut queue = BinaryHeap::new();
+        let candidate =
+            |nodes: &[Symbol], left: usize, queue: &mut BinaryHeap<Pair>| -> Result<()> {
+                let Some(right) = nodes[left].next else {
+                    return Ok(());
+                };
+                if let Ok(text) = std::str::from_utf8(&bytes[nodes[left].start..nodes[right].end])
+                    && let Some(&id) = self.lookup.get(text)
+                {
+                    queue.push(Pair {
+                        priority: f64::from(self.scores[usize::try_from(id)?]),
+                        left,
+                        right,
+                        size: nodes[right].end - nodes[left].start,
+                    });
+                }
+                Ok(())
+            };
+        for index in 0..nodes.len().saturating_sub(1) {
+            candidate(&nodes, index, &mut queue)?;
+        }
+        while let Some(pair) = queue.pop() {
+            if nodes[pair.left].start == nodes[pair.left].end
+                || nodes[pair.right].start == nodes[pair.right].end
+                || nodes[pair.left].next != Some(pair.right)
+                || nodes[pair.right].end - nodes[pair.left].start != pair.size
+            {
+                continue;
+            }
+            let next = nodes[pair.right].next;
+            nodes[pair.left].end = nodes[pair.right].end;
+            nodes[pair.left].next = next;
+            nodes[pair.right].end = nodes[pair.right].start;
+            if let Some(next) = next {
+                nodes[next].previous = Some(pair.left);
+            }
+            if let Some(previous) = nodes[pair.left].previous {
+                candidate(&nodes, previous, &mut queue)?;
+            }
+            candidate(&nodes, pair.left, &mut queue)?;
+        }
+        let mut current = (!nodes.is_empty()).then_some(0);
+        while let Some(index) = current {
+            let piece = &bytes[nodes[index].start..nodes[index].end];
+            if let Ok(text) = std::str::from_utf8(piece)
+                && let Some(&id) = self.lookup.get(text)
+            {
+                output.push(id);
+            } else {
+                for &byte in piece {
+                    output.push(self.byte(byte)?);
+                }
+            }
+            current = nodes[index].next;
+        }
+        Ok(())
     }
 
     fn ordinary(&self, text: &str, previous_special: bool, output: &mut Vec<u32>) -> Result<()> {
@@ -959,7 +1121,8 @@ fn patterns(pre: &str) -> Result<Vec<&'static str>> {
     let llama = r"(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+";
     Ok(match pre {
         "qwen35" => vec![],
-        "gpt-2" | "phi-2" | "mpt" | "olmo" | "jais" | "jina-v2-es" | "jina-v2-de" => vec![gpt],
+        "gpt-2" | "phi-2" | "mpt" | "olmo" | "jais" | "jina-v2-es" | "jina-v2-de"
+        | "jina-v2-code" | "jina-v1-en" | "roberta-bpe" => vec![gpt],
         "llama3" | "llama-v3" | "llama-bpe" | "smaug-bpe" => vec![llama],
         "qwen2" | "stablelm2" => vec![
             r"(?:'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD])|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+",

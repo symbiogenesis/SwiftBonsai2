@@ -1,8 +1,8 @@
 //! Adapters to the runtime's existing production vocabulary APIs.
 //!
 //! A Rust vocabulary context means successful construction of the production
-//! `Tokenizer` and `Vocabulary` objects, plus `SpecialTokens` when insertion is
-//! requested. It makes no inference-context claim. Metadata is never relabeled;
+//! `GgufTokenizer`, including family-specific insertion declarations. It makes
+//! no inference-context claim. Metadata is never relabeled;
 //! unsupported declarations and API limits return failed operation metadata.
 
 use std::fmt::Write as _;
@@ -100,7 +100,7 @@ fn validate(operation: &Value) -> Result<()> {
     Ok(())
 }
 
-fn metadata(path: &Path) -> Result<Metadata> {
+pub(super) fn metadata(path: &Path) -> Result<Metadata> {
     let mut file = File::open(path)?;
     let bytes = file.metadata()?.len();
     if !file.metadata()?.is_file() || bytes > 64 * 1024 * 1024 {

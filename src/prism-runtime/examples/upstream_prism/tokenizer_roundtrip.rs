@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 
 use super::engine::Engine;
 use super::llama_grammar::{array, exact_fields, field, uint};
-use super::model_session::{Client, ModelSession};
+use super::tokenizer_session::{Client, ModelSession};
 use super::{Result, invalid, result};
 
 const SPM_ID: &str = "tests/test-tokenizer-1-spm.cpp";
