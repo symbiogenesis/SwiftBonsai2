@@ -356,11 +356,12 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   opaque fixture factory supplies chunk contents, as in the original source.
   Rust owns the invocation, traversal, serialization requests and comparisons.
 
-The Rust runtime tokenizer adapter loads actual supported model metadata and
-uses its production tokenizer and vocabulary objects. Unsupported vocabulary
-constructors remain measured failures. The Rust runtime has no equivalent
-generic regex, MTP, Jinja, MTMD or grammar APIs.
-Those target results explicitly fail rather than testing substitute helpers.
+The Rust runtime adapters use production tokenizer, Unicode, MTP, Jinja,
+multimodal, grammar/schema/PEG, sampling, graph allocator, optimizer and codec
+APIs. Focused implementation evidence and the remaining production families are
+listed in [the migration TODO](prism-upstream-todo.md). Complete hosted source,
+numerical and performance qualification remains separate; unavailable operations
+continue to fail explicitly rather than testing substitute helpers.
 
 For each port, the same safe Rust inputs and assertions run against pinned Prism
 first, then against the Rust runtime. A native process bridge performs bounded
