@@ -8,6 +8,34 @@ use bonsai_prism_runtime::grammar::{
 
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
+#[cfg(feature = "cli")]
+#[test]
+fn every_original_integration_literal_initializes() -> TestResult {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../examples/upstream_prism/grammar-integration-cases.json"
+    ))?;
+    for case in fixture["Cases"].as_array().ok_or("Cases must be array")? {
+        let definition = case["Definition"]
+            .as_str()
+            .ok_or("Definition must be text")?;
+        let source = if case["Kind"] == "schema" {
+            bonsai_prism_runtime::schema::to_grammar(definition, true)?
+        } else {
+            definition.to_owned()
+        };
+        let outcome =
+            Grammar::parse(&source).and_then(|parsed| GrammarState::from_grammar(parsed, "root"));
+        assert!(
+            outcome.is_ok(),
+            "{} {}: {}\n{source}",
+            case["Group"],
+            case["Name"],
+            outcome.err().map_or_default(|error| error.to_string())
+        );
+    }
+    Ok(())
+}
+
 fn grammar(source: &str) -> bonsai_prism_runtime::Result<GrammarState> {
     GrammarState::from_grammar(Grammar::parse(source)?, "root")
 }

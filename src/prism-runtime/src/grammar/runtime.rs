@@ -101,35 +101,14 @@ fn alternatives(rule: &[Element]) -> Vec<usize> {
 }
 
 fn reject_left_recursion(rules: &[Vec<Element>]) -> Result<()> {
-    let mut nullable = vec![false; rules.len()];
-    loop {
-        let mut changed = false;
-        for (index, rule) in rules.iter().enumerate() {
-            if nullable[index] {
-                continue;
-            }
-            for start in alternatives(rule) {
-                let mut empty = true;
-                for element in &rule[start..] {
-                    if end(*element) {
-                        break;
-                    }
-                    if element.kind != 2 || !nullable[usize::try_from(element.value)?] {
-                        empty = false;
-                        break;
-                    }
-                }
-                if empty {
-                    nullable[index] = true;
-                    changed = true;
-                    break;
-                }
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
+    // The native detector marks only an explicitly empty alternative. It
+    // does not propagate emptiness through wrapper rule references. Preserve
+    // that distinction: nested nullable repetitions such as ([x]*)* are valid
+    // source inputs, and advance's seen-set safely terminates their expansion.
+    let nullable: Vec<_> = rules
+        .iter()
+        .map(|rule| alternatives(rule).iter().any(|&start| end(rule[start])))
+        .collect();
     let mut edges = vec![Vec::new(); rules.len()];
     for (index, rule) in rules.iter().enumerate() {
         for start in alternatives(rule) {
