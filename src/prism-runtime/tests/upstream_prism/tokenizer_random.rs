@@ -8,11 +8,16 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread;
 use std::time::Instant;
 
 const ID: &str = "tests/test-tokenizer-random.py";
 const BATCH: usize = 256;
 const MAX_ERRORS: usize = 10;
+// Each case owns a vocabulary, reference and production session. Keep memory
+// bounded while sharing the existing inner tokenizer batch worker pool.
+const CASE_WORKERS: usize = 2;
 pub(super) const NAMES: [&str; 26] = [
     "llama-spm",
     "phi-3",
@@ -323,6 +328,39 @@ pub(super) fn run_case(
         json!({"Name":name,"ReferenceClass":reference.class,"ReferenceSourceCorrection":reference.source_correction,"SourceAssertions":0,"SetupPredicates":1,"Completed":true,"StrictReferenceMatch":strict,"ProcessLeases":leases,"Groups":groups}),
     ))
 }
+
+fn ordered_cases<T: Send>(count: usize, run: impl Fn(usize) -> T + Sync) -> Result<Vec<T>> {
+    let next = AtomicUsize::new(0);
+    thread::scope(|scope| {
+        let mut workers = Vec::new();
+        for _ in 0..count.min(CASE_WORKERS) {
+            workers.push(scope.spawn(|| {
+                let mut completed = Vec::new();
+                loop {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    if index >= count {
+                        break;
+                    }
+                    completed.push((index, run(index)));
+                }
+                completed
+            }));
+        }
+        // Join every worker before interpreting outcomes, then restore original
+        // case order so errors and unsupported verdicts keep their source order.
+        let joined = workers
+            .into_iter()
+            .map(thread::ScopedJoinHandle::join)
+            .collect::<Vec<_>>();
+        let mut completed = Vec::with_capacity(count);
+        for worker in joined {
+            completed.extend(worker.map_err(|_| invalid("Tokenizer case worker panicked"))?);
+        }
+        completed.sort_unstable_by_key(|(index, _)| *index);
+        Ok(completed.into_iter().map(|(_, value)| value).collect())
+    })
+}
+
 pub(super) fn run(engine: &Engine) -> Result<Value> {
     require_ci()?;
     let prepared = super::tokenizer_inputs::prepare(engine)?;
@@ -337,16 +375,19 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
             "Tokenizer original26 default identities/order changed",
         ));
     }
-    let mut cases = Vec::new();
-    for case in &prepared.cases {
-        let Some(observation) = run_case(
+    let observations = ordered_cases(prepared.cases.len(), |index| {
+        let case = &prepared.cases[index];
+        run_case(
             engine,
             &case.name,
             &case.vocabulary,
             &case.reference_directory,
             &Options::default(),
-        )?
-        else {
+        )
+    })?;
+    let mut cases = Vec::with_capacity(observations.len());
+    for observation in observations {
+        let Some(observation) = observation? else {
             return Ok(result(
                 ID,
                 false,
@@ -422,4 +463,67 @@ pub(super) fn diagnostic(engine: &Engine, value: &Value) -> Result<Value> {
     Ok(
         json!({"Diagnostic":"tokenizer-random-options","CorrectnessSourceCount":0,"Status":if observation.is_some(){"completed"}else{"unsupported"},"Observation":observation}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CASE_WORKERS, NAMES, Result, invalid, ordered_cases};
+    use std::sync::Barrier;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::thread;
+
+    #[test]
+    fn whole_case_workers_preserve_order_and_bound_live_sessions() -> Result<()> {
+        let first_pair = Barrier::new(CASE_WORKERS);
+        let second_completed = AtomicBool::new(false);
+        let active = AtomicUsize::new(0);
+        let peak = AtomicUsize::new(0);
+        let visits = NAMES.map(|_| AtomicUsize::new(0));
+        let cases = ordered_cases(NAMES.len(), |index| {
+            let live = active.fetch_add(1, Ordering::SeqCst) + 1;
+            peak.fetch_max(live, Ordering::SeqCst);
+            if index < CASE_WORKERS {
+                first_pair.wait();
+                if index == 0 {
+                    while !second_completed.load(Ordering::Acquire) {
+                        thread::yield_now();
+                    }
+                } else {
+                    second_completed.store(true, Ordering::Release);
+                }
+            }
+            visits[index].fetch_add(1, Ordering::Relaxed);
+            active.fetch_sub(1, Ordering::SeqCst);
+            NAMES[index]
+        })?;
+        assert_eq!(cases, NAMES);
+        assert_eq!(peak.load(Ordering::SeqCst), CASE_WORKERS);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+        assert!(
+            visits
+                .iter()
+                .all(|count| count.load(Ordering::Relaxed) == 1)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn whole_case_workers_retain_original_error_and_unsupported_order() -> Result<()> {
+        let cases = ordered_cases(3, |index| match index {
+            0 => Err(invalid("first source error")),
+            1 => Err(invalid("second source error")),
+            _ => Ok(Some(index)),
+        })?;
+        let error = cases
+            .into_iter()
+            .collect::<Result<Vec<_>>>()
+            .err()
+            .ok_or_else(|| invalid("Tokenizer case errors were lost"))?;
+        assert_eq!(error.to_string(), "first source error");
+        let cases = ordered_cases(3, |index| if index == 1 { None } else { Some(index) })?;
+        assert_eq!(cases, [Some(0), None, Some(2)]);
+        assert_eq!(ordered_cases(1, |index| index)?, [0]);
+        assert!(ordered_cases(0, |index| index)?.is_empty());
+        Ok(())
+    }
 }
