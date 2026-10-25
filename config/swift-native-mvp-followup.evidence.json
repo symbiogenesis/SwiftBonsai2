@@ -223,6 +223,21 @@
       "path": "neon-chat61-vs-scalar-chat61-exact-comparison.json",
       "bytes": 2493555,
       "sha256": "9b830d1d7f99cea13e3e9f71c04fa94db5da2d87edf8b1d4ac5b4b5370e565d0"
+    },
+    {
+      "path": "attention42-trace-comparison.json",
+      "bytes": 3891,
+      "sha256": "27df25891b69faeda60afe3f8f78589ffd5a6db69582df0539b35b0da6dbe016"
+    },
+    {
+      "path": "native-attention42-trace\\report.json",
+      "bytes": 18924,
+      "sha256": "df8fa45cfc57c6fd8037589cabcc3c8667bd913d7478950a1400033e42db98a0"
+    },
+    {
+      "path": "neon-chat61-vs-neon-chat61-attention42-exact-comparison.json",
+      "bytes": 2493565,
+      "sha256": "bcf89fe170b070a746c605eaf4c526ab35393e66ad0c269affd8b9d37cfca70a"
     }
   ],
   "sessionFollowup": {
@@ -608,7 +623,37 @@
     "comparisonFiles": [
       "block-trace-comparison.json",
       "gdn-block-trace-comparison.json"
-    ]
+    ],
+    "attentionPrefix": {
+      "testedRevision": "d932dac4896fd14f3f1206b3be346e52c57ba947",
+      "position": 42,
+      "block": 3,
+      "nativeFinalLogitsProductionIdentical": true,
+      "rustFinalStateAndLogitsProductionIdentical": true,
+      "rustProductionFilesCompared": 8388,
+      "precedingStagesBitExact": [
+        "attn_norm",
+        "Qcur_full",
+        "Kcur_projection",
+        "Vcur_projection",
+        "Qcur_normed",
+        "Kcur_normed",
+        "gate_reshaped"
+      ],
+      "firstDivergence": {
+        "label": "Qcur",
+        "words": 6144,
+        "different_words": 191,
+        "max_error": 4.76837158203125e-07,
+        "first_difference": {
+          "index": 6,
+          "actual": -0.28960368037223816,
+          "reference": -0.28960365056991577
+        }
+      },
+      "hypothesis": "Production in-place/fused RoPE execution differs from standalone operator controls; no additional repair yet",
+      "rawComparison": "attention42-trace-comparison.json"
+    }
   },
   "downProjectionDiagnosis": {
     "status": "Combined actual-model first-token logits and complete logical state now match the pinned reference bit-for-bit; later-token divergence remains",
