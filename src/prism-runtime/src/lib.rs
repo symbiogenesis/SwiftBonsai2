@@ -29,6 +29,7 @@ pub mod token_input;
 pub mod token_worker;
 pub mod tokenization;
 pub mod tokenizer;
+pub mod unicode;
 pub mod vocabulary;
 
 /// A rejected model, numerical contract, resource limit, or I/O operation.
