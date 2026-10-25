@@ -6,8 +6,9 @@ engine behavior needed for that path. **Everything else is deferred.**
 
 The migration is not complete. Verified loading, packed CPU kernels, the Qwen35
 hybrid graph, tokenization and transactional token generation already exist;
-full-model parity and application integration remain open. Reuse those pieces
-and implement only the gaps exposed by the Swift path. Pinned Prism remains the
+full-model numerical parity and complete device lifecycle qualification remain
+open. The experimental native session and owned broker path are implemented.
+Pinned Prism remains the
 comparison and fallback engine until the replacement is qualified.
 
 ## MVP boundary
@@ -30,13 +31,18 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
 
 ## Ordered MVP work
 
-- [ ] **M1 — Verify the actual Swift model loads within its CPU budget.** Reuse
+- [x] **M1 — Verify the actual Swift model loads within its CPU budget.** Reuse
   the verified GGUF loader and owned tensor storage. Check the pinned artifact's
   complete tensor inventory, dimensions, metadata, tokenizer/template identity
   and Hadamard/sign declarations. Retain immutable artifact handling, malformed
   input rejection and bounded allocations. Close this with a real Swift load
   and recorded memory accounting; generic model generation/saving and support
   for other architectures or packed weight formats are deferred.
+
+  Evidence: the actual pinned artifact and all 851 layouts loaded on the target
+  Snapdragon device; the 8K graph initialized all 16 attention and 48 recurrent
+  blocks. Peak process commit was 7,410,827,264 bytes, within the 12 GiB allowance.
+  See the [retained load and comparison receipt](../config/swift-native-mvp.evidence.json).
 
 - [ ] **M2 — Qualify the Swift Qwen35 forward path against pinned Prism.** Reuse
   the existing graph and PQ2 packed CPU operations, including their Q8_K
@@ -49,7 +55,16 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   deferred. Exit with retained full-model correctness evidence, not just
   synthetic kernel checks or a successful load.
 
-- [ ] **M3 — Connect Swift's chat prompt to the exact tokenizer.** Render the
+  **Still unqualified:** the three supplied-token trajectories have byte-exact
+  Rust scalar/NEON logits and state, but native comparisons fail the declared
+  `1e-3 + 1e-3 * abs(reference)` tolerance. Maximum logit error is about 0.149;
+  2,331,246 of 117,866,496 state elements fail, starting in block 1 convolution.
+  Matching next-token observations do not qualify a generated greedy sequence.
+  [Focused operator evidence](../config/swift-native-operators.evidence.json)
+  identifies RMS multiplication grouping and other small arithmetic differences;
+  their full-model causal effect and a production repair remain unproven.
+
+- [x] **M3 — Connect Swift's chat prompt to the exact tokenizer.** Render the
   verified embedded template with the existing Jinja/chat APIs, current
   thinking/effort defaults and supplied assistant reasoning history. Feed those
   exact rendered bytes through the production Qwen35 tokenizer; compare prompt
@@ -59,17 +74,32 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   output. The token driver does not yet render chat templates; generic template
   discovery, tool parsing and other tokenizer families are deferred.
 
-- [ ] **M4 — Wire the Swift sampler and generation termination.** Connect the
+  Evidence: `SwiftChatSession` and the separate Swift worker/client render and
+  count the exact verified template. Three actual Swift cases match pinned
+  native template bytes and tokenizer IDs (61/104/63 tokens), including supplied
+  reasoning, Unicode and control spellings. BOS/EOS policy, the full 4K output
+  reservation, overflow rejection and reuse after rejection are covered by
+  [retained captures](../src/prism-runtime/tests/fixtures/swift-prompt-parity.json).
+
+- [x] **M4 — Wire the Swift sampler and generation termination.** Connect the
   production sampler to the Swift runtime with temperature 1, top-p 0.95,
   top-k 20, min-p 0, repetition penalty 1 and presence/frequency penalties 0.
   Support Swift's full 248,320-token vocabulary within bounded allocations;
   the [production candidate storage](../src/prism-runtime/src/sampling/upstream.rs)
-  currently caps backing storage at 131,072, before top-k filtering can run.
+  now admits the complete vocabulary before top-k filtering, with a hard
+  1,048,576-candidate bound.
   Qualify Prism RNG/draw ordering and seeded sampling against the same logits;
   the driver's independent SplitMix64 reference sampler is not that parity
   evidence. Honor the verified EOS/EOT/EOM policy and complete output cap,
   without an added reasoning cutoff. Test stop handling and sampler rollback
   after cancellation or failed delivery. Other sampler modes are deferred.
+
+  Evidence: the production MT19937 chain matches 192 seeded native observations
+  across four full-vocabulary distributions and four seeds, including native
+  top-k ties. The verified native five-token EOG policy is applied; focused
+  regressions cover cancellation/delivery rollback, stop draws and reset.
+  [Sampler captures](../src/prism-runtime/tests/fixtures/swift-sampler.json)
+  are independent of the driver's SplitMix64 reference sampler.
 
 - [ ] **M5 — Complete the minimal Swift session and broker wiring.** Reuse
   the existing runtime, token worker/client and broker boundaries for pinned
@@ -81,6 +111,13 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   Require only this one-model, one-conversation API. Generic model-session
   transport, multi-sequence scheduling, portable state files, cache reuse and
   new UI/client features are deferred.
+
+  Implementation is connected through `SwiftSession`, bounded Swift worker/client,
+  and `--native-engine` in a `native-swift` broker build. The existing 12 GiB Job,
+  16 GiB startup admission, 4 GiB reserve, private credentials and listener-PID
+  checks remain in force. Focused lifecycle and protocol regressions pass, and
+  the actual owned path counted/prefilled 53 prompt tokens and streamed one
+  sampled token. Complete device recovery evidence remains with M6.
 
 - [ ] **M6 — Demonstrate bounded end-to-end Swift operation.** On the target
   Windows ARM64 device, run the pinned model through the connected engine path:
@@ -94,6 +131,14 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   suites and every benchmark CI-only. Performance optimization and benchmark
   campaigns are deferred; do not claim qualified throughput, creative quality,
   daily security or standard-profile readiness from this engine demonstration.
+
+  **Partial:** [device session evidence](../config/swift-native-session.evidence.json)
+  records verified readiness, exact counting, sampled SSE output, length stop
+  and acknowledged reset. The diagnostic was deliberately stopped during its
+  post-reset request when the user authorized handoff. Actual multi-turn
+  execution, context rejection, cancellation and restart still need a complete
+  run; M2 also remains unqualified. CI monitoring and repairs were handed to
+  the user. No full local suites or benchmarks ran.
 
 ## Deferred until after the MVP
 

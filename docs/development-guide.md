@@ -254,6 +254,38 @@ prevention and real-model daily acceptance remain unqualified.
 
 ## Build the CPU server from source
 
+### Experimental native Swift backend
+
+The Rust broker also has an opt-in `native-swift` build feature. Build
+`bonsai-broker` with `--features native-swift` using the external working and
+target directories shown above, then add `--native-engine` to the owned launcher:
+
+```powershell
+& $broker --launch-development --allow-unisolated-backend `
+    --profile swift-pq2-assessment --native-engine `
+    --data-directory $data --evidence-parent ([IO.Path]::GetTempPath()) `
+    --frontend-port 5173 --backend-port 8081 --max-waiting 2
+```
+
+Run this executable from an external native working directory as above. The
+selection requires the original pinned Swift artifact and its verified Prism
+installation; it accepts no adapter, alternate model or inference overrides.
+The current executable is retained against replacement and its native child
+receives the existing 12 GiB Job, 16 GiB available-memory admission, 4 GiB
+reserve watchdog, protected keys and listener-PID checks. The seed is fixed at
+42. Native identity must match before the frontend opens. Interrupted frontend
+generation closes admission and stops the owned backend; restart the launcher
+to establish a fresh owned instance.
+
+This is an experimental path. Actual model loading, prompt/tokenizer parity and
+seeded sampler comparisons have evidence, but full-model numerical parity fails
+the declared tolerance and complete device recovery remains pending. See the
+[MVP checklist](prism-upstream-todo.md); no throughput or daily-service claim is
+made. The internal `--native-engine-child` flag alone does not establish Job
+ownership or prevent same-user bypass.
+
+### Publisher Prism source build
+
 Install Visual Studio 2026 native ARM64 C++ tools and CMake, or explicitly choose
 the supported Visual Studio 2022 generator. The builder installs no toolchain.
 

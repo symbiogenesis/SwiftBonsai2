@@ -2,8 +2,34 @@
 
 `bonsai-prism-runtime` is an experimental safe Rust implementation of the dense
 Qwen35 text path used by Swift/Bonsai. It links no C/C++ inference library.
-**Full-model parity, broker integration and target-device qualification are
-pending.** Pinned publisher Prism remains the assessment and fallback engine.
+**Full-model numerical parity and complete device lifecycle qualification remain
+pending.** The experimental Swift session and owned broker integration exist;
+pinned publisher Prism remains the assessment and fallback engine.
+
+The [MVP checklist](../../docs/prism-upstream-todo.md) separates implemented
+behavior from measured qualification. The actual pinned 851-tensor model loads
+and its 8K graph initializes within the CPU budget. Scalar/NEON state and logits
+match exactly on the retained three-step trajectory, while native numerical
+differences exceed the declared tolerance. Do not promote this engine on the
+basis of loading, matching sampled observations or a single streamed response.
+
+`SwiftChatSession` applies the verified template and exact tokenizer with
+thinking on, `xhigh`, preserved supplied reasoning and complete output
+reservation. `SwiftSession` joins it to the fixed production MT19937 sampler,
+all five verified native stop tokens, transactional decoding and bounded UTF-8
+output. The separate `bonsai-swift-worker` JSONL executable and `SwiftClient`
+verify readiness and bounded count/completion/reset exchanges. Their caller
+owns process lifetime and transport shutdown.
+
+A broker built with Cargo's `--features native-swift` can select
+`--native-engine` with `--profile swift-pq2-assessment` on the existing Windows
+development launcher. This launches the current broker executable as its private
+native child inside the existing guarded Job. Authentication, exact prepared
+input binding, reasoning/content streaming and failure admission are preserved.
+The ordinary publisher Prism selection remains available. See the
+[development guide](../../docs/development-guide.md) for the invocation and
+the [partial device receipt](../../config/swift-native-session.evidence.json)
+for the limits of the demonstrated path.
 
 ## Implemented behavior
 
