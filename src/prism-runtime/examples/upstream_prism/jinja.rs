@@ -5,6 +5,7 @@
 //! transcribed from source, never obtained from an engine. `VariablesJson` retains
 //! source object insertion order and floating point literals such as 1.0.
 
+use bonsai_prism_runtime::jinja::PathSegment;
 use serde_json::{Value, json};
 
 use super::engine::Engine;
@@ -47,6 +48,130 @@ const BUILTINS: &[&str] = &[
 ];
 const COMMON_VARS: &str =
     r#"{"x":42,"y":"hello","arr":[1,2,3],"obj":{"a":1,"b":2},"items":["a","b","c"]}"#;
+
+fn bytes(value: &Value) -> Result<Vec<u8>> {
+    value
+        .as_array()
+        .ok_or("Jinja bytes must be an array")?
+        .iter()
+        .map(|value| {
+            u8::try_from(value.as_u64().ok_or("Jinja byte must be unsigned")?).map_err(Into::into)
+        })
+        .collect()
+}
+fn path(value: &Value) -> Result<Vec<PathSegment>> {
+    value
+        .as_array()
+        .ok_or("Jinja path must be an array")?
+        .iter()
+        .map(|value| {
+            if let Some(key) = value.as_str() {
+                Ok(PathSegment::Key(key.into()))
+            } else {
+                Ok(PathSegment::Index(usize::try_from(
+                    value.as_u64().ok_or("Jinja path index must be unsigned")?,
+                )?))
+            }
+        })
+        .collect()
+}
+
+/// Observe the reusable production Jinja API without adding execution to the harness.
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "Keep the fallible optional-operation dispatch signature shared by engine adapters"
+)]
+pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
+    use bonsai_prism_runtime::jinja::{Hasher, Template, builtin_inventory};
+    let Some(operations) = request.get("Operations").and_then(Value::as_array) else {
+        return Ok(None);
+    };
+    if !operations.iter().all(|operation| {
+        operation
+            .get("Kind")
+            .and_then(Value::as_str)
+            .is_some_and(|kind| kind.starts_with("jinja-"))
+    }) {
+        return Ok(None);
+    }
+    let mut results = Vec::new();
+    for operation in operations {
+        let observed = (|| -> Result<Value> {
+            let kind = text(operation, "Kind")?;
+            if kind == "jinja-builtins" {
+                return Ok(
+                    json!({"Builtins":builtin_inventory().iter().flat_map(|(category,names)|names.iter().map(move|name|json!({"Type":category,"Name":name}))).collect::<Vec<_>>()}),
+                );
+            }
+            if kind == "jinja-hash" {
+                let mut hash = Hasher::new();
+                for chunk in array(operation, "Chunks")? {
+                    hash.update(&bytes(chunk)?);
+                }
+                return Ok(json!({"Digest":hash.digest()}));
+            }
+            if kind == "jinja-hash-trace" {
+                let mut hash = Hasher::new();
+                let mut digests = Vec::new();
+                for action in array(operation, "Actions")? {
+                    if let Some(update) = action.get("Update") {
+                        hash.update(&bytes(update)?);
+                    } else if action.get("Digest") == Some(&Value::Bool(true)) {
+                        digests.push(hash.digest());
+                    } else {
+                        return Err(invalid("invalid Jinja hash action"));
+                    }
+                }
+                return Ok(json!({"Digests":digests}));
+            }
+            let template = Template::parse(text(operation, "Template")?)?;
+            if kind == "jinja-caps" {
+                let (string, typed) = template.content_capabilities()?;
+                return Ok(json!({"SupportsStringContent":string,"SupportsTypedContent":typed}));
+            }
+            let variables = if let Some(json) = operation.get("VariablesJson") {
+                json.as_str()
+                    .ok_or("Jinja VariablesJson must be text")?
+                    .to_owned()
+            } else {
+                operation
+                    .get("Variables")
+                    .map_or_else(|| Ok("{}".to_owned()), serde_json::to_string)?
+            };
+            let mut overlays = Vec::new();
+            if let Some(values) = operation.get("ByteStrings") {
+                for overlay in values
+                    .as_array()
+                    .ok_or("Jinja ByteStrings must be an array")?
+                {
+                    overlays.push((
+                        path(field(overlay, "Path")?)?,
+                        bytes(field(overlay, "Bytes")?)?,
+                    ));
+                }
+            }
+            let execution = template.execute_with_bytes(&variables, &overlays)?;
+            if let Some(error) = &execution.error {
+                return Err(invalid(error.clone()));
+            }
+            match kind {
+                "jinja-render" => Ok(json!({"Rendered":String::from_utf8(execution.bytes())?})),
+                "jinja-string-parts" => Ok(
+                    json!({"Parts":execution.parts().into_iter().map(|part|Ok(json!({"Value":String::from_utf8(part.bytes)?,"IsInput":part.is_input}))).collect::<Result<Vec<_>>>()?}),
+                ),
+                "jinja-stats" => Ok(
+                    json!({"Used":array(operation,"Paths")?.iter().map(|value|Ok(execution.used(&path(value)?))).collect::<Result<Vec<_>>>()?}),
+                ),
+                _ => Err(invalid("unknown Jinja observation")),
+            }
+        })();
+        results.push(match observed {
+            Ok(value) => value,
+            Err(error) => json!({"ExceptionKind":"standard","Message":error.to_string()}),
+        });
+    }
+    Ok(Some(json!({"SchemaVersion":1,"Results":results})))
+}
 
 #[derive(Default)]
 struct Assertions {
@@ -891,4 +1016,117 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
             assertions.failures.join("; ")
         ),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn production_jinja_resource_bounds() -> Result<()> {
+        use bonsai_prism_runtime::jinja::Template;
+        for source in [
+            "{{ é }}".to_owned(),
+            format!("{{{{ {}1 }}}}", "-".repeat(256)),
+            format!("{{{{ {}1 }}}}", "1+".repeat(256)),
+        ] {
+            assert!(Template::parse(&source).is_err());
+        }
+        for source in [
+            "{% set x=[] %}{% set y=x.append(x) %}",
+            "{% set x=namespace() %}{% set x.a=x %}",
+            "{% macro f() %}{{f()}}{% endmacro %}{{f()}}",
+            "{{range(0,1000000)}}",
+            "{% set x=['a' * 4096] * 65536 %}{{x}}",
+        ] {
+            let rendered = Template::parse(source)?.execute("{}")?;
+            assert!(rendered.error.is_some(), "{source}");
+        }
+        let rendered = Template::parse("{{a + b}}")?.execute(r#"{"a":9007199254740992,"b":1}"#)?;
+        assert!(rendered.error.is_none());
+        assert_eq!(rendered.bytes(), b"9007199254740993");
+        assert!(Template::parse("ok")?.execute(r#"{"a":1,"a":2}"#).is_err());
+        let rendered = Template::parse("{{data}}")?.execute_with_bytes(
+            r#"{"data":""}"#,
+            &[(vec![PathSegment::Key("data".into())], vec![0xff, 0x80])],
+        )?;
+        assert_eq!(rendered.bytes(), [0xff, 0x80]);
+        assert!(rendered.error.is_none());
+        Ok(())
+    }
+    #[test]
+    fn production_original_jinja_observations() -> Result<()> {
+        let engine = Engine::new(
+            super::super::engine::Target::Rust,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        let mut assertions = Assertions::default();
+        hash_assertions(&engine, &mut assertions)?;
+        stats_assertions(&engine, &mut assertions)?;
+        caps_assertions(&engine, &mut assertions)?;
+        parts_assertions(&engine, &mut assertions)?;
+        assert!(
+            assertions.failures.is_empty(),
+            "{}",
+            assertions.failures.join("\n")
+        );
+        assert_eq!(assertions.count, 56);
+        Ok(())
+    }
+    #[test]
+    fn production_original_jinja_fuzz() -> Result<()> {
+        let engine = Engine::new(
+            super::super::engine::Target::Rust,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
+        let inventory = exchange(
+            &engine,
+            "jinja-builtins",
+            &[json!({"Kind":"jinja-builtins"})],
+        )?
+        .ok_or("Jinja builtin inventory missing")?;
+        let mut assertions = Assertions::default();
+        let count = fuzz_assertions(&engine, &mut assertions, array(&inventory[0], "Builtins")?)?;
+        assert!(
+            assertions.failures.is_empty(),
+            "{}",
+            assertions.failures.join("\n")
+        );
+        assert!(count > 500);
+        Ok(())
+    }
+    #[test]
+    fn production_original_jinja_literals() -> Result<()> {
+        let fixture: Value = serde_json::from_str(LITERALS)?;
+        let mut failures = Vec::new();
+        for case in array(&fixture, "Cases")? {
+            let operation = json!({"Kind":"jinja-render","Template":field(case,"Template")?,"VariablesJson":field(case,"VariablesJson")?});
+            let response =
+                execute(&json!({"Operations":[operation]}))?.ok_or("missing Jinja response")?;
+            let observed = &response["Results"][0];
+            if observed.get("Rendered") != case.get("Expected") {
+                failures.push(format!(
+                    "{} {}: {:?}, expected {:?}",
+                    text(case, "Group")?,
+                    text(case, "Name")?,
+                    observed,
+                    field(case, "Expected")?
+                ));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} failures:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
+        Ok(())
+    }
 }
