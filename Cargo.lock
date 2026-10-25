@@ -127,6 +127,7 @@ dependencies = [
  "bonsai-gguf",
  "bonsai-prism",
  "bonsai-ternary",
+ "fancy-regex",
  "fearless_simd",
  "regex",
  "sentencepiece-rs",
