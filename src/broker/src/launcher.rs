@@ -41,9 +41,10 @@ pub const LAUNCH_USAGE: &str = concat!(
     "  --frontend-port <0-or-1024..65535> --backend-port <1024..65535>\n",
     "  [--profile <reference-cpu|swift-pq2-assessment>]\n",
     "  [--native-engine] (requires the pinned Prism inference release and swift-pq2-assessment)\n",
+    "  [--use-abliterate-lora] (pinned scale-one adapter; Swift Prism CPU server only)\n",
     "  [--max-waiting <0..8>] [--check-only]\n",
     "Default: reference-cpu. Only compiled model/runtime pins and fixed CPU policies are accepted.\n",
-    "Swift selects original PQ2 weights without an adapter; daily use remains unqualified.\n",
+    "Swift selects original PQ2 weights; the demo requests its pinned LoRA by default. Daily use remains unqualified.\n",
     "Creates fresh protected credentials; prints paths, never key values.\n",
 );
 
@@ -63,6 +64,8 @@ pub enum LaunchError {
     Policy,
     /// Locked model/runtime verification failed.
     Artifacts,
+    /// The pinned abliteration adapter is missing, altered or unsafe to open.
+    Adapter,
     /// Protected credential provisioning failed.
     Credentials,
     /// Physical memory admission or a running resource guard failed.
@@ -91,6 +94,7 @@ pub struct LaunchConfig {
     check_only: bool,
     profile: LaunchProfile,
     native_engine: bool,
+    use_abliterate_lora: bool,
 }
 
 /// Offline verification result; checking never creates credentials or a process.
@@ -110,6 +114,7 @@ impl LaunchConfig {
         let (mut launch, mut unisolated) = (false, false);
         let mut check_only = false;
         let mut native_engine = false;
+        let mut use_abliterate_lora = false;
         let mut profile = None;
         let (mut data, mut evidence_parent) = (None, None);
         let (mut frontend_port, mut backend_port, mut max_waiting) = (None, None, None);
@@ -120,6 +125,9 @@ impl LaunchConfig {
                 Some("--check-only") if !check_only => check_only = true,
                 Some("--native-engine") if !native_engine => {
                     native_engine = true;
+                }
+                Some("--use-abliterate-lora") if !use_abliterate_lora => {
+                    use_abliterate_lora = true;
                 }
                 Some("--profile") if profile.is_none() => {
                     profile = Some(
@@ -158,6 +166,8 @@ impl LaunchConfig {
             || backend_port == frontend_port
             || max_waiting > MAX_WAITING
             || (native_engine && profile != LaunchProfile::SwiftPq2Assessment)
+            || (use_abliterate_lora
+                && (native_engine || profile != LaunchProfile::SwiftPq2Assessment))
         {
             return Err(LaunchError::Arguments);
         }
@@ -170,6 +180,7 @@ impl LaunchConfig {
             check_only,
             profile,
             native_engine,
+            use_abliterate_lora,
         })
     }
 
@@ -198,19 +209,37 @@ impl LaunchConfig {
     /// in the result rather than preventing this read-only verification.
     pub fn check(&self) -> Result<LaunchCheck, LaunchError> {
         self.validate_paths()?;
-        let plan = LaunchPlan::for_profile(
+        let plan = LaunchPlan::for_profile_with_lora(
             &self.data,
             self.backend_port,
             &self.evidence_parent.join("not-created.key"),
             self.profile,
+            self.use_abliterate_lora,
         )
         .map_err(|_| LaunchError::Policy)?;
         let _artifacts = self.verify_artifacts(&plan)?;
+        let _adapter = Self::adapter_guard(&plan)?;
         let _native_executable = self.native_executable_guard()?;
         Ok(LaunchCheck {
             memory_admitted: available_memory_bytes().map_err(|_| LaunchError::Memory)?
                 >= plan.required_available_bytes,
         })
+    }
+
+    fn adapter_guard(
+        plan: &LaunchPlan,
+    ) -> Result<Option<bonsai_artifacts::VerifiedFile>, LaunchError> {
+        plan.adapter
+            .as_ref()
+            .map(|adapter| {
+                bonsai_artifacts::VerifiedFile::verify(
+                    &adapter.path,
+                    adapter.bytes,
+                    &adapter.sha256,
+                )
+                .map_err(|_| LaunchError::Adapter)
+            })
+            .transpose()
     }
 
     fn verify_artifacts(&self, plan: &LaunchPlan) -> Result<VerifiedArtifacts, LaunchError> {
@@ -317,21 +346,28 @@ impl LaunchConfig {
         self.validate_paths()?;
         // Resolve policy before creating secrets or loading any native code.
         let pending_key = self.evidence_parent.join("not-created.key");
-        let preliminary =
-            LaunchPlan::for_profile(&self.data, self.backend_port, &pending_key, self.profile)
-                .map_err(|_| LaunchError::Policy)?;
+        let preliminary = LaunchPlan::for_profile_with_lora(
+            &self.data,
+            self.backend_port,
+            &pending_key,
+            self.profile,
+            self.use_abliterate_lora,
+        )
+        .map_err(|_| LaunchError::Policy)?;
         admit(preliminary.required_available_bytes)?;
         let artifacts = self.verify_artifacts(&preliminary)?;
+        let adapter = Self::adapter_guard(&preliminary)?;
         if poll_fn(|cx| Poll::Ready(shutdown.as_mut().poll(cx).is_ready())).await {
             return Err(LaunchError::Cancelled);
         }
         let credentials = PrivateCredentials::create(&self.evidence_parent)
             .map_err(|_| LaunchError::Credentials)?;
-        let plan = LaunchPlan::for_profile(
+        let plan = LaunchPlan::for_profile_with_lora(
             &self.data,
             self.backend_port,
             credentials.backend_path(),
             self.profile,
+            self.use_abliterate_lora,
         )
         .map_err(|_| LaunchError::Policy)?;
         // Reserve only as a collision check; PID checks close the release/bind
@@ -376,6 +412,7 @@ impl LaunchConfig {
             process,
             credentials,
             _artifacts: artifacts,
+            _adapter: adapter,
             _native_executable: native_executable,
             memory_limit_bytes: specification.memory_limit_bytes,
             backend_port: self.backend_port,
@@ -389,6 +426,7 @@ pub struct LaunchedService {
     process: OwnedProcess,
     credentials: PrivateCredentials,
     _artifacts: VerifiedArtifacts,
+    _adapter: Option<bonsai_artifacts::VerifiedFile>,
     _native_executable: Option<bonsai_artifacts::VerifiedFile>,
     memory_limit_bytes: usize,
     backend_port: u16,
@@ -727,6 +765,86 @@ mod tests {
         .into_iter()
         .map(OsString::from)
         .collect()
+    }
+
+    #[test]
+    fn lora_launch_is_explicit_swift_prism_only() {
+        let default = LaunchConfig::parse(arguments()).ok();
+        assert!(default.is_some_and(|config| !config.use_abliterate_lora));
+        let mut enabled = arguments();
+        enabled.extend(
+            ["--profile", "swift-pq2-assessment", "--use-abliterate-lora"].map(OsString::from),
+        );
+        let config = LaunchConfig::parse(enabled.clone()).ok();
+        assert!(config.is_some_and(|config| config.use_abliterate_lora));
+        for extra in ["--use-abliterate-lora", "--native-engine"] {
+            let mut rejected = enabled.clone();
+            rejected.push(extra.into());
+            assert_eq!(
+                LaunchConfig::parse(rejected).err(),
+                Some(LaunchError::Arguments)
+            );
+        }
+        let mut reference = arguments();
+        reference.push("--use-abliterate-lora".into());
+        assert_eq!(
+            LaunchConfig::parse(reference).err(),
+            Some(LaunchError::Arguments)
+        );
+    }
+
+    #[test]
+    fn lora_guard_rejects_missing_and_altered_adapter_and_opt_out_needs_no_file()
+    -> std::io::Result<()> {
+        use std::{fs, io};
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("Bonsai-lora-guard-{stamp}"));
+        fs::create_dir(&directory)?;
+        let key = directory.join("not-created.key");
+        let base = super::LaunchPlan::for_profile(
+            &directory,
+            49152,
+            &key,
+            LaunchProfile::SwiftPq2Assessment,
+        )
+        .map_err(io::Error::other)?;
+        assert!(
+            LaunchConfig::adapter_guard(&base)
+                .map_err(|_| io::Error::other("Unexpected base guard"))?
+                .is_none()
+        );
+        let plan = super::LaunchPlan::for_profile_with_lora(
+            &directory,
+            49152,
+            &key,
+            LaunchProfile::SwiftPq2Assessment,
+            true,
+        )
+        .map_err(io::Error::other)?;
+        assert_eq!(
+            LaunchConfig::adapter_guard(&plan).err(),
+            Some(LaunchError::Adapter)
+        );
+        let path = &plan
+            .adapter
+            .as_ref()
+            .ok_or_else(|| io::Error::other("Missing adapter plan"))?
+            .path;
+        let parent = path
+            .parent()
+            .ok_or_else(|| io::Error::other("Missing parent"))?;
+        fs::create_dir_all(parent)?;
+        fs::write(path, b"altered adapter")?;
+        assert_eq!(
+            LaunchConfig::adapter_guard(&plan).err(),
+            Some(LaunchError::Adapter)
+        );
+        assert_eq!(directory.parent(), Some(std::env::temp_dir().as_path()));
+        fs::remove_dir_all(directory)?;
+        Ok(())
     }
 
     #[test]

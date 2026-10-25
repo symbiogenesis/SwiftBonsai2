@@ -7,6 +7,42 @@ use bonsai_broker::launch_policy::{
 use std::{ffi::OsString, path::PathBuf};
 
 #[test]
+fn lora_plan_uses_only_pinned_adapter_without_changing_cpu_limits() -> Result<(), PolicyError> {
+    let data = std::env::temp_dir().join("Bonsai LoRA data & spaces");
+    let key = std::env::temp_dir()
+        .join("Bonsai LoRA key")
+        .join("backend.key");
+    let profile = LaunchProfile::SwiftPq2Assessment;
+    let base = LaunchPlan::for_profile(&data, 49152, &key, profile)?;
+    assert!(base.adapter.is_none());
+    let mut enabled = LaunchPlan::for_profile_with_lora(&data, 49152, &key, profile, true)?;
+    let adapter = enabled.adapter.as_ref().ok_or(PolicyError::Configuration)?;
+    let expected = data
+        .join("adapters")
+        .join("703028bb7fba03496e796b144839b161cf0f5409")
+        .join("bonsai-abliterate-lora.gguf");
+    assert_eq!(adapter.path, expected);
+    assert_eq!(adapter.bytes, 9_682_464);
+    assert_eq!(
+        adapter.sha256,
+        "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42"
+    );
+    assert_eq!(enabled.arguments.pop(), Some(expected.into_os_string()));
+    assert_eq!(enabled.arguments.pop(), Some("--lora".into()));
+    assert_eq!(enabled.arguments, base.arguments);
+    assert_eq!(enabled.memory_limit_bytes, base.memory_limit_bytes);
+    assert_eq!(
+        enabled.required_available_bytes,
+        base.required_available_bytes
+    );
+    assert!(
+        LaunchPlan::for_profile_with_lora(&data, 49152, &key, LaunchProfile::ReferenceCpu, true)
+            .is_err()
+    );
+    Ok(())
+}
+
+#[test]
 fn inherited_overrides_are_case_insensitive_and_value_free() {
     for name in [
         "LLAMA_MODEL",

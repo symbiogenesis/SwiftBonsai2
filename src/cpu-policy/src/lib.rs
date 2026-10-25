@@ -5,7 +5,7 @@
 //! verification, memory admission, and bounded native process supervision.
 #![forbid(unsafe_code)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -529,6 +529,48 @@ fn validate_adapter(adapter: &Value, lock: &Value) -> Result<(), String> {
             && adapter["compatibility"]["runtimeCommit"] == lock["runtime"]["commit"],
         "Review adapter compatibility and memory accounting for the pinned model/runtime.",
     )
+}
+
+/// The sole reviewed pretrained adapter, resolved under an external data directory.
+#[derive(Debug)]
+pub struct AbliterateLoraArtifact {
+    /// Whole-file path; callers must verify and retain it before model launch.
+    pub path: PathBuf,
+    /// Required whole-file byte length.
+    pub bytes: u64,
+    /// Required lowercase whole-file SHA-256.
+    pub sha256: String,
+}
+
+/// Resolve the pinned adapter after validating its Swift model/runtime compatibility.
+/// This performs no filesystem access, download or model loading.
+///
+/// # Errors
+/// Rejects unexpanded/nonabsolute paths or inconsistent compiled adapter pins.
+pub fn abliterate_lora_artifact(data: &Path) -> Result<AbliterateLoraArtifact, String> {
+    require(
+        data.is_absolute()
+            && data
+                .to_str()
+                .is_some_and(|path| !path.contains('\0') && !unexpanded_variable(path)),
+        "An expanded absolute data directory is required.",
+    )?;
+    let adapter = parse(ADAPTER_LOCK)?;
+    validate_adapter(&adapter, &parse(SWIFT_LOCK)?)?;
+    let pin = &adapter["adapter"];
+    let filename = pin["filename"]
+        .as_str()
+        .ok_or("Invalid adapter filename.")?;
+    Ok(AbliterateLoraArtifact {
+        path: artifact_path(data, "adapters", pin, filename)?.into(),
+        bytes: pin["bytes"]
+            .as_u64()
+            .ok_or("Invalid adapter byte length.")?,
+        sha256: pin["sha256"]
+            .as_str()
+            .ok_or("Invalid adapter digest.")?
+            .into(),
+    })
 }
 
 #[derive(Deserialize)]

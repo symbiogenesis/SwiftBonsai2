@@ -23,7 +23,7 @@ pub enum LaunchProfile {
     /// Default Qwen reference; its compiled JSON profile remains launch-disabled.
     #[default]
     ReferenceCpu,
-    /// Explicit Swift PQ2 assessment, without derived weights or an adapter.
+    /// Explicit Swift PQ2 assessment, optionally with the pinned abliteration `LoRA`.
     SwiftPq2Assessment,
 }
 impl LaunchProfile {
@@ -113,6 +113,8 @@ pub struct LaunchPlan {
     pub arguments: Vec<OsString>,
     /// Whole-model path verified before launch.
     pub model_path: PathBuf,
+    /// Optional pinned adapter identity; never an arbitrary caller-supplied path.
+    pub adapter: Option<bonsai_cpu_policy::AbliterateLoraArtifact>,
     /// Pinned archive path verified before launch.
     pub archive_path: PathBuf,
     /// Complete installed runtime directory.
@@ -144,6 +146,23 @@ impl LaunchPlan {
         key_file: &Path,
         profile: LaunchProfile,
     ) -> Result<Self, PolicyError> {
+        Self::for_profile_with_lora(data, backend_port, key_file, profile, false)
+    }
+
+    /// Build a fixed server plan with the pinned scale-one `LoRA` when requested.
+    ///
+    /// # Errors
+    /// Rejects `LoRA` on the reference profile, invalid paths or compiled policy drift.
+    pub fn for_profile_with_lora(
+        data: &Path,
+        backend_port: u16,
+        key_file: &Path,
+        profile: LaunchProfile,
+        use_abliterate_lora: bool,
+    ) -> Result<Self, PolicyError> {
+        if use_abliterate_lora && profile != LaunchProfile::SwiftPq2Assessment {
+            return Err(PolicyError::Configuration);
+        }
         validate_environment(std::env::vars_os().map(|(name, _)| name))?;
         let pins = reviewed_pins(profile)?;
         validate_external_path(data)?;
@@ -162,7 +181,7 @@ impl LaunchPlan {
         for path in [&executable, &model_path, &archive_path] {
             validate_external_path(path)?;
         }
-        let arguments = bonsai_cpu_policy::server::arguments(
+        let mut arguments: Vec<OsString> = bonsai_cpu_policy::server::arguments(
             model_path.to_str().ok_or(PolicyError::Path)?,
             key_file.to_str().ok_or(PolicyError::Path)?,
             backend_port,
@@ -172,10 +191,25 @@ impl LaunchPlan {
         .into_iter()
         .map(OsString::from)
         .collect();
+        let adapter = if use_abliterate_lora {
+            let adapter = bonsai_cpu_policy::abliterate_lora_artifact(data)
+                .map_err(|_| PolicyError::Configuration)?;
+            validate_external_path(&adapter.path)?;
+            // --lora applies scale 1 and accepts an absolute Windows path as one
+            // argument; --lora-scaled would split the drive-letter colon.
+            arguments.extend([
+                OsString::from("--lora"),
+                adapter.path.as_os_str().to_owned(),
+            ]);
+            Some(adapter)
+        } else {
+            None
+        };
         Ok(Self {
             executable,
             arguments,
             model_path,
+            adapter,
             archive_path,
             runtime_directory,
             key_file: key_file.to_path_buf(),
