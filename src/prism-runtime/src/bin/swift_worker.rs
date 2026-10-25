@@ -10,17 +10,17 @@ use std::{
 };
 
 use bonsai_prism_runtime::{
-    Result,
-    kernels::MatvecBackend,
-    model::swift,
-    runtime::{Cancellation, Finish},
-    swift_session::{SwiftSession, TextEvent},
+    Result, kernels::MatvecBackend, model::swift, runtime::Cancellation,
+    swift_session::SwiftSession,
 };
-use serde_json::{Value, json};
+use serde_json::json;
 
 #[path = "../swift_worker_request.rs"]
 mod request;
 use request::{MAX_FRAME_BYTES, Request};
+#[path = "../swift_worker_output.rs"]
+mod delivery;
+use delivery::{Delivery, write_record};
 const USAGE: &[u8] = b"Usage: bonsai-swift-worker --model <absolute-pinned-swift-gguf> --seed <u32> [--backend <auto|scalar>]\nJSONL: {\"op\":\"count\",\"id\":1,\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}],\"max_tokens\":16}\nUse op=complete with timeout_seconds (1..600), or {\"op\":\"reset\",\"id\":2}.\nInput frames require LF and are bounded to 1 MiB. Output is flushed JSONL.\nDeltas are provisional until complete. Close the worker for transport cancellation;\nlibrary owners can also cancel cooperatively through the session Cancellation.\nExisting process admission and ownership policies must wrap this worker.\nFull-model correctness and device qualification require retained comparison evidence.\n";
 
 fn bad() -> bonsai_prism_runtime::Error {
@@ -55,25 +55,6 @@ fn load() -> Result<SwiftSession> {
         backend.unwrap_or(MatvecBackend::Auto),
         seed.ok_or_else(bad)?,
     )
-}
-
-fn write_record(output: &mut impl Write, value: &Value) -> Result<()> {
-    serde_json::to_writer(&mut *output, value)?;
-    output.write_all(b"\n")?;
-    output.flush()?;
-    Ok(())
-}
-
-fn write_delta(output: &mut impl Write, id: u64, mut text: &str) -> Result<()> {
-    while !text.is_empty() {
-        let mut end = text.len().min(16 * 1024);
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
-        write_record(output, &json!({"type":"delta","id":id,"text":&text[..end]}))?;
-        text = &text[end..];
-    }
-    Ok(())
 }
 
 fn frame(input: &mut impl BufRead, bytes: &mut Vec<u8>) -> Result<bool> {
@@ -194,27 +175,12 @@ fn serve(
                     )?;
                     continue;
                 };
-                let mut transport_failed = false;
-                let result = session.complete(&prompt, &Cancellation::default(), deadline, |event| {
-                    let result = match event {
-                        TextEvent::Delta(text) => write_delta(output, id, text),
-                        TextEvent::Complete(completion) => write_record(output, &json!({"type":"complete","id":id,
-                            "prompt_tokens":completion.prompt_tokens,"generated_tokens":completion.generated_tokens,
-                            "finish_reason":if completion.finish == Finish::Stop {"stop"} else {"length"}})),
-                    };
-                    transport_failed |= result.is_err();
-                    result
-                });
-                if transport_failed {
-                    return Err(io::Error::other("Swift output abandoned").into());
-                }
-                if result.is_err() {
-                    write_record(
-                        output,
-                        &json!({"type":"error","id":id,"error":"generation_failed",
-                        "reset_required":session.is_faulted()}),
-                    )?;
-                }
+                let mut delivery = Delivery::new(output, id);
+                let result =
+                    session.complete(&prompt, &Cancellation::default(), deadline, |event| {
+                        delivery.emit(&event)
+                    });
+                delivery.finish(result.is_ok(), session.is_faulted())?;
             }
         }
     }
