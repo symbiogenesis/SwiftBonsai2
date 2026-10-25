@@ -23,18 +23,9 @@ fn deadline() -> Instant {
 }
 
 #[test]
-fn reservations_bound_all_accepted_requests_without_waiting() {
-    for waiting in [0, 1, MAX_WAITING] {
-        let gate = RequestGate::new(waiting).unwrap();
-        let mut reservations = Vec::new();
-        for _ in 0..=waiting {
-            reservations.push(gate.reserve().unwrap());
-        }
-        assert!(matches!(gate.reserve(), Err(GateError::Capacity)));
-        drop(reservations.pop());
-        assert!(gate.reserve().is_ok());
-        drop(reservations);
-    }
+fn waiting_limit_rejects_invalid_configuration() {
+    // The model histories probe reservation capacity and its recovery for
+    // every supported waiting limit after each operation.
     for invalid in [MAX_WAITING + 1, usize::MAX] {
         assert!(matches!(
             RequestGate::new(invalid),
