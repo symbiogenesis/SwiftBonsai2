@@ -14,7 +14,9 @@ use std::hash::{BuildHasher, Hasher};
 
 use crate::{Result, invalid};
 
-const MAX_CANDIDATES: usize = 131_072;
+// Swift's pinned Qwen35 vocabulary contains 248,320 entries. This bound applies
+// before filtering, so top-k must not hide an otherwise oversized vocabulary.
+const MAX_CANDIDATES: usize = 1_048_576;
 
 /// One token's mutable logit and probability.
 #[derive(Clone, Copy, Debug, PartialEq)]
