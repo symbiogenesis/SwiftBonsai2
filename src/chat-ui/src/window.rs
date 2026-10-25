@@ -14,16 +14,25 @@ use std::{
     ptr::{null, null_mut, without_provenance_mut},
     sync::mpsc::{self, Receiver, Sender},
 };
+use windows_sys::Win32::UI::WindowsAndMessaging::WM_GETMINMAXINFO;
 use windows_sys::{
     Win32::{
         Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
+        Graphics::Dwm::DwmSetWindowAttribute,
         Graphics::Gdi::{
-            CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, COLOR_WINDOW, CreateFontW, DEFAULT_CHARSET,
-            DEFAULT_PITCH, DeleteObject, FW_NORMAL, GetSysColorBrush, HFONT, OUT_DEFAULT_PRECIS,
+            BeginPaint, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateFontW, CreateSolidBrush,
+            DC_PEN, DEFAULT_CHARSET, DEFAULT_PITCH, DT_CENTER, DT_NOPREFIX, DT_SINGLELINE,
+            DT_VCENTER, DeleteObject, DrawFocusRect, DrawTextW, EndPaint, FW_NORMAL, FillRect,
+            GetStockObject, HBRUSH, HDC, HFONT, InvalidateRect, OUT_DEFAULT_PRECIS, PAINTSTRUCT,
+            RoundRect, SelectObject, SetBkColor, SetBkMode, SetDCPenColor, SetTextColor,
+            TRANSPARENT,
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
-            Controls::{EM_REPLACESEL, EM_SCROLLCARET, EM_SETLIMITTEXT, EM_SETSEL},
+            Controls::{
+                DRAWITEMSTRUCT, EM_REPLACESEL, EM_SCROLLCARET, EM_SETLIMITTEXT, EM_SETSEL,
+                ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, ODT_BUTTON, SetWindowTheme,
+            },
             HiDpi::{
                 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow,
                 SetProcessDpiAwarenessContext,
@@ -32,15 +41,17 @@ use windows_sys::{
                 EnableWindow, GetFocus, GetKeyState, SetFocus, VK_RETURN, VK_SHIFT,
             },
             WindowsAndMessaging::{
-                BS_DEFPUSHBUTTON, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
+                BS_OWNERDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
                 DispatchMessageW, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, ES_WANTRETURN,
-                GetClientRect, GetMessageW, GetWindowTextLengthW, GetWindowTextW, IDC_ARROW,
-                IDI_APPLICATION, IsDialogMessageW, KillTimer, LoadCursorW, LoadIconW, MB_ICONERROR,
-                MB_OK, MSG, MessageBoxW, MoveWindow, PostQuitMessage, RegisterClassW, SW_HIDE,
-                SW_SHOW, SendMessageW, SetTimer, SetWindowTextW, ShowWindow, TranslateMessage,
-                WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_DPICHANGED, WM_KEYDOWN, WM_SETFONT, WM_SIZE,
-                WM_TIMER, WNDCLASSW, WS_CHILD, WS_EX_CLIENTEDGE, WS_EX_CONTROLPARENT,
-                WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+                GetClientRect, GetDlgCtrlID, GetMessageW, GetWindowTextLengthW, GetWindowTextW,
+                IDC_ARROW, IDI_APPLICATION, IsDialogMessageW, KillTimer, LoadCursorW, LoadIconW,
+                MB_ICONERROR, MB_OK, MINMAXINFO, MSG, MessageBoxW, MoveWindow, PostQuitMessage,
+                RegisterClassW, SW_HIDE, SW_SHOW, SendMessageW, SetTimer, SetWindowTextW,
+                ShowWindow, TranslateMessage, WM_CLOSE, WM_COMMAND, WM_CTLCOLORBTN,
+                WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED, WM_DRAWITEM,
+                WM_ERASEBKGND, WM_GETFONT, WM_KEYDOWN, WM_PAINT, WM_SETFONT, WM_SIZE, WM_TIMER,
+                WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_OVERLAPPEDWINDOW,
+                WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
             },
         },
     },
@@ -51,15 +62,24 @@ const SEND: usize = 101;
 const STOP: usize = 102;
 const NEW: usize = 103;
 const THINKING: usize = 104;
+const RETRY: usize = 105;
 const TIMER: usize = 1;
+const BACKGROUND: u32 = 0x0016_1810;
+const PANEL: u32 = 0x001d_2217;
+const BORDER: u32 = 0x0033_3d2b;
+const TEXT: u32 = 0x00df_e8e2;
+const MUTED: u32 = 0x009f_a99a;
+const ACCENT: u32 = 0x009d_b583;
+const BUTTON: u32 = 0x0024_2c1d;
 
 thread_local! {
     static STATE: RefCell<Option<State>> = const { RefCell::new(None) };
+    static PALETTE: RefCell<Option<Palette>> = const { RefCell::new(None) };
 }
 
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "Separate native control flags track input, generation, panel visibility and retry availability."
+    reason = "Readiness, generation, retry eligibility and optional pane visibility are independent UI state flags"
 )]
 struct State {
     window: HWND,
@@ -72,14 +92,275 @@ struct State {
     stop: HWND,
     new_chat: HWND,
     thinking: HWND,
+    retry: HWND,
     status: HWND,
     font: HFONT,
+    title_font: HFONT,
+    small_font: HFONT,
     commands: Sender<Command>,
     events: Receiver<Event>,
     ready: bool,
     busy: bool,
-    show_thinking: bool,
     retryable: bool,
+    show_thinking: bool,
+}
+
+struct Brush(HBRUSH);
+impl Brush {
+    fn new(color: u32) -> io::Result<Self> {
+        // SAFETY: Scalar COLORREF creates a new owned GDI brush.
+        let brush = unsafe { CreateSolidBrush(color) };
+        if brush.is_null() {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(Self(brush))
+        }
+    }
+}
+impl Drop for Brush {
+    fn drop(&mut self) {
+        // SAFETY: Owned brushes are deselected after painting and released only
+        // after child controls are destroyed. Each wrapper releases its handle once.
+        unsafe {
+            DeleteObject(self.0);
+        }
+    }
+}
+struct Palette {
+    background: Brush,
+    panel: Brush,
+    button: Brush,
+    accent: Brush,
+}
+impl Palette {
+    fn new() -> io::Result<Self> {
+        Ok(Self {
+            background: Brush::new(BACKGROUND)?,
+            panel: Brush::new(PANEL)?,
+            button: Brush::new(BUTTON)?,
+            accent: Brush::new(ACCENT)?,
+        })
+    }
+}
+fn palette_with<T>(action: impl FnOnce(&Palette) -> T) -> Option<T> {
+    PALETTE.with(|palette| palette.try_borrow().ok()?.as_ref().map(action))
+}
+fn color_control(wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let dc: HDC = without_provenance_mut(wparam);
+    let control: HWND = without_provenance_mut(lparam.cast_unsigned());
+    // SAFETY: WM_CTLCOLOR supplies a live control and message-scoped paint HDC.
+    let id = unsafe { GetDlgCtrlID(control) };
+    let editor = matches!(id, 201..=203);
+    let foreground = if id == 202 || (!editor && id != 301) {
+        MUTED
+    } else {
+        TEXT
+    };
+    // SAFETY: dc is the live paint context supplied by this synchronous message.
+    unsafe {
+        SetTextColor(dc, foreground);
+    }
+    // SAFETY: Same message-scoped HDC; only scalar colors are passed.
+    unsafe {
+        SetBkColor(dc, if editor { PANEL } else { BACKGROUND });
+    }
+    palette_with(|p| if editor { p.panel.0 } else { p.background.0 })
+        .map_or(0, |brush| brush.addr().cast_signed())
+}
+fn round_box(dc: HDC, rect: RECT, brush: HBRUSH, border: u32, radius: i32) {
+    // SAFETY: Paint DC and palette brush are live; selections are restored below.
+    let old_brush = unsafe { SelectObject(dc, brush) };
+    // SAFETY: DC_PEN is a borrowed system stock object and is never deleted.
+    let pen = unsafe { GetStockObject(DC_PEN) };
+    // SAFETY: Live paint DC and stock pen; restore previous selection below.
+    let old_pen = unsafe { SelectObject(dc, pen) };
+    // SAFETY: Changes only this paint DC's stock pen color.
+    unsafe {
+        SetDCPenColor(dc, border);
+    }
+    // SAFETY: Bounded layout coordinates are drawn into a live clipped paint DC.
+    unsafe {
+        RoundRect(
+            dc,
+            rect.left,
+            rect.top,
+            rect.right,
+            rect.bottom,
+            radius,
+            radius,
+        );
+    }
+    // SAFETY: Restore the previous brush before releasing the palette borrow.
+    unsafe {
+        SelectObject(dc, old_brush);
+    }
+    // SAFETY: Restore the previous borrowed pen; no ownership is transferred.
+    unsafe {
+        SelectObject(dc, old_pen);
+    }
+}
+fn paint(window: HWND) {
+    let mut scope = PAINTSTRUCT::default();
+    // SAFETY: WM_PAINT supplies a live HWND; scope is writable and paired with EndPaint below.
+    let dc = unsafe { BeginPaint(window, &raw mut scope) };
+    let mut bounds = RECT::default();
+    // SAFETY: Live UI-thread HWND and writable rectangle.
+    unsafe {
+        GetClientRect(window, &raw mut bounds);
+    }
+    // SAFETY: Live HWND queried only for scalar DPI.
+    let dpi = i32::try_from(unsafe { GetDpiForWindow(window) }.max(96)).unwrap_or(96);
+    let px = |v: i32| v.saturating_mul(dpi) / 96;
+    let pad = px(32);
+    let thinking = STATE
+        .with(|state| {
+            state
+                .try_borrow()
+                .ok()
+                .and_then(|state| state.as_ref().map(|state| state.show_thinking))
+        })
+        .unwrap_or(false);
+    let top = px(148);
+    let bottom = bounds.bottom - px(184);
+    let split = if thinking { (bottom - top) / 3 } else { 0 };
+    palette_with(|p| {
+        // SAFETY: Brush and paint DC are live during this synchronous paint scope.
+        unsafe {
+            FillRect(dc, &raw const bounds, p.background.0);
+        }
+        let body = RECT {
+            left: pad,
+            top,
+            right: bounds.right - pad,
+            bottom: bottom - split,
+        };
+        round_box(dc, body, p.panel.0, BORDER, px(16));
+        if thinking {
+            let reasoning = RECT {
+                left: pad,
+                top: bottom - split + px(10),
+                right: bounds.right - pad,
+                bottom,
+            };
+            round_box(dc, reasoning, p.panel.0, BORDER, px(16));
+        }
+        let composer = RECT {
+            left: pad,
+            top: bottom + px(16),
+            right: bounds.right - pad,
+            bottom: bounds.bottom - px(49),
+        };
+        round_box(dc, composer, p.panel.0, BORDER, px(16));
+    });
+    // SAFETY: Completes the exact BeginPaint scope for this window.
+    unsafe {
+        EndPaint(window, &raw const scope);
+    }
+}
+fn draw_button(draw: &DRAWITEMSTRUCT) {
+    if draw.CtlType != ODT_BUTTON {
+        return;
+    }
+    palette_with(|p| {
+        let primary = matches!(usize::try_from(draw.CtlID), Ok(SEND | RETRY));
+        let disabled = draw.itemState & ODS_DISABLED != 0;
+        let selected = draw.itemState & ODS_SELECTED != 0;
+        let brush = if primary && !disabled && !selected {
+            p.accent.0
+        } else {
+            p.button.0
+        };
+        round_box(
+            draw.hDC,
+            draw.rcItem,
+            brush,
+            if primary && !disabled { ACCENT } else { BORDER },
+            12,
+        );
+        let color = if disabled {
+            0x0060_6b58
+        } else if primary && !selected {
+            BACKGROUND
+        } else {
+            TEXT
+        };
+        // SAFETY: DRAWITEMSTRUCT supplies this message-scoped paint HDC.
+        unsafe {
+            SetTextColor(draw.hDC, color);
+        }
+        // SAFETY: Changes only the live paint DC's text background mode.
+        unsafe {
+            SetBkMode(draw.hDC, TRANSPARENT.cast_signed());
+        }
+        // SAFETY: Live child HWND accepts a pointer-free font query.
+        let font = unsafe { SendMessageW(draw.hwndItem, WM_GETFONT, 0, 0) };
+        // SAFETY: The queried font remains retained by this live control throughout painting.
+        let old_font =
+            unsafe { SelectObject(draw.hDC, without_provenance_mut(font.cast_unsigned())) };
+        let mut text = [0u16; 96];
+        // SAFETY: This writable buffer has the supplied bound of 96 UTF-16 units.
+        let length = unsafe { GetWindowTextW(draw.hwndItem, text.as_mut_ptr(), 96) };
+        let mut rect = draw.rcItem;
+        // SAFETY: Text buffer and writable rectangle live throughout the synchronous paint call.
+        unsafe {
+            DrawTextW(
+                draw.hDC,
+                text.as_ptr(),
+                length.max(0),
+                &raw mut rect,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+            );
+        }
+        // SAFETY: Restore the previous borrowed font before leaving the paint scope.
+        unsafe {
+            SelectObject(draw.hDC, old_font);
+        }
+        if draw.itemState & ODS_FOCUS != 0 {
+            rect.left += 4;
+            rect.top += 4;
+            rect.right -= 4;
+            rect.bottom -= 4;
+            // SAFETY: This focus rectangle stays inside the message-scoped button DC.
+            unsafe {
+                DrawFocusRect(draw.hDC, &raw const rect);
+            }
+        }
+    });
+}
+fn make_font(pixels: i32, weight: i32, dpi: i32) -> HFONT {
+    // SAFETY: Scalar font settings and static face name create an owned GDI font.
+    unsafe {
+        CreateFontW(
+            -pixels.saturating_mul(dpi) / 96,
+            0,
+            0,
+            0,
+            weight,
+            0,
+            0,
+            0,
+            u32::from(DEFAULT_CHARSET),
+            u32::from(OUT_DEFAULT_PRECIS),
+            u32::from(CLIP_DEFAULT_PRECIS),
+            u32::from(CLEARTYPE_QUALITY),
+            u32::from(DEFAULT_PITCH),
+            w!("Segoe UI"),
+        )
+    }
+}
+fn apply_font(control: HWND, font: HFONT) {
+    // SAFETY: Live control retains this live font until replacement or destruction.
+    unsafe {
+        SendMessageW(control, WM_SETFONT, font.addr(), 1);
+    }
+}
+fn delete_fonts(fonts: [HFONT; 3]) {
+    for font in fonts.into_iter().filter(|font| !font.is_null()) {
+        // SAFETY: These distinct owned fonts are no longer retained by live controls.
+        unsafe {
+            DeleteObject(font);
+        }
+    }
 }
 
 fn wide(text: &str) -> Vec<u16> {
@@ -144,7 +425,7 @@ fn control(parent: HWND, class: *const u16, text: &str, style: u32, id: usize) -
     }
 }
 
-fn edit(parent: HWND, readonly: bool) -> io::Result<HWND> {
+fn edit(parent: HWND, readonly: bool, id: usize) -> io::Result<HWND> {
     let style = WS_TABSTOP
         | WS_VSCROLL
         | u32::try_from(ES_MULTILINE | ES_AUTOVSCROLL).unwrap_or_default()
@@ -157,7 +438,7 @@ fn edit(parent: HWND, readonly: bool) -> io::Result<HWND> {
     // pointers are static or null, and no application-owned pointer is retained.
     let handle = unsafe {
         CreateWindowExW(
-            WS_EX_CLIENTEDGE,
+            0,
             w!("EDIT"),
             w!(""),
             WS_CHILD | WS_VISIBLE | style,
@@ -166,7 +447,7 @@ fn edit(parent: HWND, readonly: bool) -> io::Result<HWND> {
             1,
             1,
             parent,
-            null_mut(),
+            without_provenance_mut(id),
             null_mut(),
             null(),
         )
@@ -183,6 +464,10 @@ fn edit(parent: HWND, readonly: bool) -> io::Result<HWND> {
             0,
         );
     }
+    // SAFETY: Static theme name is consumed synchronously by this live native control.
+    unsafe {
+        SetWindowTheme(handle, w!("DarkMode_Explorer"), null());
+    }
     Ok(handle)
 }
 
@@ -198,27 +483,52 @@ impl State {
     ) -> io::Result<Self> {
         Ok(Self {
             window,
-            title: control(window, w!("STATIC"), "Swift Bonsai 2", 0, 0)?,
+            title: control(window, w!("STATIC"), "Swift Bonsai 2", 0, 301)?,
             subtitle: control(
                 window,
                 w!("STATIC"),
-                "Native Rust  /  Local CPU  /  Creative writing",
+                "THE WRITING ROOM   /   LOCAL CPU   /   NATIVE RUST",
                 0,
                 0,
             )?,
-            transcript: edit(window, true)?,
-            reasoning: edit(window, true)?,
-            input: edit(window, false)?,
+            transcript: edit(window, true, 201)?,
+            reasoning: edit(window, true, 202)?,
+            input: edit(window, false, 203)?,
             send: control(
                 window,
                 w!("BUTTON"),
-                "Send",
-                WS_TABSTOP | u32::try_from(BS_DEFPUSHBUTTON).unwrap_or_default(),
+                "Send  ↑",
+                WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
                 SEND,
             )?,
-            stop: control(window, w!("BUTTON"), "Stop", WS_TABSTOP, STOP)?,
-            new_chat: control(window, w!("BUTTON"), "New conversation", WS_TABSTOP, NEW)?,
-            thinking: control(window, w!("BUTTON"), "Show thinking", WS_TABSTOP, THINKING)?,
+            stop: control(
+                window,
+                w!("BUTTON"),
+                "Stop",
+                WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
+                STOP,
+            )?,
+            new_chat: control(
+                window,
+                w!("BUTTON"),
+                "＋  New conversation",
+                WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
+                NEW,
+            )?,
+            thinking: control(
+                window,
+                w!("BUTTON"),
+                "Show thinking",
+                WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
+                THINKING,
+            )?,
+            retry: control(
+                window,
+                w!("BUTTON"),
+                "Retry model",
+                WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
+                RETRY,
+            )?,
             status: control(
                 window,
                 w!("STATIC"),
@@ -227,12 +537,14 @@ impl State {
                 0,
             )?,
             font: null_mut(),
+            title_font: null_mut(),
+            small_font: null_mut(),
             commands,
             events,
             ready: false,
             busy: false,
-            show_thinking: false,
             retryable: false,
+            show_thinking: false,
         })
     }
 
@@ -244,10 +556,7 @@ impl State {
         }
         // SAFETY: Same control lifetime/thread contract as above.
         unsafe {
-            EnableWindow(
-                self.new_chat,
-                i32::from((self.ready && !self.busy) || self.retryable),
-            );
+            EnableWindow(self.new_chat, i32::from(self.ready && !self.busy));
         }
         // SAFETY: Same control lifetime/thread contract as above.
         unsafe {
@@ -257,55 +566,63 @@ impl State {
         unsafe {
             EnableWindow(self.stop, i32::from(self.busy));
         }
+        // SAFETY: Retry is a live UI-thread child and only scalar flags are passed.
+        unsafe {
+            EnableWindow(self.retry, i32::from(self.retryable));
+        }
+        // SAFETY: Toggle the live retry button without retaining references.
+        unsafe {
+            ShowWindow(self.retry, if self.retryable { SW_SHOW } else { SW_HIDE });
+        }
     }
 
-    fn layout(&mut self) {
+    fn layout(&self) {
         let mut bounds = RECT::default();
-        // SAFETY: window is live on its UI thread; bounds points to writable RECT storage.
+        // SAFETY: Live UI-thread window and writable rectangle storage.
         unsafe {
             GetClientRect(self.window, &raw mut bounds);
         }
-        // SAFETY: window is a live HWND; no pointers are passed.
-        let dpi = unsafe { GetDpiForWindow(self.window) }.max(96);
-        let scale = |value: i32| value.saturating_mul(i32::try_from(dpi).unwrap_or(96)) / 96;
-        let width = bounds.right.max(scale(480));
-        let height = bounds.bottom.max(scale(400));
-        let pad = scale(20);
-        let content_width = width - 2 * pad;
-        let top = scale(116);
-        let bottom = height - scale(160);
+        // SAFETY: Live window queried only for scalar DPI.
+        let dpi = i32::try_from(unsafe { GetDpiForWindow(self.window) }.max(96)).unwrap_or(96);
+        let p = |v: i32| v.saturating_mul(dpi) / 96;
+        let width = bounds.right.max(p(480));
+        let height = bounds.bottom.max(p(520));
+        let pad = p(32);
+        let content = width - 2 * pad;
+        let top = p(148);
+        let bottom = height - p(184);
         let split = if self.show_thinking {
             (bottom - top) / 3
         } else {
             0
         };
-        let transcript_height = (bottom - top - split).max(scale(60));
-        let place = |handle, x, y, w, h| {
-            // SAFETY: Each supplied HWND is live on this thread; all dimensions
-            // are bounded signed layout values; MoveWindow retains no references.
+        let body_height = bottom - top - split;
+        let place = |handle, x, y, w: i32, h: i32| {
+            // SAFETY: All handles are live UI-thread children, and layout coordinates are scalar.
             unsafe {
-                MoveWindow(handle, x, y, w, h, 1);
+                MoveWindow(handle, x, y, w.max(1), h.max(1), 1);
             }
         };
-        place(self.title, pad, scale(16), content_width, scale(26));
-        place(self.subtitle, pad, scale(46), content_width, scale(22));
-        place(self.new_chat, pad, scale(78), scale(160), scale(28));
+        place(self.title, pad, p(25), content, p(46));
+        place(self.subtitle, pad + p(1), p(79), content, p(20));
+        place(self.new_chat, pad, p(106), p(190), p(30));
+        place(self.thinking, pad + p(202), p(106), p(145), p(30));
+        place(self.retry, width - pad - p(145), p(106), p(145), p(30));
         place(
-            self.thinking,
-            width - pad - scale(140),
-            scale(78),
-            scale(140),
-            scale(28),
+            self.transcript,
+            pad + p(20),
+            top + p(18),
+            content - p(40),
+            body_height - p(36),
         );
-        place(self.transcript, pad, top, content_width, transcript_height);
         place(
             self.reasoning,
-            pad,
-            top + transcript_height + scale(6),
-            content_width,
-            (split - scale(6)).max(1),
+            pad + p(20),
+            top + body_height + p(28),
+            content - p(40),
+            split - p(46),
         );
-        // SAFETY: reasoning is a live child window; visibility is a scalar flag.
+        // SAFETY: Live child HWND, scalar visibility flag.
         unsafe {
             ShowWindow(
                 self.reasoning,
@@ -314,64 +631,49 @@ impl State {
         }
         place(
             self.input,
-            pad,
-            bottom + scale(12),
-            content_width - scale(106),
-            scale(92),
+            pad + p(20),
+            bottom + p(34),
+            content - p(160),
+            p(82),
         );
         place(
             self.send,
-            width - pad - scale(94),
-            bottom + scale(12),
-            scale(94),
-            scale(40),
+            width - pad - p(121),
+            bottom + p(31),
+            p(101),
+            p(42),
         );
         place(
             self.stop,
-            width - pad - scale(94),
-            bottom + scale(62),
-            scale(94),
-            scale(40),
+            width - pad - p(121),
+            bottom + p(82),
+            p(101),
+            p(28),
         );
         place(
             self.status,
-            pad,
-            height - scale(34),
-            content_width,
-            scale(26),
+            pad + p(2),
+            height - p(38),
+            content - p(4),
+            p(32),
         );
+        // SAFETY: Invalidate the owned window; null means the complete client area.
+        unsafe {
+            InvalidateRect(self.window, null(), 1);
+        }
     }
 
     fn set_font(&mut self) {
-        // SAFETY: window is a live HWND belonging to this thread.
-        let dpi = unsafe { GetDpiForWindow(self.window) }.max(96);
-        let height = -(18 * i32::try_from(dpi).unwrap_or(96) / 96);
-        // SAFETY: CreateFontW consumes scalar font settings and a static
-        // NUL-terminated face name; the returned GDI handle is owned by State.
-        let font = unsafe {
-            CreateFontW(
-                height,
-                0,
-                0,
-                0,
-                FW_NORMAL.cast_signed(),
-                0,
-                0,
-                0,
-                u32::from(DEFAULT_CHARSET),
-                u32::from(OUT_DEFAULT_PRECIS),
-                u32::from(CLIP_DEFAULT_PRECIS),
-                u32::from(CLEARTYPE_QUALITY),
-                u32::from(DEFAULT_PITCH),
-                w!("Segoe UI"),
-            )
-        };
-        if font.is_null() {
+        // SAFETY: Live HWND on this UI thread.
+        let dpi = i32::try_from(unsafe { GetDpiForWindow(self.window) }.max(96)).unwrap_or(96);
+        let font = make_font(17, FW_NORMAL.cast_signed(), dpi);
+        let title = make_font(34, 600, dpi);
+        let small = make_font(13, FW_NORMAL.cast_signed(), dpi);
+        if font.is_null() || title.is_null() || small.is_null() {
+            delete_fonts([font, title, small]);
             return;
         }
-        for handle in [
-            self.title,
-            self.subtitle,
+        for control in [
             self.transcript,
             self.reasoning,
             self.input,
@@ -379,22 +681,17 @@ impl State {
             self.stop,
             self.new_chat,
             self.thinking,
-            self.status,
+            self.retry,
         ] {
-            // SAFETY: Control and font are live; WM_SETFONT synchronously stores
-            // the GDI handle, which remains owned until replaced or controls die.
-            unsafe {
-                SendMessageW(handle, WM_SETFONT, font.addr(), 1);
-            }
+            apply_font(control, font);
         }
-        if !self.font.is_null() {
-            // SAFETY: Every live control has just switched to the new font;
-            // the old owned font is no longer selected in any control.
-            unsafe {
-                DeleteObject(self.font);
-            }
-        }
+        apply_font(self.title, title);
+        apply_font(self.subtitle, small);
+        apply_font(self.status, small);
+        delete_fonts([self.font, self.title_font, self.small_font]);
         self.font = font;
+        self.title_font = title;
+        self.small_font = small;
     }
 
     fn submit(&mut self) {
@@ -435,6 +732,7 @@ impl State {
     fn fail(&mut self, message: &str) {
         self.ready = false;
         self.busy = false;
+        self.retryable = false;
         set_text(self.status, message);
         append(self.transcript, &format!("\n\nDemo status\n{message}\n"));
         self.update_buttons();
@@ -448,19 +746,26 @@ impl State {
             match event {
                 Event::Starting => {
                     self.ready = false;
+                    self.busy = false;
                     self.retryable = false;
-                    set_text(self.new_chat, "New conversation");
-                    set_text(self.status, "Verifying model and available memory...");
+                    set_text(
+                        self.status,
+                        "Starting Swift. Checking memory and verifying the local model...",
+                    );
                     self.update_buttons();
                 }
                 Event::Retryable(message) => {
                     self.fail(&message);
                     self.retryable = true;
-                    set_text(self.new_chat, "Retry model");
+                    set_text(
+                        self.status,
+                        "More free memory is needed. Close a few applications, then choose Retry model.",
+                    );
                     self.update_buttons();
                 }
                 Event::Ready => {
                     self.ready = true;
+                    self.retryable = false;
                     set_text(
                         self.status,
                         "Ready. Enter to send; Shift+Enter for a new line.",
@@ -495,12 +800,44 @@ impl State {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep audited native message lifetimes and dispatch branches together"
+)]
 unsafe extern "system" fn procedure(
     window: HWND,
     message: u32,
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    match message {
+        WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
+            return color_control(wparam, lparam);
+        }
+        WM_PAINT => {
+            paint(window);
+            return 0;
+        }
+        WM_ERASEBKGND => return 1,
+        WM_GETMINMAXINFO if lparam != 0 => {
+            // SAFETY: The system supplies writable MINMAXINFO for this synchronous callback.
+            let bounds =
+                unsafe { &mut *without_provenance_mut::<MINMAXINFO>(lparam.cast_unsigned()) };
+            // SAFETY: This live HWND is queried only for scalar DPI.
+            let dpi = i32::try_from(unsafe { GetDpiForWindow(window) }.max(96)).unwrap_or(96);
+            bounds.ptMinTrackSize.x = 680_i32.saturating_mul(dpi) / 96;
+            bounds.ptMinTrackSize.y = 650_i32.saturating_mul(dpi) / 96;
+            return 0;
+        }
+        WM_DRAWITEM if lparam != 0 => {
+            // SAFETY: The system supplies aligned DRAWITEMSTRUCT storage valid for this synchronous callback.
+            let draw =
+                unsafe { &*without_provenance_mut::<DRAWITEMSTRUCT>(lparam.cast_unsigned()) };
+            draw_button(draw);
+            return 1;
+        }
+        _ => {}
+    }
     if message == WM_DESTROY {
         // SAFETY: Called on the creating thread; posts a scalar quit code to its loop.
         unsafe {
@@ -525,16 +862,25 @@ unsafe extern "system" fn procedure(
         WM_COMMAND => {
             match wparam & 0xffff {
                 SEND => state.submit(),
+                RETRY if state.retryable => {
+                    if state.commands.send(Command::Retry).is_ok() {
+                        state.retryable = false;
+                        state.ready = false;
+                        state.busy = false;
+                        set_text(
+                            state.status,
+                            "Starting Swift. Rechecking available memory...",
+                        );
+                        state.update_buttons();
+                    } else {
+                        state.fail("The model worker stopped. Close and restart the demo.");
+                    }
+                }
                 STOP if state.busy => {
                     let _result = state.commands.send(Command::Stop);
                     state.fail(
                         "Stopped. Close and restart the demo to start a fresh model session.",
                     );
-                }
-                NEW if state.retryable => {
-                    state.retryable = false;
-                    let _result = state.commands.send(Command::Retry);
-                    state.update_buttons();
                 }
                 NEW if state.ready && !state.busy => {
                     let _result = state.commands.send(Command::NewChat);
@@ -595,14 +941,13 @@ fn create_window() -> io::Result<HWND> {
     let icon = unsafe { LoadIconW(null_mut(), IDI_APPLICATION) };
     // SAFETY: Same shared-resource lifetime contract as above.
     let cursor = unsafe { LoadCursorW(null_mut(), IDC_ARROW) };
-    // SAFETY: Returns a shared system-owned brush; it must not be deleted.
-    let brush = unsafe { GetSysColorBrush(COLOR_WINDOW) };
+
     let class = WNDCLASSW {
         lpfnWndProc: Some(procedure),
         hInstance: instance,
         hIcon: icon,
         hCursor: cursor,
-        hbrBackground: brush,
+        hbrBackground: null_mut(),
         lpszClassName: w!("SwiftBonsaiRustChat"),
         ..WNDCLASSW::default()
     };
@@ -617,11 +962,11 @@ fn create_window() -> io::Result<HWND> {
             WS_EX_CONTROLPARENT,
             w!("SwiftBonsaiRustChat"),
             w!("Swift Bonsai 2 — Native Rust Chat"),
-            WS_OVERLAPPEDWINDOW,
+            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            1000,
-            820,
+            1100,
+            870,
             null_mut(),
             null_mut(),
             instance,
@@ -631,10 +976,24 @@ fn create_window() -> io::Result<HWND> {
     if window.is_null() {
         return Err(io::Error::last_os_error());
     }
+    let dark: i32 = 1;
+    // SAFETY: Attribute 20 takes a four-byte BOOL, alive through this call; unsupported Windows versions may reject it harmlessly.
+    unsafe {
+        DwmSetWindowAttribute(window, 20, (&raw const dark).cast(), 4);
+    }
+    let corners: u32 = 2;
+    // SAFETY: Attribute 33 takes a four-byte corner preference, alive through the synchronous call.
+    unsafe {
+        DwmSetWindowAttribute(window, 33, (&raw const corners).cast(), 4);
+    }
     Ok(window)
 }
 
 pub(super) fn run(config: Config) -> io::Result<()> {
+    PALETTE.with(|palette| {
+        *palette.borrow_mut() = Some(Palette::new()?);
+        Ok::<(), io::Error>(())
+    })?;
     let window = create_window()?;
     let (commands, incoming_commands) = mpsc::channel();
     let (events, incoming_events) = mpsc::channel();
@@ -644,7 +1003,7 @@ pub(super) fn run(config: Config) -> io::Result<()> {
     state.update_buttons();
     set_text(
         state.transcript,
-        "Your local creative writing partner.\r\n\r\nTry: Write a short opening scene set in a quiet greenhouse at midnight.\r\n\r\nThe model is starting. Your conversation stays in memory.\r\n",
+        "A small model. An open canvas.\r\n\r\nStart with a scene, a spark, or a wonderfully strange question.\r\n\r\nTry this\r\nWrite the opening of a story about a botanist who discovers a tree that remembers the future.\r\n\r\nYour conversation stays in this window's memory.\r\n",
     );
     STATE.with(|slot| *slot.borrow_mut() = Some(state));
     let worker = std::thread::Builder::new()
@@ -702,15 +1061,12 @@ pub(super) fn run(config: Config) -> io::Result<()> {
     let _result = commands.send(Command::Shutdown);
     let _result = worker.join();
     STATE.with(|slot| {
-        if let Some(state) = slot.borrow_mut().take()
-            && !state.font.is_null()
-        {
-            // SAFETY: WM_DESTROY has destroyed every child control, so none
-            // retains the owned font; delete it exactly once here.
-            unsafe {
-                DeleteObject(state.font);
-            }
+        if let Some(state) = slot.borrow_mut().take() {
+            delete_fonts([state.font, state.title_font, state.small_font]);
         }
+    });
+    PALETTE.with(|palette| {
+        palette.borrow_mut().take();
     });
     Ok(())
 }
