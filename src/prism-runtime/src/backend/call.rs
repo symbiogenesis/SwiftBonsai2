@@ -250,6 +250,18 @@ impl CpuBackend {
         view: Option<(TensorId, [usize; 4], usize)>,
     ) -> Result<Observation> {
         let id = self.tensor(ctx, kind, shape)?;
+        let view = if let Some((source, strides, offset)) = view {
+            let (root, relative) = self.view_root(source)?;
+            Some((
+                root,
+                strides,
+                relative
+                    .checked_add(offset)
+                    .ok_or_else(|| invalid("CPU view offset overflow"))?,
+            ))
+        } else {
+            None
+        };
         let info = self.info_mut(id)?;
         info.operation = operation;
         for (slot, &source) in info.source_slots.iter_mut().zip(&sources) {

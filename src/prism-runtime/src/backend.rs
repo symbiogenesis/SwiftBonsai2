@@ -18,6 +18,7 @@
 use crate::{Result, invalid};
 use bonsai_ternary::half_to_float;
 
+pub mod allocator;
 mod attention;
 mod call;
 mod gdn;
@@ -194,6 +195,7 @@ impl TensorInfo {
 struct Node {
     info: TensorInfo,
     data: Vec<u8>,
+    allocation: Option<(TensorId, usize)>,
 }
 
 #[derive(Default)]
@@ -318,14 +320,39 @@ impl CpuBackend {
         self.tensors.push(Node {
             info,
             data: Vec::new(),
+            allocation: None,
         });
         Ok(id)
+    }
+
+    fn view_root(&self, tensor: TensorId) -> Result<(TensorId, usize)> {
+        let mut current = tensor;
+        let mut offset = 0_usize;
+        for _ in 0..=self.tensors.len() {
+            let info = self.info(current)?;
+            offset = offset
+                .checked_add(info.offset)
+                .ok_or_else(|| invalid("CPU view offset overflow"))?;
+            if let Some(source) = info.view {
+                current = source;
+            } else {
+                return Ok((current, offset));
+            }
+        }
+        Err(invalid("cyclic CPU storage views"))
     }
 
     fn storage(&self, tensor: TensorId) -> Result<(TensorId, usize)> {
         let mut current = tensor;
         let mut offset = 0_usize;
         for _ in 0..=self.tensors.len() {
+            if let Some((arena, relative)) = self.tensors[current.0].allocation {
+                offset = offset
+                    .checked_add(relative)
+                    .ok_or_else(|| invalid("CPU allocation offset overflow"))?;
+                current = arena;
+                continue;
+            }
             let info = self.info(current)?;
             offset = offset
                 .checked_add(info.offset)
@@ -376,9 +403,7 @@ impl CpuBackend {
         self.ensure_storage(arena)?;
         for &(id, offset) in placements {
             self.tensors[id.0].data.clear();
-            let info = self.info_mut(id)?;
-            info.view = Some(arena);
-            info.offset = offset;
+            self.tensors[id.0].allocation = Some((arena, offset));
         }
         Ok(())
     }
@@ -404,6 +429,7 @@ impl CpuBackend {
             reference.tensors.push(Node {
                 info: node.info.clone(),
                 data,
+                allocation: node.allocation,
             });
         }
         let nodes = self.graph_nodes(graph)?.0.to_vec();

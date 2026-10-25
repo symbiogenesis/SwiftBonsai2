@@ -279,7 +279,13 @@ pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
     if operations.iter().any(|op| {
         !matches!(
             op["Kind"].as_str(),
-            Some("backend-graph" | "tensor-graph" | "cpu-buffer-info" | "cpu-arena-graph")
+            Some(
+                "backend-graph"
+                    | "tensor-graph"
+                    | "cpu-buffer-info"
+                    | "cpu-arena-graph"
+                    | "allocation-graph"
+            )
         )
     }) {
         return Ok(None);
@@ -288,6 +294,7 @@ pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
         .iter()
         .map(|operation| match operation["Kind"].as_str() {
             Some("backend-graph") => graph::execute(operation),
+            Some("allocation-graph") => super::super::allocation::execute(operation),
             Some("tensor-graph") => tensor_graph(operation, None, None),
             Some("cpu-buffer-info") => Ok(json!({"Alignment":64})),
             Some("cpu-arena-graph") => tensor_graph(

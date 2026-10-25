@@ -11,6 +11,167 @@ use serde_json::{Value, json};
 const ID: &str = "tests/test-alloc.cpp";
 const SOURCE_SHA: &str = "89de1c9549888a37b388474aca89cad3052c1751fbdace09c81e79d5844633db";
 
+/// Construct caller-supplied tensors and serialize production allocator observations.
+#[allow(
+    clippy::too_many_lines,
+    reason = "The adapter only marshals graph calls and raw allocation metadata."
+)]
+pub(super) fn execute(operation: &Value) -> Result<Value> {
+    use bonsai_prism_runtime::backend::allocator::{BufferType, GraphAllocator, can_inplace};
+    use bonsai_prism_runtime::backend::{Argument, CpuBackend, Observation, TensorId};
+    let descriptors = array(&operation["Backends"])?;
+    if descriptors.is_empty() || descriptors.len() > 3 {
+        return Err(invalid("allocation backend count outside bound"));
+    }
+    let mut types = Vec::new();
+    for descriptor in descriptors {
+        let alignment = number(&descriptor["Alignment"])?;
+        if alignment > 64 {
+            return Err(invalid("allocation alignment outside bound"));
+        }
+        types.push(BufferType {
+            alignment,
+            maximum: if descriptor["MaxBufferSize"].is_null() {
+                None
+            } else {
+                Some(number(&descriptor["MaxBufferSize"])?)
+            },
+        });
+    }
+    let mut allocator = GraphAllocator::new(types)?;
+    let steps = array(&operation["Steps"])?;
+    if steps.is_empty() || steps.len() > 4 {
+        return Err(invalid("allocation step count outside bound"));
+    }
+    let mut observations = Vec::new();
+    for step in steps {
+        let descriptions = array(&step["Nodes"])?;
+        if descriptions.is_empty() || descriptions.len() > 40 {
+            return Err(invalid("allocation node count outside bound"));
+        }
+        let mut backend = CpuBackend::new();
+        let mut tensors: Vec<TensorId> = Vec::new();
+        for node in descriptions {
+            let context = u32::try_from(number(&node["Context"])?)?;
+            let op = node["Op"]
+                .as_str()
+                .ok_or_else(|| invalid("allocation node Op required"))?;
+            let tensor = if op == "input" {
+                let id = backend.tensor(context, 0, [number(&node["Elements"])?, 1, 1, 1])?;
+                backend.info_mut(id)?.flags |= 1;
+                id
+            } else {
+                let mut arguments = vec![Argument::Context(context)];
+                for input in array(&node["Inputs"])? {
+                    arguments.push(Argument::Tensor(
+                        *tensors
+                            .get(number(input)?)
+                            .ok_or_else(|| invalid("allocation input must precede node"))?,
+                    ));
+                }
+                let function = match op {
+                    "add" => "ggml_add",
+                    "mul" => "ggml_mul",
+                    "concat" => {
+                        arguments.push(Argument::Integer(0));
+                        "ggml_concat"
+                    }
+                    "mean" => "ggml_mean",
+                    "scale" => {
+                        let factor: f32 = serde_json::from_value(node["Factor"].clone())?;
+                        if !factor.is_finite() {
+                            return Err(invalid("allocation scale factor must be finite"));
+                        }
+                        arguments.push(Argument::Float(factor));
+                        "ggml_scale"
+                    }
+                    "pad" => {
+                        arguments.push(Argument::Integer(i64::try_from(number(&node["Amount"])?)?));
+                        arguments.extend([
+                            Argument::Integer(0),
+                            Argument::Integer(0),
+                            Argument::Integer(0),
+                        ]);
+                        "ggml_pad"
+                    }
+                    "reshape" => {
+                        for value in array(&node["Dimensions"])? {
+                            arguments.push(Argument::Integer(i64::try_from(number(value)?)?));
+                        }
+                        "ggml_reshape_2d"
+                    }
+                    "permute" => {
+                        for value in array(&node["Axes"])? {
+                            arguments.push(Argument::Integer(i64::try_from(number(value)?)?));
+                        }
+                        "ggml_permute"
+                    }
+                    "view" => {
+                        arguments.push(Argument::Integer(i64::try_from(number(
+                            &node["Elements"],
+                        )?)?));
+                        arguments.push(Argument::Integer(i64::try_from(number(
+                            &node["OffsetBytes"],
+                        )?)?));
+                        "ggml_view_1d"
+                    }
+                    _ => return Err(invalid("unknown allocation graph operation")),
+                };
+                let Observation::Tensor(Some(id)) = backend.call(function, &arguments)? else {
+                    return Err(invalid("allocation operation did not return tensor"));
+                };
+                id
+            };
+            tensors.push(tensor);
+        }
+        let output = *tensors
+            .get(number(&step["Output"])?)
+            .ok_or_else(|| invalid("allocation output is unknown"))?;
+        backend.info_mut(output)?.flags |= 2;
+        let Observation::Graph(graph) = backend.call("ggml_new_graph", &[Argument::Context(0)])?
+        else {
+            return Err(invalid("allocation graph creation failed"));
+        };
+        backend.call(
+            "ggml_build_forward_expand",
+            &[Argument::Graph(graph), Argument::Tensor(output)],
+        )?;
+        let kinds = array(&step["BufferTypes"])?
+            .iter()
+            .map(number)
+            .collect::<Result<Vec<_>>>()?;
+        if kinds.len() != tensors.len() {
+            return Err(invalid("allocation buffer mapping extent differs"));
+        }
+        let external = array(&step["ExternalAllocations"])?
+            .iter()
+            .map(|value| {
+                Ok((
+                    u32::try_from(number(&value["Context"])?)?,
+                    number(&value["BufferType"])?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let reserve = boolean(&step["Reserve"])?;
+        let allocation = allocator.reserve(
+            &backend,
+            graph,
+            if reserve { &kinds } else { &[] },
+            &external,
+        )?;
+        GraphAllocator::allocate(&mut backend, &allocation)?;
+        let buffers = allocation.buffers.iter().enumerate().map(|(index, buffer)| json!({"Id":index,"Type":buffer.kind,"Size":buffer.bytes,"Maximum":descriptors[buffer.kind]["MaxBufferSize"]})).collect::<Vec<_>>();
+        let tensor_values = tensors.iter().enumerate().map(|(index, &id)| -> Result<Value> {
+            let info = backend.info(id)?;
+            let placement = allocation.tensors[id.0];
+            Ok(json!({"Index":index,"Context":info.context,"Buffer":placement.map(|p|p.buffer),"DataPresent":placement.is_some(),"Offset":placement.map(|p|p.offset),"Bytes":info.bytes()?,"ViewSource":info.view.map(|id|id.0),"Sources":info.source_slots.map(|source|source.map(|id|id.0)),"Op":info.operation,"Flags":info.flags,"CanInplace":can_inplace(info.operation),"Output":info.flags&2!=0}))
+        }).collect::<Result<Vec<_>>>()?;
+        let (nodes, leaves) = backend.graph_nodes(graph)?;
+        observations.push(json!({"Allocated":true,"Reserved":reserve.then_some(true),"Tensors":tensor_values,"Buffers":buffers,"GraphNodes":nodes.iter().map(|id|id.0).collect::<Vec<_>>(),"GraphLeaves":leaves.iter().map(|id|id.0).collect::<Vec<_>>() }));
+    }
+    Ok(json!({"Steps":observations}))
+}
+
 #[derive(Default)]
 struct Graph {
     nodes: Vec<Value>,
