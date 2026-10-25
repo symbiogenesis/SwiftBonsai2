@@ -25,6 +25,28 @@ fn candidates(count: usize) -> Result<Candidates, Box<dyn std::error::Error + Se
 }
 
 #[test]
+fn production_candidates_admit_swift_before_filtering_and_reject_the_bound() -> TestResult {
+    let mut swift = candidates(248_320)?;
+    assert_eq!(swift.backing_len(), 248_320);
+    State::new(Config::TopK(20))?.apply(&mut swift)?;
+    assert_eq!(swift.data().len(), 20);
+    assert_eq!(swift.backing_len(), 248_320);
+    assert!(candidates(1_048_576).is_ok());
+    assert!(candidates(1_048_577).is_err());
+    assert!(
+        State::new(Config::Penalties {
+            vocabulary_size: 248_320,
+            last_n: 64,
+            repeat: 1.0,
+            frequency: 0.0,
+            presence: 0.0,
+        })
+        .is_ok()
+    );
+    Ok(())
+}
+
+#[test]
 fn distribution_and_xtc_match_real_native_msvc_draws_and_reset() -> TestResult {
     let bytes = include_bytes!("fixtures/sampler-rng.json");
     let mut digest = String::with_capacity(64);
