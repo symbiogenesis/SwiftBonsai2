@@ -17,7 +17,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::oneshot,
-    task::{LocalSet, spawn_local},
+    task::{JoinHandle, LocalSet, spawn_local},
     time::{Instant, timeout},
 };
 
@@ -125,6 +125,40 @@ async fn count(listener: &TcpListener) -> (String, Vec<u8>) {
     )
     .await;
     request
+}
+
+struct Generating {
+    service: Arc<LocalChatService>,
+    serving: JoinHandle<Result<(), ServiceError>>,
+    backend_work: JoinHandle<()>,
+    client: TcpStream,
+}
+
+async fn generating() -> Generating {
+    let backend = listener().await;
+    let service = service(&backend, 1).await;
+    let worker = Arc::clone(&service);
+    let serving = spawn_local(async move { worker.accept().await.unwrap().serve().await });
+    let (started_tx, started_rx) = oneshot::channel();
+    let backend_work = spawn_local(async move {
+        count(&backend).await;
+        let (mut stream, _) = backend.accept().await.unwrap();
+        read_request(&mut stream).await;
+        started_tx.send(()).unwrap();
+        let mut byte = [0];
+        assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
+    });
+    let mut client = TcpStream::connect(("127.0.0.1", service.port()))
+        .await
+        .unwrap();
+    send_request(&mut client, service.port()).await;
+    started_rx.await.unwrap();
+    Generating {
+        service,
+        serving,
+        backend_work,
+        client,
+    }
 }
 
 #[test]
@@ -245,24 +279,12 @@ fn queued_socket_expires_without_reading_a_request_or_connecting_backend() {
 #[test]
 fn disconnect_during_generation_closes_backend_and_latches_service() {
     run(async {
-        let backend = listener().await;
-        let service = service(&backend, 1).await;
-        let worker = Arc::clone(&service);
-        let serving = spawn_local(async move { worker.accept().await.unwrap().serve().await });
-        let (started_tx, started_rx) = oneshot::channel();
-        let backend_work = spawn_local(async move {
-            count(&backend).await;
-            let (mut stream, _) = backend.accept().await.unwrap();
-            read_request(&mut stream).await;
-            started_tx.send(()).unwrap();
-            let mut byte = [0];
-            assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
-        });
-        let mut client = TcpStream::connect(("127.0.0.1", service.port()))
-            .await
-            .unwrap();
-        send_request(&mut client, service.port()).await;
-        started_rx.await.unwrap();
+        let Generating {
+            service,
+            serving,
+            backend_work,
+            client,
+        } = generating().await;
         drop(client);
         assert_eq!(
             serving.await.unwrap(),
@@ -279,24 +301,12 @@ fn disconnect_during_generation_closes_backend_and_latches_service() {
 #[test]
 fn caller_cancellation_during_generation_latches_service() {
     run(async {
-        let backend = listener().await;
-        let service = service(&backend, 1).await;
-        let worker = Arc::clone(&service);
-        let serving = spawn_local(async move { worker.accept().await.unwrap().serve().await });
-        let (started_tx, started_rx) = oneshot::channel();
-        let backend_work = spawn_local(async move {
-            count(&backend).await;
-            let (mut stream, _) = backend.accept().await.unwrap();
-            read_request(&mut stream).await;
-            started_tx.send(()).unwrap();
-            let mut byte = [0];
-            assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
-        });
-        let mut client = TcpStream::connect(("127.0.0.1", service.port()))
-            .await
-            .unwrap();
-        send_request(&mut client, service.port()).await;
-        started_rx.await.unwrap();
+        let Generating {
+            service,
+            serving,
+            backend_work,
+            client: _client,
+        } = generating().await;
         serving.abort();
         assert!(serving.await.unwrap_err().is_cancelled());
         backend_work.await.unwrap();
@@ -326,24 +336,12 @@ fn shutdown_wakes_pending_accept() {
 #[test]
 fn shutdown_during_generation_drops_both_sockets() {
     run(async {
-        let backend = listener().await;
-        let service = service(&backend, 1).await;
-        let worker = Arc::clone(&service);
-        let serving = spawn_local(async move { worker.accept().await.unwrap().serve().await });
-        let (started_tx, started_rx) = oneshot::channel();
-        let backend_work = spawn_local(async move {
-            count(&backend).await;
-            let (mut stream, _) = backend.accept().await.unwrap();
-            read_request(&mut stream).await;
-            started_tx.send(()).unwrap();
-            let mut byte = [0];
-            assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
-        });
-        let mut client = TcpStream::connect(("127.0.0.1", service.port()))
-            .await
-            .unwrap();
-        send_request(&mut client, service.port()).await;
-        started_rx.await.unwrap();
+        let Generating {
+            service,
+            serving,
+            backend_work,
+            mut client,
+        } = generating().await;
         service.close();
         assert_eq!(
             serving.await.unwrap(),
