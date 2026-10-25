@@ -322,13 +322,19 @@ function Merge-BonsaiPrismBackendPartition {
 function Merge-BonsaiPrismBackendSource {
     <#
     .SYNOPSIS
-    Produces one source verdict from eval, grad and support; excludes performance.
+    Requires complete eval and support, plus grad when explicitly selected; excludes performance.
     #>
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
     param([Parameter(Mandatory)][Collections.IDictionary]$Context,
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][array]$Modes)
     $raw = @(foreach ($record in $Modes) { Get-BonsaiPrismBackendPayload -Context $Context -Envelope $record })
+    if ($raw.Count -notin @(2,3) -or
+        @($raw | Where-Object Mode -CEQ 'eval').Count -ne 1 -or
+        @($raw | Where-Object Mode -CEQ 'support').Count -ne 1 -or
+        @($raw | Where-Object Mode -CEQ 'grad').Count -ne ($raw.Count - 2)) {
+        throw 'Backend source requires eval and support exactly once, with grad only when selected.'
+    }
     foreach ($mode in $raw) {
         Assert-BonsaiPrismBackendRecord -Record $mode -Statuses @('pass','fail','unsupported') -Mode ''
         if ($mode.Mode -cnotin @('eval','grad','support')) { throw 'Only correctness modes enter the source verdict.' }

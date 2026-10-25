@@ -12,7 +12,8 @@ param(
     [string]$PlanPath,
     [string]$OrdinaryEvidenceDirectory,
     [ValidateRange(0,15)][int]$Index = 0,
-    [switch]$Benchmarks
+    [switch]$Benchmarks,
+    [switch]$Gradients
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -29,7 +30,9 @@ $evidence = Resolve-ExternalPath $EvidenceDirectory
 if (Test-Path -LiteralPath $evidence) { throw 'Backend stage evidence must be fresh.' }
 [void][IO.Directory]::CreateDirectory($evidence)
 $bundle = Import-BonsaiPrismBackendBundle -Directory $BundleDirectory -Repository $repo
-$modes = @('eval','grad','support')
+$correctnessModes = @('eval','support')
+if ($Gradients) { $correctnessModes += 'grad' }
+$modes = $correctnessModes
 if ($Benchmarks) { $modes += 'perf' }
 $contexts = @{}
 foreach ($target in @('cpp','rust')) {
@@ -57,6 +60,7 @@ function Read-BackendStage {
     if ($record.SchemaVersion -ne 1 -or $record.ProjectRevision -cne $env:GITHUB_SHA -or
         $record.Phase -cne $ExpectedPhase -or $record.Count -ne 16 -or
         $record.Benchmarks -isnot [bool] -or $record.Benchmarks -ne $Benchmarks.IsPresent -or
+        $record.Gradients -isnot [bool] -or $record.Gradients -ne $Gradients.IsPresent -or
         ($record.Modes -join ',') -cne ($modes -join ',')) { throw 'Backend stage identity or workload selection differs.' }
     return $record
 }
@@ -73,7 +77,7 @@ function Write-BackendStage {
 }
 $record = @{
     SchemaVersion=1; ProjectRevision=$env:GITHUB_SHA; Phase=$Phase; Count=16
-    Index=$Index; Benchmarks=$Benchmarks.IsPresent; Modes=$modes; Targets=@{}
+    Index=$Index; Benchmarks=$Benchmarks.IsPresent; Gradients=$Gradients.IsPresent; Modes=$modes; Targets=@{}
 }
 if ($Phase -ceq 'Plan') {
     foreach ($target in @('cpp','rust')) {
@@ -120,7 +124,7 @@ $parts = @(foreach ($part in 0..15) {
 $sources = @{}
 foreach ($target in @('cpp','rust')) {
     $record.Targets[$target] = @{}
-    $correctness = @(foreach ($mode in @('eval','grad','support')) {
+    $correctness = @(foreach ($mode in $correctnessModes) {
         $reports = @($parts | ForEach-Object { $_.Targets[$target][$mode] })
         $modeResult = Merge-BonsaiPrismBackendPartition -Context $contexts[$target] -Reports $reports -Plan $plan.Targets[$target][$mode]
         $record.Targets[$target][$mode] = $modeResult

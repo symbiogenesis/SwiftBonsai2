@@ -28,7 +28,8 @@ The manual [focused reference workflow](../.github/workflows/prism-focused.yml)
 runs one selected source on Windows ARM64 for diagnostics. Its result does not
 replace Foundation's complete source and backend gates.
 The `BackendPlan` choice instead prepares revision-bound tools and plans
-partition 0 of 16 for both targets and all four modes. It produces no source
+partition 0 of 16 for both targets in evaluation, support and performance modes.
+Its optional `gradients` input also plans gradient mode. It produces no source
 verdict or benchmark measurement; this short diagnostic checks backend planning
 without first running the ordinary source catalog.
 
@@ -89,13 +90,21 @@ Seventy Windows-applicable source contracts currently have safe Rust adapters in
   Windows continuation reads allow file deletion sharing after atomic publication
   and report I/O failures directly; Rust retains the first native/controller error.
 - `test-backend-ops.cpp`: all 112 active CPU classes and 22,817 ordered
-  geometries in each of evaluation, gradient and support modes. Rust interprets
+  geometries in each of evaluation and support modes. Rust interprets
   the complete pinned source program, builds inputs and computes every reference
   and metric. Sixteen hosted partitions require complete plans and source-order
   random offsets before execution. A final gate rejects missing or duplicate
   results. The 1,530 original performance workloads remain a separate requested
   CI measurement. CPU selection is explicit; source random-device seeds become
   logged reproducible Rust seeds.
+  The original CTest registration supplies no arguments and defaults to
+  evaluation (`test`) mode. Gradient mode is a separate source CLI option;
+  Foundation's `prism_gradients` input additionally requires its complete matrix.
+  The safe Rust gradient implementation is retained without added skips. Among
+  GLU variants, the pinned production backward builder supports only split
+  SWIGLU and aborts on the source's GEGLU gradient graph. That upstream failure
+  is retained as a diagnostic; it is not reported as a passing gradient check. The default
+  source gate requires every evaluation result plus the support preflight.
   The selected CPU receives the source thread count; the reference CPU retains
   its production default, matching the original source.
   Bounded summaries retain each case's identity and full-result hash. Complete

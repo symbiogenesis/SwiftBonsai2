@@ -22,12 +22,17 @@ on:
           - SaveLoadState
           - ThreadSafety
           - BackendPlan
+      gradients:
+        description: Include optional gradient mode in BackendPlan; upstream backward operations may abort
+        type: boolean
+        default: false
 permissions:
   contents: read
 env:
   CARGO_UNSTABLE_CHECKSUM_FRESHNESS: 'true'
   CARGO_BUILD_FINGERPRINT: content
   PRISM_FOCUSED_CASE: ${{ inputs.case }}
+  PRISM_FOCUSED_GRADIENTS: ${{ inputs.gradients }}
 concurrency:
   group: prism-focused-${{ github.ref }}-${{ inputs.case }}
   cancel-in-progress: false
@@ -135,7 +140,9 @@ jobs:
             $provenance.SourceCount = 0
             $provenance.PartitionIndex = 0
             $provenance.PartitionCount = 16
-            $provenance.Modes = @('eval','grad','support','perf')
+            $provenance.Modes = @('eval','support')
+            if ($env:PRISM_FOCUSED_GRADIENTS -ceq 'true') { $provenance.Modes += 'grad' }
+            $provenance.Modes += 'perf'
             $provenance.Targets = @('cpp','rust')
           }
           [IO.File]::WriteAllText($provenancePath, ($provenance | ConvertTo-Json -Depth 8))
@@ -154,7 +161,7 @@ jobs:
               $prepared = & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -Case BackendOps -PrepareBackendToolsOnly -SourceArchive $archive -EvidenceDirectory $caseEvidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -NativeBuildDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamNative') -Generator 'Visual Studio 18 2026' -NativePlatform ARM64 -Toolchain nightly-2026-10-22-aarch64-pc-windows-msvc -Parallel 4 -CaseParallel 1
               if ($prepared.Status -cne 'backend-tools-ready' -or $prepared.ProjectRevision -cne $env:GITHUB_SHA -or $prepared.FullSourceGate -isnot [bool] -or $prepared.FullSourceGate -ne $false) { throw 'Backend preparation did not produce the expected diagnostic handoff.' }
               $prepared | ConvertTo-Json -Depth 12
-              & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Plan -BundleDirectory $prepared.BackendBundleDirectory -EvidenceDirectory (Join-Path $evidence 'backend-plan') -Index 0 -Benchmarks | ConvertTo-Json -Depth 12
+              & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Plan -BundleDirectory $prepared.BackendBundleDirectory -EvidenceDirectory (Join-Path $evidence 'backend-plan') -Index 0 -Benchmarks -Gradients:($env:PRISM_FOCUSED_GRADIENTS -ceq 'true') | ConvertTo-Json -Depth 12
             } else {
               & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismUpstream.ps1') -Case $env:PRISM_FOCUSED_CASE -SourceArchive $archive -EvidenceDirectory $caseEvidence -TargetDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamRust') -NativeBuildDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-PrismUpstreamNative') -Generator 'Visual Studio 18 2026' -NativePlatform ARM64 -Toolchain nightly-2026-10-22-aarch64-pc-windows-msvc -Parallel 4 -CaseParallel 1 | ConvertTo-Json -Depth 12
             }
@@ -177,7 +184,7 @@ jobs:
           '### Focused Prism reference diagnostic' >> $env:GITHUB_STEP_SUMMARY
           "Selected source: $env:PRISM_FOCUSED_CASE; revision: $env:GITHUB_SHA; run: $env:GITHUB_RUN_ID/$env:GITHUB_RUN_ATTEMPT." >> $env:GITHUB_STEP_SUMMARY
           if ($env:PRISM_FOCUSED_CASE -ceq 'BackendPlan') {
-            'Partition 0 of 16 planning only, for cpp/rust and eval/grad/support/perf. No graph execution, source correctness verdicts or benchmark measurements run here; Foundation owns complete acceptance.' >> $env:GITHUB_STEP_SUMMARY
+            'Partition 0 of 16 planning only, for cpp/rust and the selected modes. No graph execution, source correctness verdicts or benchmark measurements run here; Foundation owns complete acceptance.' >> $env:GITHUB_STEP_SUMMARY
             $planPath = Join-Path $env:PRISM_FOCUSED_EVIDENCE 'backend-plan/record.json'
             if ([IO.File]::Exists($planPath)) {
               if ((Get-Item -LiteralPath $planPath).Length -gt 128MB) { throw 'Backend plan diagnostic exceeds its record bound.' }
@@ -185,7 +192,7 @@ jobs:
               '| Target | Mode | Planning status |' >> $env:GITHUB_STEP_SUMMARY
               '| --- | --- | --- |' >> $env:GITHUB_STEP_SUMMARY
               foreach ($target in @('cpp','rust')) {
-                foreach ($mode in @('eval','grad','support','perf')) {
+                foreach ($mode in $plan.Modes) {
                   "| $target | $mode | $($plan.Targets.$target.$mode.Payload.Status) |" >> $env:GITHUB_STEP_SUMMARY
                 }
               }

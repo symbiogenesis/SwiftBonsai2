@@ -8,6 +8,10 @@ on:
         description: Run the ported Prism benchmark workloads on Windows ARM64
         type: boolean
         default: false
+      prism_gradients:
+        description: Include optional gradient mode; pinned upstream has unsupported backward operations
+        type: boolean
+        default: false
 permissions:
   contents: read
 env:
@@ -459,10 +463,11 @@ jobs:
         env:
           PARTITION: ${{ matrix.partition }}
           RUN_BENCHMARKS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks }}
+          RUN_GRADIENTS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_gradients }}
         run: |
           $evidence = Join-Path $env:RUNNER_TEMP ('prism-backend-plan-' + $env:PARTITION)
           "BACKEND_STAGE=$evidence" >> $env:GITHUB_ENV
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Plan -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory $evidence -Index ([int]$env:PARTITION) -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') | Out-Null
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Plan -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory $evidence -Index ([int]$env:PARTITION) -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') -Gradients:($env:RUN_GRADIENTS -ceq 'true') | Out-Null
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && env.BACKEND_STAGE != ''
         with:
@@ -502,8 +507,9 @@ jobs:
         working-directory: ${{ runner.temp }}
         env:
           RUN_BENCHMARKS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks }}
+          RUN_GRADIENTS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_gradients }}
         run: |
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase JoinPlan -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans') -InputDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-plans') -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') | Out-Null
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase JoinPlan -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans') -InputDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-plans') -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') -Gradients:($env:RUN_GRADIENTS -ceq 'true') | Out-Null
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -538,10 +544,11 @@ jobs:
         env:
           PARTITION: ${{ matrix.partition }}
           RUN_BENCHMARKS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks }}
+          RUN_GRADIENTS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_gradients }}
         run: |
           $evidence = Join-Path $env:RUNNER_TEMP ('prism-backend-run-' + $env:PARTITION)
           "BACKEND_STAGE=$evidence" >> $env:GITHUB_ENV
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Run -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory $evidence -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -Index ([int]$env:PARTITION) -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') | Out-Null
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Run -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory $evidence -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -Index ([int]$env:PARTITION) -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') -Gradients:($env:RUN_GRADIENTS -ceq 'true') | Out-Null
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && env.BACKEND_STAGE != ''
         with:
@@ -589,8 +596,9 @@ jobs:
         working-directory: ${{ runner.temp }}
         env:
           RUN_BENCHMARKS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_benchmarks }}
+          RUN_GRADIENTS: ${{ github.event_name == 'workflow_dispatch' && inputs.prism_gradients }}
         run: |
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Gate -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-upstream-gate') -InputDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-runs') -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -OrdinaryEvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-ordinary-results') -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') | ConvertTo-Json -Depth 12
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-PrismBackend.ps1') -Phase Gate -BundleDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-tools') -EvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-upstream-gate') -InputDirectory (Join-Path $env:RUNNER_TEMP 'prism-backend-runs') -PlanPath (Join-Path $env:RUNNER_TEMP 'prism-backend-complete-plans/plans.json') -OrdinaryEvidenceDirectory (Join-Path $env:RUNNER_TEMP 'prism-ordinary-results') -Benchmarks:($env:RUN_BENCHMARKS -ceq 'true') -Gradients:($env:RUN_GRADIENTS -ceq 'true') | ConvertTo-Json -Depth 12
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
