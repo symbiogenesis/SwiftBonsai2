@@ -173,17 +173,22 @@ rules. Existing constructors or a passing focused check do not close an item
 requiring full source execution. The historical 65-failure triage remains a
 record of its tested revision, not a current capability inventory.
 
-- [ ] **Complete backend numerical operations.** Construction dispatch exists
-  for 172 of 173 imported API names. Numerical execution is still missing for
-  `ADD1` (4), `IM2COL_BACK` (53), `POOL_2D_BACK` (62), `FLASH_ATTN_BACK` (75),
-  `WIN_PART`/`WIN_UNPART` (78/79), `GET_REL_POS`/`ADD_REL_POS` (80/81), and
-  custom/map callbacks (92–95). Implement their actual shape, stride, alias and
-  arithmetic contracts. `ggml_build_backward_expand`, gradient snapshots and
+- [ ] **Complete backend numerical operations.** Construction dispatch now
+  accompanies numerical kernels for F32/F16/BF16 `ADD1` (4), `IM2COL_BACK` (53),
+  `POOL_2D_BACK` (62), `WIN_PART`/`WIN_UNPART` (78/79) and
+  `GET_REL_POS`/`ADD_REL_POS` (80/81). These have focused local checks;
+  full source qualification remains open. Packed `ADD1`, `FLASH_ATTN_BACK`
+  (75) and custom/map callbacks (92–95) remain unimplemented. Preserve actual
+  shape, stride, alias and arithmetic contracts; extraction-source restrictions
+  are explicit in the [reuse review](prism-reuse-review.md).
+  `ggml_build_backward_expand`, gradient snapshots and
   reset remain incomplete; keep these separate from default eval/support
   acceptance and from the excluded GEGLU gradient diagnostic.
 - [ ] **Finish packed formats.** Remaining type IDs are 16 `IQ2_XXS`, 17 `IQ2_XS`,
-  18 `IQ3_XXS`, 19 `IQ1_S`, 21 `IQ3_S`, 22 `IQ2_S`, 29 `IQ1_M`, 41 `Q1_0`,
-  and 42 `Q2_0`. Supply checked byte layouts, arbitrary-byte decoding, reference
+  18 `IQ3_XXS`, 19 `IQ1_S`, 21 `IQ3_S`, 22 `IQ2_S` and 29 `IQ1_M`.
+  Types 41 `Q1_0` and 42 `Q2_0` now have checked layouts, decoding, encoding
+  and packed dots with focused native evidence; full source qualification
+  remains open. Supply checked byte layouts, arbitrary-byte decoding, reference
   and CPU encoders where native traits expose them, actual importance semantics,
   and native packed-activation dots. Preserve each trait's unavailable entries.
   IQ4_NL's native zero-scale reference path packs uninitialized payload nibbles;
@@ -223,6 +228,10 @@ record of its tested revision, not a current capability inventory.
   Perform bounded real HTTP retrieval with the supplied headers/timeouts/body
   limits and original 200/404/oversize/cancellation behavior. Model-resolution
   option handlers alone do not constitute the full CLI parser.
+  The resolver transport now checks complete Content-Length/chunked bodies and
+  bounds curl capture; focused malformed-transfer checks and the original
+  model-resolution source pass. Full HTTPS/download/cancellation qualification
+  remains open; see the [reuse review](prism-reuse-review.md).
 - [x] **Implement and locally qualify model resolution.** Preserve live listing/commit retrieval,
   listing order, quant tag matching, split-first-shard selection, ancestor
   sidecar precedence, cache/offline behavior and explicit-path/preset/draft

@@ -38,3 +38,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Prism runtime HTTP framing and Q1_0/Q2_0 codec adaptations also reference
+Camelid: https://github.com/timtoole02/Camelid
+Revision: 1829a7e73775eb829efe8fabf46a6680897a975b
+Source: src/fabric/http.rs and src/tensor/mod.rs
+Copyright (c) 2026 Tim Toole
+Licensed under the MIT License, reproduced in
+src/prism-runtime/CAMELID-LICENSE.txt.
+The exact Prism/ggml layouts and arithmetic remain the conformance authority.
