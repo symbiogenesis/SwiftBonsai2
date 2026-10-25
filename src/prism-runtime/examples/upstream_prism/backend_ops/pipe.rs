@@ -207,6 +207,10 @@ impl Worker {
     fn poison(&mut self, message: &str) {
         self.poisoned = true;
         self.monitor.fail(message);
+        // Complete native termination before the driver hashes or prunes the
+        // failed geometry's files. Killing alone can return before Windows has
+        // closed every native file handle and completed outstanding writes.
+        let _ = lock(&self.monitor.child).wait();
     }
 
     fn finish(&mut self) -> Result<()> {
@@ -618,6 +622,20 @@ mod tests {
                 .is_err()
         );
         assert!(!poisoned.healthy());
+        assert!(
+            lock(
+                &poisoned
+                    .worker
+                    .as_ref()
+                    .ok_or_else(|| invalid("native worker missing"))?
+                    .borrow()
+                    .monitor
+                    .child
+            )
+            .try_wait()?
+            .is_some(),
+            "failed native worker must be reaped before evidence retention"
+        );
         let directory = engine.evidence_path("after-bad-action")?;
         assert!(
             poisoned
