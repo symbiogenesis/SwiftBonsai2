@@ -16,7 +16,9 @@ No new training is required.
 The repository provides inventory, verified provisioning, source builds, GGUF
 inspection, bounded CPU checks, a strict Rust broker and an explicit Windows
 launcher for the Qwen reference or Swift assessment backend. The experimental
-[native Rust CPU reference](../src/prism-runtime/README.md) is separate from that launcher.
+[Prism Inference runtime](https://github.com/symbiogenesis/prism-inference) is a
+separate Rust project. Its initial supported model path is Swift/Bonsai; broader
+Prism inference support remains future work.
 [Adreno](adreno-gpu-plan.md) and [Hexagon](hexagon-npu-plan.md) integration remain
 planned. Current launch policies select CPU execution.
 
@@ -256,21 +258,33 @@ prevention and real-model daily acceptance remain unqualified.
 
 ### Experimental native Swift backend
 
-The Rust broker also has an opt-in `native-swift` build feature. Build
-`bonsai-broker` with `--features native-swift` using the external working and
-target directories shown above, then add `--native-engine` to the owned launcher:
+Provision the independently released
+[Prism Inference](https://github.com/symbiogenesis/prism-inference) Windows ARM64
+executables, then add `--native-engine` to the owned launcher:
 
 ```powershell
+$inference = ./scripts/Get-Inference.ps1 -DataDirectory $data
+./scripts/Get-Inference.ps1 -DataDirectory $data -VerifyOnly
 & $broker --launch-development --allow-unisolated-backend `
     --profile swift-pq2-assessment --native-engine `
     --data-directory $data --evidence-parent ([IO.Path]::GetTempPath()) `
     --frontend-port 5173 --backend-port 8081 --max-waiting 2
 ```
 
-Run this executable from an external native working directory as above. The
+The [release lock](../config/prism-inference.lock.json) pins the source revision,
+archive and every installed file by length and SHA-256. Provisioning checks the
+ARM64 executable architecture and installs under
+`inference/<commit>/aarch64-pc-windows-msvc/` in the external data directory.
+`Get-Inference.ps1` and the launcher consume these binaries without invoking
+Cargo. Updating the runtime means reviewing a new release lock and provisioning
+that release. The crates.io packages provide the Rust source distribution;
+ordinary `cargo install` compiles that source.
+
+Run the broker from an external native working directory as above. The
 selection requires the original pinned Swift artifact and its verified Prism
 installation; it accepts no adapter, alternate model or inference overrides.
-The current executable is retained against replacement and its native child
+The separately installed server executable is verified against the release lock
+and retained against replacement. Its child process
 receives the existing 12 GiB Job, 16 GiB available-memory admission, 4 GiB
 reserve watchdog, protected keys and listener-PID checks. The seed is fixed at
 42. Native identity must match before the frontend opens. Interrupted frontend
@@ -281,7 +295,7 @@ This is an experimental path. Actual model loading, prompt/tokenizer parity and
 seeded sampler comparisons have evidence, but full-model numerical parity fails
 the declared tolerance and complete device recovery remains pending. See the
 [MVP checklist](prism-upstream-todo.md); no throughput or daily-service claim is
-made. The internal `--native-engine-child` flag alone does not establish Job
+made. The server's private child protocol alone does not establish Job
 ownership or prevent same-user bypass.
 
 ### Publisher Prism source build
