@@ -332,7 +332,7 @@ fn decoded_q8k_overflow_is_rejected_by_generation_loading_and_saving() -> Result
         .data = std::sync::Arc::from(overflowing);
     let mut output = Vec::new();
     assert!(model.write_to(&mut output).is_err());
-    assert!(output.is_empty());
+    assert_eq!(output, Vec::<u8>::new());
     Ok(())
 }
 
