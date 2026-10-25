@@ -10,8 +10,8 @@ First qualify pinned Prism Vulkan for Swift under [M2](../PLAN.md#12-delivery-mi
 This can precede the Rust replacement. [Rust R6](native-rust-engine.md#ordered-work)
 follows Rust CPU parity and needs its own GPU implementation and evidence.
 Prism Vulkan is the first GPU implementation route. Compare it with Hexagon and
-qualify X1 and X2 independently; prioritize packed
-NPU prefill/decode exploration on X2 alongside the Vulkan comparison.
+qualify X1 and X2 independently; prioritize packed NPU prefill/decode exploration
+on X2 alongside the Vulkan comparison.
 
 ## Current constraints and backend choice
 
@@ -68,8 +68,7 @@ The pinned source identifies three bring-up checks:
 ### G0 — Record the native device contract
 
 - [ ] Capture actual X1/X2 GPU IDs, processor SKU, OS/driver, Vulkan API/loader/ICD
-  architecture,
-  queues, enabled features/extensions and selected device. Verify native ARM64
+  architecture, queues, enabled features/extensions and selected device. Verify native ARM64
   executable/dependencies; reject software adapters and emulated inference.
   Record build-time shader tools separately.
 - [ ] Record buffer/allocation/workgroup limits, heaps/types, subgroups, FP16/
@@ -198,8 +197,8 @@ or a documented no-go.
 G0/G1 allow local builds and focused untimed capability/correctness checks.
 G2 precedes timing. Full suites, benchmarks and timing-profile captures run only
 in CI, on each target X1/X2 device for Adreno evidence. Follow
-[validation policy](validation.md)
-and [device CI policy](../PLAN.md#10-validation-and-performance-evidence).
+[validation policy](validation.md) and
+[device CI policy](../PLAN.md#10-validation-and-performance-evidence).
 Diagnostics use absolute system-temp working/output paths and preserve inherited
 Windows system/profile variables.
 

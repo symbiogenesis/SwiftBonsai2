@@ -1,8 +1,12 @@
 # Swift Bonsai 2 - Runner implementation plan
 
-Build a local creative assistant for a 32 GB Snapdragon X Elite laptop running
-Windows ARM64. Prioritize writing, revision, brainstorming and art direction,
-with short waits, bounded memory and comfortable sustained operation.
+Build a local creative assistant for Snapdragon X1 and X2 systems running
+Windows ARM64, automatically selecting the best qualified configuration for
+each device, workload and interactive/battery objective. Start from the recorded
+32 GB Snapdragon X Elite machine. Prioritize writing, revision, brainstorming
+and art direction, with short waits, bounded memory and comfortable sustained
+operation. The [hardware profile plan](docs/hardware-profiles.md) owns this
+ultimate goal; automatic selection is not implemented yet.
 
 ## 1. Current direction
 
@@ -19,9 +23,11 @@ evidence; subsequent device measurements qualify the chosen engine and profiles.
 
 Use the pinned native engine as the control while developing the
 [Rust replacement](docs/native-rust-engine.md). Establish correct CPU behavior
-before promoting optimized paths. Adreno is the first GPU candidate; Hexagon
-access and compatibility discovery can proceed alongside it. Neither
-accelerator is enabled in current launch profiles.
+before promoting optimized paths. Adreno Vulkan and packed Hexagon are candidate
+routes on both generations, with X2 NPU batched prefill and packed decode a
+priority investigation. Qualify each actual device/capability class independently;
+neither backend must precede the other's discovery, and neither accelerator is
+enabled in current launch profiles.
 
 The active implementation scope is the pinned Swift PQ2 CPU MVP in the
 [Prism migration TODO](docs/prism-upstream-todo.md). Exact Swift chat rendering,
@@ -40,17 +46,21 @@ and human reviews remain pending. See [required qualification](docs/swift-lora.m
 
 ## 2. Hardware envelope
 
-| Component | Target / recorded inventory | Implication |
+| Component | Recorded baseline / planned coverage | Implication |
 | --- | --- | --- |
 | OS | Native Windows ARM64 | Host binaries, libraries and tooling must match |
-| CPU | Snapdragon X Elite X1E-78-100 | Verify actual ISA support and kernel dispatch |
-| GPU | Adreno X1-85 | Query shared-memory budgets; dedicated-memory reports do not describe model capacity |
-| NPU | Hexagon | Signed Windows access and exact graph support are pending |
-| RAM | 32 GB installed; 33,897,037,824 usable bytes recorded | Admit against currently available RAM, commit and device budgets |
+| CPU | Recorded X1E-78-100; planned Snapdragon X1/X2 SKU coverage | Detect actual CPU/OS capabilities; qualify ISA, thread and batch choices per device |
+| GPU | Recorded Adreno X1-85; X2 Adreno variants are separate candidates | Query features and shared-memory budgets; qualify actual drivers and kernels |
+| NPU | Recorded X1 Hexagon v73; X2/v81 extended-DMA candidate | Verify architecture, signed matching runtime/kernels, mapping path and exact graph support |
+| RAM | Recorded 32 GB installed; 33,897,037,824 usable bytes; other capacities detected | Admit against currently available RAM, commit and device budgets; do not infer headroom from generation |
 
 Run `Doctor.ps1` for current inventory. Recorded driver/OS details are evidence
 for that capture, not a continuing compatibility guarantee. Use GiB/MiB for
 allocation budgets and bytes for artifact identities.
+
+Use generation/SKU as inventory, then select by verified capabilities and
+qualified evidence. The [X1/X2 plan](docs/hardware-profiles.md) defines unknown
+hardware handling, compatible CPU fallback and independent device acceptance.
 
 ## 3. Model and runtime contracts
 
@@ -85,13 +95,18 @@ and [development commands](docs/development-guide.md).
 | Pinned Prism CPU | Bounded Swift decode works | Real service behavior, creative/comfort and daily security qualification |
 | Native Rust CPU | Verified Swift loader, hybrid graph, transactional generation, exact Swift chat/tokenizer, native sampler and experimental broker path | Reviewed prebuilt consumption; broader models, full-context workloads and adapters remain deferred |
 | Adreno Vulkan | CPU-only builds and profiles today | Native ARM64 build, exact-model placement/parity and paired device evidence |
-| Hexagon | Discovery and implementation plan only | Signed access, exact packed kernels, hybrid state and bounded deployment |
+| Hexagon | Discovery and implementation plan only; recent upstream X2 DMA and low-bit/Hadamard leads | Signed matching kernels, exact packed arithmetic, hybrid state and bounded per-device deployment |
+| Automatic X1/X2 profiles | H0-H5 planned; no selector or accepted accelerator defaults | Shared capabilities, measured profile catalog, deterministic selection and qualified fallback on each generation |
 
 The [SIMD S0–S6 plan](docs/simd-plan.md), [Adreno G0–G5 plan](docs/adreno-gpu-plan.md)
 and [Hexagon N0–N7 plan](docs/hexagon-npu-plan.md) own their detailed exits.
 Source support or device detection does not qualify this laptop. OpenCL and
 conversion-based ONNX/QNN routes require separate exact-format/graph audits.
 Keep a reproducible CPU fallback and report unsupported placements explicitly.
+The [hardware H0-H5 plan](docs/hardware-profiles.md#delivery-sequence) combines
+these exits into automatic selection. Rank qualified profiles by complete-task
+latency or energy within constraints; tune prefill/decode separately and account
+for state migration, shared bandwidth, load/compile/repack and sustained behavior.
 
 ## 5. Service, UI and isolation
 
@@ -211,15 +226,20 @@ not accepted daily profiles. Keep their fixed settings reproducible.
 | Proposed profile | Starting point | Qualification focus |
 | --- | --- | --- |
 | Creative | One 8K FP16 sequence; extend to 16K only as needed | Useful prose, explicit output budget, short waits and sustained comfort |
-| Daily | Best accepted CPU/GPU placement; bounded reuse | Security, cancellation, responsiveness and memory |
+| Daily | Automatic best qualified CPU/GPU/NPU plan for the actual X1/X2 device; bounded reuse | Security, cancellation, responsiveness, memory and visible effective selection |
 | Long context | Explicit larger context and separately qualified KV/cache | Continuity/retrieval quality and peak memory |
-| Battery | Phase-specific threads and low-polling candidates | Energy per useful task and acceptable latency |
+| Battery | Qualified per-device placement, phase-specific threads and low-polling candidates | Energy per useful task and acceptable latency; safe reevaluation when power policy changes |
 | NPU experimental | Explicit profile after kernel/state correctness | Signed deployment, device memory, placement and recovery |
 
 For initial reuse experiments, two checkpoints and 256 MiB prompt-cache storage
 are proposals, not current defaults. Larger caches need observed total-memory
 evidence. Tune prefill and decode separately; more threads, offload or processors
 can increase contention and heat. Report effective settings and fallback reasons.
+Keep qualification keyed by actual capabilities, runtime/driver and numerical
+identity. Automatic selection consumes retained results; ordinary startup does
+not launch a benchmark search. Unknown or invalidated accelerator compatibility
+uses an eligible reviewed CPU control. Stable request/state handoff and complete
+selection criteria live in the [hardware profile contract](docs/hardware-profiles.md#selection-contract).
 
 ## 9. Speculative decoding and advanced optimization
 
@@ -292,6 +312,10 @@ Record artifact/build/profile identities, CI revision/run, prefill, first answer
 decode TPS, useful task time, retries/truncation, peak memory and available
 power/thermal telemetry. Interleave repeated trials and report uncertainty.
 Keep private manuscripts and artwork out of shared evidence.
+Qualify X1 and X2 separately, recording SKU/capabilities, effective phase
+placement and selection decisions. Hardware lanes must exercise automatic
+selection/fallback and safe state handoff; one device's result does not qualify
+another generation or an untested compatibility class.
 
 ### Promotion criteria
 
@@ -333,21 +357,23 @@ when authorized, uses only `main`. Git history holds implementation chronology.
 | Milestone | Current state | Remaining exit |
 | --- | --- | --- |
 | M0a — literature selection | Qwen decision recorded; Swift is current memory priority | Reopen only on documented support, quality or resource failure |
-| M0 — reproducibility | Inventory, locks, provisioning and GGUF inspection implemented | Keep identities and capability evidence current |
+| M0 — reproducibility | Inventory, locks, provisioning and GGUF inspection implemented | Extend shared capability discovery for X1/X2; keep identities and evidence current |
 | M1 — CPU creative chat | Swift bounded decode and experimental owned native broker streaming implemented | Complete service recovery, offline UI, bypass prevention and restricted daily process |
 | M1a — creative/comfort | Pending | Useful creative output, standard LoRA qualification, latency and sustained device acceptance |
 | M1b — optional agents | Pending | Qualified client and whole-agent containment before tools are enabled |
-| M2 — Adreno | G0–G5 pending | Native exact-model correctness and useful device benefit, or documented no-go |
+| M2 — Adreno | G0–G5 pending | Per-device X1/X2 exact-model correctness and useful benefit, or documented no-go |
 | M3 — cache/context | Bounded experimental Rust state exists | Full-model reuse, context, allocation and quality qualification |
-| M4 — daily profiles | Pending | Reproducible installation and accepted creative/daily/battery profiles |
-| M5 — Hexagon | N0–N7 pending | Signed exact-model execution, bounded state/memory and device benefit, or no-go |
+| M4 — daily profiles and automatic hardware selection | H0-H5 pending | Reproducible installation; automatic qualified interactive/battery configurations and CPU fallback independently accepted on X1 and X2 |
+| M5 — Hexagon | N0–N7 pending; prioritize X2 packed-kernel investigation alongside controls | Signed exact-model execution, bounded state/memory and per-device benefit, or no-go |
 | M6 — advanced kernels/speculation | Research candidates | Correctness and measured benefit justify maintenance |
 | M7 — Rust replacement | Swift loader/graph, chat/tokenizer, native sampler and experimental owned service implemented | Reviewed runtime consumption, followed by broader R0–R7 and per-profile acceptance |
 
 The immediate engine work follows M2 → M5 → M6 in the
 [Swift-only MVP checklist](docs/prism-upstream-todo.md), against the pinned native
 control. Those checklist labels are separate from this table's project
-milestones. After the engine MVP, resume the broader M1 → M1a → M2/M3 → M4
-delivery path. Keep agents, accelerators, adapters and optimization campaigns
-deferred while closing the CPU MVP. Stop unsupported lanes with a documented
-no-go instead of weakening correctness or security requirements.
+milestones. After the engine MVP, resume M1/M1a and the hardware H1-H5 path,
+developing M2/M5 candidates independently before M4 automatic promotion. H0
+design/inventory can proceed now; keep accelerator implementation, adapters,
+agents and optimization campaigns deferred while closing the CPU MVP. Stop
+unsupported lanes with a documented no-go instead of weakening correctness or
+security requirements.

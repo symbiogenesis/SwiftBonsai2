@@ -4,6 +4,13 @@ The MVP is a safe Rust CPU engine that runs the pinned Swift Bonsai 2 model on
 a 32 GB Snapdragon X Elite laptop with Windows ARM64. Prioritize only the
 engine behavior needed for that path. **Everything else is deferred.**
 
+The later hardware goal is [automatic Snapdragon X1/X2 configuration](hardware-profiles.md),
+using qualified per-device CPU/GPU/NPU, prefill/decode and interactive/battery
+choices. This extends the roadmap beyond the recorded X1 machine without
+expanding this CPU MVP's acceptance scope. H0 discovery/profile design may
+proceed now; selector and accelerator implementation follow the reviewed CPU
+runtime handoff. Current launch policies stay CPU-only.
+
 The source CPU MVP checks below are complete for their declared bounded Swift
 workloads. Delivery into ordinary Runner builds still requires a reviewed
 prebuilt runtime release and lock update. Pinned Prism remains the comparison
@@ -194,7 +201,7 @@ dependency.
 | Training and speculation | Optimizers/datasets, backward/gradient operations, DSpark, speculative decoding and advanced recurrent rollback schedules |
 | Chat and grammar ecosystem | Non-Swift templates, general chat analysis/auto-parser parity, tool calls, multimodal content, grammar/schema/LLGuidance integration and full server API compatibility |
 | CLI and remote acquisition | All upstream example option contexts, broad CLI parity, general HF resolution, HTTPS/download/multi-shard compatibility; the MVP uses the existing pinned artifact setup |
-| Adapter and accelerator paths | LoRA forward execution and standard-profile qualification, Adreno/Vulkan, Hexagon/NPU and other offload paths |
+| Adapter and accelerator paths | LoRA forward execution and standard-profile qualification, per-device X1/X2 Adreno/Vulkan and Hexagon/NPU execution, automatic hardware profiles and other offload paths |
 | Application expansion | New UI, agent automation and writing/retrieval workflows beyond the minimal existing broker interface |
 
 The [deferred migration backlog and evidence](prism-migration-backlog.md)

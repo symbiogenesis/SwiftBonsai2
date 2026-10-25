@@ -34,6 +34,12 @@ profiling, optimization, adapter, accelerator and compatibility work below is
 deferred until after that MVP. Existing implementation evidence and separate
 profile-promotion requirements remain unchanged.
 
+The ultimate deployment goal is [automatic X1/X2 configuration](hardware-profiles.md):
+one runtime with safe CPU fallback and qualified per-device CPU/GPU/NPU plans,
+selected for the workload and interactive/battery objective. Hardware discovery
+design can proceed now; implementation and performance promotion follow the
+reviewed CPU MVP handoff. Existing kernel-level `Auto` is not that selector.
+
 - [ ] **R0 — Pin the comparison and audit reusable techniques.** Record exact
   model/adapter identities, tensor types, dimensions, transforms and adapter
   contracts. Audit Camelid, Orangu and packed-kernel sources at immutable
@@ -301,15 +307,20 @@ profile-promotion requirements remain unchanged.
     Focused reader and serialized-driver checks cover file/stdin parity,
     malformed/empty driver input and rejection before artifact loading.
 
-- [ ] **R6 — Add Adreno after CPU parity.** Follow [G0–G5](adreno-gpu-plan.md),
-  implementing the same packed types, transforms and complete hybrid graph.
-  Reuse Prism capability reports/fixtures, but qualify Rust GPU coverage and
-  safety separately. Evaluate resident state/scratch, fusion, submission reuse
-  and phase-specific placement, including migration and shared-memory costs.
+- [ ] **R6 — Add qualified Adreno/Hexagon paths after CPU parity.** Follow
+  [G0–G5](adreno-gpu-plan.md) and [N0–N7](hexagon-npu-plan.md), implementing the
+  same packed types, transforms and complete hybrid graph through safe audited
+  device boundaries. Investigate X2 packed NPU prefill/decode alongside CPU and
+  Vulkan controls; discovery of either accelerator need not wait for the other.
+  Reuse Prism capability reports/fixtures, but qualify Rust coverage and safety
+  separately for actual X1/X2 device and driver classes. Evaluate resident
+  state/scratch, fusion, submission reuse and phase-specific placement, including
+  migration, signed runtime compatibility and shared-memory costs.
   Preserve [attention rounding constraints](inference-algorithms.md#attention-locality-and-the-io-bound).
-  Exit with correct whole-model ARM64/Adreno execution and target-device CI benefit.
-  [Hexagon N0/N1 discovery](hexagon-npu-plan.md) can proceed independently; neither
-  accelerator bypasses R5 ownership or R7 qualification.
+  Exit per backend/device with correct whole-model ARM64 execution and
+  target-device CI benefit, or a retained no-go and CPU fallback. Neither
+  accelerator bypasses R5 ownership, native Rust replacement requirements or R7
+  qualification.
 
 - [ ] **R7 — Qualify each replacement profile.** Run paired, repeated/interleaved
   target-laptop CI comparisons with fixed artifacts/workloads and predeclared
@@ -321,6 +332,16 @@ profile-promotion requirements remain unchanged.
   material correctness, quality, security or resource regression. Publish limits
   and verdict, promote only qualified profiles and retain reproducible Prism
   fallback. Retire old build/overlay/FFI paths only after replacement verification.
+
+  - [ ] **R7.1 — Supply qualified X1/X2 automatic profiles.** Follow
+    [H0–H5](hardware-profiles.md#delivery-sequence). Export checked capabilities,
+    effective placement and state/numerical compatibility to Runner; keep kernel
+    eligibility in the runtime. Qualify separate prefill/decode, thread/batch and
+    power choices, deterministic profile selection, stale-driver invalidation,
+    memory admission and CPU fallback. Demonstrate each promoted device class
+    independently, including complete-state phase handoff and request-boundary
+    reevaluation. Automatic selection consumes reviewed evidence; ordinary
+    startup does not run a performance search.
 
 R0/R1 scope the first kernel experiment; synthetic R3 work can precede complete
 R2 graph parity. R2/R3 precede broader optimization, R4/R5 establish the CPU

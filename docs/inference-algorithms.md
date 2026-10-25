@@ -7,6 +7,13 @@ are implemented. The candidates below remain unqualified; none establishes a
 Snapdragon speedup. Preserve pinned Prism controls, exact artifacts and existing
 promotion gates. Pin implementation sources/licenses during R0 before reuse.
 
+The [automatic X1/X2 roadmap](hardware-profiles.md) selects qualified algorithms
+and placements separately for prefill and decode. Batched projections and
+chunkwise GDN are NPU prefill candidates; packed HVX, NEON and Adreno remain
+decode comparisons. Sequential block scheduling alone does not provide tiled
+matrix-matrix reuse. Preserve each path's numerical/state identity and include
+phase handoff costs before making it an automatic choice.
+
 ## Current implementation and next work
 
 | Task | Current state | Remaining work |

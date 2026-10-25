@@ -18,6 +18,7 @@ delivery work. Implementation chronology and individual check runs live in Git.
 | LoRA storage | [Immutable B sharing](prism-storage-overlay.md) saves 2.5 MiB in the native allocation/math regression | Adapter basis, full-model performance and standard-profile quality remain gated |
 | Rust CPU reference | Verified loader, packed scalar/NEON operations, hybrid graph, transactional token runtime, reusable workspace, state-only ingestion and physical FP16 KV | Full-model parity, complete chat/sampler/adapter support, service integration and device qualification remain open |
 | Accelerators | [Adreno](adreno-gpu-plan.md) and [Hexagon](hexagon-npu-plan.md) have explicit implementation gates | Current launch profiles are CPU-only |
+| Hardware selection goal | [X1/X2 profile plan](hardware-profiles.md) defines capability discovery, separate phase/objective choices and qualified CPU fallback | No automatic selector, cross-generation performance verdict or accepted accelerator default exists yet |
 
 Swift's completion check omits the system-only preamble that its template
 rejects. This is a Swift-specific compatibility repair; it does not replace the

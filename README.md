@@ -24,6 +24,12 @@ This repository provides the setup and runtime tooling to run Swift on a
 **32 GB Snapdragon X Elite laptop with Windows ARM64**. A local creative
 assistant is being built around that setup.
 
+The hardware goal is **automatic configuration for Snapdragon X1 and X2**:
+detect the actual device and select a qualified CPU/GPU/NPU plan for interactive
+or battery use, with separate prefill/decode tuning and CPU fallback. This
+[hardware profile selection](docs/hardware-profiles.md) is planned; current
+released launch policies remain CPU-only.
+
 The native Rust engine lives in [Prism Inference](https://github.com/symbiogenesis/prism-inference).
 This project consumes a pinned prebuilt server; ordinary builds do not compile
 the inference engine. Provision it with `./scripts/Get-Inference.ps1 -DataDirectory <absolute-path>`.
@@ -104,6 +110,7 @@ evaluation. See [benchmark context and current limits](docs/performance-expectat
 
 | Guide | What you'll find |
 | --- | --- |
+| [Automatic X1/X2 configuration](docs/hardware-profiles.md) | Device discovery, measured profile selection, phase placement and fallback roadmap |
 | [Prism Inference](https://github.com/symbiogenesis/prism-inference) | Independent Rust runtime, published crates and prebuilt server binaries |
 | [CPU SIMD plan](docs/simd-plan.md) | Packed NEON kernels, numerical contracts, safe dispatch, and qualification |
 | [Adreno GPU plan](docs/adreno-gpu-plan.md) | CPU-only status, native Vulkan bring-up, placement, and device qualification |
