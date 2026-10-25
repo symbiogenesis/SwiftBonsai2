@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 #[path = "rust_graph.rs"]
 mod graph;
+pub(super) use graph::GraphSession;
 
 fn array(value: &Value) -> Result<&[Value]> {
     value

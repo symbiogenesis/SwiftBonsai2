@@ -5,14 +5,118 @@ use super::{
     text, unhex, unsigned,
 };
 use bonsai_prism_runtime::backend::{GraphId, operation_name, type_layout, unary_name};
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const MAX_ACTIONS: usize = 524_288;
 const MAX_ACTION_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_OBSERVATION_BYTES: usize = 16 * 1024 * 1024;
+
+/// The Rust target executes the same bounded production actions directly.
+/// Its state belongs to one geometry, with no polling files or worker thread.
+pub(in super::super) struct GraphSession {
+    state: State,
+    requests: BufWriter<File>,
+    responses: BufWriter<File>,
+    total_actions: usize,
+    deadline: Instant,
+    poisoned: bool,
+}
+
+#[derive(Serialize)]
+struct Trace<'a> {
+    #[serde(rename = "Trace")]
+    values: &'a [Value],
+}
+
+fn encode_trace(values: &[Value]) -> Result<Vec<u8>> {
+    let response = serde_json::to_vec(&Trace { values })?;
+    if response.len() > MAX_OBSERVATION_BYTES {
+        return Err(invalid("Rust backend observation exceeds frame bound"));
+    }
+    Ok(response)
+}
+
+impl GraphSession {
+    pub(in super::super) fn open(
+        directory: &Path,
+        maximum: usize,
+        deadline: Instant,
+    ) -> Result<Self> {
+        let state = State::open(directory, maximum)?;
+        Ok(Self {
+            requests: BufWriter::new(File::create(state.directory.join("actions.jsonl"))?),
+            responses: BufWriter::new(File::create(state.directory.join("observations.jsonl"))?),
+            state,
+            total_actions: 1,
+            deadline,
+            poisoned: false,
+        })
+    }
+
+    pub(in super::super) fn directory(&self) -> &Path {
+        &self.state.directory
+    }
+
+    pub(in super::super) fn exchange(&mut self, actions: &[Value]) -> Result<Vec<Value>> {
+        if self.poisoned {
+            return Err(invalid(
+                "Rust backend session is poisoned by an earlier failure",
+            ));
+        }
+        let result = self.exchange_checked(actions);
+        if result.is_err() {
+            self.poisoned = true;
+        }
+        result
+    }
+
+    fn exchange_checked(&mut self, actions: &[Value]) -> Result<Vec<Value>> {
+        // Match the file and native-pipe protocols' initial checkpoint and
+        // per-exchange checkpoint slots even though no checkpoint is needed.
+        let first_action = self.total_actions;
+        self.total_actions = self
+            .total_actions
+            .checked_add(actions.len() + 1)
+            .filter(|total| *total <= MAX_ACTIONS)
+            .ok_or_else(|| invalid("Rust backend explicit action extent exceeds its bound"))?;
+        if actions.is_empty() || Instant::now() >= self.deadline {
+            return Err(invalid("Rust backend empty batch or expired case deadline"));
+        }
+        let request = serde_json::to_vec(actions)?;
+        if request.len() as u64 > MAX_ACTION_BYTES {
+            return Err(invalid("Rust backend request exceeds 128MiB"));
+        }
+        self.requests.write_all(&request)?;
+        self.requests.write_all(b"\n")?;
+        self.requests.flush()?;
+        drop(request);
+        let mut trace = Vec::with_capacity(actions.len());
+        for (index, action) in actions.iter().enumerate() {
+            if Instant::now() >= self.deadline {
+                return Err(invalid("Rust backend case deadline expired"));
+            }
+            trace.push(self.state.run(action).map_err(|error| {
+                invalid(format!(
+                    "Rust backend action {}: {error}",
+                    first_action + index
+                ))
+            })?);
+        }
+        let response = encode_trace(&trace)?;
+        if Instant::now() >= self.deadline {
+            return Err(invalid("Rust backend case deadline expired"));
+        }
+        self.responses.write_all(&response)?;
+        self.responses.write_all(b"\n")?;
+        self.responses.flush()?;
+        Ok(trace)
+    }
+}
 
 struct State {
     backend: CpuBackend,
@@ -73,6 +177,25 @@ fn metadata(backend: &CpuBackend, aliases: &TensorAliases, tensor: TensorId) -> 
 }
 
 impl State {
+    fn open(directory: &Path, maximum: usize) -> Result<Self> {
+        let directory = fs::canonicalize(directory)?;
+        if !directory.is_absolute() || !directory.is_dir() {
+            return Err(invalid("Rust backend directory differs"));
+        }
+        Ok(Self {
+            backend: CpuBackend::new(),
+            tensors: BTreeMap::new(),
+            graphs: BTreeMap::new(),
+            scalars: BTreeMap::new(),
+            contexts: BTreeSet::new(),
+            backends: BTreeSet::new(),
+            buffers: BTreeSet::new(),
+            directory,
+            maximum,
+            started: Instant::now(),
+        })
+    }
+
     fn tensor(&self, value: &Value) -> Result<TensorId> {
         lookup(&self.tensors, value)?.ok_or_else(|| invalid("Rust backend tensor handle is null"))
     }
@@ -600,22 +723,10 @@ fn actions(state: &State, value: &Value) -> Result<Vec<Value>> {
 }
 
 pub(super) fn execute(operation: &Value) -> Result<Value> {
-    let directory = fs::canonicalize(text(&operation["Directory"])?)?;
-    if !directory.is_absolute() || !directory.is_dir() {
-        return Err(invalid("Rust backend directory differs"));
-    }
-    let mut state = State {
-        backend: CpuBackend::new(),
-        tensors: BTreeMap::new(),
-        graphs: BTreeMap::new(),
-        scalars: BTreeMap::new(),
-        contexts: BTreeSet::new(),
-        backends: BTreeSet::new(),
-        buffers: BTreeSet::new(),
-        directory,
-        maximum: unsigned(&operation["MaxFileBytes"])?,
-        started: Instant::now(),
-    };
+    let mut state = State::open(
+        Path::new(text(&operation["Directory"])?),
+        unsigned(&operation["MaxFileBytes"])?,
+    )?;
     let mut supplied = if operation.get("ActionsFile").is_some() {
         actions(&state, &operation["ActionsFile"])?
     } else {
@@ -702,5 +813,81 @@ mod tests {
         assert_eq!(canonical(&aliases, TensorId(0)), 3);
         assert_eq!(canonical(&aliases, TensorId(1)), 2);
         assert_eq!(canonical(&aliases, TensorId(17)), 0x8000_0011);
+    }
+
+    #[test]
+    fn direct_rust_sessions_enforce_checkpoint_slots_deadlines_and_poisoning() -> Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let base = std::env::temp_dir();
+        if !base.is_absolute() {
+            return Err(invalid("Rust session temp directory must be absolute"));
+        }
+        let root = base.join(format!(
+            "prism-rust-session-bounds-{}-{stamp}",
+            std::process::id()
+        ));
+        fs::create_dir(&root)?;
+        for (name, deadline, total, actions, success) in [
+            (
+                "last-slot",
+                Instant::now() + Duration::from_secs(60),
+                MAX_ACTIONS - 2,
+                vec![json!({"Op":"clock"})],
+                true,
+            ),
+            (
+                "overflow",
+                Instant::now() + Duration::from_secs(60),
+                MAX_ACTIONS - 1,
+                vec![json!({"Op":"clock"})],
+                false,
+            ),
+            (
+                "empty",
+                Instant::now() + Duration::from_secs(60),
+                1,
+                vec![],
+                false,
+            ),
+            (
+                "expired",
+                Instant::now(),
+                1,
+                vec![json!({"Op":"clock"})],
+                false,
+            ),
+        ] {
+            let directory = root.join(name);
+            fs::create_dir(&directory)?;
+            let mut session = GraphSession::open(&directory, 1024, deadline)?;
+            session.total_actions = total;
+            assert_eq!(session.exchange(&actions).is_ok(), success);
+            if success {
+                assert_eq!(session.total_actions, MAX_ACTIONS);
+                let response: Value =
+                    serde_json::from_slice(&fs::read(directory.join("observations.jsonl"))?)?;
+                assert_eq!(array(&response["Trace"])?.len(), 1);
+                assert!(session.exchange(&[json!({"Op":"clock"})]).is_err());
+            }
+            assert!(session.poisoned);
+            assert!(session.exchange(&[json!({"Op":"clock"})]).is_err());
+        }
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn direct_rust_trace_framing_enforces_the_exact_observation_cap() -> Result<()> {
+        let overhead = encode_trace(&[json!("")])?.len();
+        let mut values = [Value::String("x".repeat(MAX_OBSERVATION_BYTES - overhead))];
+        assert_eq!(encode_trace(&values)?.len(), MAX_OBSERVATION_BYTES);
+        let Value::String(value) = &mut values[0] else {
+            return Err(invalid("trace fixture is not text"));
+        };
+        value.push('x');
+        assert!(encode_trace(&values).is_err());
+        Ok(())
     }
 }

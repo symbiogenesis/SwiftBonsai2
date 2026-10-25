@@ -340,9 +340,6 @@ impl Partition {
         directory: &Path,
         controller: impl FnOnce(&mut Session) -> Result<T>,
     ) -> Result<Option<T>> {
-        let Some(worker) = &self.worker else {
-            return Ok(None);
-        };
         let directory = fs::canonicalize(directory)?;
         if !directory.is_absolute() || !directory.is_dir() {
             return Err(invalid(
@@ -357,6 +354,17 @@ impl Partition {
             Duration::from_secs(60)
         };
         let deadline = Instant::now() + timeout;
+        let Some(worker) = &self.worker else {
+            // model_session_spec returns None for the Rust target, whose
+            // production backend lives in this process. A missing pipe is
+            // therefore not an unsupported production graph API.
+            let mut session = Session::Rust(super::super::rust::GraphSession::open(
+                &directory,
+                usize::try_from(MAX_FILE_BYTES)?,
+                deadline,
+            )?);
+            return controller(&mut session).map(Some);
+        };
         worker.borrow_mut().case_deadline = Some(deadline);
         worker.borrow_mut().call(
             &json!({"Op":"open","Directory":directory,"MaxFileBytes":MAX_FILE_BYTES}),
@@ -555,6 +563,89 @@ mod tests {
             frame.extend(payload);
             native_rejects_frame(bridge, root, &frame)?;
         }
+        Ok(())
+    }
+
+    #[test]
+    fn rust_partition_matches_file_protocol_and_resets_production_state() -> Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let base = std::env::temp_dir();
+        if !base.is_absolute() {
+            return Err(invalid("Rust backend test temp directory must be absolute"));
+        }
+        let root = base.join(format!(
+            "prism-rust-partition-{}-{stamp}",
+            std::process::id()
+        ));
+        fs::create_dir(&root)?;
+        let engine = Engine::new(
+            super::super::super::super::engine::Target::Rust,
+            None,
+            None,
+            Some(root.clone()),
+            None,
+            None,
+        )?;
+        let old = engine.evidence_path("file-numerical")?;
+        let expected = super::super::with_session(&engine, &old, numerical_fixture)?
+            .ok_or_else(|| invalid("Rust file production API unavailable"))?;
+        let partition = Partition::open(&engine)?;
+        for _ in 0..3 {
+            let directory = engine.evidence_path("direct-numerical")?;
+            let actual = partition
+                .with_session(&directory, numerical_fixture)?
+                .ok_or_else(|| invalid("Rust partition must execute its production API"))?;
+            assert_eq!(actual, expected);
+        }
+        let (_, geometries, _) = planner::extent(Mode::Eval)?;
+        for class in ["test_bin_bcast", "test_get_rows"] {
+            let index = geometries
+                .iter()
+                .position(|geometry| geometry.class == class)
+                .ok_or_else(|| invalid("focused source geometry missing"))?;
+            let old = engine.evidence_path("file-source")?;
+            let expected = super::super::with_session(&engine, &old, |session| {
+                source_fixture(session, index)
+            })?
+            .ok_or_else(|| invalid("Rust file source API unavailable"))?;
+            let directory = engine.evidence_path("direct-source")?;
+            let actual = partition
+                .with_session(&directory, |session| source_fixture(session, index))?
+                .ok_or_else(|| invalid("Rust partition source API unavailable"))?;
+            assert_eq!(actual, expected);
+            if class == "test_get_rows" {
+                assert!(actual.0["CrtDraws"].as_u64().is_some_and(|draws| draws > 0));
+            }
+        }
+
+        let directory = engine.evidence_path("poisoned-source")?;
+        assert_eq!(
+            partition.with_session(&directory, |session| {
+                assert!(
+                    session
+                        .exchange(vec![json!({"Op":"invalid-operation"})])
+                        .is_err()
+                );
+                assert!(
+                    session
+                        .exchange(vec![json!({"Op":"context-init","Id":0})])
+                        .is_err()
+                );
+                Ok(true)
+            })?,
+            Some(true)
+        );
+        let directory = engine.evidence_path("after-poisoned-source")?;
+        assert!(
+            partition
+                .with_session(&directory, numerical_fixture)?
+                .is_some()
+        );
+        partition.finish()?;
+        drop(partition);
+        fs::remove_dir_all(root)?;
         Ok(())
     }
 
