@@ -104,7 +104,7 @@ impl Arena {
         clippy::too_many_lines,
         reason = "Keep parser variant streaming/extent transitions next to each other"
     )]
-    fn parse_at(
+    pub(super) fn parse_at(
         &self,
         id: usize,
         bytes: &[u8],

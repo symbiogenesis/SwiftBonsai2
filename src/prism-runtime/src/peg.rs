@@ -12,10 +12,13 @@ use serde_json::Value;
 
 use crate::{Result, invalid};
 
+#[path = "peg_capture.rs"]
+mod capture;
 #[path = "peg_grammar.rs"]
 mod grammar;
 #[path = "peg_parse.rs"]
 mod parse;
+pub use capture::{Capture, CapturedParse};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Range {
@@ -341,6 +344,104 @@ impl Arena {
                 .ok_or_else(|| invalid("PEG operation argument missing"))
         };
         match op {
+            "reasoning_block"
+            | "reasoning"
+            | "content"
+            | "tool"
+            | "tool_open"
+            | "tool_close"
+            | "tool_id"
+            | "tool_name"
+            | "tool_args"
+            | "tool_arg"
+            | "tool_arg_open"
+            | "tool_arg_close"
+            | "tool_arg_name"
+            | "tool_arg_string_value"
+            | "tool_arg_json_value" => {
+                let child = self.expression(arg(0)?, locals, depth + 1)?;
+                let tag = match op {
+                    "tool_arg_json_value" => "tool-arg-value".to_owned(),
+                    _ => op.replace('_', "-"),
+                };
+                let child = self.add(Parser::Tag { child, tag })?;
+                if matches!(
+                    op,
+                    "tool_open"
+                        | "tool_close"
+                        | "tool_id"
+                        | "tool_name"
+                        | "tool_arg_open"
+                        | "tool_arg_close"
+                        | "tool_arg_name"
+                ) {
+                    self.add(Parser::Atomic { child })
+                } else {
+                    Ok(child)
+                }
+            }
+            "start" => self.add(Parser::Start),
+            "rest" => self.add(Parser::Until {
+                delimiters: Vec::new(),
+            }),
+            "permute" => {
+                let children = array(arg(1)?)?
+                    .iter()
+                    .map(|child| self.expression(child, locals, depth + 1))
+                    .collect::<Result<Vec<_>>>()?;
+                if children.is_empty() {
+                    self.add(Parser::Epsilon)
+                } else if children.len() == 1 || children.len() > 6 {
+                    self.combine(children, false)
+                } else {
+                    let mask = (1_u8 << children.len()) - 1;
+                    self.permute(text(arg(0)?)?, &children, mask, &mut HashMap::new())
+                }
+            }
+            "schema" => {
+                let child = self.expression(arg(0)?, locals, depth + 1)?;
+                let schema = serde_json::from_str(text(&arg(2)?["Json"])?)?;
+                self.add(Parser::Schema {
+                    child,
+                    name: text(arg(1)?)?.into(),
+                    schema,
+                    raw: args.get(3).and_then(Value::as_bool).unwrap_or(false),
+                })
+            }
+            "choice-empty" => self.combine(Vec::new(), true),
+            "or-assign" => {
+                let left = self.expression(arg(0)?, locals, depth + 1)?;
+                let right = self.expression(arg(1)?, locals, depth + 1)?;
+                self.combine(vec![left, right], true)
+            }
+            "peek" | "negate" => {
+                let child = self.expression(arg(0)?, locals, depth + 1)?;
+                self.add(if op == "peek" {
+                    Parser::And { child }
+                } else {
+                    Parser::Not { child }
+                })
+            }
+            "repeat" => {
+                let child = self.expression(arg(0)?, locals, depth + 1)?;
+                let minimum = i32::try_from(
+                    arg(1)?
+                        .as_i64()
+                        .ok_or_else(|| invalid("PEG repeat minimum missing"))?,
+                )?;
+                let maximum = args.get(2).map_or(Ok(minimum), |arg| {
+                    i32::try_from(
+                        arg.as_i64()
+                            .ok_or_else(|| invalid("PEG repeat maximum missing"))?,
+                    )
+                    .map_err(crate::Error::from)
+                })?;
+                self.repeat(child, minimum, maximum)
+            }
+            "trigger_rule" => {
+                let child = self.expression(arg(1)?, locals, depth + 1)?;
+                self.rule(text(arg(0)?)?, child, true)
+            }
             "eps" => self.add(Parser::Epsilon),
             "end" => self.add(Parser::End),
             "any" => self.add(Parser::Any),
@@ -479,6 +580,32 @@ impl Arena {
             }
             _ => Err(invalid(format!("unsupported PEG builder operation {op}"))),
         }
+    }
+    fn permute(
+        &mut self,
+        prefix: &str,
+        children: &[usize],
+        mask: u8,
+        cache: &mut HashMap<u8, usize>,
+    ) -> Result<usize> {
+        if mask == 0 {
+            return self.add(Parser::Epsilon);
+        }
+        if let Some(&id) = cache.get(&mask) {
+            return Ok(id);
+        }
+        let mut alternatives = Vec::new();
+        for (index, &child) in children.iter().enumerate() {
+            let bit = 1_u8 << index;
+            if mask & bit != 0 {
+                let rest = self.permute(prefix, children, mask & !bit, cache)?;
+                alternatives.push(self.combine(vec![child, rest], false)?);
+            }
+        }
+        let choice = self.combine(alternatives, true)?;
+        let id = self.rule(&format!("{prefix}-{mask}"), choice, false)?;
+        cache.insert(mask, id);
+        Ok(id)
     }
     fn quoted(&mut self, single: bool) -> Result<usize> {
         let rule = if single {
@@ -707,6 +834,24 @@ impl Arena {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn captured_tags_preserve_partial_nodes_and_atomic_suppression() -> Result<()> {
+        use serde_json::json;
+        let graph = json!({"Statements":[],"Root":{"Op":"add","Args":[{"Op":"tag","Args":["first",{"Op":"literal","Args":["a"]}]},{"Op":"atomic","Args":[{"Op":"tag","Args":["second",{"Op":"literal","Args":["bc"]}]}]}]}});
+        let arena = Arena::from_graph(&graph)?;
+        let partial = arena.parse_captured(b"ab", 1, 0)?;
+        assert_eq!(partial.result.result_type, 2);
+        assert_eq!(partial.nodes.len(), 1);
+        assert_eq!(partial.nodes[0].tag, "first");
+        let full = arena.parse_captured(b"abc", 0, 0)?;
+        assert_eq!(full.result.result_type, 1);
+        assert_eq!(full.nodes.len(), 2);
+        assert_eq!(full.nodes[1].tag, "second");
+        let failed = arena.parse_captured(b"ax", 0, 0)?;
+        assert_eq!(failed.result.result_type, 0);
+        assert!(failed.nodes.is_empty());
+        Ok(())
+    }
     #[test]
     fn restored_arenas_reject_invalid_ids_and_bound_recursive_parsing() -> Result<()> {
         assert!(
