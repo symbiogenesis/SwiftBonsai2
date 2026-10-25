@@ -277,3 +277,4 @@ fn validate_prism_scale(bytes: [u8; 2]) -> Result<()> {
     }
     Ok(())
 }
+pub mod batch_allocator;

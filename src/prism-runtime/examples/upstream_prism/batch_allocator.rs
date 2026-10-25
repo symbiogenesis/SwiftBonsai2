@@ -8,8 +8,303 @@ use super::engine::Engine;
 use super::{Result, invalid, result};
 use serde_json::{Value, json};
 
+type RuntimeInput = bonsai_prism_runtime::model::batch_allocator::Input;
+type MemoryRanges = std::collections::BTreeMap<usize, (i32, i32)>;
+
 const ID: &str = "tests/test-batch-alloc.cpp";
 const SOURCE_SHA: &str = "341b3c4291cb46e412d6e750c2ab2e19131812d08ee3b236938c587e99341d79";
+
+fn runtime_integer(value: &Value, minimum: i64, maximum: i64) -> Result<i64> {
+    value
+        .as_i64()
+        .filter(|value| *value >= minimum && *value <= maximum)
+        .ok_or_else(|| invalid("batch allocator protocol integer outside bound"))
+}
+
+fn runtime_size(value: &Value, minimum: i64, maximum: i64) -> Result<usize> {
+    Ok(usize::try_from(runtime_integer(value, minimum, maximum)?)?)
+}
+
+fn runtime_array(value: &Value) -> Result<&[Value]> {
+    value
+        .as_array()
+        .map(Vec::as_slice)
+        .ok_or_else(|| invalid("batch allocator protocol array required"))
+}
+
+fn runtime_batch(batch: &bonsai_prism_runtime::model::batch_allocator::Batch) -> Value {
+    json!({"Embeddings":batch.embeddings,"Tokens":batch.tokens,"Positions":batch.positions,
+        "SequenceIds":batch.sequence_ids,"Logits":batch.logits})
+}
+
+fn runtime_state(
+    allocator: &bonsai_prism_runtime::model::batch_allocator::BatchAllocator,
+    limit: usize,
+) -> Result<Value> {
+    let batch = allocator
+        .batch()
+        .ok_or_else(|| invalid("batch allocator has no initialized input"))?;
+    let positions = (0..limit)
+        .map(|id| {
+            let (min, max) = allocator
+                .sequence_position(id)
+                .ok_or_else(|| invalid("batch sequence ID outside bound"))?;
+            Ok(json!({"Min":min,"Max":max}))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(
+        json!({"NTokens":batch.len(),"NOutputs":batch.logits.iter().filter(|flag|**flag!=0).count(),
+        "NUsed":allocator.used(),"Batch":runtime_batch(batch),"OutIds":allocator.output_ids(),"SequencePositions":positions}),
+    )
+}
+
+fn runtime_ubatch(value: &bonsai_prism_runtime::model::batch_allocator::MicroBatch) -> Value {
+    let data = value.data.as_ref();
+    json!({"NTokens":data.map_or(0, bonsai_prism_runtime::model::batch_allocator::Batch::len),
+        "NSequenceTokens":value.sequence_tokens,"NSequences":value.sequences,"NUniqueSequences":value.unique_sequence_ids.len(),
+        "NPositions":value.positions,"EqualSequences":value.equal_sequences,"IsPosition2D":value.positions>=3,
+        "HasTokens":data.is_some_and(|data|data.tokens.is_some()),"HasEmbeddings":data.is_some_and(|data|data.embeddings.is_some()),
+        "Tokens":data.and_then(|data|data.tokens.as_ref()),"Embeddings":data.and_then(|data|data.embeddings.as_ref()),
+        "Positions":data.map(|data|&data.positions),"SequenceIds":data.map(|data|&data.sequence_ids),
+        "UniqueSequenceIds":data.map(|_|&value.unique_sequence_ids),"SequenceIndices":data.map(|_|&value.sequence_indices),"Output":data.map(|data|&data.logits)})
+}
+
+fn runtime_input(action: &Value, position_sections: usize) -> Result<(RuntimeInput, MemoryRanges)> {
+    use bonsai_prism_runtime::model::batch_allocator::Input;
+    fields(
+        action,
+        &[
+            "Op",
+            "EmbeddingWidth",
+            "Embeddings",
+            "Tokens",
+            "Positions",
+            "SequenceIds",
+            "Logits",
+            "SequenceLimit",
+            "OutputAll",
+            "MemoryRanges",
+        ],
+    )?;
+    let width = runtime_size(&action["EmbeddingWidth"], 0, 8)?;
+    let tokens = runtime_integers(&action["Tokens"])?;
+    let embeddings = if action["Embeddings"].is_null() {
+        None
+    } else {
+        Some(serde_json::from_value::<Vec<f32>>(
+            action["Embeddings"].clone(),
+        )?)
+    };
+    let count = match (&tokens, &embeddings) {
+        (Some(tokens), None) if width == 0 => tokens.len(),
+        (None, Some(embeddings)) if width > 0 && embeddings.len().is_multiple_of(width) => {
+            embeddings.len() / width
+        }
+        _ => {
+            return Err(invalid(
+                "batch requires either tokens or complete embeddings",
+            ));
+        }
+    };
+    if count == 0 || count > 64 {
+        return Err(invalid("batch protocol token count outside bound"));
+    }
+    let positions = runtime_integers(&action["Positions"])?;
+    if positions.as_ref().is_some_and(|positions| {
+        positions.len()
+            != count
+                * if tokens.is_some() {
+                    1
+                } else {
+                    position_sections
+                }
+    }) {
+        return Err(invalid("batch protocol position extent mismatch"));
+    }
+    let sequence_ids = if action["SequenceIds"].is_null() {
+        None
+    } else {
+        let values = runtime_array(&action["SequenceIds"])?;
+        if values.len() != count {
+            return Err(invalid("batch protocol sequence extent mismatch"));
+        }
+        let mut ids = Vec::with_capacity(count);
+        for value in values {
+            let sequence = runtime_array(value)?;
+            if sequence.is_empty() || sequence.len() > 8 {
+                return Err(invalid("batch protocol memberships outside bound"));
+            }
+            ids.push(
+                sequence
+                    .iter()
+                    .map(|value| Ok(i32::try_from(runtime_integer(value, -1, 256)?)?))
+                    .collect::<Result<Vec<_>>>()?,
+            );
+        }
+        Some(ids)
+    };
+    let logits = if action["Logits"].is_null() {
+        None
+    } else {
+        let values = runtime_array(&action["Logits"])?;
+        if values.len() != count {
+            return Err(invalid("batch protocol output extent mismatch"));
+        }
+        Some(
+            values
+                .iter()
+                .map(|value| Ok(i8::try_from(runtime_integer(value, 0, 1)?)?))
+                .collect::<Result<Vec<_>>>()?,
+        )
+    };
+    Ok((
+        Input {
+            tokens,
+            embeddings,
+            embedding_width: width,
+            positions,
+            sequence_ids,
+            logits,
+        },
+        runtime_memory(action)?,
+    ))
+}
+
+fn runtime_integers(value: &Value) -> Result<Option<Vec<i32>>> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    Ok(Some(
+        runtime_array(value)?
+            .iter()
+            .map(|value| Ok(i32::try_from(runtime_integer(value, -32768, 32768)?)?))
+            .collect::<Result<Vec<_>>>()?,
+    ))
+}
+
+fn runtime_memory(action: &Value) -> Result<MemoryRanges> {
+    let mut ranges = MemoryRanges::new();
+    if !action["MemoryRanges"].is_null() {
+        let values = runtime_array(&action["MemoryRanges"])?;
+        if values.len() > 16 {
+            return Err(invalid("batch memory range bound exceeded"));
+        }
+        for value in values {
+            fields(value, &["Sequence", "Min", "Max"])?;
+            let id = runtime_size(&value["Sequence"], 0, 255)?;
+            let range = (
+                i32::try_from(runtime_integer(&value["Min"], -1, 32768)?)?,
+                i32::try_from(runtime_integer(&value["Max"], -1, 32768)?)?,
+            );
+            if ranges.insert(id, range).is_some() {
+                return Err(invalid("duplicate batch memory range"));
+            }
+        }
+    }
+    Ok(ranges)
+}
+
+fn runtime_operation(operation: &Value) -> Result<Value> {
+    use bonsai_prism_runtime::model::batch_allocator::BatchAllocator;
+    fields(operation, &["Kind", "PositionsPerEmbedding", "Actions"])?;
+    let positions = runtime_size(&operation["PositionsPerEmbedding"], 1, 4)?;
+    let mut allocator = BatchAllocator::new(positions)?;
+    let actions = runtime_array(&operation["Actions"])?;
+    if actions.is_empty() || actions.len() > 64 {
+        return Err(invalid("batch protocol action count outside bound"));
+    }
+    let mut limit = 0;
+    let mut observations = Vec::with_capacity(actions.len());
+    for action in actions {
+        let op = action["Op"]
+            .as_str()
+            .ok_or_else(|| invalid("batch protocol action Op must be text"))?;
+        let event = match op {
+            "init" => {
+                let (input, memory) = runtime_input(action, positions)?;
+                limit = runtime_size(&action["SequenceLimit"], 1, 257)?;
+                let output_all = action["OutputAll"]
+                    .as_bool()
+                    .ok_or_else(|| invalid("batch OutputAll must be boolean"))?;
+                let initialized = allocator.init(
+                    input,
+                    0,
+                    limit,
+                    output_all,
+                    if action["MemoryRanges"].is_null() {
+                        None
+                    } else {
+                        Some(&memory)
+                    },
+                )?;
+                json!({"Initialized":initialized,"State":if initialized{runtime_state(&allocator,limit)?}else{Value::Null}})
+            }
+            "reserve" => {
+                fields(action, &["Op", "SequenceTokens", "Sequences"])?;
+                let tokens = runtime_size(&action["SequenceTokens"], 1, 16)?;
+                let sequences = runtime_size(&action["Sequences"], 1, 16)?;
+                if tokens * sequences > 64 {
+                    return Err(invalid("batch reservation exceeds bound"));
+                }
+                json!({"Ubatch":runtime_ubatch(&allocator.reserve(tokens,sequences)?),"State":null})
+            }
+            "split-reset" => {
+                fields(action, &["Op"])?;
+                if allocator.batch().is_none() {
+                    return Err(invalid("batch reset requires initialized input"));
+                }
+                allocator.split_reset();
+                json!({"State":runtime_state(&allocator,limit)?})
+            }
+            "split-simple" | "split-seq" | "split-equal" => {
+                fields(
+                    action,
+                    if op == "split-equal" {
+                        &["Op", "Capacity", "Sequential", "KeepTail"]
+                    } else {
+                        &["Op", "Capacity"]
+                    },
+                )?;
+                let capacity = runtime_size(&action["Capacity"], 1, 64)?;
+                let ubatch = match op {
+                    "split-simple" => allocator.split_simple(capacity)?,
+                    "split-seq" => allocator.split_sequence(capacity)?,
+                    _ => allocator.split_equal(
+                        capacity,
+                        action["Sequential"]
+                            .as_bool()
+                            .ok_or_else(|| invalid("batch Sequential must be boolean"))?,
+                        runtime_size(&action["KeepTail"], 0, 64)?,
+                    )?,
+                };
+                json!({"Ubatch":runtime_ubatch(&ubatch),"State":runtime_state(&allocator,limit)?})
+            }
+            _ => return Err(invalid("unknown batch protocol action")),
+        };
+        observations.push(event);
+    }
+    Ok(json!({"Actions":observations}))
+}
+
+pub(super) fn execute_runtime(request: &Value) -> Result<Option<Value>> {
+    fields(request, &["SchemaVersion", "Operations"])?;
+    if request["SchemaVersion"] != 1 {
+        return Err(invalid("batch protocol version mismatch"));
+    }
+    let operations = runtime_array(&request["Operations"])?;
+    if operations.is_empty() || operations.len() > 128 {
+        return Err(invalid("batch protocol operation count outside bound"));
+    }
+    if operations
+        .iter()
+        .any(|operation| operation["Kind"] != "batch-allocator")
+    {
+        return Ok(None);
+    }
+    Ok(Some(
+        json!({"SchemaVersion":1,"Results":operations.iter().map(runtime_operation).collect::<Result<Vec<_>>>()?}),
+    ))
+}
 
 #[derive(Default)]
 struct Batch {
