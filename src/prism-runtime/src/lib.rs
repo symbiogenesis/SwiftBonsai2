@@ -8,6 +8,7 @@
 
 pub mod backend;
 pub mod bpe;
+pub mod grammar;
 pub mod graph;
 pub mod kernels;
 pub mod logging;

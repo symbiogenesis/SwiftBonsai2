@@ -169,6 +169,7 @@ pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
                     | "mtmd-image-should-tile"
                     | "mtmd-group-bitmaps"
                     | "concurrent-log"
+                    | "grammar-parser-parse"
             )
         )
     }) {
@@ -200,6 +201,16 @@ pub(super) fn execute(request: &Value) -> Result<Option<Value>> {
                 Ok(json!({"GroupSizes": groups.iter().map(Vec::len).collect::<Vec<_>>(), "RemainingBitmapParts": parts.iter().filter(|part| !matches!(part, media::Part::Text(_))).count()}))
             }
             "concurrent-log" => logging(operation),
+            "grammar-parser-parse" => {
+                exact_fields(operation, &["Kind", "Grammar"])?;
+                match bonsai_prism_runtime::grammar::Grammar::parse(text(operation, "Grammar")?) {
+                    Ok(grammar) => Ok(json!({"Parsed": true,
+                        "SymbolIds": grammar.symbols.iter().map(|(name,id)| json!({"Name": name, "Id": id})).collect::<Vec<_>>(),
+                        "Rules": grammar.rules.iter().map(|rule| rule.iter().map(|element| json!({"Type":element.kind,"Value":element.value})).collect::<Vec<_>>()).collect::<Vec<_>>()
+                    })),
+                    Err(_) => Ok(json!({"Parsed": false, "SymbolIds": [], "Rules": []})),
+                }
+            }
             _ => Err(invalid("unknown validated runtime operation")),
         }
     }).collect::<Result<Vec<_>>>()?;
