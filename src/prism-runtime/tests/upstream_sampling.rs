@@ -72,6 +72,27 @@ fn swift_logits(kind: &str) -> Result<Vec<f32>, Box<dyn std::error::Error + Send
         .collect()
 }
 
+fn assert_native_candidates(data: &Candidates, expected: &[Value]) -> TestResult {
+    assert_eq!(data.data().len(), expected.len());
+    for (candidate, native) in data.data().iter().zip(expected) {
+        assert_eq!(
+            i64::from(candidate.id),
+            native["Id"].as_i64().ok_or("native id")?
+        );
+        assert_eq!(
+            u64::from(candidate.logit.to_bits()),
+            native["LogitBits"].as_u64().ok_or("native logit")?
+        );
+        let probability = f32::from_bits(u32::try_from(
+            native["ProbabilityBits"]
+                .as_u64()
+                .ok_or("native probability")?,
+        )?);
+        assert!((candidate.probability - probability).abs() <= 1e-6);
+    }
+    Ok(())
+}
+
 #[test]
 fn swift_chain_matches_verified_pinned_arm64_candidates_and_seeded_draws() -> TestResult {
     // Canonical LF bytes retain their capture digest on CRLF Git checkouts.
@@ -158,23 +179,7 @@ fn swift_chain_matches_verified_pinned_arm64_candidates_and_seeded_draws() -> Te
                 let expected = case["FirstCandidates"]
                     .as_array()
                     .ok_or("missing candidates")?;
-                assert_eq!(data.data().len(), expected.len());
-                for (candidate, native) in data.data().iter().zip(expected) {
-                    assert_eq!(
-                        i64::from(candidate.id),
-                        native["Id"].as_i64().ok_or("native id")?
-                    );
-                    assert_eq!(
-                        u64::from(candidate.logit.to_bits()),
-                        native["LogitBits"].as_u64().ok_or("native logit")?
-                    );
-                    let probability = f32::from_bits(u32::try_from(
-                        native["ProbabilityBits"]
-                            .as_u64()
-                            .ok_or("native probability")?,
-                    )?);
-                    assert!((candidate.probability - probability).abs() <= 1e-6);
-                }
+                assert_native_candidates(&data, expected)?;
             }
         }
     }
