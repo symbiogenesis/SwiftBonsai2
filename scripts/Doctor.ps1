@@ -34,9 +34,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Capabilities.psm1')
 if (-not $IsWindows) { throw 'Doctor requires Windows and PowerShell 7.6 or later.' }
 
 $issues = [Collections.Generic.List[string]]::new()
+$probeResults = @{}
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 
 function Get-ExternalPath {
@@ -188,9 +190,18 @@ function Get-CimFact {
     [CmdletBinding()]
     [OutputType([Microsoft.Management.Infrastructure.CimInstance])]
 
-    param([string] $ClassName, [string[]] $Properties)
-    try { Get-CimInstance -ClassName $ClassName -Property $Properties -ErrorAction Stop }
-    catch { $issues.Add("CIM $ClassName unavailable; hardware facts remain unverified.") }
+    param([string] $ClassName, [string[]] $Properties, [string] $Filter)
+    try {
+        $query = @{ ClassName = $ClassName; Property = $Properties; OperationTimeoutSec = 10; ErrorAction = 'Stop' }
+        if ($Filter) { $query.Filter = $Filter }
+        $facts = @(Get-CimInstance @query)
+        $probeResults[$ClassName] = $true
+        foreach ($fact in $facts) { [Microsoft.Management.Infrastructure.CimInstance]$fact }
+    }
+    catch {
+        $probeResults[$ClassName] = $false
+        $issues.Add("CIM $ClassName unavailable; hardware facts remain unverified.")
+    }
 }
 
 try {
@@ -199,6 +210,15 @@ try {
     $computer = Get-CimFact 'Win32_ComputerSystem' @('Manufacturer', 'Model', 'TotalPhysicalMemory')
     $cpus = @(Get-CimFact 'Win32_Processor' @('Name', 'Manufacturer', 'NumberOfCores', 'NumberOfLogicalProcessors'))
     $gpus = @(Get-CimFact 'Win32_VideoController' @('Name', 'AdapterCompatibility', 'DriverVersion', 'DriverDate', 'Status'))
+    $memoryStatus = Get-CimFact 'Win32_PerfFormattedData_PerfOS_Memory' @('AvailableBytes', 'CommitLimit', 'CommittedBytes')
+    $npuDrivers = @(Get-CimFact 'Win32_PnPSignedDriver' @('DeviceName', 'Manufacturer', 'DriverVersion', 'DriverDate', 'IsSigned') -Filter "DeviceClass = 'ComputeAccelerator'")
+    $isa = $null
+    $isaProbeSucceeded = $false
+    try {
+        $isa = @{ AdvSimd = [Runtime.Intrinsics.Arm.AdvSimd]::IsSupported; DotProd = [Runtime.Intrinsics.Arm.Dp]::IsSupported }
+        $isaProbeSucceeded = $true
+    }
+    catch { $issues.Add('Process-scoped ARM ISA probes unavailable; instruction support remains unknown.') }
 
     $vsRoots = [Collections.Generic.List[string]]::new()
     $programDirectories = @(${env:ProgramFiles}, ${env:ProgramFiles(x86)}, ${env:ProgramW6432}) |
@@ -302,6 +322,20 @@ try {
         Graphics = @($gpus | ForEach-Object { [ordered] @{ Name = $_.Name; Vendor = $_.AdapterCompatibility; DriverVersion = $_.DriverVersion; DriverDate = if ($_.DriverDate) { $_.DriverDate.ToUniversalTime().ToString('o') } else { $null }; Status = $_.Status } })
         Tools = $tools
         Storage = $storage
+        Capabilities = Get-BonsaiHostCapability -Facts @{
+            OsArchitecture = $osArchitecture; ProcessArchitecture = $processArchitecture
+            OperatingSystem = $os; Computer = $computer; Processors = $cpus; Graphics = $gpus
+            Memory = $memoryStatus; NpuDrivers = $npuDrivers; Isa = $isa
+            Probes = @{
+                OperatingSystem = [bool]$probeResults['Win32_OperatingSystem']
+                Computer = [bool]$probeResults['Win32_ComputerSystem']
+                Processors = [bool]$probeResults['Win32_Processor']
+                Graphics = [bool]$probeResults['Win32_VideoController']
+                Memory = [bool]$probeResults['Win32_PerfFormattedData_PerfOS_Memory']
+                NpuDrivers = [bool]$probeResults['Win32_PnPSignedDriver']
+                Isa = $isaProbeSucceeded
+            }
+        }
         Gaps = @($issues)
         Qualification = 'Inventory only: no engine, GPU backend, memory admission, or daily security policy has been qualified.'
     }

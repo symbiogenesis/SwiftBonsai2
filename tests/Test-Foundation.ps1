@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([void])]
-param([ValidateSet('All','Download','Configuration','Paths','PE','Doctor','ServerPolicy')][string]$Case = 'All')
+param([ValidateSet('All','Download','Configuration','Paths','PE','Doctor','Capabilities','ServerPolicy')][string]$Case = 'All')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -267,11 +267,68 @@ if ($Case -in @('All','ServerPolicy')) {
     Assert ($before.Count -eq $after.Count) 'Planning changed the parent environment.'
     foreach ($name in $before.Keys) { Assert ($after[$name] -ceq $before[$name]) 'Planning changed an inherited environment value.' }
 }
+if ($Case -in @('All','Capabilities')) {
+    Import-Module (Join-Path $repo 'scripts/Bonsai.Capabilities.psm1') -Force
+    $unknown = Get-BonsaiHostCapability -Facts @{}
+    Assert ($unknown.schema_version -eq 1 -and $unknown.kind -ceq 'runner-host-capabilities') 'Capability identity changed.'
+    Assert ($unknown.cpu.status -ceq 'unknown' -and $null -eq $unknown.cpu.isa.advsimd -and
+        $null -eq $unknown.memory.available_physical_bytes -and $unknown.npu.status -ceq 'unknown') 'Missing probes fabricated support or memory.'
+    $facts = @{
+        OsArchitecture = 'Arm64'; ProcessArchitecture = 'Arm64'
+        OperatingSystem = @{ Version = '10.0.26100'; BuildNumber = '26100'; TotalVisibleMemorySize = [uint64]33554432 }
+        Computer = @{ TotalPhysicalMemory = [uint64]34359738368 }
+        Processors = @(@{ Name = 'Snapdragon X2E-96-100'; Manufacturer = 'Qualcomm'; NumberOfCores = 18; NumberOfLogicalProcessors = 18 })
+        Graphics = @(@{ Name = 'Adreno'; AdapterCompatibility = 'Qualcomm'; DriverVersion = '1.2.3'; DriverDate = [datetime]'2026-01-01T00:00:00Z' })
+        NpuDrivers = @(@{ DeviceName = 'Compute accelerator'; Manufacturer = 'Qualcomm'; DriverVersion = '4.5.6'; DriverDate = [datetime]'2026-01-01T00:00:00Z'; IsSigned = $true })
+        Memory = @{ AvailableBytes = [uint64]17179869184; CommitLimit = [uint64]68719476736; CommittedBytes = [uint64]8589934592 }
+        Isa = @{ AdvSimd = $false; DotProd = $false }
+        Probes = @{ OperatingSystem = $true; Computer = $true; Processors = $true; Graphics = $true; NpuDrivers = $true; Memory = $true; Isa = $true }
+    }
+    $known = Get-BonsaiHostCapability -Facts $facts
+    Assert ($known.cpu.identities[0].name -ceq 'Snapdragon X2E-96-100' -and $known.cpu.identities[0].physical_cores -eq 18) 'Observed processor identity or counts were lost.'
+    Assert ($known.memory.usable_physical_bytes -eq [uint64]34359738368 -and
+        $known.memory.commit_limit_bytes -eq [uint64]68719476736 -and $known.memory.status -ceq 'observed') 'Memory units or observed commit facts changed.'
+    Assert ($known.cpu.isa.advsimd -ceq $false -and $known.cpu.isa.dotprod -ceq $false -and
+        $null -eq $known.cpu.topology.processor_groups -and $null -eq $known.gpu.api_features -and
+        $null -eq $known.npu.architecture -and $null -eq $known.npu.backend_readiness) 'Marketing identity or signed-driver inventory enabled unobserved capabilities.'
+    $facts.ProcessArchitecture = 'X64'
+    $emulated = Get-BonsaiHostCapability -Facts $facts
+    Assert ($emulated.process.is_native -ceq $false -and $emulated.cpu.isa.architecture -ceq 'x64' -and
+        $emulated.cpu.isa.scope -ceq 'current-process') 'Process ISA claims lost their emulation scope.'
+    $facts.Probes.Isa = $false
+    $failedIsa = Get-BonsaiHostCapability -Facts $facts
+    Assert ($failedIsa.cpu.isa.status -ceq 'unknown' -and $null -eq $failedIsa.cpu.isa.advsimd) 'A failed ISA probe reused stale facts.'
+    $facts.NpuDrivers = @()
+    $empty = Get-BonsaiHostCapability -Facts $facts
+    Assert ($empty.npu.status -ceq 'observed' -and $empty.npu.devices.Count -eq 0) 'An empty successful inventory became a failed probe.'
+    $facts.Probes.NpuDrivers = $false
+    $failed = Get-BonsaiHostCapability -Facts $facts
+    Assert ($failed.npu.status -ceq 'unknown' -and $failed.npu.devices.Count -eq 0) 'Failed and empty inventories were conflated.'
+    foreach ($invalid in @(-1, '17179869184', 1.5, $true)) {
+        $facts.Memory.AvailableBytes = $invalid
+        Assert-Failure { Get-BonsaiHostCapability -Facts $facts } 'A non-integer or negative memory fact was accepted.'
+    }
+    $facts.Memory.AvailableBytes = [uint64]0
+    Assert ((Get-BonsaiHostCapability -Facts $facts).memory.available_physical_bytes -eq 0) 'Zero available memory became unknown.'
+    $facts.OperatingSystem.TotalVisibleMemorySize = [uint64]::MaxValue
+    Assert-Failure { Get-BonsaiHostCapability -Facts $facts } 'KiB conversion overflow was accepted.'
+    $facts.OperatingSystem.TotalVisibleMemorySize = [uint64]33554432
+    $facts.Probes.Isa = $true
+    $facts.Isa.AdvSimd = 'false'
+    Assert-Failure { Get-BonsaiHostCapability -Facts $facts } 'A string ISA flag was accepted.'
+    $facts.Isa.AdvSimd = $false
+    $facts.Processors[0].Name = "invalid`nidentity"
+    Assert-Failure { Get-BonsaiHostCapability -Facts $facts } 'Control characters in hardware identity were accepted.'
+    $facts.Processors = @(1..65 | ForEach-Object { @{ Name = 'CPU' } })
+    Assert-Failure { Get-BonsaiHostCapability -Facts $facts } 'Unbounded processor inventory was accepted.'
+}
 if ($Case -in @('All','Doctor')) {
     $reportPath = Join-Path $scratch 'doctor.json'
     $report = & (Join-Path $repo 'scripts/Doctor.ps1') -DataPath $scratch -OutputPath $reportPath -PassThru
     $saved = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json -DateKind String
     Assert ($saved.SchemaVersion -eq 1 -and $report.Runtime.ProcessArchitecture) 'Doctor did not produce a versioned architecture report.'
+    Assert ($saved.Capabilities.schema_version -eq 1 -and $saved.Capabilities.kind -ceq 'runner-host-capabilities' -and
+        $saved.Capabilities.cpu.isa.scope -ceq 'current-process' -and $null -eq $saved.Capabilities.npu.backend_readiness) 'Doctor lost its bounded host capability contract.'
     if ($null -ne $saved.Memory.UsablePhysicalBytes) { Assert ($saved.Memory.UsablePhysicalBytes -gt 0) 'Usable memory must be positive bytes.' }
     Assert-Failure { & (Join-Path $repo 'scripts/Doctor.ps1') -OutputPath $reportPath } 'Doctor overwrote an existing report.'
 }
