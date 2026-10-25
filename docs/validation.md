@@ -244,8 +244,8 @@ them. Each consumer verifies source pins, executable lengths and SHA-256 hashes,
 ARM64 PE headers, compiler identity and build provenance. LLGuidance requires a
 distinct native feature build and starts independently. Every runner extracts
 and verifies fresh source, runs every assigned workload and retains its own
-results. Each runs up to two independent adapters concurrently, starting the largest timeout
-budgets first. Each adapter retains sequential C++ and Rust controls, separate
+results. Each runs up to two independent adapters concurrently, starting the
+largest timeout budgets first. Each adapter retains sequential C++ and Rust controls, separate
 logs and bridge evidence. The final gate requires all four revision-bound
 receipts and exactly one result for every assigned source on each target before
 combining the backend partitions and applying the unchanged complete baseline.
@@ -283,6 +283,8 @@ snapshots. Native runtime discovery runs once per bridge process while each
 geometry retains fresh graph state. The source interpreter indexes classes and
 overloads once rather than scanning the complete class list for every call;
 dispatch equivalence covers inheritance, overload order and default arguments.
+Harness failures include a bounded error tail directly in the workflow log as
+well as the complete retained diagnostic log.
 
 The production GGUF tokenizer narrows a sorted vocabulary index by input bytes
 instead of scanning every token with the same first byte. Longest-match,

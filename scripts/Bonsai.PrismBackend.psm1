@@ -203,7 +203,11 @@ function Invoke-BonsaiPrismBackendDiagnostic {
             [Text.Encoding]::UTF8.GetByteCount($process.StandardError) -gt $script:BackendLogLimit) {
             throw 'Backend harness output exceeds 1MiB per stream.'
         }
-        if ($process.ExitCode -ne 0) { throw "Backend harness infrastructure exit $($process.ExitCode); see $log" }
+        if ($process.ExitCode -ne 0) {
+            $detail = if ($process.StandardError.Trim()) { $process.StandardError.Trim() } else { $process.StandardOutput.Trim() }
+            $detail = $detail.Substring([Math]::Max(0, $detail.Length - 4096))
+            throw "Backend harness infrastructure exit $($process.ExitCode): $detail; see $log"
+        }
         $report = Read-BonsaiPrismBackendJson -Path $output
         if ($report -isnot [Collections.IDictionary] -or $report.SchemaVersion -ne 1 -or
             $report.Target -cne $Context.Target -or $report.UpstreamCommit -cne 'b87ca7225456b06b0975b8239c66b5aecf07e37c' -or
