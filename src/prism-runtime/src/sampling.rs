@@ -7,7 +7,10 @@
 use crate::{Result, invalid, runtime::greedy};
 
 pub mod reasoning_budget;
+mod swift;
 pub mod upstream;
+
+pub use swift::SwiftSampler;
 
 /// Select a token from the complete next-token logits.
 ///

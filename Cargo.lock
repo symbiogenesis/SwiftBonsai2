@@ -76,6 +76,7 @@ version = "0.1.0"
 dependencies = [
  "bonsai-artifacts",
  "bonsai-cpu-policy",
+ "bonsai-prism-runtime",
  "bonsai-windows-credentials",
  "bonsai-windows-process",
  "http",
