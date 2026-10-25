@@ -49,7 +49,15 @@
       "executableSha256": "5663411fd4dc477ea1d3b3dc1b61ae50745e13001507b3abf241fa167ef5e936",
       "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
     },
-    "acceptanceScope": "Pinned-model load and three supplied-token forward steps. Approximately 13.7 GiB free at startup was sufficient for this observed bounded workload; full 8K/4K-output service admission is not changed."
+    "acceptanceScope": "Pinned-model load and three supplied-token forward steps. Approximately 13.7 GiB free at startup was sufficient for this observed bounded workload; full 8K/4K-output service admission is not changed.",
+    "latestBoundedRepeat": {
+      "startingFreeGiB": 12.201507568359375,
+      "minimumFreeGiB": 6.7581329345703125,
+      "peakProcessCommitBytes": 7536111616,
+      "acceptedForThisFixedDiagnostic": true,
+      "processRecord": "numericalFollowups latest entry",
+      "rationale": "Measured prior peak plus 4 GiB reserve and approximately 1 GiB admission margin; full-service policy unchanged"
+    }
   },
   "numerical": {
     "passed": false,
@@ -175,6 +183,26 @@
       "path": "state-comparison.json",
       "bytes": 177571,
       "sha256": "173ef770f05dc55bb27db7cd1f145e8eca21d7763ca76ba1f2f5877f30c3b7cf"
+    },
+    {
+      "path": "q8k-observation-files.sha256.json",
+      "bytes": 87037,
+      "sha256": "9f983a3b06c091401ef3a6413bf4f619c3fc497f6d8baec5a6e7370341e22b45"
+    },
+    {
+      "path": "neon-q8k-process.json",
+      "bytes": 780,
+      "sha256": "42b814e8202d03596b29c4f2854d93512b3fb5aba06399777c9e1140ed5105f9"
+    },
+    {
+      "path": "q8k-logits-comparison.json",
+      "bytes": 685,
+      "sha256": "37a57098477a73b04c0e73da36124325a9670a1e1e110c15017595ec700920de"
+    },
+    {
+      "path": "q8k-state-comparison.json",
+      "bytes": 169539,
+      "sha256": "47e6e765e5d237ddd7ed5eed99917da0df636d38d015e12824fc78fcc24b6f59"
     }
   ],
   "sessionFollowup": {
@@ -420,6 +448,90 @@
         "executableSha256": "e9093b362c00f49f410c5f71f9793eb2075342907cbd9ad6e4cad27774c3124b",
         "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
       }
+    },
+    {
+      "testedRevision": "7d49e43bf8ad248f7270ac252534db7e5cdeebb3",
+      "repair": "Combined native-controlled RMS, PQ2/Q8_K, activations, GDN and attention arithmetic",
+      "passed": false,
+      "logits": [
+        {
+          "step": 0,
+          "max_absolute_error": 0.0,
+          "mean_absolute_error": 0.0,
+          "failed_values": 0,
+          "logits_count": 248320,
+          "greedy_actual": 198,
+          "greedy_reference": 198
+        },
+        {
+          "step": 1,
+          "max_absolute_error": 0.12155365943908691,
+          "mean_absolute_error": 0.019134768012795178,
+          "failed_values": 211889,
+          "logits_count": 248320,
+          "greedy_actual": 198,
+          "greedy_reference": 198
+        },
+        {
+          "step": 2,
+          "max_absolute_error": 0.07731389999389648,
+          "mean_absolute_error": 0.010918938574789504,
+          "failed_values": 193207,
+          "logits_count": 248320,
+          "greedy_actual": 220,
+          "greedy_reference": 220
+        }
+      ],
+      "state": {
+        "totalElements": 117866496,
+        "failedElements": 1333348,
+        "maximumAbsoluteError": 0.3284187316894531,
+        "firstFailingComponent": [
+          null,
+          {
+            "step": 1,
+            "block": 1,
+            "component": "convolution",
+            "elements": 30720,
+            "failed_elements": 5283,
+            "max_absolute_error": 0.008924365043640137,
+            "mean_absolute_error": 0.000546893858198653,
+            "maximum_index": 16886,
+            "actual_at_maximum": -0.6175945401191711,
+            "reference_at_maximum": -0.6265189051628113
+          },
+          {
+            "step": 2,
+            "block": 1,
+            "component": "convolution",
+            "elements": 30720,
+            "failed_elements": 5283,
+            "max_absolute_error": 0.008924365043640137,
+            "mean_absolute_error": 0.0005469112627686457,
+            "maximum_index": 16885,
+            "actual_at_maximum": -0.6175945401191711,
+            "reference_at_maximum": -0.6265189051628113
+          }
+        ],
+        "stepZeroAllLogicalStateFilesBitExact": true
+      },
+      "process": {
+        "revision": "7d49e43bf8ad248f7270ac252534db7e5cdeebb3",
+        "mode": "neon",
+        "exitCode": 0,
+        "violation": null,
+        "peakProcessCommitBytes": 7536111616,
+        "peakWorkingSetBytes": 7522689024,
+        "initialAvailablePhysicalBytes": 13101268992,
+        "minimumAvailablePhysicalBytes": 7256489984,
+        "requiredInitialAvailableBytes": 12884901888,
+        "standardServiceAdmissionBytes": 17179869184,
+        "ownerAuthorizedReducedAdmission": true,
+        "processThresholdBytes": 12884901888,
+        "physicalReserveBytes": 4294967296,
+        "executableSha256": "86f1e82bd0477d5df8a0765e5fc73d1606a8a45b7a008f45a4e7d0d4b8ca6e37",
+        "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+      }
     }
   ],
   "causalTrace": {
@@ -452,7 +564,7 @@
     ]
   },
   "downProjectionDiagnosis": {
-    "status": "Private fused-rounding repair implemented; combined actual-model rerun pending available memory",
+    "status": "Combined actual-model first-token logits and complete logical state now match the pinned reference bit-for-bit; later-token divergence remains",
     "modelMaterialized": false,
     "transformed17408InputBitExact": true,
     "sourceVsNativeQ8kDifferentBytes": 2,
@@ -481,12 +593,12 @@
     "implementationRevision": "46599ba2ef35c9d5c1bbd6817bfe5b8636c68fc7"
   },
   "currentQualification": {
-    "implementationRevision": "46599ba2ef35c9d5c1bbd6817bfe5b8636c68fc7",
-    "combinedActualModelRerun": "not-started-memory-admission",
-    "lastObservedAvailablePhysicalBytes": 12505128960,
-    "boundedDiagnosticStartFloorBytes": 13958643712,
+    "implementationRevision": "7d49e43bf8ad248f7270ac252534db7e5cdeebb3",
+    "combinedActualModelRerun": "completed-three-supplied-token-diagnostic; first step bit exact, later steps fail unchanged tolerance",
+    "lastObservedAvailablePhysicalBytes": 13101268992,
+    "boundedDiagnosticStartFloorBytes": 12884901888,
     "memoryAcceptableForPreviouslyObservedWorkload": true,
-    "M2": "unqualified until combined full-model comparison",
+    "M2": "unqualified: history-dependent steps and full-prefix/generated trajectory remain open",
     "M6": "owned HTTP recovery and current-revision device coverage remain open",
     "runtimeReleasePin": "0.1.1",
     "serviceStartupAdmissionBytes": 17179869184

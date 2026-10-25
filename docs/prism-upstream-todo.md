@@ -96,8 +96,12 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   boundary: source arithmetic emits 72 where the compiled native fused rounding
   emits 71. The private preparation path now reproduces the native block exactly.
   Native-controlled attention dot, masked softmax and RoPE repairs are also
-  implemented. Their combined actual-model rerun remains pending available RAM;
-  the follow-up receipt records each tested revision and its separate result.
+  implemented. The combined actual-model run at `7d49e43` matches all 248,320
+  first-token logits and every first-step logical state file bit-for-bit.
+  Later supplied-token steps still exceed the unchanged tolerance, beginning
+  in block 1 convolution. History-dependent arithmetic, scalar/NEON replay and
+  the complete prefix/generated trajectory remain open; the follow-up receipt
+  records each tested revision and its separate result.
 
 - [x] **M3 — Connect Swift's chat prompt to the exact tokenizer.** Render the
   verified embedded template with the existing Jinja/chat APIs, current
