@@ -1287,13 +1287,13 @@ jobs:
           ./tests/Test-PrismCodec.ps1 -DataDirectory $data -ProbeToolPath $env:BONSAI_CODEC_PROBE_PATH -EvidenceDirectory $env:CODEC_PROBE_NATIVE_EVIDENCE
           ./scripts/Get-Adapter.ps1 -DataDirectory $data
           ./scripts/Get-Adapter.ps1 -DataDirectory $data -VerifyOnly
-          $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -EvidenceKind swift-pq2-assessment -CheckOnly
+          $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -ProfileName swift-pq2-assessment -CheckOnly
           if ($result.ModelProcessStarted -or $result.RequiredAvailableBytes -ne 16GB) { throw 'Invalid Swift admission-only result.' }
           $result | ConvertTo-Json
-          $adapterCheck = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -EvidenceKind swift-pq2-assessment -UseAbliterateLora -CheckOnly
+          $adapterCheck = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -ProfileName swift-pq2-assessment -UseAbliterateLora -CheckOnly
           if ($adapterCheck.ModelProcessStarted -or -not $adapterCheck.AdapterRequested -or $adapterCheck.EstimatedAdapterBytes -ne 9682464) { throw 'Invalid explicit adapter admission-only result.' }
           $adapterCheck | ConvertTo-Json
-          $ptqCheck = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -EvidenceKind swift-pq2-assessment -UseRepackedPtq1 -CheckOnly
+          $ptqCheck = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -ProfileName swift-pq2-assessment -UseRepackedPtq1 -CheckOnly
           if ($ptqCheck.ModelProcessStarted -or $ptqCheck.EstimatedWeightBytes -ne 5946648928 -or $ptqCheck.WeightRepresentation -cne 'current-repacked-PTQ1_0') { throw 'Invalid derived PTQ1 admission-only result.' }
       - name: Verify publisher ARM64 runtime and planned server switches
         shell: pwsh
