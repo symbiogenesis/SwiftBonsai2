@@ -195,7 +195,7 @@ impl<'a, 'b> Production<'a, 'b> {
 
     fn traverse(&mut self, name: &str, arguments: &[Value]) -> Result<Value> {
         let context = context(at(arguments, 0)?)?;
-        if self.graph.tensors.is_empty() {
+        if !self.graph.contexts_current {
             self.graph.snapshot_contexts()?;
         }
         let index = if name == "ggml_get_first_tensor" {
@@ -263,7 +263,7 @@ impl<'a, 'b> Production<'a, 'b> {
                 .ok_or_else(|| invalid("source op_params copy exceeds metadata"))?
                 .copy_from_slice(&bytes);
             self.graph.push(json!({"Op":"tensor-write","Tensor":tensor,"Fields":{"OpParamsHex":encode_hex(&params)}}));
-            self.graph.tensors.clear();
+            self.graph.invalidate_tensors();
         } else {
             write_bytes(destination, &bytes)?;
         }
@@ -516,7 +516,7 @@ impl Host for Production<'_, '_> {
         };
         self.graph
             .push(json!({"Op":"tensor-write","Tensor":id,"Fields":fields}));
-        self.graph.tensors.clear();
+        self.graph.invalidate_tensors();
         Ok(())
     }
 

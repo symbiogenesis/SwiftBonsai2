@@ -51,9 +51,7 @@ pub(super) struct Interpreter<'a> {
 impl<'a> Interpreter<'a> {
     pub(super) fn new(program: &'a Program, class: &str, host: &'a mut dyn Host) -> Result<Self> {
         let class = program
-            .classes
-            .iter()
-            .find(|entry| entry.name == class)
+            .class(class)
             .ok_or_else(|| invalid("source class is missing"))?;
         Ok(Self {
             program,
@@ -159,12 +157,7 @@ impl<'a> Interpreter<'a> {
 
     fn construct_inner(&mut self, class: &'a Class, arguments: Vec<Value>) -> Result<()> {
         self.bind(&class.constructor.parameters, arguments)?;
-        if let Some(base) = self
-            .program
-            .classes
-            .iter()
-            .find(|entry| entry.name == class.base)
-        {
+        if let Some(base) = self.program.class(&class.base) {
             let initializer = class
                 .constructor
                 .initializers
@@ -302,31 +295,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn method(&self, name: &str, count: usize) -> Option<&'a Method> {
-        let (class_name, name) = name
-            .rsplit_once("::")
-            .map_or((self.class.name.as_str(), name), |(a, b)| (a, b));
-        let mut class = self
-            .program
-            .classes
-            .iter()
-            .find(|entry| entry.name == class_name);
-        while let Some(current) = class {
-            if let Some(method) = current.methods.iter().find(|method| {
-                method.name == name
-                    && count <= method.parameters.len()
-                    && method.parameters[count..]
-                        .iter()
-                        .all(|parameter| parameter.default.is_some())
-            }) {
-                return Some(method);
-            }
-            class = self
-                .program
-                .classes
-                .iter()
-                .find(|entry| entry.name == current.base);
-        }
-        None
+        self.program.method(&self.class.name, name, count)
     }
 
     fn arguments(

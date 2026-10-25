@@ -485,6 +485,24 @@ impl State {
                     json!({"Tensors":ids.into_iter().map(|tensor|metadata(&self.backend,&aliases,tensor)).collect::<Result<Vec<_>>>()?}),
                 )
             }
+            "tensor-snapshot" => {
+                let tensor = self.tensor(&action["Tensor"])?;
+                let mut aliases = tensor_aliases(&self.tensors);
+                // Preserve complete snapshots' alias registration and source
+                // identities while only materializing the requested metadata.
+                for &context in &self.contexts {
+                    for tensor in self.backend.context_tensors(context) {
+                        let canonical = canonical(&aliases, tensor);
+                        if let std::collections::btree_map::Entry::Vacant(entry) =
+                            self.tensors.entry(canonical)
+                        {
+                            entry.insert(Some(tensor));
+                            aliases.entry(tensor).or_default().push(canonical);
+                        }
+                    }
+                }
+                Ok(json!({"Tensor":metadata(&self.backend,&aliases,tensor)?}))
+            }
             "graph-snapshot" => {
                 let graph = lookup(&self.graphs, &action["Graph"])?;
                 let (nodes, leaves) = self.backend.graph_nodes(graph)?;

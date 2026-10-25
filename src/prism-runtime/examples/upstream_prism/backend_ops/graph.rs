@@ -245,6 +245,7 @@ pub(super) struct Plan<'a> {
     pending: Vec<Json>,
     pub(super) tensors: BTreeMap<u32, Tensor>,
     pub(super) contexts: BTreeMap<u32, Vec<u32>>,
+    pub(super) contexts_current: bool,
     pub(super) graphs: BTreeMap<u32, Json>,
     scalars: BTreeMap<u32, Value>,
     shape_queries: BTreeMap<(String, u32), Value>,
@@ -263,6 +264,7 @@ impl<'a> Plan<'a> {
             pending: Vec::new(),
             tensors: BTreeMap::new(),
             contexts: BTreeMap::new(),
+            contexts_current: false,
             graphs: BTreeMap::new(),
             scalars: BTreeMap::new(),
             shape_queries: BTreeMap::new(),
@@ -280,6 +282,7 @@ impl<'a> Plan<'a> {
             action["Op"].as_str(),
             Some("tensor-write" | "context-init" | "context-free")
         ) {
+            self.invalidate_tensors();
             self.shape_queries.clear();
         }
         self.pending.push(action);
@@ -320,6 +323,13 @@ impl<'a> Plan<'a> {
                             .ok_or_else(|| invalid("backend graph handle differs"))?,
                     )?;
                     self.graphs.insert(graph, value.clone());
+                }
+                Some("tensor-snapshot") => {
+                    let tensor: Tensor = serde_json::from_value(value["Tensor"].clone())?;
+                    for &alias in &tensor.aliases {
+                        self.tensors.insert(alias, tensor.clone());
+                    }
+                    self.tensors.insert(tensor.id, tensor);
                 }
                 Some("scalar") => {
                     let id = u32::try_from(
@@ -417,7 +427,7 @@ impl<'a> Plan<'a> {
             }
         };
         if intrinsic.result == "void" || matches!(value, Value::Handle(Handle::Tensor(_))) {
-            self.tensors.clear();
+            self.invalidate_tensors();
             self.shape_queries.clear();
         }
         self.push(json!({"Op":"call","Function":name,"Arguments":arguments,"Result":result}));
@@ -441,12 +451,19 @@ impl<'a> Plan<'a> {
                 .map(|id| json!({"Op":"context-snapshot","Context":id})),
         );
         let _ = self.flush()?;
+        self.contexts_current = true;
         Ok(())
+    }
+
+    pub(super) fn invalidate_tensors(&mut self) {
+        self.tensors.clear();
+        self.contexts_current = false;
     }
 
     pub(super) fn tensor(&mut self, id: u32) -> Result<Tensor> {
         if !self.tensors.contains_key(&id) {
-            self.snapshot_contexts()?;
+            self.push(json!({"Op":"tensor-snapshot","Tensor":id}));
+            let _ = self.flush()?;
         }
         self.tensors
             .get(&id)

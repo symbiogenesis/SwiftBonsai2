@@ -501,6 +501,8 @@ mod tests {
             json!({"Op":"call","Function":"ggml_new_graph","Arguments":[{"Context":0}],"Result":{"Graph":0}}),
             json!({"Op":"call","Function":"ggml_build_forward_expand","Arguments":[{"Graph":0},{"Tensor":2}],"Result":null}),
             json!({"Op":"allocate","Context":0,"Backend":0,"Result":{"Buffer":0}}),
+            json!({"Op":"tensor-snapshot","Tensor":9}),
+            json!({"Op":"tensor-snapshot","Tensor":2}),
             json!({"Op":"context-snapshot","Context":0}),
             json!({"Op":"graph-snapshot","Graph":0}),
         ])?;
@@ -511,6 +513,11 @@ mod tests {
         assert_eq!(tensors[0]["Aliases"], json!([0, 3, 9]));
         assert_eq!(tensors[0]["Id"], 0);
         assert_eq!(tensors[0]["Name"], "left");
+        let single = observations
+            .iter()
+            .filter_map(|value| value.get("Tensor"))
+            .collect::<Vec<_>>();
+        assert_eq!(single, vec![&tensors[0], &tensors[2]]);
         observations.extend(session.exchange(vec![
             json!({"Op":"tensor-set","Tensor":0,"File":left,"FileOffset":0,"TensorOffset":0,"Bytes":bytes.len()}),
             json!({"Op":"tensor-set","Tensor":1,"File":right,"FileOffset":0,"TensorOffset":0,"Bytes":bytes.len()}),

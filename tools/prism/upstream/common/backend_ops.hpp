@@ -96,7 +96,13 @@ struct state {
     std::size_t context_bytes = 0;
     explicit state(const json & o): directory(std::filesystem::canonical(text(o.at("Directory")))), max_file_bytes(std::size_t(u64(o.at("MaxFileBytes")))) {
         require(std::filesystem::is_directory(directory), "backend Directory missing");
-        ggml_backend_load_all(); ggml_cpu_init(); ggml_time_init();
+        // A partition reuses this process, but every geometry still owns fresh
+        // graph/backend state. Runtime discovery and immutable CPU tables are
+        // process resources: do not rescan backend DLL directories per case.
+        static const bool initialized = [] {
+            ggml_backend_load_all(); ggml_cpu_init(); ggml_time_init(); return true;
+        }();
+        (void) initialized;
     }
     ~state() {
         for(const auto & b:buffers) ggml_backend_buffer_free(b.second);
@@ -478,6 +484,19 @@ inline json state::run(const json & a) {
         keys(a,{"Op","Context"}); auto * ctx=lookup(contexts,a.at("Context")); json values=json::array();
         for(auto * t=ggml_get_first_tensor(ctx);t;t=ggml_get_next_tensor(ctx,t)) { require(values.size()<32768,"backend tensor count exceeds bound"); tensor_id(t); }
         for(auto * t=ggml_get_first_tensor(ctx);t;t=ggml_get_next_tensor(ctx,t)) values.push_back(metadata(t)); return {{"Tensors",values}};
+    }
+    if(op=="tensor-snapshot") {
+        keys(a,{"Op","Tensor"}); auto * tensor=lookup(tensors,a.at("Tensor")); require(tensor,"backend null tensor snapshot");
+        // Match a complete ordered context snapshot's automatic identities,
+        // without serializing unrelated tensors for a single field lookup.
+        for(const auto & context:contexts) {
+            for(auto * t=ggml_get_first_tensor(context.second);t;t=ggml_get_next_tensor(context.second,t)) tensor_id(t);
+            for(auto * t=ggml_get_first_tensor(context.second);t;t=ggml_get_next_tensor(context.second,t)) {
+                for(auto * source:t->src) tensor_id(source);
+                tensor_id(t); tensor_id(t->view_src);
+            }
+        }
+        return {{"Tensor",metadata(tensor)}};
     }
     if(op=="graph-snapshot") {
         keys(a,{"Op","Graph"}); auto * g=lookup(graphs,a.at("Graph")); json nodes=json::array(),leaves=json::array(),gradients=json::array();

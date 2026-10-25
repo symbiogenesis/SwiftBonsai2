@@ -188,6 +188,59 @@ pub(super) struct Program {
     pub(super) classes: Vec<Class>,
     pub(super) helpers: Vec<Method>,
     pub(super) constants: BTreeMap<String, Value>,
+    #[serde(skip)]
+    lookup: OnceLock<BTreeMap<String, ClassIndex>>,
+}
+
+#[derive(Debug)]
+struct ClassIndex {
+    index: usize,
+    methods: BTreeMap<String, Vec<usize>>,
+}
+
+impl Program {
+    fn index(&self) -> &BTreeMap<String, ClassIndex> {
+        self.lookup.get_or_init(|| {
+            self.classes
+                .iter()
+                .enumerate()
+                .map(|(index, class)| {
+                    let mut methods = BTreeMap::<String, Vec<usize>>::new();
+                    for (index, method) in class.methods.iter().enumerate() {
+                        methods.entry(method.name.clone()).or_default().push(index);
+                    }
+                    (class.name.clone(), ClassIndex { index, methods })
+                })
+                .collect()
+        })
+    }
+
+    pub(super) fn class(&self, name: &str) -> Option<&Class> {
+        self.index()
+            .get(name)
+            .map(|entry| &self.classes[entry.index])
+    }
+
+    pub(super) fn method(&self, class: &str, name: &str, count: usize) -> Option<&Method> {
+        let (mut class, name) = name.rsplit_once("::").unwrap_or((class, name));
+        while let Some(entry) = self.index().get(class) {
+            let current = &self.classes[entry.index];
+            if let Some(method) = entry.methods.get(name).and_then(|indices| {
+                indices.iter().find_map(|&index| {
+                    let method = &current.methods[index];
+                    (count <= method.parameters.len()
+                        && method.parameters[count..]
+                            .iter()
+                            .all(|parameter| parameter.default.is_some()))
+                    .then_some(method)
+                })
+            }) {
+                return Some(method);
+            }
+            class = &current.base;
+        }
+        None
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -286,5 +339,73 @@ pub(super) fn load() -> Result<(&'static Program, &'static Geometries), String> 
     match loaded {
         Ok((program, geometries)) => Ok((program, geometries)),
         Err(error) => Err(error.clone()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn linear<'a>(
+        program: &'a Program,
+        class: &str,
+        name: &str,
+        count: usize,
+    ) -> Option<&'a Method> {
+        let (class, name) = name.rsplit_once("::").unwrap_or((class, name));
+        let mut class = program.classes.iter().find(|entry| entry.name == class);
+        while let Some(current) = class {
+            if let Some(method) = current.methods.iter().find(|method| {
+                method.name == name
+                    && count <= method.parameters.len()
+                    && method.parameters[count..]
+                        .iter()
+                        .all(|parameter| parameter.default.is_some())
+            }) {
+                return Some(method);
+            }
+            class = program
+                .classes
+                .iter()
+                .find(|entry| entry.name == current.base);
+        }
+        None
+    }
+
+    #[test]
+    fn indexed_dispatch_preserves_source_overloads_defaults_and_inheritance() -> Result<(), String>
+    {
+        let (program, _) = load()?;
+        let mut signatures = BTreeSet::from([("ggml_nelements", 1), ("missing_method", 0)]);
+        for method in program.classes.iter().flat_map(|class| &class.methods) {
+            for count in 0..=method.parameters.len() + 1 {
+                signatures.insert((&method.name, count));
+            }
+        }
+        for class in &program.classes {
+            assert!(std::ptr::eq(
+                program.class(&class.name).ok_or("missing class")?,
+                class
+            ));
+            for &(name, count) in &signatures {
+                for name in [name.to_owned(), format!("{}::{name}", class.name)] {
+                    let indexed = program.method(&class.name, &name, count);
+                    let original = linear(program, &class.name, &name, count);
+                    assert_eq!(
+                        indexed.map(std::ptr::from_ref),
+                        original.map(std::ptr::from_ref),
+                        "{}::{name} with {count} arguments",
+                        class.name
+                    );
+                }
+            }
+        }
+        assert!(program.class("missing_class").is_none());
+        assert!(
+            program
+                .method("test_case", "missing_class::build_graph", 1)
+                .is_none()
+        );
+        Ok(())
     }
 }
