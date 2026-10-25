@@ -134,6 +134,51 @@ fn expected_status(case: &Value) -> Result<ConversionStatus> {
     }
 }
 
+fn check_probe(case: &Value, actual: bool, assertions: &mut Assertions) -> Result<()> {
+    let expected = field(case, "Expected")?
+        .as_bool()
+        .ok_or_else(|| invalid("source string expectation must be boolean"))?;
+    assertions.check(
+        format!(
+            "string probe: {}: expected {expected}, actual {actual}",
+            text(case, "Name")?
+        ),
+        actual == expected,
+    );
+    Ok(())
+}
+
+fn check_conversion(
+    case: &Value,
+    status: ConversionStatus,
+    grammar: Option<&str>,
+    message: &str,
+    assertions: &mut Assertions,
+) -> Result<()> {
+    let name = text(case, "Name")?;
+    if status == ConversionStatus::Success {
+        let actual = trim(grammar.ok_or_else(|| invalid("successful schema grammar missing"))?);
+        let expected = trim(text(case, "ExpectedGrammar")?);
+        assertions.check(
+            format!("C++ grammar: {name}:\nExpected:\n{expected}\nActual:\n{actual}"),
+            actual == expected,
+        );
+    }
+    assertions.check(
+        format!(
+            "C++ status: {name}: expected {}, actual {}; {message}",
+            text(case, "ExpectedStatus")?,
+            if status == ConversionStatus::Success {
+                "SUCCESS"
+            } else {
+                "FAILURE"
+            }
+        ),
+        status == expected_status(case)?,
+    );
+    Ok(())
+}
+
 fn run_probes(engine: &Engine, fixture: &Value, assertions: &mut Assertions) -> Result<bool> {
     let cases = array(fixture, "ResolvesToString")?;
     let operations=cases.iter().map(|case|Ok(json!({"Kind":"json-schema-info","SchemaJson":text(case,"SchemaJson")?,"Actions":["resolve-refs","resolves-to-string"]}))).collect::<Result<Vec<_>>>()?;
@@ -152,13 +197,7 @@ fn run_probes(engine: &Engine, fixture: &Value, assertions: &mut Assertions) -> 
         let actual = field(&trace[1], "ResolvesToString")?
             .as_bool()
             .ok_or_else(|| invalid("resolves-to-string result must be boolean"))?;
-        let expected = field(case, "Expected")?
-            .as_bool()
-            .ok_or_else(|| invalid("source string expectation must be boolean"))?;
-        assertions.check(
-            format!("string probe: {}", text(case, "Name")?),
-            actual == expected,
-        );
+        check_probe(case, actual, assertions)?;
     }
     Ok(true)
 }
@@ -169,17 +208,13 @@ fn run_conversions(engine: &Engine, cases: &[Value], assertions: &mut Assertions
         .ok_or_else(|| invalid("schema conversion production API disappeared"))?;
     for (case, value) in cases.iter().zip(values) {
         let status = conversion_status(&value)?;
-        let name = text(case, "Name")?;
-        if status == ConversionStatus::Success {
-            assertions.check(
-                format!("C++ grammar: {name}"),
-                trim(text(&value, "Grammar")?) == trim(text(case, "ExpectedGrammar")?),
-            );
-        }
-        assertions.check(
-            format!("C++ status: {name}"),
-            status == expected_status(case)?,
-        );
+        check_conversion(
+            case,
+            status,
+            field(&value, "Grammar")?.as_str(),
+            text(&value, "Message")?,
+            assertions,
+        )?;
     }
     Ok(())
 }
@@ -298,6 +333,50 @@ pub(super) fn run(engine: &Engine) -> Result<Value> {
 mod tests {
     use super::super::schema_python::synthetic_limits;
     use super::*;
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn rust_schema_contract_uses_original_cases() -> Result<()> {
+        use bonsai_prism_runtime::schema::{self, SchemaInfo};
+
+        // Exercise the public Rust API without requiring native bridge wiring.
+        // The source runner and this entry point share all acceptance predicates.
+        let fixture = fixture()?;
+        let mut assertions = Assertions::default();
+        for section in ["Shared", "CppOnly"] {
+            for case in array(&fixture, section)? {
+                match schema::to_grammar(text(case, "SchemaJson")?, true) {
+                    Ok(grammar) => check_conversion(
+                        case,
+                        ConversionStatus::Success,
+                        Some(&grammar),
+                        "",
+                        &mut assertions,
+                    )?,
+                    Err(error) => check_conversion(
+                        case,
+                        ConversionStatus::Failure,
+                        None,
+                        &error.to_string(),
+                        &mut assertions,
+                    )?,
+                }
+            }
+        }
+        for case in array(&fixture, "ResolvesToString")? {
+            let mut info = SchemaInfo::new(text(case, "SchemaJson")?)?;
+            info.resolve_refs()?;
+            check_probe(case, info.resolves_to_string(), &mut assertions)?;
+        }
+        assert!(
+            assertions.failures.is_empty(),
+            "{}",
+            assertions.failures.join("\n")
+        );
+        assert_eq!(assertions.count, 193);
+        Ok(())
+    }
+
     #[test]
     fn source_trim_exception_and_root_guards_are_exact() -> Result<()> {
         let _ = fixture()?;
