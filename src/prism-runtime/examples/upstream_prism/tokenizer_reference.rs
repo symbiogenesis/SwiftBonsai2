@@ -131,6 +131,58 @@ fn added_token(value: &Value, special: bool) -> Result<AddedToken> {
         || special;
     Ok(token)
 }
+fn add_descriptions(
+    tokenizer: &mut Tokenizer,
+    descriptions: &BTreeMap<u32, Value>,
+    specials: &[String],
+) -> Result<()> {
+    if descriptions.is_empty() {
+        return Ok(());
+    }
+    let mut contents = BTreeSet::new();
+    let tokens = descriptions
+        .values()
+        .map(|value| {
+            let content =
+                token_content(value).ok_or_else(|| invalid("HF added-token content missing"))?;
+            if content.is_empty() || !contents.insert(content) {
+                return Err(invalid("HF added-token overlay needs ordered updates"));
+            }
+            added_token(value, specials.iter().any(|token| token == content))
+        })
+        .collect::<Result<Vec<_>>>();
+    if let Ok(tokens) = tokens {
+        // Each add_tokens call clones the existing descriptors and rebuilds two
+        // Aho-Corasick tries, even when a publisher descriptor is unchanged.
+        // Unique contents have independent ID/flag overlays, so construct the
+        // identical ordered token tables and matching tries only once.
+        tokenizer.add_tokens(&tokens);
+        for ((id, _), token) in descriptions.iter().zip(tokens) {
+            if tokenizer.token_to_id(&token.content) != Some(*id) {
+                return Err(invalid(
+                    "HF added-token ID differs from publisher descriptor",
+                ));
+            }
+        }
+    } else {
+        // Duplicate/empty contents and malformed flags retain the original
+        // sequential overlay behavior, including which validation fails first.
+        for (id, value) in descriptions {
+            let content =
+                token_content(value).ok_or_else(|| invalid("HF added-token content missing"))?;
+            tokenizer.add_tokens(&[added_token(
+                value,
+                specials.iter().any(|token| token == content),
+            )?]);
+            if tokenizer.token_to_id(content) != Some(*id) {
+                return Err(invalid(
+                    "HF added-token ID differs from publisher descriptor",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
 impl Reference {
     #[allow(
         clippy::too_many_lines,
@@ -251,28 +303,19 @@ impl Reference {
                         .or_insert_with(|| Value::from(content.clone()));
                 }
             }
-            for (id, value) in &descriptions {
-                let content = token_content(value)
-                    .ok_or_else(|| invalid("HF added-token content missing"))?;
-                tokenizer.add_tokens(&[added_token(
-                    value,
-                    specials.iter().any(|token| token == content),
-                )?]);
-                if tokenizer.token_to_id(content) != Some(*id) {
-                    return Err(invalid(
-                        "HF added-token ID differs from publisher descriptor",
-                    ));
-                }
-            }
+            add_descriptions(&mut tokenizer, &descriptions, &specials)?;
             let encoder = tokenizer
                 .get_added_tokens_decoder()
                 .into_values()
                 .map(|token| token.content)
                 .collect::<BTreeSet<_>>();
-            for token in &specials {
-                if !encoder.contains(token) {
-                    tokenizer.add_special_tokens(&[AddedToken::from(token.as_str(), true)]);
-                }
+            let missing = specials
+                .iter()
+                .filter(|token| !encoder.contains(*token))
+                .map(|token| AddedToken::from(token.as_str(), true))
+                .collect::<Vec<_>>();
+            if !missing.is_empty() {
+                tokenizer.add_special_tokens(&missing);
             }
             let mut ids = tokenizer
                 .get_added_tokens_decoder()
@@ -555,6 +598,109 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
+    fn focused_added_token_overlay_equivalence_guard() -> Result<()> {
+        let original = Tokenizer::from_bytes(serde_json::to_vec(
+            &json!({"version":"1.0","truncation":null,"padding":null,"added_tokens":[{"id":1,"content":"a","single_word":false,"lstrip":false,"rstrip":false,"normalized":true,"special":false}],"normalizer":{"type":"Lowercase"},"pre_tokenizer":{"type":"Whitespace"},"post_processor":null,"decoder":null,"model":{"type":"WordLevel","vocab":{"<unk>":0,"a":1,"x":2,".":3,"":4},"unk_token":"<unk>"}}),
+        )?)?;
+        let specials = vec!["<s>".to_owned(), "<t>".to_owned()];
+        let unique = BTreeMap::from([
+            (
+                1,
+                json!({"content":"a","single_word":true,"normalized":false}),
+            ),
+            (2, json!({"content":"x","lstrip":true,"rstrip":true})),
+            (3, json!({"content":".","special":true})),
+            (5, json!({"content":"<s>","normalized":false})),
+            (
+                6,
+                json!({"content":"X","normalized":true,"single_word":true}),
+            ),
+            (
+                7,
+                json!({"content":"<t>","normalized":false,"lstrip":true,"rstrip":true}),
+            ),
+            (8, json!("NEW")),
+        ]);
+        // Cover the fast path and every reason to retain ordered scalar updates,
+        // including an earlier ID error before a later malformed descriptor.
+        for descriptions in [
+            BTreeMap::new(),
+            unique,
+            BTreeMap::from([(5, json!("X")), (6, json!({"content":"X","special":true}))]),
+            BTreeMap::from([(4, json!("")), (5, json!("X"))]),
+            BTreeMap::from([
+                (5, json!("X")),
+                (6, json!({"content":"Y","lstrip":"invalid"})),
+            ]),
+            BTreeMap::from([
+                (9, json!("X")),
+                (10, json!({"content":"Y","normalized":null})),
+            ]),
+            BTreeMap::from([(9, json!("X")), (10, json!("Y"))]),
+            BTreeMap::from([(5, json!(null))]),
+        ] {
+            let mut scalar = original.clone();
+            // Keep the previous implementation independent from the optimized
+            // helper so IDs, descriptor flags and error precedence are checked.
+            let expected = (|| -> Result<()> {
+                for (id, value) in &descriptions {
+                    let content = token_content(value)
+                        .ok_or_else(|| invalid("HF added-token content missing"))?;
+                    scalar.add_tokens(&[added_token(
+                        value,
+                        specials.iter().any(|token| token == content),
+                    )?]);
+                    if scalar.token_to_id(content) != Some(*id) {
+                        return Err(invalid(
+                            "HF added-token ID differs from publisher descriptor",
+                        ));
+                    }
+                }
+                Ok(())
+            })();
+            let mut batched = original.clone();
+            let actual = add_descriptions(&mut batched, &descriptions, &specials);
+            let succeeded = expected.is_ok();
+            assert_eq!(
+                actual.map_err(|error| error.to_string()),
+                expected.map_err(|error| error.to_string())
+            );
+            if !succeeded {
+                continue;
+            }
+            assert_eq!(batched.get_vocab(true), scalar.get_vocab(true));
+            assert_eq!(
+                batched.get_added_tokens_decoder(),
+                scalar.get_added_tokens_decoder()
+            );
+            let fragments = [
+                "", "a", "Aa", "x", "X", "XX", "NEW", "<s>", "<t>", ".", "é", "\0", "\t", "\n",
+                " ", "  ",
+            ];
+            for left in fragments {
+                for right in fragments {
+                    let input = format!("{left}{right}");
+                    for special in [false, true] {
+                        assert_eq!(
+                            batched.encode(input.as_str(), special)?.get_ids(),
+                            scalar.encode(input.as_str(), special)?.get_ids(),
+                            "{input:?}"
+                        );
+                    }
+                }
+            }
+            for skip_special in [false, true] {
+                for id in 0..=9 {
+                    assert_eq!(
+                        batched.decode(&[id], skip_special)?,
+                        scalar.decode(&[id], skip_special)?
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+    #[test]
     fn focused_hf_wrapper_configuration_guard() -> Result<()> {
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
@@ -574,6 +720,7 @@ mod tests {
                 )?,
             )?;
             let reference = Reference::open(&directory)?;
+
             assert_eq!(reference.encode("a", true)?, [2, 1]);
             assert_eq!(reference.encode("a", false)?, [1]);
             assert_eq!(reference.decode(&[2, 1, 4], false)?, "<s> a.");
