@@ -24,6 +24,8 @@
 mod metrics;
 #[path = "backend_ops/number.rs"]
 mod number;
+#[path = "backend_ops/numeric_loop.rs"]
+mod numeric_loop;
 #[path = "backend_ops/program.rs"]
 mod program;
 #[path = "backend_ops/random.rs"]

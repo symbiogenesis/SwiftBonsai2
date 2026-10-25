@@ -681,6 +681,9 @@ impl<'a> Interpreter<'a> {
     )]
     fn statement(&mut self, statement: &Statement) -> Result<Flow> {
         self.step()?;
+        if super::numeric_loop::execute(self, statement)? {
+            return Ok(Flow::Next);
+        }
         match statement {
             Statement::Empty => {}
             Statement::Declare {
