@@ -31,6 +31,29 @@ ingestion deliberately omits unused output/logit checks while validating every
 computed state value. Block prefill must also preserve cancellation/backpressure
 bounds and atomic commit.
 
+## Scratch lifetimes
+
+The August 2026 [bounded-program memory allocation preprint](https://arxiv.org/html/2608.14471v1)
+identifies fixed-shape neural networks as a consumer of lifetime-based planning.
+Its tight storage bounds allow defragmentation and control-flow expansion. For
+the current sequential graph, a small fixed reuse is sufficient: Prism source
+shares attention projections with FFN up activations, shares their gate storage,
+and convolves recurrent QKV in place after each raw element's last use.
+
+At Swift's widths, the affected buffers need 34,816 rather than 73,728 F32 slots:
+**152 KiB less nominal high-water payload**, with four fewer separate vectors.
+Arithmetic/reduction order, committed state, transaction deltas and checkpoints
+retain their existing contracts. Frozen pre-change hybrid logits/state fixtures
+cover both FFN/QKV size orderings, failed evaluation, retry, restore and reset.
+This is a source follow-up in [Prism Inference at `326d0dd`](https://github.com/symbiogenesis/prism-inference/blob/326d0dd45b2d3c61ea6ce8ebe67f8249bdfa22a6/src/graph.rs);
+the runner's pinned `0.1.1` binary does not include it. A reviewed binary release
+and complete lock update are required before provisioning changes.
+
+Allocator capacity rounding and process memory are separate from this finite
+buffer count. R4.2 remains open; no measured memory or throughput gain is claimed.
+Moving arenas and general placement search remain deferred until evidence from
+the actual workload justifies them.
+
 ## Packed lookup kernels
 
 ### Exact ternary tables for decode

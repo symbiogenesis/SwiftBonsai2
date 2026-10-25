@@ -143,6 +143,10 @@ profile-promotion requirements remain unchanged.
     reuses caller-owned output; Qwen35 retains graph/kernel workspace and stages
     state deltas before commit. Checkpoints own independent state/logits.
     Synthetic fixtures cover output validation, reuse, cancellation and rollback.
+    A [source follow-up](inference-algorithms.md#scratch-lifetimes) shares
+    phase-disjoint attention/FFN projections and gates and convolves QKV in place,
+    removing 152 KiB of nominal Swift scratch payload. The provisioned `0.1.1`
+    binary awaits a reviewed release/lock update; R4.2 remains unqualified.
   - [ ] **R4.2 — Qualify allocation and memory benefit.** Compare owned-output
     and reusable-storage paths with the same model/workload. Capture prefill/decode
     allocations, peak memory, logits/tokens, prefix restoration and failure recovery.
