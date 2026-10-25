@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 //! Focused explicit-special recognition, overlap, UTF-8 and resource regressions.
 
-use bonsai_gguf::{Metadata, MetadataValue};
+use bonsai_gguf::Metadata;
 use bonsai_prism_runtime::Result;
 use bonsai_prism_runtime::special_input::{
     InputSegment, MAX_SPECIAL_INPUT_BYTES, MAX_SPECIAL_INPUT_SEGMENTS, MAX_SPECIAL_SPELLING_BYTES,
@@ -191,43 +191,6 @@ fn empty_and_ambiguous_special_spellings_are_rejected() {
         let records = [("<same>", kinds[0]), ("<same>", kinds[1])];
         assert!(SpecialInput::from_metadata(&metadata(&records), records.len()).is_err());
     }
-}
-
-#[test]
-fn malformed_vocabulary_metadata_fails_without_requiring_merge_rules() -> Result<()> {
-    let valid = metadata(&[("<special>", 3), ("a", 1)]);
-    SpecialInput::from_metadata(&valid, 2)?;
-    for (key, value) in [
-        ("tokenizer.ggml.model", "llama".into()),
-        ("tokenizer.ggml.pre", "qwen2".into()),
-        ("tokenizer.ggml.tokens", vec![1_i32, 2].into()),
-        ("tokenizer.ggml.token_type", vec![3_u32, 1].into()),
-        ("tokenizer.ggml.token_type", vec![3_i32, 7].into()),
-        ("tokenizer.ggml.token_type", vec![3_i32].into()),
-        ("tokenizer.ggml.tokens", vec!["<special>", "🦀"].into()),
-        (
-            "tokenizer.ggml.tokens",
-            MetadataValue::String("<special>".to_owned()),
-        ),
-    ] {
-        let mut values = valid.clone();
-        values.insert(key.to_owned(), value);
-        assert!(SpecialInput::from_metadata(&values, 2).is_err());
-    }
-    for key in [
-        "tokenizer.ggml.model",
-        "tokenizer.ggml.pre",
-        "tokenizer.ggml.tokens",
-        "tokenizer.ggml.token_type",
-    ] {
-        let mut values = valid.clone();
-        values.remove(key);
-        assert!(SpecialInput::from_metadata(&values, 2).is_err());
-    }
-    for count in [0, 1, 3, usize::MAX] {
-        assert!(SpecialInput::from_metadata(&valid, count).is_err());
-    }
-    Ok(())
 }
 
 #[test]

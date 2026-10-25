@@ -265,24 +265,6 @@ fn malformed_duplicate_and_non_normal_rules_fail_closed() {
 }
 
 #[test]
-fn existing_vocabulary_contract_and_counts_are_validated() {
-    let valid = metadata(&[("a", 1)], &[]);
-    for count in [0, 2, usize::MAX] {
-        assert!(Bpe::from_metadata(&valid, count).is_err());
-    }
-    for (key, value) in [
-        ("tokenizer.ggml.pre", "qwen2".into()),
-        ("tokenizer.ggml.model", "llama".into()),
-        ("tokenizer.ggml.token_type", vec![1_u32].into()),
-        ("tokenizer.ggml.tokens", vec!["λ"].into()),
-    ] {
-        let mut values = valid.clone();
-        values.insert(key.to_owned(), value);
-        assert!(Bpe::from_metadata(&values, 1).is_err());
-    }
-}
-
-#[test]
 fn merge_count_and_aggregate_serialized_bytes_are_bounded_before_parsing() {
     let mut values = metadata(&[("a", 1)], &[]);
     values.insert(
