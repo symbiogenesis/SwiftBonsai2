@@ -488,6 +488,23 @@ fn every_truncated_sse_reply_omits_successful_downstream_terminal_framing() {
             }
             assert_success(&Exchange::new(true, chunked).finish().await, true);
         }
+        // Retain the raw three-byte, one-byte-read regression as well as the
+        // complete SSE prefix sweep: an input without [DONE] cannot invent it.
+        let exchange = Exchange::with_replies(
+            true,
+            response(COUNT, false, false),
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n".to_vec(),
+        );
+        exchange.backend.streams.borrow_mut()[1].quantum = 1;
+        let outcome = exchange.finish().await;
+        assert_eq!(
+            outcome.result,
+            Err(ServeError::Response(ResponseError::BackendIo))
+        );
+        assert_eq!(outcome.calls, 2);
+        let client = outcome.states[0].borrow();
+        assert!(!parts(&client.written).1.ends_with(b"0\r\n\r\n"));
+        assert!(!client.written.windows(6).any(|part| part == b"[DONE]"));
     });
 }
 

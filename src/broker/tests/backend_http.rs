@@ -8,7 +8,7 @@
 use bonsai_broker::{
     AdmittedChat, MAX_HEADER_BYTES, MAX_HEADERS, PendingChat, Rejection, RequestPolicy,
     backend::{BackendError, BackendPolicy, count_and_admit, request_chat},
-    response::{MAX_RESPONSE_BYTES, ResponseError, send_chat_response},
+    response::MAX_RESPONSE_BYTES,
 };
 use http::{Request, Version};
 use std::{
@@ -1007,34 +1007,5 @@ fn cancelling_request_or_body_collection_drops_the_owned_connection() {
             .is_err()
         );
         assert!(state.borrow().dropped);
-    });
-}
-
-#[test]
-fn truncated_wire_stream_cannot_produce_successful_downstream_terminal_framing() {
-    run(async {
-        let backend = Stream::new(chunked_response(b"3\r\nabc\r\n", true), 1);
-        let backend_state = backend.state.clone();
-        let chat = admitted(true);
-        let response = request_chat(backend, &chat, &policy(), deadline())
-            .await
-            .unwrap();
-        let client = Stream::new(Vec::new(), usize::MAX);
-        let client_state = client.state.clone();
-        assert!(matches!(
-            Box::pin(send_chat_response(client, response, &chat, deadline())).await,
-            Err(ResponseError::BackendIo)
-        ));
-        assert!(backend_state.borrow().dropped);
-        assert!(client_state.borrow().dropped);
-        let state = client_state.borrow();
-        let split = state
-            .written
-            .windows(4)
-            .position(|part| part == b"\r\n\r\n")
-            .unwrap()
-            + 4;
-        assert!(!state.written[split..].ends_with(b"0\r\n\r\n"));
-        assert!(!state.written.windows(6).any(|part| part == b"[DONE]"));
     });
 }
