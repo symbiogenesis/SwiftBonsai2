@@ -106121,21 +106121,9 @@
                               }
                             },
                             "right": {
-                              "k": "binary",
-                              "op": ">",
-                              "left": {
-                                "k": "binary",
-                                "op": "<",
-                                "left": {
-                                  "k": "id",
-                                  "name": "static_cast"
-                                },
-                                "right": {
-                                  "k": "id",
-                                  "name": "int32_t"
-                                }
-                              },
-                              "right": {
+                              "k": "cast",
+                              "type": "int32_t",
+                              "value": {
                                 "k": "index",
                                 "object": {
                                   "k": "id",

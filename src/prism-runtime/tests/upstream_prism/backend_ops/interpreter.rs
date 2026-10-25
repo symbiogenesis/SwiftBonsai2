@@ -1175,4 +1175,135 @@ mod tests {
         );
         Ok(())
     }
+
+    #[derive(Default)]
+    struct RowIdWrites {
+        seeds: usize,
+        rows: Vec<(u64, Vec<u8>)>,
+    }
+
+    impl Host for RowIdWrites {
+        fn call(&mut self, name: &str, arguments: &[Value]) -> Result<Option<Value>> {
+            match name {
+                "random-device" => {
+                    self.seeds += 1;
+                    Ok(Some(Value::Number(Number::U32(1234))))
+                }
+                "ggml_backend_tensor_set" => {
+                    let [_, data, offset, bytes] = arguments else {
+                        return Err(invalid("row-ID source transfer argument extent differs"));
+                    };
+                    self.rows.push((
+                        offset.number().map_err(invalid)?.as_u64(),
+                        data.bytes(usize::try_from(bytes.number().map_err(invalid)?.as_u64())?)
+                            .map_err(invalid)?,
+                    ));
+                    Ok(Some(Value::Null))
+                }
+                _ => LanguageOnly.call(name, arguments),
+            }
+        }
+        fn member(&mut self, value: &Value, name: &str) -> Result<Option<Value>> {
+            LanguageOnly.member(value, name)
+        }
+        fn write(
+            &mut self,
+            value: &Value,
+            name: &str,
+            index: Option<usize>,
+            replacement: Value,
+        ) -> Result<()> {
+            LanguageOnly.write(value, name, index, replacement)
+        }
+        fn force(&mut self, value: Value) -> Result<Value> {
+            Ok(value)
+        }
+    }
+
+    fn source_row_ids(
+        geometry_index: usize,
+        kind: i32,
+        shape: [usize; 4],
+        num_rows: i32,
+    ) -> Result<Vec<(u64, Vec<i64>)>> {
+        let (program, geometries) = super::super::program::load().map_err(invalid)?;
+        let geometry = &geometries.eval[geometry_index];
+        let mut host = RowIdWrites::default();
+        let mut runtime = Interpreter::new(program, &geometry.class, &mut host)?;
+        runtime.instantiate(geometry)?;
+        let axis = usize::from(geometry.class == "test_rms_norm_mul_rope") + 1;
+        assert_eq!(
+            runtime
+                .value("ne")?
+                .index(axis)
+                .map_err(invalid)?
+                .number()
+                .map_err(invalid)?
+                .as_i64(),
+            i64::from(num_rows)
+        );
+        let width = if kind == 26 { 4 } else { 8 };
+        let tensor = super::super::standard::literal(
+            &json!({"Record":{"type":kind,"ne":shape,"nb":[width,32,128,256]}}),
+            None,
+        )?;
+        runtime.call(
+            "init_set_rows_row_ids",
+            vec![tensor, Value::Number(Number::I32(num_rows))],
+        )?;
+        assert_eq!(host.seeds, 1);
+        assert_eq!(host.rows.len(), shape[1] * shape[2]);
+        host.rows
+            .into_iter()
+            .map(|(offset, bytes)| {
+                assert_eq!(bytes.len(), shape[0] * width);
+                let values = bytes
+                    .chunks_exact(width)
+                    .map(|value| {
+                        Ok(if kind == 26 {
+                            i64::from(i32::from_le_bytes(value.try_into()?))
+                        } else {
+                            i64::from_le_bytes(value.try_into()?)
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                assert!(
+                    values
+                        .iter()
+                        .all(|&value| (0..i64::from(num_rows)).contains(&value))
+                );
+                let unique: std::collections::BTreeSet<_> = values.iter().collect();
+                assert_eq!(unique.len(), shape[0]);
+                Ok((offset, values))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn pinned_set_rows_593_and_rms_rope_8800_initialize_i32_indices() -> Result<()> {
+        // Exercise the actual helper AST used by both retained source failures,
+        // including its shuffle, resize, static_cast and raw byte transfers.
+        for (geometry, rows) in [(593, 3), (8800, 2)] {
+            let i32_rows = source_row_ids(geometry, 26, [2, 1, 1, 1], rows)?;
+            let i64_rows = source_row_ids(geometry, 27, [2, 1, 1, 1], rows)?;
+            assert_eq!(i32_rows, i64_rows);
+            assert_eq!(i32_rows[0].0, 0);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn pinned_row_id_helper_preserves_padded_multiplane_offsets_and_cast_width() -> Result<()> {
+        let i32_rows = source_row_ids(593, 26, [2, 2, 2, 1], 3)?;
+        let i64_rows = source_row_ids(593, 27, [2, 2, 2, 1], 3)?;
+        assert_eq!(i32_rows, i64_rows);
+        assert_eq!(
+            i32_rows
+                .iter()
+                .map(|(offset, _)| *offset)
+                .collect::<Vec<_>>(),
+            [0, 32, 128, 160]
+        );
+        Ok(())
+    }
 }
