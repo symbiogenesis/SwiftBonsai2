@@ -50,7 +50,7 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   blocks. Peak process commit was 7,410,827,264 bytes, within the 12 GiB allowance.
   See the [retained load and comparison receipt](../config/swift-native-mvp.evidence.json).
 
-- [ ] **M2 — Qualify the Swift Qwen35 forward path against pinned Prism.** Reuse
+- [x] **M2 — Qualify the Swift Qwen35 forward path against pinned Prism.** Reuse
   the existing graph and PQ2 packed CPU operations, including their Q8_K
   activation contract, transforms, MRoPE, attention and GDN/convolution state.
   Cover all 16 full-attention and 48 recurrent blocks, prompt ingestion and
@@ -58,56 +58,33 @@ Keep prompt-cache reuse, speculation and accelerator offload disabled.
   token sequences under declared numerical tolerances, then repair only the
   operators/layouts this graph requires. Check scalar and enabled NEON behavior;
   new SIMD optimizations, unrelated backend operations and backward graphs are
-  deferred. Exit with retained full-model correctness evidence, not just
-  synthetic kernel checks or a successful load.
+  deferred.
 
-  **Still unqualified:** the three supplied-token trajectories have byte-exact
-  Rust scalar/NEON logits and state, but native comparisons fail the declared
-  `1e-3 + 1e-3 * abs(reference)` tolerance. Maximum logit error is about 0.149;
-  2,331,246 of 117,866,496 state elements fail, starting in block 1 convolution.
-  Matching next-token observations do not qualify a generated greedy sequence.
-  [Focused operator evidence](../config/swift-native-operators.evidence.json)
-  identifies RMS multiplication grouping and other small arithmetic differences;
-  their full-model causal effect remains unproven.
+  **Qualified bounded source workloads at `9899a25`:** the current scalar
+  three-token run matches all 483 native logit/state files byte-for-byte. The
+  NEON run consumes the pinned 61-token chat prompt and feeds back three greedy
+  tokens (`1596, 1144, 310`). At positions 60–63, all 8,388 files containing
+  166,078,464 logit and complete logical state elements match native byte-for-byte.
+  This includes every recurrent/convolution block and all live FP16 KV rows,
+  promoted exactly to F32. The original `1e-3 + 1e-3 * abs(reference)` criterion
+  was unchanged. Earlier full-prefix scalar/NEON equality at `d932dac` is retained
+  separately from the corrected-revision checks.
 
-  Implementation follow-up: the Qwen35 graph now has a separate weighted RMS
-  path matching the pinned Windows ARM64 binary's `(input * weight) * scale`
-  rounding. Fresh, hash-verified native operator captures at widths
-  16/64/128/5120 match that order exactly; an independent native-output bit
-  regression rejects the previous order. The generic scalar RMS API retains
-  its original semantics. This repairs one measured operator discrepancy;
-  its effect on full-model logits/state and the remaining arithmetic differences
-  still needs the unchanged M2 qualification.
+  Independent native controls qualify the exact Swift identity's weighted RMS,
+  Q8_K preparation, PQ2 accumulation, SiLU/SwiGLU, GDN dot/update, convolution
+  accumulation, F16 attention dot, masked softmax and in-place RoPE arithmetic.
+  Production-identical traces and same-input controls isolated each causal
+  repair. In particular, native buffer reuse changes RoPE's first FMA order;
+  the separate out-of-place oracle remains covered. Generic graph arithmetic
+  retains its existing contract. The [follow-up receipt](../config/swift-native-mvp-followup.evidence.json)
+  records tested revisions, unchanged tolerances, historical failures, hashes
+  and memory observations.
 
-  The [actual-model follow-up](../config/swift-native-mvp-followup.evidence.json)
-  repeated all three supplied-token steps against a fresh native capture. The
-  repaired graph still exceeds the declared logits/state tolerances, beginning
-  in block 1 convolution. Observed greedy choices match; a generated greedy
-  continuation remains unqualified.
-
-  Further same-input native controls qualify pinned PQ2 fused accumulation,
-  SiLU/SwiGLU and GDN dot/update arithmetic. These choices apply only to the
-  exact verified Swift identity; generic graph arithmetic remains unchanged.
-  Production-identical first-token traces locate the initial divergence in GDN.
-  After its repair, block 0 matches native bit-for-bit through FFN SwiGLU,
-  including recurrent/convolution state; the next difference is the FFN down
-  projection. Those completed model comparisons exceed the unchanged tolerance.
-  A same-input down-projection control then isolated a single Q8_K rounding
-  boundary: source arithmetic emits 72 where the compiled native fused rounding
-  emits 71. The private preparation path now reproduces the native block exactly.
-  Native-controlled attention dot, masked softmax and RoPE repairs are also
-  implemented. The combined actual-model run at `7d49e43` matches all 248,320
-  first-token logits and every first-step logical state file bit-for-bit.
-  Later supplied-token steps initially still exceeded the unchanged tolerance.
-  Independent live-history convolution controls then proved native fused
-  multiply-add accumulation. With that repair at `d932dac`, all 483 state/logit
-  files across the three supplied-token steps match native byte-for-byte.
-  The subsequent 61-token chat prefix and three generated greedy steps still
-  exceed the unchanged tolerance (maximum logit error about 0.166), while the
-  generated IDs `1596, 1144, 310` match. Early recurrent blocks remain byte-exact;
-  the attention path is under audit. All 8,388 state/logit files from the current
-  scalar and NEON prefix trajectories match byte-for-byte; the follow-up receipt
-  records each tested revision separately.
+  This qualifies the declared pinned-model source workloads. Full-context and
+  longer-output qualification, performance, other models and adapters remain
+  deferred. Runner still consumes released runtime `0.1.1`; these source repairs
+  need a separately reviewed prebuilt release and lock update before ordinary
+  Runner builds consume them.
 
 - [x] **M3 — Connect Swift's chat prompt to the exact tokenizer.** Render the
   verified embedded template with the existing Jinja/chat APIs, current

@@ -243,6 +243,11 @@
       "path": "neon-chat61-inplace-comparison.json",
       "bytes": 3507844,
       "sha256": "7994a0fbfb72d416bb5542222ce5458d6e89e95947fa68764da30740f4ddac45"
+    },
+    {
+      "path": "scalar-inplace-three-token-exact-comparison.json",
+      "bytes": 143306,
+      "sha256": "0eaf49e53ab28b9e0f0716a115ce48f0ce09cef5233f8533ee5325a87a1ce534"
     }
   ],
   "sessionFollowup": {
@@ -599,6 +604,33 @@
         "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
       },
       "remaining": "61-token prefix plus generated trajectory and current scalar/NEON replay"
+    },
+    {
+      "testedRevision": "9899a253633568b4cb870cdaf9e4df795c7cc0d8",
+      "repair": "Production in-place RoPE arithmetic",
+      "mode": "scalar",
+      "passed": true,
+      "allFilesBitExact": true,
+      "comparedFiles": 483,
+      "comparedBytes": 474445824,
+      "scope": "Three supplied tokens, all 64 blocks and complete logical state",
+      "process": {
+        "revision": "9899a253633568b4cb870cdaf9e4df795c7cc0d8",
+        "mode": "scalar",
+        "exitCode": 0,
+        "violation": null,
+        "peakProcessCommitBytes": 7535939584,
+        "peakWorkingSetBytes": 7522430976,
+        "initialAvailablePhysicalBytes": 15458250752,
+        "minimumAvailablePhysicalBytes": 8078360576,
+        "requiredInitialAvailableBytes": 14656575898,
+        "standardServiceAdmissionBytes": 17179869184,
+        "ownerAuthorizedReducedAdmission": true,
+        "processThresholdBytes": 12884901888,
+        "physicalReserveBytes": 4294967296,
+        "executableSha256": "03eefba5a6494f4b4e4b200ae1962197cf9c528844528feaf919eb1b1ba2ef83",
+        "qualification": "Bounded correctness diagnostic only; no throughput measurement. Process thresholds are periodically sampled, not a Windows Job or allocator proof."
+      }
     }
   ],
   "causalTrace": {
@@ -697,7 +729,7 @@
     "lastObservedAvailablePhysicalBytes": 15655223296,
     "boundedDiagnosticStartFloorBytes": 14656575898,
     "memoryAcceptableForPreviouslyObservedWorkload": true,
-    "M2": "NEON native prefix/greedy parity passed byte-exact; focused corrected-revision scalar check pending",
+    "M2": "qualified for pinned Swift CPU source: current scalar three-token and NEON 61-token prefix plus three greedy steps are byte-exact with pinned native; broader workloads remain unqualified",
     "M6": "owned HTTP recovery and current-revision device coverage remain open",
     "runtimeReleasePin": "0.1.1",
     "serviceStartupAdmissionBytes": 17179869184

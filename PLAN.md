@@ -26,8 +26,8 @@ accelerator is enabled in current launch profiles.
 The active implementation scope is the pinned Swift PQ2 CPU MVP in the
 [Prism migration TODO](docs/prism-upstream-todo.md). Exact Swift chat rendering,
 token accounting and native sampler parity are implemented, as is the
-experimental owned service path. Full-model forward parity and complete device
-recovery evidence remain the next exits. The broader acceleration, adapter,
+experimental owned service path. Bounded full-model forward parity is qualified in the source runtime; complete
+owned device recovery and a reviewed prebuilt runtime update remain the next exits. The broader acceleration, adapter,
 UI and optimization work below stays deferred while closing that MVP.
 
 The approved abliteration LoRA is intended for the standard profile. Acceptance
@@ -82,7 +82,7 @@ and [development commands](docs/development-guide.md).
 | Path | Current state | Next gate |
 | --- | --- | --- |
 | Pinned Prism CPU | Bounded Swift decode works | Real service behavior, creative/comfort and daily security qualification |
-| Native Rust CPU | Verified Swift loader, hybrid graph, transactional generation, exact Swift chat/tokenizer, native sampler and experimental broker path | Full-model numerical parity and complete device recovery; broader models and adapters remain deferred |
+| Native Rust CPU | Verified Swift loader, hybrid graph, transactional generation, exact Swift chat/tokenizer, native sampler and experimental broker path | Complete owned device recovery and reviewed prebuilt consumption; broader models and adapters remain deferred |
 | Adreno Vulkan | CPU-only builds and profiles today | Native ARM64 build, exact-model placement/parity and paired device evidence |
 | Hexagon | Discovery and implementation plan only | Signed access, exact packed kernels, hybrid state and bounded deployment |
 
@@ -259,7 +259,7 @@ templates/models, full-model forward arithmetic, complete device recovery or
 daily service. The [active MVP checklist](docs/prism-upstream-todo.md) owns those
 remaining exits.
 Tiled prefill kernels, full-model allocation,
-parity and performance qualification remain open.
+broader model parity and performance qualification remain open.
 
 Profile before expanding optimization work. Priorities include exact packed
 lookup kernels, compatible activation sharing, bounded block prefill and hybrid
@@ -341,7 +341,7 @@ when authorized, uses only `main`. Git history holds implementation chronology.
 | M4 — daily profiles | Pending | Reproducible installation and accepted creative/daily/battery profiles |
 | M5 — Hexagon | N0–N7 pending | Signed exact-model execution, bounded state/memory and device benefit, or no-go |
 | M6 — advanced kernels/speculation | Research candidates | Correctness and measured benefit justify maintenance |
-| M7 — Rust replacement | Swift loader/graph, chat/tokenizer, native sampler and experimental owned service implemented | Swift MVP full-model parity and device lifecycle evidence, followed by broader R0–R7 and per-profile acceptance |
+| M7 — Rust replacement | Swift loader/graph, chat/tokenizer, native sampler and experimental owned service implemented | Complete Swift MVP owned device lifecycle and reviewed runtime consumption, followed by broader R0–R7 and per-profile acceptance |
 
 The immediate engine work follows M2 → M5 → M6 in the
 [Swift-only MVP checklist](docs/prism-upstream-todo.md), against the pinned native
