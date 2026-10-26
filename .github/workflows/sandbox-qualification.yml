@@ -1,0 +1,121 @@
+name: Native Windows sandbox qualification
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Model-free native capability and process-lifetime checks
+        type: choice
+        options: [hosted-arm64, snapdragon]
+        default: hosted-arm64
+permissions:
+  contents: read
+concurrency:
+  group: sandbox-qualification-${{ inputs.target }}
+  cancel-in-progress: false
+jobs:
+  qualify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ${{ fromJSON(inputs.target == 'snapdragon' && '["self-hosted","Windows","ARM64","swift-bonsai-snapdragon"]' || '"windows-11-arm"') }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+      - name: Select the exact native compiler
+        id: compiler
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Prepare external build, working and evidence paths
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP ('Sandbox-Qualification-' + [guid]::NewGuid().ToString('N'))
+          foreach ($name in @('work', 'evidence')) {
+            [void][IO.Directory]::CreateDirectory((Join-Path $root $name))
+          }
+          "BONSAI_SANDBOX_WORK=$(Join-Path $root 'work')" >> $env:GITHUB_ENV
+          "BONSAI_SANDBOX_EVIDENCE=$(Join-Path $root 'evidence')" >> $env:GITHUB_ENV
+          "CARGO_TARGET_DIR=$(Join-Path $env:RUNNER_TEMP 'Bonsai-Sandbox-Target')" >> $env:GITHUB_ENV
+      - name: Reuse native qualification build outputs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}
+          key: sandbox-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.image-identity }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'src/windows-process/**', 'src/windows-credentials/**', 'src/artifacts/**') }}
+          restore-keys: |
+            sandbox-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.image-identity }}-
+      - name: Prove native authority and owner-death contracts
+        shell: pwsh
+        working-directory: ${{ env.BONSAI_SANDBOX_WORK }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $env:TEMP = $env:BONSAI_SANDBOX_WORK
+          $env:TMP = $env:BONSAI_SANDBOX_WORK
+          [Environment]::CurrentDirectory = $env:BONSAI_SANDBOX_WORK
+          $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
+          $manifest = Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml'
+          $tests = @(
+            @{ Package='bonsai-windows-process'; Target='ownership'; Name='native_sandbox_limits_files_and_preserves_loopback_process_identity' },
+            @{ Package='bonsai-windows-process'; Target='ownership'; Name='native_sandbox_denies_external_tcp_connect_by_policy' },
+            @{ Package='bonsai-windows-process'; Target='ownership'; Name='native_sandbox_host_loopback_capability_includes_host_interface_services' },
+            @{ Package='bonsai-windows-process'; Target='ownership'; Name='native_sandbox_abrupt_owner_death_ends_worker_and_listener' },
+            @{ Package='bonsai-artifacts'; Target='contained'; Name='contained_verification_retains_exact_artifact_and_credential' }
+          )
+          $os = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+          $lock = [IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'Cargo.lock'))
+          $mxc = [regex]::Match($lock, '(?m)^name = "mxc-sdk"\r?\nversion = "([^"]+)"')
+          if (-not $mxc.Success) { throw 'The tested MXC dependency identity is missing.' }
+          $records = [Collections.Generic.List[object]]::new()
+          $report = [ordered]@{
+            SchemaVersion=1; Revision=$env:GITHUB_SHA; MxcVersion=$mxc.Groups[1].Value
+            Toolchain='nightly-2026-10-22-aarch64-pc-windows-msvc'
+            OsBuild=$os.CurrentBuildNumber; OsRevision=$os.UBR
+            Architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+            Tests=$records; Passed=$false; ActualModelQualified=$false
+            BrokerOnlyTransportQualified=$false; PerformanceMeasured=$false
+          }
+          try {
+            foreach ($test in $tests) {
+              $arguments = @('+nightly-2026-10-22', 'test', '--locked', '--manifest-path', $manifest,
+                '--package', $test.Package, '--test', $test.Target)
+              if ($test.Package -ceq 'bonsai-windows-process') { $arguments += @('--features', 'test-probe') }
+              $listed = @(& $cargo @arguments -- --list --ignored)
+              if ($LASTEXITCODE -ne 0 -or $listed -cnotcontains ($test.Name + ': test')) {
+                throw ('Required native qualification case was not found: ' + $test.Name)
+              }
+              $record = [ordered]@{ Name=$test.Name; ExitCode=$null; Passed=$false }
+              $records.Add($record)
+              try {
+                & $cargo @arguments $test.Name -- --exact --ignored --nocapture 2>&1 |
+                  Tee-Object -FilePath (Join-Path $env:BONSAI_SANDBOX_EVIDENCE ($test.Name + '.log'))
+              } finally {
+                $record.ExitCode = $LASTEXITCODE
+                $record.Passed = $LASTEXITCODE -eq 0
+              }
+              if (-not $record.Passed) { throw ('Native qualification failed: ' + $test.Name) }
+            }
+            $report.Passed = $true
+          } finally {
+            $report | ConvertTo-Json -Depth 6 |
+              Set-Content -LiteralPath (Join-Path $env:BONSAI_SANDBOX_EVIDENCE 'qualification.json') -Encoding utf8NoBOM
+          }
+          @('Model-free native sandbox qualification passed.',
+            'Host-loopback authority includes other host services.',
+            'Actual-model, broker-only transport and performance qualification remain separate.') |
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+      - name: Retain synthetic qualification evidence
+        if: always() && env.BONSAI_SANDBOX_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-sandbox-${{ inputs.target }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.BONSAI_SANDBOX_EVIDENCE }}/*.json
+            ${{ env.BONSAI_SANDBOX_EVIDENCE }}/*.log
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 1

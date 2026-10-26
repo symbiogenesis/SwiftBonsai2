@@ -1,6 +1,6 @@
 {
   "shared": [
-    "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rustfmt.toml", ".cargo/**",
+    "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rustfmt.toml", "clippy.toml", ".cargo/**",
     ".gitmodules", "third_party/simd-json", "third_party/simd-json/**",
     ".github/ci/**", "tools/ci/**", ".github/workflows/foundation.yml", ".github/actions/rust-toolchain/**",
     ".github/actions/check-rust/**", ".github/actions/native-speech/**",

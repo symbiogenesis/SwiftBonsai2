@@ -202,8 +202,17 @@ candidate alone does not promote the compiled runtime pin.
 
 ## Acceptance limits
 
+The main-only [native sandbox qualification](../.github/workflows/sandbox-qualification.yml)
+workflow runs the explicitly ignored PSEC fixtures on hosted ARM64 or the selected
+owner-managed host. It records the revision, SDK and OS identities and retains
+synthetic technical logs. It checks file/temp authority, external network denial,
+the broader host-loopback scope, real process limits, artifact/key validation and
+abrupt-owner cleanup. Ordinary Foundation suites do not execute these ignored
+native cases. The workflow loads no model and runs no benchmark.
+
 Synthetic fixtures establish app policy, parser, artifact and process contracts.
-They do not establish daily filesystem/egress isolation, same-user backend bypass
-prevention, quality, throughput or sustained comfort. Bounded source-runtime
+Native fixtures establish their exact tested Windows capability behavior; they
+do not establish complete actual-model/daily acceptance, broker-only/same-user
+bypass prevention, quality, throughput or sustained comfort. Bounded source-runtime
 checks do not qualify the provisioned release; runtime promotion requires the
 separate reviewed release and lock-update procedure.

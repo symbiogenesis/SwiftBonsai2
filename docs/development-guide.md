@@ -23,9 +23,10 @@ Prism inference support remains future work.
 planned. Current launch policies select CPU execution.
 
 A native Rust chat app is available through `Start-Chat.ps1`.
-Daily-service acceptance remains pending. Development ownership and memory
-controls do not qualify restricted inference identity, filesystem/egress
-isolation or same-user backend bypass prevention.
+Owned model and speech workers require the native Windows containment described
+in the [worker sandbox architecture](sandboxing.md). Complete actual-model and
+daily-service acceptance, including broker-only/same-user bypass prevention,
+remain pending.
 
 ## Native chat app
 
@@ -35,6 +36,9 @@ checkout or compiler. The source-build path follows below.
 
 Use native Windows ARM64 PowerShell 7.6+, the pinned Rust toolchain, an existing
 Swift PQ2 model/runtime installation and at least **16 GiB of available RAM**.
+The native app also requires serviced Windows 11 with PSEC 1.1 and container-hosted
+loopback support. Startup checks the actual capabilities and policy admission;
+it does not automatically retry with the caller's unrestricted authority.
 For a new installation, provision the model/runtime with Swift's assessment lock
 and the pinned abliteration adapter:
 
