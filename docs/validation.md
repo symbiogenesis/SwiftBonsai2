@@ -104,6 +104,15 @@ Select a regression relevant to the change, such as
 regression and use an external target/working directory. `-FullTests` is reserved
 for main-branch GitHub Actions; benchmark execution is always CI-only.
 
+The chat UI's focused `window::interaction_tests::` selection exercises actual
+egui input and accessibility with inert model channels. It covers Enter versus
+Shift+Enter and selection across streaming appends without starting a broker,
+speech runtime or microphone. Ordinary runs require no GPU. For visual review,
+set `BONSAI_UI_CAPTURE_DIRECTORY` to an expanded absolute directory outside Git
+and select `window::interaction_tests::capture_chat_layouts_when_requested`;
+that case renders wide, narrow and empty layouts to PNG using the test renderer.
+These captures do not establish native screen-reader, model or speech behavior.
+
 For prebuilt runtime promotion tooling, use
 `./tests/Test-Inference.ps1 -Case ReleaseLock`. It checks candidate generation
 and rejection with synthetic bundles without loading a model. The normal

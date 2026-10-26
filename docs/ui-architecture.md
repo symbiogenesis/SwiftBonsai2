@@ -15,15 +15,25 @@ startup; it does not implement the UI.
 
 ## Native MVP
 
-`src/chat-ui/` provides the `bonsai-chat` Windows application. Its application
-source is Rust, using native Win32 controls through Rust bindings and a Rust
-HTTP client. The UI runs separately from the broker and inference process;
-network work runs off the native event loop. It adds no GUI framework or browser
-runtime dependency.
+`src/chat-ui/` provides the `bonsai-chat` Windows application. Its presentation
+uses `egui` and `eframe`, with a native window and `wgpu` rendering; application
+state, widgets and the HTTP client are Rust. It has no browser runtime or web
+frontend. The UI runs separately from the broker and inference process;
+network work runs off the native event loop. The toolkit supports other desktop
+platforms, but the broker ownership, credentials and speech integrations remain
+Windows-specific; this migration does not establish a cross-platform runner.
 
-The native window uses a dark palette, follows Windows high-contrast/system
-color changes, exposes native control labels and keeps conversation history in
-memory. Per-monitor DPI changes apply the system's suggested window rectangle.
+The window uses a dark palette, maps Windows high-contrast settings to its
+Rust-drawn widgets and keeps conversation history in memory. `eframe` handles
+window input and per-monitor display scaling. Rust-drawn controls expose labels
+through AccessKit and support keyboard navigation.
+The conversation contains only user and assistant content. Startup, retry,
+transport and speech status use separate controls; bounded application
+diagnostics have their own collapsible view rather than appearing as chat
+messages. The transcript supports selection and explicit copying without
+interpreting model output as HTML. Selection during streaming and long-history
+scrolling need focused checks. Toolkit support for non-Latin glyphs does not imply full
+bidirectional text editing or complete native-control accessibility parity.
 An insufficient-memory startup failure offers **Retry model** after RAM is
 freed. Retrying creates a fresh broker attempt with new diagnostic storage and
 repeats the ordinary artifact, identity and 16 GiB admission checks. There is no
@@ -33,7 +43,7 @@ Stop and uncertain request failures also leave the window available for an
 explicit **Retry model**. The client tears down the owned backend before a fresh
 attempt, retains completed conversation turns, and never automatically replays
 an interrupted request. Local input-limit rejections restore the composer.
-Native controls expose the fixed 8,192-token context bound and select a
+Response settings expose the fixed 8,192-token context bound and select a
 reasoning-inclusive completion cap up to 4,096 tokens. Standard remains the
 default single-call workflow; opt-in Extra effort performs at most three
 sequential plan/draft/review calls with a shared deadline, stage labels and
@@ -50,6 +60,11 @@ creative quality, performance or daily-service isolation.
 
 Use the [development guide](development-guide.md) for launch commands and
 [broker policy](broker-policy.md) for the exact supported request contract.
+
+`bonsai-chat.exe --preview` opens the same presentation with sample content and
+an explicit preview indicator. It does not start a broker, access credentials,
+initialize a microphone or start speech services. Preview checks establish UI
+layout and interaction only; they do not qualify model or speech behavior.
 
 ## Interoperability belongs at the API boundary
 
@@ -107,7 +122,7 @@ weights and no recognition fallback; its runtime requirements are separate from
 the Swift CPU backend. No audio is sent to a cloud service by this integration.
 
 Read-aloud uses the separate, authenticated local
-[Qwen3-TTS 1.7B VoiceDesign companion](../tools/qwen-tts/README.md). The native
+[Qwen3-TTS 1.7B VoiceDesign companion](../tools/qwen-tts/README.md). The
 **Voice profile** text setting describes the desired voice in ordinary language;
 no preset, speaker file or reference recording is required. It applies to the
 next explicit read-aloud request. Only visible assistant answers are synthesized,

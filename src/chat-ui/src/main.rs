@@ -1,8 +1,8 @@
-//! Pure Rust desktop chat; the native boundary uses the operating system controls.
+//! Pure Rust egui desktop chat with isolated native process and speech boundaries.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 #![allow(
     clippy::multiple_crate_versions,
-    reason = "Pinned Microsoft WinRT binding macros require syn 2 while pinned serde_derive requires syn 3; their incompatible major APIs cannot be unified."
+    reason = "The pinned native GUI, graphics and WinRT dependencies require incompatible major versions of shared implementation crates."
 )]
 
 #[cfg(windows)]
@@ -18,10 +18,6 @@ mod speech;
 #[cfg(windows)]
 mod tts;
 #[cfg(windows)]
-#[allow(
-    unsafe_code,
-    reason = "Audited Win32 control and message-loop boundary."
-)]
 mod window;
 
 #[cfg(windows)]
@@ -229,9 +225,14 @@ fn validate_configuration(
 
 #[cfg(windows)]
 fn main() -> std::process::ExitCode {
-    let result = configuration(std::env::args_os().skip(1))
-        .map_err(std::io::Error::other)
-        .and_then(window::run);
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    let result = if args.len() == 1 && args[0] == "--preview" {
+        window::run_preview()
+    } else {
+        configuration(args)
+            .map_err(std::io::Error::other)
+            .and_then(window::run)
+    };
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {

@@ -42,10 +42,12 @@ $data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
 ./scripts/Start-Demo.ps1 -DataDirectory $data
 ```
 
-The native Win32 window follows the lasting [UI architecture policy](ui-architecture.md):
-application UI code stays in Rust; native system bindings are permitted, while
-WebViews, JavaScript, TypeScript, HTML and CSS are excluded. It starts and owns the development broker,
-uses a dark appearance, shows startup status and streams responses. If startup
+The native `egui`/`eframe` window follows the lasting
+[UI architecture policy](ui-architecture.md): application UI code stays in Rust;
+native system bindings are permitted, while WebViews, JavaScript, TypeScript,
+HTML and CSS are excluded. `wgpu` renders the Rust-drawn controls. The app
+starts and owns the development broker, uses a dark appearance, shows startup
+status and streams responses. If startup
 reports insufficient RAM, free memory and select **Retry model**. Each retry
 starts a fresh owned broker and repeats artifact verification and the standard
 16 GiB memory admission check. Conversation history stays in memory.
@@ -55,6 +57,26 @@ repeat artifact/memory admission, and continue with completed conversation turns
 retained in memory. Retry never resends a prompt automatically. Uncertain
 transport/protocol failures also require this explicit retry. Closing the window
 stops its owned broker and inference process.
+
+For a model-free visual check, build the chat executable into an external temp
+directory and open its sample preview:
+
+```powershell
+$previewTarget = Join-Path ([IO.Path]::GetTempPath()) ('Bonsai-Preview-' + [guid]::NewGuid().ToString('N'))
+cargo build --locked --release --package bonsai-chat --target-dir $previewTarget
+Start-Process -FilePath (Join-Path $previewTarget 'release/bonsai-chat.exe') -ArgumentList '--preview' -WorkingDirectory ([IO.Path]::GetTempPath())
+```
+
+The preview is visibly marked and uses the same UI with sample content. It
+starts no broker or speech services and does not access credentials or a
+microphone. Use it to inspect resizing, display scaling, selection and keyboard
+navigation. The preview does not establish real-model streaming or audio
+behavior. Although the toolkit supports Windows, macOS and Linux, this runner's
+process ownership, credentials and speech integrations remain Windows-specific.
+
+The conversation shows only user and assistant content. Model readiness,
+generation errors, retry guidance and speech status appear outside the chat;
+application diagnostics are available in a separate collapsible view.
 
 **Mode** defaults to **Standard**, which makes one completion request.
 **Extra effort (experimental)** makes up to three sequential planning, drafting
@@ -73,8 +95,13 @@ a diagnostic error body for context rejection, so an unexplained connection
 closure requires Retry model; consider a shorter conversation or smaller output
 cap before trying again.
 
-The window follows Windows high-contrast settings and distinguishes an answer
-that reached its token limit from a naturally completed answer. **Read aloud**
+The window maps Windows high-contrast colors to its controls, uses `eframe`
+display scaling and exposes control labels through AccessKit. Conversation
+text remains selectable and can be copied explicitly. Check selection while
+streaming and scrolling long conversations; full bidirectional editing and
+native-control accessibility parity are not established. The window
+distinguishes an answer that reached its token limit from a naturally completed
+answer. **Read aloud**
 uses Qwen3-TTS 1.7B VoiceDesign for the visible answer; **Stop speech** cancels
 synthesis and playback. Reasoning is not read aloud. Edit **Voice profile** to
 describe a voice, for example "A warm, low-pitched narrator with a calm pace and

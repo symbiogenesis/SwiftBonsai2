@@ -1,361 +1,252 @@
-//! Read-only native Rich Edit transcript. Selection belongs to the reader;
-//! streaming always writes to the document end, independently of that selection.
+//! Conversation-only messages with cached layout and viewport culling.
+//! Application diagnostics never enter this model.
+use eframe::egui::{self, Color32, FontId, RichText, Vec2};
+use std::sync::Arc;
 
-use super::{ACCENT, MUTED, TEXT, colors, control, display_color, set_text, wide};
-use std::io;
-use windows_sys::{
-    Win32::{
-        Foundation::{FreeLibrary, HMODULE, HWND, POINT},
-        System::LibraryLoader::{LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW},
-        UI::{
-            Controls::{EM_REPLACESEL, EM_SCROLLCARET, SetWindowTheme},
-            WindowsAndMessaging::{
-                ES_AUTOVSCROLL, ES_MULTILINE, ES_NOHIDESEL, ES_READONLY, GetScrollInfo, SB_BOTTOM,
-                SB_VERT, SCROLLINFO, SIF_PAGE, SIF_POS, SIF_RANGE, SendMessageW, WM_USER,
-                WM_VSCROLL, WS_TABSTOP, WS_VSCROLL,
-            },
-        },
-    },
-    core::w,
-};
+const MAX_BYTES: usize = 4 * 1024 * 1024;
 
-// Rich Edit messages/layouts from the Windows SDK's Richedit.h. windows-sys
-// does not expose these definitions. All pointers below are synchronous only.
-const EM_EXGETSEL: u32 = WM_USER + 52;
-const EM_EXLIMITTEXT: u32 = WM_USER + 53;
-const EM_EXSETSEL: u32 = WM_USER + 55;
-const EM_SETBKGNDCOLOR: u32 = WM_USER + 67;
-const EM_SETCHARFORMAT: u32 = WM_USER + 68;
-const EM_SETUNDOLIMIT: u32 = WM_USER + 82;
-const EM_GETTEXTLENGTHEX: u32 = WM_USER + 95;
-const EM_GETSCROLLPOS: u32 = WM_USER + 221;
-const EM_SETSCROLLPOS: u32 = WM_USER + 222;
-const SCF_SELECTION: usize = 1;
-const CFM_BOLD: u32 = 1;
-const CFM_COLOR: u32 = 0x4000_0000;
-const CFM_FACE: u32 = 0x2000_0000;
-const CFM_SIZE: u32 = 0x8000_0000;
-
-#[repr(C)]
-#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
-struct CharRange {
-    start: i32,
-    end: i32,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Role {
+    User,
+    Assistant,
 }
 
-#[repr(C)]
-struct TextLength {
-    flags: u32,
-    code_page: u32,
+struct LayoutCache {
+    width: f32,
+    pixels_per_point: f32,
+    color: Color32,
+    reasoning_color: Color32,
+    body: Arc<egui::Galley>,
+    reasoning: Option<Arc<egui::Galley>>,
 }
 
-#[repr(C)]
+pub(super) struct Message {
+    id: u64,
+    pub(super) role: Role,
+    pub(super) body: String,
+    reasoning: String,
+    pending: bool,
+    show_reasoning: bool,
+    cache: Option<LayoutCache>,
+}
+
 #[derive(Default)]
-struct CharFormat {
-    size: u32,
-    mask: u32,
-    effects: u32,
-    height: i32,
-    offset: i32,
-    color: u32,
-    charset: u8,
-    pitch: u8,
-    face: [u16; 32],
+pub(super) struct Transcript {
+    pub(super) messages: Vec<Message>,
+    next_id: u64,
 }
 
-pub(super) struct Library(HMODULE);
+impl Transcript {
+    pub(super) fn clear(&mut self) {
+        self.messages.clear();
+    }
 
-impl Library {
-    pub(super) fn load() -> io::Result<Self> {
-        // SAFETY: Load only the Windows system Rich Edit implementation. The
-        // owned module stays loaded until all transcript controls are destroyed.
-        let module = unsafe {
-            LoadLibraryExW(
-                w!("Msftedit.dll"),
-                std::ptr::null_mut(),
-                LOAD_LIBRARY_SEARCH_SYSTEM32,
-            )
-        };
-        if module.is_null() {
-            Err(io::Error::last_os_error())
-        } else {
-            Ok(Self(module))
+    pub(super) fn remove_empty_response(&mut self) {
+        if let Some(message) = self.messages.last_mut() {
+            message.pending = false;
+        }
+        if self.messages.last().is_some_and(|message| {
+            message.role == Role::Assistant
+                && message.body.is_empty()
+                && message.reasoning.is_empty()
+        }) {
+            self.messages.pop();
         }
     }
-}
 
-impl Drop for Library {
-    fn drop(&mut self) {
-        // SAFETY: This wrapper owns one module reference and outlives its controls.
-        unsafe { FreeLibrary(self.0) };
+    pub(super) fn push(&mut self, role: Role, body: String) {
+        self.next_id = self.next_id.wrapping_add(1);
+        self.messages.push(Message {
+            id: self.next_id,
+            role,
+            body,
+            reasoning: String::new(),
+            pending: role == Role::Assistant,
+            show_reasoning: false,
+            cache: None,
+        });
+        self.trim();
     }
-}
 
-pub(super) fn create(parent: HWND, id: usize) -> io::Result<HWND> {
-    let style = WS_TABSTOP
-        | WS_VSCROLL
-        | u32::try_from(ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | ES_NOHIDESEL)
-            .unwrap_or_default();
-    let handle = control(parent, w!("RICHEDIT50W"), "", style, id)?;
-    // SAFETY: Live Rich Edit control; scalar limit, no retained pointer.
-    unsafe { SendMessageW(handle, EM_EXLIMITTEXT, 0, 4 * 1024 * 1024) };
-    // SAFETY: Live control; scalar COLORREF sets its own background color.
-    unsafe {
-        SendMessageW(
-            handle,
-            EM_SETBKGNDCOLOR,
-            0,
-            isize::try_from(colors().panel).unwrap_or_default(),
-        )
-    };
-    // SAFETY: Read-only transcript needs no undo storage; scalar message only.
-    unsafe { SendMessageW(handle, EM_SETUNDOLIMIT, 0, 0) };
-    theme_control(handle);
-    Ok(handle)
-}
-
-fn theme_control(control: HWND) {
-    // SAFETY: Static/null theme pointers are read synchronously by this live control.
-    unsafe {
-        SetWindowTheme(
-            control,
-            if colors().high_contrast {
-                std::ptr::null()
+    pub(super) fn append(&mut self, text: &str, reasoning: bool) {
+        if let Some(message) = self.messages.last_mut()
+            && message.role == Role::Assistant
+        {
+            if reasoning {
+                message.reasoning.push_str(text);
             } else {
-                w!("DarkMode_Explorer")
-            },
-            std::ptr::null(),
-        );
-    }
-}
-
-pub(super) fn refresh_theme(control: HWND) {
-    let saved = selection(control);
-    let mut scroll = POINT::default();
-    // SAFETY: Live native control writes to this message-scoped POINT.
-    unsafe {
-        SendMessageW(
-            control,
-            EM_GETSCROLLPOS,
-            0,
-            (&raw mut scroll).addr().cast_signed(),
-        );
-    }
-    let colors = colors();
-    theme_control(control);
-    // SAFETY: Scalar COLORREF updates the live control's background.
-    unsafe {
-        SendMessageW(
-            control,
-            EM_SETBKGNDCOLOR,
-            0,
-            isize::try_from(colors.panel).unwrap_or_default(),
-        );
-    }
-    // Recolor existing text as well as subsequent deltas. Speaker emphasis stays
-    // bold; old accent colors must not override the user's contrast settings.
-    let format = CharFormat {
-        size: u32::try_from(size_of::<CharFormat>()).unwrap_or_default(),
-        mask: CFM_COLOR,
-        color: colors.text,
-        ..CharFormat::default()
-    };
-    // SAFETY: SCF_ALL changes only color, reading the correctly sized structure inline.
-    unsafe {
-        SendMessageW(
-            control,
-            EM_SETCHARFORMAT,
-            4,
-            (&raw const format).addr().cast_signed(),
-        );
-    }
-    select(control, saved);
-    // SAFETY: Restore this reader's viewport from a message-scoped POINT.
-    unsafe {
-        SendMessageW(
-            control,
-            EM_SETSCROLLPOS,
-            0,
-            (&raw const scroll).addr().cast_signed(),
-        );
-    }
-}
-
-fn length(control: HWND) -> i32 {
-    let options = TextLength {
-        flags: 2 | 8,    // GTL_PRECISE | GTL_NUMCHARS; internal CR, not exported CRLF.
-        code_page: 1200, // Unicode UTF-16, matching CHARRANGE positions.
-    };
-    // SAFETY: Live control reads this SDK-layout structure synchronously.
-    let count =
-        unsafe { SendMessageW(control, EM_GETTEXTLENGTHEX, (&raw const options).addr(), 0) };
-    i32::try_from(count.max(0)).unwrap_or(i32::MAX)
-}
-
-fn selection(control: HWND) -> CharRange {
-    let mut range = CharRange::default();
-    // SAFETY: Live control writes this SDK-layout range during the call only.
-    unsafe {
-        SendMessageW(
-            control,
-            EM_EXGETSEL,
-            0,
-            (&raw mut range).addr().cast_signed(),
-        );
-    }
-    range
-}
-
-fn select(control: HWND, range: CharRange) {
-    // SAFETY: Live control reads the SDK-layout range synchronously.
-    unsafe {
-        SendMessageW(
-            control,
-            EM_EXSETSEL,
-            0,
-            (&raw const range).addr().cast_signed(),
-        );
-    }
-}
-
-fn at_bottom(control: HWND) -> bool {
-    let mut info = SCROLLINFO {
-        cbSize: u32::try_from(size_of::<SCROLLINFO>()).unwrap_or_default(),
-        fMask: SIF_RANGE | SIF_PAGE | SIF_POS,
-        ..SCROLLINFO::default()
-    };
-    // SAFETY: Live control writes a correctly sized native scrollbar structure.
-    let available = unsafe { GetScrollInfo(control, SB_VERT, &raw mut info) };
-    available == 0 || i64::from(info.nPos) + i64::from(info.nPage) >= i64::from(info.nMax)
-}
-
-pub(super) fn scroll_to_end(control: HWND) {
-    let end = length(control);
-    select(control, CharRange { start: end, end });
-    // SAFETY: Live control, pointer-free scrolling message.
-    unsafe { SendMessageW(control, EM_SCROLLCARET, 0, 0) };
-}
-
-pub(super) fn set_font(control: HWND) {
-    let mut format = CharFormat {
-        size: u32::try_from(size_of::<CharFormat>()).unwrap_or_default(),
-        mask: CFM_FACE | CFM_SIZE,
-        height: 255, // 12.75 points in twips; 17 pixels at 96 DPI.
-        ..CharFormat::default()
-    };
-    for (target, source) in format.face.iter_mut().zip("Segoe UI".encode_utf16()) {
-        *target = source;
-    }
-    // SAFETY: SCF_ALL updates only font face/size, retaining speaker emphasis
-    // and colors through DPI changes. The control reads the structure inline.
-    unsafe {
-        SendMessageW(
-            control,
-            EM_SETCHARFORMAT,
-            4,
-            (&raw const format).addr().cast_signed(),
-        );
-    }
-}
-
-pub(super) fn append(control: HWND, text: &str, color: u32, bold: bool) {
-    if text.is_empty() {
-        return;
-    }
-    let saved = selection(control);
-    let end = length(control);
-    let follow = saved.start == saved.end && at_bottom(control);
-    let mut scroll = POINT::default();
-    // SAFETY: Live control writes a message-scoped native POINT.
-    unsafe {
-        SendMessageW(
-            control,
-            EM_GETSCROLLPOS,
-            0,
-            (&raw mut scroll).addr().cast_signed(),
-        );
-    }
-    select(control, CharRange { start: end, end });
-    let format = CharFormat {
-        size: u32::try_from(size_of::<CharFormat>()).unwrap_or_default(),
-        mask: CFM_BOLD | CFM_COLOR,
-        effects: u32::from(bold),
-        color: display_color(color),
-        ..CharFormat::default()
-    };
-    // SAFETY: The SDK-layout format is live until this synchronous call returns.
-    unsafe {
-        SendMessageW(
-            control,
-            EM_SETCHARFORMAT,
-            SCF_SELECTION,
-            (&raw const format).addr().cast_signed(),
-        );
-    }
-    // Rich Edit stores paragraph breaks as CR. Normalize composer CRLF too,
-    // rather than adding an extra carriage return to each existing CRLF.
-    let text = wide(&text.replace("\r\n", "\n").replace('\n', "\r"));
-    // SAFETY: The native control copies this NUL-terminated buffer synchronously.
-    unsafe {
-        SendMessageW(
-            control,
-            EM_REPLACESEL,
-            0,
-            text.as_ptr().addr().cast_signed(),
-        )
-    };
-    if follow && saved.start == end {
-        scroll_to_end(control);
-    } else {
-        select(control, saved);
-        if follow {
-            // SAFETY: Follow the bottom without moving the reader's caret.
-            // Scrolling back down resumes following after reading earlier text.
-            unsafe {
-                SendMessageW(
-                    control,
-                    WM_VSCROLL,
-                    usize::try_from(SB_BOTTOM).unwrap_or_default(),
-                    0,
-                );
+                message.body.push_str(text);
             }
-        } else {
-            // SAFETY: Restore the reader's viewport using a live native POINT.
-            unsafe {
-                SendMessageW(
-                    control,
-                    EM_SETSCROLLPOS,
-                    0,
-                    (&raw const scroll).addr().cast_signed(),
-                );
+            message.cache = None;
+        }
+        self.trim();
+    }
+
+    pub(super) fn stage(&mut self) {
+        if let Some(message) = self.messages.last_mut() {
+            message.pending = false;
+        }
+        if self.messages.last().is_some_and(|message| {
+            message.role == Role::Assistant
+                && (!message.body.is_empty() || !message.reasoning.is_empty())
+        }) {
+            self.push(Role::Assistant, String::new());
+        }
+    }
+
+    fn trim(&mut self) {
+        let mut bytes: usize = self
+            .messages
+            .iter()
+            .map(|message| message.body.len().saturating_add(message.reasoning.len()))
+            .sum();
+        while bytes > MAX_BYTES && self.messages.len() > 2 {
+            let removed = self.messages.remove(0);
+            bytes = bytes.saturating_sub(removed.body.len() + removed.reasoning.len());
+        }
+    }
+
+    pub(super) fn plain_text(&self) -> String {
+        self.messages
+            .iter()
+            .filter(|message| !message.body.is_empty())
+            .map(|message| {
+                format!(
+                    "{}\n{}",
+                    if message.role == Role::User {
+                        "You"
+                    } else {
+                        "Swift Bonsai"
+                    },
+                    message.body
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
+    pub(super) fn show(&mut self, ui: &mut egui::Ui, width: f32) {
+        let width = width.max(120.0);
+        for message in &mut self.messages {
+            message.layout(ui, width - 40.0);
+            let height = message.height();
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
+            if ui.is_rect_visible(rect) {
+                message.show(ui, rect);
             }
+            ui.add_space(16.0);
         }
     }
 }
 
-pub(super) fn turn(control: HWND, speaker: &str, color: u32) {
-    if length(control) != 0 {
-        append(control, "\n\n", TEXT, false);
+impl Message {
+    fn layout(&mut self, ui: &egui::Ui, width: f32) {
+        let color = ui.visuals().text_color();
+        let reasoning_color = ui.visuals().weak_text_color();
+        let pixels_per_point = ui.ctx().pixels_per_point();
+        if self.cache.as_ref().is_some_and(|cache| {
+            (cache.width - width).abs() < 0.5
+                && cache.pixels_per_point.to_bits() == pixels_per_point.to_bits()
+                && cache.color == color
+                && cache.reasoning_color == reasoning_color
+        }) {
+            return;
+        }
+        let body = ui.fonts_mut(|fonts| {
+            fonts.layout(self.body.clone(), FontId::proportional(16.0), color, width)
+        });
+        let reasoning = (!self.reasoning.is_empty()).then(|| {
+            ui.fonts_mut(|fonts| {
+                fonts.layout(
+                    self.reasoning.clone(),
+                    FontId::proportional(14.0),
+                    reasoning_color,
+                    width,
+                )
+            })
+        });
+        self.cache = Some(LayoutCache {
+            width,
+            pixels_per_point,
+            color,
+            reasoning_color,
+            body,
+            reasoning,
+        });
     }
-    append(control, &format!("{speaker}\n"), color, true);
-}
 
-pub(super) fn welcome(control: HWND) {
-    set_text(control, "");
-    turn(control, "What would you like to create?", ACCENT);
-    append(
-        control,
-        "Write a message below to start a conversation.\n\n",
-        TEXT,
-        false,
-    );
-    append(
-        control,
-        "Enter to send · Shift+Enter for a new line\nYour conversation stays in this window's memory.",
-        MUTED,
-        false,
-    );
-}
+    fn height(&self) -> f32 {
+        let Some(cache) = &self.cache else {
+            return 100.0;
+        };
+        let mut height = 40.0 + 24.0 + 12.0 + cache.body.size().y.max(20.0);
+        if let Some(reasoning) = &cache.reasoning {
+            height += 32.0;
+            if self.show_reasoning {
+                height += reasoning.size().y + 8.0;
+            }
+        }
+        height
+    }
 
-#[cfg(test)]
-mod tests;
+    fn show(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+        let fill = if self.role == Role::User {
+            ui.visuals().faint_bg_color
+        } else {
+            ui.visuals().extreme_bg_color
+        };
+        ui.painter().rect_filled(rect, 12.0, fill);
+        let mut child = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt(("message", self.id))
+                .max_rect(rect.shrink(20.0))
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        child.set_clip_rect(rect.intersect(ui.clip_rect()));
+        child.horizontal(|ui| {
+            let (avatar, name) = if self.role == Role::User {
+                ("●", "You")
+            } else {
+                ("B", "Swift Bonsai")
+            };
+            ui.label(
+                RichText::new(avatar)
+                    .color(ui.visuals().selection.bg_fill)
+                    .size(18.0),
+            );
+            ui.label(RichText::new(name).strong().size(14.0));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .small_button("Copy")
+                    .on_hover_text("Copy this message")
+                    .clicked()
+                {
+                    ui.ctx().copy_text(self.body.clone());
+                }
+            });
+        });
+        child.add_space(8.0);
+        if let Some(cache) = &self.cache {
+            if self.body.is_empty() && self.pending {
+                child.label(RichText::new("Thinking…").weak().italics());
+            } else if !self.body.is_empty() {
+                child.add(egui::Label::new(Arc::clone(&cache.body)).selectable(true));
+            }
+            if let Some(reasoning) = &cache.reasoning {
+                child.add_space(8.0);
+                let label = if self.show_reasoning {
+                    "Hide thinking"
+                } else {
+                    "Show thinking"
+                };
+                if child.small_button(label).clicked() {
+                    self.show_reasoning = !self.show_reasoning;
+                }
+                if self.show_reasoning {
+                    child.add_space(4.0);
+                    child.add(egui::Label::new(Arc::clone(reasoning)).selectable(true));
+                }
+            }
+        }
+    }
+}

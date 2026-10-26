@@ -31,14 +31,55 @@ Dependency terms apply independently of the application's license.
 | `unicode-ident` | (MIT OR Apache-2.0) AND Unicode-3.0 | Include Unicode-3.0 notices as well as the selected code license. |
 | `r-efi` | MIT OR Apache-2.0 OR LGPL-2.1-or-later | A permissive alternative is available; LGPL is not required. |
 | `cbindgen` 0.29.4 | MPL-2.0 | Optional `tools/prism` build tool, not linked into the application. Redistributing the tool or modified tool source requires its own MPL compliance. |
+| `eframe`, `egui`, `epaint`, `egui-wgpu`, `egui-winit`, `egui_system_font_provider` 0.37.0 | MIT OR Apache-2.0 | Retain the selected code license and attribution; embedded font terms are separate. |
+| `wgpu` and its core/HAL/type crates 30.0.1 | MIT OR Apache-2.0 | Retain the selected license and attribution. |
+| `winit` 0.30.13, `accesskit_winit` 0.34.2 | Apache-2.0 | Retain the license and applicable notices; identify modified files. |
+| `accesskit` 0.25.2, `accesskit_consumer` 0.39.2, `accesskit_windows` 0.35.2 | MIT OR Apache-2.0 | Retain the selected license and attribution. |
+| `fontique` 0.11.1, `skrifa` 0.44.0, `read-fonts` 0.41.0, `font-types` 0.12.7 | MIT OR Apache-2.0 | Retain code licenses/notices independently of the fonts they load. |
+| `harfrust` 0.12.0 | MIT | Retain the HarfBuzz developers' and Yevhenii Reizner's copyright and permission notice. |
+| `arboard` 3.7.0 / `clipboard-win` 5.4.3 | MIT OR Apache-2.0 / BSL-1.0 | Retain applicable clipboard code licenses/notices. |
+| `epaint_default_fonts` 0.37.0 | (MIT OR Apache-2.0) AND OFL-1.1 AND Ubuntu-font-1.0 | Preserve the individual font notices described below; the crate's code license does not replace them. |
 | Prism/ggml codec, loader and native reference portions | MIT | Retain upstream MIT notices; Apache-2.0 does not replace them. |
 
-The other resolved Cargo packages have permissive alternatives; none lacked a
-declared license in the review. cbindgen is the sole reviewed dependency without
-a permissive alternative. Its use does not require our source or generated
-declarations to adopt MPL. See its
+The other reviewed code packages have permissive alternatives; bundled font
+assets have separate terms. None lacked a declared license in the review.
+cbindgen has no permissive alternative declared. Its use does not require our
+source or generated declarations to adopt MPL. See its
 [license](https://github.com/mozilla/cbindgen/blob/v0.29.4/LICENSE) and the
 [MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/).
+
+### Native GUI fonts
+
+The GUI enables `accesskit`, `clipboard`, `default_fonts`, `system_fonts` and
+`wgpu`; inspection, persistence and browser-link features are disabled. The
+downloaded 0.37.0 font crate embeds Hack Regular, Ubuntu Light and the small
+`egui-icons.ttf` subset with this selection. Its optional monochrome Noto Emoji
+and full emoji-icon fonts are not enabled. See the pinned
+[font manifest](https://github.com/emilk/egui/blob/0.37.0/crates/epaint_default_fonts/Cargo.toml)
+and [embedded assets](https://github.com/emilk/egui/blob/0.37.0/crates/epaint_default_fonts/src/lib.rs).
+
+Binary distributions must retain accessible font copyright/license material
+even though the fonts are compiled into the executable. Copy the applicable
+files from the exact `epaint_default_fonts` package's `fonts/` directory:
+
+- `Hack-Regular.txt`: Source Foundry MIT notice, DejaVu public-domain statement
+  and Bitstream Vera license, including its font naming and standalone-sale
+  restrictions.
+- `UFL.txt`: Ubuntu Font Licence 1.0 for Ubuntu Light; also retain the font's
+  metadata copyright, `Copyright 2011 Canonical Ltd.`, and follow its naming
+  rules if modifying the font.
+- `emoji-icon-font-mit-license.txt` and `egui-icons.txt`: John Slegers' MIT
+  notice and the provenance of the always-embedded icon subset.
+- `OFL.txt` and corresponding font copyrights if shipping the optional Noto
+  Emoji asset, a source distribution containing it, or another OFL font. Keep
+  OFL font software under OFL and respect reserved names and standalone-sale
+  restrictions.
+
+`system_fonts` uses `fontique` to locate installed fonts at runtime; the provider
+memory-maps those local files rather than bundling them. This does not grant
+permission to ship a user's or the operating system's fonts. Review each font's
+own terms before adding it to a release. These font terms do not relicense the
+original application code.
 
 The [native Rust reference](https://github.com/symbiogenesis/prism-inference/blob/main/README.md) uses independently published
 GGUF/ternary/Prism crates. Its graph/scalar numerical code follows pinned Prism

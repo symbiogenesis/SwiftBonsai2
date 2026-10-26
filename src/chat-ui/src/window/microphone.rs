@@ -1,7 +1,7 @@
 //! UI-thread microphone permission, capture and cancellation.
 //!
 //! No microphone API is activated until an explicit start. `WinRT` operations are
-//! polled by the native timer; completed clips remain in memory and recording
+//! polled by the egui event loop; completed clips remain in memory and recording
 //! pauses while the single local transcription request is outstanding.
 
 use std::{
@@ -37,7 +37,8 @@ struct Apartment(PhantomData<Rc<()>>);
 impl Apartment {
     fn initialize() -> io::Result<Self> {
         // SAFETY: This guard is created on the native UI thread before microphone
-        // activation and cannot cross threads. Successful initialization is balanced.
+        // activation and cannot cross threads. winit also uses an STA on Windows;
+        // this successful WinRT initialization has its own balanced guard.
         unsafe { RoInitialize(RO_INIT_SINGLETHREADED) }.map_err(|_| {
             io::Error::other("The UI thread cannot initialize Windows microphone access.")
         })?;

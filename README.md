@@ -40,12 +40,15 @@ the inference engine. Provision it with `./scripts/Get-Inference.ps1 -DataDirect
 > Rust chat demo are available. Daily-service acceptance remains pending.
 
 After provisioning Swift's model and CPU runtime, run `./scripts/Start-Demo.ps1`
-to open the native Windows chat window. See the
+to open the native `egui`/`eframe` Windows chat window. See the
 [demo setup](docs/development-guide.md#native-chat-demo) for requirements.
 The lasting [UI architecture policy](docs/ui-architecture.md) keeps application
-UI code in Rust, using native system bindings without a WebView, JavaScript,
-TypeScript, HTML or CSS. The local JSON/SSE API preserves its documented strict
-subset of OpenAI-style chat conventions.
+UI code in Rust, with `wgpu` rendering and native system bindings, without a
+WebView, JavaScript, TypeScript, HTML or CSS. The toolkit is cross-platform;
+runner ownership, credentials and speech integrations currently target Windows.
+A model-free `bonsai-chat.exe --preview` mode is available for visual checks.
+The local JSON/SSE API preserves its documented strict subset of OpenAI-style
+chat conventions.
 The UI supports explicit [Qwen3-TTS VoiceDesign read-aloud](tools/qwen-tts/README.md)
 with a plain-text voice profile and optional
 [Canary Qwen 2.5B microphone transcription](tools/canary-asr/README.md), guarded
