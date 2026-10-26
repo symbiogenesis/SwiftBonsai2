@@ -14,6 +14,9 @@ function Install-NativeSpeechModels {
     Rust plans artifact identities from the inference crates' compiled model locks.
     Reuses exact verified caches under DataDirectory/speech/native. Never loads
     a model, starts a service, or accesses an audio device.
+    DeferCachedVerification checks existing file lengths without reading model
+    contents. It is reserved for launchers whose native speech services verify
+    compiled SHA-256 pins and hold verified files before loading them.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Explicit artifact provisioning command; verified cache writes are its requested purpose.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Public launcher API provisions a selected set of speech models.')]
@@ -22,13 +25,25 @@ function Install-NativeSpeechModels {
     param([Parameter(Mandatory)][string]$DataDirectory,
           [ValidateSet('All', 'Canary', 'QwenTts')][string]$Model = 'All',
           [ValidateSet('Q8_0', 'Q4_K_M')][string]$TtsQuantization = 'Q8_0',
-          [switch]$VerifyOnly, [string]$ToolPath)
+          [switch]$VerifyOnly, [switch]$DeferCachedVerification, [string]$ToolPath)
+    if ($VerifyOnly -and $DeferCachedVerification) {
+        throw 'VerifyOnly cannot be combined with DeferCachedVerification.'
+    }
     $TtsQuantization = if ($TtsQuantization -ieq 'Q8_0') { 'Q8_0' } else { 'Q4_K_M' }
     $result = Invoke-BonsaiTool -Command speech-models -ToolPath $ToolPath -Request @{
         dataDirectory = Resolve-ExternalPath -Path $DataDirectory; model = $Model; ttsQuantization = $TtsQuantization
     }
     foreach ($file in $result.Plans) {
-        if ($VerifyOnly) { Test-LockedArtifact -Path $file.Path -Bytes $file.Bytes -Sha256 $file.Sha256 }
+        $path = Resolve-ExternalPath -Path $file.Path
+        if ($DeferCachedVerification -and [IO.File]::Exists($path)) {
+            # The companion verifies the same compiled lock before loading and
+            # retains its file guard. Avoid reading gigabytes before the UI opens.
+            $stream = [IO.FileStream]::new($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+            try {
+                if ($stream.Length -ne $file.Bytes) { throw "Artifact byte length mismatch: $path" }
+            } finally { $stream.Dispose() }
+        }
+        elseif ($VerifyOnly) { Test-LockedArtifact -Path $path -Bytes $file.Bytes -Sha256 $file.Sha256 }
         else { [void](Receive-LockedArtifact -Uri $file.Uri -Path $file.Path -Bytes $file.Bytes -Sha256 $file.Sha256) }
     }
     [void]$result.Remove('Plans')
@@ -40,12 +55,14 @@ function Install-NativeSpeechCompiler {
     [CmdletBinding()]
     [OutputType([string])]
     param([Parameter(Mandatory)][string]$DataDirectory, [Parameter(Mandatory)][string]$WorkingDirectory,
-          [Parameter(Mandatory)][Collections.IDictionary]$Pin)
+          [Parameter(Mandatory)][Collections.IDictionary]$Pin, [string]$ToolPath)
     $directory = Resolve-ExternalPath -Path (Join-Path -Path $DataDirectory -ChildPath 'tools' -AdditionalChildPath $Pin.directory)
     $archive = Join-Path $directory $Pin.filename
-    [void](Receive-LockedArtifact -Uri $Pin.url -Path $archive -Bytes $Pin.bytes -Sha256 $Pin.sha256)
     $root = Resolve-ExternalPath -Path (Join-Path $directory $Pin.root)
     if (-not [IO.Directory]::Exists($root)) {
+        # The archive is needed only for extraction. Installed compiler binaries
+        # are still checked against their exact pins below on every build.
+        [void](Receive-LockedArtifact -Uri $Pin.url -Path $archive -Bytes $Pin.bytes -Sha256 $Pin.sha256)
         $tar = Join-Path $env:SystemRoot 'System32/tar.exe'
         $listing = Invoke-BonsaiNativeProcess -Executable $tar -ArgumentList @('-tvf', $archive) -WorkingDirectory $WorkingDirectory -TimeoutSeconds 600
         if ($listing.ExitCode -ne 0) { throw 'Cannot inspect the pinned LLVM archive.' }
@@ -54,7 +71,7 @@ function Install-NativeSpeechCompiler {
         }
         $names = Invoke-BonsaiNativeProcess -Executable $tar -ArgumentList @('-tf', $archive) -WorkingDirectory $WorkingDirectory -TimeoutSeconds 600
         if ($names.ExitCode -ne 0) { throw 'Cannot inspect LLVM archive paths.' }
-        $null = Invoke-BonsaiTool -Command speech-build -Request @{
+        $null = Invoke-BonsaiTool -Command speech-build -ToolPath $ToolPath -Request @{
             operation = 'validate-names'; archiveRoot = $Pin.root; names = @($names.StandardOutput -split '\r?\n' | Where-Object { $_ })
         }
         $stage = Resolve-ExternalPath -Path (Join-Path $directory ('extract-' + [guid]::NewGuid().ToString('N')))
@@ -85,15 +102,16 @@ function Initialize-NativeSpeechBuild {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Explicit build initialization provisions only verified external artifacts.')]
     [CmdletBinding()]
     [OutputType([pscustomobject])]
-    param([Parameter(Mandatory)][string]$DataDirectory, [Parameter(Mandatory)][string]$WorkingDirectory)
+    param([Parameter(Mandatory)][string]$DataDirectory, [Parameter(Mandatory)][string]$WorkingDirectory,
+          [string]$ToolPath)
     if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
         throw 'Native speech builds require native ARM64 PowerShell on Windows.'
     }
     $data = Resolve-ExternalPath -Path $DataDirectory
     $working = Resolve-ExternalPath -Path $WorkingDirectory
     [void][IO.Directory]::CreateDirectory($working)
-    $pin = Invoke-BonsaiTool -Command speech-build -Request @{ operation = 'plan' }
-    $compiler = Install-NativeSpeechCompiler -DataDirectory $data -WorkingDirectory $working -Pin $pin.compiler
+    $pin = Invoke-BonsaiTool -Command speech-build -ToolPath $ToolPath -Request @{ operation = 'plan' }
+    $compiler = Install-NativeSpeechCompiler -DataDirectory $data -WorkingDirectory $working -Pin $pin.compiler -ToolPath $ToolPath
     $cache = Resolve-ExternalPath -Path (Join-Path $data 'tools/native-speech')
     [void][IO.Directory]::CreateDirectory($cache)
     $guard = [IO.FileStream]::new((Join-Path $cache 'source-provision.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
@@ -104,7 +122,7 @@ function Initialize-NativeSpeechBuild {
             $archive = Join-Path -Path $cache -ChildPath 'downloads' -AdditionalChildPath $artifact.filename
             [void](Receive-LockedArtifact -Uri $artifact.url -Path $archive -Bytes $artifact.bytes -Sha256 $artifact.sha256)
         }
-        $null = Invoke-BonsaiTool -Command speech-build -TimeoutSeconds 120 -Request @{
+        $null = Invoke-BonsaiTool -Command speech-build -TimeoutSeconds 120 -ToolPath $ToolPath -Request @{
             operation = 'stage-sources'; sourceDirectory = $source
             qwenArchivePath = Join-Path -Path $cache -ChildPath 'downloads' -AdditionalChildPath $pin.sources.qwen.filename
             ggmlArchivePath = Join-Path -Path $cache -ChildPath 'downloads' -AdditionalChildPath $pin.sources.ggml.filename
@@ -142,8 +160,9 @@ function Initialize-NativeSpeechBuild {
     $variables['CMAKE_BUILD_PARALLEL_LEVEL'] = '4'
     $variables['TRANSCRIBE_CMAKE_ARGS'] = '-DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DTRANSCRIBE_USE_OPENMP=OFF -DTRANSCRIBE_USE_SYSTEM_BLAS=OFF -DCMAKE_C_COMPILER_TARGET=aarch64-pc-windows-msvc -DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc'
     $variables['BONSAI_TTS_SOURCE_DIR'] = $source
+    $variables['BONSAI_TTS_COMPILER'] = Join-Path $bin 'clang-cl.exe'
     $variables['BONSAI_CMAKE'] = $cmake
-    $variables['BONSAI_CMAKE_GENERATOR'] = 'Visual Studio 18 2026'
+    $variables['BONSAI_CMAKE_GENERATOR'] = 'Ninja Multi-Config'
     return [pscustomobject]@{ Environment = $variables; SourceDirectory = $source; CompilerPath = Join-Path $bin 'clang-cl.exe'; CMakePath = $cmake }
 }
 
@@ -161,7 +180,7 @@ function Invoke-NativeSpeechBuild {
     [OutputType([pscustomobject])]
     param([Parameter(Mandatory)][string]$DataDirectory, [Parameter(Mandatory)][string]$WorkingDirectory,
           [Parameter(Mandatory)][string]$RepositoryRoot,
-          [ValidateSet('All', 'Canary', 'QwenTts')][string]$Model = 'All')
+          [ValidateSet('All', 'Canary', 'QwenTts')][string]$Model = 'All', [string]$ToolPath)
     $working = Resolve-ExternalPath -Path $WorkingDirectory
     if (-not [IO.Path]::IsPathFullyQualified($RepositoryRoot) -or $RepositoryRoot -match '%[^%]+%') { throw 'RepositoryRoot must be an expanded absolute path.' }
     $repository = [IO.Path]::GetFullPath($RepositoryRoot)
@@ -169,7 +188,7 @@ function Invoke-NativeSpeechBuild {
     $toolchain = Get-Content -LiteralPath (Join-Path $repository 'rust-toolchain.toml') -Raw
     if ($toolchain -notmatch '(?m)^channel\s*=\s*"(nightly-\d{4}-\d{2}-\d{2})"\s*$') { throw 'Native build requires the repository-pinned Rust toolchain.' }
     $channel = $Matches[1] + '-aarch64-pc-windows-msvc'
-    $native = Initialize-NativeSpeechBuild -DataDirectory $DataDirectory -WorkingDirectory $working
+    $native = Initialize-NativeSpeechBuild -DataDirectory $DataDirectory -WorkingDirectory $working -ToolPath $ToolPath
     $target = Resolve-ExternalPath -Path (Join-Path $DataDirectory 'build/native-speech')
     $result = [ordered]@{ AsrPath = $null; TtsPath = $null }
     foreach ($kind in @('Canary', 'QwenTts')) {
@@ -180,11 +199,6 @@ function Invoke-NativeSpeechBuild {
         $log = Join-Path $working ($package + '-build.log')
         $environment = @{}
         foreach ($name in $native.Environment.Keys) { $environment[$name] = $native.Environment[$name] }
-        if ($kind -eq 'QwenTts') {
-            foreach ($name in @('CC', 'CXX', 'CMAKE_C_COMPILER', 'CMAKE_CXX_COMPILER')) { $environment[$name] = 'cl.exe' }
-            $environment['RC'] = 'rc.exe'
-            $environment['CMAKE_GENERATOR'] = 'Visual Studio 18 2026'
-        }
         $build = Invoke-BonsaiNativeProcess -Executable 'cargo.exe' -ArgumentList $arguments -WorkingDirectory $working -Environment $environment -TimeoutSeconds 3600 -LogPath $log
         if ($build.ExitCode -ne 0) { throw "Native $kind build failed; see $log" }
         $executable = Resolve-ExternalPath -Path (Join-Path -Path $target -ChildPath 'aarch64-pc-windows-msvc/release' -AdditionalChildPath ($package + '.exe'))

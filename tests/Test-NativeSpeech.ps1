@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([string])]
-param([ValidateSet('All', 'Models', 'Sources', 'Build', 'Reload')][string]$Case = 'All', [string]$ToolPath)
+param([ValidateSet('All', 'Models', 'Sources', 'Build', 'Reload', 'Cache')][string]$Case = 'All', [string]$ToolPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -33,7 +33,7 @@ function Install-NativeSpeechModels {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
     param([string]$DataDirectory, [string]$Model, [string]$TtsQuantization,
-          [switch]$VerifyOnly, [string]$ToolPath)
+          [switch]$VerifyOnly, [switch]$DeferCachedVerification, [string]$ToolPath)
     [pscustomobject]@{ Quantization = $TtsQuantization; Model = $Model; Verified = [bool]$VerifyOnly }
 }
 Export-ModuleMember -Function Install-NativeSpeechModels
@@ -102,6 +102,83 @@ if ($Case -in @('All', 'Models')) {
     }
     Assert (-not (Test-Path -LiteralPath $data)) 'Mocked native model provisioning wrote storage.'
 }
+if ($Case -in @('All', 'Cache')) {
+    # The preceding provisioning case installs mocks that skip actual hashes.
+    $module = Import-Module (Join-Path $repo 'scripts/Bonsai.NativeSpeech.psm1') -Force -PassThru
+    & $module {
+        $script:downloads = [Collections.Generic.List[string]]::new()
+        $script:cachePlan = $null
+        function script:Invoke-BonsaiTool {
+            [CmdletBinding()]
+            [OutputType([hashtable])]
+            param([string]$Command, [Collections.IDictionary]$Request, [string]$ToolPath)
+            if ($Command -cne 'speech-models' -or -not $Request['dataDirectory'] -or $ToolPath) { throw 'Unexpected maintenance operation.' }
+            return @{ Plans = @($script:cachePlan); CanaryModelPath = $script:cachePlan.Path }
+        }
+        function script:Receive-LockedArtifact {
+            [CmdletBinding()]
+            [OutputType([string])]
+            param([uri]$Uri, [string]$Path, [long]$Bytes, [string]$Sha256)
+            if ($Uri.Scheme -cne 'https') { throw 'Unexpected download scheme.' }
+            $script:downloads.Add($Path)
+            if (-not [IO.File]::Exists($Path)) { [IO.File]::WriteAllText($Path, 'abc') }
+            Test-LockedArtifact -Path $Path -Bytes $Bytes -Sha256 $Sha256
+            return $Path
+        }
+        function script:Assert-Arm64PE {
+            [CmdletBinding()]
+            [OutputType([void])]
+            param([string]$Path)
+            if (-not [IO.File]::Exists($Path)) { throw 'Missing compiler fixture.' }
+        }
+    }
+    $cache = Join-Path $scratch 'model-cache'
+    [void][IO.Directory]::CreateDirectory($cache)
+    $modelPath = Join-Path $cache 'model.gguf'
+    $hash = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+    $plan = @{ Path = $modelPath; Bytes = 3L; Sha256 = $hash; Uri = 'https://example.invalid/model.gguf' }
+    & $module { param($p) $script:cachePlan = $p } $plan
+    $null = Install-NativeSpeechModels -DataDirectory $cache -DeferCachedVerification
+    Assert ((& $module { $script:downloads.Count }) -eq 1) 'Deferred setup bypassed the verified download operation for a missing artifact.'
+    [IO.File]::WriteAllText($modelPath, 'bad')
+    $null = Install-NativeSpeechModels -DataDirectory $cache -DeferCachedVerification
+    Assert ((& $module { $script:downloads.Count }) -eq 1) 'Cached launch read or redownloaded an existing model.'
+    Assert-Failure { Install-NativeSpeechModels -DataDirectory $cache } 'Ordinary provisioning stopped verifying cached model digests.'
+    Assert-Failure { Install-NativeSpeechModels -DataDirectory $cache -VerifyOnly } 'VerifyOnly stopped verifying cached model digests.'
+    Assert-Failure { Install-NativeSpeechModels -DataDirectory $cache -VerifyOnly -DeferCachedVerification } 'Contradictory verification modes were accepted.'
+    [IO.File]::WriteAllText($modelPath, 'short')
+    Assert-Failure { Install-NativeSpeechModels -DataDirectory $cache -DeferCachedVerification } 'A wrong-length cached model reached the launcher.'
+    $unsafe = @('%LOCALAPPDATA%\model.gguf', 'relative.gguf', (Join-Path $repo 'model.gguf'))
+    foreach ($path in $unsafe) {
+        & $module { param($p) $script:cachePlan.Path = $p } $path
+        Assert-Failure { Install-NativeSpeechModels -DataDirectory $cache -DeferCachedVerification } 'Deferred setup accepted unsafe model storage.'
+    }
+    $alias = Join-Path $scratch 'model-cache-alias'
+    $null = New-Item -ItemType Junction -Path $alias -Target $cache
+    & $module { param($p) $script:cachePlan.Path = $p } (Join-Path $alias 'model.gguf')
+    Assert-Failure { Install-NativeSpeechModels -DataDirectory $cache -DeferCachedVerification } 'Deferred setup accepted a reparse model path.'
+    $compilerDirectory = Join-Path -Path $cache -ChildPath 'tools' -AdditionalChildPath 'test-compiler'
+    $compilerRoot = Join-Path $compilerDirectory 'test-root'
+    $compilerBin = Join-Path $compilerRoot 'bin'
+    [void][IO.Directory]::CreateDirectory($compilerBin)
+    foreach ($name in @('clang-cl.exe', 'llvm-rc.exe')) {
+        [IO.File]::WriteAllText((Join-Path $compilerBin $name), 'abc')
+    }
+    $pin = @{ directory = 'test-compiler'; root = 'test-root'; filename = 'missing.tar.xz'
+        url = 'https://example.invalid/compiler.tar.xz'; bytes = 3L; sha256 = $hash
+        executables = @{ 'clang-cl.exe' = @{ bytes = 3L; sha256 = $hash }; 'llvm-rc.exe' = @{ bytes = 3L; sha256 = $hash } } }
+    $downloadCount = & $module { $script:downloads.Count }
+    $resolved = & $module {
+        param($d, $p) Install-NativeSpeechCompiler -DataDirectory $d -WorkingDirectory $d -Pin $p
+    } $cache $pin
+    Assert ($resolved -ceq $compilerRoot -and (& $module { $script:downloads.Count }) -eq $downloadCount -and
+        -not [IO.File]::Exists((Join-Path $compilerDirectory 'missing.tar.xz'))) 'An installed compiler required or read its distribution archive.'
+    [IO.File]::WriteAllText((Join-Path $compilerBin 'clang-cl.exe'), 'bad')
+    Assert-Failure {
+        & $module { param($d, $p) Install-NativeSpeechCompiler -DataDirectory $d -WorkingDirectory $d -Pin $p } $cache $pin
+    } 'Skipping the compiler archive bypassed the installed executable digest.'
+    $module = Import-Module (Join-Path $repo 'scripts/Bonsai.NativeSpeech.psm1') -Force -PassThru
+}
 if ($Case -in @('All', 'Sources')) {
     # Rust owns hostile ZIP, cache, path-alias and reparse regressions. This
     # exercises the production combined operation through the packaged bridge.
@@ -122,7 +199,8 @@ if ($Case -in @('All', 'Build')) {
         function script:Initialize-NativeSpeechBuild {
             [CmdletBinding()]
             [OutputType([pscustomobject])]
-            param([string]$DataDirectory, [string]$WorkingDirectory)
+            param([string]$DataDirectory, [string]$WorkingDirectory, [string]$ToolPath)
+            $script:buildToolPath = $ToolPath
             [void](Resolve-ExternalPath -Path $DataDirectory)
             [void][IO.Directory]::CreateDirectory($WorkingDirectory)
             return [pscustomobject]@{ Environment = @{ CC = 'clang-cl.exe'; CXX = 'clang-cl.exe'; CMAKE_GENERATOR = 'Ninja'; Sentinel = 'inherited' } }
@@ -153,7 +231,9 @@ if ($Case -in @('All', 'Build')) {
         }
     }
     $working = Join-Path $scratch 'build'
-    $all = Invoke-NativeSpeechBuild -DataDirectory (Join-Path $scratch 'data') -WorkingDirectory $working -RepositoryRoot $repo
+    $selectedTool = Join-Path $scratch 'selected-tools.exe'
+    $all = Invoke-NativeSpeechBuild -DataDirectory (Join-Path $scratch 'data') -WorkingDirectory $working -RepositoryRoot $repo -ToolPath $selectedTool
+    Assert ((& $module { $script:buildToolPath }) -ceq $selectedTool) 'Native builds discarded the selected maintenance executable.'
     $builds = @(& $module { $script:builds.ToArray() })
     Assert ($builds.Count -eq 2 -and $all.AsrPath.EndsWith('bonsai-speech-asr.exe') -and $all.TtsPath.EndsWith('bonsai-speech-tts.exe')) 'Native build omitted an owned speech daemon.'
     $target = Join-Path -Path $scratch -ChildPath 'data' -AdditionalChildPath 'build/native-speech'
