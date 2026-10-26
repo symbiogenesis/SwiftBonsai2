@@ -107,7 +107,8 @@ fn files(root: &Path, kind: &str, source: &str) -> crate::Result<Vec<Value>> {
         return Err("Native speech model lock omitted a required artifact.".into());
     }
     let directory = root
-        .join("speech/native")
+        .join("speech")
+        .join("native")
         .join(directory)
         .join(&identity.revision);
     let mut result = Vec::with_capacity(keys.len());

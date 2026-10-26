@@ -387,7 +387,10 @@ fn inventory(
         if expanded > MAX_BYTES {
             return Err("Source ZIP exceeds its expansion limit.".into());
         }
-        let path = destination.join(relative.trim_end_matches('/'));
+        let path: PathBuf = destination
+            .join(relative.trim_end_matches('/'))
+            .components()
+            .collect();
         validate_external_path(&path).map_err(|error| error.to_string())?;
         entries.push((index, path, directory, entry.size()));
     }
