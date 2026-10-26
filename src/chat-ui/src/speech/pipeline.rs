@@ -7,18 +7,30 @@ use std::{
         atomic::AtomicBool,
         mpsc::{SyncSender, TrySendError},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use windows_sys::Win32::Media::Audio::{
-    HWAVEOUT, WAVEFORMATEX, WAVEHDR, waveOutClose, waveOutOpen, waveOutPrepareHeader, waveOutReset,
-    waveOutUnprepareHeader, waveOutWrite,
+    HWAVEOUT, WAVEFORMATEX, WAVEHDR, waveOutClose, waveOutOpen, waveOutPause, waveOutPrepareHeader,
+    waveOutReset, waveOutRestart, waveOutUnprepareHeader, waveOutWrite,
 };
 
 const AUDIO_FAILURE: tts::Failure =
     tts::Failure::Message("Audio playback failed. Check the Windows audio output device.");
 const POLL: Duration = Duration::from_millis(5);
-const PACKET_BYTES: usize = 16_384;
-const PACKETS: usize = 4;
+// Normalize callbacks into 100 ms of mono 24 kHz PCM16, so queue bounds describe
+// audio duration even when HTTP/native chunks are tiny.
+const PACKET_BYTES: usize = 4_800;
+const PREFETCH_PACKETS: usize = 160; // 16 seconds / 768,000 bytes, outside WinMM.
+const PLAYBACK_PACKETS: usize = 8;
+// Cover the native codec's 640 ms steady bursts, including after an underrun.
+const PREROLL_PACKETS: usize = 7;
+const CODEC_BURST: Duration = Duration::from_millis(640);
+const MAX_BUFFER_BYTES: usize = 48_000 * 120;
+
+enum Audio {
+    Frame(Vec<u8>),
+    SegmentEnd,
+}
 
 pub(super) struct Pipeline {
     segments: Option<SyncSender<String>>,
@@ -96,7 +108,7 @@ fn produce(
     current: &Arc<AtomicU64>,
     stop: &Arc<AtomicBool>,
 ) -> Result<(), tts::Failure> {
-    let (sender, incoming) = mpsc::sync_channel(PACKETS);
+    let (sender, incoming) = mpsc::sync_channel(PREFETCH_PACKETS);
     let output_stop = Arc::clone(stop);
     let output_current = Arc::clone(current);
     let playback = thread::Builder::new()
@@ -110,13 +122,18 @@ fn produce(
         })
         .map_err(|_| AUDIO_FAILURE)?;
     let synthesis = (|| {
-        while let Some(text) = next_segment(segments, generation, current, stop)? {
+        let mut pending = None;
+        let mut frames = Frames::default();
+        while let Some(text) = next_segment(segments, &mut pending, generation, current, stop)? {
             client.synthesize_pcm(&text, voice, generation, current, stop, |pcm| {
-                for packet in pcm.chunks(PACKET_BYTES) {
-                    send(&sender, packet.to_vec(), generation, current, stop)?;
-                }
-                Ok(())
+                frames.push(pcm, |packet| {
+                    send(&sender, Audio::Frame(packet), generation, current, stop)
+                })
             })?;
+            frames
+                .finish(|packet| send(&sender, Audio::Frame(packet), generation, current, stop))?;
+            send(&sender, Audio::SegmentEnd, generation, current, stop)?;
+            frames = Frames::default();
         }
         Ok(())
     })();
@@ -136,16 +153,79 @@ fn produce(
 
 fn next_segment(
     segments: &Receiver<String>,
+    pending: &mut Option<String>,
     generation: u64,
     current: &AtomicU64,
     stop: &AtomicBool,
 ) -> Result<Option<String>, tts::Failure> {
-    loop {
+    let mut text = loop {
         check(generation, current, stop)?;
+        if let Some(text) = pending.take() {
+            break text;
+        }
         match segments.recv_timeout(POLL) {
-            Ok(text) => return Ok(Some(text)),
+            Ok(text) => break text,
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(None),
+        }
+    };
+    let mut characters = text.chars().count();
+    while let Ok(next) = segments.try_recv() {
+        check(generation, current, stop)?;
+        let count = next.chars().count();
+        if characters + 1 + count > super::MAX_SEGMENT {
+            *pending = Some(next);
+            break;
+        }
+        text.push(' ');
+        text.push_str(&next);
+        characters += 1 + count;
+    }
+    Ok(Some(text))
+}
+
+struct Frames {
+    pending: Vec<u8>,
+}
+
+impl Default for Frames {
+    fn default() -> Self {
+        Self {
+            pending: Vec::with_capacity(PACKET_BYTES),
+        }
+    }
+}
+
+impl Frames {
+    fn push(
+        &mut self,
+        mut pcm: &[u8],
+        mut sink: impl FnMut(Vec<u8>) -> Result<(), tts::Failure>,
+    ) -> Result<(), tts::Failure> {
+        while !pcm.is_empty() {
+            let count = pcm.len().min(PACKET_BYTES - self.pending.len());
+            self.pending.extend_from_slice(&pcm[..count]);
+            pcm = &pcm[count..];
+            if self.pending.len() == PACKET_BYTES {
+                sink(std::mem::replace(
+                    &mut self.pending,
+                    Vec::with_capacity(PACKET_BYTES),
+                ))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(
+        self,
+        sink: impl FnOnce(Vec<u8>) -> Result<(), tts::Failure>,
+    ) -> Result<(), tts::Failure> {
+        if self.pending.is_empty() {
+            Ok(())
+        } else if self.pending.len() % 2 == 0 {
+            sink(self.pending)
+        } else {
+            Err(AUDIO_FAILURE)
         }
     }
 }
@@ -159,8 +239,8 @@ fn check(generation: u64, current: &AtomicU64, stop: &AtomicBool) -> Result<(), 
 }
 
 fn send(
-    sender: &SyncSender<Vec<u8>>,
-    mut pcm: Vec<u8>,
+    sender: &SyncSender<Audio>,
+    mut pcm: Audio,
     generation: u64,
     current: &AtomicU64,
     stop: &AtomicBool,
@@ -179,34 +259,173 @@ fn send(
 }
 
 fn consume(
-    incoming: &Receiver<Vec<u8>>,
+    incoming: &Receiver<Audio>,
     generation: u64,
     current: &AtomicU64,
     stop: &AtomicBool,
 ) -> Result<(), tts::Failure> {
-    let mut output = WaveOutput::open()?;
+    consume_with(
+        incoming,
+        generation,
+        current,
+        stop,
+        &mut WaveOutput::open()?,
+    )
+}
+
+trait Output {
+    fn queued(&self) -> usize;
+    fn push(&mut self, pcm: Vec<u8>) -> Result<(), tts::Failure>;
+    fn reap(&mut self) -> Result<(), tts::Failure>;
+    fn pause(&mut self) -> Result<(), tts::Failure>;
+    fn start(&mut self) -> Result<(), tts::Failure>;
+}
+
+fn consume_with(
+    incoming: &Receiver<Audio>,
+    generation: u64,
+    current: &AtomicU64,
+    stop: &AtomicBool,
+    output: &mut impl Output,
+) -> Result<(), tts::Failure> {
+    output.pause()?;
+    let mut started = false;
+    let mut buffered = Buffered::default();
+    let mut pending = None;
+    let mut finished = false;
     loop {
         check(generation, current, stop)?;
         output.reap()?;
-        if output.buffers.len() >= PACKETS {
-            thread::sleep(POLL);
-            continue;
+        if started && output.queued() == 0 && buffered.ready.is_empty() {
+            output.pause()?;
+            buffered.underrun();
+            started = false;
         }
-        match incoming.recv_timeout(POLL) {
-            Ok(pcm) => {
-                check(generation, current, stop)?;
+        while output.queued() < PLAYBACK_PACKETS {
+            if let Some(pcm) = buffered.pop() {
                 output.push(pcm)?;
+                if !started
+                    && (output.queued() >= PREROLL_PACKETS
+                        || (buffered.ready.is_empty() && buffered.flush))
+                {
+                    output.start()?;
+                    started = true;
+                    buffered.flush = false;
+                }
+            } else {
+                break;
             }
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+        if finished && buffered.ready.is_empty() && output.queued() == 0 {
+            return Ok(());
+        }
+        let audio = if pending.is_some() {
+            pending.take()
+        } else if finished {
+            None
+        } else {
+            match incoming.recv_timeout(POLL) {
+                Ok(audio) => Some(audio),
+                Err(mpsc::RecvTimeoutError::Timeout) => None,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    if buffered.segment_bytes != 0 {
+                        return Err(AUDIO_FAILURE);
+                    }
+                    finished = true;
+                    None
+                }
+            }
+        };
+        check(generation, current, stop)?;
+        match audio {
+            Some(Audio::Frame(pcm)) => {
+                if let Some(pcm) = buffered.frame(pcm, Instant::now())? {
+                    pending = Some(Audio::Frame(pcm));
+                }
+            }
+            Some(Audio::SegmentEnd) => buffered.end()?,
+            None => {}
+        }
+        if pending.is_some() || finished {
+            thread::sleep(POLL);
         }
     }
-    while !output.buffers.is_empty() {
-        check(generation, current, stop)?;
-        output.reap()?;
-        thread::sleep(POLL);
+}
+
+// At most one 120-second clip of application staging, plus the 16-second
+// producer channel and 800 ms WinMM queue. Slow synthesis waits for a validated
+// segment instead of repeatedly playing short bursts separated by silence.
+#[derive(Default)]
+struct Buffered {
+    ready: VecDeque<Vec<u8>>,
+    segment: VecDeque<Vec<u8>>,
+    bytes: usize,
+    segment_bytes: usize,
+    first: Option<(Instant, usize)>,
+    released: bool,
+    slow: bool,
+    flush: bool,
+}
+
+impl Buffered {
+    fn frame(&mut self, pcm: Vec<u8>, now: Instant) -> Result<Option<Vec<u8>>, tts::Failure> {
+        if pcm.is_empty()
+            || pcm.len() > PACKET_BYTES
+            || pcm.len() % 2 != 0
+            || self.segment_bytes + pcm.len() > MAX_BUFFER_BYTES
+        {
+            return Err(AUDIO_FAILURE);
+        }
+        if self.bytes + pcm.len() > MAX_BUFFER_BYTES {
+            return Ok(Some(pcm));
+        }
+        let (first, initial) = *self.first.get_or_insert((now, pcm.len()));
+        self.segment_bytes += pcm.len();
+        self.bytes += pcm.len();
+        if self.released {
+            self.ready.push_back(pcm);
+        } else {
+            self.segment.push_back(pcm);
+            if self.segment_bytes >= PREROLL_PACKETS * PACKET_BYTES {
+                // Exclude cold first-audio latency. This compares later supply
+                // time to the duration it produced, not to model load time.
+                let duration = Duration::from_millis(
+                    u64::try_from(self.segment_bytes - initial).map_err(|_| AUDIO_FAILURE)? / 48,
+                );
+                // One codec burst of jitter is normal even at real-time speed:
+                // the native ramp groups 80/160/320/640 ms into separate callbacks.
+                self.slow |= now.saturating_duration_since(first) > duration + CODEC_BURST;
+                if !self.slow {
+                    self.ready.append(&mut self.segment);
+                    self.released = true;
+                }
+            }
+        }
+        Ok(None)
     }
-    Ok(())
+
+    fn end(&mut self) -> Result<(), tts::Failure> {
+        if self.segment_bytes == 0 {
+            return Err(AUDIO_FAILURE);
+        }
+        self.ready.append(&mut self.segment);
+        self.segment_bytes = 0;
+        self.first = None;
+        self.released = false;
+        self.flush = true;
+        Ok(())
+    }
+
+    fn pop(&mut self) -> Option<Vec<u8>> {
+        let pcm = self.ready.pop_front()?;
+        self.bytes -= pcm.len();
+        Some(pcm)
+    }
+
+    const fn underrun(&mut self) {
+        self.slow = true;
+        self.released = false;
+    }
 }
 
 struct Buffer {
@@ -245,6 +464,31 @@ impl WaveOutput {
             buffers: VecDeque::new(),
             header_bytes: u32::try_from(size_of::<WAVEHDR>()).map_err(|_| AUDIO_FAILURE)?,
         })
+    }
+}
+
+impl Output for WaveOutput {
+    fn queued(&self) -> usize {
+        self.buffers.len()
+    }
+
+    fn pause(&mut self) -> Result<(), tts::Failure> {
+        // SAFETY: This thread exclusively owns a live WinMM handle. Pausing
+        // retains queued headers and PCM until restart/reset releases them.
+        if unsafe { waveOutPause(self.handle) } == 0 {
+            Ok(())
+        } else {
+            Err(AUDIO_FAILURE)
+        }
+    }
+
+    fn start(&mut self) -> Result<(), tts::Failure> {
+        // SAFETY: The live handle and queued buffers remain exclusively owned.
+        if unsafe { waveOutRestart(self.handle) } == 0 {
+            Ok(())
+        } else {
+            Err(AUDIO_FAILURE)
+        }
     }
 
     fn push(&mut self, mut pcm: Vec<u8>) -> Result<(), tts::Failure> {
@@ -319,7 +563,11 @@ impl Drop for WaveOutput {
 
 #[cfg(test)]
 mod tests {
-    use super::{Arc, AtomicBool, AtomicU64, Ordering, PACKETS, check, mpsc, send};
+    use super::{
+        Arc, AtomicBool, AtomicU64, Audio, Buffered, Duration, Frames, Instant, MAX_BUFFER_BYTES,
+        Ordering, Output, PACKET_BYTES, PLAYBACK_PACKETS, PREFETCH_PACKETS, PREROLL_PACKETS,
+        VecDeque, check, consume_with, mpsc, send,
+    };
     use crate::tts::Failure;
 
     #[test]
@@ -329,19 +577,28 @@ mod tests {
         let stop = AtomicBool::new(false);
         assert!(sender.send("First".to_owned()).is_ok());
         assert_eq!(
-            super::next_segment(&receiver, 4, &current, &stop),
+            super::next_segment(&receiver, &mut None, 4, &current, &stop),
             Ok(Some("First".to_owned()))
         );
         current.store(5, Ordering::Release);
         assert_eq!(
-            super::next_segment(&receiver, 4, &current, &stop),
+            super::next_segment(&receiver, &mut None, 4, &current, &stop),
             Err(Failure::Cancelled)
         );
         drop(sender);
-        assert_eq!(super::next_segment(&receiver, 5, &current, &stop), Ok(None));
+        assert_eq!(
+            super::next_segment(&receiver, &mut None, 5, &current, &stop),
+            Ok(None)
+        );
         let (sender, receiver) = mpsc::sync_channel(2);
         let waiting = std::thread::spawn(move || {
-            super::next_segment(&receiver, 4, &AtomicU64::new(4), &AtomicBool::new(false))
+            super::next_segment(
+                &receiver,
+                &mut None,
+                4,
+                &AtomicU64::new(4),
+                &AtomicBool::new(false),
+            )
         });
         assert!(sender.send("Second".to_owned()).is_ok());
         assert_eq!(waiting.join().ok(), Some(Ok(Some("Second".to_owned()))));
@@ -349,19 +606,244 @@ mod tests {
 
     #[test]
     fn bounded_prefetch_cancels_while_the_audio_queue_is_full() {
-        let (sender, _incoming) = mpsc::sync_channel(PACKETS);
-        for _ in 0..PACKETS {
-            assert!(sender.try_send(vec![0; 2]).is_ok());
+        let (sender, _incoming) = mpsc::sync_channel(PREFETCH_PACKETS);
+        assert_eq!(PREFETCH_PACKETS * PACKET_BYTES, 48_000 * 16);
+        for _ in 0..PREFETCH_PACKETS {
+            assert!(sender.try_send(Audio::Frame(vec![0; PACKET_BYTES])).is_ok());
         }
         let current = Arc::new(AtomicU64::new(4));
         let stop = Arc::new(AtomicBool::new(false));
         let worker_current = Arc::clone(&current);
         let worker_stop = Arc::clone(&stop);
-        let worker =
-            std::thread::spawn(move || send(&sender, vec![0; 2], 4, &worker_current, &worker_stop));
+        let worker = std::thread::spawn(move || {
+            send(
+                &sender,
+                Audio::Frame(vec![0; 2]),
+                4,
+                &worker_current,
+                &worker_stop,
+            )
+        });
         current.store(5, Ordering::Release);
         assert_eq!(worker.join().ok(), Some(Err(Failure::Cancelled)));
         stop.store(true, Ordering::Release);
         assert_eq!(check(5, &current, &stop), Err(Failure::Cancelled));
+    }
+
+    #[test]
+    fn queued_short_text_coalesces_without_reordering_or_exceeding_the_request_bound() {
+        let (sender, receiver) = mpsc::sync_channel(4);
+        assert!(sender.send("Hello.".to_owned()).is_ok());
+        assert!(sender.send("Another sentence.".to_owned()).is_ok());
+        assert!(sender.send("x".repeat(super::super::MAX_SEGMENT)).is_ok());
+        assert!(sender.send("Last.".to_owned()).is_ok());
+        drop(sender);
+        let mut pending = None;
+        let current = AtomicU64::new(4);
+        let stop = AtomicBool::new(false);
+        for expected in [
+            "Hello. Another sentence.".to_owned(),
+            "x".repeat(super::super::MAX_SEGMENT),
+            "Last.".to_owned(),
+        ] {
+            assert_eq!(
+                super::next_segment(&receiver, &mut pending, 4, &current, &stop),
+                Ok(Some(expected))
+            );
+        }
+        assert_eq!(
+            super::next_segment(&receiver, &mut pending, 4, &current, &stop),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn tiny_pcm_callbacks_form_fixed_frames_and_flush_the_final_tail_exactly() -> Result<(), Failure>
+    {
+        let source: Vec<_> = (0_u8..=255).cycle().take(PACKET_BYTES * 3 + 42).collect();
+        let mut frames = Frames::default();
+        let mut packets = Vec::new();
+        for tiny in source.chunks(2) {
+            frames.push(tiny, |packet| {
+                packets.push(packet);
+                Ok(())
+            })?;
+            assert!(frames.pending.len() < PACKET_BYTES);
+        }
+        frames.finish(|packet| {
+            packets.push(packet);
+            Ok(())
+        })?;
+        assert_eq!(
+            packets.iter().map(Vec::len).collect::<Vec<_>>(),
+            [PACKET_BYTES, PACKET_BYTES, PACKET_BYTES, 42]
+        );
+        assert_eq!(packets.concat(), source);
+        Ok(())
+    }
+
+    #[test]
+    fn fast_supply_primes_after_cold_start_but_slow_supply_waits_for_validated_segment()
+    -> Result<(), Failure> {
+        let cold = Instant::now() + Duration::from_secs(90);
+        let mut fast = Buffered::default();
+        let mut slow = Buffered::default();
+        for index in 0..PREROLL_PACKETS {
+            let tick = u64::try_from(index).map_err(|_| super::AUDIO_FAILURE)?;
+            assert!(
+                fast.frame(
+                    vec![1; PACKET_BYTES],
+                    cold + Duration::from_millis(tick * 50)
+                )?
+                .is_none()
+            );
+            assert!(
+                slow.frame(
+                    vec![2; PACKET_BYTES],
+                    cold + Duration::from_millis(tick * 800)
+                )?
+                .is_none()
+            );
+            if index + 1 < PREROLL_PACKETS {
+                assert!(fast.ready.is_empty());
+            }
+            assert!(slow.ready.is_empty());
+        }
+        assert_eq!(fast.ready.len(), PREROLL_PACKETS);
+        assert!(!fast.slow);
+        assert!(slow.slow);
+        slow.end()?;
+        assert_eq!(slow.ready.len(), PREROLL_PACKETS);
+        assert!(slow.flush);
+        Ok(())
+    }
+
+    #[test]
+    fn realtime_native_callback_ramp_keeps_streaming_despite_burst_jitter() -> Result<(), Failure> {
+        let now = Instant::now() + Duration::from_secs(90);
+        let mut buffered = Buffered::default();
+        let mut frames = Frames::default();
+        for (millis, bytes) in [(80, 3_840), (240, 7_680), (560, 15_360), (1_200, 30_720)] {
+            frames.push(&vec![0; bytes], |frame| {
+                assert!(
+                    buffered
+                        .frame(frame, now + Duration::from_millis(millis))?
+                        .is_none()
+                );
+                Ok(())
+            })?;
+        }
+        assert!(!buffered.slow);
+        assert_eq!(buffered.ready.len(), 12);
+        Ok(())
+    }
+
+    #[test]
+    fn underrun_requires_complete_segments_and_staging_rejects_overlong_audio()
+    -> Result<(), Failure> {
+        let now = Instant::now();
+        let mut buffered = Buffered::default();
+        buffered.underrun();
+        for _ in 0..MAX_BUFFER_BYTES / PACKET_BYTES {
+            assert!(buffered.frame(vec![0; PACKET_BYTES], now)?.is_none());
+        }
+        assert!(buffered.ready.is_empty());
+        assert_eq!(buffered.bytes, MAX_BUFFER_BYTES);
+        assert!(buffered.frame(vec![0; 2], now).is_err());
+        buffered.end()?;
+        assert_eq!(buffered.frame(vec![0; 2], now)?, Some(vec![0; 2]));
+        assert!(buffered.pop().is_some());
+        assert!(buffered.frame(vec![0; 2], now)?.is_none());
+        assert!(buffered.slow);
+        Ok(())
+    }
+
+    #[derive(Default)]
+    struct RecordingOutput {
+        queued: VecDeque<Vec<u8>>,
+        played: Vec<u8>,
+        starts: Vec<usize>,
+        paused: bool,
+        maximum: usize,
+    }
+
+    impl Output for RecordingOutput {
+        fn queued(&self) -> usize {
+            self.queued.len()
+        }
+
+        fn push(&mut self, pcm: Vec<u8>) -> Result<(), Failure> {
+            self.queued.push_back(pcm);
+            self.maximum = self.maximum.max(self.queued.len());
+            Ok(())
+        }
+
+        fn reap(&mut self) -> Result<(), Failure> {
+            if !self.paused
+                && let Some(pcm) = self.queued.pop_front()
+            {
+                self.played.extend(pcm);
+            }
+            Ok(())
+        }
+
+        fn pause(&mut self) -> Result<(), Failure> {
+            self.paused = true;
+            Ok(())
+        }
+
+        fn start(&mut self) -> Result<(), Failure> {
+            self.starts.push(self.queued.len());
+            self.paused = false;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn synthetic_output_primes_and_drains_short_final_segments_without_an_audio_device()
+    -> Result<(), Failure> {
+        for frames in [1, PREROLL_PACKETS + 5] {
+            let (sender, incoming) = mpsc::sync_channel(PREFETCH_PACKETS);
+            for _ in 0..frames {
+                assert!(sender.send(Audio::Frame(vec![7; PACKET_BYTES])).is_ok());
+            }
+            assert!(sender.send(Audio::SegmentEnd).is_ok());
+            drop(sender);
+            let mut output = RecordingOutput::default();
+            consume_with(
+                &incoming,
+                4,
+                &AtomicU64::new(4),
+                &AtomicBool::new(false),
+                &mut output,
+            )?;
+            assert_eq!(output.played, vec![7; PACKET_BYTES * frames]);
+            assert_eq!(output.starts.first(), Some(&frames.min(PREROLL_PACKETS)));
+            assert!(output.maximum <= PLAYBACK_PACKETS);
+        }
+        let (sender, incoming) = mpsc::sync_channel(PREFETCH_PACKETS);
+        assert!(sender.send(Audio::Frame(vec![0; 2])).is_ok());
+        drop(sender);
+        assert!(
+            consume_with(
+                &incoming,
+                4,
+                &AtomicU64::new(4),
+                &AtomicBool::new(false),
+                &mut RecordingOutput::default()
+            )
+            .is_err()
+        );
+        assert_eq!(
+            consume_with(
+                &incoming,
+                4,
+                &AtomicU64::new(5),
+                &AtomicBool::new(false),
+                &mut RecordingOutput::default()
+            ),
+            Err(Failure::Cancelled)
+        );
+        Ok(())
     }
 }
