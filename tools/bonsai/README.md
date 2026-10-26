@@ -44,6 +44,7 @@ bonsai-tools runtime-verify --request ABSOLUTE_JSON_PATH
 bonsai-tools completion --request ABSOLUTE_JSON_PATH
 bonsai-tools qualification --request ABSOLUTE_JSON_PATH
 bonsai-tools speech-models --request ABSOLUTE_JSON_PATH
+bonsai-tools inference-lock --request ABSOLUTE_JSON_PATH
 ```
 
 Requests are JSON objects read through a retained read-only handle, capped at
@@ -59,6 +60,13 @@ returns the selected download plan and aggregate paths/byte total. PowerShell
 retains resumable downloading and exact artifact verification; the Rust planner
 does not network, create model storage or load a model. Model-only provisioning
 uses the same packaged-tool selection or source-build fallback as other wrappers.
+
+`inference-lock` reviews independently selected Prism release and source ZIPs.
+It retains read-only input handles, checks bounded inventories, file hashes,
+ARM64 headers, source package versions and the compiler pin, then writes a new
+candidate lock and review evidence. It does not extract or execute the release
+bundle. `Get-Inference.ps1` keeps its separate provisioning path without a
+maintenance-tool or Cargo dependency.
 
 `cpu-check-plan` combines the shared `bonsai-cpu-policy` plan with a current
 available-memory observation. Its request contains `operation: "plan"`,

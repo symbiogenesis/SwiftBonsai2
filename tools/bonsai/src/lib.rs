@@ -24,3 +24,6 @@ pub mod install;
 
 /// Native speech artifact plans shared with the provisioning wrappers.
 pub mod speech;
+
+/// Offline review of a release receipt, exact source ZIP and ARM64 bundle.
+pub mod inference_lock;

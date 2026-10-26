@@ -538,11 +538,16 @@ and run identity, rather than copying them from an unreviewed receipt:
     -OutputPath (Join-Path $lane 'prism-inference.lock.candidate.json')
 ```
 
-The command checks receipt identities, archive and individual file hashes,
+The command uses `bonsai-tools`; supply a trusted build with `-ToolPath` or
+`BONSAI_TOOLS_PATH`, or let the resolver build the maintenance CLI in system temp.
+Production `Get-Inference.ps1` provisioning still requires no Rust toolchain.
+The review checks receipt identities, archive and individual file hashes,
 the complete executable/license inventory, ARM64 PE headers and the source
 archive's commit root, package versions and compiler pin. It writes a new
-external candidate and retains verification evidence. It does not execute a
-binary, build source, publish a release or replace the repository's lock.
+external candidate and retains `candidate.lock.json` and `verification.json` in
+its verification directory. It verifies ZIP contents directly without extracting
+the runtime, executing the reviewed binaries, building Prism source, publishing a
+release or replacing the repository's lock.
 
 Publication requires separate authorization under the session's repository
 rules. After the exact checked bundle is available at the candidate's immutable

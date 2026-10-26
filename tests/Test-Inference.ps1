@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([void])]
-param([ValidateSet('All', 'Install', 'Archive', 'Lock', 'ReleaseLock')][string]$Case = 'All')
+param([ValidateSet('All', 'Install', 'Archive', 'Lock', 'ReleaseLock')][string]$Case = 'All', [string]$ToolPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -107,7 +107,8 @@ if ($Case -in @('All', 'ReleaseLock')) {
     try {
         foreach ($relative in @('Cargo.toml', 'server/Cargo.toml', 'rust-toolchain.toml')) {
             $entry = $source.CreateEntry("prism-inference-$($fixture.Lock.commit)/$relative")
-            $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($false))
+            # The previous StreamReader path accepted a UTF-8 BOM in each manifest.
+            $writer = [IO.StreamWriter]::new($entry.Open(), [Text.UTF8Encoding]::new($true))
             try {
                 if ($relative -ceq 'rust-toolchain.toml') { $writer.WriteLine('[toolchain]'); $writer.WriteLine('channel = "nightly-2026-10-22"') }
                 else {
@@ -120,11 +121,15 @@ if ($Case -in @('All', 'ReleaseLock')) {
     $parameters = @{
         ReceiptPath = $receiptPath; ArchivePath = $archivePath; SourceArchivePath = $sourcePath
         SourceRevision = $fixture.Lock.commit; Version = '0.1.0'; RunId = '12345'; RunAttempt = 2; OutputPath = $outputPath
+        ToolPath = $ToolPath
     }
     $script = Join-Path $PSScriptRoot '../scripts/New-InferenceLock.ps1'
     $result = & $script @parameters
     $candidate = Read-BonsaiInferenceLock -Path $outputPath
     Assert ($result.Verified -and $candidate.files.Count -eq 9 -and $candidate.commit -ceq $fixture.Lock.commit) 'The reviewed release did not produce a complete candidate lock.'
+    Assert ([IO.File]::Exists((Join-Path $result.VerificationDirectory 'candidate.lock.json')) -and
+        [IO.File]::Exists((Join-Path $result.VerificationDirectory 'verification.json')) -and
+        -not [IO.Directory]::Exists((Join-Path $result.VerificationDirectory 'inference'))) 'Review evidence was missing or the offline review extracted runtime files.'
     Assert ($candidate.Source.Commit -ceq $candidate.commit -and $candidate.Source.Url -ceq "$($candidate.repository)/archive/$($candidate.commit).zip" -and
         $candidate.Source.Bytes -eq ([IO.FileInfo]$sourcePath).Length -and
         $candidate.Source.Sha256 -ceq (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()) 'Candidate source identity does not match the source archive.'
@@ -189,4 +194,14 @@ if ($Case -in @('All', 'ReleaseLock')) {
     $parameters.OutputPath = Join-Path $fixture.Root 'source-version.json'
     Assert-Failure { & $script @parameters } 'An independently mismatched source package version was accepted.'
     Assert (-not [IO.File]::Exists($parameters.OutputPath)) 'Wrong-version source produced a candidate lock.'
+    $source = [IO.Compression.ZipArchive]::new([IO.File]::Open($sourcePath, [IO.FileMode]::Open), [IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $entryName = "prism-inference-$($fixture.Lock.commit)/server/Cargo.toml"
+        $source.GetEntry($entryName).Delete()
+        $stream = $source.CreateEntry($entryName).Open()
+        try { $stream.WriteByte(0xFF) } finally { $stream.Dispose() }
+    } finally { $source.Dispose() }
+    $parameters.OutputPath = Join-Path $fixture.Root 'source-encoding.json'
+    Assert-Failure { & $script @parameters } 'Malformed UTF-8 source was accepted.'
+    Assert (-not [IO.File]::Exists($parameters.OutputPath)) 'Malformed UTF-8 source produced a candidate lock.'
 }

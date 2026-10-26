@@ -37,6 +37,7 @@ fn version_advertises_policy_commands_without_resolving_a_request_file()
         "runtime-stage",
         "runtime-verify",
         "speech-models",
+        "inference-lock",
     ] {
         assert!(commands.iter().any(|command| command == name));
     }

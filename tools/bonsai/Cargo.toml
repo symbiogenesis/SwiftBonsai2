@@ -22,6 +22,7 @@ bonsai-cpu-policy = { path = "../../src/cpu-policy" }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
+zip.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 bonsai-windows-process = { path = "../../src/windows-process" }
@@ -29,6 +30,3 @@ bonsai-windows-credentials = { path = "../../src/windows-credentials" }
 
 [lints]
 workspace = true
-
-[dev-dependencies]
-zip.workspace = true
