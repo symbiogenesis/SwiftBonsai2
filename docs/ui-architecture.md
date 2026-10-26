@@ -55,7 +55,12 @@ automatic retry or reduced-memory profile.
 Stop and uncertain request failures also leave the window available for an
 explicit **Retry model**. The client tears down the owned backend before a fresh
 attempt, retains completed conversation turns, and never automatically replays
-an interrupted request. Local input-limit rejections restore the composer.
+an interrupted request. Stop immediately freezes queued streaming updates;
+network waits wake on the cancellation command. Requested stops use neutral
+status messages while the backend is released, with Retry available only after
+teardown. An interrupted prompt returns to an empty composer without replacing
+a newly typed draft. If a fully completed turn wins the stop race, its visible
+answer stays consistent with committed history. Local input-limit rejections restore the composer.
 Response settings expose the fixed 8,192-token context bound and select a
 reasoning-inclusive completion cap up to 4,096 tokens. Thinking is off by default;
 the Response settings checkbox enables it for the next response and every Extra

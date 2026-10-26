@@ -59,6 +59,7 @@ struct State {
     worker: Option<JoinHandle<()>>,
     ready: bool,
     busy: bool,
+    stopping: bool,
     retryable: bool,
     waiting_model: bool,
     preview: bool,
@@ -135,6 +136,7 @@ impl State {
             worker: None,
             ready: false,
             busy: false,
+            stopping: false,
             retryable: false,
             waiting_model: config.is_some(),
             preview: config.is_none(),
@@ -326,6 +328,9 @@ impl State {
     }
 
     fn stop_generation(&mut self) {
+        if !self.busy {
+            return;
+        }
         if self.commands.send(Command::Stop).is_err() {
             self.fail("The model worker stopped. Close and restart the app.");
             return;
@@ -333,6 +338,7 @@ impl State {
         self.stop_speech();
         self.ready = false;
         self.busy = false;
+        self.stopping = true;
         self.retryable = false;
         self.waiting_model = true;
         self.transcript.remove_empty_response();
@@ -363,6 +369,7 @@ impl State {
         self.stop_speech();
         self.ready = false;
         self.busy = false;
+        self.stopping = false;
         self.retryable = false;
         self.waiting_model = false;
         self.transcript.remove_empty_response();
@@ -400,9 +407,24 @@ impl State {
     }
 
     fn model_event(&mut self, event: Event) {
+        if self.stopping
+            && matches!(
+                event,
+                Event::Text(_)
+                    | Event::Reasoning(_)
+                    | Event::Stage(_)
+                    | Event::Draft(_)
+                    | Event::Complete(_)
+            )
+        {
+            // Events already queued at the click cannot restart the response
+            // or replace the stop/cleanup status.
+            return;
+        }
         self.recovery_dirty = true;
         match event {
             Event::Starting => {
+                self.stopping = false;
                 self.waiting_model = true;
                 self.ready = false;
                 self.busy = false;
@@ -413,6 +435,8 @@ impl State {
                 self.fail(&message);
                 self.retryable = true;
             }
+            Event::Stopping(text) => self.stopping_response(&text),
+            Event::Stopped => self.stopped_response(),
             Event::Ready => {
                 if self.restore_history {
                     self.restore_history = false;
@@ -453,7 +477,7 @@ impl State {
                     .clone_into(&mut self.status);
             }
             Event::Reasoning(text) => self.transcript.append(&text, true),
-            Event::Committed(history) => self.committed = history,
+            Event::Committed(history) => self.commit_history(history),
             Event::Complete(completion) => {
                 if self.streaming_active {
                     self.speech_command(speech::Command::FinishStream);
@@ -477,6 +501,47 @@ impl State {
             }
             Event::Failed(message) => self.fail(&message),
         }
+    }
+
+    fn commit_history(&mut self, history: Vec<client::Message>) {
+        if self.stopping
+            && let Some(answer) = history.last().filter(|answer| answer.role == "assistant")
+        {
+            // A fully completed turn can win just before the stop click. Keep
+            // its visible answer consistent with the authoritative history,
+            // without reopening Send or overwriting the cleanup status.
+            self.transcript
+                .replace_response(&answer.content, answer.reasoning_content.as_deref());
+            self.last_answer.clone_from(&answer.content);
+            self.answer_complete = true;
+        }
+        self.committed = history;
+    }
+
+    fn stopping_response(&mut self, text: &str) {
+        self.stop_speech();
+        self.busy = false;
+        self.ready = false;
+        self.stopping = true;
+        self.waiting_model = true;
+        self.retryable = false;
+        if self.input.is_empty() {
+            self.input = text.chars().take(INPUT_LIMIT).collect();
+            self.place_composer_cursor(self.input.chars().count());
+        }
+        self.transcript.remove_empty_response();
+        self.retain_draft();
+        self.set_status("Response stopped. Releasing the local model…", false);
+    }
+
+    fn stopped_response(&mut self) {
+        self.stopping = false;
+        self.busy = false;
+        self.ready = false;
+        self.waiting_model = false;
+        self.retryable = true;
+        self.set_status(client::STOPPED_MESSAGE, false);
+        self.focus_composer = true;
     }
 
     fn speech_command(&mut self, command: speech::Command) -> bool {
@@ -1152,7 +1217,12 @@ impl State {
         ui.separator();
         if self.warning || self.retryable {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(&self.status).color(ui.visuals().warn_fg_color));
+                let color = if self.warning {
+                    ui.visuals().warn_fg_color
+                } else {
+                    ui.visuals().text_color()
+                };
+                ui.label(RichText::new(&self.status).color(color));
                 if self.retryable && ui.button("Retry model").clicked() {
                     self.retry();
                 }

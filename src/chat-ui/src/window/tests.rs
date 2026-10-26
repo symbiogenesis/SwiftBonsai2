@@ -46,10 +46,86 @@ fn stopped_empty_response_leaves_only_conversation_content() {
     assert!(state.waiting_model);
     assert_eq!(state.transcript.messages.len(), 1);
     assert_eq!(state.transcript.plain_text(), "You\nKeep my question");
-    state.model_event(Event::Retryable("Response cancelled.".to_owned()));
+    state.model_event(Event::Stopping("Keep my question".to_owned()));
+    assert_eq!(state.input, "Keep my question");
+    assert!(!state.warning);
+    assert!(!state.retryable);
+    state.model_event(Event::Stopped);
     assert!(!state.waiting_model);
     assert!(state.retryable);
+    assert!(!state.warning);
     assert_eq!(state.transcript.messages.len(), 1);
+}
+
+#[test]
+fn stop_freezes_queued_output_and_preserves_a_new_composer_draft() {
+    let (mut state, commands, events) = state();
+    state.ready = true;
+    state.input = "Original question".to_owned();
+    state.submit();
+    assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
+    state.model_event(Event::Text("Partial answer".to_owned()));
+    state.stop_generation();
+    state.stop_generation();
+    assert!(matches!(commands.try_recv(), Ok(Command::Stop)));
+    assert!(commands.try_recv().is_err());
+    let transcript = state.transcript.plain_text();
+    let status = state.status.clone();
+    for event in [
+        Event::Text(" late text".to_owned()),
+        Event::Reasoning("late reasoning".to_owned()),
+        Event::Stage("Late stage"),
+        Event::Draft("Late draft".to_owned()),
+        Event::Complete(Completion::Finished),
+    ] {
+        assert!(events.send(event).is_ok());
+    }
+    state.drain_events();
+    assert_eq!(state.transcript.plain_text(), transcript);
+    assert_eq!(state.status, status);
+    assert!(state.stopping && state.waiting_model);
+    assert!(!state.ready && !state.retryable && !state.warning);
+    state.input = "My next question".to_owned();
+    state.model_event(Event::Stopping("Original question".to_owned()));
+    assert_eq!(state.input, "My next question");
+    state.model_event(Event::Stopped);
+    assert!(!state.warning);
+    state.retry();
+    assert!(matches!(commands.try_recv(), Ok(Command::Retry)));
+    assert!(!state.ready);
+}
+
+#[test]
+fn completed_turn_winning_stop_race_keeps_visible_and_committed_answers_consistent() {
+    let (mut state, _commands, _events) = state();
+    state.ready = true;
+    state.input = "A question".to_owned();
+    state.submit();
+    state.model_event(Event::Text("Partial".to_owned()));
+    state.stop_generation();
+    let status = state.status.clone();
+    state.model_event(Event::Committed(vec![
+        client::Message {
+            role: "user",
+            content: "A question".to_owned(),
+            reasoning_content: None,
+        },
+        client::Message {
+            role: "assistant",
+            content: "Complete answer".to_owned(),
+            reasoning_content: Some("Complete reasoning".to_owned()),
+        },
+    ]));
+    state.model_event(Event::Complete(Completion::Finished));
+    assert_eq!(state.transcript.messages.len(), 2);
+    assert!(state.transcript.plain_text().ends_with("Complete answer"));
+    assert_eq!(state.committed[1].content, state.last_answer);
+    assert!(state.answer_complete);
+    assert_eq!(state.status, status);
+    assert!(!state.ready && !state.retryable && !state.warning);
+    state.model_event(Event::Stopped);
+    assert!(state.retryable);
+    assert!(!state.warning);
 }
 
 #[test]

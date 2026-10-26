@@ -133,6 +133,25 @@ impl Transcript {
         self.trim();
     }
 
+    pub(super) fn replace_response(&mut self, text: &str, reasoning: Option<&str>) {
+        if self
+            .messages
+            .last()
+            .is_none_or(|message| message.role != Role::Assistant)
+        {
+            self.push(Role::Assistant, String::new());
+        }
+        if let Some(message) = self.messages.last_mut() {
+            text.clone_into(&mut message.body);
+            reasoning
+                .unwrap_or_default()
+                .clone_into(&mut message.reasoning);
+            message.cache = None;
+        }
+        self.trim();
+        self.remove_empty_response();
+    }
+
     pub(super) fn append(&mut self, text: &str, reasoning: bool) {
         if !reasoning {
             self.search.invalidate();

@@ -20,10 +20,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(test)]
+mod cancellation_tests;
 mod effort;
 
 const POLL: Duration = Duration::from_millis(100);
-const IO_POLL: Duration = Duration::from_millis(250);
+const IO_POLL: Duration = Duration::from_millis(50);
 const DEADLINE: Duration = Duration::from_secs(600);
 const MAX_HEAD: usize = 16 * 1024;
 const MAX_BODY: usize = 4 * 1024 * 1024;
@@ -35,6 +37,7 @@ const EVIDENCE_PREFIX: &str = "Protected credentials and technical evidence: ";
 const RUNNING_MEMORY_MESSAGE: &str = "Swift stopped because its running memory requirements were no longer met. Close other apps, then select Retry model. Completed conversation turns remain in memory.";
 const LOCAL_CONNECTION_CLOSED: &str = "The connection to the model on this computer closed before a complete reply was received. The cause was not reported.";
 const CONTEXT_LIMIT_MESSAGE: &str = "This conversation and the selected output cap do not fit within the model's 8,192-token context limit. Choose a smaller output cap or start a new conversation, then send again.";
+pub(crate) const STOPPED_MESSAGE: &str = "Response stopped. Select Retry model to continue. Completed conversation turns are retained; the interrupted turn is not added to model history.";
 
 pub(crate) const DEFAULT_ABLITERATION_SCALE: f32 = 1.3;
 
@@ -77,6 +80,7 @@ pub(crate) enum Command {
 }
 
 /// Text-only notifications; no credentials or raw HTTP diagnostics cross this boundary.
+#[derive(Clone)]
 pub(crate) enum Event {
     Starting,
     Ready,
@@ -86,6 +90,8 @@ pub(crate) enum Event {
     Committed(Vec<Message>),
     Failed(String),
     Retryable(String),
+    Stopping(String),
+    Stopped,
     Rejected {
         message: String,
         text: String,
@@ -204,22 +210,26 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Ev
                     &commands,
                     &events,
                     &mut history,
-                    "Not enough free memory. Swift needs 16 GiB available. Free some RAM, then select Retry model.",
+                    &Event::Retryable("Not enough free memory. Swift needs 16 GiB available. Free some RAM, then select Retry model.".to_owned()),
                 ) {
+                    return;
+                }
+            }
+            Err(Failure::Stopped) => {
+                // The broker guard has finished teardown. A requested stop is
+                // an expected outcome, separate from failure/rejection notices.
+                if !wait_for_retry(&commands, &events, &mut history, &Event::Stopped) {
                     return;
                 }
             }
             Err(failure) => {
                 let message = match failure {
-                    Failure::Stopped => {
-                        "Generation stopped. Select Retry model to restart safely; completed conversation turns are retained. The interrupted turn has not been added to model history."
-                    }
                     Failure::Message(message) | Failure::Rejected(message) => message,
-                    Failure::Shutdown | Failure::Memory => return,
+                    Failure::Shutdown | Failure::Memory | Failure::Stopped => return,
                 };
                 // worker has returned and its Broker guard has stopped/waited
                 // for the owned process before Retry can be offered.
-                if !wait_for_retry(&commands, &events, &mut history, &retry_guidance(message)) {
+                if !wait_for_retry(&commands, &events, &mut history, &Event::Retryable(retry_guidance(message))) {
                     return;
                 }
             }
@@ -240,9 +250,9 @@ fn wait_for_retry(
     commands: &Receiver<Command>,
     events: &Sender<Event>,
     history: &mut Vec<Message>,
-    message: &str,
+    notice: &Event,
 ) -> bool {
-    if notify(events, Event::Retryable(message.to_owned())).is_err() {
+    if notify(events, notice.clone()).is_err() {
         return false;
     }
     loop {
@@ -259,7 +269,7 @@ fn wait_for_retry(
                     message: "The model is unavailable. Your message is restored; select Retry model before sending again.".to_owned(),
                     text,
                     retry_required: true,
-                }).is_err() || notify(events, Event::Retryable(message.to_owned())).is_err() {
+                }).is_err() || notify(events, notice.clone()).is_err() {
                     return false;
                 }
             }
@@ -370,7 +380,7 @@ fn worker(
                                 generate(config.frontend_port, &key, &request, commands, events)
                             }
                         });
-                finish_turn(history, pending, &text, outcome, events)?;
+                finish_turn(history, pending, &text, outcome, events, commands)?;
             }
             Ok(Command::Retry) | Err(RecvTimeoutError::Timeout) => {}
         }
@@ -526,8 +536,11 @@ fn finish_turn(
     text: &str,
     outcome: Result<(Message, Completion)>,
     events: &Sender<Event>,
+    commands: &Receiver<Command>,
 ) -> Result<()> {
-    match outcome {
+    // Buffered parsing and local validation may finish without touching the
+    // socket again. Stop takes precedence until this commit boundary.
+    match check_commands(commands).and(outcome) {
         Ok((answer, completion)) => {
             pending.push(answer);
             *history = pending;
@@ -535,16 +548,17 @@ fn finish_turn(
             notify(events, Event::Complete(completion))
         }
         Err(Failure::Shutdown) => Err(Failure::Shutdown),
+        Err(Failure::Stopped) => {
+            notify(events, Event::Stopping(text.to_owned()))?;
+            Err(Failure::Stopped)
+        }
         Err(failure) => {
             let message = match failure {
                 Failure::Rejected(message) => message,
-                Failure::Stopped => {
-                    "The response was stopped. Your message is restored for review; it has not been added to model history."
-                }
                 Failure::Message(_) | Failure::Memory => {
                     "The response did not complete. Your message is restored for review; partial output has not been added to model history."
                 }
-                Failure::Shutdown => return Err(Failure::Shutdown),
+                Failure::Shutdown | Failure::Stopped => return Err(failure),
             };
             notify(
                 events,
@@ -636,13 +650,15 @@ impl Interruptible<'_> {
                 "Native chat request interrupted",
             ));
         }
-        let result = if Instant::now() >= self.until {
-            Err(Failure::Message(
-                "The local model took longer than the ten-minute request limit.",
-            ))
-        } else {
-            check_commands(self.commands)
-        };
+        let result = check_commands(self.commands).and_then(|()| {
+            if Instant::now() >= self.until {
+                Err(Failure::Message(
+                    "The local model took longer than the ten-minute request limit.",
+                ))
+            } else {
+                Ok(())
+            }
+        });
         if let Err(failure) = result {
             self.interrupted = Some(failure);
             return Err(io::Error::new(
@@ -651,6 +667,23 @@ impl Interruptible<'_> {
             ));
         }
         Ok(())
+    }
+
+    fn wait(&mut self) -> io::Result<()> {
+        // The socket is nonblocking: wait on the command channel instead of
+        // a socket timeout, so Stop/Shutdown wake a stalled read or write.
+        let timeout = self
+            .until
+            .saturating_duration_since(Instant::now())
+            .min(IO_POLL);
+        match self.commands.recv_timeout(timeout) {
+            Ok(Command::Stop) => self.interrupted = Some(Failure::Stopped),
+            Ok(Command::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
+                self.interrupted = Some(Failure::Shutdown);
+            }
+            Ok(_) | Err(RecvTimeoutError::Timeout) => {}
+        }
+        self.check()
     }
 }
 
@@ -663,8 +696,14 @@ impl Read for Interruptible<'_> {
                     if matches!(
                         error.kind(),
                         io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-                    ) => {}
-                result => return result,
+                    ) =>
+                {
+                    self.wait()?;
+                }
+                result => {
+                    self.check()?;
+                    return result;
+                }
             }
         }
     }
@@ -679,8 +718,14 @@ impl Write for Interruptible<'_> {
                     if matches!(
                         error.kind(),
                         io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-                    ) => {}
-                result => return result,
+                    ) =>
+                {
+                    self.wait()?;
+                }
+                result => {
+                    self.check()?;
+                    return result;
+                }
             }
         }
     }
@@ -725,15 +770,14 @@ fn generate_until(
     let connect_timeout = until
         .saturating_duration_since(Instant::now())
         .min(Duration::from_secs(1));
-    let stream = TcpStream::connect_timeout(&address, connect_timeout).map_err(|_| {
+    let connected = TcpStream::connect_timeout(&address, connect_timeout);
+    check_commands(commands)?;
+    let stream = connected.map_err(|_| {
         Failure::Message("Could not connect to the model service on this computer.")
     })?;
     stream
-        .set_read_timeout(Some(IO_POLL))
-        .map_err(|_| Failure::Message("Could not configure the local response timeout."))?;
-    stream
-        .set_write_timeout(Some(IO_POLL))
-        .map_err(|_| Failure::Message("Could not configure the local request timeout."))?;
+        .set_nonblocking(true)
+        .map_err(|_| Failure::Message("Could not configure the local connection."))?;
     let mut connection = Interruptible {
         stream,
         commands,
@@ -741,6 +785,7 @@ fn generate_until(
         interrupted: None,
     };
     let outcome = exchange(&mut connection, port, key, request, events);
+    let _checked = connection.check();
     connection.interrupted.map_or(outcome, Err)
 }
 
@@ -1371,7 +1416,7 @@ mod tests {
             &incoming,
             &events,
             &mut history,
-            "Retry explicitly."
+            &Event::Retryable("Retry explicitly.".to_owned())
         ));
         assert_eq!(serialize_request(&history, 4096, false, None)?, expected);
         assert!(matches!(notifications.try_recv(), Ok(Event::Retryable(_))));
@@ -1758,7 +1803,7 @@ mod tests {
             &incoming,
             &events,
             &mut history,
-            "Select Retry model."
+            &Event::Retryable("Select Retry model.".to_owned())
         ));
         assert!(history.is_empty());
         assert!(matches!(notifications.try_recv(), Ok(Event::Retryable(_))));
@@ -1773,13 +1818,14 @@ mod tests {
             &incoming,
             &events,
             &mut history,
-            "Select Retry model."
+            &Event::Retryable("Select Retry model.".to_owned())
         ));
     }
 
     #[test]
     fn rejected_and_stopped_turns_restore_composer_without_committing_partial_history()
     -> Result<(), Failure> {
+        let (_commands, commands) = std::sync::mpsc::channel();
         let (events, incoming) = std::sync::mpsc::channel();
         let mut history = vec![
             Message {
@@ -1811,13 +1857,19 @@ mod tests {
                 "Unfinished task 🌱",
                 Err(failure),
                 &events,
+                &commands,
             );
             assert_eq!(result.is_ok(), matches!(failure, Failure::Rejected(_)));
             assert_eq!(serialize_request(&history, 4096, false, None)?, original);
-            assert!(
-                matches!(incoming.try_recv(), Ok(Event::Rejected { text, retry_required, .. })
-                if text == "Unfinished task 🌱" && retry_required != matches!(failure, Failure::Rejected(_)))
-            );
+            let event = incoming.try_recv();
+            if failure == Failure::Stopped {
+                assert!(matches!(event, Ok(Event::Stopping(text)) if text == "Unfinished task 🌱"));
+            } else {
+                assert!(
+                    matches!(event, Ok(Event::Rejected { text, retry_required, .. })
+                    if text == "Unfinished task 🌱" && retry_required != matches!(failure, Failure::Rejected(_)))
+                );
+            }
             assert!(incoming.try_recv().is_err());
         }
         // A later, explicitly submitted request is appended only after framed
@@ -1841,6 +1893,7 @@ mod tests {
                 Completion::Finished,
             )),
             &events,
+            &commands,
         )?;
         assert_eq!(history.len(), 4);
         assert_eq!(history[2].content, "Reviewed task");
