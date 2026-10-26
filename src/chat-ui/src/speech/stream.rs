@@ -161,13 +161,13 @@ mod tests {
         let now = Instant::now();
         let mut text = Text::default();
         text.append("A clause", now)?;
-        let later = now + LATENCY - std::time::Duration::from_millis(1);
+        let almost_latency = LATENCY
+            .checked_sub(std::time::Duration::from_millis(1))
+            .ok_or("latency must exceed one millisecond")?;
+        let later = now + almost_latency;
         text.append(" continuing", later)?;
         assert!(text.ready(now + LATENCY).is_empty());
-        assert!(
-            text.ready(later + LATENCY - std::time::Duration::from_millis(1))
-                .is_empty()
-        );
+        assert!(text.ready(later + almost_latency).is_empty());
         assert_eq!(text.ready(later + LATENCY), ["A clause"]);
         text.append(" softly.", later + LATENCY)?;
         text.finished = true;
