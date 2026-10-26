@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use bonsai_artifacts::{is_redirect, validate_external_path};
+use bonsai_artifacts::{is_redirect, open_locked_file, validate_external_path};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
@@ -313,24 +313,7 @@ fn validate_name<'a>(name: &'a str, root: &str) -> crate::Result<&'a str> {
 }
 
 fn open_locked(path: &Path) -> crate::Result<File> {
-    validate_external_path(path).map_err(|error| error.to_string())?;
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt as _;
-        options.share_mode(1).custom_flags(0x0020_0000);
-    }
-    let file = options
-        .open(path)
-        .map_err(|_| "Native source file cannot be opened safely.")?;
-    let metadata = file
-        .metadata()
-        .map_err(|_| "Native source metadata is unavailable.")?;
-    if !metadata.is_file() || is_redirect(&metadata) {
-        return Err("Native source is not a regular file.".into());
-    }
-    Ok(file)
+    open_locked_file(path).map_err(|_| "Native source file cannot be opened safely.".into())
 }
 
 fn digest(

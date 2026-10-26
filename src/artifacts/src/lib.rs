@@ -138,7 +138,7 @@ impl VerifiedRuntime {
             &mut handles,
             &mut checkpoint,
         )?;
-        let mut archive = locked_file(&spec.archive_path)?;
+        let mut archive = open_locked_file(&spec.archive_path)?;
         let mut buffer = vec![0; HASH_BUFFER_BYTES];
         check_locked(
             &mut archive,
@@ -225,7 +225,7 @@ impl VerifiedFile {
         }
         let mut handles = Vec::new();
         hold_ancestors(path, &mut handles, &mut checkpoint)?;
-        let mut file = locked_file(path)?;
+        let mut file = open_locked_file(path)?;
         let mut buffer = vec![0; HASH_BUFFER_BYTES];
         check_locked(&mut file, bytes, hash, &mut buffer, &mut checkpoint)?;
         handles.push(file);
@@ -249,7 +249,15 @@ fn classify_hash_error(error: ArtifactError, fallback: ArtifactError) -> Artifac
         fallback
     }
 }
-fn locked_file(path: &Path) -> Result<File, ArtifactError> {
+/// Open an ordinary external file for reading without following a leaf redirect.
+///
+/// On Windows the returned handle permits only other readers, preventing writes
+/// and deletion of the opened file. This does not retain ancestor directory
+/// handles; use [`VerifiedFile`] when the complete path must remain stable.
+///
+/// # Errors
+/// Rejects unsafe external paths, redirects, non-files and failed opens.
+pub fn open_locked_file(path: &Path) -> Result<File, ArtifactError> {
     validate_external_path(path).map_err(|_| ArtifactError::Path)?;
     let mut options = OpenOptions::new();
     options.read(true);
@@ -327,12 +335,25 @@ fn digest_hex(hash: Sha256) -> String {
         .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
         .collect()
 }
-fn hash_reader(
+/// Hash exactly `expected` bytes from the reader's current position through EOF.
+///
+/// The caller supplies a reusable, nonempty read buffer and a cancellation
+/// checkpoint invoked before every read. The lowercase SHA-256 covers the exact
+/// bytes read, without text decoding or newline normalization. This function
+/// neither rewinds nor locks the reader.
+///
+/// # Errors
+/// Rejects an empty buffer, read failures, short or long streams, byte-count
+/// overflow, and any error returned by the checkpoint.
+pub fn hash_reader(
     reader: &mut impl Read,
     expected: u64,
     buffer: &mut [u8],
     checkpoint: &mut impl FnMut() -> Result<(), ArtifactError>,
 ) -> Result<String, ArtifactError> {
+    if buffer.is_empty() {
+        return Err(ArtifactError::Configuration);
+    }
     let mut hash = Sha256::new();
     let mut total = 0_u64;
     loop {
@@ -496,7 +517,7 @@ fn verify_installed_files<R: Read + Seek>(
         checkpoint()?;
         let path = root.join(&entry.name);
         hold_ancestors(&path, handles, checkpoint)?;
-        let mut installed = locked_file(&path)?;
+        let mut installed = open_locked_file(&path)?;
         let mut source = archive
             .by_index(entry.index)
             .map_err(|_| ArtifactError::Archive)?;
@@ -728,6 +749,34 @@ mod tests {
                 .ok()
                 .as_deref(),
             Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        );
+    }
+    #[test]
+    fn bounded_hash_validates_buffer_and_cancellation_before_reading() {
+        let mut reader = Cursor::new(b"abc");
+        assert_eq!(
+            hash_reader(&mut reader, 3, &mut [], &mut || Ok(())),
+            Err(ArtifactError::Configuration)
+        );
+        assert_eq!(reader.position(), 0);
+
+        let mut buffer = [0; 1];
+        let mut reads = 0;
+        assert_eq!(
+            hash_reader(&mut reader, 3, &mut buffer, &mut || {
+                reads += 1;
+                if reads == 2 {
+                    Err(ArtifactError::Cancelled)
+                } else {
+                    Ok(())
+                }
+            }),
+            Err(ArtifactError::Cancelled)
+        );
+        assert_eq!(reader.position(), 1);
+        assert_eq!(
+            hash_reader(&mut Cursor::new(b""), 0, &mut buffer, &mut || Ok(())),
+            Ok("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into())
         );
     }
     #[test]

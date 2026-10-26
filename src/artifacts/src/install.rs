@@ -2,7 +2,7 @@
 
 use super::{
     ArtifactError, HASH_BUFFER_BYTES, Installation, RuntimeSpec, VerifiedRuntimeFile, check_arm64,
-    check_locked, hold_ancestors, inspect_archive, locked_file, validate_external_path,
+    check_locked, hold_ancestors, inspect_archive, open_locked_file, validate_external_path,
     verify_installed_files,
 };
 use std::fs::{self, File, OpenOptions};
@@ -38,7 +38,7 @@ pub fn stage_runtime(
 
     let mut archive_handles = Vec::new();
     hold_ancestors(&spec.archive_path, &mut archive_handles, &mut || Ok(()))?;
-    let mut archive = locked_file(&spec.archive_path)?;
+    let mut archive = open_locked_file(&spec.archive_path)?;
     let mut buffer = vec![0; HASH_BUFFER_BYTES];
     check_locked(
         &mut archive,

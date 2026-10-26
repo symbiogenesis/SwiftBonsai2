@@ -6,7 +6,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bonsai_artifacts::{is_redirect, validate_external_path};
+use bonsai_artifacts::{hash_reader, open_locked_file, validate_external_path};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
@@ -78,21 +78,9 @@ fn numeric_identity(value: &Value, expected: &str) -> bool {
 }
 
 fn open_input(path: &Path, maximum: u64) -> crate::Result<File> {
-    validate_external_path(path).map_err(|error| error.to_string())?;
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt as _;
-        options.share_mode(1).custom_flags(0x0020_0000);
-    }
-    let file = options.open(path).map_err(|error| error.to_string())?;
+    let file = open_locked_file(path).map_err(|error| error.to_string())?;
     let metadata = file.metadata().map_err(|error| error.to_string())?;
-    if !metadata.is_file()
-        || is_redirect(&metadata)
-        || metadata.len() == 0
-        || metadata.len() > maximum
-    {
+    if metadata.len() == 0 || metadata.len() > maximum {
         return Err("Release review input is not a bounded regular file.".into());
     }
     Ok(file)
@@ -119,26 +107,8 @@ fn digest_hex(hash: Sha256) -> String {
 }
 
 fn digest(reader: &mut impl Read, expected: u64) -> crate::Result<String> {
-    let mut hash = Sha256::new();
-    let mut total = 0_u64;
     let mut buffer = vec![0; 65536].into_boxed_slice();
-    loop {
-        let count = reader
-            .read(&mut buffer)
-            .map_err(|error| error.to_string())?;
-        if count == 0 {
-            break;
-        }
-        total += u64::try_from(count).map_err(|error| error.to_string())?;
-        if total > expected {
-            return Err("Release artifact exceeded its exact byte length.".into());
-        }
-        hash.update(&buffer[..count]);
-    }
-    if total != expected {
-        return Err("Release artifact differs from its exact byte length.".into());
-    }
-    Ok(digest_hex(hash))
+    hash_reader(reader, expected, &mut buffer, &mut || Ok(())).map_err(|error| error.to_string())
 }
 
 fn validate_receipt(request: &Request, receipt: &Receipt) -> crate::Result<String> {

@@ -8,13 +8,12 @@ use std::{
     collections::BTreeMap,
     ffi::OsString,
     fs::{self, File, OpenOptions},
-    io::{Read as _, Seek as _, SeekFrom},
+    io::{Seek as _, SeekFrom},
     path::{Path, PathBuf},
     time::Duration,
 };
 
-use bonsai_artifacts::{is_redirect, validate_external_path};
-use sha2::{Digest as _, Sha256};
+use bonsai_artifacts::{hash_reader, is_redirect, open_locked_file, validate_external_path};
 
 fn expected(bytes: u64, sha256: &str) -> crate::Result<()> {
     if bytes == 0
@@ -34,16 +33,10 @@ fn digest_matches(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<bo
     }
     file.seek(SeekFrom::Start(0))
         .map_err(|error| error.to_string())?;
-    let mut hash = Sha256::new();
     let mut buffer = vec![0; 1024 * 1024];
-    loop {
-        let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
-        if read == 0 {
-            break;
-        }
-        hash.update(&buffer[..read]);
-    }
-    Ok(crate::startup_cache::hex(&hash.finalize()).eq_ignore_ascii_case(sha256))
+    let hash =
+        hash_reader(file, bytes, &mut buffer, &mut || Ok(())).map_err(|error| error.to_string())?;
+    Ok(hash.eq_ignore_ascii_case(sha256))
 }
 
 fn check(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<()> {
@@ -54,20 +47,7 @@ fn check(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<()> {
 }
 
 fn open_read(path: &Path) -> crate::Result<File> {
-    validate_external_path(path).map_err(|error| error.to_string())?;
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt as _;
-        options.share_mode(1).custom_flags(0x0020_0000);
-    }
-    let file = options.open(path).map_err(|error| error.to_string())?;
-    let metadata = file.metadata().map_err(|error| error.to_string())?;
-    if !metadata.is_file() || is_redirect(&metadata) {
-        return Err("Artifact must be an ordinary file.".into());
-    }
-    Ok(file)
+    open_locked_file(path).map_err(|error| error.to_string())
 }
 
 /// Verifies a complete pinned artifact without downloading or modifying it.
@@ -341,6 +321,8 @@ fn receive_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest as _, Sha256};
+    use std::io::Read as _;
 
     fn recovery_fixture() -> crate::Result<(PathBuf, PathBuf, PathBuf, String)> {
         let working = std::env::temp_dir().join(format!(
