@@ -42,6 +42,7 @@ fn main() -> io::Result<()> {
         }
         "sleep" => wait_forever(),
         "mitigations" => report_mitigations()?,
+        "--version" | "--help" => report_inspection_mitigations()?,
         "nested-mitigations" => nested_mitigations()?,
         "sandbox-files" => sandbox_files(&args)?,
         "sandbox-connect-allowed" => sandbox_connect(&args, true)?,
@@ -391,14 +392,9 @@ fn nested_mitigations() -> io::Result<()> {
     Ok(())
 }
 
-#[allow(
-    unsafe_code,
-    reason = "Query mitigation flags for this disposable probe's borrowed pseudo handle."
-)]
 fn report_mitigations() -> io::Result<()> {
     use windows_sys::Win32::System::Threading::{
-        GetCurrentProcess, GetProcessMitigationPolicy, ProcessExtensionPointDisablePolicy,
-        ProcessImageLoadPolicy, ProcessSystemCallDisablePolicy,
+        ProcessExtensionPointDisablePolicy, ProcessImageLoadPolicy, ProcessSystemCallDisablePolicy,
     };
 
     let mut report = String::new();
@@ -407,26 +403,52 @@ fn report_mitigations() -> io::Result<()> {
         ("extensions", ProcessExtensionPointDisablePolicy),
         ("images", ProcessImageLoadPolicy),
     ] {
-        let mut flags = 0_u32;
-        // SAFETY: Borrow the current process pseudo handle without closing it.
-        let process = unsafe { GetCurrentProcess() };
-        // SAFETY: These three documented policy structures each consist of a
-        // single DWORD Flags union. The aligned writable buffer has that exact
-        // size and remains live for the synchronous query; no ownership moves.
-        let queried = unsafe {
-            GetProcessMitigationPolicy(
-                process,
-                policy,
-                std::ptr::from_mut(&mut flags).cast(),
-                size_of_val(&flags),
-            )
-        };
-        if queried == 0 {
-            return Err(io::Error::last_os_error());
-        }
+        let flags = mitigation_flags(policy)?;
         writeln!(report, "{name}={flags}").map_err(io::Error::other)?;
     }
     fs::write("mitigations.txt", report)
+}
+
+fn report_inspection_mitigations() -> io::Result<()> {
+    use windows_sys::Win32::System::Threading::{
+        ProcessChildProcessPolicy, ProcessHeapTerminatePolicy,
+    };
+    report_mitigations()?;
+    let heap = mitigation_flags(ProcessHeapTerminatePolicy)?;
+    let children = mitigation_flags(ProcessChildProcessPolicy)?;
+    fs::write(
+        "inspection.txt",
+        format!("heap={heap}\nchildren={children}\n"),
+    )
+}
+
+#[allow(
+    unsafe_code,
+    reason = "Query mitigation flags for this disposable probe's borrowed pseudo handle."
+)]
+fn mitigation_flags(
+    policy: windows_sys::Win32::System::Threading::PROCESS_MITIGATION_POLICY,
+) -> io::Result<u32> {
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessMitigationPolicy};
+    let mut flags = 0_u32;
+    // SAFETY: Borrow the current process pseudo handle without closing it.
+    let process = unsafe { GetCurrentProcess() };
+    // SAFETY: The queried policy structures consist of a single DWORD Flags
+    // union. The aligned writable buffer has that exact size and remains live
+    // for the synchronous query; no ownership moves.
+    let queried = unsafe {
+        GetProcessMitigationPolicy(
+            process,
+            policy,
+            std::ptr::from_mut(&mut flags).cast(),
+            size_of_val(&flags),
+        )
+    };
+    if queried == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(flags)
+    }
 }
 
 fn argument(args: &[OsString], index: usize) -> io::Result<&str> {

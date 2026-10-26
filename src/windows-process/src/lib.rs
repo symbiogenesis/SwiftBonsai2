@@ -206,6 +206,32 @@ impl OwnedProcess {
         native::NativeProcess::start(spec, command).map(Self)
     }
 
+    /// Starts a bounded, model-free `--version` or `--help` inspection.
+    ///
+    /// The caller verifies and retains the inspected executable and dependencies.
+    /// Exactly one fixed inspection argument and a one-process limit are required.
+    /// Memory, Job ownership, child-process denial, evidence and inherited-environment
+    /// validation match worker launches. Heap termination, extension-point denial
+    /// and image-load restrictions remain enabled. Win32k calls remain available
+    /// so legacy runtime inspection can initialize imported Windows shell DLLs.
+    /// This is an explicit inspection policy, never a fallback for model workers.
+    ///
+    /// # Errors
+    /// Rejects arguments other than a single `--version` or `--help`, process
+    /// limits other than one, and every invalid worker launch input or native failure.
+    pub fn start_inspection(spec: &ProcessSpec) -> io::Result<Self> {
+        validate_process(spec)?;
+        if spec.active_process_limit != 1
+            || !matches!(spec.arguments.as_slice(), [argument] if argument == "--version" || argument == "--help")
+        {
+            return Err(invalid(
+                "inspection requires one --version or --help argument and a single-process limit",
+            ));
+        }
+        let command = command_line(&spec.executable, &spec.arguments)?;
+        native::NativeProcess::start_inspection(spec, command).map(Self)
+    }
+
     /// Returns the root Windows process identifier.
     #[must_use]
     pub const fn id(&self) -> u32 {

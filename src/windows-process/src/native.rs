@@ -75,6 +75,24 @@ struct LaunchSpec<'a> {
     stdout: &'a Path,
     stderr: &'a Path,
     limits: Option<(usize, u32)>,
+    mitigation_profile: MitigationProfile,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum MitigationProfile {
+    Tool,
+    Headless,
+    Inspection,
+}
+
+impl MitigationProfile {
+    const fn flags(self) -> Option<u64> {
+        match self {
+            Self::Tool => None,
+            Self::Headless => Some(HEADLESS_MITIGATIONS),
+            Self::Inspection => Some(HEADLESS_MITIGATIONS & !(1 << 28)),
+        }
+    }
 }
 
 pub(super) struct ParentProcess(OwnedHandle);
@@ -213,6 +231,23 @@ impl NativeProcess {
                 stdout: &spec.stdout,
                 stderr: &spec.stderr,
                 limits: Some((spec.memory_limit_bytes, spec.active_process_limit)),
+                mitigation_profile: MitigationProfile::Headless,
+            },
+            command,
+            None,
+            None,
+        )
+    }
+
+    pub(super) fn start_inspection(spec: &ProcessSpec, command: Vec<u16>) -> io::Result<Self> {
+        Self::launch(
+            &LaunchSpec {
+                executable: &spec.executable,
+                working_directory: &spec.working_directory,
+                stdout: &spec.stdout,
+                stderr: &spec.stderr,
+                limits: Some((spec.memory_limit_bytes, spec.active_process_limit)),
+                mitigation_profile: MitigationProfile::Inspection,
             },
             command,
             None,
@@ -234,6 +269,7 @@ impl NativeProcess {
                 stdout: &spec.stdout,
                 stderr: &spec.stderr,
                 limits: Some((spec.memory_limit_bytes, spec.active_process_limit)),
+                mitigation_profile: MitigationProfile::Headless,
             },
             command,
             Some(&environment),
@@ -253,6 +289,7 @@ impl NativeProcess {
                 stdout: &spec.stdout,
                 stderr: &spec.stderr,
                 limits: None,
+                mitigation_profile: MitigationProfile::Tool,
             },
             command,
             environment,
@@ -317,7 +354,7 @@ impl NativeProcess {
                 output.as_raw_handle(),
                 error.as_raw_handle(),
             ],
-            spec.limits.is_some(),
+            spec.mitigation_profile.flags(),
             spec.limits.is_some_and(|(_, count)| count == 1),
             containment.as_ref().map(containment::Environment::raw),
         )?;
@@ -358,7 +395,7 @@ impl NativeProcess {
             &process,
             &thread,
             &job,
-            spec.limits.is_some(),
+            spec.mitigation_profile,
             spec.limits.is_some_and(|(_, count)| count == 1),
             containment.is_some(),
         ) {
@@ -620,7 +657,7 @@ fn resume_owned(
     process: &OwnedHandle,
     thread: &OwnedHandle,
     job: &OwnedHandle,
-    headless: bool,
+    mitigation_profile: MitigationProfile,
     restrict_children: bool,
     native_containment: bool,
 ) -> io::Result<()> {
@@ -647,20 +684,20 @@ fn resume_owned(
             },
         )?;
     }
-    if headless {
+    if mitigation_profile == MitigationProfile::Headless {
         require_mitigation(process, ProcessSystemCallDisablePolicy, 0x1, "Win32k")?;
-        if !native_containment {
-            // The PSEC broker can also omit these ordinary creation policies.
-            // PSEC uses its native filesystem/UI policy instead; Win32k and
-            // verified Job ownership remain mandatory before the first thread.
-            require_mitigation(
-                process,
-                ProcessExtensionPointDisablePolicy,
-                0x1,
-                "extension points",
-            )?;
-            require_mitigation(process, ProcessImageLoadPolicy, 0x3, "image loading")?;
-        }
+    }
+    if mitigation_profile != MitigationProfile::Tool && !native_containment {
+        // The PSEC broker can also omit these ordinary creation policies.
+        // PSEC uses its native filesystem/UI policy instead; Win32k and
+        // verified Job ownership remain mandatory before the first thread.
+        require_mitigation(
+            process,
+            ProcessExtensionPointDisablePolicy,
+            0x1,
+            "extension points",
+        )?;
+        require_mitigation(process, ProcessImageLoadPolicy, 0x3, "image loading")?;
     }
     // SAFETY: The retained initial thread was requested suspended. Requiring
     // the returned count to be exactly one detects ignored suspension or extra
@@ -912,7 +949,7 @@ struct CreationAttributes {
     storage: Vec<usize>,
     handles: Box<[HANDLE; 3]>,
     jobs: Box<[HANDLE; 1]>,
-    mitigations: Box<u64>,
+    mitigations: Option<Box<u64>>,
     security_environment: Option<Box<HANDLE>>,
     child_policy: Option<Box<u32>>,
     initialized: bool,
@@ -922,12 +959,12 @@ impl CreationAttributes {
     fn new(
         job: HANDLE,
         handles: [HANDLE; 3],
-        headless: bool,
+        mitigations: Option<u64>,
         restrict_children: bool,
         security_environment: Option<HANDLE>,
     ) -> io::Result<Self> {
         let count = 2
-            + u32::from(headless)
+            + u32::from(mitigations.is_some())
             + u32::from(security_environment.is_some())
             + u32::from(restrict_children);
         let mut bytes = 0;
@@ -940,7 +977,7 @@ impl CreationAttributes {
             storage: vec![0; bytes.div_ceil(size_of::<usize>())],
             handles: Box::new(handles),
             jobs: Box::new([job]),
-            mitigations: Box::new(HEADLESS_MITIGATIONS),
+            mitigations: mitigations.map(Box::new),
             security_environment: security_environment.map(Box::new),
             // PROCESS_CREATION_CHILD_PROCESS_RESTRICTED from the Windows SDK.
             child_policy: restrict_children.then(|| Box::new(0x1)),
@@ -962,11 +999,11 @@ impl CreationAttributes {
             value.jobs.as_ptr().cast(),
             size_of_val(value.jobs.as_ref()),
         )?;
-        if headless {
+        if let Some(mitigations) = value.mitigations.as_ref() {
             value.update(
                 PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
-                ptr::from_ref(value.mitigations.as_ref()).cast(),
-                size_of_val(value.mitigations.as_ref()),
+                ptr::from_ref(mitigations.as_ref()).cast(),
+                size_of_val(mitigations.as_ref()),
             )?;
         }
         if let Some(environment) = value.security_environment.as_ref() {

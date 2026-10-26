@@ -443,6 +443,51 @@ fn headless_mitigations_apply_at_creation_without_changing_tool_policy() -> io::
 }
 
 #[test]
+fn inspection_keeps_non_win32k_mitigations_and_rejects_worker_arguments() -> io::Result<()> {
+    let invalid = Lane::new("inspection-invalid")?;
+    for arguments in [
+        Vec::new(),
+        vec![OsString::from("mitigations")],
+        vec![OsString::from("--version"), OsString::from("--model")],
+    ] {
+        let mut spec = invalid.spec(arguments);
+        spec.active_process_limit = 1;
+        let error = OwnedProcess::start_inspection(&spec)
+            .err()
+            .ok_or_else(|| io::Error::other("worker arguments accepted for inspection"))?;
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(!spec.stdout.exists());
+        assert!(!spec.stderr.exists());
+    }
+    let invalid_count = invalid.spec(vec![OsString::from("--version")]);
+    assert!(OwnedProcess::start_inspection(&invalid_count).is_err());
+    assert!(!invalid_count.stdout.exists());
+    assert!(!invalid_count.stderr.exists());
+
+    for argument in ["--version", "--help"] {
+        let lane = Lane::new("inspection-mitigations")?;
+        let mut spec = lane.spec(vec![OsString::from(argument)]);
+        spec.active_process_limit = 1;
+        let process = OwnedProcess::start_inspection(&spec)?;
+        assert_eq!(process.wait_for_exit(TIMEOUT)?, Some(0));
+        let observed = fs::read_to_string(lane.path.join("mitigations.txt"))?;
+        for (name, expected) in [("win32k", 0), ("extensions", 1), ("images", 3)] {
+            assert!(
+                observed
+                    .lines()
+                    .any(|line| line == format!("{name}={expected}")),
+                "{observed}"
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(lane.path.join("inspection.txt"))?,
+            "heap=1\nchildren=1\n"
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn committed_memory_limit_denies_allocations() -> io::Result<()> {
     let lane = Lane::new("memory-limit")?;
     let mut spec = lane.spec(vec![OsString::from("commit")]);
