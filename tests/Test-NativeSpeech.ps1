@@ -49,7 +49,7 @@ Export-ModuleMember -Function Install-NativeSpeechModels
         Assert ($result.Quantization -ceq 'Q4_K_M' -and $result.Model -ceq 'QwenTts' -and $result.Verified) 'Model provisioning did not reload the changed parameter contract.'
     } finally {
         Get-Module | Where-Object Path -EQ $fixtureModulePath | Remove-Module -Force
-        Import-Module (Join-Path $repo 'scripts/Bonsai.NativeSpeech.psm1') -Force
+        $module = Import-Module (Join-Path $repo 'scripts/Bonsai.NativeSpeech.psm1') -Force -PassThru
     }
 }
 
