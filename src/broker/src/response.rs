@@ -8,9 +8,9 @@
 use crate::{AdmittedChat, Object, singleton};
 use http::{Response, StatusCode};
 use serde::de::IgnoredAny;
-use std::time::Duration;
+use std::{future::poll_fn, pin::Pin, task::Poll, time::Duration};
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
     time::{Instant, timeout_at},
 };
 
@@ -21,6 +21,7 @@ pub const RESPONSE_BUFFER_BYTES: usize = 8 * 1024;
 /// Maximum elapsed time for writing and flushing one group of response bytes.
 pub const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const CHUNK_PREFIX_BYTES: usize = 2 * size_of::<usize>() + 2;
+const MAX_SSE_READS_PER_GROUP: usize = 32;
 
 // Keep one literal for both formatted JSON heads and compile-time SSE heads.
 macro_rules! common_headers {
@@ -128,7 +129,7 @@ async fn write_sse_response<W: AsyncWrite + Unpin, R: AsyncRead + Unpin>(
         // At the cap, probe one byte to distinguish exact-limit EOF from
         // surplus without forwarding any byte beyond the limit.
         let bound = RESPONSE_BUFFER_BYTES.min(MAX_RESPONSE_BYTES - sent + 1);
-        let count = read_before(
+        let (count, status) = read_sse_group(
             body,
             &mut buffer[CHUNK_PREFIX_BYTES..CHUNK_PREFIX_BYTES + bound],
             supervisor_deadline,
@@ -158,9 +159,57 @@ async fn write_sse_response<W: AsyncWrite + Unpin, R: AsyncRead + Unpin>(
         )
         .await?;
         sent += count;
+        match status {
+            SseReadStatus::Open => {}
+            SseReadStatus::Complete => break,
+            SseReadStatus::Failed => return Err(ResponseError::BackendIo),
+        }
     }
     // Never emit the terminator on backend error, byte limit or deadline.
     write_group(client, &[b"0\r\n\r\n"], supervisor_deadline, true).await
+}
+
+enum SseReadStatus {
+    Open,
+    Complete,
+    Failed,
+}
+
+// Wait only for the first payload. Coalesce subsequent immediately-ready reads
+// within the existing wire buffer, with a finite poll count and no delay timer.
+// If read-ahead discovers an error, deliver the valid prefix before reporting it;
+// the caller must omit successful terminal framing and close both endpoints.
+async fn read_sse_group<R: AsyncRead + Unpin>(
+    body: &mut R,
+    buffer: &mut [u8],
+    deadline: Instant,
+) -> Result<(usize, SseReadStatus), ResponseError> {
+    let mut count = read_before(body, buffer, deadline).await?;
+    if count == 0 {
+        return Ok((0, SseReadStatus::Complete));
+    }
+    for _ in 1..MAX_SSE_READS_PER_GROUP {
+        if count == buffer.len() {
+            break;
+        }
+        ensure_time(deadline)?;
+        let ready = poll_fn(|cx| {
+            let mut output = ReadBuf::new(&mut buffer[count..]);
+            Poll::Ready(match Pin::new(&mut *body).poll_read(cx, &mut output) {
+                Poll::Pending => None,
+                Poll::Ready(result) => Some(result.map(|()| output.filled().len())),
+            })
+        })
+        .await;
+        ensure_time(deadline)?;
+        match ready {
+            None => break,
+            Some(Ok(0)) => return Ok((count, SseReadStatus::Complete)),
+            Some(Ok(read)) => count += read,
+            Some(Err(_)) => return Ok((count, SseReadStatus::Failed)),
+        }
+    }
+    Ok((count, SseReadStatus::Open))
 }
 
 async fn write_json_response<W: AsyncWrite + Unpin, R: AsyncRead + Unpin>(

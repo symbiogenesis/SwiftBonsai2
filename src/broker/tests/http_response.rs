@@ -150,6 +150,7 @@ impl Drop for Backend {
 #[derive(Default)]
 struct WriteState {
     bytes: Vec<u8>,
+    write_polls: usize,
     flushes: Vec<usize>,
     shutdowns: usize,
     dropped: bool,
@@ -193,6 +194,7 @@ impl AsyncWrite for Client {
         cx: &mut Context<'_>,
         bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
+        self.state.borrow_mut().write_polls += 1;
         if self.fail_write {
             return Poll::Ready(Err(io::Error::from(io::ErrorKind::BrokenPipe)));
         }
@@ -656,6 +658,154 @@ fn fragmented_sse_is_flushed_in_bounded_chunks_without_inventing_events() {
             assert_eq!(state.shutdowns, 1);
             assert_closed(&client_state, &backend_state);
         }
+    });
+}
+
+#[test]
+fn ready_sse_fragments_share_bounded_wire_chunks_and_fewer_writes() {
+    run(async {
+        let body = vec![b'x'; 1024];
+        let backend = Backend::new(body.clone(), 1);
+        let backend_state = backend.state.clone();
+        let client = Client::new(usize::MAX);
+        let client_state = client.state.clone();
+        Box::pin(send_chat_response(
+            client,
+            response(backend, true),
+            &admitted(true),
+            deadline(),
+        ))
+        .await
+        .unwrap();
+        let state = client_state.borrow();
+        let (_, wire, _) = wire_parts(&state.bytes);
+        let (decoded, ends) = chunks(wire, true);
+        assert_eq!(decoded, body);
+        // Deterministic operation counts, not elapsed-time measurements: even
+        // one-byte ready reads need far fewer writes/flushes than payload bytes.
+        assert!(state.write_polls <= body.len() / 16);
+        assert!(state.flushes.len() <= body.len() / 16);
+        assert!(ends.len() < body.len() / 16);
+        // A group cannot drain unlimited immediately-ready one-byte fragments.
+        assert!(ends.len() >= body.len() / 32);
+        assert_eq!(backend_state.borrow().consumed, body.len());
+        assert_closed(&client_state, &backend_state);
+    });
+}
+
+#[test]
+fn sse_ready_prefix_is_flushed_before_a_later_read_becomes_pending() {
+    run(async {
+        let body = b"data: first\n\n";
+        let mut backend = Backend::new(body.to_vec(), usize::MAX);
+        backend.stall_at_end = true;
+        let backend_state = backend.state.clone();
+        let client = Client::new(usize::MAX);
+        let client_state = client.state.clone();
+        assert!(
+            timeout(
+                Duration::from_millis(1),
+                Box::pin(send_chat_response(
+                    client,
+                    response(backend, true),
+                    &admitted(true),
+                    deadline(),
+                )),
+            )
+            .await
+            .is_err()
+        );
+        let state = client_state.borrow();
+        let (_, wire, head) = wire_parts(&state.bytes);
+        let (decoded, ends) = chunks(wire, false);
+        assert_eq!(decoded, body);
+        assert_eq!(ends.len(), 1);
+        assert_eq!(state.flushes, [head, head + ends[0]]);
+        assert_eq!(state.shutdowns, 0);
+        assert_closed(&client_state, &backend_state);
+    });
+}
+
+#[test]
+fn sse_coalescing_finishes_after_the_first_framed_eof() {
+    // A decoder promises the first clean EOF is complete framing. It need not
+    // accept another read after that notification.
+    struct SingleEof {
+        backend: Backend,
+        completed: bool,
+    }
+    impl AsyncRead for SingleEof {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            output: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            if self.completed {
+                return Poll::Ready(Err(io::Error::from(io::ErrorKind::BrokenPipe)));
+            }
+            let before = output.filled().len();
+            let result = Pin::new(&mut self.backend).poll_read(cx, output);
+            if matches!(result, Poll::Ready(Ok(()))) && output.filled().len() == before {
+                self.completed = true;
+            }
+            result
+        }
+    }
+    run(async {
+        let body = b"data: first\n\n";
+        let backend = Backend::new(body.to_vec(), usize::MAX);
+        let backend_state = backend.state.clone();
+        let client = Client::new(usize::MAX);
+        let client_state = client.state.clone();
+        let response = Response::builder()
+            .header("content-type", "text/event-stream")
+            .body(SingleEof {
+                backend,
+                completed: false,
+            })
+            .unwrap();
+        Box::pin(send_chat_response(
+            client,
+            response,
+            &admitted(true),
+            deadline(),
+        ))
+        .await
+        .unwrap();
+        let state = client_state.borrow();
+        let (_, wire, _) = wire_parts(&state.bytes);
+        assert_eq!(chunks(wire, true).0, body);
+        assert_eq!(backend_state.borrow().polls, 2);
+        assert_eq!(state.shutdowns, 1);
+        assert_closed(&client_state, &backend_state);
+    });
+}
+
+#[test]
+fn sse_coalescing_does_not_extend_the_absolute_backend_deadline() {
+    run(async {
+        let mut backend = Backend::new(b"abc".to_vec(), 1);
+        backend.delay = Some(Duration::from_secs(1));
+        let backend_state = backend.state.clone();
+        let client = Client::new(usize::MAX);
+        let client_state = client.state.clone();
+        let start = Instant::now();
+        assert!(matches!(
+            Box::pin(send_chat_response(
+                client,
+                response(backend, true),
+                &admitted(true),
+                start + Duration::from_secs(2),
+            ))
+            .await,
+            Err(ResponseError::Deadline)
+        ));
+        assert_eq!(Instant::now() - start, Duration::from_secs(2));
+        let state = client_state.borrow();
+        let (_, wire, _) = wire_parts(&state.bytes);
+        assert_eq!(chunks(wire, false).0, b"a");
+        assert_eq!(state.shutdowns, 0);
+        assert_closed(&client_state, &backend_state);
     });
 }
 
