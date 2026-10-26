@@ -319,7 +319,7 @@ impl Input {
             self.clear();
             self.service = self
                 .client
-                .start_service(&self.config, generation, current)?;
+                .start_service(&self.config, generation, wav, current)?;
             self.generation = Some(generation);
         }
         if let Some(service) = &self.service {
@@ -897,7 +897,7 @@ mod tests {
         ));
         let canary = crate::canary::Client::new(&canary_config).map_err(io::Error::other)?;
         assert!(matches!(
-            canary.start_service(&canary_config, 1, &AtomicU64::new(2)),
+            canary.start_service(&canary_config, 1, &[], &AtomicU64::new(2)),
             Err(crate::canary::Failure::Cancelled)
         ));
         assert!(std::fs::read_dir(&evidence)?.next().is_none());

@@ -164,9 +164,12 @@ impl Client {
         &self,
         config: &Config,
         generation: u64,
+        wav: &[u8],
         current: &AtomicU64,
     ) -> Result<Option<Service>> {
-        Call::new(generation, current, READY_LIMIT).check()?;
+        let call = Call::new(generation, current, READY_LIMIT);
+        call.check()?;
+        let _validated = normalize_wav(wav, &call)?;
         let Some(launch) = &config.launch else {
             self.ready_for(generation, current)?;
             return Ok(None);
@@ -757,6 +760,41 @@ mod tests {
         );
         stream.write_all(head.as_bytes())?;
         stream.write_all(body)
+    }
+
+    #[test]
+    fn invalid_capture_is_rejected_before_native_port_admission_or_model_loading() -> io::Result<()>
+    {
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+        listener.set_nonblocking(true)?;
+        let port = listener.local_addr()?.port();
+        let (credentials, client) = client(port)?;
+        let evidence = credentials
+            .frontend_path()
+            .parent()
+            .ok_or_else(|| io::Error::other("Missing test credential parent."))?
+            .join("model-evidence");
+        fs::create_dir(&evidence)?;
+        let config = Config {
+            port,
+            key_file: credentials.frontend_path().to_owned(),
+            launch: Some(crate::native_speech::Launch {
+                executable: evidence.join("unavailable-native.exe"),
+                model: evidence.join("unavailable-model.gguf"),
+                codec: None,
+                evidence: evidence.clone(),
+            }),
+        };
+        assert!(
+            matches!(client.start_service(&config, 7, &[], &AtomicU64::new(7)),
+            Err(Failure::Message(message)) if message.contains("16 kHz mono 16-bit PCM WAV"))
+        );
+        assert!(
+            matches!(listener.accept(), Err(error) if error.kind() == io::ErrorKind::WouldBlock)
+        );
+        assert!(fs::read_dir(&evidence)?.next().is_none());
+        fs::remove_dir(evidence)?;
+        Ok(())
     }
 
     #[test]
