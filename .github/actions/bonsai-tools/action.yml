@@ -29,7 +29,7 @@ runs:
       with:
         path: ${{ env.BONSAI_TOOLS_PACKAGE }}
         # No fallback keys: skipping compilation requires identical build inputs.
-        key: bonsai-tools-executable-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-${{ env.BONSAI_TOOLS_SOURCE_ID }}
+        key: bonsai-tools-executable-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-${{ env.BONSAI_TOOLS_SOURCE_ID }}
     - name: Reuse the pinned native Rust compiler when compilation is needed
       if: steps.executable-cache.outputs.cache-hit != 'true'
       uses: ./.github/actions/rust-toolchain
@@ -64,11 +64,14 @@ runs:
         [void][IO.Directory]::CreateDirectory($env:BONSAI_TOOLS_PACKAGE)
         $tool = Join-Path $env:BONSAI_TOOLS_PACKAGE 'bonsai-tools.exe'
         Copy-Item -LiteralPath $builtTool -Destination $tool
+        $probe = Join-Path $env:BONSAI_TOOLS_PACKAGE 'bonsai-completion-test-probe.exe'
+        Copy-Item -LiteralPath (Join-Path $env:BONSAI_TOOLS_TARGET 'release/bonsai-completion-test-probe.exe') -Destination $probe
         @{
-          SchemaVersion = 1
+          SchemaVersion = 2
           SourceId = $env:BONSAI_TOOLS_SOURCE_ID
           Toolchain = 'nightly-2026-10-22-aarch64-pc-windows-msvc'
           Sha256 = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
+          ProbeSha256 = (Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash.ToLowerInvariant()
         } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:BONSAI_TOOLS_PACKAGE 'receipt.json')
     - name: Verify the packaged CLI and select it for script invocations
       shell: pwsh
@@ -79,13 +82,17 @@ runs:
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'
         $tool = Join-Path $env:BONSAI_TOOLS_PACKAGE 'bonsai-tools.exe'
+        $probe = Join-Path $env:BONSAI_TOOLS_PACKAGE 'bonsai-completion-test-probe.exe'
         $receipt = Get-Content -LiteralPath (Join-Path $env:BONSAI_TOOLS_PACKAGE 'receipt.json') -Raw | ConvertFrom-Json
-        if ($receipt.SchemaVersion -ne 1 -or $receipt.SourceId -cne $env:BONSAI_TOOLS_SOURCE_ID -or
+        if ($receipt.SchemaVersion -ne 2 -or $receipt.SourceId -cne $env:BONSAI_TOOLS_SOURCE_ID -or
             $receipt.Toolchain -cne 'nightly-2026-10-22-aarch64-pc-windows-msvc' -or
-            $receipt.Sha256 -cne (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Packaged CLI digest or build identity differs.' }
+            $receipt.Sha256 -cne (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant() -or
+            $receipt.ProbeSha256 -cne (Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Packaged CLI digest or build identity differs.' }
         Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1')
         Assert-Arm64PE -Path $tool
+        Assert-Arm64PE -Path $probe
         "BONSAI_TOOLS_PATH=$tool" >> $env:GITHUB_ENV
+        "BONSAI_COMPLETION_PROBE_PATH=$probe" >> $env:GITHUB_ENV
         "Exact packaged CLI cache hit: $env:EXECUTABLE_CACHE_HIT; correctness checks still run in every lane." >> $env:GITHUB_STEP_SUMMARY
     - name: Retain packaged CLI build evidence
       if: always() && steps.executable-cache.outputs.cache-hit != 'true' && env.BONSAI_TOOLS_BUILD_EVIDENCE != ''

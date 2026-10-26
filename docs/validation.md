@@ -71,7 +71,10 @@ packages are affected. It produces one CLI artifact for selected app groups;
 script-only changes reuse/build the CLI without running unrelated Rust suites.
 Script and released-runtime groups start as soon as maintenance completes;
 they do not wait for the independent broker, UI or native speech checks.
-Consumers verify its revision, digest and ARM64 identity. The standards job alone
+The artifact also carries the feature-gated native Rust completion test probe,
+so supervisor lifecycle fixtures obey the same headless process mitigations as
+production workers. Consumers verify the revision and both executables' digests
+and ARM64 identities. The standards job alone
 installs the .NET SDK; script lanes use PowerShell's bundled `Add-Type` compiler.
 
 The broker/service and UI packages use separate lanes. ASR and TTS each use their
