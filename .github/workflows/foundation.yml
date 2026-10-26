@@ -264,6 +264,7 @@ jobs:
         run: |
           & (Join-Path $env:GITHUB_WORKSPACE "tests/Test-NativeSpeech.ps1") -Case All
           & (Join-Path $env:GITHUB_WORKSPACE "tests/Test-ChatSpeech.ps1") -Case All
+          & (Join-Path $env:GITHUB_WORKSPACE "tests/Test-ToolCache.ps1") -Case All
       - name: Pinned inference binary contracts
         if: matrix.lane == 'foundation'
         shell: pwsh

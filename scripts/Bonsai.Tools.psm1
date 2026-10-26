@@ -7,10 +7,11 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 
 $script:ToolScratch = @{}
 $script:CheckedTools = @{}
+$script:ToolCacheRoot = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2/build/tools'
 
 function Get-BonsaiToolScratch {
     <# .SYNOPSIS
-    Returns the retained external incremental build lane for one tool in this session.
+    Returns the retained external diagnostics lane for one tool in this session.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -25,7 +26,11 @@ function Get-BonsaiToolScratch {
 
 function Resolve-BonsaiRustTool {
     <# .SYNOPSIS
-    Resolves a packaged tool or builds reviewed sources in an external incremental lane.
+    Resolves a packaged tool or builds reviewed sources in a reusable external cache.
+    .DESCRIPTION
+    Cargo checks freshness on every source resolution, reusing cached outputs.
+    Launchers can resolve once and pass ToolPath to subsequent operations.
+    The output digest receipt detects corruption, not same-user tampering.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -38,16 +43,44 @@ function Resolve-BonsaiRustTool {
         return [IO.Path]::GetFullPath($ToolPath)
     }
     $scratch = Get-BonsaiToolScratch -Name $Name
-    $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
     $manifest = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $ManifestRelativePath))
-    $target = Join-Path $scratch 'target'
-    $arguments = @('+nightly-2026-10-22-aarch64-pc-windows-msvc', 'build', '--locked', '--release', '--manifest-path', $manifest, '--target-dir', $target)
-    $log = Join-Path $scratch ('cargo-build-' + [guid]::NewGuid().ToString('N') + '.log')
-    $result = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -LogPath $log
-    if ($result.ExitCode -ne 0) { throw "Tool build failed; inspect $log`n$($result.StandardError)" }
-    $tool = Join-Path $target ('release/' + $Name + '.exe')
-    if (-not [IO.File]::Exists($tool)) { throw "Tool build produced no executable; inspect $log" }
-    return $tool
+    $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+    foreach ($inputName in @('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml')) {
+        if (-not [IO.File]::Exists((Join-Path $repository $inputName))) { throw "Tool build input is missing: $inputName" }
+    }
+    $toolchain = [IO.File]::ReadAllText((Join-Path $repository 'rust-toolchain.toml'))
+    if ($toolchain -notmatch '(?m)^channel\s*=\s*"(nightly-\d{4}-\d{2}-\d{2})"\s*$') {
+        throw 'Tool builds require the repository-pinned Rust toolchain.'
+    }
+    $channel = $Matches[1] + '-aarch64-pc-windows-msvc'
+    $identity = $manifest.ToUpperInvariant() + "`n" + $channel
+    $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($identity))).ToLowerInvariant()
+    $target = Resolve-ExternalPath -Path (Join-Path $script:ToolCacheRoot $key)
+    [void][IO.Directory]::CreateDirectory($target)
+    $tool = Resolve-ExternalPath -Path (Join-Path $target ('release/' + $Name + '.exe'))
+    $receipt = Resolve-ExternalPath -Path (Join-Path $target ($Name + '.sha256'))
+    $lock = Resolve-ExternalPath -Path (Join-Path $target 'build.lock')
+    try { $guard = [IO.FileStream]::new($lock, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
+    catch { throw 'Another process is preparing this maintenance tool. Wait for it to finish, then retry.' }
+    try {
+        $expected = if ([IO.File]::Exists($receipt)) { [IO.File]::ReadAllText($receipt).Trim() } else { '' }
+        $actual = if ([IO.File]::Exists($tool)) { (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash } else { '' }
+        $valid = $expected -match '^[a-fA-F0-9]{64}$' -and $actual -ieq $expected
+        if (-not $valid -and [IO.File]::Exists($tool)) {
+            # This fixed output beneath the validated external cache is disposable.
+            # Removing it forces Cargo to produce the executable again.
+            Remove-Item -LiteralPath $tool -Force
+        }
+        $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
+        $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', $manifest, '--target-dir', $target)
+        $log = Join-Path $scratch ('cargo-build-' + [guid]::NewGuid().ToString('N') + '.log')
+        $result = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -LogPath $log
+        if ($result.ExitCode -ne 0) { throw "Tool build failed; inspect $log`n$($result.StandardError)" }
+        if (-not [IO.File]::Exists($tool)) { throw "Tool build produced no executable; inspect $log" }
+        $digest = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
+        [IO.File]::WriteAllText($receipt, $digest)
+        return $tool
+    } finally { $guard.Dispose() }
 }
 
 function Invoke-BonsaiTool {
