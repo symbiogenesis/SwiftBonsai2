@@ -10,13 +10,13 @@ const ANSWER: &str = "Start with the moment something changes.\n\nA quiet booksh
 struct Fixture {
     app: State,
     commands: Receiver<Command>,
-    _events: Sender<Event>,
+    _events: client::EventSender,
 }
 
 impl Fixture {
     fn new(seeded: bool) -> Self {
         let (commands, incoming) = mpsc::channel();
-        let (events, incoming_events) = mpsc::channel();
+        let (events, incoming_events) = client::event_channel();
         let mut app = State::create(commands, incoming_events, None, None);
         app.preview = false;
         app.ready = true;

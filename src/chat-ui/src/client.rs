@@ -15,7 +15,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command as ProcessCommand, Stdio},
-    sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError},
+    sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError},
     thread,
     time::{Duration, Instant},
 };
@@ -23,6 +23,9 @@ use std::{
 #[cfg(test)]
 mod cancellation_tests;
 mod effort;
+mod event_queue;
+
+pub(crate) use event_queue::{EventReceiver, EventSender, channel as event_channel};
 
 const POLL: Duration = Duration::from_millis(100);
 const IO_POLL: Duration = Duration::from_millis(50);
@@ -99,6 +102,9 @@ pub(crate) enum Event {
     },
     Stage(&'static str),
     Draft(String),
+    // Extra effort restores a previously completed draft as one lifecycle
+    // operation. Its aggregate body retains the separate MAX_BODY bound.
+    RetainedAnswer(String),
 }
 
 /// Why a successfully framed generation ended; a token cap can leave partial prose.
@@ -185,7 +191,7 @@ struct ResponseOptions {
     clippy::needless_pass_by_value,
     reason = "The background thread owns its configuration and channels until the broker is stopped"
 )]
-pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Event>) {
+pub(crate) fn run(config: Config, commands: Receiver<Command>, events: EventSender) {
     // Only committed turns live here, outside an individual owned broker's
     // lifetime. Explicit retries preserve them without replaying a failed turn.
     let mut history = Vec::new();
@@ -248,7 +254,7 @@ fn retry_guidance(message: &str) -> String {
 
 fn wait_for_retry(
     commands: &Receiver<Command>,
-    events: &Sender<Event>,
+    events: &EventSender,
     history: &mut Vec<Message>,
     notice: &Event,
 ) -> bool {
@@ -286,7 +292,7 @@ fn wait_for_retry(
 fn worker(
     config: &Config,
     commands: &Receiver<Command>,
-    events: &Sender<Event>,
+    events: &EventSender,
     history: &mut Vec<Message>,
 ) -> Result<()> {
     let stdout_path = config.evidence.join("broker.stdout.log");
@@ -535,7 +541,7 @@ fn finish_turn(
     mut pending: Vec<Message>,
     text: &str,
     outcome: Result<(Message, Completion)>,
-    events: &Sender<Event>,
+    events: &EventSender,
     commands: &Receiver<Command>,
 ) -> Result<()> {
     // Buffered parsing and local validation may finish without touching the
@@ -616,8 +622,8 @@ fn serialize_request(
     Ok(body)
 }
 
-fn notify(events: &Sender<Event>, event: Event) -> Result<()> {
-    events.send(event).map_err(|_| Failure::Shutdown)
+fn notify(events: &EventSender, event: Event) -> Result<()> {
+    events.send(event).map_err(|()| Failure::Shutdown)
 }
 
 fn check_commands(commands: &Receiver<Command>) -> Result<()> {
@@ -740,7 +746,7 @@ fn generate(
     key: &str,
     request: &[u8],
     commands: &Receiver<Command>,
-    events: &Sender<Event>,
+    events: &EventSender,
 ) -> Result<(Message, Completion)> {
     generate_until(
         port,
@@ -757,7 +763,7 @@ fn generate_until(
     key: &str,
     request: &[u8],
     commands: &Receiver<Command>,
-    events: &Sender<Event>,
+    events: &EventSender,
     until: Instant,
 ) -> Result<(Message, Completion)> {
     check_commands(commands)?;
@@ -794,7 +800,7 @@ fn exchange(
     port: u16,
     key: &str,
     request: &[u8],
-    events: &Sender<Event>,
+    events: &EventSender,
 ) -> Result<(Message, Completion)> {
     let header = format!(
         "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {key}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -807,16 +813,18 @@ fn exchange(
         .map_err(|_| {
             Failure::Message("Could not send your message to the model on this computer.")
         })?;
+    let commands = connection.commands;
+    let until = connection.until;
     let mut body = HttpBody::new(connection)?;
     let mut sse = Sse::default();
     let mut bytes = [0; READ_SIZE];
     while let Some(count) = body.next(&mut bytes)? {
         sse.push(&bytes[..count], &mut |text, reasoning| {
             if !text.is_empty() {
-                notify(events, Event::Text(text))?;
+                events.stream_until(Event::Text(text), commands, until)?;
             }
             if !reasoning.is_empty() {
-                notify(events, Event::Reasoning(reasoning))?;
+                events.stream_until(Event::Reasoning(reasoning), commands, until)?;
             }
             Ok(())
         })?;
@@ -1408,7 +1416,7 @@ mod tests {
                 .is_err()
         );
         let (commands, incoming) = std::sync::mpsc::channel();
-        let (events, notifications) = std::sync::mpsc::channel();
+        let (events, notifications) = crate::client::event_channel();
         assert!(commands.send(Command::RestoreChat(saved)).is_ok());
         assert!(commands.send(Command::Retry).is_ok());
         let mut history = Vec::new();
@@ -1771,7 +1779,7 @@ mod tests {
     #[test]
     fn memory_retry_requires_explicit_command_and_allows_shutdown() {
         let (commands, incoming) = std::sync::mpsc::channel();
-        let (events, notifications) = std::sync::mpsc::channel();
+        let (events, notifications) = crate::client::event_channel();
         let mut history = vec![Message {
             role: "user",
             content: "Previous conversation must not survive New conversation".into(),
@@ -1826,7 +1834,7 @@ mod tests {
     fn rejected_and_stopped_turns_restore_composer_without_committing_partial_history()
     -> Result<(), Failure> {
         let (_commands, commands) = std::sync::mpsc::channel();
-        let (events, incoming) = std::sync::mpsc::channel();
+        let (events, incoming) = crate::client::event_channel();
         let mut history = vec![
             Message {
                 role: "user",

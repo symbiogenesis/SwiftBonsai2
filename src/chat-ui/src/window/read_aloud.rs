@@ -99,7 +99,7 @@ mod tests {
 
     fn fixture() -> io::Result<(State, mpsc::Receiver<speech::Command>)> {
         let (commands, _incoming) = mpsc::channel();
-        let (_events, incoming_events) = mpsc::channel();
+        let (_events, incoming_events) = client::event_channel();
         let mut state = State::create(commands, incoming_events, None, None);
         let (session, speech_commands) = speech::Session::fixture()?;
         state.speech = Some(session);

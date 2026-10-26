@@ -1,12 +1,22 @@
 //! Headless presentation regressions. No model, permission, capture or playback.
 use super::*;
 
-fn state() -> (State, Receiver<Command>, Sender<Event>) {
+fn state() -> (State, Receiver<Command>, client::EventSender) {
     let (commands, incoming) = mpsc::channel();
-    let (events, incoming_events) = mpsc::channel();
+    let (events, incoming_events) = client::event_channel();
     let mut state = State::create(commands, incoming_events, None, None);
     state.preview = false;
     (state, incoming, events)
+}
+
+#[test]
+fn model_notifications_have_a_finite_per_frame_work_budget() {
+    let (mut state, _commands, events) = state();
+    for _ in 0..80 {
+        assert!(events.send(Event::Stage("Queued stage")).is_ok());
+    }
+    state.drain_events();
+    assert_eq!(state.events.try_iter().count(), 16);
 }
 
 #[test]
@@ -76,6 +86,7 @@ fn stop_freezes_queued_output_and_preserves_a_new_composer_draft() {
         Event::Reasoning("late reasoning".to_owned()),
         Event::Stage("Late stage"),
         Event::Draft("Late draft".to_owned()),
+        Event::RetainedAnswer("Late restored draft".to_owned()),
         Event::Complete(Completion::Finished),
     ] {
         assert!(events.send(event).is_ok());

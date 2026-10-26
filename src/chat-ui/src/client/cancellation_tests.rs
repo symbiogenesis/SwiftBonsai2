@@ -35,7 +35,7 @@ fn stop_cancels_stalled_headers_and_body_and_closes_the_connection() -> io::Resu
             Ok(())
         });
         let (commands, incoming) = mpsc::channel();
-        let (events, _notifications) = mpsc::channel();
+        let (events, _notifications) = event_channel();
         let (finished, result) = mpsc::channel();
         let worker = thread::spawn(move || {
             let outcome = generate(port, "inert-test-key", b"{}", &incoming, &events);
@@ -63,7 +63,7 @@ fn stop_wins_over_buffered_completion_and_connection_failure() {
         Err(Failure::Message(LOCAL_CONNECTION_CLOSED)),
     ] {
         let (commands, incoming) = mpsc::channel();
-        let (events, notifications) = mpsc::channel();
+        let (events, notifications) = event_channel();
         assert!(commands.send(Command::Stop).is_ok());
         let mut history = Vec::new();
         assert_eq!(
@@ -88,7 +88,7 @@ fn stop_wins_over_buffered_completion_and_connection_failure() {
 #[test]
 fn stopped_retry_notice_waits_for_explicit_retry_without_failure_events() {
     let (commands, incoming) = mpsc::channel();
-    let (events, notifications) = mpsc::channel();
+    let (events, notifications) = event_channel();
     assert!(commands.send(Command::Stop).is_ok());
     assert!(commands.send(Command::Retry).is_ok());
     assert!(wait_for_retry(

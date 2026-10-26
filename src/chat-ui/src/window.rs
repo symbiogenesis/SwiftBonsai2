@@ -12,10 +12,13 @@ use eframe::egui::{self, Color32, RichText};
 use std::{
     collections::VecDeque,
     io,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{self, Sender},
     thread::JoinHandle,
     time::{Duration, Instant},
 };
+
+#[cfg(test)]
+use std::sync::mpsc::Receiver;
 
 #[cfg(test)]
 mod interaction_tests;
@@ -55,7 +58,7 @@ const MAX_CONVERSATIONS: usize = 16;
 )]
 struct State {
     commands: Sender<Command>,
-    events: Receiver<Event>,
+    events: client::EventReceiver,
     worker: Option<JoinHandle<()>>,
     ready: bool,
     busy: bool,
@@ -124,7 +127,7 @@ struct State {
 impl State {
     fn create(
         commands: Sender<Command>,
-        events: Receiver<Event>,
+        events: client::EventReceiver,
         config: Option<&Config>,
         microphone: Option<microphone::Microphone>,
     ) -> Self {
@@ -398,7 +401,8 @@ impl State {
     }
 
     fn drain_events(&mut self) {
-        for _ in 0..256 {
+        // Bound per-frame work even when the worker refills the bounded queue.
+        for _ in 0..64 {
             match self.events.try_recv() {
                 Ok(event) => self.model_event(event),
                 Err(mpsc::TryRecvError::Empty) => break,
@@ -420,6 +424,7 @@ impl State {
                     | Event::Reasoning(_)
                     | Event::Stage(_)
                     | Event::Draft(_)
+                    | Event::RetainedAnswer(_)
                     | Event::Complete(_)
             )
         {
@@ -474,7 +479,7 @@ impl State {
                 self.set_status(label, false);
             }
             Event::Draft(text) => self.retained_draft = text,
-            Event::Text(text) => {
+            Event::Text(text) | Event::RetainedAnswer(text) => {
                 self.last_answer.push_str(&text);
                 self.transcript.append(&text, false);
                 self.stream_answer(&text);
@@ -1651,7 +1656,7 @@ pub(super) fn run(config: Config) -> io::Result<()> {
         Box::new(move |cc| {
             configure(&cc.egui_ctx);
             let (commands, incoming) = mpsc::channel();
-            let (events, incoming_events) = mpsc::channel();
+            let (events, incoming_events) = client::event_channel();
             let microphone = microphone::Microphone::new().ok();
             let mut state = State::create(commands, incoming_events, Some(&config), microphone);
             state.attach_recovery(recovery);
@@ -1671,7 +1676,7 @@ pub(super) fn run_preview() -> io::Result<()> {
     eframe::run_native("Swift Bonsai · Preview", native_options(), Box::new(|cc| {
         configure(&cc.egui_ctx);
         let (commands, _incoming) = mpsc::channel();
-        let (_events, incoming_events) = mpsc::channel();
+        let (_events, incoming_events) = client::event_channel();
         let mut state = State::create(commands, incoming_events, None, None);
         state.ready = true;
         "Interface preview".clone_into(&mut state.status);

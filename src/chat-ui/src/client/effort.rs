@@ -1,14 +1,11 @@
 //! Bounded opt-in planning, drafting and review above the unchanged broker API.
 
 use super::{
-    Command, Completion, DEADLINE, Event, Failure, Message, ResponseOptions, Result,
+    Command, Completion, DEADLINE, Event, EventSender, Failure, Message, ResponseOptions, Result,
     check_commands, generate_until, notify, serialize_request,
 };
 use serde::Serialize;
-use std::{
-    sync::mpsc::{Receiver, Sender},
-    time::Instant,
-};
+use std::{sync::mpsc::Receiver, time::Instant};
 
 const PLAN: &str = "Extra effort: Planning (1/3)";
 const DRAFT: &str = "Extra effort: Drafting (2/3)";
@@ -21,7 +18,7 @@ pub(super) fn run(
     pending: &[Message],
     options: ResponseOptions,
     commands: &Receiver<Command>,
-    events: &Sender<Event>,
+    events: &EventSender,
 ) -> Result<(Message, Completion)> {
     let until = Instant::now() + DEADLINE;
     run_with(
@@ -90,7 +87,7 @@ fn run_with(
     pending: &[Message],
     options: ResponseOptions,
     commands: &Receiver<Command>,
-    events: &Sender<Event>,
+    events: &EventSender,
     until: Instant,
     mut generate: impl FnMut(&[u8], Instant) -> Result<(Message, Completion)>,
 ) -> Result<(Message, Completion)> {
@@ -138,7 +135,7 @@ fn run_with(
     active(commands, until)?;
     if completion == Completion::TokenLimit {
         notify(events, Event::Stage("Draft incomplete; review skipped"))?;
-        notify(events, Event::Text(draft.content.clone()))?;
+        notify(events, Event::RetainedAnswer(draft.content.clone()))?;
         return Ok((draft, Completion::TokenLimit));
     }
     if draft.content.trim().is_empty() {
@@ -168,7 +165,7 @@ fn run_with(
             events,
             Event::Stage("Revision incomplete; complete draft retained"),
         )?;
-        notify(events, Event::Text(draft.content.clone()))?;
+        notify(events, Event::RetainedAnswer(draft.content.clone()))?;
         return Ok((draft, Completion::TokenLimit));
     }
     if revision.content.trim().is_empty() {

@@ -296,7 +296,7 @@ mod tests {
 
     fn state() -> State {
         let (commands, _incoming) = mpsc::channel();
-        let (_events, incoming) = mpsc::channel();
+        let (_events, incoming) = client::event_channel();
         State::create(commands, incoming, None, None)
     }
 

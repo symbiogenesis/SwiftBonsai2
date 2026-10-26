@@ -5,12 +5,12 @@ use egui_kittest::{Harness, kittest::Queryable as _};
 struct Fixture {
     app: State,
     commands: Receiver<Command>,
-    _events: Sender<Event>,
+    _events: client::EventSender,
 }
 
 fn harness() -> Harness<'static, Fixture> {
     let (commands, incoming) = mpsc::channel();
-    let (events, incoming_events) = mpsc::channel();
+    let (events, incoming_events) = client::event_channel();
     let mut app = State::create(commands, incoming_events, None, None);
     app.preview = false;
     app.ready = true;

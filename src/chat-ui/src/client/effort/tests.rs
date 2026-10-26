@@ -30,7 +30,7 @@ fn task() -> Vec<Message> {
 fn effort_applies_thinking_selection_to_every_stage() -> Result<()> {
     for enable_thinking in [false, true] {
         let (_commands, incoming) = mpsc::channel();
-        let (events, _outgoing) = mpsc::channel();
+        let (events, _outgoing) = crate::client::event_channel();
         let mut calls = 0;
         let _answer = run_with(
             &task(),
@@ -65,7 +65,7 @@ fn effort_applies_thinking_selection_to_every_stage() -> Result<()> {
 #[test]
 fn effort_stages_use_fresh_original_context_and_one_deadline() -> Result<()> {
     let (_commands, incoming) = mpsc::channel();
-    let (events, outgoing) = mpsc::channel();
+    let (events, outgoing) = crate::client::event_channel();
     let pending = task();
     let mut responses = VecDeque::from([
         (
@@ -160,7 +160,7 @@ fn effort_stages_use_fresh_original_context_and_one_deadline() -> Result<()> {
 fn effort_truncation_stops_later_stages_and_keeps_complete_draft() -> Result<()> {
     for truncated_stage in 0..3 {
         let (_commands, incoming) = mpsc::channel();
-        let (events, outgoing) = mpsc::channel();
+        let (events, outgoing) = crate::client::event_channel();
         let mut count = 0;
         let result = run_with(
             &task(),
@@ -202,7 +202,7 @@ fn effort_truncation_stops_later_stages_and_keeps_complete_draft() -> Result<()>
             );
             assert_eq!(completion, Completion::TokenLimit);
             assert!(
-                matches!(notifications.last(), Some(Event::Text(text)) if text == "A complete draft")
+                matches!(notifications.last(), Some(Event::RetainedAnswer(text)) if text == "A complete draft")
             );
         }
         assert_eq!(
@@ -218,7 +218,7 @@ fn effort_truncation_stops_later_stages_and_keeps_complete_draft() -> Result<()>
 #[test]
 fn effort_cancellation_deadline_and_request_bounds_prevent_later_calls() {
     let (commands, incoming) = mpsc::channel();
-    let (events, _outgoing) = mpsc::channel();
+    let (events, _outgoing) = crate::client::event_channel();
     let mut count = 0;
     let stopped = run_with(
         &task(),
@@ -280,7 +280,7 @@ fn effort_cancellation_deadline_and_request_bounds_prevent_later_calls() {
 #[test]
 fn effort_review_failure_leaves_complete_draft_visible() {
     let (_commands, incoming) = mpsc::channel();
-    let (events, outgoing) = mpsc::channel();
+    let (events, outgoing) = crate::client::event_channel();
     let mut count = 0;
     let result = run_with(
         &task(),
