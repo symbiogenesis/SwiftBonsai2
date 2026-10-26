@@ -9,12 +9,14 @@ use std::{
     io,
     panic::{AssertUnwindSafe, catch_unwind},
     ptr::NonNull,
+    sync::Once,
 };
 
 mod qwen;
 use qwen::RawAudio;
 
 const extern "C" fn discard_log(_: c_int, _: *const c_char, _: *mut c_void) {}
+static LOGGING: Once = Once::new();
 
 // A foreign exception may abort inside catch_unwind or return an opaque Err.
 // In the latter case abort without inspecting/dropping that payload or reusing
@@ -33,9 +35,12 @@ impl Context {
         reason = "The potentially throwing Qwen call is contained by abort_on_unwind."
     )]
     pub(super) fn load(model: &CStr, codec: &CStr) -> io::Result<Self> {
-        // SAFETY: The callback never dereferences, allocates, logs or panics and
-        // is valid for the process lifetime on every native worker thread.
-        unsafe { qwen::qt_log_set(discard_log, std::ptr::null_mut()) };
+        LOGGING.call_once(|| {
+            // SAFETY: The callback never dereferences, allocates, logs or panics
+            // and is valid on every worker for the process lifetime. Install it
+            // once: the upstream callback user-data slot is not atomic.
+            unsafe { qwen::qt_log_set(discard_log, std::ptr::null_mut()) };
+        });
         let mut params = qwen::InitParams::default();
         // SAFETY: This is the complete, writable ABI-v6 POD layout.
         unsafe { qwen::qt_init_default_params(&raw mut params) };
