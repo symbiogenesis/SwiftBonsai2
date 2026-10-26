@@ -16,10 +16,19 @@ acceptance contract.
 ## Swift CPU supported subset
 
 The bounded CPU contract targets the exact Swift Bonsai 2 model on Windows
-ARM64, initially the 32 GB Snapdragon X Elite. Runner's pinned `0.1.3` release
+ARM64, initially the 32 GB Snapdragon X Elite. Runner's pinned `0.1.4` release
 contains the bounded source CPU implementation. Release identity and focused
 integration do not establish full-context behavior, sustained performance,
 creative quality, adapter correctness or daily-service isolation.
+
+The pinned `0.1.4` bundle comes from reviewed main revision
+`72a55f66cf395294d95b4e3393932ff2302047dc` and successful
+[Foundation run 40405141588](https://github.com/symbiogenesis/prism-inference/actions/runs/40405141588).
+It retains sampler candidate storage between tokens without copying scratch into
+transaction clones, and reads attention values in 32-channel tiles with at most
+2 KiB accumulator payload. Frozen sampler, graph and bitwise attention fixtures
+preserve the prior arithmetic and recovery contracts. These changes establish
+neither a measured TPS gain nor lower model-level peak RAM.
 
 | Area | Contract |
 | --- | --- |
