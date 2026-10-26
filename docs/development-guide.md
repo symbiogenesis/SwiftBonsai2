@@ -180,7 +180,10 @@ C++ engines perform inference. GPU/NPU acceleration is not enabled.
 
 The three pinned Q8_0 GGUF files total approximately 4.8 GiB and live below
 `$data/speech/native/` in revision-specific directories. Exact size and SHA-256
-verification rejects altered caches and reuses valid files. Interrupted downloads
+verification rejects altered caches. Ordinary chat launch checks cached file
+sizes without reading all 4.8 GiB; each Rust speech service verifies the exact
+SHA-256 and retains the verified files before loading on first use. New downloads,
+`-SpeechModelsOnly` and standalone provisioning still verify full hashes. Interrupted downloads
 resume. Existing original snapshots and old private runtimes are preserved.
 Download without compiling or launching:
 
@@ -198,7 +201,11 @@ original reference snapshots; the app no longer consumes those snapshots.
 Native artifact planning uses `bonsai-tools` with the crates' compiled model
 locks. Select a trusted packaged tool with `BONSAI_TOOLS_PATH` or the provisioning
 script's `-ToolPath`; otherwise the shared resolver builds the maintenance CLI
-in system temp. This also applies to model-only provisioning. It never loads a
+in a reusable external cache under `%LOCALAPPDATA%/SwiftBonsai2/build/tools/`,
+separated by checkout and pinned Rust compiler. Cargo checks freshness once per
+chat launch, and provisioning, native build planning and credential creation
+share that executable. Logs and requests stay in unique system-temp lanes.
+This also applies to model-only provisioning. It never loads a
 speech model or builds the speech engines.
 
 Native builds require the pinned Rust compiler and Visual Studio 18 ARM64 C++
@@ -243,6 +250,8 @@ verification/loading. These changes do not establish a throughput improvement.
 
 `-NoTts` skips automatic TTS setup; `-NoSpeechModels` skips all automatic speech
 setup and downloads. Neither downloading nor compiling opens a microphone.
+The launcher provisions files only for automatically owned speech services;
+externally managed services do not trigger unused model downloads or builds.
 For independently managed services, pass `-CanaryKeyFile C:\Speech\canary.key`
 and/or `-TtsKeyFile C:\Speech\qwen-tts.key`. Ports default to 8766/8767 and must
 be distinct from one another and the chat ports. Key-only services are not owned

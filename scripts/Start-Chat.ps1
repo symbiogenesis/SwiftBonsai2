@@ -5,7 +5,8 @@ Builds and opens the native Rust Swift Bonsai 2 chat application.
 .DESCRIPTION
 Uses the existing Swift model and pinned CPU runtime. Downloads and verifies
 the pinned native Canary STT and Qwen VoiceDesign TTS GGUF files by
-default, reusing verified files and resuming interrupted downloads.
+default, resuming interrupted downloads. Cached speech files are size-checked at
+launch; the native speech service verifies their SHA-256 before loading them.
 Enables the pinned abliteration LoRA at scale 1.3 unless NoAbliterateLora is set.
 UseRepackedPtq1 explicitly selects the verified current-weight PTQ1 export.
 PQ2 remains the default; the alternate packing does not qualify output or speed.
@@ -127,10 +128,19 @@ if (($AsrPath -and -not $ownCanary) -or ($TtsPath -and -not $ownTts)) {
     throw 'A prebuilt speech executable requires automatic setup for that service.'
 }
 $speechModels = $null
-if (-not $NoSpeechModels) {
-    Write-Information -MessageData "Preparing pinned native Canary and Qwen VoiceDesign files ($TtsQuantization talker). Verified cached files are reused." -InformationAction Continue
-    $speechParameters = @{ DataDirectory = $DataDirectory; TtsQuantization = $TtsQuantization }
-    if ($ToolPath) { $speechParameters.ToolPath = $ToolPath }
+if ($SpeechModelsOnly -or $ownCanary -or $ownTts) {
+    # Resolve once per launch, including repeated launches from the same shell.
+    # Every maintenance operation below shares this checked executable.
+    Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1') -Force
+    if (-not $ToolPath -and $env:BONSAI_TOOLS_PATH) { $ToolPath = $env:BONSAI_TOOLS_PATH }
+    $ToolPath = Resolve-BonsaiRustTool -Name 'bonsai-tools' -ManifestRelativePath '../tools/bonsai/Cargo.toml' -ToolPath $ToolPath
+    $selection = if ($SpeechModelsOnly -or ($ownCanary -and $ownTts)) { 'All' }
+        elseif ($ownCanary) { 'Canary' } else { 'QwenTts' }
+    $verification = if ($SpeechModelsOnly) { 'Verifying cached model hashes.' }
+        else { 'Cached model hashes are checked by the speech service before use.' }
+    Write-Information -MessageData "Preparing pinned native speech files ($selection, $TtsQuantization talker). $verification" -InformationAction Continue
+    $speechParameters = @{ DataDirectory = $DataDirectory; Model = $selection; TtsQuantization = $TtsQuantization; ToolPath = $ToolPath }
+    if (-not $SpeechModelsOnly) { $speechParameters.DeferCachedVerification = $true }
     $speechModels = & (Join-Path $PSScriptRoot 'Get-NativeSpeechModels.ps1') @speechParameters
     Write-Information -MessageData ("Canary model: {0}`nQwen VoiceDesign model: {1}`nQwen audio codec: {2}" -f
         $speechModels.CanaryModelPath, $speechModels.TtsModelPath,
@@ -157,7 +167,7 @@ if (($ownCanary -and -not $AsrPath) -or ($ownTts -and -not $TtsPath)) {
         if ($ownTts -and -not $TtsPath) { 'All' } else { 'Canary' }
     } else { 'QwenTts' }
     Write-Information -MessageData 'Building the native ARM64 speech companions. Pinned compiler and engine sources are cached outside Git.' -InformationAction Continue
-    $nativeSpeech = Invoke-NativeSpeechBuild -DataDirectory $DataDirectory -WorkingDirectory $scratch -RepositoryRoot (Split-Path $PSScriptRoot -Parent) -Model $selection
+    $nativeSpeech = Invoke-NativeSpeechBuild -DataDirectory $DataDirectory -WorkingDirectory $scratch -RepositoryRoot (Split-Path $PSScriptRoot -Parent) -Model $selection -ToolPath $ToolPath
     if ($ownCanary -and -not $AsrPath) { $AsrPath = $nativeSpeech.AsrPath }
     if ($ownTts -and -not $TtsPath) { $TtsPath = $nativeSpeech.TtsPath }
 }

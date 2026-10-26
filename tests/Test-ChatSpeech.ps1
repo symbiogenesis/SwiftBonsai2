@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([string])]
-param([ValidateSet('All', 'Launcher', 'DownloadOnly', 'Rejections', 'Cache')][string]$Case = 'All')
+param([ValidateSet('All', 'Launcher', 'StartupWork', 'DownloadOnly', 'Rejections', 'Cache')][string]$Case = 'All')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -27,6 +27,18 @@ $cargo = (Join-Path $scratch 'cargo.exe').Replace("'", "''")
 $source = $source.Insert($ast.ParamBlock.Extent.EndOffset, "`nfunction Get-Command { [pscustomobject]@{ Source = '$cargo' } }`n")
 [IO.File]::WriteAllText($copy, $source)
 Copy-Item -LiteralPath (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Destination $scripts
+$toolResolver = @'
+function Resolve-BonsaiRustTool {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([string]$Name, [string]$ManifestRelativePath, [string]$ToolPath)
+    [IO.File]::AppendAllText('__RESOLVED__', "resolved`n")
+    if ($ToolPath) { return $ToolPath }
+    return '__TOOL__'
+}
+Export-ModuleMember -Function Resolve-BonsaiRustTool
+'@
+[IO.File]::WriteAllText((Join-Path $scripts 'Bonsai.Tools.psm1'), $toolResolver.Replace('__RESOLVED__', (Join-Path $data 'tool-resolved').Replace("'", "''")).Replace('__TOOL__', (Join-Path $data 'bonsai-tools.exe').Replace("'", "''")))
 $capture = @'
 function Invoke-BonsaiNativeProcess {
     [CmdletBinding()]
@@ -43,8 +55,9 @@ Export-ModuleMember -Function Invoke-BonsaiNativeProcess
 [IO.File]::WriteAllText((Join-Path $scripts 'Bonsai.Native.psm1'), $capture.Replace('__RECEIPT__', $receipt.Replace("'", "''")))
 $download = @'
 [CmdletBinding()]
-param([string]$DataDirectory, [string]$TtsQuantization = 'Q8_0')
+param([string]$DataDirectory, [string]$Model, [string]$TtsQuantization = 'Q8_0', [switch]$DeferCachedVerification, [string]$ToolPath)
 [IO.File]::WriteAllText((Join-Path $DataDirectory 'download-called'), '')
+[IO.File]::WriteAllText((Join-Path $DataDirectory 'download-plan.json'), (ConvertTo-Json @{ Model = $Model; Deferred = [bool]$DeferCachedVerification; ToolPath = $ToolPath }))
 [pscustomobject]@{ CanaryModelPath = 'canary.gguf'; TtsModelPath = 'talker.gguf'; TtsCodecPath = 'codec.gguf'; TotalBytes = 1 }
 '@
 [IO.File]::WriteAllText((Join-Path $scripts 'Get-NativeSpeechModels.ps1'), $download)
@@ -52,8 +65,9 @@ $build = @'
 function Invoke-NativeSpeechBuild {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
-    param([string]$DataDirectory, [string]$WorkingDirectory, [string]$RepositoryRoot, [string]$Model)
+    param([string]$DataDirectory, [string]$WorkingDirectory, [string]$RepositoryRoot, [string]$Model, [string]$ToolPath)
     [IO.File]::WriteAllText((Join-Path $DataDirectory 'native-build-called'), $Model)
+    [IO.File]::WriteAllText((Join-Path $DataDirectory 'build-tool'), $ToolPath)
     if ([IO.File]::Exists((Join-Path $DataDirectory 'native-build-failure'))) { throw 'Deliberate native build failure.' }
     [pscustomobject]@{ AsrPath = (Join-Path $DataDirectory 'asr.exe'); TtsPath = (Join-Path $DataDirectory 'tts.exe') }
 }
@@ -62,9 +76,10 @@ Export-ModuleMember -Function Invoke-NativeSpeechBuild
 [IO.File]::WriteAllText((Join-Path $scripts 'Bonsai.NativeSpeech.psm1'), $build)
 $keys = @'
 [CmdletBinding()]
-param([string]$ParentDirectory)
+param([string]$ParentDirectory, [string]$ToolPath)
 $key = Join-Path $ParentDirectory 'fixture.key'
 [IO.File]::WriteAllText($key, ('a' * 64))
+[IO.File]::WriteAllText((Join-Path $ParentDirectory 'key-tool'), $ToolPath)
 [pscustomobject]@{ FrontendKeyFile = $key }
 '@
 [IO.File]::WriteAllText((Join-Path $scripts 'New-DevelopmentKeys.ps1'), $keys)
@@ -73,6 +88,37 @@ $broker = Join-Path $scratch 'broker.exe'
 [IO.File]::WriteAllText($chat, '')
 [IO.File]::WriteAllText($broker, '')
 $launch = @{ DataDirectory = $data; ChatPath = $chat; BrokerPath = $broker }
+
+if ($Case -cin @('All', 'StartupWork')) {
+    $resolved = Join-Path $data 'tool-resolved'
+    $planPath = Join-Path $data 'download-plan.json'
+    & $copy @launch | Out-Null
+    $plan = Get-Content -LiteralPath $planPath -Raw | ConvertFrom-Json
+    Assert ($plan.Model -ceq 'All' -and $plan.Deferred) 'Warm launch retained eager speech hashing or omitted an owned engine.'
+    Assert (@([IO.File]::ReadAllLines($resolved)).Count -eq 1) 'Maintenance tool was resolved more than once per launch.'
+    Assert ([IO.File]::ReadAllText((Join-Path $data 'build-tool')) -ceq $plan.ToolPath) 'Speech compilation did not share the resolved maintenance tool.'
+    $record = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+    foreach ($service in @('canary', 'tts')) {
+        $keyTool = Join-Path -Path $record.WorkingDirectory -ChildPath ($service + '-credentials') -AdditionalChildPath 'key-tool'
+        Assert ([IO.File]::ReadAllText($keyTool) -ceq $plan.ToolPath) 'Credentials did not share the resolved maintenance tool.'
+    }
+    & $copy @launch -NoTts | Out-Null
+    $plan = Get-Content -LiteralPath $planPath -Raw | ConvertFrom-Json
+    Assert ($plan.Model -ceq 'Canary' -and $plan.Deferred) 'NoTts prepared unused Qwen files.'
+    Assert (@([IO.File]::ReadAllLines($resolved)).Count -eq 2) 'Repeated same-shell launch skipped its maintenance freshness check.'
+    $external = Join-Path $data 'external.key'
+    [IO.File]::WriteAllText($external, ('b' * 64))
+    & $copy @launch -CanaryKeyFile $external | Out-Null
+    $plan = Get-Content -LiteralPath $planPath -Raw | ConvertFrom-Json
+    Assert ($plan.Model -ceq 'QwenTts') 'External Canary prepared unused recognition files.'
+    [IO.File]::Delete($planPath)
+    & $copy @launch -CanaryKeyFile $external -TtsKeyFile $external | Out-Null
+    & $copy @launch -NoSpeechModels | Out-Null
+    Assert (-not [IO.File]::Exists($planPath) -and @([IO.File]::ReadAllLines($resolved)).Count -eq 3) 'Text-only or externally managed speech performed automatic model/tool setup.'
+    & $copy -DataDirectory $data -SpeechModelsOnly | Out-Null
+    $plan = Get-Content -LiteralPath $planPath -Raw | ConvertFrom-Json
+    Assert ($plan.Model -ceq 'All' -and -not $plan.Deferred) 'Explicit provisioning stopped fully verifying both engines.'
+}
 
 if ($Case -cin @('All', 'Launcher')) {
     $original = [Environment]::CurrentDirectory
