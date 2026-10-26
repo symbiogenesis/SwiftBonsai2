@@ -7,7 +7,7 @@ runs:
       shell: pwsh
       working-directory: ${{ runner.temp }}
       env:
-        TOOLS_SOURCE_ID: ${{ hashFiles('Cargo.toml', 'Cargo.lock', '**/Cargo.toml', 'tools/bonsai/**', 'src/artifacts/**', 'src/cpu-policy/**', 'src/windows-*/**', '.cargo/**', 'rust-toolchain.toml', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/**', '.github/actions/bonsai-tools/action.yml') }}
+        TOOLS_SOURCE_ID: ${{ hashFiles('Cargo.toml', 'Cargo.lock', '**/Cargo.toml', 'tools/bonsai/**', 'src/artifacts/**', 'src/cpu-policy/**', 'src/windows-*/**', 'src/speech-asr/model.lock.json', 'src/speech-tts/model.lock.json', '.cargo/**', 'rust-toolchain.toml', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/**', '.github/actions/bonsai-tools/action.yml') }}
         RUNNER_ENVIRONMENT: ${{ runner.environment }}
       run: |
         Set-StrictMode -Version Latest
@@ -43,7 +43,7 @@ runs:
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ${{ env.BONSAI_TOOLS_TARGET }}
-        key: bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/bonsai/**', 'src/cpu-policy/**', 'src/artifacts/**', 'src/windows-*/**', 'config/**/*.json', 'rust-toolchain.toml') }}-content-v1
+        key: bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/bonsai/**', 'src/cpu-policy/**', 'src/artifacts/**', 'src/windows-*/**', 'src/speech-asr/model.lock.json', 'src/speech-tts/model.lock.json', 'config/**/*.json', 'rust-toolchain.toml') }}-content-v1
         restore-keys: |
           bonsai-tools-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BONSAI_TOOLS_CACHE_HOST }}-nightly-2026-10-22-
     - name: Build the packaged CLI after build inputs change

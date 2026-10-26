@@ -6,17 +6,6 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
 
-function Assert-NativeSpeechArtifact {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([Parameter(Mandatory)][Collections.IDictionary]$Artifact, [Parameter(Mandatory)][string]$ExpectedUrl)
-    if ($Artifact.filename -cnotmatch '^[\w.+-]+$' -or
-        ($Artifact.bytes -isnot [long] -and $Artifact.bytes -isnot [int]) -or $Artifact.bytes -le 0 -or
-        $Artifact.sha256 -cnotmatch '^[a-f0-9]{64}$' -or $Artifact.url -cne $ExpectedUrl) {
-        throw 'Native speech artifacts require a pinned URL, simple filename, exact length and SHA-256.'
-    }
-}
-
 function Install-NativeSpeechModels {
     <#
     .SYNOPSIS
@@ -47,47 +36,7 @@ function Read-NativeSpeechBuildLock {
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
     param()
-    $pin = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/native-speech.lock.json') -Raw |
-        ConvertFrom-Json -AsHashtable -DateKind String -NoEnumerate
-    if ($pin.schemaVersion -ne 1 -or $pin.target -cne 'aarch64-pc-windows-msvc' -or
-        $pin.compiler.version -cnotmatch '^\d+\.\d+\.\d+$' -or
-        $pin.compiler.directory -cne "llvm-$($pin.compiler.version)-arm64" -or
-        $pin.compiler.root -cne "clang+llvm-$($pin.compiler.version)-aarch64-pc-windows-msvc" -or
-        $pin.compiler.filename -cne "$($pin.compiler.root).tar.xz") { throw 'Invalid native speech compiler lock.' }
-    $compilerUrl = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$($pin.compiler.version)/clang%2Bllvm-$($pin.compiler.version)-aarch64-pc-windows-msvc.tar.xz"
-    Assert-NativeSpeechArtifact -Artifact $pin.compiler -ExpectedUrl $compilerUrl
-    if ($pin.compiler.executables.Count -ne 2) { throw 'Native compiler executable identities are required.' }
-    foreach ($name in @('clang-cl.exe', 'llvm-rc.exe')) {
-        $file = $pin.compiler.executables[$name]
-        if (($file.bytes -isnot [long] -and $file.bytes -isnot [int]) -or $file.bytes -le 0 -or
-            $file.sha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid native compiler executable hash.' }
-    }
-    $model = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../src/speech-tts/model.lock.json') -Raw |
-        ConvertFrom-Json -AsHashtable -DateKind String -NoEnumerate
-    if ($pin.sources.Count -ne 2 -or $model.nativeRuntime.repository -cne "https://github.com/$($pin.sources.qwen.repository)" -or
-        $model.nativeRuntime.revision -cne $pin.sources.qwen.revision -or
-        $model.nativeRuntime.ggmlRepository -cne "https://github.com/$($pin.sources.ggml.repository)" -or
-        $model.nativeRuntime.ggmlRevision -cne $pin.sources.ggml.revision) { throw 'Native source and model runtime revisions disagree.' }
-    foreach ($key in @('qwen', 'ggml')) {
-        $source = $pin.sources[$key]
-        if ($source.repository -cnotmatch '^[\w.-]+/[\w.-]+$' -or $source.revision -cnotmatch '^[a-f0-9]{40}$' -or
-            $source.root -cne "$($source.repository.Split('/')[1])-$($source.revision)") { throw 'Invalid native speech source identity.' }
-        Assert-NativeSpeechArtifact -Artifact $source -ExpectedUrl "https://codeload.github.com/$($source.repository)/zip/$($source.revision)"
-    }
-    return $pin
-}
-
-function Assert-NativeSpeechArchiveName {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$ArchiveRoot)
-    if ($Name.Contains('\') -or -not $Name.StartsWith($ArchiveRoot + '/', [StringComparison]::Ordinal) -or
-        $Name -match '[:<>"|?*\x00-\x1f]' -or $Name.Contains('//')) { throw 'Native archive contains an unsafe path.' }
-    foreach ($part in $Name.TrimEnd('/').Split('/')) {
-        if ($part -match '[. ]$' -or $part -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)') {
-            throw 'Native archive contains an ambiguous Windows path.'
-        }
-    }
+    return Invoke-BonsaiTool -Command speech-build -Request @{ operation = 'plan' }
 }
 
 function Get-NativeSpeechTreeFile {
@@ -124,80 +73,15 @@ function Expand-NativeSpeechZip {
     [CmdletBinding()]
     [OutputType([string])]
     param([Parameter(Mandatory)][string]$Archive, [Parameter(Mandatory)][string]$Destination,
-          [Parameter(Mandatory)][string]$ArchiveRoot)
+          [Parameter(Mandatory)][string]$ArchiveRoot, [long]$Bytes, [string]$Sha256)
     $Destination = Resolve-ExternalPath -Path $Destination
-    # Validate existing descendants once, using .NET rather than repeating
-    # provider/Git-ancestor lookups for every archive file and directory.
     Get-NativeSpeechTreeFile -Root $Destination | Out-Null
-    $prefix = $Destination.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
-    $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
-    try {
-        $entries = [Collections.Generic.List[object]]::new()
-        $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-        [long]$expanded = 0
-        foreach ($entry in $zip.Entries) {
-            $name = $entry.FullName
-            # Entries stay within one reviewed root. Unix symlink bytes are
-            # materialized as ordinary text files; no filesystem link is made
-            # or followed (the GGML archive has one documentation link).
-            Assert-NativeSpeechArchiveName -Name $name -ArchiveRoot $ArchiveRoot
-            $relative = $name.Substring($ArchiveRoot.Length + 1)
-            if (-not $relative) { continue }
-            $mode = ($entry.ExternalAttributes -shr 16) -band 0xf000
-            $directory = $name.EndsWith('/', [StringComparison]::Ordinal)
-            if ($mode -notin @(0, 0x8000, 0x4000, 0xa000) -or ($directory -and $mode -in @(0x8000, 0xa000)) -or
-                (-not $directory -and $mode -eq 0x4000) -or -not $seen.Add($relative.TrimEnd('/'))) {
-                throw 'Native source ZIP contains a link, device, or duplicate path.'
-            }
-            $expanded += $entry.Length
-            if ($expanded -gt 1GB -or $zip.Entries.Count -gt 20000) { throw 'Native source ZIP exceeds its expansion limit.' }
-            $path = [IO.Path]::GetFullPath([IO.Path]::Combine($Destination, $relative.Replace('/', [IO.Path]::DirectorySeparatorChar)))
-            if (-not $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
-                throw 'Native source ZIP escaped its destination.'
-            }
-            $entries.Add(@{ Entry = $entry; Path = $path; Directory = $directory })
-        }
-        # Validate every entry before writing any source bytes.
-        foreach ($item in $entries) {
-            if ($item.Directory) { [void][IO.Directory]::CreateDirectory($item.Path); continue }
-            [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($item.Path))
-            $inputStream = $item.Entry.Open()
-            try {
-                if ([IO.File]::Exists($item.Path)) {
-                    $expected = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($inputStream))
-                    $existing = [IO.FileStream]::new($item.Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-                    try {
-                        if ($existing.Length -ne $item.Entry.Length -or
-                            [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($existing)) -cne $expected) {
-                            throw "Native source bytes disagree with their pinned archive: $($item.Path)"
-                        }
-                    } finally { $existing.Dispose() }
-                } else {
-                    $output = [IO.FileStream]::new($item.Path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
-                    try { $inputStream.CopyTo($output) } finally { $output.Dispose() }
-                }
-            } finally { $inputStream.Dispose() }
-            $item.Path
-        }
-    } finally { $zip.Dispose() }
-}
-
-function Assert-NativeSpeechArm64 {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([Parameter(Mandatory)][string]$Path)
-    $stream = [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
-    $reader = [IO.BinaryReader]::new($stream)
-    try {
-        if ($stream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5a4d) { throw 'Native speech executable lacks a DOS header.' }
-        $stream.Position = 0x3c
-        $offset = $reader.ReadInt32()
-        if ($offset -lt 64 -or $offset -gt $stream.Length - 6) { throw 'Native speech executable has an invalid PE offset.' }
-        $stream.Position = $offset
-        if ($reader.ReadUInt32() -ne 0x00004550 -or $reader.ReadUInt16() -ne 0xaa64) {
-            throw 'Native speech executables must be native ARM64 PE images.'
-        }
-    } finally { $reader.Dispose() }
+    if (-not $Bytes) { $Bytes = (Get-Item -LiteralPath $Archive).Length }
+    if (-not $Sha256) { $Sha256 = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant() }
+    $result = Invoke-BonsaiTool -Command speech-build -TimeoutSeconds 120 -Request @{
+        operation = 'stage-source'; archivePath = $Archive; destination = $Destination; archiveRoot = $ArchiveRoot; bytes = $Bytes; sha256 = $Sha256
+    }
+    return $result.Files
 }
 
 function Install-NativeSpeechCompiler {
@@ -219,8 +103,8 @@ function Install-NativeSpeechCompiler {
         }
         $names = Invoke-BonsaiNativeProcess -Executable $tar -ArgumentList @('-tf', $archive) -WorkingDirectory $WorkingDirectory -TimeoutSeconds 600
         if ($names.ExitCode -ne 0) { throw 'Cannot inspect LLVM archive paths.' }
-        foreach ($name in ($names.StandardOutput -split '\r?\n')) {
-            if ($name) { Assert-NativeSpeechArchiveName -Name $name -ArchiveRoot $Pin.root }
+        $null = Invoke-BonsaiTool -Command speech-build -Request @{
+            operation = 'validate-names'; archiveRoot = $Pin.root; names = @($names.StandardOutput -split '\r?\n' | Where-Object { $_ })
         }
         $stage = Resolve-ExternalPath -Path (Join-Path $directory ('extract-' + [guid]::NewGuid().ToString('N')))
         [void][IO.Directory]::CreateDirectory($stage)
@@ -232,7 +116,7 @@ function Install-NativeSpeechCompiler {
     foreach ($name in $Pin.executables.Keys) {
         $file = Resolve-ExternalPath -Path (Join-Path -Path $root -ChildPath 'bin' -AdditionalChildPath $name)
         Test-LockedArtifact -Path $file -Bytes $Pin.executables[$name].bytes -Sha256 $Pin.executables[$name].sha256
-        Assert-NativeSpeechArm64 -Path $file
+        Assert-Arm64PE -Path $file
     }
     return $root
 }
@@ -270,7 +154,7 @@ function Initialize-NativeSpeechBuild {
             $archive = Join-Path -Path $cache -ChildPath 'downloads' -AdditionalChildPath $artifact.filename
             [void](Receive-LockedArtifact -Uri $artifact.url -Path $archive -Bytes $artifact.bytes -Sha256 $artifact.sha256)
             $destination = if ($key -eq 'qwen') { $source } else { Join-Path $source 'ggml' }
-            foreach ($file in (Expand-NativeSpeechZip -Archive $archive -Destination $destination -ArchiveRoot $artifact.root)) { [void]$expected.Add($file) }
+            foreach ($file in (Expand-NativeSpeechZip -Archive $archive -Destination $destination -ArchiveRoot $artifact.root -Bytes $artifact.bytes -Sha256 $artifact.sha256)) { [void]$expected.Add($file) }
         }
         Assert-NativeSpeechSourceTree -Root $source -Expected $expected
     } finally { $guard.Dispose() }
@@ -352,7 +236,7 @@ function Invoke-NativeSpeechBuild {
         $build = Invoke-BonsaiNativeProcess -Executable 'cargo.exe' -ArgumentList $arguments -WorkingDirectory $working -Environment $environment -TimeoutSeconds 3600 -LogPath $log
         if ($build.ExitCode -ne 0) { throw "Native $kind build failed; see $log" }
         $executable = Resolve-ExternalPath -Path (Join-Path -Path $target -ChildPath 'aarch64-pc-windows-msvc/release' -AdditionalChildPath ($package + '.exe'))
-        Assert-NativeSpeechArm64 -Path $executable
+        Assert-Arm64PE -Path $executable
         if ($kind -eq 'Canary') { $result.AsrPath = $executable } else { $result.TtsPath = $executable }
     }
     return [pscustomobject]$result

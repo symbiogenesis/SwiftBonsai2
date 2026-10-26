@@ -45,6 +45,7 @@ bonsai-tools completion --request ABSOLUTE_JSON_PATH
 bonsai-tools qualification --request ABSOLUTE_JSON_PATH
 bonsai-tools speech-models --request ABSOLUTE_JSON_PATH
 bonsai-tools inference-lock --request ABSOLUTE_JSON_PATH
+bonsai-tools speech-build --request ABSOLUTE_JSON_PATH
 ```
 
 Requests are JSON objects read through a retained read-only handle, capped at
@@ -67,6 +68,13 @@ ARM64 headers, source package versions and the compiler pin, then writes a new
 candidate lock and review evidence. It does not extract or execute the release
 bundle. `Get-Inference.ps1` keeps its separate provisioning path without a
 maintenance-tool or Cargo dependency.
+
+`speech-build` validates the compiled native compiler/source pins, checks compiler
+archive names in bulk and stages source ZIPs. ZIP identity, complete path inventory,
+Windows aliases, entry types, expansion limits and existing cache bytes are checked
+in Rust. ZIP link entries become ordinary files containing their archived bytes.
+PowerShell keeps downloading, compiler TAR extraction, Visual Studio environment
+setup and process invocation.
 
 `cpu-check-plan` combines the shared `bonsai-cpu-policy` plan with a current
 available-memory observation. Its request contains `operation: "plan"`,

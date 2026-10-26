@@ -21,6 +21,7 @@ const COMMANDS: &[&str] = &[
     "qualification",
     "speech-models",
     "inference-lock",
+    "speech-build",
 ];
 
 fn read_request(path: &Path, maximum: u64) -> bonsai_tools::Result<serde_json::Value> {
@@ -86,6 +87,7 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
         Some("qualification") => bonsai_tools::qualification::run(request),
         Some("speech-models") => bonsai_tools::speech::run(request),
         Some("inference-lock") => bonsai_tools::inference_lock::run(request),
+        Some("speech-build") => bonsai_tools::speech_build::run(request),
         _ => Err("Unknown maintenance command.".into()),
     }
 }

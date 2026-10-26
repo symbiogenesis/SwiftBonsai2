@@ -77,6 +77,9 @@ if ($Case -in @('All', 'Sources')) {
         return $path
     }
     $safe = New-TestSourceZip -Names @('source/src/engine.cpp', 'source/CMakeLists.txt')
+    $changedArchive = Join-Path $scratch 'changed-archive'
+    Assert-Failure { & $module { param($a, $d) Expand-NativeSpeechZip -Archive $a -Destination $d -ArchiveRoot source -Sha256 ('0' * 64) } $safe $changedArchive } 'Source ZIP bytes were not reverified at the native staging boundary.'
+    Assert (-not (Test-Path -LiteralPath $changedArchive)) 'A changed source ZIP wrote output before rejection.'
     $destination = Join-Path $scratch 'source'
     $files = @(& $module { param($a, $d) Expand-NativeSpeechZip -Archive $a -Destination $d -ArchiveRoot source } $safe $destination)
     Assert ($files.Count -eq 2 -and (Get-Content -LiteralPath $files[0] -Raw) -ceq 'fixture') 'Verified ZIP extraction lost source bytes.'
@@ -87,7 +90,9 @@ if ($Case -in @('All', 'Sources')) {
     foreach ($names in @(
         @('source/../outside.cpp'), @('source/sub/../../outside.cpp'), @('/absolute.cpp'),
         @('source/file:stream.cpp'), @('source/CON.cpp'), @('source/file. '),
-        @('source/src/engine.cpp', 'source/SRC/engine.cpp')
+        @('source/src/engine.cpp', 'source/SRC/engine.cpp'), @('source/a', 'source/a/b'),
+        @('source/source.cpp', 'source/ſource.cpp'),
+        @('source/a/b', 'source/A'), @('source/.git/config'), @('source//file')
     )) {
         $archive = New-TestSourceZip -Names $names
         $invalid = Join-Path $scratch ('rejected-' + $index++)
