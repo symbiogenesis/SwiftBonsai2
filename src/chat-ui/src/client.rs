@@ -20,6 +20,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod effort;
+
 const POLL: Duration = Duration::from_millis(100);
 const IO_POLL: Duration = Duration::from_millis(250);
 const DEADLINE: Duration = Duration::from_secs(600);
@@ -45,7 +47,11 @@ pub(crate) struct Config {
 
 /// Commands sent from the native UI to its single background worker.
 pub(crate) enum Command {
-    Send(String),
+    Send {
+        text: String,
+        max_completion_tokens: u32,
+        extra_effort: bool,
+    },
     NewChat,
     Stop,
     Retry,
@@ -61,6 +67,9 @@ pub(crate) enum Event {
     Complete(Completion),
     Failed(String),
     Retryable(String),
+    Rejected { message: String, text: String },
+    Stage(&'static str),
+    Draft(String),
 }
 
 /// Why a successfully framed generation ended; a token cap can leave partial prose.
@@ -75,6 +84,7 @@ enum Failure {
     Shutdown,
     Stopped,
     Memory,
+    Rejected(&'static str),
     Message(&'static str),
 }
 
@@ -112,6 +122,9 @@ struct ChatRequest<'a> {
     reason = "The background thread owns its configuration and channels until the broker is stopped"
 )]
 pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Event>) {
+    // Only committed turns live here, outside an individual owned broker's
+    // lifetime. Explicit retries preserve them without replaying a failed turn.
+    let mut history = Vec::new();
     for attempt in 0..u32::MAX {
         let attempt_config = Config {
             evidence: config.evidence.join(format!("attempt-{attempt}")),
@@ -126,7 +139,7 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Ev
         if notify(&events, Event::Starting).is_err() {
             return;
         }
-        match worker(&attempt_config, &commands, &events) {
+        match worker(&attempt_config, &commands, &events, &mut history) {
             Ok(()) | Err(Failure::Shutdown) => return,
             Err(Failure::Memory) => {
                 if notify(&events, Event::Retryable("Not enough free memory. Swift needs 16 GiB available. Free some RAM, then select Retry model.".to_owned())).is_err()
@@ -137,12 +150,18 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Ev
             }
             Err(failure) => {
                 let message = match failure {
-                    Failure::Stopped => "Generation stopped. Restart the demo to begin a fresh model session.",
+                    Failure::Stopped => "Generation stopped. Select Retry model to restart safely; completed conversation turns are retained. The interrupted turn has not been added to model history.",
                     Failure::Message(message) => message,
+                    Failure::Rejected(message) => message,
                     Failure::Shutdown | Failure::Memory => return,
                 };
-                let _notification = events.send(Event::Failed(message.to_owned()));
-                return;
+                // worker has returned and its Broker guard has stopped/waited
+                // for the owned process before Retry can be offered.
+                if notify(&events, Event::Retryable(format!("{message}\nSelect Retry model to start a fresh model session. Completed turns remain in memory. If the request was too long, reduce the output budget or start a new conversation after retrying."))).is_err()
+                    || !wait_for_retry(&commands)
+                {
+                    return;
+                }
             }
         }
     }
@@ -152,15 +171,21 @@ fn wait_for_retry(commands: &Receiver<Command>) -> bool {
     loop {
         match commands.recv_timeout(POLL) {
             Ok(Command::Retry) => return true,
-            Ok(Command::Shutdown | Command::Stop) | Err(RecvTimeoutError::Disconnected) => {
+            Ok(Command::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
                 return false;
             }
-            Ok(Command::Send(_) | Command::NewChat) | Err(RecvTimeoutError::Timeout) => {}
+            Ok(Command::Send { .. } | Command::NewChat | Command::Stop)
+            | Err(RecvTimeoutError::Timeout) => {}
         }
     }
 }
 
-fn worker(config: &Config, commands: &Receiver<Command>, events: &Sender<Event>) -> Result<()> {
+fn worker(
+    config: &Config,
+    commands: &Receiver<Command>,
+    events: &Sender<Event>,
+    history: &mut Vec<Message>,
+) -> Result<()> {
     let stdout_path = config.evidence.join("broker.stdout.log");
     let stderr_path = config.evidence.join("broker.stderr.log");
     let stdout = new_log(&stdout_path)?;
@@ -199,7 +224,6 @@ fn worker(config: &Config, commands: &Receiver<Command>, events: &Sender<Event>)
     })?);
     let key = wait_ready(&mut broker, config, commands, &stdout_path, &stderr_path)?;
     notify(events, Event::Ready)?;
-    let mut history = Vec::new();
     loop {
         if broker
             .0
@@ -215,20 +239,36 @@ fn worker(config: &Config, commands: &Receiver<Command>, events: &Sender<Event>)
             Ok(Command::Shutdown) | Err(RecvTimeoutError::Disconnected) => return Ok(()),
             Ok(Command::Stop) => return Err(Failure::Stopped),
             Ok(Command::NewChat) => history.clear(),
-            Ok(Command::Send(text)) => {
+            Ok(Command::Send {
+                text,
+                max_completion_tokens,
+                extra_effort,
+            }) => {
                 if text.trim().is_empty() {
                     continue;
                 }
-                history.push(Message {
+                let mut pending = history.clone();
+                pending.push(Message {
                     role: "user",
-                    content: text,
+                    content: text.clone(),
                     reasoning_content: None,
                 });
-                let request = serialize_request(&history)?;
-                let (answer, completion) =
-                    generate(config.frontend_port, &key, &request, commands, events)?;
-                history.push(answer);
-                notify(events, Event::Complete(completion))?;
+                let outcome =
+                    serialize_request(&pending, max_completion_tokens).and_then(|request| {
+                        if extra_effort {
+                            effort::run(
+                                config.frontend_port,
+                                &key,
+                                &pending,
+                                max_completion_tokens,
+                                commands,
+                                events,
+                            )
+                        } else {
+                            generate(config.frontend_port, &key, &request, commands, events)
+                        }
+                    });
+                finish_turn(history, pending, &text, outcome, events)?;
             }
             Ok(Command::Retry) | Err(RecvTimeoutError::Timeout) => {}
         }
@@ -370,21 +410,67 @@ fn evidence_directory(output: &[u8]) -> Result<Option<PathBuf>> {
     Ok(None)
 }
 
-fn serialize_request(history: &[Message]) -> Result<Vec<u8>> {
+fn finish_turn(
+    history: &mut Vec<Message>,
+    mut pending: Vec<Message>,
+    text: &str,
+    outcome: Result<(Message, Completion)>,
+    events: &Sender<Event>,
+) -> Result<()> {
+    match outcome {
+        Ok((answer, completion)) => {
+            pending.push(answer);
+            *history = pending;
+            notify(events, Event::Complete(completion))
+        }
+        Err(Failure::Shutdown) => Err(Failure::Shutdown),
+        Err(failure) => {
+            let message = match failure {
+                Failure::Rejected(message) => message,
+                Failure::Stopped => {
+                    "The response was stopped. Your message is restored for review; it has not been added to model history."
+                }
+                Failure::Message(_) | Failure::Memory => {
+                    "The response did not complete. Your message is restored for review; partial output has not been added to model history."
+                }
+                Failure::Shutdown => return Err(Failure::Shutdown),
+            };
+            notify(
+                events,
+                Event::Rejected {
+                    message: message.to_owned(),
+                    text: text.to_owned(),
+                },
+            )?;
+            if matches!(failure, Failure::Rejected(_)) {
+                Ok(())
+            } else {
+                Err(failure)
+            }
+        }
+    }
+}
+
+fn serialize_request(history: &[Message], max_completion_tokens: u32) -> Result<Vec<u8>> {
+    if !(1..=4096).contains(&max_completion_tokens) {
+        return Err(Failure::Rejected(
+            "Choose an output budget between 1 and 4,096 tokens.",
+        ));
+    }
     if history.len() > 128 {
-        return Err(Failure::Message(
-            "This conversation reached the 128-message limit. Restart the demo for a new conversation.",
+        return Err(Failure::Rejected(
+            "This conversation reached the 128-message limit. Select New conversation before sending again.",
         ));
     }
     let body = serde_json::to_vec(&ChatRequest {
         messages: history,
-        max_completion_tokens: 4096,
+        max_completion_tokens,
         stream: true,
     })
     .map_err(|_| Failure::Message("Could not prepare the chat request."))?;
     if body.len() > MAX_REQUEST {
-        return Err(Failure::Message(
-            "This conversation exceeded the request limit. Restart the demo for a shorter conversation.",
+        return Err(Failure::Rejected(
+            "This conversation exceeded the request byte limit. Shorten your message or select New conversation.",
         ));
     }
     Ok(body)
@@ -401,7 +487,7 @@ fn check_commands(commands: &Receiver<Command>) -> Result<()> {
                 return Err(Failure::Shutdown);
             }
             Ok(Command::Stop) => return Err(Failure::Stopped),
-            Ok(Command::Send(_) | Command::NewChat | Command::Retry) => {}
+            Ok(Command::Send { .. } | Command::NewChat | Command::Retry) => {}
             Err(TryRecvError::Empty) => return Ok(()),
         }
     }
@@ -483,8 +569,35 @@ fn generate(
     commands: &Receiver<Command>,
     events: &Sender<Event>,
 ) -> Result<(Message, Completion)> {
+    generate_until(
+        port,
+        key,
+        request,
+        commands,
+        events,
+        Instant::now() + DEADLINE,
+    )
+}
+
+fn generate_until(
+    port: u16,
+    key: &str,
+    request: &[u8],
+    commands: &Receiver<Command>,
+    events: &Sender<Event>,
+    until: Instant,
+) -> Result<(Message, Completion)> {
+    check_commands(commands)?;
+    if Instant::now() >= until {
+        return Err(Failure::Message(
+            "The response exceeded its overall ten-minute deadline.",
+        ));
+    }
     let address = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
-    let stream = TcpStream::connect_timeout(&address, Duration::from_secs(1)).map_err(|_| {
+    let connect_timeout = until
+        .saturating_duration_since(Instant::now())
+        .min(Duration::from_secs(1));
+    let stream = TcpStream::connect_timeout(&address, connect_timeout).map_err(|_| {
         Failure::Message("Could not connect to the owned local broker. Restart the demo.")
     })?;
     stream
@@ -496,7 +609,7 @@ fn generate(
     let mut connection = Interruptible {
         stream,
         commands,
-        until: Instant::now() + DEADLINE,
+        until,
         interrupted: None,
     };
     let outcome = exchange(&mut connection, port, key, request, events);
@@ -974,8 +1087,8 @@ impl Sse {
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, Completion, Failure, HttpBody, Message, Sse, evidence_directory, parse_head,
-        serialize_request, startup_failure, wait_for_retry,
+        Command, Completion, Event, Failure, HttpBody, Message, Sse, evidence_directory,
+        finish_turn, parse_head, serialize_request, startup_failure, wait_for_retry,
     };
     use std::io::{self, Read};
 
@@ -1018,23 +1131,26 @@ mod tests {
         sse.finish()?;
         assert_eq!(text, "Rain 雨");
         assert_eq!(reasoning, "Consider 🌱");
-        let request = serialize_request(&[
-            Message {
-                role: "user",
-                content: "Begin".into(),
-                reasoning_content: None,
-            },
-            Message {
-                role: "assistant",
-                content: text,
-                reasoning_content: Some(reasoning),
-            },
-            Message {
-                role: "user",
-                content: "Continue".into(),
-                reasoning_content: None,
-            },
-        ])?;
+        let request = serialize_request(
+            &[
+                Message {
+                    role: "user",
+                    content: "Begin".into(),
+                    reasoning_content: None,
+                },
+                Message {
+                    role: "assistant",
+                    content: text,
+                    reasoning_content: Some(reasoning),
+                },
+                Message {
+                    role: "user",
+                    content: "Continue".into(),
+                    reasoning_content: None,
+                },
+            ],
+            4096,
+        )?;
         let json: serde_json::Value =
             serde_json::from_slice(&request).map_err(|_| Failure::Message("test request JSON"))?;
         assert_eq!(json["messages"][1]["reasoning_content"], "Consider 🌱");
@@ -1198,9 +1314,131 @@ mod tests {
             Failure::Message(_)
         ));
         assert!(commands.send(Command::NewChat).is_ok());
+        assert!(commands.send(Command::Stop).is_ok());
+        assert!(
+            commands
+                .send(Command::Send {
+                    text: "Never automatically replay this message".into(),
+                    max_completion_tokens: 4096,
+                    extra_effort: false,
+                })
+                .is_ok()
+        );
         assert!(commands.send(Command::Retry).is_ok());
         assert!(wait_for_retry(&incoming));
         assert!(commands.send(Command::Shutdown).is_ok());
         assert!(!wait_for_retry(&incoming));
+    }
+
+    #[test]
+    fn rejected_and_stopped_turns_restore_composer_without_committing_partial_history()
+    -> Result<(), Failure> {
+        let (events, incoming) = std::sync::mpsc::channel();
+        let mut history = vec![
+            Message {
+                role: "user",
+                content: "Earlier task".into(),
+                reasoning_content: None,
+            },
+            Message {
+                role: "assistant",
+                content: "Earlier completed answer".into(),
+                reasoning_content: Some("Retained reasoning".into()),
+            },
+        ];
+        let original = serialize_request(&history, 4096)?;
+        for failure in [
+            Failure::Rejected("Shorten the request."),
+            Failure::Stopped,
+            Failure::Message("Malformed response"),
+        ] {
+            let mut pending = history.clone();
+            pending.push(Message {
+                role: "user",
+                content: "Unfinished task 🌱".into(),
+                reasoning_content: None,
+            });
+            let result = finish_turn(
+                &mut history,
+                pending,
+                "Unfinished task 🌱",
+                Err(failure),
+                &events,
+            );
+            assert_eq!(result.is_ok(), matches!(failure, Failure::Rejected(_)));
+            assert_eq!(serialize_request(&history, 4096)?, original);
+            assert!(
+                matches!(incoming.try_recv(), Ok(Event::Rejected { text, .. }) if text == "Unfinished task 🌱")
+            );
+            assert!(incoming.try_recv().is_err());
+        }
+        // A later, explicitly submitted request is appended only after framed
+        // completion; the prior rejected/stopped attempt is never replayed.
+        let mut pending = history.clone();
+        pending.push(Message {
+            role: "user",
+            content: "Reviewed task".into(),
+            reasoning_content: None,
+        });
+        finish_turn(
+            &mut history,
+            pending,
+            "Reviewed task",
+            Ok((
+                Message {
+                    role: "assistant",
+                    content: "New complete answer".into(),
+                    reasoning_content: None,
+                },
+                Completion::Finished,
+            )),
+            &events,
+        )?;
+        assert_eq!(history.len(), 4);
+        assert_eq!(history[2].content, "Reviewed task");
+        assert_eq!(
+            history[1].reasoning_content.as_deref(),
+            Some("Retained reasoning")
+        );
+        assert!(matches!(
+            incoming.try_recv(),
+            Ok(Event::Complete(Completion::Finished))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn request_limits_are_recoverable_and_output_budget_is_bounded() -> Result<(), Failure> {
+        let history = [Message {
+            role: "user",
+            content: "Task".into(),
+            reasoning_content: None,
+        }];
+        for budget in [1, 512, 1024, 2048, 4096] {
+            let body = serialize_request(&history, budget)?;
+            let json: serde_json::Value =
+                serde_json::from_slice(&body).map_err(|_| Failure::Message("test request JSON"))?;
+            assert_eq!(json["max_completion_tokens"], budget);
+        }
+        for budget in [0, 4097, u32::MAX] {
+            assert!(matches!(
+                serialize_request(&history, budget),
+                Err(Failure::Rejected(_))
+            ));
+        }
+        assert!(matches!(
+            serialize_request(&vec![history[0].clone(); 129], 4096),
+            Err(Failure::Rejected(_))
+        ));
+        let oversized = [Message {
+            role: "user",
+            content: "x".repeat(super::MAX_REQUEST),
+            reasoning_content: None,
+        }];
+        assert!(matches!(
+            serialize_request(&oversized, 4096),
+            Err(Failure::Rejected(_))
+        ));
+        Ok(())
     }
 }
