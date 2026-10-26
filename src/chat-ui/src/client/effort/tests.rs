@@ -50,6 +50,7 @@ fn effort_stages_use_fresh_original_context_and_one_deadline() -> Result<()> {
     let (answer, completion) = run_with(
         &pending,
         2048,
+        Some(1.3),
         &incoming,
         &events,
         until,
@@ -74,6 +75,7 @@ fn effort_stages_use_fresh_original_context_and_one_deadline() -> Result<()> {
     );
     for request in &requests {
         assert_eq!(request["max_completion_tokens"], 2048);
+        assert_eq!(request["abliteration_scale"], serde_json::json!(1.3));
         assert_eq!(request["messages"].as_array().map(Vec::len), Some(3));
         assert_eq!(
             request["messages"][1]["reasoning_content"],
@@ -124,6 +126,7 @@ fn effort_truncation_stops_later_stages_and_keeps_complete_draft() -> Result<()>
         let result = run_with(
             &task(),
             4096,
+            None,
             &incoming,
             &events,
             Instant::now() + DEADLINE,
@@ -178,6 +181,7 @@ fn effort_cancellation_deadline_and_request_bounds_prevent_later_calls() {
     let stopped = run_with(
         &task(),
         1024,
+        None,
         &incoming,
         &events,
         Instant::now() + DEADLINE,
@@ -191,16 +195,25 @@ fn effort_cancellation_deadline_and_request_bounds_prevent_later_calls() {
     );
     assert!(matches!(stopped, Err(Failure::Stopped)));
     assert_eq!(count, 1);
-    let expired = run_with(&task(), 1024, &incoming, &events, Instant::now(), |_, _| {
-        count += 1;
-        Ok((message("assistant", "Should not run"), Completion::Finished))
-    });
+    let expired = run_with(
+        &task(),
+        1024,
+        None,
+        &incoming,
+        &events,
+        Instant::now(),
+        |_, _| {
+            count += 1;
+            Ok((message("assistant", "Should not run"), Completion::Finished))
+        },
+    );
     assert!(matches!(expired, Err(Failure::Message(_))));
     assert_eq!(count, 1);
     let oversized = vec![message("user", &"x".repeat(super::super::MAX_REQUEST))];
     let bounded = run_with(
         &oversized,
         1024,
+        None,
         &incoming,
         &events,
         Instant::now() + DEADLINE,
@@ -221,6 +234,7 @@ fn effort_review_failure_leaves_complete_draft_visible() {
     let result = run_with(
         &task(),
         4096,
+        None,
         &incoming,
         &events,
         Instant::now() + DEADLINE,

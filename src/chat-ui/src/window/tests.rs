@@ -59,6 +59,7 @@ fn response_controls_preserve_limits_recover_composer_and_retain_complete_draft(
     state.input = "A story about a garden".to_owned();
     state.extra_effort = true;
     state.output_budget = 1;
+    state.abliteration_scale = 1.7;
     state.submit();
     let command = commands.try_recv();
     assert!(matches!(
@@ -257,6 +258,7 @@ fn conversation_workspace_preserves_drafts_settings_and_exact_committed_turns() 
     state.input = "An unsent revision 🌱".to_owned();
     state.extra_effort = true;
     state.output_budget = 1;
+    state.abliteration_scale = 1.7;
     let original = state.active_conversation;
     let visible = state.transcript.plain_text();
     state.new_chat();
@@ -278,6 +280,7 @@ fn conversation_workspace_preserves_drafts_settings_and_exact_committed_turns() 
     assert_eq!(state.input, "An unsent revision 🌱");
     assert!(state.extra_effort);
     assert_eq!(state.output_budget, 1);
+    assert!((state.abliteration_scale - 1.7).abs() < f32::EPSILON);
     state.switch_conversation(second);
     assert!(matches!(commands.try_recv(), Ok(Command::RestoreChat(history)) if history.is_empty()));
     assert_eq!(state.input, "Second conversation draft");

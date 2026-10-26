@@ -20,6 +20,7 @@ pub(super) fn run(
     key: &str,
     pending: &[Message],
     max_completion_tokens: u32,
+    abliteration_scale: Option<f32>,
     commands: &Receiver<Command>,
     events: &Sender<Event>,
 ) -> Result<(Message, Completion)> {
@@ -27,6 +28,7 @@ pub(super) fn run(
     run_with(
         pending,
         max_completion_tokens,
+        abliteration_scale,
         commands,
         events,
         until,
@@ -45,6 +47,7 @@ fn stage_request(
     instruction: &str,
     working: Working<'_>,
     max_completion_tokens: u32,
+    abliteration_scale: Option<f32>,
 ) -> Result<Vec<u8>> {
     let mut fresh = pending.to_vec();
     let task = fresh
@@ -64,7 +67,7 @@ fn stage_request(
          Return only the requested stage's visible output.\nGenerated working material (JSON):\n",
     );
     task.content.push_str(&working);
-    serialize_request(&fresh, max_completion_tokens)
+    serialize_request(&fresh, max_completion_tokens, abliteration_scale)
 }
 
 fn active(commands: &Receiver<Command>, until: Instant) -> Result<()> {
@@ -84,6 +87,7 @@ fn active(commands: &Receiver<Command>, until: Instant) -> Result<()> {
 fn run_with(
     pending: &[Message],
     max_completion_tokens: u32,
+    abliteration_scale: Option<f32>,
     commands: &Receiver<Command>,
     events: &Sender<Event>,
     until: Instant,
@@ -100,6 +104,7 @@ fn run_with(
             draft: None,
         },
         max_completion_tokens,
+        abliteration_scale,
     )?;
     let (plan, completion) = generate(&request, until)?;
     active(commands, until)?;
@@ -128,6 +133,7 @@ fn run_with(
             draft: None,
         },
         max_completion_tokens,
+        abliteration_scale,
     )?;
     let (draft, completion) = generate(&request, until)?;
     active(commands, until)?;
@@ -155,6 +161,7 @@ fn run_with(
             draft: Some(&draft.content),
         },
         max_completion_tokens,
+        abliteration_scale,
     )?;
     let (revision, completion) = generate(&request, until)?;
     active(commands, until)?;

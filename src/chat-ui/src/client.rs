@@ -36,6 +36,16 @@ const RUNNING_MEMORY_MESSAGE: &str = "Swift stopped because its running memory r
 const LOCAL_CONNECTION_CLOSED: &str = "The connection to the model on this computer closed before a complete reply was received. The cause was not reported.";
 const CONTEXT_LIMIT_MESSAGE: &str = "This conversation and the selected output cap do not fit within the model's 8,192-token context limit. Choose a smaller output cap or start a new conversation, then send again.";
 
+pub(crate) const DEFAULT_ABLITERATION_SCALE: f32 = 1.3;
+
+pub(crate) const fn default_abliteration_scale() -> f32 {
+    DEFAULT_ABLITERATION_SCALE
+}
+
+pub(crate) fn valid_abliteration_scale(scale: f32) -> bool {
+    scale.is_finite() && (0.0..=2.0).contains(&scale)
+}
+
 /// Fixed development launch inputs; paths and keys have no debug representation.
 #[derive(Clone)]
 pub(crate) struct Config {
@@ -55,6 +65,7 @@ pub(crate) enum Command {
         text: String,
         max_completion_tokens: u32,
         extra_effort: bool,
+        abliteration_scale: f32,
     },
     NewChat,
     RestoreChat(Vec<Message>),
@@ -149,6 +160,8 @@ struct ChatRequest<'a> {
     messages: &'a [Message],
     max_completion_tokens: u32,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    abliteration_scale: Option<f32>,
 }
 
 /// Launch the owned broker, then serve one in-memory conversation until shutdown.
@@ -311,6 +324,7 @@ fn worker(
                 text,
                 max_completion_tokens,
                 extra_effort,
+                abliteration_scale,
             }) => {
                 if text.trim().is_empty() {
                     continue;
@@ -321,14 +335,16 @@ fn worker(
                     content: text.clone(),
                     reasoning_content: None,
                 });
+                let scale = config.use_abliterate_lora.then_some(abliteration_scale);
                 let outcome =
-                    serialize_request(&pending, max_completion_tokens).and_then(|request| {
+                    serialize_request(&pending, max_completion_tokens, scale).and_then(|request| {
                         if extra_effort {
                             effort::run(
                                 config.frontend_port,
                                 &key,
                                 &pending,
                                 max_completion_tokens,
+                                scale,
                                 commands,
                                 events,
                             )
@@ -531,7 +547,16 @@ fn finish_turn(
     }
 }
 
-fn serialize_request(history: &[Message], max_completion_tokens: u32) -> Result<Vec<u8>> {
+fn serialize_request(
+    history: &[Message],
+    max_completion_tokens: u32,
+    abliteration_scale: Option<f32>,
+) -> Result<Vec<u8>> {
+    if abliteration_scale.is_some_and(|scale| !valid_abliteration_scale(scale)) {
+        return Err(Failure::Rejected(
+            "Choose an abliteration scale between 0 and 2.",
+        ));
+    }
     if !(1..=4096).contains(&max_completion_tokens) {
         return Err(Failure::Rejected(
             "Choose an output budget between 1 and 4,096 tokens.",
@@ -546,6 +571,7 @@ fn serialize_request(history: &[Message], max_completion_tokens: u32) -> Result<
         messages: history,
         max_completion_tokens,
         stream: true,
+        abliteration_scale,
     })
     .map_err(|_| Failure::Message("Could not prepare the chat request."))?;
     if body.len() > MAX_REQUEST {
@@ -1229,6 +1255,36 @@ mod tests {
         Command, Completion, Event, Failure, HttpBody, Message, READ_SIZE, Sse, evidence_directory,
         finish_turn, parse_head, serialize_request, startup_failure, wait_for_retry,
     };
+
+    #[test]
+    fn abliteration_requests_preserve_scale_bounds_and_omit_disabled_adapter() -> Result<(), Failure>
+    {
+        let history = [Message {
+            role: "user",
+            content: "Write a garden scene.".to_owned(),
+            reasoning_content: None,
+        }];
+        for scale in [0.0, super::DEFAULT_ABLITERATION_SCALE, 2.0] {
+            let body = serialize_request(&history, 4096, Some(scale))?;
+            let request: serde_json::Value = serde_json::from_slice(&body)
+                .map_err(|_| Failure::Message("invalid scale request JSON"))?;
+            assert!(request["abliteration_scale"].as_f64().is_some_and(|value| {
+                (value - f64::from(scale)).abs() < f64::from(f32::EPSILON)
+            }));
+            assert!(request.get("lora").is_none());
+        }
+        let body = serialize_request(&history, 4096, None)?;
+        let request: serde_json::Value = serde_json::from_slice(&body)
+            .map_err(|_| Failure::Message("invalid disabled request JSON"))?;
+        assert!(request.get("abliteration_scale").is_none());
+        for scale in [-0.1, 2.1, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(matches!(
+                serialize_request(&history, 4096, Some(scale)),
+                Err(Failure::Rejected(_))
+            ));
+        }
+        Ok(())
+    }
     use std::io::{self, Read};
 
     struct Fragmented<'a>(&'a [u8]);
@@ -1247,7 +1303,7 @@ mod tests {
         let bytes = br#"[{"role":"user","content":"Saved question"},{"role":"assistant","content":"Saved answer","reasoning_content":"Saved reasoning"}]"#;
         let saved: Vec<Message> = serde_json::from_slice(bytes)
             .map_err(|_| Failure::Message("History roundtrip failed"))?;
-        let expected = serialize_request(&saved, 4096)?;
+        let expected = serialize_request(&saved, 4096, None)?;
         assert!(
             serde_json::from_slice::<Message>(br#"{"role":"system","content":"Unaccepted role"}"#)
                 .is_err()
@@ -1263,7 +1319,7 @@ mod tests {
             &mut history,
             "Retry explicitly."
         ));
-        assert_eq!(serialize_request(&history, 4096)?, expected);
+        assert_eq!(serialize_request(&history, 4096, None)?, expected);
         assert!(matches!(notifications.try_recv(), Ok(Event::Retryable(_))));
         assert!(notifications.try_recv().is_err());
         Ok(())
@@ -1317,6 +1373,7 @@ mod tests {
                 },
             ],
             4096,
+            None,
         )?;
         let json: serde_json::Value =
             serde_json::from_slice(&request).map_err(|_| Failure::Message("test request JSON"))?;
@@ -1636,6 +1693,7 @@ mod tests {
                     text: "Never automatically replay this message".into(),
                     max_completion_tokens: 4096,
                     extra_effort: false,
+                    abliteration_scale: super::DEFAULT_ABLITERATION_SCALE,
                 })
                 .is_ok()
         );
@@ -1679,7 +1737,7 @@ mod tests {
                 reasoning_content: Some("Retained reasoning".into()),
             },
         ];
-        let original = serialize_request(&history, 4096)?;
+        let original = serialize_request(&history, 4096, None)?;
         for failure in [
             Failure::Rejected("Shorten the request."),
             Failure::Stopped,
@@ -1699,7 +1757,7 @@ mod tests {
                 &events,
             );
             assert_eq!(result.is_ok(), matches!(failure, Failure::Rejected(_)));
-            assert_eq!(serialize_request(&history, 4096)?, original);
+            assert_eq!(serialize_request(&history, 4096, None)?, original);
             assert!(
                 matches!(incoming.try_recv(), Ok(Event::Rejected { text, retry_required, .. })
                 if text == "Unfinished task 🌱" && retry_required != matches!(failure, Failure::Rejected(_)))
@@ -1752,19 +1810,19 @@ mod tests {
             reasoning_content: None,
         }];
         for budget in [1, 512, 1024, 2048, 4096] {
-            let body = serialize_request(&history, budget)?;
+            let body = serialize_request(&history, budget, None)?;
             let json: serde_json::Value =
                 serde_json::from_slice(&body).map_err(|_| Failure::Message("test request JSON"))?;
             assert_eq!(json["max_completion_tokens"], budget);
         }
         for budget in [0, 4097, u32::MAX] {
             assert!(matches!(
-                serialize_request(&history, budget),
+                serialize_request(&history, budget, None),
                 Err(Failure::Rejected(_))
             ));
         }
         assert!(matches!(
-            serialize_request(&vec![history[0].clone(); 129], 4096),
+            serialize_request(&vec![history[0].clone(); 129], 4096, None),
             Err(Failure::Rejected(_))
         ));
         let oversized = [Message {
@@ -1773,7 +1831,7 @@ mod tests {
             reasoning_content: None,
         }];
         assert!(matches!(
-            serialize_request(&oversized, 4096),
+            serialize_request(&oversized, 4096, None),
             Err(Failure::Rejected(_))
         ));
         Ok(())

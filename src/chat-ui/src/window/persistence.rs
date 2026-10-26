@@ -36,6 +36,7 @@ struct ActiveView<'a> {
     answer_complete: bool,
     extra_effort: bool,
     output_budget: usize,
+    abliteration_scale: f32,
     status: &'a str,
     warning: bool,
 }
@@ -64,19 +65,21 @@ impl State {
     }
 
     pub(super) fn workspace_bytes(&self) -> io::Result<Vec<u8>> {
-        if !valid_parts(
-            &self.transcript,
-            &self.input,
-            self.output_budget,
-            &self.status,
-            &self.last_answer,
-            &self.retained_draft,
-            &self.committed,
-        ) || self
-            .conversations
-            .iter()
-            .filter_map(|conversation| conversation.saved.as_ref())
-            .any(|saved| !valid_snapshot(saved))
+        if !client::valid_abliteration_scale(self.abliteration_scale)
+            || !valid_parts(
+                &self.transcript,
+                &self.input,
+                self.output_budget,
+                &self.status,
+                &self.last_answer,
+                &self.retained_draft,
+                &self.committed,
+            )
+            || self
+                .conversations
+                .iter()
+                .filter_map(|conversation| conversation.saved.as_ref())
+                .any(|saved| !valid_snapshot(saved))
         {
             return Err(io::Error::other(
                 "Conversation recovery reached its saved-state limits. Delete older conversations or disable saving.",
@@ -96,6 +99,7 @@ impl State {
                 answer_complete: self.answer_complete,
                 extra_effort: self.extra_effort,
                 output_budget: self.output_budget,
+                abliteration_scale: self.abliteration_scale,
                 status: &self.status,
                 warning: self.warning,
             },
@@ -233,15 +237,16 @@ impl SavedWorkspace {
 }
 
 fn valid_snapshot(saved: &ConversationSnapshot) -> bool {
-    valid_parts(
-        &saved.transcript,
-        &saved.input,
-        saved.output_budget,
-        &saved.status,
-        &saved.last_answer,
-        &saved.retained_draft,
-        &saved.committed,
-    )
+    client::valid_abliteration_scale(saved.abliteration_scale)
+        && valid_parts(
+            &saved.transcript,
+            &saved.input,
+            saved.output_budget,
+            &saved.status,
+            &saved.last_answer,
+            &saved.retained_draft,
+            &saved.committed,
+        )
 }
 
 fn valid_parts(
@@ -285,6 +290,45 @@ mod tests {
         let (commands, _incoming) = mpsc::channel();
         let (_events, incoming) = mpsc::channel();
         State::create(commands, incoming, None, None)
+    }
+
+    #[test]
+    fn abliteration_recovery_preserves_selection_defaults_old_workspaces_and_rejects_invalid_scales()
+    -> io::Result<()> {
+        let mut original = state();
+        original.abliteration_scale = 1.7;
+        let bytes = original.workspace_bytes()?;
+        let mut restored = state();
+        restored.restore_workspace(&bytes)?;
+        assert!((restored.abliteration_scale - 1.7).abs() < f32::EPSILON);
+        let mut old: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(io::Error::other)?;
+        old["active"]
+            .as_object_mut()
+            .ok_or_else(|| io::Error::other("active object"))?
+            .remove("abliteration_scale");
+        restored.restore_workspace(&serde_json::to_vec(&old).map_err(io::Error::other)?)?;
+        assert!(
+            (restored.abliteration_scale - client::DEFAULT_ABLITERATION_SCALE).abs() < f32::EPSILON
+        );
+        for invalid in [
+            serde_json::json!(-0.1),
+            serde_json::json!(2.1),
+            serde_json::json!(null),
+            serde_json::json!("1.3"),
+        ] {
+            old["active"]["abliteration_scale"] = invalid;
+            assert!(
+                restored
+                    .restore_workspace(&serde_json::to_vec(&old).map_err(io::Error::other)?)
+                    .is_err()
+            );
+        }
+        for invalid in [f32::NAN, f32::INFINITY, -0.1, 2.1] {
+            original.abliteration_scale = invalid;
+            assert!(original.workspace_bytes().is_err());
+        }
+        Ok(())
     }
 
     #[test]

@@ -54,6 +54,54 @@ fn harness(size: [f32; 2], seeded: bool) -> Harness<'static, Fixture> {
 }
 
 #[test]
+fn abliteration_settings_keyboard_selection_reaches_next_turn_and_locks_while_busy() {
+    let mut chat = harness([1180.0, 960.0], false);
+    assert!((chat.state().app.abliteration_scale - 1.3).abs() < f32::EPSILON);
+    chat.state_mut().app.show_settings = true;
+    chat.run();
+    chat.get_by_role_and_label(egui::Role::Slider, "Abliteration scale")
+        .focus();
+    chat.run();
+    chat.key_press(egui::Key::ArrowRight);
+    chat.run();
+    let selected = chat.state().app.abliteration_scale;
+    assert!((selected - 1.4).abs() < 0.001);
+    chat.state_mut().app.show_settings = false;
+    chat.state_mut().app.input = "A story about a garden".to_owned();
+    chat.state_mut().app.submit();
+    assert!(matches!(
+        chat.state().commands.try_recv(),
+        Ok(Command::Send { abliteration_scale, .. })
+            if (abliteration_scale - selected).abs() < f32::EPSILON
+    ));
+    chat.state_mut().app.show_settings = true;
+    chat.run();
+    chat.key_press(egui::Key::ArrowRight);
+    chat.run();
+    assert!((chat.state().app.abliteration_scale - selected).abs() < f32::EPSILON);
+}
+
+#[test]
+fn abliteration_startup_opt_out_disables_settings_control() {
+    let mut chat = harness([1180.0, 960.0], false);
+    chat.state_mut().app.abliteration_enabled = false;
+    chat.state_mut().app.show_settings = true;
+    chat.run();
+    assert!(
+        chat.get_by_label("Disabled at launch. Restart without -NoAbliterateLora to enable it.")
+            .rect()
+            .is_positive()
+    );
+    let initial = chat.state().app.abliteration_scale;
+    chat.get_by_role_and_label(egui::Role::Slider, "Abliteration scale")
+        .focus();
+    chat.run();
+    chat.key_press(egui::Key::ArrowRight);
+    chat.run();
+    assert!((chat.state().app.abliteration_scale - initial).abs() < f32::EPSILON);
+}
+
+#[test]
 fn accessible_chat_controls_handle_enter_and_shift_enter() {
     let mut menu = harness([760.0, 800.0], false);
     menu.get_by_role_and_label(egui::Role::Button, "Conversation menu")

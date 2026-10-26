@@ -85,6 +85,8 @@ struct State {
     help: Option<(&'static str, &'static str)>,
     extra_effort: bool,
     output_budget: usize,
+    abliteration_scale: f32,
+    abliteration_enabled: bool,
     focus_composer: bool,
     composing: bool,
     composer_id: Option<egui::Id>,
@@ -154,6 +156,8 @@ impl State {
             help: None,
             extra_effort: false,
             output_budget: 3,
+            abliteration_scale: client::DEFAULT_ABLITERATION_SCALE,
+            abliteration_enabled: config.is_none_or(|config| config.use_abliterate_lora),
             focus_composer: false,
             composing: false,
             composer_id: None,
@@ -235,6 +239,7 @@ impl State {
                 text: text.clone(),
                 max_completion_tokens,
                 extra_effort: self.extra_effort,
+                abliteration_scale: self.abliteration_scale,
             })
             .is_err()
         {
@@ -900,6 +905,28 @@ impl State {
         });
     }
 
+    fn abliteration_controls(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Abliteration");
+        ui.add_enabled_ui(!self.busy && self.abliteration_enabled, |ui| {
+            ui.add(
+                egui::Slider::new(&mut self.abliteration_scale, 0.0..=2.0)
+                    .step_by(0.1)
+                    .fixed_decimals(1)
+                    .text("Abliteration scale"),
+            );
+        });
+        ui.label(
+            RichText::new(if self.abliteration_enabled {
+                "0 turns it off. Applies to your next response."
+            } else {
+                "Disabled at launch. Restart without -NoAbliterateLora to enable it."
+            })
+            .small()
+            .weak(),
+        );
+        ui.add_space(16.0);
+    }
+
     fn settings(&mut self, ctx: &egui::Context) {
         if !self.show_settings {
             return;
@@ -909,12 +936,14 @@ impl State {
             .open(&mut open)
             .resizable(false)
             .default_width(400.0)
+            .default_height(620.0)
             .vscroll(true)
             .max_height((ctx.content_rect().height() - 48.0).max(180.0))
             .show(ctx, |ui| {
                 let before = (
                     self.extra_effort,
                     self.output_budget,
+                    self.abliteration_scale,
                     self.voice_profile.clone(),
                 );
                 self.recovery_controls(ui);
@@ -958,6 +987,7 @@ impl State {
                         .weak(),
                 );
                 ui.add_space(16.0);
+                self.abliteration_controls(ui);
                 ui.heading("Voice");
                 let label = ui.label("Voice profile");
                 ui.add_enabled(
@@ -988,6 +1018,7 @@ impl State {
                     != (
                         self.extra_effort,
                         self.output_budget,
+                        self.abliteration_scale,
                         self.voice_profile.clone(),
                     );
             });

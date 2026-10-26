@@ -13,6 +13,8 @@ pub(super) struct ConversationSnapshot {
     pub(super) answer_complete: bool,
     pub(super) extra_effort: bool,
     pub(super) output_budget: usize,
+    #[serde(default = "client::default_abliteration_scale")]
+    pub(super) abliteration_scale: f32,
     pub(super) status: String,
     pub(super) warning: bool,
 }
@@ -48,6 +50,7 @@ impl State {
             answer_complete: self.answer_complete,
             extra_effort: self.extra_effort,
             output_budget: self.output_budget,
+            abliteration_scale: self.abliteration_scale,
             status: self.status.clone(),
             warning: self.warning,
         }
@@ -74,6 +77,7 @@ impl State {
         self.answer_complete = false;
         self.extra_effort = false;
         self.output_budget = 3;
+        self.abliteration_scale = client::DEFAULT_ABLITERATION_SCALE;
         self.place_composer_cursor(0);
         self.focus_composer = true;
     }
@@ -87,6 +91,7 @@ impl State {
         self.answer_complete = snapshot.answer_complete;
         self.extra_effort = snapshot.extra_effort;
         self.output_budget = snapshot.output_budget;
+        self.abliteration_scale = snapshot.abliteration_scale;
         self.status = snapshot.status;
         self.warning = snapshot.warning;
         self.stage = None;
