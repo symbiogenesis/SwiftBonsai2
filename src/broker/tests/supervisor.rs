@@ -327,14 +327,21 @@ fn canonical_count_and_generation_share_body_and_drop_streams() {
 #[test]
 fn rejected_count_never_connects_generation() {
     run(async {
-        for (body, rejection) in [
+        for (body, rejection, stream) in [
             (
                 br#"{"input_tokens":9000,"object":"response.input_tokens"}"#.as_slice(),
                 Rejection::ContextLimit,
+                false,
+            ),
+            (
+                br#"{"input_tokens":9000,"object":"response.input_tokens"}"#.as_slice(),
+                Rejection::ContextLimit,
+                true,
             ),
             (
                 br#"{"input_tokens":0,"object":"response.input_tokens"}"#.as_slice(),
                 Rejection::TokenCountUnavailable,
+                false,
             ),
         ] {
             let counter = BackendStream::new(response(body, false));
@@ -343,7 +350,7 @@ fn rejected_count_never_connects_generation() {
             let (client, mut peer, dropped) = clients();
             let policy = policy();
             let (result, bytes) = both(serve_chat(client, &policy, &backend, deadline()), async {
-                peer.write_all(&request(false)).await.unwrap();
+                peer.write_all(&request(stream)).await.unwrap();
                 let mut bytes = Vec::new();
                 peer.read_to_end(&mut bytes).await.unwrap();
                 bytes
@@ -354,9 +361,56 @@ fn rejected_count_never_connects_generation() {
                 Err(ServeError::Backend(BackendError::Admission(rejection)))
             );
             assert_eq!(backend.calls.get(), 1);
-            assert_eq!(bytes, [0_u8; 0]);
+            if rejection == Rejection::ContextLimit {
+                let wire = String::from_utf8(bytes).unwrap();
+                let (head, body) = wire.split_once("\r\n\r\n").unwrap();
+                assert!(head.starts_with("HTTP/1.1 413 Content Too Large\r\n"));
+                assert!(head.contains("\r\nContent-Type: application/json\r\n"));
+                assert!(head.contains(&format!("\r\nContent-Length: {}", body.len())));
+                assert!(head.contains("\r\nCache-Control: no-store\r\n"));
+                assert_eq!(body, r#"{"error":{"code":"context_length_exceeded"}}"#);
+                assert!(!wire.contains(CLIENT_KEY));
+                assert!(!wire.contains(BACKEND_KEY));
+                assert!(!wire.contains("Keep the rain"));
+            } else {
+                assert_eq!(bytes, [0_u8; 0]);
+            }
             assert!(state.borrow().dropped && dropped.get());
         }
+    });
+}
+
+#[test]
+fn truncated_generation_does_not_append_an_admission_error() {
+    run(async {
+        let counter = BackendStream::new(response(COUNT, false));
+        let generation = BackendStream::new(
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 10\r\n\r\npartial".to_vec(),
+        );
+        let state = generation.state.clone();
+        let backend = Connector::new([counter, generation]);
+        let (client, mut peer, dropped) = clients();
+        let policy = policy();
+        let (result, bytes) = both(serve_chat(client, &policy, &backend, deadline()), async {
+            peer.write_all(&request(true)).await.unwrap();
+            let mut bytes = Vec::new();
+            peer.read_to_end(&mut bytes).await.unwrap();
+            bytes
+        })
+        .await;
+        assert_eq!(
+            result,
+            Err(ServeError::Response(
+                bonsai_broker::response::ResponseError::BackendIo
+            ))
+        );
+        assert_eq!(backend.calls.get(), 2);
+        let wire = String::from_utf8(bytes).unwrap();
+        assert!(wire.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(!wire.contains("413"));
+        assert!(!wire.contains("context_length_exceeded"));
+        assert!(!wire.ends_with("0\r\n\r\n"));
+        assert!(state.borrow().dropped && dropped.get());
     });
 }
 

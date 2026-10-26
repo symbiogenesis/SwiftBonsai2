@@ -5,10 +5,10 @@
 //! bypass prevention before this adapter is suitable for daily use.
 
 use crate::{
-    RequestPolicy,
+    Rejection, RequestPolicy,
     backend::{BackendError, BackendPolicy, count_and_admit, request_chat},
     reception::{ReceiveError, receive_chat},
-    response::{ResponseError, send_chat_response},
+    response::{ResponseError, send_chat_response, send_context_rejection},
 };
 use std::{future::poll_fn, pin::pin, task::Poll, time::Duration};
 use tokio::{
@@ -75,7 +75,8 @@ pub enum ServeError {
 /// or cancellation drops all owned streams immediately, including cancellation
 /// while connecting or waiting for backend data. Backend generation/slot release
 /// after connection closure must be qualified separately. No response is retried; writes
-/// may already be partial. No error response is invented for rejected requests.
+/// may already be partial. Exact context-limit admission rejection sends a fixed
+/// 413 JSON error before generation; other failures do not invent error responses.
 ///
 /// # Errors
 /// Returns [`ServeError`] for request rejection, backend/response failure,
@@ -107,9 +108,19 @@ where
             .connect(deadline)
             .await
             .map_err(ServeError::Backend)?;
-        let chat = count_and_admit(counter, pending, backend.policy(), deadline)
-            .await
-            .map_err(ServeError::Backend)?;
+        let chat = match count_and_admit(counter, pending, backend.policy(), deadline).await {
+            Ok(chat) => chat,
+            Err(error) => {
+                if error == BackendError::Admission(Rejection::ContextLimit) {
+                    // No generation connection or client response has started.
+                    // Never use this path for a failure after response forwarding.
+                    send_context_rejection(output, deadline)
+                        .await
+                        .map_err(ServeError::Response)?;
+                }
+                return Err(ServeError::Backend(error));
+            }
+        };
         let generation = backend
             .connect(deadline)
             .await

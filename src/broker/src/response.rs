@@ -47,6 +47,26 @@ pub enum ResponseError {
     JsonSyntax,
 }
 
+/// Send the sole fixed pre-generation admission error without private values.
+/// The caller must not have written any response bytes or begun generation.
+pub(crate) async fn send_context_rejection<W: AsyncWrite + Unpin>(
+    mut client: W,
+    supervisor_deadline: Instant,
+) -> Result<(), ResponseError> {
+    const BODY: &[u8] = br#"{"error":{"code":"context_length_exceeded"}}"#;
+    let head = format!(
+        "HTTP/1.1 413 Content Too Large\r\n{COMMON_HEADERS}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+        BODY.len()
+    );
+    write_group(
+        &mut client,
+        &[head.as_bytes(), BODY],
+        supervisor_deadline,
+        true,
+    )
+    .await
+}
+
 /// Send one HTTP/1.1 response, then drop both owned endpoints.
 ///
 /// Requires a Tokio time driver and endpoints whose Drop closes their connection.
