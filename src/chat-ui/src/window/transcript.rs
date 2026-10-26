@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 const MAX_BYTES: usize = 4 * 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(super) enum Role {
     User,
     Assistant,
@@ -21,23 +21,66 @@ struct LayoutCache {
     reasoning: Option<Arc<egui::Galley>>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct Message {
+    #[serde(skip)]
     id: u64,
     pub(super) role: Role,
     pub(super) body: String,
     reasoning: String,
+    #[serde(skip)]
     pending: bool,
+    #[serde(skip)]
     show_reasoning: bool,
+    #[serde(skip)]
     cache: Option<LayoutCache>,
 }
 
-#[derive(Default)]
+#[derive(Default, serde::Serialize)]
 pub(super) struct Transcript {
     pub(super) messages: Vec<Message>,
+    #[serde(skip)]
     next_id: u64,
 }
 
+impl<'de> serde::Deserialize<'de> for Transcript {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct StoredTranscript {
+            messages: Vec<Message>,
+        }
+        let stored = StoredTranscript::deserialize(deserializer)?;
+        let mut transcript = Self::default();
+        for mut message in stored.messages {
+            transcript.next_id = transcript.next_id.wrapping_add(1);
+            message.id = transcript.next_id;
+            transcript.messages.push(message);
+        }
+        if !transcript.valid_saved() {
+            return Err(serde::de::Error::custom(
+                "Saved transcript exceeds its text or message limit.",
+            ));
+        }
+        Ok(transcript)
+    }
+}
+
 impl Transcript {
+    pub(super) fn valid_saved(&self) -> bool {
+        self.messages.len() <= 512
+            && self.messages.iter().fold(0_usize, |total, message| {
+                total
+                    .saturating_add(message.body.len())
+                    .saturating_add(message.reasoning.len())
+            }) <= MAX_BYTES
+    }
+
+
     pub(super) fn clear(&mut self) {
         self.messages.clear();
     }
@@ -269,5 +312,38 @@ impl Message {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+
+    #[test]
+    fn restored_transcript_retains_text_without_layout_or_pending_generation()
+    -> Result<(), serde_json::Error> {
+        let mut transcript = Transcript::default();
+        transcript.push(Role::User, "界 🌱".to_owned());
+        transcript.push(Role::Assistant, "Interrupted draft".to_owned());
+        transcript.append("Retained reasoning", true);
+        let bytes = serde_json::to_vec(&transcript)?;
+        let mut restored: Transcript = serde_json::from_slice(&bytes)?;
+        assert_eq!(restored.plain_text(), transcript.plain_text());
+        assert_eq!(restored.messages[1].reasoning, "Retained reasoning");
+        assert!(!restored.messages[1].pending);
+        assert!(
+            restored
+                .messages
+                .iter()
+                .all(|message| message.cache.is_none())
+        );
+        assert_ne!(restored.messages[0].id, restored.messages[1].id);
+        restored.push(Role::User, "New turn".to_owned());
+        assert_ne!(restored.messages[1].id, restored.messages[2].id);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(!text.contains("cache"));
+        assert!(!text.contains("pending"));
+        assert!(!text.contains("next_id"));
+        Ok(())
     }
 }
