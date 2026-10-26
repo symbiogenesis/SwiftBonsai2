@@ -3,7 +3,7 @@ description: Download the current run's checked Windows ARM64 CLI and verify its
 runs:
   using: composite
   steps:
-    - name: Download the maintenance lane's checked CLI
+    - name: Download the maintenance job's checked CLI
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
         name: bonsai-tools-windows-arm64-${{ github.sha }}

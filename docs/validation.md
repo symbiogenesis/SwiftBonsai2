@@ -25,7 +25,7 @@ explicitly authorized by the plan are accepted.
 
 | Group | Coverage |
 | --- | --- |
-| Broker core and maintenance | Affected registered app packages and their workspace consumers |
+| Broker core, native UI, speech and maintenance | Affected registered app packages and their workspace consumers, with independent build caches |
 | Standards | Pinned PowerShell analysis, script contracts and strict embedded-C# analyzers |
 | Foundation/native scripts | Download/provisioning, invocation plans, native-process wrappers and packaged supervisor contracts |
 | Released-runtime integration | Pinned archive/install verification, profile/adapter/admission policy, released GGUF wrappers and server-help switching |
@@ -37,11 +37,22 @@ PowerShell/C# standards run only for their own inputs. Embedded configuration
 and fixtures are mapped to their owning crates in
 [the routing configuration](../.github/ci/impact.json).
 
-The maintenance lane owns Windows Job lifetime/resource-limit tests when those
+The maintenance job owns Windows Job lifetime/resource-limit tests when those
 packages are affected. It produces one CLI artifact for selected app groups;
 script-only changes reuse/build the CLI without running unrelated Rust suites.
+Script and released-runtime groups start as soon as maintenance completes;
+they do not wait for the independent broker, UI or native speech checks.
 Consumers verify its revision, digest and ARM64 identity. The standards job alone
 installs the .NET SDK; script lanes use PowerShell's bundled `Add-Type` compiler.
+
+The broker/service and UI packages use separate lanes. ASR and TTS each use their
+own speech lane and consume the checked CLI for pinned native-source preparation,
+avoiding an additional uncached CLI build. TTS prepares its four native static
+libraries through the existing Cargo build script and caches only those libraries
+and their digest receipt, keyed by the exact build inputs and runner image. Its
+Clippy, rustdoc, tests and executable build reuse these libraries through
+`BONSAI_TTS_NATIVE_BUILD_DIR`; all Rust checks still execute. A missing cache
+rebuilds the libraries, and mismatched identities or digests fail the job.
 
 Each workflow compares against its most recent successful main-push ancestor,
 including changes left unvalidated by failed or cancelled runs. A missing base,
@@ -53,6 +64,10 @@ selection on every run. `tools/ci/` owns workspace discovery, successful-ancesto
 GitHub API lookup, conservative diff selection and aggregate gate enforcement.
 It reads `.github/ci/impact.json` without running Cargo metadata or resolving
 registry dependencies.
+The planner caches its exact Linux compiler and hands its tested executable to
+the final gate as a current-run artifact, so aggregation needs no compiler install
+or second Cargo invocation. The final gate requires the independent maintenance
+and speech jobs as well as broker, standards and script groups when selected.
 
 The workspace and [package registry](../config/rust-packages.psd1) contain only
 these app packages. Upstream source/backend catalogs, baseline policy, codec

@@ -26,6 +26,10 @@ jobs:
       plan: ${{ steps.impact.outputs.plan }}
       packages: ${{ steps.impact.outputs.packages }}
       rust_lanes: ${{ steps.impact.outputs.rust_lanes }}
+      broker_checks: ${{ steps.impact.outputs.broker_checks }}
+      maintenance: ${{ steps.impact.outputs.maintenance }}
+      speech: ${{ steps.impact.outputs.speech }}
+      speech_lanes: ${{ steps.impact.outputs.speech_lanes }}
       broker_lanes: ${{ steps.impact.outputs.broker_lanes }}
       script_lanes: ${{ steps.impact.outputs.script_lanes }}
       scripts: ${{ steps.impact.outputs.scripts }}
@@ -37,11 +41,27 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Install the pinned Rust compiler for CI tooling
+      - name: Select the exact Linux CI compiler and external paths
         working-directory: ${{ runner.temp }}
         run: |
           echo "CARGO_TARGET_DIR=$RUNNER_TEMP/SwiftBonsai-CI" >> "$GITHUB_ENV"
-          rustup toolchain install nightly-2026-10-22 --profile minimal --no-self-update
+          echo "CI_TOOLCHAIN_PATH=$(rustup show home)/toolchains/nightly-2026-10-22-aarch64-unknown-linux-gnu" >> "$GITHUB_ENV"
+          echo "CI_IMAGE_ID=${ImageOS:?}-${ImageVersion:?}" >> "$GITHUB_ENV"
+      - name: Reuse the exact CI compiler
+        id: ci-compiler
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CI_TOOLCHAIN_PATH }}
+          key: ci-compiler-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_IMAGE_ID }}-nightly-2026-10-22
+      - name: Install the CI compiler on a cache miss
+        if: steps.ci-compiler.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}
+        run: rustup toolchain install nightly-2026-10-22-aarch64-unknown-linux-gnu --profile minimal --no-self-update
+      - name: Verify the exact native CI compiler
+        working-directory: ${{ runner.temp }}
+        run: |
+          rustup run nightly-2026-10-22-aarch64-unknown-linux-gnu rustc -vV
+          test "$(rustup run nightly-2026-10-22-aarch64-unknown-linux-gnu rustc --print sysroot)" = "$CI_TOOLCHAIN_PATH"
       - name: Reuse compiled CI tooling
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -57,15 +77,20 @@ jobs:
           BEFORE: ${{ github.event.before }}
         working-directory: ${{ runner.temp }}
         run: cargo +nightly-2026-10-22 run --locked --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" --package bonsai-ci -- impact --workflow foundation.yml --before "$BEFORE" --after "$GITHUB_SHA"
+      - name: Share the checked CI gate executable
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bonsai-ci-linux-arm64-${{ github.sha }}
+          path: ${{ env.CARGO_TARGET_DIR }}/debug/bonsai-ci
+          if-no-files-found: error
+          compression-level: 1
   broker:
     name: broker / ${{ matrix.lane }}
-    if: needs.changes.outputs.rust_lanes == 'true'
+    if: needs.changes.outputs.broker_checks == 'true'
     needs: changes
     runs-on: windows-11-arm
     timeout-minutes: 40
     strategy:
-      # Keep each package's feature checks isolated while compiling independent
-      # package selections concurrently. Every lane must still pass the gate.
       fail-fast: false
       matrix:
         lane: ${{ fromJSON(needs.changes.outputs.broker_lanes) }}
@@ -73,101 +98,32 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Select this lane's affected registered crates
-        id: packages
-        shell: pwsh
-        working-directory: ${{ runner.temp }}
-        env:
-          AFFECTED_PACKAGES: ${{ needs.changes.outputs.packages }}
-          BROKER_LANE: ${{ matrix.lane }}
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Rust.psm1')
-          $affected = @(ConvertFrom-Json -InputObject $env:AFFECTED_PACKAGES)
-          $registered = @(Get-BonsaiRustPackage -Group Broker)
-          foreach ($name in $affected) {
-            if ($name -cnotin $registered.Name) { throw "Affected crate is missing from the Rust registry: $name" }
-          }
-          $packages = @($registered | Where-Object {
-            $_.Name -cin $affected -and (($env:BROKER_LANE -ceq 'core') -eq ($_.Name -cin @('bonsai-broker', 'bonsai-chat', 'bonsai-speech-asr', 'bonsai-speech-tts', 'bonsai-speech-service')))
-          } | ForEach-Object { $_.Name })
-          "has-packages=$($packages.Count -gt 0)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
-          "BROKER_PACKAGES=$(ConvertTo-Json -InputObject $packages -Compress)" >> $env:GITHUB_ENV
-      - name: Reuse the pinned native Rust compiler
-        if: steps.packages.outputs.has-packages == 'true'
-        uses: ./.github/actions/rust-toolchain
+      - uses: ./.github/actions/check-rust
         with:
-          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
-      - name: Select external Cargo cache paths
-        if: steps.packages.outputs.has-packages == 'true'
-        shell: pwsh
-        working-directory: ${{ runner.temp }}
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
-          $target = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Broker'
-          foreach ($path in @($cargoHome, $target)) {
-            if (-not [IO.Path]::IsPathFullyQualified($path) -or $path -match '%[^%]+%') { throw 'Expected expanded absolute Cargo paths.' }
-          }
-          "CARGO_HOME=$cargoHome" >> $env:GITHUB_ENV
-          "CARGO_TARGET_DIR=$target" >> $env:GITHUB_ENV
-          # Runner-provided process variables are not automatically env-context
-          # values in workflow expressions; export the cache identity explicitly.
-          $hostIdentity = "$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)"
-          "BROKER_CACHE_HOST=$hostIdentity" >> $env:GITHUB_ENV
-      - name: Reuse locked Cargo downloads and build artifacts
-        if: steps.packages.outputs.has-packages == 'true'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          lane: ${{ matrix.lane }}
+          packages: ${{ matrix.lane == 'ui' && '["bonsai-chat"]' || '["bonsai-broker","bonsai-speech-service"]' }}
+          affected: ${{ needs.changes.outputs.packages }}
+  maintenance:
+    if: needs.changes.outputs.maintenance == 'true'
+    needs: changes
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Cache downloads, never credentials or the full Cargo home. The hosted
-          # runner temp path is stable within its isolated job, unlike a new GUID.
-          path: |
-            ${{ env.CARGO_HOME }}/registry/index
-            ${{ env.CARGO_HOME }}/registry/cache
-            ${{ env.CARGO_HOME }}/git/db
-            ${{ env.CARGO_TARGET_DIR }}
-          key: broker-v4-${{ matrix.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/chat-ui/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('src/broker/**/*.rs', 'src/chat-ui/**', 'src/cpu-policy/**', 'src/artifacts/**', 'src/windows-*/**', 'tools/bonsai/**', 'config/**/*.json', 'tests/fixtures/lora-qualification-v1.json', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', 'config/rust-packages.psd1') }}-content-v1
-          restore-keys: |
-            broker-v4-${{ matrix.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
-            broker-v4-${{ matrix.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-
-            broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
-      - name: Reuse pinned native speech compiler and sources
-        if: steps.packages.outputs.has-packages == 'true' && matrix.lane == 'core'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          persist-credentials: false
+      - name: Check the affected maintenance crates
+        id: checks
+        uses: ./.github/actions/check-rust
         with:
-          path: ${{ runner.temp }}/SwiftBonsai-NativeSpeech
-          key: native-speech-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-${{ hashFiles('config/native-speech.lock.json', 'src/speech-tts/model.lock.json', 'scripts/Bonsai.NativeSpeech.psm1') }}
-      - name: Broker format, analyzer and full correctness suite
-        if: steps.packages.outputs.has-packages == 'true'
-        shell: pwsh
-        working-directory: ${{ runner.temp }}
-        run: |
-          Set-StrictMode -Version Latest
-          $ErrorActionPreference = 'Stop'
-          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-BrokerChecks-' + [guid]::NewGuid().ToString('N'))
-          "BROKER_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
-          $packages = @(ConvertFrom-Json -InputObject $env:BROKER_PACKAGES)
-          if (-not $packages.Count) { throw 'The Broker lane must select registered packages.' }
-          if ($packages | Where-Object { $_ -cin @('bonsai-speech-asr', 'bonsai-speech-tts') }) {
-            Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.NativeSpeech.psm1')
-            $native = Initialize-NativeSpeechBuild -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-NativeSpeech') -WorkingDirectory $env:RUNNER_TEMP
-            foreach ($key in $native.Environment.Keys) { [Environment]::SetEnvironmentVariable($key, [string]$native.Environment[$key], 'Process') }
-          }
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Rust.ps1') -Group Broker -Package $packages -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -TimeoutSeconds 1800 -FullTests -Build | ConvertTo-Json -Depth 8
-      - name: Reuse a packaged CLI when only its script consumers changed
-        if: matrix.lane == 'maintenance' && needs.changes.outputs.tools == 'true' && steps.packages.outputs.has-packages != 'true'
+          lane: maintenance
+          packages: '["bonsai-artifacts","bonsai-cpu-policy","bonsai-windows-process","bonsai-windows-credentials","bonsai-tools","bonsai-ci"]'
+          affected: ${{ needs.changes.outputs.packages }}
+      - name: Reuse a packaged CLI when only its consumers changed
+        if: needs.changes.outputs.tools == 'true' && steps.checks.outputs.has-packages != 'true'
         uses: ./.github/actions/bonsai-tools
-      - name: Retain broker and packaged tool check evidence
-        if: always() && env.BROKER_CHECK_EVIDENCE != ''
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: broker-checks-${{ matrix.lane }}-${{ github.run_id }}
-          path: ${{ env.BROKER_CHECK_EVIDENCE }}
-          if-no-files-found: error
       - name: Stage the checked maintenance CLI and revision receipt
-        if: matrix.lane == 'maintenance' && needs.changes.outputs.tools == 'true'
+        if: needs.changes.outputs.tools == 'true'
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
@@ -184,12 +140,34 @@ jobs:
             Sha256 = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
           } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package 'receipt.json')
       - name: Share the checked native Windows ARM64 maintenance CLI
-        if: matrix.lane == 'maintenance' && needs.changes.outputs.tools == 'true'
+        if: needs.changes.outputs.tools == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bonsai-tools-windows-arm64-${{ github.sha }}
           path: ${{ runner.temp }}/SwiftBonsai-CheckedTools
           if-no-files-found: error
+          compression-level: 1
+  speech:
+    name: speech / ${{ matrix.lane }}
+    if: needs.changes.outputs.speech == 'true'
+    needs: [changes, maintenance]
+    runs-on: windows-11-arm
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: ${{ fromJSON(needs.changes.outputs.speech_lanes) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use the current run's checked maintenance CLI for source provisioning
+        uses: ./.github/actions/use-bonsai-tools
+      - uses: ./.github/actions/check-rust
+        with:
+          lane: ${{ matrix.lane }}
+          packages: ${{ matrix.lane == 'asr' && '["bonsai-speech-asr"]' || '["bonsai-speech-tts"]' }}
+          affected: ${{ needs.changes.outputs.packages }}
   standards:
     if: needs.changes.outputs.standards == 'true'
     needs: changes
@@ -233,32 +211,29 @@ jobs:
   # Preserve the required check name; only the planner may authorize skips.
   foundation:
     if: always() && github.ref == 'refs/heads/main'
-    needs: [changes, broker, standards, foundation-tests, release-integration]
+    needs: [changes, broker, maintenance, speech, standards, foundation-tests, release-integration]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install the pinned Rust compiler for CI tooling
-        working-directory: ${{ runner.temp }}
-        run: |
-          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/SwiftBonsai-CI" >> "$GITHUB_ENV"
-          rustup toolchain install nightly-2026-10-22 --profile minimal --no-self-update
-      - name: Reuse compiled CI tooling
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Download the CI executable checked by the planner job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: ${{ env.CARGO_TARGET_DIR }}
-          key: ci-tool-v1-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/ci/**') }}
+          name: bonsai-ci-linux-arm64-${{ github.sha }}
+          path: ${{ runner.temp }}/SwiftBonsai-CI-Gate
       - name: Require every selected Foundation test group
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
         working-directory: ${{ runner.temp }}
-        run: cargo +nightly-2026-10-22 run --locked --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" --package bonsai-ci -- gate --workflow foundation
+        run: |
+          chmod +x "$RUNNER_TEMP/SwiftBonsai-CI-Gate/bonsai-ci"
+          "$RUNNER_TEMP/SwiftBonsai-CI-Gate/bonsai-ci" gate --workflow foundation
   foundation-tests:
     name: scripts / ${{ matrix.lane }}
     if: needs.changes.outputs.scripts == 'true'
-    needs: [changes, broker]
+    needs: [changes, maintenance]
     runs-on: windows-11-arm
     timeout-minutes: 15
     strategy:
@@ -269,7 +244,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Use the maintenance CLI checked by the broker job
+      - name: Use the checked maintenance CLI
         uses: ./.github/actions/use-bonsai-tools
       - name: Full foundation suite
         if: matrix.lane == 'foundation'
@@ -361,14 +336,14 @@ jobs:
           $plan | ConvertTo-Json
   release-integration:
     if: needs.changes.outputs.release == 'true'
-    needs: [changes, broker]
+    needs: [changes, maintenance]
     runs-on: windows-11-arm
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Use the maintenance CLI checked by the broker job
+      - name: Use the checked maintenance CLI
         uses: ./.github/actions/use-bonsai-tools
       - name: Swift assessment policy and pinned ARM64 runtime
         shell: pwsh

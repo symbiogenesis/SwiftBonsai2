@@ -395,7 +395,7 @@ fn package_path_override_does_not_claim_unrelated_root_files() -> TestResult {
 }
 
 #[test]
-fn native_ui_uses_core_lane_without_maintenance() -> TestResult {
+fn runner_ci_native_ui_uses_dedicated_lane_without_maintenance() -> TestResult {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let config: Value = serde_json::from_slice(&fs::read(root.join(".github/ci/impact.json"))?)?;
     let plan = impact::select(
@@ -406,9 +406,80 @@ fn native_ui_uses_core_lane_without_maintenance() -> TestResult {
         "changed inputs",
     )?;
     assert_eq!(plan.packages, ["bonsai-chat"]);
-    assert!(plan.groups["broker"]);
+    assert!(plan.groups["ui"]);
+    assert!(!plan.groups["broker"]);
     assert!(!plan.groups["maintenance"]);
+    assert!(!plan.groups["speech"]);
     assert!(!plan.groups["tools"]);
+    Ok(())
+}
+
+#[test]
+fn runner_ci_speech_selects_checked_tools_without_unrelated_lanes() -> TestResult {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config: Value = serde_json::from_slice(&fs::read(root.join(".github/ci/impact.json"))?)?;
+    for (package, lane) in [("asr", "speech_asr"), ("tts", "speech_tts")] {
+        let plan = impact::select(
+            &root,
+            &[format!("src/speech-{package}/src/main.rs")],
+            false,
+            &config,
+            "changed inputs",
+        )?;
+        assert_eq!(plan.packages, [format!("bonsai-speech-{package}")]);
+        for group in [lane, "speech", "maintenance", "tools"] {
+            assert!(plan.groups[group], "{package}: {group}");
+        }
+        for group in ["broker_checks", "ui", "scripts", "release"] {
+            assert!(!plan.groups[group], "{package}: {group}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn runner_ci_shared_changes_assign_every_package_to_exactly_one_lane() -> TestResult {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config: Value = serde_json::from_slice(&fs::read(root.join(".github/ci/impact.json"))?)?;
+    let plan = impact::select(&root, &["Cargo.lock".into()], false, &config, "shared")?;
+    assert!(plan.full);
+    for package in &plan.packages {
+        let mut owners = Vec::new();
+        for lane in ["broker", "ui", "speech_asr", "speech_tts", "maintenance"] {
+            let group = &config["groups"][lane];
+            let includes = group["packages"]
+                .as_array()
+                .ok_or("Missing lane packages")?;
+            let excluded = group["exclude_packages"]
+                .as_array()
+                .is_some_and(|names| names.iter().any(|name| name == package));
+            if !excluded && includes.iter().any(|name| name == "*" || name == package) {
+                owners.push(lane);
+            }
+        }
+        assert_eq!(owners.len(), 1, "{package}: {owners:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn runner_ci_gate_requires_independent_maintenance_and_speech_results() -> TestResult {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config: Value = serde_json::from_slice(&fs::read(root.join(".github/ci/impact.json"))?)?;
+    let plan = impact::select(&root, &[], true, &config, "full")?;
+    let jobs = &config["workflows"]["foundation"];
+    let mut needs = json!({"changes": {"result": "success", "outputs": {
+        "plan": serde_json::to_string(&plan)?
+    }}});
+    for job in jobs.as_object().ok_or("Missing Foundation job map")?.keys() {
+        needs[job] = json!({"result": "success"});
+    }
+    assert_eq!(gate::failures(&needs, jobs), Vec::<String>::new());
+    for job in ["maintenance", "speech"] {
+        needs[job]["result"] = json!("skipped");
+        assert!(!gate::failures(&needs, jobs).is_empty(), "{job}");
+        needs[job]["result"] = json!("success");
+    }
     Ok(())
 }
 

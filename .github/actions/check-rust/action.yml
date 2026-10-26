@@ -1,0 +1,99 @@
+name: Check an affected native Rust lane
+description: Preserve format, Release analyzers, documentation, full tests and executable builds in independently cached lanes.
+inputs:
+  lane:
+    description: Stable cache and evidence lane name.
+    required: true
+  packages:
+    description: JSON array of registered packages owned by this lane.
+    required: true
+  affected:
+    description: JSON array of affected packages selected by the planner.
+    required: true
+outputs:
+  has-packages:
+    description: Whether this lane selected packages.
+    value: ${{ steps.packages.outputs.has-packages }}
+runs:
+  using: composite
+  steps:
+    - name: Select this lane's affected registered crates
+      id: packages
+      shell: pwsh
+      working-directory: ${{ runner.temp }}
+      env:
+        AFFECTED_PACKAGES: ${{ inputs.affected }}
+        LANE_PACKAGES: ${{ inputs.packages }}
+        RUST_LANE: ${{ inputs.lane }}
+      run: |
+        Set-StrictMode -Version Latest
+        $ErrorActionPreference = 'Stop'
+        if ($env:RUST_LANE -cnotmatch '^[a-z][a-z-]*$') { throw 'Invalid Rust lane name.' }
+        Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Rust.psm1')
+        $registered = @(Get-BonsaiRustPackage -Group Broker)
+        $affected = @(ConvertFrom-Json -InputObject $env:AFFECTED_PACKAGES)
+        $owned = @(ConvertFrom-Json -InputObject $env:LANE_PACKAGES)
+        foreach ($name in @($affected + $owned)) {
+          if ($name -cnotin $registered.Name) { throw "Crate is missing from the Rust registry: $name" }
+        }
+        $packages = @($registered | Where-Object { $_.Name -cin $affected -and $_.Name -cin $owned } | ForEach-Object { $_.Name })
+        "has-packages=$($packages.Count -gt 0)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
+        "BROKER_PACKAGES=$(ConvertTo-Json -InputObject $packages -Compress)" >> $env:GITHUB_ENV
+    - name: Reuse the pinned native Rust compiler
+      if: steps.packages.outputs.has-packages == 'true'
+      uses: ./.github/actions/rust-toolchain
+      with:
+        toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+    - name: Select external Cargo cache paths
+      if: steps.packages.outputs.has-packages == 'true'
+      shell: pwsh
+      working-directory: ${{ runner.temp }}
+      run: |
+        Set-StrictMode -Version Latest
+        $ErrorActionPreference = 'Stop'
+        $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE '.cargo' }
+        $target = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Broker'
+        foreach ($path in @($cargoHome, $target)) {
+          if (-not [IO.Path]::IsPathFullyQualified($path) -or $path -match '%[^%]+%') { throw 'Expected expanded absolute Cargo paths.' }
+        }
+        "CARGO_HOME=$cargoHome" >> $env:GITHUB_ENV
+        "CARGO_TARGET_DIR=$target" >> $env:GITHUB_ENV
+        "BROKER_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
+    - name: Reuse locked Cargo downloads and this lane's build artifacts
+      if: steps.packages.outputs.has-packages == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ env.CARGO_HOME }}/registry/index
+          ${{ env.CARGO_HOME }}/registry/cache
+          ${{ env.CARGO_HOME }}/git/db
+          ${{ env.CARGO_TARGET_DIR }}
+        key: broker-v5-${{ inputs.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml') }}-${{ hashFiles('config/**', 'tests/fixtures/**', 'scripts/Bonsai.Rust.psm1', 'tests/Test-Rust.ps1', '.github/actions/check-rust/**', '.github/actions/native-speech/**') }}-${{ inputs.lane == 'ui' && hashFiles('src/chat-ui/**', 'src/windows-*/**') || inputs.lane == 'core' && hashFiles('src/broker/**', 'src/speech-service/**', 'src/artifacts/**', 'src/cpu-policy/**', 'src/windows-*/**') || inputs.lane == 'asr' && hashFiles('src/speech-asr/**', 'src/speech-service/**', 'src/artifacts/**', 'src/windows-*/**') || inputs.lane == 'tts' && hashFiles('src/speech-tts/**', 'src/speech-service/**', 'src/artifacts/**', 'src/windows-*/**') || hashFiles('tools/bonsai/**', 'tools/ci/**', 'src/artifacts/**', 'src/cpu-policy/**', 'src/windows-*/**') }}-content-v1
+        restore-keys: |
+          broker-v5-${{ inputs.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', '**/Cargo.toml', 'rust-toolchain.toml') }}-
+          broker-v5-${{ inputs.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-nightly-2026-10-22-
+    - name: Prepare reusable native speech compiler outputs
+      if: steps.packages.outputs.has-packages == 'true' && (inputs.lane == 'asr' || inputs.lane == 'tts')
+      uses: ./.github/actions/native-speech
+      with:
+        lane: ${{ inputs.lane }}
+    - name: Format, analyze, document, test and build the selected crates
+      if: steps.packages.outputs.has-packages == 'true'
+      shell: pwsh
+      working-directory: ${{ runner.temp }}
+      run: |
+        Set-StrictMode -Version Latest
+        $ErrorActionPreference = 'Stop'
+        $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-BrokerChecks-' + [guid]::NewGuid().ToString('N'))
+        "BROKER_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+        $packages = @(ConvertFrom-Json -InputObject $env:BROKER_PACKAGES)
+        if (-not $packages.Count) { throw 'A Rust check lane must select registered packages.' }
+        & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Rust.ps1') -Group Broker -Package $packages -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -TimeoutSeconds 1800 -FullTests -Build | ConvertTo-Json -Depth 8
+    - name: Retain this lane's correctness and analyzer evidence
+      if: always() && env.BROKER_CHECK_EVIDENCE != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: broker-checks-${{ inputs.lane }}-${{ github.run_id }}
+        path: ${{ env.BROKER_CHECK_EVIDENCE }}
+        if-no-files-found: error
+        compression-level: 1

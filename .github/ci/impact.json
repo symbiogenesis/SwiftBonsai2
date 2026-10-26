@@ -2,6 +2,7 @@
   "shared": [
     "Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rustfmt.toml", ".cargo/**",
     ".github/ci/**", "tools/ci/**", ".github/workflows/foundation.yml", ".github/actions/rust-toolchain/**",
+    ".github/actions/check-rust/**", ".github/actions/native-speech/**",
     "config/rust-packages.psd1", "scripts/Bonsai.Rust.psm1", "tests/Test-Rust.ps1"
   ],
   "ignored": ["*.md", "docs/**", "LICENSE", "NOTICE", ".gitignore"],
@@ -11,16 +12,21 @@
     "bonsai-tools": ["config/swift-assessment.lock.json", "config/swift-lora.lock.json", "config/swift.ptq1-export.json", "config/swift-lora.qualification.json", "config/swift.metadata.json", "tests/fixtures/lora-qualification-v1.json", "src/speech-asr/model.lock.json", "src/speech-tts/model.lock.json", "config/native-speech.lock.json"]
   },
   "groups": {
-    "broker": {"packages": ["bonsai-broker", "bonsai-chat", "bonsai-speech-asr", "bonsai-speech-tts", "bonsai-speech-service"]},
+    "broker": {"packages": ["bonsai-broker", "bonsai-speech-service"]},
+    "ui": {"packages": ["bonsai-chat"]},
+    "speech_asr": {"packages": ["bonsai-speech-asr"]},
+    "speech_tts": {"packages": ["bonsai-speech-tts"]},
+    "broker_checks": {"groups": ["broker", "ui"]},
+    "speech": {"groups": ["speech_asr", "speech_tts"]},
     "maintenance": {
       "packages": ["*"], "exclude_packages": ["bonsai-broker", "bonsai-chat", "bonsai-speech-asr", "bonsai-speech-tts", "bonsai-speech-service"],
       "groups": ["tools"]
     },
     "tools": {
-      "packages": ["bonsai-tools"], "groups": ["scripts", "release"],
+      "packages": ["bonsai-tools"], "groups": ["scripts", "release", "speech"],
       "paths": [".github/actions/bonsai-tools/**", ".github/actions/use-bonsai-tools/**"]
     },
-    "rust_lanes": {"groups": ["broker", "maintenance"]},
+    "rust_lanes": {"groups": ["broker_checks", "speech", "maintenance"]},
     "foundation_scripts": {
       "packages": ["bonsai-tools"],
       "paths": [
@@ -66,10 +72,11 @@
     }
   },
   "matrices": {
-    "broker_lanes": {"core": "broker", "maintenance": "maintenance"},
+    "broker_lanes": {"core": "broker", "ui": "ui"},
+    "speech_lanes": {"asr": "speech_asr", "tts": "speech_tts"},
     "script_lanes": {"foundation": "foundation_scripts", "native": "native_scripts"}
   },
   "workflows": {
-    "foundation": {"broker": "rust_lanes", "standards": "standards", "foundation-tests": "scripts", "release-integration": "release"}
+    "foundation": {"broker": "broker_checks", "speech": "speech", "maintenance": "maintenance", "standards": "standards", "foundation-tests": "scripts", "release-integration": "release"}
   }
 }
