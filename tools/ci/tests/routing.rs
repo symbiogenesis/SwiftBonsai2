@@ -300,7 +300,7 @@ fn shared_build_inputs_require_all_groups() -> TestResult {
 fn root_documentation_does_not_start_expensive_jobs() -> TestResult {
     let fixture = WorkspaceCase::leaf_and_other()?;
     let plan = fixture.plan(&["README.md", "docs/validation.md"])?;
-    assert!(plan.packages.is_empty());
+    assert_eq!(plan.packages, Vec::<String>::new());
     assert!(plan.groups.values().all(|selected| !selected));
     assert!(!plan.full);
     Ok(())
@@ -332,7 +332,7 @@ fn lint_observation_does_not_hide_unclassified_behavior() -> TestResult {
     assert!(fixture.plan(&["scripts/new-helper.ps1"])?.full);
     let known = fixture.plan(&["scripts/known.ps1"])?;
     assert!(!known.full);
-    assert!(known.packages.is_empty());
+    assert_eq!(known.packages, Vec::<String>::new());
     assert!(known.groups["scripts"]);
     assert!(known.groups["standards"]);
     Ok(())
@@ -483,7 +483,7 @@ fn failed_planner_and_malformed_results_cannot_pass() -> TestResult {
 fn malformed_gate_shapes_and_unknown_groups_fail_closed() {
     let jobs = json!({"build": "rust"});
     for needs in [Value::Null, json!([]), json!(true)] {
-        assert!(!gate::failures(&needs, &jobs).is_empty());
+        assert_ne!(gate::failures(&needs, &jobs), Vec::<String>::new());
     }
     for jobs in [
         Value::Null,
@@ -491,11 +491,14 @@ fn malformed_gate_shapes_and_unknown_groups_fail_closed() {
         json!({"build": false}),
         json!({"build": "unknown"}),
     ] {
-        assert!(!gate::failures(&needs(true, "success"), &jobs).is_empty());
+        assert_ne!(
+            gate::failures(&needs(true, "success"), &jobs),
+            Vec::<String>::new()
+        );
     }
     for result in [Value::Null, json!(false), json!({})] {
         let mut malformed = needs(false, "success");
         malformed["build"]["result"] = result;
-        assert!(!gate::failures(&malformed, &jobs).is_empty());
+        assert_ne!(gate::failures(&malformed, &jobs), Vec::<String>::new());
     }
 }
