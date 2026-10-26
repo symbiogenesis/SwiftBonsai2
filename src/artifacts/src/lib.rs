@@ -458,11 +458,23 @@ fn verify_installation<R: Read + Seek>(
     buffer: &mut [u8],
     checkpoint: &mut impl FnMut() -> Result<(), ArtifactError>,
 ) -> Result<(PathBuf, Vec<VerifiedRuntimeFile>), ArtifactError> {
+    let installation = inspect_archive(archive, root, checkpoint)?;
+    verify_installed_files(archive, root, installation, handles, buffer, checkpoint)
+}
+
+fn verify_installed_files<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    root: &Path,
+    installation: Installation,
+    handles: &mut Vec<File>,
+    buffer: &mut [u8],
+    checkpoint: &mut impl FnMut() -> Result<(), ArtifactError>,
+) -> Result<(PathBuf, Vec<VerifiedRuntimeFile>), ArtifactError> {
     let Installation {
         executable: server,
         files: expected_files,
         directories: expected_directories,
-    } = inspect_archive(archive, root, checkpoint)?;
+    } = installation;
     let mut installed_files = BTreeSet::new();
     let mut installed_directories = BTreeSet::new();
     enumerate_installation(

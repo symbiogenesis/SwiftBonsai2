@@ -3,7 +3,7 @@
 use super::{
     ArtifactError, HASH_BUFFER_BYTES, Installation, RuntimeSpec, VerifiedRuntimeFile, check_arm64,
     check_locked, hold_ancestors, inspect_archive, locked_file, validate_external_path,
-    verify_installation,
+    verify_installed_files,
 };
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, Write};
@@ -61,9 +61,11 @@ pub fn stage_runtime(
     extract(&mut zip, staging, &installation, &mut buffer)?;
 
     let mut staging_handles = Vec::new();
-    let (_, files) = verify_installation(
+    // The same locked ZIP is unchanged since preflight; reuse its inventory.
+    let (_, files) = verify_installed_files(
         &mut zip,
         staging,
+        installation,
         &mut staging_handles,
         &mut buffer,
         &mut || Ok(()),
