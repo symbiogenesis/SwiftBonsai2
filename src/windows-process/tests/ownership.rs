@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use bonsai_windows_process::{
-    OwnedProcess, ProcessSpec, available_memory_bytes, listener_process_id,
+    OwnedProcess, ProcessSpec, ToolProcessSpec, available_memory_bytes, listener_process_id,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -141,6 +141,65 @@ fn active_process_limit_blocks_descendants() -> io::Result<()> {
     until(|| process.try_wait().map(|code| code.is_some()))?;
     assert_eq!(process.try_wait()?, Some(0));
     assert_eq!(fs::read_to_string(lane.path.join("spawn.txt"))?, "denied");
+    Ok(())
+}
+
+#[test]
+fn headless_mitigations_apply_at_creation_without_changing_tool_policy() -> io::Result<()> {
+    let control = Lane::new("mitigation-control")?;
+    let status = Command::new(env!("CARGO_BIN_EXE_bonsai-process-test-probe"))
+        .arg("mitigations")
+        .current_dir(&control.path)
+        .creation_flags(0x0800_0000)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    assert!(status.success());
+    let baseline = fs::read_to_string(control.path.join("mitigations.txt"))?;
+
+    let worker = Lane::new("mitigation-worker")?;
+    let process = OwnedProcess::start(&worker.spec(vec![OsString::from("mitigations")]))?;
+    until(|| process.try_wait().map(|code| code.is_some()))?;
+    assert_eq!(process.try_wait()?, Some(0));
+    let observed = fs::read_to_string(worker.path.join("mitigations.txt"))?;
+    for (name, required) in [("win32k", 1), ("extensions", 1), ("images", 3)] {
+        let flags = observed
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}=")))
+            .ok_or_else(|| io::Error::other("missing mitigation report"))?
+            .parse::<u32>()
+            .map_err(io::Error::other)?;
+        assert_eq!(flags & required, required, "{name}: {observed}");
+    }
+
+    let tool = Lane::new("mitigation-tool")?;
+    let spec = tool.spec(vec![OsString::from("mitigations")]);
+    let process = OwnedProcess::start_tool(&ToolProcessSpec {
+        executable: spec.executable,
+        arguments: spec.arguments,
+        working_directory: spec.working_directory,
+        stdout: spec.stdout,
+        stderr: spec.stderr,
+        environment: std::collections::BTreeMap::new(),
+    })?;
+    until(|| process.try_wait().map(|code| code.is_some()))?;
+    assert_eq!(process.try_wait()?, Some(0));
+    assert_eq!(
+        fs::read_to_string(tool.path.join("mitigations.txt"))?,
+        baseline
+    );
+
+    // A second owner inside the restricted worker must retain Job nesting.
+    // JobObjectBasicUIRestrictions would prevent this valid hierarchy.
+    let nested = Lane::new("mitigation-nested")?;
+    let process = OwnedProcess::start(&nested.spec(vec![OsString::from("nested-mitigations")]))?;
+    until(|| process.try_wait().map(|code| code.is_some()))?;
+    assert_eq!(process.try_wait()?, Some(0));
+    assert_eq!(
+        fs::read_to_string(nested.path.join("mitigations.txt"))?,
+        observed
+    );
     Ok(())
 }
 

@@ -42,7 +42,8 @@ use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
     DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
     GetProcessTimes, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess,
-    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
+    PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, PROCESS_INFORMATION,
     PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, ResumeThread, STARTF_USESHOWWINDOW,
     STARTF_USESTDHANDLES, STARTUPINFOEXW, UpdateProcThreadAttribute, WaitForSingleObject,
 };
@@ -282,6 +283,7 @@ impl NativeProcess {
                 output.as_raw_handle(),
                 error.as_raw_handle(),
             ],
+            spec.limits.is_some(),
         )?;
         let mut startup = STARTUPINFOEXW::default();
         startup.StartupInfo.cb = win_size::<STARTUPINFOEXW>();
@@ -723,18 +725,28 @@ const fn win_size<T>() -> u32 {
     }
 }
 
+// Documented PROCESS_CREATION_MITIGATION_POLICY_* ALWAYS_ON values from winnt.h:
+// heap termination, Win32k syscall denial, legacy extension-point denial, and
+// remote/low-integrity image denial. These headless CPU workers need no desktop
+// calls or injected UI extensions. Unlike Job UI limits, creation mitigations
+// permit nested Jobs. This does not restrict ordinary file or network access.
+// https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute
+const HEADLESS_MITIGATIONS: u64 = (1 << 12) | (1 << 28) | (1 << 32) | (1 << 52) | (1 << 56);
+
 struct CreationAttributes {
     storage: Vec<usize>,
     handles: Box<[HANDLE; 3]>,
     jobs: Box<[HANDLE; 1]>,
+    mitigations: Box<u64>,
     initialized: bool,
 }
 
 impl CreationAttributes {
-    fn new(job: HANDLE, handles: [HANDLE; 3]) -> io::Result<Self> {
+    fn new(job: HANDLE, handles: [HANDLE; 3], headless: bool) -> io::Result<Self> {
+        let count = if headless { 3 } else { 2 };
         let mut bytes = 0;
         // SAFETY: Documented null sizing call; bytes points to writable storage.
-        let _ = unsafe { InitializeProcThreadAttributeList(null_mut(), 2, 0, &raw mut bytes) };
+        let _ = unsafe { InitializeProcThreadAttributeList(null_mut(), count, 0, &raw mut bytes) };
         if bytes == 0 || bytes > 1_048_576 {
             return Err(io::Error::other("invalid process attribute size"));
         }
@@ -742,11 +754,14 @@ impl CreationAttributes {
             storage: vec![0; bytes.div_ceil(size_of::<usize>())],
             handles: Box::new(handles),
             jobs: Box::new([job]),
+            mitigations: Box::new(HEADLESS_MITIGATIONS),
             initialized: false,
         };
         // SAFETY: Pointer-aligned buffer is writable for at least the requested
         // bytes. No other references alias its native attribute-list contents.
-        check(unsafe { InitializeProcThreadAttributeList(value.address(), 2, 0, &raw mut bytes) })?;
+        check(unsafe {
+            InitializeProcThreadAttributeList(value.address(), count, 0, &raw mut bytes)
+        })?;
         value.initialized = true;
         value.update(
             PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
@@ -758,6 +773,13 @@ impl CreationAttributes {
             value.jobs.as_ptr().cast(),
             size_of_val(value.jobs.as_ref()),
         )?;
+        if headless {
+            value.update(
+                PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
+                ptr::from_ref(value.mitigations.as_ref()).cast(),
+                size_of_val(value.mitigations.as_ref()),
+            )?;
+        }
         Ok(value)
     }
 

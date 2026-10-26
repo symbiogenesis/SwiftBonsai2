@@ -39,6 +39,8 @@ fn main() -> io::Result<()> {
             fs::write("report.txt", text)?;
         }
         "sleep" => wait_forever(),
+        "mitigations" => report_mitigations()?,
+        "nested-mitigations" => nested_mitigations()?,
         "crash" => native_crash(),
         "error-policy" | "error-policy-owner" => error_policy(mode)?,
         "listen" => {
@@ -103,6 +105,61 @@ fn main() -> io::Result<()> {
         _ => return Err(io::Error::other("unknown probe mode")),
     }
     Ok(())
+}
+
+fn nested_mitigations() -> io::Result<()> {
+    let directory = std::env::current_dir()?;
+    let process = OwnedProcess::start(&ProcessSpec {
+        executable: std::env::current_exe()?,
+        arguments: vec![OsString::from("mitigations")],
+        working_directory: directory.clone(),
+        stdout: directory.join("nested.stdout"),
+        stderr: directory.join("nested.stderr"),
+        memory_limit_bytes: 256 * 1024 * 1024,
+        active_process_limit: 1,
+    })?;
+    if process.wait_for_exit(Duration::from_secs(10))? != Some(0) {
+        return Err(io::Error::other("nested mitigation probe failed"));
+    }
+    Ok(())
+}
+
+#[allow(
+    unsafe_code,
+    reason = "Query mitigation flags for this disposable probe's borrowed pseudo handle."
+)]
+fn report_mitigations() -> io::Result<()> {
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcess, GetProcessMitigationPolicy, ProcessExtensionPointDisablePolicy,
+        ProcessImageLoadPolicy, ProcessSystemCallDisablePolicy,
+    };
+
+    let mut report = String::new();
+    for (name, policy) in [
+        ("win32k", ProcessSystemCallDisablePolicy),
+        ("extensions", ProcessExtensionPointDisablePolicy),
+        ("images", ProcessImageLoadPolicy),
+    ] {
+        let mut flags = 0_u32;
+        // SAFETY: Borrow the current process pseudo handle without closing it.
+        let process = unsafe { GetCurrentProcess() };
+        // SAFETY: These three documented policy structures each consist of a
+        // single DWORD Flags union. The aligned writable buffer has that exact
+        // size and remains live for the synchronous query; no ownership moves.
+        let queried = unsafe {
+            GetProcessMitigationPolicy(
+                process,
+                policy,
+                std::ptr::from_mut(&mut flags).cast(),
+                size_of_val(&flags),
+            )
+        };
+        if queried == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        writeln!(report, "{name}={flags}").map_err(io::Error::other)?;
+    }
+    fs::write("mitigations.txt", report)
 }
 
 fn argument(args: &[OsString], index: usize) -> io::Result<&str> {

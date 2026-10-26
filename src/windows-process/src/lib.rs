@@ -131,10 +131,15 @@ impl OwnedProcess {
     ///
     /// The full OS/profile environment is inherited without modification.
     /// Model/backend override variables are rejected before creating any files.
+    /// Headless CPU workers deny Win32k calls, legacy extension points and
+    /// remote/low-integrity executable images, with heap termination enabled.
+    /// These creation-time mitigations preserve nested Jobs but do not restrict
+    /// ordinary filesystem access, sockets or the caller's security identity.
     ///
     /// # Errors
     /// Rejects ambiguous paths, invalid limits/arguments, inherited backend
-    /// overrides, existing evidence files, or any failed Windows operation.
+    /// overrides, existing evidence files, or any failed Windows operation,
+    /// including unsupported required process-creation mitigations.
     pub fn start(spec: &ProcessSpec) -> io::Result<Self> {
         for path in [
             &spec.executable,

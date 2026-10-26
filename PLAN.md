@@ -26,9 +26,10 @@ dependency or an explicitly chosen later milestone.
 - Establish a restricted inference identity with read-only approved artifacts,
   private bounded cache/temp storage, denied unrelated files/credentials and
   denied egress. Prevent same-user backend bypass; Jobs, ACLs and loopback alone
-  are insufficient. Evaluate AppContainer/LPAC with explicit artifact/storage
-  grants and broker-only IPC; qualify denied access, egress and backend bypass
-  without broad network grants or global loopback exemptions. Follow the
+  are insufficient. Integrate native MXC containment while retaining atomic Job
+  limits and exact worker identity; qualify broker-only communication without
+  weaker fallback tiers or global loopback exemptions. Follow the
+  [worker sandbox architecture](docs/sandboxing.md),
   [Windows integration review](docs/windows-integration.md) and qualify the
   [daily-service boundary](docs/broker-policy.md).
 - Qualify the complete transport/security boundary: numeric loopback, exact

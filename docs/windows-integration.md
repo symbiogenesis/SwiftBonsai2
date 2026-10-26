@@ -117,15 +117,19 @@ bypass. The daily profile remains disabled until the
 is qualified. Outstanding implementation and acceptance work stays in
 [PLAN.md](../PLAN.md).
 
-Windows [AppContainer/LPAC capabilities](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer)
-are a candidate for that boundary, alongside the project's restricted-identity
-requirements. Qualification must prove read-only approved model/runtime access,
-private bounded writable storage, denied unrelated files/credentials and egress,
-and authenticated broker-only communication. Current loopback HTTP access must
-be deliberately accommodated or replaced with a brokered channel; a blanket
-network capability or loopback exemption is not evidence of denied egress.
-Avoid global firewall/registry changes or broad capability grants as an
-automatic fallback. Packaging alone does not establish AppContainer isolation.
+The [worker sandbox architecture](sandboxing.md) selects native Microsoft
+Execution Containers (MXC) as the integration target and records the NVX,
+LiteBox and Windows Sandbox tradeoffs. It owns the version-specific policy,
+Job-composition, credential separation and qualification requirements. MXC is
+not yet integrated; the supported launch API must first preserve our atomic
+Job limits and exact worker identity. AppContainer/LPAC, packaging and broad
+loopback grants alone do not establish the required boundary.
+
+Current headless workers receive creation-time Win32k, extension-point and
+image-loading mitigations. These reduce attack surface while preserving nested
+Jobs; they do not restrict ordinary file or network access. Build tools retain
+their inherited policy. See the sandbox architecture for the exact mitigations,
+compatibility limits and focused regression evidence.
 
 Focused synthetic regressions establish the repaired path, handle and lock
 contracts. Complete suites run in Foundation CI; device performance, real-model

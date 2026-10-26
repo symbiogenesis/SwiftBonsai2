@@ -360,6 +360,10 @@ same Windows process boundary, with their separate fixed arguments/pins.
 Restricted tokens, filesystem/egress isolation, same-user backend bypass
 prevention, everyday native UI acceptance and real-model quality/performance
 remain unqualified.
+The [worker sandbox architecture](sandboxing.md) selects native MXC containment
+as the integration target, records NVX/LiteBox limits and specifies the required
+policy and Job-composition gates. Current process-creation mitigations reduce
+headless-worker attack surface without providing filesystem/network containment.
 Synthetic loopback/stream regressions establish broker behavior, not those gates.
 See [launch commands](development-guide.md#owned-windows-development-backend) and
 [validation](validation.md). Dependency/toolchain pins live in the Cargo workspace
