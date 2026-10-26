@@ -54,6 +54,50 @@ fn harness(size: [f32; 2], seeded: bool) -> Harness<'static, Fixture> {
 }
 
 #[test]
+fn thinking_setting_defaults_off_reaches_next_turn_and_locks_while_busy() {
+    let mut chat = harness([1180.0, 960.0], false);
+    assert!(!chat.state().app.enable_thinking);
+    chat.state_mut().app.show_settings = true;
+    chat.run();
+    chat.get_by_role_and_label(egui::Role::CheckBox, "Thinking")
+        .click();
+    chat.run();
+    assert!(chat.state().app.enable_thinking);
+    assert!(chat.state().app.recovery_dirty);
+    chat.state_mut().app.show_settings = false;
+    chat.state_mut().app.input = "A story about a garden".to_owned();
+    chat.state_mut().app.submit();
+    assert!(matches!(
+        chat.state().commands.try_recv(),
+        Ok(Command::Send {
+            enable_thinking: true,
+            ..
+        })
+    ));
+    chat.state_mut().app.show_settings = true;
+    chat.run();
+    chat.get_by_role_and_label(egui::Role::CheckBox, "Thinking")
+        .click();
+    chat.run();
+    assert!(chat.state().app.enable_thinking);
+    chat.state_mut().app.busy = false;
+    chat.get_by_role_and_label(egui::Role::CheckBox, "Thinking")
+        .click();
+    chat.run();
+    assert!(!chat.state().app.enable_thinking);
+    chat.state_mut().app.show_settings = false;
+    chat.state_mut().app.input = "Another garden story".to_owned();
+    chat.state_mut().app.submit();
+    assert!(matches!(
+        chat.state().commands.try_recv(),
+        Ok(Command::Send {
+            enable_thinking: false,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn abliteration_settings_keyboard_selection_reaches_next_turn_and_locks_while_busy() {
     let mut chat = harness([1180.0, 960.0], false);
     assert!((chat.state().app.abliteration_scale - 1.3).abs() < f32::EPSILON);

@@ -257,6 +257,7 @@ fn conversation_workspace_preserves_drafts_settings_and_exact_committed_turns() 
     state.model_event(Event::Complete(Completion::Finished));
     state.input = "An unsent revision 🌱".to_owned();
     state.extra_effort = true;
+    state.enable_thinking = true;
     state.output_budget = 1;
     state.abliteration_scale = 1.7;
     let original = state.active_conversation;
@@ -269,6 +270,7 @@ fn conversation_workspace_preserves_drafts_settings_and_exact_committed_turns() 
     assert!(state.committed.is_empty());
     assert_eq!(state.input, "");
     assert!(!state.extra_effort);
+    assert!(!state.enable_thinking);
     state.input = "Second conversation draft".to_owned();
     let second = state.active_conversation;
     state.switch_conversation(original);
@@ -279,11 +281,13 @@ fn conversation_workspace_preserves_drafts_settings_and_exact_committed_turns() 
     assert_eq!(state.transcript.plain_text(), visible);
     assert_eq!(state.input, "An unsent revision 🌱");
     assert!(state.extra_effort);
+    assert!(state.enable_thinking);
     assert_eq!(state.output_budget, 1);
     assert!((state.abliteration_scale - 1.7).abs() < f32::EPSILON);
     state.switch_conversation(second);
     assert!(matches!(commands.try_recv(), Ok(Command::RestoreChat(history)) if history.is_empty()));
     assert_eq!(state.input, "Second conversation draft");
+    assert!(!state.enable_thinking);
 }
 
 #[test]

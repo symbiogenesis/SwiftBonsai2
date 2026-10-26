@@ -57,7 +57,11 @@ explicit **Retry model**. The client tears down the owned backend before a fresh
 attempt, retains completed conversation turns, and never automatically replays
 an interrupted request. Local input-limit rejections restore the composer.
 Response settings expose the fixed 8,192-token context bound and select a
-reasoning-inclusive completion cap up to 4,096 tokens. Standard remains the
+reasoning-inclusive completion cap up to 4,096 tokens. Thinking is off by default;
+the Response settings checkbox enables it for the next response and every Extra
+effort pass. Each conversation preserves its choice, including optional encrypted
+recovery; older saved conversations default to off. Response controls lock during
+generation. Standard remains the
 default single-call workflow; opt-in Extra effort performs at most three
 sequential plan/draft/review calls with a shared deadline, stage labels and
 retained drafts. Its quality gains remain unproven.
@@ -81,8 +85,9 @@ response. The selected scale also applies to every Extra effort pass. Optional
 conversation recovery preserves it; older saved conversations default to 1.3.
 The launch-time opt-out disables the scale control and omits adapter requests.
 The UI does not load model weights, select arbitrary runtime arguments, bypass
-artifact verification or change model, memory, context, sampler or thinking
-policy. Completion selection stays within the broker's existing request bound.
+artifact verification or change model, memory, context or sampler policy.
+Thinking selection uses the broker's explicit boolean request option.
+Completion selection stays within the broker's existing request bound.
 A native UI does not by itself qualify runtime correctness, LoRA,
 creative quality, performance or daily-service isolation.
 
@@ -105,7 +110,8 @@ reasoning separately from visible answer text and replay it using
 `reasoning_content` when supported by the contract.
 
 The present broker implements a deliberately strict subset. Its complete public
-request contains `messages`, `max_completion_tokens`, `stream` and an optional
+request contains `messages`, `max_completion_tokens`, `stream`, optional
+`enable_thinking` (default false), and an optional
 fixed `model: "bonsai"` alias. An owned Swift backend with the verified pinned
 adapter also accepts the bounded `abliteration_scale` scalar. Content accepts
 strings or bounded standard text parts; arbitrary model selection, adapters,

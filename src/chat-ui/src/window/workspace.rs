@@ -12,6 +12,8 @@ pub(super) struct ConversationSnapshot {
     pub(super) retained_draft: String,
     pub(super) answer_complete: bool,
     pub(super) extra_effort: bool,
+    #[serde(default)]
+    pub(super) enable_thinking: bool,
     pub(super) output_budget: usize,
     #[serde(default = "client::default_abliteration_scale")]
     pub(super) abliteration_scale: f32,
@@ -49,6 +51,7 @@ impl State {
             retained_draft: std::mem::take(&mut self.retained_draft),
             answer_complete: self.answer_complete,
             extra_effort: self.extra_effort,
+            enable_thinking: self.enable_thinking,
             output_budget: self.output_budget,
             abliteration_scale: self.abliteration_scale,
             status: self.status.clone(),
@@ -76,6 +79,7 @@ impl State {
         self.stage = None;
         self.answer_complete = false;
         self.extra_effort = false;
+        self.enable_thinking = false;
         self.output_budget = 3;
         self.abliteration_scale = client::DEFAULT_ABLITERATION_SCALE;
         self.place_composer_cursor(0);
@@ -90,6 +94,7 @@ impl State {
         self.retained_draft = snapshot.retained_draft;
         self.answer_complete = snapshot.answer_complete;
         self.extra_effort = snapshot.extra_effort;
+        self.enable_thinking = snapshot.enable_thinking;
         self.output_budget = snapshot.output_budget;
         self.abliteration_scale = snapshot.abliteration_scale;
         self.status = snapshot.status;

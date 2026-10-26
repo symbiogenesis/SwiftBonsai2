@@ -60,13 +60,16 @@ The entire public JSON schema is:
   "model": "bonsai",
   "messages": [{"role": "user", "content": "Draft a scene."}],
   "max_completion_tokens": 1024,
-  "stream": true
+  "stream": true,
+  "enable_thinking": false
 }
 ```
 
 `model` is optional and accepts only the fixed alias `bonsai`. It identifies the
 already selected, verified profile; it cannot select another model or path and
 is removed before canonical backend serialization. `stream` defaults to true.
+`enable_thinking` accepts only a boolean and defaults to false. The native UI's
+Thinking setting controls it for the next response and every Extra effort pass.
 The owned Swift Prism CPU launcher with `--use-abliterate-lora` additionally
 accepts an optional numeric `abliteration_scale` from 0 through 2 inclusive,
 defaulting to **1.3** when omitted. Zero disables the correction for that request.
@@ -90,7 +93,7 @@ reasoning fields on user/system messages are rejected. Omitted reasoning stays
 omitted; supplied reasoning is preserved and counted within the same body and
 context bounds.
 
-Model selection, token-cap aliases, tools, media, template/thinking/sampling
+Model selection, token-cap aliases, tools, media, other template or sampling
 controls, arbitrary LoRA selection or arrays, slots and timing overrides are
 unsupported. URLs in strings stay plain text; the broker fetches no remote content.
 
@@ -104,11 +107,11 @@ token admission are required before accepting image parts.
 Input is rebuilt as immutable canonical backend JSON with one completion,
 cache reuse disabled, EOS honored and the reference sampler: temperature 1,
 top-p .95, top-k 20, min-p 0, presence/frequency penalties 0, repetition penalty 1.
-The canonical body explicitly requests `enable_thinking: true` and
+The canonical body explicitly carries the selected `enable_thinking` boolean,
 `reasoning_effort: "xhigh"` and `preserve_thinking: true` through
-`chat_template_kwargs`, matching the pinned template's defaults. Counting and
-generation receive those same settings. The
-launcher also fixes thinking on, effort `xhigh` and no separate reasoning cutoff
+`chat_template_kwargs`. Counting and generation receive those same settings.
+Supplied assistant reasoning history remains preserved when thinking is off.
+The launcher retains effort `xhigh` and no separate reasoning cutoff
 (`--reasoning-budget -1`); the total completion cap still includes reasoning and
 does not promise that many visible prose tokens. See
 [inference defaults and evidence](inference-defaults.md).

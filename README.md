@@ -38,6 +38,10 @@ with **Ctrl+F**. Enable **Save conversations on this device** in Settings to
 recover your workspace after closing; saved conversations use Windows user
 encryption. Saving is off by default.
 
+Thinking is off by default. Enable **Thinking** under **Settings → Response**
+for the next response, including every Extra effort pass. Each conversation
+keeps its own choice; optional conversation saving restores it.
+
 Settings also adjusts the pinned abliteration adapter's strength for the next
 response. The default scale is **1.3**; **0** disables its correction. Its effect
 and output quality on Swift remain experimental.

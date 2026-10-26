@@ -84,6 +84,7 @@ struct State {
     sidebar_open: bool,
     help: Option<(&'static str, &'static str)>,
     extra_effort: bool,
+    enable_thinking: bool,
     output_budget: usize,
     abliteration_scale: f32,
     abliteration_enabled: bool,
@@ -155,6 +156,7 @@ impl State {
             sidebar_open: false,
             help: None,
             extra_effort: false,
+            enable_thinking: false,
             output_budget: 3,
             abliteration_scale: client::DEFAULT_ABLITERATION_SCALE,
             abliteration_enabled: config.is_none_or(|config| config.use_abliterate_lora),
@@ -239,6 +241,7 @@ impl State {
                 text: text.clone(),
                 max_completion_tokens,
                 extra_effort: self.extra_effort,
+                enable_thinking: self.enable_thinking,
                 abliteration_scale: self.abliteration_scale,
             })
             .is_err()
@@ -942,6 +945,7 @@ impl State {
             .show(ctx, |ui| {
                 let before = (
                     self.extra_effort,
+                    self.enable_thinking,
                     self.output_budget,
                     self.abliteration_scale,
                     self.voice_profile.clone(),
@@ -949,6 +953,13 @@ impl State {
                 self.recovery_controls(ui);
                 ui.heading("Response");
                 ui.add_enabled_ui(!self.busy, |ui| {
+                    ui.checkbox(&mut self.enable_thinking, "Thinking");
+                    ui.label(
+                        RichText::new("Off by default. Applies to your next response and every Extra effort pass.")
+                            .small()
+                            .weak(),
+                    );
+                    ui.add_space(8.0);
                     ui.checkbox(&mut self.extra_effort, "Extra effort (experimental)");
                     ui.label(
                         RichText::new(
@@ -1017,6 +1028,7 @@ impl State {
                 self.recovery_dirty |= before
                     != (
                         self.extra_effort,
+                        self.enable_thinking,
                         self.output_budget,
                         self.abliteration_scale,
                         self.voice_profile.clone(),

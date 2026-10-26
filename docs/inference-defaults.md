@@ -1,8 +1,9 @@
 # Inference defaults and quality evidence
 
-The defaults preserve the publisher's evaluated configuration and native chat
-template. They are the best-supported baseline found in the October 23, 2026
-literature review, not a measured optimum for this laptop or creative writing.
+The sampler defaults preserve the publisher's evaluated configuration and native
+chat template. Thinking is off by default for chat, with an explicit opt-in.
+The evaluated thinking configuration remains available but is not a measured
+optimum for this laptop or creative writing.
 Daily chat and Swift serving remain under development.
 
 ## Applied defaults
@@ -10,7 +11,7 @@ Daily chat and Swift serving remain under development.
 | Setting | Default | Reason |
 | --- | --- | --- |
 | Template | Verified embedded Jinja template | Preserve the model's trained role, turn and reasoning format |
-| Thinking / effort | Enabled / `xhigh` | Both pinned templates support this and default to it; request it explicitly |
+| Thinking / effort | Disabled; `xhigh` when enabled | Chat defaults to off; Settings → Response can enable thinking for the next response |
 | Separate thinking budget | `-1` (no extra cutoff) | Avoid forcing an early reasoning exit; total generation and context caps still apply |
 | Sampler | Temperature **1**, top-p **0.95**, top-k **20**, min-p **0** | Matches Swift's published evaluation configuration and Qwen's thinking guidance |
 | Penalties | Repetition **1**, presence **0**, frequency **0** | No additional repetition/logit correction by default |
@@ -28,9 +29,9 @@ The pinned completion renderer omits template kwargs on its actual formatting
 call, so its parsed thinking/effort switches alone do not prove enforcement;
 that single-turn check relies on the verified embedded on/`xhigh` defaults.
 The server request path applies the explicit template settings.
-The broker supplies `chat_template_kwargs` with `enable_thinking: true`,
+The broker supplies `chat_template_kwargs` with the selected `enable_thinking` boolean (default false),
 `reasoning_effort: "xhigh"` and `preserve_thinking: true` in the identical canonical
-body used for prompt counting and generation. Client inference overrides remain
+body used for prompt counting and generation. Other client inference overrides remain
 rejected. User messages, including an optional system message, retain their
 original content. Clients can replay the returned assistant `reasoning_content`
 alongside its answer text; both consume the exact context reservation. The broker

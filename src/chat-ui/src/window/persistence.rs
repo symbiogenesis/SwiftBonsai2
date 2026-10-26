@@ -35,6 +35,7 @@ struct ActiveView<'a> {
     retained_draft: &'a str,
     answer_complete: bool,
     extra_effort: bool,
+    enable_thinking: bool,
     output_budget: usize,
     abliteration_scale: f32,
     status: &'a str,
@@ -98,6 +99,7 @@ impl State {
                 retained_draft: &self.retained_draft,
                 answer_complete: self.answer_complete,
                 extra_effort: self.extra_effort,
+                enable_thinking: self.enable_thinking,
                 output_budget: self.output_budget,
                 abliteration_scale: self.abliteration_scale,
                 status: &self.status,
@@ -290,6 +292,63 @@ mod tests {
         let (commands, _incoming) = mpsc::channel();
         let (_events, incoming) = mpsc::channel();
         State::create(commands, incoming, None, None)
+    }
+
+    #[test]
+    fn thinking_recovery_preserves_each_conversation_and_defaults_old_workspaces_off()
+    -> io::Result<()> {
+        let mut original = state();
+        assert!(!original.enable_thinking);
+        original.enable_thinking = true;
+        original.save_conversation();
+        original.clear_conversation();
+        assert!(!original.enable_thinking);
+        let bytes = original.workspace_bytes()?;
+        let mut restored = state();
+        restored.restore_workspace(&bytes)?;
+        assert!(!restored.enable_thinking);
+        assert!(
+            restored.conversations[0]
+                .saved
+                .as_ref()
+                .is_some_and(|saved| saved.enable_thinking)
+        );
+
+        original.enable_thinking = true;
+        let bytes = original.workspace_bytes()?;
+        restored.restore_workspace(&bytes)?;
+        assert!(restored.enable_thinking);
+        let mut old: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(io::Error::other)?;
+        old["active"]
+            .as_object_mut()
+            .ok_or_else(|| io::Error::other("active object"))?
+            .remove("enable_thinking");
+        old["conversations"][0]["saved"]
+            .as_object_mut()
+            .ok_or_else(|| io::Error::other("saved object"))?
+            .remove("enable_thinking");
+        restored.restore_workspace(&serde_json::to_vec(&old).map_err(io::Error::other)?)?;
+        assert!(!restored.enable_thinking);
+        assert!(
+            restored.conversations[0]
+                .saved
+                .as_ref()
+                .is_some_and(|saved| !saved.enable_thinking)
+        );
+        for invalid in [
+            serde_json::json!(null),
+            serde_json::json!("false"),
+            serde_json::json!(0),
+        ] {
+            old["active"]["enable_thinking"] = invalid;
+            assert!(
+                restored
+                    .restore_workspace(&serde_json::to_vec(&old).map_err(io::Error::other)?)
+                    .is_err()
+            );
+        }
+        Ok(())
     }
 
     #[test]
