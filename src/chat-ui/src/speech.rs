@@ -121,6 +121,40 @@ pub(crate) struct Session {
     worker: Option<JoinHandle<()>>,
 }
 impl Session {
+    #[cfg(test)]
+    pub(crate) fn fixture() -> io::Result<(Self, Receiver<Command>)> {
+        let (sender, incoming) = mpsc::channel::<Envelope>();
+        let (outgoing, events) = mpsc::channel();
+        let (observed, commands) = mpsc::channel();
+        let current_input = Arc::new(AtomicU64::new(NO_INPUT));
+        let worker = thread::Builder::new()
+            .name("bonsai-speech-fixture".to_owned())
+            .spawn(move || {
+                let _events = outgoing;
+                while let Ok(envelope) = incoming.recv() {
+                    if matches!(envelope.command, Command::Shutdown) {
+                        break;
+                    }
+                    if observed.send(envelope.command).is_err() {
+                        break;
+                    }
+                }
+            })?;
+        Ok((
+            Self {
+                commands: Commands {
+                    sender,
+                    current_output: Arc::new(AtomicU64::new(0)),
+                    current_input: Arc::clone(&current_input),
+                },
+                events,
+                current_input,
+                worker: Some(worker),
+            },
+            commands,
+        ))
+    }
+
     /// Queued output events from cancelled or replaced readouts cannot change UI state.
     pub(crate) fn is_current_output(&self, generation: u64) -> bool {
         self.commands.current_output.load(Ordering::Acquire) == generation

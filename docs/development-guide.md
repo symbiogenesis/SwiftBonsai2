@@ -90,7 +90,8 @@ Switching is available while the model is ready and idle. You can draft a
 message while the model prepares; sending waits for readiness.
 
 Long or pasted drafts scroll inside the composer, keeping the conversation and
-Microphone, Read aloud and Send/Stop controls visible. **Ctrl+End** moves to the
+Microphone and Send/Stop controls visible. Each Swift Bonsai response has its
+own speaker button at the lower right of its bubble. **Ctrl+End** moves to the
 end of a draft; **Shift+Enter** inserts a new line and **Enter** sends when ready.
 
 Use **Find** or **Ctrl+F** to search visible message text, **F3** / **Shift+F3**
@@ -144,9 +145,11 @@ text remains selectable and can be copied explicitly. Check selection while
 streaming and scrolling long conversations; full bidirectional editing and
 native-control accessibility parity are not established. The window
 distinguishes an answer that reached its token limit from a naturally completed
-answer. **Read aloud**
-uses Qwen3-TTS 1.7B VoiceDesign for the visible answer; **Stop speech** cancels
-synthesis and playback. Reasoning is not read aloud. Edit **Voice profile** to
+answer. Select a response's **speaker button** to play that response using
+Qwen3-TTS 1.7B VoiceDesign. The active button becomes **Stop** to cancel synthesis
+and playback; selecting another response switches playback to it. Buttons become
+available when generation finishes, including for older responses. Reasoning is
+not read aloud. Edit **Voice profile** to
 describe a voice, for example "A warm, low-pitched narrator with a calm pace and
 clear consonants." No voice preset or reference recording is required.
 
@@ -218,8 +221,8 @@ recognition or voice-activity detection. Selecting **Microphone: on** to turn it
 read-aloud or closing the window stops capture and cancels pending input.
 Transcripts appear in the composer for review; they are never sent automatically.
 Permission denial or a missing/not-ready Canary service keeps capture off.
-**Read aloud** explains missing Qwen service setup or the need for a completed
-answer when it cannot start. Speech controls remain visible and actionable while
+Each response's **speaker button** explains missing Qwen service setup when it
+cannot start. Speech controls remain visible and actionable while
 idle; they do not silently hide setup requirements behind greyed-out buttons.
 The native UI does not download Canary weights or substitute another recognizer. The
 companion's supported runtime and memory requirements are separate from Swift's

@@ -12,7 +12,7 @@ fn harness(transcript: Transcript) -> Harness<'static, Transcript> {
         })
         .build_ui_state(
             |ui, transcript: &mut Transcript| {
-                egui::ScrollArea::vertical().show(ui, |ui| transcript.show(ui, 600.0));
+                egui::ScrollArea::vertical().show(ui, |ui| transcript.show(ui, 600.0, None, true));
             },
             transcript,
         )
