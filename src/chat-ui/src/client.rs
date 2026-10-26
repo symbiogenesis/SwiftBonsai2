@@ -66,6 +66,7 @@ pub(crate) enum Command {
         text: String,
         max_completion_tokens: u32,
         extra_effort: bool,
+        enable_thinking: bool,
         abliteration_scale: f32,
     },
     NewChat,
@@ -161,7 +162,15 @@ struct ChatRequest<'a> {
     messages: &'a [Message],
     max_completion_tokens: u32,
     stream: bool,
+    enable_thinking: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    abliteration_scale: Option<f32>,
+}
+
+#[derive(Clone, Copy)]
+struct ResponseOptions {
+    max_completion_tokens: u32,
+    enable_thinking: bool,
     abliteration_scale: Option<f32>,
 }
 
@@ -328,6 +337,7 @@ fn worker(
                 text,
                 max_completion_tokens,
                 extra_effort,
+                enable_thinking,
                 abliteration_scale,
             }) => {
                 if text.trim().is_empty() {
@@ -341,21 +351,25 @@ fn worker(
                 });
                 let scale = config.use_abliterate_lora.then_some(abliteration_scale);
                 let outcome =
-                    serialize_request(&pending, max_completion_tokens, scale).and_then(|request| {
-                        if extra_effort {
-                            effort::run(
-                                config.frontend_port,
-                                &key,
-                                &pending,
-                                max_completion_tokens,
-                                scale,
-                                commands,
-                                events,
-                            )
-                        } else {
-                            generate(config.frontend_port, &key, &request, commands, events)
-                        }
-                    });
+                    serialize_request(&pending, max_completion_tokens, enable_thinking, scale)
+                        .and_then(|request| {
+                            if extra_effort {
+                                effort::run(
+                                    config.frontend_port,
+                                    &key,
+                                    &pending,
+                                    ResponseOptions {
+                                        max_completion_tokens,
+                                        enable_thinking,
+                                        abliteration_scale: scale,
+                                    },
+                                    commands,
+                                    events,
+                                )
+                            } else {
+                                generate(config.frontend_port, &key, &request, commands, events)
+                            }
+                        });
                 finish_turn(history, pending, &text, outcome, events)?;
             }
             Ok(Command::Retry) | Err(RecvTimeoutError::Timeout) => {}
@@ -554,6 +568,7 @@ fn finish_turn(
 fn serialize_request(
     history: &[Message],
     max_completion_tokens: u32,
+    enable_thinking: bool,
     abliteration_scale: Option<f32>,
 ) -> Result<Vec<u8>> {
     if abliteration_scale.is_some_and(|scale| !valid_abliteration_scale(scale)) {
@@ -575,6 +590,7 @@ fn serialize_request(
         messages: history,
         max_completion_tokens,
         stream: true,
+        enable_thinking,
         abliteration_scale,
     })
     .map_err(|_| Failure::Message("Could not prepare the chat request."))?;
@@ -1261,6 +1277,40 @@ mod tests {
     };
 
     #[test]
+    fn thinking_request_selection_preserves_supplied_reasoning() -> Result<(), Failure> {
+        let history = [
+            Message {
+                role: "user",
+                content: "Write a garden scene.".to_owned(),
+                reasoning_content: None,
+            },
+            Message {
+                role: "assistant",
+                content: "The garden grew quiet.".to_owned(),
+                reasoning_content: Some("Retained prior reasoning".to_owned()),
+            },
+            Message {
+                role: "user",
+                content: "Continue.".to_owned(),
+                reasoning_content: None,
+            },
+        ];
+        for enable_thinking in [false, true] {
+            let body = serialize_request(&history, 4096, enable_thinking, None)?;
+            let request: serde_json::Value = serde_json::from_slice(&body)
+                .map_err(|_| Failure::Message("invalid thinking request JSON"))?;
+            assert_eq!(request["enable_thinking"], enable_thinking);
+            assert_eq!(
+                request["messages"][1]["reasoning_content"],
+                "Retained prior reasoning"
+            );
+            assert_eq!(request["max_completion_tokens"], 4096);
+            assert_eq!(request["stream"], true);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn abliteration_requests_preserve_scale_bounds_and_omit_disabled_adapter() -> Result<(), Failure>
     {
         let history = [Message {
@@ -1269,7 +1319,7 @@ mod tests {
             reasoning_content: None,
         }];
         for scale in [0.0, super::DEFAULT_ABLITERATION_SCALE, 2.0] {
-            let body = serialize_request(&history, 4096, Some(scale))?;
+            let body = serialize_request(&history, 4096, false, Some(scale))?;
             let request: serde_json::Value = serde_json::from_slice(&body)
                 .map_err(|_| Failure::Message("invalid scale request JSON"))?;
             assert!(request["abliteration_scale"].as_f64().is_some_and(|value| {
@@ -1277,13 +1327,13 @@ mod tests {
             }));
             assert!(request.get("lora").is_none());
         }
-        let body = serialize_request(&history, 4096, None)?;
+        let body = serialize_request(&history, 4096, false, None)?;
         let request: serde_json::Value = serde_json::from_slice(&body)
             .map_err(|_| Failure::Message("invalid disabled request JSON"))?;
         assert!(request.get("abliteration_scale").is_none());
         for scale in [-0.1, 2.1, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
             assert!(matches!(
-                serialize_request(&history, 4096, Some(scale)),
+                serialize_request(&history, 4096, false, Some(scale)),
                 Err(Failure::Rejected(_))
             ));
         }
@@ -1307,7 +1357,7 @@ mod tests {
         let bytes = br#"[{"role":"user","content":"Saved question"},{"role":"assistant","content":"Saved answer","reasoning_content":"Saved reasoning"}]"#;
         let saved: Vec<Message> = serde_json::from_slice(bytes)
             .map_err(|_| Failure::Message("History roundtrip failed"))?;
-        let expected = serialize_request(&saved, 4096, None)?;
+        let expected = serialize_request(&saved, 4096, false, None)?;
         assert!(
             serde_json::from_slice::<Message>(br#"{"role":"system","content":"Unaccepted role"}"#)
                 .is_err()
@@ -1323,7 +1373,7 @@ mod tests {
             &mut history,
             "Retry explicitly."
         ));
-        assert_eq!(serialize_request(&history, 4096, None)?, expected);
+        assert_eq!(serialize_request(&history, 4096, false, None)?, expected);
         assert!(matches!(notifications.try_recv(), Ok(Event::Retryable(_))));
         assert!(notifications.try_recv().is_err());
         Ok(())
@@ -1377,6 +1427,7 @@ mod tests {
                 },
             ],
             4096,
+            false,
             None,
         )?;
         let json: serde_json::Value =
@@ -1385,7 +1436,7 @@ mod tests {
         assert!(json["messages"][0].get("reasoning_content").is_none());
         assert_eq!(json["max_completion_tokens"], 4096);
         assert_eq!(json["stream"], true);
-        assert_eq!(json.as_object().map(serde_json::Map::len), Some(3));
+        assert_eq!(json.as_object().map(serde_json::Map::len), Some(4));
         Ok(())
     }
 
@@ -1697,6 +1748,7 @@ mod tests {
                     text: "Never automatically replay this message".into(),
                     max_completion_tokens: 4096,
                     extra_effort: false,
+                    enable_thinking: false,
                     abliteration_scale: super::DEFAULT_ABLITERATION_SCALE,
                 })
                 .is_ok()
@@ -1741,7 +1793,7 @@ mod tests {
                 reasoning_content: Some("Retained reasoning".into()),
             },
         ];
-        let original = serialize_request(&history, 4096, None)?;
+        let original = serialize_request(&history, 4096, false, None)?;
         for failure in [
             Failure::Rejected("Shorten the request."),
             Failure::Stopped,
@@ -1761,7 +1813,7 @@ mod tests {
                 &events,
             );
             assert_eq!(result.is_ok(), matches!(failure, Failure::Rejected(_)));
-            assert_eq!(serialize_request(&history, 4096, None)?, original);
+            assert_eq!(serialize_request(&history, 4096, false, None)?, original);
             assert!(
                 matches!(incoming.try_recv(), Ok(Event::Rejected { text, retry_required, .. })
                 if text == "Unfinished task 🌱" && retry_required != matches!(failure, Failure::Rejected(_)))
@@ -1814,19 +1866,19 @@ mod tests {
             reasoning_content: None,
         }];
         for budget in [1, 512, 1024, 2048, 4096] {
-            let body = serialize_request(&history, budget, None)?;
+            let body = serialize_request(&history, budget, false, None)?;
             let json: serde_json::Value =
                 serde_json::from_slice(&body).map_err(|_| Failure::Message("test request JSON"))?;
             assert_eq!(json["max_completion_tokens"], budget);
         }
         for budget in [0, 4097, u32::MAX] {
             assert!(matches!(
-                serialize_request(&history, budget, None),
+                serialize_request(&history, budget, false, None),
                 Err(Failure::Rejected(_))
             ));
         }
         assert!(matches!(
-            serialize_request(&vec![history[0].clone(); 129], 4096, None),
+            serialize_request(&vec![history[0].clone(); 129], 4096, false, None),
             Err(Failure::Rejected(_))
         ));
         let oversized = [Message {
@@ -1835,7 +1887,7 @@ mod tests {
             reasoning_content: None,
         }];
         assert!(matches!(
-            serialize_request(&oversized, 4096, None),
+            serialize_request(&oversized, 4096, false, None),
             Err(Failure::Rejected(_))
         ));
         Ok(())

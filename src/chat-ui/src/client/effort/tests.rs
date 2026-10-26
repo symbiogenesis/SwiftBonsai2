@@ -27,6 +27,42 @@ fn task() -> Vec<Message> {
 }
 
 #[test]
+fn effort_applies_thinking_selection_to_every_stage() -> Result<()> {
+    for enable_thinking in [false, true] {
+        let (_commands, incoming) = mpsc::channel();
+        let (events, _outgoing) = mpsc::channel();
+        let mut calls = 0;
+        let _answer = run_with(
+            &task(),
+            ResponseOptions {
+                max_completion_tokens: 1024,
+                enable_thinking,
+                abliteration_scale: None,
+            },
+            &incoming,
+            &events,
+            Instant::now() + DEADLINE,
+            |body, _| {
+                let request: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|_| Failure::Message("invalid thinking stage JSON"))?;
+                assert_eq!(request["enable_thinking"], enable_thinking);
+                assert_eq!(
+                    request["messages"][1]["reasoning_content"],
+                    "Preserved prior reasoning"
+                );
+                calls += 1;
+                Ok((
+                    message("assistant", "A complete stage."),
+                    Completion::Finished,
+                ))
+            },
+        )?;
+        assert_eq!(calls, 3);
+    }
+    Ok(())
+}
+
+#[test]
 fn effort_stages_use_fresh_original_context_and_one_deadline() -> Result<()> {
     let (_commands, incoming) = mpsc::channel();
     let (events, outgoing) = mpsc::channel();
@@ -49,8 +85,11 @@ fn effort_stages_use_fresh_original_context_and_one_deadline() -> Result<()> {
     let until = Instant::now() + DEADLINE;
     let (answer, completion) = run_with(
         &pending,
-        2048,
-        Some(1.3),
+        ResponseOptions {
+            max_completion_tokens: 2048,
+            enable_thinking: false,
+            abliteration_scale: Some(1.3),
+        },
         &incoming,
         &events,
         until,
@@ -125,8 +164,11 @@ fn effort_truncation_stops_later_stages_and_keeps_complete_draft() -> Result<()>
         let mut count = 0;
         let result = run_with(
             &task(),
-            4096,
-            None,
+            ResponseOptions {
+                max_completion_tokens: 4096,
+                enable_thinking: false,
+                abliteration_scale: None,
+            },
             &incoming,
             &events,
             Instant::now() + DEADLINE,
@@ -180,8 +222,11 @@ fn effort_cancellation_deadline_and_request_bounds_prevent_later_calls() {
     let mut count = 0;
     let stopped = run_with(
         &task(),
-        1024,
-        None,
+        ResponseOptions {
+            max_completion_tokens: 1024,
+            enable_thinking: false,
+            abliteration_scale: None,
+        },
         &incoming,
         &events,
         Instant::now() + DEADLINE,
@@ -197,8 +242,11 @@ fn effort_cancellation_deadline_and_request_bounds_prevent_later_calls() {
     assert_eq!(count, 1);
     let expired = run_with(
         &task(),
-        1024,
-        None,
+        ResponseOptions {
+            max_completion_tokens: 1024,
+            enable_thinking: false,
+            abliteration_scale: None,
+        },
         &incoming,
         &events,
         Instant::now(),
@@ -212,8 +260,11 @@ fn effort_cancellation_deadline_and_request_bounds_prevent_later_calls() {
     let oversized = vec![message("user", &"x".repeat(super::super::MAX_REQUEST))];
     let bounded = run_with(
         &oversized,
-        1024,
-        None,
+        ResponseOptions {
+            max_completion_tokens: 1024,
+            enable_thinking: false,
+            abliteration_scale: None,
+        },
         &incoming,
         &events,
         Instant::now() + DEADLINE,
@@ -233,8 +284,11 @@ fn effort_review_failure_leaves_complete_draft_visible() {
     let mut count = 0;
     let result = run_with(
         &task(),
-        4096,
-        None,
+        ResponseOptions {
+            max_completion_tokens: 4096,
+            enable_thinking: false,
+            abliteration_scale: None,
+        },
         &incoming,
         &events,
         Instant::now() + DEADLINE,

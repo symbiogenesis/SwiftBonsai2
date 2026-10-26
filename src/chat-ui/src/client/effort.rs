@@ -1,8 +1,8 @@
 //! Bounded opt-in planning, drafting and review above the unchanged broker API.
 
 use super::{
-    Command, Completion, DEADLINE, Event, Failure, Message, Result, check_commands, generate_until,
-    notify, serialize_request,
+    Command, Completion, DEADLINE, Event, Failure, Message, ResponseOptions, Result,
+    check_commands, generate_until, notify, serialize_request,
 };
 use serde::Serialize;
 use std::{
@@ -19,16 +19,14 @@ pub(super) fn run(
     port: u16,
     key: &str,
     pending: &[Message],
-    max_completion_tokens: u32,
-    abliteration_scale: Option<f32>,
+    options: ResponseOptions,
     commands: &Receiver<Command>,
     events: &Sender<Event>,
 ) -> Result<(Message, Completion)> {
     let until = Instant::now() + DEADLINE;
     run_with(
         pending,
-        max_completion_tokens,
-        abliteration_scale,
+        options,
         commands,
         events,
         until,
@@ -46,8 +44,7 @@ fn stage_request(
     pending: &[Message],
     instruction: &str,
     working: Working<'_>,
-    max_completion_tokens: u32,
-    abliteration_scale: Option<f32>,
+    options: ResponseOptions,
 ) -> Result<Vec<u8>> {
     let mut fresh = pending.to_vec();
     let task = fresh
@@ -67,7 +64,12 @@ fn stage_request(
          Return only the requested stage's visible output.\nGenerated working material (JSON):\n",
     );
     task.content.push_str(&working);
-    serialize_request(&fresh, max_completion_tokens, abliteration_scale)
+    serialize_request(
+        &fresh,
+        options.max_completion_tokens,
+        options.enable_thinking,
+        options.abliteration_scale,
+    )
 }
 
 fn active(commands: &Receiver<Command>, until: Instant) -> Result<()> {
@@ -86,8 +88,7 @@ fn active(commands: &Receiver<Command>, until: Instant) -> Result<()> {
 )]
 fn run_with(
     pending: &[Message],
-    max_completion_tokens: u32,
-    abliteration_scale: Option<f32>,
+    options: ResponseOptions,
     commands: &Receiver<Command>,
     events: &Sender<Event>,
     until: Instant,
@@ -103,8 +104,7 @@ fn run_with(
             plan: None,
             draft: None,
         },
-        max_completion_tokens,
-        abliteration_scale,
+        options,
     )?;
     let (plan, completion) = generate(&request, until)?;
     active(commands, until)?;
@@ -132,8 +132,7 @@ fn run_with(
             plan: Some(&plan.content),
             draft: None,
         },
-        max_completion_tokens,
-        abliteration_scale,
+        options,
     )?;
     let (draft, completion) = generate(&request, until)?;
     active(commands, until)?;
@@ -160,8 +159,7 @@ fn run_with(
             plan: Some(&plan.content),
             draft: Some(&draft.content),
         },
-        max_completion_tokens,
-        abliteration_scale,
+        options,
     )?;
     let (revision, completion) = generate(&request, until)?;
     active(commands, until)?;
