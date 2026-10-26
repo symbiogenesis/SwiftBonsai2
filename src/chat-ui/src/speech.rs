@@ -22,6 +22,7 @@ use std::{
     time::{Duration, Instant},
 };
 mod pipeline;
+mod stream;
 
 const POLL: Duration = Duration::from_millis(50);
 const MAX_TEXT: usize = 32768;
@@ -40,6 +41,13 @@ pub(crate) enum Command {
         text: String,
         voice_description: String,
     },
+    BeginStream {
+        voice_description: String,
+    },
+    AppendStream {
+        text: String,
+    },
+    FinishStream,
     StopSpeaking,
     Shutdown,
 }
@@ -88,13 +96,17 @@ impl Commands {
     pub(crate) fn send(&self, command: Command) -> Result<(), mpsc::SendError<Command>> {
         if matches!(
             &command,
-            Command::StopListening | Command::Speak { .. } | Command::Shutdown
+            Command::StopListening
+                | Command::Speak { .. }
+                | Command::BeginStream { .. }
+                | Command::Shutdown
         ) {
             self.current_input.store(NO_INPUT, Ordering::Release);
         }
         let generation = if matches!(
             &command,
             Command::Speak { .. }
+                | Command::BeginStream { .. }
                 | Command::StopSpeaking
                 | Command::Shutdown
                 | Command::Transcribe { .. }
@@ -215,6 +227,8 @@ struct Output {
     generation: u64,
     voice: String,
     segments: VecDeque<String>,
+    stream: Option<stream::Text>,
+    failure: Option<&'static str>,
     pipeline: Option<pipeline::Pipeline>,
     prepared: bool,
     service: Option<Service>,
@@ -371,6 +385,13 @@ fn render(
     if current.load(Ordering::Acquire) != output.generation {
         return Ok(false);
     }
+    if let Some(failure) = output.failure {
+        return Err(failure);
+    }
+    if let Some(stream) = &mut output.stream {
+        output.segments.extend(stream.ready(Instant::now()));
+    }
+    let finished = output.stream.as_ref().is_none_or(|stream| stream.finished);
     if let Some(service) = &output.service {
         service.check().map_err(output_failure)?;
     }
@@ -392,6 +413,9 @@ fn render(
             message: "Generating speech with Qwen3-TTS VoiceDesign. Stop speech cancels synthesis.",
         });
     }
+    if output.pipeline.is_none() && output.segments.is_empty() {
+        return Ok(!finished);
+    }
     if output.pipeline.is_none() {
         let client = client.ok_or(
             "Qwen3-TTS VoiceDesign is unavailable. Check its companion service and key file.",
@@ -399,13 +423,15 @@ fn render(
         output.pipeline = Some(
             pipeline::Pipeline::start(
                 Arc::clone(client),
-                std::mem::take(&mut output.segments),
                 output.voice.clone(),
                 output.generation,
                 Arc::clone(current),
             )
             .map_err(|_| "Could not start native speech playback.")?,
         );
+    }
+    if let Some(pipeline) = &mut output.pipeline {
+        pipeline.feed(&mut output.segments, finished);
     }
     match output
         .pipeline
@@ -516,6 +542,8 @@ fn run(
                         generation: output_generation,
                         voice: voice_description,
                         segments,
+                        stream: None,
+                        failure: None,
                         pipeline: None,
                         prepared,
                         service,
@@ -534,6 +562,64 @@ fn run(
                         generation: output_generation,
                         message: "Read-aloud needs an answer up to 32,768 UTF-16 characters and a non-empty voice description up to 1,024 characters.",
                     });
+                }
+            }
+            Ok(Envelope {
+                command: Command::BeginStream { voice_description },
+                output_generation,
+            }) => {
+                output = None;
+                if let Some(input) = &mut input {
+                    input.clear();
+                }
+                if current_output.load(Ordering::Acquire) != output_generation {
+                    warm = None;
+                    continue;
+                }
+                let service =
+                    take_warm(&mut warm, Instant::now(), |service| service.check().is_ok());
+                let failure = (voice_description.trim().is_empty()
+                    || voice_description.chars().count() > 1024
+                    || voice_description.contains('\0'))
+                .then_some(
+                    "Read aloud needs a non-empty voice description up to 1,024 characters.",
+                );
+                output = Some(Output {
+                    generation: output_generation,
+                    voice: voice_description,
+                    segments: VecDeque::new(),
+                    stream: Some(stream::Text::default()),
+                    failure,
+                    pipeline: None,
+                    prepared: service.is_some(),
+                    service,
+                });
+                let _sent = events.send(Event::Speaking {
+                    generation: output_generation,
+                    speaking: true,
+                });
+            }
+            Ok(Envelope {
+                command: Command::AppendStream { text },
+                output_generation,
+            }) => {
+                if let Some(active) = &mut output
+                    && active.generation == output_generation
+                    && let Some(stream) = &mut active.stream
+                    && let Err(message) = stream.append(&text, Instant::now())
+                {
+                    active.failure = Some(message);
+                }
+            }
+            Ok(Envelope {
+                command: Command::FinishStream,
+                output_generation,
+            }) => {
+                if let Some(active) = &mut output
+                    && active.generation == output_generation
+                    && let Some(stream) = &mut active.stream
+                {
+                    stream.finished = true;
                 }
             }
             Ok(Envelope {
@@ -605,6 +691,49 @@ mod tests {
         },
         time::Duration,
     };
+
+    #[test]
+    fn streaming_append_and_finish_preserve_generation_until_replaced() -> io::Result<()> {
+        let (sender, receiver) = mpsc::channel();
+        let current_output = Arc::new(AtomicU64::new(0));
+        let current_input = Arc::new(AtomicU64::new(7));
+        let commands = Commands {
+            sender,
+            current_output: Arc::clone(&current_output),
+            current_input: Arc::clone(&current_input),
+        };
+        commands
+            .send(Command::BeginStream {
+                voice_description: "Calm".to_owned(),
+            })
+            .map_err(io::Error::other)?;
+        let generation = receiver.recv().map_err(io::Error::other)?.output_generation;
+        assert_eq!(current_input.load(Ordering::Acquire), super::NO_INPUT);
+        for command in [
+            Command::AppendStream {
+                text: "First sentence. ".to_owned(),
+            },
+            Command::FinishStream,
+        ] {
+            commands.send(command).map_err(io::Error::other)?;
+            assert_eq!(
+                receiver.recv().map_err(io::Error::other)?.output_generation,
+                generation
+            );
+            assert_eq!(current_output.load(Ordering::Acquire), generation);
+        }
+        commands
+            .send(Command::Speak {
+                text: "Replay".to_owned(),
+                voice_description: "Warm".to_owned(),
+            })
+            .map_err(io::Error::other)?;
+        assert_ne!(
+            receiver.recv().map_err(io::Error::other)?.output_generation,
+            generation
+        );
+        Ok(())
+    }
 
     #[test]
     fn warm_service_reuse_requires_health_and_unexpired_idle_time() {

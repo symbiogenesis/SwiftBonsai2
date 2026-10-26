@@ -21,6 +21,7 @@ const PACKET_BYTES: usize = 16_384;
 const PACKETS: usize = 4;
 
 pub(super) struct Pipeline {
+    segments: Option<SyncSender<String>>,
     finished: Receiver<Result<(), tts::Failure>>,
     cancelled: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
@@ -29,25 +30,44 @@ pub(super) struct Pipeline {
 impl Pipeline {
     pub(super) fn start(
         client: Arc<tts::Client>,
-        segments: VecDeque<String>,
         voice: String,
         generation: u64,
         current: Arc<AtomicU64>,
     ) -> io::Result<Self> {
         let (complete, finished) = mpsc::channel();
+        let (segments, incoming) = mpsc::sync_channel(2);
         let cancelled = Arc::new(AtomicBool::new(false));
         let stop = Arc::clone(&cancelled);
         let worker = thread::Builder::new()
             .name("bonsai-tts-prefetch".to_owned())
             .spawn(move || {
-                let result = produce(&client, segments, &voice, generation, &current, &stop);
+                let result = produce(&client, &incoming, &voice, generation, &current, &stop);
                 let _sent = complete.send(result);
             })?;
         Ok(Self {
+            segments: Some(segments),
             finished,
             cancelled,
             worker: Some(worker),
         })
+    }
+
+    pub(super) fn feed(&mut self, queued: &mut VecDeque<String>, finished: bool) {
+        if let Some(sender) = &self.segments {
+            while let Some(text) = queued.pop_front() {
+                match sender.try_send(text) {
+                    Ok(()) => {}
+                    Err(TrySendError::Full(text)) => {
+                        queued.push_front(text);
+                        break;
+                    }
+                    Err(TrySendError::Disconnected(_)) => break,
+                }
+            }
+        }
+        if finished && queued.is_empty() {
+            self.segments = None;
+        }
     }
 
     pub(super) fn result(&self) -> Option<Result<(), tts::Failure>> {
@@ -70,7 +90,7 @@ impl Drop for Pipeline {
 
 fn produce(
     client: &tts::Client,
-    segments: VecDeque<String>,
+    segments: &Receiver<String>,
     voice: &str,
     generation: u64,
     current: &Arc<AtomicU64>,
@@ -90,7 +110,7 @@ fn produce(
         })
         .map_err(|_| AUDIO_FAILURE)?;
     let synthesis = (|| {
-        for text in segments {
+        while let Some(text) = next_segment(segments, generation, current, stop)? {
             client.synthesize_pcm(&text, voice, generation, current, stop, |pcm| {
                 for packet in pcm.chunks(PACKET_BYTES) {
                     send(&sender, packet.to_vec(), generation, current, stop)?;
@@ -112,6 +132,22 @@ fn produce(
     }
     synthesis?;
     played
+}
+
+fn next_segment(
+    segments: &Receiver<String>,
+    generation: u64,
+    current: &AtomicU64,
+    stop: &AtomicBool,
+) -> Result<Option<String>, tts::Failure> {
+    loop {
+        check(generation, current, stop)?;
+        match segments.recv_timeout(POLL) {
+            Ok(text) => return Ok(Some(text)),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(None),
+        }
+    }
 }
 
 fn check(generation: u64, current: &AtomicU64, stop: &AtomicBool) -> Result<(), tts::Failure> {
@@ -285,6 +321,31 @@ impl Drop for WaveOutput {
 mod tests {
     use super::{Arc, AtomicBool, AtomicU64, Ordering, PACKETS, check, mpsc, send};
     use crate::tts::Failure;
+
+    #[test]
+    fn streaming_segment_input_waits_through_gaps_then_finishes_or_cancels() {
+        let (sender, receiver) = mpsc::sync_channel(2);
+        let current = AtomicU64::new(4);
+        let stop = AtomicBool::new(false);
+        assert!(sender.send("First".to_owned()).is_ok());
+        assert_eq!(
+            super::next_segment(&receiver, 4, &current, &stop),
+            Ok(Some("First".to_owned()))
+        );
+        current.store(5, Ordering::Release);
+        assert_eq!(
+            super::next_segment(&receiver, 4, &current, &stop),
+            Err(Failure::Cancelled)
+        );
+        drop(sender);
+        assert_eq!(super::next_segment(&receiver, 5, &current, &stop), Ok(None));
+        let (sender, receiver) = mpsc::sync_channel(2);
+        let waiting = std::thread::spawn(move || {
+            super::next_segment(&receiver, 4, &AtomicU64::new(4), &AtomicBool::new(false))
+        });
+        assert!(sender.send("Second".to_owned()).is_ok());
+        assert_eq!(waiting.join().ok(), Some(Ok(Some("Second".to_owned()))));
+    }
 
     #[test]
     fn bounded_prefetch_cancels_while_the_audio_queue_is_full() {
