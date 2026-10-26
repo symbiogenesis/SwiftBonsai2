@@ -96,6 +96,8 @@ fn main() -> io::Result<()> {
         println!("cargo:rustc-link-search=native={}", parent.display());
         println!("cargo:rustc-link-lib=static={name}");
     }
+    // GGML queries the Windows CPU description through the registry API.
+    println!("cargo:rustc-link-lib=advapi32");
     Ok(())
 }
 
