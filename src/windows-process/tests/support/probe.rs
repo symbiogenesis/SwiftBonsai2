@@ -8,6 +8,7 @@ use std::io;
 use std::net::TcpListener;
 use std::os::windows::ffi::OsStrExt as _;
 use std::os::windows::process::CommandExt as _;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -41,6 +42,8 @@ fn main() -> io::Result<()> {
         "sleep" => wait_forever(),
         "mitigations" => report_mitigations()?,
         "nested-mitigations" => nested_mitigations()?,
+        "sandbox-files" => sandbox_files(&args)?,
+        "sandbox-temp-denied" => sandbox_temp_denied(&args)?,
         "crash" => native_crash(),
         "error-policy" | "error-policy-owner" => error_policy(mode)?,
         "listen" => {
@@ -103,6 +106,191 @@ fn main() -> io::Result<()> {
             wait_forever();
         }
         _ => return Err(io::Error::other("unknown probe mode")),
+    }
+    Ok(())
+}
+
+fn sandbox_files(args: &[OsString]) -> io::Result<()> {
+    let model = argument(args, 1)?;
+    let key = argument(args, 2)?;
+    let unrelated = argument(args, 3)?;
+    let model_text =
+        fs::read_to_string(model).map_err(|error| sandbox_error("model read", &error))?;
+    let key_text =
+        fs::read_to_string(key).map_err(|error| sandbox_error("backend key read", &error))?;
+    if model_text != "approved model" || key_text != "backend key" {
+        return Err(io::Error::other("approved sandbox input changed"));
+    }
+    sandbox_ancestors(Path::new(model))?;
+    if fs::read(unrelated).is_ok() {
+        return Err(io::Error::other(
+            "sandbox read unrelated frontend credential",
+        ));
+    }
+    if fs::hard_link(unrelated, "stolen.key").is_ok()
+        && (fs::read("stolen.key").is_ok()
+            || fs::OpenOptions::new()
+                .write(true)
+                .open("stolen.key")
+                .is_ok())
+    {
+        return Err(io::Error::other(
+            "sandbox accessed unrelated file through a hardlink alias",
+        ));
+    }
+    if fs::OpenOptions::new().write(true).open(model).is_ok() {
+        return Err(io::Error::other("sandbox opened read-only model writable"));
+    }
+    fs::write("scratch.txt", "private scratch")
+        .map_err(|error| sandbox_error("scratch write", &error))?;
+    let directory = std::env::current_dir()?;
+    sandbox_temp()?;
+    let child_policy = child_process_policy()?;
+    fs::write("child-policy.txt", child_policy.to_string())?;
+    let mut child = Command::new(std::env::current_exe()?)
+        .arg("sleep")
+        .current_dir(&directory)
+        .creation_flags(0x0800_0000)
+        .spawn();
+    if let Ok(child) = &mut child {
+        let recorded = child_creation_file_time(child).and_then(|creation| {
+            fs::write(
+                "unexpected-child.txt",
+                format!(
+                    "pid={}\ncreation={creation}\nexecutable={}\n",
+                    child.id(),
+                    std::env::current_exe()?.display()
+                ),
+            )
+        });
+        let stopped = child.kill().and_then(|()| child.wait().map(|_| ()));
+        recorded?;
+        stopped?;
+        return Err(io::Error::other(
+            "sandbox escaped its one-process Job limit",
+        ));
+    }
+    let port = argument(args, 4)?
+        .parse::<u16>()
+        .map_err(io::Error::other)?;
+    let _listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port))
+        .map_err(|error| sandbox_error("loopback listener bind", &error))?;
+    fs::write("sandbox-ready.txt", std::process::id().to_string())?;
+    wait_forever();
+    Ok(())
+}
+
+#[allow(
+    unsafe_code,
+    reason = "Query the disposable probe's native child-process mitigation without transferring handles."
+)]
+fn child_process_policy() -> io::Result<u32> {
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcess, GetProcessMitigationPolicy, ProcessChildProcessPolicy,
+    };
+
+    let mut flags = 0_u32;
+    // SAFETY: Borrow the current process pseudo handle without closing it.
+    let process = unsafe { GetCurrentProcess() };
+    // SAFETY: The documented child-policy structure is one DWORD Flags union.
+    // The aligned writable buffer and exact byte count agree and remain live.
+    let queried = unsafe {
+        GetProcessMitigationPolicy(
+            process,
+            ProcessChildProcessPolicy,
+            std::ptr::from_mut(&mut flags).cast(),
+            size_of_val(&flags),
+        )
+    };
+    if queried == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(flags)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "Record creation identity while retaining the unexpectedly spawned fixture's owning Child handle."
+)]
+fn child_creation_file_time(child: &std::process::Child) -> io::Result<u64> {
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Foundation::FILETIME;
+    use windows_sys::Win32::System::Threading::GetProcessTimes;
+
+    let mut creation = FILETIME::default();
+    let mut exit = FILETIME::default();
+    let mut kernel = FILETIME::default();
+    let mut user = FILETIME::default();
+    // SAFETY: Child retains its live process handle; four nonaliasing aligned
+    // FILETIME buffers stay writable for the synchronous identity query.
+    let queried = unsafe {
+        GetProcessTimes(
+            child.as_raw_handle(),
+            &raw mut creation,
+            &raw mut exit,
+            &raw mut kernel,
+            &raw mut user,
+        )
+    };
+    if queried == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime))
+}
+
+fn sandbox_temp() -> io::Result<()> {
+    let directory = std::env::temp_dir();
+    if !directory.is_absolute() {
+        return Err(io::Error::other("sandbox temporary directory is relative"));
+    }
+    for name in ["TEMP", "TMP"] {
+        let value = std::env::var_os(name)
+            .ok_or_else(|| io::Error::other("sandbox temporary variable is missing"))?;
+        if fs::canonicalize(PathBuf::from(value))? != fs::canonicalize(&directory)? {
+            return Err(io::Error::other("sandbox TEMP/TMP disagree"));
+        }
+    }
+    let file = directory.join("sandbox-private-temp.txt");
+    fs::write(&file, "private kernel temp")?;
+    fs::write("kernel-temp-path.txt", file.to_string_lossy().as_bytes())
+}
+
+fn sandbox_temp_denied(args: &[OsString]) -> io::Result<()> {
+    if fs::read(argument(args, 1)?).is_ok() {
+        return Err(io::Error::other(
+            "sandbox read another worker's private temp",
+        ));
+    }
+    sandbox_temp()
+}
+
+fn sandbox_error(stage: &str, error: &io::Error) -> io::Error {
+    io::Error::new(error.kind(), format!("{stage}: {error}"))
+}
+
+fn sandbox_ancestors(model: &Path) -> io::Result<()> {
+    let parent = model
+        .parent()
+        .ok_or_else(|| io::Error::other("approved sandbox input lacks a parent"))?;
+    for ancestor in parent.ancestors() {
+        // The owner validates volume roots before granting these exact paths.
+        // The worker receives no root grant and checks all non-root ancestors.
+        if ancestor.parent().is_none() {
+            continue;
+        }
+        let _metadata = fs::symlink_metadata(ancestor).map_err(|error| {
+            sandbox_error(&format!("ancestor metadata {}", ancestor.display()), &error)
+        })?;
+        match fs::symlink_metadata(ancestor.join(".git")) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(sandbox_error(
+                    &format!("Git ancestry lookup {}", ancestor.display()),
+                    &error,
+                ));
+            }
+            Ok(_) => return Err(io::Error::other("sandbox fixture has a Git ancestor")),
+        }
     }
     Ok(())
 }

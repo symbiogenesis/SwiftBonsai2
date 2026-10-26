@@ -4,7 +4,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::io;
-use std::net::TcpListener;
+use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
 use std::os::windows::fs::OpenOptionsExt as _;
 use std::os::windows::process::CommandExt as _;
@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use bonsai_windows_process::{
     OwnedProcess, ProcessSpec, SandboxPolicy, ToolProcessSpec, available_memory_bytes,
-    listener_process_id,
+    listener_process_id, native_sandbox_available,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -64,7 +64,7 @@ fn until(mut predicate: impl FnMut() -> io::Result<bool>) -> io::Result<()> {
 }
 
 fn unused_port() -> io::Result<u16> {
-    Ok(TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?
+    Ok(TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?
         .local_addr()?
         .port())
 }
@@ -101,6 +101,123 @@ fn sandbox_rejects_invalid_grants_before_creating_evidence() -> io::Result<()> {
         assert!(!spec.stdout.exists());
         assert!(!spec.stderr.exists());
     }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires a native Windows PSEC v1.1 host with host-loopback ingress support."]
+fn native_sandbox_limits_files_and_preserves_loopback_process_identity() -> io::Result<()> {
+    native_sandbox_available()
+        .map_err(|error| io::Error::new(error.kind(), format!("native preflight: {error}")))?;
+    let lane = Lane::new("sandbox-files")?;
+    let scratch = lane.path.join("scratch");
+    fs::create_dir(&scratch)?;
+    let model = lane.path.join("approved-model.gguf");
+    let backend_key = lane.path.join("backend.key");
+    let frontend_key = lane.path.join("frontend.key");
+    fs::write(&model, "approved model")?;
+    fs::write(&backend_key, "backend key")?;
+    fs::write(&frontend_key, "unrelated frontend key")?;
+    // Match the retained deny-write/delete handles used by production artifact
+    // and credential verification while Windows admits the native policy.
+    let _model_guard = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&model)?;
+    let _key_guard = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(1)
+        .open(&backend_key)?;
+    let port = unused_port()?;
+    let mut spec = lane.spec(vec![
+        OsString::from("sandbox-files"),
+        model.clone().into_os_string(),
+        backend_key.clone().into_os_string(),
+        frontend_key.clone().into_os_string(),
+        OsString::from(port.to_string()),
+    ]);
+    spec.working_directory.clone_from(&scratch);
+    spec.active_process_limit = 1;
+    let policy = SandboxPolicy {
+        readonly_paths: vec![spec.executable.clone(), model.clone(), backend_key],
+        writable_directory: scratch.clone(),
+    };
+    let process = OwnedProcess::start_sandboxed(&spec, &policy)
+        .map_err(|error| io::Error::new(error.kind(), format!("first worker launch: {error}")))?;
+    until(|| {
+        if scratch.join("sandbox-ready.txt").exists() {
+            return Ok(true);
+        }
+        if let Some(code) = process.try_wait()? {
+            return Err(io::Error::other(format!(
+                "sandbox file probe exited {code}: {}",
+                fs::read_to_string(&spec.stderr)?
+            )));
+        }
+        Ok(false)
+    })?;
+    assert_eq!(
+        fs::read_to_string(scratch.join("sandbox-ready.txt"))?,
+        process.id().to_string()
+    );
+    assert_eq!(listener_process_id(port)?, Some(process.id()));
+    let _connection =
+        TcpStream::connect_timeout(&(Ipv4Addr::LOCALHOST, port).into(), Duration::from_secs(2))?;
+    assert_eq!(
+        fs::read_to_string(scratch.join("scratch.txt"))?,
+        "private scratch"
+    );
+    assert_eq!(fs::read_to_string(model)?, "approved model");
+    assert_eq!(fs::read_to_string(frontend_key)?, "unrelated frontend key");
+    let child_policy = fs::read_to_string(scratch.join("child-policy.txt"))?
+        .parse::<u32>()
+        .map_err(io::Error::other)?;
+    fs::write(
+        lane.path.join("observed-child-policy.txt"),
+        child_policy.to_string(),
+    )?;
+    assert_other_worker_temp_denied(&scratch)?;
+    assert!(process.memory_usage()?.private_bytes > 0);
+    process.stop(TIMEOUT)?;
+    assert!(process.try_wait()?.is_some());
+    until(|| listener_process_id(port).map(|owner| owner.is_none()))?;
+    Ok(())
+}
+
+fn assert_other_worker_temp_denied(first_scratch: &std::path::Path) -> io::Result<()> {
+    // Windows can replace the requested TEMP/TMP with an OS-managed private
+    // AppContainer temp. Prove isolation with a live second worker, rather than
+    // assuming that the native environment preserves a particular pathname.
+    let first = fs::read_to_string(first_scratch.join("kernel-temp-path.txt"))?;
+    assert_eq!(fs::read_to_string(&first)?, "private kernel temp");
+    let lane = Lane::new("sandbox-other-temp")?;
+    let scratch = lane.path.join("scratch");
+    fs::create_dir(&scratch)?;
+    let mut spec = lane.spec(vec![
+        OsString::from("sandbox-temp-denied"),
+        OsString::from(&first),
+    ]);
+    spec.working_directory.clone_from(&scratch);
+    spec.active_process_limit = 1;
+    let process = OwnedProcess::start_sandboxed(
+        &spec,
+        &SandboxPolicy {
+            readonly_paths: vec![spec.executable.clone()],
+            writable_directory: scratch.clone(),
+        },
+    )
+    .map_err(|error| io::Error::new(error.kind(), format!("second temp worker launch: {error}")))?;
+    until(|| process.try_wait().map(|code| code.is_some()))?;
+    assert_eq!(
+        process.try_wait()?,
+        Some(0),
+        "{}",
+        fs::read_to_string(&spec.stderr)?
+    );
+    assert_ne!(
+        fs::read_to_string(scratch.join("kernel-temp-path.txt"))?,
+        first
+    );
     Ok(())
 }
 
