@@ -269,11 +269,13 @@ impl AuthorizedHead {
     ///
     /// Copies the bounded immutable body because SIMD-JSON parses in place.
     /// Schema, history, settings and canonical serialization use the production
-    /// policy. No service route selects this experimental parser.
+    /// policy. Requests with a decoded `abliteration_scale` field, and candidate
+    /// parsing failures, use the production parser to retain its exact numeric
+    /// and rejection semantics. No service route selects this parser.
     ///
     /// # Errors
     /// Returns the same value-free rejections as [`Self::prepare`]. Allocation
-    /// and parser failures return [`Rejection::ChatSchema`].
+    /// failures return [`Rejection::ChatSchema`].
     #[cfg(feature = "json-candidate")]
     pub fn prepare_simd_json(self, body: &[u8]) -> Result<PendingChat, Rejection> {
         self.check_body_size(body)?;
@@ -282,8 +284,17 @@ impl AuthorizedHead {
             .try_reserve_exact(body.len())
             .map_err(|_| Rejection::ChatSchema)?;
         mutable.extend_from_slice(body);
-        let Object(chat): Object<ClientChat<'_>> =
-            simd_json::serde::from_slice(&mut mutable).map_err(|_| Rejection::ChatSchema)?;
+        let Ok(Object(chat)): Result<Object<ClientChat<'_>>, _> =
+            simd_json::serde::from_slice(&mut mutable)
+        else {
+            return self.prepare(body);
+        };
+        // The parsers can round the same decimal scale to adjacent F64 values.
+        // Retain the production lexeme conversion, including escaped key names
+        // and numeric values near admission boundaries, instead of changing it.
+        if chat.abliteration_scale.is_some() {
+            return self.prepare(body);
+        }
         self.prepare_chat(&chat)
     }
 

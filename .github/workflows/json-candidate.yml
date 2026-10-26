@@ -58,9 +58,11 @@ jobs:
           cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --release --locked --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') -p bonsai-broker --features json-candidate --lib json_candidate::ci_comparison -- --exact --ignored
           $result = Get-Content -Raw -LiteralPath (Join-Path $env:BONSAI_JSON_EVIDENCE 'comparison.json') | ConvertFrom-Json
           @(
-            "Candidate / serde_json median-time geometric mean: $($result.geometric_mean_time_ratio)",
-            "Worst-case median-time ratio: $($result.worst_case_time_ratio)",
-            "Meets the 5%/5% screen: $($result.qualifies)",
+            "Original six-case median-time geometric mean: $($result.original_six_geometric_mean_time_ratio)",
+            "Original six-case worst median-time ratio: $($result.original_six_worst_case_time_ratio)",
+            "Meets the original six-case 5%/5% screen: $($result.original_six_qualifies)",
+            "Supplemental float-setting worst median-time ratio: $($result.supplemental_worst_case_time_ratio)",
+            "Overall screen qualifies, including supplemental no-regression requirement: $($result.qualifies)",
             'Production remains on serde_json. This hosted CPU result does not establish inference TPS or Snapdragon behavior.'
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
       - name: Retain comparison and host identities

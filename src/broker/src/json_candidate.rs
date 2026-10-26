@@ -143,6 +143,35 @@ fn fixed_candidate_preserves_schema_history_and_bounds() -> Result<(), Box<dyn E
     Ok(())
 }
 
+#[test]
+fn fixed_candidate_preserves_serde_scale_lexemes() {
+    for key in ["abliteration_scale", r"abliteration_\u0073cale"] {
+        for scale in [
+            "1.2785641882898677",
+            "1.6447349639294147",
+            "1.8830876439670798",
+            "1.9999999999999999",
+            "2.0000000000000001",
+            "-1e-400",
+            "0e9999",
+            "null",
+            r#""1.3""#,
+            "[]",
+            "{}",
+            "true",
+            "-0.0001",
+            "2.0000000000000004",
+            "1e9999",
+        ] {
+            let body =
+                format!(r#"{{"messages":[{{"role":"user","content":"a"}}],"{key}":{scale}}}"#);
+            parity(body.as_bytes(), true);
+            parity(body.as_bytes(), false);
+        }
+    }
+    parity(br#"{"messages":[{"role":"user","content":"a"}],"abliteration_scale":1,"abliteration_\u0073cale":2}"#, true);
+}
+
 fn history(count: usize) -> Result<Vec<u8>, serde_json::Error> {
     let mut messages =
         vec![serde_json::json!({"role":"system","content":"Use the supplied scene packet."})];
@@ -168,6 +197,7 @@ fn fixtures() -> Result<Vec<(&'static str, Vec<u8>)>, serde_json::Error> {
 struct CaseReport {
     name: &'static str,
     body_bytes: usize,
+    pinned_adapter: bool,
     iterations_per_round: usize,
     serde_nanoseconds: Vec<u128>,
     candidate_nanoseconds: Vec<u128>,
@@ -181,16 +211,19 @@ struct Report {
     architecture: &'static str,
     warmup_rounds: usize,
     measured_rounds: usize,
-    geometric_mean_time_ratio: f64,
-    worst_case_time_ratio: f64,
+    original_six_geometric_mean_time_ratio: f64,
+    original_six_worst_case_time_ratio: f64,
+    original_six_qualifies: bool,
+    supplemental_worst_case_time_ratio: f64,
     qualifies: bool,
     cases: Vec<CaseReport>,
+    supplemental_cases: Vec<CaseReport>,
 }
 
-fn timed(body: &[u8], candidate: bool, iterations: usize) -> u128 {
+fn timed(body: &[u8], candidate: bool, pinned: bool, iterations: usize) -> u128 {
     let started = Instant::now();
     for _ in 0..iterations {
-        let result = canonical(black_box(body), candidate, false);
+        let result = canonical(black_box(body), candidate, pinned);
         assert!(result.is_ok());
         drop(black_box(result));
     }
@@ -206,6 +239,37 @@ fn ratio(candidate: u128, baseline: u128) -> f64 {
     candidate as f64 / baseline as f64
 }
 
+fn compare_case(name: &'static str, body: &[u8], pinned_adapter: bool) -> CaseReport {
+    let iterations = if body.len() > 100_000 { 64 } else { 2048 };
+    let mut serde_nanoseconds = Vec::new();
+    let mut candidate_nanoseconds = Vec::new();
+    for round in 0..10 {
+        let mut elapsed = [0; 2];
+        for offset in 0..2 {
+            let candidate = (round + offset) % 2 == 1;
+            elapsed[usize::from(candidate)] = timed(body, candidate, pinned_adapter, iterations);
+        }
+        if round != 0 {
+            serde_nanoseconds.push(elapsed[0]);
+            candidate_nanoseconds.push(elapsed[1]);
+        }
+    }
+    let mut baseline = serde_nanoseconds.clone();
+    let mut candidate = candidate_nanoseconds.clone();
+    baseline.sort_unstable();
+    candidate.sort_unstable();
+    let median_time_ratio = ratio(candidate[4], baseline[4]);
+    CaseReport {
+        name,
+        body_bytes: body.len(),
+        pinned_adapter,
+        iterations_per_round: iterations,
+        serde_nanoseconds,
+        candidate_nanoseconds,
+        median_time_ratio,
+    }
+}
+
 #[test]
 #[ignore = "benchmark execution requires the main-only JSON candidate workflow"]
 fn ci_comparison() -> Result<(), Box<dyn Error>> {
@@ -217,35 +281,10 @@ fn ci_comparison() -> Result<(), Box<dyn Error>> {
     assert!(directory.is_dir());
     fixed_candidate_preserves_unicode_and_rejections();
     fixed_candidate_preserves_schema_history_and_bounds()?;
+    fixed_candidate_preserves_serde_scale_lexemes();
     let mut cases = Vec::new();
     for (name, body) in fixtures()? {
-        let iterations = if body.len() > 100_000 { 64 } else { 2048 };
-        let mut serde_nanoseconds = Vec::new();
-        let mut candidate_nanoseconds = Vec::new();
-        for round in 0..10 {
-            let mut elapsed = [0; 2];
-            for offset in 0..2 {
-                let candidate = (round + offset) % 2 == 1;
-                elapsed[usize::from(candidate)] = timed(&body, candidate, iterations);
-            }
-            if round != 0 {
-                serde_nanoseconds.push(elapsed[0]);
-                candidate_nanoseconds.push(elapsed[1]);
-            }
-        }
-        let mut baseline = serde_nanoseconds.clone();
-        let mut candidate = candidate_nanoseconds.clone();
-        baseline.sort_unstable();
-        candidate.sort_unstable();
-        let median_time_ratio = ratio(candidate[4], baseline[4]);
-        cases.push(CaseReport {
-            name,
-            body_bytes: body.len(),
-            iterations_per_round: iterations,
-            serde_nanoseconds,
-            candidate_nanoseconds,
-            median_time_ratio,
-        });
+        cases.push(compare_case(name, &body, false));
     }
     let geometric_mean_time_ratio = (cases
         .iter()
@@ -257,16 +296,29 @@ fn ci_comparison() -> Result<(), Box<dyn Error>> {
         .iter()
         .map(|case| case.median_time_ratio)
         .fold(0.0, f64::max);
+    let original_six_qualifies = geometric_mean_time_ratio <= 0.95 && worst_case_time_ratio <= 1.05;
+    let supplemental_cases = [
+        ("adapter_scale_default", br#"{"messages":[{"role":"user","content":"Draft a scene with rain."}],"abliteration_scale":1.3}"#.as_slice()),
+        ("adapter_scale_decimal", br#"{"messages":[{"role":"user","content":"Draft a scene with rain."}],"abliteration_scale":1.2785641882898677}"#.as_slice()),
+        ("adapter_scale_escaped_key", br#"{"messages":[{"role":"user","content":"Draft a scene with rain."}],"abliteration_\u0073cale":1.6447349639294147}"#.as_slice()),
+    ].into_iter().map(|(name, body)| compare_case(name, body, true)).collect::<Vec<_>>();
+    let supplemental_worst_case_time_ratio = supplemental_cases
+        .iter()
+        .map(|case| case.median_time_ratio)
+        .fold(0.0, f64::max);
     let report = Report {
         source_revision: "ff8f5c8bb75dfc56803321c2f5a92656c7de842f",
         tested_revision: std::env::var("GITHUB_SHA")?,
         architecture: std::env::consts::ARCH,
         warmup_rounds: 1,
         measured_rounds: 9,
-        geometric_mean_time_ratio,
-        worst_case_time_ratio,
-        qualifies: geometric_mean_time_ratio <= 0.95 && worst_case_time_ratio <= 1.05,
+        original_six_geometric_mean_time_ratio: geometric_mean_time_ratio,
+        original_six_worst_case_time_ratio: worst_case_time_ratio,
+        original_six_qualifies,
+        supplemental_worst_case_time_ratio,
+        qualifies: original_six_qualifies && supplemental_worst_case_time_ratio <= 1.05,
         cases,
+        supplemental_cases,
     };
     let file = std::fs::OpenOptions::new()
         .write(true)

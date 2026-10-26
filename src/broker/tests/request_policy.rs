@@ -37,14 +37,23 @@ fn head(size: usize) -> Parts {
 
 fn prepare(body: &[u8]) -> Result<PendingChat, Rejection> {
     let authorized = policy().check_head(&head(body.len()))?;
+    let production = authorized.prepare(body);
     #[cfg(feature = "json-candidate")]
     {
-        authorized.prepare_simd_json(body)
+        // Retain the production result for every original assertion. Independently
+        // compare both parsers' canonical bytes, response mode and exact errors.
+        let reference = policy().check_head(&head(body.len()))?.prepare(body);
+        let candidate = policy()
+            .check_head(&head(body.len()))?
+            .prepare_simd_json(body);
+        let view = |result: Result<PendingChat, Rejection>| {
+            result
+                .and_then(|pending| pending.admit(|_| Ok(1)))
+                .map(|chat| (chat.backend_body().to_vec(), chat.streams_response()))
+        };
+        assert_eq!(view(candidate), view(reference));
     }
-    #[cfg(not(feature = "json-candidate"))]
-    {
-        authorized.prepare(body)
-    }
+    production
 }
 
 fn rejected_head(parts: &Parts, expected: Rejection) {
