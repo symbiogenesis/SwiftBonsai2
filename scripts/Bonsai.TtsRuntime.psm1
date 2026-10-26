@@ -95,7 +95,12 @@ function Install-QwenTtsRuntime {
             Write-Information -MessageData ('Preparing Qwen runtime dependency: {0}' -f $artifact.Name) -InformationAction Continue
             [void](Receive-LockedArtifact -Uri $artifact.Uri -Path $artifact.Path -Bytes $artifact.Bytes -Sha256 $artifact.Sha256)
         }
-        $staging = Resolve-ExternalPath ($plan.RuntimeDirectory + '.staging-' + [guid]::NewGuid().ToString('N'))
+        # A short sibling avoids exceeding Windows executable-path limits when
+        # the caller uses a longer external data directory.
+        $staging = Resolve-ExternalPath (Join-Path $parent ('setup-' + [guid]::NewGuid().ToString('N')))
+        if ((Join-Path $staging 'python.exe').Length -ge 260 -or $plan.PythonPath.Length -ge 260) {
+            throw 'Choose a shorter DataDirectory for the private Qwen Python runtime.'
+        }
         [void][IO.Directory]::CreateDirectory($staging)
         $python = ($plan.Artifacts | Where-Object Kind -CEQ Python).Path
         [IO.Compression.ZipFile]::ExtractToDirectory($python, $staging)
@@ -116,7 +121,17 @@ function Install-QwenTtsRuntime {
         }
         Test-QwenTtsRuntime -PythonPath $stagedPython -WorkingDirectory $working
         [IO.File]::WriteAllText((Join-Path $staging 'runtime.receipt'), $plan.Identity)
-        [IO.Directory]::Move($staging, $plan.RuntimeDirectory)
+        # Windows may retain executable/DLL mappings briefly after the import
+        # probe exits. Publish only this verified sibling, without replacement.
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                [IO.Directory]::Move($staging, $plan.RuntimeDirectory)
+                break
+            } catch [IO.IOException], [UnauthorizedAccessException] {
+                if ($attempt -ge 119 -or [IO.Directory]::Exists($plan.RuntimeDirectory)) { throw }
+                Start-Sleep -Milliseconds 250
+            }
+        }
         return $plan.PythonPath
     } finally { $lease.Dispose() }
 }

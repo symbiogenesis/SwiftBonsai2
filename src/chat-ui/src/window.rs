@@ -1443,7 +1443,7 @@ impl State {
         if self.tts_configured {
             "Qwen3-TTS VoiceDesign is not ready. Start its service on the configured port, check its protected key file, then restart the demo. See tools/qwen-tts/README.md. Your voice description will be used when the service is ready."
         } else {
-            "Read aloud needs the Qwen3-TTS 1.7B VoiceDesign runtime and service. The PowerShell demo script downloads its pinned model files automatically. Set up the runtime, start the service, then launch the demo with -TtsKeyFile pointing to its protected key file. See tools/qwen-tts/README.md. Describe your desired voice in Voice profile; no preset or reference recording is required."
+            "Launch the demo with scripts/Start-Demo.ps1 to prepare Qwen3-TTS 1.7B VoiceDesign automatically. Use its default settings without -NoTts or -NoSpeechModels. Read aloud then starts the local service when selected. Describe your desired voice in Voice profile; no preset or reference recording is required. See tools/qwen-tts/README.md."
         }
     }
 

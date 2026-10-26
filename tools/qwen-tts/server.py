@@ -306,7 +306,7 @@ def _model_worker(connection, snapshot: str, device: str, scratch: str) -> None:
 class ProcessSynthesizer:
     def __init__(self, snapshot: Path, device: str, startup_seconds: float):
         self._ready = False
-        self.scratch = tempfile.TemporaryDirectory(prefix="Bonsai-QwenTTS-")
+        self.scratch = tempfile.TemporaryDirectory(prefix="Bonsai-QwenTTS-", dir=Path.cwd())
         context = multiprocessing.get_context("spawn")
         self.connection, child = context.Pipe()
         self.process = context.Process(
