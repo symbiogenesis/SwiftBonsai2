@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([string])]
-param([ValidateSet('All','Plan','Selection','Provision','Launcher')][string]$Case = 'All')
+param([ValidateSet('All','Plan','Selection','Provision')][string]$Case = 'All')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -118,56 +118,6 @@ if ($Case -in @('All','Provision')) {
     }
     Assert (-not (Test-Path -LiteralPath $data)) 'Mocked provisioning unexpectedly wrote model storage.'
     Import-Module $modulePath -Force | Out-Null
-}
-
-if ($Case -in @('All','Launcher')) {
-    $launcher = Join-Path $repo 'scripts/Start-Chat.ps1'
-    $tokens = $null
-    $errors = $null
-    $ast = [Management.Automation.Language.Parser]::ParseFile($launcher, [ref]$tokens, [ref]$errors)
-    Assert ($errors.Count -eq 0) 'Demo launcher has parse errors.'
-    $names = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
-    Assert ($names -ccontains 'NoSpeechModels' -and $names -ccontains 'SpeechModelsOnly') 'Demo omitted model download controls.'
-    $download = @($ast.FindAll({ param($node)
-        $node -is [Management.Automation.Language.CommandAst] -and $node.InvocationOperator -eq 'Ampersand' -and
-            $node.Extent.Text.Contains('Get-NativeSpeechModels.ps1')
-    }, $true))
-    Assert ($download.Count -eq 1) 'Demo does not invoke the reviewed speech downloader exactly once.'
-    $guard = $download[0].Parent
-    while ($guard -and ($guard -isnot [Management.Automation.Language.IfStatementAst] -or
-            -not $guard.Extent.Text.Contains('NoSpeechModels'))) { $guard = $guard.Parent }
-    Assert ($null -ne $guard) 'Speech downloading lacks the explicit text-only opt-out guard.'
-
-    # Execute the real launcher flow from a disposable external copy with only
-    # its downloader replaced. Compiler lookup is trapped before any native run.
-    $fixture = Join-Path $scratch 'launcher'
-    $scripts = Join-Path $fixture 'scripts'
-    [void][IO.Directory]::CreateDirectory($scripts)
-    $source = [IO.File]::ReadAllText($launcher)
-    $trap = "`nfunction Get-Command { throw 'Download-only mode attempted compiler or native lookup.' }`n"
-    $source = $source.Insert($ast.ParamBlock.Extent.EndOffset, $trap)
-    $copy = Join-Path $scripts 'Start-Chat.ps1'
-    [IO.File]::WriteAllText($copy, $source)
-    Copy-Item -LiteralPath (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Destination $scripts
-    Copy-Item -LiteralPath (Join-Path $repo 'scripts/Bonsai.Native.psm1') -Destination $scripts
-    $fakeDownloader = @'
-[CmdletBinding()]
-param([string]$DataDirectory, [string]$Model = 'All',
-      [ValidateSet('Q8_0', 'Q4_K_M')][string]$TtsQuantization = 'Q8_0', [switch]$VerifyOnly)
-[void][IO.Directory]::CreateDirectory($DataDirectory)
-[IO.File]::WriteAllText((Join-Path $DataDirectory 'download-called'), $Model)
-[IO.File]::WriteAllText((Join-Path $DataDirectory 'quantization-called'), $TtsQuantization)
-[pscustomobject]@{ Status = 'verified'; CanaryModelPath = 'canary'; TtsModelPath = 'tts'; TtsCodecPath = 'codec'; TotalBytes = 1 }
-'@
-    [IO.File]::WriteAllText((Join-Path $scripts 'Get-NativeSpeechModels.ps1'), $fakeDownloader)
-    $data = Join-Path $fixture 'data'
-    [void][IO.Directory]::CreateDirectory($data)
-    & $copy -DataDirectory $data -SpeechModelsOnly | Out-Null
-    Assert ([IO.File]::ReadAllText((Join-Path $data 'download-called')) -ceq 'All') 'Download-only demo skipped required model provisioning.'
-    Assert ([IO.File]::ReadAllText((Join-Path $data 'quantization-called')) -ceq 'Q8_0') 'Download-only demo changed the default TTS quantization.'
-    & $copy -DataDirectory $data -SpeechModelsOnly -TtsQuantization Q4_K_M | Out-Null
-    Assert ([IO.File]::ReadAllText((Join-Path $data 'quantization-called')) -ceq 'Q4_K_M') 'Download-only demo did not forward the selected TTS quantization.'
-    Assert-Failure { & $copy -DataDirectory $data -SpeechModelsOnly -NoSpeechModels } 'Contradictory download switches were accepted.'
 }
 
 Write-Output "Speech model $Case checks passed. Evidence: $scratch"

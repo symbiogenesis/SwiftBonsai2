@@ -33,17 +33,17 @@
       "paths": [
         "scripts/Doctor.ps1", "scripts/Bonsai.Capabilities.psm1", "scripts/Get-Inference.ps1", "scripts/New-InferenceLock.ps1",
         "scripts/Read-Gguf.ps1", "scripts/Export-SwiftPtq1.ps1", "scripts/Bonsai.Gguf.psm1",
-        "scripts/Get-Model.ps1", "scripts/Get-ServerPlan.ps1", "scripts/Start-Chat.ps1", "scripts/Bonsai.ChatLaunch.psm1", "scripts/Bonsai.ServerPolicy.psm1",
+        "scripts/Get-Model.ps1", "scripts/Get-ServerPlan.ps1", "scripts/Start-Chat.ps1", "scripts/Bonsai.ServerPolicy.psm1",
         "scripts/New-ChatPackage.ps1", "scripts/Install-ChatPackage.ps1", "scripts/Start-InstalledChat.ps1", "scripts/Bonsai.ChatPackage.psm1", "tests/Test-ChatPackage.ps1",
         "scripts/Get-SpeechModels.ps1", "scripts/Bonsai.SpeechModels.psm1", "tests/Test-SpeechModels.ps1",
-        "scripts/Bonsai.NativeSpeech.psm1", "scripts/Get-NativeSpeechModels.ps1", "tests/Test-NativeSpeech.ps1", "tests/Test-ChatSpeech.ps1", "config/native-speech.lock.json",
+        "scripts/Bonsai.NativeSpeech.psm1", "scripts/Get-NativeSpeechModels.ps1", "config/native-speech.lock.json",
         "scripts/Invoke-TtsEvaluation.ps1", ".github/workflows/tts-evaluation.yml",
         "tools/canary-asr/model.lock.json", "tools/canary-asr/tokenizer.lock.json", "tools/qwen-tts/model.lock.json",
         "scripts/New-DevelopmentKeys.ps1", "scripts/Bonsai.Inference.psm1",
         "scripts/Bonsai.Common.psm1", "scripts/Bonsai.Tools.psm1", "scripts/Bonsai.Native.psm1",
         "tests/Test-Foundation.ps1", "tests/Test-ChatInstance.ps1", "tests/Test-Inference*.ps1", "tests/Test-Gguf.ps1",
         "tests/Test-Pq2Census.ps1", "tests/Test-Ptq1Export.ps1", "tests/Test-DevelopmentKeys.ps1",
-        "tests/Test-RustTooling.ps1", "tests/Test-ToolCache.ps1", "scripts/Bonsai.BuildCache.psm1", "tests/Test-BuildCache.ps1", "tests/*Support*", "tests/fixtures/**",
+        "tests/Test-RustTooling.ps1", "tests/*Support*", "tests/fixtures/**",
         "config/prism-inference.lock.json", "config/model.metadata.json"
       ]
     },

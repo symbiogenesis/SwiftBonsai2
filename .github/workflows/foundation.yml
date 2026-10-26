@@ -264,15 +264,6 @@ jobs:
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: '& (Join-Path $env:GITHUB_WORKSPACE "tests/Test-SpeechModels.ps1") -Case All'
-      - name: Native speech provisioning and automatic launch contracts
-        if: matrix.lane == 'foundation'
-        shell: pwsh
-        working-directory: ${{ runner.temp }}
-        run: |
-          & (Join-Path $env:GITHUB_WORKSPACE "tests/Test-NativeSpeech.ps1") -Case All
-          & (Join-Path $env:GITHUB_WORKSPACE "tests/Test-ChatSpeech.ps1") -Case All
-          & (Join-Path $env:GITHUB_WORKSPACE "tests/Test-ToolCache.ps1") -Case All
-          & (Join-Path $env:GITHUB_WORKSPACE "tests/Test-BuildCache.ps1") -Case All
       - name: Pinned inference binary contracts
         if: matrix.lane == 'foundation'
         shell: pwsh

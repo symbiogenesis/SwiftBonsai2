@@ -14,7 +14,7 @@ function Get-ChatPackageFileName {
     return [string[]]@('bin/bonsai-chat.exe', 'bin/bonsai-broker.exe', 'bin/bonsai-asr.exe',
         'bin/bonsai-tts.exe', 'bin/bonsai-tools.exe', 'LICENSE', 'NOTICE', 'THIRD-PARTY-NOTICES.txt',
         'scripts/Start-Chat.ps1', 'scripts/Start-InstalledChat.ps1', 'scripts/Install-ChatPackage.ps1', 'scripts/Bonsai.ChatPackage.psm1',
-        'scripts/Bonsai.Common.psm1', 'scripts/Bonsai.Native.psm1', 'scripts/Bonsai.Tools.psm1', 'scripts/Bonsai.BuildCache.psm1',
+        'scripts/Bonsai.Common.psm1', 'scripts/Bonsai.Native.psm1', 'scripts/Bonsai.Tools.psm1',
         'scripts/Bonsai.NativeSpeech.psm1', 'scripts/Get-NativeSpeechModels.ps1',
         'scripts/New-DevelopmentKeys.ps1')
 }

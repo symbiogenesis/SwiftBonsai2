@@ -4,7 +4,6 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
-Import-Module (Join-Path $PSScriptRoot 'Bonsai.BuildCache.psm1')
 
 $script:ToolScratch = @{}
 $script:CheckedTools = @{}
@@ -27,83 +26,76 @@ function Get-BonsaiToolScratch {
 
 function Resolve-BonsaiRustTool {
     <# .SYNOPSIS
-    Resolves a packaged tool or builds reviewed sources in a reusable external cache.
-    .DESCRIPTION
-    Unchanged build inputs and checked outputs bypass Cargo on source resolution.
-    Changed inputs or ForceBuild run Cargo's ordinary freshness checks.
-    Launchers can resolve once and pass ToolPath to subsequent operations.
-    The output digest receipt detects corruption, not same-user tampering.
+    Bootstraps the maintenance CLI, then delegates source freshness/builds to Rust.
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param([Parameter(Mandatory)][ValidatePattern('^[a-z-]+$')][string]$Name,
           [Parameter(Mandatory)][string]$ManifestRelativePath, [string]$ToolPath, [switch]$ForceBuild)
     if ($ToolPath) {
-        if (-not [IO.Path]::IsPathFullyQualified($ToolPath) -or $ToolPath -match '%[^%]+%' -or -not [IO.File]::Exists($ToolPath)) {
-            throw 'ToolPath must name an existing expanded absolute executable.'
-        }
-        return [IO.Path]::GetFullPath($ToolPath)
+        $path = Resolve-ExternalPath -Path $ToolPath
+        if (-not [IO.File]::Exists($path)) { throw 'ToolPath must name an existing expanded absolute executable.' }
+        return $path
     }
-    $scratch = Get-BonsaiToolScratch -Name $Name
-    $manifest = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $ManifestRelativePath))
+    if ($Name -cne 'bonsai-tools' -or $ManifestRelativePath -cne '../tools/bonsai/Cargo.toml') { throw 'Unsupported maintenance bootstrap.' }
     $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-    if (-not $manifest.StartsWith($repository + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Tool manifests must remain inside the source repository.'
-    }
-    foreach ($inputName in @('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml')) {
-        if (-not [IO.File]::Exists((Join-Path $repository $inputName))) { throw "Tool build input is missing: $inputName" }
-    }
-    $toolchain = [IO.File]::ReadAllText((Join-Path $repository 'rust-toolchain.toml'))
-    if ($toolchain -notmatch '(?m)^channel\s*=\s*"(nightly-\d{4}-\d{2}-\d{2})"\s*$') {
-        throw 'Tool builds require the repository-pinned Rust toolchain.'
-    }
+    $pin = [IO.File]::ReadAllText((Join-Path $repository 'rust-toolchain.toml'))
+    if ($pin -notmatch '(?m)^channel\s*=\s*"(nightly-\d{4}-\d{2}-\d{2})"\s*$') { throw 'Use the repository-pinned Rust toolchain.' }
     $channel = $Matches[1] + '-aarch64-pc-windows-msvc'
-    $identity = $manifest.ToUpperInvariant() + "`n" + $channel
+    $identity = (Join-Path $repository 'tools/bonsai/Cargo.toml').ToUpperInvariant() + "`n" + $channel
     $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($identity))).ToLowerInvariant()
     $target = Resolve-ExternalPath -Path (Join-Path $script:ToolCacheRoot $key)
     [void][IO.Directory]::CreateDirectory($target)
-    $tool = Resolve-ExternalPath -Path (Join-Path $target ('release/' + $Name + '.exe'))
-    $receipt = Resolve-ExternalPath -Path (Join-Path $target ($Name + '.sha256'))
-    $lock = Resolve-ExternalPath -Path (Join-Path $target 'build.lock')
-    try { $guard = [IO.FileStream]::new($lock, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
-    catch { throw 'Another process is preparing this maintenance tool. Wait for it to finish, then retry.' }
+    $scratch = Get-BonsaiToolScratch -Name $Name
+    $tool = Resolve-ExternalPath -Path (Join-Path $target 'release/bonsai-tools.exe')
+    $receipt = Resolve-ExternalPath -Path (Join-Path $target 'bonsai-tools.sha256')
+    try { $guard = [IO.FileStream]::new((Join-Path $target 'build.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
+    catch { throw 'Another process is preparing this maintenance tool. Try again after it finishes.' }
     try {
-        $fingerprint = Get-BonsaiBuildFingerprint -RepositoryRoot $repository -Identity $identity -WorkingDirectory $scratch
-        $freshness = Join-Path $target ($Name + '.build.json')
         $expected = if ([IO.File]::Exists($receipt)) { [IO.File]::ReadAllText($receipt).Trim() } else { '' }
-        $actual = if ([IO.File]::Exists($tool)) { (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash } else { '' }
-        $valid = $expected -match '^[a-fA-F0-9]{64}$' -and $actual -ieq $expected
-        if (-not $valid -and [IO.File]::Exists($tool)) {
-            # This fixed output beneath the validated external cache is disposable.
-            # Removing it forces Cargo to produce the executable again.
-            Remove-Item -LiteralPath $tool -Force
+        $digest = if ([IO.File]::Exists($tool)) { (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }
+        $compatible = $false
+        if ($expected -cmatch '^[a-f0-9]{64}$' -and $digest -ceq $expected) {
+            $probe = Invoke-BonsaiNativeProcess -Executable $tool -ArgumentList @('--version') -WorkingDirectory $scratch -TimeoutSeconds 10
+            if (-not $probe.ExitCode) {
+                $version = $probe.StandardOutput | ConvertFrom-Json -AsHashtable -NoEnumerate -DateKind String
+                $compatible = $version.Contains('Commands') -and 'source-build' -cin $version.Commands
+            }
         }
-        if (-not $ForceBuild -and $valid -and (Test-BonsaiBuildReceipt -ReceiptPath $freshness -Fingerprint $fingerprint -Executable @($tool))) {
-            return $tool
+        if (-not $compatible) {
+            if ([IO.File]::Exists($tool)) { [IO.File]::Delete($tool) }
+            $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
+            $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', (Join-Path $repository 'tools/bonsai/Cargo.toml'), '--target-dir', $target)
+            $log = Join-Path $scratch 'bootstrap-build.log'
+            $built = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -Environment @{ CARGO_BUILD_FINGERPRINT = 'content'; CARGO_UNSTABLE_CHECKSUM_FRESHNESS = 'true' } -LogPath $log -TimeoutSeconds 3600
+            if ($built.ExitCode) { throw "Maintenance bootstrap failed; see $log" }
+            Assert-Arm64PE -Path $tool
+            $digest = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
+            [IO.File]::WriteAllText($receipt, $digest)
         }
-        [IO.File]::Delete($freshness)
-        $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
-        $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', $manifest, '--target-dir', $target)
-        $log = Join-Path $scratch ('cargo-build-' + [guid]::NewGuid().ToString('N') + '.log')
-        $result = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -Environment @{ CARGO_BUILD_FINGERPRINT = 'content'; CARGO_UNSTABLE_CHECKSUM_FRESHNESS = 'true' } -LogPath $log
-        if ($result.ExitCode -ne 0) { throw "Tool build failed; inspect $log`n$($result.StandardError)" }
-        if (-not [IO.File]::Exists($tool)) { throw "Tool build produced no executable; inspect $log" }
-        $digest = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
-        [IO.File]::WriteAllText($receipt, $digest)
-        if ((Get-BonsaiBuildFingerprint -RepositoryRoot $repository -Identity $identity -WorkingDirectory $scratch) -ceq $fingerprint) {
-            Write-BonsaiBuildReceipt -ReceiptPath $freshness -Fingerprint $fingerprint -Executable @($tool)
-        }
-        return $tool
+        # Windows cannot replace an executing EXE. Immutable snapshots let Rust
+        # rebuild the source CLI without locking its Cargo output at launch.
+        $snapshot = Resolve-ExternalPath -Path (Join-Path -Path $target -ChildPath 'bootstrap' -AdditionalChildPath ($digest + '.exe'))
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($snapshot))
+        if (-not [IO.File]::Exists($snapshot)) { [IO.File]::Copy($tool, $snapshot, $false) }
+        if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash -ine $digest) { throw 'The maintenance bootstrap snapshot changed.' }
     } finally { $guard.Dispose() }
+    $request = Join-Path $scratch ('source-build-' + [guid]::NewGuid().ToString('N') + '.json')
+    [IO.File]::WriteAllText($request, (ConvertTo-Json @{ operation = 'tool'; repositoryRoot = $repository; workingDirectory = $scratch; targetDirectory = $target; forceBuild = [bool]$ForceBuild }))
+    $result = Invoke-BonsaiNativeProcess -Executable $snapshot -ArgumentList @('source-build', '--request', $request) -WorkingDirectory $scratch -TimeoutSeconds 0 -LogPath (Join-Path $scratch 'source-build.log')
+    if ($result.ExitCode) { throw "Maintenance source build failed: $($result.StandardError.Trim()) Evidence: $scratch" }
+    $resolved = $result.StandardOutput | ConvertFrom-Json -AsHashtable -NoEnumerate -DateKind String
+    if ($resolved.ToolPath -cne $tool) { throw 'The maintenance build returned an unexpected executable path.' }
+    [IO.File]::WriteAllText($receipt, (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant())
+    return $tool
 }
-
 function Invoke-BonsaiTool {
     <# .SYNOPSIS
     Runs one bounded JSON maintenance operation with a packaged or source-built tool.
     #>
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
-    param([Parameter(Mandatory)][ValidateSet('credentials','memory','cpu-check-plan','cpu-check-report','server-policy','runtime-stage','runtime-verify','completion','qualification','speech-models','inference-lock','inference-capabilities','speech-build')][string]$Command,
+    param([Parameter(Mandatory)][ValidateSet('credentials','memory','cpu-check-plan','cpu-check-report','server-policy','runtime-stage','runtime-verify','completion','qualification','speech-models','inference-lock','inference-capabilities','speech-build','source-build','chat-launch')][string]$Command,
           [Collections.IDictionary]$Request = @{}, [string]$ToolPath,
           [ValidateRange(0,86400)][int]$TimeoutSeconds = 60)
     if (-not $ToolPath -and $env:BONSAI_TOOLS_PATH) { $ToolPath = $env:BONSAI_TOOLS_PATH }

@@ -84,13 +84,28 @@ if ($Case -cin @('All', 'Rejections')) {
 }
 
 if ($Case -cin @('All', 'Launcher')) {
-    # The actual copied launcher dependency closure runs with synthetic native
-    # operations. No compiler, checkout files, model, microphone or process runs.
+    # Exercise the real copied PowerShell dependency closure. Rust owns startup
+    # behavior; this bridge check supplies no checkout, compiler or model.
     $first = New-ChatPackage -OutputDirectory (Join-Path $scratch 'package-launcher') -Version '0.3.0' -SourceRevision ('c' * 40) -Binary $binary -ThirdPartyNoticePath $notices
     $root = Join-Path $scratch 'launcher-installation'
     $installed = Set-ChatPackage -InstallationDirectory $root -PackageDirectory $first.Directory -ManifestSha256 $first.ManifestSha256
     $data = Join-Path $scratch 'data'
     [void][IO.Directory]::CreateDirectory($data)
+    # Keep the single-instance gate in this fixture without changing inherited
+    # profile variables or competing with the user's running chat session.
+    $common = Import-Module (Join-Path $installed.Directory 'scripts/Bonsai.Common.psm1') -Force -PassThru
+    & $common {
+        param([string]$GuardDirectory)
+        $script:OriginalResolve = ${function:Resolve-ExternalPath}
+        $script:GuardDirectory = $GuardDirectory
+        function script:Resolve-ExternalPath {
+            [CmdletBinding()]
+            [OutputType([string])]
+            param([string]$Path)
+            if ($Path -ceq (Join-Path $env:LOCALAPPDATA 'SwiftBonsai2')) { $Path = $script:GuardDirectory }
+            & $script:OriginalResolve -Path $Path
+        }
+    } (Join-Path $scratch 'instance-guard')
     $native = Import-Module (Join-Path $installed.Directory 'scripts/Bonsai.Native.psm1') -Force -PassThru
     & $native {
         $script:Calls = [Collections.Generic.List[object]]::new()
@@ -98,41 +113,42 @@ if ($Case -cin @('All', 'Launcher')) {
             [CmdletBinding()]
             [OutputType([pscustomobject])]
             param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$LogPath)
-            $script:Calls.Add([pscustomobject]@{ Executable = $Executable; Arguments = $ArgumentList; WorkingDirectory = $WorkingDirectory; TimeoutSeconds = $TimeoutSeconds; LogPath = $LogPath })
-            $output = ''
-            if ([IO.Path]::GetFileName($Executable) -ceq 'bonsai-tools.exe') {
-                switch ($ArgumentList[0]) {
-                    '--version' { $output = '{"Name":"bonsai-tools","Version":"0.1.0","ProtocolVersion":5,"Commands":["credentials","speech-models"]}' }
-                    'speech-models' { $output = '{"Plans":[],"CanaryModelPath":"canary.gguf","TtsModelPath":"talker.gguf","TtsCodecPath":"codec.gguf","TotalBytes":1}' }
-                    'credentials' {
-                        $request = Get-Content -LiteralPath $ArgumentList[2] -Raw | ConvertFrom-Json
-                        $key = Join-Path $request.parentDirectory 'fixture.key'
-                        [IO.File]::WriteAllText($key, ('a' * 64))
-                        $output = ConvertTo-Json -InputObject @{ FrontendKeyFile = $key }
-                    }
-                    default { throw 'Unexpected packaged maintenance command.' }
-                }
-            } elseif ([IO.Path]::GetFileName($Executable) -cne 'bonsai-chat.exe') { throw 'Packaged launcher attempted a build or unexpected executable.' }
+            $request = if ($ArgumentList[0] -ceq 'chat-launch') { Get-Content -LiteralPath $ArgumentList[2] -Raw | ConvertFrom-Json -AsHashtable } else { $null }
+            $script:Calls.Add(@{ Executable = $Executable; Arguments = $ArgumentList; WorkingDirectory = $WorkingDirectory; TimeoutSeconds = $TimeoutSeconds; LogPath = $LogPath; Request = $request })
+            if ([IO.Path]::GetFileName($Executable) -cne 'bonsai-tools.exe') { throw 'Packaged launcher attempted a build or unexpected executable.' }
+            $output = switch ($ArgumentList[0]) {
+                '--version' { '{"Name":"bonsai-tools","Version":"0.1.0","ProtocolVersion":5,"Commands":["chat-launch"]}' }
+                'chat-launch' { '{"Status":"completed"}' }
+                default { throw 'Unexpected packaged maintenance command.' }
+            }
             return [pscustomobject]@{ ExitCode = 0; StandardOutput = $output; StandardError = '' }
         }
     }
     $launcher = Join-Path $installed.Directory 'scripts/Start-InstalledChat.ps1'
+    $originalDirectory = [Environment]::CurrentDirectory
     & $launcher -InstallationDirectory $root -DataDirectory $data -NoSpeechModels | Out-Null
     $calls = @(& $native { $script:Calls.ToArray() })
-    Assert ($calls.Count -eq 1 -and [IO.Path]::GetFileName($calls[0].Executable) -ceq 'bonsai-chat.exe') 'Text-only packaged launch used extra dependencies.'
-    Assert ($calls[0].Arguments -cnotcontains '--canary-executable') 'Text-only packaged launch enabled speech.'
-    & $launcher -InstallationDirectory $root -DataDirectory $data | Out-Null
+    Assert ($calls.Count -eq 2 -and $calls[-1].Request.NoSpeechModels -and -not $calls[-1].Request.ContainsKey('AsrPath')) 'Text-only package options changed at the Rust bridge.'
+    & $launcher -InstallationDirectory $root -DataDirectory $data -UseRepackedPtq1 -NoAbliterateLora | Out-Null
     $calls = @(& $native { $script:Calls.ToArray() })
-    $chat = $calls[-1]
-    Assert ($chat.Arguments -ccontains '--canary-executable' -and $chat.Arguments -ccontains '--tts-executable') 'Owned speech package paths were omitted.'
+    $request = $calls[-1].Request
+    Assert ($request.UseRepackedPtq1 -and $request.NoAbliterateLora -and
+        $request.ChatPath -ceq (Join-Path $installed.Directory 'bin/bonsai-chat.exe') -and
+        $request.AsrPath -ceq (Join-Path $installed.Directory 'bin/bonsai-asr.exe') -and
+        $request.TtsPath -ceq (Join-Path $installed.Directory 'bin/bonsai-tts.exe')) 'Package paths or explicit model/adapter selections were not forwarded.'
+    & $launcher -InstallationDirectory $root -DataDirectory $data -NoTts -Verbose:$false | Out-Null
+    $calls = @(& $native { $script:Calls.ToArray() })
+    Assert ($calls[-1].Request.NoTts -and $calls[-1].Request.ContainsKey('AsrPath') -and
+        -not $calls[-1].Request.ContainsKey('TtsPath') -and -not $calls[-1].Request.ContainsKey('Verbose')) 'NoTts or common PowerShell parameter forwarding changed.'
     foreach ($call in $calls) {
         Assert ($call.Executable.StartsWith((Join-Path $installed.Directory 'bin'), [StringComparison]::OrdinalIgnoreCase)) 'Packaged launch used a compiler or external executable.'
-        Assert ([IO.Path]::IsPathFullyQualified($call.WorkingDirectory) -and -not $call.WorkingDirectory.StartsWith($installed.Directory, [StringComparison]::OrdinalIgnoreCase)) 'Native process did not retain its external scratch lane.'
+        Assert ([IO.Path]::IsPathFullyQualified($call.WorkingDirectory) -and -not $call.WorkingDirectory.StartsWith($installed.Directory, [StringComparison]::OrdinalIgnoreCase)) 'Native process escaped its external scratch lane.'
     }
-    Assert (@($calls | Where-Object { $_.Arguments[0] -ceq 'speech-models' }).Count -eq 1) 'Packaged speech provisioning did not use the supplied tool.'
-    Assert (@($calls | Where-Object { $_.Arguments[0] -ceq 'credentials' }).Count -eq 2) 'Packaged credentials did not use the supplied tool.'
-    & $launcher -InstallationDirectory $root -DataDirectory $data -NoTts | Out-Null
-    $calls = @(& $native { $script:Calls.ToArray() })
-    Assert ($calls[-1].Arguments -ccontains '--canary-executable' -and $calls[-1].Arguments -cnotcontains '--tts-executable') 'Packaged NoTts setup lost input or retained output.'
+    Assert ([Environment]::CurrentDirectory -ceq $originalDirectory) 'The startup bridge changed the caller native working directory.'
+    $before = $calls.Count
+    $guard = [IO.FileStream]::new((Join-Path -Path $scratch -ChildPath 'instance-guard' -AdditionalChildPath 'chat.lock'), [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    try { & $launcher -InstallationDirectory $root -DataDirectory $data | Out-Null }
+    finally { $guard.Dispose() }
+    Assert ((& $native { $script:Calls.Count }) -eq $before) 'A duplicate started maintenance work before returning.'
 }
 "Chat package $Case checks passed. Evidence: $scratch"
