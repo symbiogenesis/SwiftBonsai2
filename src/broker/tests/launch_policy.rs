@@ -7,6 +7,52 @@ use bonsai_broker::launch_policy::{
 use std::{ffi::OsString, path::PathBuf};
 
 #[test]
+fn repacked_ptq1_selects_current_weight_identity_with_same_runtime_limits_and_adapter()
+-> Result<(), PolicyError> {
+    let data = std::env::temp_dir().join("Bonsai PTQ1 data & spaces");
+    let key = std::env::temp_dir().join("Bonsai PTQ1 backend.key");
+    let profile = LaunchProfile::SwiftPq2Assessment;
+    let source = LaunchPlan::for_profile_with_lora(&data, 49152, &key, profile, true)?;
+    let repacked = LaunchPlan::for_profile_with_options(&data, 49152, &key, profile, true, true)?;
+    assert_eq!(
+        repacked.model_path,
+        data.join("models")
+            .join("a3bdac086bbb6b04d87d0108d18943b5f63868f7")
+            .join("Swift-Bonsai-2-current-repacked-PTQ1_0.gguf")
+    );
+    assert_ne!(repacked.model_path, source.model_path);
+    assert_eq!(PathBuf::from(&repacked.arguments[1]), repacked.model_path);
+    let mut expected = source.arguments;
+    expected[1] = repacked.model_path.as_os_str().to_owned();
+    assert_eq!(repacked.arguments, expected);
+    assert_eq!(repacked.runtime_directory, source.runtime_directory);
+    assert_eq!(repacked.archive_path, source.archive_path);
+    assert_eq!(repacked.executable, source.executable);
+    assert_eq!(repacked.memory_limit_bytes, source.memory_limit_bytes);
+    assert_eq!(
+        repacked.required_available_bytes,
+        source.required_available_bytes
+    );
+    let adapter = repacked.adapter.ok_or(PolicyError::Configuration)?;
+    let source_adapter = source.adapter.ok_or(PolicyError::Configuration)?;
+    assert_eq!(adapter.path, source_adapter.path);
+    assert_eq!(adapter.sha256, source_adapter.sha256);
+    assert_eq!(adapter.bytes, source_adapter.bytes);
+    assert!(
+        LaunchPlan::for_profile_with_options(
+            &data,
+            49152,
+            &key,
+            LaunchProfile::ReferenceCpu,
+            false,
+            true,
+        )
+        .is_err()
+    );
+    Ok(())
+}
+
+#[test]
 fn lora_plan_uses_only_pinned_adapter_without_changing_cpu_limits() -> Result<(), PolicyError> {
     let data = std::env::temp_dir().join("Bonsai LoRA data & spaces");
     let key = std::env::temp_dir()

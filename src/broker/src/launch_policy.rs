@@ -12,6 +12,7 @@ use std::{
 const LOCK_JSON: &str = include_str!("../../../config/runtime.lock.json");
 const PROFILE_JSON: &str = include_str!("../../../config/profiles/reference-cpu.json");
 const SWIFT_LOCK_JSON: &str = include_str!("../../../config/swift-assessment.lock.json");
+const PTQ1_EXPORT_JSON: &str = include_str!("../../../config/swift.ptq1-export.json");
 /// Fixed process memory ceiling: 18 GiB.
 pub const MEMORY_LIMIT_BYTES: usize = bonsai_cpu_policy::MEMORY_LIMIT_BYTES;
 /// Required available physical memory including a 4 GiB host reserve.
@@ -160,11 +161,34 @@ impl LaunchPlan {
         profile: LaunchProfile,
         use_abliterate_lora: bool,
     ) -> Result<Self, PolicyError> {
+        Self::for_profile_with_options(
+            data,
+            backend_port,
+            key_file,
+            profile,
+            use_abliterate_lora,
+            false,
+        )
+    }
+
+    /// Build a fixed server plan with explicit pinned adapter and weight packing selections.
+    /// The PTQ1 option selects only the verified current-weight export, never the older checkpoint.
+    ///
+    /// # Errors
+    /// Rejects Swift-only options on the reference profile, invalid paths or compiled policy drift.
+    pub fn for_profile_with_options(
+        data: &Path,
+        backend_port: u16,
+        key_file: &Path,
+        profile: LaunchProfile,
+        use_abliterate_lora: bool,
+        use_repacked_ptq1: bool,
+    ) -> Result<Self, PolicyError> {
         if use_abliterate_lora && profile != LaunchProfile::SwiftPq2Assessment {
             return Err(PolicyError::Configuration);
         }
         validate_environment(std::env::vars_os().map(|(name, _)| name))?;
-        let pins = reviewed_pins(profile)?;
+        let pins = reviewed_pins_for_representation(profile, use_repacked_ptq1)?;
         validate_external_path(data)?;
         validate_external_path(key_file)?;
         if backend_port < 1024 {
@@ -332,6 +356,35 @@ pub(crate) fn reviewed_pins(profile: LaunchProfile) -> Result<ReviewedPins, Poli
         }
         LaunchProfile::SwiftPq2Assessment => parse_swift_pins(SWIFT_LOCK_JSON),
     }
+}
+
+pub(crate) fn reviewed_pins_for_representation(
+    profile: LaunchProfile,
+    use_repacked_ptq1: bool,
+) -> Result<ReviewedPins, PolicyError> {
+    let mut pins = reviewed_pins(profile)?;
+    if use_repacked_ptq1 {
+        let lock = serde_json::from_str(SWIFT_LOCK_JSON).map_err(|_| PolicyError::Configuration)?;
+        let evidence =
+            serde_json::from_str(PTQ1_EXPORT_JSON).map_err(|_| PolicyError::Configuration)?;
+        let selected =
+            bonsai_cpu_policy::select_artifact(&lock, profile.cpu_profile(), true, Some(&evidence))
+                .map_err(|_| PolicyError::Configuration)?;
+        let selected: SelectedModel =
+            serde_json::from_value(selected).map_err(|_| PolicyError::Configuration)?;
+        pins.model.filename = selected.filename;
+        pins.model.bytes = selected.bytes;
+        pins.model.sha256 = selected.sha256;
+    }
+    Ok(pins)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+struct SelectedModel {
+    filename: String,
+    bytes: u64,
+    sha256: String,
 }
 
 #[derive(Deserialize)]
@@ -553,6 +606,29 @@ mod tests {
         assert!(reviewed_pins(LaunchProfile::SwiftPq2Assessment).is_ok());
         assert!(validate_profile(PROFILE_JSON).is_ok());
     }
+
+    #[test]
+    fn repacked_identity_is_the_exact_current_weight_export_not_the_older_checkpoint()
+    -> Result<(), PolicyError> {
+        let profile = LaunchProfile::SwiftPq2Assessment;
+        let original = reviewed_pins_for_representation(profile, false)?;
+        let repacked = reviewed_pins_for_representation(profile, true)?;
+        assert_eq!(original.model.filename, "Swift-Bonsai-2-PQ2_0.gguf");
+        assert_eq!(
+            repacked.model.filename,
+            "Swift-Bonsai-2-current-repacked-PTQ1_0.gguf"
+        );
+        assert_eq!(repacked.model.bytes, 5_946_648_928);
+        assert_eq!(
+            repacked.model.sha256,
+            "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5"
+        );
+        assert_eq!(repacked.model.revision, original.model.revision);
+        assert_eq!(repacked.runtime.commit, original.runtime.commit);
+        assert!(reviewed_pins_for_representation(LaunchProfile::ReferenceCpu, true).is_err());
+        Ok(())
+    }
+
     #[test]
     fn profile_drift_and_coercions_fail_closed() {
         for changed in [

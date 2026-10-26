@@ -42,9 +42,10 @@ pub const LAUNCH_USAGE: &str = concat!(
     "  [--profile <reference-cpu|swift-pq2-assessment>]\n",
     "  [--native-engine] (requires the pinned Prism inference release and swift-pq2-assessment)\n",
     "  [--use-abliterate-lora] (pinned adapter; request scale 0..2, default 1.3; Swift Prism CPU server only)\n",
+    "  [--use-repacked-ptq1] (verified current-weight export; Swift Prism CPU server only)\n",
     "  [--max-waiting <0..8>] [--check-only]\n",
     "Default: reference-cpu. Only compiled model/runtime pins and fixed CPU policies are accepted.\n",
-    "Swift selects original PQ2 weights; the demo requests its pinned LoRA by default. Daily use remains unqualified.\n",
+    "Swift defaults to original PQ2 weights; PTQ1 requires explicit selection. Daily use remains unqualified.\n",
     "Creates fresh protected credentials; prints paths, never key values.\n",
 );
 
@@ -84,6 +85,11 @@ pub enum LaunchError {
     Stop,
 }
 
+enum WeightRepresentation {
+    Source,
+    CurrentRepackedPtq1,
+}
+
 /// Parsed explicit development launch; paths and credentials have no Debug output.
 pub struct LaunchConfig {
     data: PathBuf,
@@ -95,6 +101,7 @@ pub struct LaunchConfig {
     profile: LaunchProfile,
     native_engine: bool,
     use_abliterate_lora: bool,
+    weight_representation: WeightRepresentation,
 }
 
 /// Offline verification result; checking never creates credentials or a process.
@@ -115,6 +122,7 @@ impl LaunchConfig {
         let mut check_only = false;
         let mut native_engine = false;
         let mut use_abliterate_lora = false;
+        let mut use_repacked_ptq1 = false;
         let mut profile = None;
         let (mut data, mut evidence_parent) = (None, None);
         let (mut frontend_port, mut backend_port, mut max_waiting) = (None, None, None);
@@ -128,6 +136,9 @@ impl LaunchConfig {
                 }
                 Some("--use-abliterate-lora") if !use_abliterate_lora => {
                     use_abliterate_lora = true;
+                }
+                Some("--use-repacked-ptq1") if !use_repacked_ptq1 => {
+                    use_repacked_ptq1 = true;
                 }
                 Some("--profile") if profile.is_none() => {
                     profile = Some(
@@ -168,6 +179,8 @@ impl LaunchConfig {
             || (native_engine && profile != LaunchProfile::SwiftPq2Assessment)
             || (use_abliterate_lora
                 && (native_engine || profile != LaunchProfile::SwiftPq2Assessment))
+            || (use_repacked_ptq1
+                && (native_engine || profile != LaunchProfile::SwiftPq2Assessment))
         {
             return Err(LaunchError::Arguments);
         }
@@ -181,6 +194,11 @@ impl LaunchConfig {
             profile,
             native_engine,
             use_abliterate_lora,
+            weight_representation: if use_repacked_ptq1 {
+                WeightRepresentation::CurrentRepackedPtq1
+            } else {
+                WeightRepresentation::Source
+            },
         })
     }
 
@@ -202,6 +220,15 @@ impl LaunchConfig {
         self.native_engine
     }
 
+    /// Whether the explicitly selected model is the verified current-weight PTQ1 export.
+    #[must_use]
+    pub const fn uses_repacked_ptq1(&self) -> bool {
+        matches!(
+            self.weight_representation,
+            WeightRepresentation::CurrentRepackedPtq1
+        )
+    }
+
     /// Verify the fixed policy and complete artifacts without creating state.
     ///
     /// # Errors
@@ -209,12 +236,13 @@ impl LaunchConfig {
     /// in the result rather than preventing this read-only verification.
     pub fn check(&self) -> Result<LaunchCheck, LaunchError> {
         self.validate_paths()?;
-        let plan = LaunchPlan::for_profile_with_lora(
+        let plan = LaunchPlan::for_profile_with_options(
             &self.data,
             self.backend_port,
             &self.evidence_parent.join("not-created.key"),
             self.profile,
             self.use_abliterate_lora,
+            self.uses_repacked_ptq1(),
         )
         .map_err(|_| LaunchError::Policy)?;
         let _artifacts = self.verify_artifacts(&plan)?;
@@ -251,8 +279,12 @@ impl LaunchConfig {
             }
             return Ok(artifacts);
         }
-        let artifacts = VerifiedArtifacts::verify_for_profile(&self.data, self.profile)
-            .map_err(|_| LaunchError::Artifacts)?;
+        let artifacts = VerifiedArtifacts::verify_for_profile_with_representation(
+            &self.data,
+            self.profile,
+            self.uses_repacked_ptq1(),
+        )
+        .map_err(|_| LaunchError::Artifacts)?;
         if artifacts.executable() != plan.executable
             || artifacts.model() != plan.model_path
             || artifacts.runtime_directory() != plan.runtime_directory
@@ -346,12 +378,13 @@ impl LaunchConfig {
         self.validate_paths()?;
         // Resolve policy before creating secrets or loading any native code.
         let pending_key = self.evidence_parent.join("not-created.key");
-        let preliminary = LaunchPlan::for_profile_with_lora(
+        let preliminary = LaunchPlan::for_profile_with_options(
             &self.data,
             self.backend_port,
             &pending_key,
             self.profile,
             self.use_abliterate_lora,
+            self.uses_repacked_ptq1(),
         )
         .map_err(|_| LaunchError::Policy)?;
         admit(preliminary.required_available_bytes)?;
@@ -362,12 +395,13 @@ impl LaunchConfig {
         }
         let credentials = PrivateCredentials::create(&self.evidence_parent)
             .map_err(|_| LaunchError::Credentials)?;
-        let plan = LaunchPlan::for_profile_with_lora(
+        let plan = LaunchPlan::for_profile_with_options(
             &self.data,
             self.backend_port,
             credentials.backend_path(),
             self.profile,
             self.use_abliterate_lora,
+            self.uses_repacked_ptq1(),
         )
         .map_err(|_| LaunchError::Policy)?;
         // Reserve only as a collision check; PID checks close the release/bind
@@ -771,6 +805,35 @@ mod tests {
     }
 
     #[test]
+    fn repacked_ptq1_is_explicit_swift_prism_only_and_keeps_lora_available() {
+        let default = LaunchConfig::parse(arguments()).ok();
+        assert!(default.is_some_and(|config| !config.uses_repacked_ptq1()));
+        let mut enabled = arguments();
+        enabled.extend(
+            ["--profile", "swift-pq2-assessment", "--use-repacked-ptq1"].map(OsString::from),
+        );
+        let config = LaunchConfig::parse(enabled.clone()).ok();
+        assert!(config.is_some_and(|config| config.uses_repacked_ptq1()));
+        let mut with_lora = enabled.clone();
+        with_lora.push("--use-abliterate-lora".into());
+        assert!(LaunchConfig::parse(with_lora).is_ok());
+        for extra in ["--use-repacked-ptq1", "--native-engine"] {
+            let mut rejected = enabled.clone();
+            rejected.push(extra.into());
+            assert_eq!(
+                LaunchConfig::parse(rejected).err(),
+                Some(LaunchError::Arguments)
+            );
+        }
+        let mut reference = arguments();
+        reference.push("--use-repacked-ptq1".into());
+        assert_eq!(
+            LaunchConfig::parse(reference).err(),
+            Some(LaunchError::Arguments)
+        );
+    }
+
+    #[test]
     fn lora_launch_is_explicit_swift_prism_only() {
         let default = LaunchConfig::parse(arguments()).ok();
         assert!(default.is_some_and(|config| !config.use_abliterate_lora));
@@ -984,7 +1047,6 @@ mod tests {
                 "--lora",
                 "C:\\Adapter.gguf",
             ],
-            vec!["--profile", "swift-pq2-assessment", "--use-repacked-ptq1"],
             vec![
                 "--profile",
                 "swift-pq2-assessment",

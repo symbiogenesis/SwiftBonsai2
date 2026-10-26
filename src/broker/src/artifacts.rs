@@ -1,6 +1,6 @@
 //! Offline verification of compiled model/runtime identities with retained guards.
 
-use crate::launch_policy::{LaunchProfile, reviewed_pins};
+use crate::launch_policy::{LaunchProfile, reviewed_pins_for_representation};
 use bonsai_artifacts::{RuntimeSpec, VerifiedFile, VerifiedRuntime};
 use std::path::{Path, PathBuf};
 
@@ -41,10 +41,24 @@ impl VerifiedArtifacts {
     /// # Errors
     /// Rejects policy/path drift, changed artifacts and unsafe installations.
     pub fn verify_for_profile(data: &Path, profile: LaunchProfile) -> Result<Self, ArtifactError> {
+        Self::verify_for_profile_with_representation(data, profile, false)
+    }
+
+    /// Verify one compiled model/runtime profile and its explicitly selected weight representation.
+    /// PTQ1 uses the pinned current-weight export receipt and retains the same runtime verification.
+    ///
+    /// # Errors
+    /// Rejects incompatible selection, policy/path drift, changed artifacts and unsafe installations.
+    pub fn verify_for_profile_with_representation(
+        data: &Path,
+        profile: LaunchProfile,
+        use_repacked_ptq1: bool,
+    ) -> Result<Self, ArtifactError> {
         if !cfg!(windows) {
             return Err(ArtifactError::Configuration);
         }
-        let pins = reviewed_pins(profile).map_err(|_| ArtifactError::Configuration)?;
+        let pins = reviewed_pins_for_representation(profile, use_repacked_ptq1)
+            .map_err(|_| ArtifactError::Configuration)?;
         let spec = RuntimeSpec {
             archive_path: data.join("downloads").join(&pins.runtime.asset.filename),
             runtime_directory: data.join("runtime").join(&pins.runtime.commit),
@@ -52,11 +66,7 @@ impl VerifiedArtifacts {
             archive_sha256: pins.runtime.asset.sha256.clone(),
         };
         let runtime = VerifiedRuntime::verify(&spec)?;
-        let model = data
-            .join("models")
-            .join(&pins.model.revision)
-            .join(&pins.model.filename);
-        let model_guard = VerifiedFile::verify(&model, pins.model.bytes, &pins.model.sha256)?;
+        let (model, model_guard) = Self::verify_selected_model(data, profile, use_repacked_ptq1)?;
         Ok(Self {
             executable: runtime.executable().to_owned(),
             model,
@@ -72,12 +82,7 @@ impl VerifiedArtifacts {
         data: &Path,
         profile: LaunchProfile,
     ) -> Result<Self, ArtifactError> {
-        let pins = reviewed_pins(profile).map_err(|_| ArtifactError::Configuration)?;
-        let model = data
-            .join("models")
-            .join(&pins.model.revision)
-            .join(&pins.model.filename);
-        let model_guard = VerifiedFile::verify(&model, pins.model.bytes, &pins.model.sha256)?;
+        let (model, model_guard) = Self::verify_selected_model(data, profile, false)?;
         Ok(Self {
             executable: PathBuf::new(),
             model,
@@ -86,6 +91,21 @@ impl VerifiedArtifacts {
             _runtime: None,
             _model: Some(model_guard),
         })
+    }
+
+    fn verify_selected_model(
+        data: &Path,
+        profile: LaunchProfile,
+        use_repacked_ptq1: bool,
+    ) -> Result<(PathBuf, VerifiedFile), ArtifactError> {
+        let pins = reviewed_pins_for_representation(profile, use_repacked_ptq1)
+            .map_err(|_| ArtifactError::Configuration)?;
+        let model = data
+            .join("models")
+            .join(&pins.model.revision)
+            .join(&pins.model.filename);
+        let guard = VerifiedFile::verify(&model, pins.model.bytes, &pins.model.sha256)?;
+        Ok((model, guard))
     }
 
     /// Server path established by the verified archive.
@@ -113,7 +133,50 @@ impl VerifiedArtifacts {
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
+    use crate::launch_policy::reviewed_pins;
     use std::fs;
+
+    #[test]
+    fn ptq1_verification_rejects_missing_or_altered_selected_file_without_pq2_fallback()
+    -> std::io::Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(std::io::Error::other)?
+            .as_nanos();
+        let parent = std::env::temp_dir();
+        let data = parent.join(format!(
+            "Bonsai-ptq1-identity-{}-{stamp}",
+            std::process::id()
+        ));
+        let profile = LaunchProfile::SwiftPq2Assessment;
+        let pins = reviewed_pins(profile).map_err(std::io::Error::other)?;
+        let directory = data.join("models").join(&pins.model.revision);
+        fs::create_dir_all(&directory)?;
+        let pq2 = directory.join(pins.model.filename);
+        let ptq1 = directory.join("Swift-Bonsai-2-current-repacked-PTQ1_0.gguf");
+        fs::write(&ptq1, b"altered PTQ1")?;
+        assert_eq!(
+            VerifiedArtifacts::verify_selected_model(&data, profile, true).err(),
+            Some(ArtifactError::Identity)
+        );
+        assert_eq!(
+            VerifiedArtifacts::verify_selected_model(&data, profile, false).err(),
+            Some(ArtifactError::Path)
+        );
+        fs::write(&pq2, b"altered PQ2")?;
+        fs::remove_file(&ptq1)?;
+        assert_eq!(
+            VerifiedArtifacts::verify_selected_model(&data, profile, true).err(),
+            Some(ArtifactError::Path)
+        );
+        assert_eq!(
+            VerifiedArtifacts::verify_selected_model(&data, profile, false).err(),
+            Some(ArtifactError::Identity)
+        );
+        assert_eq!(data.parent(), Some(parent.as_path()));
+        fs::remove_dir_all(data)?;
+        Ok(())
+    }
 
     #[test]
     fn native_profile_checks_model_without_requiring_upstream_runtime() -> std::io::Result<()> {
