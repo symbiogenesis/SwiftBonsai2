@@ -188,7 +188,7 @@ fn runtime_spec(request: &Request, lock: &Value) -> Result<RuntimeSpec> {
     Ok(runtime)
 }
 
-fn save(path: &Path, value: &Value, initial: bool) -> Result<()> {
+pub(super) fn save(path: &Path, value: &Value, initial: bool) -> Result<()> {
     let mut options = OpenOptions::new();
     options.write(true);
     if initial {
@@ -289,7 +289,7 @@ impl Capture {
     }
 }
 
-fn read_sample(root: &Path, id: &str) -> Result<Option<(Value, Value)>> {
+pub(super) fn read_sample(root: &Path, id: &str) -> Result<Option<(Value, Value)>> {
     let lane = validate_path(&root.join(id))?;
     let path = lane.join("supervision.json");
     if !path.try_exists().map_err(|error| error.to_string())? {
@@ -313,7 +313,7 @@ fn read_sample(root: &Path, id: &str) -> Result<Option<(Value, Value)>> {
     Ok(Some((supervision, captured)))
 }
 
-fn copy_adapter(source: &Path, destination: &Path, bytes: u64) -> Result<()> {
+pub(super) fn copy_adapter(source: &Path, destination: &Path, bytes: u64) -> Result<()> {
     validate_path(source)?;
     let mut input = OpenOptions::new();
     input.read(true);
@@ -491,6 +491,18 @@ pub(super) fn run(request: Map<String, Value>) -> Result<Value> {
     let request: Request = decode(Value::Object(request))?;
     let context = ci_context(&request.processor_name)?;
     capture_with(&request, &context, crate::completion::run)
+}
+
+pub(super) fn screen_context(processor_name: &str) -> Result<Value> {
+    let context = ci_context(processor_name)?;
+    Ok(json!({"githubActions": true, "runUrl": context.run_url,
+        "runnerArchitecture": "Arm64", "deviceModel": "Snapdragon X Elite",
+        "runnerName": context.runner_name, "sourceRevision": context.source_revision}))
+}
+
+pub(super) fn screen_compiled_plan(request: Value) -> Result<(Value, Value, RuntimeSpec)> {
+    let request: Request = decode(request)?;
+    compiled_plan(&request, &policy()?)
 }
 
 #[cfg(test)]

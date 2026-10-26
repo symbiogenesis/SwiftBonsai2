@@ -8,6 +8,7 @@ mod capture;
 mod invocation;
 mod schema;
 mod score;
+mod screen;
 #[cfg(test)]
 mod tests;
 
@@ -339,6 +340,9 @@ pub fn run(request: Value) -> Result<Value> {
     let operation: String = take(&mut request, "operation")?;
     if operation == "capture" {
         return capture::run(request);
+    }
+    if operation.starts_with("screen-") {
+        return screen::run(&operation, request);
     }
     let policy = policy()?;
     let result = match operation.as_str() {

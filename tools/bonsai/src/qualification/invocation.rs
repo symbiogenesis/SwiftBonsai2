@@ -85,6 +85,26 @@ fn arguments(
     arm: &str,
     prompt: &str,
 ) -> Result<Vec<String>> {
+    arguments_at_scale(controls, model_path, adapter_path, arm, prompt, "1")
+}
+
+pub(super) fn screen_arguments(
+    controls: &Controls,
+    model_path: &str,
+    arm: &str,
+    prompt: &str,
+) -> Result<Vec<String>> {
+    arguments_at_scale(controls, model_path, ADAPTER_FILENAME, arm, prompt, "1.3")
+}
+
+fn arguments_at_scale(
+    controls: &Controls,
+    model_path: &str,
+    adapter_path: &str,
+    arm: &str,
+    prompt: &str,
+    scale: &str,
+) -> Result<Vec<String>> {
     require(
         !model_path.trim().is_empty()
             && !model_path.contains('\0')
@@ -139,7 +159,7 @@ fn arguments(
     }
     match arm {
         "zero" => result.extend(["--lora-scaled".into(), format!("{adapter_path}:0")]),
-        "adapter" => result.extend(["--lora-scaled".into(), format!("{adapter_path}:1")]),
+        "adapter" => result.extend(["--lora-scaled".into(), format!("{adapter_path}:{scale}")]),
         _ => {}
     }
     result.extend(["--prompt".into(), prompt.into()]);
