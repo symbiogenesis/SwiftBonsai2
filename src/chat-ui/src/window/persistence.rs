@@ -64,6 +64,24 @@ impl State {
     }
 
     pub(super) fn workspace_bytes(&self) -> io::Result<Vec<u8>> {
+        if !valid_parts(
+            &self.transcript,
+            &self.input,
+            self.output_budget,
+            &self.status,
+            &self.last_answer,
+            &self.retained_draft,
+            &self.committed,
+        ) || self
+            .conversations
+            .iter()
+            .filter_map(|conversation| conversation.saved.as_ref())
+            .any(|saved| !valid_snapshot(saved))
+        {
+            return Err(io::Error::other(
+                "Conversation recovery reached its saved-state limits. Delete older conversations or disable saving.",
+            ));
+        }
         let bytes = serde_json::to_vec(&WorkspaceView {
             version: 1,
             conversations: &self.conversations,
@@ -215,15 +233,35 @@ impl SavedWorkspace {
 }
 
 fn valid_snapshot(saved: &ConversationSnapshot) -> bool {
-    saved.transcript.valid_saved()
-        && saved.input.chars().count() <= INPUT_LIMIT
-        && saved.output_budget < OUTPUT_TOKENS.len()
-        && saved.status.len() <= MAX_DIAGNOSTIC_CHARS * 4
-        && saved.last_answer.len() <= 4 * 1024 * 1024
-        && saved.retained_draft.len() <= 4 * 1024 * 1024
-        && saved.committed.len() <= 128
-        && saved.committed.len().is_multiple_of(2)
-        && saved.committed.iter().enumerate().all(|(index, message)| {
+    valid_parts(
+        &saved.transcript,
+        &saved.input,
+        saved.output_budget,
+        &saved.status,
+        &saved.last_answer,
+        &saved.retained_draft,
+        &saved.committed,
+    )
+}
+
+fn valid_parts(
+    transcript: &Transcript,
+    input: &str,
+    output_budget: usize,
+    status: &str,
+    last_answer: &str,
+    retained_draft: &str,
+    committed: &[client::Message],
+) -> bool {
+    transcript.valid_saved()
+        && input.chars().count() <= INPUT_LIMIT
+        && output_budget < OUTPUT_TOKENS.len()
+        && status.len() <= MAX_DIAGNOSTIC_CHARS * 4
+        && last_answer.len() <= 4 * 1024 * 1024
+        && retained_draft.len() <= 4 * 1024 * 1024
+        && committed.len() <= 128
+        && committed.len().is_multiple_of(2)
+        && committed.iter().enumerate().all(|(index, message)| {
             message.role
                 == if index.is_multiple_of(2) {
                     "user"
@@ -335,6 +373,64 @@ mod tests {
         assert!(!state.save_conversations);
         assert!(state.recovery_notice.contains("removed"));
         drop(controlled);
+        Ok(())
+    }
+
+    #[test]
+    fn recovery_invalid_live_state_preserves_last_valid_encrypted_snapshot() -> io::Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("Bonsai-recovery-bounds-{stamp}"));
+        std::fs::create_dir(&directory)?;
+        let mut state = state();
+        state.attach_recovery(crate::recovery::Recovery::open(&directory));
+        state.save_conversations = true;
+        state.recovery_dirty = true;
+        state.input = "Last valid draft".to_owned();
+        state.last_recovery_save = Instant::now()
+            .checked_sub(Duration::from_secs(3))
+            .unwrap_or_else(Instant::now);
+        state.poll_recovery();
+        let recovery = state
+            .recovery
+            .as_ref()
+            .ok_or_else(|| io::Error::other("Recovery did not open."))?;
+        assert!(matches!(
+            recovery.events.recv_timeout(Duration::from_secs(5)),
+            Ok(crate::recovery::Event::Saved(_))
+        ));
+        let path = directory.join("chat-recovery.dpapi");
+        let valid = std::fs::read(&path)?;
+
+        // Rejected attempts can accumulate many short visible messages while
+        // remaining inside the byte limit. Never write a state restore rejects.
+        for _ in 0..513 {
+            state
+                .transcript
+                .push(Role::User, "Rejected attempt".to_owned());
+        }
+        assert!(state.workspace_bytes().is_err());
+        state.recovery_dirty = true;
+        state.last_recovery_save = Instant::now()
+            .checked_sub(Duration::from_secs(3))
+            .unwrap_or_else(Instant::now);
+        state.poll_recovery();
+        assert!(state.recovery_notice.starts_with("Could not save"));
+        state.ready = true;
+        state.new_chat();
+        assert!(state.transcript.messages.is_empty());
+        assert!(state.workspace_bytes().is_err());
+        drop(state);
+        assert_eq!(std::fs::read(&path)?, valid);
+        let plain = bonsai_windows_credentials::unprotect_private_data(&valid)?;
+        let mut recovered = self::state();
+        recovered.restore_workspace(&plain)?;
+        assert_eq!(recovered.input, "Last valid draft");
+        std::fs::remove_file(path)?;
+        std::fs::remove_file(directory.join("chat-recovery.lock"))?;
+        std::fs::remove_dir(directory)?;
         Ok(())
     }
 }
