@@ -102,7 +102,7 @@ has a separate scheduling/floating-order contract. Qualcomm's
 [multiplication-only inverse][approximate-inverse] uses truncation/residual
 correction and belongs to approximation, not exact execution. Strict triangularity
 does not bound low-order error, and phone NPU results do not qualify Windows
-X Elite. [Low-bit LUT KV](inference-algorithms.md#compression-bound-and-deferred-experiments)
+X Elite. [Low-bit LUT KV](inference-algorithms.md#compression-and-approximation-constraints)
 differs from lossless physical FP16 storage. Requantization, training, retrieval
 embeddings, draft models and speculation are distinct qualification scopes.
 

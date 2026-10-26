@@ -62,8 +62,8 @@ PTQ uses Q8_0 activations while PQ2 uses Q8_K. Equal weights therefore do not
 prove equal logits, text or speed. `-UseRepackedPtq1` selects only this exact
 derived artifact and retains the same memory allowance. Bounded 16-token native
 decode passes with and without the approved adapter. See the
-[allocation audit](swift-memory-options.md); the alternate BITCOS packing is
-[retired](bitcos-retirement.md).
+[allocation audit](swift-memory-options.md); the
+[packing decision](swift-memory-options.md#packing-decision) excludes BITCOS.
 
 A pretrained [LoRA](swift-lora.md) is a separate behavioral change with runtime
 cost, not lossless memory savings. Its explicit development switch does not

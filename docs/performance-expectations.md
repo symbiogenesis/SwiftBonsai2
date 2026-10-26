@@ -29,8 +29,8 @@ The pinned Prism CPU runtime completes a bounded 16-token Swift decode check.
 Current-weight PTQ1 also decodes and saves 1.173 GiB of file payload, but uses
 different activation arithmetic. The experimental Rust engine has selected
 NEON kernels and a hybrid graph. See the [memory assessment](swift-memory.md)
-and [Rust roadmap](native-rust-engine.md) for bounded source evidence and remaining
-release/profile acceptance.
+and [runtime contract](native-rust-engine.md) for bounded source evidence.
+Outstanding release/profile qualification lives in the [central TODO](../PLAN.md).
 
 Snapdragon TPS, sustained comfort, creative quality and accepted GPU/NPU profiles
 remain unqualified. The [pure-Rust native UI](ui-architecture.md) supplies a chat

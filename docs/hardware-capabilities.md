@@ -106,8 +106,9 @@ and null records/digests. The result remains `unqualified`.
 These records identify retained observations for review. They do not establish
 complete topology, unobserved optional ISA, GPU/NPU features or accelerator
 driver compatibility. Runtime archive/source/target remain separate profile
-fields. Accelerator identity generation, catalog admission and selection remain
-future work; hashing the complete Doctor report is not a compatibility policy.
+fields. This scope excludes accelerator identities, catalog admission and
+selection; their tasks live in the [central TODO](../PLAN.md#hardware-selection).
+Hashing the complete Doctor report is not a compatibility policy.
 
 `ProfileEvidence::from_json` binds the complete compatibility object to a
 `tested_main_revision`, decimal-string `ci_run_id`, retained `capture_sha256`,
@@ -121,9 +122,9 @@ qualification still require their existing reviews.
 `FallbackReason` reserves value-free codes: `unknown-capability`,
 `unavailable-backend`, `incompatible-runtime`, `incompatible-driver`,
 `stale-evidence`, `insufficient-memory` and `strict-backend-unavailable`.
-No selector currently emits these codes. H1-H5, profile catalogs, safe state
-migration and current-budget admission remain in the
-[hardware profile plan](hardware-profiles.md).
+No selector currently emits these codes. The
+[hardware profile contract](hardware-profiles.md) defines their policy boundary;
+implementation tasks live in the [central TODO](../PLAN.md#hardware-selection).
 
 ## Focused checks
 

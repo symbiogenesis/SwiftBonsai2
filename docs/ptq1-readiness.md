@@ -38,8 +38,8 @@ convolution and recurrent state. The fixed acceptance tolerance is
 `1e-3 + 1e-3 * abs(reference)`; matching selected token IDs cannot override a
 failure in logits or state.
 
-The retained [arithmetic evidence](ptq1-arithmetic-evidence.json) distinguishes
-operator checks from full-model acceptance. Native Q8 preparation and PTQ1
+The retained [full-model comparison](ptq1-arithmetic-evidence.json) records the
+numerical acceptance failure. Native Q8 preparation and PTQ1
 four-lane fused accumulation fixes do not establish full-model parity. The
 corrected one-token capture still exceeded the bound for 430,526 of 39,504,384
 logits/state values, with maximum absolute error 0.06584501266479492. Stored

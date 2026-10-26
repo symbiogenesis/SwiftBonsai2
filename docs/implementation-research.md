@@ -3,7 +3,7 @@
 This reference explains current design choices and their evidence limits.
 Use the [development guide](development-guide.md) for commands,
 [validation](validation.md) for checks and [PLAN.md](../PLAN.md) for remaining
-delivery work. Implementation chronology and individual check runs live in Git.
+delivery work.
 
 ## Native UI and interoperability
 

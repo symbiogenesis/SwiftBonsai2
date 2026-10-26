@@ -66,7 +66,7 @@ download parity is not implied by those framing checks.
 These are bounded source contracts, not full upstream/backend-matrix or
 performance qualification. The accepted baseline and supported model admission
 are independent. All outstanding runtime delivery and deferred work is tracked
-in [PLAN.md](../PLAN.md#runtime-correctness-and-delivery).
+in [PLAN.md](../PLAN.md#runtime-and-correctness).
 
 ## Rejected reuse
 

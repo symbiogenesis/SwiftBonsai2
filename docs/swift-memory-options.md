@@ -37,7 +37,7 @@ original group-128 scales.
 For arbitrary independent 128-trit blocks, `ceil(128 log2(3)) = 203` bits require
 26 whole code bytes. PTQ1 meets this byte-aligned bound before its scale.
 Cross-block compression has different tradeoffs; see the
-[counting bound](inference-algorithms.md#compression-bound-and-deferred-experiments).
+[counting bound](inference-algorithms.md#compression-and-approximation-constraints).
 Physical FP16 KV in the experimental Rust reference and checkpoint-storage
 behavior are separate from weight packing.
 

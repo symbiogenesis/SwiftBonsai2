@@ -315,10 +315,10 @@ Direct `bonsai-chat` and development broker launches accept
 does not substitute the older publisher PTQ1 checkpoint or silently fall back.
 The pinned adapter remains available with the same opt-out and scale setting.
 The native Rust inference service rejects this option until its separate
-end-to-end PTQ1 qualification is complete. See [PTQ1 readiness](ptq1-readiness.md)
-for the small decision screen and remaining correctness/quality work.
+end-to-end PTQ1 qualification is complete. See the
+[PTQ1 contract](ptq1-readiness.md) and [central TODO](../PLAN.md#creative-quality-adapters-and-memory).
 
-## Planned X1/X2 configuration
+## X1/X2 configuration boundary
 
 The recorded development machine is a 32 GB Snapdragon X Elite X1E-78-100.
 The ultimate target covers Snapdragon X1 and X2 Windows ARM64 systems with
@@ -338,7 +338,7 @@ Unknown or unsupported hardware will select a supported baseline CPU profile
 with a recorded reason, or refuse admission when its requirements cannot be
 met. Hardware names and advertised TOPS alone will not enable acceleration.
 The CPU MVP and existing model, context, LoRA and service acceptance requirements
-remain the immediate delivery scope.
+are tracked in the [central TODO](../PLAN.md).
 
 ## Inventory and provisioning
 
@@ -628,8 +628,9 @@ This is an experimental path. Bounded source-runtime checks qualify actual model
 loading, native logit/state parity, prompt/tokenizer and seeded sampler parity,
 and owned HTTP recovery. The provisioned `0.1.3` release includes those source
 repairs and pins the reviewed binary and source identities. See the
-[MVP checklist](prism-upstream-todo.md) for supported scope and remaining release
-qualification. Full-context behavior, throughput and daily-service acceptance
+[runtime contract](native-rust-engine.md) for supported scope and the
+[central TODO](../PLAN.md#runtime-and-correctness) for outstanding qualification.
+Full-context behavior, throughput and daily-service acceptance
 remain open. The server's private child protocol alone does not establish Job
 ownership or prevent same-user bypass.
 

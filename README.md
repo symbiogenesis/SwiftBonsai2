@@ -128,11 +128,11 @@ See [benchmark context and current limits](docs/performance-expectations.md).
 
 | Guide | What you'll find |
 | --- | --- |
-| [Automatic X1/X2 configuration](docs/hardware-profiles.md) | Device discovery, measured profile selection, phase placement and fallback roadmap |
+| [Automatic X1/X2 configuration](docs/hardware-profiles.md) | Capability, profile selection, phase placement and fallback contracts |
 | [Prism Inference](https://github.com/symbiogenesis/prism-inference) | Independent Rust runtime, published crates and prebuilt server binaries |
-| [CPU SIMD plan](docs/simd-plan.md) | Packed NEON kernels, numerical contracts, safe dispatch, and qualification |
-| [Adreno GPU plan](docs/adreno-gpu-plan.md) | CPU-only status, native Vulkan bring-up, placement, and device qualification |
-| [Hexagon NPU plan](docs/hexagon-npu-plan.md) | Signed runtime access, exact Swift kernels/state, placement, and qualification |
+| [CPU SIMD contracts](docs/simd-plan.md) | Packed NEON kernels, numerical contracts, safe dispatch, and qualification |
+| [Adreno GPU contracts](docs/adreno-gpu-plan.md) | Vulkan placement, arithmetic and device qualification boundaries |
+| [Hexagon NPU contracts](docs/hexagon-npu-plan.md) | Signed runtime access, exact Swift kernels/state, placement, and qualification |
 
 ### Research
 

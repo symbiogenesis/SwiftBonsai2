@@ -153,7 +153,7 @@ An independent 128-trit block has `3^128` possibilities and needs
 `ceil(128 log2(3)) = 203` bits: **26 whole code bytes**, already used by PTQ1
 plus its unchanged two-byte scale. This rules out a general whole-byte saving
 per independent block, not correlated/cross-block coding. See the
-[PTQ1 decision](swift-memory-options.md) and [BITCOS retirement](bitcos-retirement.md).
+[packing decision](swift-memory-options.md#packing-decision).
 
 | Research | Constraint |
 | --- | --- |

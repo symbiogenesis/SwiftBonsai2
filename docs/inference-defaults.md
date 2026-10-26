@@ -83,8 +83,8 @@ labels for planning, drafting and reviewing. Keep incomplete or failed stages
 visible; a truncated revision must not replace a complete draft or be labelled a
 finished answer.
 
-Initial implementation needs focused behavior checks for default single-call
-behavior, stage order, bounds, cancellation and draft retention. An extensive
+The validation contract covers default single-call behavior, stage order,
+bounds, cancellation and draft retention through focused behavior checks. An extensive
 quality/performance benchmark campaign is not a prerequisite for exposing this
 opt-in experimental mode. Do not claim an established quality or speed gain, or
 promote it to the default, without appropriate evidence. Any benchmarks remain

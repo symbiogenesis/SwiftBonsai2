@@ -111,10 +111,6 @@ owner-accepted heat/fan requirements after bounded tuning. Record the failure
 and a fresh literature decision before provisioning the fallback. Keep candidate
 benchmarks on CI.
 
-## Implementation gates
-
-Pinned provisioning, host inventory and full GGUF inspection are implemented.
-CPU loading, authenticated chat/lifecycle controls, restricted inference policy,
-creative/comfort acceptance, Vulkan and performance promotion remain unqualified.
-No daily profile is accepted. See the [development guide](development-guide.md)
-for current commands and [licensing](licensing.md) for redistribution terms.
+No daily reference profile is accepted. Outstanding qualification work lives in
+the [central TODO](../PLAN.md). Use the [development guide](development-guide.md)
+for commands and [licensing](licensing.md) for redistribution terms.

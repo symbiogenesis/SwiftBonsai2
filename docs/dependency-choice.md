@@ -4,7 +4,7 @@ Keep **Serde 1.0.229, serde_json 1.0.154 and Tokio 1.54.1**, as pinned in the
 [workspace](../Cargo.toml). No evaluated challenger satisfied the production
 replacement criteria. Strict request behavior precedes speed, and all benchmarks
 run only in CI. Outstanding optional dependency experiments are tracked only in
-[PLAN.md](../PLAN.md#application-and-daily-service).
+[PLAN.md](../PLAN.md#deferred-dependency-experiments).
 
 ## JSON selection
 

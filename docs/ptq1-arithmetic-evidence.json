@@ -1,62 +1,17 @@
 {
   "schemaVersion": 1,
-  "date": "2026-10-26",
+  "kind": "ptq1-full-model-parity-evidence",
   "runtimeSourceRevision": "e2d8d6f4bb4e42e6d284a03d1db8ffd1cde9cc93",
   "modelSha256": "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5",
   "nativeRuntimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
   "nativeCpuDllSha256": "701b354a38b25e5c6dc57a1559f71cd26b2d0f8d69c1576a0e77a59a4273d2ab",
-  "repairs": [
-    "Select pinned graph arithmetic for the exact verified current-weight PTQ1 hash",
-    "Use native ARM64 ties-to-even Q8 activation rounding in pinned graph execution",
-    "Preserve native PTQ1 four-lane fused row accumulation and pairwise reduction"
-  ],
-  "nativeOperatorChecks": {
-    "modelLoaded": false,
-    "q8CompleteCaptureCases": 6,
-    "q8Formats": ["Q8_0", "Q8_1"],
-    "q8FixtureSha256": "dbc8044e66533b37a8feaaae2bac7450809e7650711252b902d89d230ac640e0",
-    "ptq1DotRows": 40,
-    "ptq1DotMismatches": 0,
-    "ptq1DotPriorArithmeticMismatches": 30,
-    "ptq1DotCaptureNrc": 1,
-    "ptq1DotFixtureSha256": "781fa202c4d23e2a78cf362e3d84e008dd647c31606ba92b7869f5c2168d439c",
-    "twoByTwoTileParityQualified": false
-  },
-  "focusedLocalChecks": {
-    "pinnedQ8PreparationRegression": "passed",
-    "pinnedPtq1AccumulationRegression": "passed",
-    "graphSelectionAndRecoveryRegression": "passed",
-    "existingNeonPtq1DecoderRegressions": "passed",
-    "publicReferencePtq1Regression": "passed",
-    "releaseAllTargetsClippy": "passed",
-    "releaseCheckerBuild": "passed",
-    "formatting": "passed"
-  },
-  "originalAdmissionRecheck": {
-    "status": "rejected-before-launch",
-    "modelProcessStarted": false,
-    "plannedInputTokens": [248045],
-    "plannedBackend": "auto",
-    "requiredAvailablePhysicalBytes": 17179869184,
-    "minimumObservedAvailablePhysicalBytes": 14668292096,
-    "committedLimitBytes": 12884901888,
-    "physicalReserveBytes": 4294967296,
-    "numericalParityVerdict": "not-run"
-  },
-  "fullModelRecheck": {
-    "status": "completed-numerical-comparison-failed",
-    "modelProcessStarted": true,
-    "modelExitCode": 0,
+  "comparison": {
     "checkerBuildSourceRevision": "45fdd8527683515576fc6c9244f4213eb17f9a39",
     "checkerSha256": "6aa8d1e245504362d40620cde5dcdc43f2bd31e2a0e2ab5b610199ea77462601",
-    "inputTokens": [248045],
+    "inputTokens": [
+      248045
+    ],
     "backend": "auto",
-    "trialRequiredAvailablePhysicalBytes": 15920349184,
-    "trialAdmissionReductionBytes": 1259520000,
-    "minimumObservedAvailablePhysicalBytes": 11211378688,
-    "peakJobMemoryBytes": 6275854336,
-    "committedLimitBytes": 12884901888,
-    "physicalReserveBytes": 4294967296,
     "absoluteTolerance": 0.001,
     "relativeTolerance": 0.001,
     "files": 129,
@@ -69,11 +24,8 @@
     "firstNonexactStoredStateBlock": 14,
     "firstOutOfToleranceStoredStateBlock": 15,
     "comparisonSha256": "fdbc3e2084f366be76f87d4a676f44ebadcda66c38ab2f6f2c524eae0a02d58b",
-    "numericalParityVerdict": "failed",
-    "admissionReductionRetained": false,
-    "productionRequiredAvailablePhysicalBytes": 17179869184
+    "numericalParityVerdict": "failed"
   },
-  "benchmarksRun": false,
   "fullModelParityQualified": false,
   "adapterQualified": false,
   "qualityQualified": false,
