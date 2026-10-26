@@ -128,6 +128,35 @@ function Assert-NativeSpeechArchiveName {
     }
 }
 
+function Get-NativeSpeechTreeFile {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$Root)
+    # Root has already passed Resolve-ExternalPath. Inspect entries before
+    # descending so a junction cannot redirect source traversal elsewhere.
+    if (-not [IO.Directory]::Exists($Root)) { return }
+    $directories = [Collections.Generic.Stack[string]]::new()
+    $directories.Push($Root)
+    while ($directories.Count -gt 0) {
+        foreach ($path in [IO.Directory]::EnumerateFileSystemEntries($directories.Pop())) {
+            $attributes = [IO.File]::GetAttributes($path)
+            if ($attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Native source cache contains a reparse entry: $path" }
+            if ($attributes -band [IO.FileAttributes]::Directory) { $directories.Push($path) }
+            else { $path }
+        }
+    }
+}
+
+function Assert-NativeSpeechSourceTree {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory)][string]$Root,
+          [Parameter(Mandatory)][Collections.Generic.HashSet[string]]$Expected)
+    foreach ($file in (Get-NativeSpeechTreeFile -Root $Root)) {
+        if (-not $Expected.Contains($file)) { throw "Native source cache contains an unpinned file: $file" }
+    }
+}
+
 function Expand-NativeSpeechZip {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Private verified source extraction for explicit provisioning.')]
     [CmdletBinding()]
@@ -135,6 +164,10 @@ function Expand-NativeSpeechZip {
     param([Parameter(Mandatory)][string]$Archive, [Parameter(Mandatory)][string]$Destination,
           [Parameter(Mandatory)][string]$ArchiveRoot)
     $Destination = Resolve-ExternalPath -Path $Destination
+    # Validate existing descendants once, using .NET rather than repeating
+    # provider/Git-ancestor lookups for every archive file and directory.
+    Get-NativeSpeechTreeFile -Root $Destination | Out-Null
+    $prefix = $Destination.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
     $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
     try {
         $entries = [Collections.Generic.List[object]]::new()
@@ -156,8 +189,8 @@ function Expand-NativeSpeechZip {
             }
             $expanded += $entry.Length
             if ($expanded -gt 1GB -or $zip.Entries.Count -gt 20000) { throw 'Native source ZIP exceeds its expansion limit.' }
-            $path = Resolve-ExternalPath -Path (Join-Path $Destination $relative)
-            if (-not $path.StartsWith($Destination.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            $path = [IO.Path]::GetFullPath([IO.Path]::Combine($Destination, $relative.Replace('/', [IO.Path]::DirectorySeparatorChar)))
+            if (-not $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
                 throw 'Native source ZIP escaped its destination.'
             }
             $entries.Add(@{ Entry = $entry; Path = $path; Directory = $directory })
@@ -170,7 +203,13 @@ function Expand-NativeSpeechZip {
             try {
                 if ([IO.File]::Exists($item.Path)) {
                     $expected = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($inputStream))
-                    Test-LockedArtifact -Path $item.Path -Bytes $item.Entry.Length -Sha256 $expected
+                    $existing = [IO.FileStream]::new($item.Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+                    try {
+                        if ($existing.Length -ne $item.Entry.Length -or
+                            [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($existing)) -cne $expected) {
+                            throw "Native source bytes disagree with their pinned archive: $($item.Path)"
+                        }
+                    } finally { $existing.Dispose() }
                 } else {
                     $output = [IO.FileStream]::new($item.Path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
                     try { $inputStream.CopyTo($output) } finally { $output.Dispose() }
@@ -271,10 +310,7 @@ function Initialize-NativeSpeechBuild {
             $destination = if ($key -eq 'qwen') { $source } else { Join-Path $source 'ggml' }
             foreach ($file in (Expand-NativeSpeechZip -Archive $archive -Destination $destination -ArchiveRoot $artifact.root)) { [void]$expected.Add($file) }
         }
-        foreach ($file in (Get-ChildItem -LiteralPath $source -Recurse -Force)) {
-            [void](Resolve-ExternalPath -Path $file.FullName)
-            if (-not $file.PSIsContainer -and -not $expected.Contains($file.FullName)) { throw "Native source cache contains an unpinned file: $($file.FullName)" }
-        }
+        Assert-NativeSpeechSourceTree -Root $source -Expected $expected
     } finally { $guard.Dispose() }
     $vswhere = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)) 'Microsoft Visual Studio/Installer/vswhere.exe'
     $found = Invoke-BonsaiNativeProcess -Executable $vswhere -ArgumentList @('-latest', '-products', '*', '-property', 'installationPath') -WorkingDirectory $working -TimeoutSeconds 60

@@ -98,6 +98,16 @@ if ($Case -in @('All', 'Sources')) {
     $linkFiles = @(& $module { param($a, $d) Expand-NativeSpeechZip -Archive $a -Destination $d -ArchiveRoot source } $link (Join-Path $scratch 'link'))
     Assert ($linkFiles.Count -eq 1 -and -not ((Get-Item -LiteralPath $linkFiles[0]).Attributes -band [IO.FileAttributes]::ReparsePoint) -and
         (Get-Content -LiteralPath $linkFiles[0] -Raw) -ceq 'fixture') 'A ZIP link was followed instead of materialized as ordinary bytes.'
+    $expected = [Collections.Generic.HashSet[string]]::new([string[]]$linkFiles, [StringComparer]::OrdinalIgnoreCase)
+    $tree = Join-Path $scratch 'link'
+    & $module { param($r, $e) Assert-NativeSpeechSourceTree -Root $r -Expected $e } $tree $expected
+    [IO.File]::WriteAllText((Join-Path $tree 'unexpected.cpp'), 'unreviewed')
+    Assert-Failure { & $module { param($r, $e) Assert-NativeSpeechSourceTree -Root $r -Expected $e } $tree $expected } 'Source cache validation accepted an unpinned file.'
+    $reparseTree = Join-Path $scratch 'reparse'
+    [void][IO.Directory]::CreateDirectory($reparseTree)
+    $junction = New-Item -ItemType Junction -Path (Join-Path $reparseTree 'redirected') -Value $tree
+    Assert ($null -ne $junction) 'Could not create the owned reparse fixture.'
+    Assert-Failure { & $module { param($r) Get-NativeSpeechTreeFile -Root $r } $reparseTree } 'Native source traversal followed a reparse directory.'
     & $module { Read-NativeSpeechBuildLock } | Out-Null
 }
 
