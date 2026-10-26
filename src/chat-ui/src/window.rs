@@ -74,6 +74,7 @@ const THINKING: usize = 104;
 const RETRY: usize = 105;
 const DICTATE: usize = 106;
 const READ_ALOUD: usize = 107;
+const DEFAULT_VOICE: &str = "A warm, clear, natural adult voice with a calm conversational pace.";
 const TIMER: usize = 1;
 const BACKGROUND: u32 = 0x0016_1810;
 const PANEL: u32 = 0x001d_2217;
@@ -110,6 +111,8 @@ struct State {
     dictate: HWND,
     read_aloud: HWND,
     speech_status: HWND,
+    voice_label: HWND,
+    voice_profile: HWND,
     status: HWND,
     font: HFONT,
     title_font: HFONT,
@@ -275,7 +278,7 @@ fn color_control(wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     let control: HWND = without_provenance_mut(lparam.cast_unsigned());
     // SAFETY: WM_CTLCOLOR supplies a live control and message-scoped paint HDC.
     let id = unsafe { GetDlgCtrlID(control) };
-    let editor = matches!(id, 201..=203);
+    let editor = matches!(id, 201..=204);
     let colors = colors();
     let foreground = if id == 202 || (!editor && id != 301) {
         colors.muted
@@ -353,7 +356,7 @@ fn paint(window: HWND) {
                 .and_then(|state| state.as_ref().map(|state| state.show_thinking))
         })
         .unwrap_or(false);
-    let top = px(188);
+    let top = px(280);
     let bottom = bounds.bottom - px(184);
     let split = if thinking { (bottom - top) / 3 } else { 0 };
     palette_with(|p| {
@@ -361,6 +364,13 @@ fn paint(window: HWND) {
         unsafe {
             FillRect(dc, &raw const bounds, p.background.0);
         }
+        let voice = RECT {
+            left: pad,
+            top: px(208),
+            right: bounds.right - pad,
+            bottom: px(266),
+        };
+        round_box(dc, voice, p.panel.0, p.colors.border, px(12));
         let body = RECT {
             left: pad,
             top,
@@ -513,6 +523,16 @@ fn set_text(control: HWND, text: &str) {
     }
 }
 
+fn control_text(control: HWND) -> String {
+    // SAFETY: Callers supply live native edits owned by this UI thread.
+    let count = unsafe { GetWindowTextLengthW(control) };
+    let mut buffer = vec![0u16; usize::try_from(count.max(0)).unwrap_or_default() + 1];
+    // SAFETY: The allocation covers the queried text length plus terminator;
+    // no intervening UI dispatch can mutate this same-thread edit.
+    let copied = unsafe { GetWindowTextW(control, buffer.as_mut_ptr(), count.saturating_add(1)) };
+    String::from_utf16_lossy(&buffer[..usize::try_from(copied.max(0)).unwrap_or_default()])
+}
+
 fn append(control: HWND, text: &str) {
     transcript::append(control, text, TEXT, false);
 }
@@ -615,6 +635,14 @@ fn edit(parent: HWND, readonly: bool, id: usize) -> io::Result<HWND> {
     Ok(handle)
 }
 
+fn voice_profile(parent: HWND) -> io::Result<HWND> {
+    let control = edit(parent, false, 204)?;
+    // SAFETY: This live native edit accepts a bounded scalar text limit.
+    unsafe { SendMessageW(control, EM_SETLIMITTEXT, 1024, 0) };
+    set_text(control, DEFAULT_VOICE);
+    Ok(control)
+}
+
 fn state_with<T>(action: impl FnOnce(&mut State) -> T) -> Option<T> {
     STATE.with(|state| state.try_borrow_mut().ok()?.as_mut().map(action))
 }
@@ -627,7 +655,7 @@ impl State {
         config: &Config,
         microphone: Option<microphone::Microphone>,
     ) -> io::Result<Self> {
-        let speech = speech::start(config.canary.clone()).ok();
+        let speech = speech::start(config.canary.clone(), config.qwen_tts.clone()).ok();
         Ok(Self {
             window,
             title: control(window, w!("STATIC"), "Swift Bonsai 2", 0, 301)?,
@@ -664,6 +692,8 @@ impl State {
                 0,
                 404,
             )?,
+            voice_label: control(window, w!("STATIC"), "&Voice profile", 0, 405)?,
+            voice_profile: voice_profile(window)?,
             status: control(
                 window,
                 w!("STATIC"),
@@ -730,6 +760,8 @@ impl State {
                 ),
             );
         }
+        // SAFETY: The native setting stays fixed while synthesis or playback is active.
+        unsafe { EnableWindow(self.voice_profile, i32::from(!self.speaking)) };
         // SAFETY: Live speech control; readout is available only for retained visible answer text.
         unsafe {
             EnableWindow(
@@ -773,7 +805,7 @@ impl State {
         let height = bounds.bottom.max(p(520));
         let pad = p(32);
         let content = width - 2 * pad;
-        let top = p(188);
+        let top = p(280);
         let bottom = height - p(184);
         let split = if self.show_thinking {
             (bottom - top) / 3
@@ -795,6 +827,7 @@ impl State {
             content - p(314),
             p(32),
         );
+        self.layout_voice_profile(width, dpi);
         place(
             self.transcript_label,
             pad + p(20),
@@ -886,6 +919,20 @@ impl State {
         );
     }
 
+    fn layout_voice_profile(&self, width: i32, dpi: i32) {
+        let p = |value: i32| value.saturating_mul(dpi) / 96;
+        let pad = p(32);
+        let content = width - 2 * pad;
+        place(self.voice_label, pad + p(2), p(184), content - p(4), p(20));
+        place(
+            self.voice_profile,
+            pad + p(12),
+            p(216),
+            content - p(24),
+            p(42),
+        );
+    }
+
     fn set_font(&mut self) {
         // SAFETY: Live HWND on this UI thread.
         let dpi = i32::try_from(unsafe { GetDpiForWindow(self.window) }.max(96)).unwrap_or(96);
@@ -905,6 +952,7 @@ impl State {
             self.retry,
             self.dictate,
             self.read_aloud,
+            self.voice_profile,
         ] {
             apply_font(control, font);
         }
@@ -914,6 +962,7 @@ impl State {
         apply_font(self.subtitle, small);
         apply_font(self.status, small);
         apply_font(self.speech_status, small);
+        apply_font(self.voice_label, small);
         apply_font(self.transcript_label, small);
         apply_font(self.reasoning_label, small);
         apply_font(self.input_label, small);
@@ -933,17 +982,19 @@ impl State {
         PALETTE.with(|slot| *slot.borrow_mut() = Some(palette));
         let colors = colors();
         set_dark_frame(self.window, !colors.high_contrast);
-        // SAFETY: Live native edit and static/null theme pointers; the call is synchronous.
-        unsafe {
-            SetWindowTheme(
-                self.input,
-                if colors.high_contrast {
-                    null()
-                } else {
-                    w!("DarkMode_Explorer")
-                },
-                null(),
-            );
+        for control in [self.input, self.voice_profile] {
+            // SAFETY: Live native edits and static/null theme pointers; calls are synchronous.
+            unsafe {
+                SetWindowTheme(
+                    control,
+                    if colors.high_contrast {
+                        null()
+                    } else {
+                        w!("DarkMode_Explorer")
+                    },
+                    null(),
+                );
+            }
         }
         transcript::refresh_theme(self.transcript);
         transcript::refresh_theme(self.reasoning);
@@ -956,15 +1007,7 @@ impl State {
         if !self.ready || self.busy {
             return;
         }
-        // SAFETY: input is a live EDIT on this thread; no pointer is passed.
-        let count = unsafe { GetWindowTextLengthW(self.input) };
-        let mut buffer = vec![0u16; usize::try_from(count.max(0)).unwrap_or_default() + 1];
-        // SAFETY: buffer is writable for count+1 UTF-16 units, count is queried
-        // from the same UI-thread control, and the call writes at most that bound.
-        let copied =
-            unsafe { GetWindowTextW(self.input, buffer.as_mut_ptr(), count.saturating_add(1)) };
-        let text =
-            String::from_utf16_lossy(&buffer[..usize::try_from(copied.max(0)).unwrap_or_default()]);
+        let text = control_text(self.input);
         let text = text.trim();
         if text.is_empty() {
             return;
@@ -1166,8 +1209,21 @@ impl State {
                 set_text(self.speech_status, "Read aloud stopped.");
             }
         } else if self.speech_output && self.answer_complete && !self.last_answer.is_empty() {
+            let voice_description = control_text(self.voice_profile).trim().to_owned();
+            if voice_description.is_empty() {
+                set_text(
+                    self.speech_status,
+                    "Describe the voice in Voice profile before reading aloud.",
+                );
+                // SAFETY: This enabled native setting requires the user's description.
+                unsafe { SetFocus(self.voice_profile) };
+                return;
+            }
             self.stop_speech();
-            if self.speech_command(speech::Command::Speak(self.last_answer.clone())) {
+            if self.speech_command(speech::Command::Speak {
+                text: self.last_answer.clone(),
+                voice_description,
+            }) {
                 self.speaking = true;
                 set_text(self.speech_status, "Reading the visible answer aloud.");
             }
@@ -1207,10 +1263,12 @@ impl State {
                 set_text(
                     self.speech_status,
                     match (self.speech_input, output) {
-                        (true, true) => "Microphone input and read aloud available.",
-                        (true, false) => "Microphone ready; no Windows voice installed.",
-                        (false, true) => "Read aloud ready; microphone input unavailable.",
-                        (false, false) => "Speech input and output unavailable.",
+                        (true, true) => "Microphone input and Qwen speech available.",
+                        (true, false) => "Microphone ready; Qwen speech unavailable.",
+                        (false, true) => "Qwen read aloud ready; microphone input unavailable.",
+                        (false, false) => {
+                            "Speech services unavailable. Text chat remains available."
+                        }
                     },
                 );
             }
@@ -1358,7 +1416,7 @@ unsafe extern "system" fn procedure(
             // SAFETY: This live HWND is queried only for scalar DPI.
             let dpi = i32::try_from(unsafe { GetDpiForWindow(window) }.max(96)).unwrap_or(96);
             bounds.ptMinTrackSize.x = 680_i32.saturating_mul(dpi) / 96;
-            bounds.ptMinTrackSize.y = 700_i32.saturating_mul(dpi) / 96;
+            bounds.ptMinTrackSize.y = 800_i32.saturating_mul(dpi) / 96;
             return 0;
         }
         WM_DRAWITEM if lparam != 0 => {
