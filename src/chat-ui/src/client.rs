@@ -685,8 +685,9 @@ fn exchange(
         .map_err(|_| Failure::Message("Could not send the chat request. Restart the demo."))?;
     let mut body = HttpBody::new(connection)?;
     let mut sse = Sse::default();
-    while let Some(bytes) = body.next()? {
-        sse.push(&bytes, &mut |text, reasoning| {
+    let mut bytes = [0; READ_SIZE];
+    while let Some(count) = body.next(&mut bytes)? {
+        sse.push(&bytes[..count], &mut |text, reasoning| {
             if !text.is_empty() {
                 notify(events, Event::Text(text.to_owned()))?;
             }
@@ -743,7 +744,7 @@ impl<R: Read> HttpBody<R> {
         })
     }
 
-    fn next(&mut self) -> Result<Option<Vec<u8>>> {
+    fn next(&mut self, bytes: &mut [u8; READ_SIZE]) -> Result<Option<usize>> {
         if self.done {
             return Ok(None);
         }
@@ -754,16 +755,15 @@ impl<R: Read> HttpBody<R> {
                     self.done = true;
                     return Ok(None);
                 }
-                let mut bytes = vec![0; count];
-                read_exact(&mut self.reader, &mut bytes)?;
+                read_exact(&mut self.reader, &mut bytes[..count])?;
                 self.total += count;
-                Ok(Some(bytes))
+                Ok(Some(count))
             }
-            Framing::Chunked => self.chunk(),
+            Framing::Chunked => self.chunk(bytes),
         }
     }
 
-    fn chunk(&mut self) -> Result<Option<Vec<u8>>> {
+    fn chunk(&mut self, bytes: &mut [u8; READ_SIZE]) -> Result<Option<usize>> {
         if self.remaining == 0 {
             let line = read_line(&mut self.reader, 32)?;
             if line.is_empty() || !line.iter().all(u8::is_ascii_hexdigit) {
@@ -789,8 +789,7 @@ impl<R: Read> HttpBody<R> {
             }
         }
         let count = READ_SIZE.min(self.remaining);
-        let mut bytes = vec![0; count];
-        read_exact(&mut self.reader, &mut bytes)?;
+        read_exact(&mut self.reader, &mut bytes[..count])?;
         self.remaining -= count;
         self.total += count;
         if self.remaining == 0 {
@@ -802,7 +801,7 @@ impl<R: Read> HttpBody<R> {
                 ));
             }
         }
-        Ok(Some(bytes))
+        Ok(Some(count))
     }
 }
 
@@ -1138,7 +1137,7 @@ impl Sse {
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, Completion, Event, Failure, HttpBody, Message, Sse, evidence_directory,
+        Command, Completion, Event, Failure, HttpBody, Message, READ_SIZE, Sse, evidence_directory,
         finish_turn, parse_head, serialize_request, startup_failure, wait_for_retry,
     };
     use std::io::{self, Read};
@@ -1172,8 +1171,9 @@ mod tests {
         let mut sse = Sse::default();
         let mut text = String::new();
         let mut reasoning = String::new();
-        while let Some(bytes) = body.next()? {
-            sse.push(&bytes, &mut |content, thought| {
+        let mut bytes = [0; READ_SIZE];
+        while let Some(count) = body.next(&mut bytes)? {
+            sse.push(&bytes[..count], &mut |content, thought| {
                 text.push_str(content);
                 reasoning.push_str(thought);
                 Ok(())
@@ -1213,9 +1213,37 @@ mod tests {
     }
 
     #[test]
+    fn http_body_preserves_short_final_reads_for_both_framings() -> Result<(), Failure> {
+        let mut expected = vec![b'x'; READ_SIZE + 3];
+        expected[READ_SIZE..].copy_from_slice(b"end");
+        for chunked in [false, true] {
+            let framing = if chunked {
+                format!("Transfer-Encoding: chunked\r\n\r\n{:X}\r\n", expected.len())
+            } else {
+                format!("Content-Length: {}\r\n\r\n", expected.len())
+            };
+            let mut wire = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n".to_vec();
+            wire.extend_from_slice(framing.as_bytes());
+            wire.extend_from_slice(&expected);
+            if chunked {
+                wire.extend_from_slice(b"\r\n0\r\n\r\n");
+            }
+            let mut body = HttpBody::new(Fragmented(&wire))?;
+            let mut bytes = [0; READ_SIZE];
+            let mut actual = Vec::new();
+            while let Some(count) = body.next(&mut bytes)? {
+                actual.extend_from_slice(&bytes[..count]);
+            }
+            assert_eq!(actual, expected);
+            assert_eq!(body.next(&mut bytes)?, None);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn truncated_http_and_incomplete_generation_are_rejected() -> Result<(), Failure> {
         let mut body = HttpBody::new(Fragmented(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nabc"))?;
-        assert!(body.next().is_err());
+        assert!(body.next(&mut [0; READ_SIZE]).is_err());
         let mut sse = Sse::default();
         sse.push(
             b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n",
