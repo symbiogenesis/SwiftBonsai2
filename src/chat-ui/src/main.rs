@@ -12,6 +12,8 @@ mod client;
 #[cfg(windows)]
 mod native_speech;
 #[cfg(windows)]
+mod recovery;
+#[cfg(windows)]
 #[allow(
     unsafe_code,
     reason = "Audited native WAV playback boundary; owned buffers live until playback completes."

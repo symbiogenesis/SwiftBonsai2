@@ -2,6 +2,8 @@
 //! history remain separate, so switching never promotes an interrupted turn.
 use super::{Command, RichText, State, Transcript, client, egui};
 
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct ConversationSnapshot {
     pub(super) transcript: Transcript,
     pub(super) committed: Vec<client::Message>,
@@ -15,6 +17,8 @@ pub(super) struct ConversationSnapshot {
     pub(super) warning: bool,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct Conversation {
     pub(super) id: u64,
     pub(super) title: String,
@@ -118,6 +122,7 @@ impl State {
         if let Some(snapshot) = self.conversations[index].saved.take() {
             self.active_conversation = id;
             self.load_conversation(snapshot);
+            self.recovery_dirty = true;
         }
     }
 
@@ -158,6 +163,7 @@ impl State {
             }
         }
         self.conversations.remove(index);
+        self.recovery_dirty = true;
     }
 
     pub(super) fn conversation_list(&mut self, ui: &mut egui::Ui) {
@@ -212,6 +218,7 @@ impl State {
                             {
                                 title.trim().clone_into(&mut conversation.title);
                                 conversation.renamed = true;
+                                self.recovery_dirty = true;
                             }
                             done = true;
                         }

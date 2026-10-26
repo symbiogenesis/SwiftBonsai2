@@ -108,22 +108,36 @@ impl Drop for Broker {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize)]
 pub(crate) struct Message {
-    #[serde(deserialize_with = "history_role")]
     pub(crate) role: &'static str,
     pub(crate) content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) reasoning_content: Option<String>,
 }
 
-fn history_role<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> std::result::Result<&'static str, D::Error> {
-    match String::deserialize(deserializer)?.as_str() {
-        "user" => Ok("user"),
-        "assistant" => Ok("assistant"),
-        _ => Err(serde::de::Error::custom("Unsupported conversation role.")),
+impl<'de> Deserialize<'de> for Message {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct StoredMessage {
+            role: String,
+            content: String,
+            reasoning_content: Option<String>,
+        }
+        let stored = StoredMessage::deserialize(deserializer)?;
+        let role = match stored.role.as_str() {
+            "user" => "user",
+            "assistant" => "assistant",
+            _ => return Err(serde::de::Error::custom("Unsupported conversation role.")),
+        };
+        Ok(Self {
+            role,
+            content: stored.content,
+            reasoning_content: stored.reasoning_content,
+        })
     }
 }
 

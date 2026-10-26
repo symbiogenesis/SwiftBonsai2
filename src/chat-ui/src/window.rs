@@ -24,6 +24,7 @@ mod interaction_tests;
     reason = "Audited UI-thread WinRT microphone initialization and teardown."
 )]
 mod microphone;
+mod persistence;
 #[allow(
     unsafe_code,
     reason = "Audited Windows high-contrast and fatal-dialog boundary."
@@ -66,6 +67,13 @@ struct State {
     next_conversation: u64,
     rename_conversation: Option<(u64, String)>,
     delete_conversation: Option<u64>,
+    recovery: Option<crate::recovery::Recovery>,
+    save_conversations: bool,
+    recovery_dirty: bool,
+    recovery_erase_pending: bool,
+    recovery_notice: String,
+    last_recovery_save: Instant,
+    restore_history: bool,
     status: String,
     warning: bool,
     diagnostics: VecDeque<String>,
@@ -128,6 +136,13 @@ impl State {
             next_conversation: 2,
             rename_conversation: None,
             delete_conversation: None,
+            recovery: None,
+            save_conversations: false,
+            recovery_dirty: false,
+            recovery_erase_pending: false,
+            recovery_notice: String::new(),
+            last_recovery_save: Instant::now(),
+            restore_history: false,
             status: "Preparing your local model…".to_owned(),
             warning: false,
             diagnostics: VecDeque::new(),
@@ -241,6 +256,7 @@ impl State {
         }
         self.transcript.push(Role::User, text);
         self.transcript.push(Role::Assistant, String::new());
+        self.recovery_dirty = true;
         self.input.clear();
         self.place_composer_cursor(0);
         self.busy = true;
@@ -269,6 +285,7 @@ impl State {
         self.conversations.push(Conversation::new(id));
         self.active_conversation = id;
         self.clear_conversation();
+        self.recovery_dirty = true;
         self.set_status("Ready for a new conversation.", false);
     }
 
@@ -349,6 +366,7 @@ impl State {
     }
 
     fn model_event(&mut self, event: Event) {
+        self.recovery_dirty = true;
         match event {
             Event::Starting => {
                 self.waiting_model = true;
@@ -362,6 +380,17 @@ impl State {
                 self.retryable = true;
             }
             Event::Ready => {
+                if self.restore_history {
+                    self.restore_history = false;
+                    if self
+                        .commands
+                        .send(Command::RestoreChat(self.committed.clone()))
+                        .is_err()
+                    {
+                        self.fail("The model worker stopped. Close and restart the app.");
+                        return;
+                    }
+                }
                 self.waiting_model = false;
                 self.ready = true;
                 self.retryable = false;
@@ -670,6 +699,7 @@ impl State {
     }
 
     fn place_composer_cursor(&mut self, index: usize) {
+        self.recovery_dirty = true;
         let cursor = egui::text::CCursorRange::one(egui::text::CCursor::new(index));
         self.composer_cursor = Some(cursor);
         self.pending_cursor = Some(cursor);
@@ -728,6 +758,13 @@ impl State {
 
 impl Drop for State {
     fn drop(&mut self) {
+        if let Some(recovery) = &self.recovery {
+            if self.recovery_erase_pending {
+                recovery.finish_erase();
+            } else if self.save_conversations {
+                recovery.finish(self.workspace_bytes().ok());
+            }
+        }
         self.stop_speech();
         self.microphone.take();
         self.speech.take();
@@ -824,6 +861,15 @@ impl State {
                 self.show_settings = !self.show_settings;
             }
             ui.add_space(8.0);
+            ui.label(
+                RichText::new(if self.save_conversations {
+                    "Conversation saving is on"
+                } else {
+                    "Conversations stay in this window"
+                })
+                .small()
+                .weak(),
+            );
             ui.label(RichText::new("Private · On your device").small().weak());
             ui.label(
                 RichText::new(if self.preview {
@@ -854,6 +900,12 @@ impl State {
             .resizable(false)
             .default_width(400.0)
             .show(ctx, |ui| {
+                let before = (
+                    self.extra_effort,
+                    self.output_budget,
+                    self.voice_profile.clone(),
+                );
+                self.recovery_controls(ui);
                 ui.heading("Response");
                 ui.add_enabled_ui(!self.busy, |ui| {
                     ui.checkbox(&mut self.extra_effort, "Extra effort (experimental)");
@@ -920,6 +972,12 @@ impl State {
                         .small()
                         .weak(),
                 );
+                self.recovery_dirty |= before
+                    != (
+                        self.extra_effort,
+                        self.output_budget,
+                        self.voice_profile.clone(),
+                    );
             });
         self.show_settings = open;
     }
@@ -1011,6 +1069,9 @@ impl State {
                     .weak(),
             );
         }
+        if self.recovery_notice.starts_with("Could not") {
+            ui.label(RichText::new(&self.recovery_notice).color(ui.visuals().warn_fg_color));
+        }
     }
 
     fn empty_state(&mut self, ui: &mut egui::Ui) {
@@ -1087,6 +1148,7 @@ impl State {
                                     ))),
                             )
                             .labelled_by(label.id);
+                        self.recovery_dirty |= response.changed();
                         self.composer_id = Some(response.id);
                         if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
                             if let Some(cursor) = self.pending_cursor.take() {
@@ -1229,7 +1291,7 @@ impl State {
                     .show(ui, |ui| self.composer(ui));
                 let empty = self.transcript.messages.is_empty();
                 egui::ScrollArea::vertical()
-                    .id_salt("conversation-scroll")
+                    .id_salt(("conversation-scroll", self.active_conversation))
                     .stick_to_bottom(true)
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
@@ -1294,6 +1356,7 @@ impl eframe::App for State {
         }
         self.poll_microphone();
         self.drain_speech_events();
+        self.poll_recovery();
         ctx.input(|input| {
             for event in &input.events {
                 match event {
@@ -1350,6 +1413,7 @@ fn native_options() -> eframe::NativeOptions {
 }
 
 pub(super) fn run(config: Config) -> io::Result<()> {
+    let recovery = crate::recovery::Recovery::open(&config.data);
     eframe::run_native(
         "Swift Bonsai",
         native_options(),
@@ -1359,6 +1423,7 @@ pub(super) fn run(config: Config) -> io::Result<()> {
             let (events, incoming_events) = mpsc::channel();
             let microphone = microphone::Microphone::new().ok();
             let mut state = State::create(commands, incoming_events, Some(&config), microphone);
+            state.attach_recovery(recovery);
             state.worker = Some(
                 std::thread::Builder::new()
                     .name("swift-chat-client".to_owned())
