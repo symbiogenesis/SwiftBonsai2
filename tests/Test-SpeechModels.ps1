@@ -152,9 +152,11 @@ if ($Case -in @('All','Launcher')) {
     Copy-Item -LiteralPath (Join-Path $repo 'scripts/Bonsai.Native.psm1') -Destination $scripts
     $fakeDownloader = @'
 [CmdletBinding()]
-param([string]$DataDirectory, [string]$Model = 'All', [switch]$VerifyOnly)
+param([string]$DataDirectory, [string]$Model = 'All',
+      [ValidateSet('Q8_0', 'Q4_K_M')][string]$TtsQuantization = 'Q8_0', [switch]$VerifyOnly)
 [void][IO.Directory]::CreateDirectory($DataDirectory)
 [IO.File]::WriteAllText((Join-Path $DataDirectory 'download-called'), $Model)
+[IO.File]::WriteAllText((Join-Path $DataDirectory 'quantization-called'), $TtsQuantization)
 [pscustomobject]@{ Status = 'verified'; CanaryModelPath = 'canary'; TtsModelPath = 'tts'; TtsCodecPath = 'codec'; TotalBytes = 1 }
 '@
     [IO.File]::WriteAllText((Join-Path $scripts 'Get-NativeSpeechModels.ps1'), $fakeDownloader)
@@ -162,6 +164,9 @@ param([string]$DataDirectory, [string]$Model = 'All', [switch]$VerifyOnly)
     [void][IO.Directory]::CreateDirectory($data)
     & $copy -DataDirectory $data -SpeechModelsOnly | Out-Null
     Assert ([IO.File]::ReadAllText((Join-Path $data 'download-called')) -ceq 'All') 'Download-only demo skipped required model provisioning.'
+    Assert ([IO.File]::ReadAllText((Join-Path $data 'quantization-called')) -ceq 'Q8_0') 'Download-only demo changed the default TTS quantization.'
+    & $copy -DataDirectory $data -SpeechModelsOnly -TtsQuantization Q4_K_M | Out-Null
+    Assert ([IO.File]::ReadAllText((Join-Path $data 'quantization-called')) -ceq 'Q4_K_M') 'Download-only demo did not forward the selected TTS quantization.'
     Assert-Failure { & $copy -DataDirectory $data -SpeechModelsOnly -NoSpeechModels } 'Contradictory download switches were accepted.'
 }
 

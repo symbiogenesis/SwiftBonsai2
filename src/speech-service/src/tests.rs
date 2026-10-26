@@ -107,10 +107,18 @@ fn streaming_pcm_frames_complete_output_and_leaves_failures_incomplete() -> io::
             body.len()
         )?;
         let mut response = Vec::new();
-        peer.read_to_end(&mut response)?;
+        let read_result = peer.read_to_end(&mut response);
         server
             .join()
             .map_err(|_| io::Error::other("Synthetic streaming server failed."))??;
+        match read_result {
+            Ok(_) => {}
+            // Deliberately incomplete responses may close with RST on Windows.
+            // Successful synthesis must still provide a clean, complete stream.
+            Err(error)
+                if (failure || invalid) && error.kind() == io::ErrorKind::ConnectionReset => {}
+            Err(error) => return Err(error),
+        }
         assert!(response.starts_with(b"HTTP/1.1 200"));
         assert!(
             response
@@ -135,6 +143,12 @@ fn streaming_pcm_frames_complete_output_and_leaves_failures_incomplete() -> io::
             .position(|part| part == b"\r\n\r\n")
             .ok_or_else(|| io::Error::other("Missing streaming response headers."))?;
         assert!(response[boundary + 4..].starts_with(b"6\r\n\x01\x80\x00\x00\xff\x7f\r\n"));
+        if !failure && !invalid {
+            assert_eq!(
+                &response[boundary + 4..],
+                b"6\r\n\x01\x80\x00\x00\xff\x7f\r\n2\r\n\x00\x40\r\n0\r\n\r\n"
+            );
+        }
     }
     Ok(())
 }
