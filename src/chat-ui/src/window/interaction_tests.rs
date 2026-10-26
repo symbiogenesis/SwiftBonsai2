@@ -114,7 +114,7 @@ fn accessible_chat_controls_handle_enter_and_shift_enter() {
 #[test]
 fn transcript_export_preserves_roles_spacing_and_visible_unicode_only() {
     let mut transcript = Transcript::default();
-    assert!(transcript.plain_text().is_empty());
+    assert_eq!(transcript.plain_text(), "");
     transcript.push(Role::User, "First line\n\n界".to_owned());
     transcript.push(Role::Assistant, String::new());
     transcript.append("Private thinking", true);
@@ -128,7 +128,7 @@ fn transcript_export_preserves_roles_spacing_and_visible_unicode_only() {
         "You\nFirst line\n\n界\n\nSwift Bonsai\nAnswer 🌱\n"
     );
     transcript.clear();
-    assert!(transcript.plain_text().is_empty());
+    assert_eq!(transcript.plain_text(), "");
 }
 
 #[test]
