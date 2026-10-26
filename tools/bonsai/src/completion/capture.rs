@@ -1,7 +1,6 @@
 //! Exact response identity and diagnostics for completed paired samples.
 
 use serde_json::{Value, json};
-use sha2::{Digest as _, Sha256};
 
 use crate::Result;
 
@@ -15,11 +14,7 @@ pub(super) fn decode(bytes: Vec<u8>) -> Result<String> {
 pub(super) fn assemble(text: String, receipt: &Value) -> Value {
     let timing = &receipt["Timing"];
     let counts = &receipt["Counts"];
-    let sha256: String = Sha256::digest(text.as_bytes())
-        .iter()
-        .flat_map(|byte| [byte >> 4, byte & 15])
-        .map(|part| char::from(b"0123456789abcdef"[usize::from(part)]))
-        .collect();
+    let sha256 = crate::identity::sha256(text.as_bytes());
     let mut captured = json!({
         "SchemaVersion": 1,
         "Sha256": sha256,

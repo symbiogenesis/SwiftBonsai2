@@ -11,20 +11,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use crate::identity::hex;
 use bonsai_artifacts::{is_redirect, validate_external_path};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
-
-pub(crate) fn hex(hash: &[u8]) -> String {
-    hash.iter()
-        .flat_map(|byte| {
-            [
-                char::from(b"0123456789abcdef"[usize::from(byte >> 4)]),
-                char::from(b"0123456789abcdef"[usize::from(byte & 15)]),
-            ]
-        })
-        .collect()
-}
 
 pub(crate) fn lock_file(path: &Path) -> crate::Result<File> {
     validate_external_path(path).map_err(|error| error.to_string())?;

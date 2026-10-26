@@ -343,7 +343,7 @@ mod tests {
         let path = working.join("artifact.bin");
         let partial = working.join("artifact.bin.partial");
         fs::write(&partial, b"wrong").map_err(|error| error.to_string())?;
-        let hash = crate::startup_cache::hex(&Sha256::digest(b"right"));
+        let hash = crate::identity::hex(&Sha256::digest(b"right"));
         Ok((working, path, partial, hash))
     }
 
@@ -494,7 +494,7 @@ mod tests {
         validate_external_path(&working).map_err(|error| error.to_string())?;
         fs::create_dir(&working).map_err(|error| error.to_string())?;
         let path = working.join("artifact.bin");
-        let hash = crate::startup_cache::hex(&Sha256::digest(b"hello"));
+        let hash = crate::identity::hex(&Sha256::digest(b"hello"));
         fs::write(&path, b"hello").map_err(|error| error.to_string())?;
         receive(
             "https://example.invalid/artifact",

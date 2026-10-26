@@ -19,9 +19,9 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use sha2::{Digest as _, Sha256};
 
 use crate::Result;
+use crate::identity::{is_lower_hex, sha256};
 use schema::{Controls, Prompt};
 
 const CONTRACT: &str = include_str!("../../../../config/swift-lora.qualification.json");
@@ -47,16 +47,7 @@ struct Scheduled {
 }
 
 fn digest(text: &str) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    Sha256::digest(text.as_bytes())
-        .iter()
-        .flat_map(|byte| {
-            [
-                char::from(HEX[usize::from(byte >> 4)]),
-                char::from(HEX[usize::from(byte & 15)]),
-            ]
-        })
-        .collect()
+    sha256(text.as_bytes())
 }
 
 fn decode<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T> {
@@ -80,10 +71,7 @@ fn string(value: &str, maximum: usize) -> Result<()> {
 
 fn hash(value: &str) -> Result<()> {
     require(
-        value.len() == 64
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+        is_lower_hex(value, 64),
         "Qualification digest must be a lowercase SHA-256.",
     )
 }

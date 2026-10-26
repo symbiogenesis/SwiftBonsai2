@@ -38,7 +38,7 @@ mod windows {
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     use bonsai_artifacts::{ArtifactError, RuntimeSpec, VerifiedRuntime, validate_external_path};
-    use bonsai_windows_process::{OwnedProcess, ParentProcess, ProcessSpec};
+    use bonsai_windows_process::{ParentProcess, ProcessSpec};
     use serde::Deserialize;
     use serde_json::{Value, json};
 
@@ -74,13 +74,6 @@ mod windows {
         })
     }
 
-    fn bounded_output(path: &Path) -> Result<String> {
-        if fs::metadata(path).map_err(|error| error.to_string())?.len() > 1_048_576 {
-            return Err("Runtime version probe exceeded its output bound.".into());
-        }
-        fs::read_to_string(path).map_err(|error| error.to_string())
-    }
-
     fn probe(
         runtime: &VerifiedRuntime,
         parent: &ParentProcess,
@@ -89,44 +82,21 @@ mod windows {
     ) -> Result<String> {
         let stdout = scratch.join(format!("{kind}.stdout.txt"));
         let stderr = scratch.join(format!("{kind}.stderr.txt"));
-        let process = OwnedProcess::start(&ProcessSpec {
-            executable: runtime.executable().to_owned(),
-            arguments: vec![format!("--{kind}").into()],
-            working_directory: scratch.to_owned(),
-            stdout: stdout.clone(),
-            stderr: stderr.clone(),
-            memory_limit_bytes: 512 * 1024 * 1024,
-            active_process_limit: 1,
-        })
-        .map_err(|error| error.to_string())?;
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let result = (|| {
-            loop {
-                parent.ensure_alive().map_err(|error| error.to_string())?;
-                if Instant::now() >= deadline {
-                    return Err("Runtime version probe timed out.".into());
-                }
-                for path in [&stdout, &stderr] {
-                    if fs::metadata(path).map_err(|error| error.to_string())?.len() > 1_048_576 {
-                        return Err("Runtime version probe exceeded its output bound.".into());
-                    }
-                }
-                if let Some(code) = process
-                    .wait_for_exit(Duration::from_millis(25))
-                    .map_err(|error| error.to_string())?
-                {
-                    if code != 0 {
-                        return Err("Runtime version probe failed.".into());
-                    }
-                    return Ok(());
-                }
-            }
-        })();
-        let stopped = process
-            .stop(Duration::from_secs(10))
-            .map_err(|error| error.to_string());
-        result.and(stopped)?;
-        Ok(bounded_output(&stdout)? + &bounded_output(&stderr)?)
+        let output = crate::runtime_probe::run(
+            &ProcessSpec {
+                executable: runtime.executable().to_owned(),
+                arguments: vec![format!("--{kind}").into()],
+                working_directory: scratch.to_owned(),
+                stdout,
+                stderr,
+                memory_limit_bytes: 512 * 1024 * 1024,
+                active_process_limit: 1,
+            },
+            1_048_576,
+            "Runtime version",
+            || parent.ensure_alive().map_err(|error| error.to_string()),
+        )?;
+        Ok(output.stdout + &output.stderr)
     }
 
     pub(super) fn run(value: Value) -> Result<Value> {
@@ -134,13 +104,7 @@ mod windows {
             return Err("Runtime request must be an object.".into());
         }
         let request: Request = serde_json::from_value(value).map_err(|error| error.to_string())?;
-        if request.schema_version != 1
-            || request.commit.len() != 40
-            || !request
-                .commit
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
+        if request.schema_version != 1 || !crate::identity::is_lower_hex(&request.commit, 40) {
             return Err("Runtime verification requires a reviewed schema and full commit.".into());
         }
         let parent = ParentProcess::open(

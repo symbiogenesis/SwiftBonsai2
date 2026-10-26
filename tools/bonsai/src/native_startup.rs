@@ -510,7 +510,7 @@ mod tests {
         let path = working.join("model.gguf");
         fs::write(&path, b"wrong").map_err(|error| error.to_string())?;
         let plan = json!({"CanaryModelPath": path, "Plans": [{"Path": path, "Bytes": 5,
-            "Sha256": crate::startup_cache::hex(&Sha256::digest(b"right")), "Uri": "https://example.invalid/model"}]});
+            "Sha256": crate::identity::hex(&Sha256::digest(b"right")), "Uri": "https://example.invalid/model"}]});
         assert!(
             provision_models(plan.clone(), false, true, &working)?
                 .get("Plans")

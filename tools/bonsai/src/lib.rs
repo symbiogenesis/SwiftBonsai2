@@ -43,7 +43,10 @@ pub mod chat_launch;
 /// Retained caller identity for cancellation of native startup work.
 pub mod startup_cancel;
 
+mod identity;
 mod native_startup;
+#[cfg(windows)]
+mod runtime_probe;
 mod startup_cache;
 mod startup_download;
 mod startup_process;

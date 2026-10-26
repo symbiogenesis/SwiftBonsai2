@@ -7,6 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::identity::{hex, is_lower_hex};
 use bonsai_artifacts::{is_redirect, open_locked_file, validate_external_path};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -171,13 +172,6 @@ fn text<'a>(value: &'a Value, name: &str) -> crate::Result<&'a str> {
         .ok_or_else(|| "Invalid native speech build lock.".into())
 }
 
-fn hex(value: &str, length: usize) -> bool {
-    value.len() == length
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
 fn artifact(value: &Value, url: &str) -> crate::Result<()> {
     let filename = text(value, "filename")?;
     if filename.is_empty()
@@ -187,7 +181,7 @@ fn artifact(value: &Value, url: &str) -> crate::Result<()> {
         || value["bytes"]
             .as_u64()
             .is_none_or(|bytes| bytes == 0 || bytes > i64::MAX.unsigned_abs())
-        || !hex(text(value, "sha256")?, 64)
+        || !is_lower_hex(text(value, "sha256")?, 64)
         || text(value, "url")? != url
     {
         return Err("Invalid native speech artifact identity.".into());
@@ -233,7 +227,7 @@ pub(crate) fn build_plan() -> crate::Result<Value> {
         if file["bytes"]
             .as_u64()
             .is_none_or(|bytes| bytes == 0 || bytes > i64::MAX.unsigned_abs())
-            || !hex(text(file, "sha256")?, 64)
+            || !is_lower_hex(text(file, "sha256")?, 64)
         {
             return Err("Invalid compiler executable identity.".into());
         }
@@ -256,7 +250,7 @@ pub(crate) fn build_plan() -> crate::Result<Value> {
                         .bytes()
                         .all(|byte| byte.is_ascii_alphanumeric() || b"_.-".contains(&byte))
             })
-            || !hex(revision, 40)
+            || !is_lower_hex(revision, 40)
             || source["root"] != format!("{}-{revision}", pieces[1])
         {
             return Err("Invalid native source identity.".into());
@@ -543,17 +537,6 @@ fn check_source_tree(root: &Path, expected: Option<&BTreeSet<String>>) -> crate:
     Ok(())
 }
 
-fn digest_hex(hash: &[u8]) -> String {
-    hash.iter()
-        .flat_map(|byte| {
-            [
-                char::from(b"0123456789abcdef"[usize::from(byte >> 4)]),
-                char::from(b"0123456789abcdef"[usize::from(byte & 15)]),
-            ]
-        })
-        .collect()
-}
-
 fn prepare_source(
     archive_path: &Path,
     destination: &Path,
@@ -564,7 +547,7 @@ fn prepare_source(
 ) -> crate::Result<PreparedSource> {
     validate_external_path(destination).map_err(|error| error.to_string())?;
     let mut file = open_locked(archive_path)?;
-    if bytes == 0 || bytes > MAX_BYTES || !hex(sha256, 64) {
+    if bytes == 0 || bytes > MAX_BYTES || !is_lower_hex(sha256, 64) {
         return Err("Invalid native source archive identity.".into());
     }
     if file
@@ -575,7 +558,7 @@ fn prepare_source(
     {
         return Err("Source archive exceeds its byte bound.".into());
     }
-    let actual = digest_hex(&digest(&mut file, bytes, &mut std::io::sink(), buffer)?);
+    let actual = hex(&digest(&mut file, bytes, &mut std::io::sink(), buffer)?);
     if actual != sha256 {
         return Err("Native source archive differs from its pin.".into());
     }
@@ -742,7 +725,7 @@ mod tests {
             destination: destination.into(),
             archive_root: root.into(),
             bytes: u64::try_from(bytes.len())?,
-            sha256: super::digest_hex(&Sha256::digest(&bytes)),
+            sha256: crate::identity::hex(&Sha256::digest(&bytes)),
         })
     }
 

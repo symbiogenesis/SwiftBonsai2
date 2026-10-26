@@ -6,6 +6,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::identity::{hex, is_lower_hex};
 use bonsai_artifacts::{hash_reader, open_locked_file, validate_external_path};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -63,13 +64,6 @@ struct Identity {
     sha256: String,
 }
 
-fn hex(value: &str, length: usize) -> bool {
-    value.len() == length
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
 fn numeric_identity(value: &Value, expected: &str) -> bool {
     value.as_str().is_some_and(|actual| actual == expected)
         || value
@@ -98,14 +92,6 @@ fn bounded_bytes(reader: &mut impl Read, maximum: u64) -> crate::Result<Vec<u8>>
     Ok(bytes)
 }
 
-fn digest_hex(hash: Sha256) -> String {
-    hash.finalize()
-        .into_iter()
-        .flat_map(|byte| [byte >> 4, byte & 0x0f])
-        .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
-        .collect()
-}
-
 fn digest(reader: &mut impl Read, expected: u64) -> crate::Result<String> {
     let mut buffer = vec![0; 65536].into_boxed_slice();
     hash_reader(reader, expected, &mut buffer, &mut || Ok(())).map_err(|error| error.to_string())
@@ -114,7 +100,7 @@ fn digest(reader: &mut impl Read, expected: u64) -> crate::Result<String> {
 fn validate_receipt(request: &Request, receipt: &Receipt) -> crate::Result<String> {
     let filename = format!("prism-inference-{}-{TARGET}.zip", request.version);
     let version: Vec<_> = request.version.split('.').collect();
-    if !hex(&request.source_revision, 40)
+    if !is_lower_hex(&request.source_revision, 40)
         || version.len() != 3
         || version
             .iter()
@@ -133,7 +119,7 @@ fn validate_receipt(request: &Request, receipt: &Receipt) -> crate::Result<Strin
         || receipt.archive.name != filename
         || receipt.archive.bytes == 0
         || receipt.archive.bytes > 1024 * MIB
-        || !hex(&receipt.archive.sha256, 64)
+        || !is_lower_hex(&receipt.archive.sha256, 64)
         || receipt.files.len() != FILES.len()
     {
         return Err(
@@ -147,7 +133,7 @@ fn validate_receipt(request: &Request, receipt: &Receipt) -> crate::Result<Strin
             || !names.insert(&file.name)
             || file.bytes == 0
             || file.bytes > 512 * MIB
-            || !hex(&file.sha256, 64)
+            || !is_lower_hex(&file.sha256, 64)
         {
             return Err(
                 "The release receipt needs every executable and license identity exactly once."
@@ -330,7 +316,7 @@ fn verify_entry(reader: &mut impl Read, identity: &Identity) -> crate::Result<()
         total = end;
     }
     if total != identity.bytes
-        || digest_hex(hash) != identity.sha256
+        || hex(&hash.finalize()) != identity.sha256
         || executable && (offset.is_none() || pe != [b'P', b'E', 0, 0, 0x64, 0xaa])
     {
         return Err("Release entry hash, length or ARM64 machine differs from its lock.".into());
@@ -473,7 +459,8 @@ mod tests {
 
     use sha2::{Digest as _, Sha256};
 
-    use super::{Identity, digest_hex, quoted_field, verify_entry};
+    use super::{Identity, quoted_field, verify_entry};
+    use crate::identity::hex;
 
     struct CappedReader<'a> {
         bytes: &'a [u8],
@@ -501,7 +488,7 @@ mod tests {
             let mut identity = Identity {
                 name: "prism-inference.exe".into(),
                 bytes: u64::try_from(image.len()).map_err(|error| error.to_string())?,
-                sha256: digest_hex(hash),
+                sha256: hex(&hash.finalize()),
             };
             for maximum in [3, 65536] {
                 verify_entry(
@@ -515,7 +502,7 @@ mod tests {
             image[position + 5] = 0x86;
             let mut hash = Sha256::new();
             hash.update(&image);
-            identity.sha256 = digest_hex(hash);
+            identity.sha256 = hex(&hash.finalize());
             assert!(
                 verify_entry(
                     &mut CappedReader {

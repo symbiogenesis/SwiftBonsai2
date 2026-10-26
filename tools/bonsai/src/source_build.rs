@@ -60,7 +60,7 @@ pub(crate) fn channel(repository: &Path) -> crate::Result<String> {
 }
 
 pub(crate) fn cache_key(repository: &Path, channel: &str) -> String {
-    cache::hex(&Sha256::digest(
+    crate::identity::hex(&Sha256::digest(
         format!("{}\n{channel}", repository.to_string_lossy().to_uppercase()).as_bytes(),
     ))
     // MSVC still rejects some archive paths beyond MAX_PATH. The full source
@@ -118,7 +118,7 @@ fn identity(spec: &BuildSpec) -> String {
 fn receipt_path(spec: &BuildSpec, identity: &str) -> PathBuf {
     spec.target_directory.join(format!(
         "startup-build-{}.json",
-        cache::hex(&Sha256::digest(identity.as_bytes()))
+        crate::identity::hex(&Sha256::digest(identity.as_bytes()))
     ))
 }
 

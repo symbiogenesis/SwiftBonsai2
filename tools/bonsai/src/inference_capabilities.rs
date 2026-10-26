@@ -50,7 +50,7 @@ mod windows {
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     use bonsai_artifacts::{ArtifactError, VerifiedFile, validate_external_path};
-    use bonsai_windows_process::{OwnedProcess, ParentProcess, ProcessSpec};
+    use bonsai_windows_process::{ParentProcess, ProcessSpec};
     use serde::Deserialize;
     use serde_json::{Value, json};
 
@@ -89,59 +89,25 @@ mod windows {
         sha256: String,
     }
 
-    fn output(path: &Path) -> Result<String> {
-        if fs::metadata(path).map_err(|error| error.to_string())?.len() > super::MAX_REPORT_BYTES {
-            return Err("Runtime capability probe exceeded its output bound.".into());
-        }
-        fs::read_to_string(path).map_err(|error| error.to_string())
-    }
-
     fn probe(executable: &Path, parent: &ParentProcess, scratch: &Path) -> Result<String> {
         let stdout = scratch.join("capabilities.stdout.json");
         let stderr = scratch.join("capabilities.stderr.txt");
-        let process = OwnedProcess::start(&ProcessSpec {
-            executable: executable.to_owned(),
-            arguments: vec!["--capabilities".into()],
-            working_directory: scratch.to_owned(),
-            stdout: stdout.clone(),
-            stderr: stderr.clone(),
-            memory_limit_bytes: 512 * 1024 * 1024,
-            active_process_limit: 1,
-        })
-        .map_err(|error| error.to_string())?;
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let result = (|| {
-            loop {
-                parent.ensure_alive().map_err(|error| error.to_string())?;
-                if Instant::now() >= deadline {
-                    return Err("Runtime capability probe timed out.".into());
-                }
-                for path in [&stdout, &stderr] {
-                    if fs::metadata(path).map_err(|error| error.to_string())?.len()
-                        > super::MAX_REPORT_BYTES
-                    {
-                        return Err("Runtime capability probe exceeded its output bound.".into());
-                    }
-                }
-                if let Some(code) = process
-                    .wait_for_exit(Duration::from_millis(25))
-                    .map_err(|error| error.to_string())?
-                {
-                    return if code == 0 {
-                        Ok(())
-                    } else {
-                        Err("Runtime capability probe failed.".into())
-                    };
-                }
-            }
-        })();
-        let stopped = process
-            .stop(Duration::from_secs(10))
-            .map_err(|error| error.to_string());
-        result.and(stopped)?;
+        let output = crate::runtime_probe::run(
+            &ProcessSpec {
+                executable: executable.to_owned(),
+                arguments: vec!["--capabilities".into()],
+                working_directory: scratch.to_owned(),
+                stdout,
+                stderr,
+                memory_limit_bytes: 512 * 1024 * 1024,
+                active_process_limit: 1,
+            },
+            super::MAX_REPORT_BYTES,
+            "Runtime capability",
+            || parent.ensure_alive().map_err(|error| error.to_string()),
+        )?;
         // Keep diagnostic stderr separate: it must never become part of the JSON.
-        let _ = output(&stderr)?;
-        output(&stdout)
+        Ok(output.stdout)
     }
 
     pub(super) fn run(value: Value) -> Result<Value> {

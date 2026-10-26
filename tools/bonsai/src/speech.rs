@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::identity::is_lower_hex;
 use bonsai_artifacts::validate_external_path;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -86,13 +87,6 @@ fn atom(text: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"_.-".contains(&byte))
 }
 
-fn hex(text: &str, length: usize) -> bool {
-    text.len() == length
-        && text
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
 fn files(root: &Path, kind: &str, source: &str) -> crate::Result<Vec<Value>> {
     let pin: Value = serde_json::from_str(source).map_err(|error| error.to_string())?;
     let identity: Identity =
@@ -112,7 +106,7 @@ fn files(root: &Path, kind: &str, source: &str) -> crate::Result<Vec<Value>> {
             .repository
             .split_once('/')
             .is_some_and(|(owner, repository)| atom(owner) && atom(repository))
-        || !hex(&identity.revision, 40)
+        || !is_lower_hex(&identity.revision, 40)
     {
         return Err("Invalid native speech model identity.".into());
     }
@@ -146,7 +140,7 @@ fn files(root: &Path, kind: &str, source: &str) -> crate::Result<Vec<Value>> {
                 .all(|byte| byte.is_ascii_alphanumeric() || b"_.+-".contains(&byte))
             || artifact.bytes == 0
             || artifact.bytes > MAX_BYTES
-            || !hex(&artifact.sha256, 64)
+            || !is_lower_hex(&artifact.sha256, 64)
             || artifact.url != url
         {
             return Err("Invalid native speech artifact identity.".into());
