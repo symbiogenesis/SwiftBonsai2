@@ -25,6 +25,10 @@ mod tts;
 mod window;
 
 #[cfg(windows)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Parse the bounded native launcher contract without accepting arbitrary service arguments."
+)]
 fn configuration(
     args: impl IntoIterator<Item = std::ffi::OsString>,
 ) -> Result<client::Config, &'static str> {
@@ -34,6 +38,7 @@ fn configuration(
     let (mut frontend_port, mut backend_port) = (None, None);
     let (mut canary_port, mut canary_key_file) = (None, None);
     let (mut tts_port, mut tts_key_file) = (None, None);
+    let (mut tts_python, mut tts_service, mut tts_snapshot) = (None, None, None);
     let mut no_abliterate_lora = false;
     while let Some(option) = args.next() {
         match option.to_str() {
@@ -83,13 +88,42 @@ fn configuration(
                     return Err("A Qwen TTS key-file path is required.");
                 }
             }
+            Some("--tts-python") if tts_python.is_none() => {
+                tts_python = Some(PathBuf::from(
+                    args.next().ok_or("A Qwen TTS Python path is required.")?,
+                ));
+            }
+            Some("--tts-service") if tts_service.is_none() => {
+                tts_service = Some(PathBuf::from(
+                    args.next().ok_or("A Qwen TTS service path is required.")?,
+                ));
+            }
+            Some("--tts-snapshot") if tts_snapshot.is_none() => {
+                tts_snapshot = Some(PathBuf::from(
+                    args.next().ok_or("A Qwen TTS snapshot path is required.")?,
+                ));
+            }
             _ => {
                 return Err(
-                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--canary-key-file ABSOLUTE_FILE --canary-port 8766] [--tts-key-file ABSOLUTE_FILE --tts-port 8767]",
+                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--canary-key-file ABSOLUTE_FILE --canary-port 8766] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-python ABSOLUTE_EXE --tts-service ABSOLUTE_FILE --tts-snapshot ABSOLUTE_DIRECTORY]]",
                 );
             }
         }
     }
+    let tts_launch = match (tts_python, tts_service, tts_snapshot) {
+        (None, None, None) => None,
+        (Some(python), Some(service), Some(snapshot)) if tts_key_file.is_some() => {
+            Some(tts::Launch {
+                python,
+                service,
+                snapshot,
+                evidence: evidence
+                    .clone()
+                    .ok_or("An external evidence directory is required.")?,
+            })
+        }
+        _ => return Err("Configure all three Qwen TTS launch paths with --tts-key-file."),
+    };
     let config = client::Config {
         broker: broker.ok_or("A broker executable is required.")?,
         data: data.ok_or("A provisioned data directory is required.")?,
@@ -104,6 +138,7 @@ fn configuration(
         qwen_tts: tts_key_file.map(|key_file| tts::Config {
             port: tts_port.unwrap_or(8767),
             key_file,
+            launch: tts_launch,
         }),
     };
     validate_configuration(&config, canary_port.is_some(), tts_port.is_some())?;
@@ -164,6 +199,30 @@ fn validate_configuration(
                 "Qwen TTS needs an existing key file and a distinct unprivileged local port.",
             );
         }
+        if let Some(launch) = &tts.launch {
+            for path in [&launch.python, &launch.service, &launch.snapshot] {
+                bonsai_windows_credentials::validate_external_path(path).map_err(
+                    |_| "Use existing expanded absolute external Qwen TTS launch paths.",
+                )?;
+            }
+            if !launch.python.is_file()
+                || !launch.service.is_file()
+                || !launch.snapshot.is_dir()
+                || !launch
+                    .python
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+                || !launch
+                    .service
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("py"))
+                || !launch.service.with_file_name("model.lock.json").is_file()
+            {
+                return Err(
+                    "Qwen TTS launch requires its Python executable, reviewed service and adjacent model lock, and local snapshot.",
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -186,6 +245,74 @@ fn main() -> std::process::ExitCode {
 mod tests {
     use super::configuration;
     use std::{ffi::OsString, fs, io};
+
+    #[test]
+    fn owned_tts_configuration_requires_complete_existing_external_launch_inputs() -> io::Result<()>
+    {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("Bonsai-owned-tts-config-{stamp}"));
+        fs::create_dir(&directory)?;
+        let broker = directory.join("broker.exe");
+        let service = directory.join("server.py");
+        let lock = directory.join("model.lock.json");
+        let key = directory.join("tts.key");
+        for path in [&broker, &service, &lock, &key] {
+            fs::write(path, b"")?;
+        }
+        let base = vec![
+            OsString::from("--broker-path"),
+            broker.clone().into_os_string(),
+            OsString::from("--data-directory"),
+            directory.clone().into_os_string(),
+            OsString::from("--evidence-directory"),
+            directory.clone().into_os_string(),
+        ];
+        let mut enabled = base.clone();
+        enabled.extend([
+            OsString::from("--tts-python"),
+            broker.clone().into_os_string(),
+            OsString::from("--tts-service"),
+            service.clone().into_os_string(),
+            OsString::from("--tts-snapshot"),
+            directory.clone().into_os_string(),
+        ]);
+        assert!(configuration(enabled.clone()).is_err());
+        enabled.extend([
+            OsString::from("--tts-key-file"),
+            key.clone().into_os_string(),
+        ]);
+        let config = configuration(enabled.clone()).map_err(io::Error::other)?;
+        assert!(
+            config
+                .qwen_tts
+                .as_ref()
+                .is_some_and(|tts| tts.launch.is_some())
+        );
+        let mut partial = base;
+        partial.extend([
+            OsString::from("--tts-key-file"),
+            key.clone().into_os_string(),
+            OsString::from("--tts-python"),
+            broker.clone().into_os_string(),
+        ]);
+        assert!(configuration(partial).is_err());
+        let mut repeated = enabled.clone();
+        repeated.extend([
+            OsString::from("--tts-python"),
+            broker.clone().into_os_string(),
+        ]);
+        assert!(configuration(repeated).is_err());
+        fs::remove_file(lock)?;
+        assert!(configuration(enabled).is_err());
+        for path in [&broker, &service, &key] {
+            fs::remove_file(path)?;
+        }
+        fs::remove_dir(directory)?;
+        Ok(())
+    }
 
     #[test]
     fn canary_configuration_requires_explicit_key_and_distinct_port() -> io::Result<()> {

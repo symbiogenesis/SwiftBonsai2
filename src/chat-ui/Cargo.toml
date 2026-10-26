@@ -17,6 +17,7 @@ httparse = "=1.10.1"
 
 [target.'cfg(windows)'.dependencies]
 bonsai-windows-credentials = { path = "../windows-credentials" }
+bonsai-windows-process = { path = "../windows-process" }
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_Media_Audio", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_HiDpi", "Win32_UI_Controls", "Win32_UI_Accessibility"] }
 windows = { version = "=0.62.2", features = ["Win32_System_WinRT", "Foundation", "Media_Capture", "Media_MediaProperties", "Storage_Streams", "Security_Authorization_AppCapabilityAccess"] }
 windows-future = "=0.3.2"

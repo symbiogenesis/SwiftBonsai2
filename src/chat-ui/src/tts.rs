@@ -11,8 +11,16 @@
 
 pub(crate) use crate::canary::Failure;
 use crate::canary::{self, Call, Media};
+use bonsai_windows_process::{OwnedProcess, ProcessSpec, listener_process_id};
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, sync::atomic::AtomicU64, time::Duration};
+use std::{
+    ffi::OsString,
+    fs,
+    path::PathBuf,
+    sync::atomic::AtomicU64,
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 const MODEL: &str = "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign";
 const MAX_TEXT: usize = 2048;
@@ -26,6 +34,27 @@ const READY_LIMIT: Duration = Duration::from_secs(5);
 pub(crate) struct Config {
     pub(crate) port: u16,
     pub(crate) key_file: PathBuf,
+    pub(crate) launch: Option<Launch>,
+}
+
+/// Reviewed local service inputs; the process starts only for explicit read-aloud.
+#[derive(Clone)]
+pub(crate) struct Launch {
+    pub(crate) python: PathBuf,
+    pub(crate) service: PathBuf,
+    pub(crate) snapshot: PathBuf,
+    pub(crate) evidence: PathBuf,
+}
+
+/// Retaining this owner bounds the server and its model-worker descendants.
+pub(crate) struct Service(OwnedProcess);
+
+impl Drop for Service {
+    fn drop(&mut self) {
+        // Closing the noninheritable Job also kills descendants if cleanup fails
+        // or this application terminates before the explicit bounded stop.
+        let _stopped = self.0.stop(Duration::from_secs(5));
+    }
 }
 
 /// Uses the same bounded transport policy with its own configured key and port.
@@ -44,7 +73,15 @@ impl Client {
     /// Verify the specific `VoiceDesign` model without generating or playing audio.
     pub(crate) fn ready(&self) -> Result<(), &'static str> {
         let current = AtomicU64::new(0);
-        let call = Call::new(0, &current, READY_LIMIT);
+        self.ready_for(0, &current)
+            .map_err(|failure| match failure {
+                Failure::Cancelled => "The Qwen TTS readiness check was cancelled.",
+                Failure::Message(message) => message,
+            })
+    }
+
+    fn ready_for(&self, generation: u64, current: &AtomicU64) -> Result<(), Failure> {
+        let call = Call::new(generation, current, READY_LIMIT);
         let result = self.0.exchange("GET", "/health", None, &[], Media::Json, &call)
             .map_err(transport_failure)
             .and_then(|bytes| {
@@ -60,13 +97,58 @@ impl Client {
                 }
                 Ok(())
             });
-        call.check()
-            .map_err(transport_failure)
-            .and(result)
-            .map_err(|failure| match failure {
-                Failure::Cancelled => "The Qwen TTS readiness check was cancelled.",
-                Failure::Message(message) => message,
-            })
+        call.check().map_err(transport_failure).and(result)
+    }
+
+    /// Launch in an owned Job, then authenticate readiness before any text request.
+    pub(crate) fn start_service(
+        &self,
+        config: &Config,
+        generation: u64,
+        current: &AtomicU64,
+    ) -> Result<Option<Service>, Failure> {
+        let call = Call::new(generation, current, Duration::from_mins(15));
+        call.check().map_err(transport_failure)?;
+        let Some(launch) = &config.launch else {
+            self.ready_for(generation, current)?;
+            return Ok(None);
+        };
+        if listener_process_id(config.port)
+            .map_err(|_| Failure::Message("Could not check the local Qwen TTS port."))?
+            .is_some()
+        {
+            return Err(Failure::Message(
+                "The Qwen TTS port is already occupied. Close the conflicting service or choose a distinct TTS port.",
+            ));
+        }
+        let process = Service(OwnedProcess::start(&service_specification(launch, config)?)
+            .map_err(|_| Failure::Message("Could not start the local Qwen TTS runtime. Check its installed environment and retained service evidence."))?);
+        loop {
+            call.check().map_err(transport_failure)?;
+            if process
+                .0
+                .try_wait()
+                .map_err(|_| Failure::Message("Could not inspect the Qwen TTS process."))?
+                .is_some()
+            {
+                return Err(Failure::Message(
+                    "Qwen TTS could not load its model. Check the installed runtime and retained service evidence.",
+                ));
+            }
+            match self.ready_for(generation, current) {
+                Ok(()) => {
+                    if listener_process_id(config.port).ok().flatten() != Some(process.0.id()) {
+                        return Err(Failure::Message(
+                            "The local Qwen TTS listener does not belong to the owned service.",
+                        ));
+                    }
+                    call.check().map_err(transport_failure)?;
+                    return Ok(Some(process));
+                }
+                Err(Failure::Cancelled) => return Err(Failure::Cancelled),
+                Err(Failure::Message(_)) => thread::sleep(Duration::from_millis(100)),
+            }
+        }
     }
 
     /// Synthesize one clip; the worker sequences longer answers at word boundaries.
@@ -124,6 +206,39 @@ impl Client {
         call.check().map_err(transport_failure)?;
         Ok(wav)
     }
+}
+
+fn service_specification(launch: &Launch, config: &Config) -> Result<ProcessSpec, Failure> {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| Failure::Message("Could not create the Qwen TTS evidence lane."))?
+        .as_nanos();
+    let directory = launch
+        .evidence
+        .join(format!("qwen-tts-{}-{stamp}", std::process::id()));
+    fs::create_dir(&directory)
+        .map_err(|_| Failure::Message("Could not create the Qwen TTS evidence lane."))?;
+    Ok(ProcessSpec {
+        executable: launch.python.clone(),
+        arguments: vec![
+            OsString::from("-I"),
+            OsString::from("-B"),
+            launch.service.clone().into_os_string(),
+            OsString::from("--snapshot"),
+            launch.snapshot.clone().into_os_string(),
+            OsString::from("--token-file"),
+            config.key_file.clone().into_os_string(),
+            OsString::from("--port"),
+            OsString::from(config.port.to_string()),
+            OsString::from("--device"),
+            OsString::from("cpu"),
+        ],
+        working_directory: directory.clone(),
+        stdout: directory.join("service.stdout"),
+        stderr: directory.join("service.stderr"),
+        memory_limit_bytes: 16 * 1024 * 1024 * 1024,
+        active_process_limit: 4,
+    })
 }
 
 #[derive(Deserialize)]
@@ -211,6 +326,7 @@ mod tests {
         let client = Client::new(&Config {
             port,
             key_file: credentials.frontend_path().to_owned(),
+            launch: None,
         })
         .map_err(io::Error::other)?;
         Ok((credentials, client))

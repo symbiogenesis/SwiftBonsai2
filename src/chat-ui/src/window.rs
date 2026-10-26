@@ -1308,7 +1308,9 @@ impl State {
                     match (self.speech_input, output) {
                         (true, true) => "Microphone ready. Read aloud needs a completed answer.",
                         (true, false) => "Microphone ready. Select Read aloud for Qwen setup.",
-                        (false, true) => "Qwen ready. Select Microphone for input setup.",
+                        (false, true) => {
+                            "Read aloud is available for completed answers. Select Microphone for input setup."
+                        }
                         (false, false) => {
                             "Speech setup required. Select Microphone or Read aloud for instructions."
                         }
@@ -1347,6 +1349,12 @@ impl State {
                 generation,
                 message,
             } => self.output_status(generation, false, message),
+            speech::Event::OutputStatus {
+                generation,
+                message,
+            } => {
+                self.output_status(generation, true, message);
+            }
             speech::Event::InputFailed {
                 generation,
                 message,

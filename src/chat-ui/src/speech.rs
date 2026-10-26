@@ -65,6 +65,10 @@ pub(crate) enum Event {
         generation: u64,
         message: &'static str,
     },
+    OutputStatus {
+        generation: u64,
+        message: &'static str,
+    },
 }
 
 struct Envelope {
@@ -126,7 +130,7 @@ impl Drop for Session {
     }
 }
 
-/// Discover both explicitly configured services without opening audio devices.
+/// Discover configured speech without opening audio devices or loading owned TTS.
 pub(crate) fn start(
     canary_config: Option<canary::Config>,
     tts_config: Option<tts::Config>,
@@ -231,6 +235,8 @@ struct Output {
     voice: String,
     segments: VecDeque<String>,
     playback: Option<Playback>,
+    prepared: bool,
+    service: Option<tts::Service>,
 }
 
 fn segments(text: &str) -> Option<VecDeque<String>> {
@@ -301,10 +307,30 @@ fn transcription(
 fn render(
     output: &mut Output,
     client: Option<&tts::Client>,
+    config: Option<&tts::Config>,
     current: &Arc<AtomicU64>,
+    events: &Sender<Event>,
 ) -> Result<bool, &'static str> {
     if current.load(Ordering::Acquire) != output.generation {
         return Ok(false);
+    }
+    if !output.prepared {
+        let client = client.ok_or("Qwen3-TTS VoiceDesign is unavailable. Check its installed runtime and protected key file.")?;
+        let config = config.ok_or("Qwen3-TTS VoiceDesign has no local configuration.")?;
+        let _sent = events.send(Event::OutputStatus {
+            generation: output.generation,
+            message: "Loading Qwen3-TTS VoiceDesign. Stop speech cancels loading.",
+        });
+        output.service = match client.start_service(config, output.generation, current) {
+            Ok(service) => service,
+            Err(tts::Failure::Cancelled) => return Ok(false),
+            Err(tts::Failure::Message(message)) => return Err(message),
+        };
+        output.prepared = true;
+        let _sent = events.send(Event::OutputStatus {
+            generation: output.generation,
+            message: "Generating speech with Qwen3-TTS VoiceDesign. Stop speech cancels synthesis.",
+        });
     }
     if let Some(playback) = &output.playback {
         match playback.result() {
@@ -352,7 +378,9 @@ fn run(
         .filter(|client| client.ready().is_ok());
     let tts = tts_config
         .and_then(|config| tts::Client::new(config).ok())
-        .filter(|client| client.ready().is_ok());
+        .filter(|client| {
+            tts_config.is_some_and(|config| config.launch.is_some()) || client.ready().is_ok()
+        });
     let _sent = events.send(Event::Capabilities {
         input: canary.is_some(),
         output: tts.is_some(),
@@ -407,6 +435,8 @@ fn run(
                         voice: voice_description,
                         segments,
                         playback: None,
+                        prepared: false,
+                        service: None,
                     });
                     let _sent = events.send(Event::Speaking {
                         generation: output_generation,
@@ -437,7 +467,7 @@ fn run(
         }
         if let Some(active) = &mut output {
             let generation = active.generation;
-            let outcome = render(active, tts.as_ref(), current_output);
+            let outcome = render(active, tts.as_ref(), tts_config, current_output, events);
             if !matches!(outcome, Ok(true)) {
                 output = None;
                 if current_output.load(Ordering::Acquire) == generation {
@@ -628,6 +658,54 @@ mod tests {
             .send(Command::Shutdown)
             .map_err(io::Error::other)?;
         drop(session);
+        Ok(())
+    }
+
+    #[test]
+    fn owned_tts_discovery_does_not_launch_or_load_a_model_before_read_aloud() -> io::Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let parent = std::env::temp_dir().join(format!("Bonsai-lazy-tts-{stamp}"));
+        std::fs::create_dir(&parent)?;
+        let evidence = parent.join("evidence");
+        std::fs::create_dir(&evidence)?;
+        let credentials = bonsai_windows_credentials::PrivateCredentials::create(&parent)?;
+        let config = crate::tts::Config {
+            port: 8767,
+            key_file: credentials.frontend_path().to_owned(),
+            launch: Some(crate::tts::Launch {
+                python: parent.join("unavailable-python.exe"),
+                service: parent.join("unavailable-service.py"),
+                snapshot: parent.join("unavailable-model"),
+                evidence: evidence.clone(),
+            }),
+        };
+        let session = start(None, Some(config.clone()))?;
+        assert!(matches!(
+            session
+                .events
+                .recv_timeout(Duration::from_secs(2))
+                .map_err(io::Error::other)?,
+            Event::Capabilities {
+                input: false,
+                output: true
+            }
+        ));
+        // Cancellation must also precede port observation, evidence creation,
+        // process launch and dependency/model loading.
+        let client = crate::tts::Client::new(&config).map_err(io::Error::other)?;
+        assert!(matches!(
+            client.start_service(&config, 1, &AtomicU64::new(2)),
+            Err(crate::tts::Failure::Cancelled)
+        ));
+        assert!(std::fs::read_dir(&evidence)?.next().is_none());
+        drop(session);
+        drop(client);
+        drop(credentials);
+        std::fs::remove_dir(&evidence)?;
+        std::fs::remove_dir_all(parent)?;
         Ok(())
     }
 }
