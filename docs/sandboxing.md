@@ -1,156 +1,136 @@
 # Worker sandbox architecture
 
-Reviewed against Microsoft's published sources on 2026-10-26. The current
-development launcher is **not a filesystem or network sandbox**. Its workers
-retain the caller's identity. Windows Jobs, artifact verification, credentials
-and process mitigations reduce particular risks; none substitutes for a
-restricted execution boundary. The daily profile remains unqualified.
+Runner's native UI requires Windows process containment for its owned inference,
+ASR and TTS workers. `bonsai-windows-process` composes the pinned **MXC 1.0.1**
+Process Security Environment (PSEC) with the existing suspended process creation,
+atomic Job assignment, exact worker PID, resource limits and restricted handle
+inheritance. Missing capabilities or rejected policies fail launch without an
+uncontained retry. Actual-model and stronger broker-only isolation acceptance
+remain unqualified; this document records the implemented scope and its limits.
 
-## Choose containment for the workload
+## Windows consent and capabilities
 
-| Technology | Decision for Runner | Reason |
-| --- | --- | --- |
-| [Microsoft Execution Containers (MXC)](https://github.com/microsoft/mxc/tree/v1.0.1) | Preferred integration target for the native Windows ARM64 inference and speech workers; not yet integrated. | Native process containment supports filesystem, network and desktop policy without replacing the Rust UI or Windows runtime artifacts. |
-| [NVX](https://github.com/microsoft/nvx) | Evaluate for future hostile Linux tools needing a separate kernel. | OpenVMM runs a Linux guest with hardware isolation. Existing Windows PE workers, artifacts, transport and resource accounting need a separate guest implementation and qualification. |
-| [LiteBox](https://github.com/microsoft/litebox) | Research option, not Runner's security boundary. | Its current Windows userland implementation targets x86_64 and explicitly allows the guest to read or overwrite host memory in their shared address space. It cannot isolate these Windows ARM64 workers. |
-| [Windows Sandbox](https://github.com/microsoft/mxc/blob/v1.0.1/docs/backends/windows-sandbox/windows-sandbox.md) | Experimental MXC backend; optional future Windows VM qualification lane. | Separate-kernel isolation, but upstream teardown is best-effort and a hard-killed launcher can leave an orphan VM. Boot, model sharing, transport and cleanup need qualification. |
+Microphone permission and worker containment are separate Windows mechanisms.
+The trusted native UI requests `AppCapability` microphone access after explicit
+user action. Model workers receive no microphone, playback or presentation role.
+PSEC applies the worker's filesystem, network and desktop restrictions in Windows;
+these are kernel-enforced grants, not a generic permission prompt for each file.
+A Windows Firewall prompt or rule is another independent control. A denied
+Firewall request must be distinguished from a rejected PSEC policy during diagnosis.
 
-LiteBox's limitation is stated in the
-[Windows platform source](https://github.com/microsoft/litebox/blob/main/litebox_platform_windows_userland/src/lib.rs).
-Its library-OS interface can reduce exposed services, but that does not by
-itself create an enforced trust boundary. Do not combine technologies merely
-because they are available: each additional runtime, image, bridge and update
-path adds code and operational cost. No speed or memory benefit is assumed;
-all performance evaluation remains CI-only.
+## Technology selection
 
-## Threat model and authority
+| Technology | Role |
+| --- | --- |
+| [Microsoft Execution Containers](https://github.com/microsoft/mxc/tree/v1.0.1) | Native Windows ARM64 process containment used by owned UI workers. |
+| [NVX](https://github.com/microsoft/nvx) | Possible future separate-kernel boundary for hostile Linux tools. It runs a Linux guest and cannot substitute for the pinned Windows PE workers. |
+| [LiteBox](https://github.com/microsoft/litebox) | Research only. Its [Windows userland platform](https://github.com/microsoft/litebox/blob/main/litebox_platform_windows_userland/src/lib.rs) targets x86_64 and explicitly shares writable host memory with the guest; it is not this application's security boundary. |
+| [Windows Sandbox through MXC](https://github.com/microsoft/mxc/blob/v1.0.1/docs/backends/windows-sandbox/windows-sandbox.md) | Experimental future Windows VM lane. Upstream teardown is best-effort and a hard-killed launcher can leave an orphan VM. Model sharing, transport, resource accounting and cleanup need separate qualification. |
 
-Treat native model, tokenizer, adapter and audio parsing as potential entry
-points for a compromised worker, even when the bytes match a reviewed pin.
-The trusted Rust UI owns microphone access and playback. The broker owns public
-request validation, admission and frontend credentials. Provisioning and build
-tools run separately from inference; an inference policy must never acquire
-their download, compiler, profile or repository permissions.
+No performance benefit is assumed from a technology name. All performance
+evaluation remains CI-only. The UI and transport contracts remain
+[pure Rust/native](ui-architecture.md).
 
-Each model, ASR and TTS process needs an independent restricted identity and
-policy. Only its exact executable/runtime, model/tokenizer/adapter files and its
-own backend credential should be readable, together with the required OS
-runtime. Only a fresh private worker scratch/cache directory should be writable.
-Retain existing artifact handles and verification. Keep Windows/profile
-environment variables intact: policy restricts access, not fabricated paths.
-Child-only TEMP/TMP can point to that worker's private scratch directory.
-Do not clear the environment or redirect SystemRoot, ProgramData or profile
-folders into the checkout.
+## Worker authority
 
-The existing inference working directory is the protected evidence directory,
-which also contains **both frontend and backend keys**. A future sandbox must
-separate worker scratch from owner evidence and grant only the worker's key
-read access. Granting the entire evidence directory would expose the frontend
-credential and weaken the broker boundary. Open stdout/stderr on the owner side
-and inherit only their handles, rather than granting all log paths writable.
-Do not grant the entire data directory, user profile, repository or host TEMP.
+Treat native model, tokenizer, adapter and audio parsing as potential compromise
+entry points even when the bytes match a reviewed pin. Provisioning and compiler
+tools remain trusted maintenance operations with their existing authority; they
+are not launched under the inference policy. Independently managed external
+speech companions also retain their separately managed permissions.
 
-Default-deny external ingress and egress. Current native workers serve only
-numeric loopback, so an HTTP integration needs explicit container-hosted
-loopback support; preserve bounded HTTP/authentication, exact Host/routes and
-listener PID checks. Loopback permission is not broker-only authentication.
-It can permit access to unrelated local services and other same-user processes
-can interfere with credentials and endpoints. Qualifying the stronger
-same-user-bypass requirement needs an OS-enforced brokered communication design
-and its own adversarial tests, rather than a blanket loopback exemption.
-An administrator or a compromised trusted owner remains outside the proposed
-worker boundary.
+The owned-worker policy grants:
 
-Model output remains inert text. The public API rejects tools, arbitrary
-executables and dynamic model/runtime options. If code execution or plugins are
-added later, give them separate capabilities, per-task storage, resource limits
-and a separately qualified VM boundary where a hostile shared-kernel workload
-requires one. They must not inherit inference or UI authority.
+- Read-only access to exact selected executable/runtime files, model, tokenizer
+  or codec, adapter and only that worker's backend credential. Public policy
+  inputs accept files, not broad data/profile directories.
+- Internal read-only Windows runtime directories. No drive-root grant is added:
+  a native negative test showed that a generated read-only volume-root grant
+  exposed an unrelated credential. Worker ancestry checks need narrow validation
+  compatibility, not broader ancestor or volume permissions.
+- Writable application scratch below a fresh protected owner/LocalSystem
+  directory. Keys and parent-opened stdout/stderr remain outside that writable
+  grant; only their specific standard handles are inherited.
+- Windows' own private PSEC temporary storage. Windows can replace the requested
+  child TEMP/TMP with `Packages/sandbox.{id}/AC/Temp`; supplied scratch is not the
+  sole writable location, and effective TEMP must not be claimed to equal cwd.
+- Explicit bidirectional host-loopback access required by the current native
+  HTTP servers, with external ingress and egress denied by policy and no
+  Internet/private-LAN capability.
 
-## MXC adoption requirements
+Host-loopback permission includes services reached through the host's own
+non-loopback interface addresses. Native tests observed this even with explicit
+all-address egress-deny rules and without the older loopback capability/sentinel.
+It **does not enforce broker-only communication** or deny all other local services.
+The [versioned networking contract](https://github.com/microsoft/mxc/blob/v1.0.1/docs/backends/process-container/networking.md)
+explains the coarse host-loopback grant. Retain numeric-loopback binding, bearer
+authentication, exact Host/routes and listener PID checks. A stricter boundary
+requires a separately proven brokered transport or accepted peer identity;
+changing a JSON toggle is insufficient.
 
-Use the Rust SDK and retain the pure Rust/native presentation contract. Review
-and pin an exact published version and its transitive dependencies. As reviewed,
-[`mxc-sdk` v1.0.1](https://github.com/microsoft/mxc/blob/v1.0.1/src/mxc-sdk/Cargo.toml)
-still contains AppContainer/BFS/DACL fallback paths. The moving `main` branch has
-different enforcement behavior. Never infer the pinned release's protections
-from current-main documentation.
+OS/profile environment entries are passed through; the launcher does not clear
+the environment or relocate Windows/profile folders into a checkout. Child
+TEMP/TMP select scratch before Windows applies PSEC's own temporary-storage policy.
+Known credential-shaped variables, including common tokens, API keys, passwords
+and connection strings, reject sandbox launch with a value-free error. This is a
+conservative guard, not proof that every arbitrarily named inherited value is
+non-secret. Run from an appropriately scoped parent environment.
 
-Before creating credentials or starting a model, probe the **actual requested
-policy**, require native Process Security Environment containment and reject
-errors, unsupported restrictions, DACL augmentation and weaker fallback tiers.
-Capability availability is authoritative; a sufficiently new Windows version
-alone does not prove the request can run. Container-hosted HTTP additionally
-requires `base_container_supports_ingress_host_loopback_allow`.
-See the versioned [Rust capability types](https://github.com/microsoft/mxc/blob/v1.0.1/docs/api-reference/rust/v1/types.md)
-and [networking contract](https://github.com/microsoft/mxc/blob/v1.0.1/docs/backends/process-container/networking.md).
-Forbid audit/learning modes in ordinary execution, silent retries outside the
-sandbox, global loopback exemptions and automatic host ACL/firewall changes.
+Existing artifact verification and retained handles remain in force. Jobs still
+enforce process count and committed memory; the physical-RAM watchdog remains
+necessary for mapped weights. Scratch and log storage do not acquire a disk quota
+merely by being private. Same-user processes outside the sandbox can still read
+owner-protected credentials or interfere with endpoints; administrator or trusted
+owner compromise remains outside this worker boundary.
 
-The supported [Rust V1 launch API](https://github.com/microsoft/mxc/blob/v1.0.1/docs/api-reference/rust/v1/api.md)
-does not expose our existing Job, suspended launch or process/memory limits.
-A direct replacement with `v1::spawn`, or wrapping `wxc-exec.exe` and treating
-the executor PID as the model PID, would lose existing guarantees. Integration
-must first provide a supported way to compose containment with:
+## Native integration contract
 
-- Atomic Job assignment before any worker code runs, one-process policy,
-  job-wide commitment limits and no breakaway.
-- Exact model PID identity for listener checks and resource monitoring.
-- Whole-tree teardown on startup failure, cancellation, owner drop and abrupt
-  owner death, including bounded confirmation of process exit.
-- Inherited standard streams without extra handles, absolute external working
-  directories, preserved OS/profile environment and the physical-RAM watchdog.
+Runtime probes require PSEC 1.1 and container-hosted loopback support, then
+create and dispose a real minimal security environment.
+Version numbers or export presence alone are insufficient. The actual complete
+policy is also admitted before a worker runs. Audit/learning modes, SDK backend
+dispatch, DACL augmentation, global loopback exemptions and weaker fallback tiers
+are not used. Host Firewall restrictions may still apply independently.
 
-The v1.0.1 crate exposes doc-hidden PSEC APIs and generated FlatBuffer types that
-could attach a security-environment attribute to our existing `STARTUPINFOEXW`.
-Microsoft explicitly marks these compatibility exports as unsupported for SDK
-consumers in its [SDK boundary](https://github.com/microsoft/mxc/blob/v1.0.1/src/mxc-sdk/src/lib.rs).
-Do not hand-copy its policy encoder or depend on those unsupported interfaces as an
-unreviewed shortcut. Prefer a supported composition hook, or independently
-review and qualify an explicit native boundary before introducing that debt.
-No such hook or SDK integration is claimed by this change.
+The supported [Rust V1 spawn API](https://github.com/microsoft/mxc/blob/v1.0.1/docs/api-reference/rust/v1/api.md)
+cannot accept Runner's existing Job and suspended-launch contract. The audited
+native boundary therefore uses the exact release's doc-hidden PSEC compatibility
+exports and generated FlatBuffer types to add the security-environment attribute
+alongside `JOB_LIST`, mitigations and the standard-handle list. The PSEC owner
+outlives process teardown. No executor wrapper is mistaken for the model PID.
 
-## Current defense in depth
+Microsoft marks those compatibility exports as unsupported SDK interfaces in the
+[SDK boundary](https://github.com/microsoft/mxc/blob/v1.0.1/src/mxc-sdk/src/lib.rs).
+This is explicit compatibility debt: review the encoder, ABI, dependencies and
+actual enforcement before changing either exact pin. Current-main documentation
+must not substitute for the shipped release's behavior. Prefer a supported
+composition hook when one becomes available.
 
-`bonsai-windows-process` applies process-creation mitigations to `ProcessSpec`
-workers before their first instruction: deny Win32k system calls, legacy
-extension points and remote/low-integrity executable images, and terminate on
-heap corruption. It keeps the atomic Job assignment and standard-handle list.
-These policies suit the current headless CPU workers; GPU drivers, GUI helpers
-or other future backends require separate compatibility review. Tool processes
-keep their ordinary inherited policy. Failure to apply a required creation
-attribute fails launch; there is no unmitigated retry.
+Creation-time defense in depth denies Win32k calls, legacy extension points and
+remote/low-integrity executable images and enables heap termination. It uses
+[`PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute),
+not Job UI limits that prevent [nested Jobs](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs).
+Future GPU drivers or GUI helpers require separate compatibility review.
 
-The policy uses
-[`PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute).
-It avoids Job UI limits because Windows
-[does not allow those limits when forming nested Jobs](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs).
-These mitigations reduce native/UI attack surface, but ordinary filesystem
-reads/writes, sockets and the caller identity remain unrestricted.
+## Launch and qualification
 
-## Qualification before enabling a sandboxed daily profile
+The native UI selects `--require-native-sandbox` for its owned broker and always
+uses containment for owned speech. A direct development broker can instead
+explicitly select `--allow-unisolated-backend`; the two options are exclusive.
+That opt-out retains the earlier caller-authority development boundary and is
+never an automatic recovery path for failed containment.
 
-Use focused synthetic checks locally and complete suites in main-only Foundation
-CI under the [validation policy](validation.md). Preserve evidence for the exact
-SDK/source, policy, OS/architecture, runtime and artifact revisions. A read-only
-probe or successful command launch is insufficient. Required evidence includes:
+Focused local checks and main-only Foundation suites follow the
+[validation policy](validation.md). Record the exact SDK, policy, OS/architecture,
+runtime and artifact identities. Distinguish portable parser/policy checks from
+actual native enforcement and actual-model acceptance. Required remaining evidence
+includes complete model/adapter/speech loading, cross-container private-temp
+isolation, outside-host network denial, lifecycle and cancellation under load,
+and a separately implemented/proven broker-only transport. Native admission
+errors and pending qualification must not be reported as passed.
 
-- Positive access: the pinned Windows ARM64 model, adapter, tokenizer and native
-  speech engines load and serve through the authenticated broker; approved
-  scratch writes and streamed output work.
-- Negative access: unrelated files, frontend/other-worker keys, model/runtime
-  writes, profile/repository traversal, reparse/alternate-path escapes, Internet,
-  LAN, unrelated loopback services and desktop operations are rejected.
-- Boundary behavior: missing native support, unsupported ingress, stale policy,
-  unavailable artifacts and audit/fallback attempts fail closed before serving.
-- Lifecycle: memory/process limits, listener identity, stalled consumers,
-  cancellation, native faults and abrupt owner death leave no runnable worker,
-  warm VM, bridge or unowned writable mapping.
-- Separate acceptance for adversarial same-user backend bypass. A successful
-  model request, protected same-user DACL or native containment probe does not
-  establish that property.
-
-The focused process regression queries the policies from inside a newly started
-worker, checks a second owner in a nested Job, and compares tool policy to an
-ordinary inherited-policy control. It establishes mitigation application and
-composition, not MXC containment or actual-model compatibility.
+The public API still rejects tools, arbitrary executables, dynamic runtime
+selection and unsupported media. Model output remains inert text. Future plugins
+or generated-code execution need separate per-task capabilities and, where the
+threat model requires it, a separately qualified VM boundary. They must not
+inherit the UI's or inference worker's authority.

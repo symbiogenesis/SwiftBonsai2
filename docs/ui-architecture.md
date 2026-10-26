@@ -22,6 +22,9 @@ frontend. The UI runs separately from the broker and inference process;
 network work runs off the native event loop. The toolkit supports other desktop
 platforms, but the broker ownership, credentials and speech integrations remain
 Windows-specific; this migration does not establish a cross-platform runner.
+Owned model and speech workers require the native Windows containment described
+in the [worker sandbox architecture](sandboxing.md); microphone consent remains
+a separate UI capability check.
 
 The window uses a dark palette, maps Windows high-contrast settings to its
 Rust-drawn widgets and keeps an in-memory workspace of up to 16 conversations.

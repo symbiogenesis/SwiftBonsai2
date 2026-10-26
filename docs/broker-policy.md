@@ -299,7 +299,8 @@ See [commands](development-guide.md#explicit-development-broker).
 
 ## Owned Windows development launcher
 
-`--launch-development --allow-unisolated-backend` selects `launcher::LaunchConfig`.
+`--launch-development` with exactly one of `--require-native-sandbox` or
+`--allow-unisolated-backend` selects `launcher::LaunchConfig`.
 Only compiled-in pins and fixed arguments are accepted: `reference-cpu` is the
 default, and `--profile swift-pq2-assessment` explicitly selects Swift's separate
 model/runtime lock. Arbitrary executables, models, profile JSON and overrides
@@ -357,13 +358,14 @@ components. Evidence and credentials remain retained; never share either key or
 the whole directory. CPU/LoRA checks use the packaged Rust maintenance tool and
 same Windows process boundary, with their separate fixed arguments/pins.
 
-Restricted tokens, filesystem/egress isolation, same-user backend bypass
-prevention, everyday native UI acceptance and real-model quality/performance
-remain unqualified.
-The [worker sandbox architecture](sandboxing.md) selects native MXC containment
-as the integration target, records NVX/LiteBox limits and specifies the required
-policy and Job-composition gates. Current process-creation mitigations reduce
-headless-worker attack surface without providing filesystem/network containment.
+The native UI selects `--require-native-sandbox`; direct development can instead
+explicitly choose the exclusive `--allow-unisolated-backend` opt-out. Owned UI
+model and speech workers use pinned native MXC containment with exact file grants,
+private scratch and preserved atomic Job ownership. The
+[worker sandbox architecture](sandboxing.md) owns the detailed policy, OS-managed
+temp behavior, coarse host-loopback authority and remaining qualification gates.
+Broker-only/same-user bypass prevention, complete actual-model acceptance and
+quality/performance remain unqualified.
 Synthetic loopback/stream regressions establish broker behavior, not those gates.
 See [launch commands](development-guide.md#owned-windows-development-backend) and
 [validation](validation.md). Dependency/toolchain pins live in the Cargo workspace

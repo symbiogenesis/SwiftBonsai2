@@ -109,21 +109,19 @@ distinct purposes.
 An application's model-capability report is not a Windows permission grant, and
 a microphone privacy permission does not sandbox the inference process.
 
-**The development inference process still runs with the caller's identity.**
-Jobs, numeric-loopback binding, listener PID checks and bearer credentials do
-not deny unrelated filesystem access, network egress or same-user backend
-bypass. The daily profile remains disabled until the
+Owned UI inference and speech workers now require native Windows PSEC
+containment. Explicit unisolated development launches retain caller authority.
+The daily profile remains disabled until the
 [daily-service boundary](broker-policy.md)
 is qualified. Outstanding implementation and acceptance work stays in
 [PLAN.md](../PLAN.md).
 
-The [worker sandbox architecture](sandboxing.md) selects native Microsoft
-Execution Containers (MXC) as the integration target and records the NVX,
-LiteBox and Windows Sandbox tradeoffs. It owns the version-specific policy,
-Job-composition, credential separation and qualification requirements. MXC is
-not yet integrated; the supported launch API must first preserve our atomic
-Job limits and exact worker identity. AppContainer/LPAC, packaging and broad
-loopback grants alone do not establish the required boundary.
+The [worker sandbox architecture](sandboxing.md) describes the pinned MXC
+integration, exact file grants, private scratch, OS-managed temporary storage,
+Job composition and NVX/LiteBox tradeoffs. It also records the important limits:
+host-loopback permission includes other host services, inherited environment
+values require care, and stronger broker-only/same-user isolation and actual-model
+qualification remain outstanding. Keep the detailed policy and evidence there.
 
 Current headless workers receive creation-time Win32k, extension-point and
 image-loading mitigations. These reduce attack surface while preserving nested
