@@ -23,6 +23,7 @@ byte correctness are prerequisites for interpreting timing.
 | Fused Serde visitor | 1.0408× | 1.2442× small plain input | No qualifying gain |
 | SIMD-JSON 0.18.1 | Not timed | Strict Unicode mismatch | Reject |
 | SIMD-JSON fixed source `ff8f5c8` | 1.3807× | 1.9802× near body limit | No qualifying gain |
+| SIMD-JSON `ff8f5c8`, padded tape | 1.3919× | 1.7595× near body limit | No qualifying gain |
 
 SIMD-JSON's Serde adapter accepted `{"messages":[{"role":"user","content":"\ud800"}]}`
 and canonicalized the lone surrogate to `\u0000`; production serde_json rejects
@@ -65,11 +66,26 @@ evidence on that hosted CPU, not Snapdragon inference throughput.
 uses the existing `fill_tape_padded` API followed by `Tape::deserialize`, avoiding
 the Serde entry point's internal input copy. The immutable-body copy, padding,
 allocation, validation, serialization and destruction remain timed. The receipt
-identifies this path as `padded-tape-serde`; the result above describes the older
-copying path. Production and the acceptance thresholds remain unchanged until
-the follow-up CI comparison passes. The decimal fallback remains necessary:
+identifies this path as `padded-tape-serde`; the first result above describes the
+older copying path. The [padded-path CI comparison](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40408246424)
+tested Runner `6a582c1a61ef0ebb2c28df256b08bc927cedd6f9` on the same hosted CPU
+class and pinned compiler. Correctness passed, but all six cases remained slower:
+1.3919× geometric-mean time, 1.7595× near the body limit, and up to 1.9431× on
+supplemental explicit-scale cases. Both screens failed; retain serde_json.
+The `json-candidate-40408246424-1` artifact contains raw rounds and identities.
+These separate CI runs do not isolate the speedup from removing the copy.
+The decimal fallback remains necessary:
 SIMD-JSON's correctly rounded conversion can differ from serde_json's default
 conversion, even when neither parser has a bug.
+
+Upstream [issue #494](https://github.com/simd-lite/simd-json/issues/494) and
+[PR #495](https://github.com/simd-lite/simd-json/pull/495) address a separate gap:
+typed Serde callers cannot recover the tape allocation for reuse. The proposed
+`Deserializer::from_tape` preserves borrowing and validation; it has no measured
+broker speedup yet. The open [AVX-512 PR #475](https://github.com/simd-lite/simd-json/pull/475)
+targets x86, while [#479](https://github.com/simd-lite/simd-json/pull/479) and
+[#477](https://github.com/simd-lite/simd-json/pull/477) concern code cleanup and
+`no_std`. None supplies evidence to overturn this Windows ARM64 decision.
 
 Sonic's 3.5–4.7% history-case gains and the fused visitor's 6.9% gain at 128
 messages did not offset other regressions. These results reject the tested

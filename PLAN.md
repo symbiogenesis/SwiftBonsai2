@@ -328,7 +328,9 @@ Reference: [exact conformance requirements](docs/prism-upstream-tests.md).
   with no case more than 5% slower. Preserve the existing dependency decision
   until those gates pass; see [dependency contracts](docs/dependency-choice.md).
   [Follow-up #1](https://github.com/symbiogenesis/SwiftBonsai2Runner/issues/1)
-  screens the existing padded tape path without its second input copy.
+  also rejected the padded tape path. Upstream
+  [tape reuse #494](https://github.com/simd-lite/simd-json/issues/494) remains
+  unqualified for this workload.
 
 ## Optional agents
 
