@@ -22,6 +22,8 @@ pub struct ServiceArgs {
     pub model: PathBuf,
     /// Absolute external codec GGUF; required for TTS and forbidden for ASR.
     pub codec: Option<PathBuf>,
+    /// Absolute pinned Base talker GGUF used to preserve a designed speaker.
+    pub voice_model: Option<PathBuf>,
     /// Absolute external protected 64-byte lowercase hexadecimal credential.
     pub token_file: PathBuf,
     /// Unprivileged numeric-loopback port, defaulting to 8766 or 8767.
@@ -69,9 +71,9 @@ pub fn require_native_host() -> io::Result<()> {
 /// Parse the exact fixed companion command line without opening model contents.
 ///
 /// `--version` must appear alone. ASR accepts `--model`, `--token-file` and an
-/// optional `--port`; TTS additionally requires `--codec` and accepts bounded
-/// `--threads` and pinned `--quantization Q8_0|Q4_K_M`. Every supplied path
-/// must already name an external regular non-reparse file.
+/// optional `--port`; TTS additionally requires `--codec` and `--voice-model`,
+/// and accepts bounded `--threads` and pinned `--quantization Q8_0|Q4_K_M`.
+/// Every supplied path must already name an external regular non-reparse file.
 ///
 /// # Errors
 /// Rejects missing, duplicate or unknown options; unsafe paths; unsupported codec
@@ -83,6 +85,7 @@ pub fn parse(kind: Kind, arguments: impl IntoIterator<Item = OsString>) -> io::R
     }
     let mut arguments = values.into_iter();
     let (mut model, mut codec, mut token_file, mut port) = (None, None, None, None);
+    let mut voice_model = None;
     let (mut threads, mut quantization) = (None, None);
     while let Some(option) = arguments.next() {
         match option.to_str() {
@@ -93,6 +96,11 @@ pub fn parse(kind: Kind, arguments: impl IntoIterator<Item = OsString>) -> io::R
             }
             Some("--codec") if kind == Kind::QwenTts && codec.is_none() => {
                 codec = Some(PathBuf::from(
+                    arguments.next().ok_or_else(invalid_arguments)?,
+                ));
+            }
+            Some("--voice-model") if kind == Kind::QwenTts && voice_model.is_none() => {
+                voice_model = Some(PathBuf::from(
                     arguments.next().ok_or_else(invalid_arguments)?,
                 ));
             }
@@ -133,12 +141,13 @@ pub fn parse(kind: Kind, arguments: impl IntoIterator<Item = OsString>) -> io::R
             _ => return Err(invalid_arguments()),
         }
     }
-    if kind == Kind::QwenTts && codec.is_none() {
+    if kind == Kind::QwenTts && (codec.is_none() || voice_model.is_none()) {
         return Err(invalid_arguments());
     }
     let arguments = ServiceArgs {
         model: model.ok_or_else(invalid_arguments)?,
         codec,
+        voice_model,
         token_file: token_file.ok_or_else(invalid_arguments)?,
         port: port.unwrap_or(match kind {
             Kind::Canary => 8766,
@@ -153,6 +162,7 @@ pub fn parse(kind: Kind, arguments: impl IntoIterator<Item = OsString>) -> io::R
     for path in [&arguments.model, &arguments.token_file]
         .into_iter()
         .chain(arguments.codec.as_ref())
+        .chain(arguments.voice_model.as_ref())
     {
         validate_file(path)?;
     }
@@ -193,7 +203,7 @@ pub fn verify_models(
     }
     let models = match kind {
         Kind::Canary => {
-            if arguments.codec.is_some() {
+            if arguments.codec.is_some() || arguments.voice_model.is_some() {
                 return Err(invalid_models());
             }
             vec![verify_artifact(&arguments.model, &pin)?]
@@ -201,12 +211,17 @@ pub fn verify_models(
         Kind::QwenTts => {
             let files = pin.get("files").ok_or_else(invalid_models)?;
             let codec = arguments.codec.as_ref().ok_or_else(invalid_models)?;
+            let voice_model = arguments.voice_model.as_ref().ok_or_else(invalid_models)?;
             vec![
                 verify_artifact(
                     &arguments.model,
                     files.get("talker").ok_or_else(invalid_models)?,
                 )?,
                 verify_artifact(codec, files.get("codec").ok_or_else(invalid_models)?)?,
+                verify_artifact(
+                    voice_model,
+                    files.get("voice_talker").ok_or_else(invalid_models)?,
+                )?,
             ]
         }
     };
@@ -310,6 +325,7 @@ mod tests {
         };
         assert_eq!(arguments.port, 8766);
         assert!(arguments.codec.is_none());
+        assert!(arguments.voice_model.is_none());
         for extra in [
             vec!["--model", "C:\\replacement"],
             vec!["--hash", "override"],
@@ -317,6 +333,7 @@ mod tests {
             vec!["--port", "+8766"],
             vec!["--version"],
             vec!["--codec", "C:\\codec"],
+            vec!["--voice-model", "C:\\voice"],
         ] {
             let mut invalid = values.clone();
             invalid.extend(extra.into_iter().map(OsString::from));
@@ -326,9 +343,11 @@ mod tests {
         let codec = directory.join("codec.gguf");
         fs::write(&codec, b"abc")?;
         let mut tts = values;
-        tts.extend([OsString::from("--codec"), codec.into_os_string()]);
+        tts.extend([OsString::from("--codec"), codec.clone().into_os_string()]);
+        assert!(parse(Kind::QwenTts, tts.clone()).is_err());
+        tts.extend([OsString::from("--voice-model"), codec.into_os_string()]);
         assert!(
-            matches!(parse(Kind::QwenTts, tts)?, Command::Serve(arguments) if arguments.port == 8767 && arguments.codec.is_some())
+            matches!(parse(Kind::QwenTts, tts)?, Command::Serve(arguments) if arguments.port == 8767 && arguments.codec.is_some() && arguments.voice_model.is_some())
         );
         assert!(matches!(
             parse(Kind::QwenTts, [OsString::from("--version")])?,
@@ -359,11 +378,55 @@ mod tests {
             model: arguments.model,
             token_file: arguments.token_file,
             codec: None,
+            voice_model: None,
             port: 8767,
             threads: None,
             quantization: super::TtsQuantization::default(),
         };
         assert!(verify_models(Kind::QwenTts, &wrong, pin).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn tts_guards_verify_and_retain_the_base_voice_model() -> io::Result<()> {
+        let (directory, mut values) = fixture()?;
+        let codec = directory.join("codec.gguf");
+        let voice = directory.join("voice.gguf");
+        fs::write(&codec, b"abc")?;
+        fs::write(&voice, b"abc")?;
+        values.extend([
+            OsString::from("--codec"),
+            codec.into_os_string(),
+            OsString::from("--voice-model"),
+            voice.clone().into_os_string(),
+        ]);
+        let Command::Serve(mut arguments) = parse(Kind::QwenTts, values.clone())? else {
+            return Err(io::Error::other("Missing TTS serve arguments"));
+        };
+        let artifact = serde_json::json!({
+            "bytes": 3,
+            "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        });
+        let pin = serde_json::json!({
+            "schemaVersion": 1, "model": Kind::QwenTts.model(),
+            "files": {"talker": artifact, "codec": artifact, "voice_talker": artifact},
+        });
+        let guard = verify_models(Kind::QwenTts, &arguments, &pin.to_string())?;
+        assert!(fs::OpenOptions::new().write(true).open(&voice).is_err());
+        drop(guard);
+        fs::write(&voice, b"abd")?;
+        assert!(verify_models(Kind::QwenTts, &arguments, &pin.to_string()).is_err());
+        arguments.voice_model = None;
+        assert!(verify_models(Kind::QwenTts, &arguments, &pin.to_string()).is_err());
+        let mut duplicate = values.clone();
+        duplicate.extend([OsString::from("--voice-model"), voice.into_os_string()]);
+        assert!(parse(Kind::QwenTts, duplicate).is_err());
+        let mut relative = values;
+        let last = relative
+            .last_mut()
+            .ok_or_else(|| io::Error::other("Missing voice path"))?;
+        *last = OsString::from("relative.gguf");
+        assert!(parse(Kind::QwenTts, relative).is_err());
         Ok(())
     }
 
@@ -383,7 +446,12 @@ mod tests {
         let (directory, mut values) = fixture()?;
         let codec = directory.join("codec.gguf");
         fs::write(&codec, b"abc")?;
-        values.extend([OsString::from("--codec"), codec.into_os_string()]);
+        values.extend([
+            OsString::from("--codec"),
+            codec.clone().into_os_string(),
+            OsString::from("--voice-model"),
+            codec.into_os_string(),
+        ]);
         let mut tuned = values.clone();
         tuned.extend(["--threads", "10", "--quantization", "Q4_K_M"].map(OsString::from));
         let Command::Serve(arguments) = parse(Kind::QwenTts, tuned)? else {
