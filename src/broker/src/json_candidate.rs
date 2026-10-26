@@ -207,6 +207,7 @@ struct CaseReport {
 #[derive(Serialize)]
 struct Report {
     source_revision: &'static str,
+    candidate_path: &'static str,
     tested_revision: String,
     architecture: &'static str,
     warmup_rounds: usize,
@@ -308,6 +309,7 @@ fn ci_comparison() -> Result<(), Box<dyn Error>> {
         .fold(0.0, f64::max);
     let report = Report {
         source_revision: "ff8f5c8bb75dfc56803321c2f5a92656c7de842f",
+        candidate_path: "padded-tape-serde",
         tested_revision: std::env::var("GITHUB_SHA")?,
         architecture: std::env::consts::ARCH,
         warmup_rounds: 1,

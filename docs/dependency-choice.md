@@ -61,6 +61,16 @@ retain serde_json. The `json-candidate-40405967479-1` artifact contains raw roun
 decisions and source/compiler/CPU/OS identities. This is broker preparation
 evidence on that hosted CPU, not Snapdragon inference throughput.
 
+[Follow-up #1](https://github.com/symbiogenesis/SwiftBonsai2Runner/issues/1)
+uses the existing `fill_tape_padded` API followed by `Tape::deserialize`, avoiding
+the Serde entry point's internal input copy. The immutable-body copy, padding,
+allocation, validation, serialization and destruction remain timed. The receipt
+identifies this path as `padded-tape-serde`; the result above describes the older
+copying path. Production and the acceptance thresholds remain unchanged until
+the follow-up CI comparison passes. The decimal fallback remains necessary:
+SIMD-JSON's correctly rounded conversion can differ from serde_json's default
+conversion, even when neither parser has a bug.
+
 Sonic's 3.5–4.7% history-case gains and the fused visitor's 6.9% gain at 128
 messages did not offset other regressions. These results reject the tested
 prototypes for this workload; they are not universal library rankings.

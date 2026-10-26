@@ -35,6 +35,7 @@ jobs:
           [ordered]@{
             Revision = $env:GITHUB_SHA
             ParserSource = $source
+            ParserPath = 'padded-tape-serde'
             Compiler = (cargo +nightly-2026-10-22-aarch64-pc-windows-msvc --version)
             Rustc = (rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV)
             OS = [Environment]::OSVersion.VersionString
@@ -58,6 +59,7 @@ jobs:
           cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --release --locked --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') -p bonsai-broker --features json-candidate --lib json_candidate::ci_comparison -- --exact --ignored
           $result = Get-Content -Raw -LiteralPath (Join-Path $env:BONSAI_JSON_EVIDENCE 'comparison.json') | ConvertFrom-Json
           @(
+            "Candidate path: $($result.candidate_path)",
             "Original six-case median-time geometric mean: $($result.original_six_geometric_mean_time_ratio)",
             "Original six-case worst median-time ratio: $($result.original_six_worst_case_time_ratio)",
             "Meets the original six-case 5%/5% screen: $($result.original_six_qualifies)",
