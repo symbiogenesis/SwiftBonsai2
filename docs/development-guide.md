@@ -300,6 +300,14 @@ including after changing external compiler installations or dependency caches.
 Pass absolute `-ChatPath` and `-BrokerPath` values to select existing builds.
 A fresh system-temp lane retains compiler output in `chat-build.log` and app
 output in `chat.log`. `Start-Chat.ps1` is the supported launcher.
+The launcher allows one chat instance per Windows user. It acquires an exclusive
+handle to `%LOCALAPPDATA%/SwiftBonsai2/chat.lock` before speech provisioning or
+builds and holds it until the app exits. Rapid repeated launches return with an
+already-starting-or-running message, including before the window appears and
+when using another checkout, installed package, data directory or set of ports.
+Closing the app or a startup failure releases the guard automatically; the empty
+lock file stays in place and does not mean the app is running. `-SpeechModelsOnly`
+continues to work independently. Direct executable launches bypass this script guard.
 The pinned abliteration LoRA is enabled at scale **1.3** by default. In Settings,
 adjust **Abliteration scale** from 0 to 2 in 0.1 steps; the choice applies to the
 next response and every Extra effort pass without restarting the model. Zero
