@@ -58,7 +58,7 @@ pub fn stage_runtime(
         &mut || Ok(()),
     )?;
     fs::create_dir(staging).map_err(|_| ArtifactError::Path)?;
-    extract(&mut zip, staging, &installation)?;
+    extract(&mut zip, staging, &installation, &mut buffer)?;
 
     let mut staging_handles = Vec::new();
     let (_, files) = verify_installation(
@@ -82,6 +82,7 @@ fn extract<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     staging: &Path,
     installation: &Installation,
+    buffer: &mut [u8],
 ) -> Result<(), ArtifactError> {
     for directory in &installation.directories {
         let path = staging.join(directory);
@@ -104,7 +105,7 @@ fn extract<R: Read + Seek>(
         let mut output = options
             .open(&path)
             .map_err(|_| ArtifactError::Installation)?;
-        copy_bounded(&mut source, &mut output, entry.bytes)?;
+        copy_bounded(&mut source, &mut output, entry.bytes, buffer)?;
         output.sync_all().map_err(|_| ArtifactError::Installation)?;
         if path.extension().is_some_and(|extension| {
             extension.eq_ignore_ascii_case("exe") || extension.eq_ignore_ascii_case("dll")
@@ -119,13 +120,11 @@ fn copy_bounded(
     source: &mut impl Read,
     output: &mut File,
     expected: u64,
+    buffer: &mut [u8],
 ) -> Result<(), ArtifactError> {
     let mut total = 0_u64;
-    let mut buffer = vec![0; 64 * 1024].into_boxed_slice();
     loop {
-        let count = source
-            .read(&mut buffer)
-            .map_err(|_| ArtifactError::Archive)?;
+        let count = source.read(buffer).map_err(|_| ArtifactError::Archive)?;
         if count == 0 {
             break;
         }
