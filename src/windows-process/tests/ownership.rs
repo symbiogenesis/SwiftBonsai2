@@ -14,7 +14,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use bonsai_windows_process::{
-    OwnedProcess, ProcessSpec, ToolProcessSpec, available_memory_bytes, listener_process_id,
+    OwnedProcess, ProcessSpec, SandboxPolicy, ToolProcessSpec, available_memory_bytes,
+    listener_process_id,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -66,6 +67,41 @@ fn unused_port() -> io::Result<u16> {
     Ok(TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?
         .local_addr()?
         .port())
+}
+
+#[test]
+fn sandbox_rejects_invalid_grants_before_creating_evidence() -> io::Result<()> {
+    let lane = Lane::new("invalid-sandbox")?;
+    let scratch = lane.path.join("scratch");
+    fs::create_dir(&scratch)?;
+    let mut spec = lane.spec(vec![OsString::from("sleep")]);
+    spec.working_directory.clone_from(&scratch);
+    for policy in [
+        SandboxPolicy {
+            readonly_paths: vec![spec.executable.clone(), PathBuf::from("relative-model")],
+            writable_directory: scratch.clone(),
+        },
+        SandboxPolicy {
+            readonly_paths: vec![spec.executable.clone()],
+            writable_directory: PathBuf::from("relative-scratch"),
+        },
+        SandboxPolicy {
+            readonly_paths: Vec::new(),
+            writable_directory: scratch.clone(),
+        },
+        SandboxPolicy {
+            readonly_paths: vec![spec.executable.clone(), scratch.clone()],
+            writable_directory: scratch,
+        },
+    ] {
+        let error = OwnedProcess::start_sandboxed(&spec, &policy)
+            .err()
+            .ok_or_else(|| io::Error::other("invalid sandbox policy launched a worker"))?;
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(!spec.stdout.exists());
+        assert!(!spec.stderr.exists());
+    }
+    Ok(())
 }
 
 #[test]
