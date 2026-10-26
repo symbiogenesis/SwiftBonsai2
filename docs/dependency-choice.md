@@ -6,6 +6,9 @@ replacement criteria. Strict request behavior precedes speed, and all benchmarks
 run only in CI. Outstanding optional dependency experiments are tracked only in
 [PLAN.md](../PLAN.md#deferred-dependency-experiments).
 
+The [workspace dependency audit](dependency-audit.md) covers direct usage,
+resolved duplicates, enabled features and current security/maintenance notices.
+
 ## JSON selection
 
 The declared gate required at least **5% lower equal-weight geometric mean
