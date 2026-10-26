@@ -1,0 +1,49 @@
+name: Dependency audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.lock
+      - Cargo.toml
+      - '**/Cargo.toml'
+      - rust-toolchain.toml
+      - .github/actions/rust-toolchain/**
+      - .github/workflows/dependency-audit.yml
+  schedule:
+    - cron: '17 8 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  audit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+        id: compiler
+        with:
+          toolchain: nightly-2026-10-22-aarch64-unknown-linux-gnu
+          components: ''
+      - name: Cache the pinned audit tool
+        id: audit-tool
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/cargo-audit
+          key: cargo-audit-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.compiler.outputs.image-identity }}-nightly-2026-10-22-0.22.2
+      - name: Install the pinned audit tool
+        if: steps.audit-tool.outputs.cache-hit != 'true'
+        working-directory: ${{ runner.temp }}
+        run: cargo +nightly-2026-10-22 install cargo-audit --version 0.22.2 --locked --root "$RUNNER_TEMP/cargo-audit"
+      - name: Check the complete lockfile against fresh advisories
+        working-directory: ${{ runner.temp }}
+        # Do not cache the advisory database or suppress off-target notices.
+        # Known vulnerabilities and yanked packages fail; maintenance notices
+        # remain visible for every platform represented by the lockfile.
+        run: '"$RUNNER_TEMP/cargo-audit/bin/cargo-audit" audit --file "$GITHUB_WORKSPACE/Cargo.lock" --deny yanked'
