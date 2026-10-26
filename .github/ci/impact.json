@@ -26,7 +26,7 @@
       "paths": [
         "scripts/Doctor.ps1", "scripts/Bonsai.Capabilities.psm1", "scripts/Get-Inference.ps1", "scripts/New-InferenceLock.ps1",
         "scripts/Read-Gguf.ps1", "scripts/Export-SwiftPtq1.ps1", "scripts/Bonsai.Gguf.psm1",
-        "scripts/Get-Model.ps1", "scripts/Get-ServerPlan.ps1", "scripts/Start-Demo.ps1", "scripts/Bonsai.ServerPolicy.psm1",
+        "scripts/Get-Model.ps1", "scripts/Get-ServerPlan.ps1", "scripts/Start-Chat.ps1", "scripts/Start-Demo.ps1", "scripts/Bonsai.ChatLaunch.psm1", "scripts/Bonsai.ServerPolicy.psm1",
         "scripts/Get-SpeechModels.ps1", "scripts/Bonsai.SpeechModels.psm1", "tests/Test-SpeechModels.ps1",
         "scripts/Bonsai.NativeSpeech.psm1", "scripts/Get-NativeSpeechModels.ps1", "tests/Test-NativeSpeech.ps1", "tests/Test-DemoSpeech.ps1", "config/native-speech.lock.json",
         "tools/canary-asr/model.lock.json", "tools/canary-asr/tokenizer.lock.json", "tools/qwen-tts/model.lock.json",
