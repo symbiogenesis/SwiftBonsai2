@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([string])]
-param([ValidateSet('All', 'Launcher', 'DownloadOnly', 'Rejections')][string]$Case = 'All')
+param([ValidateSet('All', 'Launcher', 'DownloadOnly', 'Rejections', 'Cache')][string]$Case = 'All')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -17,8 +17,8 @@ $data = Join-Path $scratch 'data'
 [void][IO.Directory]::CreateDirectory($scripts)
 [void][IO.Directory]::CreateDirectory($data)
 $receipt = Join-Path $scratch 'launch.json'
-$copy = Join-Path $scripts 'Start-Demo.ps1'
-$source = [IO.File]::ReadAllText((Join-Path $repo 'scripts/Start-Demo.ps1'))
+$copy = Join-Path $scripts 'Start-Chat.ps1'
+$source = [IO.File]::ReadAllText((Join-Path $repo 'scripts/Start-Chat.ps1'))
 $tokens = $null
 $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$errors)
@@ -27,6 +27,7 @@ $cargo = (Join-Path $scratch 'cargo.exe').Replace("'", "''")
 $source = $source.Insert($ast.ParamBlock.Extent.EndOffset, "`nfunction Get-Command { [pscustomobject]@{ Source = '$cargo' } }`n")
 [IO.File]::WriteAllText($copy, $source)
 Copy-Item -LiteralPath (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Destination $scripts
+Copy-Item -LiteralPath (Join-Path $repo 'scripts/Start-Demo.ps1') -Destination $scripts
 $capture = @'
 function Invoke-BonsaiNativeProcess {
     [CmdletBinding()]
@@ -77,6 +78,11 @@ $launch = @{ DataDirectory = $data; ChatPath = $chat; BrokerPath = $broker }
 if ($Case -cin @('All', 'Launcher')) {
     $original = [Environment]::CurrentDirectory
     & $copy @launch | Out-Null
+    & (Join-Path $scripts 'Start-Demo.ps1') @launch -NoSpeechModels -NoAbliterateLora -FrontendPort 5174 | Out-Null
+    $compatibility = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+    Assert ($compatibility.Arguments -ccontains '--no-abliterate-lora' -and $compatibility.Arguments -ccontains '5174' -and
+        $compatibility.Arguments -cnotcontains '--tts-executable') 'Start-Demo did not forward explicit switches and ports to Start-Chat.'
+    & $copy @launch | Out-Null
     $record = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
     $arguments = @($record.Arguments)
     Assert ($record.Executable -ceq $chat -and [IO.Directory]::Exists($record.WorkingDirectory)) 'Native app lost its external working directory.'
@@ -121,5 +127,77 @@ if ($Case -cin @('All', 'Rejections')) {
     Assert-Failure { & $copy @launch -CanaryPort 8767 } 'Colliding speech ports were accepted.'
     [IO.File]::WriteAllText(($receipt + '.fail'), '')
     Assert-Failure { & $copy @launch -NoSpeechModels } 'Nonzero app exit was accepted.'
+}
+if ($Case -cin @('All', 'Cache')) {
+    $module = Import-Module (Join-Path $repo 'scripts/Bonsai.ChatLaunch.psm1') -Force -PassThru
+    & $module {
+        $script:builds = [Collections.Generic.List[object]]::new()
+        $script:exitCode = 0
+        function script:Get-Command {
+            [CmdletBinding()]
+            [OutputType([pscustomobject])]
+            param([string]$Name, [string]$CommandType)
+            if ($Name -cne 'cargo' -or $CommandType -cne 'Application') { throw 'Unexpected compiler lookup.' }
+            return [pscustomobject]@{ Source = 'cargo.exe' }
+        }
+        function script:Invoke-BonsaiNativeProcess {
+            [CmdletBinding()]
+            [OutputType([pscustomobject])]
+            param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$LogPath)
+            $target = $ArgumentList[[array]::IndexOf($ArgumentList, '--target-dir') + 1]
+            $existed = [Collections.Generic.List[bool]]::new()
+            for ($index = 0; $index -lt $ArgumentList.Count; $index++) {
+                if ($ArgumentList[$index] -cne '--package') { continue }
+                $name = $ArgumentList[$index + 1]
+                $path = Join-Path -Path $target -ChildPath 'aarch64-pc-windows-msvc/release' -AdditionalChildPath ($name + '.exe')
+                $existed.Add([IO.File]::Exists($path))
+                if ([IO.File]::Exists($path) -or $script:exitCode) { continue }
+                [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))
+                $stream = [IO.FileStream]::new($path, [IO.FileMode]::CreateNew)
+                $writer = [IO.BinaryWriter]::new($stream)
+                try {
+                    $stream.SetLength(512)
+                    $writer.Write([uint16]0x5a4d)
+                    $stream.Position = 0x3c
+                    $writer.Write([int]0x80)
+                    $stream.Position = 0x80
+                    $writer.Write([uint32]0x00004550)
+                    $writer.Write([uint16]0xaa64)
+                } finally { $writer.Dispose() }
+            }
+            $script:builds.Add([pscustomobject]@{ Executable = $Executable; TimeoutSeconds = $TimeoutSeconds; Arguments = $ArgumentList; WorkingDirectory = $WorkingDirectory; LogPath = $LogPath; Existed = $existed.ToArray() })
+            return [pscustomobject]@{ ExitCode = $script:exitCode }
+        }
+    }
+    $working = Join-Path $scratch 'cache-checks'
+    $parameters = @{ DataDirectory = $data; WorkingDirectory = $working; RepositoryRoot = $repo; Package = @('bonsai-chat', 'bonsai-broker') }
+    $first = Invoke-ChatBuild @parameters
+    $second = Invoke-ChatBuild @parameters
+    $builds = @(& $module { $script:builds.ToArray() })
+    Assert ($first.TargetDirectory -ceq $second.TargetDirectory -and $first.ChatPath -ceq $second.ChatPath) 'Repeated launch discarded the reusable Cargo target.'
+    Assert ($builds.Count -eq 2 -and $builds[0].Existed -notcontains $true -and $builds[1].Existed -notcontains $false) 'Unchanged binaries were rebuilt or Cargo freshness was skipped.'
+    foreach ($build in $builds) {
+        Assert ($build.Executable -ceq 'cargo.exe' -and $build.TimeoutSeconds -eq 3600 -and $build.Arguments -contains '--locked' -and $build.Arguments -contains '--release' -and
+            $build.Arguments -contains '--manifest-path' -and $build.Arguments[0] -match '^\+nightly-\d{4}-\d{2}-\d{2}-aarch64-pc-windows-msvc$' -and
+            $build.WorkingDirectory -ceq $working -and $build.LogPath.StartsWith($working + '\', [StringComparison]::OrdinalIgnoreCase)) 'Cache reuse lost Cargo freshness, the pinned compiler or external diagnostics.'
+    }
+    $digest = (Get-FileHash -LiteralPath $first.ChatPath -Algorithm SHA256).Hash
+    [IO.File]::WriteAllText($first.ChatPath, 'changed executable')
+    $null = Invoke-ChatBuild @parameters
+    Assert ((Get-FileHash -LiteralPath $first.ChatPath -Algorithm SHA256).Hash -ceq $digest) 'A changed cached executable was trusted.'
+    $receiptPath = Join-Path $first.TargetDirectory 'bonsai-chat.sha256'
+    [IO.File]::Delete($receiptPath)
+    $null = Invoke-ChatBuild @parameters
+    $builds = @(& $module { $script:builds.ToArray() })
+    Assert (-not $builds[2].Existed[1] -and -not $builds[3].Existed[1]) 'Changed or unreceipted outputs reached Cargo as trusted executables.'
+    $lock = [IO.FileStream]::new((Join-Path $first.TargetDirectory 'build.lock'), [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    try { Assert-Failure { Invoke-ChatBuild @parameters } 'Concurrent cache mutation was accepted.' }
+    finally { $lock.Dispose() }
+    & $module { $script:exitCode = 7 }
+    Assert-Failure { Invoke-ChatBuild @parameters } 'A failed freshness check returned executable paths.'
+    Assert-Failure { Invoke-ChatBuild -DataDirectory $repo -WorkingDirectory $working -RepositoryRoot $repo -Package bonsai-chat } 'A chat build wrote inside Git.'
+    $alias = Join-Path $scratch 'cache-alias'
+    $null = New-Item -ItemType Junction -Path $alias -Target $data
+    Assert-Failure { Invoke-ChatBuild -DataDirectory $alias -WorkingDirectory $working -RepositoryRoot $repo -Package bonsai-chat } 'A reparse cache path was accepted.'
 }
 Write-Output "Native demo speech $Case checks passed. Evidence: $scratch"

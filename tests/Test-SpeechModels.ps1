@@ -121,7 +121,7 @@ if ($Case -in @('All','Provision')) {
 }
 
 if ($Case -in @('All','Launcher')) {
-    $launcher = Join-Path $repo 'scripts/Start-Demo.ps1'
+    $launcher = Join-Path $repo 'scripts/Start-Chat.ps1'
     $tokens = $null
     $errors = $null
     $ast = [Management.Automation.Language.Parser]::ParseFile($launcher, [ref]$tokens, [ref]$errors)
@@ -146,7 +146,7 @@ if ($Case -in @('All','Launcher')) {
     $source = [IO.File]::ReadAllText($launcher)
     $trap = "`nfunction Get-Command { throw 'Download-only mode attempted compiler or native lookup.' }`n"
     $source = $source.Insert($ast.ParamBlock.Extent.EndOffset, $trap)
-    $copy = Join-Path $scripts 'Start-Demo.ps1'
+    $copy = Join-Path $scripts 'Start-Chat.ps1'
     [IO.File]::WriteAllText($copy, $source)
     Copy-Item -LiteralPath (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Destination $scripts
     Copy-Item -LiteralPath (Join-Path $repo 'scripts/Bonsai.Native.psm1') -Destination $scripts
