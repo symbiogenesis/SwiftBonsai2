@@ -20,15 +20,10 @@ Swift Bonsai 2 is a language model by [UkisAI](https://ukisai.com/swift-bonsai-2
 built on [PrismML's Bonsai 2](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf),
 which derives from [Alibaba's Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B).
 
-This repository provides the setup and runtime tooling to run Swift on a
-**32 GB Snapdragon X Elite laptop with Windows ARM64**. A local creative
-assistant is being built around that setup.
-
-The hardware goal is **automatic configuration for Snapdragon X1 and X2**:
-detect the actual device and select a qualified CPU/GPU/NPU plan for interactive
-or battery use, with separate prefill/decode tuning and CPU fallback. This
-[hardware profile selection](docs/hardware-profiles.md) is planned; current
-released launch policies remain CPU-only.
+This project is building a local creative assistant for **Windows ARM64 laptops
+with Snapdragon X and X2 processors**. It currently runs on the CPU, with
+[automatic hardware tuning and GPU/NPU support](docs/hardware-profiles.md)
+planned.
 
 The native Rust engine lives in [Prism Inference](https://github.com/symbiogenesis/prism-inference).
 This project consumes a pinned prebuilt server; ordinary builds do not compile
@@ -39,31 +34,23 @@ the inference engine. Provision it with `./scripts/Get-Inference.ps1 -DataDirect
 > **Early development.** Model setup, CPU checks, a development API and a native
 > Rust chat demo are available. Daily-service acceptance remains pending.
 
-After provisioning Swift's model and CPU runtime, run `./scripts/Start-Demo.ps1`
-to open the native `egui`/`eframe` Windows chat window. See the
-[demo setup](docs/development-guide.md#native-chat-demo) for requirements.
-The lasting [UI architecture policy](docs/ui-architecture.md) keeps application
-UI code in Rust, with `wgpu` rendering and native system bindings, without a
-WebView, JavaScript, TypeScript, HTML or CSS. The toolkit is cross-platform;
-runner ownership, credentials and speech integrations currently target Windows.
-A model-free `bonsai-chat.exe --preview` mode is available for visual checks.
-The local JSON/SSE API preserves its documented strict subset of OpenAI-style
-chat conventions.
-The UI supports explicit [Qwen3-TTS VoiceDesign read-aloud](tools/qwen-tts/README.md)
-with a plain-text voice profile and optional
-[Canary Qwen 2.5B microphone transcription](tools/canary-asr/README.md), guarded
-by Windows microphone permission and an off-by-default microphone toggle.
-The demo script downloads their pinned model files automatically; use
-`-SpeechModelsOnly` to download without launching, or `-NoSpeechModels` to skip.
-Both companions run natively on ARM64 through Rust services and GGML engines.
-Models load on demand, and speech processes are owned separately from text chat.
-Use `-NoTts` to skip automatic TTS setup.
+Once you've [set up the model and runtime](docs/development-guide.md#native-chat-demo),
+run `./scripts/Start-Demo.ps1` to open the Windows chat demo.
+
+You can chat with Swift, hear answers read aloud in a voice you describe, or
+dictate a message to review before sending. The microphone stays off until you
+turn it on and grant Windows permission.
+
+The launcher downloads speech models automatically. The setup guide explains
+how to skip those downloads or preview the app without loading a model.
+For developer details, see the [native Rust UI architecture](docs/ui-architecture.md)
+and [local API contract](docs/broker-policy.md#public-request-contract).
 
 ## At a glance
 
 | | Current target |
 | --- | --- |
-| **Hardware** | Snapdragon X Elite · 32 GB RAM |
+| **Hardware** | Snapdragon X and X2 · Windows ARM64 |
 | **Model** | Swift Bonsai 2 · `PQ2_0` |
 | **CPU profile** | One conversation · 8K-token context · FP16 attention caches |
 | **Next milestones** | Daily-service acceptance and quality/performance qualification |
