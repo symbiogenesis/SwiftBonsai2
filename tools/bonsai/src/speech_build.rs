@@ -378,6 +378,62 @@ struct SourceSpec {
     sha256: String,
 }
 
+struct SourceStaging {
+    directory: PathBuf,
+}
+
+impl SourceStaging {
+    fn new(root: &Path) -> crate::Result<Self> {
+        let parent = root.parent().ok_or("Missing source staging parent.")?;
+        validate_external_path(parent).map_err(|error| error.to_string())?;
+        fs::create_dir_all(parent).map_err(|_| "Cannot create source staging parent.")?;
+        // Stay beside the outer source tree, including for nested GGML entries.
+        // An interrupted write must never become a canonical inventory entry.
+        let directory = parent.join(format!(
+            ".bonsai-source-stage-{}",
+            crate::startup_process::unique()
+        ));
+        validate_external_path(&directory).map_err(|error| error.to_string())?;
+        fs::create_dir(&directory).map_err(|_| "Cannot create source staging arena.")?;
+        Ok(Self { directory })
+    }
+}
+
+impl Drop for SourceStaging {
+    fn drop(&mut self) {
+        if validate_external_path(&self.directory).is_ok() {
+            // Remove only our empty arena. Failed writes remain as evidence;
+            // a later invocation uses a fresh sibling and ignores those bytes.
+            let _ = fs::remove_dir(&self.directory);
+        }
+    }
+}
+
+fn publish_source(
+    path: &Path,
+    staging: &SourceStaging,
+    write: impl FnOnce(&mut File) -> crate::Result<()>,
+) -> crate::Result<()> {
+    let temporary = staging.directory.join(crate::startup_process::unique());
+    validate_external_path(&temporary).map_err(|error| error.to_string())?;
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|_| "Cannot create staged native source file.")?;
+    write(&mut output)?;
+    output
+        .sync_all()
+        .map_err(|_| "Cannot sync staged native source file.")?;
+    drop(output);
+    validate_external_path(path).map_err(|error| error.to_string())?;
+    fs::hard_link(&temporary, path)
+        .map_err(|_| "Cannot publish native source file without replacing existing bytes.")?;
+    // Publication is complete even if a reader keeps the staging alias open.
+    let _ = fs::remove_file(&temporary);
+    Ok(())
+}
+
 fn stage_source(
     archive_path: &Path,
     destination: &Path,
@@ -395,7 +451,8 @@ fn stage_source(
         sha256,
         &mut buffer,
     )?;
-    stage_prepared(&mut source, &mut buffer)?;
+    let staging = SourceStaging::new(destination)?;
+    stage_prepared(&mut source, &mut buffer, &staging)?;
     let files: Vec<_> = source
         .entries
         .iter()
@@ -420,8 +477,9 @@ fn stage_sources(root: &Path, specs: &[SourceSpec]) -> crate::Result<Value> {
         )?);
     }
     let expected = expected_files(&sources)?;
+    let staging = SourceStaging::new(root)?;
     for source in &mut sources {
-        stage_prepared(source, &mut buffer)?;
+        stage_prepared(source, &mut buffer, &staging)?;
     }
     check_source_tree(root, Some(&expected))?;
     // Keep both read-only ZIP handles until the complete union has been checked.
@@ -542,7 +600,11 @@ fn prepare_source(
     Ok(PreparedSource { zip, entries })
 }
 
-fn stage_prepared(source: &mut PreparedSource, buffer: &mut [u8]) -> crate::Result<()> {
+fn stage_prepared(
+    source: &mut PreparedSource,
+    buffer: &mut [u8],
+    staging: &SourceStaging,
+) -> crate::Result<()> {
     for (index, path, directory, bytes) in &source.entries {
         validate_external_path(path).map_err(|error| error.to_string())?;
         if *directory {
@@ -569,15 +631,10 @@ fn stage_prepared(source: &mut PreparedSource, buffer: &mut [u8]) -> crate::Resu
                 return Err("Native source cache differs from its pinned archive.".into());
             }
         } else {
-            let mut output = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(path)
-                .map_err(|_| "Cannot create native source file.")?;
-            digest(&mut entry, *bytes, &mut output, buffer)?;
-            output
-                .flush()
-                .map_err(|_| "Cannot flush native source file.")?;
+            publish_source(path, staging, |output| {
+                digest(&mut entry, *bytes, output, buffer)?;
+                Ok(())
+            })?;
         }
     }
     Ok(())
@@ -798,6 +855,74 @@ mod tests {
         fs::write(root.join("unreviewed.cpp"), b"unreviewed")?;
         assert!(stage_sources(&root, &specs).is_err());
         assert_eq!(fs::read(root.join("unreviewed.cpp"))?, b"unreviewed");
+        Ok(())
+    }
+
+    #[test]
+    fn interrupted_source_write_retains_only_external_staging_bytes_and_retry_succeeds()
+    -> TestResult {
+        let scratch = scratch("interrupted")?;
+        let root = scratch.join("source");
+        let specs = [
+            source_fixture(&scratch, &root, "qwen", &["qwen/src/engine.cpp"], false)?,
+            source_fixture(
+                &scratch,
+                &root.join("ggml"),
+                "ggml",
+                &["ggml/src/ggml.c"],
+                false,
+            )?,
+        ];
+        let canonical = root.join("ggml/src/ggml.c");
+        fs::create_dir_all(canonical.parent().ok_or("Missing fixture parent.")?)?;
+        let staging = super::SourceStaging::new(&root)?;
+        let arena = staging.directory.clone();
+        assert_eq!(arena.parent(), root.parent());
+        assert!(!arena.starts_with(&root));
+        let result = super::publish_source(&canonical, &staging, |output| {
+            output
+                .write_all(b"partial")
+                .map_err(|error| error.to_string())?;
+            Err("Injected interruption during native source write.".into())
+        });
+        assert!(result.is_err());
+        assert!(!canonical.exists());
+        drop(staging);
+        let evidence = fs::read_dir(&arena)?.collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(evidence.len(), 1);
+        assert_eq!(
+            fs::read(
+                evidence
+                    .first()
+                    .ok_or("Missing retained source evidence.")?
+                    .path()
+            )?,
+            b"partial"
+        );
+        assert_eq!(stage_sources(&root, &specs)?["FilesVerified"], 2);
+        assert_eq!(fs::read(&canonical)?, b"fixture");
+        assert_eq!(stage_sources(&root, &specs)?["FilesVerified"], 2);
+        assert!(arena.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn source_publication_never_replaces_existing_canonical_bytes() -> TestResult {
+        let scratch = scratch("exclusive")?;
+        let root = scratch.join("source");
+        fs::create_dir(&root)?;
+        let canonical = root.join("engine.cpp");
+        fs::write(&canonical, b"existing")?;
+        let staging = super::SourceStaging::new(&root)?;
+        assert!(
+            super::publish_source(&canonical, &staging, |output| {
+                output
+                    .write_all(b"replacement")
+                    .map_err(|error| error.to_string())
+            })
+            .is_err()
+        );
+        assert_eq!(fs::read(canonical)?, b"existing");
         Ok(())
     }
 
