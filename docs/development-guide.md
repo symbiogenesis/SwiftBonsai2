@@ -158,6 +158,7 @@ recognizer or Windows voice is substituted. See the
 protocol contracts. Voice descriptions guide generation without guaranteeing
 persistent speaker identity between segments. Native actual-model smoke checks
 establish one working path, not a measured performance gain.
+
 The visible **Microphone: off** button explains speech setup when Canary is not
 configured or ready. With Canary ready, selecting it requests Windows microphone
 permission before recording and changes the button to **Microphone: on**.

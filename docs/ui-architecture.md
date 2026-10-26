@@ -116,7 +116,8 @@ independently managed companions instead. Runtime orchestration stays outside
 presentation controls.
 
 Speech input uses the authenticated numeric-loopback
-[Canary companion](../tools/canary-asr/README.md).The Rust UI requests the Windows `microphone` capability on its UI thread before
+[Canary companion](../tools/canary-asr/README.md). The Rust UI requests the Windows
+`microphone` capability on its UI thread before
 audio-only capture. Denied, cancelled or unavailable access fails closed. The
 microphone is off initially; only the explicit microphone toggle can start it.
 Disabling it, sending a prompt, starting read-aloud, creating a conversation or
