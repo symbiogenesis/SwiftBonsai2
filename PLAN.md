@@ -33,8 +33,9 @@ The active implementation scope is the pinned Swift PQ2 CPU MVP in the
 [Prism migration TODO](docs/prism-upstream-todo.md). Exact Swift chat rendering,
 token accounting and native sampler parity are implemented, as is the
 experimental owned service path. Bounded full-model forward parity and owned
-HTTP recovery are qualified in the source runtime. A reviewed prebuilt runtime
-release and lock update remain before ordinary Runner consumes those changes.
+HTTP recovery are qualified in the source runtime. Runner now pins the reviewed
+`0.1.3` prebuilt release containing those repairs; released integration and
+device acceptance retain their separate validation requirements.
 Broader acceleration, adapters and runtime optimization remain deferred. The
 application MVP adds a separate pure-Rust native chat UI; it does not expand the
 engine MVP's runtime acceptance scope. The permanent
@@ -97,7 +98,7 @@ and [development commands](docs/development-guide.md).
 | Path | Current state | Next gate |
 | --- | --- | --- |
 | Pinned Prism CPU | Bounded Swift decode works | Real service behavior, creative/comfort and daily security qualification |
-| Native Rust CPU | Verified Swift loader, hybrid graph, transactional generation, exact Swift chat/tokenizer, native sampler and experimental broker path | Reviewed prebuilt consumption; broader models, full-context workloads and adapters remain deferred |
+| Native Rust CPU | Verified Swift loader, hybrid graph, transactional generation, exact Swift chat/tokenizer, native sampler, experimental broker path and pinned `0.1.3` prebuilt consumption | Released integration and per-device acceptance; broader models, full-context workloads and adapters remain deferred |
 | Adreno Vulkan | CPU-only builds and profiles today | Native ARM64 build, exact-model placement/parity and paired device evidence |
 | Hexagon | Discovery and implementation plan only; recent upstream X2 DMA and low-bit/Hadamard leads | Signed matching kernels, exact packed arithmetic, hybrid state and bounded per-device deployment |
 | Automatic X1/X2 profiles | Initial H0 inventory/contracts implemented; no selector or accepted accelerator defaults | Shared capabilities, measured profile catalog, deterministic selection and qualified fallback on each generation |
@@ -227,7 +228,21 @@ Completed native chat experience follow-ups:
 - [x] Navigate Find with Enter/Shift+Enter and dismiss it with Escape before
   global generation/speech cancellation, preserving the current draft.
 
-Next application exits: packaged installation/update/rollback, actual-model
+Completed delivery foundations:
+
+- [x] Assemble and verify a fixed-layout portable native chat package, activate
+  versioned installations atomically and retain explicit checked rollback.
+  Launch uses packaged executables without a source checkout or compiler. Signed
+  installer and complete redistribution-notice review remain open. See
+  [portable packages](docs/chat-packages.md).
+- [x] Consume the pinned `0.1.3` runtime's model-free capability report through
+  a bounded owned probe, retaining archive/file verification through exit and
+  checking the shared schema, native target and release version.
+- [x] Retain versioned static CPU observation records and reproducible digest
+  keys in Doctor; exclude changing resource values and preserve explicit unknowns.
+  Accelerator identities, catalog admission and automatic selection remain open.
+
+Next application exits: signed installation/distribution acceptance, actual-model
 startup/long-chat/speech acceptance, Windows assistive-technology review, and
 the restricted daily-service boundary from section 5. UI polish does not qualify
 those runtime, security, creative-quality or sustained-performance requirements.
@@ -316,7 +331,7 @@ native MT19937 sampler. Retained native captures cover prompt bytes/token IDs
 and seeded sampler draws; the independently released server connects that
 session to the owned experimental broker. Separate source-runtime evidence
 qualifies bounded Swift full-model forward parity. Other templates/models,
-reviewed prebuilt consumption and daily service remain separate exits in the
+released integration and daily service remain separate exits in the
 [active MVP checklist](docs/prism-upstream-todo.md). Tiled prefill kernels, broader
 model/full-context allocation, broader model parity and performance
 qualification remain open.
@@ -406,7 +421,7 @@ when authorized, uses only `main`. Git history holds implementation chronology.
 | M4 — daily profiles and automatic hardware selection | Initial H0 discovery/contracts implemented; H1-H5 pending | Reproducible installation; automatic qualified interactive/battery configurations and CPU fallback independently accepted on X1 and X2 |
 | M5 — Hexagon | N0–N7 pending; prioritize X2 packed-kernel investigation alongside controls | Signed exact-model execution, bounded state/memory and per-device benefit, or no-go |
 | M6 — advanced kernels/speculation | Research candidates | Correctness and measured benefit justify maintenance |
-| M7 — Rust replacement | Swift loader/graph, chat/tokenizer, native sampler and experimental owned service implemented | Reviewed runtime consumption, followed by broader R0–R7 and per-profile acceptance |
+| M7 — Rust replacement | Swift loader/graph, chat/tokenizer, native sampler, experimental owned service and pinned `0.1.3` runtime consumption implemented | Released integration, followed by broader R0–R7 and per-profile acceptance |
 
 The immediate engine work follows M2 → M5 → M6 in the
 [Swift-only MVP checklist](docs/prism-upstream-todo.md), against the pinned native

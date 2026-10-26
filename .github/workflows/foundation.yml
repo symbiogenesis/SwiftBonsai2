@@ -269,6 +269,11 @@ jobs:
         shell: pwsh
         run: |
           ./tests/Test-Inference.ps1 -Case All
+      - name: Portable native chat package lifecycle
+        if: matrix.lane == 'foundation'
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: '& (Join-Path $env:GITHUB_WORKSPACE "tests/Test-ChatPackage.ps1") -Case All'
       - name: Released GGUF command integration
         if: matrix.lane == 'foundation'
         shell: pwsh
@@ -278,7 +283,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           $data = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Inference'
-          $inference = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Get-Inference.ps1') -DataDirectory $data
+          $inference = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Get-Inference.ps1') -DataDirectory $data -IncludeCapabilities
+          if ($inference.CapabilityVerification.Status -cne 'verified' -or
+              $inference.Capabilities.qualification -cne 'unqualified' -or
+              $inference.Capabilities.runtime.target.architecture -cne 'aarch64') {
+            throw 'Invalid verified released-runtime capability report.'
+          }
           $env:BONSAI_GGUF_TOOL = $inference.Gguf
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Gguf.ps1') -Case All
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Pq2Census.ps1')

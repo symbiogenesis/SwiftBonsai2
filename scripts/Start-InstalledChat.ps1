@@ -7,6 +7,8 @@ Run this script from an installed version or the source checkout. Swift model,
 runtime and optional adapter must already be provisioned in DataDirectory. The
 packaged launcher can provision pinned speech models through its maintenance
 executable. No source checkout, Rust/C++ compiler or Cargo is used at launch.
+Native speech requires an installed compatible ARM64 Microsoft Visual C++ runtime;
+this package does not install those runtime DLLs.
 #>
 [CmdletBinding()]
 [OutputType([string], [pscustomobject])]

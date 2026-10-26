@@ -40,6 +40,12 @@ explicitly authorized by the plan are accepted.
 | Foundation/native scripts | Download/provisioning, invocation plans, native-process wrappers and packaged supervisor contracts |
 | Released-runtime integration | Pinned archive/install verification, profile/adapter/admission policy, released GGUF wrappers and server-help switching |
 
+The foundation script lane also runs the complete portable chat package lifecycle,
+tamper/path rejection and copied-launcher dependency checks. Its released GGUF
+setup runs `Get-Inference.ps1 -IncludeCapabilities`, validating the actual pinned
+runtime's model-free report through the checked maintenance tool. These checks
+do not establish publisher signing, actual-model behavior or device qualification.
+
 For example, `src/broker/**` runs only broker checks. A change to a shared Windows
 boundary crate also checks its broker/CLI consumers. A CLI change runs its own
 crate checks and app integration, without testing unrelated crate sources.

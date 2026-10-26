@@ -220,7 +220,8 @@ function Get-BonsaiCpuCompatibilityIdentity {
     if ($Capabilities['schema_version'] -isnot [int] -and $Capabilities['schema_version'] -isnot [long]) {
         throw 'CPU compatibility identity requires an integer host schema version.'
     }
-    if ($Capabilities['schema_version'] -ne 1 -or $Capabilities['kind'] -cne 'runner-host-capabilities') {
+    if ($Capabilities['schema_version'] -ne 1 -or $Capabilities['kind'] -isnot [string] -or
+        $Capabilities['kind'] -cne 'runner-host-capabilities') {
         throw 'CPU compatibility identity requires the version-one host capability projection.'
     }
     $result = [ordered]@{

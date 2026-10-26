@@ -120,8 +120,9 @@ authentication and daily isolation across every selected route.
 The [first H0 discovery and contract implementation](hardware-capabilities.md)
 is available: Doctor's versioned host facts, Prism's model-free runtime report,
 checked compatibility/evidence keys and explicit unknown/fallback vocabulary.
-Digest generation, reviewed prebuilt consumption and selector integration remain
-open. H1-H5 exits are pending. These are project hardware milestones, separate
+Scoped CPU observation digests and verified `0.1.3` prebuilt capability reporting
+are implemented. Accelerator identities, catalog admission and selector integration
+remain open. H1-H5 exits are pending. These are project hardware milestones, separate
 from the CPU MVP checklist and backend-specific S/G/N stages.
 
 | Stage | Deliverable and exit |

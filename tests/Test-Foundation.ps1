@@ -377,6 +377,11 @@ if ($Case -in @('All','Capabilities')) {
         $changed.schema_version = $schema
         Assert-Failure { Get-BonsaiCpuCompatibilityIdentity -Capabilities $changed } 'An unsupported CPU identity input schema was accepted.'
     }
+    foreach ($kind in @(@(), @('runner-host-capabilities'), 1, $null)) {
+        $changed = $knownJson | ConvertFrom-Json -AsHashtable -DateKind String
+        $changed.kind = $kind
+        Assert-Failure { Get-BonsaiCpuCompatibilityIdentity -Capabilities $changed } 'A non-string host capability kind produced an identity.'
+    }
     $missingIdentity = Get-BonsaiCpuCompatibilityIdentity -Capabilities $unknown
     Assert ($missingIdentity.status -ceq 'unknown' -and $null -eq $missingIdentity.capability_class_sha256) 'Missing observations became a CPU identity.'
     $facts.ProcessArchitecture = 'X64'

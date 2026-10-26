@@ -2,8 +2,8 @@
 
 The first H0 implementation supplies host inventory, model-free runtime
 inventory and checked profile/evidence structures. It does not select profiles.
-Released runtime provisioning still uses its existing immutable lock; the new
-Prism command requires a source build or a later reviewed prebuilt promotion.
+Released runtime provisioning uses its immutable `0.1.3` lock. The optional
+verified capability probe consumes that release without loading a model.
 
 ## Host inventory
 
@@ -44,6 +44,14 @@ package/version/compiler target, scalar support, the production NEON build
 eligibility predicate, exact supported graph identity suffixes and unavailable
 Vulkan/Hexagon backends. Its `qualification` is always `unqualified`.
 
+Use `./scripts/Get-Inference.ps1 -DataDirectory <absolute-path> -IncludeCapabilities`
+to provision the pinned release and run the bounded model-free probe. Add
+`-VerifyOnly` to require an existing installation. The result adds `Capabilities`
+and `CapabilityVerification`, with retained runtime file/archive identities and
+external diagnostic evidence. Verification guards remain held through process
+exit. The probe rejects a custom lock and checks the reported version and native
+target against the compiled release pin; it never establishes device qualification.
+
 The frozen wire example is identical in Prism's
 `tests/fixtures/runtime-capabilities-v1.json` and Runner's
 `src/cpu-policy/tests/fixtures/runtime-capabilities-v1.json`. Deliberate wire
@@ -81,7 +89,24 @@ cannot become a concrete target, graph or state identity. It binds:
 SHA-256 fields use exactly 64 lowercase hexadecimal digits; Git revisions use
 40. Capability-class records must exclude timestamps, tool paths and changing
 free-memory/power values. They must bind actual observed capabilities rather
-than a marketing family name. Digest generation and catalog admission are
+than a marketing family name.
+
+Doctor's `CpuCompatibilityIdentity` now retains canonical UTF-8 JSON strings
+and their lowercase SHA-256 digests. The exported
+`Get-BonsaiCpuCompatibilityIdentity -Capabilities $report.Capabilities` helper
+produces the same result without new probes. Its explicit scope is
+`native-windows-arm64-cpu-observations-v1`: the capability-class record binds
+native architecture, ordinally sorted CPU names/vendors/core counts and observed
+AdvSimd/dot-product flags; the CPU backend record binds OS version/build. Repeated
+processor entries retain their multiplicity. Changing live memory, timestamps,
+tool paths or accelerator inventory does not change these CPU digests.
+Missing, emulated or contradictory observations return `unknown-capability`
+and null records/digests. The result remains `unqualified`.
+
+These records identify retained observations for review. They do not establish
+complete topology, unobserved optional ISA, GPU/NPU features or accelerator
+driver compatibility. Runtime archive/source/target remain separate profile
+fields. Accelerator identity generation, catalog admission and selection remain
 future work; hashing the complete Doctor report is not a compatibility policy.
 
 `ProfileEvidence::from_json` binds the complete compatibility object to a

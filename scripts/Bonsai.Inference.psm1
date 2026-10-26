@@ -80,6 +80,45 @@ function Test-BonsaiInferenceDirectory {
     }
 }
 
+function Assert-BonsaiInferenceCapabilityReceipt {
+    <# .SYNOPSIS
+    Binds a trusted maintenance probe receipt to this checkout's installed release.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory)][Collections.IDictionary]$Lock,
+          [Parameter(Mandatory)][pscustomobject]$Installed,
+          [Parameter(Mandatory)][Collections.IDictionary]$Receipt,
+          [Parameter(Mandatory)][string]$DataDirectory)
+    $expected = [ordered]@{
+        Status = 'verified'; Commit = $Lock.commit; Version = $Lock.version; Target = $Lock.target
+        ArchiveSha256 = $Lock.asset.sha256; RuntimeVerification = 'verified-and-retained-through-exit'
+    }
+    foreach ($name in $expected.Keys) {
+        if ($Receipt[$name] -isnot [string] -or $Receipt[$name] -cne $expected[$name]) {
+            throw 'The maintenance capability receipt differs from the selected inference lock. Use a current tool build.'
+        }
+    }
+    $archive = Resolve-ExternalPath (Join-Path -Path $DataDirectory -ChildPath 'downloads' -AdditionalChildPath $Lock.asset.filename)
+    foreach ($pair in @(@('Executable', $Installed.Executable), @('ArchivePath', $archive))) {
+        if ($Receipt[$pair[0]] -isnot [string] -or
+            (Resolve-ExternalPath $Receipt[$pair[0]]) -ine $pair[1]) {
+            throw 'The maintenance capability receipt describes a different runtime location.'
+        }
+    }
+    $files = $Receipt['RuntimeFiles']
+    if ($files -isnot [array] -or $files.Count -ne $Lock.files.Count) { throw 'Capability receipt file inventory differs from the selected lock.' }
+    foreach ($file in $Lock.files) {
+        $path = Join-Path $Installed.Directory $file.name
+        $matchingFiles = @($files | Where-Object {
+            $_ -is [Collections.IDictionary] -and $_['Path'] -is [string] -and $_['Path'] -ieq $path -and
+            ($_['Bytes'] -is [int] -or $_['Bytes'] -is [long]) -and $_['Bytes'] -eq $file.bytes -and
+            $_['Sha256'] -is [string] -and $_['Sha256'] -ceq $file.sha256
+        })
+        if ($matchingFiles.Count -ne 1) { throw 'Capability receipt file inventory differs from the selected lock.' }
+    }
+}
+
 function Install-BonsaiInference {
     <# .SYNOPSIS
     Installs a pinned prebuilt release outside Git, without invoking Cargo.
@@ -146,4 +185,4 @@ function Install-BonsaiInference {
     return Test-BonsaiInferenceDirectory -Lock $lock -Directory $destination
 }
 
-Export-ModuleMember -Function Read-BonsaiInferenceLock, Test-BonsaiInferenceDirectory, Install-BonsaiInference
+Export-ModuleMember -Function Read-BonsaiInferenceLock, Test-BonsaiInferenceDirectory, Install-BonsaiInference, Assert-BonsaiInferenceCapabilityReceipt

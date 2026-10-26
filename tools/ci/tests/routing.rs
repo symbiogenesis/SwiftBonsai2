@@ -455,6 +455,36 @@ fn runner_ci_q4_lock_rebuilds_the_embedded_planner_and_tts() -> TestResult {
 }
 
 #[test]
+fn runner_ci_chat_packages_select_lifecycle_checks_and_standards() -> TestResult {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config: Value = serde_json::from_slice(&fs::read(root.join(".github/ci/impact.json"))?)?;
+    for path in [
+        "scripts/New-ChatPackage.ps1",
+        "scripts/Install-ChatPackage.ps1",
+        "scripts/Start-InstalledChat.ps1",
+        "scripts/Bonsai.ChatPackage.psm1",
+        "tests/Test-ChatPackage.ps1",
+    ] {
+        let plan = impact::select(&root, &[path.into()], false, &config, "chat packaging")?;
+        assert!(!plan.full, "{path}");
+        assert!(plan.packages.is_empty(), "{path}");
+        for group in [
+            "foundation_scripts",
+            "scripts",
+            "standards",
+            "tools",
+            "maintenance",
+        ] {
+            assert!(plan.groups[group], "{path}: {group}");
+        }
+        for group in ["broker", "ui", "speech", "release", "native_scripts"] {
+            assert!(!plan.groups[group], "{path}: {group}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn runner_ci_shared_changes_assign_every_package_to_exactly_one_lane() -> TestResult {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let config: Value = serde_json::from_slice(&fs::read(root.join(".github/ci/impact.json"))?)?;

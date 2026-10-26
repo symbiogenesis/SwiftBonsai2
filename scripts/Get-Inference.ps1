@@ -29,6 +29,7 @@ if ($IncludeCapabilities) {
     $discovery = Invoke-BonsaiTool -Command 'inference-capabilities' -ToolPath $ToolPath -Request @{
         schemaVersion = 1; dataDirectory = [IO.Path]::GetFullPath($DataDirectory)
     }
+    Assert-BonsaiInferenceCapabilityReceipt -Lock (Read-BonsaiInferenceLock) -Installed $installed -Receipt $discovery -DataDirectory $DataDirectory
     $installed | Add-Member -NotePropertyName Capabilities -NotePropertyValue $discovery.Capabilities
     $installed | Add-Member -NotePropertyName CapabilityVerification -NotePropertyValue $discovery
 }

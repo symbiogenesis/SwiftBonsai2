@@ -7,7 +7,8 @@ PQ2/PTQ1 operations use baseline NEON automatically; scalar remains the referenc
 and fallback. The pinned Swift chat/tokenizer, native sampler and experimental
 owned broker path are connected. **Bounded Swift full-model numerical parity
 and owned HTTP lifecycle have bounded source-level qualification;
-reviewed prebuilt consumption remains pending.** Pinned Prism remains the
+Runner consumes those repairs through its pinned `0.1.3` prebuilt release.**
+Released integration and per-device acceptance remain separate. Pinned Prism remains the
 comparison and fallback engine. The [active MVP checklist](prism-upstream-todo.md)
 defines the narrower Swift scope; the R0–R7 roadmap below covers broader work.
 

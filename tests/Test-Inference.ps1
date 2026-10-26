@@ -93,6 +93,22 @@ if ($Case -in @('All', 'Capabilities')) {
     Assert-Failure { & $script -DataDirectory $fixture.Root -LockPath $fixture.LockPath -IncludeCapabilities -VerifyOnly } 'Capability discovery accepted a caller-selected lock.'
     Assert-Failure { & $script -DataDirectory $fixture.Root -ToolPath (Join-Path $fixture.Root 'tool.exe') -VerifyOnly } 'Provisioning silently accepted an unused tool override.'
     Assert (-not [IO.Directory]::Exists((Join-Path $fixture.Root 'inference'))) 'Rejected capability options installed or executed a runtime.'
+    $installed = Install-BonsaiInference -DataDirectory $fixture.Root -LockPath $fixture.LockPath
+    $receipt = @{
+        Status = 'verified'; Commit = $fixture.Lock.commit; Version = $fixture.Lock.version; Target = $fixture.Lock.target
+        ArchiveSha256 = $fixture.Lock.asset.sha256; RuntimeVerification = 'verified-and-retained-through-exit'
+        Executable = $installed.Executable; ArchivePath = Join-Path $fixture.Root ('downloads/' + $fixture.Lock.asset.filename)
+        RuntimeFiles = @($fixture.Lock.files | ForEach-Object { @{ Path = Join-Path $installed.Directory $_.name; Bytes = [long]$_.bytes; Sha256 = $_.sha256 } })
+    }
+    Assert-BonsaiInferenceCapabilityReceipt -Lock $fixture.Lock -Installed $installed -Receipt $receipt -DataDirectory $fixture.Root
+    foreach ($field in @('Status', 'Commit', 'Version', 'Target', 'ArchiveSha256', 'Executable', 'ArchivePath', 'RuntimeVerification', 'RuntimeFiles')) {
+        $changed = $receipt | ConvertTo-Json -Depth 8 | ConvertFrom-Json -AsHashtable -DateKind String
+        $changed[$field] = if ($field -ceq 'RuntimeFiles') { @() } else { 'stale-tool-receipt' }
+        Assert-Failure { Assert-BonsaiInferenceCapabilityReceipt -Lock $fixture.Lock -Installed $installed -Receipt $changed -DataDirectory $fixture.Root } "A stale maintenance $field receipt was attached to the selected release."
+    }
+    $changed = $receipt | ConvertTo-Json -Depth 8 | ConvertFrom-Json -AsHashtable -DateKind String
+    $changed.RuntimeFiles[0].Sha256 = '0' * 64
+    Assert-Failure { Assert-BonsaiInferenceCapabilityReceipt -Lock $fixture.Lock -Installed $installed -Receipt $changed -DataDirectory $fixture.Root } 'A mismatched receipt file hash was accepted.'
 }
 if ($Case -in @('All', 'ReleaseLock')) {
     $fixture = New-InferenceFixture -Name 'release-lock' -Entries ($names + @('bonsai-gguf.exe', 'LICENSE', 'NOTICE', 'PRISM-LICENSE.txt', 'CAMELID-LICENSE.txt'))

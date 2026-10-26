@@ -29,6 +29,10 @@ isolation or same-user backend bypass prevention.
 
 ## Native chat app
 
+For reviewed prebuilt application files, the [portable package workflow](chat-packages.md)
+provides versioned installation, explicit update/rollback and launch without a
+checkout or compiler. The source-build path follows below.
+
 Use native Windows ARM64 PowerShell 7.6+, the pinned Rust toolchain, an existing
 Swift PQ2 model/runtime installation and at least **16 GiB of available RAM**.
 For a new installation, provision the model/runtime with Swift's assessment lock
@@ -601,6 +605,13 @@ that release. For GGUF commands using a custom data directory, set
 `BONSAI_DATA_DIRECTORY` to the same absolute path, or supply `-GgufToolPath`.
 The crates.io packages provide the Rust source distribution;
 ordinary `cargo install` compiles that source.
+
+Add `-IncludeCapabilities` to `Get-Inference.ps1` for a bounded model-free probe
+of the verified release. It checks the reported version/native target and the
+shared H0 schema, retains archive/file guards through exit and returns external
+verification evidence. This optional probe uses `bonsai-tools`; supply `-ToolPath`
+or a trusted `BONSAI_TOOLS_PATH` to avoid building the maintenance tool. See the
+[capability contract](hardware-capabilities.md#runtime-inventory).
 
 Run the broker from an external native working directory as above. The
 selection requires the original pinned Swift model and verified Prism Inference

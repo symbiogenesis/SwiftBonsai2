@@ -31,6 +31,9 @@ if ($Case -cin @('All', 'Lifecycle')) {
     $initial = [IO.File]::ReadAllText($pointerPath)
     [void](Set-ChatPackage -InstallationDirectory $root -PackageDirectory $first.Directory -ManifestSha256 $first.ManifestSha256)
     Assert ([IO.File]::ReadAllText($pointerPath) -ceq $initial) 'Idempotent install changed rollback state.'
+    $uppercase = Set-ChatPackage -InstallationDirectory $root -PackageDirectory $first.Directory -ManifestSha256 $first.ManifestSha256.ToUpperInvariant()
+    Assert ($uppercase.Id -ceq $first.Id -and (Get-InstalledChatPackage -InstallationDirectory $root).Id -ceq $first.Id -and
+        [IO.File]::ReadAllText($pointerPath) -ceq $initial) 'Uppercase manifest hex created an unreadable selection or changed rollback state.'
     Assert-Failure { Set-ChatPackage -InstallationDirectory $root -Rollback } 'First install had an invented previous version.'
     $second = New-ChatPackage -OutputDirectory (Join-Path $scratch 'package-two') -Version '0.2.0' -SourceRevision ('b' * 40) -Binary $binary -ThirdPartyNoticePath $notices
     [void](Set-ChatPackage -InstallationDirectory $root -PackageDirectory $second.Directory -ManifestSha256 $second.ManifestSha256)

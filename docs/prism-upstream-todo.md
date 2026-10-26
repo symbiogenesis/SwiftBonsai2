@@ -7,9 +7,10 @@ behavior required for that path. Broader runtime work is deferred.
 Runtime implementation belongs to
 [Prism Inference](https://github.com/symbiogenesis/prism-inference). The bounded
 source CPU MVP is implemented and qualified for its limited workloads. Runner
-still provisions release `0.1.1`; delivering the source repairs requires a
-reviewed prebuilt release and [lock update](development-guide.md#prepare-a-runtime-lock-update).
-Source qualification does not qualify that provisioned release, full-context
+provisions the reviewed `0.1.3` prebuilt release containing those repairs through
+its [immutable lock](../config/prism-inference.lock.json). Future promotions use
+the [lock-update procedure](development-guide.md#prepare-a-runtime-lock-update).
+Source qualification and release identity checks do not qualify full-context
 generation, performance, creative quality or daily-service isolation.
 
 The [native Rust chat UI](ui-architecture.md) separately consumes the broker's
@@ -55,10 +56,20 @@ their existing requirements.
 
 ## Remaining Runner delivery
 
-- Review the exact source revision, required validation and immutable ARM64
-  bundle before preparing a release-lock candidate.
-- Promote only the checked released bytes through the runtime lock-update
-  procedure, then validate Runner's released-runtime integration.
+The `0.1.3` receipt identifies source revision
+`f3b0a1bf28d81d7e420161d11100e635d9d4cf5e` and successful
+[Foundation run 40278541900](https://github.com/symbiogenesis/prism-inference/actions/runs/40278541900).
+The offline release review reproduced the checked-in lock from the released
+bundle, receipt and exact source archive. Runner's verified model-free probe
+also accepts that release's capability report. This is release identity and
+integration evidence. The separate
+[full runtime-conformance run 40278541862](https://github.com/symbiogenesis/prism-inference/actions/runs/40278541862)
+failed a deferred DSpark session/lifetime timeout; complete conformance remains
+unqualified.
+
+- Keep reviewing the exact source revision, required validation and immutable
+  ARM64 bundle for every future release-lock candidate. Release `0.1.3` is pinned;
+  retain Runner's released-runtime integration checks on each settled revision.
 - Preserve the production 16 GiB available-memory admission, 12 GiB Job commit
   limit and 4 GiB physical reserve. Temporary diagnostic settings are not
   supported launch profiles.

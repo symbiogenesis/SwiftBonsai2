@@ -54,6 +54,9 @@ function Get-CheckedChatPackage {
     [OutputType([pscustomobject])]
     param([Parameter(Mandatory)][string]$PackageDirectory,
           [Parameter(Mandatory)][ValidatePattern('^[a-f0-9]{64}$')][string]$ManifestSha256)
+    # PowerShell pattern attributes accept uppercase hex too. Canonicalize
+    # before deriving a directory or pointer identity so it remains readable.
+    $ManifestSha256 = $ManifestSha256.ToLowerInvariant()
     $directory = Resolve-ExternalPath $PackageDirectory
     $manifestPath = Resolve-ExternalPath (Join-Path $directory 'package.json')
     $info = Get-Item -LiteralPath $manifestPath
