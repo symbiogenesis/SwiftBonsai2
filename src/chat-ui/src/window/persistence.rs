@@ -51,14 +51,14 @@ impl State {
                         "Conversations restored. Completed turns are ready to continue."
                             .clone_into(&mut self.recovery_notice);
                     } else {
-                        "Saved conversations could not be restored. The existing file is preserved. Enable saving to replace it with this workspace.".clone_into(&mut self.recovery_notice);
+                        "Could not restore saved conversations. The existing file is preserved. Enable saving to replace it with this workspace.".clone_into(&mut self.recovery_notice);
                     }
                 } else if opened.load_failed {
-                    "Saved conversations could not be unlocked. The existing file is preserved. Enable saving to replace it with this workspace.".clone_into(&mut self.recovery_notice);
+                    "Could not unlock saved conversations. The existing file is preserved. Enable saving to replace it with this workspace.".clone_into(&mut self.recovery_notice);
                 }
             }
             Err(_) => {
-                "Conversation saving is unavailable. Another window may be using this data folder, or the folder is not writable.".clone_into(&mut self.recovery_notice);
+                "Could not open conversation saving. Another window may be using this data folder, or the folder is not writable.".clone_into(&mut self.recovery_notice);
             }
         }
     }
@@ -147,21 +147,24 @@ impl State {
     pub(super) fn poll_recovery(&mut self) {
         if let Some(recovery) = &self.recovery {
             while let Ok(event) = recovery.events.try_recv() {
+                if !recovery.is_current(&event) {
+                    continue;
+                }
                 match event {
-                    crate::recovery::Event::Saved if self.save_conversations => {
+                    crate::recovery::Event::Saved(_) if self.save_conversations => {
                         "Saved on this device with Windows user encryption."
                             .clone_into(&mut self.recovery_notice);
                     }
-                    crate::recovery::Event::Erased => {
+                    crate::recovery::Event::Erased(_) if !self.save_conversations => {
                         self.recovery_erase_pending = false;
                         "Saving is off. The saved workspace has been removed."
                             .clone_into(&mut self.recovery_notice);
                     }
-                    crate::recovery::Event::Failed => {
+                    crate::recovery::Event::Failed(_) => {
                         "Could not update saved conversations. Check available disk space and folder access; unsaved work remains in this window.".clone_into(&mut self.recovery_notice);
                         self.recovery_dirty = self.save_conversations;
                     }
-                    crate::recovery::Event::Saved => {}
+                    crate::recovery::Event::Saved(_) | crate::recovery::Event::Erased(_) => {}
                 }
             }
         }
@@ -180,7 +183,9 @@ impl State {
                         self.recovery_dirty = !recovery.save(bytes);
                     }
                 }
-                Err(error) => self.recovery_notice = error.to_string(),
+                Err(error) => {
+                    self.recovery_notice = format!("Could not save conversations: {error}")
+                }
             }
         }
     }
@@ -281,6 +286,55 @@ mod tests {
                 .restore_workspace(&serde_json::to_vec(&invalid).map_err(io::Error::other)?)
                 .is_err()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn recovery_rapid_toggles_ignore_stale_erase_and_save_acknowledgments() -> io::Result<()> {
+        let mut state = state();
+        let (store, controlled) = crate::recovery::Recovery::controlled();
+        state.recovery = Some(store);
+        state.recovery_erase_pending = true;
+        state.last_recovery_save = Instant::now()
+            .checked_sub(Duration::from_secs(3))
+            .unwrap_or_else(Instant::now);
+        state.poll_recovery();
+        let first_erase = controlled.next_completion()?;
+        assert!(matches!(first_erase, crate::recovery::Event::Erased(_)));
+
+        // Enable saving while the first deletion's acknowledgment is delayed.
+        state.save_conversations = true;
+        state.recovery_erase_pending = false;
+        state.recovery_dirty = true;
+        state.last_recovery_save = Instant::now()
+            .checked_sub(Duration::from_secs(3))
+            .unwrap_or_else(Instant::now);
+        state.poll_recovery();
+        let later_save = controlled.next_completion()?;
+        assert!(matches!(later_save, crate::recovery::Event::Saved(_)));
+
+        // Disable again before that queued save completes. The old erase must
+        // not clear the new deletion intention, even during window shutdown.
+        state.save_conversations = false;
+        state.recovery_erase_pending = true;
+        controlled.complete(first_erase)?;
+        state.poll_recovery();
+        assert!(state.recovery_erase_pending);
+        state.last_recovery_save = Instant::now()
+            .checked_sub(Duration::from_secs(3))
+            .unwrap_or_else(Instant::now);
+        state.poll_recovery();
+        let final_erase = controlled.next_completion()?;
+        assert!(matches!(final_erase, crate::recovery::Event::Erased(_)));
+        controlled.complete(later_save)?;
+        state.poll_recovery();
+        assert!(state.recovery_erase_pending);
+        controlled.complete(final_erase)?;
+        state.poll_recovery();
+        assert!(!state.recovery_erase_pending);
+        assert!(!state.save_conversations);
+        assert!(state.recovery_notice.contains("removed"));
+        drop(controlled);
         Ok(())
     }
 }

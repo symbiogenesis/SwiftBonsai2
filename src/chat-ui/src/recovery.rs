@@ -4,6 +4,7 @@
     reason = "Keep the private persistence worker visible only within the native application."
 )]
 use std::{
+    cell::Cell,
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
@@ -15,21 +16,22 @@ const MAX_BYTES: usize = 8 * 1024 * 1024;
 const MAX_SEALED: u64 = 8 * 1024 * 1024 + 65_536;
 
 enum Command {
-    Save(Vec<u8>),
-    Erase,
+    Save(u64, Vec<u8>),
+    Erase(u64),
     Shutdown,
 }
 
 pub(crate) enum Event {
-    Saved,
-    Erased,
-    Failed,
+    Saved(u64),
+    Erased(u64),
+    Failed(u64),
 }
 
 pub(crate) struct Recovery {
     commands: SyncSender<Command>,
     pub(crate) events: Receiver<Event>,
     worker: Option<JoinHandle<()>>,
+    operation: Cell<u64>,
 }
 
 pub(crate) struct Opened {
@@ -65,18 +67,18 @@ impl Recovery {
                 let _lock = lock;
                 while let Ok(command) = incoming.recv() {
                     let event = match command {
-                        Command::Save(bytes) => {
+                        Command::Save(operation, bytes) => {
                             if save(&path, &bytes).is_ok() {
-                                Event::Saved
+                                Event::Saved(operation)
                             } else {
-                                Event::Failed
+                                Event::Failed(operation)
                             }
                         }
-                        Command::Erase => {
+                        Command::Erase(operation) => {
                             if erase(&path).is_ok() {
-                                Event::Erased
+                                Event::Erased(operation)
                             } else {
-                                Event::Failed
+                                Event::Failed(operation)
                             }
                         }
                         Command::Shutdown => break,
@@ -91,6 +93,7 @@ impl Recovery {
                 commands,
                 events: outgoing,
                 worker: Some(worker),
+                operation: Cell::new(0),
             },
             saved,
             load_failed,
@@ -103,26 +106,98 @@ impl Recovery {
         if bytes.is_empty() || bytes.len() > MAX_BYTES {
             return false;
         }
-        self.commands.try_send(Command::Save(bytes)).is_ok()
+        let operation = self.operation.get().saturating_add(1);
+        if self
+            .commands
+            .try_send(Command::Save(operation, bytes))
+            .is_ok()
+        {
+            self.operation.set(operation);
+            true
+        } else {
+            false
+        }
     }
 
     pub(crate) fn erase(&self) -> bool {
-        match self.commands.try_send(Command::Erase) {
-            Ok(()) => true,
+        let operation = self.operation.get().saturating_add(1);
+        match self.commands.try_send(Command::Erase(operation)) {
+            Ok(()) => {
+                self.operation.set(operation);
+                true
+            }
             Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => false,
         }
+    }
+
+    /// Stale acknowledgments cannot clear a newer save/erase intention.
+    pub(crate) fn is_current(&self, event: &Event) -> bool {
+        let operation = match event {
+            Event::Saved(operation) | Event::Erased(operation) | Event::Failed(operation) => {
+                *operation
+            }
+        };
+        operation == self.operation.get()
     }
 
     /// Flushes the last snapshot during window shutdown, preserving ordering
     /// with an erase or save that is already in progress.
     pub(crate) fn finish(&self, bytes: Option<Vec<u8>>) {
         if let Some(bytes) = bytes.filter(|bytes| !bytes.is_empty() && bytes.len() <= MAX_BYTES) {
-            let _sent = self.commands.send(Command::Save(bytes));
+            let operation = self.operation.get().saturating_add(1);
+            if self.commands.send(Command::Save(operation, bytes)).is_ok() {
+                self.operation.set(operation);
+            }
         }
     }
 
     pub(crate) fn finish_erase(&self) {
-        let _sent = self.commands.send(Command::Erase);
+        let operation = self.operation.get().saturating_add(1);
+        if self.commands.send(Command::Erase(operation)).is_ok() {
+            self.operation.set(operation);
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct ControlledRecovery {
+    incoming: Receiver<Command>,
+    events: mpsc::Sender<Event>,
+}
+
+#[cfg(test)]
+impl ControlledRecovery {
+    pub(crate) fn next_completion(&self) -> io::Result<Event> {
+        match self
+            .incoming
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(io::Error::other)?
+        {
+            Command::Save(operation, _) => Ok(Event::Saved(operation)),
+            Command::Erase(operation) => Ok(Event::Erased(operation)),
+            Command::Shutdown => Err(io::Error::other("No recovery operation.")),
+        }
+    }
+
+    pub(crate) fn complete(&self, event: Event) -> io::Result<()> {
+        self.events.send(event).map_err(io::Error::other)
+    }
+}
+
+#[cfg(test)]
+impl Recovery {
+    pub(crate) fn controlled() -> (Self, ControlledRecovery) {
+        let (commands, incoming) = mpsc::sync_channel(1);
+        let (events, outgoing) = mpsc::channel();
+        (
+            Self {
+                commands,
+                events: outgoing,
+                worker: None,
+                operation: Cell::new(0),
+            },
+            ControlledRecovery { incoming, events },
+        )
     }
 }
 
@@ -226,23 +301,44 @@ mod tests {
         assert!(store.save(text.clone()));
         assert!(matches!(
             store.events.recv_timeout(std::time::Duration::from_secs(5)),
-            Ok(Event::Saved)
+            Ok(Event::Saved(_))
         ));
         assert_eq!(read(&path)?, Some(text));
         let replacement = b"Revised draft".to_vec();
         store.finish(Some(replacement.clone()));
         assert!(matches!(
             store.events.recv_timeout(std::time::Duration::from_secs(5)),
-            Ok(Event::Saved)
+            Ok(Event::Saved(_))
         ));
         assert_eq!(read(&path)?, Some(replacement));
         assert!(store.erase());
         assert!(matches!(
             store.events.recv_timeout(std::time::Duration::from_secs(5)),
-            Ok(Event::Erased)
+            Ok(Event::Erased(_))
         ));
         assert!(!path.exists());
         drop(store);
+        fs::remove_file(directory.join("chat-recovery.lock"))?;
+        fs::remove_dir(directory)?;
+        Ok(())
+    }
+
+    #[test]
+    fn encrypted_recovery_finishes_erase_after_queued_saves() -> io::Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("Bonsai-recovery-order-{stamp}"));
+        fs::create_dir(&directory)?;
+        let opened = Recovery::open(&directory)?;
+        let store = opened.store;
+        store.finish(Some(b"First saved draft".to_vec()));
+        store.finish_erase();
+        store.finish(Some(b"Newer queued saved draft".to_vec()));
+        store.finish_erase();
+        drop(store);
+        assert!(!directory.join("chat-recovery.dpapi").exists());
         fs::remove_file(directory.join("chat-recovery.lock"))?;
         fs::remove_dir(directory)?;
         Ok(())
