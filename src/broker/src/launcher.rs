@@ -41,7 +41,7 @@ pub const LAUNCH_USAGE: &str = concat!(
     "  --frontend-port <0-or-1024..65535> --backend-port <1024..65535>\n",
     "  [--profile <reference-cpu|swift-pq2-assessment>]\n",
     "  [--native-engine] (requires the pinned Prism inference release and swift-pq2-assessment)\n",
-    "  [--use-abliterate-lora] (pinned scale-one adapter; Swift Prism CPU server only)\n",
+    "  [--use-abliterate-lora] (pinned adapter; request scale 0..2, default 1.3; Swift Prism CPU server only)\n",
     "  [--max-waiting <0..8>] [--check-only]\n",
     "Default: reference-cpu. Only compiled model/runtime pins and fixed CPU policies are accepted.\n",
     "Swift selects original PQ2 weights; the demo requests its pinned LoRA by default. Daily use remains unqualified.\n",
@@ -407,6 +407,9 @@ impl LaunchConfig {
         .await
         .map_err(|_| LaunchError::Service)?;
         service.require_backend_process(process.id());
+        if adapter.is_some() {
+            service.enable_pinned_abliteration();
+        }
         Ok(LaunchedService {
             service,
             process,

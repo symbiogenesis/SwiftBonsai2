@@ -118,6 +118,7 @@ pub struct RequestPolicy {
     authority: String,
     origin: String,
     authorization: [u8; 71], // "Bearer " + 64 lowercase hex characters
+    pinned_abliteration: bool,
 }
 
 impl RequestPolicy {
@@ -138,6 +139,7 @@ impl RequestPolicy {
             origin: format!("http://{authority}"),
             authority,
             authorization,
+            pinned_abliteration: false,
         })
     }
 
@@ -223,7 +225,10 @@ impl RequestPolicy {
         if length == 0 || length > MAX_BODY_BYTES {
             return Err(Rejection::BodySize);
         }
-        Ok(AuthorizedHead { length })
+        Ok(AuthorizedHead {
+            length,
+            pinned_abliteration: self.pinned_abliteration,
+        })
     }
 }
 
@@ -239,6 +244,7 @@ fn singleton<'a>(headers: &'a HeaderMap, name: &str) -> Result<Option<&'a [u8]>,
 /// Constructed only by successful head validation; does not retain the key.
 pub struct AuthorizedHead {
     length: usize,
+    pinned_abliteration: bool,
 }
 
 impl AuthorizedHead {
@@ -261,11 +267,21 @@ impl AuthorizedHead {
         if !(1..=MAX_COMPLETION_TOKENS).contains(&chat.max_completion_tokens) {
             return Err(Rejection::CompletionLimit);
         }
+        if chat.abliteration_scale.is_some() && !self.pinned_abliteration {
+            return Err(Rejection::ChatSchema);
+        }
+        let lora = self.pinned_abliteration.then(|| {
+            [PinnedLora {
+                id: 0,
+                scale: chat.abliteration_scale.unwrap_or(1.3),
+            }]
+        });
         let max_completion_tokens = chat.max_completion_tokens;
         let body = serde_json::to_vec(&BackendChat {
             messages: &chat.messages,
             max_completion_tokens,
             stream: chat.stream,
+            lora,
             n: 1,
             cache_prompt: false,
             n_cache_reuse: 0,
@@ -308,6 +324,20 @@ struct ClientChat<'a> {
     max_completion_tokens: u32,
     #[serde(default = "default_stream")]
     stream: bool,
+    #[serde(default, deserialize_with = "deserialize_abliteration_scale")]
+    abliteration_scale: Option<f64>,
+}
+
+fn deserialize_abliteration_scale<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<f64>, D::Error> {
+    // Deserialize the number directly so an explicit null cannot mean omission.
+    // Validate before any narrower representation can round an excess to 2.0.
+    let scale = f64::deserialize(deserializer)?;
+    if !scale.is_finite() || !(0.0..=2.0).contains(&scale) {
+        return Err(de::Error::custom("unsupported abliteration scale"));
+    }
+    Ok(Some(scale))
 }
 
 const fn default_cap() -> u32 {
@@ -600,6 +630,8 @@ struct BackendChat<'a, 'b> {
     messages: &'a [Message<'b>],
     max_completion_tokens: u32,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lora: Option<[PinnedLora; 1]>,
     n: u8,
     cache_prompt: bool,
     n_cache_reuse: u8,
@@ -615,11 +647,20 @@ struct BackendChat<'a, 'b> {
 }
 
 #[derive(Serialize)]
+struct PinnedLora {
+    id: u8,
+    scale: f64,
+}
+
+#[derive(Serialize)]
 struct ChatTemplateKwargs {
     enable_thinking: bool,
     reasoning_effort: &'static str,
     preserve_thinking: bool,
 }
+
+#[cfg(test)]
+mod abliteration_tests;
 
 #[cfg(test)]
 mod tests {

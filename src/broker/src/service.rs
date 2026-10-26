@@ -135,6 +135,12 @@ impl LocalChatService {
         self.backend.require_process(process_id);
     }
 
+    /// Only the owned launcher can enable the already verified pinned adapter.
+    #[cfg(windows)]
+    pub(crate) const fn enable_pinned_abliteration(&mut self) {
+        self.policy.pinned_abliteration = true;
+    }
+
     /// Stop admission and wake queued, accepting and active operations.
     ///
     /// Polling operations observe closure and drop their owned streams. No
