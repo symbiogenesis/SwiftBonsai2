@@ -10,6 +10,8 @@ description = "Bounded development chat transport and request supervision for th
 [features]
 # Compatibility marker; native inference always uses the pinned external server.
 native-swift = []
+# Qualification only; ordinary request parsing remains on serde_json.
+json-candidate = ["dep:simd-json"]
 
 [[bin]]
 name = "bonsai-broker"
@@ -24,6 +26,7 @@ http = "=1.5.0"
 httparse = "=1.10.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+simd-json = { path = "../../third_party/simd-json", version = "=0.18.1", optional = true }
 sha2.workspace = true
 subtle = "=2.6.1"
 tokio = { workspace = true, features = ["io-util", "net", "rt", "signal", "sync", "time"] }

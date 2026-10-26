@@ -1,0 +1,3 @@
+[submodule "third_party/simd-json"]
+	path = third_party/simd-json
+	url = https://github.com/simd-lite/simd-json.git

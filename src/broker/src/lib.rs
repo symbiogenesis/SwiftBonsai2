@@ -30,6 +30,9 @@ pub mod supervisor;
 pub mod transport;
 mod wire;
 
+#[cfg(all(test, feature = "json-candidate"))]
+mod json_candidate;
+
 use http::{HeaderMap, HeaderValue, Method, Version, request::Parts, uri::PathAndQuery};
 use serde::{Deserialize, Deserializer, Serialize, de};
 use std::{borrow::Cow, fmt, marker::PhantomData};
@@ -254,13 +257,45 @@ impl AuthorizedHead {
     /// Returns [`Rejection`] for a mismatched or oversized canonical body, invalid
     /// schema, unsupported message history, completion limit or serialization failure.
     pub fn prepare(self, body: &[u8]) -> Result<PendingChat, Rejection> {
-        if body.len() != self.length || body.len() > MAX_BODY_BYTES {
-            return Err(Rejection::BodySize);
-        }
+        self.check_body_size(body)?;
         // Deserialize directly: maps/Value would silently erase duplicate keys.
         // Parser error strings can include private values; never propagate them.
         let Object(chat): Object<ClientChat<'_>> =
             serde_json::from_slice(body).map_err(|_| Rejection::ChatSchema)?;
+        self.prepare_chat(&chat)
+    }
+
+    /// Qualify the pinned SIMD-JSON candidate against ordinary request parsing.
+    ///
+    /// Copies the bounded immutable body because SIMD-JSON parses in place.
+    /// Schema, history, settings and canonical serialization use the production
+    /// policy. No service route selects this experimental parser.
+    ///
+    /// # Errors
+    /// Returns the same value-free rejections as [`Self::prepare`]. Allocation
+    /// and parser failures return [`Rejection::ChatSchema`].
+    #[cfg(feature = "json-candidate")]
+    pub fn prepare_simd_json(self, body: &[u8]) -> Result<PendingChat, Rejection> {
+        self.check_body_size(body)?;
+        let mut mutable = Vec::new();
+        mutable
+            .try_reserve_exact(body.len())
+            .map_err(|_| Rejection::ChatSchema)?;
+        mutable.extend_from_slice(body);
+        let Object(chat): Object<ClientChat<'_>> =
+            simd_json::serde::from_slice(&mut mutable).map_err(|_| Rejection::ChatSchema)?;
+        self.prepare_chat(&chat)
+    }
+
+    const fn check_body_size(&self, body: &[u8]) -> Result<(), Rejection> {
+        if body.len() != self.length || body.len() > MAX_BODY_BYTES {
+            Err(Rejection::BodySize)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn prepare_chat(self, chat: &ClientChat<'_>) -> Result<PendingChat, Rejection> {
         if !valid_history(&chat.messages) {
             return Err(Rejection::ChatSchema);
         }

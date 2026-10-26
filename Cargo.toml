@@ -1,5 +1,6 @@
 [workspace]
 resolver = "3"
+exclude = ["third_party/simd-json"]
 members = [
     "src/broker",
     "src/chat-ui",

@@ -36,7 +36,15 @@ fn head(size: usize) -> Parts {
 }
 
 fn prepare(body: &[u8]) -> Result<PendingChat, Rejection> {
-    policy().check_head(&head(body.len()))?.prepare(body)
+    let authorized = policy().check_head(&head(body.len()))?;
+    #[cfg(feature = "json-candidate")]
+    {
+        authorized.prepare_simd_json(body)
+    }
+    #[cfg(not(feature = "json-candidate"))]
+    {
+        authorized.prepare(body)
+    }
 }
 
 fn rejected_head(parts: &Parts, expected: Rejection) {
