@@ -337,30 +337,7 @@ mod tests {
             enabled.extend([OsString::from(key_flag), key.clone().into_os_string()]);
             let config = configuration(enabled.clone()).map_err(io::Error::other)?;
             if key_flag == "--tts-key-file" {
-                let mut tuned = enabled.clone();
-                tuned.extend([
-                    OsString::from("--tts-quantization"),
-                    OsString::from("Q4_K_M"),
-                    OsString::from("--tts-threads"),
-                    OsString::from("10"),
-                ]);
-                let tuned = configuration(tuned).map_err(io::Error::other)?;
-                let launch = tuned
-                    .qwen_tts
-                    .and_then(|config| config.launch)
-                    .ok_or_else(|| io::Error::other("Missing owned TTS configuration"))?;
-                assert_eq!(launch.quantization.as_deref(), Some("Q4_K_M"));
-                assert_eq!(launch.threads, Some(10));
-                for (flag, value) in [
-                    ("--tts-threads", "0"),
-                    ("--tts-threads", "257"),
-                    ("--tts-threads", "-1"),
-                    ("--tts-quantization", "Q2_K"),
-                ] {
-                    let mut invalid = enabled.clone();
-                    invalid.extend([OsString::from(flag), OsString::from(value)]);
-                    assert!(configuration(invalid).is_err());
-                }
+                assert_tts_tuning(&enabled)?;
             }
             assert!(
                 config
@@ -401,6 +378,34 @@ mod tests {
             fs::remove_file(path)?;
         }
         fs::remove_dir(directory)?;
+        Ok(())
+    }
+
+    fn assert_tts_tuning(enabled: &[OsString]) -> io::Result<()> {
+        let mut tuned = enabled.to_vec();
+        tuned.extend([
+            OsString::from("--tts-quantization"),
+            OsString::from("Q4_K_M"),
+            OsString::from("--tts-threads"),
+            OsString::from("10"),
+        ]);
+        let tuned = configuration(tuned).map_err(io::Error::other)?;
+        let launch = tuned
+            .qwen_tts
+            .and_then(|config| config.launch)
+            .ok_or_else(|| io::Error::other("Missing owned TTS configuration"))?;
+        assert_eq!(launch.quantization.as_deref(), Some("Q4_K_M"));
+        assert_eq!(launch.threads, Some(10));
+        for (flag, value) in [
+            ("--tts-threads", "0"),
+            ("--tts-threads", "257"),
+            ("--tts-threads", "-1"),
+            ("--tts-quantization", "Q2_K"),
+        ] {
+            let mut invalid = enabled.to_vec();
+            invalid.extend([OsString::from(flag), OsString::from(value)]);
+            assert!(configuration(invalid).is_err());
+        }
         Ok(())
     }
     #[test]
