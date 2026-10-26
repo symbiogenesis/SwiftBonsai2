@@ -144,7 +144,10 @@ The UI owns speech through separate Windows Jobs. Canary loads only after an
 explicitly enabled and permitted microphone captures its first clip, stays warm
 for that enabled generation, and stops on input cancellation. Read Aloud releases
 Canary before loading Qwen; transcription releases Qwen first. Output uses
-sequential 256-character segments and releases its process after reading. Both
+sequential 256-character synthesis requests with bounded streaming playback and
+prefetch while earlier audio plays. After successful reading, its owned process
+stays warm for at most 30 idle seconds, retaining resource monitoring. Stop,
+failure, microphone transcription and shutdown release it immediately. Both
 services require 9 GiB available at startup and use an independent 5 GiB physical
 reserve with a 16 GiB commit ceiling. Speech failure preserves text chat and the
 completed answer. Swift's existing admission and running reserve remain unchanged.
@@ -175,8 +178,10 @@ Read-aloud uses the separate, authenticated local
 no preset, speaker file or reference recording is required. It applies to the
 next explicit read-aloud request. Only visible assistant answers are synthesized,
 as plain text; reasoning is excluded. Long answers are split into bounded text
-segments and synthesized/played sequentially with the same description. Stop
-speech cancels synthesis and native WAV playback. Missing/not-ready TTS prevents
+segments and synthesized sequentially with the same description. Native PCM
+playback overlaps synthesis through a bounded queue; older independently managed
+companions retain complete-WAV playback. Stop speech cancels synthesis and native
+audio playback. Missing/not-ready TTS prevents
 output independently of Canary input, with no Windows-voice fallback. Idle
 speech controls remain visible and show native setup/prerequisite guidance when
 selected; a missing service never activates the microphone or substitutes output. Images,

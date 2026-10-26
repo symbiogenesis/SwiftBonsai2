@@ -43,7 +43,7 @@ Export-ModuleMember -Function Invoke-BonsaiNativeProcess
 [IO.File]::WriteAllText((Join-Path $scripts 'Bonsai.Native.psm1'), $capture.Replace('__RECEIPT__', $receipt.Replace("'", "''")))
 $download = @'
 [CmdletBinding()]
-param([string]$DataDirectory)
+param([string]$DataDirectory, [string]$TtsQuantization = 'Q8_0')
 [IO.File]::WriteAllText((Join-Path $DataDirectory 'download-called'), '')
 [pscustomobject]@{ CanaryModelPath = 'canary.gguf'; TtsModelPath = 'talker.gguf'; TtsCodecPath = 'codec.gguf'; TotalBytes = 1 }
 '@
@@ -87,6 +87,12 @@ if ($Case -cin @('All', 'Launcher')) {
     }
     Assert (-not ($arguments | Where-Object { $_ -match 'python|\.py$' })) 'Native launch retained a Python dependency.'
     Assert ([IO.File]::ReadAllText((Join-Path $data 'native-build-called')) -ceq 'All') 'Ordinary launch did not build both native engines.'
+    & $copy @launch -TtsQuantization Q4_K_M -TtsThreads 10 | Out-Null
+    $tuned = @((Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json).Arguments)
+    $quantizationAt = [Array]::IndexOf($tuned, '--tts-quantization')
+    $threadsAt = [Array]::IndexOf($tuned, '--tts-threads')
+    Assert ($quantizationAt -ge 0 -and $tuned[$quantizationAt + 1] -ceq 'Q4_K_M' -and
+        $threadsAt -ge 0 -and $tuned[$threadsAt + 1] -ceq '10') 'Owned TTS lost its explicit profile or thread budget.'
     $external = Join-Path $data 'external.key'
     [IO.File]::WriteAllText($external, ('b' * 64))
     [IO.File]::Delete((Join-Path $data 'native-build-called'))

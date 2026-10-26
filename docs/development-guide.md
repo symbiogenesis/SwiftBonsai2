@@ -189,11 +189,35 @@ the service still verifies pinned model files when loading.
 Canary loads after the first permitted microphone clip, stays warm while the
 microphone generation remains enabled, and stops when input is disabled or
 cancelled. Read Aloud releases input before loading Qwen. Qwen generates bounded
-256-character segments sequentially and releases its process after reading.
+256-character segments sequentially, streaming PCM through bounded native playback
+while generation continues. Older independently managed companions retain WAV
+playback with bounded prefetch. After successful reading, an owned Qwen service
+stays warm for up to 30 idle seconds. Stop speech, failure, transcription and
+shutdown release it immediately; the memory monitor remains active while idle.
 Both speech services use separate owned Windows Jobs. Admission requires 9 GiB
 available; an independent monitor stops only speech below 5 GiB. The Job commit
 ceiling is 16 GiB. Swift's 16 GiB startup admission and 4 GiB running reserve are
 unchanged. Resource failures preserve text chat and the completed answer.
+
+TTS uses native ARM64 CPU inference. Its default thread budget reserves two of
+the available logical CPUs instead of assuming SMT and halving the count. Use
+`-TtsThreads 6` (or another count from 1 through 256) to select an explicit
+budget; zero selects automatic sizing. More threads do not guarantee higher
+throughput. Compare thread counts with the CI evaluation workflow.
+
+Q8_0 remains the default voice-design profile. To evaluate the smaller pinned
+Q4_K_M talker, retaining the Q8_0 codec:
+
+```powershell
+./scripts/Start-Chat.ps1 -DataDirectory $data -TtsQuantization Q4_K_M
+./scripts/Get-NativeSpeechModels.ps1 -DataDirectory $data -Model QwenTts -TtsQuantization Q4_K_M
+```
+
+Each profile has its own immutable artifact identity and the service verifies
+the selected profile before loading. Q4 is an explicit quality/speed tradeoff;
+it has not been promoted as equivalent to Q8. Streaming reduces time to first
+sound, prefetch reduces segment gaps, and warm reuse avoids repeated model
+verification/loading. These changes do not establish a throughput improvement.
 
 `-NoTts` skips automatic TTS setup; `-NoSpeechModels` skips all automatic speech
 setup and downloads. Neither downloading nor compiling opens a microphone.

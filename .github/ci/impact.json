@@ -9,7 +9,7 @@
   "package_inputs": {
     "bonsai-cpu-policy": ["config/runtime.lock.json", "config/swift-assessment.lock.json", "config/swift-lora.lock.json", "config/swift.ptq1-export.json", "config/profiles/reference-cpu.json"],
     "bonsai-broker": ["config/runtime.lock.json", "config/swift-assessment.lock.json", "config/profiles/reference-cpu.json", "config/prism-inference.lock.json"],
-    "bonsai-tools": ["config/swift-assessment.lock.json", "config/swift-lora.lock.json", "config/swift.ptq1-export.json", "config/swift-lora.qualification.json", "config/swift.metadata.json", "tests/fixtures/lora-qualification-v1.json", "src/speech-asr/model.lock.json", "src/speech-tts/model.lock.json", "config/native-speech.lock.json"]
+    "bonsai-tools": ["config/swift-assessment.lock.json", "config/swift-lora.lock.json", "config/swift.ptq1-export.json", "config/swift-lora.qualification.json", "config/swift.metadata.json", "tests/fixtures/lora-qualification-v1.json", "src/speech-asr/model.lock.json", "src/speech-tts/model*.lock.json", "config/native-speech.lock.json"]
   },
   "groups": {
     "broker": {"packages": ["bonsai-broker", "bonsai-speech-service"]},
@@ -35,6 +35,7 @@
         "scripts/Get-Model.ps1", "scripts/Get-ServerPlan.ps1", "scripts/Start-Chat.ps1", "scripts/Bonsai.ChatLaunch.psm1", "scripts/Bonsai.ServerPolicy.psm1",
         "scripts/Get-SpeechModels.ps1", "scripts/Bonsai.SpeechModels.psm1", "tests/Test-SpeechModels.ps1",
         "scripts/Bonsai.NativeSpeech.psm1", "scripts/Get-NativeSpeechModels.ps1", "tests/Test-NativeSpeech.ps1", "tests/Test-ChatSpeech.ps1", "config/native-speech.lock.json",
+        "scripts/Invoke-TtsEvaluation.ps1", ".github/workflows/tts-evaluation.yml",
         "tools/canary-asr/model.lock.json", "tools/canary-asr/tokenizer.lock.json", "tools/qwen-tts/model.lock.json",
         "scripts/New-DevelopmentKeys.ps1", "scripts/Bonsai.Inference.psm1",
         "scripts/Bonsai.Common.psm1", "scripts/Bonsai.Tools.psm1", "scripts/Bonsai.Native.psm1",

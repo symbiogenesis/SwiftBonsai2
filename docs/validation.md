@@ -7,6 +7,16 @@ Local builds, Release analyzers and focused named tests are allowed. Complete
 suites and every benchmark run only in CI; do not approximate a full suite by
 batching local filters.
 
+The manual [TTS evaluation](../.github/workflows/tts-evaluation.yml) compares the
+pinned Q8_0 and Q4_K_M VoiceDesign profiles with several CPU thread budgets.
+It records the tested revision, CPU identity, cold ready time, first audio,
+warm synthesis and real-time factor, retaining synthetic WAV clips for listening.
+Select the owner-managed Snapdragon runner for device-specific conclusions;
+hosted ARM64 results describe only that hosted CPU. A successful run does not
+establish equivalent voice quality: the report leaves human listening pending.
+All evaluation execution, including a single profile or short fixture, remains
+CI-only. Invoke the workflow on `main`; its script rejects local execution.
+
 The [UI architecture](ui-architecture.md) requires first-party UI application
 code to remain pure Rust and native. Native UI builds and focused client checks
 must preserve the broker's documented HTTP/JSON/SSE subset. Window launch and
