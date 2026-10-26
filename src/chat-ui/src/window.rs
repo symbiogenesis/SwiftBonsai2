@@ -107,6 +107,7 @@ struct State {
     microphone: Option<microphone::Microphone>,
     microphone_generation: Option<u64>,
     speaking: bool,
+    speaking_message: Option<u64>,
     answer_complete: bool,
     last_answer: String,
     retained_draft: String,
@@ -171,7 +172,7 @@ impl State {
             speech_output: false,
             canary_configured: config.is_some_and(|config| config.canary.is_some()),
             tts_configured: config.is_some_and(|config| config.qwen_tts.is_some()),
-            speech_status: "Select Microphone or Read aloud for setup.".to_owned(),
+            speech_status: "Select Microphone or a response's speaker button for setup.".to_owned(),
             speech_notice: false,
             voice_profile: DEFAULT_VOICE.to_owned(),
             listening: false,
@@ -179,6 +180,7 @@ impl State {
             microphone,
             microphone_generation: None,
             speaking: false,
+            speaking_message: None,
             answer_complete: false,
             last_answer: String::new(),
             retained_draft: String::new(),
@@ -475,6 +477,7 @@ impl State {
         self.speech_output = false;
         self.cancel_microphone();
         self.speaking = false;
+        self.speaking_message = None;
         "Speech worker stopped. Restart the app to retry.".clone_into(&mut self.speech_status);
         false
     }
@@ -488,6 +491,7 @@ impl State {
         self.listening = false;
         self.dictation_requested = false;
         self.speaking = false;
+        self.speaking_message = None;
         if was_active {
             "Speech stopped. Microphone off.".clone_into(&mut self.speech_status);
             self.speech_notice = true;
@@ -543,19 +547,21 @@ impl State {
         self.record(&self.speech_status.clone());
     }
 
-    fn toggle_read_aloud(&mut self) {
+    fn toggle_read_aloud(&mut self, message_id: u64) {
+        if self.busy || self.transcript.speech_text(message_id).is_none() {
+            return;
+        }
         self.speech_notice = true;
-        if self.speaking {
+        if self.speaking && self.speaking_message == Some(message_id) {
             if self.speech_command(speech::Command::StopSpeaking) {
                 self.speaking = false;
+                self.speaking_message = None;
                 "Read aloud stopped.".clone_into(&mut self.speech_status);
             }
         } else if !self.speech_output {
             let message = self.read_aloud_help();
             message.clone_into(&mut self.speech_status);
             self.help = Some(("Read aloud setup", message));
-        } else if !self.answer_complete || self.last_answer.is_empty() {
-            "Read aloud needs a completed answer.".clone_into(&mut self.speech_status);
         } else {
             let voice_description = self.voice_profile.trim().to_owned();
             if voice_description.is_empty() {
@@ -565,13 +571,17 @@ impl State {
                 self.record(&self.speech_status.clone());
                 return;
             }
+            let Some(text) = self.transcript.speech_text(message_id).map(str::to_owned) else {
+                return;
+            };
             self.stop_speech();
             if self.speech_command(speech::Command::Speak {
-                text: self.last_answer.clone(),
+                text,
                 voice_description,
             }) {
                 self.speaking = true;
-                "Reading the visible answer aloud.".clone_into(&mut self.speech_status);
+                self.speaking_message = Some(message_id);
+                "Reading the selected response aloud.".clone_into(&mut self.speech_status);
             }
         }
         self.record(&self.speech_status.clone());
@@ -591,7 +601,7 @@ impl State {
         if self.tts_configured {
             "Qwen3-TTS VoiceDesign is not ready. Start its service on the configured port, check its protected key file, then restart the app. See tools/qwen-tts/README.md. Your voice description will be used when the service is ready."
         } else {
-            "Launch the app with scripts/Start-Chat.ps1 to prepare Qwen3-TTS 1.7B VoiceDesign automatically. Use its default settings without -NoTts or -NoSpeechModels. Read aloud then starts the local service when selected. Describe your desired voice in Voice profile; no preset or reference recording is required. See tools/qwen-tts/README.md."
+            "Launch the app with scripts/Start-Chat.ps1 to prepare Qwen3-TTS 1.7B VoiceDesign automatically. Use its default settings without -NoTts or -NoSpeechModels. Selecting a response's speaker button starts the local service. Describe your desired voice in Voice profile; no preset or reference recording is required. See tools/qwen-tts/README.md."
         }
     }
 
@@ -607,6 +617,7 @@ impl State {
                     self.speech_output = false;
                     self.cancel_microphone();
                     self.speaking = false;
+                    self.speaking_message = None;
                     "Speech unavailable. Text chat remains available."
                         .clone_into(&mut self.speech_status);
                     break;
@@ -624,10 +635,10 @@ impl State {
                 self.speech_output = output;
                 match (self.speech_input, output) {
                     (true, true) => "Microphone and read aloud are ready.",
-                    (true, false) => "Microphone ready. Select Read aloud for setup.",
-                    (false, true) => "Read aloud ready. Select Microphone for setup.",
+                    (true, false) => "Microphone ready. Select a response's speaker button for setup.",
+                    (false, true) => "Response speakers ready. Select Microphone for setup.",
                     (false, false) => {
-                        "Speech setup required. Select Microphone or Read aloud for instructions."
+                        "Speech setup required. Select Microphone or a response's speaker button for instructions."
                     }
                 }
                 .clone_into(&mut self.speech_status);
@@ -653,7 +664,7 @@ impl State {
                 generation,
                 speaking,
                 if speaking {
-                    "Reading the visible answer aloud."
+                    "Reading the selected response aloud."
                 } else {
                     "Read aloud stopped."
                 },
@@ -693,6 +704,9 @@ impl State {
             .is_some_and(|session| session.is_current_output(generation))
         {
             self.speaking = speaking;
+            if !speaking {
+                self.speaking_message = None;
+            }
             message.clone_into(&mut self.speech_status);
         }
     }
@@ -930,6 +944,18 @@ impl State {
         ui.add_space(16.0);
     }
 
+    fn thinking_controls(&mut self, ui: &mut egui::Ui) {
+        ui.checkbox(&mut self.enable_thinking, "Thinking");
+        ui.label(
+            RichText::new(
+                "Off by default. Applies to your next response and every Extra effort pass.",
+            )
+            .small()
+            .weak(),
+        );
+        ui.add_space(8.0);
+    }
+
     fn settings(&mut self, ctx: &egui::Context) {
         if !self.show_settings {
             return;
@@ -953,13 +979,7 @@ impl State {
                 self.recovery_controls(ui);
                 ui.heading("Response");
                 ui.add_enabled_ui(!self.busy, |ui| {
-                    ui.checkbox(&mut self.enable_thinking, "Thinking");
-                    ui.label(
-                        RichText::new("Off by default. Applies to your next response and every Extra effort pass.")
-                            .small()
-                            .weak(),
-                    );
-                    ui.add_space(8.0);
+                    self.thinking_controls(ui);
                     ui.checkbox(&mut self.extra_effort, "Extra effort (experimental)");
                     ui.label(
                         RichText::new(
@@ -1308,19 +1328,6 @@ impl State {
                             {
                                 self.toggle_dictation();
                             }
-                            if ui
-                                .add_enabled(
-                                    self.speaking || !self.busy,
-                                    egui::Button::new(if self.speaking {
-                                        "Stop speech"
-                                    } else {
-                                        "Read aloud"
-                                    }),
-                                )
-                                .clicked()
-                            {
-                                self.toggle_read_aloud();
-                            }
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
@@ -1417,7 +1424,14 @@ impl State {
                                     ui.push_id(
                                         ("conversation-text", self.active_conversation),
                                         |ui| {
-                                            self.transcript.show(ui, width);
+                                            if let Some(message_id) = self.transcript.show(
+                                                ui,
+                                                width,
+                                                self.speaking_message,
+                                                !self.busy,
+                                            ) {
+                                                self.toggle_read_aloud(message_id);
+                                            }
                                         },
                                     );
                                 });

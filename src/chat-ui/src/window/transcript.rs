@@ -8,6 +8,8 @@ mod cache_tests;
 mod search;
 
 const MAX_BYTES: usize = 4 * 1024 * 1024;
+const SPEAKER_SIZE: f32 = 36.0;
+const SPEAKER_FOOTER_HEIGHT: f32 = 64.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(super) enum Role {
@@ -35,7 +37,7 @@ struct LayoutCache {
 #[serde(deny_unknown_fields)]
 pub(super) struct Message {
     #[serde(skip)]
-    id: u64,
+    pub(super) id: u64,
     pub(super) role: Role,
     pub(super) body: String,
     reasoning: String,
@@ -213,7 +215,21 @@ impl Transcript {
         self.search.close_on_escape(ctx)
     }
 
-    pub(super) fn show(&mut self, ui: &mut egui::Ui, width: f32) {
+    pub(super) fn speech_text(&self, id: u64) -> Option<&str> {
+        self.messages
+            .iter()
+            .find(|message| message.id == id && message.can_speak())
+            .map(|message| message.body.as_str())
+    }
+
+    pub(super) fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        width: f32,
+        speaking_message: Option<u64>,
+        speech_enabled: bool,
+    ) -> Option<u64> {
+        let mut clicked_speaker = None;
         self.search.refresh(&self.messages);
         let width = width.max(120.0);
         let latest = self.messages.last().map(|message| message.id);
@@ -238,6 +254,11 @@ impl Transcript {
                 .filter(|found| found.message == message.id);
             if ui.is_rect_visible(rect) || target.is_some() {
                 let found_rect = message.show(ui, rect, target.map(|found| found.range.start));
+                if message.role == Role::Assistant
+                    && message.speaker(ui, rect, speaking_message, speech_enabled)
+                {
+                    clicked_speaker = Some(message.id);
+                }
                 if let Some(found_rect) = found_rect {
                     ui.scroll_to_rect(found_rect, Some(egui::Align::Center));
                     self.search.target = None;
@@ -249,10 +270,89 @@ impl Transcript {
             }
             ui.add_space(16.0);
         }
+        clicked_speaker
     }
 }
 
 impl Message {
+    fn can_speak(&self) -> bool {
+        self.role == Role::Assistant && !self.pending && !self.body.trim().is_empty()
+    }
+
+    fn speaker(
+        &self,
+        ui: &mut egui::Ui,
+        bubble: egui::Rect,
+        speaking_message: Option<u64>,
+        speech_enabled: bool,
+    ) -> bool {
+        let playing = speaking_message == Some(self.id);
+        let rect = egui::Rect::from_min_size(
+            bubble.right_bottom() - Vec2::splat(SPEAKER_SIZE + 20.0),
+            Vec2::splat(SPEAKER_SIZE),
+        );
+        let mut footer = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt(("message-speaker", self.id))
+                .max_rect(rect),
+        );
+        let label = if playing {
+            "Stop reading this response"
+        } else {
+            "Read this response aloud"
+        };
+        let response = footer.add_enabled(
+            playing || (speech_enabled && self.can_speak()),
+            egui::Button::new("")
+                .min_size(rect.size())
+                .selected(playing),
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::Role::Button, response.enabled(), label)
+        });
+        let response = response.on_hover_text(if self.pending {
+            "Available when this response finishes"
+        } else {
+            label
+        });
+        let painter = footer.painter_at(response.rect);
+        let color = footer.style().interact(&response).fg_stroke.color;
+        let center = response.rect.center();
+        if playing {
+            painter.rect_filled(
+                egui::Rect::from_center_size(center, Vec2::splat(10.0)),
+                1.0,
+                color,
+            );
+        } else {
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    center + egui::vec2(-8.0, -3.0),
+                    center + egui::vec2(-4.0, 3.0),
+                ),
+                0.0,
+                color,
+            );
+            let points = [(-4.0, -3.0), (1.0, -7.0), (1.0, 7.0), (-4.0, 3.0)]
+                .map(|(x, y)| center + egui::vec2(x, y));
+            painter.add(egui::Shape::convex_polygon(
+                points.to_vec(),
+                color,
+                egui::Stroke::NONE,
+            ));
+            for radius in [5.0_f32, 9.0] {
+                let points = [-0.8_f32, -0.4, 0.0, 0.4, 0.8].map(|angle| {
+                    center + egui::vec2(radius.mul_add(angle.cos(), 1.0), radius * angle.sin())
+                });
+                painter.add(egui::Shape::line(
+                    points.to_vec(),
+                    egui::Stroke::new(1.5, color),
+                ));
+            }
+        }
+        response.clicked()
+    }
+
     fn layout(
         &mut self,
         ui: &egui::Ui,
@@ -363,6 +463,9 @@ impl Message {
             return 100.0;
         };
         let mut height = 40.0 + 24.0 + 12.0 + cache.body.size().y.max(20.0);
+        if self.role == Role::Assistant {
+            height += SPEAKER_FOOTER_HEIGHT;
+        }
         if !self.reasoning.is_empty() {
             height += 32.0;
             if self.show_reasoning

@@ -54,6 +54,124 @@ fn harness(size: [f32; 2], seeded: bool) -> Harness<'static, Fixture> {
 }
 
 #[test]
+fn response_speakers_stay_in_bubbles_and_support_keyboard_play_and_stop() -> io::Result<()> {
+    for size in [[1180.0, 960.0], [620.0, 800.0]] {
+        let mut chat = harness(size, true);
+        chat.state_mut()
+            .app
+            .transcript
+            .append("Private reasoning", true);
+        chat.run();
+        assert!(
+            chat.query_by_role_and_label(egui::Role::Button, "Read aloud")
+                .is_none()
+        );
+        let body = chat.get_by_label(ANSWER).rect();
+        let speaker = chat
+            .get_by_role_and_label(egui::Role::Button, "Read this response aloud")
+            .rect();
+        assert!(speaker.top() > body.bottom());
+        assert!(speaker.center().x > body.center().x);
+        assert!(
+            speaker.bottom()
+                < chat
+                    .get_by_role_and_label(egui::Role::MultilineTextInput, "Message")
+                    .rect()
+                    .top()
+        );
+        chat.get_by_role_and_label(egui::Role::Button, "Show thinking")
+            .click();
+        chat.run();
+        let speaker = chat
+            .get_by_role_and_label(egui::Role::Button, "Read this response aloud")
+            .rect();
+        let reasoning = chat.get_by_label("Private reasoning").rect();
+        assert!(
+            speaker.top() > reasoning.bottom(),
+            "Speaker {speaker:?} overlaps reasoning {reasoning:?} at {size:?}"
+        );
+        chat.get_by_role_and_label(egui::Role::Button, "Read this response aloud")
+            .click();
+        chat.run();
+        assert!(chat.state().app.help.is_some());
+        assert!(!chat.state().app.dictation_requested);
+        chat.state_mut().app.help = None;
+        let (session, _commands) = speech::Session::fixture()?;
+        chat.state_mut().app.speech = Some(session);
+        chat.state_mut().app.speech_output = true;
+        chat.run();
+        chat.get_by_role_and_label(egui::Role::Button, "Read this response aloud")
+            .focus();
+        chat.run();
+        chat.key_press(egui::Key::Space);
+        chat.run();
+        assert!(chat.state().app.speaking);
+        assert_eq!(
+            chat.state().app.speaking_message,
+            Some(chat.state().app.transcript.messages[1].id)
+        );
+        chat.get_by_role_and_label(egui::Role::Button, "Stop reading this response")
+            .click();
+        chat.run();
+        assert!(!chat.state().app.speaking);
+        assert_eq!(chat.state().app.speaking_message, None);
+    }
+    Ok(())
+}
+
+#[test]
+fn response_speakers_play_the_clicked_bubble_in_a_multi_answer_conversation() -> io::Result<()> {
+    let mut chat = harness([1180.0, 960.0], false);
+    let (session, _commands) = speech::Session::fixture()?;
+    chat.state_mut().app.speech = Some(session);
+    chat.state_mut().app.speech_output = true;
+    chat.state_mut()
+        .app
+        .transcript
+        .push(Role::User, "A question".to_owned());
+    chat.state_mut()
+        .app
+        .transcript
+        .push(Role::Assistant, "An older answer".to_owned());
+    chat.state_mut().app.transcript.remove_empty_response();
+    chat.state_mut()
+        .app
+        .transcript
+        .push(Role::Assistant, "A newer answer".to_owned());
+    chat.state_mut().app.transcript.remove_empty_response();
+    chat.run();
+    assert_eq!(
+        chat.get_all_by_role_and_label(egui::Role::Button, "Read this response aloud")
+            .count(),
+        2
+    );
+    if let Some(speaker) = chat
+        .get_all_by_role_and_label(egui::Role::Button, "Read this response aloud")
+        .next()
+    {
+        speaker.click();
+    }
+    chat.run();
+    assert_eq!(
+        chat.state().app.speaking_message,
+        Some(chat.state().app.transcript.messages[1].id)
+    );
+    chat.get_by_role_and_label(egui::Role::Button, "Read this response aloud")
+        .click();
+    chat.run();
+    assert_eq!(
+        chat.state().app.speaking_message,
+        Some(chat.state().app.transcript.messages[2].id)
+    );
+    assert_eq!(
+        chat.get_all_by_role_and_label(egui::Role::Button, "Stop reading this response")
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
 fn thinking_setting_defaults_off_reaches_next_turn_and_locks_while_busy() {
     let mut chat = harness([1180.0, 960.0], false);
     assert!(!chat.state().app.enable_thinking);
@@ -236,7 +354,7 @@ fn maximum_drafts_keep_transcript_and_actions_visible_and_editable() {
             let draft: String = line.chars().cycle().take(INPUT_LIMIT - 2).collect();
             chat.state_mut().app.input.clone_from(&draft);
             chat.run();
-            for label in ["Microphone", "Read aloud", "Send  ↑"] {
+            for label in ["Microphone", "Read this response aloud", "Send  ↑"] {
                 let action = chat.get_by_role_and_label(egui::Role::Button, label).rect();
                 assert!(action.top() >= 0.0 && action.bottom() <= size[1]);
                 assert!(action.left() >= 0.0 && action.right() <= size[0]);
@@ -475,7 +593,7 @@ fn find_controls_navigate_unicode_matches_and_refresh_streamed_text() {
         .build_ui_state(
             |ui, transcript: &mut Transcript| {
                 transcript.search_bar(ui);
-                egui::ScrollArea::vertical().show(ui, |ui| transcript.show(ui, 700.0));
+                egui::ScrollArea::vertical().show(ui, |ui| transcript.show(ui, 700.0, None, true));
             },
             {
                 let mut transcript = Transcript::default();

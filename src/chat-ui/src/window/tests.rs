@@ -110,10 +110,101 @@ fn speech_controls_stay_visible_and_explain_unconfigured_services_without_listen
     assert!(!state.dictation_requested);
     assert!(state.microphone_generation.is_none());
     state.help = None;
-    state.toggle_read_aloud();
+    state
+        .transcript
+        .push(Role::Assistant, "A completed answer".to_owned());
+    state.transcript.remove_empty_response();
+    let message_id = state.transcript.messages[0].id;
+    state.toggle_read_aloud(message_id);
     assert!(state.help.is_some());
     assert!(!state.speaking);
-    assert!(state.transcript.messages.is_empty());
+    assert_eq!(state.transcript.messages.len(), 1);
+}
+
+#[test]
+fn response_speakers_select_individual_answers_and_ignore_replaced_playback_events()
+-> io::Result<()> {
+    let (mut state, _commands, _events) = state();
+    let (session, speech_commands) = speech::Session::fixture()?;
+    state.speech = Some(session);
+    state.speech_output = true;
+    state.ready = true;
+    state
+        .transcript
+        .push(Role::User, "Do not speak my prompt".to_owned());
+    state
+        .transcript
+        .push(Role::Assistant, "The older answer".to_owned());
+    state.transcript.append("Private reasoning", true);
+    state.transcript.remove_empty_response();
+    state
+        .transcript
+        .push(Role::Assistant, "The latest answer".to_owned());
+    state.transcript.remove_empty_response();
+    let user = state.transcript.messages[0].id;
+    let older = state.transcript.messages[1].id;
+    let latest = state.transcript.messages[2].id;
+    state.last_answer = "Unrelated last-answer state".to_owned();
+    state.answer_complete = false;
+    state.toggle_read_aloud(user);
+    assert!(!state.speaking);
+    state.toggle_read_aloud(older);
+    assert_eq!(state.speaking_message, Some(older));
+    assert!(matches!(
+        speech_commands.recv_timeout(Duration::from_secs(2)),
+        Ok(speech::Command::StopListening)
+    ));
+    assert!(matches!(
+        speech_commands.recv_timeout(Duration::from_secs(2)),
+        Ok(speech::Command::StopSpeaking)
+    ));
+    assert!(
+        matches!(speech_commands.recv_timeout(Duration::from_secs(2)), Ok(speech::Command::Speak { text, voice_description })
+        if text == "The older answer" && voice_description == DEFAULT_VOICE)
+    );
+    state.toggle_read_aloud(latest);
+    assert_eq!(state.speaking_message, Some(latest));
+    assert!(matches!(
+        speech_commands.recv_timeout(Duration::from_secs(2)),
+        Ok(speech::Command::StopListening)
+    ));
+    assert!(matches!(
+        speech_commands.recv_timeout(Duration::from_secs(2)),
+        Ok(speech::Command::StopSpeaking)
+    ));
+    assert!(
+        matches!(speech_commands.recv_timeout(Duration::from_secs(2)), Ok(speech::Command::Speak { text, .. }) if text == "The latest answer")
+    );
+    state.speech_event(speech::Event::Speaking {
+        generation: 2,
+        speaking: false,
+    });
+    assert!(state.speaking);
+    assert_eq!(state.speaking_message, Some(latest));
+    state.speech_event(speech::Event::Failed {
+        generation: 4,
+        message: "Speech failed",
+    });
+    assert!(!state.speaking);
+    assert_eq!(state.speaking_message, None);
+    state.toggle_read_aloud(older);
+    state.toggle_read_aloud(older);
+    assert!(!state.speaking);
+    assert_eq!(state.speaking_message, None);
+    state
+        .transcript
+        .push(Role::Assistant, "Still streaming".to_owned());
+    state.toggle_read_aloud(state.transcript.messages[3].id);
+    assert!(!state.speaking);
+    state.busy = true;
+    state.toggle_read_aloud(older);
+    assert!(!state.speaking);
+    state.busy = false;
+    state.toggle_read_aloud(latest);
+    state.new_chat();
+    assert!(!state.speaking);
+    assert_eq!(state.speaking_message, None);
+    Ok(())
 }
 
 #[test]

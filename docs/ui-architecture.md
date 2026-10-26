@@ -172,7 +172,10 @@ review, with no automatic send. The companion uses the actual pinned Canary
 weights and no recognition fallback; its native engine is separate from
 the Swift CPU backend. No audio is sent to a cloud service by this integration.
 
-Read-aloud uses the separate, authenticated local
+Each assistant bubble has a native speaker button in its lower-right corner.
+It plays that response independently, changes to a stop control while active,
+and replaces playback when another response is selected. Streaming and empty
+responses cannot start playback. Read-aloud uses the separate, authenticated local
 [Qwen3-TTS 1.7B VoiceDesign companion](../tools/qwen-tts/README.md). The
 **Voice profile** text setting describes the desired voice in ordinary language;
 no preset, speaker file or reference recording is required. It applies to the
