@@ -139,7 +139,10 @@ fn speech_memory_failure_keeps_text_chat_and_completed_answer_available() -> io:
     assert_eq!(state.last_answer, "The completed answer.");
     assert_eq!(state.transcript.plain_text(), transcript);
     assert!(state.speech_status.contains("preserve text chat"));
-    assert!(matches!(commands.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    assert!(matches!(
+        commands.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
     Ok(())
 }
 
