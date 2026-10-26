@@ -18,7 +18,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream},
     os::windows::fs::{MetadataExt, OpenOptionsExt},
     path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
@@ -35,6 +35,8 @@ const READY_LIMIT: Duration = Duration::from_secs(5);
 const TRANSCRIBE_LIMIT: Duration = Duration::from_secs(120);
 const REPARSE_POINT: u32 = 0x400;
 const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+
+mod pcm;
 
 /// Explicit companion configuration; authentication bytes never have Debug output.
 #[derive(Clone)]
@@ -201,6 +203,7 @@ impl Client {
             generation,
             current,
             until: Instant::now() + TRANSCRIBE_LIMIT,
+            cancelled: None,
         };
         let result = self.transcribe_clip(wav, &call);
         call.check().and(result)
@@ -250,6 +253,48 @@ impl Client {
         expected: Media,
         call: &Call<'_>,
     ) -> Result<Vec<u8>> {
+        let mut stream = self.connection(method, route, content_type, body, call)?;
+        read_response(&mut stream, call, expected)
+    }
+
+    pub(crate) fn stream_pcm(
+        &self,
+        body: &[u8],
+        call: &Call<'_>,
+        sink: impl FnMut(&[u8]) -> Result<()>,
+    ) -> Result<()> {
+        let mut stream = self.connection(
+            "POST",
+            "/v1/audio/speech",
+            Some("application/json"),
+            body,
+            call,
+        )?;
+        pcm::decode(
+            |bytes| loop {
+                call.check()?;
+                let result = stream.read(bytes);
+                call.check()?;
+                match result {
+                    Ok(count) => break Ok(count),
+                    Err(error) if retry_poll(&error) => {}
+                    Err(_) => {
+                        break Err(Failure::Message("The local speech stream was interrupted."));
+                    }
+                }
+            },
+            sink,
+        )
+    }
+
+    fn connection(
+        &self,
+        method: &str,
+        route: &str,
+        content_type: Option<&str>,
+        body: &[u8],
+        call: &Call<'_>,
+    ) -> Result<TcpStream> {
         call.check()?;
         if body.len() > MAX_REQUEST {
             return Err(Failure::Message(
@@ -275,7 +320,7 @@ impl Client {
         );
         write_all(&mut stream, head.as_bytes(), call)?;
         write_all(&mut stream, body, call)?;
-        read_response(&mut stream, call, expected)
+        Ok(stream)
     }
 }
 
@@ -301,6 +346,7 @@ pub(crate) struct Call<'a> {
     generation: u64,
     current: &'a AtomicU64,
     until: Instant,
+    cancelled: Option<&'a AtomicBool>,
 }
 
 impl<'a> Call<'a> {
@@ -309,11 +355,28 @@ impl<'a> Call<'a> {
             generation,
             current,
             until: Instant::now() + limit,
+            cancelled: None,
+        }
+    }
+
+    pub(crate) fn cancellable(
+        generation: u64,
+        current: &'a AtomicU64,
+        cancelled: &'a AtomicBool,
+        limit: Duration,
+    ) -> Self {
+        Self {
+            cancelled: Some(cancelled),
+            ..Self::new(generation, current, limit)
         }
     }
 
     pub(crate) fn check(&self) -> Result<()> {
-        if self.current.load(Ordering::Acquire) != self.generation {
+        if self.current.load(Ordering::Acquire) != self.generation
+            || self
+                .cancelled
+                .is_some_and(|flag| flag.load(Ordering::Acquire))
+        {
             Err(Failure::Cancelled)
         } else if Instant::now() >= self.until {
             Err(Failure::Message(
@@ -782,6 +845,8 @@ mod tests {
                 executable: evidence.join("unavailable-native.exe"),
                 model: evidence.join("unavailable-model.gguf"),
                 codec: None,
+                quantization: None,
+                threads: None,
                 evidence: evidence.clone(),
             }),
         };
@@ -904,6 +969,7 @@ mod tests {
             generation: 1,
             current: &current,
             until: Instant::now() + Duration::from_secs(1),
+            cancelled: None,
         };
         let marker =
             boundary(&audio, &call).map_err(|_| io::Error::other("Boundary preparation failed"))?;
@@ -939,6 +1005,7 @@ mod tests {
             generation: 1,
             current: &current,
             until: Instant::now() + Duration::from_secs(1),
+            cancelled: None,
         };
         assert_eq!(
             normalize_wav(&extensible, &call)

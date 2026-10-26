@@ -37,11 +37,26 @@ pub(crate) struct Launch {
     pub(crate) executable: PathBuf,
     pub(crate) model: PathBuf,
     pub(crate) codec: Option<PathBuf>,
+    pub(crate) quantization: Option<String>,
+    pub(crate) threads: Option<usize>,
     pub(crate) evidence: PathBuf,
 }
 
 impl Launch {
     pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        if self
+            .quantization
+            .as_deref()
+            .is_some_and(|value| !matches!(value, "Q8_0" | "Q4_K_M"))
+            || self
+                .threads
+                .is_some_and(|value| !(1..=256).contains(&value))
+            || (self.codec.is_none() && (self.quantization.is_some() || self.threads.is_some()))
+        {
+            return Err(
+                "Native TTS settings require a supported quantization and bounded thread count.",
+            );
+        }
         for path in [&self.executable, &self.model, &self.evidence]
             .into_iter()
             .chain(self.codec.iter())
@@ -91,6 +106,18 @@ impl Launch {
         ];
         if let Some(codec) = &self.codec {
             arguments.extend([OsString::from("--codec"), codec.clone().into_os_string()]);
+        }
+        if let Some(quantization) = &self.quantization {
+            arguments.extend([
+                OsString::from("--quantization"),
+                OsString::from(quantization),
+            ]);
+        }
+        if let Some(threads) = self.threads {
+            arguments.extend([
+                OsString::from("--threads"),
+                OsString::from(threads.to_string()),
+            ]);
         }
         arguments.extend([
             OsString::from("--token-file"),

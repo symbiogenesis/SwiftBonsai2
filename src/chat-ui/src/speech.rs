@@ -2,7 +2,7 @@
 //!
 //! Permission and microphone capture stay on the native UI thread. Finished
 //! clips and free-form voice descriptions cross this owned, text/audio boundary.
-//! Generated WAV buffers live until native playback completes or is stopped.
+//! Generated PCM stays in bounded queues until native playback completes or is stopped.
 
 #![allow(
     clippy::redundant_pub_crate,
@@ -19,9 +19,9 @@ use std::{
         mpsc::{self, Receiver, RecvTimeoutError, Sender},
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
-use windows_sys::Win32::Media::Audio::{PlaySoundW, SND_MEMORY, SND_NODEFAULT, SND_SYNC};
+mod pipeline;
 
 const POLL: Duration = Duration::from_millis(50);
 const MAX_TEXT: usize = 32768;
@@ -211,79 +211,30 @@ pub(crate) fn start(
     })
 }
 
-fn stop_audio() {
-    // SAFETY: A null sound stops this process's PlaySound playback. No input
-    // pointers or handles are retained. Only this module starts native audio.
-    unsafe { PlaySoundW(std::ptr::null(), std::ptr::null_mut(), 0) };
-}
-
-struct Playback {
-    finished: Receiver<bool>,
-    worker: Option<JoinHandle<()>>,
-}
-impl Playback {
-    fn start(wav: Vec<u8>, generation: u64, current: Arc<AtomicU64>) -> io::Result<Self> {
-        let (events, finished) = mpsc::channel();
-        let worker = thread::Builder::new()
-            .name("bonsai-qwen-audio".to_owned())
-            .spawn(move || {
-                let played = if current.load(Ordering::Acquire) == generation {
-                    // SAFETY: The TTS adapter validated this complete bounded PCM WAV.
-                    // SND_MEMORY interprets the pointer as audio bytes, not a path.
-                    // SND_SYNC keeps the owned allocation alive until playback stops
-                    // or finishes; SND_NODEFAULT forbids substituted system sounds.
-                    (unsafe {
-                        PlaySoundW(
-                            wav.as_ptr().cast(),
-                            std::ptr::null_mut(),
-                            SND_MEMORY | SND_SYNC | SND_NODEFAULT,
-                        )
-                    }) != 0
-                } else {
-                    false
-                };
-                let _sent = events.send(played);
-            })?;
-        Ok(Self {
-            finished,
-            worker: Some(worker),
-        })
-    }
-    fn result(&self) -> Option<bool> {
-        match self.finished.try_recv() {
-            Ok(result) => Some(result),
-            Err(mpsc::TryRecvError::Empty) => None,
-            Err(mpsc::TryRecvError::Disconnected) => Some(false),
-        }
-    }
-}
-impl Drop for Playback {
-    fn drop(&mut self) {
-        if let Some(worker) = self.worker.take() {
-            stop_and_join(worker, stop_audio);
-        }
-    }
-}
-
-fn stop_and_join(worker: JoinHandle<()>, mut stop: impl FnMut()) {
-    // A playback thread may have passed its generation check without entering
-    // PlaySound yet. Repeating Stop until it exits covers that pre-start window:
-    // a single Stop followed by join could miss the call and wait for the clip.
-    // The worker owns the WAV allocation until synchronous playback returns.
-    while !worker.is_finished() {
-        stop();
-        thread::sleep(Duration::from_millis(5));
-    }
-    let _joined = worker.join();
-}
-
 struct Output {
     generation: u64,
     voice: String,
     segments: VecDeque<String>,
-    playback: Option<Playback>,
+    pipeline: Option<pipeline::Pipeline>,
     prepared: bool,
     service: Option<Service>,
+}
+
+const WARM_IDLE: Duration = Duration::from_secs(30);
+
+struct Idle<T> {
+    value: T,
+    until: Instant,
+}
+
+fn take_warm<T>(
+    idle: &mut Option<Idle<T>>,
+    now: Instant,
+    healthy: impl FnOnce(&T) -> bool,
+) -> Option<T> {
+    idle.take()
+        .filter(|warm| now < warm.until && healthy(&warm.value))
+        .map(|warm| warm.value)
 }
 
 fn segments(text: &str) -> Option<VecDeque<String>> {
@@ -412,7 +363,7 @@ fn transcription(
 }
 fn render(
     output: &mut Output,
-    client: Option<&tts::Client>,
+    client: Option<&Arc<tts::Client>>,
     config: Option<&tts::Config>,
     current: &Arc<AtomicU64>,
     events: &Sender<Event>,
@@ -441,39 +392,30 @@ fn render(
             message: "Generating speech with Qwen3-TTS VoiceDesign. Stop speech cancels synthesis.",
         });
     }
-    if let Some(playback) = &output.playback {
-        match playback.result() {
-            None => return Ok(true),
-            Some(true) => output.playback = None,
-            Some(false) => {
-                return Err("Audio playback failed. Check the Windows audio output device.");
-            }
-        }
+    if output.pipeline.is_none() {
+        let client = client.ok_or(
+            "Qwen3-TTS VoiceDesign is unavailable. Check its companion service and key file.",
+        )?;
+        output.pipeline = Some(
+            pipeline::Pipeline::start(
+                Arc::clone(client),
+                std::mem::take(&mut output.segments),
+                output.voice.clone(),
+                output.generation,
+                Arc::clone(current),
+            )
+            .map_err(|_| "Could not start native speech playback.")?,
+        );
     }
-    let Some(text) = output.segments.pop_front() else {
-        return Ok(false);
-    };
-    let client = client
-        .ok_or("Qwen3-TTS VoiceDesign is unavailable. Check its companion service and key file.")?;
-    let synthesis = client.synthesize(&text, &output.voice, output.generation, current);
-    // A pressure stop deliberately closes HTTP. Preserve its useful resource
-    // reason instead of reducing it to a generic transport failure.
-    if let Some(service) = &output.service {
-        service.check().map_err(output_failure)?;
+    match output
+        .pipeline
+        .as_ref()
+        .and_then(pipeline::Pipeline::result)
+    {
+        None => Ok(true),
+        Some(Ok(())) => Ok(false),
+        Some(Err(failure)) => Err(output_failure(failure)),
     }
-    let wav = match synthesis {
-        Ok(wav) => wav,
-        Err(tts::Failure::Cancelled) => return Ok(false),
-        Err(tts::Failure::Message(message)) => return Err(message),
-    };
-    if current.load(Ordering::Acquire) != output.generation {
-        return Ok(false);
-    }
-    output.playback = Some(
-        Playback::start(wav, output.generation, Arc::clone(current))
-            .map_err(|_| "Could not start native audio playback.")?,
-    );
-    Ok(true)
 }
 
 const fn output_failure(failure: tts::Failure) -> &'static str {
@@ -498,6 +440,7 @@ fn run(
     let mut input = canary_config.and_then(Input::new);
     let tts = tts_config
         .and_then(|config| tts::Client::new(config).ok())
+        .map(Arc::new)
         .filter(|client| {
             tts_config.is_some_and(|config| config.launch.is_some()) || client.ready().is_ok()
         });
@@ -506,7 +449,15 @@ fn run(
         output: tts.is_some(),
     });
     let mut output: Option<Output> = None;
+    let mut warm: Option<Idle<Service>> = None;
     loop {
+        if warm.as_ref().is_some_and(|idle| {
+            Instant::now() >= idle.until
+                || idle.value.check().is_err()
+                || current_input.load(Ordering::Acquire) != NO_INPUT
+        }) {
+            warm = None;
+        }
         match commands.recv_timeout(POLL) {
             Ok(Envelope {
                 command: Command::Shutdown,
@@ -521,6 +472,7 @@ fn run(
                     continue;
                 }
                 output = None;
+                warm = None;
                 let _sent = events.send(Event::Speaking {
                     generation: output_generation,
                     speaking: false,
@@ -549,6 +501,7 @@ fn run(
                     input.clear();
                 }
                 if current_output.load(Ordering::Acquire) != output_generation {
+                    warm = None;
                     continue;
                 }
                 if let Some(segments) = segments(&text)
@@ -556,19 +509,23 @@ fn run(
                     && voice_description.chars().count() <= 1024
                     && !voice_description.contains('\0')
                 {
+                    let service =
+                        take_warm(&mut warm, Instant::now(), |service| service.check().is_ok());
+                    let prepared = service.is_some();
                     output = Some(Output {
                         generation: output_generation,
                         voice: voice_description,
                         segments,
-                        playback: None,
-                        prepared: false,
-                        service: None,
+                        pipeline: None,
+                        prepared,
+                        service,
                     });
                     let _sent = events.send(Event::Speaking {
                         generation: output_generation,
                         speaking: true,
                     });
                 } else {
+                    warm = None;
                     let _sent = events.send(Event::Speaking {
                         generation: output_generation,
                         speaking: false,
@@ -584,6 +541,7 @@ fn run(
                 output_generation,
             }) => {
                 output = None;
+                warm = None;
                 let _sent = events.send(Event::Speaking {
                     generation: output_generation,
                     speaking: false,
@@ -602,6 +560,20 @@ fn run(
             let generation = active.generation;
             let outcome = render(active, tts.as_ref(), tts_config, current_output, events);
             if !matches!(outcome, Ok(true)) {
+                if matches!(outcome, Ok(false))
+                    && current_output.load(Ordering::Acquire) == generation
+                {
+                    warm = active
+                        .service
+                        .take()
+                        .filter(|service| service.check().is_ok())
+                        .map(|service| Idle {
+                            value: service,
+                            until: Instant::now() + WARM_IDLE,
+                        });
+                } else {
+                    warm = None;
+                }
                 output = None;
                 if current_output.load(Ordering::Acquire) == generation {
                     let _sent = events.send(Event::Speaking {
@@ -623,18 +595,47 @@ fn run(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Command, Commands, Event, MAX_SEGMENT, MAX_TEXT, Session, segments, start, stop_and_join,
-    };
+    use super::{Command, Commands, Event, MAX_SEGMENT, MAX_TEXT, Session, segments, start};
     use std::{
         io,
         sync::{
             Arc,
-            atomic::{AtomicBool, AtomicU64, Ordering},
+            atomic::{AtomicU64, Ordering},
             mpsc,
         },
         time::Duration,
     };
+
+    #[test]
+    fn warm_service_reuse_requires_health_and_unexpired_idle_time() {
+        use super::{Idle, WARM_IDLE, take_warm};
+        use std::{sync::atomic::AtomicUsize, time::Instant};
+        struct Probe(Arc<AtomicUsize>);
+        impl Drop for Probe {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::AcqRel);
+            }
+        }
+        let drops = Arc::new(AtomicUsize::new(0));
+        let now = Instant::now();
+        let mut idle = Some(Idle {
+            value: Probe(Arc::clone(&drops)),
+            until: now + WARM_IDLE,
+        });
+        let retained = take_warm(&mut idle, now, |_| true);
+        assert!(retained.is_some() && idle.is_none());
+        assert_eq!(drops.load(Ordering::Acquire), 0);
+        drop(retained);
+        for (at, healthy) in [(now + WARM_IDLE, true), (now, false)] {
+            idle = Some(Idle {
+                value: Probe(Arc::clone(&drops)),
+                until: now + WARM_IDLE,
+            });
+            assert!(take_warm(&mut idle, at, |_| healthy).is_none());
+            assert!(idle.is_none());
+        }
+        assert_eq!(drops.load(Ordering::Acquire), 3);
+    }
 
     #[test]
     fn switching_speech_modes_invalidates_the_other_generation_immediately() -> io::Result<()> {
@@ -716,43 +717,6 @@ mod tests {
         assert!(input.generation.is_none());
         assert!(received.try_recv().is_err());
         assert!(process.wait_for_exit(Duration::from_secs(5))?.is_some());
-        Ok(())
-    }
-
-    #[test]
-    fn stop_retries_when_playback_starts_after_the_first_stop() -> io::Result<()> {
-        let (start_sender, start_receiver) = mpsc::channel();
-        let (stop_sender, stop_receiver) = mpsc::channel();
-        let playing = Arc::new(AtomicBool::new(false));
-        let stopped = Arc::new(AtomicBool::new(false));
-        let worker_playing = Arc::clone(&playing);
-        let worker_stopped = Arc::clone(&stopped);
-        let worker = std::thread::Builder::new()
-            .name("fake-late-playback".to_owned())
-            .spawn(move || {
-                // Deterministically reproduce the gap between the generation
-                // check and entering a synchronous native playback operation.
-                if start_receiver.recv_timeout(Duration::from_secs(2)).is_err() {
-                    return;
-                }
-                worker_playing.store(true, Ordering::Release);
-                if stop_receiver.recv_timeout(Duration::from_secs(2)).is_ok() {
-                    worker_stopped.store(true, Ordering::Release);
-                }
-            })?;
-        let mut first_stop = Some(start_sender);
-        let mut stop_count = 0;
-        stop_and_join(worker, || {
-            stop_count += 1;
-            if playing.load(Ordering::Acquire) {
-                let _sent = stop_sender.send(());
-            }
-            if let Some(start) = first_stop.take() {
-                let _sent = start.send(());
-            }
-        });
-        assert!(stopped.load(Ordering::Acquire));
-        assert!(stop_count >= 2);
         Ok(())
     }
 
@@ -897,6 +861,8 @@ mod tests {
             launch: Some(crate::native_speech::Launch {
                 executable: parent.join("unavailable-native.exe"),
                 codec: Some(parent.join("unavailable-codec.gguf")),
+                quantization: None,
+                threads: None,
                 model: parent.join("unavailable-model.gguf"),
                 evidence: evidence.clone(),
             }),
@@ -908,6 +874,8 @@ mod tests {
                 executable: parent.join("unavailable-canary.exe"),
                 model: parent.join("unavailable-canary.gguf"),
                 codec: None,
+                quantization: None,
+                threads: None,
                 evidence: evidence.clone(),
             }),
         };

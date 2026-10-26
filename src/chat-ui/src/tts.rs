@@ -13,7 +13,11 @@ pub(crate) use crate::canary::Failure;
 use crate::canary::{self, Call, Media};
 use crate::native_speech::{Launch, Service};
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, sync::atomic::AtomicU64, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    time::Duration,
+};
 
 const MODEL: &str = "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign";
 const MAX_TEXT: usize = 2048;
@@ -30,7 +34,7 @@ pub(crate) struct Config {
     pub(crate) launch: Option<Launch>,
 }
 /// Uses the same bounded transport policy with its own configured key and port.
-pub(crate) struct Client(canary::Client);
+pub(crate) struct Client(canary::Client, AtomicBool);
 
 impl Client {
     pub(crate) fn new(config: &Config) -> Result<Self, &'static str> {
@@ -39,7 +43,7 @@ impl Client {
             key_file: config.key_file.clone(),
             launch: None,
         })
-        .map(Self)
+        .map(|client| Self(client, AtomicBool::new(false)))
         .map_err(|_| "The Qwen TTS endpoint or protected credential file is unavailable.")
     }
 
@@ -68,6 +72,7 @@ impl Client {
                 {
                     return Err(Failure::Message("The Qwen TTS VoiceDesign model is not ready with the required audio format."));
                 }
+                self.1.store(health.streaming_pcm, Ordering::Release);
                 Ok(())
             });
         call.check().map_err(transport_failure).and(result)
@@ -102,6 +107,7 @@ impl Client {
         .map(Some)
     }
     /// Synthesize one clip; the worker sequences longer answers at word boundaries.
+    #[cfg(test)]
     pub(crate) fn synthesize(
         &self,
         text: &str,
@@ -111,6 +117,46 @@ impl Client {
     ) -> Result<Vec<u8>, Failure> {
         let call = Call::new(generation, current, SYNTHESIS_LIMIT);
         let result = self.synthesize_clip(text, voice, &call);
+        call.check().map_err(transport_failure).and(result)
+    }
+
+    /// Stream the fixed PCM format; legacy companions retain the validated WAV path.
+    pub(crate) fn synthesize_pcm(
+        &self,
+        text: &str,
+        voice: &str,
+        generation: u64,
+        current: &AtomicU64,
+        cancelled: &AtomicBool,
+        mut sink: impl FnMut(&[u8]) -> Result<(), Failure>,
+    ) -> Result<(), Failure> {
+        let call = Call::cancellable(generation, current, cancelled, SYNTHESIS_LIMIT);
+        call.check().map_err(transport_failure)?;
+        if !bounded_text(text, MAX_TEXT) || !bounded_text(voice, MAX_VOICE) {
+            return Err(Failure::Message(
+                "The speech text or voice description exceeded its limit.",
+            ));
+        }
+        let result = if self.1.load(Ordering::Acquire) {
+            let body = serde_json::to_vec(&SpeechRequest {
+                model: MODEL,
+                input: text,
+                voice_description: voice,
+                language: "Auto",
+                response_format: "pcm",
+            })
+            .map_err(|_| Failure::Message("Could not prepare the Qwen TTS request."))?;
+            self.0
+                .stream_pcm(&body, &call, &mut sink)
+                .map_err(transport_failure)
+        } else {
+            let wav = self.synthesize_clip(text, voice, &call)?;
+            for chunk in wav[44..].chunks(16_384) {
+                call.check().map_err(transport_failure)?;
+                sink(chunk)?;
+            }
+            Ok(())
+        };
         call.check().map_err(transport_failure).and(result)
     }
 
@@ -167,6 +213,8 @@ struct Health {
     sample_rate: u32,
     max_text_characters: usize,
     max_voice_characters: usize,
+    #[serde(default)]
+    streaming_pcm: bool,
 }
 
 #[derive(Serialize)]
@@ -360,6 +408,67 @@ mod tests {
             invalid[offset] ^= 1;
             assert!(validate_wav(&invalid).is_err());
         }
+    }
+
+    #[test]
+    fn pcm_adapter_delivers_audio_before_the_success_terminal() -> io::Result<()> {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        };
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+        let (_credentials, client) = client(listener.local_addr()?.port())?;
+        client.1.store(true, Ordering::Release);
+        let (delivered, observed) = mpsc::channel();
+        let server = thread::spawn(move || -> io::Result<()> {
+            let (mut stream, _) = listener.accept()?;
+            stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+            let mut head = Vec::new();
+            while !head.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte)?;
+                head.push(byte[0]);
+                assert!(head.len() <= 16384);
+            }
+            let text = std::str::from_utf8(&head).map_err(io::Error::other)?;
+            let length: usize = text
+                .lines()
+                .find_map(|line| line.strip_prefix("Content-Length: "))
+                .ok_or_else(|| io::Error::other("Missing upload length"))?
+                .trim()
+                .parse()
+                .map_err(io::Error::other)?;
+            let mut body = vec![0; length];
+            stream.read_exact(&mut body)?;
+            let request: serde_json::Value =
+                serde_json::from_slice(&body).map_err(io::Error::other)?;
+            assert_eq!(request["response_format"], "pcm");
+            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: audio/pcm\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n2\r\n\x01\x00\r\n")?;
+            observed
+                .recv_timeout(Duration::from_secs(3))
+                .map_err(io::Error::other)?;
+            stream.write_all(b"0\r\n\r\n")?;
+            Ok(())
+        });
+        let mut pcm = Vec::new();
+        client
+            .synthesize_pcm(
+                "Hello.",
+                "Calm",
+                3,
+                &AtomicU64::new(3),
+                &AtomicBool::new(false),
+                |bytes| {
+                    pcm.extend_from_slice(bytes);
+                    delivered.send(()).map_err(|_| Failure::Cancelled)
+                },
+            )
+            .map_err(|_| io::Error::other("Streaming adapter failed"))?;
+        assert_eq!(pcm, [1, 0]);
+        server
+            .join()
+            .map_err(|_| io::Error::other("PCM server failed"))??;
+        Ok(())
     }
 
     #[test]
