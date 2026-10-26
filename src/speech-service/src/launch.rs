@@ -239,7 +239,7 @@ fn verify_artifact(path: &Path, pin: &serde_json::Value) -> io::Result<VerifiedF
 
 fn validate_file(path: &Path) -> io::Result<()> {
     #[cfg(windows)]
-    bonsai_windows_credentials::validate_external_path(path).map_err(|_| invalid_arguments())?;
+    bonsai_windows_credentials::validate_read_path(path).map_err(|_| invalid_arguments())?;
     if !path.is_absolute() {
         return Err(invalid_arguments());
     }

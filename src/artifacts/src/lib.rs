@@ -258,7 +258,7 @@ fn classify_hash_error(error: ArtifactError, fallback: ArtifactError) -> Artifac
 /// # Errors
 /// Rejects unsafe external paths, redirects, non-files and failed opens.
 pub fn open_locked_file(path: &Path) -> Result<File, ArtifactError> {
-    validate_external_path(path).map_err(|_| ArtifactError::Path)?;
+    validate_read_path(path)?;
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(windows)]
@@ -281,12 +281,21 @@ fn hold_ancestors(
     checkpoint: &mut impl FnMut() -> Result<(), ArtifactError>,
 ) -> Result<(), ArtifactError> {
     checkpoint()?;
-    validate_external_path(path).map_err(|_| ArtifactError::Path)?;
+    validate_read_path(path)?;
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
+        let contained =
+            bonsai_windows_credentials::is_app_container().map_err(|_| ArtifactError::Path)?;
         for ancestor in path.ancestors().skip(1) {
             checkpoint()?;
+            // The host owner retains its root guard. A contained reader lacks
+            // root metadata rights; granting the volume root would broaden its
+            // file authority. Retain every nonroot ancestor without changing
+            // the ordinary host path/installation policy.
+            if contained && ancestor.parent().is_none() {
+                continue;
+            }
             let directory = OpenOptions::new()
                 .read(true)
                 .access_mode(0x80)
@@ -306,6 +315,15 @@ fn hold_ancestors(
         let _ = handles;
     }
     Ok(())
+}
+
+fn validate_read_path(path: &Path) -> Result<(), ArtifactError> {
+    #[cfg(windows)]
+    if bonsai_windows_credentials::is_app_container().map_err(|_| ArtifactError::Path)? {
+        return bonsai_windows_credentials::validate_read_path(path)
+            .map_err(|_| ArtifactError::Path);
+    }
+    validate_external_path(path).map_err(|_| ArtifactError::Path)
 }
 
 fn check_locked(

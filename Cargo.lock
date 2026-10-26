@@ -485,6 +485,8 @@ dependencies = [
 name = "bonsai-artifacts"
 version = "0.1.0"
 dependencies = [
+ "bonsai-windows-credentials",
+ "bonsai-windows-process",
  "serde",
  "sha2",
  "zip",

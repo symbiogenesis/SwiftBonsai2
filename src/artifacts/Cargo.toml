@@ -12,5 +12,11 @@ serde = { workspace = true, features = ["derive"] }
 sha2.workspace = true
 zip.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+bonsai-windows-credentials = { path = "../windows-credentials" }
+
+[target.'cfg(windows)'.dev-dependencies]
+bonsai-windows-process = { path = "../windows-process" }
+
 [lints]
 workspace = true
