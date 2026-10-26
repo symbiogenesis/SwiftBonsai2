@@ -1,30 +1,31 @@
 # Inference algorithms and mathematical constraints
 
-This maps algorithm candidates to the [Rust roadmap](native-rust-engine.md)
-and [advanced experiments](../PLAN.md#9-speculative-decoding-and-advanced-optimization).
-Baseline PQ2/PTQ1 NEON, state-only prompt ingestion and physical FP16 KV storage
-are implemented. The candidates below remain unqualified; none establishes a
-Snapdragon speedup. Preserve pinned Prism controls, exact artifacts and existing
-promotion gates. Pin implementation sources/licenses during R0 before reuse.
+This reference defines numerical and state constraints for the
+[Rust engine](native-rust-engine.md). Outstanding algorithm and qualification
+work lives in [PLAN.md](../PLAN.md#runtime-and-correctness).
+Algorithm descriptions and published results do not establish a Snapdragon
+speedup. Pinned Prism controls, exact artifacts and the existing promotion
+criteria remain the comparison contract. Source reuse requires immutable
+revisions and a license review.
 
-The [automatic X1/X2 roadmap](hardware-profiles.md) selects qualified algorithms
+The [X1/X2 hardware contract](hardware-profiles.md) treats qualified algorithms
 and placements separately for prefill and decode. Batched projections and
 chunkwise GDN are NPU prefill candidates; packed HVX, NEON and Adreno remain
 decode comparisons. Sequential block scheduling alone does not provide tiled
 matrix-matrix reuse. Preserve each path's numerical/state identity and include
 phase handoff costs before making it an automatic choice.
 
-## Current implementation and next work
+## Runtime semantics
 
-| Task | Current state | Remaining work |
-| --- | --- | --- |
-| R4.3: prompt ingestion | `Decoder::ingest`/Qwen35 skip output-only work for intermediate uncached prompt tokens; final tokens and prefix hits retain logits | Full-model correctness/performance qualification; retain computed-state checks, cancellation and rollback |
-| R4.4: activation preparation | Compatible sibling projections share scoped preparation, including transforms and quantization | Qualify full-model allocation and performance benefit; retain input, basis/permutation and quantizer compatibility checks |
-| R4.5: KV storage | Full-attention state retains exact binary16 bits in `Vec<u16>` and widens on reads; GDN/convolution stays FP32 | Qualify process-memory/throughput benefit; retain capacity-based mixed-state accounting |
-| R3 / S3: packed decode | NEON PQ2/PTQ1 and odd-group PQ2 have exact synthetic scalar comparisons | Compare exact ternary LUTs under unchanged quantizers/scales and generic PQ2 semantics |
-| R4.6 / S5: prefill | Bounded 1–256-token block scheduling retains sequential graph arithmetic and whole-request rollback | Compare tiled matmul, Vec-LUT and chunkwise GDN under causal/state and numerical gates |
-| R5.2: checkpoints | Snapshots share sealed immutable KV pages and copy mutable tails plus complete convolution/GDN state | Qualify full-model process-memory benefit while retaining conservative snapshot budgets |
-| M6: speculation | Native decoder supports greedy and explicit seeded reference sampling, without a block verifier | Qualify Prism sampler/RNG parity and verification before suffix proposals and compact recurrent recovery; keep separate from ordinary decoding |
+| Mechanism | Contract |
+| --- | --- |
+| Prompt ingestion | `Decoder::ingest`/Qwen35 skip output-only work for intermediate uncached prompt tokens; final tokens and prefix hits retain logits, with computed-state checks, cancellation and rollback |
+| Activation preparation | Compatible sibling projections share scoped transforms/quantization only when input, basis/permutation, width and quantizer match |
+| KV storage | Full-attention state retains exact binary16 bits in `Vec<u16>` and widens on reads; GDN/convolution stays FP32 and budgets charge actual mixed-state capacities |
+| Packed decode | NEON PQ2/PTQ1 and odd-group PQ2 preserve scalar quantizers, scale order and generic PQ2's fourth symbol |
+| Prefill | Bounded 1–256-token blocks retain sequential arithmetic and whole-request rollback; block scheduling alone gives no tiled matmul reuse |
+| Checkpoints | Sealed immutable KV pages may be shared; mutable tails and complete convolution/GDN state remain independently owned, with conservative snapshot budgets |
+| Speculation | Suffix proposals and compact recurrent recovery require a block verifier and the selected sampler/RNG's acceptance contract; ordinary decoding is a separate path |
 
 Source map: [runtime](https://github.com/symbiogenesis/prism-inference/blob/main/src/runtime.rs),
 [decoder API](https://github.com/symbiogenesis/prism-inference/blob/main/src/lib.rs),
@@ -33,7 +34,7 @@ Source map: [runtime](https://github.com/symbiogenesis/prism-inference/blob/main
 [codecs](https://github.com/symbiogenesis/prism-inference/blob/main/tools/ternary/src/lib.rs).
 
 Retained scratch is storage reuse, not proof that repeated computation or
-model-level allocation costs are removed; R4.2 remains open. Qwen35 state-only
+model-level allocation costs are removed. Qwen35 state-only
 ingestion deliberately omits unused output/logit checks while validating every
 computed state value. Block prefill must also preserve cancellation/backpressure
 bounds and atomic commit.
@@ -52,13 +53,11 @@ At Swift's widths, the affected buffers need 34,816 rather than 73,728 F32 slots
 Arithmetic/reduction order, committed state, transaction deltas and checkpoints
 retain their existing contracts. Frozen pre-change hybrid logits/state fixtures
 cover both FFN/QKV size orderings, failed evaluation, retry, restore and reset.
-This is a source follow-up in [Prism Inference at `326d0dd`](https://github.com/symbiogenesis/prism-inference/blob/326d0dd45b2d3c61ea6ce8ebe67f8249bdfa22a6/src/graph.rs);
-the runner's pinned `0.1.2` binary includes this implementation.
-
-Allocator capacity rounding and process memory are separate from this finite
-buffer count. R4.2 remains open; no measured memory or throughput gain is claimed.
-Moving arenas and general placement search remain deferred until evidence from
-the actual workload justifies them.
+The [graph implementation](https://github.com/symbiogenesis/prism-inference/blob/326d0dd45b2d3c61ea6ce8ebe67f8249bdfa22a6/src/graph.rs)
+defines the storage ownership. Allocator capacity rounding and process memory
+are separate from this finite buffer count; nominal scratch payload does not
+establish measured memory or throughput benefit. Moving arenas and general
+placement search require actual-workload evidence.
 
 ## Packed lookup kernels
 
@@ -66,8 +65,8 @@ the actual workload justifies them.
 
 [Bitnet.cpp, section 3.2](https://arxiv.org/html/2502.11880v1) distinguishes exact
 **TL1_1/TL2_1**, using INT16 sums/two byte lookups, from approximate INT8-table
-**TL1_0/TL2_0**. Audit the [official implementation](https://github.com/microsoft/BitNet)
-as a technique, preserving this engine's `q8k_into`/`q8_into`, 128-weight scales,
+**TL1_0/TL2_0**. The [official implementation](https://github.com/microsoft/BitNet)
+is a technique reference subject to this engine's `q8k_into`/`q8_into`, 128-weight scales,
 256-activation Q8_K groups, 32-activation Q8_0 groups and floating scale/add order.
 Stock BitNet quantization is not this engine's specification.
 
@@ -78,33 +77,33 @@ by 16,384; generic PQ2 raises the bound to 32,768. Bound tables, partial sums an
 corrections independently with wide accumulators. SIMD wrapping arithmetic is
 not checked by Rust overflow flags.
 
-[SIMD S3](simd-plan.md#delivery-sequence-and-exits) owns packed controls. Validated
+The [SIMD contract](simd-plan.md) defines packed controls. Validated
 immutable representations can avoid repeated canonical decoding, but arbitrary
 public tensors still need rejection checks. The identity
 `dot(code - 1, q) = dot(code, q) - sum(q)` also permits a candidate using
-`Q8KBlock.sums`; compare with lane subtraction under the same scale contract.
+`Q8KBlock.sums`; this formulation and lane subtraction share the same scale contract.
 
 ### Vec-LUT for multiple prompt tokens
 
 [Vec-LUT](https://arxiv.org/html/2512.06443v2) groups lookups across tokens and
 streams cache-sized table tiles, using bounded INT16 partials and INT32
-accumulation. Its [implementation](https://github.com/OpenBitSys/vlut.cpp) is an
-R4.6/S5 lead after block prefill exists. Retain our quantizers/scales, rederive
-bounds for all accepted inputs and account for layouts, repacking, retained
+accumulation. Its [implementation](https://github.com/OpenBitSys/vlut.cpp) is a
+batched-prefill technique. Applicability depends on unchanged quantizers/scales,
+bounds for all accepted inputs and accounting for layouts, repacking, retained
 copies and scratch. Published platforms do not qualify Windows ARM64 or Swift.
 
 ## Chunkwise Gated DeltaNet prefill
 
 [Gated Delta Networks](https://arxiv.org/html/2412.06464v3) derives chunkwise
 computation with compact WY/UT structure; the [official FLA implementation](https://github.com/fla-org/flash-linear-attention/blob/main/fla/ops/gated_delta_rule/chunk.py)
-is an algebra reference. Retain scalar recurrent execution as the decode control
-and qualify chunk sizes per backend/phase.
+is an algebra reference. Scalar recurrent execution is the decode control;
+each chunk size, backend and phase has a separate qualification identity.
 
 For column keys/values,
 `S_t = alpha_t S_(t-1) (I - beta_t k_t k_t^T) + beta_t v_t k_t^T`.
 Chunking preserves the real-arithmetic model while changing floating evaluation
-order. Declare state/logit tolerances and test long prefixes/restoration.
-Preserve normalization, `head % ssm_keys`, convolution history, grouped/sign
+order. Its numerical contract needs declared state/logit tolerances and long-prefix
+restoration checks, preserving normalization, `head % ssm_keys`, convolution history, grouped/sign
 transforms and FP32 recurrent state.
 
 ## Attention locality and the I/O bound
@@ -113,12 +112,12 @@ transforms and FP32 recurrent state.
 I/O-optimal up to constants for fast memory `M >= d^2` in their model. This
 motivates cache tiling and reduced traffic; it is not a hardware forecast or an
 unconditional subquadratic exact algorithm. [FlashAttention](https://arxiv.org/abs/2205.14135)
-is a lead for R4.6 and Adreno G4/R6.
+is an attention-tiling technique subject to the rounding boundary below.
 
 Scalar nonflash attention rounds **globally normalized probabilities to FP16
 before multiplying V**. Ordinary online-softmax merging changes that operation.
-First consider grouped-head tiling and contiguous V reads retaining reduction
-order. A rounding-compatible normalization may retain scores or recompute them;
+Grouped-head tiling and contiguous V reads can retain reduction order.
+A rounding-compatible normalization may retain scores or recompute them;
 a conventional Flash path needs a distinct numerical contract and qualification.
 Do not share checkpoints across incompatible backend identities.
 
@@ -126,8 +125,8 @@ Do not share checkpoints across incompatible backend identities.
 
 [Unified Radix Cache](https://www.lmsys.org/blog/2026-08-11-unified-radix-cache/)
 distinguishes reusable full-attention KV paths from recurrent state valid at an
-exact prefix checkpoint. Apply that boundary to R5.2. With at most eight saved
-prefixes, avoid payload copies before replacing linear lookup. Budget unique
+exact prefix checkpoint. For at most eight saved prefixes, linear-lookup cost
+is separate from payload-copy cost. State budgets include unique
 pages, mutable tails, metadata, rollback and every retained GDN snapshot;
 shared ownership cannot create mutable cross-snapshot aliases.
 
@@ -148,7 +147,7 @@ Generic inverse-state rollback is unsafe mathematically: the transition
 can underflow/saturate, and convolution overwrites history. Use snapshots,
 saved factors and forward reconstruction with numerical checks.
 
-## Compression bound and deferred experiments
+## Compression and approximation constraints
 
 An independent 128-trit block has `3^128` possibilities and needs
 `ceil(128 log2(3)) = 203` bits: **26 whole code bytes**, already used by PTQ1
@@ -169,7 +168,7 @@ Check signed Gram entries/ranges before applying approximation arguments.
 
 ## Validation and promotion
 
-Implement one change at a time under [validation policy](validation.md).
+The [validation policy](validation.md) applies independently to each change.
 Exact integer/storage changes need bitwise fixtures, scales, malformed-input and
 -128/+2 cases. Reordered floating work needs predeclared logits/KV/GDN and full-
 continuation tolerances. Both need checkpoint isolation, edits, cancellation,
