@@ -63,10 +63,16 @@ launches Qwen's Gradio/web demo.
 
 Native Windows ARM64 package compatibility, CPU latency, synthesis quality and
 combined memory admission alongside Swift and Canary have **not** been qualified.
-`--device cpu` explicitly uses float32 and eager attention; it is an available
-execution choice, rather than a promise that arbitrary ARM64 PyTorch/audio
-packages work or are fast enough. `--device cuda` uses CUDA device zero and
-BF16/eager attention, and requires a compatible local NVIDIA environment.
+`--precision bfloat16` is the default for both CPU and CUDA, using eager
+attention. The CPU path keeps weights in half-sized BF16 storage rather than
+expanding them to float32 alongside Swift. It uses four intra-op threads and
+one inter-op thread. CPU synthesis remains slow; clients should send short
+sequential clips within the existing request deadline. Explicit
+`--precision float16` and `--precision float32` are available for independently
+qualified environments, with no automatic precision or voice-engine fallback.
+`--device cuda` uses CUDA device zero and requires a compatible local NVIDIA
+environment. These execution choices do not promise that arbitrary native
+ARM64 PyTorch/audio packages work or are fast enough.
 Snapdragon Adreno/Hexagon devices are not CUDA devices. A runtime that cannot
 load the model fails startup rather than choosing another voice engine.
 

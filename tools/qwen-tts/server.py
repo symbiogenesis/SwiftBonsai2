@@ -34,6 +34,7 @@ INTAKE_SECONDS = 10.0
 SYNTHESIS_SECONDS = 180.0
 WRITE_SECONDS = 5.0
 MAX_CODEC_TOKENS = 1500  # Locked codec: 1920 output samples per 12.5 Hz frame.
+PRECISIONS = ("float32", "float16", "bfloat16")
 LANGUAGES = frozenset((
     "Auto", "Chinese", "English", "Japanese", "Korean", "German", "French",
     "Russian", "Portuguese", "Spanish", "Italian",
@@ -239,7 +240,7 @@ class Server(socketserver.TCPServer):
         pass  # Prevent request-bearing third-party tracebacks in process logs.
 
 
-def _model_worker(connection, snapshot: str, device: str, scratch: str) -> None:
+def _model_worker(connection, snapshot: str, device: str, scratch: str, precision: str) -> None:
     with open(os.devnull, "w", encoding="utf-8") as quiet:
         with contextlib.redirect_stdout(quiet), contextlib.redirect_stderr(quiet):
             try:
@@ -258,7 +259,8 @@ def _model_worker(connection, snapshot: str, device: str, scratch: str) -> None:
                 model = Qwen3TTSModel.from_pretrained(
                     snapshot, local_files_only=True, trust_remote_code=False,
                     device_map="cpu" if device == "cpu" else "cuda:0",
-                    dtype=torch.float32 if device == "cpu" else torch.bfloat16,
+                    dtype={"float32": torch.float32, "float16": torch.float16,
+                           "bfloat16": torch.bfloat16}[precision],
                     attn_implementation="eager",
                 )
                 if model.model.tts_model_type != "voice_design":
@@ -304,14 +306,17 @@ def _model_worker(connection, snapshot: str, device: str, scratch: str) -> None:
 
 
 class ProcessSynthesizer:
-    def __init__(self, snapshot: Path, device: str, startup_seconds: float):
+    def __init__(self, snapshot: Path, device: str, startup_seconds: float,
+                 precision: str = "bfloat16"):
+        if precision not in PRECISIONS:
+            raise ValueError("invalid model precision")
         self._ready = False
         self.scratch = tempfile.TemporaryDirectory(prefix="Bonsai-QwenTTS-", dir=Path.cwd())
         context = multiprocessing.get_context("spawn")
         self.connection, child = context.Pipe()
         self.process = context.Process(
             target=_model_worker,
-            args=(child, str(snapshot), device, self.scratch.name), daemon=True,
+            args=(child, str(snapshot), device, self.scratch.name, precision), daemon=True,
         )
         self.process.start()
         child.close()
@@ -432,6 +437,7 @@ def main() -> int:
     parser.add_argument("--token-file", required=True, type=Path)
     parser.add_argument("--port", type=int, default=8767)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
+    parser.add_argument("--precision", choices=PRECISIONS, default="bfloat16")
     parser.add_argument("--startup-seconds", type=int, default=900)
     args = parser.parse_args()
     try:
@@ -447,7 +453,8 @@ def main() -> int:
             token = source.read(65)
         if not re.fullmatch(rb"[a-f0-9]{64}", token):
             raise ValueError("invalid protected token file")
-        synthesizer = ProcessSynthesizer(snapshot, args.device, args.startup_seconds)
+        synthesizer = ProcessSynthesizer(snapshot, args.device, args.startup_seconds,
+                                        precision=args.precision)
         try:
             with Server(args.port, token, synthesizer) as service:
                 print(f"Qwen VoiceDesign ready at 127.0.0.1:{args.port}", flush=True)

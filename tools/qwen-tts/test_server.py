@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import wave
 
 spec = importlib.util.spec_from_file_location("bonsai_qwen_tts_server", Path(__file__).with_name("server.py"))
@@ -153,6 +154,34 @@ class InputAndArtifactTests(unittest.TestCase):
 
 
 class ProcessCancellationTests(unittest.TestCase):
+    def test_requested_precision_reaches_worker_and_invalid_precision_never_spawns(self):
+        with tempfile.TemporaryDirectory(prefix="Qwen-precision-contract-") as directory:
+            scratch = mock.Mock(name=directory)
+            scratch.name = directory
+            parent, child = mock.Mock(), mock.Mock()
+            parent.poll.return_value = True
+            parent.recv.return_value = (True, "ready")
+            process = mock.Mock()
+            process.is_alive.return_value = True
+            context = mock.Mock()
+            context.Pipe.return_value = (parent, child)
+            context.Process.return_value = process
+            with mock.patch.object(server.multiprocessing, "get_context", return_value=context), \
+                    mock.patch.object(server.tempfile, "TemporaryDirectory", return_value=scratch):
+                synthesizer = server.ProcessSynthesizer(Path(directory), "cpu", 1,
+                                                       precision="float16")
+                self.assertTrue(synthesizer.ready)
+                self.assertEqual(context.Process.call_args.kwargs["args"],
+                                 (child, directory, "cpu", directory, "float16"))
+                process.start.assert_called_once()
+                synthesizer.close()
+                scratch.cleanup.assert_called_once()
+            with mock.patch.object(server.multiprocessing, "get_context") as get_context:
+                with self.assertRaises(ValueError):
+                    server.ProcessSynthesizer(Path(directory), "cpu", 1,
+                                              precision="automatic-fallback")
+                get_context.assert_not_called()
+
     def test_timeout_terminates_worker_and_removes_external_storage(self):
         class Process:
             alive = True
