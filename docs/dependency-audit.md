@@ -142,19 +142,32 @@ also reproduced the broader dependency graph and passed Windows ARM64 checking.
 backend/capability-selective builds of the supported SDK, covering all plausibly
 optional runtime and build dependencies while retaining security validation.
 
-### Renderer defaults are broader than the manifest suggests
+### Renderer features are now explicit
 
-eframe defaults are disabled, but its `wgpu` feature enables `egui-wgpu/default`,
-which re-enables wgpu defaults: Windows builds include DX12, Vulkan and GLES.
+The initial audit found that eframe's `wgpu` feature re-enabled
+`egui-wgpu/default` and broad wgpu defaults despite disabling eframe defaults.
+The follow-up uses `wgpu_no_default_features` and a pinned direct wgpu dependency
+solely to select `std`, `parking_lot`, `dx12`, `vulkan`, `gles` and `wgsl`.
+All three existing Windows backends remain enabled, as requested by the user.
 The application uses default `NativeOptions` renderer configuration, whose
 upstream backend selection is `PRIMARY | GL` unless overridden by the environment.
 These are real fallback paths.
 
-eframe supports `wgpu_no_default_features`, paired with an explicit wgpu backend
-selection. Adopt it only after device and fallback qualification; removing GLES
-or Vulkan now would change supported fallback behavior. System fonts also pull
-in font parsers, color-font rendering, `vello_cpu` and `glifo` for actual UI
-functionality. None is an accidental inference framework or browser frontend.
+This excludes production browser/Metal backend defaults but leaves the Windows
+package graph unchanged. At the original audit baseline, the all-target chat
+normal/build graph drops from 368 to 366 packages; upstream GPU test dependencies
+still request Metal and all Windows backends. No Windows size or speed improvement
+is claimed. Narrowing the supported Windows backend set remains a separate policy
+and device-qualification decision. System fonts also pull in font parsers,
+color-font rendering, `vello_cpu` and `glifo` for actual UI functionality. None is
+an accidental inference framework or browser frontend.
+
+The renderer follow-up passed local chat format, Release Clippy, documentation
+and build checks. The exact capture regression rendered ten layouts with DX12
+forced; native preview windows with default and DX12 selection were responsive
+and closed successfully. These checks do not qualify every backend/device or
+establish inference performance. Evidence remains outside Git in
+`C:\Users\symbi\AppData\Local\Temp\Bonsai-WgpuRefine-2143bcc4c15b4cdfbfa4b483ea4d7937`.
 
 ## Direct dependency decisions
 
@@ -169,7 +182,7 @@ functionality. None is an accidental inference framework or browser frontend.
 | `socket2` | Keep pre-bind options, bounded backlog and Windows exclusive-address behavior. |
 | `windows-sys` | Keep selected Win32 process/credentials/audio/accessibility APIs. |
 | `windows`, `windows-future` | Keep compatible WinRT microphone permission/capture APIs. They serve a different role from windows-sys. |
-| `eframe` | Keep native Rust UI, accessibility, clipboard, fallback/system fonts and wgpu; qualify renderer reductions separately. |
+| `eframe`, `wgpu` | Keep native Rust UI, accessibility, clipboard and fallback/system fonts; select all three supported Windows graphics backends explicitly. |
 | `egui_kittest`, `egui_system_font_provider` | Keep test-only harness/font checks; capture-only feature splitting gives little benefit while production already needs graphics. |
 | `toml` | Keep CI manifest parsing with only parse/serde/std enabled. |
 | `ureq` | Keep CI-only synchronous HTTPS; Windows uses Schannel and non-Windows Rustls. Defaults/compression remain disabled. |

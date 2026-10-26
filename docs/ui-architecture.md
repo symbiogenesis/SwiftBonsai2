@@ -26,6 +26,13 @@ Owned model and speech workers require the native Windows containment described
 in the [worker sandbox architecture](sandboxing.md); microphone consent remains
 a separate UI capability check.
 
+The production manifest explicitly selects wgpu's DX12, Vulkan and OpenGL/GLES
+Windows backends through eframe's `wgpu_no_default_features` integration. It
+retains upstream adapter selection and `WGPU_BACKEND` handling. Browser and Metal
+backends are not requested by the production manifest; upstream test dependencies
+can enable additional platform features. Available backends still depend on the
+device and installed drivers.
+
 The window uses a dark palette, maps Windows high-contrast settings to its
 Rust-drawn widgets and keeps an in-memory workspace of up to 16 conversations.
 Each conversation retains its draft, response settings, visible transcript and

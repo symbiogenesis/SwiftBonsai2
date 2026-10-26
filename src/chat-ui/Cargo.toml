@@ -17,7 +17,9 @@ httparse = "=1.10.1"
 
 [target.'cfg(windows)'.dependencies]
 bonsai-audio = { path = "../audio" }
-eframe = { version = "=0.37.0", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "system_fonts", "wgpu"] }
+eframe = { version = "=0.37.0", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "system_fonts", "wgpu_no_default_features"] }
+# Select all supported Windows backends explicitly for eframe's shared renderer.
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "parking_lot", "dx12", "vulkan", "gles", "wgsl"] }
 bonsai-windows-credentials = { path = "../windows-credentials" }
 bonsai-windows-process = { path = "../windows-process" }
 windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Media_Audio", "Win32_UI_WindowsAndMessaging", "Win32_UI_Accessibility"] }

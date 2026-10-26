@@ -53,7 +53,8 @@ source or generated declarations to adopt MPL. See its
 ### Native GUI fonts
 
 The GUI enables `accesskit`, `clipboard`, `default_fonts`, `system_fonts` and
-`wgpu`; inspection, persistence and browser-link features are disabled. The
+`wgpu_no_default_features`, with explicit wgpu DX12, Vulkan and GLES features;
+inspection, persistence and browser-link features are disabled. The
 downloaded 0.37.0 font crate embeds Hack Regular, Ubuntu Light and the small
 `egui-icons.ttf` subset with this selection. Its optional monochrome Noto Emoji
 and full emoji-icon fonts are not enabled. See the pinned

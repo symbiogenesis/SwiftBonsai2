@@ -524,6 +524,7 @@ dependencies = [
  "httparse",
  "serde",
  "serde_json",
+ "wgpu",
  "windows",
  "windows-future",
  "windows-sys 0.61.2",

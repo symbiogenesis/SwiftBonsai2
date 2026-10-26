@@ -327,11 +327,14 @@ Reference: [exact conformance requirements](docs/prism-upstream-tests.md).
 
 ## Deferred dependency experiments
 
-- Follow the [2026-10-26 dependency audit](docs/dependency-audit.md): seek
-  backend-specific MXC dependency/features before changing supervisor boundaries;
-  qualify target-device graphics and fallback behavior before narrowing wgpu
-  backends. Consider separating artifact archive APIs only if independently built
-  speech companions show a worthwhile build/size benefit. Keep containment,
+- Follow the [2026-10-26 dependency audit](docs/dependency-audit.md) and
+  [MXC #1579](https://github.com/microsoft/mxc/issues/1579) for backend/capability
+  dependency features in the supported SDK before changing supervisor boundaries.
+  Keep all three supported Windows wgpu
+  backends explicitly selected; any future removal needs a separate support
+  decision and device/fallback qualification. Consider separating artifact archive
+  APIs only if independently built speech companions show a worthwhile build/size
+  benefit. Keep containment,
   accessibility and native UI behavior intact; all timing benchmarks remain CI-only.
 - Reopen the pinned SIMD-JSON submodule experiment only after a concrete change
   addresses the fixed-source timing no-go. Require that
