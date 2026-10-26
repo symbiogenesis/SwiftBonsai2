@@ -131,7 +131,7 @@ impl Recovery {
     }
 
     /// Stale acknowledgments cannot clear a newer save/erase intention.
-    pub(crate) fn is_current(&self, event: &Event) -> bool {
+    pub(crate) const fn is_current(&self, event: &Event) -> bool {
         let operation = match event {
             Event::Saved(operation) | Event::Erased(operation) | Event::Failed(operation) => {
                 *operation

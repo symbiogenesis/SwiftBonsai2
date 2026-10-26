@@ -184,7 +184,7 @@ impl State {
                     }
                 }
                 Err(error) => {
-                    self.recovery_notice = format!("Could not save conversations: {error}")
+                    self.recovery_notice = format!("Could not save conversations: {error}");
                 }
             }
         }
