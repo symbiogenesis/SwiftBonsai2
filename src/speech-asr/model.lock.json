@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "model": "nvidia/canary-qwen-2.5b",
+  "sourceRevision": "b1469e1bba1cfe140205529c79c434ca47180960",
+  "repository": "handy-computer/canary-qwen-2.5b-gguf",
+  "revision": "a4480da236b7d99d7a12186868de021ef4ff5ced",
+  "architecture": "canary_qwen",
+  "quantization": "Q8_0",
+  "filename": "canary-qwen-2.5b-Q8_0.gguf",
+  "url": "https://huggingface.co/handy-computer/canary-qwen-2.5b-gguf/resolve/a4480da236b7d99d7a12186868de021ef4ff5ced/canary-qwen-2.5b-Q8_0.gguf",
+  "bytes": 2797548928,
+  "sha256": "d89aad1285d5bd5aa441c464d3a4cf37bd5474f70705408e71558d8627415b34",
+  "license": "CC-BY-4.0",
+  "nativeRuntime": {
+    "package": "transcribe-cpp",
+    "version": "0.4.1",
+    "source": "https://github.com/handy-computer/transcribe.cpp",
+    "commit": "4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b",
+    "license": "MIT",
+    "backend": "CPU"
+  }
+}

@@ -1,0 +1,17 @@
+[package]
+name = "bonsai-speech-asr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+license.workspace = true
+repository.workspace = true
+keywords = ["speech", "asr", "canary", "gguf", "native"]
+categories = ["multimedia::audio"]
+description = "Bounded native Canary-Qwen 2.5B recognition for Bonsai speech services"
+
+[dependencies]
+transcribe-cpp = { version = "=0.4.1", default-features = false }
+
+[lints]
+workspace = true
