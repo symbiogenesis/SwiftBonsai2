@@ -53,8 +53,7 @@ Arithmetic/reduction order, committed state, transaction deltas and checkpoints
 retain their existing contracts. Frozen pre-change hybrid logits/state fixtures
 cover both FFN/QKV size orderings, failed evaluation, retry, restore and reset.
 This is a source follow-up in [Prism Inference at `326d0dd`](https://github.com/symbiogenesis/prism-inference/blob/326d0dd45b2d3c61ea6ce8ebe67f8249bdfa22a6/src/graph.rs);
-the runner's pinned `0.1.1` binary does not include it. A reviewed binary release
-and complete lock update are required before provisioning changes.
+the runner's pinned `0.1.2` binary includes this implementation.
 
 Allocator capacity rounding and process memory are separate from this finite
 buffer count. R4.2 remains open; no measured memory or throughput gain is claimed.

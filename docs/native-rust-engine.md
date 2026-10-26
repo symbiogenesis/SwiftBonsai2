@@ -156,8 +156,8 @@ reviewed CPU MVP handoff. Existing kernel-level `Auto` is not that selector.
     Synthetic fixtures cover output validation, reuse, cancellation and rollback.
     A [source follow-up](inference-algorithms.md#scratch-lifetimes) shares
     phase-disjoint attention/FFN projections and gates and convolves QKV in place,
-    removing 152 KiB of nominal Swift scratch payload. The provisioned `0.1.1`
-    binary awaits a reviewed release/lock update; R4.2 remains unqualified.
+    removing 152 KiB of nominal Swift scratch payload. The provisioned `0.1.2`
+    binary includes this source follow-up; R4.2 remains unqualified.
   - [ ] **R4.2 — Qualify allocation and memory benefit.** Compare owned-output
     and reusable-storage paths with the same model/workload. Capture prefill/decode
     allocations, peak memory, logits/tokens, prefix restoration and failure recovery.
