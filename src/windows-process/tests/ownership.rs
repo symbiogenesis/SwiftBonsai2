@@ -4,7 +4,7 @@
 use std::ffi::OsString;
 use std::fs;
 use std::io;
-use std::net::{Ipv4Addr, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, TcpListener, TcpStream, UdpSocket};
 use std::os::windows::ffi::{OsStrExt as _, OsStringExt as _};
 use std::os::windows::fs::OpenOptionsExt as _;
 use std::os::windows::process::CommandExt as _;
@@ -217,6 +217,92 @@ fn assert_other_worker_temp_denied(first_scratch: &std::path::Path) -> io::Resul
     assert_ne!(
         fs::read_to_string(scratch.join("kernel-temp-path.txt"))?,
         first
+    );
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires native Windows PSEC v1.1 and an IPv4 non-loopback host route."]
+fn native_sandbox_host_loopback_capability_includes_host_interface_services() -> io::Result<()> {
+    native_sandbox_available()?;
+    // UDP connect selects a local route without sending any packet. The TCP
+    // target belongs to this host; no Internet service or external peer is used.
+    let route = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
+    route.connect((Ipv4Addr::new(192, 0, 2, 1), 9))?;
+    let address = route.local_addr()?.ip();
+    if address.is_loopback() || address.is_unspecified() {
+        return Err(io::Error::other(
+            "no non-loopback IPv4 route for sandbox qualification",
+        ));
+    }
+    let listener = TcpListener::bind((address, 0))?;
+    let endpoint = listener.local_addr()?;
+    // The native host-loopback capability also includes a host's other local
+    // addresses. This scope is deliberately recorded rather than described as
+    // broker-only communication or an external network grant.
+    let control = TcpStream::connect_timeout(&endpoint, Duration::from_secs(2))?;
+    drop(control);
+    let lane = Lane::new("sandbox-network")?;
+    let scratch = lane.path.join("scratch");
+    fs::create_dir(&scratch)?;
+    let mut spec = lane.spec(vec![
+        OsString::from("sandbox-connect-allowed"),
+        OsString::from(endpoint.to_string()),
+    ]);
+    spec.working_directory.clone_from(&scratch);
+    spec.active_process_limit = 1;
+    let policy = SandboxPolicy {
+        readonly_paths: vec![spec.executable.clone()],
+        writable_directory: scratch.clone(),
+    };
+    let process = OwnedProcess::start_sandboxed(&spec, &policy)?;
+    until(|| process.try_wait().map(|code| code.is_some()))?;
+    assert_eq!(
+        process.try_wait()?,
+        Some(0),
+        "{}",
+        fs::read_to_string(&spec.stderr)?
+    );
+    assert_eq!(
+        fs::read_to_string(scratch.join("network-allowed.txt"))?,
+        "connected"
+    );
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires native Windows PSEC v1.1 with networking policy support."]
+fn native_sandbox_denies_external_tcp_connect_by_policy() -> io::Result<()> {
+    native_sandbox_available()?;
+    let lane = Lane::new("sandbox-external-network")?;
+    let scratch = lane.path.join("scratch");
+    fs::create_dir(&scratch)?;
+    // RFC 5737 TEST-NET-1 is a documentation-only address. There is no required
+    // external service: only immediate Windows WSAEACCES counts as denial.
+    // Timeout, missing route and connection refusal all fail this qualification.
+    let mut spec = lane.spec(vec![
+        OsString::from("sandbox-connect-denied"),
+        OsString::from("192.0.2.1:9"),
+    ]);
+    spec.working_directory.clone_from(&scratch);
+    spec.active_process_limit = 1;
+    let process = OwnedProcess::start_sandboxed(
+        &spec,
+        &SandboxPolicy {
+            readonly_paths: vec![spec.executable.clone()],
+            writable_directory: scratch.clone(),
+        },
+    )?;
+    until(|| process.try_wait().map(|code| code.is_some()))?;
+    assert_eq!(
+        process.try_wait()?,
+        Some(0),
+        "{}",
+        fs::read_to_string(&spec.stderr)?
+    );
+    assert_eq!(
+        fs::read_to_string(scratch.join("network-denied.txt"))?,
+        "WSAEACCES"
     );
     Ok(())
 }

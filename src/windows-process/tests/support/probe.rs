@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs;
 use std::io;
-use std::net::TcpListener;
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::windows::ffi::OsStrExt as _;
 use std::os::windows::process::CommandExt as _;
 use std::path::{Path, PathBuf};
@@ -13,6 +13,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use bonsai_windows_process::{OwnedProcess, ProcessSpec};
+use windows_sys::Win32::Networking::WinSock::WSAEACCES;
 use windows_sys::Win32::System::Diagnostics::Debug::{GetErrorMode, RaiseException, SetErrorMode};
 
 fn main() -> io::Result<()> {
@@ -43,6 +44,8 @@ fn main() -> io::Result<()> {
         "mitigations" => report_mitigations()?,
         "nested-mitigations" => nested_mitigations()?,
         "sandbox-files" => sandbox_files(&args)?,
+        "sandbox-connect-allowed" => sandbox_connect(&args, true)?,
+        "sandbox-connect-denied" => sandbox_connect(&args, false)?,
         "sandbox-temp-denied" => sandbox_temp_denied(&args)?,
         "crash" => native_crash(),
         "error-policy" | "error-policy-owner" => error_policy(mode)?,
@@ -293,6 +296,22 @@ fn sandbox_ancestors(model: &Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+fn sandbox_connect(args: &[OsString], allowed: bool) -> io::Result<()> {
+    let endpoint = argument(args, 1)?
+        .parse::<SocketAddr>()
+        .map_err(io::Error::other)?;
+    match TcpStream::connect_timeout(&endpoint, Duration::from_secs(2)) {
+        Ok(_) if allowed => fs::write("network-allowed.txt", "connected"),
+        Err(error) if !allowed && error.raw_os_error() == Some(WSAEACCES) => {
+            fs::write("network-denied.txt", "WSAEACCES")
+        }
+        Ok(_) => Err(io::Error::other(
+            "sandbox unexpectedly connected to denied endpoint",
+        )),
+        Err(error) => Err(sandbox_error("unexpected network outcome", &error)),
+    }
 }
 
 fn nested_mitigations() -> io::Result<()> {
