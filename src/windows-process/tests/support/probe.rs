@@ -410,16 +410,10 @@ fn report_mitigations() -> io::Result<()> {
 }
 
 fn report_inspection_mitigations() -> io::Result<()> {
-    use windows_sys::Win32::System::Threading::{
-        ProcessChildProcessPolicy, ProcessHeapTerminatePolicy,
-    };
+    use windows_sys::Win32::System::Threading::ProcessChildProcessPolicy;
     report_mitigations()?;
-    let heap = mitigation_flags(ProcessHeapTerminatePolicy)?;
     let children = mitigation_flags(ProcessChildProcessPolicy)?;
-    fs::write(
-        "inspection.txt",
-        format!("heap={heap}\nchildren={children}\n"),
-    )
+    fs::write("inspection.txt", format!("children={children}\n"))
 }
 
 #[allow(

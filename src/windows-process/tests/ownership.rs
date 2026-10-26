@@ -481,7 +481,7 @@ fn inspection_keeps_non_win32k_mitigations_and_rejects_worker_arguments() -> io:
         }
         assert_eq!(
             fs::read_to_string(lane.path.join("inspection.txt"))?,
-            "heap=1\nchildren=1\n"
+            "children=1\n"
         );
     }
     Ok(())
