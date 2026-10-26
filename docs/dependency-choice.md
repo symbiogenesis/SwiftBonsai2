@@ -2,9 +2,9 @@
 
 Keep **Serde 1.0.229, serde_json 1.0.154 and Tokio 1.54.1**, as pinned in the
 [workspace](../Cargo.toml). No evaluated challenger satisfied the production
-replacement criteria. Trial implementations, dependencies and benchmarks are
-removed; their source/evidence remain in Git. Preserve strict request behavior
-before considering speed, and keep all benchmarks on CI.
+replacement criteria. Strict request behavior precedes speed, and all benchmarks
+run only in CI. Outstanding optional dependency experiments are tracked only in
+[PLAN.md](../PLAN.md#application-and-daily-service).
 
 ## JSON selection
 
@@ -14,7 +14,7 @@ small inputs, 8/32/128-message histories and a near-1 MiB request. Timing includ
 immutable-input preparation, schema/history validation, canonical serialization,
 allocation/copying and destruction. One warmup round was discarded; nine measured
 rounds rotated order. Unicode, duplicate/unknown-field, shape, bound and canonical
-byte correctness preceded timing; complete broker correctness also passed in CI.
+byte correctness are prerequisites for interpreting timing.
 
 | Candidate | Time versus serde_json | Worst case | Decision |
 | --- | ---: | ---: | --- |
@@ -26,17 +26,14 @@ byte correctness preceded timing; complete broker correctness also passed in CI.
 SIMD-JSON's Serde adapter accepted `{"messages":[{"role":"user","content":"\ud800"}]}`
 and canonicalized the lone surrogate to `\u0000`; production serde_json rejects
 it as value-free `ChatSchema`. That contract violation excluded the tested
-release regardless of speed. The rejected experiment remains in `31d8b2c`.
+release regardless of speed.
 
-Upstream [PR #482](https://github.com/simd-lite/simd-json/pull/482) merged on
-2026-10-25 as [`ff8f5c8`](https://github.com/simd-lite/simd-json/commit/ff8f5c8bb75dfc56803321c2f5a92656c7de842f).
-It rejects lone high surrogates, malformed surrogate escapes and second escapes
-outside the low-surrogate range, including the upper-bound case we reported.
-The fix is newer than the `v0.18.1` tag; upstream's package version at merge was
-also `0.18.1`, so identify any new trial by its exact revision. The fixed revision
-can be reconsidered after passing the same strict correctness checks and then
-the original CI performance gates above. No post-fix broker timing or production
-replacement is established.
+Upstream revision
+[`ff8f5c8`](https://github.com/simd-lite/simd-json/commit/ff8f5c8bb75dfc56803321c2f5a92656c7de842f)
+rejects lone high surrogates, malformed surrogate escapes and second escapes
+outside the low-surrogate range. It is distinct from the evaluated `v0.18.1`
+tag despite carrying the same package version. No post-fix broker timing or
+production replacement is established; the exact source revision matters.
 
 Sonic's 3.5–4.7% history-case gains and the fused visitor's 6.9% gain at 128
 messages did not offset other regressions. These results reject the tested
@@ -62,19 +59,14 @@ screen omitted thread creation/stacks, HTTP policy, queued admission,
 disconnect cancellation and absolute deadlines. It supplies no demonstrated
 advantage for replacing the bounded Tokio runner.
 
-## Evidence and limits
+## Evidence limits
 
-[CI run 40039211957](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40039211957)
-tested [`c63a7c0762f7cc64df0d67b34001a31fda6a0b5f`](https://github.com/symbiogenesis/SwiftBonsai2Runner/tree/c63a7c0762f7cc64df0d67b34001a31fda6a0b5f).
-Its [artifact](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40039211957/artifacts/12538059153)
-contains raw observations, correctness logs, compiler/CPU/OS identities, hashes,
-selection calculations and exclusions. The host was four-core Cobalt 100,
-Windows 11 Enterprise build 26200, using
-`nightly-2026-10-22-aarch64-pc-windows-msvc`
-(`1.101.0-nightly`, `1a2c4797e`) and
-`-Znext-solver=globally -Zpolonius=next -C target-cpu=native` for all candidates.
+The [retained comparison artifact](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40039211957/artifacts/12538059153)
+binds these observations to their compiler/CPU/OS identities, hashes, selection
+calculations and exclusions. Its four-core Cobalt 100 Windows ARM64 host and
+common nightly compiler define the scope of the ratios above.
 
 This is Windows ARM64 evidence, not Snapdragon inference evidence or a
-stable-versus-nightly comparison. The subsequent promotion of the
-[pinned nightly](../rust-toolchain.toml) enables branch-sensitive lending in
-the broker; this dependency comparison does not establish a compiler speedup.
+stable-versus-nightly comparison. The [pinned nightly](../rust-toolchain.toml)
+enables branch-sensitive lending in the broker; this dependency comparison
+does not establish a compiler speedup.

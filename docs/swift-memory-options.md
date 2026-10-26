@@ -1,5 +1,9 @@
 # Swift memory options
 
+This document records representation and allocation constraints. Outstanding
+experiments and promotion requirements live only in
+[PLAN.md](../PLAN.md#creative-quality-adapters-and-memory).
+
 This audit covers the exact PQ2 artifact in
 [swift-assessment.lock.json](../config/swift-assessment.lock.json), its
 [symbol census](../config/swift.pq2-census.json) and Prism commit
@@ -12,15 +16,15 @@ New training/fine-tuning on this machine is excluded. Do not substitute an older
 checkpoint, change weight/KV precision or count an adapter as lossless memory
 savings.
 
-| Option | Current state | Quantified scope / next check |
+| Option | Current contract | Quantified scope and limitation |
 | --- | --- | --- |
-| Current-symbol PQ2 → PTQ1 | Verified export and bounded native decode pass | Saves 1,259,520,000 weight bytes (1.1730 GiB); qualify native output and performance separately. |
-| mmap, no repack | Selected | Avoids a separate complete private weight copy when the backend supports mapped tensors; inspect actual buffer types. |
-| Lower microbatch | 64 selected | A 32-token variant may reduce graph memory; obtain allocation receipts before changing it. |
-| Fewer output rows | Completion normally samples one row | One F32 logits row is 993,280 bytes; confirm the retained row count. |
+| Current-symbol PQ2 → PTQ1 | Verified export and bounded native decode | Saves 1,259,520,000 weight bytes (1.1730 GiB); native output and performance are unqualified. |
+| mmap, no repack | Selected | Avoids a separate complete private weight copy only for tensors supported by the mapped backend buffer type. |
+| Microbatch | 64 selected | A 32-token variant changes execution grouping and its memory benefit is unmeasured. |
+| Output rows | Completion normally samples one row | One F32 logits row is 993,280 bytes; graph logits and persistent host output have distinct lifetimes. |
 | Hadamard/sign cleanup | Main buffers already shared | At most 4 MiB temporary staging plus 114,688 bytes retained sign metadata. |
 | F32/BF16 narrowing | Original types retained | Only 10.09 MiB F32 and 45 MiB BF16 exist; narrowing is not a lossless default. |
-| Thread stacks | Four matching decode/batch threads | A small allocation opportunity; require actual stack-depth evidence. |
+| Thread stacks | Four matching decode/batch threads | Reserved address space is distinct from committed/resident memory. |
 
 ## Exact PTQ1 packing
 
@@ -34,8 +38,8 @@ For arbitrary independent 128-trit blocks, `ceil(128 log2(3)) = 203` bits requir
 26 whole code bytes. PTQ1 meets this byte-aligned bound before its scale.
 Cross-block compression has different tradeoffs; see the
 [counting bound](inference-algorithms.md#compression-bound-and-deferred-experiments).
-Physical FP16 KV is implemented in the experimental Rust reference; immutable
-checkpoint sharing remains pending. Both are separate from weight packing.
+Physical FP16 KV in the experimental Rust reference and checkpoint-storage
+behavior are separate from weight packing.
 
 The [native layout](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-common.h)
 and [codec](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-quants.c)
@@ -63,7 +67,20 @@ decodes PTQ in place rather than retaining an expanded model. However,
 [CPU type traits](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-cpu/ggml-cpu.c)
 use Q8_K activations for PQ2 and Q8_0 for PTQ1. Equal decoded weights do not imply
 equal logits, tokens or speed. Preserving PQ2's activation route would require
-a separately qualified PTQ1×Q8_K kernel. BITCOS is [retired](bitcos-retirement.md).
+a distinct qualified PTQ1×Q8_K kernel.
+
+## Packing decision
+
+Current-weight PTQ1 is the supported lossless packing option. BITCOS is not
+supported. Swift's 32.76154% zero-symbol rate falls below BITCOS's 37.5% ideal
+same-scale PTQ1 break-even before offsets, padding or indexes. Its proposed
+layout would occupy 6,158,339,606 bytes before container/index overhead,
+**211,690,678 bytes more** than the verified 5,946,648,928-byte PTQ1 export.
+
+The rejected Cobalt 100 ARM64 synthetic prototype was also slower than PQ2.
+That result does not establish a universal BITCOS limit, Snapdragon behavior
+or full-model performance. The serialized-size disadvantage is sufficient to
+exclude the proposed layout from this artifact's current packing choices.
 
 ## Mapping and startup
 
@@ -71,11 +88,11 @@ The [CPU check](../scripts/Invoke-CpuCheck.ps1) selects mmap, no repack, no warm
 CPU buffers and 128/64 batch/microbatch. The
 [loader](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/src/llama-model-loader.cpp)
 can point supported CPU tensors into the read-only mapping; other buffer types
-may copy them. Inspect actual load receipts before counting savings. Complete
-hashing/census/export before inference; use bounded buffers rather than whole-file
-arrays or model-wide float conversion.
+may copy them. Load receipts determine which allocations count as savings.
+Hashing/census/export use bounded buffers rather than whole-file arrays or
+model-wide float conversion and precede inference.
 
-A future native build could make whole-file prefetch optional. The pinned
+The pinned
 [Windows mapping code](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/src/llama-mmap.cpp)
 prefetches the complete mapping and cannot unmap fragments. Windows
 [prefetch](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-prefetchvirtualmemory)
@@ -85,33 +102,32 @@ savings once inference touches the weights. No current CLI switch exposes it.
 
 ## Graph and output buffers
 
-Record graph/workspace high-water allocations before tuning. The
+The
 [context allocator](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/src/llama-context.cpp)
 reserves prompt/decode graphs and grows the persistent output buffer to the
 largest requested count. With 248,320 vocabulary entries, reducing a retained
 64-row F32 logits buffer to one row would save **62,576,640 bytes**. This is
 conditional: completion may already retain only one row, and graph logits can
-differ from persistent host output. Set `n_outputs_max=1` only after confirming
-all single-sequence paths. Avoid optional embeddings, capture layers, MTP and
-backend sampling outputs unless requested.
+differ from persistent host output. Single-row output, optional embeddings,
+capture layers, MTP and backend sampling each have separate allocation contracts.
 
-Microbatch 32 preserves context length but changes execution grouping and needs
-numerical/device qualification. One F32 17,408-wide activation occupies
+Microbatch 32 preserves context length but changes execution grouping, so the
+64-token profile's numerical/device evidence does not transfer to it. One F32 17,408-wide activation occupies
 4,456,448 bytes at 64 tokens and 2,228,224 at 32. These are component sizes;
 do not multiply them by all layers because the planner reuses storage. The
 [CPU backend](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-cpu/ggml-cpu.cpp)
-retains a maximum-sized work buffer. Trimming it after prefill needs a native
-change and may cause later allocations.
+retains a maximum-sized work buffer. It has no current post-prefill trimming
+contract; releasing it could cause later allocations.
 
-## Smaller opportunities
+## Other allocation bounds
 
 The [Hadamard implementation](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/src/llama-model.cpp)
 already shares one 1024² F32 rotation per CPU buffer type and signs by width/type.
-Retained rotation/sign/metadata payload is 4,423,680 bytes. Direct CPU-buffer
-construction might remove a temporary 4 MiB vector; releasing finished sign
-metadata could recover 114,688 bytes. Counting one rotation per transformed
-weight would count shared storage repeatedly. A butterfly rewrite changes
-floating-point order and needs numerical review.
+Retained rotation/sign/metadata payload is 4,423,680 bytes, alongside a
+temporary 4 MiB initialization vector. Finished sign metadata accounts for
+114,688 bytes. Counting one rotation per transformed weight would count shared
+storage repeatedly. A butterfly rewrite changes floating-point order rather
+than merely reducing storage.
 
 F32/BF16 weights total 57,767,936 bytes. Narrowing all F32 to sixteen bits could
 save at most 5,291,008 bytes and would require exactness proofs. BF16 already
@@ -124,8 +140,9 @@ bytes; lowering context or precision changes the contract.
 avoid a separate batch pool. Four threads mean three workers plus the caller
 in the non-OpenMP path. Windows
 [stack reservation](https://learn.microsoft.com/en-us/windows/win32/procthread/thread-stack-size)
-is not committed/resident memory; inspect PE headers and stack depth before
-claiming savings or lowering limits.
+is not committed/resident memory. PE headers and actual stack depth determine
+whether stack settings represent a material allocation bound.
 
-Qualify one explicit representation/allocation change at a time. Serialized
-byte savings alone do not justify reducing the service cap or physical reserve.
+Serialized byte savings alone do not justify reducing the service cap or
+physical reserve. The [PTQ1 contract](ptq1-readiness.md) describes the supported
+selection and unchanged admission threshold.

@@ -1,5 +1,9 @@
 # Swift pretrained LoRA
 
+This is the artifact and acceptance contract. Remaining adapter, quality and
+allocation work is tracked only in
+[PLAN.md](../PLAN.md#creative-quality-adapters-and-memory).
+
 The approved OrcaRouter adapter is pinned, provisioned and passes bounded native
 ARM64 loading/decode. **Its effectiveness and quality on Swift remain
 unqualified.** The owner intends it for the standard profile after independent
@@ -80,11 +84,10 @@ AtomicChat reports an explicit order correction. Different source-matrix orders
 could explain that disagreement. Orca accepts an external checkpoint directory,
 and the shipped metadata declares neither its revision nor input order.
 
-Verify the intended correction at native residual writers before declaring the
-adapter mathematically valid on Swift. Loading and changed text cannot settle
-this question. A correctly ordered original-Bonsai correction also need not be
-the right correction for Swift's changed weights. The approved file remains
-unmodified.
+Native residual-writer evidence determines whether the intended correction is
+mathematically valid on Swift. Loading and changed text cannot settle this
+question. A correctly ordered original-Bonsai correction also need not be the
+right correction for Swift's changed weights. The approved file is unmodified.
 
 ## Memory and execution cost
 
@@ -101,9 +104,8 @@ difference of **586,870,784 bytes (559.68 MiB)**. These separate process counter
 exclude mapped weights and do not isolate adapter allocation. They establish
 bounded loading/decode, not reliable refusal changes, quality or performance.
 
-The difference is not yet attributed. Record allocator/workspace high-water
-marks, persistent adapter buffers and process commit around context creation,
-activation, graph reservation and first decode before claiming recovery.
+The difference is unattributed; those process counters do not identify persistent
+adapter buffers, workspace high-water allocations or graph lifetimes.
 The [allocator](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-alloc.c)
 already reuses eligible SCALE/ADD parent storage; explicit in-place calls do
 not guarantee savings. F32 factor/input multiplication needs no activation-type
@@ -113,13 +115,14 @@ At microbatch 64, one rank-1 projection temporary is 256 bytes and one expanded
 vocabulary correction. Do not multiply per-site buffers by 128 without proving
 their lifetimes overlap.
 
-## Allocation-preserving optimization candidates
+## Allocation semantics
 
-| Candidate | Status and constraints |
-| --- | --- |
-| Share immutable B payloads | Implemented [Rust source overlay](prism-storage-overlay.md); focused native test saves exactly 2.5 MiB with byte-identical operations. Not installed in the assessment runtime. |
-| Reserve the configured graph once | Unimplemented. Common initialization reserves the base graph before activating adapters, causing another reserve. Old compute buffers are freed before replacement, so this does not prove two buffers coexist or explain the commit delta. |
-| Fuse rank-1 accumulation | Unimplemented. Keep the existing A reduction and replace B multiplication/scale/add only after strict numerical and allocator checks. |
+Common initialization reserves the base graph before activating adapters,
+causing another reserve. Old compute buffers are freed before replacement; this
+does not prove that two buffers coexist or explain the commit delta. The
+[Rust storage overlay](prism-storage-overlay.md) shares immutable B payloads
+with byte-identical operations and a 2.5 MiB storage saving. That source overlay
+is separate from the installed assessment runtime.
 
 All 129 B tensors are byte-identical F32 `[1,5120]`, SHA-256
 `1cdf553ae2623501140ec2e52c3dfa6a80d33fcfe6f91a6d3c4dcd5f887eeca0`.
@@ -127,13 +130,11 @@ The overlay shares storage only after matching buffer type/device, shape/layout
 and bytes, preserving each target's metadata and adapter lifetime. Its saving is
 modest and does not resolve the larger counter difference.
 
-An initial-adapter context path must preserve public initialization, scale-zero
-filtering, load-without-apply, fit/no-allocation estimates and dynamic changes.
-A fused CPU accumulation must retain A's reduction, all F32 rounding stages and
-adapter order. Reuse the base result only when last-use/view/output constraints
-permit it. Do not reassociate scale or introduce FMA contraction: signed zero,
-subnormals and compiler behavior make bit identity a test requirement. Require
-strict reference comparisons, then ARM64 logits/generation checks in CI.
+Lossless allocation changes preserve public initialization, scale-zero filtering,
+load-without-apply, fit/no-allocation estimates, dynamic changes, A's reduction,
+all F32 rounding stages and adapter order. Base-result reuse depends on
+last-use/view/output constraints. Reassociation or FMA contraction can change
+signed zero, subnormals and results; bit identity is part of this contract.
 
 Quantizing factors, reducing rank/scale, pruning sites or merging into the
 ternary base changes the correction or weights; these are outside lossless
@@ -141,11 +142,11 @@ allocation work.
 
 ## Required standard-profile qualification
 
-- [ ] **Require decode tokens per second and output quality each to match or
-  improve on the same model without LoRA.** The no-LoRA configuration remains
-  the control. The [paired CI capture and scorer](lora-qualification.md) implement
-  the fixed contract; target-device evaluation, native basis/logits evidence
-  and independent human reviews remain pending.
+**Decode tokens per second and output quality must each match or improve on the
+same model without LoRA.** The no-LoRA configuration is the control. The
+[paired CI capture and scorer](lora-qualification.md) implement this fixed
+acceptance contract; a capture or score alone does not establish native
+adapter-basis validity or independent human acceptance.
 
 The contract requires every prompt's median throughput ratio to be at least
 1.0, and every applicable quality dimension to match the baseline median and
@@ -158,17 +159,18 @@ The owner accepts a modest bounded RAM premium: the fixed gate permits up to
 cap and 4 GiB physical reserve. Keep improving lossless allocation without
 requiring identical baseline RAM.
 
-Pin model, adapter, runtime, template, sampler, context, batching, threads and
-seed. Verify loaded-at-zero-scale response/logits identity before interpreting
-nonzero effects, and verify the SSM basis at residual writers. Preserve failed
-generations and individual regressions. Broader paired fiction/art checks must
-cover dialogue, continuity, tone, composition and sensitive permitted themes,
-with independent coherence, instruction-following, refusal, repetition and
-usable-completion scores. Do not choose a scale from one changed response.
+Capture identity binds model, adapter, runtime, template, sampler, context,
+batching, threads and seed. Loaded-at-zero-scale response/logits identity and
+the SSM basis at residual writers are prerequisites for interpreting nonzero
+effects. Evidence retains failed generations and individual regressions.
+Fiction/art quality includes dialogue, continuity, tone, composition and
+sensitive permitted themes, with independent coherence, instruction-following,
+refusal, repetition and usable-completion scores. One changed response cannot
+establish an appropriate scale.
 
-Keep benchmarks on CI. Report prompt processing, first-token latency, decode
-throughput, generated/reasoning tokens, response time, retries and resource
-counters. Compare equal budgets and time/tokens to useful completed work;
-fewer refusals may help, but that benefit must be measured. The fixed capture
-does not supply first-token, power or thermal measurements, so those remain
-separate creative/comfort gates before daily use.
+Benchmarks run only in CI. Performance evidence distinguishes prompt processing,
+first-token latency, decode throughput, generated/reasoning tokens, response
+time, retries and resources under equal budgets. Fewer refusals alone cannot
+establish time or tokens to useful completed work. The fixed capture does not
+supply first-token, power or thermal measurements and cannot establish the
+broader creative/comfort acceptance required for daily use.

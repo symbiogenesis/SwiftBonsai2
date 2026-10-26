@@ -8,10 +8,12 @@ compiler. Native speech also requires a compatible installed ARM64 Microsoft
 Visual C++ runtime: the TTS build uses the dynamic MSVC runtime. This package
 does not install runtime DLLs. The UI remains the same native Rust application.
 
-This is an initial checked-directory distribution path. Signed installer,
-publisher authentication, automatic update discovery, complete redistribution
-notice review, actual-model acceptance and the restricted daily-service boundary
-remain separate exits. SHA-256 detects changed bytes; review the manifest digest
+This checked-directory distribution path does not provide a signed installer,
+publisher authentication or automatic update discovery. Its synthetic packaging
+checks do not establish notice completeness, actual-model acceptance or daily
+service isolation. Remaining delivery work is tracked only in
+[PLAN.md](../PLAN.md#application-and-daily-service).
+SHA-256 detects changed bytes; review the manifest digest
 through a trusted channel before installation. Same-user replacement remains
 outside this boundary.
 

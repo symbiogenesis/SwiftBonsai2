@@ -8,7 +8,7 @@ delivery work. Implementation chronology and individual check runs live in Git.
 ## Native UI and interoperability
 
 The first-party UI is `bonsai-chat` in `src/chat-ui/`: Rust application code
-using native Windows controls and a Rust HTTP/SSE client. Keep the UI pure Rust
+using an egui/eframe native window and a Rust HTTP/SSE client. Keep the UI pure Rust
 through future changes; browser frontends, JavaScript/TypeScript, HTML/CSS,
 WebViews, Electron and Tauri HTML frontends are excluded. Native operating-system
 bindings are permitted. See the permanent [UI architecture](ui-architecture.md).
@@ -16,7 +16,7 @@ bindings are permitted. See the permanent [UI architecture](ui-architecture.md).
 Compatibility with local LLM tools belongs at the protocol boundary: the
 OpenAI-style chat endpoint, JSON text messages, bearer authentication and SSE.
 The broker's strict schema remains authoritative, so generic clients need
-adaptation when they send unsupported fields such as `model`. A native UI
+adaptation when they send unsupported fields such as `tools`. A native UI
 changes neither the pinned engine nor its independent qualification gates.
 
 ## Model and runtime evidence
@@ -28,9 +28,9 @@ changes neither the pinned engine nor its independent qualification gates.
 | Swift PQ2 | [Actual census](../config/swift.pq2-census.json): 32.76154% zeros, no fourth symbols, finite nonzero scales | This artifact is ternary; the generic native PQ2 loader must still preserve valid fourth symbols |
 | Current-weight PTQ1 | [Export receipt](../config/swift.ptq1-export.json): 5,946,648,928 bytes, 1.173 GiB smaller than PQ2, exact symbol/scale reconstruction | PTQ1 uses different activation quantization; weight parity does not establish equal logits or quality |
 | Native Swift decode | Fixed 16-token PQ2/PTQ1 checks complete with and without the pinned adapter | No sustained TPS, creative-quality or daily-service acceptance |
-| Qwen reference | Verified mixed-type artifact and native CPU route; 18 GiB allowance plus 4 GiB reserve | Recorded attempts refused memory admission; actual model loading remains pending |
+| Qwen reference | Verified mixed-type artifact and native CPU route; 18 GiB allowance plus 4 GiB reserve | Artifact checks and route availability do not establish actual-model acceptance |
 | LoRA storage | [Immutable B sharing](prism-storage-overlay.md) saves 2.5 MiB in the native allocation/math regression | Adapter basis, full-model performance and standard-profile quality remain gated |
-| Rust CPU reference | Verified loader, scalar/NEON hybrid graph, transactional generation, exact Swift chat/sampler and [bounded source parity/owned HTTP recovery](native-rust-engine.md) | Reviewed prebuilt consumption, broader models/full-context workloads, adapters and device qualification remain open |
+| Rust CPU reference | Verified loader, scalar/NEON hybrid graph, transactional generation, exact Swift chat/sampler, pinned `0.1.3` consumption and [bounded source parity/owned HTTP recovery](native-rust-engine.md) | These bounds do not establish broader-model/full-context, adapter or device qualification |
 | Accelerators | [Adreno](adreno-gpu-plan.md) and [Hexagon](hexagon-npu-plan.md) have explicit implementation gates | Current launch profiles are CPU-only |
 | Hardware selection goal | [X1/X2 profile plan](hardware-profiles.md) defines capability discovery, separate phase/objective choices and qualified CPU fallback | No automatic selector, cross-generation performance verdict or accepted accelerator default exists yet |
 
@@ -109,11 +109,10 @@ limits apply before child code executes. Stop terminates the Job and waits for
 it to become empty; dropping ownership also covers abrupt parent death.
 
 The maintenance tool reuses this boundary for CPU/LoRA checks; the broker uses
-it for its development backend. The former production C# launcher is removed.
-Codec validation now exercises the production Rust codec against the pinned
+it for its development backend. Codec validation exercises the production Rust codec against the pinned
 released native DLL in a separate supervised probe. Independent base-3 expected
-bytes, frozen FP32 scale bits and the captured C++ fixture remain its oracles;
-the retired C# codec is not needed. The small embedded C# HTTP test handler
+bytes, frozen FP32 scale bits and the captured C++ fixture are its oracles.
+The small embedded C# HTTP test handler
 remains separately checked by the strict .NET analyzer build.
 
 The Job commit cap does not bound all resident file-backed mappings or device
