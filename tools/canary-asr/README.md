@@ -1,19 +1,19 @@
 # Native Canary Qwen speech recognition
 
-The demo uses the selected **NVIDIA Canary Qwen 2.5B** model through the
+The app uses the selected **NVIDIA Canary Qwen 2.5B** model through the
 [native Rust companion](../../src/speech-asr/README.md) and the CPU-only
 transcribe.cpp engine.
 The first-party UI remains Rust and native; inference includes a reviewed C++
 GGML core. This is not a claim of pure-Rust tensor inference.
 
-Run `./scripts/Start-Demo.ps1` to provision the immutable Q8_0 GGUF, build native
+Run `./scripts/Start-Chat.ps1` to provision the immutable Q8_0 GGUF, build native
 ARM64 companions and configure the microphone button. It remains off until
 explicitly enabled and Windows microphone permission is granted. Canary loads
 only after the first captured clip, remains warm while that microphone generation
 is enabled, and stops when input is disabled or cancelled. Starting Read Aloud
 releases input first. Recognized text goes to the composer without sending.
 
-`./scripts/Start-Demo.ps1 -SpeechModelsOnly` downloads without compiling or
+`./scripts/Start-Chat.ps1 -SpeechModelsOnly` downloads without compiling or
 opening the microphone. For only Canary use:
 
 ```powershell
@@ -24,7 +24,7 @@ The native [model lock](../../src/speech-asr/model.lock.json) pins the conversio
 source model revision, exact size and SHA-256. Canary is Copyright NVIDIA
 Corporation, CC BY 4.0; retain attribution and the model license. The legacy
 `model.lock.json` and `tokenizer.lock.json` here describe original reference
-snapshots for the explicit `Get-SpeechModels.ps1` utility; the demo does not load
+snapshots for the explicit `Get-SpeechModels.ps1` utility; the app does not load
 them, and existing downloaded snapshots are preserved.
 
 For a separately managed native companion, run its built executable from an

@@ -197,18 +197,34 @@ This small client workflow runs above the broker, retaining existing
 inference settings and per-call limits, plus a shared deadline and cancellation.
 Focused behavior checks suffice for initial experimental exposure; an extensive
 benchmark campaign is not a prerequisite. Quality gains remain unproven. This is
-an opt-in demo feature, not a qualified creative-quality profile. See the
+an opt-in workflow whose creative-quality gains remain unqualified. See the
 [mode contract](docs/inference-defaults.md#experimental-extra-effort-mode).
 
-Completed demo experience follow-ups:
+Completed native chat experience follow-ups:
 
 - [x] Recover after Stop or an uncertain request failure through an explicit
   fresh owned-model retry, preserving completed conversation turns. Restore
-  locally rejected prompts for editing instead of ending the demo session.
+  locally rejected prompts for editing instead of ending the app session.
 - [x] Expose the bounded experimental plan/draft/review workflow with visible
   progress and retained complete drafts; keep Standard as the default.
 - [x] Show the 8,192-token context bound and reasoning-inclusive completion
   reservation, with native 512/1,024/2,048/4,096-token output-cap selection.
+- [x] Keep a bounded conversation workspace with separate drafts/settings, native
+  rename and confirmed deletion, and exact committed-history restoration.
+- [x] Add opt-in Windows-encrypted recovery of conversations and unsent drafts,
+  bounded asynchronous writes, atomic replacement and a single-writer lock.
+  Preserve corrupt recovery and never replay interrupted requests.
+- [x] Find Unicode message text with highlighted next/previous matches and
+  jump to latest, keeping search controls visible during long-history scrolling.
+- [x] Provide `Start-Chat.ps1` with checked reusable external build outputs and
+  actionable setup guidance; remove the obsolete demo launcher.
+- [x] Allow drafting during model startup and keep settings usable at the minimum
+  window size, with focused native interaction and rendered-layout checks.
+
+Next application exits: packaged installation/update/rollback, actual-model
+startup/long-chat/speech acceptance, Windows assistive-technology review, and
+the restricted daily-service boundary from section 5. UI polish does not qualify
+those runtime, security, creative-quality or sustained-performance requirements.
 
 ## 7. Memory and storage budgets
 

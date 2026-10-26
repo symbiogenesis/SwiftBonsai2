@@ -33,8 +33,9 @@ and [Rust roadmap](native-rust-engine.md) for bounded source evidence and remain
 release/profile acceptance.
 
 Snapdragon TPS, sustained comfort, creative quality and accepted GPU/NPU profiles
-remain unqualified. The [pure-Rust native UI](ui-architecture.md) supplies a demo
-client; daily chat still needs UI and isolation acceptance. Follow
+remain unqualified. The [pure-Rust native UI](ui-architecture.md) supplies a chat
+workspace with conversation recovery and search; daily-service isolation and
+real-model acceptance remain separate requirements. Follow
 [validation policy](validation.md) for focused checks, CI-only benchmarks and
 the separate standard LoRA performance/quality gates.
 

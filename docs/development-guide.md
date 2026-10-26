@@ -22,12 +22,12 @@ Prism inference support remains future work.
 [Adreno](adreno-gpu-plan.md) and [Hexagon](hexagon-npu-plan.md) integration remain
 planned. Current launch policies select CPU execution.
 
-A native Rust chat demo is available through the explicit development launcher.
+A native Rust chat app is available through `Start-Chat.ps1`.
 Daily-service acceptance remains pending. Development ownership and memory
 controls do not qualify restricted inference identity, filesystem/egress
 isolation or same-user backend bypass prevention.
 
-## Native chat demo
+## Native chat app
 
 Use native Windows ARM64 PowerShell 7.6+, the pinned Rust toolchain, an existing
 Swift PQ2 model/runtime installation and at least **16 GiB of available RAM**.
@@ -39,7 +39,7 @@ $data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
 ./scripts/Get-Engine.ps1 -DataDirectory $data -LockPath ./config/swift-assessment.lock.json
 ./scripts/Get-Model.ps1 -DataDirectory $data -LockPath ./config/swift-assessment.lock.json
 ./scripts/Get-Adapter.ps1 -DataDirectory $data
-./scripts/Start-Demo.ps1 -DataDirectory $data
+./scripts/Start-Chat.ps1 -DataDirectory $data
 ```
 
 The native `egui`/`eframe` window follows the lasting
@@ -78,6 +78,31 @@ The conversation shows only user and assistant content. Model readiness,
 generation errors, retry guidance and speech status appear outside the chat;
 application diagnostics are available in a separate collapsible view.
 
+The sidebar keeps up to 16 conversations, each with its own unsent draft and
+response settings. Start a **New conversation** without clearing the previous
+one, select a chat to resume it, or use **Rename** and confirmed **Delete**.
+Switching is available while the model is ready and idle. You can draft a
+message while the model prepares; sending waits for readiness.
+
+Use **Find** or **Ctrl+F** to search visible message text, **F3** / **Shift+F3**
+for the next / previous match, and **Latest** to return to the newest message.
+Search is case-insensitive, supports Unicode, and excludes private thinking.
+The search controls stay above the scrolling transcript.
+
+Conversations remain in memory by default. In **Settings**, enable **Save
+conversations on this device** for recovery across launches. The app encrypts
+the workspace with Windows user-scoped DPAPI in `DataDirectory/chat-recovery.dpapi`;
+no plaintext conversation is written to that file. Saving includes unsent drafts,
+response settings, voice description, transcript and exact completed model history.
+Interrupted text stays visible after recovery and is never promoted to completed
+history or automatically sent. The microphone remains off. Turning saving off
+removes the saved copy while keeping the current workspace open. Recovery is
+bounded to 8 MiB and only one window can write it for each data folder. Corrupt or
+unreadable recovery is preserved with a visible warning until you explicitly
+enable saving to replace it. Windows user protection does not isolate data from
+other processes running as that user, and deletion is not secure erasure or backup
+removal. Keep the model data folder private and outside Git.
+
 **Mode** defaults to **Standard**, which makes one completion request.
 **Extra effort (experimental)** makes up to three sequential planning, drafting
 and review requests to the same model, with visible stage labels and a shared
@@ -107,7 +132,7 @@ synthesis and playback. Reasoning is not read aloud. Edit **Voice profile** to
 describe a voice, for example "A warm, low-pitched narrator with a calm pace and
 clear consonants." No voice preset or reference recording is required.
 
-The demo automatically provisions and configures both native ARM64 speech
+The app automatically provisions and configures both native ARM64 speech
 companions. Canary uses the selected NVIDIA Canary Qwen 2.5B model and Qwen uses
 the selected 1.7B VoiceDesign model. Rust implements the services, authentication,
 request validation, WAV processing and process ownership. Reviewed native GGML
@@ -120,7 +145,7 @@ resume. Existing original snapshots and old private runtimes are preserved.
 Download without compiling or launching:
 
 ```powershell
-$speech = ./scripts/Start-Demo.ps1 -DataDirectory $data -SpeechModelsOnly
+$speech = ./scripts/Start-Chat.ps1 -DataDirectory $data -SpeechModelsOnly
 $speech.CanaryModelPath
 $speech.TtsModelPath
 $speech.TtsCodecPath
@@ -128,7 +153,7 @@ $speech.TtsCodecPath
 
 `Get-NativeSpeechModels.ps1 -DataDirectory $data -Model Canary` or `-Model QwenTts`
 selects one engine's files. `Get-SpeechModels.ps1` remains an explicit utility for
-original reference snapshots; the demo no longer consumes those snapshots.
+original reference snapshots; the app no longer consumes those snapshots.
 
 Native artifact planning uses `bonsai-tools` with the crates' compiled model
 locks. Select a trusted packaged tool with `BONSAI_TOOLS_PATH` or the provisioning
@@ -185,9 +210,13 @@ qualified. Qwen uses the isolated x64 environment because the official
 torchaudio package has no Windows ARM64 wheel. UI/protocol tests do not establish
 real-model audio quality or latency.
 
-`Start-Demo.ps1` builds the chat app and broker in a fresh system-temp lane.
-Pass absolute `-ChatPath` and `-BrokerPath` values to reuse existing builds.
-The lane retains compiler output in `build.log` and app output in `demo.log`.
+`Start-Chat.ps1` checks and builds the chat app and broker in a reusable external
+Cargo cache under `DataDirectory/build/chat/`, separated by checkout and pinned
+toolchain. Cargo checks source/dependency freshness on each launch; output hash
+receipts detect missing or changed cached executables and force a rebuild.
+Pass absolute `-ChatPath` and `-BrokerPath` values to select existing builds.
+A fresh system-temp lane retains compiler output in `chat-build.log` and app
+output in `chat.log`. `Start-Chat.ps1` is the supported launcher.
 The pinned abliteration LoRA is enabled at scale 1 by default. Pass
 `-NoAbliterateLora` to run without it; direct `bonsai-chat` launches accept
 `--no-abliterate-lora`. Missing or altered adapter bytes fail startup with
@@ -202,7 +231,7 @@ The app uses the broker's documented strict subset of OpenAI-style JSON/SSE
 chat conventions. Unsupported fields remain rejected; this is not a claim of
 drop-in compatibility with every OpenAI client.
 
-The demo uses the pinned Prism/llama CPU backend with original Swift PQ2 weights
+The app uses the pinned Prism/llama CPU backend with original Swift PQ2 weights
 and the pinned adapter unless opted out. This development default does not
 qualify the [standard LoRA profile](swift-lora.md#required-standard-profile-qualification).
 The separate native inference release `0.1.1` predates the

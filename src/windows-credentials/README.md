@@ -5,7 +5,7 @@ existing external local-drive parent. Accessors expose directory/key paths and
 borrow the two secret strings. The type has no `Debug` implementation or
 secret-bearing errors.
 
-Only `src/native.rs` may use unsafe Rust. `CreateDirectoryW` and
+Only the audited `src/native.rs` and `src/sealed.rs` boundaries may use unsafe Rust. `CreateDirectoryW` and
 `CreateFileW(CREATE_NEW)` establish protected ACLs at creation, granting full
 control only to the process user and LocalSystem. Directory ACLs allow
 object/container inheritance; files have explicit protected ACLs. Actual owner,
@@ -36,3 +36,10 @@ Focused Windows regressions cover live ACLs, handle sharing and unsafe aliases.
 They use `BONSAI_CREDENTIAL_TEST_ROOT` when supplied, otherwise external Windows
 temp, and retain their small evidence directories. See [validation](../../docs/validation.md)
 for local/CI limits.
+
+`protect_private_data` / `unprotect_private_data` support opt-in conversation
+recovery through user-scoped Windows DPAPI with fixed application-purpose entropy,
+no interactive prompts and an 8 MiB plaintext bound. Windows authenticates the
+encrypted data; corrupted or inaccessible data fails closed. Native output
+allocations are scrubbed before `LocalFree`. These APIs do not write files or
+provide isolation against another process running as the same Windows user.

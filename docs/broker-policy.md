@@ -287,7 +287,7 @@ model/runtime lock. Arbitrary executables, models, profile JSON and overrides
 are rejected. Swift uses the original PQ2 weights without PTQ1 substitution.
 `--use-abliterate-lora` selects only the pinned adapter at scale 1 with the Prism
 CPU backend; it is rejected for the reference profile and `--native-engine`.
-The demo requests it by default and offers `-NoAbliterateLora`; direct broker
+The app requests it by default and offers `-NoAbliterateLora`; direct broker
 launches omit it by default. `--check-only`
 verifies policy/artifacts and reports memory admission without credentials or a
 process. Neither selection establishes real-model service qualification. Inherited

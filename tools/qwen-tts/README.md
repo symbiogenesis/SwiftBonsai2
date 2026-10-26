@@ -5,7 +5,7 @@ Read Aloud uses **Qwen3-TTS 12Hz 1.7B VoiceDesign** through the
 core. A plain-language voice description controls synthesis; no voice preset,
 speaker file or reference recording is required.
 
-`./scripts/Start-Demo.ps1` downloads and verifies the pinned Q8_0 talker and
+`./scripts/Start-Chat.ps1` downloads and verifies the pinned Q8_0 talker and
 codec, builds native ARM64 companions, and configures Read Aloud automatically.
 Enter a plain-language **Voice profile**, for example “A warm, low-pitched
 narrator with a calm pace and clear consonants.” It applies to the next explicit
@@ -31,7 +31,7 @@ For only the native TTS model and codec:
 The native [model lock](../../src/speech-tts/model.lock.json) pins both files to
 immutable conversions of the named Qwen checkpoint. The model is Apache-2.0;
 preserve Qwen attribution and notices. The legacy `model.lock.json` here is only
-for the explicit original-snapshot download utility, not the demo runtime.
+for the explicit original-snapshot download utility, not the app runtime.
 Existing raw snapshots and old private runtimes are not deleted or modified.
 
 For an independently managed native companion, run from an external working

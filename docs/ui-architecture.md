@@ -24,15 +24,28 @@ platforms, but the broker ownership, credentials and speech integrations remain
 Windows-specific; this migration does not establish a cross-platform runner.
 
 The window uses a dark palette, maps Windows high-contrast settings to its
-Rust-drawn widgets and keeps conversation history in memory. `eframe` handles
+Rust-drawn widgets and keeps an in-memory workspace of up to 16 conversations.
+Each conversation retains its draft, response settings, visible transcript and
+separate exact committed model history. Switching while idle never promotes an
+interrupted turn to model history. Rename and confirmed deletion are native controls.
+Optional recovery uses Windows user-scoped DPAPI through the audited credentials
+boundary, with encrypted atomic file replacement outside Git and a single-writer
+file lock. Saving is off by default; disabling it removes the saved copy. Only
+completed history is restored to a fresh broker, with no automatic request replay
+or microphone activation. Disk and encryption work run on a separate bounded worker.
+The encrypted workspace is limited to 8 MiB; unreadable recovery remains untouched
+until an explicit user saving choice. `eframe` handles
 window input and per-monitor display scaling. Rust-drawn controls expose labels
 through AccessKit and support keyboard navigation.
 The conversation contains only user and assistant content. Startup, retry,
 transport and speech status use separate controls; bounded application
 diagnostics have their own collapsible view rather than appearing as chat
 messages. The transcript supports selection and explicit copying without
-interpreting model output as HTML. Selection during streaming and long-history
-scrolling need focused checks. Toolkit support for non-Latin glyphs does not imply full
+interpreting model output as HTML. Find highlights Unicode case-insensitive
+message-body matches, with previous/next navigation and jump-to-latest controls
+outside the transcript scroller. Reasoning is excluded from search. Focused
+interaction tests cover streaming selection, search and startup drafting.
+Toolkit support for non-Latin glyphs does not imply full
 bidirectional text editing or complete native-control accessibility parity.
 An insufficient-memory startup failure offers **Retry model** after RAM is
 freed. Retrying creates a fresh broker attempt with new diagnostic storage and
@@ -49,7 +62,7 @@ default single-call workflow; opt-in Extra effort performs at most three
 sequential plan/draft/review calls with a shared deadline, stage labels and
 retained drafts. Its quality gains remain unproven.
 
-The demo uses the existing pinned Swift PQ2 CPU backend through the broker.
+The app uses the existing pinned Swift PQ2 CPU backend through the broker.
 Its pinned abliteration LoRA is enabled by default, with an explicit
 `-NoAbliterateLora` opt-out; the broker verifies and holds the selected adapter.
 The UI does not load model weights, select arbitrary runtime arguments, bypass
@@ -93,7 +106,7 @@ unsupported terminal reasons, error events and missing completion reject.
 
 ## Speech input and output
 
-The PowerShell demo launcher provisions the pinned Canary Qwen 2.5B and Qwen3-TTS
+The PowerShell chat launcher provisions the pinned Canary Qwen 2.5B and Qwen3-TTS
 1.7B VoiceDesign Q8_0 GGUF files using immutable URLs and exact size/SHA-256
 verification. `-SpeechModelsOnly` provisions files without building or launching the app;
 `-NoSpeechModels` skips automatic speech setup. The launcher builds native ARM64
@@ -160,7 +173,7 @@ admission, credential or context requirements.
 
 Review UI changes against both boundaries: first-party application code remains
 Rust/native, and the HTTP adapter preserves the documented local LLM contract.
-Use native builds, focused protocol/UI checks and an actual-model demo where
+Use native builds, focused protocol/UI checks and an actual-model session where
 appropriate. Full suites and all benchmarks remain CI-only under the existing
 [validation policy](validation.md). Do not use a successful window launch as
 evidence of model quality or sustained inference performance.

@@ -7,7 +7,7 @@
 Creative writing · Brainstorming · Art direction
 
 ![Platform: Windows ARM64](https://img.shields.io/badge/Windows-ARM64-0078D4?style=flat-square)
-![Status: early development](https://img.shields.io/badge/status-early_development-D99A28?style=flat-square)
+![UI: native Rust](https://img.shields.io/badge/UI-native_Rust-50855B?style=flat-square)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-50855B?style=flat-square)](LICENSE)
 
 [Get started](docs/development-guide.md) · [Documentation](#documentation) · [Roadmap](PLAN.md)
@@ -20,7 +20,7 @@ Swift Bonsai 2 is a language model by [UkisAI](https://ukisai.com/swift-bonsai-2
 built on [PrismML's Bonsai 2](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf),
 which derives from [Alibaba's Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B).
 
-This project is building a local creative assistant for **Windows ARM64 laptops
+This project provides a local creative assistant for **Windows ARM64 laptops
 with Snapdragon X and X2 processors**. It currently runs on the CPU, with
 [automatic hardware tuning and GPU/NPU support](docs/hardware-profiles.md)
 planned.
@@ -30,12 +30,13 @@ This project consumes a pinned prebuilt server; ordinary builds do not compile
 the inference engine. Provision it with `./scripts/Get-Inference.ps1 -DataDirectory <absolute-path>`.
 
 
-> [!IMPORTANT]
-> **Early development.** Model setup, CPU checks, a development API and a native
-> Rust chat demo are available. Daily-service acceptance remains pending.
+Once you've [set up the model and runtime](docs/development-guide.md#native-chat-app),
+run `./scripts/Start-Chat.ps1` to open the native Windows chat app.
 
-Once you've [set up the model and runtime](docs/development-guide.md#native-chat-demo),
-run `./scripts/Start-Demo.ps1` to open the Windows chat demo.
+Keep separate conversations and unsent drafts, rename your chats, and find text
+with **Ctrl+F**. Enable **Save conversations on this device** in Settings to
+recover your workspace after closing; saved conversations use Windows user
+encryption. Saving is off by default.
 
 You can chat with Swift, hear answers read aloud in a voice you describe, or
 dictate a message to review before sending. The microphone stays off until you
@@ -52,7 +53,7 @@ and [local API contract](docs/broker-policy.md#public-request-contract).
 | --- | --- |
 | **Hardware** | Snapdragon X and X2 · Windows ARM64 |
 | **Model** | Swift Bonsai 2 · `PQ2_0` |
-| **CPU profile** | One conversation · 8K-token context · FP16 attention caches |
+| **CPU profile** | One active request · 8K-token context · FP16 attention caches |
 | **Next milestones** | Daily-service acceptance and quality/performance qualification |
 
 ## Memory footprint
@@ -100,8 +101,8 @@ with conventional compressed versions of the same Qwen base:
 [Source: Prism benchmark results](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf#benchmarks).
 These scores cover **base Bonsai, not Swift**, and do not measure creative-writing
 quality. Swift's own publisher reports [uneven general-purpose behavior](https://ukisai.com/swift-bonsai-2#research-status-and-limitations).
-Expect an experimental writing partner; prose quality on this build still needs
-evaluation. See [benchmark context and current limits](docs/performance-expectations.md).
+Creative-writing quality and daily-service isolation still need qualification.
+See [benchmark context and current limits](docs/performance-expectations.md).
 
 ## Documentation
 
