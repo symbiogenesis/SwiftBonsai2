@@ -52,9 +52,10 @@ pub struct ProcessSpec {
 /// by the native boundary; caller profile and data directories are not.
 #[derive(Debug)]
 pub struct SandboxPolicy {
-    /// Exact existing model, credential and executable files or runtime folders.
+    /// Exact existing model, credential, executable and runtime library files.
     pub readonly_paths: Vec<PathBuf>,
-    /// Existing private worker scratch, also used as its working directory/TEMP/TMP.
+    /// Existing private worker scratch, also used as its working directory.
+    /// PSEC may substitute its own private per-container TEMP/TMP directory.
     pub writable_directory: PathBuf,
 }
 
@@ -62,11 +63,15 @@ pub struct SandboxPolicy {
 ///
 /// This never changes host ACLs, firewall settings or installed Windows features.
 /// It does not launch a process or establish actual-model compatibility.
+/// Recognized ambient credential variable names reject with a value-free error;
+/// other inherited entries remain intact, so unknown secrets remain a residual risk.
 ///
 /// # Errors
 /// Returns `Unsupported` when the native contract is unavailable, or a native
-/// failure when the host cannot create the required restricted environment.
+/// failure when the host cannot create the required restricted environment, or
+/// `InvalidInput` for recognized ambient credential variables.
 pub fn native_sandbox_available() -> io::Result<()> {
+    validate_sandbox_environment()?;
     native::sandbox_available()
 }
 
@@ -130,8 +135,10 @@ impl OwnedProcess {
     /// Starts a natively contained worker with atomic Job and mitigation attributes.
     ///
     /// The exact worker retains the existing PID, memory, process-count and
-    /// lifetime contracts. Its only writable path is private scratch. OS/profile
-    /// environment entries are inherited; child TEMP/TMP select that scratch.
+    /// lifetime contracts. Writable application storage is private scratch;
+    /// Windows also supplies its own per-container private temporary directory.
+    /// OS/profile environment entries are inherited; TEMP/TMP request scratch
+    /// but PSEC can replace them with that OS-managed temporary directory.
     /// All policy and capability failures reject without an uncontained retry.
     ///
     /// # Errors
@@ -139,6 +146,7 @@ impl OwnedProcess {
     /// grants, unavailable native PSEC support or failed native creation.
     pub fn start_sandboxed(spec: &ProcessSpec, policy: &SandboxPolicy) -> io::Result<Self> {
         validate_process(spec)?;
+        validate_sandbox_environment()?;
         let command = command_line(&spec.executable, &spec.arguments)?;
         native::NativeProcess::start_sandboxed(spec, command, policy).map(Self)
     }
@@ -310,6 +318,61 @@ fn forbidden_environment_name(name: &OsStr) -> bool {
         .iter()
         .any(|prefix| name.starts_with(prefix))
         || ["HF_TOKEN", "HF_ENDPOINT", "MODEL_ENDPOINT"].contains(&name.as_str())
+}
+
+fn validate_sandbox_environment() -> io::Result<()> {
+    if std::env::vars_os().any(|(name, _)| credential_environment_name(&name)) {
+        return Err(invalid(
+            "sandbox launch rejects inherited credential environment variables",
+        ));
+    }
+    Ok(())
+}
+
+fn credential_environment_name(name: &OsStr) -> bool {
+    let name = name.to_string_lossy().to_ascii_uppercase();
+    [
+        "_TOKEN",
+        "_SECRET",
+        "_PASSWORD",
+        "_API_KEY",
+        "_PRIVATE_KEY",
+        "_ACCESS_KEY",
+        "_CONNECTION_STRING",
+        "_CONNECTIONSTRING",
+        "_DATABASE_URL",
+        "_REDIS_URL",
+    ]
+    .iter()
+    .any(|suffix| name.ends_with(suffix))
+        || [
+            "TOKEN",
+            "SECRET",
+            "PASSWORD",
+            "API_KEY",
+            "PRIVATE_KEY",
+            "ACCESS_KEY",
+            "AWS_ACCESS_KEY_ID",
+            "AZURE_OPENAI_KEY",
+            "AZURE_STORAGE_KEY",
+            "AZURE_STORAGE_CONNECTION_STRING",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "CONNECTION_STRING",
+            "CONNECTIONSTRING",
+            "DATABASE_URL",
+            "REDIS_URL",
+        ]
+        .contains(&name.as_str())
+        || [
+            "CONNECTIONSTRINGS__",
+            "SQLCONNSTR_",
+            "SQLAZURECONNSTR_",
+            "MYSQLCONNSTR_",
+            "CUSTOMCONNSTR_",
+            "POSTGRESQLCONNSTR_",
+        ]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
 }
 
 fn validate_path(path: &Path) -> io::Result<()> {
@@ -565,5 +628,66 @@ mod tests {
                 "{name}"
             );
         }
+    }
+}
+#[cfg(test)]
+#[test]
+fn sandbox_environment_classifies_credential_names_without_changing_environment() {
+    for name in [
+        "OPENAI_API_KEY",
+        "openai_api_key",
+        "ANTHROPIC_API_KEY",
+        "AZURE_OPENAI_KEY",
+        "AZURE_STORAGE_CONNECTION_STRING",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "HF_TOKEN",
+        "service_TOKEN",
+        "service_SECRET",
+        "service_PASSWORD",
+        "service_API_KEY",
+        "service_PRIVATE_KEY",
+        "service_ACCESS_KEY",
+        "TOKEN",
+        "PASSWORD",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "DATABASE_URL",
+        "REDIS_URL",
+        "APP_DATABASE_URL",
+        "APP_REDIS_URL",
+        "APP_CONNECTION_STRING",
+        "APP_CONNECTIONSTRING",
+        "ConnectionStrings__DefaultConnection",
+        "SQLCONNSTR_Default",
+        "SQLAZURECONNSTR_Default",
+        "MYSQLCONNSTR_Default",
+        "CUSTOMCONNSTR_Default",
+        "POSTGRESQLCONNSTR_Default",
+    ] {
+        assert!(credential_environment_name(OsStr::new(name)), "{name}");
+    }
+    for name in [
+        "SystemDrive",
+        "SystemRoot",
+        "windir",
+        "ProgramData",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "USERPROFILE",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "PATH",
+        "TEMP",
+        "TMP",
+        "ComSpec",
+        "ProgramFiles",
+        "HF_HOME",
+        "TOKENIZERS_PARALLELISM",
+        "PASSWORD_POLICY",
+    ] {
+        assert!(!credential_environment_name(OsStr::new(name)), "{name}");
     }
 }

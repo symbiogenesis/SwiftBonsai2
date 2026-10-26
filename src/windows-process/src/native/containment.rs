@@ -124,6 +124,11 @@ fn validate_policy(spec: &ProcessSpec, policy: &SandboxPolicy) -> io::Result<Vec
     let mut readonly = runtime_paths()?;
     for path in &policy.readonly_paths {
         validate_local_path(path)?;
+        if !path.is_file() {
+            return Err(invalid(
+                "sandbox read-only grants must name exact existing files",
+            ));
+        }
         if within(path, &policy.writable_directory)? || within(&policy.writable_directory, path)? {
             return Err(invalid(
                 "sandbox read-only and writable grants must not overlap",
@@ -140,8 +145,7 @@ fn validate_policy(spec: &ProcessSpec, policy: &SandboxPolicy) -> io::Result<Vec
     }
     let mut executable_granted = false;
     for path in &policy.readonly_paths {
-        if same_path(&spec.executable, path)? || (path.is_dir() && within(&spec.executable, path)?)
-        {
+        if same_path(&spec.executable, path)? {
             executable_granted = true;
         }
     }
@@ -157,6 +161,16 @@ fn validate_policy(spec: &ProcessSpec, policy: &SandboxPolicy) -> io::Result<Vec
             ));
         }
     }
+    // Native PSEC volume-root grants do not cascade to descendants. Worker
+    // artifact validators need root metadata, which fs_enumerate alone does not
+    // supply. Add only each required volume root; negative qualification must
+    // continue to prove that unrelated contents beneath that root stay denied.
+    let volume_roots: Vec<String> = readonly
+        .iter()
+        .filter_map(|path| Path::new(path).ancestors().last())
+        .map(path_text)
+        .collect::<io::Result<_>>()?;
+    readonly.extend(volume_roots);
     readonly.sort_unstable();
     readonly.dedup();
     Ok(readonly)
@@ -261,9 +275,10 @@ fn policy_bytes(readonly: Vec<String>, scratch: Option<String>) -> Vec<u8> {
     let mut network = NetworkPolicyT::default();
     network.egress = Some(Box::new(egress));
     network.ingress = Some(Box::new(ingress));
-    // Per-container local HTTP is explicitly bidirectional. This does not grant
-    // internetClient/privateNetworkClientServer, a global loopback exemption,
-    // a proxy or a direct external allow rule.
+    // Host loopback is explicitly bidirectional and includes other host-owned
+    // service addresses. Native tests show that neither removing the capability/
+    // peer nor explicit all-address egress deny rules narrow that local scope.
+    // No internet/private-network capability or external allow rule is granted.
     network.allowed_appcontainer_peer = Some("MXC-Loopback".to_owned());
     let mut spec = ProcessSecurityEnvironmentT::default();
     spec.version = SchemaVersionT { major: 1, minor: 1 };
