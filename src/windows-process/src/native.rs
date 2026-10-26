@@ -27,7 +27,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     OPEN_EXISTING,
 };
 use windows_sys::Win32::System::JobObjects::{
-    CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
     JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION, JOB_OBJECT_LIMIT_JOB_MEMORY,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
@@ -41,11 +41,14 @@ use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORY
 use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
     DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
-    GetProcessTimes, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess,
+    GetProcessMitigationPolicy, GetProcessTimes, InitializeProcThreadAttributeList,
+    LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess, PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,
     PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
-    PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, PROCESS_INFORMATION,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, ResumeThread, STARTF_USESHOWWINDOW,
-    STARTF_USESTDHANDLES, STARTUPINFOEXW, UpdateProcThreadAttribute, WaitForSingleObject,
+    PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, PROCESS_INFORMATION, PROCESS_MITIGATION_POLICY,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, ProcessChildProcessPolicy,
+    ProcessExtensionPointDisablePolicy, ProcessImageLoadPolicy, ProcessSystemCallDisablePolicy,
+    ResumeThread, STARTF_USESHOWWINDOW, STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess,
+    UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
 use crate::{ProcessMemory, ProcessSpec, SandboxPolicy, ToolProcessSpec, invalid};
@@ -315,6 +318,7 @@ impl NativeProcess {
                 error.as_raw_handle(),
             ],
             spec.limits.is_some(),
+            spec.limits.is_some_and(|(_, count)| count == 1),
             containment.as_ref().map(containment::Environment::raw),
         )?;
         let mut startup = STARTUPINFOEXW::default();
@@ -350,11 +354,20 @@ impl NativeProcess {
         })?;
         let process = owned(info.hProcess)?;
         let thread = owned(info.hThread)?;
-        // SAFETY: The initial thread was created suspended and is owned/live.
-        if unsafe { ResumeThread(thread.as_raw_handle()) } == u32::MAX {
-            return Err(io::Error::last_os_error());
+        if let Err(error) = resume_owned(
+            &process,
+            &thread,
+            &job,
+            spec.limits.is_some(),
+            spec.limits.is_some_and(|(_, count)| count == 1),
+            containment.is_some(),
+        ) {
+            // PSEC may broker process creation rather than inheriting JOB_LIST.
+            // Any failure before confirmed ownership must terminate this exact
+            // retained root, even when closing our Job cannot reach it yet.
+            terminate_failed_start(&process)?;
+            return Err(error);
         }
-        // Every error after creation closes the Job, killing the suspended tree.
         Ok(Self {
             job,
             process,
@@ -557,6 +570,124 @@ impl NativeProcess {
             private_bytes: counters.PrivateUsage,
             working_set_bytes: counters.WorkingSetSize,
         })
+    }
+}
+
+fn process_in_job(process: &OwnedHandle, job: &OwnedHandle) -> io::Result<bool> {
+    let mut member = 0;
+    // SAFETY: Both uniquely retained handles remain live, and member is writable.
+    check(unsafe {
+        IsProcessInJob(
+            process.as_raw_handle(),
+            job.as_raw_handle(),
+            &raw mut member,
+        )
+    })?;
+    Ok(member != 0)
+}
+
+fn require_mitigation(
+    process: &OwnedHandle,
+    policy: PROCESS_MITIGATION_POLICY,
+    required: u32,
+    name: &str,
+) -> io::Result<()> {
+    // The queried Windows policies all contain one DWORD Flags union. Query the
+    // exact aligned ABI size without introducing union field reads.
+    let mut flags = 0_u32;
+    // SAFETY: This retained process permits queries; the selected policies use
+    // one DWORD Flags union, and the exact writable size is supplied.
+    check(unsafe {
+        GetProcessMitigationPolicy(
+            process.as_raw_handle(),
+            policy,
+            ptr::from_mut(&mut flags).cast(),
+            size_of::<u32>(),
+        )
+    })?;
+    if flags & required != required {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            format!(
+                "required worker mitigation {name} was not applied (flags={flags:#x}, required={required:#x})"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn resume_owned(
+    process: &OwnedHandle,
+    thread: &OwnedHandle,
+    job: &OwnedHandle,
+    headless: bool,
+    restrict_children: bool,
+    native_containment: bool,
+) -> io::Result<()> {
+    let assigned = !process_in_job(process, job)?;
+    if assigned {
+        // SAFETY: The retained root was requested suspended and has not been
+        // resumed by this owner. The live Job already has its complete limits.
+        check(unsafe { AssignProcessToJobObject(job.as_raw_handle(), process.as_raw_handle()) })?;
+        if !process_in_job(process, job)? {
+            return Err(io::Error::other("worker did not enter its required Job"));
+        }
+    }
+    // Native PSEC's creation broker can omit JOB_LIST and the child-process
+    // mitigation attribute. Explicit suspended-root Job assignment above is
+    // mandatory; actual native qualification proves its one-process cap denies
+    // child creation. Plain creation additionally requires the mitigation bit.
+    if restrict_children && !native_containment {
+        require_mitigation(process, ProcessChildProcessPolicy, 0x1, "child creation").map_err(
+            |error| {
+                io::Error::new(
+                    error.kind(),
+                    format!("{error}; root Job verified, explicit assignment={assigned}"),
+                )
+            },
+        )?;
+    }
+    if headless {
+        require_mitigation(process, ProcessSystemCallDisablePolicy, 0x1, "Win32k")?;
+        if !native_containment {
+            // The PSEC broker can also omit these ordinary creation policies.
+            // PSEC uses its native filesystem/UI policy instead; Win32k and
+            // verified Job ownership remain mandatory before the first thread.
+            require_mitigation(
+                process,
+                ProcessExtensionPointDisablePolicy,
+                0x1,
+                "extension points",
+            )?;
+            require_mitigation(process, ProcessImageLoadPolicy, 0x3, "image loading")?;
+        }
+    }
+    // SAFETY: The retained initial thread was requested suspended. Requiring
+    // the returned count to be exactly one detects ignored suspension or extra
+    // suspension before accepting a running, fully owned worker.
+    match unsafe { ResumeThread(thread.as_raw_handle()) } {
+        1 => Ok(()),
+        u32::MAX => Err(io::Error::last_os_error()),
+        _ => Err(io::Error::other(
+            "worker initial suspension was not preserved",
+        )),
+    }
+}
+
+fn terminate_failed_start(process: &OwnedHandle) -> io::Result<()> {
+    // SAFETY: This is the exact newly created root, retained against PID reuse.
+    let terminated = unsafe { TerminateProcess(process.as_raw_handle(), 1) };
+    // SAFETY: Wait only on the same live root handle, with a bounded timeout.
+    match unsafe { WaitForSingleObject(process.as_raw_handle(), 10_000) } {
+        WAIT_OBJECT_0 => Ok(()),
+        WAIT_TIMEOUT => Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "failed worker startup did not terminate",
+        )),
+        _ if terminated == 0 => Err(io::Error::last_os_error()),
+        _ => Err(io::Error::other(
+            "failed worker startup exit could not be confirmed",
+        )),
     }
 }
 
@@ -783,6 +914,7 @@ struct CreationAttributes {
     jobs: Box<[HANDLE; 1]>,
     mitigations: Box<u64>,
     security_environment: Option<Box<HANDLE>>,
+    child_policy: Option<Box<u32>>,
     initialized: bool,
 }
 
@@ -791,9 +923,13 @@ impl CreationAttributes {
         job: HANDLE,
         handles: [HANDLE; 3],
         headless: bool,
+        restrict_children: bool,
         security_environment: Option<HANDLE>,
     ) -> io::Result<Self> {
-        let count = 2 + u32::from(headless) + u32::from(security_environment.is_some());
+        let count = 2
+            + u32::from(headless)
+            + u32::from(security_environment.is_some())
+            + u32::from(restrict_children);
         let mut bytes = 0;
         // SAFETY: Documented null sizing call; bytes points to writable storage.
         let _ = unsafe { InitializeProcThreadAttributeList(null_mut(), count, 0, &raw mut bytes) };
@@ -806,6 +942,8 @@ impl CreationAttributes {
             jobs: Box::new([job]),
             mitigations: Box::new(HEADLESS_MITIGATIONS),
             security_environment: security_environment.map(Box::new),
+            // PROCESS_CREATION_CHILD_PROCESS_RESTRICTED from the Windows SDK.
+            child_policy: restrict_children.then(|| Box::new(0x1)),
             initialized: false,
         };
         // SAFETY: Pointer-aligned buffer is writable for at least the requested
@@ -838,6 +976,13 @@ impl CreationAttributes {
                 0x0023 | 0x0002_0000,
                 ptr::from_ref(environment.as_ref()).cast(),
                 size_of::<HANDLE>(),
+            )?;
+        }
+        if let Some(policy) = value.child_policy.as_ref() {
+            value.update(
+                PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,
+                ptr::from_ref(policy.as_ref()).cast(),
+                size_of::<u32>(),
             )?;
         }
         Ok(value)

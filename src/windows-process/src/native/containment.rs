@@ -27,6 +27,12 @@ use windows_sys::Win32::System::SystemInformation::GetWindowsDirectoryW;
 
 use crate::{ProcessSpec, SandboxPolicy, invalid, validate_path};
 
+// PROCESS_SECURITY_ENVIRONMENT_FLAG_TERMINATE_ON_CLOSE from processmodel.h.
+// Keep native enforcement owned even when brokered creation bypasses Job
+// inheritance. Never cancel this flag or substitute it for process/resource caps.
+// https://learn.microsoft.com/windows/win32/api/processmodel/ne-processmodel-process_security_environment_flags
+const TERMINATE_ON_CLOSE: u32 = 0x1;
+
 /// Owns only a native PSEC handle; creation and policy remain immutable thereafter.
 pub(super) struct Environment(ProcessSecurityEnvironment);
 
@@ -52,7 +58,9 @@ impl Environment {
         let readonly = validate_policy(spec, policy)?;
         let api = available_api()?;
         let bytes = policy_bytes(readonly, Some(path_text(&policy.writable_directory)?));
-        api.create(&bytes, 0).map(Self).map_err(native_error)
+        api.create(&bytes, TERMINATE_ON_CLOSE)
+            .map(Self)
+            .map_err(native_error)
     }
 }
 
@@ -62,7 +70,7 @@ pub(super) fn available() -> io::Result<()> {
     // Creating the same network/UI posture exercises actual PSEC policy admission
     // without a child, credentials, filesystem grants or host ACL changes.
     let environment = api
-        .create(&policy_bytes(Vec::new(), None), 0)
+        .create(&policy_bytes(Vec::new(), None), TERMINATE_ON_CLOSE)
         .map_err(native_error)?;
     drop(environment);
     Ok(())

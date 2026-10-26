@@ -1,6 +1,6 @@
 //! Windows 10+ process ownership using an unnamed, noninheritable Job object.
 //!
-//! A suspended root receives its Job atomically during creation; dropping its
+//! A suspended root must enter its Job before its first instruction; dropping its
 //! owner kills the complete tree. This enforces lifecycle and committed-memory
 //! limits. Explicit sandboxed launches additionally require native Windows PSEC
 //! filesystem, network and desktop containment; no weaker fallback is used.
@@ -132,7 +132,7 @@ impl ParentProcess {
 }
 
 impl OwnedProcess {
-    /// Starts a natively contained worker with atomic Job and mitigation attributes.
+    /// Starts a natively contained worker with verified Job and mitigation attributes.
     ///
     /// The exact worker retains the existing PID, memory, process-count and
     /// lifetime contracts. Writable application storage is private scratch;
@@ -140,12 +140,21 @@ impl OwnedProcess {
     /// OS/profile environment entries are inherited; TEMP/TMP request scratch
     /// but PSEC can replace them with that OS-managed temporary directory.
     /// All policy and capability failures reject without an uncontained retry.
+    /// Native launches require a verified one-process Job before the first
+    /// instruction. PSEC may omit ordinary creation attributes, so suspended
+    /// Job assignment is repaired explicitly and native terminate-on-close is
+    /// also required. There is no retry without containment or resource limits.
     ///
     /// # Errors
     /// Returns invalid launch/grant paths, reparse paths, overlapping read/write
     /// grants, unavailable native PSEC support or failed native creation.
     pub fn start_sandboxed(spec: &ProcessSpec, policy: &SandboxPolicy) -> io::Result<Self> {
         validate_process(spec)?;
+        if spec.active_process_limit != 1 {
+            return Err(invalid(
+                "native sandbox requires a single-process worker policy",
+            ));
+        }
         validate_sandbox_environment()?;
         let command = command_line(&spec.executable, &spec.arguments)?;
         native::NativeProcess::start_sandboxed(spec, command, policy).map(Self)
