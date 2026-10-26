@@ -2,6 +2,7 @@
 
 #[cfg(windows)]
 mod capture;
+mod report;
 #[cfg(windows)]
 mod timing;
 #[cfg(windows)]
@@ -57,5 +58,18 @@ pub fn cpu_check_plan(request: serde_json::Value) -> crate::Result<serde_json::V
     // Do not require unprovisioned ancestor directories to exist for CheckOnly.
     let mut plan = bonsai_cpu_policy::run(request)?;
     plan["AvailablePhysicalBytes"] = available_memory()?["AvailablePhysicalBytes"].clone();
+    Ok(plan)
+}
+
+/// Add the existing PowerShell report contract to one CPU plan and memory observation.
+///
+/// # Errors
+/// Rejects the same invalid inputs as [`cpu_check_plan`] and incomplete report fields.
+pub fn cpu_check_report(request: serde_json::Value) -> crate::Result<serde_json::Value> {
+    let mut plan = cpu_check_plan(request)?;
+    let available = plan["AvailablePhysicalBytes"]
+        .as_u64()
+        .ok_or("Physical memory observation was not an integer.")?;
+    report::attach(&mut plan, available)?;
     Ok(plan)
 }

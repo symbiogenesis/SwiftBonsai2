@@ -10,3 +10,8 @@ Its SHA-256 with Git's LF line endings is
 `95c81c6e805cc80cbddf8858e624fd33a441b564b3272e981270c97f536773b6`.
 The separately checked canonical catalog SHA-256 is
 `2a262f01c68f4137f01519188323fa4ad9edb55a5b5ec05f1b7d00df40f03efd`.
+
+`cpu-reports-v1.json` freezes complete reports and property order from the
+PowerShell implementation at `5f663e6`, with a fixed UTC string and memory
+observations immediately below and at admission. It covers both profiles,
+optional LoRA fields and the derived PTQ1 selection without loading a model.

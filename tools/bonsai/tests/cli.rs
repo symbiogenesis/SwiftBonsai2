@@ -34,6 +34,7 @@ fn version_advertises_policy_commands_without_resolving_a_request_file()
         .ok_or("Missing command capabilities")?;
     for name in [
         "server-policy",
+        "cpu-check-report",
         "runtime-stage",
         "runtime-verify",
         "speech-models",

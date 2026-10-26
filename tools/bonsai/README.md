@@ -38,6 +38,7 @@ bonsai-tools --version
 bonsai-tools credentials --request ABSOLUTE_JSON_PATH
 bonsai-tools memory --request ABSOLUTE_JSON_PATH
 bonsai-tools cpu-check-plan --request ABSOLUTE_JSON_PATH
+bonsai-tools cpu-check-report --request ABSOLUTE_JSON_PATH
 bonsai-tools server-policy --request ABSOLUTE_JSON_PATH
 bonsai-tools runtime-stage --request ABSOLUTE_JSON_PATH
 bonsai-tools runtime-verify --request ABSOLUTE_JSON_PATH
@@ -80,8 +81,10 @@ setup and process invocation.
 available-memory observation. Its request contains `operation: "plan"`,
 `dataDirectory`, `profile`, `useAbliterateLora` and `useRepackedPtq1`. It returns
 the policy, compiled pins, selected paths and complete CPU-check argv without
-reading model bytes or starting inference. `Invoke-CpuCheck.ps1 -CheckOnly`
-uses this operation; the former per-function PowerShell policy helpers are removed.
+reading model bytes or starting inference. `cpu-check-report` adds the existing
+ordered CPU report and admission status using that same single observation;
+`Invoke-CpuCheck.ps1 -CheckOnly` stamps its UTC time and preserves its PowerShell
+value types. The original plan command retains its response and avoids report work.
 
 `server-policy` owns reference preflight profile validation, environment-name
 rejection and fixed server arguments through `bonsai-cpu-policy`. The development
