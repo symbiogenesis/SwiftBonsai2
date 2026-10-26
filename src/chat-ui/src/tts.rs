@@ -37,7 +37,9 @@ const READY_LIMIT: Duration = Duration::from_secs(5);
 const GIB: u64 = 1024 * 1024 * 1024;
 const START_AVAILABLE: u64 = 9 * GIB;
 const RUNNING_RESERVE: u64 = 5 * GIB;
-const SERVICE_COMMIT_LIMIT: usize = 8 * 1024 * 1024 * 1024;
+// PyTorch's startup private commitment can exceed its resident weight size.
+// The separate physical-memory monitor protects the shared host reserve.
+const SERVICE_COMMIT_LIMIT: usize = 16 * 1024 * 1024 * 1024;
 const RESOURCE_POLL: Duration = Duration::from_millis(25);
 const RESOURCE_STOP: Duration = Duration::from_secs(5);
 const LOW_MEMORY: u8 = 1;

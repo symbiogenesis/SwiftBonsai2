@@ -189,12 +189,19 @@ also fails. Errors use value-free `{"error":{"code":"..."}}` JSON and 4xx/5xx
 status. Responses use `Cache-Control: no-store`.
 
 Long answers are split by the native client at word boundaries into sequential
-requests of at most 160 characters to bound CPU synthesis latency, within the
+requests of at most 32 characters to bound half-precision CPU synthesis latency, within the
 service's 2048-character request ceiling. Reusing the same description
 guides the voice in each segment; it does not promise identical timbre across
 separately sampled clips. This adapter does not clone a real or reference voice.
 
 ## Bounds, cancellation and privacy
+
+The automatically owned service uses BF16 weights, 9 GiB startup availability
+and a separate 25 ms host-memory monitor. If available RAM falls below 5 GiB,
+the app stops only the speech Job, preserving Swift's independent 4 GiB reserve
+and chat session. The speech Job has a 16 GiB commit ceiling because loader
+commitment can temporarily exceed resident model storage. These limits do not
+establish a hard physical reservation against unrelated instantaneous allocations.
 
 The complete request body is at most 64 KiB, with at most 16 KiB/64 HTTP headers
 and a ten-second absolute intake deadline. One connection is handled at a time,

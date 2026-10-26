@@ -145,6 +145,13 @@ the result. Initial model loading and CPU synthesis can take time. The native
 app owns the service and worker in a Windows Job and releases them when reading
 finishes, stops or fails. The service does not load before Swift's 16 GiB startup
 admission. No setup popup or manually managed service is needed for this path.
+Qwen keeps BF16 weights rather than expanding them to float32. TTS requires
+9 GiB available before loading alongside Swift, and an independent monitor stops
+only speech if available RAM falls below 5 GiB. Its 16 GiB Job commit ceiling
+also covers transient loader allocations; committed bytes are not resident RAM.
+Speech resource failures keep text chat and the completed answer available for
+another Read Aloud attempt. CPU synthesis uses short sequential clips and can
+remain slow; this compatibility runtime does not establish native ARM64 speed.
 
 Pass `-NoTts` to skip automatic TTS runtime setup, or `-NoSpeechModels` for a
 text-only launch with no speech downloads or automatic runtime setup. Downloads
@@ -165,7 +172,10 @@ The visible **Microphone: off** button explains speech setup when Canary is not
 configured or ready. With Canary ready, selecting it requests Windows microphone
 permission before recording and changes the button to **Microphone: on**.
 The microphone remains off unless explicitly enabled, and capture pauses while
-each clip is transcribed. Selecting **Microphone: on** to turn it off, Send, New conversation,
+each bounded five-second clip is transcribed. While enabled, the initialized
+recorder is reused after transcription instead of initializing the device for
+every clip. Fixed clip boundaries can still divide words; this is not streaming
+recognition or voice-activity detection. Selecting **Microphone: on** to turn it off, Send, New conversation,
 read-aloud or closing the window stops capture and cancels pending input.
 Transcripts appear in the composer for review; they are never sent automatically.
 Permission denial or a missing/not-ready Canary service keeps capture off.

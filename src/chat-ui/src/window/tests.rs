@@ -116,6 +116,34 @@ fn speech_controls_stay_visible_and_explain_unconfigured_services_without_listen
 }
 
 #[test]
+fn speech_memory_failure_keeps_text_chat_and_completed_answer_available() -> io::Result<()> {
+    let (mut state, commands, _events) = state();
+    state.ready = true;
+    state.input = "A short answer".to_owned();
+    state.submit();
+    assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
+    state.model_event(Event::Text("The completed answer.".to_owned()));
+    state.model_event(Event::Complete(Completion::Finished));
+    let transcript = state.transcript.plain_text();
+    state.speech = Some(speech::start(None, None)?);
+    state.speech_output = true;
+    state.speaking = true;
+    state.speech_event(speech::Event::Failed {
+        generation: 0,
+        message: "Read aloud stopped to preserve text chat memory.",
+    });
+    assert!(state.ready);
+    assert!(state.answer_complete);
+    assert!(!state.speaking);
+    assert!(!state.retryable);
+    assert_eq!(state.last_answer, "The completed answer.");
+    assert_eq!(state.transcript.plain_text(), transcript);
+    assert!(state.speech_status.contains("preserve text chat"));
+    assert!(matches!(commands.try_recv(), Err(mpsc::TryRecvError::Empty)));
+    Ok(())
+}
+
+#[test]
 fn cancelled_dictation_cannot_insert_a_late_transcript() {
     let (mut state, _commands, _events) = state();
     state.ready = true;

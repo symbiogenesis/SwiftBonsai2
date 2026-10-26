@@ -100,8 +100,12 @@ verification. `-SpeechModelsOnly` provisions files without building or launching
 provisions a private, pinned Qwen TTS runtime and protected credential. The Rust
 app owns the TTS process tree through a Windows Job, starts it only for explicit
 Read Aloud, checks authenticated model readiness, and releases the tree when
-reading ends or is cancelled. This preserves Swift's unchanged startup memory
-admission. `-NoTts` skips automatic TTS setup; an explicit `-TtsKeyFile` instead
+reading ends or is cancelled. Qwen uses BF16 weights and short sequential clips.
+Its independent memory monitor admits startup with 9 GiB available and stops
+only the speech Job if availability falls below 5 GiB. Swift's existing 4 GiB
+running reserve and startup admission remain unchanged. A speech resource error
+preserves the completed answer and available text-chat session.
+`-NoTts` skips automatic TTS setup; an explicit `-TtsKeyFile` instead
 connects to an independently managed companion. Canary runtime/service setup
 remains separate. Runtime installation and process orchestration stay outside
 presentation controls.
@@ -115,8 +119,10 @@ Disabling it, sending a prompt, starting read-aloud, creating a conversation or
 closing the window cancels capture and invalidates outstanding session results.
 Late permission/capture/transcription completions cannot reactivate capture.
 
-Bounded mono 16 kHz PCM WAV clips stay in memory in the client. Capture pauses
-while Canary transcribes a clip; recognized text returns to the composer for
+Bounded five-second mono 16 kHz PCM WAV clips stay in memory in the client. Capture pauses
+while Canary transcribes a clip, retaining the initialized recorder only for the
+same enabled, permitted generation. Disabling or revoking access closes it.
+Recognized text returns to the composer for
 review, with no automatic send. The companion uses the actual pinned Canary
 weights and no recognition fallback; its runtime requirements are separate from
 the Swift CPU backend. No audio is sent to a cloud service by this integration.
