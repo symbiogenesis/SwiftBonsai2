@@ -7,24 +7,6 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Inference.psm1')
 
-function Invoke-BonsaiGgufProcess {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [Parameter(Mandatory)][string]$Executable,
-        [Parameter(Mandatory)][string[]]$ArgumentList,
-        [Parameter(Mandatory)][string]$WorkingDirectory,
-        [string]$LogPath
-    )
-    $result = Invoke-BonsaiNativeProcess -Executable $Executable -ArgumentList $ArgumentList -WorkingDirectory $WorkingDirectory -LogPath $LogPath
-    if ($result.ExitCode -ne 0) {
-        $evidence = if ($LogPath) { " Build log: $LogPath" } else { '' }
-        throw "GGUF tool exited with code $($result.ExitCode).$evidence`n$($result.StandardError)$($result.StandardOutput)"
-    }
-    if ($result.StandardError) { Write-Verbose -Message $result.StandardError.TrimEnd() }
-    return $result.StandardOutput
-}
-
 function Resolve-GgufTool {
     <#
     .SYNOPSIS
@@ -60,8 +42,12 @@ function Invoke-GgufTool {
     )
     $tool = Resolve-GgufTool -GgufToolPath $GgufToolPath
     $scratch = Get-BonsaiToolScratch -Name 'bonsai-gguf'
-    $json = Invoke-BonsaiGgufProcess -Executable $tool -ArgumentList $Arguments -WorkingDirectory $scratch
-    $result = ConvertFrom-Json -InputObject $json -Depth 30 -AsHashtable -NoEnumerate -DateKind String
+    $process = Invoke-BonsaiNativeProcess -Executable $tool -ArgumentList $Arguments -WorkingDirectory $scratch
+    if ($process.ExitCode -ne 0) {
+        throw "GGUF tool exited with code $($process.ExitCode).`n$($process.StandardError)$($process.StandardOutput)"
+    }
+    if ($process.StandardError) { Write-Verbose -Message $process.StandardError.TrimEnd() }
+    $result = ConvertFrom-Json -InputObject $process.StandardOutput -Depth 30 -AsHashtable -NoEnumerate -DateKind String
     if ($result -isnot [Collections.IDictionary]) { throw 'The GGUF tool did not return a JSON object.' }
     return $result
 }
