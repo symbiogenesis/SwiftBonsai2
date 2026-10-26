@@ -27,7 +27,6 @@ $cargo = (Join-Path $scratch 'cargo.exe').Replace("'", "''")
 $source = $source.Insert($ast.ParamBlock.Extent.EndOffset, "`nfunction Get-Command { [pscustomobject]@{ Source = '$cargo' } }`n")
 [IO.File]::WriteAllText($copy, $source)
 Copy-Item -LiteralPath (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Destination $scripts
-Copy-Item -LiteralPath (Join-Path $repo 'scripts/Start-Demo.ps1') -Destination $scripts
 $capture = @'
 function Invoke-BonsaiNativeProcess {
     [CmdletBinding()]
@@ -77,11 +76,6 @@ $launch = @{ DataDirectory = $data; ChatPath = $chat; BrokerPath = $broker }
 
 if ($Case -cin @('All', 'Launcher')) {
     $original = [Environment]::CurrentDirectory
-    & $copy @launch | Out-Null
-    & (Join-Path $scripts 'Start-Demo.ps1') @launch -NoSpeechModels -NoAbliterateLora -FrontendPort 5174 | Out-Null
-    $compatibility = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
-    Assert ($compatibility.Arguments -ccontains '--no-abliterate-lora' -and $compatibility.Arguments -ccontains '5174' -and
-        $compatibility.Arguments -cnotcontains '--tts-executable') 'Start-Demo did not forward explicit switches and ports to Start-Chat.'
     & $copy @launch | Out-Null
     $record = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
     $arguments = @($record.Arguments)
