@@ -149,6 +149,7 @@ if ($Case -in @('All','Launcher')) {
     $copy = Join-Path $scripts 'Start-Demo.ps1'
     [IO.File]::WriteAllText($copy, $source)
     Copy-Item -LiteralPath (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Destination $scripts
+    Copy-Item -LiteralPath (Join-Path $repo 'scripts/Bonsai.Native.psm1') -Destination $scripts
     $fakeDownloader = @'
 [CmdletBinding()]
 param([string]$DataDirectory, [string]$Model = 'All', [switch]$VerifyOnly)

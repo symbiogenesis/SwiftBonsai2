@@ -52,6 +52,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 
 if (-not $SpeechModelsOnly -and (-not $IsWindows -or
     [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
@@ -110,78 +111,53 @@ if ($SpeechModelsOnly) {
 }
 $scratch = Resolve-ExternalPath -Path (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Demo-' + [guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)
-$previousDirectory = [Environment]::CurrentDirectory
-Push-Location $scratch
-try {
-    [Environment]::CurrentDirectory = $scratch
-    if (-not $ChatPath -or -not $BrokerPath) {
-        $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
-        $manifest = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../Cargo.toml'))
-        $target = Join-Path $scratch 'build'
-        $arguments = @('+nightly-2026-10-22-aarch64-pc-windows-msvc', 'build', '--locked', '--release',
-            '--manifest-path', $manifest, '--target-dir', $target)
-        if (-not $ChatPath) { $arguments += @('--package', 'bonsai-chat') }
-        if (-not $BrokerPath) { $arguments += @('--package', 'bonsai-broker') }
-        Write-Information -MessageData 'Building the native chat demo with the pinned Rust compiler.' -InformationAction Continue
-        & $cargo @arguments
-        if ($LASTEXITCODE -ne 0) { throw 'Demo build failed.' }
-        if (-not $ChatPath) { $ChatPath = Join-Path $target 'release/bonsai-chat.exe' }
-        if (-not $BrokerPath) { $BrokerPath = Join-Path $target 'release/bonsai-broker.exe' }
-    }
-    $ttsPython = $ttsService = $null
-    if (-not $TtsKeyFile -and -not $NoTts -and -not $NoSpeechModels) {
-        if ($TtsPort -in @($FrontendPort, $BackendPort) -or
-            ($CanaryKeyFile -and $TtsPort -eq $CanaryPort)) {
-            throw 'Qwen TTS needs a distinct local port.'
-        }
-        Import-Module (Join-Path $PSScriptRoot 'Bonsai.TtsRuntime.psm1')
-        Write-Information -MessageData 'Preparing the private Qwen TTS runtime. The first setup downloads its pinned Python dependencies; later launches reuse them.' -InformationAction Continue
-        $ttsPython = Install-QwenTtsRuntime -DataDirectory $DataDirectory -WorkingDirectory $scratch
-        $keys = & (Join-Path $PSScriptRoot 'New-DevelopmentKeys.ps1') -ParentDirectory $scratch
-        $TtsKeyFile = $keys.FrontendKeyFile
-        $serviceDirectory = Join-Path $scratch 'qwen-tts-service'
-        [void][IO.Directory]::CreateDirectory($serviceDirectory)
-        foreach ($file in @('server.py','model.lock.json')) {
-            Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../tools/qwen-tts/$file") -Destination $serviceDirectory
-        }
-        $ttsService = Join-Path $serviceDirectory 'server.py'
-        Write-Information -MessageData 'Read Aloud is configured for local Qwen VoiceDesign. Its model loads only when requested, and the app releases it when reading finishes.' -InformationAction Continue
-    }
-    Write-Information -MessageData "Opening Swift Bonsai 2. Closing its window stops the demo. Evidence: $scratch" -InformationAction Continue
-    $start = [Diagnostics.ProcessStartInfo]::new($ChatPath)
-    $start.UseShellExecute = $false
-    $start.WorkingDirectory = $scratch
-    foreach ($argument in @('--broker-path', $BrokerPath, '--data-directory', $DataDirectory,
-            '--evidence-directory', $scratch, '--frontend-port', [string]$FrontendPort,
-            '--backend-port', [string]$BackendPort)) {
-        [void]$start.ArgumentList.Add($argument)
-    }
-    if ($NoAbliterateLora) { [void]$start.ArgumentList.Add('--no-abliterate-lora') }
-    if ($CanaryKeyFile) {
-        foreach ($argument in @('--canary-key-file', $CanaryKeyFile, '--canary-port', [string]$CanaryPort)) {
-            [void]$start.ArgumentList.Add($argument)
-        }
-    }
-    if ($TtsKeyFile) {
-        foreach ($argument in @('--tts-key-file', $TtsKeyFile, '--tts-port', [string]$TtsPort)) {
-            [void]$start.ArgumentList.Add($argument)
-        }
-    }
-    if ($ttsPython) {
-        foreach ($argument in @('--tts-python', $ttsPython, '--tts-service', $ttsService,
-                '--tts-snapshot', $speechModels.TtsSnapshotPath)) {
-            [void]$start.ArgumentList.Add($argument)
-        }
-    }
-    $process = [Diagnostics.Process]::Start($start)
-    if ($null -eq $process) { throw 'The native demo process could not start.' }
-    try {
-        $process.WaitForExit()
-        if ($process.ExitCode -ne 0) { throw "Demo stopped with exit code $($process.ExitCode). Evidence is retained under $scratch." }
-    } finally {
-        $process.Dispose()
-    }
-} finally {
-    [Environment]::CurrentDirectory = $previousDirectory
-    Pop-Location
+if (-not $ChatPath -or -not $BrokerPath) {
+    $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
+    $manifest = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../Cargo.toml'))
+    $target = Join-Path $scratch 'build'
+    $arguments = @('+nightly-2026-10-22-aarch64-pc-windows-msvc', 'build', '--locked', '--release',
+        '--manifest-path', $manifest, '--target-dir', $target)
+    if (-not $ChatPath) { $arguments += @('--package', 'bonsai-chat') }
+    if (-not $BrokerPath) { $arguments += @('--package', 'bonsai-broker') }
+    Write-Information -MessageData 'Building the native chat demo with the pinned Rust compiler.' -InformationAction Continue
+    $log = Join-Path $scratch 'build.log'
+    $result = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -LogPath $log
+    if ($result.ExitCode -ne 0) { throw "Demo build failed; inspect $log" }
+    if (-not $ChatPath) { $ChatPath = Join-Path $target 'release/bonsai-chat.exe' }
+    if (-not $BrokerPath) { $BrokerPath = Join-Path $target 'release/bonsai-broker.exe' }
 }
+$ttsPython = $ttsService = $null
+if (-not $TtsKeyFile -and -not $NoTts -and -not $NoSpeechModels) {
+    if ($TtsPort -in @($FrontendPort, $BackendPort) -or
+        ($CanaryKeyFile -and $TtsPort -eq $CanaryPort)) {
+        throw 'Qwen TTS needs a distinct local port.'
+    }
+    Import-Module (Join-Path $PSScriptRoot 'Bonsai.TtsRuntime.psm1')
+    Write-Information -MessageData 'Preparing the private Qwen TTS runtime. The first setup downloads its pinned Python dependencies; later launches reuse them.' -InformationAction Continue
+    $ttsPython = Install-QwenTtsRuntime -DataDirectory $DataDirectory -WorkingDirectory $scratch
+    $keys = & (Join-Path $PSScriptRoot 'New-DevelopmentKeys.ps1') -ParentDirectory $scratch
+    $TtsKeyFile = $keys.FrontendKeyFile
+    $serviceDirectory = Join-Path $scratch 'qwen-tts-service'
+    [void][IO.Directory]::CreateDirectory($serviceDirectory)
+    foreach ($file in @('server.py','model.lock.json')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../tools/qwen-tts/$file") -Destination $serviceDirectory
+    }
+    $ttsService = Join-Path $serviceDirectory 'server.py'
+    Write-Information -MessageData 'Read Aloud is configured for local Qwen VoiceDesign. Its model loads only when requested, and the app releases it when reading finishes.' -InformationAction Continue
+}
+Write-Information -MessageData "Opening Swift Bonsai 2. Closing its window stops the demo. Evidence: $scratch" -InformationAction Continue
+$arguments = @('--broker-path', $BrokerPath, '--data-directory', $DataDirectory,
+    '--evidence-directory', $scratch, '--frontend-port', [string]$FrontendPort,
+    '--backend-port', [string]$BackendPort)
+if ($NoAbliterateLora) { $arguments += '--no-abliterate-lora' }
+if ($CanaryKeyFile) {
+    $arguments += @('--canary-key-file', $CanaryKeyFile, '--canary-port', [string]$CanaryPort)
+}
+if ($TtsKeyFile) {
+    $arguments += @('--tts-key-file', $TtsKeyFile, '--tts-port', [string]$TtsPort)
+}
+if ($ttsPython) {
+    $arguments += @('--tts-python', $ttsPython, '--tts-service', $ttsService, '--tts-snapshot', $speechModels.TtsSnapshotPath)
+}
+$result = Invoke-BonsaiNativeProcess -Executable $ChatPath -ArgumentList $arguments -WorkingDirectory $scratch -LogPath (Join-Path $scratch 'demo.log')
+if ($result.ExitCode -ne 0) { throw "Demo stopped with exit code $($result.ExitCode). Evidence is retained under $scratch." }

@@ -191,6 +191,7 @@ real-model audio quality or latency.
 
 `Start-Demo.ps1` builds the chat app and broker in a fresh system-temp lane.
 Pass absolute `-ChatPath` and `-BrokerPath` values to reuse existing builds.
+The lane retains compiler output in `build.log` and app output in `demo.log`.
 The pinned abliteration LoRA is enabled at scale 1 by default. Pass
 `-NoAbliterateLora` to run without it; direct `bonsai-chat` launches accept
 `--no-abliterate-lora`. Missing or altered adapter bytes fail startup with

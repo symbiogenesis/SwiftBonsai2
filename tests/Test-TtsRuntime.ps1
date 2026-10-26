@@ -59,13 +59,6 @@ if ($Case -in @('All', 'Launcher')) {
     Assert ($errors.Count -eq 0) 'The demo launcher has parse errors.'
     $parameters = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
     Assert ($parameters -ccontains 'NoTts') 'The demo has no explicit automatic TTS opt-out.'
-    $starts = @($ast.FindAll({ param($node)
-        $node -is [Management.Automation.Language.InvokeMemberExpressionAst] -and
-            $node.Static -and $node.Expression.Extent.Text -ceq '[Diagnostics.Process]' -and
-            $node.Member.Value -ceq 'Start'
-    }, $true))
-    Assert ($starts.Count -eq 1) 'The demo must have one owned native app launch boundary.'
-
     # Run the actual launcher decisions and argument construction, substituting
     # only external acquisition and the final process boundary. No compiler,
     # package resolver, model loader, microphone or audio device is involved.
@@ -78,28 +71,26 @@ if ($Case -in @('All', 'Launcher')) {
     [void][IO.Directory]::CreateDirectory($data)
     $receipt = Join-Path $fixture 'launch.json'
     $runtimeReceipt = Join-Path $data 'runtime-called'
-    $source = [IO.File]::ReadAllText($launcher)
-    $start = $starts[0]
-    $source = $source.Remove($start.Extent.StartOffset, $start.Extent.EndOffset - $start.Extent.StartOffset).
-        Insert($start.Extent.StartOffset, '(Start-TestDemoProcess -StartInfo $start)')
     $capture = @'
-
-function Start-TestDemoProcess {
+function Invoke-BonsaiNativeProcess {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
-    param([Diagnostics.ProcessStartInfo]$StartInfo)
-    $arguments = @($StartInfo.ArgumentList)
-    [IO.File]::WriteAllText('__RECEIPT__', (ConvertTo-Json -InputObject $arguments))
-    $result = [pscustomobject]@{ ExitCode = 0 }
-    $result | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { }
-    $result | Add-Member -MemberType ScriptMethod -Name Dispose -Value { }
-    return $result
+    param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [string]$LogPath)
+    $record = @{ Executable = $Executable; Arguments = $ArgumentList; WorkingDirectory = $WorkingDirectory; LogPath = $LogPath }
+    $receipt = '__RECEIPT__'
+    if ([IO.Path]::GetFileName($Executable) -ceq 'cargo.exe') { $receipt += '.build' }
+    [IO.File]::WriteAllText($receipt, (ConvertTo-Json -InputObject $record))
+    return [pscustomobject]@{ ExitCode = [int][IO.File]::Exists($receipt + '.fail') }
 }
+Export-ModuleMember -Function Invoke-BonsaiNativeProcess
 '@
     $capture = $capture.Replace('__RECEIPT__', $receipt.Replace("'", "''"))
-    $source = $source.Insert($ast.ParamBlock.Extent.EndOffset, $capture)
     $copy = Join-Path $scripts 'Start-Demo.ps1'
+    $source = [IO.File]::ReadAllText($launcher)
+    $cargoPath = (Join-Path $fixture 'cargo.exe').Replace("'", "''")
+    $source = $source.Insert($ast.ParamBlock.Extent.EndOffset, "`nfunction Get-Command { [pscustomobject]@{ Source = '$cargoPath' } }`n")
     [IO.File]::WriteAllText($copy, $source)
+    [IO.File]::WriteAllText((Join-Path $scripts 'Bonsai.Native.psm1'), $capture)
     Copy-Item -LiteralPath (Join-Path $repo 'scripts/Bonsai.Common.psm1') -Destination $scripts
     [IO.File]::WriteAllText((Join-Path $service 'server.py'), '# Isolated launcher fixture; never executed.')
     [IO.File]::WriteAllText((Join-Path $service 'model.lock.json'), '{}')
@@ -138,8 +129,14 @@ $key = Join-Path $ParentDirectory 'fixture-tts.key'
     [IO.File]::WriteAllText($chat, '')
     [IO.File]::WriteAllText($broker, '')
     $launch = @{ DataDirectory = $data; ChatPath = $chat; BrokerPath = $broker }
+    $previousDirectory = [Environment]::CurrentDirectory
+    $previousLocation = (Get-Location).Path
     & $copy @launch | Out-Null
-    $arguments = @(Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json)
+    $process = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+    $arguments = @($process.Arguments)
+    Assert ($process.Executable -ceq $chat -and [IO.Directory]::Exists($process.WorkingDirectory) -and
+        $process.LogPath -ceq (Join-Path $process.WorkingDirectory 'demo.log')) 'The native app lost its executable, external working directory or retained log.'
+    Assert ([Environment]::CurrentDirectory -ceq $previousDirectory -and (Get-Location).Path -ceq $previousLocation) 'The launcher changed the caller working directory.'
     Assert ([IO.File]::Exists($runtimeReceipt)) 'Ordinary demo launch omitted automatic TTS runtime setup.'
     foreach ($option in @('--tts-python', '--tts-service', '--tts-snapshot', '--tts-key-file', '--tts-port')) {
         Assert ($arguments -ccontains $option) 'Ordinary demo launch omitted owned TTS configuration.'
@@ -158,17 +155,38 @@ $key = Join-Path $ParentDirectory 'fixture-tts.key'
     $externalKey = Join-Path $data 'external-tts.key'
     [IO.File]::WriteAllText($externalKey, ('b' * 64))
     & $copy @launch -TtsKeyFile $externalKey | Out-Null
-    $arguments = @(Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json)
+    $arguments = @((Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json).Arguments)
     Assert (-not [IO.File]::Exists($runtimeReceipt)) 'An explicit external TTS service triggered owned runtime installation.'
     Assert ($arguments -ccontains '--tts-key-file' -and $arguments -cnotcontains '--tts-python') 'External TTS configuration was replaced by an owned service.'
 
     foreach ($switch in @('NoTts', 'NoSpeechModels')) {
         $optOut = @{ $switch = $true }
         & $copy @launch @optOut | Out-Null
-        $arguments = @(Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json)
+        $arguments = @((Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json).Arguments)
         Assert (-not [IO.File]::Exists($runtimeReceipt)) 'The automatic TTS opt-out installed a runtime.'
         Assert ($arguments -cnotcontains '--tts-python') 'The automatic TTS opt-out passed an owned service.'
     }
+    foreach ($selected in @(
+        @{ Paths = @{ BrokerPath = $broker }; Packages = @('bonsai-chat') },
+        @{ Paths = @{ ChatPath = $chat }; Packages = @('bonsai-broker') },
+        @{ Paths = @{}; Packages = @('bonsai-chat', 'bonsai-broker') }
+    )) {
+        $paths = $selected.Paths
+        & $copy -DataDirectory $data -NoSpeechModels @paths | Out-Null
+        $build = Get-Content -LiteralPath ($receipt + '.build') -Raw | ConvertFrom-Json
+        $packages = for ($index = 0; $index -lt $build.Arguments.Count; $index++) {
+            if ($build.Arguments[$index] -ceq '--package') { $build.Arguments[$index + 1] }
+        }
+        Assert (($packages -join ',') -ceq ($selected.Packages -join ',')) 'Demo compilation changed the selected missing app packages.'
+        Assert ($build.LogPath -ceq (Join-Path $build.WorkingDirectory 'build.log') -and
+            $build.Arguments -ccontains '--locked' -and $build.Arguments -ccontains '--release') 'Demo compilation lost its retained log or locked Release build.'
+    }
+    [IO.File]::Delete($receipt)
+    [IO.File]::WriteAllText(($receipt + '.build.fail'), '')
+    Assert-Failure { & $copy -DataDirectory $data -NoSpeechModels } 'A failed compiler did not stop demo startup.'
+    Assert (-not [IO.File]::Exists($receipt)) 'A failed compiler still launched the demo.'
+    [IO.File]::WriteAllText(($receipt + '.fail'), '')
+    Assert-Failure { & $copy @launch -NoSpeechModels } 'A nonzero native app exit was accepted.'
     [IO.File]::Delete($receipt)
     & $copy -DataDirectory $data -SpeechModelsOnly | Out-Null
     Assert (-not [IO.File]::Exists($runtimeReceipt) -and -not [IO.File]::Exists($receipt)) 'Download-only mode installed a runtime or opened the native app.'
