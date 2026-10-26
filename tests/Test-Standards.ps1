@@ -66,7 +66,7 @@ $directories.Push($repoRoot)
 while ($directories.Count) {
     foreach ($entry in (Get-ChildItem -LiteralPath $directories.Pop() -Force)) {
         if ($entry.PSIsContainer) {
-            if ($entry.Name -notin @('.git', '.agents', '.codex', 'target', 'bin', 'obj', 'artifacts', 'node_modules', '.venv')) {
+            if ($entry.Name -notin @('.git', '.agents', '.codex', 'target', 'bin', 'obj', 'artifacts', 'node_modules')) {
                 if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Do not hide repository source behind a directory link: $($entry.FullName)" }
                 $directories.Push($entry.FullName)
             }
