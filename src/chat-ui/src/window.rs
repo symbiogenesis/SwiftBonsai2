@@ -12,6 +12,8 @@ use crate::{
     speech,
 };
 mod microphone;
+#[cfg(test)]
+mod tests;
 mod transcript;
 use std::{
     cell::RefCell,
@@ -52,8 +54,8 @@ use windows_sys::{
                 DispatchMessageW, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, ES_WANTRETURN,
                 GetClientRect, GetDlgCtrlID, GetMessageW, GetWindowTextLengthW, GetWindowTextW,
                 IDC_ARROW, IDI_APPLICATION, IsDialogMessageW, IsWindow, KillTimer, LoadCursorW,
-                LoadIconW, MB_ICONERROR, MB_OK, MINMAXINFO, MSG, MessageBoxW, MoveWindow,
-                PostQuitMessage, RegisterClassW, SPI_GETHIGHCONTRAST, SW_HIDE, SW_SHOW,
+                LoadIconW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MINMAXINFO, MSG, MessageBoxW,
+                MoveWindow, PostQuitMessage, RegisterClassW, SPI_GETHIGHCONTRAST, SW_HIDE, SW_SHOW,
                 SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetTimer, SetWindowPos, SetWindowTextW,
                 ShowWindow, SystemParametersInfoW, TranslateMessage, WM_CLOSE, WM_COMMAND,
                 WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED,
@@ -127,6 +129,8 @@ struct State {
     speech: Option<speech::Session>,
     speech_input: bool,
     speech_output: bool,
+    canary_configured: bool,
+    tts_configured: bool,
     listening: bool,
     dictation_requested: bool,
     microphone: Option<microphone::Microphone>,
@@ -679,7 +683,7 @@ impl State {
             new_chat: button(window, "＋  &New conversation", NEW)?,
             thinking: button(window, "Show t&hinking", THINKING)?,
             retry: button(window, "&Retry model", RETRY)?,
-            dictate: button(window, "Enable &microphone", DICTATE)?,
+            dictate: button(window, "&Microphone: off", DICTATE)?,
             read_aloud: button(window, "Read a&loud", READ_ALOUD)?,
             speech_status: control(
                 window,
@@ -714,6 +718,8 @@ impl State {
             speech,
             speech_input: false,
             speech_output: false,
+            canary_configured: config.canary.is_some(),
+            tts_configured: config.qwen_tts.is_some(),
             listening: false,
             dictation_requested: false,
             microphone,
@@ -754,38 +760,27 @@ impl State {
         unsafe {
             EnableWindow(
                 self.dictate,
-                i32::from(
-                    self.dictation_requested
-                        || (self.ready && !self.busy && !self.speaking && self.speech_input),
-                ),
+                i32::from(self.dictation_requested || (!self.busy && !self.speaking)),
             );
         }
         // SAFETY: The native setting stays fixed while synthesis or playback is active.
         unsafe { EnableWindow(self.voice_profile, i32::from(!self.speaking)) };
         // SAFETY: Live speech control; readout is available only for retained visible answer text.
         unsafe {
-            EnableWindow(
-                self.read_aloud,
-                i32::from(
-                    self.speaking
-                        || (self.speech_output
-                            && self.answer_complete
-                            && !self.last_answer.is_empty()),
-                ),
-            );
+            EnableWindow(self.read_aloud, i32::from(self.speaking || !self.busy));
         }
         set_text(
             self.dictate,
             if self.dictation_requested {
-                "Disable &microphone"
+                "&Microphone: on"
             } else {
-                "Enable &microphone"
+                "&Microphone: off"
             },
         );
         set_text(
             self.read_aloud,
             if self.speaking {
-                "Stop a&loud"
+                "Stop s&peech"
             } else {
                 "Read a&loud"
             },
@@ -818,14 +813,14 @@ impl State {
         place(self.new_chat, pad, p(106), p(190), p(30));
         place(self.thinking, pad + p(202), p(106), p(145), p(30));
         place(self.retry, width - pad - p(145), p(106), p(145), p(30));
-        place(self.dictate, pad, p(146), p(145), p(30));
-        place(self.read_aloud, pad + p(157), p(146), p(145), p(30));
+        place(self.dictate, pad, p(146), p(168), p(32));
+        place(self.read_aloud, pad + p(180), p(146), p(145), p(32));
         place(
             self.speech_status,
-            pad + p(314),
+            pad + p(337),
             p(146),
-            content - p(314),
-            p(32),
+            content - p(337),
+            p(42),
         );
         self.layout_voice_profile(width, dpi);
         place(
@@ -1175,7 +1170,14 @@ impl State {
                 self.speech_status,
                 "Microphone disabled. Review your message before sending.",
             );
-        } else if self.ready && !self.busy && !self.speaking && self.speech_input {
+        } else if !self.speech_input {
+            self.speech_help("Microphone setup", self.microphone_help());
+        } else if !self.ready {
+            set_text(
+                self.speech_status,
+                "Swift is not ready yet. Enable the microphone after model startup completes.",
+            );
+        } else if !self.busy && !self.speaking {
             let Some(microphone) = &mut self.microphone else {
                 return;
             };
@@ -1208,7 +1210,14 @@ impl State {
                 self.speaking = false;
                 set_text(self.speech_status, "Read aloud stopped.");
             }
-        } else if self.speech_output && self.answer_complete && !self.last_answer.is_empty() {
+        } else if !self.speech_output {
+            self.speech_help("Read aloud setup", self.read_aloud_help());
+        } else if !self.answer_complete || self.last_answer.is_empty() {
+            set_text(
+                self.speech_status,
+                "Read aloud needs a completed answer. Send a message to Swift first.",
+            );
+        } else {
             let voice_description = control_text(self.voice_profile).trim().to_owned();
             if voice_description.is_empty() {
                 set_text(
@@ -1229,6 +1238,40 @@ impl State {
             }
         }
         self.update_buttons();
+    }
+
+    const fn microphone_help(&self) -> &'static str {
+        if !self.canary_configured {
+            "Microphone recognition needs the Canary Qwen 2.5B model runtime and service. Install its runtime and model, start the service, then launch the demo with -CanaryKeyFile pointing to its protected key file. See tools/canary-asr/README.md. Windows permission is requested only when you enable a ready microphone; nothing is recording now."
+        } else if self.microphone.is_none() {
+            "Windows microphone access could not initialize. Check Windows microphone privacy settings and restart the demo. Nothing is recording."
+        } else {
+            "Canary Qwen 2.5B is not ready. Start its service on the configured port, check its protected key file, then restart the demo. See tools/canary-asr/README.md. Nothing is recording."
+        }
+    }
+
+    const fn read_aloud_help(&self) -> &'static str {
+        if self.tts_configured {
+            "Qwen3-TTS VoiceDesign is not ready. Start its service on the configured port, check its protected key file, then restart the demo. See tools/qwen-tts/README.md. Your voice description will be used when the service is ready."
+        } else {
+            "Read aloud needs the Qwen3-TTS 1.7B VoiceDesign model runtime and service. Install its runtime and model, start the service, then launch the demo with -TtsKeyFile pointing to its protected key file. See tools/qwen-tts/README.md. Describe your desired voice in Voice profile; no preset or reference recording is required."
+        }
+    }
+
+    fn speech_help(&self, title: &str, message: &str) {
+        set_text(self.speech_status, message);
+        let title = wide(title);
+        let message = wide(message);
+        // SAFETY: This UI-thread window owns the modal native help dialog; both
+        // NUL-terminated strings live until the synchronous call returns.
+        unsafe {
+            MessageBoxW(
+                self.window,
+                message.as_ptr(),
+                title.as_ptr(),
+                MB_OK | MB_ICONINFORMATION,
+            )
+        };
     }
 
     fn drain_speech_events(&mut self) {
@@ -1263,11 +1306,11 @@ impl State {
                 set_text(
                     self.speech_status,
                     match (self.speech_input, output) {
-                        (true, true) => "Microphone input and Qwen speech available.",
-                        (true, false) => "Microphone ready; Qwen speech unavailable.",
-                        (false, true) => "Qwen read aloud ready; microphone input unavailable.",
+                        (true, true) => "Microphone ready. Read aloud needs a completed answer.",
+                        (true, false) => "Microphone ready. Select Read aloud for Qwen setup.",
+                        (false, true) => "Qwen ready. Select Microphone for input setup.",
                         (false, false) => {
-                            "Speech services unavailable. Text chat remains available."
+                            "Speech setup required. Select Microphone or Read aloud for instructions."
                         }
                     },
                 );
@@ -1288,21 +1331,22 @@ impl State {
             speech::Event::Recognized { generation, text } => {
                 self.accept_transcript(generation, &text);
             }
-            speech::Event::Speaking(speaking) => {
-                self.speaking = speaking;
-                set_text(
-                    self.speech_status,
-                    if speaking {
-                        "Reading the visible answer aloud."
-                    } else {
-                        "Read aloud stopped."
-                    },
-                );
-            }
-            speech::Event::Failed(message) => {
-                self.speaking = false;
-                set_text(self.speech_status, message);
-            }
+            speech::Event::Speaking {
+                generation,
+                speaking,
+            } => self.output_status(
+                generation,
+                speaking,
+                if speaking {
+                    "Reading the visible answer aloud."
+                } else {
+                    "Read aloud stopped."
+                },
+            ),
+            speech::Event::Failed {
+                generation,
+                message,
+            } => self.output_status(generation, false, message),
             speech::Event::InputFailed {
                 generation,
                 message,
@@ -1318,6 +1362,17 @@ impl State {
             speech::Event::Status(_) => {}
         }
         self.update_buttons();
+    }
+
+    fn output_status(&mut self, generation: u64, speaking: bool, message: &str) {
+        if self
+            .speech
+            .as_ref()
+            .is_some_and(|session| session.is_current_output(generation))
+        {
+            self.speaking = speaking;
+            set_text(self.speech_status, message);
+        }
     }
 
     fn accept_transcript(&mut self, generation: u64, text: &str) {
