@@ -146,23 +146,31 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Ev
         match worker(&attempt_config, &commands, &events, &mut history) {
             Ok(()) | Err(Failure::Shutdown) => return,
             Err(Failure::Memory) => {
-                if notify(&events, Event::Retryable("Not enough free memory. Swift needs 16 GiB available. Free some RAM, then select Retry model.".to_owned())).is_err()
-                    || !wait_for_retry(&commands)
-                {
+                if !wait_for_retry(
+                    &commands,
+                    &events,
+                    "Not enough free memory. Swift needs 16 GiB available. Free some RAM, then select Retry model.",
+                ) {
                     return;
                 }
             }
             Err(failure) => {
                 let message = match failure {
-                    Failure::Stopped => "Generation stopped. Select Retry model to restart safely; completed conversation turns are retained. The interrupted turn has not been added to model history.",
+                    Failure::Stopped => {
+                        "Generation stopped. Select Retry model to restart safely; completed conversation turns are retained. The interrupted turn has not been added to model history."
+                    }
                     Failure::Message(message) | Failure::Rejected(message) => message,
                     Failure::Shutdown | Failure::Memory => return,
                 };
                 // worker has returned and its Broker guard has stopped/waited
                 // for the owned process before Retry can be offered.
-                if notify(&events, Event::Retryable(format!("{message}\nSelect Retry model to start a fresh model session. Completed turns remain in memory. If the request was too long, reduce the output budget or start a new conversation after retrying."))).is_err()
-                    || !wait_for_retry(&commands)
-                {
+                if !wait_for_retry(
+                    &commands,
+                    &events,
+                    &format!(
+                        "{message}\nSelect Retry model to start a fresh model session. Completed turns remain in memory. If the request was too long, reduce the output budget or start a new conversation after retrying."
+                    ),
+                ) {
                     return;
                 }
             }
@@ -170,15 +178,29 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Ev
     }
 }
 
-fn wait_for_retry(commands: &Receiver<Command>) -> bool {
+fn wait_for_retry(commands: &Receiver<Command>, events: &Sender<Event>, message: &str) -> bool {
+    if notify(events, Event::Retryable(message.to_owned())).is_err() {
+        return false;
+    }
     loop {
         match commands.recv_timeout(POLL) {
             Ok(Command::Retry) => return true,
             Ok(Command::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
                 return false;
             }
-            Ok(Command::Send { .. } | Command::NewChat | Command::Stop)
-            | Err(RecvTimeoutError::Timeout) => {}
+            Ok(Command::Send { text, .. }) => {
+                // An idle broker can exit just as the UI submits. Restore that
+                // queued prompt instead of discarding it, and retain the retry
+                // state without automatically replaying the request.
+                if notify(events, Event::Rejected {
+                    message: "The model is unavailable. Your message is restored; select Retry model before sending again.".to_owned(),
+                    text,
+                    retry_required: true,
+                }).is_err() || notify(events, Event::Retryable(message.to_owned())).is_err() {
+                    return false;
+                }
+            }
+            Ok(Command::NewChat | Command::Stop) | Err(RecvTimeoutError::Timeout) => {}
         }
     }
 }
@@ -1311,6 +1333,7 @@ mod tests {
     #[test]
     fn memory_retry_requires_explicit_command_and_allows_shutdown() {
         let (commands, incoming) = std::sync::mpsc::channel();
+        let (events, notifications) = std::sync::mpsc::channel();
         assert_eq!(
             startup_failure(b"Development backend launch failed: Memory."),
             Failure::Memory
@@ -1331,9 +1354,16 @@ mod tests {
                 .is_ok()
         );
         assert!(commands.send(Command::Retry).is_ok());
-        assert!(wait_for_retry(&incoming));
+        assert!(wait_for_retry(&incoming, &events, "Select Retry model."));
+        assert!(matches!(notifications.try_recv(), Ok(Event::Retryable(_))));
+        assert!(
+            matches!(notifications.try_recv(), Ok(Event::Rejected { text, retry_required: true, .. })
+            if text == "Never automatically replay this message")
+        );
+        assert!(matches!(notifications.try_recv(), Ok(Event::Retryable(_))));
+        assert!(notifications.try_recv().is_err());
         assert!(commands.send(Command::Shutdown).is_ok());
-        assert!(!wait_for_retry(&incoming));
+        assert!(!wait_for_retry(&incoming, &events, "Select Retry model."));
     }
 
     #[test]
