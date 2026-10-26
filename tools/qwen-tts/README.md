@@ -199,8 +199,10 @@ worker and requires an explicit service restart; health then reports
 `ready: false`. A normal client keeps its sending half open until completion.
 
 Text, descriptions and audio remain in memory; generated WAV is never written
-to disk or logged. The worker has a unique external system-temp working directory
-removed after process shutdown. Third-party output/tracebacks are suppressed so
+to disk or logged. The worker uses a unique directory beneath the service's
+external working directory. Graceful shutdown removes it; terminating the owned
+Job may leave its empty directory in the retained evidence lane.
+Third-party output/tracebacks are suppressed so
 they cannot reveal text, voice descriptions or audio in service diagnostics.
 The service prints only a value-free startup failure or ready endpoint. It
 performs no transcript/audio persistence, remote fetch or telemetry itself.

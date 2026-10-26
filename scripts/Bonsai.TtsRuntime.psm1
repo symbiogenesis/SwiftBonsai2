@@ -78,6 +78,9 @@ function Install-QwenTtsRuntime {
     $working = Resolve-ExternalPath $WorkingDirectory
     if (-not [IO.Directory]::Exists($working)) { throw 'An existing external working directory is required.' }
     $plan = Get-QwenTtsRuntimePlan -DataDirectory $DataDirectory
+    if ($plan.RuntimeDirectory.Length -gt 160) {
+        throw 'Choose a shorter DataDirectory; Qwen Windows DLLs require a runtime directory path of at most 160 characters.'
+    }
     $marker = Join-Path $plan.RuntimeDirectory 'runtime.receipt'
     if ([IO.File]::Exists($marker)) {
         if ([IO.File]::ReadAllText($marker) -cne $plan.Identity) { throw 'Qwen runtime receipt does not match its pinned dependencies.' }

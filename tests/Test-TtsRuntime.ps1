@@ -46,6 +46,9 @@ if ($Case -in @('All', 'Plan')) {
         Assert-Failure { Get-QwenTtsRuntimePlan -DataDirectory $invalid } 'Unsafe TTS runtime storage was accepted.'
     }
     Assert (-not (Test-Path -LiteralPath $data)) 'Runtime plan validation wrote package bytes.'
+    $longData = Join-Path $scratch ('long-' + ('x' * 100))
+    Assert-Failure { Install-QwenTtsRuntime -DataDirectory $longData -WorkingDirectory $scratch } 'An unsupported Windows DLL path length reached package installation.'
+    Assert (-not (Test-Path -LiteralPath $longData)) 'Runtime path rejection wrote or downloaded dependencies.'
 }
 
 if ($Case -in @('All', 'Launcher')) {
