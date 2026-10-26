@@ -198,7 +198,6 @@ impl Transcript {
     }
 
     pub(super) fn show(&mut self, ui: &mut egui::Ui, width: f32) {
-        self.search_bar(ui);
         self.search.refresh(&self.messages);
         let width = width.max(120.0);
         let latest = self.messages.last().map(|message| message.id);

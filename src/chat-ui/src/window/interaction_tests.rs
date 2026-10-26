@@ -112,6 +112,28 @@ fn accessible_chat_controls_handle_enter_and_shift_enter() {
 }
 
 #[test]
+fn composer_keeps_a_draft_while_the_model_prepares() {
+    let mut chat = harness([620.0, 760.0], false);
+    chat.state_mut().app.ready = false;
+    chat.state_mut().app.waiting_model = true;
+    chat.run();
+    chat.get_by_role_and_label(egui::Role::MultilineTextInput, "Message")
+        .focus();
+    chat.run();
+    chat.get_by_role_and_label(egui::Role::MultilineTextInput, "Message")
+        .type_text("Keep this draft while loading 🌱");
+    chat.run();
+    chat.key_press(egui::Key::Enter);
+    chat.run();
+    assert_eq!(chat.state().app.input, "Keep this draft while loading 🌱");
+    assert!(chat.state().app.transcript.messages.is_empty());
+    assert!(matches!(
+        chat.state().commands.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
+}
+
+#[test]
 fn transcript_export_preserves_roles_spacing_and_visible_unicode_only() {
     let mut transcript = Transcript::default();
     assert_eq!(transcript.plain_text(), "");
@@ -254,8 +276,12 @@ fn capture_chat_layouts_when_requested() -> io::Result<()> {
         ("conversation-wide.png", [1180.0, 860.0], true),
         ("conversation-narrow.png", [620.0, 760.0], true),
         ("empty-state.png", [1180.0, 860.0], false),
+        ("settings-narrow.png", [620.0, 640.0], true),
     ] {
         let mut chat = harness(size, seeded);
+        if name == "settings-narrow.png" {
+            chat.state_mut().app.show_settings = true;
+        }
         chat.run();
         chat.render()
             .map_err(io::Error::other)?
@@ -280,6 +306,7 @@ fn find_controls_navigate_unicode_matches_and_refresh_streamed_text() {
         })
         .build_ui_state(
             |ui, transcript: &mut Transcript| {
+                transcript.search_bar(ui);
                 egui::ScrollArea::vertical().show(ui, |ui| transcript.show(ui, 700.0));
             },
             {

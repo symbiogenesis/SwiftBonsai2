@@ -63,7 +63,7 @@ struct Lifecycle {
 impl Lifecycle {
     fn begin(&mut self) -> io::Result<u64> {
         self.generation = self.generation.checked_add(1).ok_or_else(|| {
-            io::Error::other("Microphone session limit reached. Restart the demo.")
+            io::Error::other("Microphone session limit reached. Restart the app.")
         })?;
         self.requested = true;
         self.waiting = false;

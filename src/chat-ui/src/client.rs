@@ -1,4 +1,4 @@
-//! Owned, bounded loopback client for the native demonstration window.
+//! Owned, bounded loopback client for the native chat window.
 
 #![forbid(unsafe_code)]
 #![allow(
@@ -164,7 +164,7 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Ev
         };
         if std::fs::create_dir(&attempt_config.evidence).is_err() {
             let _notification = events.send(Event::Failed(
-                "Could not create a fresh model startup directory. Restart the demo.".to_owned(),
+                "Could not create a fresh model startup directory. Restart the app.".to_owned(),
             ));
             return;
         }
@@ -285,9 +285,7 @@ fn worker(
     #[cfg(windows)]
     process.creation_flags(0x0800_0000);
     let mut broker = Broker(process.spawn().map_err(|_| {
-        Failure::Message(
-            "Could not start the broker. Build the demo and check its executable path.",
-        )
+        Failure::Message("Could not start the broker. Build the app and check its executable path.")
     })?);
     let key = wait_ready(&mut broker, config, commands, &stdout_path, &stderr_path)?;
     notify(events, Event::Ready)?;
@@ -349,7 +347,7 @@ fn new_log(path: &Path) -> Result<File> {
         .open(path)
         .map_err(|_| {
             Failure::Message(
-                "Could not create fresh diagnostic logs in the demo evidence directory.",
+                "Could not create fresh diagnostic logs in the app evidence directory.",
             )
         })
 }
@@ -369,7 +367,7 @@ fn wait_ready(
             let parent = config
                 .evidence
                 .canonicalize()
-                .map_err(|_| Failure::Message("The demo evidence directory is unavailable."))?;
+                .map_err(|_| Failure::Message("The app evidence directory is unavailable."))?;
             let directory = directory
                 .canonicalize()
                 .map_err(|_| Failure::Message("The broker credential directory is unavailable."))?;
@@ -402,7 +400,7 @@ fn wait_ready(
         }
         if Instant::now() >= until {
             return Err(Failure::Message(
-                "Swift did not become ready within ten minutes. Check the retained broker logs and restart the demo.",
+                "Swift did not become ready within ten minutes. Check the retained broker logs and restart the app.",
             ));
         }
         thread::sleep(POLL);
@@ -415,7 +413,7 @@ fn startup_failure(diagnostic: &[u8]) -> Failure {
         Failure::Memory
     } else if text.contains("Port") || text.contains("Service") {
         Failure::Message(
-            "A local demo port is unavailable. Close the previous demo instance and restart.",
+            "A local chat port is unavailable. Close the previous chat instance and restart.",
         )
     } else if text.contains("Adapter") {
         Failure::Message(
@@ -427,7 +425,7 @@ fn startup_failure(diagnostic: &[u8]) -> Failure {
         )
     } else {
         Failure::Message(
-            "Swift could not start. Check the retained broker diagnostic logs, then restart the demo.",
+            "Swift could not start. Check the retained broker diagnostic logs, then restart the app.",
         )
     }
 }
@@ -593,7 +591,7 @@ impl Interruptible<'_> {
         }
         let result = if Instant::now() >= self.until {
             Err(Failure::Message(
-                "The response exceeded the ten-minute request limit. Restart the demo to continue.",
+                "The response exceeded the ten-minute request limit. Restart the app to continue.",
             ))
         } else {
             check_commands(self.commands)
@@ -681,7 +679,7 @@ fn generate_until(
         .saturating_duration_since(Instant::now())
         .min(Duration::from_secs(1));
     let stream = TcpStream::connect_timeout(&address, connect_timeout).map_err(|_| {
-        Failure::Message("Could not connect to the owned local broker. Restart the demo.")
+        Failure::Message("Could not connect to the owned local broker. Restart the app.")
     })?;
     stream
         .set_read_timeout(Some(IO_POLL))
@@ -714,7 +712,7 @@ fn exchange(
     connection
         .write_all(header.as_bytes())
         .and_then(|()| connection.write_all(request))
-        .map_err(|_| Failure::Message("Could not send the chat request. Restart the demo."))?;
+        .map_err(|_| Failure::Message("Could not send the chat request. Restart the app."))?;
     let mut body = HttpBody::new(connection)?;
     let mut sse = Sse::default();
     let mut bytes = [0; READ_SIZE];
@@ -843,11 +841,11 @@ fn read_exact(reader: &mut impl Read, bytes: &mut [u8]) -> Result<()> {
     let mut filled = 0;
     while filled < bytes.len() {
         let count = reader.read(&mut bytes[filled..]).map_err(|_| {
-            Failure::Message("The response was interrupted. Restart the demo to continue.")
+            Failure::Message("The response was interrupted. Restart the app to continue.")
         })?;
         if count == 0 {
             return Err(Failure::Message(
-                "The response ended before its HTTP framing completed. Restart the demo.",
+                "The response ended before its HTTP framing completed. Restart the app.",
             ));
         }
         filled += count;
@@ -885,7 +883,7 @@ fn parse_head(head: &[u8]) -> Result<Framing> {
         || response.code != Some(200)
     {
         return Err(Failure::Message(
-            "The local broker rejected the request. Restart the demo, or begin a shorter conversation.",
+            "The local broker rejected the request. Restart the app, or begin a shorter conversation.",
         ));
     }
     let mut content_type = None;
@@ -1150,12 +1148,12 @@ impl Sse {
     fn finish(&self) -> Result<Completion> {
         if !self.done {
             return Err(Failure::Message(
-                "The response ended before generation completed. Restart the demo.",
+                "The response ended before generation completed. Restart the app.",
             ));
         }
         if self.text.is_empty() && self.reasoning.is_empty() {
             return Err(Failure::Message(
-                "The model returned no text. Restart the demo to try again.",
+                "The model returned no text. Restart the app to try again.",
             ));
         }
         // SSE discards any final event lacking a blank-line terminator. The

@@ -209,7 +209,7 @@ impl State {
     fn submit(&mut self) {
         if self.preview {
             self.set_status(
-                "Preview only. Launch the demo normally to chat with your local model.",
+                "Preview only. Launch the app normally to chat with your local model.",
                 false,
             );
             return;
@@ -236,7 +236,7 @@ impl State {
             })
             .is_err()
         {
-            self.fail("The model worker stopped. Close and restart the demo.");
+            self.fail("The model worker stopped. Close and restart the app.");
             return;
         }
         if let Some(conversation) = self
@@ -294,7 +294,7 @@ impl State {
             return;
         }
         if self.commands.send(Command::Retry).is_err() {
-            self.fail("The model worker stopped. Close and restart the demo.");
+            self.fail("The model worker stopped. Close and restart the app.");
             return;
         }
         self.stop_speech();
@@ -307,7 +307,7 @@ impl State {
 
     fn stop_generation(&mut self) {
         if self.commands.send(Command::Stop).is_err() {
-            self.fail("The model worker stopped. Close and restart the demo.");
+            self.fail("The model worker stopped. Close and restart the app.");
             return;
         }
         self.stop_speech();
@@ -357,7 +357,7 @@ impl State {
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
                     if !self.preview && (self.ready || self.busy || self.waiting_model) {
-                        self.fail("The model worker stopped. Close and restart the demo.");
+                        self.fail("The model worker stopped. Close and restart the app.");
                     }
                     break;
                 }
@@ -452,7 +452,7 @@ impl State {
         self.speech_output = false;
         self.cancel_microphone();
         self.speaking = false;
-        "Speech worker stopped. Restart the demo to retry.".clone_into(&mut self.speech_status);
+        "Speech worker stopped. Restart the app to retry.".clone_into(&mut self.speech_status);
         false
     }
 
@@ -556,19 +556,19 @@ impl State {
 
     const fn microphone_help(&self) -> &'static str {
         if !self.canary_configured {
-            "Launch scripts/Start-Demo.ps1 with its default speech settings to prepare native Canary Qwen 2.5B automatically. The model loads after you enable the microphone and permit Windows microphone access. See tools/canary-asr/README.md. Nothing is recording now."
+            "Launch scripts/Start-Chat.ps1 with its default speech settings to prepare native Canary Qwen 2.5B automatically. The model loads after you enable the microphone and permit Windows microphone access. See tools/canary-asr/README.md. Nothing is recording now."
         } else if self.microphone.is_none() {
-            "Windows microphone access could not initialize. Check Windows microphone privacy settings and restart the demo. Nothing is recording."
+            "Windows microphone access could not initialize. Check Windows microphone privacy settings and restart the app. Nothing is recording."
         } else {
-            "Canary Qwen 2.5B is not ready. Start its service on the configured port, check its protected key file, then restart the demo. See tools/canary-asr/README.md. Nothing is recording."
+            "Canary Qwen 2.5B is not ready. Start its service on the configured port, check its protected key file, then restart the app. See tools/canary-asr/README.md. Nothing is recording."
         }
     }
 
     const fn read_aloud_help(&self) -> &'static str {
         if self.tts_configured {
-            "Qwen3-TTS VoiceDesign is not ready. Start its service on the configured port, check its protected key file, then restart the demo. See tools/qwen-tts/README.md. Your voice description will be used when the service is ready."
+            "Qwen3-TTS VoiceDesign is not ready. Start its service on the configured port, check its protected key file, then restart the app. See tools/qwen-tts/README.md. Your voice description will be used when the service is ready."
         } else {
-            "Launch the demo with scripts/Start-Demo.ps1 to prepare Qwen3-TTS 1.7B VoiceDesign automatically. Use its default settings without -NoTts or -NoSpeechModels. Read aloud then starts the local service when selected. Describe your desired voice in Voice profile; no preset or reference recording is required. See tools/qwen-tts/README.md."
+            "Launch the app with scripts/Start-Chat.ps1 to prepare Qwen3-TTS 1.7B VoiceDesign automatically. Use its default settings without -NoTts or -NoSpeechModels. Read aloud then starts the local service when selected. Describe your desired voice in Voice profile; no preset or reference recording is required. See tools/qwen-tts/README.md."
         }
     }
 
@@ -850,11 +850,6 @@ impl State {
                 self.delete_conversation = Some(self.active_conversation);
             }
         });
-        ui.label(
-            RichText::new("Conversations stay in memory until you close the app.")
-                .small()
-                .weak(),
-        );
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
             ui.add_space(12.0);
             if ui.button("Settings").clicked() {
@@ -899,6 +894,8 @@ impl State {
             .open(&mut open)
             .resizable(false)
             .default_width(400.0)
+            .vscroll(true)
+            .max_height((ctx.content_rect().height() - 48.0).max(180.0))
             .show(ctx, |ui| {
                 let before = (
                     self.extra_effort,
@@ -1126,7 +1123,7 @@ impl State {
                         let label = ui.label(RichText::new("Message").small().weak());
                         let response = ui
                             .add_enabled(
-                                self.ready && !self.busy,
+                                !self.busy,
                                 egui::TextEdit::multiline(&mut self.input)
                                     .id_salt("composer")
                                     .hint_text(if self.ready {
@@ -1134,7 +1131,7 @@ impl State {
                                     } else if self.retryable {
                                         "Retry the model to continue…"
                                     } else if self.waiting_model {
-                                        "Your local model is preparing…"
+                                        "Write while your local model prepares…"
                                     } else {
                                         "Model unavailable"
                                     })
@@ -1290,6 +1287,11 @@ impl State {
                     .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 12)))
                     .show(ui, |ui| self.composer(ui));
                 let empty = self.transcript.messages.is_empty();
+                if !empty {
+                    ui.push_id(("conversation-find", self.active_conversation), |ui| {
+                        self.transcript.search_bar(ui);
+                    });
+                }
                 egui::ScrollArea::vertical()
                     .id_salt(("conversation-scroll", self.active_conversation))
                     .stick_to_bottom(true)
@@ -1305,7 +1307,12 @@ impl State {
                                 ui.add_space(margin);
                                 ui.vertical(|ui| {
                                     ui.set_width(width);
-                                    self.transcript.show(ui, width);
+                                    ui.push_id(
+                                        ("conversation-text", self.active_conversation),
+                                        |ui| {
+                                            self.transcript.show(ui, width);
+                                        },
+                                    );
                                 });
                             });
                         }
