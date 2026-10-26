@@ -10,6 +10,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
     process::Command,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 fn main() -> io::Result<()> {
@@ -49,10 +50,19 @@ fn main() -> io::Result<()> {
     let cmake = env::var_os("BONSAI_CMAKE").unwrap_or_else(|| OsString::from("cmake"));
     let generator = env::var_os("BONSAI_CMAKE_GENERATOR")
         .unwrap_or_else(|| OsString::from("Visual Studio 18 2026"));
-    let engine_build = engine_build(&source, &output, &cmake, &generator)?;
+    // MSBuild's FileTracker still has a MAX_PATH limit even when Windows long
+    // paths are enabled. Cargo's nested OUT_DIR can exceed that limit during
+    // compiler identification. Compile in a short, unique external temp lane,
+    // then retain the libraries in Cargo's own output for subsequent links.
+    let native_work = native_work()?;
+    fs::write(
+        output.join("native-build-location.txt"),
+        native_work.as_os_str().to_string_lossy().as_bytes(),
+    )?;
+    let engine_build = engine_build(&source, &native_work, &cmake, &generator)?;
     external_output(&engine_build)?;
     let manifest = absolute_env("CARGO_MANIFEST_DIR")?;
-    let bridge = output.join("bridge-build");
+    let bridge = native_work.join("b");
     fs::create_dir_all(&bridge)?;
     let mut configure = Command::new(&cmake);
     configure.args([
@@ -67,8 +77,9 @@ fn main() -> io::Result<()> {
         OsString::from(format!("-DBONSAI_TTS_SOURCE_DIR={}", source.display())),
         OsString::from("-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL"),
     ]);
-    run(&mut configure, &output)?;
-    build(&cmake, &bridge, "bonsai-qwen-bridge", &output)?;
+    run(&mut configure, &native_work)?;
+    build(&cmake, &bridge, "bonsai-qwen-bridge", &native_work)?;
+    println!("cargo:rustc-link-search=native={}", output.display());
     for (name, path) in [
         (
             "bonsai-qwen-bridge",
@@ -90,15 +101,28 @@ fn main() -> io::Result<()> {
                 "A required native speech static library was not built.",
             ));
         }
-        let parent = path
-            .parent()
-            .ok_or_else(|| io::Error::other("Invalid native library path."))?;
-        println!("cargo:rustc-link-search=native={}", parent.display());
+        fs::copy(&path, output.join(format!("{name}.lib")))?;
         println!("cargo:rustc-link-lib=static={name}");
     }
     // GGML queries the Windows CPU description through the registry API.
     println!("cargo:rustc-link-lib=advapi32");
     Ok(())
+}
+
+fn native_work() -> io::Result<PathBuf> {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| io::Error::other("Cannot create native speech build evidence."))?
+        .as_nanos();
+    let path = env::temp_dir().join(format!("BQ-{}-{stamp:x}", std::process::id()));
+    if !path.is_absolute() || path.as_os_str().to_string_lossy().contains('%') {
+        return Err(io::Error::other(
+            "Use an expanded absolute system temp path.",
+        ));
+    }
+    external_output(&path)?;
+    fs::create_dir(&path)?;
+    Ok(path)
 }
 
 fn engine_build(
