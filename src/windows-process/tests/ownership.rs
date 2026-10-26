@@ -444,6 +444,20 @@ fn headless_mitigations_apply_at_creation_without_changing_tool_policy() -> io::
 
 #[test]
 fn inspection_keeps_non_win32k_mitigations_and_rejects_worker_arguments() -> io::Result<()> {
+    let control = Lane::new("inspection-control")?;
+    let status = Command::new(env!("CARGO_BIN_EXE_bonsai-process-test-probe"))
+        .arg("--version")
+        .current_dir(&control.path)
+        .creation_flags(0x0800_0000)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    assert!(status.success());
+    assert_eq!(
+        fs::read_to_string(control.path.join("inspection.txt"))?,
+        "spawn=allowed\n"
+    );
     let invalid = Lane::new("inspection-invalid")?;
     for arguments in [
         Vec::new(),
