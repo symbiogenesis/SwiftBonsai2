@@ -7,6 +7,7 @@ use std::{
     cell::Cell,
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
+    os::windows::fs::{MetadataExt as _, OpenOptionsExt as _},
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, SyncSender, TrySendError},
     thread::JoinHandle,
@@ -49,13 +50,7 @@ impl Recovery {
         for candidate in [data, path.as_path(), lock_path.as_path()] {
             bonsai_windows_credentials::validate_external_path(candidate)?;
         }
-        let lock = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(lock_path)?;
-        lock.try_lock().map_err(io::Error::other)?;
+        let lock = open_lock(&lock_path)?;
         let loaded = read(&path);
         let load_failed = loaded.is_err();
         let saved = loaded.unwrap_or_default();
@@ -210,6 +205,29 @@ impl Drop for Recovery {
     }
 }
 
+fn open_lock(path: &Path) -> io::Result<File> {
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        // FILE_SHARE_READ | FILE_SHARE_WRITE: contenders can open and test
+        // the byte-range lock, but cannot delete/replace its pathname.
+        .share_mode(3)
+        // FILE_FLAG_OPEN_REPARSE_POINT: examine the leaf actually opened if it
+        // was replaced after the caller's path validation.
+        .custom_flags(0x0020_0000)
+        .open(path)?;
+    let metadata = lock.metadata()?;
+    if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 {
+        return Err(io::Error::other(
+            "Conversation recovery locks must be ordinary files.",
+        ));
+    }
+    lock.try_lock().map_err(io::Error::other)?;
+    Ok(lock)
+}
+
 fn read(path: &Path) -> io::Result<Option<Vec<u8>>> {
     let file = match File::open(path) {
         Ok(file) => file,
@@ -282,6 +300,53 @@ fn erase(path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovery_lock_prevents_path_replacement_until_owner_exits() -> io::Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("Bonsai-recovery-lock-{stamp}"));
+        fs::create_dir(&directory)?;
+        let path = directory.join("chat-recovery.lock");
+        let renamed = directory.join("renamed.lock");
+        let opened = Recovery::open(&directory)?;
+        assert!(Recovery::open(&directory).is_err());
+        assert!(fs::remove_file(&path).is_err());
+        assert!(fs::rename(&path, &renamed).is_err());
+        assert!(path.exists());
+        drop(opened);
+        let reopened = Recovery::open(&directory)?;
+        drop(reopened);
+        fs::rename(&path, &renamed)?;
+        fs::remove_file(renamed)?;
+        fs::remove_dir(directory)?;
+        Ok(())
+    }
+
+    #[test]
+    fn recovery_lock_rejects_a_leaf_redirect_at_open() -> io::Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("Bonsai-recovery-redirect-{stamp}"));
+        fs::create_dir(&directory)?;
+        let target = directory.join("ordinary.lock");
+        let alias = directory.join("redirect.lock");
+        fs::write(&target, b"Retain this unrelated file.")?;
+        std::os::windows::fs::symlink_file(&target, &alias)?;
+        // Call the open boundary directly to model a redirect installed after
+        // Recovery::open validated the pathname, without a timing-dependent race.
+        assert!(open_lock(&alias).is_err());
+        assert_eq!(fs::read(&target)?, b"Retain this unrelated file.");
+        drop(open_lock(&target)?);
+        fs::remove_file(alias)?;
+        fs::remove_file(target)?;
+        fs::remove_dir(directory)?;
+        Ok(())
+    }
 
     #[test]
     fn encrypted_recovery_replaces_atomically_locks_and_erases() -> io::Result<()> {

@@ -160,6 +160,7 @@ pub fn validate_external_path(path: &Path) -> io::Result<()> {
             || *part == "."
             || *part == ".."
             || part.ends_with(['.', ' '])
+            || part.chars().any(|character| character <= '\u{1f}')
             || part.contains(['<', '>', '"', '|', '?', '*'])
             || part.eq_ignore_ascii_case(".git")
             || reserved_component(part)
@@ -185,14 +186,24 @@ pub fn validate_external_path(path: &Path) -> io::Result<()> {
 }
 
 fn reserved_component(component: &str) -> bool {
-    let base = component.split('.').next().unwrap_or_default();
-    let bytes = base.as_bytes();
+    let base = component
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(' ')
+        .to_ascii_uppercase();
     matches!(
-        base.to_ascii_uppercase().as_str(),
-        "CON" | "PRN" | "AUX" | "NUL"
-    ) || (base.len() == 4
-        && (bytes[..3].eq_ignore_ascii_case(b"COM") || bytes[..3].eq_ignore_ascii_case(b"LPT"))
-        && matches!(bytes[3], b'1'..=b'9'))
+        base.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || base
+        .strip_prefix("COM")
+        .or_else(|| base.strip_prefix("LPT"))
+        .is_some_and(|suffix| {
+            // Win32 also treats ISO-8859-1 superscript 1, 2 and 3 as
+            // device digits, including when followed by an extension.
+            (suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9'))
+                || matches!(suffix, "\u{b9}" | "\u{b2}" | "\u{b3}")
+        })
 }
 
 fn check_existing(path: &Path) -> io::Result<bool> {

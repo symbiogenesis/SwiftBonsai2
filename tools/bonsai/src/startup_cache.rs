@@ -33,11 +33,17 @@ pub(crate) fn lock_file(path: &Path) -> crate::Result<File> {
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt as _;
-        options.share_mode(0);
+        // Keep the persistent sentinel at one name while owned. Open the leaf
+        // itself so a replacement after path validation cannot redirect the lock.
+        options.share_mode(0).custom_flags(0x0020_0000);
     }
     let guard = options
         .open(path)
         .map_err(|_| "Another process is preparing this startup cache.")?;
+    let metadata = guard.metadata().map_err(|error| error.to_string())?;
+    if !metadata.is_file() || is_redirect(&metadata) {
+        return Err("Startup cache locks must be ordinary files.".into());
+    }
     guard
         .try_lock()
         .map_err(|_| "Another process is preparing this startup cache.")?;
@@ -56,7 +62,13 @@ fn source_file(path: &Path) -> crate::Result<File> {
         use std::os::windows::fs::OpenOptionsExt as _;
         options.share_mode(1).custom_flags(0x0820_0000);
     }
-    options.open(path).map_err(|error| error.to_string())
+    let file = options.open(path).map_err(|error| error.to_string())?;
+    // Check the object actually opened, rather than only the earlier path probe.
+    let metadata = file.metadata().map_err(|error| error.to_string())?;
+    if !metadata.is_file() || is_redirect(&metadata) {
+        return Err("Build inputs must be ordinary files.".into());
+    }
+    Ok(file)
 }
 
 pub(crate) fn digest_file(path: &Path) -> crate::Result<String> {
@@ -833,6 +845,31 @@ mod tests {
             .map_err(|error| error.to_string())?;
         fs::write(repo.join("src/main.rs"), "first source").map_err(|error| error.to_string())?;
         Ok((scratch, repo))
+    }
+
+    #[test]
+    fn cache_lock_keeps_sentinel_stable_and_releases_without_deleting() -> crate::Result<()> {
+        let (scratch, _) = fixture()?;
+        let path = scratch.join("build.lock");
+        let original = b"persistent lock sentinel";
+        fs::write(&path, original).map_err(|error| error.to_string())?;
+        let guard = lock_file(&path)?;
+        assert!(lock_file(&path).is_err());
+        #[cfg(windows)]
+        {
+            assert!(fs::remove_file(&path).is_err());
+            assert!(fs::rename(&path, scratch.join("moved.lock")).is_err());
+        }
+        drop(guard);
+        assert_eq!(
+            fs::read(&path).map_err(|error| error.to_string())?,
+            original
+        );
+        let guard = lock_file(&path)?;
+        assert!(lock_file(&path).is_err());
+        drop(guard);
+        assert!(path.is_file());
+        fs::remove_dir_all(&scratch).map_err(|error| error.to_string())
     }
 
     #[test]

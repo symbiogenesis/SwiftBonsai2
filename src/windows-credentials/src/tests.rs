@@ -137,3 +137,29 @@ fn volatile_scrub_zeroes_the_owned_buffer() {
     native::scrub(&mut bytes);
     assert!(bytes.iter().all(|byte| *byte == 0));
 }
+
+#[test]
+fn path_validation_rejects_win32_device_aliases_and_control_characters() -> io::Result<()> {
+    let lane = test_lane("device-aliases")?;
+    for component in [
+        "NUL .key",
+        "CONIN$",
+        "CONOUT$",
+        "COM\u{b9}",
+        "com\u{b2}.key",
+        "COM\u{b3}.log",
+        "LPT\u{b9}.key",
+        "lpt\u{b2}",
+        "LPT\u{b3}.txt",
+        "key\u{1}file",
+        "key\tfile",
+        "key\u{1f}file",
+    ] {
+        assert!(validate_external_path(&lane.join(component)).is_err());
+    }
+    for component in ["COM0", "COM10.key", "LPT10", "company.key", "\u{1f980}"] {
+        validate_external_path(&lane.join(component))?;
+        assert!(!reserved_component(component));
+    }
+    Ok(())
+}

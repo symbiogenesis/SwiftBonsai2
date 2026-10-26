@@ -124,6 +124,7 @@ See [benchmark context and current limits](docs/performance-expectations.md).
 | --- | --- |
 | [Development guide](docs/development-guide.md) | Requirements, setup, and development commands |
 | [Validation](docs/validation.md) | Code standards, focused tests, and CI |
+| [Windows integration](docs/windows-integration.md) | Handle ownership, locking, threads, permissions and isolation limits |
 | [TODO](PLAN.md) | All outstanding implementation and qualification work |
 
 ### Runtime and acceleration

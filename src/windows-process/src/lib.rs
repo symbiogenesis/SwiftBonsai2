@@ -277,7 +277,52 @@ fn validate_path(path: &Path) -> io::Result<()> {
     {
         return Err(invalid("native paths must use a drive or UNC prefix"));
     }
+    for component in path.components() {
+        if let Component::Normal(name) = component {
+            // CreateFileW also opens DOS devices and NTFS alternate streams.
+            // Evidence paths must name ordinary files, even when fully qualified.
+            if name
+                .encode_wide()
+                .any(|unit| unit < 32 || matches!(unit, 34 | 42 | 58 | 60 | 62 | 63 | 124))
+                || reserved_device(name)
+            {
+                return Err(invalid(
+                    "native paths must name ordinary files and directories",
+                ));
+            }
+        }
+    }
     Ok(())
+}
+
+fn reserved_device(name: &OsStr) -> bool {
+    let text = name.to_string_lossy();
+    let base = text
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(' ');
+    let base = base.to_ascii_uppercase();
+    matches!(
+        base.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || (base.starts_with("COM") || base.starts_with("LPT"))
+        && matches!(
+            base.get(3..),
+            Some(
+                "1" | "2"
+                    | "3"
+                    | "4"
+                    | "5"
+                    | "6"
+                    | "7"
+                    | "8"
+                    | "9"
+                    | "\u{b9}"
+                    | "\u{b2}"
+                    | "\u{b3}"
+            )
+        )
 }
 
 fn command_line(executable: &Path, arguments: &[OsString]) -> io::Result<Vec<u16>> {
@@ -411,6 +456,61 @@ mod tests {
             "HF_HOME",
         ] {
             assert!(!forbidden_environment_name(OsStr::new(name)));
+        }
+    }
+
+    #[test]
+    fn native_paths_reject_devices_streams_and_reserved_characters() {
+        for name in [
+            "NUL",
+            "nul.txt",
+            "NUL .txt",
+            "Con",
+            "PRN.log",
+            "AUX",
+            "CONIN$",
+            "CONOUT$",
+            "COM1",
+            "com9.txt",
+            "LPT1",
+            "lpt9.log",
+            "COM\u{b9}",
+            "com\u{b2}.txt",
+            "COM\u{b3}",
+            "LPT\u{b9}",
+            "lpt\u{b2}.txt",
+            "LPT\u{b3}",
+            "file.log:stream",
+            "file.log::$DATA",
+            "wild?card",
+            "wild*card",
+            "quoted\"name",
+            "pipe|name",
+            "less<name",
+            "greater>name",
+            "control\u{1f}name",
+        ] {
+            assert!(
+                validate_path(&Path::new("C:\\evidence").join(name)).is_err(),
+                "{name}"
+            );
+            assert!(
+                validate_path(&Path::new("C:\\evidence").join(name).join("output.log")).is_err(),
+                "{name}"
+            );
+        }
+        for name in [
+            "console.log",
+            "nulled.txt",
+            "COM10",
+            "LPT10",
+            ".config",
+            "ordinary name",
+        ] {
+            assert!(
+                validate_path(&Path::new("C:\\evidence").join(name)).is_ok(),
+                "{name}"
+            );
         }
     }
 }

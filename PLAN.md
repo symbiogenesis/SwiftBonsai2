@@ -26,7 +26,11 @@ dependency or an explicitly chosen later milestone.
 - Establish a restricted inference identity with read-only approved artifacts,
   private bounded cache/temp storage, denied unrelated files/credentials and
   denied egress. Prevent same-user backend bypass; Jobs, ACLs and loopback alone
-  are insufficient. Qualify the [daily-service boundary](docs/broker-policy.md).
+  are insufficient. Evaluate AppContainer/LPAC with explicit artifact/storage
+  grants and broker-only IPC; qualify denied access, egress and backend bypass
+  without broad network grants or global loopback exemptions. Follow the
+  [Windows integration review](docs/windows-integration.md) and qualify the
+  [daily-service boundary](docs/broker-policy.md).
 - Qualify the complete transport/security boundary: numeric loopback, exact
   Host/Origin/routes, private credentials, tools/MCP and dynamic-loading rejection,
   capability-override rejection, bounded queues/bytes/tokens/duration and reliable

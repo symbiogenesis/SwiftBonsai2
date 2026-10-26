@@ -568,6 +568,7 @@ fn archive_name(raw: &str, directory: bool) -> Result<String, ArtifactError> {
             .split('.')
             .next()
             .unwrap_or_default()
+            .trim_end_matches(' ')
             .to_ascii_uppercase();
         if part.is_empty()
             || part == "."
@@ -727,6 +728,9 @@ mod tests {
             "a\\b",
             "a//b",
             "NUL.dll",
+            "NUL .txt",
+            "con .dll",
+            "COM1 .dll",
             "con",
             "COM1.exe",
             "x./file",

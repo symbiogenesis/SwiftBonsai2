@@ -284,13 +284,18 @@ fn safe_part(part: &str) -> bool {
         .split('.')
         .next()
         .unwrap_or_default()
+        .trim_end_matches(' ')
         .to_ascii_uppercase();
     !part.is_empty()
         && !part.eq_ignore_ascii_case(".git")
         && part != "."
         && part != ".."
         && !part.ends_with(['.', ' '])
-        && !["CON", "PRN", "AUX", "NUL"].contains(&stem.as_str())
+        && !["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"].contains(&stem.as_str())
+        && !matches!(
+            stem.as_str(),
+            "COM¹" | "COM²" | "COM³" | "LPT¹" | "LPT²" | "LPT³"
+        )
         && !((stem.starts_with("COM") || stem.starts_with("LPT"))
             && stem.len() == 4
             && stem.as_bytes()[3].is_ascii_digit())
@@ -995,6 +1000,16 @@ mod tests {
             "/absolute",
             "source/a:stream",
             "source/CON.cpp",
+            "source/NUL .txt",
+            "source/COM1 .cpp",
+            "source/CONIN$",
+            "source/conout$.cpp",
+            "source/COM¹.cpp",
+            "source/COM².cpp",
+            "source/COM³.cpp",
+            "source/LPT¹.cpp",
+            "source/LPT².cpp",
+            "source/LPT³.cpp",
             "source/file. ",
             "source//file",
             "source\\file",
