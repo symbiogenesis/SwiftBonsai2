@@ -22,8 +22,13 @@ pub const RESPONSE_BUFFER_BYTES: usize = 8 * 1024;
 pub const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const CHUNK_PREFIX_BYTES: usize = 2 * size_of::<usize>() + 2;
 
-const COMMON_HEADERS: &str =
-    "Connection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n";
+// Keep one literal for both formatted JSON heads and compile-time SSE heads.
+macro_rules! common_headers {
+    () => {
+        "Connection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n"
+    };
+}
+const COMMON_HEADERS: &str = common_headers!();
 
 /// Value-free errors: no upstream header, body, prompt or I/O diagnostic escapes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -89,8 +94,10 @@ async fn write_sse_response<W: AsyncWrite + Unpin, R: AsyncRead + Unpin>(
     body: &mut R,
     supervisor_deadline: Instant,
 ) -> Result<(), ResponseError> {
-    let head = format!(
-        "HTTP/1.1 200 OK\r\n{COMMON_HEADERS}Content-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
+    let head = concat!(
+        "HTTP/1.1 200 OK\r\n",
+        common_headers!(),
+        "Content-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
     );
     write_group(client, &[head.as_bytes()], supervisor_deadline, false).await?;
     // Read into the final wire frame: no per-chunk String allocation or
