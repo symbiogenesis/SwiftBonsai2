@@ -38,6 +38,10 @@ with **Ctrl+F**. Enable **Save conversations on this device** in Settings to
 recover your workspace after closing; saved conversations use Windows user
 encryption. Saving is off by default.
 
+Settings also adjusts the pinned abliteration adapter's strength for the next
+response. The default scale is **1.3**; **0** disables its correction. Its effect
+and output quality on Swift remain experimental.
+
 You can chat with Swift, hear answers read aloud in a voice you describe, or
 dictate a message to review before sending. The microphone stays off until you
 turn it on and grant Windows permission.

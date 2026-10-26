@@ -5,7 +5,12 @@ ARM64 loading/decode. **Its effectiveness and quality on Swift remain
 unqualified.** The owner intends it for the standard profile after independent
 throughput and output-quality parity gates pass. Until then it is an explicit
 development option in the broker. The native chat app enables it by
-default at scale 1; use `Start-Chat.ps1 -NoAbliterateLora` to opt out.
+default at scale **1.3**; use `Start-Chat.ps1 -NoAbliterateLora` to opt out.
+The native Settings pane adjusts the scale from 0 to 2 in 0.1 steps for the next
+response, including every Extra effort pass, without reloading the model. Zero
+disables the correction for that response while keeping the adapter loaded.
+The 1.3 default is an owner-selected experimental setting, not a measured optimum
+or evidence that effectiveness, numerical correctness or quality gates pass.
 This app default does not promote the qualified standard profile; daily chat
 stays disabled. Using this pretrained artifact
 requires no local training or fine-tuning.

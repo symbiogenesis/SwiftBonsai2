@@ -6,7 +6,8 @@ Builds and opens the native Rust Swift Bonsai 2 chat application.
 Uses the existing Swift model and pinned CPU runtime. Downloads and verifies
 the pinned native Canary STT and Qwen VoiceDesign TTS GGUF files by
 default, reusing verified files and resuming interrupted downloads.
-Enables the pinned abliteration LoRA at scale 1 unless NoAbliterateLora is set.
+Enables the pinned abliteration LoRA at scale 1.3 unless NoAbliterateLora is set.
+The native Settings pane adjusts its scale for the next response.
 Builds missing app executables with the pinned Rust compiler in an external reusable cache.
 The native window owns its broker and inference-process lifetime. Session
 credentials and logs remain in a unique external session directory. App builds stay

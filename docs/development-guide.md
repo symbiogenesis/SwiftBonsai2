@@ -223,7 +223,12 @@ receipts detect missing or changed cached executables and force a rebuild.
 Pass absolute `-ChatPath` and `-BrokerPath` values to select existing builds.
 A fresh system-temp lane retains compiler output in `chat-build.log` and app
 output in `chat.log`. `Start-Chat.ps1` is the supported launcher.
-The pinned abliteration LoRA is enabled at scale 1 by default. Pass
+The pinned abliteration LoRA is enabled at scale **1.3** by default. In Settings,
+adjust **Abliteration scale** from 0 to 2 in 0.1 steps; the choice applies to the
+next response and every Extra effort pass without restarting the model. Zero
+disables the correction for a response. Optional conversation saving preserves
+the selected scale; older saved conversations use 1.3. This experimental default
+does not establish effectiveness or output quality on Swift. Pass
 `-NoAbliterateLora` to run without it; direct `bonsai-chat` launches accept
 `--no-abliterate-lora`. Missing or altered adapter bytes fail startup with
 provisioning guidance; there is no automatic download or fallback.
@@ -482,7 +487,8 @@ The default selection remains `reference-cpu`. Pass
 and original PQ2 model, provisioned with `config/swift-assessment.lock.json`.
 That selection fixes batch/microbatch to 128/64, a 12 GiB Job cap and 16 GiB
 available-RAM admission including the 4 GiB reserve. Add `--use-abliterate-lora`
-to select the pinned scale-one adapter with the Prism CPU server; the demo
+to load the pinned adapter and enable its bounded per-request scale with the
+Prism CPU server (default 1.3); the demo
 requests this automatically. Direct broker launches omit it by default.
 The native inference backend and derived PTQ1 do not support this option.
 Profile names are exact; arbitrary adapters,

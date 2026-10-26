@@ -69,8 +69,13 @@ connection and do not guess at a token or memory cause. HTTP communication here
 uses numeric loopback on the same computer, rather than an Internet service.
 
 The app uses the existing pinned Swift PQ2 CPU backend through the broker.
-Its pinned abliteration LoRA is enabled by default, with an explicit
-`-NoAbliterateLora` opt-out; the broker verifies and holds the selected adapter.
+Its pinned abliteration LoRA is enabled by default at scale **1.3**, with an
+explicit `-NoAbliterateLora` opt-out; the broker verifies and holds the selected
+adapter. Settings exposes a scale from 0 to 2 in 0.1 steps, applied to the next
+response without restarting the model. Zero disables the correction for that
+response. The selected scale also applies to every Extra effort pass. Optional
+conversation recovery preserves it; older saved conversations default to 1.3.
+The launch-time opt-out disables the scale control and omits adapter requests.
 The UI does not load model weights, select arbitrary runtime arguments, bypass
 artifact verification or change model, memory, context, sampler or thinking
 policy. Completion selection stays within the broker's existing request bound.
@@ -97,9 +102,10 @@ reasoning separately from visible answer text and replay it using
 
 The present broker implements a deliberately strict subset. Its complete public
 request contains `messages`, `max_completion_tokens`, `stream` and an optional
-fixed `model: "bonsai"` alias. Content accepts strings or bounded standard text
-parts; arbitrary model selection, sampling controls, tools, media and unknown
-fields remain unsupported.
+fixed `model: "bonsai"` alias. An owned Swift backend with the verified pinned
+adapter also accepts the bounded `abliteration_scale` scalar. Content accepts
+strings or bounded standard text parts; arbitrary model selection, adapters,
+sampling controls, tools, media and unknown fields remain unsupported.
 Clients must use the exact loopback Host, preserve request framing, respect
 bounds and distinguish framed transport completion from a successful terminal
 generation event. See the [public request contract](broker-policy.md#public-request-contract).

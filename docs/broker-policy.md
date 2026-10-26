@@ -67,6 +67,14 @@ The entire public JSON schema is:
 `model` is optional and accepts only the fixed alias `bonsai`. It identifies the
 already selected, verified profile; it cannot select another model or path and
 is removed before canonical backend serialization. `stream` defaults to true.
+The owned Swift Prism CPU launcher with `--use-abliterate-lora` additionally
+accepts an optional numeric `abliteration_scale` from 0 through 2 inclusive,
+defaulting to **1.3** when omitted. Zero disables the correction for that request.
+This field is rejected unless that launcher has verified and loaded the pinned
+adapter; reference, native-engine, no-adapter and independently bound services
+do not accept it. The broker translates it to the sole pinned adapter at slot 0
+in the canonical private request used unchanged for counting and generation.
+The UI changes this scalar for the next response, with no model restart.
 Null, wrong types, unknown fields and duplicate fields
 are rejected at every schema level. An optional first system message may precede
 alternating user/assistant turns ending on user. Content may be a string or one
@@ -83,8 +91,8 @@ omitted; supplied reasoning is preserved and counted within the same body and
 context bounds.
 
 Model selection, token-cap aliases, tools, media, template/thinking/sampling
-controls, LoRA, slots and timing overrides are unsupported. URLs in strings stay
-plain text; the broker fetches no remote content.
+controls, arbitrary LoRA selection or arrays, slots and timing overrides are
+unsupported. URLs in strings stay plain text; the broker fetches no remote content.
 
 The exported `MODEL_CAPABILITIES` contract declares text input and text output,
 the `bonsai` alias and context/completion bounds. It is a Rust contract, not a
@@ -293,8 +301,9 @@ Only compiled-in pins and fixed arguments are accepted: `reference-cpu` is the
 default, and `--profile swift-pq2-assessment` explicitly selects Swift's separate
 model/runtime lock. Arbitrary executables, models, profile JSON and overrides
 are rejected. Swift uses the original PQ2 weights without PTQ1 substitution.
-`--use-abliterate-lora` selects only the pinned adapter at scale 1 with the Prism
-CPU backend; it is rejected for the reference profile and `--native-engine`.
+`--use-abliterate-lora` loads only the pinned adapter with the Prism CPU backend
+and enables the bounded per-request scale described above; it is rejected for
+the reference profile and `--native-engine`.
 The app requests it by default and offers `-NoAbliterateLora`; direct broker
 launches omit it by default. `--check-only`
 verifies policy/artifacts and reports memory admission without credentials or a
