@@ -21,7 +21,9 @@ jobs:
   changes:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 3
+    timeout-minutes: 10
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/SwiftBonsai-CI
     outputs:
       plan: ${{ steps.impact.outputs.plan }}
       packages: ${{ steps.impact.outputs.packages }}
@@ -37,14 +39,24 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Install the pinned Rust compiler for CI tooling
+        working-directory: ${{ runner.temp }}
+        run: rustup toolchain install nightly-2026-10-22 --profile minimal --no-self-update
+      - name: Reuse compiled CI tooling
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}
+          key: ci-tool-v1-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/ci/**') }}
       - name: Check CI selection and gate regressions
-        run: python3 -B -m unittest discover -s .github/ci -p 'test_*.py'
+        working-directory: ${{ runner.temp }}
+        run: cargo +nightly-2026-10-22 test --locked --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" --package bonsai-ci
       - name: Select affected crates and app groups
         id: impact
         env:
           GITHUB_TOKEN: ${{ github.token }}
           BEFORE: ${{ github.event.before }}
-        run: python3 -B .github/ci/impact.py --workflow foundation.yml --before "$BEFORE" --after "$GITHUB_SHA"
+        working-directory: ${{ runner.temp }}
+        run: cargo +nightly-2026-10-22 run --locked --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" --package bonsai-ci -- impact --workflow foundation.yml --before "$BEFORE" --after "$GITHUB_SHA"
   broker:
     name: broker / ${{ matrix.lane }}
     if: needs.changes.outputs.rust_lanes == 'true'
@@ -223,15 +235,26 @@ jobs:
     if: always() && github.ref == 'refs/heads/main'
     needs: [changes, broker, standards, foundation-tests, release-integration]
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 2
+    timeout-minutes: 10
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/SwiftBonsai-CI
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install the pinned Rust compiler for CI tooling
+        working-directory: ${{ runner.temp }}
+        run: rustup toolchain install nightly-2026-10-22 --profile minimal --no-self-update
+      - name: Reuse compiled CI tooling
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}
+          key: ci-tool-v1-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'tools/ci/**') }}
       - name: Require every selected Foundation test group
         env:
           CI_NEEDS: ${{ toJSON(needs) }}
-        run: python3 -B .github/ci/gate.py --workflow foundation
+        working-directory: ${{ runner.temp }}
+        run: cargo +nightly-2026-10-22 run --locked --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" --package bonsai-ci -- gate --workflow foundation
   foundation-tests:
     name: scripts / ${{ matrix.lane }}
     if: needs.changes.outputs.scripts == 'true'
