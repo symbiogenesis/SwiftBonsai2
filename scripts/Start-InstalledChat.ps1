@@ -25,7 +25,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.ChatPackage.psm1')
-$package = Get-InstalledChatPackage -InstallationDirectory $InstallationDirectory
+$package = Get-InstalledChatPackage -InstallationDirectory $InstallationDirectory -Native
 $parameters = @{}
 foreach ($name in $PSBoundParameters.Keys) { if ($name -cne 'InstallationDirectory') { $parameters[$name] = $PSBoundParameters[$name] } }
 $parameters.ChatPath = Join-Path $package.Directory 'bin/bonsai-chat.exe'

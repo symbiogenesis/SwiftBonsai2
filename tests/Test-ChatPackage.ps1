@@ -91,6 +91,29 @@ if ($Case -cin @('All', 'Launcher')) {
     $installed = Set-ChatPackage -InstallationDirectory $root -PackageDirectory $first.Directory -ManifestSha256 $first.ManifestSha256
     $data = Join-Path $scratch 'data'
     [void][IO.Directory]::CreateDirectory($data)
+    # The synthetic PE cannot execute. Keep the real trust bootstrap, replacing
+    # only its final process boundary with the inert full-package checker.
+    $packages = Import-Module (Join-Path $installed.Directory 'scripts/Bonsai.ChatPackage.psm1') -Force -PassThru
+    & $packages {
+        $script:Inspections = 0
+        function script:Invoke-ChatPackageInspection {
+            [CmdletBinding()]
+            [OutputType([Collections.IDictionary])]
+            param([string]$ToolPath, [string]$InstallationDirectory)
+            $script:Inspections++
+            $selection = Read-ChatPackageSelection -InstallationDirectory $InstallationDirectory
+            $directory = Join-Path -Path $InstallationDirectory -ChildPath 'versions' -AdditionalChildPath $selection.active.id
+            if ($ToolPath -cne (Join-Path $directory 'bin/bonsai-tools.exe')) { throw 'Inspection selected an unexpected maintenance executable.' }
+            $package = Get-CheckedChatPackage -PackageDirectory $directory -ManifestSha256 $selection.active.manifestSha256
+            return @{ Directory = $package.Directory; ManifestSha256 = $package.ManifestSha256; Manifest = $package.Manifest; Id = $package.Id }
+        }
+    }
+    $tool = Join-Path $installed.Directory 'bin/bonsai-tools.exe'
+    $originalTool = [IO.File]::ReadAllBytes($tool)
+    [IO.File]::WriteAllText($tool, 'tampered')
+    Assert-Failure { Get-InstalledChatPackage -InstallationDirectory $root -Native } 'A changed maintenance executable ran before its trust bootstrap.'
+    Assert ((& $packages { $script:Inspections }) -eq 0) 'An unverified maintenance executable reached the process boundary.'
+    [IO.File]::WriteAllBytes($tool, $originalTool)
     # Keep the single-instance gate in this fixture without changing inherited
     # profile variables or competing with the user's running chat session.
     $common = Import-Module (Join-Path $installed.Directory 'scripts/Bonsai.Common.psm1') -Force -PassThru
