@@ -2,7 +2,7 @@
 //!
 //! The caller verifies and retains the pinned GGUF model artifacts before
 //! loading them. All inference runs locally through an audited static GGML
-//! boundary; this library has no Python, network, preset-voice or audio-device
+//! boundary; this library has no network, preset-voice or audio-device
 //! dependency. Keep the engine in its separately supervised service process.
 #![cfg(windows)]
 

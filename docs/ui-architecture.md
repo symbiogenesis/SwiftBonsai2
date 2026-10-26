@@ -99,9 +99,8 @@ verification. `-SpeechModelsOnly` provisions files without building or launching
 `-NoSpeechModels` skips automatic speech setup. The launcher builds native ARM64
 Rust companions and creates separate protected credentials. Rust owns their
 HTTP/authentication, schema validation, WAV processing and model-file verification.
-Reviewed native GGML C++ cores implement inference; Python and PyTorch are absent
-from both demo speech paths. Separate executables avoid mixing different native
-GGML versions in one process.
+Reviewed native GGML C++ cores implement inference. Separate executables avoid
+mixing different native GGML versions in one process.
 
 The UI owns speech through separate Windows Jobs. Canary loads only after an
 explicitly enabled and permitted microphone captures its first clip, stays warm

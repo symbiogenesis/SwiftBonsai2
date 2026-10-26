@@ -14,7 +14,7 @@ NoSpeechModels skips speech model provisioning. SpeechModelsOnly downloads or
 verifies speech files and returns their paths without building or launching the app.
 The demo builds native ARM64 Rust speech companions using pinned native engines.
 The app loads Canary only after an enabled, permitted microphone captures a clip;
-it loads Qwen only for Read Aloud. No Python runtime is used.
+it loads Qwen only for Read Aloud.
 NoTts skips automatic TTS setup. Explicit keys select externally managed services.
 Downloading files and preparing TTS never opens the microphone.
 .EXAMPLE

@@ -1,4 +1,4 @@
-//! Native ARM64 Canary service; no Python interpreter or model downloads.
+//! Native ARM64 Canary service using verified local model files.
 #![forbid(unsafe_code)]
 
 use bonsai_speech_service::{

@@ -1,4 +1,4 @@
-//! Bounded, Python-free Canary-Qwen 2.5B inference on the native CPU backend.
+//! Bounded Canary-Qwen 2.5B inference on the native CPU backend.
 //!
 //! The service owns artifact verification, authentication, process limits and
 //! microphone permission. This library accepts only the selected Canary family,

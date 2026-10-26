@@ -4,7 +4,7 @@
 Downloads or verifies native ARM64 Canary STT and Qwen VoiceDesign TTS models.
 .DESCRIPTION
 Uses each Rust crate's immutable GGUF lock, exact length and SHA-256 verification,
-and resumable external caches. Does not install Python or open audio devices.
+and resumable external caches. Does not open audio devices.
 #>
 [CmdletBinding()]
 [OutputType([pscustomobject])]

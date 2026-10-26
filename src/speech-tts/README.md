@@ -2,9 +2,8 @@
 
 This library owns the native Qwen3-TTS 1.7B VoiceDesign GGML engine through a
 small Rust binding to its public C ABI. No C++ source is maintained in this
-repository. It has no Python or LibTorch dependency. The talker and
-codec are independently pinned Q8_0 GGUF conversions of the named upstream
-checkpoint; the calling service must verify and retain both artifact files
+repository. The talker and codec are independently pinned Q8_0 GGUF conversions
+of the named upstream checkpoint; the calling service must verify and retain both artifact files
 before loading. Model identity, immutable URLs, byte lengths and SHA-256 values
 are recorded in `model.lock.json`.
 

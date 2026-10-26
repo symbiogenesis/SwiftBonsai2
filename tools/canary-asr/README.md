@@ -2,7 +2,7 @@
 
 The demo uses the selected **NVIDIA Canary Qwen 2.5B** model through the
 [native Rust companion](../../src/speech-asr/README.md) and the CPU-only
-transcribe.cpp engine. Python, NeMo, PyTorch and FFmpeg are not required.
+transcribe.cpp engine.
 The first-party UI remains Rust and native; inference includes a reviewed C++
 GGML core. This is not a claim of pure-Rust tensor inference.
 

@@ -41,8 +41,7 @@ pub struct ModelGuards {
 /// Require a native ARM64 process on Windows before starting model work.
 ///
 /// # Errors
-/// Rejects every other build target; emulated Python or x64 executables are not
-/// a supported native speech companion.
+/// Rejects every build target other than native Windows ARM64.
 pub fn require_native_host() -> io::Result<()> {
     if !cfg!(windows) || std::env::consts::ARCH != "aarch64" {
         return Err(io::Error::new(

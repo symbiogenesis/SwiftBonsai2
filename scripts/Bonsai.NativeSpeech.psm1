@@ -13,7 +13,7 @@ function Install-NativeSpeechModels {
     .DESCRIPTION
     Rust plans artifact identities from the inference crates' compiled model locks.
     Reuses exact verified caches under DataDirectory/speech/native. Never loads
-    a model, invokes Python, starts a service, or accesses an audio device.
+    a model, starts a service, or accesses an audio device.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Explicit artifact provisioning command; verified cache writes are its requested purpose.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Public launcher API provisions a selected set of speech models.')]

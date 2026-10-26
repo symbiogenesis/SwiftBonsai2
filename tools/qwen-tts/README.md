@@ -2,8 +2,8 @@
 
 Read Aloud uses **Qwen3-TTS 12Hz 1.7B VoiceDesign** through the
 [native Rust companion](../../src/speech-tts/README.md) and a reviewed GGML C++
-core. It requires no Python, PyTorch, LibTorch, Windows speech synthesis,
-voice preset, speaker file or reference recording.
+core. A plain-language voice description controls synthesis; no voice preset,
+speaker file or reference recording is required.
 
 `./scripts/Start-Demo.ps1` downloads and verifies the pinned Q8_0 talker and
 codec, builds native ARM64 companions, and configures Read Aloud automatically.

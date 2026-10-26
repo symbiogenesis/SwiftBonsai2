@@ -111,8 +111,7 @@ The demo automatically provisions and configures both native ARM64 speech
 companions. Canary uses the selected NVIDIA Canary Qwen 2.5B model and Qwen uses
 the selected 1.7B VoiceDesign model. Rust implements the services, authentication,
 request validation, WAV processing and process ownership. Reviewed native GGML
-C++ engines perform inference. Neither path needs Python, PyTorch, NeMo, LibTorch
-or FFmpeg. GPU/NPU acceleration is not enabled.
+C++ engines perform inference. GPU/NPU acceleration is not enabled.
 
 The three pinned Q8_0 GGUF files total approximately 4.8 GiB and live below
 `$data/speech/native/` in revision-specific directories. Exact size and SHA-256

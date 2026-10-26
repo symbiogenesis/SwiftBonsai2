@@ -6,7 +6,7 @@ Downloads or verifies pinned Canary STT and Qwen VoiceDesign TTS snapshots.
 Uses immutable model, tokenizer and codec locks with the shared resumable,
 size/SHA-256-verified download helper. Stores regular snapshots outside Git,
 reuses verified files and rejects altered artifacts without overwriting them.
-Does not install Python dependencies, load a model, start a service or open audio.
+Does not load a model, start a service or open audio.
 #>
 [CmdletBinding()]
 [OutputType([pscustomobject])]

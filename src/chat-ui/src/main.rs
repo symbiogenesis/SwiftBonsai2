@@ -262,7 +262,8 @@ mod tests {
     use std::{ffi::OsString, fs, io};
 
     #[test]
-    fn native_speech_configuration_requires_complete_groups_and_rejects_python() -> io::Result<()> {
+    fn native_speech_configuration_requires_complete_groups_and_rejects_legacy_options()
+    -> io::Result<()> {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(io::Error::other)?

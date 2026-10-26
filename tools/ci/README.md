@@ -1,7 +1,7 @@
 # Rust CI tooling
 
-`bonsai-ci` replaces the repository's Python impact planner, regression tests and
-aggregate gate. It reads Cargo manifests directly and uses the existing routing
+`bonsai-ci` provides the workspace impact planner, regression tests and
+aggregate gate. It reads Cargo manifests directly and uses the routing
 policy in `.github/ci/impact.json`. It never builds inspected packages or runs
 Cargo metadata. Git is required for ancestor and diff queries; HTTPS baseline
 lookup uses Rust with a 20-second timeout and the supplied `GITHUB_TOKEN`.
