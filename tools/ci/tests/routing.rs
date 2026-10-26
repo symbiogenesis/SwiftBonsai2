@@ -485,6 +485,23 @@ fn runner_ci_chat_packages_select_lifecycle_checks_and_standards() -> TestResult
 }
 
 #[test]
+fn runner_ci_external_json_source_keeps_workspace_bounded_and_requires_full_validation() -> TestResult {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config: Value = serde_json::from_slice(&fs::read(root.join(".github/ci/impact.json"))?)?;
+    for path in [
+        ".gitmodules",
+        "third_party/simd-json",
+        "third_party/simd-json/src/lib.rs",
+    ] {
+        let plan = impact::select(&root, &[path.into()], false, &config, "external JSON source")?;
+        assert!(plan.full, "{path}");
+        assert!(plan.groups["broker"] && plan.groups["maintenance"], "{path}");
+        assert!(!plan.packages.iter().any(|package| package == "simd-json"));
+    }
+    Ok(())
+}
+
+#[test]
 fn runner_ci_shared_changes_assign_every_package_to_exactly_one_lane() -> TestResult {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let config: Value = serde_json::from_slice(&fs::read(root.join(".github/ci/impact.json"))?)?;

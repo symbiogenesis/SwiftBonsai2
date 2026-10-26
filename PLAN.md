@@ -53,8 +53,9 @@ dependency or an explicitly chosen later milestone.
   current-weight PTQ1 and other model/format support separately qualified.
 - Measure complete model-level allocation, scratch lifetimes and peak memory for
   reusable logits, state-only prompt ingestion, activation sharing, physical FP16
-  KV and checkpoint pages. Establish retained memory/throughput benefits rather
-  than inferring them from fewer buffers.
+  KV, checkpoint pages and retained sampler candidates. Establish retained
+  memory/throughput benefits rather than inferring them from fewer buffers;
+  qualify tiled attention-value traversal on complete long-context workloads.
 - Develop exact packed lookup/Vec-LUT kernels and genuine bounded tiled prefill
   where profiling justifies them. Prove causal scheduling, hybrid-state parity,
   scratch bounds, cancellation and whole-request rollback; qualify chunkwise GDN
@@ -320,7 +321,8 @@ Reference: [exact conformance requirements](docs/prism-upstream-tests.md).
 
 ## Deferred dependency experiments
 
-- Reconsider SIMD-JSON source `ff8f5c8bb75dfc56803321c2f5a92656c7de842f` only if
+- Qualify the pinned SIMD-JSON submodule candidate at
+  `ff8f5c8bb75dfc56803321c2f5a92656c7de842f` only if
   unchanged Unicode/duplicate/unknown-field/shape/bound/canonical-byte checks
   pass and main-only CI shows at least 5% lower equal-weight geometric-mean time
   with no case more than 5% slower. Preserve the existing dependency decision
