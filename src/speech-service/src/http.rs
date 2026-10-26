@@ -9,7 +9,7 @@ use crate::{
 use std::{
     collections::HashMap,
     io::{self, Read, Write},
-    net::TcpStream,
+    net::{Shutdown, TcpStream},
     time::{Duration, Instant},
 };
 use subtle::ConstantTimeEq as _;
@@ -47,8 +47,13 @@ pub(super) fn handle(peer: &mut TcpStream, port: u16, key: &[u8; 64], engine: &m
             return;
         }
         let body = serde_json::json!({"error": {"code": error.code}}).to_string();
-        let _written = send(peer, error.status, "application/json", body.as_bytes());
+        if send(peer, error.status, "application/json", body.as_bytes()).is_err() {
+            return;
+        }
     }
+    // Complete framed responses end gracefully before the socket is dropped.
+    // Incomplete streams return above without manufacturing a successful end.
+    let _closed = peer.shutdown(Shutdown::Write);
 }
 
 fn respond(
