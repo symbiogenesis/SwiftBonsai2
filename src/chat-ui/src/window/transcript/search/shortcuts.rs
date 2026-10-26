@@ -194,7 +194,7 @@ mod tests {
         chat.run();
         assert!(chat.state().escaped);
         assert!(!chat.state().global_escape);
-        assert!(chat.state().transcript.search.query.is_empty());
+        assert_eq!(chat.state().transcript.search.query, "");
         assert!(chat.state().transcript.search.target.is_none());
         chat.state_mut().transcript.search.refresh(&[]);
         assert!(chat.state().transcript.search.matches.is_empty());
