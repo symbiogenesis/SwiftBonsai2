@@ -171,6 +171,7 @@ fn cached_build_with(
     prepare: impl FnOnce() -> crate::Result<BTreeMap<String, String>>,
     build: impl FnOnce(&BuildSpec, &BTreeMap<String, String>, &[OsString], &Path) -> crate::Result<()>,
 ) -> crate::Result<BTreeMap<String, PathBuf>> {
+    crate::startup_cancel::checkpoint()?;
     validate_external_path(&spec.target_directory).map_err(|error| error.to_string())?;
     validate_external_path(&spec.working_directory).map_err(|error| error.to_string())?;
     fs::create_dir_all(&spec.target_directory).map_err(|error| error.to_string())?;

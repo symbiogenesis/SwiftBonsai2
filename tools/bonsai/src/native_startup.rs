@@ -278,6 +278,7 @@ fn setup_environment(
 
 /// Prepares verified compiler/source inputs and returns a child-only environment.
 pub(crate) fn environment(data: &Path, working: &Path) -> crate::Result<Value> {
+    crate::startup_cancel::checkpoint()?;
     require_host()?;
     external(data)?;
     external(working)?;

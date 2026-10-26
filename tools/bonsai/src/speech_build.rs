@@ -325,6 +325,7 @@ fn digest(
     let mut hash = Sha256::new();
     let mut count = 0_u64;
     loop {
+        crate::startup_cancel::checkpoint()?;
         let copied = reader
             .read(buffer)
             .map_err(|_| "Cannot read native source bytes.")?;

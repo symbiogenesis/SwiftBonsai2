@@ -117,7 +117,7 @@ if ($Case -cin @('All', 'Launcher')) {
             $script:Calls.Add(@{ Executable = $Executable; Arguments = $ArgumentList; WorkingDirectory = $WorkingDirectory; TimeoutSeconds = $TimeoutSeconds; LogPath = $LogPath; Request = $request })
             if ([IO.Path]::GetFileName($Executable) -cne 'bonsai-tools.exe') { throw 'Packaged launcher attempted a build or unexpected executable.' }
             $output = switch ($ArgumentList[0]) {
-                '--version' { '{"Name":"bonsai-tools","Version":"0.1.0","ProtocolVersion":5,"Commands":["chat-launch"]}' }
+                '--version' { '{"Name":"bonsai-tools","Version":"0.1.0","ProtocolVersion":5,"StartupProtocolVersion":1,"Commands":["chat-launch"]}' }
                 'chat-launch' { '{"Status":"completed"}' }
                 default { throw 'Unexpected packaged maintenance command.' }
             }

@@ -544,6 +544,7 @@ fn working_directory(requested: Option<&Path>) -> crate::Result<PathBuf> {
 /// Rejects unsupported hosts, malformed or conflicting options, unsafe paths,
 /// failed provisioning/builds, and a nonzero chat exit. Evidence remains external.
 pub fn run(value: Value) -> crate::Result<Value> {
+    crate::startup_cancel::checkpoint()?;
     let request: Request = serde_json::from_value(value).map_err(|error| error.to_string())?;
     let plan = prepare(request, cfg!(all(windows, target_arch = "aarch64")))?;
     let working = working_directory(plan.request.working_directory.as_deref())?;

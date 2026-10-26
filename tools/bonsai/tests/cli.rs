@@ -29,6 +29,7 @@ fn version_advertises_policy_commands_without_resolving_a_request_file()
     let version: Value = serde_json::from_slice(&output.stdout)?;
     assert_eq!(version["Name"], "bonsai-tools");
     assert_eq!(version["ProtocolVersion"], 5);
+    assert_eq!(version["StartupProtocolVersion"], 1);
     let commands = version["Commands"]
         .as_array()
         .ok_or("Missing command capabilities")?;
@@ -49,6 +50,36 @@ fn version_advertises_policy_commands_without_resolving_a_request_file()
     for name in ["prism-source", "prism-baseline"] {
         assert!(!commands.iter().any(|command| command == name));
     }
+    Ok(())
+}
+
+#[test]
+fn startup_rejects_invalid_caller_identity_before_build_work()
+-> Result<(), Box<dyn std::error::Error>> {
+    let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let scratch = std::env::temp_dir().join(format!(
+        "SwiftBonsai-StartupIdentity-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir(&scratch)?;
+    let request = scratch.join("request.json");
+    for identity in [
+        json!({"parentProcessId": 1}),
+        json!({"parentProcessId": 0, "parentCreationTimeFileTime": 1}),
+        json!({"parentProcessId": 1, "parentCreationTimeFileTime": "invalid"}),
+    ] {
+        fs::write(&request, serde_json::to_vec(&identity)?)?;
+        let output = Command::new(env!("CARGO_BIN_EXE_bonsai-tools"))
+            .args(["source-build", "--request"])
+            .arg(&request)
+            .current_dir(&scratch)
+            .output()?;
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("startup caller identity"));
+    }
+    fs::remove_file(request)?;
+    fs::remove_dir(scratch)?;
     Ok(())
 }
 

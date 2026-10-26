@@ -60,10 +60,12 @@ fn source_file(path: &Path) -> crate::Result<File> {
 }
 
 pub(crate) fn digest_file(path: &Path) -> crate::Result<String> {
+    crate::startup_cancel::checkpoint()?;
     let mut file = source_file(path)?;
     let mut hash = Sha256::new();
     let mut buffer = vec![0; 65536];
     loop {
+        crate::startup_cancel::checkpoint()?;
         let count = file.read(&mut buffer).map_err(|error| error.to_string())?;
         if count == 0 {
             break;
@@ -125,6 +127,7 @@ fn non_build_input(root: &Path, path: &Path) -> bool {
 }
 
 fn enumerate(root: &Path, directory: &Path, files: &mut BTreeSet<PathBuf>) -> crate::Result<()> {
+    crate::startup_cancel::checkpoint()?;
     for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
         let entry = entry.map_err(|error| error.to_string())?;
         let path = entry.path();
@@ -541,6 +544,7 @@ pub(crate) fn fingerprint(
     working: &Path,
     identity: &str,
 ) -> crate::Result<Option<String>> {
+    crate::startup_cancel::checkpoint()?;
     let environment = std::env::vars_os()
         .filter_map(|(name, value)| {
             name.to_str()

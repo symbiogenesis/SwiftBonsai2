@@ -59,7 +59,8 @@ function Resolve-BonsaiRustTool {
             $probe = Invoke-BonsaiNativeProcess -Executable $tool -ArgumentList @('--version') -WorkingDirectory $scratch -TimeoutSeconds 10
             if (-not $probe.ExitCode) {
                 $version = $probe.StandardOutput | ConvertFrom-Json -AsHashtable -NoEnumerate -DateKind String
-                $compatible = $version.Contains('Commands') -and 'source-build' -cin $version.Commands
+                $compatible = $version.Contains('StartupProtocolVersion') -and $version.StartupProtocolVersion -eq 1 -and
+                    $version.Contains('Commands') -and 'source-build' -cin $version.Commands
             }
         }
         if (-not $compatible) {
@@ -80,11 +81,10 @@ function Resolve-BonsaiRustTool {
         if (-not [IO.File]::Exists($snapshot)) { [IO.File]::Copy($tool, $snapshot, $false) }
         if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash -ine $digest) { throw 'The maintenance bootstrap snapshot changed.' }
     } finally { $guard.Dispose() }
-    $request = Join-Path $scratch ('source-build-' + [guid]::NewGuid().ToString('N') + '.json')
-    [IO.File]::WriteAllText($request, (ConvertTo-Json @{ operation = 'tool'; repositoryRoot = $repository; workingDirectory = $scratch; targetDirectory = $target; forceBuild = [bool]$ForceBuild }))
-    $result = Invoke-BonsaiNativeProcess -Executable $snapshot -ArgumentList @('source-build', '--request', $request) -WorkingDirectory $scratch -TimeoutSeconds 0 -LogPath (Join-Path $scratch 'source-build.log')
-    if ($result.ExitCode) { throw "Maintenance source build failed: $($result.StandardError.Trim()) Evidence: $scratch" }
-    $resolved = $result.StandardOutput | ConvertFrom-Json -AsHashtable -NoEnumerate -DateKind String
+    $resolved = Invoke-BonsaiTool -Command source-build -ToolPath $snapshot -TimeoutSeconds 0 -Request @{
+        operation = 'tool'; repositoryRoot = $repository; workingDirectory = $scratch;
+        targetDirectory = $target; forceBuild = [bool]$ForceBuild
+    }
     if ($resolved.ToolPath -cne $tool) { throw 'The maintenance build returned an unexpected executable path.' }
     [IO.File]::WriteAllText($receipt, (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant())
     return $tool
@@ -116,15 +116,21 @@ function Invoke-BonsaiTool {
             @($version.Commands | Where-Object { $_ -isnot [string] }).Count) {
             throw 'Use a compatible bonsai-tools executable (version 0.1.0, protocol 5).'
         }
-        $script:CheckedTools[$identity] = $version.Commands
+        $script:CheckedTools[$identity] = $version
     }
-    if ($Command -cnotin $script:CheckedTools[$identity]) { throw "The selected maintenance tool does not support '$Command'; use a current build." }
+    $version = $script:CheckedTools[$identity]
+    if ($Command -cnotin $version.Commands) { throw "The selected maintenance tool does not support '$Command'; use a current build." }
+    $startup = $Command -cin @('source-build', 'chat-launch') -or
+        ($Command -ceq 'speech-build' -and $Request['operation'] -cin @('models', 'environment', 'build'))
+    if ($startup -and (-not $version.Contains('StartupProtocolVersion') -or $version.StartupProtocolVersion -ne 1)) {
+        throw 'Use a current bonsai-tools build with startup protocol 1 for cancellable startup operations.'
+    }
     $lane = Join-Path $scratch ([guid]::NewGuid().ToString('N'))
     [void][IO.Directory]::CreateDirectory($lane)
     $requestPath = Join-Path $lane 'request.json'
     $payload = [ordered]@{}
     foreach ($key in $Request.Keys) { $payload[$key] = $Request[$key] }
-    if ($Command -in @('completion','runtime-verify','inference-capabilities') -or
+    if ($startup -or $Command -in @('completion','runtime-verify','inference-capabilities') -or
         ($Command -eq 'qualification' -and $Request['operation'] -in @('capture', 'screen-capture'))) {
         $currentProcess = [Diagnostics.Process]::GetCurrentProcess()
         try {

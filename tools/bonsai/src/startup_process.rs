@@ -7,14 +7,22 @@
 use std::{
     collections::BTreeMap,
     ffi::{OsStr, OsString},
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::Read as _,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
     sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+
+#[cfg(not(windows))]
+use std::{
+    fs::OpenOptions,
+    process::{Child, Command, Stdio},
+};
+
+#[cfg(windows)]
+use bonsai_windows_process::{OwnedProcess, ToolProcessSpec};
 
 use bonsai_artifacts::validate_external_path;
 
@@ -85,96 +93,76 @@ fn native_path(path: &Path) -> PathBuf {
     }
 }
 
-fn hidden(command: &mut Command) {
+struct ChildGuard {
     #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt as _;
-        command.creation_flags(0x0800_0000);
-    }
+    child: OwnedProcess,
     #[cfg(not(windows))]
-    let _ = command;
-}
-
-fn arguments(command: &mut Command, executable: &Path, args: &[OsString]) -> crate::Result<()> {
-    #[cfg(windows)]
-    if executable
-        .file_name()
-        .is_some_and(|name| name.eq_ignore_ascii_case("cmd.exe"))
-    {
-        use std::os::windows::process::CommandExt as _;
-        // CMD parses one command string rather than CRT argv. Startup uses
-        // only this explicit /d /c form for its generated environment batch.
-        let [disable_auto_run, execute, script] = args else {
-            return Err("Unsupported command interpreter arguments.".into());
-        };
-        if disable_auto_run != "/d" || execute != "/c" {
-            return Err("Command interpreter startup must disable AutoRun.".into());
-        }
-        let script = script
-            .to_str()
-            .ok_or("Command interpreter input must be UTF-8.")?;
-        if Path::new(script).is_absolute() {
-            if script.contains(['"', '\r', '\n', '%']) {
-                return Err("Unsupported environment batch path.".into());
-            }
-            let script = script.replace('/', "\\");
-            command.raw_arg(format!("/d /v:off /s /c \"\"{script}\"\""));
-        } else {
-            command.raw_arg(format!("/d /v:off /c {script}"));
-        }
-        return Ok(());
-    }
-    #[cfg(not(windows))]
-    let _ = executable;
-    command.args(args);
-    Ok(())
-}
-
-fn stop_tree(child: &mut Child, working: &Path) {
-    #[cfg(windows)]
-    if let Some(system) = std::env::var_os("SystemRoot") {
-        let taskkill = PathBuf::from(system).join("System32/taskkill.exe");
-        if taskkill.is_absolute() {
-            let mut command = Command::new(taskkill);
-            command
-                .args(["/T", "/F", "/PID", &child.id().to_string()])
-                .current_dir(working)
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null());
-            hidden(&mut command);
-            if let Ok(mut killer) = command.spawn() {
-                let deadline = Instant::now();
-                while killer.try_wait().is_ok_and(|status| status.is_none())
-                    && deadline.elapsed() < Duration::from_secs(5)
-                {
-                    thread::sleep(Duration::from_millis(10));
-                }
-                let _ = killer.kill();
-                let _ = killer.wait();
-            }
-        }
-    }
-    #[cfg(not(windows))]
-    let _ = working;
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-struct ChildGuard<'a> {
     child: Child,
-    working: &'a Path,
     finished: bool,
 }
 
-impl Drop for ChildGuard<'_> {
-    fn drop(&mut self) {
-        if !self.finished {
-            stop_tree(&mut self.child, self.working);
+impl ChildGuard {
+    #[cfg_attr(
+        windows,
+        expect(
+            clippy::needless_pass_by_ref_mut,
+            reason = "The non-Windows std::process::Child wait API requires a mutable borrow."
+        )
+    )]
+    fn try_wait(&mut self) -> crate::Result<Option<u32>> {
+        #[cfg(windows)]
+        {
+            self.child.try_wait().map_err(|error| error.to_string())
+        }
+        #[cfg(not(windows))]
+        {
+            self.child
+                .try_wait()
+                .map(|status| {
+                    status.map(|status| {
+                        status
+                            .code()
+                            .map_or(1, |code| u32::from_ne_bytes(code.to_ne_bytes()))
+                    })
+                })
+                .map_err(|error| error.to_string())
+        }
+    }
+
+    #[cfg_attr(
+        windows,
+        expect(
+            clippy::needless_pass_by_ref_mut,
+            reason = "The non-Windows std::process::Child kill/wait API requires a mutable borrow."
+        )
+    )]
+    fn stop(&mut self) -> crate::Result<()> {
+        #[cfg(windows)]
+        {
+            self.child
+                .stop(Duration::from_secs(5))
+                .map_err(|error| error.to_string())
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = self.child.kill();
+            self.child
+                .wait()
+                .map(|_| ())
+                .map_err(|error| error.to_string())
         }
     }
 }
 
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.stop();
+        }
+    }
+}
+
+#[cfg(not(windows))]
 fn capture(path: &Path) -> crate::Result<File> {
     validate_external_path(path).map_err(|error| error.to_string())?;
     OpenOptions::new()
@@ -206,6 +194,27 @@ pub(crate) fn run(
     timeout: Duration,
     log: &Path,
 ) -> crate::Result<ProcessOutput> {
+    run_with_checkpoint(
+        executable,
+        args,
+        working,
+        environment,
+        timeout,
+        log,
+        crate::startup_cancel::checkpoint,
+    )
+}
+
+fn run_with_checkpoint(
+    executable: &OsStr,
+    args: &[OsString],
+    working: &Path,
+    environment: &BTreeMap<String, String>,
+    timeout: Duration,
+    log: &Path,
+    mut checkpoint: impl FnMut() -> crate::Result<()>,
+) -> crate::Result<ProcessOutput> {
+    checkpoint()?;
     validate_external_path(working).map_err(|error| error.to_string())?;
     validate_external_path(log).map_err(|error| error.to_string())?;
     if !working.is_dir() {
@@ -214,31 +223,62 @@ pub(crate) fn run(
     let serial = unique();
     let stdout_path = log.with_extension(format!("{serial}.stdout"));
     let stderr_path = log.with_extension(format!("{serial}.stderr"));
-    let stdout = capture(&stdout_path)?;
-    let stderr = capture(&stderr_path)?;
     let executable = resolve(executable)?;
-    let mut command = Command::new(&executable);
-    arguments(&mut command, &executable, args)?;
-    command
-        .current_dir(working)
-        .envs(environment)
-        .stdin(Stdio::null())
-        .stdout(stdout.try_clone().map_err(|error| error.to_string())?)
-        .stderr(stderr.try_clone().map_err(|error| error.to_string())?);
-    hidden(&mut command);
+    checkpoint()?;
+    #[cfg(windows)]
+    let child = OwnedProcess::start_tool(&ToolProcessSpec {
+        executable,
+        arguments: args.to_vec(),
+        working_directory: working.to_owned(),
+        stdout: stdout_path.clone(),
+        stderr: stderr_path.clone(),
+        environment: environment.clone(),
+    })
+    .map_err(|error| error.to_string())?;
+    #[cfg(not(windows))]
+    let child = {
+        let stdout = capture(&stdout_path)?;
+        let stderr = capture(&stderr_path)?;
+        Command::new(&executable)
+            .args(args)
+            .current_dir(working)
+            .envs(environment)
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr)
+            .spawn()
+            .map_err(|error| error.to_string())?
+    };
     let mut guard = ChildGuard {
-        child: command.spawn().map_err(|error| error.to_string())?,
-        working,
+        child,
         finished: false,
     };
     let started = Instant::now();
     let status = loop {
-        if let Some(status) = guard.child.try_wait().map_err(|error| error.to_string())? {
+        if let Err(error) = checkpoint() {
+            fs::write(
+                log,
+                format!(
+                    "{error}\nstdout: {}\nstderr: {}\n",
+                    stdout_path.display(),
+                    stderr_path.display()
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+            return Err(format!("{error} Evidence: {}", log.display()));
+        }
+        if let Some(status) = guard.try_wait()? {
             break status;
         }
         if (!timeout.is_zero() && started.elapsed() >= timeout)
-            || stdout.metadata().map_err(|error| error.to_string())?.len() > MAX_OUTPUT
-            || stderr.metadata().map_err(|error| error.to_string())?.len() > MAX_OUTPUT
+            || fs::metadata(&stdout_path)
+                .map_err(|error| error.to_string())?
+                .len()
+                > MAX_OUTPUT
+            || fs::metadata(&stderr_path)
+                .map_err(|error| error.to_string())?
+                .len()
+                > MAX_OUTPUT
         {
             fs::write(
                 log,
@@ -256,18 +296,19 @@ pub(crate) fn run(
         }
         thread::sleep(Duration::from_millis(20));
     };
-    // An ordinary compiler child may leave background descendants behind. The
-    // owned root is complete; captures use files, so no inherited pipe can hang us.
-    guard.finished = true;
+    // A compiler root can exit before a descendant. Empty the owned Job before
+    // accepting its result, so no compiler outlives the enclosing build lock.
+    guard.stop()?;
+    checkpoint()?;
     let output = ProcessOutput {
         stdout: text(&stdout_path)?,
         stderr: text(&stderr_path)?,
-        code: status
-            .code()
-            .map_or(1, |code| u32::from_ne_bytes(code.to_ne_bytes())),
+        code: status,
     };
     fs::write(log, format!("{}{}", output.stdout, output.stderr))
         .map_err(|error| error.to_string())?;
+    checkpoint()?;
+    guard.finished = true;
     Ok(output)
 }
 
@@ -330,9 +371,10 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn command_batch_path_preserves_spaces() -> crate::Result<()> {
-        let scratch = std::env::temp_dir().join(format!("Bonsai-Process with spaces-{}", unique()));
+        let scratch =
+            std::env::temp_dir().join(format!("Bonsai-Process with spaces & (group)-{}", unique()));
         fs::create_dir(&scratch).map_err(|error| error.to_string())?;
-        let batch = scratch.join("environment with spaces.cmd");
+        let batch = scratch.join("environment with spaces & (group).cmd");
         fs::write(&batch, "@echo batch-output\r\n@exit /b 0\r\n")
             .map_err(|error| error.to_string())?;
         let exe =
@@ -348,6 +390,262 @@ mod tests {
         )?;
         assert_eq!(output.code, 0);
         assert!(output.stdout.contains("batch-output"));
+        Ok(())
+    }
+
+    #[test]
+    fn cancelled_before_spawn_has_no_filesystem_side_effects() -> crate::Result<()> {
+        let scratch = std::env::temp_dir().join(format!("Bonsai-Process-{}", unique()));
+        fs::create_dir(&scratch).map_err(|error| error.to_string())?;
+        let result = run_with_checkpoint(
+            OsStr::new("missing"),
+            &[],
+            &scratch,
+            &BTreeMap::new(),
+            Duration::ZERO,
+            &scratch.join("not-created.log"),
+            || Err("Synthetic caller cancellation.".into()),
+        );
+        assert!(result.is_err_and(|error| error == "Synthetic caller cancellation."));
+        assert_eq!(
+            fs::read_dir(&scratch)
+                .map_err(|error| error.to_string())?
+                .count(),
+            0
+        );
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn quoted(path: &Path) -> String {
+        path.to_string_lossy().replace('\'', "''")
+    }
+
+    #[cfg(windows)]
+    fn process_tree(
+        scratch: &Path,
+        wait: bool,
+    ) -> crate::Result<(PathBuf, Vec<OsString>, PathBuf)> {
+        let executable = resolve(OsStr::new("pwsh.exe"))?;
+        let marker = scratch.join("descendant.txt");
+        let leaf = scratch.join("leaf.ps1");
+        let parent = scratch.join("parent.ps1");
+        fs::write(
+            &leaf,
+            format!(
+                "$ErrorActionPreference = 'Stop'\n\
+                 $process = Get-Process -Id $PID\n\
+                 [IO.File]::WriteAllText('{marker}.partial', \"$PID`n$($process.StartTime.ToUniversalTime().ToFileTimeUtc())\")\n\
+                 [IO.File]::Move('{marker}.partial', '{marker}')\n\
+                 $deadline = [DateTime]::UtcNow.AddSeconds(30)\n\
+                 while ([DateTime]::UtcNow -lt $deadline) {{ Start-Sleep -Milliseconds 100 }}\n",
+                marker = quoted(&marker)
+            ),
+        )
+        .map_err(|error| error.to_string())?;
+        fs::write(
+            &parent,
+            format!(
+                "$ErrorActionPreference = 'Stop'\n\
+                 $start = [Diagnostics.ProcessStartInfo]::new('{executable}')\n\
+                 $start.UseShellExecute = $false\n\
+                 $start.CreateNoWindow = $true\n\
+                 $start.WorkingDirectory = '{working}'\n\
+                 foreach ($argument in @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', '{leaf}')) {{ $start.ArgumentList.Add($argument) }}\n\
+                 $child = [Diagnostics.Process]::Start($start)\n\
+                 while (-not [IO.File]::Exists('{marker}')) {{ if ($child.HasExited) {{ throw 'Leaf failed.' }}; Start-Sleep -Milliseconds 10 }}\n\
+                 {wait}\n",
+                executable = quoted(&executable),
+                working = quoted(scratch),
+                leaf = quoted(&leaf),
+                marker = quoted(&marker),
+                wait = if wait { "$child.WaitForExit()" } else { "exit 0" },
+            ),
+        )
+        .map_err(|error| error.to_string())?;
+        Ok((
+            executable,
+            vec![
+                "-NoLogo".into(),
+                "-NoProfile".into(),
+                "-NonInteractive".into(),
+                "-File".into(),
+                parent.into_os_string(),
+            ],
+            marker,
+        ))
+    }
+
+    #[cfg(windows)]
+    fn descendant(marker: &Path) -> crate::Result<Option<bonsai_windows_process::ParentProcess>> {
+        if !marker.is_file() {
+            return Ok(None);
+        }
+        let identity = fs::read_to_string(marker).map_err(|error| error.to_string())?;
+        let (id, creation) = identity
+            .split_once('\n')
+            .ok_or("Incomplete descendant identity.")?;
+        let id = id
+            .trim()
+            .parse()
+            .map_err(|error| format!("Invalid descendant PID: {error}"))?;
+        let creation = creation
+            .trim()
+            .parse()
+            .map_err(|error| format!("Invalid descendant creation identity: {error}"))?;
+        bonsai_windows_process::ParentProcess::open(id, creation)
+            .map(Some)
+            .map_err(|error| error.to_string())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cancelled_build_stops_descendants_before_releasing_lock() -> crate::Result<()> {
+        let scratch = std::env::temp_dir().join(format!("Bonsai-Process-Cancel-{}", unique()));
+        fs::create_dir(&scratch).map_err(|error| error.to_string())?;
+        let (executable, args, marker) = process_tree(&scratch, true)?;
+        let lock_path = scratch.join("build.lock");
+        let lock = crate::startup_cache::lock_file(&lock_path)?;
+        let mut child = None;
+        let result = run_with_checkpoint(
+            executable.as_os_str(),
+            &args,
+            &scratch,
+            &BTreeMap::new(),
+            Duration::from_secs(30),
+            &scratch.join("cancel.log"),
+            || {
+                child = descendant(&marker)?;
+                if child.is_some() {
+                    Err("Synthetic caller cancellation.".into())
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        assert!(result.is_err_and(|error| error.contains("Synthetic caller cancellation.")));
+        let child = child.ok_or("Synthetic compiler descendant never became ready.")?;
+        assert!(
+            child.ensure_alive().is_err(),
+            "Compiler descendant survived cancellation."
+        );
+        assert!(crate::startup_cache::lock_file(&lock_path).is_err());
+        drop(lock);
+        let _next_build = crate::startup_cache::lock_file(&lock_path)?;
+        assert!(
+            fs::read_to_string(scratch.join("cancel.log"))
+                .map_err(|error| error.to_string())?
+                .contains("Synthetic caller cancellation.")
+        );
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn timed_out_build_stops_descendants() -> crate::Result<()> {
+        let scratch = std::env::temp_dir().join(format!("Bonsai-Process-Timeout-{}", unique()));
+        fs::create_dir(&scratch).map_err(|error| error.to_string())?;
+        let (executable, args, marker) = process_tree(&scratch, true)?;
+        let mut child = None;
+        let result = run_with_checkpoint(
+            executable.as_os_str(),
+            &args,
+            &scratch,
+            &BTreeMap::new(),
+            Duration::from_secs(10),
+            &scratch.join("timeout.log"),
+            || {
+                if child.is_none() {
+                    child = descendant(&marker)?;
+                }
+                Ok(())
+            },
+        );
+        assert!(result.is_err_and(|error| error.contains("timed out")));
+        let child = child.ok_or("Synthetic compiler descendant never became ready.")?;
+        assert!(
+            child.ensure_alive().is_err(),
+            "Compiler descendant survived timeout."
+        );
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn completed_root_cannot_leave_compiler_descendants() -> crate::Result<()> {
+        let scratch = std::env::temp_dir().join(format!("Bonsai-Process-RootExit-{}", unique()));
+        fs::create_dir(&scratch).map_err(|error| error.to_string())?;
+        let (executable, args, marker) = process_tree(&scratch, false)?;
+        let output = run(
+            executable.as_os_str(),
+            &args,
+            &scratch,
+            &BTreeMap::new(),
+            Duration::from_secs(10),
+            &scratch.join("root-exit.log"),
+        )?;
+        assert_eq!(output.code, 0);
+        assert!(marker.is_file());
+        assert!(
+            descendant(&marker).is_err(),
+            "Compiler descendant survived root exit."
+        );
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn compiler_overlay_preserves_inherited_profile_and_unicode() -> crate::Result<()> {
+        let scratch = std::env::temp_dir().join(format!("Bonsai-Process-Environment-{}", unique()));
+        fs::create_dir(&scratch).map_err(|error| error.to_string())?;
+        let executable = resolve(OsStr::new("pwsh.exe"))?;
+        let original_path = std::env::var("PATH").map_err(|error| error.to_string())?;
+        let overlay = BTreeMap::from([
+            (
+                "BONSAI_STARTUP_UNICODE".into(),
+                "\u{30d1}\u{30b9}\u{1f332}".into(),
+            ),
+            (
+                "pAtH".into(),
+                format!("{original_path};C:\\compiler-marker"),
+            ),
+        ]);
+        let output = run(
+            executable.as_os_str(),
+            &[
+                "-NoLogo".into(), "-NoProfile".into(), "-NonInteractive".into(), "-Command".into(),
+                "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); @{Value=$env:BONSAI_STARTUP_UNICODE; Path=$env:PATH; SystemRoot=$env:SystemRoot; Local=$env:LOCALAPPDATA; Roaming=$env:APPDATA} | ConvertTo-Json -Compress".into(),
+            ],
+            &scratch,
+            &overlay,
+            Duration::from_secs(10),
+            &scratch.join("environment.log"),
+        )?;
+        assert_eq!(output.code, 0, "{}", output.stderr);
+        let actual: serde_json::Value =
+            serde_json::from_str(&output.stdout).map_err(|error| error.to_string())?;
+        assert_eq!(actual["Value"], overlay["BONSAI_STARTUP_UNICODE"]);
+        // PowerShell itself prepends $PSHOME; the complete compiler overlay
+        // remains the inherited suffix rather than changing the parent PATH.
+        assert!(
+            actual["Path"]
+                .as_str()
+                .is_some_and(|path| path.ends_with(&overlay["pAtH"]))
+        );
+        for (field, name) in [
+            ("SystemRoot", "SystemRoot"),
+            ("Local", "LOCALAPPDATA"),
+            ("Roaming", "APPDATA"),
+        ] {
+            assert_eq!(
+                actual[field],
+                std::env::var(name).map_err(|error| error.to_string())?
+            );
+        }
+        assert_eq!(
+            std::env::var("PATH").map_err(|error| error.to_string())?,
+            original_path
+        );
         Ok(())
     }
 }

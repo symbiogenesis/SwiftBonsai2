@@ -13,7 +13,9 @@ use std::{
     time::Duration,
 };
 
-use bonsai_artifacts::{hash_reader, is_redirect, open_locked_file, validate_external_path};
+use bonsai_artifacts::{
+    ArtifactError, hash_reader, is_redirect, open_locked_file, validate_external_path,
+};
 
 fn expected(bytes: u64, sha256: &str) -> crate::Result<()> {
     if bytes == 0
@@ -27,6 +29,7 @@ fn expected(bytes: u64, sha256: &str) -> crate::Result<()> {
 }
 
 fn digest_matches(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<bool> {
+    crate::startup_cancel::checkpoint()?;
     expected(bytes, sha256)?;
     if file.metadata().map_err(|error| error.to_string())?.len() != bytes {
         return Err("Artifact byte length differs from its lock.".into());
@@ -34,12 +37,15 @@ fn digest_matches(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<bo
     file.seek(SeekFrom::Start(0))
         .map_err(|error| error.to_string())?;
     let mut buffer = vec![0; 1024 * 1024];
-    let hash =
-        hash_reader(file, bytes, &mut buffer, &mut || Ok(())).map_err(|error| error.to_string())?;
+    let hash = hash_reader(file, bytes, &mut buffer, &mut || {
+        crate::startup_cancel::checkpoint().map_err(|_| ArtifactError::Cancelled)
+    })
+    .map_err(|error| error.to_string())?;
     Ok(hash.eq_ignore_ascii_case(sha256))
 }
 
 fn check(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<()> {
+    crate::startup_cancel::checkpoint()?;
     if !digest_matches(file, bytes, sha256)? {
         return Err("Artifact SHA-256 differs from its lock; invalid bytes are retained.".into());
     }
@@ -233,6 +239,7 @@ fn receive_with(
     working: &Path,
     mut transfer: impl FnMut(&str, &Path, u64, u64, &Path) -> crate::Result<()>,
 ) -> crate::Result<()> {
+    crate::startup_cancel::checkpoint()?;
     expected(bytes, sha256)?;
     download_uri(uri)?;
     validate_external_path(path).map_err(|error| error.to_string())?;
@@ -271,6 +278,7 @@ fn receive_with(
     }
     let mut quarantined: Option<PathBuf> = None;
     let completed = loop {
+        crate::startup_cancel::checkpoint()?;
         if offset < bytes {
             transfer(uri, &partial, offset, bytes, working)?;
         }
@@ -305,6 +313,7 @@ fn receive_with(
         quarantined = Some(quarantine);
         offset = 0;
     };
+    crate::startup_cancel::checkpoint()?;
     match fs::hard_link(&partial, path) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
