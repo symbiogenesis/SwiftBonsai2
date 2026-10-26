@@ -239,6 +239,30 @@ fn bounds_both_advertised_and_actual_body_bytes() {
 }
 
 #[test]
+fn content_length_preserves_syntax_precedence_and_leading_zeroes() {
+    let mut h = head(CHAT.len());
+    h.headers.insert(
+        "content-length",
+        HeaderValue::from_str(&format!("{}{}", "0".repeat(128), CHAT.len())).unwrap(),
+    );
+    assert!(policy().check_head(&h).is_ok());
+    // A malformed field is a framing error even if its numeric prefix would
+    // overflow. A syntactically decimal overflow remains a body-size error.
+    for suffix in ["x", ", 1", ".0"] {
+        h.headers.insert(
+            "content-length",
+            HeaderValue::from_str(&format!("{}{suffix}", "9".repeat(128))).unwrap(),
+        );
+        rejected_head(&h, Rejection::Framing);
+    }
+    h.headers.insert(
+        "content-length",
+        HeaderValue::from_str(&"9".repeat(128)).unwrap(),
+    );
+    rejected_head(&h, Rejection::BodySize);
+}
+
+#[test]
 fn canonical_backend_body_respects_the_exact_private_request_byte_limit() {
     let empty = br#"{"messages":[{"role":"user","content":""}]}"#;
     let overhead = prepare(empty)

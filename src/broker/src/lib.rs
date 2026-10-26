@@ -216,15 +216,10 @@ impl RequestPolicy {
             return Err(Rejection::ContentType);
         }
         let length = singleton(headers, "content-length")?.ok_or(Rejection::Framing)?;
-        if length.is_empty() || !length.iter().all(u8::is_ascii_digit) {
-            return Err(Rejection::Framing);
-        }
-        let length = length
-            .iter()
-            .try_fold(0usize, |n, b| {
-                n.checked_mul(10)?.checked_add(usize::from(b - b'0'))
-            })
-            .ok_or(Rejection::BodySize)?;
+        let length = wire::content_length(length).map_err(|error| match error {
+            wire::LengthError::Syntax => Rejection::Framing,
+            wire::LengthError::Overflow => Rejection::BodySize,
+        })?;
         if length == 0 || length > MAX_BODY_BYTES {
             return Err(Rejection::BodySize);
         }

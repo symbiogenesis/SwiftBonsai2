@@ -745,18 +745,10 @@ fn validate_response(bytes: &[u8], status: u16) -> io::Result<&[u8]> {
             return Err(invalid());
         }
         if header.name.eq_ignore_ascii_case("content-length") {
-            if length.is_some()
-                || header.value.is_empty()
-                || !header.value.iter().all(u8::is_ascii_digit)
-            {
+            if length.is_some() {
                 return Err(invalid());
             }
-            length = Some(
-                std::str::from_utf8(header.value)
-                    .map_err(|_| invalid())?
-                    .parse::<usize>()
-                    .map_err(|_| invalid())?,
-            );
+            length = Some(crate::wire::content_length(header.value).map_err(|_| invalid())?);
         }
         if header.name.eq_ignore_ascii_case("content-type") {
             if content_type.is_some() {
@@ -1083,6 +1075,26 @@ mod tests {
         assert!(validate_health(&response(r#"{"status":"ok"}"#)).is_ok());
         assert!(validate_health(&response(r#"{"status":"loading model"}"#)).is_err());
         assert!(validate_health(&response(r#"{"status":"ok"}garbage"#)).is_err());
+        let complete = response(r#"{"status":"ok"}"#);
+        let complete = String::from_utf8_lossy(&complete);
+        assert!(
+            validate_health(
+                complete
+                    .replace("Content-Length: 15", "Content-Length: 00015")
+                    .as_bytes()
+            )
+            .is_ok()
+        );
+        for length in ["+15", "15x", "99999999999999999999999999999999999999"] {
+            assert!(
+                validate_health(
+                    complete
+                        .replace("Content-Length: 15", &format!("Content-Length: {length}"))
+                        .as_bytes()
+                )
+                .is_err()
+            );
+        }
         for message in [
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 15\r\nContent-Length: 15\r\n\r\n{\"status\":\"ok\"}",

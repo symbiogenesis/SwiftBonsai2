@@ -84,14 +84,10 @@ pub async fn receive_chat<R: AsyncRead + Unpin + 'static>(
         if used == raw.len() {
             return Err(ReceiveError::HeadLimit);
         }
-        let scan_from = used.saturating_sub(3);
+        let previous = used;
         used += read_before(&mut stream, &mut raw[used..], header_deadline).await?;
-        // Scan each byte at most four times, even with one-byte fragments.
-        if let Some(offset) = raw[scan_from..used]
-            .array_windows()
-            .position(|bytes| bytes == b"\r\n\r\n")
-        {
-            break scan_from + offset + 4;
+        if let Some(end) = wire::head_end(&raw[..used], previous) {
+            break end;
         }
     };
     let authorized = parse_head(policy, &raw[..head_end])?;

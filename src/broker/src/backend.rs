@@ -220,11 +220,7 @@ where
         let count = available.len().min(MAX_HEADER_BYTES - raw.len());
         let previous = raw.len();
         raw.extend_from_slice(&available[..count]);
-        if let Some(offset) = raw[previous.saturating_sub(3)..]
-            .array_windows()
-            .position(|bytes| bytes == b"\r\n\r\n")
-        {
-            let end = previous.saturating_sub(3) + offset + 4;
+        if let Some(end) = wire::head_end(&raw, previous) {
             // Leave coalesced body bytes in the owned reader, not the head.
             reader.consume(end - previous);
             raw.truncate(end);
@@ -279,13 +275,8 @@ fn parse_head(raw: &[u8], streaming: bool) -> Result<(Response<()>, Framing), Ba
     let length = singleton(headers, "content-length").map_err(|_| BackendError::Framing)?;
     let transfer = singleton(headers, "transfer-encoding").map_err(|_| BackendError::Framing)?;
     let framing = match (length, transfer) {
-        (Some(bytes), None) if !bytes.is_empty() && bytes.iter().all(u8::is_ascii_digit) => {
-            let length = bytes
-                .iter()
-                .try_fold(0usize, |n, b| {
-                    n.checked_mul(10)?.checked_add(usize::from(b - b'0'))
-                })
-                .ok_or(BackendError::Framing)?;
+        (Some(bytes), None) => {
+            let length = wire::content_length(bytes).map_err(|_| BackendError::Framing)?;
             if length > MAX_RESPONSE_BYTES {
                 return Err(BackendError::Body);
             }
