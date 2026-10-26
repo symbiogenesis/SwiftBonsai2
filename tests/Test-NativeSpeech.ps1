@@ -196,11 +196,19 @@ if ($Case -in @('All', 'Build')) {
     & $module {
         $script:builds = [Collections.Generic.List[object]]::new()
         $script:machine = [uint16]0xaa64
+        function script:Clear-BonsaiWorkspaceBuild {
+            [CmdletBinding()]
+            [OutputType([void])]
+            param([string]$RepositoryRoot, [string]$CargoPath, [string]$Channel, [string]$TargetDirectory, [string]$WorkingDirectory, [string]$BuildTarget)
+            $script:invalidation = $PSBoundParameters
+        }
+        $script:initializations = 0
         function script:Initialize-NativeSpeechBuild {
             [CmdletBinding()]
             [OutputType([pscustomobject])]
             param([string]$DataDirectory, [string]$WorkingDirectory, [string]$ToolPath)
             $script:buildToolPath = $ToolPath
+            $script:initializations++
             [void](Resolve-ExternalPath -Path $DataDirectory)
             [void][IO.Directory]::CreateDirectory($WorkingDirectory)
             return [pscustomobject]@{ Environment = @{ CC = 'clang-cl.exe'; CXX = 'clang-cl.exe'; CMAKE_GENERATOR = 'Ninja'
@@ -233,13 +241,20 @@ if ($Case -in @('All', 'Build')) {
     }
     $working = Join-Path $scratch 'build'
     $selectedTool = Join-Path $scratch 'selected-tools.exe'
+    [IO.File]::WriteAllText($selectedTool, 'selected maintenance executable fixture')
     $all = Invoke-NativeSpeechBuild -DataDirectory (Join-Path $scratch 'data') -WorkingDirectory $working -RepositoryRoot $repo -ToolPath $selectedTool
     Assert ((& $module { $script:buildToolPath }) -ceq $selectedTool) 'Native builds discarded the selected maintenance executable.'
     $builds = @(& $module { $script:builds.ToArray() })
     Assert ($builds.Count -eq 2 -and $all.AsrPath.EndsWith('bonsai-speech-asr.exe') -and $all.TtsPath.EndsWith('bonsai-speech-tts.exe')) 'Native build omitted an owned speech daemon.'
-    $target = Join-Path -Path $scratch -ChildPath 'data' -AdditionalChildPath 'build/native-speech'
-    Assert ($all.AsrPath.StartsWith($target + '\', [StringComparison]::OrdinalIgnoreCase) -and
-        $all.TtsPath.StartsWith($target + '\', [StringComparison]::OrdinalIgnoreCase)) 'Native daemon builds discarded the persistent external Cargo cache.'
+    $target = $builds[0].Arguments[[array]::IndexOf($builds[0].Arguments, '--target-dir') + 1]
+    $cacheRoot = Join-Path -Path $scratch -ChildPath 'data' -AdditionalChildPath 'build/native-speech'
+    Assert ($target.StartsWith($cacheRoot + '\', [StringComparison]::OrdinalIgnoreCase) -and
+        [IO.Path]::GetFileName($target) -cmatch '^[a-f0-9]{64}$' -and
+        $all.AsrPath.StartsWith($target + '\', [StringComparison]::OrdinalIgnoreCase) -and
+        $all.TtsPath.StartsWith($target + '\', [StringComparison]::OrdinalIgnoreCase)) 'Native daemon builds lost their checkout-specific persistent Cargo cache.'
+    $warm = Invoke-NativeSpeechBuild -DataDirectory (Join-Path $scratch 'data') -WorkingDirectory $working -RepositoryRoot $repo -ToolPath $selectedTool
+    Assert ($warm.AsrPath -ceq $all.AsrPath -and $warm.TtsPath -ceq $all.TtsPath -and
+        (& $module { $script:builds.Count }) -eq 2 -and (& $module { $script:initializations }) -eq 1) 'Warm native launch invoked Cargo or provisioned compiler/source inputs.'
     Assert ($builds[0].Environment.CC -ceq 'clang-cl.exe' -and $builds[0].Environment.CMAKE_GENERATOR -ceq 'Ninja' -and
         $builds[1].Environment.CC -ceq 'clang-cl.exe' -and $builds[1].Environment.CMAKE_GENERATOR -ceq 'Ninja' -and
         $builds[1].Environment.BONSAI_TTS_COMPILER -ceq 'C:\pinned-llvm\bin\clang-cl.exe' -and
@@ -255,8 +270,17 @@ if ($Case -in @('All', 'Build')) {
     }
     $only = Invoke-NativeSpeechBuild -DataDirectory (Join-Path $scratch 'data') -WorkingDirectory $working -RepositoryRoot $repo -Model Canary
     Assert ($null -eq $only.TtsPath -and $null -ne $only.AsrPath) 'Canary selection forced a TTS build.'
+    $digest = (Get-FileHash -LiteralPath $all.AsrPath -Algorithm SHA256).Hash
+    [IO.File]::WriteAllText($all.AsrPath, 'changed native executable')
+    $null = Invoke-NativeSpeechBuild -DataDirectory (Join-Path $scratch 'data') -WorkingDirectory $working -RepositoryRoot $repo -ToolPath $selectedTool
+    Assert ((Get-FileHash -LiteralPath $all.AsrPath -Algorithm SHA256).Hash -ceq $digest -and
+        (& $module { $script:initializations }) -gt 1) 'A modified speech executable reached launch without rebuilding.'
+    $guard = [IO.FileStream]::new((Join-Path $target 'build.lock'), [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    try {
+        Assert-Failure { Invoke-NativeSpeechBuild -DataDirectory (Join-Path $scratch 'data') -WorkingDirectory $working -RepositoryRoot $repo } 'Concurrent native cache mutation was accepted.'
+    } finally { $guard.Dispose() }
     & $module { $script:machine = [uint16]0x8664 }
-    Assert-Failure { Invoke-NativeSpeechBuild -DataDirectory (Join-Path $scratch 'data') -WorkingDirectory $working -RepositoryRoot $repo -Model QwenTts } 'An emulated x64 executable passed native ARM64 acceptance.'
+    Assert-Failure { Invoke-NativeSpeechBuild -DataDirectory (Join-Path $scratch 'data') -WorkingDirectory $working -RepositoryRoot $repo -Model QwenTts -ForceBuild } 'An emulated x64 executable passed native ARM64 acceptance.'
     Assert-Failure { Invoke-NativeSpeechBuild -DataDirectory (Join-Path $scratch 'data') -WorkingDirectory $repo -RepositoryRoot $repo } 'A native build wrote into the Git checkout.'
 }
 "Native speech $Case contracts passed. Evidence: $scratch"

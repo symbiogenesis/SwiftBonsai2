@@ -5,6 +5,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.BuildCache.psm1')
 
 function Install-NativeSpeechModels {
     <#
@@ -172,7 +173,9 @@ function Invoke-NativeSpeechBuild {
     Builds selected native speech daemons in Release and verifies ARM64 PE outputs.
     .DESCRIPTION
     Returns AsrPath and TtsPath; unselected paths are null. Uses the repository's
-    pinned Rust toolchain and Cargo.lock. Cargo reuses DataDirectory/build/native-speech;
+    pinned Rust toolchain and Cargo.lock. Checked unchanged builds skip compiler and
+    native source provisioning. ForceBuild repeats the ordinary build checks.
+    Cargo outputs are isolated by checkout/toolchain under DataDirectory/build/native-speech;
     process working directories and logs remain in the external WorkingDirectory.
     No model is loaded during builds.
     #>
@@ -180,7 +183,8 @@ function Invoke-NativeSpeechBuild {
     [OutputType([pscustomobject])]
     param([Parameter(Mandatory)][string]$DataDirectory, [Parameter(Mandatory)][string]$WorkingDirectory,
           [Parameter(Mandatory)][string]$RepositoryRoot,
-          [ValidateSet('All', 'Canary', 'QwenTts')][string]$Model = 'All', [string]$ToolPath)
+          [ValidateSet('All', 'Canary', 'QwenTts')][string]$Model = 'All', [string]$ToolPath,
+          [switch]$ForceBuild)
     $working = Resolve-ExternalPath -Path $WorkingDirectory
     if (-not [IO.Path]::IsPathFullyQualified($RepositoryRoot) -or $RepositoryRoot -match '%[^%]+%') { throw 'RepositoryRoot must be an expanded absolute path.' }
     $repository = [IO.Path]::GetFullPath($RepositoryRoot)
@@ -188,24 +192,61 @@ function Invoke-NativeSpeechBuild {
     $toolchain = Get-Content -LiteralPath (Join-Path $repository 'rust-toolchain.toml') -Raw
     if ($toolchain -notmatch '(?m)^channel\s*=\s*"(nightly-\d{4}-\d{2}-\d{2})"\s*$') { throw 'Native build requires the repository-pinned Rust toolchain.' }
     $channel = $Matches[1] + '-aarch64-pc-windows-msvc'
-    $native = Initialize-NativeSpeechBuild -DataDirectory $DataDirectory -WorkingDirectory $working -ToolPath $ToolPath
-    $target = Resolve-ExternalPath -Path (Join-Path $DataDirectory 'build/native-speech')
-    $result = [ordered]@{ AsrPath = $null; TtsPath = $null }
-    foreach ($kind in @('Canary', 'QwenTts')) {
-        if ($Model -ne 'All' -and $Model -ne $kind) { continue }
-        $package = if ($kind -eq 'Canary') { 'bonsai-speech-asr' } else { 'bonsai-speech-tts' }
-        $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', (Join-Path $repository 'Cargo.toml'), '--package', $package,
-            '--target', 'aarch64-pc-windows-msvc', '--target-dir', $target)
-        $log = Join-Path $working ($package + '-build.log')
-        $environment = @{}
-        foreach ($name in $native.Environment.Keys) { $environment[$name] = $native.Environment[$name] }
-        $build = Invoke-BonsaiNativeProcess -Executable 'cargo.exe' -ArgumentList $arguments -WorkingDirectory $working -Environment $environment -TimeoutSeconds 3600 -LogPath $log
-        if ($build.ExitCode -ne 0) { throw "Native $kind build failed; see $log" }
-        $executable = Resolve-ExternalPath -Path (Join-Path -Path $target -ChildPath 'aarch64-pc-windows-msvc/release' -AdditionalChildPath ($package + '.exe'))
-        Assert-Arm64PE -Path $executable
-        if ($kind -eq 'Canary') { $result.AsrPath = $executable } else { $result.TtsPath = $executable }
-    }
-    return [pscustomobject]$result
+    $identity = $repository.ToUpperInvariant() + "`n" + $channel
+    $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($identity))).ToLowerInvariant()
+    $target = Resolve-ExternalPath -Path (Join-Path -Path $DataDirectory -ChildPath 'build/native-speech' -AdditionalChildPath $key)
+    [void][IO.Directory]::CreateDirectory($target)
+    [void][IO.Directory]::CreateDirectory($working)
+    try { $guard = [IO.FileStream]::new((Join-Path $target 'build.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
+    catch { throw 'Another process is preparing these speech companions. Wait for it to finish, then launch again.' }
+    try {
+        # An explicit maintenance executable supplies native source/compiler pins.
+        # Include its bytes so replacing it cannot reuse an older build plan.
+        $selectedTool = if ($ToolPath) { $ToolPath } else { $env:BONSAI_TOOLS_PATH }
+        if ($selectedTool) {
+            $selectedTool = Resolve-ExternalPath -Path $selectedTool
+            $identity += "`n" + $selectedTool + "`n" + (Get-FileHash -LiteralPath $selectedTool -Algorithm SHA256).Hash
+        }
+        $fingerprint = Get-BonsaiBuildFingerprint -RepositoryRoot $repository -Identity $identity -WorkingDirectory $working
+        $result = [ordered]@{ AsrPath = $null; TtsPath = $null }
+        $native = $null
+        $needsBuild = [bool]$ForceBuild
+        foreach ($kind in @('Canary', 'QwenTts')) {
+            if ($Model -ne 'All' -and $Model -ne $kind) { continue }
+            $package = if ($kind -eq 'Canary') { 'bonsai-speech-asr' } else { 'bonsai-speech-tts' }
+            $executable = Resolve-ExternalPath -Path (Join-Path -Path $target -ChildPath 'aarch64-pc-windows-msvc/release' -AdditionalChildPath ($package + '.exe'))
+            if (-not (Test-BonsaiBuildReceipt -ReceiptPath (Join-Path $target ($package + '.build.json')) -Fingerprint $fingerprint -Executable @($executable))) { $needsBuild = $true }
+        }
+        foreach ($kind in @('Canary', 'QwenTts')) {
+            if ($Model -ne 'All' -and $Model -ne $kind) { continue }
+            $package = if ($kind -eq 'Canary') { 'bonsai-speech-asr' } else { 'bonsai-speech-tts' }
+            $executable = Resolve-ExternalPath -Path (Join-Path -Path $target -ChildPath 'aarch64-pc-windows-msvc/release' -AdditionalChildPath ($package + '.exe'))
+            $receipt = Join-Path $target ($package + '.build.json')
+            $reused = -not $needsBuild
+            if (-not $reused) {
+                [IO.File]::Delete($receipt)
+                # Cargo may otherwise consider a modified top-level executable fresh.
+                if ([IO.File]::Exists($executable)) { [IO.File]::Delete($executable) }
+                if ($null -eq $native) {
+                    $native = Initialize-NativeSpeechBuild -DataDirectory $DataDirectory -WorkingDirectory $working -ToolPath $ToolPath
+                    Clear-BonsaiWorkspaceBuild -RepositoryRoot $repository -CargoPath 'cargo.exe' -Channel $channel -TargetDirectory $target -WorkingDirectory $working -BuildTarget 'aarch64-pc-windows-msvc'
+                }
+                $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', (Join-Path $repository 'Cargo.toml'), '--package', $package,
+                    '--target', 'aarch64-pc-windows-msvc', '--target-dir', $target)
+                $log = Join-Path $working ($package + '-build.log')
+                $environment = @{}
+                foreach ($name in $native.Environment.Keys) { $environment[$name] = $native.Environment[$name] }
+                $build = Invoke-BonsaiNativeProcess -Executable 'cargo.exe' -ArgumentList $arguments -WorkingDirectory $working -Environment $environment -TimeoutSeconds 3600 -LogPath $log
+                if ($build.ExitCode -ne 0) { throw "Native $kind build failed; see $log" }
+            }
+            Assert-Arm64PE -Path $executable
+            if (-not $reused -and (Get-BonsaiBuildFingerprint -RepositoryRoot $repository -Identity $identity -WorkingDirectory $working) -ceq $fingerprint) {
+                Write-BonsaiBuildReceipt -ReceiptPath $receipt -Fingerprint $fingerprint -Executable @($executable)
+            }
+            if ($kind -eq 'Canary') { $result.AsrPath = $executable } else { $result.TtsPath = $executable }
+        }
+        return [pscustomobject]$result
+    } finally { $guard.Dispose() }
 }
 
 Export-ModuleMember -Function Install-NativeSpeechModels, Initialize-NativeSpeechBuild, Invoke-NativeSpeechBuild

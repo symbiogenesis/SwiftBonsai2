@@ -15,7 +15,8 @@ Builds missing app executables with the pinned Rust compiler in an external reus
 ToolPath selects an explicit maintenance executable for speech provisioning and credentials.
 The native window owns its broker and inference-process lifetime. Session
 credentials and logs remain in a unique external session directory. App builds stay
-under DataDirectory/build/chat; Cargo checks source and compiler freshness at launch.
+under DataDirectory/build/chat. Checked unchanged builds skip Cargo and native
+compiler provisioning. ForceBuild repeats the ordinary pinned build checks.
 NoSpeechModels skips speech model provisioning. SpeechModelsOnly downloads or
 verifies speech files and returns their paths without building or launching the app.
 The launcher builds native ARM64 Rust speech companions using pinned native engines.
@@ -65,7 +66,8 @@ param(
     [ValidateRange(1024, 65535)][int]$TtsPort = 8767,
     [switch]$NoTts,
     [switch]$NoSpeechModels,
-    [switch]$SpeechModelsOnly
+    [switch]$SpeechModelsOnly,
+    [switch]$ForceBuild
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -134,7 +136,9 @@ if (-not $NoSpeechModels -and ($SpeechModelsOnly -or $ownCanary -or $ownTts)) {
     if (-not $SpeechModelsOnly) {
         Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1') -Force
         if (-not $ToolPath -and $env:BONSAI_TOOLS_PATH) { $ToolPath = $env:BONSAI_TOOLS_PATH }
-        $ToolPath = Resolve-BonsaiRustTool -Name 'bonsai-tools' -ManifestRelativePath '../tools/bonsai/Cargo.toml' -ToolPath $ToolPath
+        $toolParameters = @{}
+        if ($ForceBuild) { $toolParameters.ForceBuild = $true }
+        $ToolPath = Resolve-BonsaiRustTool -Name 'bonsai-tools' -ManifestRelativePath '../tools/bonsai/Cargo.toml' -ToolPath $ToolPath @toolParameters
     }
     $selection = if ($SpeechModelsOnly -or ($ownCanary -and $ownTts)) { 'All' }
         elseif ($ownCanary) { 'Canary' } else { 'QwenTts' }
@@ -160,7 +164,9 @@ if (-not $ChatPath -or -not $BrokerPath) {
     $packages = @()
     if (-not $ChatPath) { $packages += 'bonsai-chat' }
     if (-not $BrokerPath) { $packages += 'bonsai-broker' }
-    $built = Invoke-ChatBuild -DataDirectory $DataDirectory -WorkingDirectory $scratch -RepositoryRoot (Split-Path $PSScriptRoot -Parent) -Package $packages
+    $buildParameters = @{}
+    if ($ForceBuild) { $buildParameters.ForceBuild = $true }
+    $built = Invoke-ChatBuild -DataDirectory $DataDirectory -WorkingDirectory $scratch -RepositoryRoot (Split-Path $PSScriptRoot -Parent) -Package $packages @buildParameters
     if (-not $ChatPath) { $ChatPath = $built.ChatPath }
     if (-not $BrokerPath) { $BrokerPath = $built.BrokerPath }
 }
@@ -169,8 +175,10 @@ if (($ownCanary -and -not $AsrPath) -or ($ownTts -and -not $TtsPath)) {
     $selection = if ($ownCanary -and -not $AsrPath) {
         if ($ownTts -and -not $TtsPath) { 'All' } else { 'Canary' }
     } else { 'QwenTts' }
-    Write-Information -MessageData 'Building the native ARM64 speech companions. Pinned compiler and engine sources are cached outside Git.' -InformationAction Continue
-    $nativeSpeech = Invoke-NativeSpeechBuild -DataDirectory $DataDirectory -WorkingDirectory $scratch -RepositoryRoot (Split-Path $PSScriptRoot -Parent) -Model $selection -ToolPath $ToolPath
+    Write-Information -MessageData 'Preparing the native ARM64 speech companions. Checked unchanged builds are reused.' -InformationAction Continue
+    $buildParameters = @{}
+    if ($ForceBuild) { $buildParameters.ForceBuild = $true }
+    $nativeSpeech = Invoke-NativeSpeechBuild -DataDirectory $DataDirectory -WorkingDirectory $scratch -RepositoryRoot (Split-Path $PSScriptRoot -Parent) -Model $selection -ToolPath $ToolPath @buildParameters
     if ($ownCanary -and -not $AsrPath) { $AsrPath = $nativeSpeech.AsrPath }
     if ($ownTts -and -not $TtsPath) { $TtsPath = $nativeSpeech.TtsPath }
 }

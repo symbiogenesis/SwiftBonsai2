@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.BuildCache.psm1')
 
 $script:ToolScratch = @{}
 $script:CheckedTools = @{}
@@ -28,14 +29,15 @@ function Resolve-BonsaiRustTool {
     <# .SYNOPSIS
     Resolves a packaged tool or builds reviewed sources in a reusable external cache.
     .DESCRIPTION
-    Cargo checks freshness on every source resolution, reusing cached outputs.
+    Unchanged build inputs and checked outputs bypass Cargo on source resolution.
+    Changed inputs or ForceBuild run Cargo's ordinary freshness checks.
     Launchers can resolve once and pass ToolPath to subsequent operations.
     The output digest receipt detects corruption, not same-user tampering.
     #>
     [CmdletBinding()]
     [OutputType([string])]
     param([Parameter(Mandatory)][ValidatePattern('^[a-z-]+$')][string]$Name,
-          [Parameter(Mandatory)][string]$ManifestRelativePath, [string]$ToolPath)
+          [Parameter(Mandatory)][string]$ManifestRelativePath, [string]$ToolPath, [switch]$ForceBuild)
     if ($ToolPath) {
         if (-not [IO.Path]::IsPathFullyQualified($ToolPath) -or $ToolPath -match '%[^%]+%' -or -not [IO.File]::Exists($ToolPath)) {
             throw 'ToolPath must name an existing expanded absolute executable.'
@@ -45,6 +47,9 @@ function Resolve-BonsaiRustTool {
     $scratch = Get-BonsaiToolScratch -Name $Name
     $manifest = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $ManifestRelativePath))
     $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+    if (-not $manifest.StartsWith($repository + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Tool manifests must remain inside the source repository.'
+    }
     foreach ($inputName in @('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml')) {
         if (-not [IO.File]::Exists((Join-Path $repository $inputName))) { throw "Tool build input is missing: $inputName" }
     }
@@ -63,6 +68,8 @@ function Resolve-BonsaiRustTool {
     try { $guard = [IO.FileStream]::new($lock, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
     catch { throw 'Another process is preparing this maintenance tool. Wait for it to finish, then retry.' }
     try {
+        $fingerprint = Get-BonsaiBuildFingerprint -RepositoryRoot $repository -Identity $identity -WorkingDirectory $scratch
+        $freshness = Join-Path $target ($Name + '.build.json')
         $expected = if ([IO.File]::Exists($receipt)) { [IO.File]::ReadAllText($receipt).Trim() } else { '' }
         $actual = if ([IO.File]::Exists($tool)) { (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash } else { '' }
         $valid = $expected -match '^[a-fA-F0-9]{64}$' -and $actual -ieq $expected
@@ -71,7 +78,12 @@ function Resolve-BonsaiRustTool {
             # Removing it forces Cargo to produce the executable again.
             Remove-Item -LiteralPath $tool -Force
         }
+        if (-not $ForceBuild -and $valid -and (Test-BonsaiBuildReceipt -ReceiptPath $freshness -Fingerprint $fingerprint -Executable @($tool))) {
+            return $tool
+        }
+        [IO.File]::Delete($freshness)
         $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
+        Clear-BonsaiWorkspaceBuild -RepositoryRoot $repository -CargoPath $cargo -Channel $channel -TargetDirectory $target -WorkingDirectory $scratch
         $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', $manifest, '--target-dir', $target)
         $log = Join-Path $scratch ('cargo-build-' + [guid]::NewGuid().ToString('N') + '.log')
         $result = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -LogPath $log
@@ -79,6 +91,9 @@ function Resolve-BonsaiRustTool {
         if (-not [IO.File]::Exists($tool)) { throw "Tool build produced no executable; inspect $log" }
         $digest = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
         [IO.File]::WriteAllText($receipt, $digest)
+        if ((Get-BonsaiBuildFingerprint -RepositoryRoot $repository -Identity $identity -WorkingDirectory $scratch) -ceq $fingerprint) {
+            Write-BonsaiBuildReceipt -ReceiptPath $freshness -Fingerprint $fingerprint -Executable @($tool)
+        }
         return $tool
     } finally { $guard.Dispose() }
 }
