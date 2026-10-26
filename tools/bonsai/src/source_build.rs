@@ -63,6 +63,12 @@ pub(crate) fn cache_key(repository: &Path, channel: &str) -> String {
     cache::hex(&Sha256::digest(
         format!("{}\n{channel}", repository.to_string_lossy().to_uppercase()).as_bytes(),
     ))
+    // MSVC still rejects some archive paths beyond MAX_PATH. The full source
+    // identity stays in the verified receipt; a 96-bit directory label leaves
+    // room for Cargo's target, package and artifact names on ordinary profiles.
+    .chars()
+    .take(24)
+    .collect()
 }
 
 fn outputs(spec: &BuildSpec) -> crate::Result<BTreeMap<String, PathBuf>> {
@@ -300,6 +306,22 @@ pub fn run(request: Value) -> crate::Result<Value> {
 mod tests {
     use super::*;
     use std::cell::Cell;
+
+    #[test]
+    fn cache_labels_leave_room_for_windows_linker_artifacts() {
+        let repository = Path::new("C:/Users/symbi/source/repos/SwiftBonsai2Runner");
+        let compiler = "nightly-2026-10-22-aarch64-pc-windows-msvc";
+        let key = cache_key(repository, compiler);
+        assert_eq!(key.len(), 24);
+        assert_eq!(key, cache_key(repository, compiler));
+        assert_ne!(key, cache_key(Path::new("C:/another-checkout"), compiler));
+        let artifact = Path::new("C:/Users/symbi/AppData/Local/SwiftBonsai2")
+            .join("build/native-speech")
+            .join(key)
+            .join("aarch64-pc-windows-msvc/release/build/bonsai-windows-credentials")
+            .join("032c9bd086e4ceb8/out/libbonsai_windows_credentials-032c9bd086e4ceb8.rlib");
+        assert!(artifact.as_os_str().len() < 240);
+    }
 
     fn fixture() -> crate::Result<BuildSpec> {
         let scratch =
