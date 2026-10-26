@@ -134,6 +134,66 @@ fn composer_keeps_a_draft_while_the_model_prepares() {
 }
 
 #[test]
+fn maximum_drafts_keep_transcript_and_actions_visible_and_editable() {
+    for size in [[1180.0, 860.0], [620.0, 640.0]] {
+        for line in [
+            "A manuscript line with a thought.\n",
+            "A wrapped manuscript passage. ",
+        ] {
+            let mut chat = harness(size, true);
+            let draft: String = line.chars().cycle().take(INPUT_LIMIT - 2).collect();
+            chat.state_mut().app.input.clone_from(&draft);
+            chat.run();
+            for label in ["Microphone", "Read aloud", "Send  ↑"] {
+                let action = chat.get_by_role_and_label(egui::Role::Button, label).rect();
+                assert!(action.top() >= 0.0 && action.bottom() <= size[1]);
+                assert!(action.left() >= 0.0 && action.right() <= size[0]);
+            }
+            let transcript = chat.get_by_label(ANSWER).rect();
+            let send = chat
+                .get_by_role_and_label(egui::Role::Button, "Send  ↑")
+                .rect();
+            assert!(transcript.top() >= 0.0 && transcript.bottom() < send.top());
+            chat.get_by_role_and_label(egui::Role::MultilineTextInput, "Message")
+                .focus();
+            chat.run();
+            chat.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::End);
+            chat.run();
+            let geometry = chat.ctx.data(|data| {
+                data.get_temp::<(Option<egui::Rect>, egui::Rect, egui::Vec2)>(egui::Id::unique(
+                    "composer-viewport",
+                ))
+            });
+            assert!(
+                geometry.is_some_and(|(caret, viewport, offset)| {
+                    offset.y > 0.0
+                        && viewport.height() <= 160.0
+                        && caret.is_some_and(|caret| viewport.expand(1.0).contains_rect(caret))
+                }),
+                "Composer caret must scroll into view: {geometry:?}"
+            );
+            chat.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Enter);
+            chat.run();
+            assert_eq!(chat.state().app.input, format!("{draft}\n"));
+            assert!(matches!(
+                chat.state().commands.try_recv(),
+                Err(mpsc::TryRecvError::Empty)
+            ));
+            chat.key_press(egui::Key::Enter);
+            chat.run();
+            assert!(
+                matches!(chat.state().commands.try_recv(), Ok(Command::Send { text, .. }) if text == draft.trim())
+            );
+            assert!(chat.state().app.busy);
+            let stop = chat
+                .get_by_role_and_label(egui::Role::Button, "Stop")
+                .rect();
+            assert!(stop.top() >= 0.0 && stop.bottom() <= size[1]);
+        }
+    }
+}
+
+#[test]
 fn transcript_export_preserves_roles_spacing_and_visible_unicode_only() {
     let mut transcript = Transcript::default();
     assert_eq!(transcript.plain_text(), "");
@@ -277,12 +337,28 @@ fn capture_chat_layouts_when_requested() -> io::Result<()> {
         ("conversation-narrow.png", [620.0, 760.0], true),
         ("empty-state.png", [1180.0, 860.0], false),
         ("settings-narrow.png", [620.0, 640.0], true),
+        ("draft-wide.png", [1180.0, 860.0], true),
+        ("draft-narrow.png", [620.0, 640.0], true),
     ] {
         let mut chat = harness(size, seeded);
         if name == "settings-narrow.png" {
             chat.state_mut().app.show_settings = true;
+        } else if name.starts_with("draft-") {
+            chat.state_mut().app.input = "A manuscript line with a thought.\n"
+                .chars()
+                .cycle()
+                .take(INPUT_LIMIT - "\nEnd of draft.".len())
+                .collect();
+            chat.state_mut().app.input.push_str("\nEnd of draft.");
         }
         chat.run();
+        if name.starts_with("draft-") {
+            chat.get_by_role_and_label(egui::Role::MultilineTextInput, "Message")
+                .focus();
+            chat.run();
+            chat.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::End);
+            chat.run();
+        }
         chat.render()
             .map_err(io::Error::other)?
             .save(directory.join(name))

@@ -1136,45 +1136,94 @@ impl State {
                     .inner_margin(14)
                     .show(ui, |ui| {
                         let label = ui.label(RichText::new("Message").small().weak());
-                        let response = ui
-                            .add_enabled(
-                                !self.busy,
-                                egui::TextEdit::multiline(&mut self.input)
-                                    .id_salt("composer")
-                                    .hint_text(if self.ready {
-                                        "Ask anything…"
-                                    } else if self.retryable {
-                                        "Retry the model to continue…"
-                                    } else if self.waiting_model {
-                                        "Write while your local model prepares…"
-                                    } else {
-                                        "Model unavailable"
+                        // A pasted manuscript must not push the transcript and
+                        // Send/Stop controls outside the window. TextEdit keeps
+                        // the caret visible within this native scroll area.
+                        let editor = egui::ScrollArea::vertical()
+                            .id_salt(("composer-scroll", self.active_conversation))
+                            .max_height(160.0)
+                            .show(ui, |ui| {
+                                let output = ui
+                                    .add_enabled_ui(!self.busy, |ui| {
+                                        egui::TextEdit::multiline(&mut self.input)
+                                            .id_salt("composer")
+                                            .hint_text(if self.ready {
+                                                "Ask anything…"
+                                            } else if self.retryable {
+                                                "Retry the model to continue…"
+                                            } else if self.waiting_model {
+                                                "Write while your local model prepares…"
+                                            } else {
+                                                "Model unavailable"
+                                            })
+                                            .desired_rows(3)
+                                            .desired_width(f32::INFINITY)
+                                            .frame(egui::Frame::NONE)
+                                            .char_limit(INPUT_LIMIT)
+                                            .return_key(Some(egui::KeyboardShortcut::new(
+                                                egui::Modifiers::SHIFT,
+                                                egui::Key::Enter,
+                                            )))
+                                            .show(ui)
                                     })
-                                    .desired_rows(3)
-                                    .desired_width(f32::INFINITY)
-                                    .frame(egui::Frame::NONE)
-                                    .char_limit(INPUT_LIMIT)
-                                    .return_key(Some(egui::KeyboardShortcut::new(
-                                        egui::Modifiers::SHIFT,
-                                        egui::Key::Enter,
-                                    ))),
-                            )
-                            .labelled_by(label.id);
-                        self.recovery_dirty |= response.changed();
-                        self.composer_id = Some(response.id);
-                        if let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), response.id) {
-                            if let Some(cursor) = self.pending_cursor.take() {
-                                state.cursor.set_char_range(Some(cursor));
-                                state.store(ui.ctx(), response.id);
-                                ui.ctx().request_repaint();
-                            } else {
-                                self.composer_cursor = state.cursor.char_range();
-                            }
-                        }
-                        if self.focus_composer && self.ready && !self.busy {
-                            response.request_focus();
-                            self.focus_composer = false;
-                        }
+                                    .inner;
+                                let response = output.response.response.labelled_by(label.id);
+                                self.recovery_dirty |= response.changed();
+                                self.composer_id = Some(response.id);
+                                let pending_cursor = self.pending_cursor.take();
+                                let cursor = pending_cursor.or(output.cursor_range);
+                                if let Some(mut state) =
+                                    egui::TextEdit::load_state(ui.ctx(), response.id)
+                                {
+                                    if let Some(cursor) = pending_cursor {
+                                        state.cursor.set_char_range(Some(cursor));
+                                        state.store(ui.ctx(), response.id);
+                                        ui.ctx().request_repaint();
+                                    } else {
+                                        self.composer_cursor = state.cursor.char_range();
+                                    }
+                                }
+                                let focus_requested =
+                                    self.focus_composer && self.ready && !self.busy;
+                                if focus_requested {
+                                    response.request_focus();
+                                    self.focus_composer = false;
+                                }
+                                let caret = cursor.map(|cursor| {
+                                    output
+                                        .galley
+                                        .pos_from_cursor(cursor.primary)
+                                        .translate(output.galley_pos.to_vec2())
+                                });
+                                // Focusing a recovered draft can leave the cursor
+                                // already at the end, so egui sees no cursor change
+                                // and does not request its usual automatic scroll.
+                                if (response.has_focus() || focus_requested)
+                                    && (response.gained_focus()
+                                        || focus_requested
+                                        || pending_cursor.is_some()
+                                        || ui.input(|input| {
+                                            input.key_pressed(egui::Key::End)
+                                                || input.key_pressed(egui::Key::Home)
+                                        }))
+                                    && let Some(caret) = caret
+                                {
+                                    ui.scroll_to_rect(caret, None);
+                                }
+                                (response, caret)
+                            });
+                        #[cfg(test)]
+                        ui.ctx().data_mut(|data| {
+                            data.insert_temp(
+                                egui::Id::unique("composer-viewport"),
+                                (
+                                    editor.inner.1,
+                                    editor.inner_rect,
+                                    editor.state.clamped_offset(),
+                                ),
+                            );
+                        });
+                        let response = editor.inner.0;
                         let ime_event = ui.input(|input| {
                             input
                                 .events
