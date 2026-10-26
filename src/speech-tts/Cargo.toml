@@ -1,0 +1,14 @@
+[package]
+name = "bonsai-speech-tts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+license.workspace = true
+repository.workspace = true
+keywords = ["speech", "tts", "qwen", "ggml", "native"]
+categories = ["multimedia::audio"]
+description = "Owned native Qwen VoiceDesign speech inference for Bonsai"
+
+[lints]
+workspace = true
