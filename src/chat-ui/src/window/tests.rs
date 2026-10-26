@@ -101,7 +101,7 @@ fn speech_controls_stay_visible_and_explain_unconfigured_services_without_listen
     let (mut state, _commands, _events) = state();
     assert!(!state.dictation_requested);
     assert!(state.microphone.is_none());
-    assert!(state.microphone_help().contains("-CanaryKeyFile"));
+    assert!(state.microphone_help().contains("Start-Demo.ps1"));
     assert!(state.read_aloud_help().contains("Start-Demo.ps1"));
     assert!(state.read_aloud_help().contains("-NoTts"));
     state.toggle_dictation();
