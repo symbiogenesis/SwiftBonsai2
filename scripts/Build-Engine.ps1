@@ -26,6 +26,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Build.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') { throw 'Build in native ARM64 PowerShell on a Windows ARM64 host.' }
 function Resolve-BuildPath {
     [CmdletBinding()]
@@ -137,14 +138,7 @@ if ($cache -notmatch '(?m)^CMAKE_GENERATOR_PLATFORM:INTERNAL=ARM64\r?$' -or $cac
 $null = Invoke-Native $CMakePath (Get-EngineBuildArgument $build $parallelJobs)
 if (Invoke-Git @('-C', $source, 'status', '--porcelain', '--untracked-files=all', '--ignored=matching')) { throw 'Build changed the source checkout; inspect it before reuse.' }
 $engine = Join-Path $build -ChildPath 'bin', 'Release', 'llama-server.exe'
-$reader = [IO.BinaryReader]::new([IO.File]::OpenRead($engine))
-try {
-    if ($reader.ReadUInt16() -ne 0x5A4D -or $reader.BaseStream.Length -lt 64) { throw 'Output is not a PE executable.' }
-    $reader.BaseStream.Position = 0x3C; $offset = $reader.ReadInt32()
-    if ($offset -lt 64 -or $offset -gt $reader.BaseStream.Length - 6) { throw 'Invalid PE header offset.' }
-    $reader.BaseStream.Position = $offset
-    if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0xAA64) { throw 'Output is not native ARM64 PE.' }
-} finally { $reader.Dispose() }
+Assert-Arm64PE -Path $engine
 $engineVersion = Invoke-Native -Executable $engine -Arguments @('--version') -TimeoutSeconds 30
 $reportedCommit = [regex]::Match($engineVersion, '\bcommit ([a-f0-9]{7,40})\)').Groups[1].Value
 if (-not $reportedCommit -or -not $commit.StartsWith($reportedCommit)) { throw 'Engine version does not identify the locked commit.' }

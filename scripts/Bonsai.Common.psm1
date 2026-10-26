@@ -225,7 +225,7 @@ function Assert-Arm64PE {
         if ($reader.BaseStream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5A4D) { throw 'Invalid DOS header.' }
         $reader.BaseStream.Position = 0x3C
         $peOffset = $reader.ReadUInt32()
-        if ($peOffset -gt $reader.BaseStream.Length - 24) { throw 'Invalid PE offset.' }
+        if ($peOffset -lt 64 -or $peOffset -gt $reader.BaseStream.Length - 24) { throw 'Invalid PE offset.' }
         $reader.BaseStream.Position = $peOffset
         if ($reader.ReadUInt32() -ne 0x00004550 -or $reader.ReadUInt16() -ne 0xAA64) {
             throw 'Expected a native ARM64 PE image.'

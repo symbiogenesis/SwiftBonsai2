@@ -65,6 +65,15 @@ if ($Case -in @('All','PE')) {
     $path = Join-Path $scratch 'architecture.exe'
     [IO.File]::WriteAllBytes($path, $image)
     Assert-Arm64PE $path
+    $image[60] = 4
+    $image[4] = 0x50; $image[5] = 0x45; $image[8] = 0x64; $image[9] = 0xAA
+    [IO.File]::WriteAllBytes($path, $image)
+    Assert-Failure { Assert-Arm64PE $path } 'A PE header inside the DOS header was accepted.'
+    $image[60] = 120
+    $image[120] = 0x50; $image[121] = 0x45; $image[124] = 0x64; $image[125] = 0xAA
+    [IO.File]::WriteAllBytes($path, $image)
+    Assert-Failure { Assert-Arm64PE $path } 'A truncated COFF header was accepted.'
+    $image[60] = 64
     $image[68] = 0x64; $image[69] = 0x86
     [IO.File]::WriteAllBytes($path, $image)
     Assert-Failure { Assert-Arm64PE $path } 'An x64 executable was accepted.'
