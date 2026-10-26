@@ -7,7 +7,10 @@
     reason = "Keep the audited native boundary explicitly parent-only."
 )]
 
-use crate::client::{self, Command, Config, Event};
+use crate::{
+    client::{self, Command, Completion, Config, Event},
+    speech,
+};
 mod transcript;
 use std::{
     cell::RefCell,
@@ -33,8 +36,8 @@ use windows_sys::{
         UI::{
             Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW},
             Controls::{
-                DRAWITEMSTRUCT, EM_SETLIMITTEXT, ODS_DISABLED, ODS_FOCUS, ODS_SELECTED, ODT_BUTTON,
-                SetWindowTheme,
+                DRAWITEMSTRUCT, EM_REPLACESEL, EM_SETLIMITTEXT, ODS_DISABLED, ODS_FOCUS,
+                ODS_SELECTED, ODT_BUTTON, SetWindowTheme,
             },
             HiDpi::{
                 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow,
@@ -68,6 +71,8 @@ const STOP: usize = 102;
 const NEW: usize = 103;
 const THINKING: usize = 104;
 const RETRY: usize = 105;
+const DICTATE: usize = 106;
+const READ_ALOUD: usize = 107;
 const TIMER: usize = 1;
 const BACKGROUND: u32 = 0x0016_1810;
 const PANEL: u32 = 0x001d_2217;
@@ -84,7 +89,7 @@ thread_local! {
 
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "Readiness, generation, retry eligibility and optional pane visibility are independent UI state flags"
+    reason = "Readiness, generation, retry, speech capabilities and active speech operations are independent UI state flags"
 )]
 struct State {
     window: HWND,
@@ -101,6 +106,9 @@ struct State {
     new_chat: HWND,
     thinking: HWND,
     retry: HWND,
+    dictate: HWND,
+    read_aloud: HWND,
+    speech_status: HWND,
     status: HWND,
     font: HFONT,
     title_font: HFONT,
@@ -112,6 +120,14 @@ struct State {
     retryable: bool,
     show_thinking: bool,
     chat_started: bool,
+    speech: Option<speech::Session>,
+    speech_input: bool,
+    speech_output: bool,
+    listening: bool,
+    dictation_requested: bool,
+    speaking: bool,
+    answer_complete: bool,
+    last_answer: String,
 }
 
 struct Brush(HBRUSH);
@@ -334,7 +350,7 @@ fn paint(window: HWND) {
                 .and_then(|state| state.as_ref().map(|state| state.show_thinking))
         })
         .unwrap_or(false);
-    let top = px(148);
+    let top = px(188);
     let bottom = bounds.bottom - px(184);
     let split = if thinking { (bottom - top) / 3 } else { 0 };
     palette_with(|p| {
@@ -532,6 +548,16 @@ fn control(parent: HWND, class: *const u16, text: &str, style: u32, id: usize) -
     }
 }
 
+fn button(parent: HWND, text: &str, id: usize) -> io::Result<HWND> {
+    control(
+        parent,
+        w!("BUTTON"),
+        text,
+        WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
+        id,
+    )
+}
+
 fn edit(parent: HWND, readonly: bool, id: usize) -> io::Result<HWND> {
     let style = WS_TABSTOP
         | WS_VSCROLL
@@ -596,6 +622,7 @@ impl State {
         commands: Sender<Command>,
         events: Receiver<Event>,
     ) -> io::Result<Self> {
+        let speech = speech::start().ok();
         Ok(Self {
             window,
             title: control(window, w!("STATIC"), "Swift Bonsai 2", 0, 301)?,
@@ -610,44 +637,27 @@ impl State {
             // static label. Keep these label/control pairs adjacent in child order.
             transcript_label: control(window, w!("STATIC"), "&Conversation", 0, 401)?,
             transcript: transcript::create(window, 201)?,
-            reasoning_label: control(window, w!("STATIC"), "&Thinking", 0, 402)?,
+            reasoning_label: control(window, w!("STATIC"), "Reasoning details", 0, 402)?,
             reasoning: transcript::create(window, 202)?,
-            input_label: control(window, w!("STATIC"), "&Message", 0, 403)?,
+            input_label: control(window, w!("STATIC"), "M&essage", 0, 403)?,
             input: edit(window, false, 203)?,
-            send: control(
+            send: button(window, "&Send  ↑", SEND)?,
+            stop: button(window, "S&top", STOP)?,
+            new_chat: button(window, "＋  &New conversation", NEW)?,
+            thinking: button(window, "Show t&hinking", THINKING)?,
+            retry: button(window, "&Retry model", RETRY)?,
+            dictate: button(window, "Enable &microphone", DICTATE)?,
+            read_aloud: button(window, "Read a&loud", READ_ALOUD)?,
+            speech_status: control(
                 window,
-                w!("BUTTON"),
-                "&Send  ↑",
-                WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
-                SEND,
-            )?,
-            stop: control(
-                window,
-                w!("BUTTON"),
-                "S&top",
-                WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
-                STOP,
-            )?,
-            new_chat: control(
-                window,
-                w!("BUTTON"),
-                "＋  &New conversation",
-                WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
-                NEW,
-            )?,
-            thinking: control(
-                window,
-                w!("BUTTON"),
-                "Show t&hinking",
-                WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
-                THINKING,
-            )?,
-            retry: control(
-                window,
-                w!("BUTTON"),
-                "&Retry model",
-                WS_TABSTOP | u32::try_from(BS_OWNERDRAW).unwrap_or_default(),
-                RETRY,
+                w!("STATIC"),
+                if speech.is_some() {
+                    "Checking speech capabilities..."
+                } else {
+                    "Speech unavailable."
+                },
+                0,
+                404,
             )?,
             status: control(
                 window,
@@ -666,6 +676,14 @@ impl State {
             retryable: false,
             show_thinking: false,
             chat_started: false,
+            speech,
+            speech_input: false,
+            speech_output: false,
+            listening: false,
+            dictation_requested: false,
+            speaking: false,
+            answer_complete: false,
+            last_answer: String::new(),
         })
     }
 
@@ -695,6 +713,44 @@ impl State {
         unsafe {
             ShowWindow(self.retry, if self.retryable { SW_SHOW } else { SW_HIDE });
         }
+        // SAFETY: Speech buttons are live controls; capability and lifecycle flags are scalar.
+        unsafe {
+            EnableWindow(
+                self.dictate,
+                i32::from(
+                    self.dictation_requested
+                        || (self.ready && !self.busy && !self.speaking && self.speech_input),
+                ),
+            );
+        }
+        // SAFETY: Live speech control; readout is available only for retained visible answer text.
+        unsafe {
+            EnableWindow(
+                self.read_aloud,
+                i32::from(
+                    self.speaking
+                        || (self.speech_output
+                            && self.answer_complete
+                            && !self.last_answer.is_empty()),
+                ),
+            );
+        }
+        set_text(
+            self.dictate,
+            if self.dictation_requested {
+                "Disable &microphone"
+            } else {
+                "Enable &microphone"
+            },
+        );
+        set_text(
+            self.read_aloud,
+            if self.speaking {
+                "Stop a&loud"
+            } else {
+                "Read a&loud"
+            },
+        );
     }
 
     fn layout(&self) {
@@ -710,7 +766,7 @@ impl State {
         let height = bounds.bottom.max(p(520));
         let pad = p(32);
         let content = width - 2 * pad;
-        let top = p(148);
+        let top = p(188);
         let bottom = height - p(184);
         let split = if self.show_thinking {
             (bottom - top) / 3
@@ -723,6 +779,15 @@ impl State {
         place(self.new_chat, pad, p(106), p(190), p(30));
         place(self.thinking, pad + p(202), p(106), p(145), p(30));
         place(self.retry, width - pad - p(145), p(106), p(145), p(30));
+        place(self.dictate, pad, p(146), p(145), p(30));
+        place(self.read_aloud, pad + p(157), p(146), p(145), p(30));
+        place(
+            self.speech_status,
+            pad + p(314),
+            p(146),
+            content - p(314),
+            p(32),
+        );
         place(
             self.transcript_label,
             pad + p(20),
@@ -831,6 +896,8 @@ impl State {
             self.new_chat,
             self.thinking,
             self.retry,
+            self.dictate,
+            self.read_aloud,
         ] {
             apply_font(control, font);
         }
@@ -839,6 +906,7 @@ impl State {
         apply_font(self.title, title);
         apply_font(self.subtitle, small);
         apply_font(self.status, small);
+        apply_font(self.speech_status, small);
         apply_font(self.transcript_label, small);
         apply_font(self.reasoning_label, small);
         apply_font(self.input_label, small);
@@ -894,6 +962,9 @@ impl State {
         if text.is_empty() {
             return;
         }
+        self.stop_speech();
+        self.last_answer.clear();
+        self.answer_complete = false;
         if self.commands.send(Command::Send(text.to_owned())).is_err() {
             self.fail("The model worker stopped. Close and restart the demo.");
             return;
@@ -918,6 +989,7 @@ impl State {
     }
 
     fn fail(&mut self, message: &str) {
+        self.stop_speech();
         self.ready = false;
         self.busy = false;
         self.retryable = false;
@@ -969,17 +1041,26 @@ impl State {
                     }
                 }
                 Event::Text(text) => {
+                    self.last_answer.push_str(&text);
                     append(self.transcript, &text);
                     set_text(self.status, "Writing...");
                 }
                 Event::Reasoning(text) => {
                     transcript::append(self.reasoning, &text, MUTED, false);
                 }
-                Event::Complete => {
+                Event::Complete(completion) => {
                     self.busy = false;
+                    self.answer_complete = true;
                     set_text(
                         self.status,
-                        "Ready. Enter to send; Shift+Enter for a new line.",
+                        match completion {
+                            Completion::Finished => {
+                                "Ready. Enter to send; Shift+Enter for a new line."
+                            }
+                            Completion::TokenLimit => {
+                                "Response reached its token limit and may be incomplete. You can ask Swift to continue."
+                            }
+                        },
                     );
                     self.update_buttons();
                     // SAFETY: Query only this UI thread's live focus handle.
@@ -993,6 +1074,176 @@ impl State {
                 Event::Failed(message) => self.fail(&message),
             }
         }
+    }
+
+    fn speech_command(&mut self, command: speech::Command) -> bool {
+        if self
+            .speech
+            .as_ref()
+            .is_some_and(|session| session.commands.send(command).is_ok())
+        {
+            return true;
+        }
+        self.speech_input = false;
+        self.speech_output = false;
+        self.listening = false;
+        self.dictation_requested = false;
+        self.speaking = false;
+        set_text(
+            self.speech_status,
+            "Speech worker stopped. Restart the demo to retry.",
+        );
+        false
+    }
+
+    fn stop_speech(&mut self) {
+        if let Some(session) = &self.speech {
+            let _result = session.commands.send(speech::Command::StopListening);
+            let _result = session.commands.send(speech::Command::StopSpeaking);
+        }
+        self.listening = false;
+        self.dictation_requested = false;
+        self.speaking = false;
+    }
+
+    fn toggle_dictation(&mut self) {
+        if self.dictation_requested {
+            if self.speech_command(speech::Command::StopListening) {
+                self.listening = false;
+                self.dictation_requested = false;
+                set_text(
+                    self.speech_status,
+                    "Microphone disabled. Review your message before sending.",
+                );
+            }
+        } else if self.ready
+            && !self.busy
+            && !self.speaking
+            && self.speech_input
+            && self.speech_command(speech::Command::Listen)
+        {
+            self.dictation_requested = true;
+            set_text(
+                self.speech_status,
+                "Requesting microphone access. Transcripts stay in the message box.",
+            );
+            // SAFETY: The user explicitly enabled the microphone for this enabled native edit.
+            unsafe { SetFocus(self.input) };
+        }
+        self.update_buttons();
+    }
+
+    fn toggle_read_aloud(&mut self) {
+        if self.speaking {
+            if self.speech_command(speech::Command::StopSpeaking) {
+                self.speaking = false;
+                set_text(self.speech_status, "Read aloud stopped.");
+            }
+        } else if self.speech_output && self.answer_complete && !self.last_answer.is_empty() {
+            self.stop_speech();
+            if self.speech_command(speech::Command::Speak(self.last_answer.clone())) {
+                self.speaking = true;
+                set_text(self.speech_status, "Reading the visible answer aloud.");
+            }
+        }
+        self.update_buttons();
+    }
+
+    fn drain_speech_events(&mut self) {
+        for _ in 0..32 {
+            let Some(session) = &self.speech else {
+                break;
+            };
+            match session.events.try_recv() {
+                Ok(event) => self.speech_event(event),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.speech_input = false;
+                    self.speech_output = false;
+                    self.listening = false;
+                    self.dictation_requested = false;
+                    self.speaking = false;
+                    set_text(
+                        self.speech_status,
+                        "Speech unavailable. Text chat remains available.",
+                    );
+                    self.update_buttons();
+                    break;
+                }
+            }
+        }
+    }
+
+    fn speech_event(&mut self, event: speech::Event) {
+        match event {
+            speech::Event::Capabilities { input, output } => {
+                self.speech_input = input;
+                self.speech_output = output;
+                set_text(
+                    self.speech_status,
+                    match (input, output) {
+                        (true, true) => "Microphone input and read aloud available.",
+                        (true, false) => "Microphone ready; no Windows voice installed.",
+                        (false, true) => "Read aloud ready; microphone input unavailable.",
+                        (false, false) => "Speech input and output unavailable.",
+                    },
+                );
+            }
+            speech::Event::Listening(listening) => {
+                self.listening = listening && self.dictation_requested;
+                set_text(
+                    self.speech_status,
+                    if self.listening {
+                        "Recording. Review transcribed text before sending."
+                    } else if self.dictation_requested {
+                        "Microphone enabled."
+                    } else {
+                        "Microphone disabled."
+                    },
+                );
+            }
+            speech::Event::Recognized(text) => {
+                if self.dictation_requested && self.ready && !self.busy && !text.trim().is_empty() {
+                    let phrase = wide(&format!("{} ", text.trim()));
+                    // SAFETY: The enabled native edit copies this bounded phrase synchronously;
+                    // its configured text limit still applies. No Send command is generated.
+                    unsafe {
+                        SendMessageW(
+                            self.input,
+                            EM_REPLACESEL,
+                            1,
+                            phrase.as_ptr().addr().cast_signed(),
+                        )
+                    };
+                    set_text(
+                        self.speech_status,
+                        "Transcribed text added. Review it before sending.",
+                    );
+                }
+            }
+            speech::Event::Speaking(speaking) => {
+                self.speaking = speaking;
+                set_text(
+                    self.speech_status,
+                    if speaking {
+                        "Reading the visible answer aloud."
+                    } else {
+                        "Read aloud stopped."
+                    },
+                );
+            }
+            speech::Event::Failed(message) => {
+                self.listening = false;
+                self.dictation_requested = false;
+                self.speaking = false;
+                set_text(self.speech_status, message);
+            }
+            speech::Event::Status(message) if self.dictation_requested => {
+                set_text(self.speech_status, message)
+            }
+            speech::Event::Status(_) => {}
+        }
+        self.update_buttons();
     }
 }
 
@@ -1022,7 +1273,7 @@ unsafe extern "system" fn procedure(
             // SAFETY: This live HWND is queried only for scalar DPI.
             let dpi = i32::try_from(unsafe { GetDpiForWindow(window) }.max(96)).unwrap_or(96);
             bounds.ptMinTrackSize.x = 680_i32.saturating_mul(dpi) / 96;
-            bounds.ptMinTrackSize.y = 650_i32.saturating_mul(dpi) / 96;
+            bounds.ptMinTrackSize.y = 700_i32.saturating_mul(dpi) / 96;
             return 0;
         }
         WM_DRAWITEM if lparam != 0 => {
@@ -1074,11 +1325,14 @@ unsafe extern "system" fn procedure(
         }
         WM_TIMER if wparam == TIMER => {
             state.drain_events();
+            state.drain_speech_events();
             true
         }
         WM_COMMAND => {
             match wparam & 0xffff {
                 SEND => state.submit(),
+                DICTATE => state.toggle_dictation(),
+                READ_ALOUD => state.toggle_read_aloud(),
                 RETRY if state.retryable => {
                     if state.commands.send(Command::Retry).is_ok() {
                         state.retryable = false;
@@ -1100,10 +1354,14 @@ unsafe extern "system" fn procedure(
                     );
                 }
                 NEW if state.ready && !state.busy => {
+                    state.stop_speech();
+                    state.last_answer.clear();
+                    state.answer_complete = false;
                     let _result = state.commands.send(Command::NewChat);
                     transcript::welcome(state.transcript);
                     state.chat_started = false;
                     set_text(state.reasoning, "");
+                    state.update_buttons();
                     // SAFETY: The composer is an enabled live control on this thread.
                     unsafe { SetFocus(state.input) };
                 }
@@ -1124,6 +1382,8 @@ unsafe extern "system" fn procedure(
             true
         }
         WM_CLOSE => {
+            state.stop_speech();
+            state.speech.take();
             let _result = state.commands.send(Command::Shutdown);
             // SAFETY: These are this UI thread's timer and top-level window;
             // WM_DESTROY is handled without borrowing State during reentrancy.
