@@ -62,6 +62,12 @@ default single-call workflow; opt-in Extra effort performs at most three
 sequential plan/draft/review calls with a shared deadline, stage labels and
 retained drafts. Its quality gains remain unproven.
 
+Exact context-limit rejections return a bounded, framed local error before
+generation begins. The UI restores the prompt with specific output-cap/context
+guidance and leaves the model ready. Unexpected disconnects describe the local
+connection and do not guess at a token or memory cause. HTTP communication here
+uses numeric loopback on the same computer, rather than an Internet service.
+
 The app uses the existing pinned Swift PQ2 CPU backend through the broker.
 Its pinned abliteration LoRA is enabled by default, with an explicit
 `-NoAbliterateLora` opt-out; the broker verifies and holds the selected adapter.
@@ -103,6 +109,9 @@ fragmented input, and UTF-8 charset parameters on the event-stream media type.
 It requires a terminal `finish_reason` plus `[DONE]` and completed HTTP framing.
 A `length` result retains partial text and displays the token-limit outcome;
 unsupported terminal reasons, error events and missing completion reject.
+Before generation, the broker may instead return HTTP 413 with the fixed JSON
+code `context_length_exceeded`. Only a fully framed, bounded, recognized error
+is treated as a recoverable context rejection; other failures require retry.
 
 ## Speech input and output
 

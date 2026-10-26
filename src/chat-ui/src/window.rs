@@ -431,7 +431,7 @@ impl State {
                         "Review did not finish. Your complete draft is retained."
                     }
                     Completion::TokenLimit => {
-                        "Response reached its token limit. You can ask Swift to continue."
+                        "Response reached the selected output cap, including thinking. You can ask Swift to continue."
                     }
                 };
                 self.set_status(message, completion == Completion::TokenLimit);

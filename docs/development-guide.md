@@ -114,11 +114,17 @@ quality improvements remain unproven.
 Every completion cap includes reasoning, within the fixed 8,192-token total
 context. The broker also reserves 64 tokens for template accounting. These
 controls do not estimate an exact local token count or discard history; the
-broker still performs exact admission for every call. Locally
-rejected prompts return to the composer for editing. The broker does not return
-a diagnostic error body for context rejection, so an unexplained connection
-closure requires Retry model; consider a shorter conversation or smaller output
-cap before trying again.
+broker still performs exact admission for every call. A conversation that exceeds
+this combined allowance gets a specific message to reduce the output cap or start
+a new conversation. The prompt returns to the composer for editing, and the model
+stays ready without requiring a retry. Reaching the output cap during an otherwise
+complete reply is a separate outcome and lets you ask Swift to continue.
+
+HTTP is used only between the UI, broker and model server on this computer,
+through numeric loopback (`127.0.0.1`); chat inference does not send the conversation
+to a website. An unexpected local connection closure requires **Retry model** and
+does not by itself establish a token-limit or memory failure. Completed turns stay
+in memory and the interrupted prompt is restored for review.
 
 The window maps Windows high-contrast colors to its controls, uses `eframe`
 display scaling and exposes control labels through AccessKit. Conversation

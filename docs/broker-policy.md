@@ -123,6 +123,14 @@ The reserve is conservative policy, not a measured tokenizer-error allowance.
 Bytes/characters are never treated as tokens. Counter errors or identity drift
 must reject admission.
 
+An exact `ContextLimit` rejection returns HTTP 413 with the fixed JSON body
+`{"error":{"code":"context_length_exceeded"}}` before any generation connection.
+It uses `Content-Type: application/json`, `Content-Length`, `Connection: close`,
+`Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. The response contains
+no prompt, credentials, token-counter payload or native diagnostic. This rejection
+leaves generation admission available for an edited request. Other failures retain
+their socket-close behavior; no error response is appended after streaming begins.
+
 ## One-request receiver
 
 `reception::receive_chat(stream, &policy, supervisor_deadline)` owns an

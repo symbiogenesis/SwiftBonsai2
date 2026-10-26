@@ -29,9 +29,12 @@ const MAX_HEAD: usize = 16 * 1024;
 const MAX_BODY: usize = 4 * 1024 * 1024;
 const MAX_REQUEST: usize = 1024 * 1024;
 const MAX_EVENT: usize = 1024 * 1024;
+const MAX_ERROR_BODY: usize = 256;
 const READ_SIZE: usize = 8192;
 const EVIDENCE_PREFIX: &str = "Protected credentials and technical evidence: ";
 const RUNNING_MEMORY_MESSAGE: &str = "Swift stopped because its running memory requirements were no longer met. Close other apps, then select Retry model. Completed conversation turns remain in memory.";
+const LOCAL_CONNECTION_CLOSED: &str = "The connection to the model on this computer closed before a complete reply was received. The cause was not reported.";
+const CONTEXT_LIMIT_MESSAGE: &str = "This conversation and the selected output cap do not fit within the model's 8,192-token context limit. Choose a smaller output cap or start a new conversation, then send again.";
 
 /// Fixed development launch inputs; paths and keys have no debug representation.
 #[derive(Clone)]
@@ -206,7 +209,7 @@ fn retry_guidance(message: &str) -> String {
         return message.to_owned();
     }
     format!(
-        "{message}\nSelect Retry model to start a fresh model session. Completed turns remain in memory. If the request was too long, reduce the output budget or start a new conversation after retrying."
+        "{message}\nSelect Retry model to restart the local model. Completed turns remain in memory."
     )
 }
 
@@ -400,7 +403,7 @@ fn wait_ready(
         }
         if Instant::now() >= until {
             return Err(Failure::Message(
-                "Swift did not become ready within ten minutes. Check the retained broker logs and restart the app.",
+                "The local model did not become ready within ten minutes.",
             ));
         }
         thread::sleep(POLL);
@@ -413,7 +416,7 @@ fn startup_failure(diagnostic: &[u8]) -> Failure {
         Failure::Memory
     } else if text.contains("Port") || text.contains("Service") {
         Failure::Message(
-            "A local chat port is unavailable. Close the previous chat instance and restart.",
+            "A local chat port is unavailable. Close any other instance of this app before retrying the model.",
         )
     } else if text.contains("Adapter") {
         Failure::Message(
@@ -421,12 +424,10 @@ fn startup_failure(diagnostic: &[u8]) -> Failure {
         )
     } else if text.contains("Artifacts") {
         Failure::Message(
-            "The pinned Swift model or CPU runtime could not be verified. Provision both with the Swift assessment lock and restart.",
+            "The pinned Swift model or CPU runtime could not be verified. Provision both with the Swift assessment lock.",
         )
     } else {
-        Failure::Message(
-            "Swift could not start. Check the retained broker diagnostic logs, then restart the app.",
-        )
+        Failure::Message("Swift could not start. Check the retained broker diagnostic logs.")
     }
 }
 
@@ -591,7 +592,7 @@ impl Interruptible<'_> {
         }
         let result = if Instant::now() >= self.until {
             Err(Failure::Message(
-                "The response exceeded the ten-minute request limit. Restart the app to continue.",
+                "The local model took longer than the ten-minute request limit.",
             ))
         } else {
             check_commands(self.commands)
@@ -679,7 +680,7 @@ fn generate_until(
         .saturating_duration_since(Instant::now())
         .min(Duration::from_secs(1));
     let stream = TcpStream::connect_timeout(&address, connect_timeout).map_err(|_| {
-        Failure::Message("Could not connect to the owned local broker. Restart the app.")
+        Failure::Message("Could not connect to the model service on this computer.")
     })?;
     stream
         .set_read_timeout(Some(IO_POLL))
@@ -712,7 +713,9 @@ fn exchange(
     connection
         .write_all(header.as_bytes())
         .and_then(|()| connection.write_all(request))
-        .map_err(|_| Failure::Message("Could not send the chat request. Restart the app."))?;
+        .map_err(|_| {
+            Failure::Message("Could not send your message to the model on this computer.")
+        })?;
     let mut body = HttpBody::new(connection)?;
     let mut sse = Sse::default();
     let mut bytes = [0; READ_SIZE];
@@ -744,6 +747,12 @@ enum Framing {
     Length(usize),
 }
 
+#[derive(Clone, Copy)]
+enum ResponseKind {
+    Stream,
+    ContextError,
+}
+
 struct HttpBody<R> {
     reader: BufReader<R>,
     framing: Framing,
@@ -764,14 +773,45 @@ impl<R: Read> HttpBody<R> {
             }
             head.push(read_byte(&mut reader)?);
         }
-        let framing = parse_head(&head)?;
-        Ok(Self {
+        let (framing, kind) = parse_head(&head)?;
+        let mut body = Self {
             reader,
             framing,
             remaining: 0,
             total: 0,
             done: false,
-        })
+        };
+        if matches!(kind, ResponseKind::ContextError) {
+            return Err(body.context_error()?);
+        }
+        Ok(body)
+    }
+
+    fn context_error(&mut self) -> Result<Failure> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Envelope {
+            error: ErrorCode,
+        }
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct ErrorCode {
+            code: String,
+        }
+        let invalid = Failure::Message("The local model returned an unrecognized error reply.");
+        let mut error = Vec::new();
+        let mut bytes = [0; READ_SIZE];
+        while let Some(count) = self.next(&mut bytes)? {
+            if count > MAX_ERROR_BODY - error.len() {
+                return Err(invalid);
+            }
+            error.extend_from_slice(&bytes[..count]);
+        }
+        let envelope: Envelope = serde_json::from_slice(&error).map_err(|_| invalid)?;
+        if envelope.error.code != "context_length_exceeded" {
+            return Err(invalid);
+        }
+        Ok(Failure::Rejected(CONTEXT_LIMIT_MESSAGE))
     }
 
     fn next(&mut self, bytes: &mut [u8; READ_SIZE]) -> Result<Option<usize>> {
@@ -841,12 +881,10 @@ fn read_exact(reader: &mut impl Read, bytes: &mut [u8]) -> Result<()> {
     let mut filled = 0;
     while filled < bytes.len() {
         let count = reader.read(&mut bytes[filled..]).map_err(|_| {
-            Failure::Message("The response was interrupted. Restart the app to continue.")
+            Failure::Message("The connection to the model on this computer was interrupted before a complete reply was received.")
         })?;
         if count == 0 {
-            return Err(Failure::Message(
-                "The response ended before its HTTP framing completed. Restart the app.",
-            ));
+            return Err(Failure::Message(LOCAL_CONNECTION_CLOSED));
         }
         filled += count;
     }
@@ -864,7 +902,7 @@ fn read_line(reader: &mut impl Read, max: usize) -> Result<Vec<u8>> {
     loop {
         if line.len() == max {
             return Err(Failure::Message(
-                "The HTTP framing line exceeded its limit.",
+                "The local model returned reply metadata larger than the app can accept.",
             ));
         }
         line.push(read_byte(reader)?);
@@ -875,17 +913,25 @@ fn read_line(reader: &mut impl Read, max: usize) -> Result<Vec<u8>> {
     }
 }
 
-fn parse_head(head: &[u8]) -> Result<Framing> {
+fn parse_head(head: &[u8]) -> Result<(Framing, ResponseKind)> {
     let mut headers = [httparse::EMPTY_HEADER; 64];
     let mut response = httparse::Response::new(&mut headers);
     if !matches!(response.parse(head), Ok(httparse::Status::Complete(_)))
         || response.version != Some(1)
-        || response.code != Some(200)
     {
         return Err(Failure::Message(
-            "The local broker rejected the request. Restart the app, or begin a shorter conversation.",
+            "The model on this computer returned a reply the app could not read.",
         ));
     }
+    let kind = match response.code {
+        Some(200) => ResponseKind::Stream,
+        Some(413) => ResponseKind::ContextError,
+        _ => {
+            return Err(Failure::Message(
+                "The local model rejected the request without reporting a recognized reason.",
+            ));
+        }
+    };
     let mut content_type = None;
     let mut length = None;
     let mut transfer = None;
@@ -910,27 +956,42 @@ fn parse_head(head: &[u8]) -> Result<Framing> {
             return Err(Failure::Message("Encoded local responses are unsupported."));
         }
     }
-    if !content_type.is_some_and(is_event_stream) {
+    let valid_media = match kind {
+        ResponseKind::Stream => content_type.is_some_and(is_event_stream),
+        ResponseKind::ContextError => {
+            content_type.is_some_and(|value| value.eq_ignore_ascii_case(b"application/json"))
+        }
+    };
+    if !valid_media {
         return Err(Failure::Message(
-            "The broker did not return a text event stream.",
+            "The local model returned a reply format the app could not read.",
         ));
     }
-    match (length, transfer) {
-        (None, Some(value)) if value.eq_ignore_ascii_case(b"chunked") => Ok(Framing::Chunked),
+    let framing = match (length, transfer) {
+        (None, Some(value)) if value.eq_ignore_ascii_case(b"chunked") => Framing::Chunked,
         (Some(value), None) if !value.is_empty() && value.iter().all(u8::is_ascii_digit) => {
             let length = std::str::from_utf8(value)
                 .ok()
                 .and_then(|text| text.parse::<usize>().ok())
-                .filter(|length| *length <= MAX_BODY)
+                .filter(|length| {
+                    *length
+                        <= match kind {
+                            ResponseKind::Stream => MAX_BODY,
+                            ResponseKind::ContextError => MAX_ERROR_BODY,
+                        }
+                })
                 .ok_or(Failure::Message(
                     "The response length is invalid or exceeded its limit.",
                 ))?;
-            Ok(Framing::Length(length))
+            Framing::Length(length)
         }
-        _ => Err(Failure::Message(
-            "The local response had unsupported or conflicting framing.",
-        )),
-    }
+        _ => {
+            return Err(Failure::Message(
+                "The local response had unsupported or conflicting framing.",
+            ));
+        }
+    };
+    Ok((framing, kind))
 }
 
 fn is_event_stream(value: &[u8]) -> bool {
@@ -1148,13 +1209,11 @@ impl Sse {
     fn finish(&self) -> Result<Completion> {
         if !self.done {
             return Err(Failure::Message(
-                "The response ended before generation completed. Restart the app.",
+                "The local model ended its reply without confirming that generation finished.",
             ));
         }
         if self.text.is_empty() && self.reasoning.is_empty() {
-            return Err(Failure::Message(
-                "The model returned no text. Restart the app to try again.",
-            ));
+            return Err(Failure::Message("The local model returned no text."));
         }
         // SSE discards any final event lacking a blank-line terminator. The
         // explicit terminal event and [DONE] above must both have dispatched.
@@ -1310,6 +1369,98 @@ mod tests {
         assert!(parse_head(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n").is_err());
         assert!(parse_head(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 1\r\nContent-Length: 1\r\n\r\n").is_err());
         Ok(())
+    }
+
+    fn context_response(body: &[u8], chunked: bool) -> Vec<u8> {
+        let mut wire =
+            b"HTTP/1.1 413 Content Too Large\r\nContent-Type: application/json\r\n".to_vec();
+        if chunked {
+            wire.extend_from_slice(
+                format!("Transfer-Encoding: chunked\r\n\r\n{:X}\r\n", body.len()).as_bytes(),
+            );
+            wire.extend_from_slice(body);
+            wire.extend_from_slice(b"\r\n0\r\n\r\n");
+        } else {
+            wire.extend_from_slice(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes());
+            wire.extend_from_slice(body);
+        }
+        wire
+    }
+
+    #[test]
+    fn context_rejection_requires_a_complete_bounded_recognized_reply() {
+        let body = br#"{"error":{"code":"context_length_exceeded"}}"#;
+        for chunked in [false, true] {
+            let wire = context_response(body, chunked);
+            assert!(
+                matches!(HttpBody::new(Fragmented(&wire)), Err(Failure::Rejected(message))
+                if message == super::CONTEXT_LIMIT_MESSAGE)
+            );
+            // Even a complete JSON code is insufficient without the complete
+            // declared body or final chunk terminator.
+            assert!(matches!(
+                HttpBody::new(Fragmented(&wire[..wire.len() - 1])),
+                Err(Failure::Message(_))
+            ));
+        }
+        for invalid in [
+            br#"{"error":{"code":"unknown"}}"#.as_slice(),
+            br#"{"error":{"code":"context_length_exceeded","message":"untrusted text"}}"#,
+            br#"{"error":{"code":"context_length_exceeded","code":"context_length_exceeded"}}"#,
+            b"not JSON",
+            &[b'x'; super::MAX_ERROR_BODY + 1],
+        ] {
+            for chunked in [false, true] {
+                let wire = context_response(invalid, chunked);
+                assert!(matches!(
+                    HttpBody::new(Fragmented(&wire)),
+                    Err(Failure::Message(_))
+                ));
+            }
+        }
+        for headers in [
+            "Content-Length: 44\r\nContent-Length: 44",
+            "Content-Length: 44\r\nTransfer-Encoding: chunked",
+            "Content-Length: 44\r\nContent-Encoding: gzip",
+        ] {
+            let wire = format!(
+                "HTTP/1.1 413 Content Too Large\r\nContent-Type: application/json\r\n{headers}\r\n\r\n"
+            );
+            assert!(matches!(
+                HttpBody::new(Fragmented(wire.as_bytes())),
+                Err(Failure::Message(_))
+            ));
+        }
+        let wire = context_response(body, false);
+        let wrong_status = String::from_utf8_lossy(&wire)
+            .replace("413 Content Too Large", "500 Internal Server Error");
+        assert!(matches!(
+            HttpBody::new(Fragmented(wrong_status.as_bytes())),
+            Err(Failure::Message(_))
+        ));
+    }
+
+    #[test]
+    fn unexpected_disconnect_explains_local_connection_without_guessing_token_limits() {
+        let wire = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n";
+        for response in [b"".as_slice(), wire] {
+            assert!(
+                matches!(HttpBody::new(Fragmented(response)), Err(Failure::Message(message))
+                if message == super::LOCAL_CONNECTION_CLOSED)
+            );
+        }
+        let guidance = super::retry_guidance(super::LOCAL_CONNECTION_CLOSED);
+        assert!(guidance.contains("on this computer"));
+        assert!(guidance.contains("cause was not reported"));
+        assert!(guidance.contains("Retry model"));
+        for misleading in [
+            "HTTP",
+            "Restart the app",
+            "output budget",
+            "request was too long",
+        ] {
+            assert!(!guidance.contains(misleading));
+        }
     }
 
     #[test]
