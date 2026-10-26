@@ -46,6 +46,10 @@ The lasting [UI architecture policy](docs/ui-architecture.md) keeps application
 UI code in Rust, using native system bindings without a WebView, JavaScript,
 TypeScript, HTML or CSS. The local JSON/SSE API preserves its documented strict
 subset of OpenAI-style chat conventions.
+The UI supports explicit [Qwen3-TTS VoiceDesign read-aloud](tools/qwen-tts/README.md)
+with a plain-text voice profile and optional
+[Canary Qwen 2.5B microphone transcription](tools/canary-asr/README.md), guarded
+by Windows microphone permission and an off-by-default microphone toggle.
 
 ## At a glance
 

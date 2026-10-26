@@ -1,0 +1,21 @@
+name: Speech contracts
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/canary-asr/**'
+      - 'tools/qwen-tts/**'
+      - '.github/workflows/canary-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run isolated service contract tests without weights or audio devices
+        run: python3 -B -m unittest discover -s tools/canary-asr -p 'test_*.py'
+      - name: Run voice-design service contracts without model weights or playback
+        run: python3 -B -m unittest discover -s tools/qwen-tts -p 'test_*.py'

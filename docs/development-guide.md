@@ -52,6 +52,41 @@ starts a fresh owned broker and repeats artifact verification and the standard
 Stopping an active response closes backend admission; restart the demo before
 sending again. Closing the window stops its owned broker and inference process.
 
+The window follows Windows high-contrast settings and distinguishes an answer
+that reached its token limit from a naturally completed answer. **Read aloud**
+uses Qwen3-TTS 1.7B VoiceDesign for the visible answer; **Stop speech** cancels
+synthesis and playback. Reasoning is not read aloud. Edit **Voice profile** to
+describe a voice, for example "A warm, low-pitched narrator with a calm pace and
+clear consonants." No voice preset or reference recording is required.
+
+For microphone input, first prepare and start the separate
+[Canary Qwen 2.5B companion](../tools/canary-asr/README.md), then launch with its
+protected external key file:
+
+```powershell
+./scripts/Start-Demo.ps1 -DataDirectory $data -CanaryKeyFile C:\Speech\canary.key -CanaryPort 8766
+```
+
+For speech output, prepare/start the independent
+[Qwen VoiceDesign companion](../tools/qwen-tts/README.md), then add
+`-TtsKeyFile C:\Speech\qwen-tts.key` (default local port 8767). Both companions
+may be configured together; their ports must be distinct. The demo verifies
+their authenticated model/capability responses and never substitutes system
+speech synthesis. The Qwen service uses the pinned VoiceDesign weights and
+offline tokenizer assets, with `Auto` language selection. Descriptions guide
+the generated voice; they do not promise a persistent speaker identity.
+
+**Enable microphone** requests Windows microphone permission before recording.
+The microphone remains off unless explicitly enabled, and capture pauses while
+each clip is transcribed. **Disable microphone**, Send, New conversation,
+read-aloud or closing the window stops capture and cancels pending input.
+Transcripts appear in the composer for review; they are never sent automatically.
+Permission denial or a missing/not-ready Canary service keeps input disabled.
+The UI does not download Canary weights or substitute another recognizer. The
+companion's supported runtime and memory requirements are separate from Swift's
+16 GiB admission check; Windows ARM64 Canary and Qwen TTS inference are not yet
+qualified. UI/protocol tests do not establish real-model audio quality or latency.
+
 `Start-Demo.ps1` builds the chat app and broker in a fresh system-temp lane.
 Pass absolute `-ChatPath` and `-BrokerPath` values to reuse existing builds.
 The pinned abliteration LoRA is enabled at scale 1 by default. Pass

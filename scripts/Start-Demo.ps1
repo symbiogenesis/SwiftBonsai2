@@ -14,6 +14,10 @@ credentials and logs remain in the unique external demo directory.
 ./scripts/Start-Demo.ps1 -ChatPath C:\Demo\bonsai-chat.exe -BrokerPath C:\Demo\bonsai-broker.exe
 .EXAMPLE
 ./scripts/Start-Demo.ps1 -NoAbliterateLora
+.EXAMPLE
+./scripts/Start-Demo.ps1 -CanaryKeyFile C:\Speech\canary.key -CanaryPort 8766
+.EXAMPLE
+./scripts/Start-Demo.ps1 -CanaryKeyFile C:\Speech\canary.key -TtsKeyFile C:\Speech\qwen-tts.key
 #>
 [CmdletBinding()]
 [OutputType([string])]
@@ -23,7 +27,11 @@ param(
     [string]$BrokerPath,
     [switch]$NoAbliterateLora,
     [ValidateRange(1024, 65535)][int]$FrontendPort = 5173,
-    [ValidateRange(1024, 65535)][int]$BackendPort = 8081
+    [ValidateRange(1024, 65535)][int]$BackendPort = 8081,
+    [string]$CanaryKeyFile,
+    [ValidateRange(1024, 65535)][int]$CanaryPort = 8766,
+    [string]$TtsKeyFile,
+    [ValidateRange(1024, 65535)][int]$TtsPort = 8767
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -35,6 +43,25 @@ if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitec
     throw 'Run the demo in native ARM64 PowerShell on Windows ARM64.'
 }
 if ($FrontendPort -eq $BackendPort) { throw 'FrontendPort and BackendPort must differ.' }
+if ($PSBoundParameters.ContainsKey('CanaryPort') -and -not $CanaryKeyFile) {
+    throw 'CanaryPort requires CanaryKeyFile.'
+}
+if ($CanaryKeyFile) {
+    $CanaryKeyFile = Resolve-ExternalPath -Path $CanaryKeyFile
+    if (-not [IO.File]::Exists($CanaryKeyFile) -or $CanaryPort -in @($FrontendPort, $BackendPort)) {
+        throw 'Canary needs an existing external key file and a distinct local port.'
+    }
+}
+if ($PSBoundParameters.ContainsKey('TtsPort') -and -not $TtsKeyFile) {
+    throw 'TtsPort requires TtsKeyFile.'
+}
+if ($TtsKeyFile) {
+    $TtsKeyFile = Resolve-ExternalPath -Path $TtsKeyFile
+    if (-not [IO.File]::Exists($TtsKeyFile) -or $TtsPort -in @($FrontendPort, $BackendPort) -or
+        ($CanaryKeyFile -and $TtsPort -eq $CanaryPort)) {
+        throw 'Qwen TTS needs an existing external key file and a distinct local port.'
+    }
+}
 $DataDirectory = Resolve-ExternalPath -Path $DataDirectory
 if (-not [IO.Directory]::Exists($DataDirectory)) {
     throw 'DataDirectory must already contain the provisioned Swift model and CPU runtime. See docs/development-guide.md.'
@@ -79,6 +106,16 @@ try {
         [void]$start.ArgumentList.Add($argument)
     }
     if ($NoAbliterateLora) { [void]$start.ArgumentList.Add('--no-abliterate-lora') }
+    if ($CanaryKeyFile) {
+        foreach ($argument in @('--canary-key-file', $CanaryKeyFile, '--canary-port', [string]$CanaryPort)) {
+            [void]$start.ArgumentList.Add($argument)
+        }
+    }
+    if ($TtsKeyFile) {
+        foreach ($argument in @('--tts-key-file', $TtsKeyFile, '--tts-port', [string]$TtsPort)) {
+            [void]$start.ArgumentList.Add($argument)
+        }
+    }
     $process = [Diagnostics.Process]::Start($start)
     if ($null -eq $process) { throw 'The native demo process could not start.' }
     try {

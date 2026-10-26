@@ -39,6 +39,8 @@ pub(crate) struct Config {
     pub(crate) frontend_port: u16,
     pub(crate) backend_port: u16,
     pub(crate) use_abliterate_lora: bool,
+    pub(crate) canary: Option<crate::canary::Config>,
+    pub(crate) qwen_tts: Option<crate::tts::Config>,
 }
 
 /// Commands sent from the native UI to its single background worker.

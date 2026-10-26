@@ -1,69 +1,113 @@
-//! Optional local Windows speech input and plain-text read-aloud output.
+//! Cancellable Canary transcription and Qwen `VoiceDesign` synthesis workers.
 //!
-//! All COM interfaces stay on one worker. Discovering installed tokens does not
-//! open the microphone; only an explicit Listen command creates an input stream.
-//! Recognized text returns to the composer for review, never directly to the model.
+//! Permission and microphone capture stay on the native UI thread. Finished
+//! clips and free-form voice descriptions cross this owned, text/audio boundary.
+//! Generated WAV buffers live until native playback completes or is stopped.
 
 #![allow(
     clippy::redundant_pub_crate,
     reason = "The window uses this crate-private worker boundary."
 )]
 
+use crate::{canary, tts};
 use std::{
+    collections::VecDeque,
     io,
-    sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
-    thread::{self, JoinHandle},
-    time::{Duration, Instant},
-};
-use windows::{
-    Win32::{
-        Media::Speech::{
-            ISpObjectToken, ISpObjectTokenCategory, ISpRecoContext, ISpRecoGrammar, ISpRecoResult,
-            ISpRecognizer, ISpVoice, SPCAT_AUDIOIN, SPCAT_RECOGNIZERS, SPEI_RECOGNITION,
-            SPET_LPARAM_IS_OBJECT, SPET_LPARAM_IS_POINTER, SPET_LPARAM_IS_STRING,
-            SPET_LPARAM_IS_TOKEN, SPEVENT, SPF_ASYNC, SPF_IS_NOT_XML, SPF_PURGEBEFORESPEAK,
-            SPLO_STATIC, SPRS_ACTIVE, SPRS_DONE, SPRS_INACTIVE, SPRST_INACTIVE_WITH_PURGE,
-            SPVOICESTATUS, SpInprocRecognizer, SpObjectToken, SpObjectTokenCategory, SpVoice,
-        },
-        System::Com::{
-            CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
-            CoTaskMemFree, CoUninitialize,
-        },
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+        mpsc::{self, Receiver, RecvTimeoutError, Sender},
     },
-    core::{IUnknown, Interface, PCWSTR, PWSTR},
+    thread::{self, JoinHandle},
+    time::Duration,
 };
+use windows_sys::Win32::Media::Audio::{PlaySoundW, SND_MEMORY, SND_NODEFAULT, SND_SYNC};
 
-const POLL: Duration = Duration::from_millis(100);
-const LISTEN_LIMIT: Duration = Duration::from_secs(120);
-const SPEAK_LIMIT: Duration = Duration::from_secs(600);
+const POLL: Duration = Duration::from_millis(50);
 const MAX_TEXT: usize = 32768;
-const READ_ALOUD_FLAGS: u32 =
-    (SPF_ASYNC.0 | SPF_PURGEBEFORESPEAK.0 | SPF_IS_NOT_XML.0).cast_unsigned();
+const MAX_SEGMENT: usize = 2048;
+const NO_INPUT: u64 = u64::MAX;
 
 pub(crate) enum Command {
-    Listen,
+    Transcribe {
+        generation: u64,
+        wav: Vec<u8>,
+    },
     StopListening,
-    Speak(String),
+    Speak {
+        text: String,
+        voice_description: String,
+    },
     StopSpeaking,
     Shutdown,
 }
 
 pub(crate) enum Event {
-    Capabilities { input: bool, output: bool },
+    Capabilities {
+        input: bool,
+        output: bool,
+    },
     Listening(bool),
-    Recognized(String),
+    Recognized {
+        generation: u64,
+        text: String,
+    },
+    InputFailed {
+        generation: u64,
+        message: &'static str,
+    },
+    Status(&'static str),
     Speaking(bool),
     Failed(&'static str),
 }
 
-pub(crate) struct Session {
-    pub(crate) commands: Sender<Command>,
-    pub(crate) events: Receiver<Event>,
-    worker: Option<JoinHandle<()>>,
+struct Envelope {
+    command: Command,
+    output_generation: u64,
 }
 
+/// Sending Stop/Speak invalidates synthesis immediately, even during HTTP I/O.
+pub(crate) struct Commands {
+    sender: Sender<Envelope>,
+    current_output: Arc<AtomicU64>,
+}
+impl Commands {
+    pub(crate) fn send(&self, command: Command) -> Result<(), mpsc::SendError<Command>> {
+        let generation = if matches!(
+            &command,
+            Command::Speak { .. } | Command::StopSpeaking | Command::Shutdown
+        ) {
+            self.current_output
+                .fetch_add(1, Ordering::AcqRel)
+                .wrapping_add(1)
+        } else {
+            self.current_output.load(Ordering::Acquire)
+        };
+        self.sender
+            .send(Envelope {
+                command,
+                output_generation: generation,
+            })
+            .map_err(|error| mpsc::SendError(error.0.command))
+    }
+}
+
+pub(crate) struct Session {
+    pub(crate) commands: Commands,
+    pub(crate) events: Receiver<Event>,
+    current_input: Arc<AtomicU64>,
+    worker: Option<JoinHandle<()>>,
+}
+impl Session {
+    /// The UI calls this before disabling capture, sending text, or closing.
+    pub(crate) fn set_input_generation(&self, generation: Option<u64>) {
+        self.current_input
+            .store(generation.unwrap_or(NO_INPUT), Ordering::Release);
+    }
+}
 impl Drop for Session {
     fn drop(&mut self) {
+        self.set_input_generation(None);
         let _sent = self.commands.send(Command::Shutdown);
         if let Some(worker) = self.worker.take() {
             let _joined = worker.join();
@@ -71,387 +115,389 @@ impl Drop for Session {
     }
 }
 
-/// Start a worker without capturing audio or producing speech.
-pub(crate) fn start() -> io::Result<Session> {
-    let (commands, incoming) = mpsc::channel();
+/// Discover both explicitly configured services without opening audio devices.
+pub(crate) fn start(
+    canary_config: Option<canary::Config>,
+    tts_config: Option<tts::Config>,
+) -> io::Result<Session> {
+    let (sender, incoming) = mpsc::channel();
     let (outgoing, events) = mpsc::channel();
+    let current_input = Arc::new(AtomicU64::new(NO_INPUT));
+    let current_output = Arc::new(AtomicU64::new(0));
+    let input = Arc::clone(&current_input);
+    let output = Arc::clone(&current_output);
     let worker = thread::Builder::new()
-        .name("bonsai-local-speech".to_owned())
-        .spawn(move || run(&incoming, &outgoing))?;
+        .name("bonsai-speech".to_owned())
+        .spawn(move || {
+            run(
+                canary_config.as_ref(),
+                tts_config.as_ref(),
+                &incoming,
+                &outgoing,
+                &input,
+                &output,
+            );
+        })?;
     Ok(Session {
-        commands,
+        commands: Commands {
+            sender,
+            current_output,
+        },
         events,
+        current_input,
         worker: Some(worker),
     })
 }
 
-struct Apartment;
-impl Apartment {
-    fn initialize() -> windows::core::Result<Self> {
-        // SAFETY: This new worker initializes COM once and uses no interfaces
-        // from other threads. The matching uninitialize occurs after their Drop.
-        unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.ok()?;
-        Ok(Self)
-    }
-}
-impl Drop for Apartment {
-    fn drop(&mut self) {
-        // SAFETY: Balances this worker's successful CoInitializeEx; all local
-        // COM interfaces have been released before the apartment guard drops.
-        unsafe { CoUninitialize() };
-    }
+fn stop_audio() {
+    // SAFETY: A null sound stops this process's PlaySound playback. No input
+    // pointers or handles are retained. Only this module starts native audio.
+    unsafe { PlaySoundW(std::ptr::null(), std::ptr::null_mut(), 0) };
 }
 
-struct TaskText(PWSTR);
-impl Drop for TaskText {
-    fn drop(&mut self) {
-        // SAFETY: SAPI returns CoTaskMem-allocated text; this owner frees it once.
-        unsafe { CoTaskMemFree(Some(self.0.as_ptr().cast())) };
-    }
+struct Playback {
+    finished: Receiver<bool>,
+    worker: Option<JoinHandle<()>>,
 }
-
-fn default_token(category: PCWSTR) -> windows::core::Result<ISpObjectToken> {
-    // SAFETY: A documented SAPI class is activated on this initialized worker.
-    let tokens: ISpObjectTokenCategory =
-        unsafe { CoCreateInstance(&SpObjectTokenCategory, None, CLSCTX_INPROC_SERVER) }?;
-    // SAFETY: category is a static Windows SDK category ID; no registry mutation.
-    unsafe { tokens.SetId(category, false) }?;
-    // SAFETY: Valid same-thread category returns one owned CoTaskMem string.
-    let id = TaskText(unsafe { tokens.GetDefaultTokenId() }?);
-    // SAFETY: Documented token class, no aggregation or out-of-process activation.
-    let token: ISpObjectToken =
-        unsafe { CoCreateInstance(&SpObjectToken, None, CLSCTX_INPROC_SERVER) }?;
-    // SAFETY: The null-terminated token ID remains live through this call; false
-    // prevents creating or changing the user's speech configuration.
-    unsafe { token.SetId(PCWSTR::null(), PCWSTR(id.0.as_ptr()), false) }?;
-    Ok(token)
-}
-
-fn voice() -> windows::core::Result<ISpVoice> {
-    // SAFETY: Documented Windows SAPI class on this initialized worker.
-    let voice: ISpVoice = unsafe { CoCreateInstance(&SpVoice, None, CLSCTX_INPROC_SERVER) }?;
-    // SAFETY: Discover an installed voice without synthesizing or playing audio.
-    let _token = unsafe { voice.GetVoice() }?;
-    Ok(voice)
-}
-
-struct Recognition {
-    grammar: ISpRecoGrammar,
-    context: ISpRecoContext,
-    recognizer: ISpRecognizer,
-    until: Instant,
-}
-impl Recognition {
-    fn start() -> windows::core::Result<Self> {
-        let audio = default_token(SPCAT_AUDIOIN)?;
-        // SAFETY: A private in-process recognizer is created only after Listen;
-        // its interfaces and input stay on this worker until Stop or shutdown.
-        let recognizer: ISpRecognizer =
-            unsafe { CoCreateInstance(&SpInprocRecognizer, None, CLSCTX_INPROC_SERVER) }?;
-        // SAFETY: Documented inactive state before connecting the audio device.
-        unsafe { recognizer.SetRecoState(SPRST_INACTIVE_WITH_PURGE) }?;
-        // SAFETY: The installed default audio token is valid for this call.
-        unsafe { recognizer.SetInput(&audio, true) }?;
-        // SAFETY: Create a private context from a live same-thread recognizer.
-        let context = unsafe { recognizer.CreateRecoContext() }?;
-        // SPFEI includes SAPI's two flag-check bits, as defined in sapi.h.
-        let interest = (1_u64 << SPEI_RECOGNITION.0) | (1_u64 << 30) | (1_u64 << 33);
-        // SAFETY: Only completed recognition events are queued for this context.
-        unsafe { context.SetInterest(interest, interest) }?;
-        // SAFETY: Native event notification; no application callback or pointer.
-        unsafe { context.SetNotifyWin32Event() }?;
-        // SAFETY: Private grammar ID has no external interpretation.
-        let grammar = unsafe { context.CreateGrammar(1) }?;
-        // SAFETY: Null topic selects installed dictation, without custom files.
-        unsafe { grammar.LoadDictation(PCWSTR::null(), SPLO_STATIC) }?;
-        // SAFETY: The user's explicit Listen activates this private grammar.
-        unsafe { grammar.SetDictationState(SPRS_ACTIVE) }?;
-        // SAFETY: Start the recognizer only after the context and grammar exist.
-        unsafe { recognizer.SetRecoState(windows::Win32::Media::Speech::SPRST_ACTIVE) }?;
+impl Playback {
+    fn start(wav: Vec<u8>, generation: u64, current: Arc<AtomicU64>) -> io::Result<Self> {
+        let (events, finished) = mpsc::channel();
+        let worker = thread::Builder::new()
+            .name("bonsai-qwen-audio".to_owned())
+            .spawn(move || {
+                let played = if current.load(Ordering::Acquire) == generation {
+                    // SAFETY: The TTS adapter validated this complete bounded PCM WAV.
+                    // SND_MEMORY interprets the pointer as audio bytes, not a path.
+                    // SND_SYNC keeps the owned allocation alive until playback stops
+                    // or finishes; SND_NODEFAULT forbids substituted system sounds.
+                    (unsafe {
+                        PlaySoundW(
+                            wav.as_ptr().cast(),
+                            std::ptr::null_mut(),
+                            SND_MEMORY | SND_SYNC | SND_NODEFAULT,
+                        )
+                    }) != 0
+                } else {
+                    false
+                };
+                let _sent = events.send(played);
+            })?;
         Ok(Self {
-            grammar,
-            context,
-            recognizer,
-            until: Instant::now() + LISTEN_LIMIT,
+            finished,
+            worker: Some(worker),
         })
     }
-
-    fn poll(&self, events: &Sender<Event>) -> windows::core::Result<()> {
-        // Bound work per iteration so a stream of events cannot starve Stop.
-        for _ in 0..8 {
-            let mut event = SPEVENT::default();
-            let mut fetched = 0;
-            // SAFETY: SAPI writes at most one correctly sized event and count.
-            unsafe { self.context.GetEvents(1, &raw mut event, &raw mut fetched) }?;
-            if fetched == 0 {
-                break;
-            }
-            if recognition_event(&event) {
-                // SAFETY: SPEI_RECOGNITION with object lParam transfers one
-                // ISpRecoResult reference to us. from_raw consumes that reference.
-                let result = unsafe {
-                    ISpRecoResult::from_raw(std::ptr::without_provenance_mut(
-                        event.lParam.0.cast_unsigned(),
-                    ))
-                };
-                let mut pointer = PWSTR::null();
-                // SAFETY: Valid result writes owned CoTaskMem UTF-16 text;
-                // u32::MAX is SAPI's SP_GETWHOLEPHRASE constant for both indices.
-                unsafe { result.GetText(u32::MAX, u32::MAX, true, &raw mut pointer, None) }?;
-                let text = TaskText(pointer);
-                if let Some(text) = phrase(&text)? {
-                    let _sent = events.send(Event::Recognized(text));
-                }
-            } else {
-                release_event(event);
-            }
+    fn result(&self) -> Option<bool> {
+        match self.finished.try_recv() {
+            Ok(result) => Some(result),
+            Err(mpsc::TryRecvError::Empty) => None,
+            Err(mpsc::TryRecvError::Disconnected) => Some(false),
         }
-        Ok(())
     }
 }
-impl Drop for Recognition {
+impl Drop for Playback {
     fn drop(&mut self) {
-        // SAFETY: Deactivate this worker's live grammar before releasing it.
-        let _stopped = unsafe { self.grammar.SetDictationState(SPRS_INACTIVE) };
-        // SAFETY: Purge private recognition and release input when interfaces drop.
-        let _stopped = unsafe { self.recognizer.SetRecoState(SPRST_INACTIVE_WITH_PURGE) };
-    }
-}
-
-const fn recognition_event(event: &SPEVENT) -> bool {
-    let bits = event._bitfield.cast_unsigned();
-    bits & 0xffff == SPEI_RECOGNITION.0.cast_unsigned()
-        && bits >> 16 == SPET_LPARAM_IS_OBJECT.0.cast_unsigned()
-        && event.lParam.0 != 0
-}
-
-fn release_event(event: SPEVENT) {
-    if event.lParam.0 == 0 {
-        return;
-    }
-    let kind = event._bitfield.cast_unsigned() >> 16;
-    if kind == SPET_LPARAM_IS_OBJECT.0.cast_unsigned()
-        || kind == SPET_LPARAM_IS_TOKEN.0.cast_unsigned()
-    {
-        // SAFETY: SAPI's object/token event contract transfers one IUnknown
-        // reference; this temporary owner releases it exactly once.
-        drop(unsafe {
-            IUnknown::from_raw(std::ptr::without_provenance_mut(
-                event.lParam.0.cast_unsigned(),
-            ))
-        });
-    } else if kind == SPET_LPARAM_IS_POINTER.0.cast_unsigned()
-        || kind == SPET_LPARAM_IS_STRING.0.cast_unsigned()
-    {
-        // SAFETY: SAPI's pointer/string event contract transfers CoTaskMem storage.
-        unsafe {
-            CoTaskMemFree(Some(std::ptr::without_provenance(
-                event.lParam.0.cast_unsigned(),
-            )));
-        };
-    }
-}
-
-fn phrase(text: &TaskText) -> windows::core::Result<Option<String>> {
-    if text.0.is_null() {
-        return Ok(None);
-    }
-    for length in 0..=MAX_TEXT {
-        // SAFETY: SAPI guarantees a NUL-terminated allocation. Stop at its first
-        // NUL; the bounded scan never continues beyond that terminator.
-        let unit = unsafe { text.0.as_ptr().add(length) };
-        // SAFETY: The documented allocation is initialized through its NUL;
-        // earlier iterations stop before advancing past that terminator.
-        if unsafe { *unit } == 0 {
-            // SAFETY: The scan established the initialized UTF-16 prefix length.
-            let units = unsafe { std::slice::from_raw_parts(text.0.as_ptr(), length) };
-            return Ok((!units.is_empty()).then(|| String::from_utf16_lossy(units)));
+        stop_audio();
+        if let Some(worker) = self.worker.take() {
+            let _joined = worker.join();
         }
     }
-    Err(windows::core::Error::from_hresult(windows::core::HRESULT(
-        0x8007_0057_u32.cast_signed(),
-    )))
 }
 
-fn speak(voice: &ISpVoice, text: &str) -> bool {
-    let Some(text) = speech_text(text) else {
-        return false;
-    };
-    // SAFETY: SAPI consumes the live NUL-terminated buffer during Speak. ASYNC
-    // owns any subsequent synthesis; IS_NOT_XML prevents interpreting model text
-    // as SSML, file references, or speech commands.
-    unsafe { voice.Speak(PCWSTR(text.as_ptr()), READ_ALOUD_FLAGS, None) }.is_ok()
+struct Output {
+    generation: u64,
+    voice: String,
+    segments: VecDeque<String>,
+    playback: Option<Playback>,
 }
 
-fn speech_text(text: &str) -> Option<Vec<u16>> {
-    if text.trim().is_empty() || text.contains('\0') {
+fn segments(text: &str) -> Option<VecDeque<String>> {
+    if text.trim().is_empty()
+        || text.contains('\0')
+        || text.encode_utf16().take(MAX_TEXT + 1).count() > MAX_TEXT
+    {
         return None;
     }
-    let units: Vec<_> = text.encode_utf16().take(MAX_TEXT + 1).collect();
-    (units.len() <= MAX_TEXT).then(|| units.into_iter().chain(Some(0)).collect())
+    let mut remaining = text.trim();
+    let mut result = VecDeque::new();
+    while !remaining.is_empty() {
+        let maximum = remaining
+            .char_indices()
+            .nth(MAX_SEGMENT)
+            .map_or(remaining.len(), |(index, _)| index);
+        let boundary = if maximum < remaining.len() {
+            remaining[..maximum]
+                .char_indices()
+                .rev()
+                .find(|(index, character)| *index >= maximum / 2 && character.is_whitespace())
+                .map_or(maximum, |(index, _)| index)
+        } else {
+            maximum
+        };
+        result.push_back(remaining[..boundary].trim().to_owned());
+        remaining = remaining[boundary..].trim_start();
+    }
+    Some(result)
 }
 
-fn stop_speaking(voice: Option<&ISpVoice>) {
-    if let Some(voice) = voice {
-        // SAFETY: Null text plus purge cancels this voice's queued speech.
-        let _stopped = unsafe { voice.Speak(PCWSTR::null(), READ_ALOUD_FLAGS, None) };
+fn transcription(
+    client: Option<&canary::Client>,
+    generation: u64,
+    wav: &[u8],
+    current: &AtomicU64,
+    events: &Sender<Event>,
+) {
+    if current.load(Ordering::Acquire) != generation {
+        return;
+    }
+    let _sent = events.send(Event::Status(
+        "Transcribing with Canary Qwen 2.5B. Microphone capture is paused.",
+    ));
+    let result = client.map_or(
+        Err(canary::Failure::Message(
+            "Canary Qwen 2.5B is unavailable. Check its companion service and key file.",
+        )),
+        |client| client.transcribe(generation, wav, current),
+    );
+    if current.load(Ordering::Acquire) != generation {
+        return;
+    }
+    match result {
+        Ok(text) => {
+            let _sent = events.send(Event::Recognized { generation, text });
+        }
+        Err(canary::Failure::Cancelled) => {}
+        Err(canary::Failure::Message(message)) => {
+            let _sent = events.send(Event::InputFailed {
+                generation,
+                message,
+            });
+        }
     }
 }
 
-fn speaking(voice: &ISpVoice) -> windows::core::Result<bool> {
-    let mut status = SPVOICESTATUS::default();
-    // SAFETY: Valid voice writes one SDK-layout status; null bookmark requests
-    // no allocation. This does not start playback.
-    unsafe { voice.GetStatus(&raw mut status, std::ptr::null_mut()) }?;
-    speech_pending(&status)
-}
-
-fn speech_pending(status: &SPVOICESTATUS) -> windows::core::Result<bool> {
-    status.hrLastResult.ok()?;
-    // Zero means that SAPI is waiting to speak, including immediately after an
-    // asynchronous enqueue. Only SPRS_DONE means all queued output has finished.
-    Ok(status.dwRunningState != SPRS_DONE.0.cast_unsigned())
-}
-
-fn run(commands: &Receiver<Command>, events: &Sender<Event>) {
-    let Ok(_apartment) = Apartment::initialize() else {
-        let _sent = events.send(Event::Capabilities {
-            input: false,
-            output: false,
-        });
-        return;
+fn render(
+    output: &mut Output,
+    client: Option<&tts::Client>,
+    current: &Arc<AtomicU64>,
+) -> Result<bool, &'static str> {
+    if current.load(Ordering::Acquire) != output.generation {
+        return Ok(false);
+    }
+    if let Some(playback) = &output.playback {
+        match playback.result() {
+            None => return Ok(true),
+            Some(true) => output.playback = None,
+            Some(false) => {
+                return Err("Audio playback failed. Check the Windows audio output device.");
+            }
+        }
+    }
+    let Some(text) = output.segments.pop_front() else {
+        return Ok(false);
     };
-    let voice = voice().ok();
-    let input = default_token(SPCAT_RECOGNIZERS).is_ok() && default_token(SPCAT_AUDIOIN).is_ok();
+    let client = client
+        .ok_or("Qwen3-TTS VoiceDesign is unavailable. Check its companion service and key file.")?;
+    let wav = match client.synthesize(&text, &output.voice, output.generation, current) {
+        Ok(wav) => wav,
+        Err(tts::Failure::Cancelled) => return Ok(false),
+        Err(tts::Failure::Message(message)) => return Err(message),
+    };
+    if current.load(Ordering::Acquire) != output.generation {
+        return Ok(false);
+    }
+    output.playback = Some(
+        Playback::start(wav, output.generation, Arc::clone(current))
+            .map_err(|_| "Could not start native audio playback.")?,
+    );
+    Ok(true)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "One bounded worker owns command ordering, cancellation and the audio buffer lifetime."
+)]
+fn run(
+    canary_config: Option<&canary::Config>,
+    tts_config: Option<&tts::Config>,
+    commands: &Receiver<Envelope>,
+    events: &Sender<Event>,
+    current_input: &AtomicU64,
+    current_output: &Arc<AtomicU64>,
+) {
+    let canary = canary_config
+        .and_then(|config| canary::Client::new(config).ok())
+        .filter(|client| client.ready().is_ok());
+    let tts = tts_config
+        .and_then(|config| tts::Client::new(config).ok())
+        .filter(|client| client.ready().is_ok());
     let _sent = events.send(Event::Capabilities {
-        input,
-        output: voice.is_some(),
+        input: canary.is_some(),
+        output: tts.is_some(),
     });
-    let mut recognition: Option<Recognition> = None;
-    let mut speech_until: Option<Instant> = None;
+    let mut output: Option<Output> = None;
     loop {
         match commands.recv_timeout(POLL) {
-            Ok(Command::Shutdown) | Err(RecvTimeoutError::Disconnected) => break,
-            Ok(Command::Listen) => {
-                stop_speaking(voice.as_ref());
-                speech_until = None;
-                let _sent = events.send(Event::Speaking(false));
-                recognition = Recognition::start().ok();
-                let _sent = events.send(Event::Listening(recognition.is_some()));
-                if recognition.is_none() {
-                    let _sent = events.send(Event::Failed("Local dictation is unavailable. Check the installed Windows speech language, microphone, and privacy settings."));
+            Ok(Envelope {
+                command: Command::Shutdown,
+                ..
+            })
+            | Err(RecvTimeoutError::Disconnected) => break,
+            Ok(Envelope {
+                command: Command::Transcribe { generation, wav },
+                ..
+            }) => {
+                if current_input.load(Ordering::Acquire) != generation {
+                    continue;
                 }
+                output = None;
+                let _sent = events.send(Event::Speaking(false));
+                transcription(canary.as_ref(), generation, &wav, current_input, events);
             }
-            Ok(Command::StopListening) => {
-                recognition = None;
+            Ok(Envelope {
+                command: Command::StopListening,
+                ..
+            }) => {
                 let _sent = events.send(Event::Listening(false));
             }
-            Ok(Command::Speak(text)) => {
-                recognition = None;
-                let _sent = events.send(Event::Listening(false));
-                if voice.as_ref().is_some_and(|voice| speak(voice, &text)) {
-                    speech_until = Some(Instant::now() + SPEAK_LIMIT);
+            Ok(Envelope {
+                command:
+                    Command::Speak {
+                        text,
+                        voice_description,
+                    },
+                output_generation,
+            }) => {
+                output = None;
+                if current_output.load(Ordering::Acquire) != output_generation {
+                    continue;
+                }
+                if let Some(segments) = segments(&text)
+                    && !voice_description.trim().is_empty()
+                    && voice_description.chars().count() <= 1024
+                    && !voice_description.contains('\0')
+                {
+                    output = Some(Output {
+                        generation: output_generation,
+                        voice: voice_description,
+                        segments,
+                        playback: None,
+                    });
                     let _sent = events.send(Event::Speaking(true));
                 } else {
-                    stop_speaking(voice.as_ref());
-                    speech_until = None;
                     let _sent = events.send(Event::Speaking(false));
-                    let _sent = events.send(Event::Failed("Could not read this answer aloud. Check Windows voices and audio output; read-aloud accepts up to 32,768 UTF-16 characters."));
+                    let _sent = events.send(Event::Failed("Read-aloud needs an answer up to 32,768 UTF-16 characters and a non-empty voice description up to 1,024 characters."));
                 }
             }
-            Ok(Command::StopSpeaking) => {
-                stop_speaking(voice.as_ref());
-                speech_until = None;
+            Ok(Envelope {
+                command: Command::StopSpeaking,
+                ..
+            }) => {
+                output = None;
                 let _sent = events.send(Event::Speaking(false));
             }
             Err(RecvTimeoutError::Timeout) => {}
         }
-        if let Some(active) = &recognition {
-            let expired = Instant::now() >= active.until;
-            if expired || active.poll(events).is_err() {
-                recognition = None;
-                let _sent = events.send(Event::Listening(false));
-                let _sent = events.send(Event::Failed(if expired {
-                    "Dictation stopped after two minutes. Review your text before sending."
-                } else {
-                    "Dictation stopped. Check your microphone and Windows speech settings."
-                }));
-            }
-        }
-        if let Some(until) = speech_until {
-            let pending = voice.as_ref().map_or(Ok(false), speaking);
-            if Instant::now() >= until || !matches!(pending, Ok(true)) {
-                stop_speaking(voice.as_ref());
-                speech_until = None;
-                let _sent = events.send(Event::Speaking(false));
-                if pending.is_err() {
-                    let _sent = events.send(Event::Failed(
-                        "Read-aloud stopped. Check Windows voices and audio output.",
-                    ));
+        if let Some(active) = &mut output {
+            let generation = active.generation;
+            let outcome = render(active, tts.as_ref(), current_output);
+            if !matches!(outcome, Ok(true)) {
+                output = None;
+                if current_output.load(Ordering::Acquire) == generation {
+                    let _sent = events.send(Event::Speaking(false));
+                    if let Err(message) = outcome {
+                        let _sent = events.send(Event::Failed(message));
+                    }
                 }
             }
         }
     }
-    drop(recognition);
-    stop_speaking(voice.as_ref());
+    drop(output);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Command, Event, MAX_TEXT, recognition_event, speech_pending, speech_text, start};
-    use std::{io, time::Duration};
-    use windows::Win32::Media::Speech::{
-        SPEI_RECOGNITION, SPEVENT, SPRS_DONE, SPRS_IS_SPEAKING, SPVOICESTATUS,
+    use super::{Command, Commands, Event, MAX_SEGMENT, MAX_TEXT, segments, start};
+    use std::{
+        io,
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+            mpsc,
+        },
+        time::Duration,
     };
 
     #[test]
-    fn speech_text_is_plain_bounded_and_nul_terminated() {
-        assert_eq!(
-            speech_text("<speak>hello</speak>"),
-            Some("<speak>hello</speak>\0".encode_utf16().collect())
+    fn output_segments_preserve_unicode_and_bound_each_model_request() -> io::Result<()> {
+        let text = "A calm sentence.  🙂 Another sentence. ".repeat(300);
+        let pieces =
+            segments(&text).ok_or_else(|| io::Error::other("Expected speech segments."))?;
+        assert!(pieces.len() > 1);
+        assert!(
+            pieces
+                .iter()
+                .all(|part| part.chars().count() <= MAX_SEGMENT)
         );
-        assert!(speech_text(" ").is_none());
-        assert!(speech_text("hello\0hidden").is_none());
-        assert!(speech_text(&"a".repeat(MAX_TEXT)).is_some());
-        assert!(speech_text(&"a".repeat(MAX_TEXT + 1)).is_none());
-        assert!(speech_text(&"🙂".repeat(MAX_TEXT / 2 + 1)).is_none());
-    }
-
-    #[test]
-    fn only_owned_recognition_objects_are_interpreted_as_results() {
-        let mut event = SPEVENT {
-            _bitfield: SPEI_RECOGNITION.0 | (2 << 16),
-            ..SPEVENT::default()
-        };
-        assert!(!recognition_event(&event));
-        event.lParam.0 = 1;
-        assert!(recognition_event(&event));
-        event._bitfield = SPEI_RECOGNITION.0 | (4 << 16);
-        assert!(!recognition_event(&event));
-    }
-
-    #[test]
-    fn queued_speech_waits_for_completion_and_surfaces_engine_errors() -> windows::core::Result<()>
-    {
-        let mut status = SPVOICESTATUS::default();
-        assert!(speech_pending(&status)?);
-        status.dwRunningState = SPRS_IS_SPEAKING.0.cast_unsigned();
-        assert!(speech_pending(&status)?);
-        status.dwRunningState = SPRS_DONE.0.cast_unsigned();
-        assert!(!speech_pending(&status)?);
-        status.hrLastResult = windows::core::HRESULT(0x8000_4005_u32.cast_signed());
-        assert!(speech_pending(&status).is_err());
+        let original: String = text
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect();
+        let rebuilt: String = pieces
+            .iter()
+            .flat_map(|part| part.chars())
+            .filter(|character| !character.is_whitespace())
+            .collect();
+        assert_eq!(original, rebuilt);
+        assert!(segments(" ").is_none());
+        assert!(segments("hello\0hidden").is_none());
+        assert!(segments(&"a".repeat(MAX_TEXT + 1)).is_none());
         Ok(())
     }
 
     #[test]
-    fn installed_speech_capabilities_do_not_capture_or_play_audio() -> io::Result<()> {
-        let session = start()?;
+    fn stopping_output_invalidates_queued_synthesis_before_worker_receives_it() -> io::Result<()> {
+        let (sender, receiver) = mpsc::channel();
+        let current_output = Arc::new(AtomicU64::new(0));
+        let commands = Commands {
+            sender,
+            current_output: Arc::clone(&current_output),
+        };
+        commands
+            .send(Command::Speak {
+                text: "Hello".to_owned(),
+                voice_description: "Warm and calm".to_owned(),
+            })
+            .map_err(io::Error::other)?;
+        let queued = receiver.recv().map_err(io::Error::other)?;
+        assert_eq!(
+            queued.output_generation,
+            current_output.load(Ordering::Acquire)
+        );
+        commands
+            .send(Command::StopSpeaking)
+            .map_err(io::Error::other)?;
+        assert_ne!(
+            queued.output_generation,
+            current_output.load(Ordering::Acquire)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn absent_services_do_not_open_audio_devices_or_substitute_system_voices() -> io::Result<()> {
+        let session = start(None, None)?;
         let event = session
             .events
-            .recv_timeout(Duration::from_secs(20))
+            .recv_timeout(Duration::from_secs(2))
             .map_err(io::Error::other)?;
-        assert!(matches!(event, Event::Capabilities { .. }));
+        assert!(matches!(
+            event,
+            Event::Capabilities {
+                input: false,
+                output: false
+            }
+        ));
         session
             .commands
             .send(Command::Shutdown)

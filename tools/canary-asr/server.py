@@ -256,6 +256,11 @@ class Server(socketserver.TCPServer):
         self.recognizer = recognizer
         super().__init__(("127.0.0.1", port), Handler)
 
+    def server_bind(self) -> None:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
     def handle_error(self, request, client_address) -> None:
         # Never let socketserver print tracebacks containing request/model data.
         pass

@@ -49,7 +49,7 @@ parsing; it is not a preemptive CPU limit. Errors expose value-free categories.
 
 The API uses familiar local LLM chat JSON and SSE conventions, with a strict
 supported subset. Generic OpenAI-style clients need an adapter if they send
-fields such as `model`, sampling controls or tool definitions. Native Rust UI
+fields such as sampling controls or tool definitions. Native Rust UI
 implementation does not widen that public schema or claim unrestricted SDK
 compatibility.
 
@@ -57,15 +57,24 @@ The entire public JSON schema is:
 
 ```json
 {
+  "model": "bonsai",
   "messages": [{"role": "user", "content": "Draft a scene."}],
   "max_completion_tokens": 1024,
   "stream": true
 }
 ```
 
-`stream` defaults to true. Null, wrong types, unknown fields and duplicate fields
+`model` is optional and accepts only the fixed alias `bonsai`. It identifies the
+already selected, verified profile; it cannot select another model or path and
+is removed before canonical backend serialization. `stream` defaults to true.
+Null, wrong types, unknown fields and duplicate fields
 are rejected at every schema level. An optional first system message may precede
-alternating user/assistant turns ending on user. Content must be a string. Ending
+alternating user/assistant turns ending on user. Content may be a string or one
+through 128 text parts, for example
+`[{"type":"text","text":"Draft a scene."}]`. Parts allow exactly `type` and
+`text`, and are concatenated without adding separators into the same canonical
+text used for both counting and generation. Empty arrays, unknown part types,
+nulls and duplicate fields are rejected. Ending
 on user avoids the pinned runtime's automatic assistant-prefill behavior.
 Assistant messages may also contain a string `reasoning_content` to replay
 previous reasoning returned by the backend. Present null/non-string values and
@@ -76,6 +85,13 @@ context bounds.
 Model selection, token-cap aliases, tools, media, template/thinking/sampling
 controls, LoRA, slots and timing overrides are unsupported. URLs in strings stay
 plain text; the broker fetches no remote content.
+
+The exported `MODEL_CAPABILITIES` contract declares text input and text output,
+the `bonsai` alias and context/completion bounds. It is a Rust contract, not a
+discovery HTTP route. Native microphone transcription uses the separate
+[Canary speech companion](../tools/canary-asr/README.md); audio bytes never enter
+this text-model broker. A compatible verified vision projector and exact media
+token admission are required before accepting image parts.
 
 Input is rebuilt as immutable canonical backend JSON with one completion,
 cache reuse disabled, EOS honored and the reference sampler: temperature 1,
