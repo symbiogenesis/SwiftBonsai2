@@ -67,7 +67,11 @@ pub(crate) enum Event {
     Complete(Completion),
     Failed(String),
     Retryable(String),
-    Rejected { message: String, text: String },
+    Rejected {
+        message: String,
+        text: String,
+        retry_required: bool,
+    },
     Stage(&'static str),
     Draft(String),
 }
@@ -231,7 +235,7 @@ fn worker(
             .is_some()
         {
             return Err(Failure::Message(
-                "The model session ended. Restart the demo to continue.",
+                "The model session ended. Select Retry model to continue.",
             ));
         }
         match commands.recv_timeout(POLL) {
@@ -439,6 +443,9 @@ fn finish_turn(
                 Event::Rejected {
                     message: message.to_owned(),
                     text: text.to_owned(),
+                    // The UI must not enable Send during owned-process
+                    // teardown; Retryable is sent only after Broker::drop.
+                    retry_required: !matches!(failure, Failure::Rejected(_)),
                 },
             )?;
             if matches!(failure, Failure::Rejected(_)) {
@@ -1367,7 +1374,8 @@ mod tests {
             assert_eq!(result.is_ok(), matches!(failure, Failure::Rejected(_)));
             assert_eq!(serialize_request(&history, 4096)?, original);
             assert!(
-                matches!(incoming.try_recv(), Ok(Event::Rejected { text, .. }) if text == "Unfinished task 🌱")
+                matches!(incoming.try_recv(), Ok(Event::Rejected { text, retry_required, .. })
+                if text == "Unfinished task 🌱" && retry_required != matches!(failure, Failure::Rejected(_)))
             );
             assert!(incoming.try_recv().is_err());
         }
