@@ -147,11 +147,23 @@ native-control accessibility parity are not established. The window
 distinguishes an answer that reached its token limit from a naturally completed
 answer. Select a response's **speaker button** to play that response using
 Qwen3-TTS 1.7B VoiceDesign. The active button becomes **Stop** to cancel synthesis
-and playback; selecting another response switches playback to it. Buttons become
-available when generation finishes, including for older responses. Reasoning is
+and playback; selecting another response switches playback to it. Each button
+becomes available when its response finishes; older responses remain available
+while another response is generating. Reasoning is
 not read aloud. Edit **Voice profile** to
 describe a voice, for example "A warm, low-pitched narrator with a calm pace and
 clear consonants." No voice preset or reference recording is required.
+
+Enable **Read aloud as responses arrive** beside the composer to read new
+responses while Swift writes them. The choice is off by default and belongs to
+the current conversation. Speech starts in short sentence or word chunks and may
+lag behind the text while Qwen loads or synthesizes. **Stop speech** cancels the
+current reading without stopping text generation. Selecting any completed
+response's speaker button takes over playback and pauses automatic reading until
+the next prompt. Disable the checkbox to stop automatic reading; manual replay
+remains available. Extra effort reads its visible stages and cancels queued audio
+at each stage change. Optional conversation saving preserves the checkbox choice
+without replaying anything on restore.
 
 The app automatically provisions and configures both native ARM64 speech
 companions. Canary uses the selected NVIDIA Canary Qwen 2.5B model and Qwen uses

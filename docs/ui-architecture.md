@@ -174,12 +174,14 @@ the Swift CPU backend. No audio is sent to a cloud service by this integration.
 
 Each assistant bubble has a native speaker button in its lower-right corner.
 It plays that response independently, changes to a stop control while active,
-and replaces playback when another response is selected. Streaming and empty
-responses cannot start playback. Read-aloud uses the separate, authenticated local
+and replaces playback when another response is selected. Completed responses remain
+available during generation of another response. Streaming and empty responses
+cannot start manual playback; an active streaming response's stop button cancels it.
+Read-aloud uses the separate, authenticated local
 [Qwen3-TTS 1.7B VoiceDesign companion](../tools/qwen-tts/README.md). The
 **Voice profile** text setting describes the desired voice in ordinary language;
 no preset, speaker file or reference recording is required. It applies to the
-next explicit read-aloud request. Only visible assistant answers are synthesized,
+next read-aloud request or streaming response. Only visible assistant answers are synthesized,
 as plain text; reasoning is excluded. Long answers are split into bounded text
 segments and synthesized sequentially with the same description. Native PCM
 playback overlaps synthesis through a bounded queue; older independently managed
@@ -189,6 +191,22 @@ output independently of Canary input, with no Windows-voice fallback. Idle
 speech controls remain visible and show native setup/prerequisite guidance when
 selected; a missing service never activates the microphone or substitutes output. Images,
 video and generated images remain unavailable in the pinned Swift profile.
+
+The conversation-wide **Read aloud as responses arrive** checkbox is off by
+default. It feeds visible answer deltas into a separate incremental speech
+session while the model is still generating. Sentence boundaries and bounded
+256-character chunks release text promptly; a short timeout releases accumulated
+words during a pause, and completion flushes the final tail. Synthesis and playback
+use bounded queues, so speech can lag behind text according to local model speed.
+Reasoning and retained working drafts are never fed into speech. Extra effort
+reads each visible stage, cancelling outstanding audio when the next stage replaces
+it. Selecting a completed response's speaker button or **Stop speech** suppresses
+automatic reading for the rest of that response; the mode applies again on the
+next submitted prompt. Switching conversations, stopping generation or a model
+failure cancels pending speech. Each conversation retains its mode choice,
+including optional encrypted recovery; restoring never starts playback. Older
+saved conversations default to off. The existing companion HTTP and model
+request contracts remain unchanged.
 
 This is not a claim of unrestricted OpenAI SDK or arbitrary local-server
 compatibility. A generic client that emits extra fields needs an adapter to

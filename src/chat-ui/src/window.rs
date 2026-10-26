@@ -32,6 +32,7 @@ mod persistence;
     reason = "Audited Windows high-contrast and fatal-dialog boundary."
 )]
 mod platform;
+mod read_aloud;
 #[cfg(test)]
 mod tests;
 mod transcript;
@@ -108,6 +109,9 @@ struct State {
     microphone_generation: Option<u64>,
     speaking: bool,
     speaking_message: Option<u64>,
+    streaming_read_aloud: bool,
+    streaming_active: bool,
+    streaming_suppressed: bool,
     answer_complete: bool,
     last_answer: String,
     retained_draft: String,
@@ -181,6 +185,9 @@ impl State {
             microphone_generation: None,
             speaking: false,
             speaking_message: None,
+            streaming_read_aloud: false,
+            streaming_active: false,
+            streaming_suppressed: false,
             answer_complete: false,
             last_answer: String::new(),
             retained_draft: String::new(),
@@ -272,6 +279,7 @@ impl State {
         self.input.clear();
         self.place_composer_cursor(0);
         self.busy = true;
+        self.streaming_suppressed = false;
         self.set_status("Responding…", false);
     }
 
@@ -363,6 +371,7 @@ impl State {
     }
 
     fn reject(&mut self, message: &str, text: &str, retry_required: bool) {
+        self.stop_speech();
         self.busy = false;
         self.ready = !retry_required;
         self.retryable = false;
@@ -427,6 +436,7 @@ impl State {
                 retry_required,
             } => self.reject(&message, &text, retry_required),
             Event::Stage(label) => {
+                self.replace_streaming_stage();
                 self.stage = Some(label);
                 self.last_answer.clear();
                 self.answer_complete = false;
@@ -437,6 +447,7 @@ impl State {
             Event::Text(text) => {
                 self.last_answer.push_str(&text);
                 self.transcript.append(&text, false);
+                self.stream_answer(&text);
                 self.stage
                     .unwrap_or("Writing…")
                     .clone_into(&mut self.status);
@@ -444,6 +455,9 @@ impl State {
             Event::Reasoning(text) => self.transcript.append(&text, true),
             Event::Committed(history) => self.committed = history,
             Event::Complete(completion) => {
+                if self.streaming_active {
+                    self.speech_command(speech::Command::FinishStream);
+                }
                 self.transcript.remove_empty_response();
                 self.busy = false;
                 self.answer_complete = true;
@@ -478,6 +492,8 @@ impl State {
         self.cancel_microphone();
         self.speaking = false;
         self.speaking_message = None;
+        self.streaming_active = false;
+        self.streaming_suppressed = true;
         "Speech worker stopped. Restart the app to retry.".clone_into(&mut self.speech_status);
         false
     }
@@ -492,6 +508,8 @@ impl State {
         self.dictation_requested = false;
         self.speaking = false;
         self.speaking_message = None;
+        self.streaming_active = false;
+        self.streaming_suppressed = true;
         if was_active {
             "Speech stopped. Microphone off.".clone_into(&mut self.speech_status);
             self.speech_notice = true;
@@ -548,21 +566,15 @@ impl State {
     }
 
     fn toggle_read_aloud(&mut self, message_id: u64) {
-        if self.busy || self.transcript.speech_text(message_id).is_none() {
+        if self.speaking && self.speaking_message == Some(message_id) {
+            self.stop_speech();
+            return;
+        }
+        if self.transcript.speech_text(message_id).is_none() {
             return;
         }
         self.speech_notice = true;
-        if self.speaking && self.speaking_message == Some(message_id) {
-            if self.speech_command(speech::Command::StopSpeaking) {
-                self.speaking = false;
-                self.speaking_message = None;
-                "Read aloud stopped.".clone_into(&mut self.speech_status);
-            }
-        } else if !self.speech_output {
-            let message = self.read_aloud_help();
-            message.clone_into(&mut self.speech_status);
-            self.help = Some(("Read aloud setup", message));
-        } else {
+        if self.speech_output {
             let voice_description = self.voice_profile.trim().to_owned();
             if voice_description.is_empty() {
                 "Describe the voice in Settings before reading aloud."
@@ -583,6 +595,10 @@ impl State {
                 self.speaking_message = Some(message_id);
                 "Reading the selected response aloud.".clone_into(&mut self.speech_status);
             }
+        } else {
+            let message = self.read_aloud_help();
+            message.clone_into(&mut self.speech_status);
+            self.help = Some(("Read aloud setup", message));
         }
         self.record(&self.speech_status.clone());
     }
@@ -618,6 +634,8 @@ impl State {
                     self.cancel_microphone();
                     self.speaking = false;
                     self.speaking_message = None;
+                    self.streaming_active = false;
+                    self.streaming_suppressed = true;
                     "Speech unavailable. Text chat remains available."
                         .clone_into(&mut self.speech_status);
                     break;
@@ -664,7 +682,11 @@ impl State {
                 generation,
                 speaking,
                 if speaking {
-                    "Reading the selected response aloud."
+                    if self.streaming_active {
+                        "Reading the response as it arrives."
+                    } else {
+                        "Reading the selected response aloud."
+                    }
                 } else {
                     "Read aloud stopped."
                 },
@@ -706,6 +728,8 @@ impl State {
             self.speaking = speaking;
             if !speaking {
                 self.speaking_message = None;
+                self.streaming_active = false;
+                self.streaming_suppressed = true;
             }
             message.clone_into(&mut self.speech_status);
         }
@@ -1311,7 +1335,7 @@ impl State {
                         {
                             self.submit();
                         }
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             if ui
                                 .add_enabled(
                                     self.dictation_requested || (!self.busy && !self.speaking),
@@ -1328,6 +1352,7 @@ impl State {
                             {
                                 self.toggle_dictation();
                             }
+                            self.read_aloud_controls(ui);
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
@@ -1428,7 +1453,7 @@ impl State {
                                                 ui,
                                                 width,
                                                 self.speaking_message,
-                                                !self.busy,
+                                                true,
                                             ) {
                                                 self.toggle_read_aloud(message_id);
                                             }

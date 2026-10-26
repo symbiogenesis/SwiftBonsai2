@@ -54,6 +54,50 @@ fn harness(size: [f32; 2], seeded: bool) -> Harness<'static, Fixture> {
 }
 
 #[test]
+fn streaming_read_aloud_control_is_available_during_generation_and_stops_audio() -> io::Result<()> {
+    for size in [[1180.0, 960.0], [620.0, 800.0]] {
+        let mut chat = harness(size, true);
+        let (session, _commands) = speech::Session::fixture()?;
+        chat.state_mut().app.speech = Some(session);
+        chat.state_mut().app.speech_output = true;
+        "Older answer.".clone_into(&mut chat.state_mut().app.transcript.messages[1].body);
+        chat.get_by_role_and_label(egui::Role::CheckBox, "Read aloud as responses arrive")
+            .focus();
+        chat.run();
+        chat.key_press(egui::Key::Space);
+        chat.run();
+        assert!(chat.state().app.streaming_read_aloud);
+        chat.state_mut().app.input = "Next answer".to_owned();
+        chat.state_mut().app.submit();
+        chat.state_mut()
+            .app
+            .model_event(Event::Text("Live answer.".to_owned()));
+        chat.run();
+        assert!(chat.state().app.busy && chat.state().app.streaming_active);
+        chat.get_by_role_and_label(egui::Role::Button, "Stop speech")
+            .click();
+        chat.run();
+        assert!(!chat.state().app.speaking);
+        assert!(chat.state().app.busy && chat.state().app.streaming_read_aloud);
+        chat.get_all_by_role_and_label(egui::Role::Button, "Read this response aloud")
+            .next()
+            .ok_or_else(|| io::Error::other("Missing older response speaker"))?
+            .click();
+        chat.run();
+        assert_eq!(
+            chat.state().app.speaking_message,
+            Some(chat.state().app.transcript.messages[1].id)
+        );
+        chat.get_by_role_and_label(egui::Role::CheckBox, "Read aloud as responses arrive")
+            .click();
+        chat.run();
+        assert!(!chat.state().app.streaming_read_aloud);
+        assert!(chat.state().app.speaking);
+    }
+    Ok(())
+}
+
+#[test]
 fn response_speakers_stay_in_bubbles_and_support_keyboard_play_and_stop() -> io::Result<()> {
     for size in [[1180.0, 960.0], [620.0, 800.0]] {
         let mut chat = harness(size, true);

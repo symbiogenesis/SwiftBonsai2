@@ -40,6 +40,7 @@ struct ActiveView<'a> {
     answer_complete: bool,
     extra_effort: bool,
     enable_thinking: bool,
+    streaming_read_aloud: bool,
     output_budget: usize,
     abliteration_scale: f32,
     status: &'a str,
@@ -104,6 +105,7 @@ impl State {
                 answer_complete: self.answer_complete,
                 extra_effort: self.extra_effort,
                 enable_thinking: self.enable_thinking,
+                streaming_read_aloud: self.streaming_read_aloud,
                 output_budget: self.output_budget,
                 abliteration_scale: self.abliteration_scale,
                 status: &self.status,
@@ -296,6 +298,51 @@ mod tests {
         let (commands, _incoming) = mpsc::channel();
         let (_events, incoming) = mpsc::channel();
         State::create(commands, incoming, None, None)
+    }
+
+    #[test]
+    fn streaming_read_aloud_recovery_preserves_preference_without_resuming_playback()
+    -> io::Result<()> {
+        let mut original = state();
+        original.streaming_read_aloud = true;
+        original.save_conversation();
+        original.conversations.push(Conversation::new(2));
+        original.active_conversation = 2;
+        original.next_conversation = 3;
+        original.clear_conversation();
+        assert!(!original.streaming_read_aloud);
+        original.streaming_read_aloud = true;
+        let bytes = original.workspace_bytes()?;
+        let mut restored = state();
+        restored.restore_workspace(&bytes)?;
+        assert!(restored.streaming_read_aloud);
+        assert!(!restored.streaming_active && !restored.speaking);
+        assert!(
+            restored.conversations[0]
+                .saved
+                .as_ref()
+                .is_some_and(|saved| saved.streaming_read_aloud)
+        );
+
+        let mut old: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(io::Error::other)?;
+        old["active"]
+            .as_object_mut()
+            .ok_or_else(|| io::Error::other("active object"))?
+            .remove("streaming_read_aloud");
+        old["conversations"][0]["saved"]
+            .as_object_mut()
+            .ok_or_else(|| io::Error::other("saved object"))?
+            .remove("streaming_read_aloud");
+        restored.restore_workspace(&serde_json::to_vec(&old).map_err(io::Error::other)?)?;
+        assert!(!restored.streaming_read_aloud);
+        assert!(
+            restored.conversations[0]
+                .saved
+                .as_ref()
+                .is_some_and(|saved| !saved.streaming_read_aloud)
+        );
+        Ok(())
     }
 
     #[test]

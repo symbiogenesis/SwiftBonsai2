@@ -48,7 +48,9 @@ and output quality on Swift remain experimental.
 
 You can chat with Swift, hear answers read aloud in a voice you describe, or
 dictate a message to review before sending. The microphone stays off until you
-turn it on and grant Windows permission.
+turn it on and grant Windows permission. **Read aloud as responses arrive** reads
+new answers while Swift writes; each response's speaker button remains available
+for independent replay.
 
 The launcher downloads speech models automatically. The setup guide explains
 how to skip those downloads or preview the app without loading a model.

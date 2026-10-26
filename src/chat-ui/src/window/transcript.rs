@@ -310,7 +310,7 @@ impl Message {
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::Role::Button, response.enabled(), label)
         });
-        let response = response.on_hover_text(if self.pending {
+        let response = response.on_hover_text(if self.pending && !playing {
             "Available when this response finishes"
         } else {
             label

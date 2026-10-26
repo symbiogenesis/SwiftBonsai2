@@ -18,6 +18,8 @@ pub(super) struct ConversationSnapshot {
     pub(super) extra_effort: bool,
     #[serde(default)]
     pub(super) enable_thinking: bool,
+    #[serde(default)]
+    pub(super) streaming_read_aloud: bool,
     pub(super) output_budget: usize,
     #[serde(default = "client::default_abliteration_scale")]
     pub(super) abliteration_scale: f32,
@@ -56,6 +58,7 @@ impl State {
             answer_complete: self.answer_complete,
             extra_effort: self.extra_effort,
             enable_thinking: self.enable_thinking,
+            streaming_read_aloud: self.streaming_read_aloud,
             output_budget: self.output_budget,
             abliteration_scale: self.abliteration_scale,
             status: self.status.clone(),
@@ -84,6 +87,7 @@ impl State {
         self.answer_complete = false;
         self.extra_effort = false;
         self.enable_thinking = false;
+        self.streaming_read_aloud = false;
         self.output_budget = 3;
         self.abliteration_scale = client::DEFAULT_ABLITERATION_SCALE;
         self.place_composer_cursor(0);
@@ -99,6 +103,7 @@ impl State {
         self.answer_complete = snapshot.answer_complete;
         self.extra_effort = snapshot.extra_effort;
         self.enable_thinking = snapshot.enable_thinking;
+        self.streaming_read_aloud = snapshot.streaming_read_aloud;
         self.output_budget = snapshot.output_budget;
         self.abliteration_scale = snapshot.abliteration_scale;
         self.status = snapshot.status;

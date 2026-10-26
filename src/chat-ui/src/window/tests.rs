@@ -105,6 +105,10 @@ fn speech_controls_stay_visible_and_explain_unconfigured_services_without_listen
     assert!(state.microphone_help().contains("Start-Chat.ps1"));
     assert!(state.read_aloud_help().contains("Start-Chat.ps1"));
     assert!(state.read_aloud_help().contains("-NoTts"));
+    state.toggle_streaming_read_aloud();
+    assert!(state.help.is_some());
+    assert!(!state.streaming_read_aloud);
+    state.help = None;
     state.toggle_dictation();
     assert!(state.help.is_some());
     assert!(!state.dictation_requested);
@@ -198,7 +202,8 @@ fn response_speakers_select_individual_answers_and_ignore_replaced_playback_even
     assert!(!state.speaking);
     state.busy = true;
     state.toggle_read_aloud(older);
-    assert!(!state.speaking);
+    assert!(state.speaking);
+    assert_eq!(state.speaking_message, Some(older));
     state.busy = false;
     state.toggle_read_aloud(latest);
     state.new_chat();
