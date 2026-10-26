@@ -7,6 +7,30 @@ checkpoint. The [export receipt](../config/swift.ptq1-export.json) establishes
 1,259,520,000 fewer serialized bytes; it does not establish a total RAM saving,
 identical calculations, better answers or faster generation.
 
+## Quick-check decision, 2026-10-26
+
+**Do not change the default or reduce memory enforcement yet.** Bounded local
+checks used three supplied token IDs and the unchanged numerical bound
+`1e-3 + 1e-3 * abs(reference)`, without benchmarking:
+
+- The pinned publisher PTQ1 runtime completed all three tokens.
+- Rust scalar PTQ1 at source `934fb13bbace35c030f2d9759711f976cfa19287`
+  differed from that same-format native reference: 2,691,842 of 118,611,456
+  logits/state values exceeded the bound; maximum absolute error was 0.19140625.
+- Native PTQ1 versus a hash-verified compatible prior native PQ2 capture also
+  differed: 593,835 of 744,960 logits exceeded the bound. The different native
+  activation routes can explain cross-format drift, but do not establish
+  equivalent quality. All three observed greedy token IDs matched.
+
+The same-format Rust failure needs investigation of native Q8_0 quantization
+and packed-dot arithmetic before that path is qualified. The native Rust PTQ1
+service remains disabled. Adapter application/basis, quality and performance
+remain unqualified. The owner declined runner registration and requested quick
+local checks; no device benchmark, NEON model capture or adapter model capture
+was run. Supporting snapshots and reports are retained in the session's external
+`runtime-correctness` evidence lane. Matching three chosen tokens does not
+override the numerical failure or authorize promotion.
+
 ## Explicit development use
 
 `scripts/Start-Chat.ps1 -UseRepackedPtq1` forwards the fixed selection through the
