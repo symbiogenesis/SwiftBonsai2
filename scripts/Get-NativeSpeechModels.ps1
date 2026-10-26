@@ -17,5 +17,6 @@ param([Parameter(Mandatory)][string]$DataDirectory,
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
-Import-Module (Join-Path $PSScriptRoot 'Bonsai.NativeSpeech.psm1')
+# A long-lived launch shell can retain an older exported parameter contract.
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.NativeSpeech.psm1') -Force
 Install-NativeSpeechModels -DataDirectory $DataDirectory -Model $Model -TtsQuantization $TtsQuantization -VerifyOnly:$VerifyOnly -ToolPath $ToolPath

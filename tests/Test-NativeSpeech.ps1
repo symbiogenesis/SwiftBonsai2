@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([string])]
-param([ValidateSet('All', 'Models', 'Sources', 'Build')][string]$Case = 'All', [string]$ToolPath)
+param([ValidateSet('All', 'Models', 'Sources', 'Build', 'Reload')][string]$Case = 'All', [string]$ToolPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -14,6 +14,44 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 $module = Import-Module (Join-Path $repo 'scripts/Bonsai.NativeSpeech.psm1') -Force -PassThru
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-NativeSpeechTests-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($scratch)
+
+if ($Case -in @('All', 'Reload')) {
+    $fixture = Join-Path $scratch 'module-reload'
+    [void][IO.Directory]::CreateDirectory($fixture)
+    $fixtureModulePath = Join-Path $fixture 'Bonsai.NativeSpeech.psm1'
+    $oldModule = @'
+function Install-NativeSpeechModels {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([string]$DataDirectory, [string]$Model, [switch]$VerifyOnly, [string]$ToolPath)
+    throw 'The obsolete cached speech module was invoked.'
+}
+Export-ModuleMember -Function Install-NativeSpeechModels
+'@
+    $newModule = @'
+function Install-NativeSpeechModels {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([string]$DataDirectory, [string]$Model, [string]$TtsQuantization,
+          [switch]$VerifyOnly, [string]$ToolPath)
+    [pscustomobject]@{ Quantization = $TtsQuantization; Model = $Model; Verified = [bool]$VerifyOnly }
+}
+Export-ModuleMember -Function Install-NativeSpeechModels
+'@
+    [IO.File]::WriteAllText($fixtureModulePath, $oldModule)
+    Import-Module $fixtureModulePath -Force
+    try {
+        [IO.File]::WriteAllText($fixtureModulePath, $newModule)
+        Assert (-not (Get-Command Install-NativeSpeechModels).Parameters.ContainsKey('TtsQuantization')) 'Fixture did not retain the obsolete module.'
+        $wrapper = Join-Path $fixture 'Get-NativeSpeechModels.ps1'
+        Copy-Item -LiteralPath (Join-Path $repo 'scripts/Get-NativeSpeechModels.ps1') -Destination $wrapper
+        $result = & $wrapper -DataDirectory $scratch -Model QwenTts -TtsQuantization Q4_K_M -VerifyOnly
+        Assert ($result.Quantization -ceq 'Q4_K_M' -and $result.Model -ceq 'QwenTts' -and $result.Verified) 'Model provisioning did not reload the changed parameter contract.'
+    } finally {
+        Get-Module | Where-Object Path -EQ $fixtureModulePath | Remove-Module -Force
+        Import-Module (Join-Path $repo 'scripts/Bonsai.NativeSpeech.psm1') -Force
+    }
+}
 
 if ($Case -in @('All', 'Models')) {
     & $module {
