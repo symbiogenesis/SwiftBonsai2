@@ -81,8 +81,8 @@ impl Recognizer {
                 no_mmap: false,
             },
         )
-        .map_err(native_error)?;
-        let capabilities = model.capabilities();
+        .map_err(|error| native_error(&error))?;
+        let capabilities = model.capabilities().map_err(|error| native_error(&error))?;
         if model.arch() != ARCHITECTURE
             || model.variant() != VARIANT
             || capabilities.native_sample_rate != 16_000
@@ -101,7 +101,7 @@ impl Recognizer {
                 n_ctx: 8192,
                 ..SessionOptions::default()
             })
-            .map_err(native_error)?;
+            .map_err(|error| native_error(&error))?;
         Ok(Self { session })
     }
 
@@ -136,7 +136,7 @@ impl Recognizer {
         );
         self.session.clear_cancel_token();
         check_cancelled(cancellation)?;
-        let transcript = result.map_err(native_error)?;
+        let transcript = result.map_err(|error| native_error(&error))?;
         if transcript.text.len() > MAX_TEXT_BYTES || transcript.text.contains('\0') {
             return Err(invalid(
                 "Canary returned an invalid or oversized transcript.",
@@ -203,7 +203,7 @@ fn bounded_string(reader: &mut impl Read) -> io::Result<String> {
     String::from_utf8(value).map_err(|_| invalid("The Canary GGUF identity is not UTF-8."))
 }
 
-fn native_error(error: transcribe_cpp::Error) -> io::Error {
+fn native_error(error: &transcribe_cpp::Error) -> io::Error {
     use transcribe_cpp::Error;
     match error {
         Error::Aborted { .. } => io::Error::new(
@@ -249,7 +249,8 @@ mod tests {
     #[test]
     fn cancelled_request_handles_cannot_cancel_a_fresh_request() {
         let first = Cancellation::new();
-        first.clone().cancel();
+        let worker = first.clone();
+        assert!(std::thread::spawn(move || worker.cancel()).join().is_ok());
         assert_eq!(
             check_cancelled(&first).err().map(|error| error.kind()),
             Some(io::ErrorKind::Interrupted)

@@ -27,3 +27,8 @@ GGUF preserves that model license; its immutable source revision is recorded in
 the lock. transcribe.cpp and its Rust bindings are **MIT** licensed. Recognition
 quality, accuracy and performance still require explicit native device
 qualification; compilation and protocol tests alone do not establish them.
+
+Focused Windows ARM64 verification successfully loaded the pinned Q8_0 model and
+recognized the public JFK fixture from the same immutable upstream commit. This
+establishes one real recognition path; it does not measure general accuracy or
+performance. The Release analyzer and focused model-header regression also pass.
