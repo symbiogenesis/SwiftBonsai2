@@ -1,195 +1,39 @@
-# Deferred Prism migration backlog and evidence
+# Deferred Prism migration contracts
 
-All remaining full-migration work below is deferred until after the
-[Swift-only engine MVP](prism-upstream-todo.md). It is retained for future work
-and provenance, not as the MVP's implementation order or completion criteria.
-Only a dependency demonstrated to be necessary for Swift belongs on the active
-MVP list. Deferred items remain open; no source verdict or baseline is promoted.
+Broader runtime work belongs to
+[Prism Inference](https://github.com/symbiogenesis/prism-inference) and remains
+deferred behind the [Swift-only engine MVP](prism-upstream-todo.md). Reopen only
+requirements demonstrated to be necessary for Swift. Implementation and complete
+source qualification remain separate; a focused check does not promote a baseline.
 
-Original handoff at code revision `9332b01cd8b7102ce1f05d6858dc9d75ccf48a03`.
-Implementation and qualification are tracked independently below.
-The migration is **not complete**. The October 25 parallel implementation adds
-owned model storage, symbolic CPU backward graphs and three IQ encoders, with
-focused local evidence below. Complete hosted qualification remains open.
 The target is Snapdragon X Elite on Windows ARM64. Apple work is excluded.
-See the [migration guide](prism-upstream-tests.md),
-[71-source catalog](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/catalog.json), and
-[migration inventory](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/migration.json).
+The [conformance guide](prism-upstream-tests.md),
+[71-source catalog](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/catalog.json)
+and [migration inventory](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/migration.json)
+define the upstream scope. Runner owns application and released-runtime integration.
 
-## Completed and measured
+## Full reference qualification
 
-- All 70 Windows-applicable sources have shared safe Rust adapters, used against
-  upstream production C++ and our Rust runtime. Adapter coverage is not a pass
-  verdict. The Apple-only source remains explicit in the 71-source inventory.
-- Original C++ test executables, fixture exporters, and the replay importer/build
-  are retired. The remaining two C++ translation units and one C ABI translation
-  unit expose production operations needed by the reference adapters.
-- [Run 40146089128](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40146089128)
-  on `eb37e263b9852c4fcccb0d1fa8ee69aea977b4d5` passed all 69 ordinary source
-  adapters against C++ and all 16 backend planning partitions. Rust recorded
-  4 ordinary passes and 65 failures. The run failed during artifact extraction
-  with `EMFILE` before backend numerical execution. It did not qualify all 70
-  applicable sources.
-- `9332b01` changes artifact handoffs to compact records while retaining full
-  evidence separately. Suite and runtime source code are unchanged from that run.
-
-## Deferred full reference qualification
-
-- [x] Collect the result of [run 40150402106](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40150402106),
-  which tests `9332b01` with benchmarks enabled and optional gradients disabled.
-  Its verdict was pending at handoff. The run was subsequently cancelled during
-  the ordinary source job, before backend plan joining or numerical execution.
-  It provides no complete-source or benchmark qualification.
-- [ ] Verify the compact plan and execution handoffs avoid the extraction failure,
-  and that the separate `prism-backend-evidence-plan-*` and
-  `prism-backend-evidence-run-*` artifacts retain complete diagnostics.
-  Planning is now demonstrated: run
-  [40153890429](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40153890429)
-  at `8aca3a1` passed all 16 planning partitions and the plan join. Compact
-  `prism-backend-plan-*` records and separate diagnostic artifacts were retained.
-  Execution stopped before producing all compact execution records, so this
-  combined handoff item remains open.
-- [ ] Complete plan joining and all 16 backend execution partitions. Account for
-  all 22,817 ordered geometries in each of evaluation and support modes, preserving
-  source identities, random offsets, original tolerances, and result hashes.
-  The complete numerical matrix has not yet run successfully.
-- [ ] Complete the requested 1,530 backend performance workloads and retain their
-  measurements separately from correctness. Unsupported Rust operations remain
-  explicit failures or unsupported results; they do not become fabricated timings.
-- [ ] If execution exposes another port defect, reproduce the first failing
-  geometry with a focused check, repair the Rust controller or production bridge,
-  and commit that fix separately. Preserve upstream assertions and input domains.
-- [ ] Verify the final unified gate contains exactly 70 applicable source results
-  per target and all C++ reference results pass. Preserve the Apple exclusion in
-  the full catalog. Record the actual tested revision, run URL, report hashes,
-  source verdicts, and benchmark scope in the migration guide and baseline
-  provenance only after reviewing the artifacts.
-
-## Deferred runtime-wide follow-up
-
-These are production capability gaps exposed by the imported suite, separate
-from completing the suite's upstream reference qualification.
-
-- [x] Triage the retained `rust-results.json`: all 65 failures are indexed in
-  [runtime-triage.json](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/runtime-triage.json), bound to
-  the retained artifact hash and tested revision. Sixty failures report
-  unavailable production APIs or wrapper failures; five are measured
-  decoder/loader defects. The inventory preserves the original failed verdicts.
-- [ ] Implement the remaining required
-  safe Rust runtime operations and connect adapters to those operations; do not
-  put replacement implementations of the runtime inside the tests.
-- [ ] Resolve the five measured decoder/loader failures, retaining their original
-  domains: `test-ptq1_0-element-map.cpp`, `test-ptq1_0-cuda-dot.cpp`,
-  `test-tokenizer-0.cpp`, `test-tokenizer-0.sh`, and `test-tokenizers-repo.sh`.
-  The PTQ element-map run rejects 19,434 original blocks; the packed-codec run
-  fails 12,325 of 14,096 checks. Vocabulary loading also rejects original inputs.
-- [ ] Provide the missing Rust backend operation API and run the same complete
-  backend contracts against it. Backend planning currently reports unsupported
-  Rust operations; it supplies no passing numerical qualification.
-- [ ] Ratchet [baseline.json](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/baseline.json) after complete
-  hosted evidence proves new passing source identities. Preserve the existing
-  required green IDs. Of the four observed ordinary passes, PQ2 exercises the
-  runtime; the others are a zero-assertion file workload, a model-data helper,
-  and pure arithmetic. Keep those scopes explicit when reporting progress.
-
-## Focused implementation evidence
-
-The following production changes have passed focused local source checks. They
-are not a complete hosted run and do not ratchet the accepted baseline.
-
-| Production capability | Original focused scope |
-| --- | --- |
-| Native PTQ byte decoding and packed activation dots | 20,000 arbitrary-byte blocks, 2,560,000 element predicates, and all 14,096 production decoder/dot checks; zero rejected blocks or mismatches |
-| GGUF vocabulary tokenizer families | All 15 bundled vocabularies and 694 token-vector predicates; all six immutable repository corpora |
-| MTP batch bounds | All six source conditions, plus widened-sum boundary regression |
-| Unicode regex splitting | Original regex/input/piece assertion; reversible GPT byte encoding regression |
-| Multimodal tiling and temporal grouping | All 29 source assertions, including ties-to-even alignment and mutation of remaining parts |
-| Concurrent logger | Eight workers, 8,000 messages, format changes, joins, flush and explicit close; source has no output-content assertions |
-| Reasoning-budget sampler | All 71 original semantic conditions, including clone/reset and UTF-8 boundaries |
-| Owned batch allocator | All 26 source cases and 198 original assertions |
-| GBNF parser | All 23 variants and 274 original symbol/rule-element assertions |
-| Grammar stack execution | All 174 original stack-pointer/candidate-rejection conditions; independently owned clone storage |
-| CPU tensor graph and manual arena storage | Original col2im geometries at all three precisions, all three DFly contracts, all five RoPE modes, and all 48 MoE alias layouts |
-| Grammar/schema integration | All 504 grammar integration conditions and all 269 JSON-schema source assertions |
-| PEG parsing and serialization | All six inherited groups, 241 source assertions; owned captures and atomic/partial parsing added |
-| Jinja execution | All 278 literal renders, 56 original observations, 16 additional streaming-hash checks and original no-crash fuzz calls |
-| Jinja chat capabilities | Five focused probe/fallback tests pass; six capability flags match native observations for 31 of 37 pinned templates. Six templates retain Rust execution gaps; complete parity remains open. |
-| Chat templates and chat PEG | All 36 legacy and 35 common Jinja renders; all seven chat-PEG correctness groups, 30 subgroups and 105 incremental prefixes; embedded benchmarks not run locally |
-| Multimodal chunks | All 46 source factory/traversal/serialization conditions |
-| Stateful sampling | All 343 original correctness conditions; 20 independent native seeded RNG/XTC observations and clone/reset/offset regressions |
-| Owned GGUF contexts | All 34 crafted source variants, 96 source conditions and 27 malformed-input guards |
-| Graph allocator | All 13 scenarios/14 graphs; 468 unconditional predicates and 136 triggered overlap checks |
-| CPU threadpool | Focused worker-switching, dependency/barrier, independent-plan and error-draining checks; original timed workload remains CI-only |
-| Optimizer/datasets | All 164 original CPU subtests, including AdamW and SGD; additional generic gradient/classification/ownership checks |
-| Quantization selection | All 11 unchanged real metadata models and 363 expected sections |
-| HF model resolution | All 94 listing variants/13 handler assemblies, 757 original predicates, 358 guards and 228 live loopback GETs; complete CLI parser remains separate |
-| Legacy, K, IQ4, TQ and FP4 codecs | Independent native reference/importance encodings, arbitrary packed decoders and generic packed activation dots; complete source/benchmark qualification remains open |
-| Codec traits and owned buffers | All 144 trait slots match the pinned C++ inventory; eight focused ownership/codec checks and two adapter guards pass. CPU/reference capabilities stay distinct; persistent model-session transport remains open. |
-| Owned generated models and streaming saver | Eight focused storage/callback/serialization contracts, including all 32 production decoder kinds; an additional Q8_K overflow regression covers generation, verified loading and prevalidated saving |
-| Symbolic CPU backward graphs | Eight focused graph contracts covering derivatives, finite differences, strided views, accumulation/reset and failure rollback; the adapter exports readable gradient handles and preserves explicit aliases |
-| IQ3_XXS, IQ3_S and IQ2_S encoding | All 144 pinned native reference/importance records match byte for byte, including mixed zero groups; 36 overlapping persistent-buffer calls pass. Native CPU encoder availability is unchanged |
-
-The original `test-model-load-cancel.cpp` now runs against the production Rust
-loader. Its focused ARM64 result matches the retained x64 C++ control exactly:
-two source predicates, four additional guards, and cancellation at the first
-`0.0` progress callback under the original `progress > 0.50` policy. Both use the
-unchanged, hash-verified stories15M model. This qualifies that cancellation
-schedule locally, not architecture execution or a complete hosted source run.
-
-The CPU backend now has typed production tensor storage, strided views, graph
-operations and a source-controller adapter. Advanced operations and unsupported
-packed formats still return explicit failures. Complete backend qualification,
-the 1,530 performance workloads, and the remaining ordinary API families above
-remain open. Persistent Rust vocabulary sessions now call the same production
-tokenizer, without a separate tokenizer implementation in the test harness.
-
-The scalar and native runtime lanes in
-[run 40153248553](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40153248553)
-tested `e62b81556e266b927ad11632c93ee73805d3badb` and failed compilation/analyzer
-checks. The retained logs identify backend test naming/value-argument lints, an
-unwired reasoning adapter, and extra trailing whitespace in `lib.rs`; no runtime
-assertion verdict was obtained. Those defects were repaired through `8aca3a1`.
-Release all-target analyzers pass locally for ARM64 and x64, formatting passes,
-and the runtime builds without default features. A new hosted verdict is still
-required. Subsequent native failures are tracked below; this paragraph records
-the earlier failure rather than the final session status.
-
-## Latest CI failures and committed repairs
-
-- [Run 40155168704](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40155168704)
-  tested `a2d085d`. Scalar fallback passed. Native execution passed its runtime
-  tests, then the no-default-features analyzer attempted to compile the JSON
-  example with its schema/PEG modules disabled. `03fd07b` declares the example's
-  `cli` requirement. The exact no-default all-target analyzer passed locally.
-- [Run 40155820247](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40155820247)
-  tested `03fd07b`. Its native suite failed only the Jinja observation-count
-  guard: all observations passed, but the guard still expected 56 after 16
-  additional hash checks were added. `97a0dda` expects 72; the focused test passed.
-- Both recent `prism-upstream / 3` failures stopped at Rust
-  `test-tokenizer-1-bpe.cpp`. The retained earlier diagnostic identifies the
-  original Aquila GGUF v2 vocabulary being rejected by the v3 reader.
-  `d563f38` adds a verified vocabulary-only v2 reader while preserving strict v3
-  model execution. The real unchanged Aquila vocabulary now passes the focused
-  persistent tokenization/detokenization session; the complete roundtrip source
-  still needs hosted completion.
-- Backend execution in `40153890429` stopped in C++ geometry **15450**,
-  `test_argsort`, because repeated immutable shape queries exhausted the bounded
-  transport action count. `41a6f79` reuses actual typed production observations
-  until metadata changes. The exact geometry passed against Rust and production
-  C++, preserving geometry seed, CRT offset **7,748,238**, **262,400** draws,
-  original inputs and comparisons. This does not qualify the remaining matrix.
-- [Run 40156509200](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40156509200)
-  tested the previously published `5ede838`; it was pending when inspected. No
-  passing verdict is claimed. Later wrap-up commits were unpublished at that
-  handoff.
+- [ ] Verify compact plan/execution handoffs and complete diagnostic artifacts
+  without extraction limits dropping source results.
+- [ ] Complete all backend execution partitions and all 22,817 ordered geometries
+  in both evaluation and support modes. Preserve source identities, random
+  offsets, input domains, tolerances and result hashes.
+- [ ] Complete the 1,530 backend performance workloads separately from correctness.
+  Unsupported operations must remain explicit; they cannot yield fabricated timings.
+- [ ] Require exactly 70 Windows-applicable source results per target, with the
+  Apple-only exclusion explicit in the complete inventory and passing native
+  reference results.
+- [ ] Ratchet the upstream baseline only after complete reviewed hosted evidence
+  proves new passing identities. Preserve existing required green IDs and record
+  the tested revision, hardware and actual scope of each acceptance result.
 
 ## Deferred implementation contracts
 
 Each item below requires production safe Rust functionality and thin adapters
 that retain the imported source's inputs, assertions, tolerances and stopping
 rules. Existing constructors or a passing focused check do not close an item
-requiring full source execution. The historical 65-failure triage remains a
-record of its tested revision, not a current capability inventory.
+requiring full source execution.
 
 - [ ] **Complete backend numerical operations.** Construction dispatch now
   accompanies numerical kernels for F32/F16/BF16 `ADD1` (4), `IM2COL_BACK` (53),
@@ -269,15 +113,6 @@ record of its tested revision, not a current capability inventory.
   bounds curl capture; focused malformed-transfer checks and the original
   model-resolution source pass. Full HTTPS/download/cancellation qualification
   remains open; see the [reuse review](prism-reuse-review.md).
-- [x] **Implement and locally qualify model resolution.** Preserve live listing/commit retrieval,
-  listing order, quant tag matching, split-first-shard selection, ancestor
-  sidecar precedence, cache/offline behavior and explicit-path/preset/draft
-  handler precedence. Run all 94 listing variants and 13 handler assemblies
-  (757 predicates) against the production Rust resolver and original loopback
-  HF inputs. The final in-flight implementation passed that complete focused
-  source, 358 guards, 228 live GETs and five additional production checks;
-  integrated locally as `24a3f0e`. Hosted qualification remains open below.
-  Its model/draft option handlers do not implement the complete CLI parser.
 - [ ] **Qualify the resolver's remaining input domains.** The original source
   exercises refs/tree listing retrieval and offline finalization. Separate
   production parity checks remain for live HTTPS/curl, actual URL/multi-shard
@@ -338,15 +173,6 @@ record of its tested revision, not a current capability inventory.
   Snapdragon X Elite performance evidence. Full suites/benchmarks remain CI-only.
 
 ## Constraints to preserve
-
-At the prior implementation handoff, closing local checks passed after the
-in-flight integration: Release all-target,
-all-feature Clippy for ARM64 and x64, the no-default-features all-target analyzer,
-formatting, focused new codec checks and the original chat-PEG correctness test.
-Full suites and benchmarks were not run locally. `baseline.json` was not
-ratcheted. Session worktrees and temporary branches were decommissioned after
-their changes were integrated; useful evidence, patches and branch bundles were
-retained outside the repository in the session's temporary evidence directory.
 
 - Keep the intended invalid-UTF-8 skip, immutable model/vocabulary inputs,
   synthetic DSpark references, and both documented, hash-verified upstream
