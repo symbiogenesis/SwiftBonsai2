@@ -1,6 +1,6 @@
 //! Focused synthetic supervision regressions; no model or benchmark is executed.
 #![forbid(unsafe_code)]
-#![cfg(windows)]
+#![cfg(all(windows, feature = "test-probe"))]
 
 use std::fs;
 #[cfg(target_arch = "aarch64")]
@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 
 #[path = "support/windows.rs"]
 mod windows;
-use windows::{caller_identity, shell};
+use windows::caller_identity;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -27,7 +27,10 @@ fn fixture(name: &str) -> Result<(PathBuf, Value)> {
     fs::create_dir(&lane)?;
     let creation = caller_identity(&lane)?;
     let request = json!({
-        "schemaVersion": 1, "executable": shell()?, "arguments": ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Console]::Out.Write('bounded-response')"],
+        // Owned completion workers prohibit Win32k calls. Use a native fixture:
+        // Windows PowerShell initializes desktop DLLs before its script runs.
+        "schemaVersion": 1, "executable": env!("CARGO_BIN_EXE_bonsai-completion-test-probe"),
+        "arguments": ["stdout", "bounded-response"],
         "workingDirectory": lane, "evidenceDirectory": lane, "artifacts": [],
         "memoryLimitBytes": 536_870_912, "requiredAvailableBytes": 0, "physicalReserveBytes": 0,
         "timeoutSeconds": 10, "stdoutLimitBytes": 4096, "stderrLimitBytes": 4096,
@@ -47,8 +50,7 @@ fn batch_preserves_outputs_and_retains_verified_inputs() -> Result<()> {
         let evidence = lane.join(id);
         fs::create_dir(&evidence)?;
         samples.push(json!({"id": id, "evidenceDirectory": evidence,
-            "arguments": ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
-                "$ErrorActionPreference='Stop'; try { [IO.File]::WriteAllText('pinned.txt','changed'); exit 9 } catch [IO.IOException] { [Console]::Out.Write('retained-input') }"]}));
+            "arguments": ["retained-input"]}));
     }
     request["arguments"] = json!([]);
     request["samples"] = json!(samples);
@@ -144,18 +146,10 @@ fn malformed_first_capture_prevents_the_next_batch_sample() -> Result<()> {
     if !synthetic_ci_child("malformed_first_capture_prevents_the_next_batch_sample")? {
         return Ok(());
     }
-    for (name, script, expected) in [
-        ("empty", "[Console]::Out.Write(' ')", "no captured response"),
-        (
-            "utf8",
-            "[Console]::OpenStandardOutput().Write([byte[]]@(255),0,1)",
-            "valid UTF-8",
-        ),
-        (
-            "timing",
-            "[Console]::Out.Write('response')",
-            "decode timing",
-        ),
+    for (name, arguments, expected) in [
+        ("empty", json!(["stdout", " "]), "no captured response"),
+        ("utf8", json!(["invalid-utf8"]), "valid UTF-8"),
+        ("timing", json!(["stdout", "response"]), "decode timing"),
     ] {
         let (lane, mut request) = fixture(name)?;
         let first = lane.join("first");
@@ -166,9 +160,9 @@ fn malformed_first_capture_prevents_the_next_batch_sample() -> Result<()> {
         request["ciOnly"] = json!(true);
         request["samples"] = json!([
             {"id": "first", "evidenceDirectory": first,
-                "arguments": ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script]},
+                "arguments": arguments},
             {"id": "second", "evidenceDirectory": second,
-                "arguments": ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[IO.File]::WriteAllText('next-started.txt','unexpected')"]},
+                "arguments": ["touch"]},
         ]);
         let failure = bonsai_tools::completion::run(request)
             .err()
@@ -184,19 +178,6 @@ fn malformed_first_capture_prevents_the_next_batch_sample() -> Result<()> {
 }
 
 #[cfg(target_arch = "aarch64")]
-fn exact_capture_script(text: &str) -> String {
-    const LOG: &str = "main: number of tokens in prompt = 15\ncommon_perf_print: prompt eval time = 100.5 ms / 15 tokens ( 6.7 ms per token, 149.25 tokens per second)\ncommon_perf_print: eval time = 200.0 ms / 3 runs ( 66.7 ms per token, 15 tokens per second)\ncommon_perf_print: samplers time = 0.50 ms / 19 tokens\n";
-    let bytes = text
-        .bytes()
-        .map(|byte| byte.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "$bytes = [byte[]]@({bytes}); [Console]::OpenStandardOutput().Write($bytes,0,$bytes.Length); [Console]::Error.Write('{LOG}')"
-    )
-}
-
-#[cfg(target_arch = "aarch64")]
 #[test]
 fn completed_capture_survives_failed_and_missing_batch_samples() -> Result<()> {
     if !synthetic_ci_child("completed_capture_survives_failed_and_missing_batch_samples")? {
@@ -205,21 +186,15 @@ fn completed_capture_survives_failed_and_missing_batch_samples() -> Result<()> {
     let (lane, mut request) = fixture("capture-recovery")?;
     let text = "\u{feff}caf\u{e9} \u{1f331} [end of text]\r\n\n";
     let mut samples = Vec::new();
-    for (id, script) in [
-        ("first", exact_capture_script(text)),
-        (
-            "failed",
-            "[Console]::Out.Write('partial-response'); exit 7".into(),
-        ),
-        (
-            "missing",
-            "[IO.File]::WriteAllText('next-started.txt','unexpected')".into(),
-        ),
+    for (id, arguments) in [
+        ("first", json!(["capture", text])),
+        ("failed", json!(["partial-failure"])),
+        ("missing", json!(["touch"])),
     ] {
         let evidence = lane.join(id);
         fs::create_dir(&evidence)?;
         samples.push(json!({"id": id, "evidenceDirectory": evidence,
-            "arguments": ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script]}));
+            "arguments": arguments}));
     }
     request["arguments"] = json!([]);
     request["ciOnly"] = json!(true);
@@ -278,13 +253,7 @@ fn capture_write_failure_cannot_publish_a_completed_sample() -> Result<()> {
     let (lane, mut request) = fixture("capture-write")?;
     let diagnostics = lane.join("diagnostics.json");
     fs::write(&diagnostics, b"retained-evidence")?;
-    request["arguments"] = json!([
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        exact_capture_script("response\n")
-    ]);
+    request["arguments"] = json!(["capture", "response\n"]);
     request["ciOnly"] = json!(true);
     assert!(bonsai_tools::completion::run(request).is_err());
     assert!(lane.join("capture.json").exists());
