@@ -11,6 +11,7 @@ use crate::{
     client::{self, Command, Completion, Config, Event},
     speech,
 };
+mod microphone;
 mod transcript;
 use std::{
     cell::RefCell,
@@ -125,6 +126,8 @@ struct State {
     speech_output: bool,
     listening: bool,
     dictation_requested: bool,
+    microphone: Option<microphone::Microphone>,
+    microphone_generation: Option<u64>,
     speaking: bool,
     answer_complete: bool,
     last_answer: String,
@@ -621,8 +624,10 @@ impl State {
         window: HWND,
         commands: Sender<Command>,
         events: Receiver<Event>,
+        config: &Config,
+        microphone: Option<microphone::Microphone>,
     ) -> io::Result<Self> {
-        let speech = speech::start().ok();
+        let speech = speech::start(config.canary.clone()).ok();
         Ok(Self {
             window,
             title: control(window, w!("STATIC"), "Swift Bonsai 2", 0, 301)?,
@@ -681,6 +686,8 @@ impl State {
             speech_output: false,
             listening: false,
             dictation_requested: false,
+            microphone,
+            microphone_generation: None,
             speaking: false,
             answer_complete: false,
             last_answer: String::new(),
@@ -1086,8 +1093,7 @@ impl State {
         }
         self.speech_input = false;
         self.speech_output = false;
-        self.listening = false;
-        self.dictation_requested = false;
+        self.cancel_microphone();
         self.speaking = false;
         set_text(
             self.speech_status,
@@ -1097,8 +1103,8 @@ impl State {
     }
 
     fn stop_speech(&mut self) {
+        self.cancel_microphone();
         if let Some(session) = &self.speech {
-            let _result = session.commands.send(speech::Command::StopListening);
             let _result = session.commands.send(speech::Command::StopSpeaking);
         }
         self.listening = false;
@@ -1106,29 +1112,49 @@ impl State {
         self.speaking = false;
     }
 
+    fn cancel_microphone(&mut self) {
+        if let Some(session) = &self.speech {
+            session.set_input_generation(None);
+            let _result = session.commands.send(speech::Command::StopListening);
+        }
+        if let Some(microphone) = &mut self.microphone {
+            microphone.stop();
+        }
+        self.microphone_generation = None;
+        self.dictation_requested = false;
+        self.listening = false;
+    }
+
     fn toggle_dictation(&mut self) {
         if self.dictation_requested {
-            if self.speech_command(speech::Command::StopListening) {
-                self.listening = false;
-                self.dictation_requested = false;
-                set_text(
-                    self.speech_status,
-                    "Microphone disabled. Review your message before sending.",
-                );
-            }
-        } else if self.ready
-            && !self.busy
-            && !self.speaking
-            && self.speech_input
-            && self.speech_command(speech::Command::Listen)
-        {
-            self.dictation_requested = true;
+            self.cancel_microphone();
             set_text(
                 self.speech_status,
-                "Requesting microphone access. Transcripts stay in the message box.",
+                "Microphone disabled. Review your message before sending.",
             );
-            // SAFETY: The user explicitly enabled the microphone for this enabled native edit.
-            unsafe { SetFocus(self.input) };
+        } else if self.ready && !self.busy && !self.speaking && self.speech_input {
+            let Some(microphone) = &mut self.microphone else {
+                return;
+            };
+            match microphone.start() {
+                Ok(generation) => {
+                    if let Some(session) = &self.speech {
+                        session.set_input_generation(Some(generation));
+                    }
+                    self.microphone_generation = Some(generation);
+                    self.dictation_requested = true;
+                    set_text(
+                        self.speech_status,
+                        "Requesting Windows microphone permission...",
+                    );
+                    // SAFETY: The user explicitly enabled input for this live native edit.
+                    unsafe { SetFocus(self.input) };
+                }
+                Err(_) => set_text(
+                    self.speech_status,
+                    "Windows microphone permission is unavailable. Check privacy settings and app capabilities.",
+                ),
+            }
         }
         self.update_buttons();
     }
@@ -1160,8 +1186,7 @@ impl State {
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.speech_input = false;
                     self.speech_output = false;
-                    self.listening = false;
-                    self.dictation_requested = false;
+                    self.cancel_microphone();
                     self.speaking = false;
                     set_text(
                         self.speech_status,
@@ -1177,11 +1202,11 @@ impl State {
     fn speech_event(&mut self, event: speech::Event) {
         match event {
             speech::Event::Capabilities { input, output } => {
-                self.speech_input = input;
+                self.speech_input = input && self.microphone.is_some();
                 self.speech_output = output;
                 set_text(
                     self.speech_status,
-                    match (input, output) {
+                    match (self.speech_input, output) {
                         (true, true) => "Microphone input and read aloud available.",
                         (true, false) => "Microphone ready; no Windows voice installed.",
                         (false, true) => "Read aloud ready; microphone input unavailable.",
@@ -1202,24 +1227,8 @@ impl State {
                     },
                 );
             }
-            speech::Event::Recognized(text) => {
-                if self.dictation_requested && self.ready && !self.busy && !text.trim().is_empty() {
-                    let phrase = wide(&format!("{} ", text.trim()));
-                    // SAFETY: The enabled native edit copies this bounded phrase synchronously;
-                    // its configured text limit still applies. No Send command is generated.
-                    unsafe {
-                        SendMessageW(
-                            self.input,
-                            EM_REPLACESEL,
-                            1,
-                            phrase.as_ptr().addr().cast_signed(),
-                        )
-                    };
-                    set_text(
-                        self.speech_status,
-                        "Transcribed text added. Review it before sending.",
-                    );
-                }
+            speech::Event::Recognized { generation, text } => {
+                self.accept_transcript(generation, &text);
             }
             speech::Event::Speaking(speaking) => {
                 self.speaking = speaking;
@@ -1233,15 +1242,91 @@ impl State {
                 );
             }
             speech::Event::Failed(message) => {
-                self.listening = false;
-                self.dictation_requested = false;
                 self.speaking = false;
                 set_text(self.speech_status, message);
             }
+            speech::Event::InputFailed {
+                generation,
+                message,
+            } => {
+                if self.dictation_requested && self.microphone_generation == Some(generation) {
+                    self.cancel_microphone();
+                    set_text(self.speech_status, message);
+                }
+            }
             speech::Event::Status(message) if self.dictation_requested => {
-                set_text(self.speech_status, message)
+                set_text(self.speech_status, message);
             }
             speech::Event::Status(_) => {}
+        }
+        self.update_buttons();
+    }
+
+    fn accept_transcript(&mut self, generation: u64, text: &str) {
+        if !self.dictation_requested
+            || self.microphone_generation != Some(generation)
+            || !self.ready
+            || self.busy
+        {
+            return;
+        }
+        if !text.trim().is_empty() {
+            let phrase = wide(&format!("{} ", text.trim()));
+            // SAFETY: The live edit copies this bounded phrase synchronously; its
+            // configured text limit still applies. Transcription never sends chat.
+            unsafe {
+                SendMessageW(
+                    self.input,
+                    EM_REPLACESEL,
+                    1,
+                    phrase.as_ptr().addr().cast_signed(),
+                )
+            };
+        }
+        if self
+            .microphone
+            .as_mut()
+            .is_some_and(|microphone| microphone.resume(generation).is_err())
+        {
+            self.cancel_microphone();
+            set_text(
+                self.speech_status,
+                "Microphone capture became unavailable. Enable it again to retry.",
+            );
+        } else {
+            set_text(
+                self.speech_status,
+                "Transcript ready to review. Resuming microphone recording...",
+            );
+        }
+    }
+
+    fn poll_microphone(&mut self) {
+        let Some(microphone) = &mut self.microphone else {
+            return;
+        };
+        for event in microphone.poll() {
+            match event {
+                microphone::Event::Status(message) if self.dictation_requested => {
+                    set_text(self.speech_status, message);
+                }
+                microphone::Event::Status(_) => {}
+                microphone::Event::Failed(message) => {
+                    self.cancel_microphone();
+                    set_text(self.speech_status, message);
+                }
+                microphone::Event::Clip { generation, wav } => {
+                    if self.dictation_requested && self.microphone_generation == Some(generation) {
+                        self.listening = false;
+                        if self.speech_command(speech::Command::Transcribe { generation, wav }) {
+                            set_text(
+                                self.speech_status,
+                                "Transcribing locally. Microphone capture is paused.",
+                            );
+                        }
+                    }
+                }
+            }
         }
         self.update_buttons();
     }
@@ -1325,6 +1410,7 @@ unsafe extern "system" fn procedure(
         }
         WM_TIMER if wparam == TIMER => {
             state.drain_events();
+            state.poll_microphone();
             state.drain_speech_events();
             true
         }
@@ -1383,6 +1469,7 @@ unsafe extern "system" fn procedure(
         }
         WM_CLOSE => {
             state.stop_speech();
+            state.microphone.take();
             state.speech.take();
             let _result = state.commands.send(Command::Shutdown);
             // SAFETY: These are this UI thread's timer and top-level window;
@@ -1494,7 +1581,14 @@ pub(super) fn run(config: Config) -> io::Result<()> {
     let _window_lifetime = WindowLifetime(window);
     let (commands, incoming_commands) = mpsc::channel();
     let (events, incoming_events) = mpsc::channel();
-    let mut state = State::create(window, commands.clone(), incoming_events)?;
+    let microphone = microphone::Microphone::new().ok();
+    let mut state = State::create(
+        window,
+        commands.clone(),
+        incoming_events,
+        &config,
+        microphone,
+    )?;
     state.set_font();
     state.layout();
     state.update_buttons();
