@@ -75,7 +75,7 @@ fn startup_rejects_invalid_caller_identity_before_build_work()
             .current_dir(&scratch)
             .output()?;
         assert!(!output.status.success());
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout, Vec::<u8>::new());
         assert!(String::from_utf8_lossy(&output.stderr).contains("startup caller identity"));
     }
     fs::remove_file(request)?;
