@@ -115,6 +115,13 @@ fn identity(spec: &BuildSpec) -> String {
     )
 }
 
+fn receipt_path(spec: &BuildSpec, identity: &str) -> PathBuf {
+    spec.target_directory.join(format!(
+        "startup-build-{}.json",
+        cache::hex(&Sha256::digest(identity.as_bytes()))
+    ))
+}
+
 fn cargo_arguments(spec: &BuildSpec) -> Vec<OsString> {
     let mut args = vec![
         format!("+{}", spec.channel).into(),
@@ -173,11 +180,12 @@ fn cached_build_with(
     let identity = identity(spec);
     let fingerprint =
         cache::fingerprint(&spec.repository_root, &spec.working_directory, &identity)?;
-    let receipt = spec.target_directory.join("startup-build.json");
+    let receipt = receipt_path(spec, &identity);
+    cache::remove_abandoned_receipts(&receipt)?;
     if !spec.force
         && fingerprint
             .as_ref()
-            .is_some_and(|fingerprint| cache::matches(&receipt, fingerprint, &outputs))
+            .is_some_and(|fingerprint| cache::matches(&receipt, &identity, fingerprint, &outputs))
     {
         return Ok(outputs);
     }
@@ -210,7 +218,7 @@ fn cached_build_with(
         && cache::fingerprint(&spec.repository_root, &spec.working_directory, &identity)?.as_ref()
             == Some(&fingerprint)
     {
-        cache::write_receipt(&receipt, fingerprint, &outputs)?;
+        cache::write_receipt(&receipt, identity, fingerprint, &outputs)?;
     }
     Ok(outputs)
 }
@@ -428,7 +436,7 @@ mod tests {
         assert!(
             cached_build_with(&spec, || Err("Preparation failed.".into()), fake_build).is_err()
         );
-        assert!(!spec.target_directory.join("startup-build.json").exists());
+        assert!(!receipt_path(&spec, &identity(&spec)).exists());
         let guard = cache::lock_file(&spec.target_directory.join("build.lock"))?;
         assert!(cached_build_with(&spec, || Ok(BTreeMap::new()), fake_build).is_err());
         drop(guard);
@@ -440,7 +448,112 @@ mod tests {
             )
             .is_err()
         );
-        assert!(!spec.target_directory.join("startup-build.json").exists());
+        assert!(!receipt_path(&spec, &identity(&spec)).exists());
+        Ok(())
+    }
+
+    #[test]
+    fn package_variants_reuse_receipts_only_while_exact_outputs_match() -> crate::Result<()> {
+        let mut spec = fixture()?;
+        let builds = Cell::new(0);
+        let build =
+            |spec: &BuildSpec, env: &BTreeMap<String, String>, args: &[OsString], log: &Path| {
+                builds.set(builds.get() + 1);
+                fake_build(spec, env, args, log)
+            };
+        let _ = cached_build_with(&spec, || Ok(BTreeMap::new()), build)?;
+        let complete = receipt_path(&spec, &identity(&spec));
+        spec.packages = vec!["bonsai-chat".into()];
+        let narrow = receipt_path(&spec, &identity(&spec));
+        let _ = cached_build_with(&spec, || Ok(BTreeMap::new()), build)?;
+        assert!(complete.is_file() && narrow.is_file());
+        spec.packages.push("bonsai-broker".into());
+        spec.packages.reverse();
+        let outputs = cached_build_with(&spec, || Err("Warm prepare ran.".into()), build)?;
+        assert_eq!(builds.get(), 2);
+        let chat = outputs.get("bonsai-chat").ok_or("Missing chat fixture.")?;
+        let mut changed = fs::read(chat).map_err(|error| error.to_string())?;
+        changed.push(1);
+        fs::write(chat, changed).map_err(|error| error.to_string())?;
+        let _ = cached_build_with(&spec, || Ok(BTreeMap::new()), build)?;
+        assert_eq!(builds.get(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn documentation_edits_keep_warm_build_but_embedded_and_config_edits_rebuild()
+    -> crate::Result<()> {
+        let spec = fixture()?;
+        fs::create_dir(spec.repository_root.join("docs")).map_err(|error| error.to_string())?;
+        fs::create_dir(spec.repository_root.join("config")).map_err(|error| error.to_string())?;
+        fs::write(spec.repository_root.join("README.md"), "embedded")
+            .map_err(|error| error.to_string())?;
+        fs::write(
+            spec.repository_root.join("src/main.rs"),
+            "const TEXT: &str = include_str!(\"../README.md\");",
+        )
+        .map_err(|error| error.to_string())?;
+        let builds = Cell::new(0);
+        let build =
+            |spec: &BuildSpec, env: &BTreeMap<String, String>, args: &[OsString], log: &Path| {
+                builds.set(builds.get() + 1);
+                fake_build(spec, env, args, log)
+            };
+        let _ = cached_build_with(&spec, || Ok(BTreeMap::new()), build)?;
+        fs::write(spec.repository_root.join("docs/guide.md"), "updated guide")
+            .map_err(|error| error.to_string())?;
+        let _ = cached_build_with(&spec, || Err("Documentation rebuilt.".into()), build)?;
+        assert_eq!(builds.get(), 1);
+        fs::write(spec.repository_root.join("README.md"), "changed embedded")
+            .map_err(|error| error.to_string())?;
+        let _ = cached_build_with(&spec, || Ok(BTreeMap::new()), build)?;
+        assert_eq!(builds.get(), 2);
+        fs::write(spec.repository_root.join("config/input.json"), "{}")
+            .map_err(|error| error.to_string())?;
+        let _ = cached_build_with(&spec, || Ok(BTreeMap::new()), build)?;
+        assert_eq!(builds.get(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn interrupted_and_malformed_receipts_recover_without_blessing_partial_outputs()
+    -> crate::Result<()> {
+        let spec = fixture()?;
+        let receipt = receipt_path(&spec, &identity(&spec));
+        let _ = cached_build_with(&spec, || Ok(BTreeMap::new()), fake_build)?;
+        fs::write(&receipt, "{\"version\":2,").map_err(|error| error.to_string())?;
+        assert!(
+            cached_build_with(
+                &spec,
+                || Ok(BTreeMap::new()),
+                |spec, _, _, _| {
+                    for path in outputs(spec)?.values() {
+                        fs::write(path, "interrupted").map_err(|error| error.to_string())?;
+                    }
+                    Err("Compiler was interrupted.".into())
+                }
+            )
+            .is_err()
+        );
+        assert!(!receipt.exists());
+        let _ = cached_build_with(&spec, || Ok(BTreeMap::new()), fake_build)?;
+        let abandoned = receipt.with_file_name(format!(
+            "{}.1-2-3.tmp",
+            receipt
+                .file_name()
+                .ok_or("Missing receipt name.")?
+                .to_string_lossy()
+        ));
+        fs::write(&abandoned, "{partial").map_err(|error| error.to_string())?;
+        let unrelated = spec.target_directory.join("unrelated.tmp");
+        fs::write(&unrelated, "keep").map_err(|error| error.to_string())?;
+        let _ = cached_build_with(
+            &spec,
+            || Err("Warm prepare ran.".into()),
+            |_, _, _, _| Err("Warm Cargo ran.".into()),
+        )?;
+        assert!(!abandoned.exists());
+        assert!(unrelated.exists());
         Ok(())
     }
 
