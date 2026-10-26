@@ -124,7 +124,11 @@ fn rejected_context_preserves_admission_for_a_subsequent_multiturn_request() {
         send_request(&mut rejected, service.port()).await;
         let mut rejected_response = Vec::new();
         rejected.read_to_end(&mut rejected_response).await.unwrap();
-        assert_eq!(rejected_response, [0_u8; 0]);
+        let rejected_wire = String::from_utf8(rejected_response).unwrap();
+        let (head, body) = rejected_wire.split_once("\r\n\r\n").unwrap();
+        assert!(head.starts_with("HTTP/1.1 413 Content Too Large\r\n"));
+        assert!(head.contains(&format!("\r\nContent-Length: {}", body.len())));
+        assert_eq!(body, r#"{"error":{"code":"context_length_exceeded"}}"#);
 
         let mut client = TcpStream::connect(("127.0.0.1", service.port()))
             .await
