@@ -231,3 +231,112 @@ fn chat_renders_at_minimum_window_size_without_starting_services() {
     assert!(state.microphone.is_none());
     assert!(state.speech.is_none());
 }
+
+#[test]
+fn conversation_workspace_preserves_drafts_settings_and_exact_committed_turns() {
+    let (mut state, commands, _events) = state();
+    state.ready = true;
+    state.input = "A garden story".to_owned();
+    state.submit();
+    assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
+    state.model_event(Event::Text("Complete story".to_owned()));
+    state.model_event(Event::Committed(vec![
+        client::Message {
+            role: "user",
+            content: "A garden story".to_owned(),
+            reasoning_content: None,
+        },
+        client::Message {
+            role: "assistant",
+            content: "Complete story".to_owned(),
+            reasoning_content: Some("Private reasoning".to_owned()),
+        },
+    ]));
+    state.model_event(Event::Complete(Completion::Finished));
+    state.input = "An unsent revision 🌱".to_owned();
+    state.extra_effort = true;
+    state.output_budget = 1;
+    let original = state.active_conversation;
+    let visible = state.transcript.plain_text();
+    state.new_chat();
+    assert!(matches!(commands.try_recv(), Ok(Command::NewChat)));
+    assert_eq!(state.conversations.len(), 2);
+    assert_eq!(state.conversations[0].title, "A garden story");
+    assert!(state.transcript.messages.is_empty());
+    assert!(state.committed.is_empty());
+    assert_eq!(state.input, "");
+    assert!(!state.extra_effort);
+    state.input = "Second conversation draft".to_owned();
+    let second = state.active_conversation;
+    state.switch_conversation(original);
+    let restored = commands.try_recv();
+    assert!(
+        matches!(&restored, Ok(Command::RestoreChat(history)) if history.len() == 2 && history[1].reasoning_content.as_deref() == Some("Private reasoning"))
+    );
+    assert_eq!(state.transcript.plain_text(), visible);
+    assert_eq!(state.input, "An unsent revision 🌱");
+    assert!(state.extra_effort);
+    assert_eq!(state.output_budget, 1);
+    state.switch_conversation(second);
+    assert!(matches!(commands.try_recv(), Ok(Command::RestoreChat(history)) if history.is_empty()));
+    assert_eq!(state.input, "Second conversation draft");
+}
+
+#[test]
+fn conversation_workspace_never_promotes_interrupted_visible_output() {
+    let (mut state, commands, _events) = state();
+    state.ready = true;
+    state.input = "Unfinished request".to_owned();
+    state.submit();
+    assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
+    state.model_event(Event::Text("Partial answer".to_owned()));
+    state.model_event(Event::Rejected {
+        message: "Interrupted".to_owned(),
+        text: "Unfinished request".to_owned(),
+        retry_required: true,
+    });
+    state.model_event(Event::Retryable("Retry required".to_owned()));
+    state.model_event(Event::Ready);
+    let original = state.active_conversation;
+    state.new_chat();
+    assert!(matches!(commands.try_recv(), Ok(Command::NewChat)));
+    state.switch_conversation(original);
+    assert!(matches!(commands.try_recv(), Ok(Command::RestoreChat(history)) if history.is_empty()));
+    assert!(state.transcript.plain_text().contains("Partial answer"));
+    assert_eq!(state.input, "Unfinished request");
+    assert!(state.committed.is_empty());
+}
+
+#[test]
+fn conversation_workspace_bounds_count_blocks_busy_switches_and_deletes_explicitly() {
+    let (mut state, commands, _events) = state();
+    state.ready = true;
+    let original = state.active_conversation;
+    state.new_chat();
+    assert!(matches!(commands.try_recv(), Ok(Command::NewChat)));
+    let second = state.active_conversation;
+    state.busy = true;
+    state.switch_conversation(original);
+    state.remove_conversation(second);
+    state.new_chat();
+    assert_eq!(state.active_conversation, second);
+    assert_eq!(state.conversations.len(), 2);
+    assert!(commands.try_recv().is_err());
+    state.busy = false;
+    state.remove_conversation(second);
+    assert_eq!(state.active_conversation, original);
+    assert_eq!(state.conversations.len(), 1);
+    assert!(matches!(commands.try_recv(), Ok(Command::RestoreChat(_))));
+    state.remove_conversation(original);
+    assert_ne!(state.active_conversation, original);
+    assert_eq!(state.conversations.len(), 1);
+    assert!(matches!(commands.try_recv(), Ok(Command::NewChat)));
+    for _ in 1..MAX_CONVERSATIONS {
+        state.new_chat();
+        assert!(matches!(commands.try_recv(), Ok(Command::NewChat)));
+    }
+    state.new_chat();
+    assert_eq!(state.conversations.len(), MAX_CONVERSATIONS);
+    assert!(state.warning);
+    assert!(commands.try_recv().is_err());
+}

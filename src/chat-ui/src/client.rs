@@ -54,6 +54,7 @@ pub(crate) enum Command {
         extra_effort: bool,
     },
     NewChat,
+    RestoreChat(Vec<Message>),
     Stop,
     Retry,
     Shutdown,
@@ -66,6 +67,7 @@ pub(crate) enum Event {
     Text(String),
     Reasoning(String),
     Complete(Completion),
+    Committed(Vec<Message>),
     Failed(String),
     Retryable(String),
     Rejected {
@@ -106,12 +108,23 @@ impl Drop for Broker {
     }
 }
 
-#[derive(Clone, Serialize)]
-struct Message {
-    role: &'static str,
-    content: String,
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct Message {
+    #[serde(deserialize_with = "history_role")]
+    pub(crate) role: &'static str,
+    pub(crate) content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    reasoning_content: Option<String>,
+    pub(crate) reasoning_content: Option<String>,
+}
+
+fn history_role<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<&'static str, D::Error> {
+    match String::deserialize(deserializer)?.as_str() {
+        "user" => Ok("user"),
+        "assistant" => Ok("assistant"),
+        _ => Err(serde::de::Error::custom("Unsupported conversation role.")),
+    }
 }
 
 #[derive(Serialize)]
@@ -214,6 +227,7 @@ fn wait_for_retry(
             // reset queued just before idle process death so a fresh transcript
             // cannot silently retain the previous conversation after Retry.
             Ok(Command::NewChat) => history.clear(),
+            Ok(Command::RestoreChat(restored)) => *history = restored,
             Ok(Command::Stop) | Err(RecvTimeoutError::Timeout) => {}
         }
     }
@@ -277,6 +291,7 @@ fn worker(
             Ok(Command::Shutdown) | Err(RecvTimeoutError::Disconnected) => return Ok(()),
             Ok(Command::Stop) => return Err(Failure::Stopped),
             Ok(Command::NewChat) => history.clear(),
+            Ok(Command::RestoreChat(restored)) => *history = restored,
             Ok(Command::Send {
                 text,
                 max_completion_tokens,
@@ -469,6 +484,7 @@ fn finish_turn(
         Ok((answer, completion)) => {
             pending.push(answer);
             *history = pending;
+            notify(events, Event::Committed(history.clone()))?;
             notify(events, Event::Complete(completion))
         }
         Err(Failure::Shutdown) => Err(Failure::Shutdown),
@@ -538,7 +554,9 @@ fn check_commands(commands: &Receiver<Command>) -> Result<()> {
                 return Err(Failure::Shutdown);
             }
             Ok(Command::Stop) => return Err(Failure::Stopped),
-            Ok(Command::Send { .. } | Command::NewChat | Command::Retry) => {}
+            Ok(
+                Command::Send { .. } | Command::NewChat | Command::RestoreChat(_) | Command::Retry,
+            ) => {}
             Err(TryRecvError::Empty) => return Ok(()),
         }
     }
@@ -1153,6 +1171,33 @@ mod tests {
     }
 
     #[test]
+    fn conversation_workspace_restores_committed_history_during_retry_without_replay()
+    -> Result<(), Failure> {
+        let bytes = br#"[{"role":"user","content":"Saved question"},{"role":"assistant","content":"Saved answer","reasoning_content":"Saved reasoning"}]"#;
+        let saved: Vec<Message> = serde_json::from_slice(bytes)
+            .map_err(|_| Failure::Message("History roundtrip failed"))?;
+        let expected = serialize_request(&saved, 4096)?;
+        assert!(
+            serde_json::from_slice::<Message>(br#"{"role":"system","content":"Unaccepted role"}"#)
+                .is_err()
+        );
+        let (commands, incoming) = std::sync::mpsc::channel();
+        let (events, notifications) = std::sync::mpsc::channel();
+        assert!(commands.send(Command::RestoreChat(saved)).is_ok());
+        assert!(commands.send(Command::Retry).is_ok());
+        let mut history = Vec::new();
+        assert!(wait_for_retry(
+            &incoming,
+            &events,
+            &mut history,
+            "Retry explicitly."
+        ));
+        assert_eq!(serialize_request(&history, 4096)?, expected);
+        assert!(matches!(notifications.try_recv(), Ok(Event::Retryable(_))));
+        assert!(notifications.try_recv().is_err());
+        Ok(())
+    }
+    #[test]
     fn fragmented_chunked_unicode_stream_preserves_reasoning_and_history() -> Result<(), Failure> {
         let events = concat!(
             "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Consider 🌱\"}}]}\r\n\r\n",
@@ -1525,6 +1570,9 @@ mod tests {
         assert_eq!(
             history[1].reasoning_content.as_deref(),
             Some("Retained reasoning")
+        );
+        assert!(
+            matches!(incoming.try_recv(), Ok(Event::Committed(committed)) if committed.len() == 4 && committed[1].reasoning_content.as_deref() == Some("Retained reasoning"))
         );
         assert!(matches!(
             incoming.try_recv(),

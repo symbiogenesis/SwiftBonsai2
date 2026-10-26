@@ -32,8 +32,10 @@ mod platform;
 #[cfg(test)]
 mod tests;
 mod transcript;
+mod workspace;
 
 use transcript::{Role, Transcript};
+use workspace::Conversation;
 
 const OUTPUT_TOKENS: [u32; 4] = [512, 1024, 2048, 4096];
 const DEFAULT_VOICE: &str = "A warm, clear, natural adult voice with a calm conversational pace.";
@@ -41,6 +43,7 @@ const INPUT_LIMIT: usize = 32_768;
 const VOICE_LIMIT: usize = 1_024;
 const MAX_DIAGNOSTICS: usize = 128;
 const MAX_DIAGNOSTIC_CHARS: usize = 4_096;
+const MAX_CONVERSATIONS: usize = 16;
 
 #[allow(
     clippy::struct_excessive_bools,
@@ -57,6 +60,12 @@ struct State {
     preview: bool,
     input: String,
     transcript: Transcript,
+    committed: Vec<client::Message>,
+    conversations: Vec<Conversation>,
+    active_conversation: u64,
+    next_conversation: u64,
+    rename_conversation: Option<(u64, String)>,
+    delete_conversation: Option<u64>,
     status: String,
     warning: bool,
     diagnostics: VecDeque<String>,
@@ -113,6 +122,12 @@ impl State {
             preview: config.is_none(),
             input: String::new(),
             transcript: Transcript::default(),
+            committed: Vec::new(),
+            conversations: vec![Conversation::new(1)],
+            active_conversation: 1,
+            next_conversation: 2,
+            rename_conversation: None,
+            delete_conversation: None,
             status: "Preparing your local model…".to_owned(),
             warning: false,
             diagnostics: VecDeque::new(),
@@ -209,6 +224,21 @@ impl State {
             self.fail("The model worker stopped. Close and restart the demo.");
             return;
         }
+        if let Some(conversation) = self
+            .conversations
+            .iter_mut()
+            .find(|conversation| conversation.id == self.active_conversation)
+            && !conversation.renamed
+            && self.transcript.messages.is_empty()
+        {
+            conversation.title = text
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .chars()
+                .take(48)
+                .collect();
+        }
         self.transcript.push(Role::User, text);
         self.transcript.push(Role::Assistant, String::new());
         self.input.clear();
@@ -221,19 +251,24 @@ impl State {
         if !self.ready || self.busy {
             return;
         }
+        if self.conversations.len() >= MAX_CONVERSATIONS {
+            self.set_status(
+                "You have 16 conversations open. Delete one before starting another.",
+                true,
+            );
+            return;
+        }
         if !self.preview && self.commands.send(Command::NewChat).is_err() {
-            self.fail("The model worker stopped. Close and restart the demo.");
+            self.fail("The model worker stopped. Close and restart the app.");
             return;
         }
         self.stop_speech();
-        self.last_answer.clear();
-        self.retained_draft.clear();
-        self.stage = None;
-        self.answer_complete = false;
-        self.transcript.clear();
-        self.input.clear();
-        self.place_composer_cursor(0);
-        self.focus_composer = true;
+        self.save_conversation();
+        let id = self.next_conversation;
+        self.next_conversation = self.next_conversation.saturating_add(1);
+        self.conversations.push(Conversation::new(id));
+        self.active_conversation = id;
+        self.clear_conversation();
         self.set_status("Ready for a new conversation.", false);
     }
 
@@ -353,6 +388,7 @@ impl State {
                     .clone_into(&mut self.status);
             }
             Event::Reasoning(text) => self.transcript.append(&text, true),
+            Event::Committed(history) => self.committed = history,
             Event::Complete(completion) => {
                 self.transcript.remove_empty_response();
                 self.busy = false;
@@ -754,21 +790,34 @@ impl State {
             self.new_chat();
         }
         ui.add_space(24.0);
-        ui.label(RichText::new("THIS CONVERSATION").small().weak());
-        let title = self
-            .transcript
-            .messages
-            .iter()
-            .find(|message| message.role == Role::User)
-            .map_or_else(
-                || "New conversation".to_owned(),
-                |message| message.body.chars().take(26).collect(),
-            );
-        ui.label(RichText::new(title).strong());
+        self.conversation_list(ui);
         ui.add_space(8.0);
         if !self.transcript.messages.is_empty() && ui.button("Copy conversation").clicked() {
             ui.ctx().copy_text(self.transcript.plain_text());
         }
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(!self.busy, egui::Button::new("Rename"))
+                .clicked()
+            {
+                self.rename_conversation = self
+                    .conversations
+                    .iter()
+                    .find(|conversation| conversation.id == self.active_conversation)
+                    .map(|conversation| (conversation.id, conversation.title.clone()));
+            }
+            if ui
+                .add_enabled(self.ready && !self.busy, egui::Button::new("Delete"))
+                .clicked()
+            {
+                self.delete_conversation = Some(self.active_conversation);
+            }
+        });
+        ui.label(
+            RichText::new("Conversations stay in memory until you close the app.")
+                .small()
+                .weak(),
+        );
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
             ui.add_space(12.0);
             if ui.button("Settings").clicked() {
@@ -1203,6 +1252,7 @@ impl State {
         let ctx = ui.ctx().clone();
         self.settings(&ctx);
         self.diagnostics(&ctx);
+        self.conversation_dialogs(&ctx);
         if let Some((title, message)) = self.help {
             let mut open = true;
             egui::Window::new(title)
