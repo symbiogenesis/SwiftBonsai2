@@ -107,67 +107,57 @@ synthesis and playback. Reasoning is not read aloud. Edit **Voice profile** to
 describe a voice, for example "A warm, low-pitched narrator with a calm pace and
 clear consonants." No voice preset or reference recording is required.
 
-For microphone input, first prepare and start the separate
-[Canary Qwen 2.5B companion](../tools/canary-asr/README.md), then launch with its
-protected external key file:
+The demo automatically provisions and configures both native ARM64 speech
+companions. Canary uses the selected NVIDIA Canary Qwen 2.5B model and Qwen uses
+the selected 1.7B VoiceDesign model. Rust implements the services, authentication,
+request validation, WAV processing and process ownership. Reviewed native GGML
+C++ engines perform inference. Neither path needs Python, PyTorch, NeMo, LibTorch
+or FFmpeg. GPU/NPU acceleration is not enabled.
 
-```powershell
-./scripts/Start-Demo.ps1 -DataDirectory $data -CanaryKeyFile C:\Speech\canary.key -CanaryPort 8766
-```
-
-`Start-Demo.ps1` downloads the pinned Canary model, its Qwen tokenizer/config
-files and Qwen VoiceDesign model files by default into revision-specific
-directories under `$data/speech/`. The first complete download is approximately
-9 GiB. Each file is checked for exact size and SHA-256; valid files are reused,
-and interrupted downloads resume through the existing `.partial` mechanism.
-Mismatched cached files are rejected rather than overwritten.
-
-To download and return the three snapshot paths without compiling or opening
-the demo, use:
+The three pinned Q8_0 GGUF files total approximately 4.8 GiB and live below
+`$data/speech/native/` in revision-specific directories. Exact size and SHA-256
+verification rejects altered caches and reuses valid files. Interrupted downloads
+resume. Existing original snapshots and old private runtimes are preserved.
+Download without compiling or launching:
 
 ```powershell
 $speech = ./scripts/Start-Demo.ps1 -DataDirectory $data -SpeechModelsOnly
-$speech.CanarySnapshotPath
-$speech.CanaryTokenizerSnapshotPath
-$speech.TtsSnapshotPath
+$speech.CanaryModelPath
+$speech.TtsModelPath
+$speech.TtsCodecPath
 ```
 
-The default demo also provisions a private pinned CPython x64 runtime and Qwen
-dependencies below `$data/speech/runtime/`, using Windows x64 emulation on ARM64.
-It does not modify global Python, PATH or file associations. All installation
-artifacts have exact download sizes and SHA-256 pins; cached installations run
-an import/version check before reuse. First setup downloads additional runtime
-dependencies. `-SpeechModelsOnly` returns before runtime setup.
+`Get-NativeSpeechModels.ps1 -DataDirectory $data -Model Canary` or `-Model QwenTts`
+selects one engine's files. `Get-SpeechModels.ps1` remains an explicit utility for
+original reference snapshots; the demo no longer consumes those snapshots.
 
-Read Aloud is configured automatically. Once an assistant answer is available,
-select it to load Qwen, synthesize with the **Voice profile** description and play
-the result. Initial model loading and CPU synthesis can take time. The native
-app owns the service and worker in a Windows Job and releases them when reading
-finishes, stops or fails. The service does not load before Swift's 16 GiB startup
-admission. No setup popup or manually managed service is needed for this path.
-Qwen keeps BF16 weights rather than expanding them to float32. TTS requires
-9 GiB available before loading alongside Swift, and an independent monitor stops
-only speech if available RAM falls below 5 GiB. Its 16 GiB Job commit ceiling
-also covers transient loader allocations; committed bytes are not resident RAM.
-Speech resource failures keep text chat and the completed answer available for
-another Read Aloud attempt. CPU synthesis uses short sequential clips and can
-remain slow; this compatibility runtime does not establish native ARM64 speed.
+Native builds require the pinned Rust compiler and Visual Studio 18 ARM64 C++
+tools/Windows SDK. The provisioner downloads pinned LLVM ARM64 and native engine
+source archives into external storage. It changes only child compiler settings,
+with no global installation or profile modification. Build outputs and evidence
+stay outside Git. `-AsrPath` and `-TtsPath` can supply already built executables;
+the service still verifies pinned model files when loading.
 
-Pass `-NoTts` to skip automatic TTS runtime setup, or `-NoSpeechModels` for a
-text-only launch with no speech downloads or automatic runtime setup. Downloads
-and TTS setup do not request microphone access. Canary's supported Python
-environment and running companion remain separate requirements.
+Canary loads after the first permitted microphone clip, stays warm while the
+microphone generation remains enabled, and stops when input is disabled or
+cancelled. Read Aloud releases input before loading Qwen. Qwen generates bounded
+256-character segments sequentially and releases its process after reading.
+Both speech services use separate owned Windows Jobs. Admission requires 9 GiB
+available; an independent monitor stops only speech below 5 GiB. The Job commit
+ceiling is 16 GiB. Swift's 16 GiB startup admission and 4 GiB running reserve are
+unchanged. Resource failures preserve text chat and the completed answer.
 
-To use an independently managed
-[Qwen VoiceDesign companion](../tools/qwen-tts/README.md), add
-`-TtsKeyFile C:\Speech\qwen-tts.key` (default local port 8767); the demo then
-does not install or own its runtime. Both companions may be configured together;
-their ports must be distinct. The demo verifies
-their authenticated model/capability responses and never substitutes system
-speech synthesis. The Qwen service uses the pinned VoiceDesign weights and
-offline tokenizer assets, with `Auto` language selection. Descriptions guide
-the generated voice; they do not promise a persistent speaker identity.
-
+`-NoTts` skips automatic TTS setup; `-NoSpeechModels` skips all automatic speech
+setup and downloads. Neither downloading nor compiling opens a microphone.
+For independently managed services, pass `-CanaryKeyFile C:\Speech\canary.key`
+and/or `-TtsKeyFile C:\Speech\qwen-tts.key`. Ports default to 8766/8767 and must
+be distinct from one another and the chat ports. Key-only services are not owned
+by the app. Both authenticated capability responses are checked, and no fallback
+recognizer or Windows voice is substituted. See the
+[Canary](../tools/canary-asr/README.md) and [Qwen](../tools/qwen-tts/README.md)
+protocol contracts. Voice descriptions guide generation without guaranteeing
+persistent speaker identity between segments. Native actual-model smoke checks
+establish one working path, not a measured performance gain.
 The visible **Microphone: off** button explains speech setup when Canary is not
 configured or ready. With Canary ready, selecting it requests Windows microphone
 permission before recording and changes the button to **Microphone: on**.

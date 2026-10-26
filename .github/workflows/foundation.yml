@@ -50,7 +50,7 @@ jobs:
     if: needs.changes.outputs.rust_lanes == 'true'
     needs: changes
     runs-on: windows-11-arm
-    timeout-minutes: 15
+    timeout-minutes: 40
     strategy:
       # Keep each package's feature checks isolated while compiling independent
       # package selections concurrently. Every lane must still pass the gate.
@@ -78,7 +78,7 @@ jobs:
             if ($name -cnotin $registered.Name) { throw "Affected crate is missing from the Rust registry: $name" }
           }
           $packages = @($registered | Where-Object {
-            $_.Name -cin $affected -and (($env:BROKER_LANE -ceq 'core') -eq ($_.Name -cin @('bonsai-broker', 'bonsai-chat')))
+            $_.Name -cin $affected -and (($env:BROKER_LANE -ceq 'core') -eq ($_.Name -cin @('bonsai-broker', 'bonsai-chat', 'bonsai-speech-asr', 'bonsai-speech-tts', 'bonsai-speech-service')))
           } | ForEach-Object { $_.Name })
           "has-packages=$($packages.Count -gt 0)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
           "BROKER_PACKAGES=$(ConvertTo-Json -InputObject $packages -Compress)" >> $env:GITHUB_ENV
@@ -120,6 +120,12 @@ jobs:
           restore-keys: |
             broker-v4-${{ matrix.lane }}-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
             broker-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-rustnightly-2026-10-22-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src/broker/Cargo.toml', 'src/cpu-policy/Cargo.toml', 'src/artifacts/Cargo.toml', 'src/windows-*/Cargo.toml', 'tools/bonsai/Cargo.toml', 'rust-toolchain.toml') }}-
+      - name: Reuse pinned native speech compiler and sources
+        if: steps.packages.outputs.has-packages == 'true' && matrix.lane == 'core'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/SwiftBonsai-NativeSpeech
+          key: native-speech-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-${{ hashFiles('config/native-speech.lock.json', 'src/speech-tts/model.lock.json', 'scripts/Bonsai.NativeSpeech.psm1') }}
       - name: Broker format, analyzer and full correctness suite
         if: steps.packages.outputs.has-packages == 'true'
         shell: pwsh
@@ -131,7 +137,12 @@ jobs:
           "BROKER_CHECK_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           $packages = @(ConvertFrom-Json -InputObject $env:BROKER_PACKAGES)
           if (-not $packages.Count) { throw 'The Broker lane must select registered packages.' }
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Rust.ps1') -Group Broker -Package $packages -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -FullTests -Build | ConvertTo-Json -Depth 8
+          if ($packages | Where-Object { $_ -cin @('bonsai-speech-asr', 'bonsai-speech-tts') }) {
+            Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.NativeSpeech.psm1')
+            $native = Initialize-NativeSpeechBuild -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-NativeSpeech') -WorkingDirectory $env:RUNNER_TEMP
+            foreach ($key in $native.Environment.Keys) { [Environment]::SetEnvironmentVariable($key, [string]$native.Environment[$key], 'Process') }
+          }
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Rust.ps1') -Group Broker -Package $packages -TargetDirectory $env:CARGO_TARGET_DIR -EvidenceDirectory $evidence -TimeoutSeconds 1800 -FullTests -Build | ConvertTo-Json -Depth 8
       - name: Reuse a packaged CLI when only its script consumers changed
         if: matrix.lane == 'maintenance' && needs.changes.outputs.tools == 'true' && steps.packages.outputs.has-packages != 'true'
         uses: ./.github/actions/bonsai-tools
@@ -245,11 +256,13 @@ jobs:
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: '& (Join-Path $env:GITHUB_WORKSPACE "tests/Test-SpeechModels.ps1") -Case All'
-      - name: Pinned TTS runtime and automatic read-aloud wiring contracts
+      - name: Native speech provisioning and automatic launch contracts
         if: matrix.lane == 'foundation'
         shell: pwsh
         working-directory: ${{ runner.temp }}
-        run: '& (Join-Path $env:GITHUB_WORKSPACE "tests/Test-TtsRuntime.ps1") -Case All'
+        run: |
+          & (Join-Path $env:GITHUB_WORKSPACE "tests/Test-NativeSpeech.ps1") -Case All
+          & (Join-Path $env:GITHUB_WORKSPACE "tests/Test-DemoSpeech.ps1") -Case All
       - name: Pinned inference binary contracts
         if: matrix.lane == 'foundation'
         shell: pwsh

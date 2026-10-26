@@ -130,7 +130,7 @@ if ($Case -in @('All','Launcher')) {
     Assert ($names -ccontains 'NoSpeechModels' -and $names -ccontains 'SpeechModelsOnly') 'Demo omitted model download controls.'
     $download = @($ast.FindAll({ param($node)
         $node -is [Management.Automation.Language.CommandAst] -and $node.InvocationOperator -eq 'Ampersand' -and
-            $node.Extent.Text.Contains('Get-SpeechModels.ps1')
+            $node.Extent.Text.Contains('Get-NativeSpeechModels.ps1')
     }, $true))
     Assert ($download.Count -eq 1) 'Demo does not invoke the reviewed speech downloader exactly once.'
     $guard = $download[0].Parent
@@ -155,9 +155,9 @@ if ($Case -in @('All','Launcher')) {
 param([string]$DataDirectory, [string]$Model = 'All', [switch]$VerifyOnly)
 [void][IO.Directory]::CreateDirectory($DataDirectory)
 [IO.File]::WriteAllText((Join-Path $DataDirectory 'download-called'), $Model)
-[pscustomobject]@{ Status = 'verified'; CanarySnapshotPath = 'canary'; CanaryTokenizerSnapshotPath = 'tokenizer'; TtsSnapshotPath = 'tts'; TotalBytes = 1 }
+[pscustomobject]@{ Status = 'verified'; CanaryModelPath = 'canary'; TtsModelPath = 'tts'; TtsCodecPath = 'codec'; TotalBytes = 1 }
 '@
-    [IO.File]::WriteAllText((Join-Path $scripts 'Get-SpeechModels.ps1'), $fakeDownloader)
+    [IO.File]::WriteAllText((Join-Path $scripts 'Get-NativeSpeechModels.ps1'), $fakeDownloader)
     $data = Join-Path $fixture 'data'
     [void][IO.Directory]::CreateDirectory($data)
     & $copy -DataDirectory $data -SpeechModelsOnly | Out-Null

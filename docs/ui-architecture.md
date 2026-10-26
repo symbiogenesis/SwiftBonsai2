@@ -93,26 +93,30 @@ unsupported terminal reasons, error events and missing completion reject.
 
 ## Speech input and output
 
-The PowerShell demo launcher provisions the pinned Canary, tokenizer and Qwen
-VoiceDesign files by default, using immutable URLs and exact size/SHA-256
+The PowerShell demo launcher provisions the pinned Canary Qwen 2.5B and Qwen3-TTS
+1.7B VoiceDesign Q8_0 GGUF files using immutable URLs and exact size/SHA-256
 verification. `-SpeechModelsOnly` provisions files without building or launching;
-`-NoSpeechModels` skips that step and automatic TTS setup. The launcher also
-provisions a private, pinned Qwen TTS runtime and protected credential. The Rust
-app owns the TTS process tree through a Windows Job, starts it only for explicit
-Read Aloud, checks authenticated model readiness, and releases the tree when
-reading ends or is cancelled. Qwen uses BF16 weights and short sequential clips.
-Its independent memory monitor admits startup with 9 GiB available and stops
-only the speech Job if availability falls below 5 GiB. Swift's existing 4 GiB
-running reserve and startup admission remain unchanged. A speech resource error
-preserves the completed answer and available text-chat session.
-`-NoTts` skips automatic TTS setup; an explicit `-TtsKeyFile` instead
-connects to an independently managed companion. Canary runtime/service setup
-remains separate. Runtime installation and process orchestration stay outside
+`-NoSpeechModels` skips automatic speech setup. The launcher builds native ARM64
+Rust companions and creates separate protected credentials. Rust owns their
+HTTP/authentication, schema validation, WAV processing and model-file verification.
+Reviewed native GGML C++ cores implement inference; Python and PyTorch are absent
+from both demo speech paths. Separate executables avoid mixing different native
+GGML versions in one process.
+
+The UI owns speech through separate Windows Jobs. Canary loads only after an
+explicitly enabled and permitted microphone captures its first clip, stays warm
+for that enabled generation, and stops on input cancellation. Read Aloud releases
+Canary before loading Qwen; transcription releases Qwen first. Output uses
+sequential 256-character segments and releases its process after reading. Both
+services require 9 GiB available at startup and use an independent 5 GiB physical
+reserve with a 16 GiB commit ceiling. Speech failure preserves text chat and the
+completed answer. Swift's existing admission and running reserve remain unchanged.
+`-NoTts` skips automatic TTS setup. Explicit `-CanaryKeyFile`/`-TtsKeyFile` select
+independently managed companions instead. Runtime orchestration stays outside
 presentation controls.
 
-Speech input uses NVIDIA Canary Qwen 2.5B through an explicitly configured,
-authenticated numeric-loopback [companion service](../tools/canary-asr/README.md).
-The Rust UI requests the Windows `microphone` capability on its UI thread before
+Speech input uses the authenticated numeric-loopback
+[Canary companion](../tools/canary-asr/README.md).The Rust UI requests the Windows `microphone` capability on its UI thread before
 audio-only capture. Denied, cancelled or unavailable access fails closed. The
 microphone is off initially; only the explicit microphone toggle can start it.
 Disabling it, sending a prompt, starting read-aloud, creating a conversation or
@@ -124,7 +128,7 @@ while Canary transcribes a clip, retaining the initialized recorder only for the
 same enabled, permitted generation. Disabling or revoking access closes it.
 Recognized text returns to the composer for
 review, with no automatic send. The companion uses the actual pinned Canary
-weights and no recognition fallback; its runtime requirements are separate from
+weights and no recognition fallback; its native engine is separate from
 the Swift CPU backend. No audio is sent to a cloud service by this integration.
 
 Read-aloud uses the separate, authenticated local

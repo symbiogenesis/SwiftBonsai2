@@ -489,7 +489,7 @@ impl State {
 
     const fn microphone_help(&self) -> &'static str {
         if !self.canary_configured {
-            "Microphone recognition needs the Canary Qwen 2.5B runtime and service. The PowerShell demo script downloads its pinned model files automatically. Set up the runtime, start the service, then launch the demo with -CanaryKeyFile pointing to its protected key file. See tools/canary-asr/README.md. Windows permission is requested only when you enable a ready microphone; nothing is recording now."
+            "Launch scripts/Start-Demo.ps1 with its default speech settings to prepare native Canary Qwen 2.5B automatically. The model loads after you enable the microphone and permit Windows microphone access. See tools/canary-asr/README.md. Nothing is recording now."
         } else if self.microphone.is_none() {
             "Windows microphone access could not initialize. Check Windows microphone privacy settings and restart the demo. Nothing is recording."
         } else {
