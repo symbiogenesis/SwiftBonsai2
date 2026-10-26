@@ -348,7 +348,9 @@ impl State {
             Event::Text(text) => {
                 self.last_answer.push_str(&text);
                 self.transcript.append(&text, false);
-                self.status = self.stage.unwrap_or("Writing…").to_owned();
+                self.stage
+                    .unwrap_or("Writing…")
+                    .clone_into(&mut self.status);
             }
             Event::Reasoning(text) => self.transcript.append(&text, true),
             Event::Complete(completion) => {
