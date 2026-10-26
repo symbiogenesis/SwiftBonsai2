@@ -11,7 +11,7 @@ categories = ["os::windows-apis"]
 description = "Windows Job ownership and bounded native process lifecycle for Bonsai"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_SystemInformation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_SystemInformation", "Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock"] }
 
 [features]
 test-probe = ["windows-sys/Win32_System_Diagnostics_Debug"]

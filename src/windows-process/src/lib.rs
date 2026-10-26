@@ -5,6 +5,7 @@
 //! limits. It does not restrict tokens, files, network access, or GPU allocation.
 #![cfg(windows)]
 
+use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::io;
 use std::os::windows::ffi::OsStrExt as _;
@@ -40,6 +41,26 @@ pub struct ProcessSpec {
     pub memory_limit_bytes: usize,
     /// Maximum simultaneously active processes, including the root.
     pub active_process_limit: u32,
+}
+
+/// Startup compiler/tool inputs with a child-only inherited-environment overlay.
+///
+/// The unnamed Job owns the complete tree without applying model-specific
+/// memory or process-count limits. Descendants cannot escape this ownership.
+#[derive(Debug)]
+pub struct ToolProcessSpec {
+    /// Expanded absolute executable path; no executable search is performed.
+    pub executable: PathBuf,
+    /// Windows CRT arguments, or the explicit `cmd.exe /d /c` startup grammar.
+    pub arguments: Vec<OsString>,
+    /// Expanded absolute native working directory.
+    pub working_directory: PathBuf,
+    /// Expanded absolute path of a new standard-output evidence file.
+    pub stdout: PathBuf,
+    /// Expanded absolute path of a new standard-error evidence file.
+    pub stderr: PathBuf,
+    /// Child-only overrides; Windows system/profile variables cannot be replaced.
+    pub environment: BTreeMap<String, String>,
 }
 
 /// Current root-process counters, distinct from the job-wide commit limit.
@@ -79,6 +100,33 @@ impl ParentProcess {
 }
 
 impl OwnedProcess {
+    /// Atomically owns a startup compiler/tool tree and then resumes its root.
+    ///
+    /// The complete Unicode environment is inherited and merged case-insensitively
+    /// with the child-only overlay. OS/profile entries remain unchanged. Only the
+    /// three evidence streams are inherited as handles, and the window is hidden.
+    /// Closing the owner kills descendants even if the root already exited.
+    ///
+    /// # Errors
+    /// Rejects invalid paths, malformed arguments or environment entries, protected
+    /// system/profile overrides, existing evidence files, or native launch failures.
+    pub fn start_tool(spec: &ToolProcessSpec) -> io::Result<Self> {
+        for path in [
+            &spec.executable,
+            &spec.working_directory,
+            &spec.stdout,
+            &spec.stderr,
+        ] {
+            validate_path(path)?;
+        }
+        if !spec.executable.is_file() || !spec.working_directory.is_dir() {
+            return Err(invalid("executable or working directory does not exist"));
+        }
+        let command = tool_command_line(&spec.executable, &spec.arguments)?;
+        let environment = native::tool_environment(&spec.environment)?;
+        native::NativeProcess::start_tool(spec, command, environment.as_deref()).map(Self)
+    }
+
     /// Creates evidence files, atomically assigns a suspended root, then resumes.
     ///
     /// The full OS/profile environment is inherited without modification.
@@ -244,6 +292,44 @@ fn command_line(executable: &Path, arguments: &[OsString]) -> io::Result<Vec<u16
         if output.len() >= 32_767 {
             return Err(invalid("Windows command line exceeds 32767 UTF-16 units"));
         }
+    }
+    output.push(0);
+    Ok(output)
+}
+
+fn tool_command_line(executable: &Path, arguments: &[OsString]) -> io::Result<Vec<u16>> {
+    if !executable
+        .file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case("cmd.exe"))
+    {
+        return command_line(executable, arguments);
+    }
+    let [disable_auto_run, execute, script] = arguments else {
+        return Err(invalid("unsupported command interpreter arguments"));
+    };
+    if disable_auto_run != "/d" || execute != "/c" {
+        return Err(invalid("command interpreter startup must disable AutoRun"));
+    }
+    let script = script
+        .to_str()
+        .ok_or_else(|| invalid("command interpreter input must be Unicode"))?;
+    if script.contains(['\0', '\r', '\n']) {
+        return Err(invalid("unsupported command interpreter input"));
+    }
+    let command = if Path::new(script).is_absolute() {
+        validate_path(Path::new(script))?;
+        if script.contains('"') {
+            return Err(invalid("unsupported environment batch path"));
+        }
+        format!(" /d /v:off /s /c \"\"{}\"\"", script.replace('/', "\\"))
+    } else {
+        format!(" /d /v:off /c {script}")
+    };
+    let mut output = Vec::new();
+    quote(executable.as_os_str(), &mut output)?;
+    output.extend(command.encode_utf16());
+    if output.len() >= 32_767 {
+        return Err(invalid("Windows command line exceeds 32767 UTF-16 units"));
     }
     output.push(0);
     Ok(output)
