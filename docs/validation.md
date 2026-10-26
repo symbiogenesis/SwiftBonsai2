@@ -58,9 +58,12 @@ Each workflow compares against its most recent successful main-push ancestor,
 including changes left unvalidated by failed or cancelled runs. A missing base,
 unclassified input, or shared workspace/lockfile/toolchain/CI change selects full
 coverage. Manual Foundation dispatch also runs all packages and app groups.
-Revision-scoped concurrency keeps disjoint crate changes from cancelling each
-other. The small Rust `bonsai-ci` planner and gate regression checks run before
-selection on every run. `tools/ci/` owns workspace discovery, successful-ancestor
+The newest automatic push supersedes older Foundation push runs on the same
+branch, releasing runners for the current revision. Its successful-ancestor
+baseline includes every earlier change left unvalidated by cancellation, so
+disjoint crate edits remain covered. Manual dispatches have independent run
+groups and are never superseded. The small Rust `bonsai-ci` planner and gate
+regression checks run before selection on every run. `tools/ci/` owns workspace discovery, successful-ancestor
 GitHub API lookup, conservative diff selection and aggregate gate enforcement.
 It reads `.github/ci/impact.json` without running Cargo metadata or resolving
 registry dependencies.

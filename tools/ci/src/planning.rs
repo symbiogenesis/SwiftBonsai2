@@ -242,20 +242,22 @@ mod tests {
     }
 
     #[test]
-    fn validated_ancestor_drives_the_diff() {
+    fn validated_ancestor_drives_cumulative_diff_after_superseded_push() {
         let mut seen = Vec::new();
         let result = resolve_inputs(
-            &options("event-parent", Some("foundation.yml")),
+            &options("cancelled-event-parent", Some("foundation.yml")),
             "push",
             |_, _| Some("validated".into()),
             |before, after| {
                 seen.extend([before.to_owned(), after.to_owned()]);
-                Ok(b"leaf/src/lib.rs\0".to_vec())
+                // The cancelled predecessor changed leaf; the newest push
+                // changed other. Both remain unvalidated since the baseline.
+                Ok(b"leaf/src/lib.rs\0other/src/lib.rs\0".to_vec())
             },
         );
         assert_eq!(seen, ["validated", "after"]);
         assert!(!result.full);
-        assert_eq!(result.paths, ["leaf/src/lib.rs"]);
+        assert_eq!(result.paths, ["leaf/src/lib.rs", "other/src/lib.rs"]);
     }
 
     #[test]

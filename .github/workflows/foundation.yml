@@ -15,7 +15,9 @@ env:
   CARGO_UNSTABLE_CHECKSUM_FRESHNESS: 'true'
   CARGO_BUILD_FINGERPRINT: content
 concurrency:
-  group: foundation-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}
+  # Superseded pushes retain cumulative coverage through the successful baseline.
+  # Manual acceptance runs have independent groups and are never superseded.
+  group: foundation-${{ github.event_name }}-${{ github.ref }}-${{ github.event_name == 'push' && 'latest' || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'push' }}
 jobs:
   changes:
