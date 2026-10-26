@@ -1,8 +1,9 @@
 //! Runtime extraction shares the verifier's archive policy.
 
 use super::{
-    ArtifactError, Installation, RuntimeSpec, VerifiedRuntimeFile, check_arm64, check_locked,
-    hold_ancestors, inspect_archive, locked_file, validate_external_path, verify_installation,
+    ArtifactError, HASH_BUFFER_BYTES, Installation, RuntimeSpec, VerifiedRuntimeFile, check_arm64,
+    check_locked, hold_ancestors, inspect_archive, locked_file, validate_external_path,
+    verify_installation,
 };
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, Write};
@@ -38,10 +39,12 @@ pub fn stage_runtime(
     let mut archive_handles = Vec::new();
     hold_ancestors(&spec.archive_path, &mut archive_handles, &mut || Ok(()))?;
     let mut archive = locked_file(&spec.archive_path)?;
+    let mut buffer = vec![0; HASH_BUFFER_BYTES];
     check_locked(
         &mut archive,
         spec.archive_bytes,
         &spec.archive_sha256,
+        &mut buffer,
         &mut || Ok(()),
     )?;
     let mut zip = ZipArchive::new(archive).map_err(|_| ArtifactError::Archive)?;
@@ -58,7 +61,13 @@ pub fn stage_runtime(
     extract(&mut zip, staging, &installation)?;
 
     let mut staging_handles = Vec::new();
-    let (_, files) = verify_installation(&mut zip, staging, &mut staging_handles, &mut || Ok(()))?;
+    let (_, files) = verify_installation(
+        &mut zip,
+        staging,
+        &mut staging_handles,
+        &mut buffer,
+        &mut || Ok(()),
+    )?;
     Ok(files)
 }
 

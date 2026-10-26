@@ -19,6 +19,7 @@ use zip::ZipArchive;
 
 const MAX_EXPANDED_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ENTRIES: usize = 4096;
+const HASH_BUFFER_BYTES: usize = 64 * 1024;
 
 mod install;
 pub use install::stage_runtime;
@@ -138,10 +139,12 @@ impl VerifiedRuntime {
             &mut checkpoint,
         )?;
         let mut archive = locked_file(&spec.archive_path)?;
+        let mut buffer = vec![0; HASH_BUFFER_BYTES];
         check_locked(
             &mut archive,
             spec.archive_bytes,
             &spec.archive_sha256,
+            &mut buffer,
             &mut checkpoint,
         )?;
         let mut zip = ZipArchive::new(archive.try_clone().map_err(|_| ArtifactError::Archive)?)
@@ -150,6 +153,7 @@ impl VerifiedRuntime {
             &mut zip,
             &spec.runtime_directory,
             &mut handles,
+            &mut buffer,
             &mut checkpoint,
         )?;
         handles.push(archive);
@@ -222,7 +226,8 @@ impl VerifiedFile {
         let mut handles = Vec::new();
         hold_ancestors(path, &mut handles, &mut checkpoint)?;
         let mut file = locked_file(path)?;
-        check_locked(&mut file, bytes, hash, &mut checkpoint)?;
+        let mut buffer = vec![0; HASH_BUFFER_BYTES];
+        check_locked(&mut file, bytes, hash, &mut buffer, &mut checkpoint)?;
         handles.push(file);
         Ok(Self {
             path: path.to_owned(),
@@ -299,13 +304,14 @@ fn check_locked(
     file: &mut File,
     bytes: u64,
     hash: &str,
+    buffer: &mut [u8],
     checkpoint: &mut impl FnMut() -> Result<(), ArtifactError>,
 ) -> Result<(), ArtifactError> {
     checkpoint()?;
     if file.metadata().map_err(|_| ArtifactError::Identity)?.len() != bytes {
         return Err(ArtifactError::Identity);
     }
-    let digest = hash_reader(file, bytes, checkpoint)?;
+    let digest = hash_reader(file, bytes, buffer, checkpoint)?;
     if digest != hash {
         return Err(ArtifactError::Identity);
     }
@@ -324,16 +330,14 @@ fn digest_hex(hash: Sha256) -> String {
 fn hash_reader(
     reader: &mut impl Read,
     expected: u64,
+    buffer: &mut [u8],
     checkpoint: &mut impl FnMut() -> Result<(), ArtifactError>,
 ) -> Result<String, ArtifactError> {
     let mut hash = Sha256::new();
     let mut total = 0_u64;
-    let mut buffer = vec![0; 64 * 1024].into_boxed_slice();
     loop {
         checkpoint()?;
-        let count = reader
-            .read(&mut buffer)
-            .map_err(|_| ArtifactError::Identity)?;
+        let count = reader.read(buffer).map_err(|_| ArtifactError::Identity)?;
         if count == 0 {
             break;
         }
@@ -451,6 +455,7 @@ fn verify_installation<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     root: &Path,
     handles: &mut Vec<File>,
+    buffer: &mut [u8],
     checkpoint: &mut impl FnMut() -> Result<(), ArtifactError>,
 ) -> Result<(PathBuf, Vec<VerifiedRuntimeFile>), ArtifactError> {
     let Installation {
@@ -483,10 +488,16 @@ fn verify_installation<R: Read + Seek>(
         let mut source = archive
             .by_index(entry.index)
             .map_err(|_| ArtifactError::Archive)?;
-        let expected_hash = hash_reader(&mut source, entry.bytes, checkpoint)
+        let expected_hash = hash_reader(&mut source, entry.bytes, buffer, checkpoint)
             .map_err(|error| classify_hash_error(error, ArtifactError::Archive))?;
-        check_locked(&mut installed, entry.bytes, &expected_hash, checkpoint)
-            .map_err(|error| classify_hash_error(error, ArtifactError::Installation))?;
+        check_locked(
+            &mut installed,
+            entry.bytes,
+            &expected_hash,
+            buffer,
+            checkpoint,
+        )
+        .map_err(|error| classify_hash_error(error, ArtifactError::Installation))?;
         if path
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("exe") || ext.eq_ignore_ascii_case("dll"))
@@ -697,10 +708,11 @@ mod tests {
     }
     #[test]
     fn bounded_hash_rejects_short_and_long_streams() {
-        assert!(hash_reader(&mut Cursor::new(b"abc"), 2, &mut || Ok(())).is_err());
-        assert!(hash_reader(&mut Cursor::new(b"abc"), 4, &mut || Ok(())).is_err());
+        let mut buffer = vec![0; HASH_BUFFER_BYTES];
+        assert!(hash_reader(&mut Cursor::new(b"abc"), 2, &mut buffer, &mut || Ok(())).is_err());
+        assert!(hash_reader(&mut Cursor::new(b"abc"), 4, &mut buffer, &mut || Ok(())).is_err());
         assert_eq!(
-            hash_reader(&mut Cursor::new(b"abc"), 3, &mut || Ok(()))
+            hash_reader(&mut Cursor::new(b"abc"), 3, &mut buffer, &mut || Ok(()))
                 .ok()
                 .as_deref(),
             Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
@@ -732,8 +744,17 @@ mod tests {
         writer.write_all(&image)?;
         let mut archive = ZipArchive::new(writer.finish()?)?;
         let mut handles = Vec::new();
+        let mut buffer = vec![0; HASH_BUFFER_BYTES];
+        let mut checkpoint = || Ok(());
         assert_eq!(
-            verify_installation(&mut archive, &root, &mut handles, &mut || Ok(()))?.0,
+            verify_installation(
+                &mut archive,
+                &root,
+                &mut handles,
+                &mut buffer,
+                &mut checkpoint,
+            )?
+            .0,
             executable
         );
         drop(handles);
@@ -741,7 +762,13 @@ mod tests {
         fs::write(&executable, &image)?;
         let mut handles = Vec::new();
         assert_eq!(
-            verify_installation(&mut archive, &root, &mut handles, &mut || Ok(())),
+            verify_installation(
+                &mut archive,
+                &root,
+                &mut handles,
+                &mut buffer,
+                &mut checkpoint,
+            ),
             Err(ArtifactError::Installation)
         );
         drop(handles);
