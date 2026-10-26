@@ -73,3 +73,12 @@ basis requirements; the existing scale-one/512-token contract is not silently
 relabelled as app-scale-1.3 qualification. Broader context/recovery and daily-use
 requirements also remain separate. Promote only after the required evidence
 passes, and retain PQ2 as a reproducible rollback.
+
+The owner authorizes PTQ1 becoming the default once it is proven suitable, with
+a corresponding reduction in memory requirements and checks. The verified
+packing difference is **1.173019409 GiB** (1,259,520,000 bytes), not 1.7 GiB.
+Use that exact verified amount for a candidate admission reduction; do not
+assume a larger saving. Mapped weight residency and private committed memory
+must be accounted separately before lowering the Job ceiling. Preserve the
+host reserve and demonstrate the lower thresholds on the same intended profile
+before activating them. Until then, defaults and enforcement remain unchanged.

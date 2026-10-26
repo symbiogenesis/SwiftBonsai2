@@ -300,7 +300,11 @@ See [commands](development-guide.md#explicit-development-broker).
 Only compiled-in pins and fixed arguments are accepted: `reference-cpu` is the
 default, and `--profile swift-pq2-assessment` explicitly selects Swift's separate
 model/runtime lock. Arbitrary executables, models, profile JSON and overrides
-are rejected. Swift uses the original PQ2 weights without PTQ1 substitution.
+are rejected. Swift defaults to original PQ2 weights. The explicit
+`--use-repacked-ptq1` option selects only the pinned current-weight export;
+missing or altered bytes reject startup without substitution or fallback.
+That option is rejected with the native Rust inference service pending its
+separate end-to-end qualification.
 `--use-abliterate-lora` loads only the pinned adapter with the Prism CPU backend
 and enables the bounded per-request scale described above; it is rejected for
 the reference profile and `--native-engine`.

@@ -507,7 +507,9 @@ available-RAM admission including the 4 GiB reserve. Add `--use-abliterate-lora`
 to load the pinned adapter and enable its bounded per-request scale with the
 Prism CPU server (default 1.3); the demo
 requests this automatically. Direct broker launches omit it by default.
-The native inference backend and derived PTQ1 do not support this option.
+The native inference backend does not support this option. The publisher Prism
+CPU backend supports the pinned adapter with either original PQ2 or the explicit
+`--use-repacked-ptq1` current-weight export.
 Profile names are exact; arbitrary adapters,
 models, runtimes and inference overrides remain rejected.
 
