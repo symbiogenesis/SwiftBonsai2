@@ -11,6 +11,10 @@ pub(super) enum Prepared {
 }
 
 impl Prepared {
+    pub(super) fn streaming_pcm(&self) -> bool {
+        matches!(self, Self::Synthesize(speech) if speech.response_format == "pcm")
+    }
+
     pub(super) fn engine_request(&self) -> Option<Request<'_>> {
         match self {
             Self::Health => None,
@@ -51,7 +55,7 @@ pub(super) fn body(kind: Kind, media: &str, bytes: &[u8]) -> Result<Prepared, Er
             if speech.model != TTS_MODEL {
                 return Err(Error::bad("unsupported_model"));
             }
-            if speech.response_format != "wav" {
+            if !matches!(speech.response_format.as_str(), "wav" | "pcm") {
                 return Err(Error::bad("unsupported_audio_format"));
             }
             if speech.language != "Auto" {

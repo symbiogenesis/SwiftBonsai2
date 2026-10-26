@@ -13,6 +13,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+mod build_overlay;
+
 fn main() -> io::Result<()> {
     for name in [
         "BONSAI_TTS_SOURCE_DIR",
@@ -23,6 +25,7 @@ fn main() -> io::Result<()> {
         println!("cargo:rerun-if-env-changed={name}");
     }
     println!("cargo:rerun-if-changed=model.lock.json");
+    println!("cargo:rerun-if-changed=build_overlay.rs");
     if env::var("CARGO_CFG_TARGET_OS").is_ok_and(|value| value != "windows") {
         return Ok(());
     }
@@ -106,12 +109,14 @@ fn engine_build(
     let directory = if env::var_os("BONSAI_TTS_NATIVE_BUILD_DIR").is_some() {
         absolute_env("BONSAI_TTS_NATIVE_BUILD_DIR")?
     } else {
+        let private_source = output.join("qwen-source");
+        build_overlay::prepare(source, &private_source)?;
         let directory = output.join("qwen-build");
         fs::create_dir_all(&directory)?;
         let mut configure = Command::new(cmake);
         configure.args([
             OsString::from("-S"),
-            source.as_os_str().to_owned(),
+            private_source.into_os_string(),
             OsString::from("-B"),
             directory.clone().into_os_string(),
             OsString::from("-G"),

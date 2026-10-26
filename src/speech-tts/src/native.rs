@@ -9,7 +9,7 @@ use std::{
     io,
     panic::{AssertUnwindSafe, catch_unwind},
     ptr::NonNull,
-    sync::Once,
+    sync::{Mutex, Once},
 };
 
 mod qwen;
@@ -17,6 +17,7 @@ use qwen::RawAudio;
 
 const extern "C" fn discard_log(_: c_int, _: *const c_char, _: *mut c_void) {}
 static LOGGING: Once = Once::new();
+static INITIALIZE: Mutex<()> = Mutex::new(());
 
 // A foreign exception may abort inside catch_unwind or return an opaque Err.
 // In the latter case abort without inspecting/dropping that payload or reusing
@@ -34,7 +35,11 @@ impl Context {
         ffi_unwind_calls,
         reason = "The potentially throwing Qwen call is contained by abort_on_unwind."
     )]
-    pub(super) fn load(model: &CStr, codec: &CStr) -> io::Result<Self> {
+    pub(super) fn load(model: &CStr, codec: &CStr, threads: usize) -> io::Result<Self> {
+        let threads = c_int::try_from(threads).map_err(|_| invalid_audio())?;
+        let _initialize = INITIALIZE
+            .lock()
+            .map_err(|_| io::Error::other("Native initialization failed."))?;
         LOGGING.call_once(|| {
             // SAFETY: The callback never dereferences, allocates, logs or panics
             // and is valid on every worker for the process lifetime. Install it
@@ -50,6 +55,9 @@ impl Context {
         params.use_fa = false;
         params.max_batch = 1;
         params.codec_chunk_sec = 8.0;
+        // SAFETY: The reviewed overlay atomically stores a validated bounded
+        // count. INITIALIZE prevents another context changing it during init.
+        unsafe { qwen::bonsai_qt_set_cpu_threads(threads) };
         // SAFETY: Both paths are owned NUL-terminated strings retained by the
         // Synthesizer; params is the pinned ABI-v6 layout and survives the call.
         // C-unwind permits an escaped foreign exception into abort_on_unwind.
@@ -96,6 +104,103 @@ impl Context {
         }
         audio.copy_samples()
     }
+
+    #[allow(
+        ffi_unwind_calls,
+        reason = "The potentially throwing Qwen call is contained by abort_on_unwind."
+    )]
+    pub(super) fn synthesize_stream(
+        &mut self,
+        text: &CStr,
+        voice: &CStr,
+        sink: &mut (dyn FnMut(&[f32]) -> io::Result<()> + Send),
+    ) -> io::Result<()> {
+        let state = Mutex::new(StreamState {
+            sink,
+            samples: 0,
+            failed: false,
+        });
+        let mut params = qwen::TtsParams::default();
+        // SAFETY: params is the complete, exclusively writable pinned POD.
+        unsafe { qwen::qt_tts_default_params(&raw mut params) };
+        params.text = text.as_ptr();
+        params.lang = c"auto".as_ptr();
+        params.instruct = voice.as_ptr();
+        params.max_new_tokens = 1500;
+        params.on_chunk = Some(stream_chunk);
+        params.on_chunk_user_data = (&raw const state).cast_mut().cast();
+        // SAFETY: The pinned ABI blocks until its worker finishes callbacks.
+        // Text, voice, mutex and sink all outlive that call. The mutex serializes
+        // accesses from the native worker; streaming permits a null audio out.
+        let status = abort_on_unwind(|| unsafe {
+            qwen::qt_synthesize(self.0.as_ptr(), &raw const params, std::ptr::null_mut())
+        });
+        let state = state.into_inner().map_err(|_| invalid_audio())?;
+        if status != 0
+            || state.failed
+            || state.samples == 0
+            || state.samples >= super::TOKEN_CEILING_SAMPLES
+        {
+            return Err(invalid_audio());
+        }
+        Ok(())
+    }
+}
+
+struct StreamState<'a> {
+    sink: &'a mut (dyn FnMut(&[f32]) -> io::Result<()> + Send),
+    samples: usize,
+    failed: bool,
+}
+
+impl StreamState<'_> {
+    fn push(&mut self, samples: &[f32]) -> bool {
+        if self.failed || samples.is_empty() || samples.iter().any(|sample| !sample.is_finite()) {
+            self.failed = true;
+            return false;
+        }
+        let Some(total) = self.samples.checked_add(samples.len()) else {
+            self.failed = true;
+            return false;
+        };
+        if total > super::MAX_SAMPLES || total >= super::TOKEN_CEILING_SAMPLES {
+            self.failed = true;
+            return false;
+        }
+        self.samples = total;
+        if (self.sink)(samples).is_err() {
+            self.failed = true;
+        }
+        !self.failed
+    }
+}
+
+extern "C" fn stream_chunk(samples: *const f32, count: c_int, user: *mut c_void) -> bool {
+    // A callback must never unwind into C++. Poisoning its mutex ensures a
+    // caught sink panic also makes final completion fail closed.
+    catch_unwind(AssertUnwindSafe(|| {
+        if user.is_null() {
+            return false;
+        }
+        // SAFETY: user points to the live mutex installed for this synchronous
+        // qt_synthesize call. Only this callback accesses it on the worker.
+        let state = unsafe { &*user.cast::<Mutex<StreamState<'_>>>() };
+        let Ok(mut state) = state.lock() else {
+            return false;
+        };
+        let Ok(count) = usize::try_from(count) else {
+            state.failed = true;
+            return false;
+        };
+        if samples.is_null() || !samples.is_aligned() || count == 0 || count > super::MAX_SAMPLES {
+            state.failed = true;
+            return false;
+        }
+        // SAFETY: The pinned callback owns count aligned readable f32 samples
+        // for the duration of the callback; they are borrowed only here.
+        state.push(unsafe { std::slice::from_raw_parts(samples, count) })
+    }))
+    .unwrap_or(false)
 }
 
 impl Drop for Context {
@@ -156,10 +261,43 @@ fn invalid_audio() -> io::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{Context, NativeAudio, abort_on_unwind, qwen};
+    use super::{Context, NativeAudio, StreamState, abort_on_unwind, qwen};
     use std::{error::Error, ffi::CString, fs, io, process::Command, time::SystemTime};
 
     type TestResult = Result<(), Box<dyn Error>>;
+
+    #[test]
+    fn streaming_samples_reject_nonfinite_overflow_and_sink_failure() {
+        let mut count = 0;
+        let mut sink = |samples: &[f32]| {
+            count += samples.len();
+            Ok(())
+        };
+        let mut state = StreamState {
+            sink: &mut sink,
+            samples: 0,
+            failed: false,
+        };
+        assert!(state.push(&[0.0, 0.5]));
+        assert!(!state.push(&[f32::NAN]));
+        assert!(!state.push(&[0.0]));
+        assert_eq!(state.samples, 2);
+        assert_eq!(count, 2);
+        let mut sink = |_: &[f32]| Ok(());
+        let mut state = StreamState {
+            sink: &mut sink,
+            samples: super::super::TOKEN_CEILING_SAMPLES - 1,
+            failed: false,
+        };
+        assert!(!state.push(&[0.0]));
+        let mut sink = |_: &[f32]| Err(io::Error::other("synthetic sink failure"));
+        let mut state = StreamState {
+            sink: &mut sink,
+            samples: 0,
+            failed: false,
+        };
+        assert!(!state.push(&[0.0]));
+    }
 
     #[test]
     fn pinned_qwen_defaults_populate_complete_rust_abi() {
@@ -199,7 +337,7 @@ mod tests {
         ));
         let path = CString::new(missing.to_str().ok_or("Non-UTF-8 temp path")?)?;
         for _ in 0..2 {
-            let error = Context::load(&path, &path)
+            let error = Context::load(&path, &path, 1)
                 .err()
                 .ok_or("Unexpected model load")?;
             assert_eq!(error.kind(), io::ErrorKind::Other);

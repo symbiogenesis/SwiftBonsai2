@@ -98,6 +98,27 @@ pub trait Engine {
     /// Return an error for failed or incomplete generation. The protocol emits
     /// only a value-free model-failure code, without formatting this error.
     fn infer(&mut self, request: Request<'_>) -> io::Result<Output>;
+    /// Whether this engine implements bounded incremental mono 24 kHz output.
+    fn streaming_pcm(&self) -> bool {
+        false
+    }
+    /// Generate finite mono 24 kHz samples incrementally, blocking until complete.
+    ///
+    /// The sink may run on the native compute worker. Stop and return an error
+    /// if the sink rejects a chunk. Successful return certifies complete output.
+    ///
+    /// # Errors
+    /// Returns an error for unsupported, failed, cancelled or truncated output.
+    fn infer_stream(
+        &mut self,
+        _request: Request<'_>,
+        _sink: &mut (dyn FnMut(&[f32]) -> io::Result<()> + Send),
+    ) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Streaming speech is unavailable.",
+        ))
+    }
 }
 
 /// Serves an authenticated numeric-loopback endpoint after the engine is loaded.

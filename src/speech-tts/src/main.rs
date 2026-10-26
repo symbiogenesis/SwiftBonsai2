@@ -3,7 +3,7 @@
 
 use bonsai_speech_service::{
     Kind,
-    launch::{self, Command},
+    launch::{self, Command, TtsQuantization},
 };
 use std::{
     io::{self, Write as _},
@@ -18,6 +18,30 @@ struct NativeEngine {
 
 #[cfg(windows)]
 impl bonsai_speech_service::Engine for NativeEngine {
+    fn streaming_pcm(&self) -> bool {
+        true
+    }
+
+    fn infer_stream(
+        &mut self,
+        request: bonsai_speech_service::Request<'_>,
+        sink: &mut (dyn FnMut(&[f32]) -> io::Result<()> + Send),
+    ) -> io::Result<()> {
+        let bonsai_speech_service::Request::Synthesize {
+            text,
+            voice_description,
+            language: "Auto",
+        } = request
+        else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Unsupported native synthesis request.",
+            ));
+        };
+        self.synthesizer
+            .synthesize_stream(text, voice_description, sink)
+    }
+
     fn kind(&self) -> Kind {
         Kind::QwenTts
     }
@@ -61,14 +85,21 @@ fn run() -> io::Result<()> {
             let guards = launch::verify_models(
                 Kind::QwenTts,
                 &arguments,
-                include_str!("../model.lock.json"),
+                match arguments.quantization {
+                    TtsQuantization::Q8 => include_str!("../model.lock.json"),
+                    TtsQuantization::Q4KM => include_str!("../model-q4.lock.json"),
+                },
             )?;
             let codec = arguments
                 .codec
                 .as_ref()
                 .ok_or_else(|| io::Error::other("Native speech codec is required."))?;
-            let synthesizer = bonsai_speech_tts::Synthesizer::load(&arguments.model, codec)
-                .map_err(|_| io::Error::other("Native Qwen model loading failed."))?;
+            let synthesizer = bonsai_speech_tts::Synthesizer::load_with_threads(
+                &arguments.model,
+                codec,
+                arguments.threads,
+            )
+            .map_err(|_| io::Error::other("Native Qwen model loading failed."))?;
             let engine = NativeEngine {
                 synthesizer,
                 _models: guards,

@@ -63,12 +63,18 @@ fn respond(
                 serde_json::json!({"model":kind.model(),"ready":true,"sample_rate":16000,"max_clip_seconds":30,"input_format":"pcm_s16le_wav","channels":1})
             }
             Kind::QwenTts => {
-                serde_json::json!({"model":kind.model(),"ready":true,"voice_design":true,"sample_rate":24000,"max_text_characters":2048,"max_voice_characters":1024})
+                serde_json::json!({"model":kind.model(),"ready":true,"voice_design":true,"sample_rate":24000,"max_text_characters":2048,"max_voice_characters":1024,"streaming_pcm":engine.streaming_pcm()})
             }
         };
         return send(peer, 200, "application/json", value.to_string().as_bytes())
             .map_err(|_| Error::new(0, "response_failed"));
     };
+    if prepared.streaming_pcm() {
+        if !engine.streaming_pcm() {
+            return Err(Error::bad("unsupported_audio_format"));
+        }
+        return stream(engine, input, peer);
+    }
     let limit = match kind {
         Kind::Canary => Duration::from_secs(120),
         Kind::QwenTts => Duration::from_secs(180),
@@ -94,6 +100,56 @@ fn respond(
         _ => return Err(Error::new(502, "model_failure")),
     }
     .map_err(|_| Error::new(0, "response_failed"))
+}
+
+fn stream(
+    engine: &mut impl Engine,
+    request: crate::Request<'_>,
+    peer: &mut TcpStream,
+) -> Result<(), Error> {
+    let _watchdog = Watchdog::start(peer, Duration::from_secs(180))
+        .map_err(|_| Error::new(503, "supervision_unavailable"))?;
+    peer.set_write_timeout(Some(WRITE))
+        .and_then(|()| peer.write_all(b"HTTP/1.1 200 Response\r\nContent-Type: audio/pcm\r\nTransfer-Encoding: chunked\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n"))
+        .map_err(|_| Error::new(0, "response_failed"))?;
+    let mut total = 0_usize;
+    let mut failed = false;
+    let result = engine.infer_stream(request, &mut |samples| {
+        if failed || samples.is_empty() || samples.iter().any(|sample| !sample.is_finite()) {
+            failed = true;
+            return Err(io::Error::other("Invalid streaming speech audio."));
+        }
+        total = total.checked_add(samples.len()).ok_or_else(|| {
+            failed = true;
+            io::Error::other("Streaming speech exceeds its bound.")
+        })?;
+        if total > 24_000 * 120 {
+            failed = true;
+            return Err(io::Error::other("Streaming speech exceeds its bound."));
+        }
+        for chunk in samples.chunks(16_384) {
+            let mut bytes = Vec::with_capacity(chunk.len() * 2);
+            for sample in chunk {
+                bytes.extend_from_slice(&wave::pcm(*sample).to_le_bytes());
+            }
+            if write!(peer, "{:x}\r\n", bytes.len())
+                .and_then(|()| peer.write_all(&bytes))
+                .and_then(|()| peer.write_all(b"\r\n"))
+                .is_err()
+            {
+                failed = true;
+                return Err(io::Error::other("Streaming speech response failed."));
+            }
+        }
+        Ok(())
+    });
+    if result.is_err() || failed || total == 0 {
+        // Headers already committed: omit the final chunk, so partial audible
+        // output is never confused with a successful complete synthesis.
+        return Err(Error::new(0, "model_failure"));
+    }
+    peer.write_all(b"0\r\n\r\n")
+        .map_err(|_| Error::new(0, "response_failed"))
 }
 
 fn receive(peer: &mut TcpStream, port: u16, key: &[u8; 64], kind: Kind) -> Result<Prepared, Error> {

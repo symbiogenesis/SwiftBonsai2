@@ -14,6 +14,10 @@ use std::{ffi::CString, io, path::Path};
 )]
 mod native;
 
+#[cfg(test)]
+#[path = "../build_overlay.rs"]
+mod build_overlay;
+
 /// Immutable native engine source revision compiled by the provisioning script.
 pub const ENGINE_REVISION: &str = "5916bf7c79dbb4e66fc059cdc507a79a23a28bb4";
 /// Exact upstream checkpoint represented by the pinned quantized GGUF files.
@@ -49,9 +53,27 @@ impl Synthesizer {
     /// Rejects non-absolute or missing files, non-UTF-8 paths and a model that
     /// cannot initialize as `VoiceDesign`. Errors contain no supplied path text.
     pub fn load(model: &Path, codec: &Path) -> io::Result<Self> {
+        Self::load_with_threads(model, codec, None)
+    }
+
+    /// Load verified weights with an optional bounded CPU compute team size.
+    ///
+    /// The default reserves two available CPUs for the UI and text runtime.
+    ///
+    /// # Errors
+    /// Returns the same failures as [`Self::load`], or rejects zero, more than
+    /// 256 threads. An explicit override may oversubscribe available CPUs for
+    /// controlled evaluation; the default never does so.
+    pub fn load_with_threads(
+        model: &Path,
+        codec: &Path,
+        threads: Option<usize>,
+    ) -> io::Result<Self> {
+        let available = std::thread::available_parallelism()?.get();
+        let threads = select_threads(threads, available)?;
         let model = model_path(model)?;
         let codec = model_path(codec)?;
-        let context = native::Context::load(&model, &codec)?;
+        let context = native::Context::load(&model, &codec, threads)?;
         Ok(Self {
             context,
             _model_path: model,
@@ -84,6 +106,37 @@ impl Synthesizer {
             sample_rate: SAMPLE_RATE,
         })
     }
+
+    /// Generate mono 24 kHz chunks while inference is still running.
+    ///
+    /// The sink executes on the native worker and must return promptly. Audio
+    /// heard before a later failure remains partial; success is reported only
+    /// after final sample-count and token-ceiling validation.
+    ///
+    /// # Errors
+    /// Rejects the same inputs/output failures as [`Self::synthesize`], and any
+    /// sink failure, without exposing text or native diagnostics.
+    pub fn synthesize_stream(
+        &mut self,
+        text: &str,
+        voice: &str,
+        sink: &mut (dyn FnMut(&[f32]) -> io::Result<()> + Send),
+    ) -> io::Result<()> {
+        let text = bounded_input(text, MAX_TEXT)?;
+        let voice = bounded_input(voice, MAX_VOICE)?;
+        self.context.synthesize_stream(&text, &voice, sink)
+    }
+}
+
+fn select_threads(requested: Option<usize>, available: usize) -> io::Result<usize> {
+    let count = requested.unwrap_or_else(|| available.saturating_sub(2).clamp(1, 256));
+    if count == 0 || count > 256 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Invalid speech CPU thread count.",
+        ));
+    }
+    Ok(count)
 }
 
 fn model_path(path: &Path) -> io::Result<CString> {
@@ -124,7 +177,18 @@ fn bounded_input(text: &str, maximum: usize) -> io::Result<CString> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_TEXT, MAX_VOICE, bounded_input};
+    use super::{MAX_TEXT, MAX_VOICE, bounded_input, select_threads};
+
+    #[test]
+    fn cpu_threads_reserve_ui_capacity_and_bound_explicit_overrides() -> std::io::Result<()> {
+        assert_eq!(select_threads(None, 12)?, 10);
+        assert_eq!(select_threads(None, 1)?, 1);
+        assert_eq!(select_threads(Some(12), 12)?, 12);
+        assert!(select_threads(Some(0), 12).is_err());
+        assert_eq!(select_threads(Some(16), 12)?, 16);
+        assert!(select_threads(Some(257), 512).is_err());
+        Ok(())
+    }
 
     #[test]
     fn voice_design_input_bounds_count_unicode_without_truncating() {

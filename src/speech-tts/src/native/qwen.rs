@@ -58,6 +58,8 @@ pub(super) struct RawAudio {
 // These pinned functions only assign POD fields, access existing storage, or
 // release a malloc allocation; none performs a throwing C++ operation.
 unsafe extern "C" {
+    // Runner's reviewed private build overlay adds this bounded atomic setter.
+    pub(super) fn bonsai_qt_set_cpu_threads(threads: c_int);
     pub(super) fn qt_init_default_params(params: *mut InitParams);
     pub(super) fn qt_tts_default_params(params: *mut TtsParams);
     pub(super) fn qt_model_type(context: *const c_void) -> *const c_char;

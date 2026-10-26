@@ -26,6 +26,20 @@ pub struct ServiceArgs {
     pub token_file: PathBuf,
     /// Unprivileged numeric-loopback port, defaulting to 8766 or 8767.
     pub port: u16,
+    /// Optional TTS compute team size, bounded to 1 through 256.
+    pub threads: Option<usize>,
+    /// Explicit pinned talker quantization; ASR always uses the default value.
+    pub quantization: TtsQuantization,
+}
+
+/// Reviewed TTS talker artifact selection, independent of checkpoint identity.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum TtsQuantization {
+    /// Default eight-bit talker weights.
+    #[default]
+    Q8,
+    /// Opt-in four-bit talker evaluation weights.
+    Q4KM,
 }
 
 /// Read guards for all verified model files and the startup credential.
@@ -55,7 +69,8 @@ pub fn require_native_host() -> io::Result<()> {
 /// Parse the exact fixed companion command line without opening model contents.
 ///
 /// `--version` must appear alone. ASR accepts `--model`, `--token-file` and an
-/// optional `--port`; TTS additionally requires `--codec`. Every supplied path
+/// optional `--port`; TTS additionally requires `--codec` and accepts bounded
+/// `--threads` and pinned `--quantization Q8_0|Q4_K_M`. Every supplied path
 /// must already name an external regular non-reparse file.
 ///
 /// # Errors
@@ -68,6 +83,7 @@ pub fn parse(kind: Kind, arguments: impl IntoIterator<Item = OsString>) -> io::R
     }
     let mut arguments = values.into_iter();
     let (mut model, mut codec, mut token_file, mut port) = (None, None, None, None);
+    let (mut threads, mut quantization) = (None, None);
     while let Some(option) = arguments.next() {
         match option.to_str() {
             Some("--model") if model.is_none() => {
@@ -93,6 +109,27 @@ pub fn parse(kind: Kind, arguments: impl IntoIterator<Item = OsString>) -> io::R
                 }
                 port = Some(text.parse::<u16>().map_err(|_| invalid_arguments())?);
             }
+            Some("--threads") if kind == Kind::QwenTts && threads.is_none() => {
+                let value = arguments.next().ok_or_else(invalid_arguments)?;
+                let text = value.to_str().ok_or_else(invalid_arguments)?;
+                if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+                    return Err(invalid_arguments());
+                }
+                let count = text.parse::<usize>().map_err(|_| invalid_arguments())?;
+                if !(1..=256).contains(&count) {
+                    return Err(invalid_arguments());
+                }
+                threads = Some(count);
+            }
+            Some("--quantization") if kind == Kind::QwenTts && quantization.is_none() => {
+                quantization = Some(
+                    match arguments.next().as_deref().and_then(|value| value.to_str()) {
+                        Some("Q8_0") => TtsQuantization::Q8,
+                        Some("Q4_K_M") => TtsQuantization::Q4KM,
+                        _ => return Err(invalid_arguments()),
+                    },
+                );
+            }
             _ => return Err(invalid_arguments()),
         }
     }
@@ -107,6 +144,8 @@ pub fn parse(kind: Kind, arguments: impl IntoIterator<Item = OsString>) -> io::R
             Kind::Canary => 8766,
             Kind::QwenTts => 8767,
         }),
+        threads,
+        quantization: quantization.unwrap_or_default(),
     };
     if arguments.port < 1024 {
         return Err(invalid_arguments());
@@ -321,6 +360,8 @@ mod tests {
             token_file: arguments.token_file,
             codec: None,
             port: 8767,
+            threads: None,
+            quantization: super::TtsQuantization::default(),
         };
         assert!(verify_models(Kind::QwenTts, &wrong, pin).is_err());
         Ok(())
@@ -334,6 +375,34 @@ mod tests {
         let mut invalid = values;
         invalid[1] = link.into_os_string();
         assert!(parse(Kind::Canary, invalid).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn tts_cli_bounds_thread_counts_and_pinned_quantization() -> io::Result<()> {
+        let (directory, mut values) = fixture()?;
+        let codec = directory.join("codec.gguf");
+        fs::write(&codec, b"abc")?;
+        values.extend([OsString::from("--codec"), codec.into_os_string()]);
+        let mut tuned = values.clone();
+        tuned.extend(["--threads", "10", "--quantization", "Q4_K_M"].map(OsString::from));
+        let Command::Serve(arguments) = parse(Kind::QwenTts, tuned)? else {
+            return Err(io::Error::other("Expected TTS settings."));
+        };
+        assert_eq!(arguments.threads, Some(10));
+        assert_eq!(arguments.quantization, super::TtsQuantization::Q4KM);
+        for extra in [
+            vec!["--threads", "0"],
+            vec!["--threads", "257"],
+            vec!["--threads", "+2"],
+            vec!["--threads", "2", "--threads", "3"],
+            vec!["--quantization", "unknown"],
+            vec!["--quantization", "Q8_0", "--quantization", "Q4_K_M"],
+        ] {
+            let mut invalid = values.clone();
+            invalid.extend(extra.into_iter().map(OsString::from));
+            assert!(parse(Kind::QwenTts, invalid).is_err());
+        }
         Ok(())
     }
 }

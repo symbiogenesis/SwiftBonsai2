@@ -52,6 +52,93 @@ impl Engine for Fake {
     }
 }
 
+struct StreamFake {
+    failure: bool,
+    invalid: bool,
+}
+
+impl Engine for StreamFake {
+    fn kind(&self) -> Kind {
+        Kind::QwenTts
+    }
+    fn infer(&mut self, _: Request<'_>) -> io::Result<Output> {
+        Err(io::Error::other("Streaming fixture requires PCM."))
+    }
+    fn streaming_pcm(&self) -> bool {
+        true
+    }
+    fn infer_stream(
+        &mut self,
+        _: Request<'_>,
+        sink: &mut (dyn FnMut(&[f32]) -> io::Result<()> + Send),
+    ) -> io::Result<()> {
+        sink(&[-1.0, 0.0, 1.0])?;
+        if self.invalid {
+            // Even an engine ignoring a rejected chunk cannot frame success.
+            let _rejected = sink(&[f32::INFINITY]);
+            return Ok(());
+        }
+        if self.failure {
+            return Err(io::Error::other("Synthetic truncated generation."));
+        }
+        sink(&[0.5])
+    }
+}
+
+#[test]
+fn streaming_pcm_frames_complete_output_and_leaves_failures_incomplete() -> io::Result<()> {
+    for (failure, invalid) in [(false, false), (true, false), (false, true)] {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        let port = listener.local_addr()?.port();
+        let server = thread::spawn(move || -> io::Result<()> {
+            let (mut peer, _) = listener.accept()?;
+            http::handle(&mut peer, port, &KEY, &mut StreamFake { failure, invalid });
+            Ok(())
+        });
+        let body = String::from_utf8(speech())
+            .map_err(io::Error::other)?
+            .replace("\"wav\"", "\"pcm\"");
+        let mut peer = TcpStream::connect((Ipv4Addr::LOCALHOST, port))?;
+        peer.set_read_timeout(Some(Duration::from_secs(3)))?;
+        let key = std::str::from_utf8(&KEY).map_err(io::Error::other)?;
+        write!(
+            peer,
+            "POST /v1/audio/speech HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {key}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )?;
+        let mut response = Vec::new();
+        peer.read_to_end(&mut response)?;
+        server
+            .join()
+            .map_err(|_| io::Error::other("Synthetic streaming server failed."))??;
+        assert!(response.starts_with(b"HTTP/1.1 200"));
+        assert!(
+            response
+                .windows(b"Transfer-Encoding: chunked".len())
+                .any(|part| part == b"Transfer-Encoding: chunked")
+        );
+        assert!(
+            response
+                .windows(b"Content-Type: audio/pcm".len())
+                .any(|part| part == b"Content-Type: audio/pcm")
+        );
+        assert_eq!(response.ends_with(b"0\r\n\r\n"), !failure && !invalid);
+        assert_eq!(
+            response
+                .windows(b"HTTP/1.1".len())
+                .filter(|part| *part == b"HTTP/1.1")
+                .count(),
+            1
+        );
+        let boundary = response
+            .windows(4)
+            .position(|part| part == b"\r\n\r\n")
+            .ok_or_else(|| io::Error::other("Missing streaming response headers."))?;
+        assert!(response[boundary + 4..].starts_with(b"6\r\n\x01\x80\x00\x00\xff\x7f\r\n"));
+    }
+    Ok(())
+}
+
 fn exchange(
     kind: Kind,
     route: &str,
@@ -140,7 +227,10 @@ fn native_http_preserves_exact_health_and_voice_design_audio() -> io::Result<()>
         assert_eq!(health["model"], kind.model());
         assert_eq!(health["ready"], true);
         assert_eq!(calls, 0);
-        assert_eq!(health.as_object().map(serde_json::Map::len), Some(6));
+        assert_eq!(
+            health.as_object().map(serde_json::Map::len),
+            Some(if kind == Kind::QwenTts { 7 } else { 6 })
+        );
     }
     let body = speech();
     let (response, calls) = exchange(

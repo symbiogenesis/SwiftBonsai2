@@ -75,6 +75,6 @@ pub(super) fn encode(audio: &Audio) -> Result<Vec<u8>, Error> {
     clippy::cast_possible_truncation,
     reason = "Finite samples are explicitly clamped and rounded into the representable PCM16 range."
 )]
-fn pcm(sample: f32) -> i16 {
+pub(super) fn pcm(sample: f32) -> i16 {
     (sample.clamp(-1.0, 1.0) * 32767.0).round() as i16
 }
