@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 import wave
 
 import server
@@ -135,6 +136,37 @@ class HttpContractTests(unittest.TestCase):
 
 
 class ArtifactContractTests(unittest.TestCase):
+    def test_tokenizer_cache_contains_only_reviewed_revision_and_assets(self):
+        with tempfile.TemporaryDirectory(prefix="Canary-tokenizer-contract-") as directory:
+            root = Path(directory)
+            snapshot, scratch = root / "source", root / "worker"
+            snapshot.mkdir()
+            scratch.mkdir()
+            files = {}
+            for name in server.TOKENIZER_FILES:
+                content = ("synthetic reviewed " + name).encode()
+                (snapshot / name).write_bytes(content)
+                files[name] = {"bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}
+            revision = "a" * 40
+            lock = root / "tokenizer.lock.json"
+            lock.write_text(json.dumps({"schema_version": 1, "model": server.TOKENIZER_MODEL,
+                                        "revision": revision, "files": files}), encoding="utf-8")
+            with patch.object(server, "TOKENIZER_LOCK_PATH", lock):
+                cache = server.seal_tokenizer_cache(snapshot, scratch)
+                repo = cache / "models--Qwen--Qwen3-1.7B"
+                self.assertEqual((repo / "refs" / "main").read_text(), revision)
+                copied = repo / "snapshots" / revision
+                self.assertEqual({entry.name for entry in copied.iterdir()}, server.TOKENIZER_FILES)
+                for name in server.TOKENIZER_FILES:
+                    self.assertEqual((copied / name).read_bytes(), (snapshot / name).read_bytes())
+                (snapshot / "added_tokens.json").write_bytes(b"unreviewed")
+                with self.assertRaises(ValueError):
+                    server.verified_tokenizer_snapshot(snapshot)
+                (snapshot / "added_tokens.json").unlink()
+                (snapshot / "tokenizer.json").write_bytes(b"changed")
+                with self.assertRaises(ValueError):
+                    server.verified_tokenizer_snapshot(snapshot)
+
     def test_pinned_artifact_mismatch_rejects_before_model_import(self):
         with tempfile.TemporaryDirectory(prefix="Canary-contract-") as directory:
             artifact = Path(directory) / "model.safetensors"

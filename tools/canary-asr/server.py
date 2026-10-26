@@ -17,8 +17,10 @@ import os
 from pathlib import Path
 import re
 import select
+import shutil
 import socket
 import socketserver
+import stat
 import struct
 import tempfile
 import time
@@ -36,6 +38,12 @@ TRANSCRIBE_SECONDS = 120.0
 WRITE_SECONDS = 5.0
 MAX_NEW_TOKENS = 256
 LOCK_PATH = Path(__file__).with_name("model.lock.json")
+TOKENIZER_LOCK_PATH = Path(__file__).with_name("tokenizer.lock.json")
+TOKENIZER_MODEL = "Qwen/Qwen3-1.7B"
+TOKENIZER_FILES = frozenset((
+    "config.json", "generation_config.json", "merges.txt", "tokenizer.json",
+    "tokenizer_config.json", "vocab.json",
+))
 
 
 class RequestError(Exception):
@@ -266,7 +274,7 @@ class Server(socketserver.TCPServer):
         pass
 
 
-def _model_worker(connection, snapshot: str, device: str, scratch: str) -> None:
+def _model_worker(connection, snapshot: str, tokenizer_snapshot: str, device: str, scratch: str) -> None:
     # Suppress third-party diagnostics: transcripts, file paths and model errors
     # never become companion logs. The parent receives value-free categories.
     with open(os.devnull, "w", encoding="utf-8") as quiet:
@@ -275,6 +283,13 @@ def _model_worker(connection, snapshot: str, device: str, scratch: str) -> None:
                 os.chdir(scratch)
                 os.environ["HF_HUB_OFFLINE"] = "1"
                 os.environ["TRANSFORMERS_OFFLINE"] = "1"
+                cache = seal_tokenizer_cache(Path(tokenizer_snapshot), Path(scratch))
+                # Set all supported cache names before importing HF/NeMo. The
+                # inherited unversioned cache is never consulted by this worker.
+                os.environ["HF_HOME"] = str(Path(scratch) / "hf-home")
+                os.environ["HF_HUB_CACHE"] = str(cache)
+                os.environ["HUGGINGFACE_HUB_CACHE"] = str(cache)
+                os.environ["TRANSFORMERS_CACHE"] = str(cache)
                 import torch
                 from nemo.collections.speechlm2.models import SALM
 
@@ -322,14 +337,14 @@ def _model_worker(connection, snapshot: str, device: str, scratch: str) -> None:
 class ProcessRecognizer:
     """Terminate model work on timeout/disconnect; require explicit restart."""
 
-    def __init__(self, snapshot: Path, device: str, startup_seconds: float):
+    def __init__(self, snapshot: Path, tokenizer_snapshot: Path, device: str, startup_seconds: float):
         self.ready = False
         self.scratch = tempfile.TemporaryDirectory(prefix="Bonsai-Canary-")
         context = multiprocessing.get_context("spawn")
         self.connection, child = context.Pipe()
         self.process = context.Process(
             target=_model_worker,
-            args=(child, str(snapshot), device, self.scratch.name),
+            args=(child, str(snapshot), str(tokenizer_snapshot), device, self.scratch.name),
             daemon=True,
         )
         self.process.start()
@@ -419,13 +434,59 @@ def verified_snapshot(snapshot: Path) -> None:
     files = pin.get("files", {})
     if set(files) != {"config.json", "model.safetensors"}:
         raise ValueError("invalid model artifacts")
+    reject_unpinned_files(snapshot, set(files))
     for name, artifact in files.items():
         verified_file(snapshot / name, artifact["sha256"], artifact["bytes"])
+
+
+def reject_unpinned_files(snapshot: Path, expected: set[str]) -> None:
+    documentation = {"README.md", "LICENSE", "LICENSE.txt", "NOTICE", "NOTICE.txt", ".gitattributes"}
+    with os.scandir(snapshot) as entries:
+        for entry in entries:
+            metadata = entry.stat(follow_symlinks=False)
+            if (entry.is_symlink() or getattr(metadata, "st_file_attributes", 0) & 0x400
+                    or not stat.S_ISREG(metadata.st_mode)
+                    or entry.name not in expected | documentation):
+                raise ValueError("unverified model entry")
+
+
+def verified_tokenizer_snapshot(snapshot: Path) -> dict:
+    with TOKENIZER_LOCK_PATH.open("rb") as source:
+        encoded = source.read(8193)
+    if len(encoded) > 8192:
+        raise ValueError("invalid tokenizer lock")
+    pin = json.loads(encoded)
+    if (pin.get("schema_version") != 1 or pin.get("model") != TOKENIZER_MODEL
+            or not re.fullmatch(r"[a-f0-9]{40}", pin.get("revision", ""))
+            or set(pin.get("files", {})) != TOKENIZER_FILES):
+        raise ValueError("invalid tokenizer lock")
+    reject_unpinned_files(snapshot, TOKENIZER_FILES)
+    for name, artifact in pin["files"].items():
+        verified_file(snapshot / name, artifact["sha256"], artifact["bytes"])
+    return pin
+
+
+def seal_tokenizer_cache(snapshot: Path, scratch: Path) -> Path:
+    pin = verified_tokenizer_snapshot(snapshot)
+    cache = scratch / "reviewed-hf-cache"
+    repo = cache / "models--Qwen--Qwen3-1.7B"
+    destination = repo / "snapshots" / pin["revision"]
+    destination.mkdir(parents=True, exist_ok=False)
+    for name, artifact in pin["files"].items():
+        copied = destination / name
+        shutil.copyfile(snapshot / name, copied)
+        # Hash the copied bytes too: mutation during copying never becomes ready.
+        verified_file(copied, artifact["sha256"], artifact["bytes"])
+    references = repo / "refs"
+    references.mkdir()
+    (references / "main").write_text(pin["revision"], encoding="ascii")
+    return cache
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshot", required=True, type=Path)
+    parser.add_argument("--tokenizer-snapshot", required=True, type=Path)
     parser.add_argument("--token-file", required=True, type=Path)
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
@@ -434,17 +495,19 @@ def main() -> int:
     try:
         if not 1024 <= args.port <= 65535 or not 1 <= args.startup_seconds <= 1800:
             raise ValueError("invalid service bounds")
-        if not args.snapshot.is_absolute() or not args.token_file.is_absolute():
+        if not args.snapshot.is_absolute() or not args.tokenizer_snapshot.is_absolute() or not args.token_file.is_absolute():
             raise ValueError("absolute local paths required")
         snapshot = args.snapshot.resolve(strict=True)
         verified_snapshot(snapshot)
+        tokenizer_snapshot = args.tokenizer_snapshot.resolve(strict=True)
+        verified_tokenizer_snapshot(tokenizer_snapshot)
         if args.token_file.is_symlink() or args.token_file.stat().st_size != 64:
             raise ValueError("invalid protected token file")
         with args.token_file.open("rb") as source:
             token = source.read(65)
         if not re.fullmatch(rb"[a-f0-9]{64}", token):
             raise ValueError("invalid protected token file")
-        recognizer = ProcessRecognizer(snapshot, args.device, args.startup_seconds)
+        recognizer = ProcessRecognizer(snapshot, tokenizer_snapshot, args.device, args.startup_seconds)
         try:
             with Server(args.port, token, recognizer) as server:
                 print(f"Canary ready at 127.0.0.1:{args.port}", flush=True)

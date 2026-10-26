@@ -48,12 +48,29 @@ attribution, model card and license when provisioning or distributing the model.
 This repository's Python adapter does not redistribute the model weights or
 modify their licensing.
 
-Pre-cache the tokenizer/config dependencies referenced by that checkpoint
-(including `Qwen/Qwen3-1.7B`) in the tested environment. The service sets
-`HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, and passes `local_files_only=True`
-plus `trust_remote_code=False`. A missing dependency causes startup failure;
-there is no automatic model or tokenizer download. These library flags are not
-OS-enforced network isolation.
+Provision the six small configuration/tokenizer files in
+[`tokenizer.lock.json`](tokenizer.lock.json) to a separate private directory.
+These are from `Qwen/Qwen3-1.7B` revision
+`70d244cc86ccca08cf5af4e1e306ecf908b1ad5e`; its additional model weights are not
+needed because the Canary checkpoint already contains the trained LLM weights.
+The pinned Canary configuration also includes the full speech encoder and
+preprocessor architecture. No separate Canary-1b-flash weights are loaded.
+
+Both snapshots permit only their locked runtime files and root README,
+LICENSE/NOTICE or `.gitattributes` documentation. Optional runtime overrides,
+directories and reparse/symlink entries fail preflight. The worker copies and
+re-verifies the six tokenizer files into a fresh private temporary HF cache,
+with `refs/main` fixed to the pinned revision. It sets the HF/Transformers cache
+environment variables before imports, so an inherited unversioned user cache is
+not consulted. All temporary cache files are removed with the worker directory.
+
+The service sets `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, and passes
+`local_files_only=True` plus `trust_remote_code=False`. A missing dependency
+causes startup failure; there is no automatic model or tokenizer download.
+These library flags are not OS-enforced network isolation. Qwen3-1.7B is released
+by the Alibaba Qwen team under Apache 2.0; preserve its attribution/license with
+the provisioned tokenizer files. The new cache contract is covered by a
+synthetic regression; actual model execution remains unqualified.
 
 Create a separate protected development key using the repository's key
 provisioning tooling. Pass the absolute path to a **64-byte lowercase hex key
@@ -74,6 +91,7 @@ Push-Location $scratch
 try {
     [Environment]::CurrentDirectory = $scratch
     python -B $service --snapshot 'D:\Models\Canary\reviewed-snapshot' `
+        --tokenizer-snapshot 'D:\Models\Canary\reviewed-qwen-tokenizer' `
         --token-file 'D:\Private\canary-key' --port 8766 --device cpu
 } finally {
     [Environment]::CurrentDirectory = $previous
