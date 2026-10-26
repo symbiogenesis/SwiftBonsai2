@@ -59,63 +59,18 @@ if ($Case -in @('All', 'Models')) {
     Assert (-not (Test-Path -LiteralPath $data)) 'Mocked native model provisioning wrote storage.'
 }
 if ($Case -in @('All', 'Sources')) {
-    function New-TestSourceZip {
-        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates a disposable ZIP fixture beneath the unique test scratch directory.')]
-        [CmdletBinding()]
-        [OutputType([string])]
-        param([Parameter(Mandatory)][string[]]$Names, [switch]$Link)
-        $path = Join-Path $scratch ([guid]::NewGuid().ToString('N') + '.zip')
-        $zip = [IO.Compression.ZipFile]::Open($path, [IO.Compression.ZipArchiveMode]::Create)
-        try {
-            foreach ($name in $Names) {
-                $entry = $zip.CreateEntry($name)
-                if ($Link) { $entry.ExternalAttributes = -1610612736 }
-                $writer = [IO.StreamWriter]::new($entry.Open())
-                try { $writer.Write('fixture') } finally { $writer.Dispose() }
-            }
-        } finally { $zip.Dispose() }
-        return $path
-    }
-    $safe = New-TestSourceZip -Names @('source/src/engine.cpp', 'source/CMakeLists.txt')
-    $changedArchive = Join-Path $scratch 'changed-archive'
-    Assert-Failure { & $module { param($a, $d) Expand-NativeSpeechZip -Archive $a -Destination $d -ArchiveRoot source -Sha256 ('0' * 64) } $safe $changedArchive } 'Source ZIP bytes were not reverified at the native staging boundary.'
-    Assert (-not (Test-Path -LiteralPath $changedArchive)) 'A changed source ZIP wrote output before rejection.'
-    $destination = Join-Path $scratch 'source'
-    $files = @(& $module { param($a, $d) Expand-NativeSpeechZip -Archive $a -Destination $d -ArchiveRoot source } $safe $destination)
-    Assert ($files.Count -eq 2 -and (Get-Content -LiteralPath $files[0] -Raw) -ceq 'fixture') 'Verified ZIP extraction lost source bytes.'
-    & $module { param($a, $d) Expand-NativeSpeechZip -Archive $a -Destination $d -ArchiveRoot source } $safe $destination | Out-Null
-    [IO.File]::WriteAllText($files[0], 'changed')
-    Assert-Failure { & $module { param($a, $d) Expand-NativeSpeechZip -Archive $a -Destination $d -ArchiveRoot source } $safe $destination } 'A changed source cache was accepted.'
-    $index = 0
-    foreach ($names in @(
-        @('source/../outside.cpp'), @('source/sub/../../outside.cpp'), @('/absolute.cpp'),
-        @('source/file:stream.cpp'), @('source/CON.cpp'), @('source/file. '),
-        @('source/src/engine.cpp', 'source/SRC/engine.cpp'), @('source/a', 'source/a/b'),
-        @('source/source.cpp', 'source/ſource.cpp'),
-        @('source/a/b', 'source/A'), @('source/.git/config'), @('source//file')
-    )) {
-        $archive = New-TestSourceZip -Names $names
-        $invalid = Join-Path $scratch ('rejected-' + $index++)
-        Assert-Failure { & $module { param($a, $d) Expand-NativeSpeechZip -Archive $a -Destination $d -ArchiveRoot source } $archive $invalid } 'An unsafe or duplicate archive path was accepted.'
-        Assert (-not (Test-Path -LiteralPath $invalid)) 'Unsafe archive validation wrote partial source bytes.'
-    }
-    $link = New-TestSourceZip -Names @('source/doc/link.md') -Link
-    $linkFiles = @(& $module { param($a, $d) Expand-NativeSpeechZip -Archive $a -Destination $d -ArchiveRoot source } $link (Join-Path $scratch 'link'))
-    Assert ($linkFiles.Count -eq 1 -and -not ((Get-Item -LiteralPath $linkFiles[0]).Attributes -band [IO.FileAttributes]::ReparsePoint) -and
-        (Get-Content -LiteralPath $linkFiles[0] -Raw) -ceq 'fixture') 'A ZIP link was followed instead of materialized as ordinary bytes.'
-    $expected = [Collections.Generic.HashSet[string]]::new([string[]]$linkFiles, [StringComparer]::OrdinalIgnoreCase)
-    $tree = Join-Path $scratch 'link'
-    & $module { param($r, $e) Assert-NativeSpeechSourceTree -Root $r -Expected $e } $tree $expected
-    [IO.File]::WriteAllText((Join-Path $tree 'unexpected.cpp'), 'unreviewed')
-    Assert-Failure { & $module { param($r, $e) Assert-NativeSpeechSourceTree -Root $r -Expected $e } $tree $expected } 'Source cache validation accepted an unpinned file.'
-    $reparseTree = Join-Path $scratch 'reparse'
-    [void][IO.Directory]::CreateDirectory($reparseTree)
-    $junction = New-Item -ItemType Junction -Path (Join-Path $reparseTree 'redirected') -Value $tree
-    Assert ($null -ne $junction) 'Could not create the owned reparse fixture.'
-    Assert-Failure { & $module { param($r) Get-NativeSpeechTreeFile -Root $r } $reparseTree } 'Native source traversal followed a reparse directory.'
-    & $module { Read-NativeSpeechBuildLock } | Out-Null
+    # Rust owns hostile ZIP, cache, path-alias and reparse regressions. This
+    # exercises the production combined operation through the packaged bridge.
+    $request = @{ operation = 'stage-sources'; sourceDirectory = Join-Path $scratch 'sources'
+        qwenArchivePath = Join-Path $scratch 'qwen.zip'; ggmlArchivePath = Join-Path $scratch 'ggml.zip' }
+    $failure = $null
+    try { & $module { param($r, $t) Invoke-BonsaiTool -Command speech-build -Request $r -ToolPath $t } $request $ToolPath }
+    catch { $failure = $_.Exception.Message }
+    Assert ($failure -and $failure.Contains('Native source file cannot be opened safely.')) 'The combined source staging bridge did not reach the pinned archive boundary.'
+    Assert (-not (Test-Path -LiteralPath $request.sourceDirectory)) 'Missing source archives wrote cache storage.'
+    $request.sourceDirectory = $repo
+    Assert-Failure { & $module { param($r, $t) Invoke-BonsaiTool -Command speech-build -Request $r -ToolPath $t } $request $ToolPath } 'Source staging accepted a Git checkout.'
 }
-
 if ($Case -in @('All', 'Build')) {
     & $module {
         $script:builds = [Collections.Generic.List[object]]::new()

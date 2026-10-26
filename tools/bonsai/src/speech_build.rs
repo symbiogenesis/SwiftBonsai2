@@ -1,7 +1,7 @@
 //! Native speech build pins and bounded, nonexecuting source ZIP staging.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     io::{Read, Seek as _, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -34,6 +34,12 @@ enum Request {
         bytes: u64,
         sha256: String,
     },
+    #[serde(rename = "stage-sources", rename_all = "camelCase")]
+    StageSources {
+        source_directory: PathBuf,
+        qwen_archive_path: PathBuf,
+        ggml_archive_path: PathBuf,
+    },
 }
 
 /// Validate compiled build pins or stage bounded source bytes without executing code.
@@ -63,6 +69,28 @@ pub fn run(request: Value) -> crate::Result<Value> {
             bytes,
             sha256,
         } => stage_source(&archive_path, &destination, &archive_root, bytes, &sha256),
+        Request::StageSources {
+            source_directory,
+            qwen_archive_path,
+            ggml_archive_path,
+        } => {
+            let pin = build_plan()?;
+            let mut sources = Vec::new();
+            for (key, archive_path, destination) in [
+                ("qwen", qwen_archive_path, source_directory.clone()),
+                ("ggml", ggml_archive_path, source_directory.join("ggml")),
+            ] {
+                let source = &pin["sources"][key];
+                sources.push(SourceSpec {
+                    archive_path,
+                    destination,
+                    archive_root: text(source, "root")?.into(),
+                    bytes: source["bytes"].as_u64().ok_or("Invalid source size.")?,
+                    sha256: text(source, "sha256")?.into(),
+                });
+            }
+            stage_sources(&source_directory, &sources)
+        }
     }
 }
 
@@ -266,6 +294,19 @@ fn digest(
     Ok(hash.finalize().into())
 }
 
+struct PreparedSource {
+    zip: ZipArchive<File>,
+    entries: Vec<SourceEntry>,
+}
+
+struct SourceSpec {
+    archive_path: PathBuf,
+    destination: PathBuf,
+    archive_root: String,
+    bytes: u64,
+    sha256: String,
+}
+
 fn stage_source(
     archive_path: &Path,
     destination: &Path,
@@ -273,6 +314,136 @@ fn stage_source(
     bytes: u64,
     sha256: &str,
 ) -> crate::Result<Value> {
+    check_source_tree(destination, None)?;
+    let mut buffer = vec![0; 64 * 1024];
+    let mut source = prepare_source(
+        archive_path,
+        destination,
+        archive_root,
+        bytes,
+        sha256,
+        &mut buffer,
+    )?;
+    stage_prepared(&mut source, &mut buffer)?;
+    let files: Vec<_> = source
+        .entries
+        .iter()
+        .filter(|(_, _, directory, _)| !directory)
+        .map(|(_, path, _, _)| path)
+        .collect();
+    Ok(json!({"Files": files}))
+}
+
+fn stage_sources(root: &Path, specs: &[SourceSpec]) -> crate::Result<Value> {
+    check_source_tree(root, None)?;
+    let mut buffer = vec![0; 64 * 1024];
+    let mut sources = Vec::new();
+    for spec in specs {
+        sources.push(prepare_source(
+            &spec.archive_path,
+            &spec.destination,
+            &spec.archive_root,
+            spec.bytes,
+            &spec.sha256,
+            &mut buffer,
+        )?);
+    }
+    let expected = expected_files(&sources)?;
+    for source in &mut sources {
+        stage_prepared(source, &mut buffer)?;
+    }
+    check_source_tree(root, Some(&expected))?;
+    // Keep both read-only ZIP handles until the complete union has been checked.
+    Ok(
+        json!({"SourceDirectory": root.components().collect::<PathBuf>(), "FilesVerified": expected.len()}),
+    )
+}
+
+fn path_key(path: &Path) -> String {
+    path.components()
+        .collect::<PathBuf>()
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_uppercase()
+        .to_lowercase()
+}
+
+fn expected_files(sources: &[PreparedSource]) -> crate::Result<BTreeSet<String>> {
+    let mut entries = BTreeMap::new();
+    for source in sources {
+        for (_, path, directory, _) in &source.entries {
+            if entries
+                .insert(path_key(path), *directory)
+                .is_some_and(|previous| previous != *directory)
+            {
+                return Err("Native source archives have conflicting path types.".into());
+            }
+        }
+    }
+    for name in entries.keys() {
+        let mut ancestor = name.as_str();
+        while let Some((parent, _)) = ancestor.rsplit_once('/') {
+            if entries.get(parent) == Some(&false) {
+                return Err("Native source archives have a file/directory collision.".into());
+            }
+            ancestor = parent;
+        }
+    }
+    Ok(entries
+        .into_iter()
+        .filter_map(|(name, directory)| (!directory).then_some(name))
+        .collect())
+}
+
+fn check_source_tree(root: &Path, expected: Option<&BTreeSet<String>>) -> crate::Result<()> {
+    validate_external_path(root).map_err(|error| error.to_string())?;
+    match fs::symlink_metadata(root) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Ok(metadata) if metadata.is_dir() && !is_redirect(&metadata) => {}
+        _ => return Err("Native source cache is not an ordinary directory.".into()),
+    }
+    let mut directories = vec![root.to_path_buf()];
+    while let Some(directory) = directories.pop() {
+        for entry in fs::read_dir(&directory).map_err(|_| "Cannot inspect native source cache.")? {
+            let path = entry
+                .map_err(|_| "Cannot inspect native source cache entry.")?
+                .path();
+            let metadata = fs::symlink_metadata(&path)
+                .map_err(|_| "Cannot inspect native source cache metadata.")?;
+            if is_redirect(&metadata) {
+                return Err("Native source cache contains a reparse entry.".into());
+            }
+            if metadata.is_dir() {
+                directories.push(path);
+            } else if !metadata.is_file()
+                || expected.is_some_and(|files| !files.contains(&path_key(&path)))
+            {
+                return Err("Native source cache contains an unpinned file.".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn digest_hex(hash: &[u8]) -> String {
+    hash.iter()
+        .flat_map(|byte| {
+            [
+                char::from(b"0123456789abcdef"[usize::from(byte >> 4)]),
+                char::from(b"0123456789abcdef"[usize::from(byte & 15)]),
+            ]
+        })
+        .collect()
+}
+
+fn prepare_source(
+    archive_path: &Path,
+    destination: &Path,
+    archive_root: &str,
+    bytes: u64,
+    sha256: &str,
+    buffer: &mut [u8],
+) -> crate::Result<PreparedSource> {
     validate_external_path(destination).map_err(|error| error.to_string())?;
     let mut file = open_locked(archive_path)?;
     if bytes == 0 || bytes > MAX_BYTES || !hex(sha256, 64) {
@@ -286,16 +457,7 @@ fn stage_source(
     {
         return Err("Source archive exceeds its byte bound.".into());
     }
-    let mut buffer = vec![0; 64 * 1024];
-    let actual: String = digest(&mut file, bytes, &mut std::io::sink(), &mut buffer)?
-        .iter()
-        .flat_map(|byte| {
-            [
-                char::from(b"0123456789abcdef"[usize::from(byte >> 4)]),
-                char::from(b"0123456789abcdef"[usize::from(byte & 15)]),
-            ]
-        })
-        .collect();
+    let actual = digest_hex(&digest(&mut file, bytes, &mut std::io::sink(), buffer)?);
     if actual != sha256 {
         return Err("Native source archive differs from its pin.".into());
     }
@@ -306,28 +468,32 @@ fn stage_source(
         return Err("Source ZIP has too many entries.".into());
     }
     let entries = inventory(&mut zip, destination, archive_root)?;
-    let mut files: Vec<PathBuf> = Vec::new();
-    for (index, path, directory, bytes) in entries {
-        validate_external_path(&path).map_err(|error| error.to_string())?;
-        if directory {
-            fs::create_dir_all(&path).map_err(|_| "Cannot create native source directory.")?;
+    Ok(PreparedSource { zip, entries })
+}
+
+fn stage_prepared(source: &mut PreparedSource, buffer: &mut [u8]) -> crate::Result<()> {
+    for (index, path, directory, bytes) in &source.entries {
+        validate_external_path(path).map_err(|error| error.to_string())?;
+        if *directory {
+            fs::create_dir_all(path).map_err(|_| "Cannot create native source directory.")?;
             continue;
         }
         fs::create_dir_all(path.parent().ok_or("Missing source parent directory.")?)
             .map_err(|_| "Cannot create native source parent.")?;
-        validate_external_path(&path).map_err(|error| error.to_string())?;
-        let mut entry = zip
-            .by_index(index)
+        validate_external_path(path).map_err(|error| error.to_string())?;
+        let mut entry = source
+            .zip
+            .by_index(*index)
             .map_err(|_| "Cannot reopen source ZIP entry.")?;
         if path.exists() {
-            let expected = digest(&mut entry, bytes, &mut std::io::sink(), &mut buffer)?;
-            let mut existing = open_locked(&path)?;
+            let expected = digest(&mut entry, *bytes, &mut std::io::sink(), buffer)?;
+            let mut existing = open_locked(path)?;
             if existing
                 .metadata()
                 .map_err(|_| "Cannot inspect source cache.")?
                 .len()
-                != bytes
-                || digest(&mut existing, bytes, &mut std::io::sink(), &mut buffer)? != expected
+                != *bytes
+                || digest(&mut existing, *bytes, &mut std::io::sink(), buffer)? != expected
             {
                 return Err("Native source cache differs from its pinned archive.".into());
             }
@@ -335,16 +501,15 @@ fn stage_source(
             let mut output = OpenOptions::new()
                 .write(true)
                 .create_new(true)
-                .open(&path)
+                .open(path)
                 .map_err(|_| "Cannot create native source file.")?;
-            digest(&mut entry, bytes, &mut output, &mut buffer)?;
+            digest(&mut entry, *bytes, &mut output, buffer)?;
             output
                 .flush()
                 .map_err(|_| "Cannot flush native source file.")?;
         }
-        files.push(path);
     }
-    Ok(json!({"Files": files}))
+    Ok(())
 }
 
 type SourceEntry = (usize, PathBuf, bool, u64);
@@ -412,7 +577,223 @@ fn inventory(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_plan, validate_name};
+    use super::{SourceSpec, build_plan, stage_source, stage_sources, validate_name};
+    use sha2::{Digest as _, Sha256};
+    use std::{
+        error::Error,
+        fs,
+        io::Write as _,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    use zip::{ZipWriter, write::SimpleFileOptions};
+
+    type TestResult<T = ()> = Result<T, Box<dyn Error>>;
+
+    fn scratch(name: &str) -> TestResult<PathBuf> {
+        let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "Bonsai-SourceCache-{name}-{}-{nonce}",
+            std::process::id()
+        ));
+        bonsai_artifacts::validate_external_path(&path)?;
+        fs::create_dir(&path)?;
+        Ok(path)
+    }
+
+    fn source_fixture(
+        scratch: &Path,
+        destination: &Path,
+        root: &str,
+        names: &[&str],
+        link: bool,
+    ) -> TestResult<SourceSpec> {
+        let path = scratch.join(format!("{root}.zip"));
+        let mut zip = ZipWriter::new(fs::File::create(&path)?);
+        for name in names {
+            if link {
+                zip.add_symlink(*name, "fixture", SimpleFileOptions::default())?;
+            } else {
+                zip.start_file(*name, SimpleFileOptions::default())?;
+                zip.write_all(b"fixture")?;
+            }
+        }
+        zip.finish()?;
+        let bytes = fs::read(&path)?;
+        Ok(SourceSpec {
+            archive_path: path,
+            destination: destination.into(),
+            archive_root: root.into(),
+            bytes: u64::try_from(bytes.len())?,
+            sha256: super::digest_hex(&Sha256::digest(&bytes)),
+        })
+    }
+
+    fn stage(spec: &SourceSpec) -> crate::Result<serde_json::Value> {
+        stage_source(
+            &spec.archive_path,
+            &spec.destination,
+            &spec.archive_root,
+            spec.bytes,
+            &spec.sha256,
+        )
+    }
+
+    #[test]
+    fn source_staging_preserves_bytes_and_rejects_changed_archive_or_cache() -> TestResult {
+        let scratch = scratch("identity")?;
+        let root = scratch.join("source");
+        let mut spec = source_fixture(
+            &scratch,
+            &root,
+            "source",
+            &["source/src/engine.cpp", "source/CMakeLists.txt"],
+            false,
+        )?;
+        let expected = spec.sha256.clone();
+        spec.sha256 = "0".repeat(64);
+        assert!(stage(&spec).is_err());
+        assert!(!root.exists());
+        spec.sha256 = expected;
+        assert_eq!(stage(&spec)?["Files"].as_array().map(Vec::len), Some(2));
+        assert_eq!(fs::read(root.join("src/engine.cpp"))?, b"fixture");
+        stage(&spec)?;
+        fs::write(root.join("src/engine.cpp"), b"changed")?;
+        assert!(stage(&spec).is_err());
+        assert_eq!(fs::read(root.join("src/engine.cpp"))?, b"changed");
+        Ok(())
+    }
+
+    #[test]
+    fn source_inventory_rejects_hostile_names_before_writing() -> TestResult {
+        let scratch = scratch("inventory")?;
+        let root = scratch.join("source");
+        for names in [
+            vec!["source/../outside.cpp"],
+            vec!["source/sub/../../outside.cpp"],
+            vec!["/absolute.cpp"],
+            vec!["source/file:stream.cpp"],
+            vec!["source/CON.cpp"],
+            vec!["source/file. "],
+            vec!["source/src/engine.cpp", "source/SRC/engine.cpp"],
+            vec!["source/a", "source/a/b"],
+            vec!["source/source.cpp", "source/ſource.cpp"],
+            vec!["source/a/b", "source/A"],
+            vec!["source/.git/config"],
+            vec!["source//file"],
+            vec![],
+        ] {
+            let spec = source_fixture(&scratch, &root, "source", &names, false)?;
+            assert!(
+                stage(&spec).is_err(),
+                "Accepted hostile source entries: {names:?}"
+            );
+            assert!(!root.exists());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn source_symlink_entries_become_regular_text() -> TestResult {
+        let scratch = scratch("link-bytes")?;
+        let root = scratch.join("source");
+        let spec = source_fixture(&scratch, &root, "source", &["source/doc/link.md"], true)?;
+        stage(&spec)?;
+        let path = root.join("doc/link.md");
+        assert!(!bonsai_artifacts::is_redirect(&fs::symlink_metadata(
+            &path
+        )?));
+        assert_eq!(fs::read(path)?, b"fixture");
+        Ok(())
+    }
+
+    #[test]
+    fn combined_sources_verify_complete_cache_with_native_path_spelling() -> TestResult {
+        let scratch = scratch("union")?;
+        let root = scratch.join("source");
+        let specs = [
+            source_fixture(&scratch, &root, "qwen", &["qwen/src/engine.cpp"], false)?,
+            source_fixture(
+                &scratch,
+                &root.join("ggml"),
+                "ggml",
+                &["ggml/src/ggml.c"],
+                false,
+            )?,
+        ];
+        assert_eq!(stage_sources(&root, &specs)?["FilesVerified"], 2);
+        let alternate = PathBuf::from(root.to_str().ok_or("Non-UTF-8 scratch")?.replace('\\', "/"));
+        assert_eq!(stage_sources(&alternate, &specs)?["FilesVerified"], 2);
+        fs::write(root.join("unreviewed.cpp"), b"unreviewed")?;
+        assert!(stage_sources(&root, &specs).is_err());
+        assert_eq!(fs::read(root.join("unreviewed.cpp"))?, b"unreviewed");
+        Ok(())
+    }
+
+    #[test]
+    fn combined_sources_preflight_both_archives_before_writing() -> TestResult {
+        let scratch = scratch("preflight")?;
+        let root = scratch.join("source");
+        let specs = [
+            source_fixture(&scratch, &root, "qwen", &["qwen/src/engine.cpp"], false)?,
+            source_fixture(
+                &scratch,
+                &root.join("ggml"),
+                "ggml",
+                &["ggml/../escaped.cpp"],
+                false,
+            )?,
+        ];
+        assert!(stage_sources(&root, &specs).is_err());
+        assert!(!root.exists());
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn source_cache_rejects_junctions_before_staging() -> TestResult {
+        use std::os::windows::process::CommandExt as _;
+        let scratch = scratch("junction")?;
+        let root = scratch.join("source");
+        let target = scratch.join("external");
+        fs::create_dir(&root)?;
+        fs::create_dir(&target)?;
+        fs::write(target.join("sentinel"), b"unchanged")?;
+        let junction = root.join("redirected");
+        let system =
+            PathBuf::from(std::env::var_os("SystemRoot").ok_or("Missing Windows directory")?);
+        assert!(
+            system.is_absolute(),
+            "Use an expanded absolute Windows directory"
+        );
+        for path in [&junction, &target] {
+            let spelling = path.to_str().ok_or("Non-UTF-8 fixture path")?;
+            assert!(path.is_absolute() && !spelling.contains(['"', '\r', '\n', '%']));
+        }
+        // cmd builtins parse one command string rather than CRT-style argv.
+        let command = format!(
+            "/d /v:off /c mklink /J \"{}\" \"{}\"",
+            junction.to_string_lossy().replace('/', "\\"),
+            target.to_string_lossy().replace('/', "\\")
+        );
+        let output = std::process::Command::new(system.join("System32").join("cmd.exe"))
+            .raw_arg(&command)
+            .current_dir(&scratch)
+            .output()?;
+        assert!(
+            output.status.success(),
+            "Cannot create owned junction fixture ({command}): {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let spec = source_fixture(&scratch, &root, "source", &["source/src/engine.cpp"], false)?;
+        assert!(stage(&spec).is_err());
+        assert!(stage_sources(&root, &[spec]).is_err());
+        assert!(!root.join("src").exists());
+        assert_eq!(fs::read(target.join("sentinel"))?, b"unchanged");
+        fs::remove_dir(junction)?;
+        Ok(())
+    }
 
     #[test]
     fn compiled_build_pins_match_native_runtime() -> crate::Result<()> {

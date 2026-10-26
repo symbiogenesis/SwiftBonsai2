@@ -32,58 +32,6 @@ function Install-NativeSpeechModels {
     return [pscustomobject]$result
 }
 
-function Read-NativeSpeechBuildLock {
-    [CmdletBinding()]
-    [OutputType([Collections.IDictionary])]
-    param()
-    return Invoke-BonsaiTool -Command speech-build -Request @{ operation = 'plan' }
-}
-
-function Get-NativeSpeechTreeFile {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param([Parameter(Mandatory)][string]$Root)
-    # Root has already passed Resolve-ExternalPath. Inspect entries before
-    # descending so a junction cannot redirect source traversal elsewhere.
-    if (-not [IO.Directory]::Exists($Root)) { return }
-    $directories = [Collections.Generic.Stack[string]]::new()
-    $directories.Push($Root)
-    while ($directories.Count -gt 0) {
-        foreach ($path in [IO.Directory]::EnumerateFileSystemEntries($directories.Pop())) {
-            $attributes = [IO.File]::GetAttributes($path)
-            if ($attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Native source cache contains a reparse entry: $path" }
-            if ($attributes -band [IO.FileAttributes]::Directory) { $directories.Push($path) }
-            else { $path }
-        }
-    }
-}
-
-function Assert-NativeSpeechSourceTree {
-    [CmdletBinding()]
-    [OutputType([void])]
-    param([Parameter(Mandatory)][string]$Root,
-          [Parameter(Mandatory)][Collections.Generic.HashSet[string]]$Expected)
-    foreach ($file in (Get-NativeSpeechTreeFile -Root $Root)) {
-        if (-not $Expected.Contains($file)) { throw "Native source cache contains an unpinned file: $file" }
-    }
-}
-
-function Expand-NativeSpeechZip {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Private verified source extraction for explicit provisioning.')]
-    [CmdletBinding()]
-    [OutputType([string])]
-    param([Parameter(Mandatory)][string]$Archive, [Parameter(Mandatory)][string]$Destination,
-          [Parameter(Mandatory)][string]$ArchiveRoot, [long]$Bytes, [string]$Sha256)
-    $Destination = Resolve-ExternalPath -Path $Destination
-    Get-NativeSpeechTreeFile -Root $Destination | Out-Null
-    if (-not $Bytes) { $Bytes = (Get-Item -LiteralPath $Archive).Length }
-    if (-not $Sha256) { $Sha256 = (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant() }
-    $result = Invoke-BonsaiTool -Command speech-build -TimeoutSeconds 120 -Request @{
-        operation = 'stage-source'; archivePath = $Archive; destination = $Destination; archiveRoot = $ArchiveRoot; bytes = $Bytes; sha256 = $Sha256
-    }
-    return $result.Files
-}
-
 function Install-NativeSpeechCompiler {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Private pinned compiler provisioning for an explicitly requested build.')]
     [CmdletBinding()]
@@ -141,22 +89,23 @@ function Initialize-NativeSpeechBuild {
     $data = Resolve-ExternalPath -Path $DataDirectory
     $working = Resolve-ExternalPath -Path $WorkingDirectory
     [void][IO.Directory]::CreateDirectory($working)
-    $pin = Read-NativeSpeechBuildLock
+    $pin = Invoke-BonsaiTool -Command speech-build -Request @{ operation = 'plan' }
     $compiler = Install-NativeSpeechCompiler -DataDirectory $data -WorkingDirectory $working -Pin $pin.compiler
     $cache = Resolve-ExternalPath -Path (Join-Path $data 'tools/native-speech')
     [void][IO.Directory]::CreateDirectory($cache)
     $guard = [IO.FileStream]::new((Join-Path $cache 'source-provision.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     try {
         $source = Resolve-ExternalPath -Path (Join-Path -Path $cache -ChildPath 'sources' -AdditionalChildPath $pin.sources.qwen.root)
-        $expected = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
         foreach ($key in @('qwen', 'ggml')) {
             $artifact = $pin.sources[$key]
             $archive = Join-Path -Path $cache -ChildPath 'downloads' -AdditionalChildPath $artifact.filename
             [void](Receive-LockedArtifact -Uri $artifact.url -Path $archive -Bytes $artifact.bytes -Sha256 $artifact.sha256)
-            $destination = if ($key -eq 'qwen') { $source } else { Join-Path $source 'ggml' }
-            foreach ($file in (Expand-NativeSpeechZip -Archive $archive -Destination $destination -ArchiveRoot $artifact.root -Bytes $artifact.bytes -Sha256 $artifact.sha256)) { [void]$expected.Add($file) }
         }
-        Assert-NativeSpeechSourceTree -Root $source -Expected $expected
+        $null = Invoke-BonsaiTool -Command speech-build -TimeoutSeconds 120 -Request @{
+            operation = 'stage-sources'; sourceDirectory = $source
+            qwenArchivePath = Join-Path -Path $cache -ChildPath 'downloads' -AdditionalChildPath $pin.sources.qwen.filename
+            ggmlArchivePath = Join-Path -Path $cache -ChildPath 'downloads' -AdditionalChildPath $pin.sources.ggml.filename
+        }
     } finally { $guard.Dispose() }
     $vswhere = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)) 'Microsoft Visual Studio/Installer/vswhere.exe'
     $found = Invoke-BonsaiNativeProcess -Executable $vswhere -ArgumentList @('-latest', '-products', '*', '-property', 'installationPath') -WorkingDirectory $working -TimeoutSeconds 60
