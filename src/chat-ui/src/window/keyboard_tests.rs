@@ -99,3 +99,68 @@ fn find_escape_preserves_speech_then_restores_composer_focus() {
         Err(mpsc::TryRecvError::Empty)
     ));
 }
+
+#[test]
+fn conversation_dialog_escape_preserves_find_speech_and_unsent_draft() {
+    for rename in [false, true] {
+        let mut chat = harness();
+        chat.state_mut().app.speaking = true;
+        open_find(&mut chat);
+        let id = chat.state().app.active_conversation;
+        if rename {
+            chat.state_mut().app.rename_conversation = Some((id, "A new name".to_owned()));
+        } else {
+            chat.state_mut().app.delete_conversation = Some(id);
+        }
+        chat.run();
+        chat.key_press(egui::Key::Escape);
+        chat.run();
+        assert!(chat.state().app.rename_conversation.is_none());
+        assert!(chat.state().app.delete_conversation.is_none());
+        assert!(chat.query_by_label("Find in conversation").is_some());
+        assert_eq!(chat.state().app.active_conversation, id);
+        assert_eq!(chat.state().app.conversations.len(), 1);
+        assert_eq!(chat.state().app.input, "Preserve this draft");
+        assert!(chat.state().app.speaking);
+        assert!(matches!(
+            chat.state().commands.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+    }
+}
+
+#[test]
+fn conversation_dialogs_keep_background_find_and_composer_shortcuts_inert() {
+    let mut chat = harness();
+    chat.state_mut()
+        .app
+        .transcript
+        .push(Role::Assistant, "Find another match".to_owned());
+    open_find(&mut chat);
+    let id = chat.state().app.active_conversation;
+    chat.state_mut().app.rename_conversation = Some((id, "A new name".to_owned()));
+    chat.run();
+    chat.get_by_role_and_label(egui::Role::TextInput, "Conversation name")
+        .focus();
+    chat.run();
+    chat.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::F);
+    chat.key_press(egui::Key::F3);
+    chat.run();
+    assert!(
+        chat.get_by_role_and_label(egui::Role::TextInput, "Conversation name")
+            .is_focused()
+    );
+    assert!(chat.get_by_label("1 of 2").rect().is_positive());
+    chat.key_press(egui::Key::Escape);
+    chat.run();
+    chat.get_by_role_and_label(egui::Role::MultilineTextInput, "Message")
+        .focus();
+    chat.run();
+    chat.state_mut().app.delete_conversation = Some(id);
+    chat.run();
+    chat.key_press(egui::Key::Enter);
+    chat.run();
+    assert_eq!(chat.state().app.delete_conversation, Some(id));
+    assert_eq!(chat.state().app.input, "Preserve this draft");
+    assert!(chat.state().commands.try_recv().is_err());
+}

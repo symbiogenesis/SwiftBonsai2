@@ -71,6 +71,7 @@ struct State {
     next_conversation: u64,
     rename_conversation: Option<(u64, String)>,
     delete_conversation: Option<u64>,
+    conversation_notice: Option<&'static str>,
     recovery: Option<crate::recovery::Recovery>,
     save_conversations: bool,
     recovery_dirty: bool,
@@ -148,6 +149,7 @@ impl State {
             next_conversation: 2,
             rename_conversation: None,
             delete_conversation: None,
+            conversation_notice: None,
             recovery: None,
             save_conversations: false,
             recovery_dirty: false,
@@ -302,6 +304,7 @@ impl State {
         }
         self.stop_speech();
         self.save_conversation();
+        self.conversation_notice = None;
         let id = self.next_conversation;
         self.next_conversation = self.next_conversation.saturating_add(1);
         self.conversations.push(Conversation::new(id));
@@ -346,6 +349,9 @@ impl State {
     }
 
     fn handle_escape(&mut self, ctx: &egui::Context) {
+        if self.rename_conversation.is_some() || self.delete_conversation.is_some() {
+            return;
+        }
         if self.transcript.close_find_on_escape(ctx) {
             self.focus_composer = true;
         } else if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
@@ -932,20 +938,26 @@ fn forest_visuals() -> egui::Visuals {
     visuals.widgets.inactive.bg_fill = Color32::from_rgb(42, 51, 46);
     visuals.widgets.hovered.bg_fill = Color32::from_rgb(58, 71, 62);
     visuals.widgets.active.bg_fill = Color32::from_rgb(66, 84, 70);
+    visuals.error_fg_color = Color32::from_rgb(246, 145, 145);
     visuals
 }
 
 impl State {
     fn sidebar(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(16.0);
-        ui.label(RichText::new("BONSAI").strong().size(20.0));
+        egui::Panel::bottom("sidebar-footer")
+            .exact_size(146.0)
+            .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 12)))
+            .show(ui, |ui| self.sidebar_footer(ui));
+        ui.add_space(8.0);
+        ui.label(RichText::new("BONSAI").strong().size(22.0));
         ui.label(RichText::new("A little space to think.").small().weak());
         ui.add_space(24.0);
         if ui
             .add_enabled(
-                self.ready && !self.busy,
+                self.ready && !self.busy && self.conversations.len() < MAX_CONVERSATIONS,
                 egui::Button::new("+ New conversation")
-                    .min_size(egui::vec2(ui.available_width(), 42.0)),
+                    .min_size(egui::vec2(ui.available_width(), 44.0))
+                    .corner_radius(10),
             )
             .on_hover_text("Start fresh · Ctrl+N")
             .clicked()
@@ -954,61 +966,44 @@ impl State {
         }
         ui.add_space(24.0);
         self.conversation_list(ui);
+    }
+
+    fn sidebar_footer(&mut self, ui: &mut egui::Ui) {
+        ui.separator();
         ui.add_space(8.0);
-        if !self.transcript.messages.is_empty() && ui.button("Copy conversation").clicked() {
-            ui.ctx().copy_text(self.transcript.plain_text());
+        if ui
+            .add_sized([ui.available_width(), 36.0], egui::Button::new("Settings"))
+            .clicked()
+        {
+            self.show_settings = !self.show_settings;
         }
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(!self.busy, egui::Button::new("Rename"))
-                .clicked()
-            {
-                self.rename_conversation = self
-                    .conversations
-                    .iter()
-                    .find(|conversation| conversation.id == self.active_conversation)
-                    .map(|conversation| (conversation.id, conversation.title.clone()));
-            }
-            if ui
-                .add_enabled(self.ready && !self.busy, egui::Button::new("Delete"))
-                .clicked()
-            {
-                self.delete_conversation = Some(self.active_conversation);
-            }
-        });
-        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-            ui.add_space(12.0);
-            if ui.button("Settings").clicked() {
-                self.show_settings = !self.show_settings;
-            }
-            ui.add_space(8.0);
-            ui.label(
-                RichText::new(if self.save_conversations {
-                    "Conversation saving is on"
-                } else {
-                    "Conversations stay in this window"
-                })
-                .small()
-                .weak(),
-            );
-            ui.label(RichText::new("Private · On your device").small().weak());
-            ui.label(
-                RichText::new(if self.preview {
-                    "Interface preview"
-                } else if self.busy {
-                    "●  Responding"
-                } else if self.ready {
-                    "●  Model ready"
-                } else if self.retryable {
-                    "●  Model paused"
-                } else if self.waiting_model {
-                    "◌  Preparing model"
-                } else {
-                    "●  Model unavailable"
-                })
-                .small(),
-            );
-        });
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new(if self.preview {
+                "Interface preview"
+            } else if self.busy {
+                "●  Responding"
+            } else if self.ready {
+                "●  Model ready"
+            } else if self.retryable {
+                "●  Model paused"
+            } else if self.waiting_model {
+                "◌  Preparing model"
+            } else {
+                "●  Model unavailable"
+            })
+            .small(),
+        );
+        ui.label(
+            RichText::new(if self.save_conversations {
+                "Conversation saving is on"
+            } else {
+                "Conversations stay in this window"
+            })
+            .small()
+            .weak(),
+        );
+        ui.label(RichText::new("Private · On your device").small().weak());
     }
 
     fn abliteration_controls(&mut self, ui: &mut egui::Ui) {
@@ -1215,6 +1210,14 @@ impl State {
         });
         ui.add_space(8.0);
         ui.separator();
+        if let Some(notice) = self.conversation_notice {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(notice).small());
+                if ui.small_button("Dismiss").clicked() {
+                    self.conversation_notice = None;
+                }
+            });
+        }
         if self.warning || self.retryable {
             ui.horizontal_wrapped(|ui| {
                 let color = if self.warning {
@@ -1387,7 +1390,9 @@ impl State {
                                 .iter()
                                 .any(|event| matches!(event, egui::Event::Ime(_)))
                         });
-                        if response.has_focus()
+                        if self.rename_conversation.is_none()
+                            && self.delete_conversation.is_none()
+                            && response.has_focus()
                             && !self.composing
                             && !ime_event
                             && ui.input_mut(|input| {
@@ -1473,7 +1478,7 @@ impl State {
         let narrow = ui.available_width() < 900.0;
         if !narrow {
             egui::Panel::left("navigation")
-                .exact_size(238.0)
+                .exact_size(266.0)
                 .frame(
                     egui::Frame::new()
                         .fill(ui.visuals().window_fill)
@@ -1482,9 +1487,11 @@ impl State {
                 .show(ui, |ui| self.sidebar(ui));
         } else if self.sidebar_open {
             let mut open = self.sidebar_open;
-            egui::Window::new("Conversation")
+            egui::Window::new("Conversations")
                 .open(&mut open)
-                .default_width(260.0)
+                .collapsible(false)
+                .default_width(280.0)
+                .default_height(500.0)
                 .show(ui.ctx(), |ui| self.sidebar(ui));
             self.sidebar_open = open;
         }
@@ -1591,7 +1598,10 @@ impl eframe::App for State {
                 }
             }
         });
-        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::N)) {
+        if self.rename_conversation.is_none()
+            && self.delete_conversation.is_none()
+            && ctx.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::N))
+        {
             self.new_chat();
         }
         self.handle_escape(ctx);

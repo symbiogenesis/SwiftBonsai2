@@ -53,6 +53,125 @@ fn harness(size: [f32; 2], seeded: bool) -> Harness<'static, Fixture> {
         )
 }
 
+fn open_sidebar(chat: &mut Harness<'_, Fixture>, size: [f32; 2]) {
+    if size[0] < 900.0 {
+        chat.get_by_role_and_label(egui::Role::Button, "Conversation menu")
+            .click();
+        chat.run();
+    }
+}
+
+fn request_conversation_deletion(chat: &mut Harness<'_, Fixture>, title: &str) {
+    chat.get_by_role_and_label(egui::Role::Button, &format!("Actions for {title}"))
+        .click();
+    chat.run();
+    chat.get_by_role_and_label(egui::Role::Button, "Delete")
+        .click();
+    chat.run();
+    assert!(
+        chat.get_by_label("Delete conversation?")
+            .rect()
+            .is_positive()
+    );
+}
+
+#[test]
+fn conversation_deletion_confirms_with_one_pointer_click_after_repeated_reopening() {
+    for size in [[1180.0, 860.0], [620.0, 640.0]] {
+        let mut chat = harness(size, false);
+        open_sidebar(&mut chat, size);
+        for cycle in 0..3 {
+            let id = chat.state().app.active_conversation;
+            let title = format!("Conversation {cycle}");
+            chat.state_mut().app.conversations[0].title = title.clone();
+            chat.state_mut().app.input = format!("Unsent draft {cycle}");
+            chat.run();
+            request_conversation_deletion(&mut chat, &title);
+            assert_eq!(chat.state().app.delete_conversation, Some(id));
+            // Node::click sends pointer movement, press and release; AccessKit
+            // activation would bypass the hit testing this regression covers.
+            chat.get_by_role_and_label(egui::Role::Button, "Delete conversation")
+                .click();
+            chat.run();
+            assert_eq!(chat.state().app.delete_conversation, None);
+            assert_ne!(chat.state().app.active_conversation, id);
+            assert_eq!(chat.state().app.conversations.len(), 1);
+            assert!(
+                chat.state()
+                    .app
+                    .conversations
+                    .iter()
+                    .all(|item| item.id != id)
+            );
+            assert_eq!(chat.state().app.input, "");
+            assert!(matches!(
+                chat.state().commands.try_recv(),
+                Ok(Command::NewChat)
+            ));
+            assert!(chat.state().commands.try_recv().is_err());
+        }
+    }
+}
+
+#[test]
+fn conversation_deletion_cancel_and_escape_preserve_the_target_and_unsent_draft() {
+    for size in [[1180.0, 860.0], [620.0, 640.0]] {
+        let mut chat = harness(size, false);
+        let id = chat.state().app.active_conversation;
+        chat.state_mut().app.conversations[0].title = "A draft to keep".to_owned();
+        chat.state_mut().app.input = "Keep this unsent text.\nAnd this line.".to_owned();
+        open_sidebar(&mut chat, size);
+        chat.run();
+        for escape in [false, true] {
+            request_conversation_deletion(&mut chat, "A draft to keep");
+            if escape {
+                chat.key_press(egui::Key::Escape);
+            } else {
+                chat.get_by_role_and_label(egui::Role::Button, "Keep conversation")
+                    .click();
+            }
+            chat.run();
+            assert_eq!(chat.state().app.delete_conversation, None);
+            assert_eq!(chat.state().app.active_conversation, id);
+            assert_eq!(chat.state().app.conversations.len(), 1);
+            assert_eq!(
+                chat.state().app.input,
+                "Keep this unsent text.\nAnd this line."
+            );
+            assert!(chat.state().commands.try_recv().is_err());
+        }
+    }
+}
+
+#[test]
+fn conversation_actions_delete_an_inactive_row_without_switching_the_active_draft() {
+    for size in [[1180.0, 860.0], [620.0, 640.0]] {
+        let mut chat = harness(size, false);
+        let inactive = chat.state().app.active_conversation;
+        chat.state_mut().app.conversations[0].title = "Saved conversation".to_owned();
+        chat.state_mut().app.new_chat();
+        assert!(matches!(
+            chat.state().commands.try_recv(),
+            Ok(Command::NewChat)
+        ));
+        let active = chat.state().app.active_conversation;
+        chat.state_mut().app.conversations[1].title = "Current conversation".to_owned();
+        chat.state_mut().app.input = "Continue this draft".to_owned();
+        open_sidebar(&mut chat, size);
+        chat.run();
+        request_conversation_deletion(&mut chat, "Saved conversation");
+        assert_eq!(chat.state().app.delete_conversation, Some(inactive));
+        chat.get_by_role_and_label(egui::Role::Button, "Delete conversation")
+            .click();
+        chat.run();
+        assert_eq!(chat.state().app.active_conversation, active);
+        assert_eq!(chat.state().app.input, "Continue this draft");
+        assert_eq!(chat.state().app.conversations.len(), 1);
+        assert_eq!(chat.state().app.conversations[0].id, active);
+        assert!(chat.state().commands.try_recv().is_err());
+    }
+}
+
 #[test]
 fn streaming_read_aloud_control_is_available_during_generation_and_stops_audio() -> io::Result<()> {
     for size in [[1180.0, 960.0], [620.0, 800.0]] {
@@ -593,10 +712,34 @@ fn capture_chat_layouts_when_requested() -> io::Result<()> {
         ("settings-narrow.png", [620.0, 640.0], true),
         ("draft-wide.png", [1180.0, 860.0], true),
         ("draft-narrow.png", [620.0, 640.0], true),
+        ("sidebar-narrow.png", [620.0, 640.0], true),
+        ("sidebar-many.png", [1180.0, 860.0], true),
+        ("delete-conversation.png", [620.0, 640.0], true),
+        ("rename-conversation.png", [620.0, 640.0], true),
     ] {
         let mut chat = harness(size, seeded);
         if name == "settings-narrow.png" {
             chat.state_mut().app.show_settings = true;
+        } else if name == "sidebar-many.png" {
+            for index in 1..MAX_CONVERSATIONS {
+                chat.state_mut().app.new_chat();
+                chat.state_mut().app.conversations[index].title =
+                    format!("Conversation {index}: a longer title to browse");
+            }
+        } else if matches!(
+            name,
+            "sidebar-narrow.png" | "delete-conversation.png" | "rename-conversation.png"
+        ) {
+            chat.state_mut().app.sidebar_open = true;
+            chat.state_mut().app.conversations[0].title =
+                "A quiet bookshop and a mysterious letter".to_owned();
+            let id = chat.state().app.active_conversation;
+            if name == "delete-conversation.png" {
+                chat.state_mut().app.delete_conversation = Some(id);
+            } else if name == "rename-conversation.png" {
+                chat.state_mut().app.rename_conversation =
+                    Some((id, "A quiet bookshop and a mysterious letter".to_owned()));
+            }
         } else if name.starts_with("draft-") {
             chat.state_mut().app.input = "A manuscript line with a thought.\n"
                 .chars()

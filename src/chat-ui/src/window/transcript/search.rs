@@ -120,7 +120,10 @@ impl Search {
     }
 
     pub(super) fn bar(&mut self, ui: &mut egui::Ui, messages: &[Message]) {
-        if ui.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::F)) {
+        let accepts_input = ui.memory(|memory| memory.allows_interaction(ui.layer_id()));
+        if accepts_input
+            && ui.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::F))
+        {
             self.visibility = Visibility::Focus;
         }
         ui.horizontal_wrapped(|ui| {
@@ -141,7 +144,9 @@ impl Search {
             }
             if self.visibility != Visibility::Closed {
                 let field_id = ui.make_persistent_id("find-query");
-                self.navigate_on_enter(ui.ctx(), field_id);
+                if accepts_input {
+                    self.navigate_on_enter(ui.ctx(), field_id);
+                }
                 let input = ui.add(
                     egui::TextEdit::singleline(&mut self.query)
                         .id(field_id)
@@ -153,7 +158,7 @@ impl Search {
                 input.widget_info(|| {
                     egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Find in conversation")
                 });
-                if self.visibility == Visibility::Focus {
+                if accepts_input && self.visibility == Visibility::Focus {
                     input.request_focus();
                     self.visibility = Visibility::Open;
                 }
@@ -184,12 +189,17 @@ impl Search {
                 let previous = ui.add_enabled(count > 0, egui::Button::new("Previous match"));
                 let next = ui.add_enabled(count > 0, egui::Button::new("Next match"));
                 if previous.clicked()
-                    || ui
-                        .input_mut(|input| input.consume_key(egui::Modifiers::SHIFT, egui::Key::F3))
+                    || (accepts_input
+                        && ui.input_mut(|input| {
+                            input.consume_key(egui::Modifiers::SHIFT, egui::Key::F3)
+                        }))
                 {
                     self.navigate(true);
                 } else if next.clicked()
-                    || ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F3))
+                    || (accepts_input
+                        && ui.input_mut(|input| {
+                            input.consume_key(egui::Modifiers::NONE, egui::Key::F3)
+                        }))
                 {
                     self.navigate(false);
                 }

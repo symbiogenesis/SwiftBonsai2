@@ -27,7 +27,10 @@ The window uses a dark palette, maps Windows high-contrast settings to its
 Rust-drawn widgets and keeps an in-memory workspace of up to 16 conversations.
 Each conversation retains its draft, response settings, visible transcript and
 separate exact committed model history. Switching while idle never promotes an
-interrupted turn to model history. Rename and confirmed deletion are native controls.
+interrupted turn to model history. Each conversation row has a labelled actions
+menu for rename, copying and deletion. Rename and delete use centered native
+modals; deletion names its target, blocks background input and shows completion
+feedback. Cancel and Escape preserve the conversation and its draft.
 Optional recovery uses Windows user-scoped DPAPI through the audited credentials
 boundary, with encrypted atomic file replacement outside Git and a single-writer
 file lock. Saving is off by default; disabling it removes the saved copy. Only

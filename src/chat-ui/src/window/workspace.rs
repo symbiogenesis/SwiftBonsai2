@@ -47,6 +47,12 @@ impl Conversation {
     }
 }
 
+enum ConversationAction {
+    Select(u64),
+    Rename(u64, String),
+    Delete(u64),
+}
+
 impl State {
     pub(super) fn take_conversation(&mut self) -> ConversationSnapshot {
         ConversationSnapshot {
@@ -138,6 +144,7 @@ impl State {
         }
         self.stop_speech();
         self.save_conversation();
+        self.conversation_notice = None;
         if let Some(snapshot) = self.conversations[index].saved.take() {
             self.active_conversation = id;
             self.load_conversation(snapshot);
@@ -183,99 +190,222 @@ impl State {
         }
         self.conversations.remove(index);
         self.recovery_dirty = true;
+        self.conversation_notice = Some("Conversation deleted.");
     }
 
     pub(super) fn conversation_list(&mut self, ui: &mut egui::Ui) {
-        ui.label(RichText::new("CONVERSATIONS").small().weak());
-        let mut selected = None;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("CONVERSATIONS").small().strong().weak());
+            ui.label(
+                RichText::new(self.conversations.len().to_string())
+                    .small()
+                    .weak(),
+            );
+        });
+        ui.add_space(8.0);
+        let mut action = None;
         egui::ScrollArea::vertical()
             .id_salt("conversation-list")
-            .max_height(260.0)
+            .auto_shrink([false, false])
+            .min_scrolled_height(0.0)
             .show(ui, |ui| {
+                let row_width = ui.available_width();
                 for conversation in &self.conversations {
-                    if ui
-                        .add_enabled(
-                            self.ready && !self.busy,
-                            egui::Button::selectable(
-                                conversation.id == self.active_conversation,
-                                &conversation.title,
-                            )
-                            .wrap(),
-                        )
-                        .clicked()
-                    {
-                        selected = Some(conversation.id);
-                    }
+                    // Stable identities survive row removal and duplicate titles.
+                    ui.push_id(conversation.id, |ui| {
+                        if let Some(selected) = self.conversation_row(ui, conversation, row_width) {
+                            action = Some(selected);
+                        }
+                    });
+                    ui.add_space(4.0);
                 }
             });
-        if let Some(id) = selected {
-            self.switch_conversation(id);
+        match action {
+            Some(ConversationAction::Select(id)) => self.switch_conversation(id),
+            Some(ConversationAction::Rename(id, title)) => {
+                self.rename_conversation = Some((id, title));
+                ui.ctx().memory_mut(|memory| {
+                    memory.request_focus(egui::Id::unique("conversation-name"));
+                });
+            }
+            Some(ConversationAction::Delete(id)) => self.delete_conversation = Some(id),
+            None => {}
         }
     }
 
+    fn conversation_row(
+        &self,
+        ui: &mut egui::Ui,
+        conversation: &Conversation,
+        row_width: f32,
+    ) -> Option<ConversationAction> {
+        let mut action = None;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let width = (row_width - 38.0).max(40.0);
+            let active = conversation.id == self.active_conversation;
+            let title = RichText::new(&conversation.title).color(if active {
+                ui.visuals().selection.stroke.color
+            } else {
+                ui.visuals().text_color()
+            });
+            let response = ui
+                .add_enabled_ui(self.ready && !self.busy, |ui| {
+                    ui.add_sized(
+                        [width, 40.0],
+                        egui::Button::selectable(active, title)
+                            .right_text(())
+                            .truncate()
+                            .corner_radius(8),
+                    )
+                })
+                .inner;
+            if active && self.focus_composer {
+                response.scroll_to_me(Some(egui::Align::Center));
+            }
+            if response.on_hover_text(&conversation.title).clicked() {
+                action = Some(ConversationAction::Select(conversation.id));
+            }
+            let (response, _) = egui::containers::menu::MenuButton::from_button(
+                egui::Button::new("⋯")
+                    .min_size(egui::vec2(34.0, 40.0))
+                    .frame_when_inactive(false),
+            )
+            .ui(ui, |ui| {
+                action = self.conversation_menu(ui, conversation);
+            });
+            let label = format!("Actions for {}", conversation.title);
+            response.accessible_name(&label).on_hover_text(label);
+        });
+        action
+    }
+
+    fn conversation_menu(
+        &self,
+        ui: &mut egui::Ui,
+        conversation: &Conversation,
+    ) -> Option<ConversationAction> {
+        ui.set_min_width(156.0);
+        if ui
+            .add_enabled(!self.busy, egui::Button::new("Rename"))
+            .clicked()
+        {
+            ui.close();
+            return Some(ConversationAction::Rename(
+                conversation.id,
+                conversation.title.clone(),
+            ));
+        }
+        let transcript = if conversation.id == self.active_conversation {
+            Some(&self.transcript)
+        } else {
+            conversation.saved.as_ref().map(|saved| &saved.transcript)
+        };
+        if ui
+            .add_enabled(
+                transcript.is_some_and(|value| !value.messages.is_empty()),
+                egui::Button::new("Copy conversation"),
+            )
+            .clicked()
+        {
+            if let Some(transcript) = transcript {
+                ui.ctx().copy_text(transcript.plain_text());
+            }
+            ui.close();
+        }
+        ui.separator();
+        if ui
+            .add_enabled(
+                self.ready && !self.busy,
+                egui::Button::new(RichText::new("Delete").color(ui.visuals().error_fg_color)),
+            )
+            .clicked()
+        {
+            ui.close();
+            return Some(ConversationAction::Delete(conversation.id));
+        }
+        None
+    }
+
     pub(super) fn conversation_dialogs(&mut self, ctx: &egui::Context) {
+        self.rename_dialog(ctx);
+        self.delete_dialog(ctx);
+    }
+
+    fn rename_dialog(&mut self, ctx: &egui::Context) {
         if let Some((id, mut title)) = self.rename_conversation.take() {
-            let mut open = true;
             let mut done = false;
-            egui::Window::new("Rename conversation")
-                .open(&mut open)
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    let label = ui.label("Conversation name");
-                    ui.add(egui::TextEdit::singleline(&mut title).char_limit(64))
-                        .labelled_by(label.id);
-                    ui.horizontal(|ui| {
-                        if ui
-                            .add_enabled(!title.trim().is_empty(), egui::Button::new("Save name"))
-                            .clicked()
+            let modal = egui::Modal::new(egui::Id::unique("rename-conversation")).show(ctx, |ui| {
+                ui.set_width(340.0);
+                ui.heading("Rename conversation");
+                ui.add_space(12.0);
+                let label = ui.label("Conversation name");
+                ui.add(
+                    egui::TextEdit::singleline(&mut title)
+                        .id(egui::Id::unique("conversation-name"))
+                        .char_limit(64)
+                        .desired_width(f32::INFINITY),
+                )
+                .labelled_by(label.id);
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(!title.trim().is_empty(), egui::Button::new("Save name"))
+                        .clicked()
+                    {
+                        if let Some(conversation) = self
+                            .conversations
+                            .iter_mut()
+                            .find(|conversation| conversation.id == id)
                         {
-                            if let Some(conversation) = self
-                                .conversations
-                                .iter_mut()
-                                .find(|conversation| conversation.id == id)
-                            {
-                                title.trim().clone_into(&mut conversation.title);
-                                conversation.renamed = true;
-                                self.recovery_dirty = true;
-                            }
-                            done = true;
+                            title.trim().clone_into(&mut conversation.title);
+                            conversation.renamed = true;
+                            self.recovery_dirty = true;
                         }
-                        if ui.button("Cancel").clicked() {
-                            done = true;
-                        }
-                    });
+                        done = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        done = true;
+                    }
                 });
-            if open && !done {
+            });
+            if !modal.should_close() && !done {
                 self.rename_conversation = Some((id, title));
             }
         }
+    }
+
+    fn delete_dialog(&mut self, ctx: &egui::Context) {
         if let Some(id) = self.delete_conversation {
-            let mut open = true;
+            let Some(conversation) = self.conversations.iter().find(|value| value.id == id) else {
+                self.delete_conversation = None;
+                return;
+            };
+            let title = conversation.title.clone();
             let mut confirmed = false;
             let mut cancelled = false;
-            egui::Window::new("Delete conversation?")
-                .open(&mut open)
-                .collapsible(false)
-                .resizable(false)
+            let modal = egui::Modal::new(egui::Id::unique("delete-conversation"))
                 .show(ctx, |ui| {
-                    ui.label(
-                        "This removes the conversation and its unsent draft from this workspace.",
-                    );
+                    ui.set_width(340.0);
+                    ui.heading("Delete conversation?");
+                    ui.add_space(12.0);
+                    ui.label(RichText::new(&title).strong());
+                    ui.label("This conversation and its unsent draft will be removed. This cannot be undone.");
+                    ui.add_space(16.0);
                     ui.horizontal(|ui| {
+                        cancelled = ui.button("Keep conversation").clicked();
                         confirmed = ui
                             .add_enabled(
                                 self.ready && !self.busy,
-                                egui::Button::new("Delete conversation"),
+                                egui::Button::new(RichText::new("Delete conversation").color(ui.visuals().error_fg_color)),
                             )
                             .clicked();
-                        cancelled = ui.button("Keep conversation").clicked();
                     });
                 });
             if confirmed {
                 self.remove_conversation(id);
             }
-            if !open || confirmed || cancelled {
+            if modal.should_close() || confirmed || cancelled {
                 self.delete_conversation = None;
             }
         }

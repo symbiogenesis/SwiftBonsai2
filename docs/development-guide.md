@@ -85,7 +85,10 @@ application diagnostics are available in a separate collapsible view.
 
 The sidebar keeps up to 16 conversations, each with its own unsent draft and
 response settings. Start a **New conversation** without clearing the previous
-one, select a chat to resume it, or use **Rename** and confirmed **Delete**.
+one, select a chat to resume it, or open the **⋯** menu beside any conversation
+to rename, copy or delete that conversation. The deletion confirmation names the
+conversation; **Keep conversation** or Escape cancels. Deleting the last chat
+leaves a fresh empty conversation ready to use.
 Switching is available while the model is ready and idle. You can draft a
 message while the model prepares; sending waits for readiness.
 
