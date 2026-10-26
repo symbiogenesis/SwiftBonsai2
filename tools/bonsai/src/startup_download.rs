@@ -543,6 +543,60 @@ mod tests {
     }
 
     #[cfg(windows)]
+    fn range_request(stream: &mut std::net::TcpStream) -> crate::Result<String> {
+        // Windows accepts can retain the listener's nonblocking mode. A read
+        // timeout only bounds blocking reads; explicitly restore that mode.
+        stream
+            .set_nonblocking(false)
+            .map_err(|error| error.to_string())?;
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .map_err(|error| error.to_string())?;
+        stream
+            .set_write_timeout(Some(Duration::from_secs(3)))
+            .map_err(|error| error.to_string())?;
+        let mut request = [0; 4096];
+        let mut count = 0;
+        while !request[..count].ends_with(b"\r\n\r\n") {
+            if count == request.len() {
+                return Err("Range fixture request headers exceeded their bound.".into());
+            }
+            match stream.read(&mut request[count..]) {
+                Ok(0) => return Err("Range fixture request headers ended early.".into()),
+                Ok(read) => count += read,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+        String::from_utf8(request[..count].to_vec()).map_err(|error| error.to_string())
+    }
+
+    #[test]
+    fn range_fixture_waits_for_fragmented_request_headers() -> crate::Result<()> {
+        use std::{io::Write as _, net::TcpListener, thread};
+        let listener = TcpListener::bind("127.0.0.1:0").map_err(|error| error.to_string())?;
+        let mut client =
+            std::net::TcpStream::connect(listener.local_addr().map_err(|error| error.to_string())?)
+                .map_err(|error| error.to_string())?;
+        let (mut accepted, _) = listener.accept().map_err(|error| error.to_string())?;
+        accepted
+            .set_nonblocking(true)
+            .map_err(|error| error.to_string())?;
+        let server = thread::spawn(move || range_request(&mut accepted));
+        for fragment in [
+            b"GET /artifact HTTP/1.1\r\nRan".as_slice(),
+            b"ge: bytes=5-\r\n\r\n",
+        ] {
+            thread::sleep(Duration::from_millis(20));
+            client
+                .write_all(fragment)
+                .map_err(|error| error.to_string())?;
+        }
+        let request = server.join().map_err(|_| "Range fixture panicked.")??;
+        assert_eq!(request, "GET /artifact HTTP/1.1\r\nRange: bytes=5-\r\n\r\n");
+        Ok(())
+    }
+
     #[test]
     fn curl_resumes_with_a_bound_on_remaining_response_bytes() -> crate::Result<()> {
         use std::{io::Write as _, net::TcpListener, thread, time::Instant};
@@ -567,19 +621,14 @@ mod tests {
             while Instant::now() < deadline {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
-                        stream
-                            .set_read_timeout(Some(Duration::from_secs(3)))
-                            .map_err(|error| error.to_string())?;
-                        let mut request = [0; 4096];
-                        let count = stream
-                            .read(&mut request)
-                            .map_err(|error| error.to_string())?;
+                        let request = range_request(&mut stream)?;
                         stream.write_all(b"HTTP/1.1 206 Partial Content\r\nContent-Length: 5\r\nContent-Range: bytes 5-9/10\r\nConnection: close\r\n\r\nworld").map_err(|error| error.to_string())?;
-                        return Ok(String::from_utf8_lossy(&request[..count]).into_owned());
+                        return Ok(request);
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(10));
                     }
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
                     Err(error) => return Err(error.to_string()),
                 }
             }
