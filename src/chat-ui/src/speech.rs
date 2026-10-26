@@ -22,7 +22,7 @@ use windows::{
             ISpRecognizer, ISpVoice, SPCAT_AUDIOIN, SPCAT_RECOGNIZERS, SPEI_RECOGNITION,
             SPET_LPARAM_IS_OBJECT, SPET_LPARAM_IS_POINTER, SPET_LPARAM_IS_STRING,
             SPET_LPARAM_IS_TOKEN, SPEVENT, SPF_ASYNC, SPF_IS_NOT_XML, SPF_PURGEBEFORESPEAK,
-            SPLO_STATIC, SPRS_ACTIVE, SPRS_INACTIVE, SPRS_IS_SPEAKING, SPRST_INACTIVE_WITH_PURGE,
+            SPLO_STATIC, SPRS_ACTIVE, SPRS_DONE, SPRS_INACTIVE, SPRST_INACTIVE_WITH_PURGE,
             SPVOICESTATUS, SpInprocRecognizer, SpObjectToken, SpObjectTokenCategory, SpVoice,
         },
         System::Com::{
@@ -37,6 +37,8 @@ const POLL: Duration = Duration::from_millis(100);
 const LISTEN_LIMIT: Duration = Duration::from_secs(120);
 const SPEAK_LIMIT: Duration = Duration::from_secs(600);
 const MAX_TEXT: usize = 32768;
+const READ_ALOUD_FLAGS: u32 =
+    (SPF_ASYNC.0 | SPF_PURGEBEFORESPEAK.0 | SPF_IS_NOT_XML.0).cast_unsigned();
 
 pub(crate) enum Command {
     Listen,
@@ -216,7 +218,7 @@ impl Drop for Recognition {
     }
 }
 
-fn recognition_event(event: &SPEVENT) -> bool {
+const fn recognition_event(event: &SPEVENT) -> bool {
     let bits = event._bitfield.cast_unsigned();
     bits & 0xffff == SPEI_RECOGNITION.0.cast_unsigned()
         && bits >> 16 == SPET_LPARAM_IS_OBJECT.0.cast_unsigned()
@@ -245,7 +247,7 @@ fn release_event(event: SPEVENT) {
         unsafe {
             CoTaskMemFree(Some(std::ptr::without_provenance(
                 event.lParam.0.cast_unsigned(),
-            )))
+            )));
         };
     }
 }
@@ -257,7 +259,10 @@ fn phrase(text: &TaskText) -> windows::core::Result<Option<String>> {
     for length in 0..=MAX_TEXT {
         // SAFETY: SAPI guarantees a NUL-terminated allocation. Stop at its first
         // NUL; the bounded scan never continues beyond that terminator.
-        if unsafe { *text.0.as_ptr().add(length) } == 0 {
+        let unit = unsafe { text.0.as_ptr().add(length) };
+        // SAFETY: The documented allocation is initialized through its NUL;
+        // earlier iterations stop before advancing past that terminator.
+        if unsafe { *unit } == 0 {
             // SAFETY: The scan established the initialized UTF-16 prefix length.
             let units = unsafe { std::slice::from_raw_parts(text.0.as_ptr(), length) };
             return Ok((!units.is_empty()).then(|| String::from_utf16_lossy(units)));
@@ -272,13 +277,10 @@ fn speak(voice: &ISpVoice, text: &str) -> bool {
     let Some(text) = speech_text(text) else {
         return false;
     };
-    let flags = (SPF_ASYNC | SPF_PURGEBEFORESPEAK | SPF_IS_NOT_XML)
-        .0
-        .cast_unsigned();
     // SAFETY: SAPI consumes the live NUL-terminated buffer during Speak. ASYNC
     // owns any subsequent synthesis; IS_NOT_XML prevents interpreting model text
     // as SSML, file references, or speech commands.
-    unsafe { voice.Speak(PCWSTR(text.as_ptr()), flags, None) }.is_ok()
+    unsafe { voice.Speak(PCWSTR(text.as_ptr()), READ_ALOUD_FLAGS, None) }.is_ok()
 }
 
 fn speech_text(text: &str) -> Option<Vec<u16>> {
@@ -291,20 +293,24 @@ fn speech_text(text: &str) -> Option<Vec<u16>> {
 
 fn stop_speaking(voice: Option<&ISpVoice>) {
     if let Some(voice) = voice {
-        let flags = (SPF_ASYNC | SPF_PURGEBEFORESPEAK | SPF_IS_NOT_XML)
-            .0
-            .cast_unsigned();
         // SAFETY: Null text plus purge cancels this voice's queued speech.
-        let _stopped = unsafe { voice.Speak(PCWSTR::null(), flags, None) };
+        let _stopped = unsafe { voice.Speak(PCWSTR::null(), READ_ALOUD_FLAGS, None) };
     }
 }
 
-fn speaking(voice: &ISpVoice) -> bool {
+fn speaking(voice: &ISpVoice) -> windows::core::Result<bool> {
     let mut status = SPVOICESTATUS::default();
     // SAFETY: Valid voice writes one SDK-layout status; null bookmark requests
     // no allocation. This does not start playback.
-    unsafe { voice.GetStatus(&raw mut status, std::ptr::null_mut()) }.is_ok()
-        && status.dwRunningState & SPRS_IS_SPEAKING.0.cast_unsigned() != 0
+    unsafe { voice.GetStatus(&raw mut status, std::ptr::null_mut()) }?;
+    speech_pending(&status)
+}
+
+fn speech_pending(status: &SPVOICESTATUS) -> windows::core::Result<bool> {
+    status.hrLastResult.ok()?;
+    // Zero means that SAPI is waiting to speak, including immediately after an
+    // asynchronous enqueue. Only SPRS_DONE means all queued output has finished.
+    Ok(status.dwRunningState != SPRS_DONE.0.cast_unsigned())
 }
 
 fn run(commands: &Receiver<Command>, events: &Sender<Event>) {
@@ -372,12 +378,18 @@ fn run(commands: &Receiver<Command>, events: &Sender<Event>) {
                 }));
             }
         }
-        if let Some(until) = speech_until
-            && (Instant::now() >= until || !voice.as_ref().is_some_and(speaking))
-        {
-            stop_speaking(voice.as_ref());
-            speech_until = None;
-            let _sent = events.send(Event::Speaking(false));
+        if let Some(until) = speech_until {
+            let pending = voice.as_ref().map_or(Ok(false), speaking);
+            if Instant::now() >= until || !matches!(pending, Ok(true)) {
+                stop_speaking(voice.as_ref());
+                speech_until = None;
+                let _sent = events.send(Event::Speaking(false));
+                if pending.is_err() {
+                    let _sent = events.send(Event::Failed(
+                        "Read-aloud stopped. Check Windows voices and audio output.",
+                    ));
+                }
+            }
         }
     }
     drop(recognition);
@@ -386,9 +398,11 @@ fn run(commands: &Receiver<Command>, events: &Sender<Event>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{Command, Event, MAX_TEXT, recognition_event, speech_text, start};
+    use super::{Command, Event, MAX_TEXT, recognition_event, speech_pending, speech_text, start};
     use std::{io, time::Duration};
-    use windows::Win32::Media::Speech::{SPEI_RECOGNITION, SPEVENT};
+    use windows::Win32::Media::Speech::{
+        SPEI_RECOGNITION, SPEVENT, SPRS_DONE, SPRS_IS_SPEAKING, SPVOICESTATUS,
+    };
 
     #[test]
     fn speech_text_is_plain_bounded_and_nul_terminated() {
@@ -414,6 +428,20 @@ mod tests {
         assert!(recognition_event(&event));
         event._bitfield = SPEI_RECOGNITION.0 | (4 << 16);
         assert!(!recognition_event(&event));
+    }
+
+    #[test]
+    fn queued_speech_waits_for_completion_and_surfaces_engine_errors() -> windows::core::Result<()>
+    {
+        let mut status = SPVOICESTATUS::default();
+        assert!(speech_pending(&status)?);
+        status.dwRunningState = SPRS_IS_SPEAKING.0.cast_unsigned();
+        assert!(speech_pending(&status)?);
+        status.dwRunningState = SPRS_DONE.0.cast_unsigned();
+        assert!(!speech_pending(&status)?);
+        status.hrLastResult = windows::core::HRESULT(0x8000_4005_u32.cast_signed());
+        assert!(speech_pending(&status).is_err());
+        Ok(())
     }
 
     #[test]
