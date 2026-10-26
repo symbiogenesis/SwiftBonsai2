@@ -42,10 +42,9 @@ use windows_sys::Win32::System::Threading::{
     CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
     DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
     GetProcessMitigationPolicy, GetProcessTimes, InitializeProcThreadAttributeList,
-    LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess, PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,
-    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
-    PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, PROCESS_INFORMATION, PROCESS_MITIGATION_POLICY,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, ProcessChildProcessPolicy,
+    LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+    PROC_THREAD_ATTRIBUTE_JOB_LIST, PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY, PROCESS_INFORMATION,
+    PROCESS_MITIGATION_POLICY, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
     ProcessExtensionPointDisablePolicy, ProcessImageLoadPolicy, ProcessSystemCallDisablePolicy,
     ResumeThread, STARTF_USESHOWWINDOW, STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess,
     UpdateProcThreadAttribute, WaitForSingleObject,
@@ -355,7 +354,6 @@ impl NativeProcess {
                 error.as_raw_handle(),
             ],
             spec.mitigation_profile.flags(),
-            spec.limits.is_some_and(|(_, count)| count == 1),
             containment.as_ref().map(containment::Environment::raw),
         )?;
         let mut startup = STARTUPINFOEXW::default();
@@ -396,7 +394,6 @@ impl NativeProcess {
             &thread,
             &job,
             spec.mitigation_profile,
-            spec.limits.is_some_and(|(_, count)| count == 1),
             containment.is_some(),
         ) {
             // PSEC may broker process creation rather than inheriting JOB_LIST.
@@ -658,7 +655,6 @@ fn resume_owned(
     thread: &OwnedHandle,
     job: &OwnedHandle,
     mitigation_profile: MitigationProfile,
-    restrict_children: bool,
     native_containment: bool,
 ) -> io::Result<()> {
     let assigned = !process_in_job(process, job)?;
@@ -670,20 +666,9 @@ fn resume_owned(
             return Err(io::Error::other("worker did not enter its required Job"));
         }
     }
-    // Native PSEC's creation broker can omit JOB_LIST and the child-process
-    // mitigation attribute. Explicit suspended-root Job assignment above is
-    // mandatory; actual native qualification proves its one-process cap denies
-    // child creation. Plain creation additionally requires the mitigation bit.
-    if restrict_children && !native_containment {
-        require_mitigation(process, ProcessChildProcessPolicy, 0x1, "child creation").map_err(
-            |error| {
-                io::Error::new(
-                    error.kind(),
-                    format!("{error}; root Job verified, explicit assignment={assigned}"),
-                )
-            },
-        )?;
-    }
+    // Native PSEC's creation broker can omit JOB_LIST. Suspended-root Job
+    // assignment above is mandatory; the one-process cap denies child creation
+    // for both native and ordinary workers before their first instruction.
     if mitigation_profile == MitigationProfile::Headless {
         require_mitigation(process, ProcessSystemCallDisablePolicy, 0x1, "Win32k")?;
     }
@@ -951,7 +936,6 @@ struct CreationAttributes {
     jobs: Box<[HANDLE; 1]>,
     mitigations: Option<Box<u64>>,
     security_environment: Option<Box<HANDLE>>,
-    child_policy: Option<Box<u32>>,
     initialized: bool,
 }
 
@@ -960,13 +944,10 @@ impl CreationAttributes {
         job: HANDLE,
         handles: [HANDLE; 3],
         mitigations: Option<u64>,
-        restrict_children: bool,
         security_environment: Option<HANDLE>,
     ) -> io::Result<Self> {
-        let count = 2
-            + u32::from(mitigations.is_some())
-            + u32::from(security_environment.is_some())
-            + u32::from(restrict_children);
+        let count =
+            2 + u32::from(mitigations.is_some()) + u32::from(security_environment.is_some());
         let mut bytes = 0;
         // SAFETY: Documented null sizing call; bytes points to writable storage.
         let _ = unsafe { InitializeProcThreadAttributeList(null_mut(), count, 0, &raw mut bytes) };
@@ -979,8 +960,6 @@ impl CreationAttributes {
             jobs: Box::new([job]),
             mitigations: mitigations.map(Box::new),
             security_environment: security_environment.map(Box::new),
-            // PROCESS_CREATION_CHILD_PROCESS_RESTRICTED from the Windows SDK.
-            child_policy: restrict_children.then(|| Box::new(0x1)),
             initialized: false,
         };
         // SAFETY: Pointer-aligned buffer is writable for at least the requested
@@ -1013,13 +992,6 @@ impl CreationAttributes {
                 0x0023 | 0x0002_0000,
                 ptr::from_ref(environment.as_ref()).cast(),
                 size_of::<HANDLE>(),
-            )?;
-        }
-        if let Some(policy) = value.child_policy.as_ref() {
-            value.update(
-                PROC_THREAD_ATTRIBUTE_CHILD_PROCESS_POLICY,
-                ptr::from_ref(policy.as_ref()).cast(),
-                size_of::<u32>(),
             )?;
         }
         Ok(value)

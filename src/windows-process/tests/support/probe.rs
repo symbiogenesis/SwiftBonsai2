@@ -9,7 +9,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::os::windows::ffi::OsStrExt as _;
 use std::os::windows::process::CommandExt as _;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use bonsai_windows_process::{OwnedProcess, ProcessSpec, SandboxPolicy};
@@ -410,10 +410,24 @@ fn report_mitigations() -> io::Result<()> {
 }
 
 fn report_inspection_mitigations() -> io::Result<()> {
-    use windows_sys::Win32::System::Threading::ProcessChildProcessPolicy;
     report_mitigations()?;
-    let children = mitigation_flags(ProcessChildProcessPolicy)?;
-    fs::write("inspection.txt", format!("children={children}\n"))
+    let attempted = Command::new(std::env::current_exe()?)
+        .arg("sleep")
+        .current_dir(std::env::current_dir()?)
+        .creation_flags(0x0800_0000)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    let result = match attempted {
+        Ok(mut child) => {
+            child.kill()?;
+            let _ = child.wait()?;
+            "spawn=allowed\n"
+        }
+        Err(_) => "spawn=denied\n",
+    };
+    fs::write("inspection.txt", result)
 }
 
 #[allow(
