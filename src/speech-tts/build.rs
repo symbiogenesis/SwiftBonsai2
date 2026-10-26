@@ -19,6 +19,7 @@ fn main() -> io::Result<()> {
     for name in [
         "BONSAI_TTS_SOURCE_DIR",
         "BONSAI_TTS_NATIVE_BUILD_DIR",
+        "BONSAI_TTS_COMPILER",
         "BONSAI_CMAKE",
         "BONSAI_CMAKE_GENERATOR",
     ] {
@@ -46,10 +47,9 @@ fn main() -> io::Result<()> {
     external_output(&output)?;
     let cmake = env::var_os("BONSAI_CMAKE").unwrap_or_else(|| OsString::from("cmake"));
     let generator = env::var_os("BONSAI_CMAKE_GENERATOR")
-        .unwrap_or_else(|| OsString::from("Visual Studio 18 2026"));
-    // MSBuild's FileTracker still has a MAX_PATH limit even when Windows long
-    // paths are enabled. Cargo's nested OUT_DIR can exceed that limit during
-    // compiler identification. Compile in a short, unique external temp lane,
+        .unwrap_or_else(|| OsString::from("Ninja Multi-Config"));
+    // Native tools and SDK helpers may still have MAX_PATH limits even when
+    // Windows long paths are enabled. Compile in a short external temp lane,
     // then retain the libraries in Cargo's own output for subsequent links.
     let native_work = native_work()?;
     fs::write(
@@ -109,6 +109,26 @@ fn engine_build(
     let directory = if env::var_os("BONSAI_TTS_NATIVE_BUILD_DIR").is_some() {
         absolute_env("BONSAI_TTS_NATIVE_BUILD_DIR")?
     } else {
+        if generator != "Ninja Multi-Config" {
+            return Err(io::Error::other(
+                "The native Qwen build requires Ninja Multi-Config and pinned ARM64 clang-cl.",
+            ));
+        }
+        let compiler = absolute_env("BONSAI_TTS_COMPILER")?;
+        let resource_compiler = compiler
+            .parent()
+            .ok_or_else(|| io::Error::other("Missing native speech compiler directory."))?
+            .join("llvm-rc.exe");
+        if compiler
+            .file_name()
+            .is_none_or(|name| name != "clang-cl.exe")
+            || !compiler.is_file()
+            || !resource_compiler.is_file()
+        {
+            return Err(io::Error::other(
+                "Provision the pinned ARM64 clang-cl and LLVM resource compiler before building Qwen.",
+            ));
+        }
         let private_source = output.join("qwen-source");
         build_overlay::prepare(source, &private_source)?;
         let directory = output.join("qwen-build");
@@ -121,10 +141,18 @@ fn engine_build(
             directory.clone().into_os_string(),
             OsString::from("-G"),
             generator.to_owned(),
-            OsString::from("-A"),
-            OsString::from("ARM64"),
         ]);
+        let compiler_argument = compiler.to_string_lossy().replace('\\', "/");
+        for name in ["CMAKE_C_COMPILER", "CMAKE_CXX_COMPILER"] {
+            configure.arg(format!("-D{name}:FILEPATH={compiler_argument}"));
+        }
+        configure.arg(format!(
+            "-DCMAKE_RC_COMPILER:FILEPATH={}",
+            resource_compiler.to_string_lossy().replace('\\', "/")
+        ));
         configure.args([
+            "-DCMAKE_C_COMPILER_TARGET=aarch64-pc-windows-msvc",
+            "-DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc",
             "-DBUILD_SHARED_LIBS=OFF",
             "-DGGML_BACKEND_DL=OFF",
             "-DGGML_NATIVE=ON",
@@ -173,9 +201,8 @@ fn external_output(path: &Path) -> io::Result<()> {
 
 fn run(command: &mut Command, working: &Path) -> io::Result<()> {
     // Preserve the inherited Windows and profile environment; only the native
-    // compiler selection is local to this VS ARM64 build. The Canary build in
-    // the same Cargo invocation requires clang-cl/Ninja; its compiler overrides
-    // must not select a different toolset for this engine's VS generator.
+    // compiler selection is explicit in CMake arguments. Inherited overrides
+    // for another native package must not replace the verified ARM64 toolset.
     for key in [
         "CC",
         "CXX",

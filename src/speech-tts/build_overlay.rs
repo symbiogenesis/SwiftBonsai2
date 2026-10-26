@@ -1,4 +1,4 @@
-//! Minimal reviewed thread-control overlay for a private copy of pinned sources.
+//! Reviewed CPU thread control and SIMD guard for private pinned source copies.
 
 use std::{fs, io, path::Path};
 
@@ -8,9 +8,7 @@ type Transform = fn(&str) -> io::Result<String>;
 
 fn replace_once(text: &str, before: &str, after: &str) -> io::Result<String> {
     if text.matches(before).count() != 1 {
-        return Err(io::Error::other(
-            "Pinned Qwen thread overlay input differs.",
-        ));
+        return Err(io::Error::other("Pinned Qwen build overlay input differs."));
     }
     Ok(text.replacen(before, after, 1))
 }
@@ -32,6 +30,14 @@ fn api(text: &str) -> io::Result<String> {
     )
 }
 
+fn vectors(text: &str) -> io::Result<String> {
+    replace_once(
+        text,
+        "#include \"vec.h\"\n",
+        "#include \"vec.h\"\n\n#if !defined(__aarch64__) || !defined(__ARM_NEON) || !defined(GGML_SIMD)\n#error Native Qwen requires ARM64 NEON vector kernels; scalar fallback is unsupported.\n#endif\n",
+    )
+}
+
 /// Copy externally verified immutable source bytes, then overlay only that copy.
 #[allow(
     clippy::redundant_pub_crate,
@@ -39,7 +45,11 @@ fn api(text: &str) -> io::Result<String> {
 )]
 pub(super) fn prepare(source: &Path, destination: &Path) -> io::Result<()> {
     copy(source, destination)?;
-    let transforms: [(&str, Transform); 2] = [("src/backend.h", backend), ("src/qwen.cpp", api)];
+    let transforms: [(&str, Transform); 3] = [
+        ("src/backend.h", backend),
+        ("src/qwen.cpp", api),
+        ("ggml/src/ggml-cpu/vec.cpp", vectors),
+    ];
     for (relative, transform) in transforms {
         let path = destination.join(relative);
         let original = fs::read_to_string(&path)?.replace("\r\n", "\n");
@@ -84,7 +94,7 @@ fn redirected(metadata: &fs::Metadata) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{THREAD_COUNT, api, backend, prepare};
+    use super::{THREAD_COUNT, api, backend, prepare, vectors};
 
     #[test]
     fn overlay_preserves_the_immutable_source_cache() -> std::io::Result<()> {
@@ -105,11 +115,24 @@ mod tests {
         let header = format!("#include <thread>\n{THREAD_COUNT}\n");
         fs::write(source.join("src/backend.h"), &header)?;
         fs::write(source.join("src/qwen.cpp"), "extern \"C\" {\n}")?;
+        fs::create_dir_all(source.join("ggml/src/ggml-cpu"))?;
+        fs::write(
+            source.join("ggml/src/ggml-cpu/vec.cpp"),
+            "#include \"vec.h\"\n",
+        )?;
         let copy = scratch.join("patched");
         prepare(&source, &copy)?;
         assert_eq!(fs::read_to_string(source.join("src/backend.h"))?, header);
         assert!(
             fs::read_to_string(copy.join("src/backend.h"))?.contains("bonsai_cpu_threads.load")
+        );
+        assert_eq!(
+            fs::read_to_string(source.join("ggml/src/ggml-cpu/vec.cpp"))?,
+            "#include \"vec.h\"\n"
+        );
+        assert!(
+            fs::read_to_string(copy.join("ggml/src/ggml-cpu/vec.cpp"))?
+                .contains("!defined(GGML_SIMD)")
         );
         fs::remove_dir_all(scratch)?;
         Ok(())
@@ -128,6 +151,20 @@ mod tests {
         let api = api("extern \"C\" {\nrest of API\n}")?;
         assert!(api.contains("n >= 1 && n <= 256"));
         assert!(api.contains("rest of API"));
+        Ok(())
+    }
+
+    #[test]
+    fn vector_guard_rejects_changed_inputs_and_requires_active_neon_kernels() -> std::io::Result<()>
+    {
+        let source = "#include \"vec.h\"\nrest of vector kernels\n";
+        let patched = vectors(source)?;
+        assert!(patched.contains("!defined(__aarch64__)"));
+        assert!(patched.contains("!defined(__ARM_NEON)"));
+        assert!(patched.contains("!defined(GGML_SIMD)"));
+        assert!(patched.contains("rest of vector kernels"));
+        assert!(vectors("changed input").is_err());
+        assert!(vectors(&source.repeat(2)).is_err());
         Ok(())
     }
 }

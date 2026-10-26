@@ -1,8 +1,8 @@
 # Native Qwen VoiceDesign inference
 
 This library owns the native Qwen3-TTS 1.7B VoiceDesign GGML engine through a
-small Rust binding to its public C ABI. A reviewed build helper adds only bounded
-thread control to a private copy of the external C++ core. The default talker
+small Rust binding to its public C ABI. A reviewed build helper adds bounded
+thread control and a SIMD compile guard to a private copy of the external C++ core. The default talker
 and codec are independently pinned Q8_0 GGUF conversions
 of the named upstream checkpoint; the calling service must verify and retain both artifact files
 before loading. Model identity, immutable URLs, byte lengths and SHA-256 values
@@ -49,15 +49,18 @@ Provision the reviewed immutable source archives outside Git before Cargo:
 - Its GGML fork `ServeurpersoCom/ggml` revision
   `cc5df49a6b878db2b68b9a7b45976e279594627d`, placed at the engine's `ggml/`.
 
-Set `BONSAI_TTS_SOURCE_DIR` to that complete source directory and `BONSAI_CMAKE`
-to an installed CMake executable. Native Windows ARM64 with the Visual Studio
-18 ARM64 C++ tools is required. `BONSAI_CMAKE_GENERATOR` can explicitly select a
-compatible Visual Studio generator. `BONSAI_TTS_NATIVE_BUILD_DIR` optionally
+Set `BONSAI_TTS_SOURCE_DIR` to that complete source directory, `BONSAI_CMAKE`
+to an installed CMake executable, and `BONSAI_TTS_COMPILER` to the provisioned
+pinned ARM64 `clang-cl.exe`. Native Windows ARM64 with the Visual Studio
+18 ARM64 C++ tools and SDK is required. The build uses Ninja Multi-Config and
+LLVM's ARM NEON/FP16 kernels. A private-source compile guard rejects scalar
+fallback; MSVC's missing ARM feature macros must not silently disable SIMD.
+`BONSAI_TTS_NATIVE_BUILD_DIR` optionally
 reuses an externally provisioned compatible native build.
 
 The Cargo build script performs no downloads. Before a fresh native build, it
 copies the verified source tree into its unique external build lane. A minimal,
-reviewed overlay (`build_overlay.rs`) adds a bounded atomic CPU-thread setter
+reviewed overlay (`build_overlay.rs`) requires active ARM64 NEON kernels, adds a bounded atomic CPU-thread setter
 and replaces the upstream logical-CPUs-divided-by-two heuristic when that setter
 is used. Exact replacement anchors reject mismatched inputs. The immutable
 provisioned source cache is never patched. Cached native libraries must include

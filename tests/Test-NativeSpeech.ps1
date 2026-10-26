@@ -203,7 +203,8 @@ if ($Case -in @('All', 'Build')) {
             $script:buildToolPath = $ToolPath
             [void](Resolve-ExternalPath -Path $DataDirectory)
             [void][IO.Directory]::CreateDirectory($WorkingDirectory)
-            return [pscustomobject]@{ Environment = @{ CC = 'clang-cl.exe'; CXX = 'clang-cl.exe'; CMAKE_GENERATOR = 'Ninja'; Sentinel = 'inherited' } }
+            return [pscustomobject]@{ Environment = @{ CC = 'clang-cl.exe'; CXX = 'clang-cl.exe'; CMAKE_GENERATOR = 'Ninja'
+                BONSAI_TTS_COMPILER = 'C:\pinned-llvm\bin\clang-cl.exe'; BONSAI_CMAKE_GENERATOR = 'Ninja Multi-Config'; Sentinel = 'inherited' } }
         }
         function script:Invoke-BonsaiNativeProcess {
             [CmdletBinding()]
@@ -240,7 +241,9 @@ if ($Case -in @('All', 'Build')) {
     Assert ($all.AsrPath.StartsWith($target + '\', [StringComparison]::OrdinalIgnoreCase) -and
         $all.TtsPath.StartsWith($target + '\', [StringComparison]::OrdinalIgnoreCase)) 'Native daemon builds discarded the persistent external Cargo cache.'
     Assert ($builds[0].Environment.CC -ceq 'clang-cl.exe' -and $builds[0].Environment.CMAKE_GENERATOR -ceq 'Ninja' -and
-        $builds[1].Environment.CC -ceq 'cl.exe' -and $builds[1].Environment.CMAKE_GENERATOR -ceq 'Visual Studio 18 2026') 'Native engines used incompatible compiler environments.'
+        $builds[1].Environment.CC -ceq 'clang-cl.exe' -and $builds[1].Environment.CMAKE_GENERATOR -ceq 'Ninja' -and
+        $builds[1].Environment.BONSAI_TTS_COMPILER -ceq 'C:\pinned-llvm\bin\clang-cl.exe' -and
+        $builds[1].Environment.BONSAI_CMAKE_GENERATOR -ceq 'Ninja Multi-Config') 'Native TTS lost the pinned SIMD-capable compiler environment.'
     foreach ($build in $builds) {
         Assert ($build.Arguments -contains '--locked' -and $build.Arguments -contains '--release' -and
             $build.Arguments[0] -match '^\+nightly-\d{4}-\d{2}-\d{2}-aarch64-pc-windows-msvc$' -and
