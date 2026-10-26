@@ -512,6 +512,8 @@ dependencies = [
 name = "bonsai-speech-asr"
 version = "0.1.0"
 dependencies = [
+ "bonsai-speech-service",
+ "serde_json",
  "transcribe-cpp",
 ]
 
@@ -519,6 +521,7 @@ dependencies = [
 name = "bonsai-speech-service"
 version = "0.1.0"
 dependencies = [
+ "bonsai-artifacts",
  "bonsai-windows-credentials",
  "bonsai-windows-process",
  "httparse",
@@ -531,6 +534,10 @@ dependencies = [
 [[package]]
 name = "bonsai-speech-tts"
 version = "0.1.0"
+dependencies = [
+ "bonsai-speech-service",
+ "serde_json",
+]
 
 [[package]]
 name = "bonsai-tools"
