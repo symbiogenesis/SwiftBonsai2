@@ -169,22 +169,31 @@ fn exchange_transcript(
     body: &[u8],
     transcript: String,
 ) -> io::Result<(Vec<u8>, usize)> {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let response = exchange_engine(
+        route,
+        headers,
+        body,
+        Fake {
+            kind,
+            calls: Arc::clone(&calls),
+            transcript,
+        },
+    )?;
+    Ok((response, calls.load(Ordering::Acquire)))
+}
+
+fn exchange_engine(
+    route: &str,
+    headers: &[(&str, &str)],
+    body: &[u8],
+    mut engine: impl Engine + Send + 'static,
+) -> io::Result<Vec<u8>> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
     let port = listener.local_addr()?.port();
-    let calls = Arc::new(AtomicUsize::new(0));
-    let observed = Arc::clone(&calls);
     let server = thread::spawn(move || -> io::Result<()> {
         let (mut peer, _) = listener.accept()?;
-        http::handle(
-            &mut peer,
-            port,
-            &KEY,
-            &mut Fake {
-                kind,
-                calls,
-                transcript,
-            },
-        );
+        http::handle(&mut peer, port, &KEY, &mut engine);
         Ok(())
     });
     let mut peer = TcpStream::connect((Ipv4Addr::LOCALHOST, port))?;
@@ -204,7 +213,7 @@ fn exchange_transcript(
     server
         .join()
         .map_err(|_| io::Error::other("Fake speech server failed"))??;
-    Ok((response, observed.load(Ordering::Acquire)))
+    Ok(response)
 }
 
 fn speech() -> Vec<u8> {
@@ -356,14 +365,14 @@ fn strict_json_and_wave_validation_rejects_untrusted_payloads() {
         assert!(wave::decode(&bytes).is_err());
     }
     assert!(
-        wave::encode(&Audio {
+        wave::header(&Audio {
             samples: vec![f32::NAN],
             sample_rate: 24_000
         })
         .is_err()
     );
     assert!(
-        wave::encode(&Audio {
+        wave::header(&Audio {
             samples: vec![0.0],
             sample_rate: 16_000
         })
@@ -498,5 +507,90 @@ fn protected_credential_keeps_a_read_handle_that_denies_writes() -> io::Result<(
     assert!(std::fs::OpenOptions::new().write(true).open(&path).is_err());
     drop(retained);
     assert!(std::fs::OpenOptions::new().write(true).open(&path).is_ok());
+    Ok(())
+}
+
+struct AudioFake(Option<Audio>);
+
+impl Engine for AudioFake {
+    fn kind(&self) -> Kind {
+        Kind::QwenTts
+    }
+
+    fn infer(&mut self, _: Request<'_>) -> io::Result<Output> {
+        self.0
+            .take()
+            .map(Output::Audio)
+            .ok_or_else(|| io::Error::other("Synthetic audio already taken."))
+    }
+}
+
+#[test]
+fn wave_response_validates_before_headers_and_preserves_pcm_bytes() -> io::Result<()> {
+    let body = speech();
+    for audio in [
+        Audio {
+            samples: vec![0.0, f32::NAN],
+            sample_rate: 24_000,
+        },
+        Audio {
+            samples: vec![0.0],
+            sample_rate: 16_000,
+        },
+        Audio {
+            samples: vec![],
+            sample_rate: 24_000,
+        },
+        Audio {
+            samples: vec![-2.0, -1.0, -0.5, -0.0, 0.0, 0.5, 1.0, 2.0],
+            sample_rate: 24_000,
+        },
+    ] {
+        let valid = audio.samples.len() == 8;
+        let response = exchange_engine(
+            "POST /v1/audio/speech",
+            &[
+                ("Content-Type", "application/json"),
+                ("Content-Length", &body.len().to_string()),
+            ],
+            &body,
+            AudioFake(Some(audio)),
+        )?;
+        assert_eq!(
+            response
+                .windows(8)
+                .filter(|bytes| *bytes == b"HTTP/1.1")
+                .count(),
+            1
+        );
+        if !valid {
+            assert!(response.starts_with(b"HTTP/1.1 502"));
+            assert!(
+                response
+                    .windows(20)
+                    .any(|bytes| bytes == b"invalid_audio_output")
+            );
+            continue;
+        }
+        assert!(response.starts_with(b"HTTP/1.1 200"));
+        assert!(
+            response
+                .windows(20)
+                .any(|bytes| bytes == b"Content-Length: 60\r\n")
+        );
+        let boundary = response
+            .windows(4)
+            .position(|bytes| bytes == b"\r\n\r\n")
+            .ok_or_else(|| io::Error::other("Missing WAV response headers."))?;
+        let wave = &response[boundary + 4..];
+        assert_eq!(wave.len(), 60);
+        assert_eq!(&wave[..4], b"RIFF");
+        assert_eq!(
+            &wave[44..],
+            &[
+                1, 128, 1, 128, 0, 192, 0, 0, 0, 0, 0, 64, 255, 127, 255, 127
+            ]
+        );
+    }
     Ok(())
 }

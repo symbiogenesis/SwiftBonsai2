@@ -99,8 +99,8 @@ fn respond(
             send(peer, 200, "application/json", body.as_bytes())
         }
         (Kind::QwenTts, Ok(Output::Audio(audio))) => {
-            let bytes = wave::encode(&audio)?;
-            send(peer, 200, "audio/wav", &bytes)
+            let header = wave::header(&audio)?;
+            send_wave(peer, &audio.samples, &header)
         }
         _ => return Err(Error::new(502, "model_failure")),
     }
@@ -117,6 +117,7 @@ fn stream(
     peer.set_write_timeout(Some(WRITE))
         .and_then(|()| peer.write_all(b"HTTP/1.1 200 Response\r\nContent-Type: audio/pcm\r\nTransfer-Encoding: chunked\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n"))
         .map_err(|_| Error::new(0, "response_failed"))?;
+    let mut frame = PcmFrame::new();
     let mut total = 0_usize;
     let mut failed = false;
     let result = engine.infer_stream(request, &mut |samples| {
@@ -132,16 +133,8 @@ fn stream(
             failed = true;
             return Err(io::Error::other("Streaming speech exceeds its bound."));
         }
-        for chunk in samples.chunks(16_384) {
-            let mut bytes = Vec::with_capacity(chunk.len() * 2);
-            for sample in chunk {
-                bytes.extend_from_slice(&wave::pcm(*sample).to_le_bytes());
-            }
-            if write!(peer, "{:x}\r\n", bytes.len())
-                .and_then(|()| peer.write_all(&bytes))
-                .and_then(|()| peer.write_all(b"\r\n"))
-                .is_err()
-            {
+        for chunk in samples.chunks(wave::PCM_SAMPLES) {
+            if peer.write_all(frame.encode(chunk)).is_err() {
                 failed = true;
                 return Err(io::Error::other("Streaming speech response failed."));
             }
@@ -341,29 +334,160 @@ fn framing(
     Ok((length, media))
 }
 
-fn send(peer: &mut TcpStream, status: u16, media: &str, bytes: &[u8]) -> io::Result<()> {
-    let until = Instant::now() + WRITE;
-    let head = format!(
-        "HTTP/1.1 {status} Response\r\nContent-Type: {media}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n",
-        bytes.len()
-    );
-    for mut remaining in [head.as_bytes(), bytes] {
-        while !remaining.is_empty() {
-            let timeout = until
-                .checked_duration_since(Instant::now())
-                .ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::TimedOut, "Speech response deadline")
-                })?;
-            peer.set_write_timeout(Some(timeout))?;
-            let count = peer.write(remaining)?;
-            if count == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::WriteZero,
-                    "Speech response closed",
-                ));
-            }
-            remaining = &remaining[count..];
+// One fixed payload buffer is retained across every native callback. Chunk
+// framing occupies its spare edges, so each payload needs one write_all call.
+const CHUNK_PREFIX: usize = 2 * size_of::<usize>() + 2;
+
+struct PcmFrame {
+    bytes: Box<[u8]>,
+}
+
+impl PcmFrame {
+    fn new() -> Self {
+        Self {
+            bytes: vec![0; CHUNK_PREFIX + wave::PCM_BYTES + 2].into_boxed_slice(),
         }
     }
+
+    fn encode(&mut self, samples: &[f32]) -> &[u8] {
+        let length = wave::pcm_into(samples, &mut self.bytes[CHUNK_PREFIX..]).len();
+        self.bytes[CHUNK_PREFIX - 2..CHUNK_PREFIX].copy_from_slice(b"\r\n");
+        let mut first = CHUNK_PREFIX - 2;
+        let mut size = length;
+        while size != 0 {
+            first -= 1;
+            self.bytes[first] = b"0123456789abcdef"[size & 0xf];
+            size >>= 4;
+        }
+        let end = CHUNK_PREFIX + length;
+        self.bytes[end..end + 2].copy_from_slice(b"\r\n");
+        &self.bytes[first..end + 2]
+    }
+}
+
+fn response_head(status: u16, media: &str, length: usize) -> String {
+    format!(
+        "HTTP/1.1 {status} Response\r\nContent-Type: {media}\r\nContent-Length: {length}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n"
+    )
+}
+
+fn send_wave(peer: &mut TcpStream, samples: &[f32], header: &[u8; 44]) -> io::Result<()> {
+    let until = Instant::now() + WRITE;
+    let head = response_head(200, "audio/wav", header.len() + samples.len() * 2);
+    write_before(peer, head.as_bytes(), until)?;
+    write_before(peer, header, until)?;
+    write_pcm(samples, |bytes| write_before(peer, bytes, until))
+}
+
+fn write_pcm(samples: &[f32], mut write: impl FnMut(&[u8]) -> io::Result<()>) -> io::Result<()> {
+    let mut bytes = vec![0; wave::PCM_BYTES].into_boxed_slice();
+    for samples in samples.chunks(wave::PCM_SAMPLES) {
+        write(wave::pcm_into(samples, &mut bytes))?;
+    }
     Ok(())
+}
+
+fn send(peer: &mut TcpStream, status: u16, media: &str, bytes: &[u8]) -> io::Result<()> {
+    let until = Instant::now() + WRITE;
+    let head = response_head(status, media, bytes.len());
+    write_before(peer, head.as_bytes(), until)?;
+    write_before(peer, bytes, until)
+}
+
+fn write_before(peer: &mut TcpStream, mut remaining: &[u8], until: Instant) -> io::Result<()> {
+    while !remaining.is_empty() {
+        let timeout = until
+            .checked_duration_since(Instant::now())
+            .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "Speech response deadline"))?;
+        peer.set_write_timeout(Some(timeout))?;
+        let count = peer.write(remaining)?;
+        if count == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                "Speech response closed",
+            ));
+        }
+        remaining = &remaining[count..];
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod pcm_tests {
+    use super::{PcmFrame, wave, write_pcm};
+    use std::io;
+
+    #[test]
+    fn complete_pcm_reuses_one_bounded_buffer_and_stops_on_write_failure() -> io::Result<()> {
+        let samples = vec![0.5; 2_880_000];
+        let mut first = None;
+        let mut writes = 0;
+        let mut total = 0;
+        write_pcm(&samples, |bytes| {
+            assert!(bytes.len() <= wave::PCM_BYTES);
+            assert!(
+                bytes
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .all(|sample| *sample == [0, 64])
+            );
+            assert_eq!(*first.get_or_insert(bytes.as_ptr()), bytes.as_ptr());
+            writes += 1;
+            total += bytes.len();
+            Ok(())
+        })?;
+        assert_eq!(writes, samples.len().div_ceil(wave::PCM_SAMPLES));
+        assert_eq!(total, samples.len() * 2);
+        assert_eq!(wave::PCM_BYTES, 32_768);
+        let mut attempted = 0;
+        let result = write_pcm(&samples, |_| {
+            attempted += 1;
+            if attempted == 2 {
+                Err(io::Error::new(
+                    io::ErrorKind::BrokenPipe,
+                    "Synthetic closed writer.",
+                ))
+            } else {
+                Ok(())
+            }
+        });
+        assert_eq!(
+            result.err().map(|error| error.kind()),
+            Some(io::ErrorKind::BrokenPipe)
+        );
+        assert_eq!(attempted, 2);
+        Ok(())
+    }
+
+    #[test]
+    fn streaming_pcm_reuses_one_frame_across_hex_boundaries_and_shorter_tails() {
+        let mut frame = PcmFrame::new();
+        let storage = frame.bytes.as_ptr();
+        let samples = vec![0.5; wave::PCM_SAMPLES];
+        for count in [
+            1,
+            7,
+            8,
+            127,
+            128,
+            wave::PCM_SAMPLES - 1,
+            wave::PCM_SAMPLES,
+            1,
+        ] {
+            let encoded = frame.encode(&samples[..count]);
+            let prefix = format!("{:x}\r\n", count * 2);
+            assert_eq!(&encoded[..prefix.len()], prefix.as_bytes());
+            assert_eq!(&encoded[encoded.len() - 2..], b"\r\n");
+            let body = &encoded[prefix.len()..encoded.len() - 2];
+            assert_eq!(body.len(), count * 2);
+            assert!(
+                body.as_chunks::<2>()
+                    .0
+                    .iter()
+                    .all(|sample| *sample == [0, 64])
+            );
+            assert_eq!(frame.bytes.as_ptr(), storage);
+        }
+    }
 }
