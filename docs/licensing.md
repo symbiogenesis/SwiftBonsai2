@@ -24,6 +24,8 @@ Dependency terms apply independently of the application's license.
 | --- | --- | --- |
 | `http`, `httparse`, `serde`, `serde_json`, `sha2`, `windows-sys`, `tempfile` | MIT OR Apache-2.0 | Retain the applicable license and attribution. |
 | `tokio` 1.54.1 | MIT | Retain copyright and permission notice. |
+| `mxc-sdk` 1.0.1 | MIT | Retain Microsoft copyright and MIT permission notice; the native PSEC integration is confined to the Windows process boundary. |
+| `flatbuffers` 25.12.19 | Apache-2.0 | Retain the selected license and notices for the fixed PSEC policy encoder. |
 | `fearless_simd` 1.1.0 | Apache-2.0 OR MIT | Optional native ARM64 Windows kernels; retain applicable license/attribution. |
 | `subtle` 2.6.1 | BSD-3-Clause | Retain copyright, conditions and disclaimer; respect non-endorsement. |
 | `zip` 9.1.2 | MIT | Retain the notice; enabled deflate dependencies also have permissive options. |

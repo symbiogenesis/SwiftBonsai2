@@ -1,0 +1,4 @@
+# MXC's pinned Windows bindings use Syn 2; the workspace's pinned Serde and
+# current ICU macros use Syn 3. Both are build-time proc-macro dependencies.
+# MXC and zip also require different Nix versions in non-Windows target metadata.
+allowed-duplicate-crates = ["syn", "nix"]

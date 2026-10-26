@@ -5,7 +5,12 @@ Original project code, documentation, and configuration are licensed under
 the Apache License, Version 2.0. See LICENSE.
 
 Third-party material retains its original license and attribution. This
-project retains the Prism/ggml-derived native codec probe in tools/codec-probe.
+project links Microsoft MXC's mxc-sdk 1.0.1 under the MIT License:
+https://github.com/microsoft/mxc/tree/v1.0.1
+Copyright (c) Microsoft Corporation. Its MIT permission terms are reproduced
+below; dependency-specific notices remain applicable.
+
+The project retains the Prism/ggml-derived native codec probe in tools/codec-probe.
 The Rust runtime, codecs, GGUF tooling and storage adapter are maintained in
 https://github.com/symbiogenesis/prism-inference. Released binaries retain
 their bundled Apache and third-party notices.

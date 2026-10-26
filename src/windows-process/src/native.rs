@@ -48,9 +48,14 @@ use windows_sys::Win32::System::Threading::{
     STARTF_USESTDHANDLES, STARTUPINFOEXW, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
-use crate::{ProcessMemory, ProcessSpec, ToolProcessSpec, invalid};
+use crate::{ProcessMemory, ProcessSpec, SandboxPolicy, ToolProcessSpec, invalid};
 
+mod containment;
 mod environment;
+
+pub(super) fn sandbox_available() -> io::Result<()> {
+    containment::available()
+}
 
 pub(super) fn tool_environment(
     overlay: &std::collections::BTreeMap<String, String>,
@@ -192,6 +197,8 @@ pub(super) struct NativeProcess {
     job: OwnedHandle,
     process: OwnedHandle,
     id: u32,
+    // Drop after the Job and retained root: containment outlives the worker.
+    containment: Option<containment::Environment>,
 }
 
 impl NativeProcess {
@@ -206,6 +213,28 @@ impl NativeProcess {
             },
             command,
             None,
+            None,
+        )
+    }
+
+    pub(super) fn start_sandboxed(
+        spec: &ProcessSpec,
+        command: Vec<u16>,
+        policy: &SandboxPolicy,
+    ) -> io::Result<Self> {
+        let containment = containment::Environment::create(spec, policy)?;
+        let environment = containment::child_environment(policy)?;
+        Self::launch(
+            &LaunchSpec {
+                executable: &spec.executable,
+                working_directory: &spec.working_directory,
+                stdout: &spec.stdout,
+                stderr: &spec.stderr,
+                limits: Some((spec.memory_limit_bytes, spec.active_process_limit)),
+            },
+            command,
+            Some(&environment),
+            Some(containment),
         )
     }
 
@@ -224,6 +253,7 @@ impl NativeProcess {
             },
             command,
             environment,
+            None,
         )
     }
 
@@ -231,6 +261,7 @@ impl NativeProcess {
         spec: &LaunchSpec<'_>,
         mut command: Vec<u16>,
         environment: Option<&[u16]>,
+        containment: Option<containment::Environment>,
     ) -> io::Result<Self> {
         let executable = wide(spec.executable.as_os_str());
         let directory = wide(spec.working_directory.as_os_str());
@@ -284,6 +315,7 @@ impl NativeProcess {
                 error.as_raw_handle(),
             ],
             spec.limits.is_some(),
+            containment.as_ref().map(containment::Environment::raw),
         )?;
         let mut startup = STARTUPINFOEXW::default();
         startup.StartupInfo.cb = win_size::<STARTUPINFOEXW>();
@@ -327,6 +359,7 @@ impl NativeProcess {
             job,
             process,
             id: info.dwProcessId,
+            containment,
         })
     }
 
@@ -524,6 +557,17 @@ impl NativeProcess {
             private_bytes: counters.PrivateUsage,
             working_set_bytes: counters.WorkingSetSize,
         })
+    }
+}
+
+impl Drop for NativeProcess {
+    fn drop(&mut self) {
+        if self.containment.is_some() {
+            // Retain PSEC while requesting complete tree termination and waiting
+            // for the exact root. Closing the Job remains the final kill guard
+            // even when a native query/wait fails during best-effort Drop.
+            let _ = self.stop(Duration::from_secs(10));
+        }
     }
 }
 
@@ -738,12 +782,18 @@ struct CreationAttributes {
     handles: Box<[HANDLE; 3]>,
     jobs: Box<[HANDLE; 1]>,
     mitigations: Box<u64>,
+    security_environment: Option<Box<HANDLE>>,
     initialized: bool,
 }
 
 impl CreationAttributes {
-    fn new(job: HANDLE, handles: [HANDLE; 3], headless: bool) -> io::Result<Self> {
-        let count = if headless { 3 } else { 2 };
+    fn new(
+        job: HANDLE,
+        handles: [HANDLE; 3],
+        headless: bool,
+        security_environment: Option<HANDLE>,
+    ) -> io::Result<Self> {
+        let count = 2 + u32::from(headless) + u32::from(security_environment.is_some());
         let mut bytes = 0;
         // SAFETY: Documented null sizing call; bytes points to writable storage.
         let _ = unsafe { InitializeProcThreadAttributeList(null_mut(), count, 0, &raw mut bytes) };
@@ -755,6 +805,7 @@ impl CreationAttributes {
             handles: Box::new(handles),
             jobs: Box::new([job]),
             mitigations: Box::new(HEADLESS_MITIGATIONS),
+            security_environment: security_environment.map(Box::new),
             initialized: false,
         };
         // SAFETY: Pointer-aligned buffer is writable for at least the requested
@@ -778,6 +829,15 @@ impl CreationAttributes {
                 PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
                 ptr::from_ref(value.mitigations.as_ref()).cast(),
                 size_of_val(value.mitigations.as_ref()),
+            )?;
+        }
+        if let Some(environment) = value.security_environment.as_ref() {
+            // Process security-environment attribute from the pinned MXC ABI.
+            // The value and owning PSEC handle stay live through CreateProcessW.
+            value.update(
+                0x0023 | 0x0002_0000,
+                ptr::from_ref(environment.as_ref()).cast(),
+                size_of::<HANDLE>(),
             )?;
         }
         Ok(value)

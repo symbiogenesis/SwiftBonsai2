@@ -2,7 +2,8 @@
 //!
 //! A suspended root receives its Job atomically during creation; dropping its
 //! owner kills the complete tree. This enforces lifecycle and committed-memory
-//! limits. It does not restrict tokens, files, network access, or GPU allocation.
+//! limits. Explicit sandboxed launches additionally require native Windows PSEC
+//! filesystem, network and desktop containment; no weaker fallback is used.
 #![cfg(windows)]
 
 use std::collections::BTreeMap;
@@ -41,6 +42,32 @@ pub struct ProcessSpec {
     pub memory_limit_bytes: usize,
     /// Maximum simultaneously active processes, including the root.
     pub active_process_limit: u32,
+}
+
+/// Least-authority native worker filesystem grants.
+///
+/// Networking denies external ingress and egress, with a per-container host
+/// loopback exception for the authenticated local HTTP service. Loopback access
+/// is not limited to the broker. Required Windows runtime directories are added
+/// by the native boundary; caller profile and data directories are not.
+#[derive(Debug)]
+pub struct SandboxPolicy {
+    /// Exact existing model, credential and executable files or runtime folders.
+    pub readonly_paths: Vec<PathBuf>,
+    /// Existing private worker scratch, also used as its working directory/TEMP/TMP.
+    pub writable_directory: PathBuf,
+}
+
+/// Requires native PSEC 1.1, host-loopback ingress and security-environment creation.
+///
+/// This never changes host ACLs, firewall settings or installed Windows features.
+/// It does not launch a process or establish actual-model compatibility.
+///
+/// # Errors
+/// Returns `Unsupported` when the native contract is unavailable, or a native
+/// failure when the host cannot create the required restricted environment.
+pub fn native_sandbox_available() -> io::Result<()> {
+    native::sandbox_available()
 }
 
 /// Startup compiler/tool inputs with a child-only inherited-environment overlay.
@@ -100,6 +127,22 @@ impl ParentProcess {
 }
 
 impl OwnedProcess {
+    /// Starts a natively contained worker with atomic Job and mitigation attributes.
+    ///
+    /// The exact worker retains the existing PID, memory, process-count and
+    /// lifetime contracts. Its only writable path is private scratch. OS/profile
+    /// environment entries are inherited; child TEMP/TMP select that scratch.
+    /// All policy and capability failures reject without an uncontained retry.
+    ///
+    /// # Errors
+    /// Returns invalid launch/grant paths, reparse paths, overlapping read/write
+    /// grants, unavailable native PSEC support or failed native creation.
+    pub fn start_sandboxed(spec: &ProcessSpec, policy: &SandboxPolicy) -> io::Result<Self> {
+        validate_process(spec)?;
+        let command = command_line(&spec.executable, &spec.arguments)?;
+        native::NativeProcess::start_sandboxed(spec, command, policy).map(Self)
+    }
+
     /// Atomically owns a startup compiler/tool tree and then resumes its root.
     ///
     /// The complete Unicode environment is inherited and merged case-insensitively
@@ -141,27 +184,7 @@ impl OwnedProcess {
     /// overrides, existing evidence files, or any failed Windows operation,
     /// including unsupported required process-creation mitigations.
     pub fn start(spec: &ProcessSpec) -> io::Result<Self> {
-        for path in [
-            &spec.executable,
-            &spec.working_directory,
-            &spec.stdout,
-            &spec.stderr,
-        ] {
-            validate_path(path)?;
-        }
-        if !spec.executable.is_file() || !spec.working_directory.is_dir() {
-            return Err(invalid("executable or working directory does not exist"));
-        }
-        if spec.memory_limit_bytes == 0 || spec.active_process_limit == 0 {
-            return Err(invalid(
-                "job memory and active-process limits must be positive",
-            ));
-        }
-        for (name, _) in std::env::vars_os() {
-            if forbidden_environment_name(&name) {
-                return Err(invalid("inherited environment contains a backend override"));
-            }
-        }
+        validate_process(spec)?;
         let command = command_line(&spec.executable, &spec.arguments)?;
         native::NativeProcess::start(spec, command).map(Self)
     }
@@ -214,6 +237,31 @@ impl OwnedProcess {
     pub fn memory_usage(&self) -> io::Result<ProcessMemory> {
         self.0.memory_usage()
     }
+}
+
+fn validate_process(spec: &ProcessSpec) -> io::Result<()> {
+    for path in [
+        &spec.executable,
+        &spec.working_directory,
+        &spec.stdout,
+        &spec.stderr,
+    ] {
+        validate_path(path)?;
+    }
+    if !spec.executable.is_file() || !spec.working_directory.is_dir() {
+        return Err(invalid("executable or working directory does not exist"));
+    }
+    if spec.memory_limit_bytes == 0 || spec.active_process_limit == 0 {
+        return Err(invalid(
+            "job memory and active-process limits must be positive",
+        ));
+    }
+    for (name, _) in std::env::vars_os() {
+        if forbidden_environment_name(&name) {
+            return Err(invalid("inherited environment contains a backend override"));
+        }
+    }
+    Ok(())
 }
 
 /// Returns currently available physical memory; this is an observation only.
