@@ -6,11 +6,10 @@ from token IDs, without a C/C++ inference library. Eligible Windows ARM64
 PQ2/PTQ1 operations use baseline NEON automatically; scalar remains the reference
 and fallback. The pinned Swift chat/tokenizer, native sampler and experimental
 owned broker path are connected. **Bounded Swift full-model numerical parity
-and owned HTTP lifecycle are qualified through the recorded source diagnostics;
+and owned HTTP lifecycle have bounded source-level qualification;
 reviewed prebuilt consumption remains pending.** Pinned Prism remains the
 comparison and fallback engine. The [active MVP checklist](prism-upstream-todo.md)
-records the narrower Swift evidence; the historical R0–R7 entries below retain
-their broader scope.
+defines the narrower Swift scope; the R0–R7 roadmap below covers broader work.
 
 The application UI is a separate [pure-Rust native client](ui-architecture.md)
 of the broker's local HTTP/JSON/SSE contract. Its availability does not change

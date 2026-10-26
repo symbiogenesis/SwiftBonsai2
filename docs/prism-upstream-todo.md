@@ -1,227 +1,90 @@
 # Prism migration TODO: Swift Bonsai 2 MVP
 
-The MVP is a safe Rust CPU engine that runs the pinned Swift Bonsai 2 model on
-a 32 GB Snapdragon X Elite laptop with Windows ARM64. Prioritize only the
-engine behavior needed for that path. **Everything else is deferred.**
+The MVP is a safe Rust CPU engine for the pinned Swift Bonsai 2 model on a
+32 GB Snapdragon X Elite laptop with Windows ARM64. Prioritize the engine
+behavior required for that path. Broader runtime work is deferred.
 
-The later hardware goal is [automatic Snapdragon X1/X2 configuration](hardware-profiles.md),
-using qualified per-device CPU/GPU/NPU, prefill/decode and interactive/battery
-choices. This extends the roadmap beyond the recorded X1 machine without
-expanding this CPU MVP's acceptance scope. H0 discovery/profile design may
-proceed now; selector and accelerator implementation follow the reviewed CPU
-runtime handoff. Current launch policies stay CPU-only.
+Runtime implementation belongs to
+[Prism Inference](https://github.com/symbiogenesis/prism-inference). The bounded
+source CPU MVP is implemented and qualified for its limited workloads. Runner
+still provisions release `0.1.1`; delivering the source repairs requires a
+reviewed prebuilt release and [lock update](development-guide.md#prepare-a-runtime-lock-update).
+Source qualification does not qualify that provisioned release, full-context
+generation, performance, creative quality or daily-service isolation.
 
-The source CPU MVP checks below are complete for their declared bounded Swift
-workloads. Delivery into ordinary Runner builds still requires a reviewed
-prebuilt runtime release and lock update. Pinned Prism remains the comparison
-and fallback engine while that consumption boundary is closed. Broader models,
-full-context workloads, performance and daily-service qualification remain open.
-
-Runtime implementation follow-ups below refer to
-[Prism Inference source](https://github.com/symbiogenesis/prism-inference).
-Runner still provisions its immutable `0.1.1` release lock; source repairs require
-a separately reviewed binary release and lock update before that provisioned
-runtime includes them.
-
-The application separately provides a [pure-Rust native chat UI](ui-architecture.md).
-That client consumes the broker's HTTP/JSON/SSE contract and is not part of this
-engine migration's runtime acceptance scope. UI implementation and protocol
-interoperability do not require a browser frontend.
+The [native Rust chat UI](ui-architecture.md) separately consumes the broker's
+HTTP/JSON/SSE contract. Its availability does not expand runtime qualification.
+The later [Snapdragon X1/X2 hardware goal](hardware-profiles.md) requires qualified
+per-device CPU/GPU/NPU plans; current launch policies remain CPU-only.
 
 ## MVP boundary
 
-| Area | Required for this MVP |
+| Area | Required behavior |
 | --- | --- |
-| Model | The exact `Swift-Bonsai-2-PQ2_0.gguf` in the [assessment lock](../config/swift-assessment.lock.json), with verified length/SHA-256 and metadata |
-| Architecture and weights | Dense `qwen35`; the [851-tensor inventory](../config/swift.metadata.json): 353 F32, 96 BF16 and 402 PQ2_0 tensors |
-| Execution | CPU only; existing scalar reference and eligible baseline NEON paths, with explicit unsupported-operation errors |
-| State and bounds | One conversation, 8,192-token context, FP16 attention K/V, F32 recurrent/convolution state, bounded model/state/scratch memory |
-| Input and output | Swift's embedded chat template, exact prompt token accounting, declared special/stop tokens and incremental text output |
-| Generation | Ordinary decoding with the [current inference defaults](inference-defaults.md), explicit thinking on/`xhigh`, and preserved supplied reasoning history |
-| Request lifecycle | Verified readiness, one active generation, streaming, cancellation, deadlines, reset and recovery |
+| Model | Exact `Swift-Bonsai-2-PQ2_0.gguf` from the [assessment lock](../config/swift-assessment.lock.json), with verified length, SHA-256 and metadata |
+| Weights | Dense `qwen35`; the [851-tensor inventory](../config/swift.metadata.json): 353 F32, 96 BF16 and 402 PQ2_0 tensors |
+| Execution | CPU only; scalar reference and eligible baseline NEON paths, with explicit unsupported-operation errors |
+| State | One 8,192-token conversation; FP16 attention K/V, F32 recurrent/convolution state and bounded allocations |
+| Input/output | Verified embedded template, exact prompt accounting, declared stop tokens and incremental text output |
+| Generation | [Current inference defaults](inference-defaults.md), thinking on/`xhigh`, preserved supplied reasoning history |
+| Lifecycle | Verified readiness, one active generation, authentication, streaming, cancellation, deadlines, reset and recovery |
 
-Use the pinned PQ2 artifact without LoRA for this first engine MVP. Current-weight
-PTQ1, other models and adapter forward execution are deferred. This does not
-qualify the intended LoRA-enabled standard profile or change its separate
+Use the pinned PQ2 artifact without LoRA for this engine MVP. Current-weight
+PTQ1, other models and adapter execution are separate work. This does not qualify
+the LoRA-enabled standard profile or replace its
 [throughput and quality requirements](swift-lora.md#required-standard-profile-qualification).
 Keep prompt-cache reuse, speculation and accelerator offload disabled.
 
-## Ordered MVP work
+## Implemented source scope
 
-- [x] **M1 — Verify the actual Swift model loads within its CPU budget.** Reuse
-  the verified GGUF loader and owned tensor storage. Check the pinned artifact's
-  complete tensor inventory, dimensions, metadata, tokenizer/template identity
-  and Hadamard/sign declarations. Retain immutable artifact handling, malformed
-  input rejection and bounded allocations. Close this with a real Swift load
-  and recorded memory accounting; generic model generation/saving and support
-  for other architectures or packed weight formats are deferred.
-
-  Evidence: the actual pinned artifact and all 851 layouts loaded on the target
-  Snapdragon device; the 8K graph initialized all 16 attention and 48 recurrent
-  blocks. Peak process commit was 7,410,827,264 bytes, within the 12 GiB allowance.
-  See the [retained load and comparison receipt](../config/swift-native-mvp.evidence.json).
-
-- [x] **M2 — Qualify the Swift Qwen35 forward path against pinned Prism.** Reuse
-  the existing graph and PQ2 packed CPU operations, including their Q8_K
-  activation contract, transforms, MRoPE, attention and GDN/convolution state.
-  Cover all 16 full-attention and 48 recurrent blocks, prompt ingestion and
-  successive decode steps on the actual model. Compare logits, state and greedy
-  token sequences under declared numerical tolerances, then repair only the
-  operators/layouts this graph requires. Check scalar and enabled NEON behavior;
-  new SIMD optimizations, unrelated backend operations and backward graphs are
-  deferred.
-
-  **Qualified bounded source workloads at `9899a25`:** the current scalar
-  three-token run matches all 483 native logit/state files byte-for-byte. The
-  NEON run consumes the pinned 61-token chat prompt and feeds back three greedy
-  tokens (`1596, 1144, 310`). At positions 60–63, all 8,388 files containing
-  166,078,464 logit and complete logical state elements match native byte-for-byte.
-  This includes every recurrent/convolution block and all live FP16 KV rows,
-  promoted exactly to F32. The original `1e-3 + 1e-3 * abs(reference)` criterion
-  was unchanged. Earlier full-prefix scalar/NEON equality at `d932dac` is retained
-  separately from the corrected-revision checks.
-
-  Independent native controls qualify the exact Swift identity's weighted RMS,
-  Q8_K preparation, PQ2 accumulation, SiLU/SwiGLU, GDN dot/update, convolution
-  accumulation, F16 attention dot, masked softmax and in-place RoPE arithmetic.
-  Production-identical traces and same-input controls isolated each causal
-  repair. In particular, native buffer reuse changes RoPE's first FMA order;
-  the separate out-of-place oracle remains covered. Generic graph arithmetic
-  retains its existing contract. The [follow-up receipt](../config/swift-native-mvp-followup.evidence.json)
-  records tested revisions, unchanged tolerances, historical failures, hashes
-  and memory observations.
-
-  This qualifies the declared pinned-model source workloads. Full-context and
-  longer-output qualification, performance, other models and adapters remain
-  deferred. Runner still consumes released runtime `0.1.1`; these source repairs
-  need a separately reviewed prebuilt release and lock update before ordinary
-  Runner builds consume them.
-
-- [x] **M3 — Connect Swift's chat prompt to the exact tokenizer.** Render the
-  verified embedded template with the existing Jinja/chat APIs, current
-  thinking/effort defaults and supplied assistant reasoning history. Feed those
-  exact rendered bytes through the production Qwen35 tokenizer; compare prompt
-  bytes, token IDs, BOS/EOS policy and counts with pinned Prism. Reserve the
-  complete output allowance within the 8K context and reject overflow before
-  execution. Reuse tokenization sessions/worker/client and incremental UTF-8
-  output. The token driver does not yet render chat templates; generic template
-  discovery, tool parsing and other tokenizer families are deferred.
-
-  Evidence: `SwiftChatSession` and the separate Swift worker/client render and
-  count the exact verified template. Three actual Swift cases match pinned
-  native template bytes and tokenizer IDs (61/104/63 tokens), including supplied
-  reasoning, Unicode and control spellings. BOS/EOS policy, the full 4K output
-  reservation, overflow rejection and reuse after rejection are covered by
-  [retained captures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/swift-prompt-parity.json).
-
-- [x] **M4 — Wire the Swift sampler and generation termination.** Connect the
-  production sampler to the Swift runtime with temperature 1, top-p 0.95,
-  top-k 20, min-p 0, repetition penalty 1 and presence/frequency penalties 0.
-  Support Swift's full 248,320-token vocabulary within bounded allocations;
-  the [production candidate storage](https://github.com/symbiogenesis/prism-inference/blob/main/src/sampling/upstream.rs)
-  now admits the complete vocabulary before top-k filtering, with a hard
-  1,048,576-candidate bound.
-  Qualify Prism RNG/draw ordering and seeded sampling against the same logits;
-  the driver's independent SplitMix64 reference sampler is not that parity
-  evidence. Honor the verified EOS/EOT/EOM policy and complete output cap,
-  without an added reasoning cutoff. Test stop handling and sampler rollback
-  after cancellation or failed delivery. Other sampler modes are deferred.
-
-  Evidence: the production MT19937 chain matches 192 seeded native observations
-  across four full-vocabulary distributions and four seeds, including native
-  top-k ties. The verified native five-token EOG policy is applied; focused
-  regressions cover cancellation/delivery rollback, stop draws and reset.
-  [Sampler captures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/swift-sampler.json)
-  are independent of the driver's SplitMix64 reference sampler.
-
-- [x] **M5 — Complete the minimal Swift session and broker wiring.** Reuse
-  the existing runtime, token worker/client and broker boundaries for pinned
-  startup identity/readiness, render/count/completion consistency and bounded
-  streaming. Preserve authentication, admission, process ownership and resource
-  policies. Exercise cancellation, deadlines, abandoned output, reset and a
-  subsequent successful request; failure must restore consistent KV,
-  recurrent/convolution and sampler state or close admission until reset.
-  Generic transport, multi-sequence scheduling, portable state files, cache
-  reuse and runtime-level client expansion remain deferred. The separate
-  native Rust application UI follows [its own contract](ui-architecture.md).
-
-  The source `SwiftSession`, worker/client and owned `--native-engine` path are
-  connected. Dropping an in-flight private request signals its exact model
-  cancellation token. Canonical backend requests are capped at 1 MiB before
-  counting, and supplied reasoning is preserved identically for count and
-  generation. Focused lifecycle/protocol checks cover rollback, closed
-  admission, deadlines, reset and subsequent success. The earlier actual-model
-  library session at `14b98a8` separately covers provisional/terminal delivery
-  faults, cancellation, context rejection and seeded replay.
-
-  The current [owned HTTP receipt](../config/swift-owned-http-mvp.evidence.json)
-  completes the bounded source wiring/recovery demonstration. It records the
-  exact temporary source bindings and admission patches; ordinary Runner still
-  consumes release `0.1.1`, whose production startup policy remains 16 GiB.
-
-- [x] **M6 — Demonstrate bounded end-to-end Swift operation.** On the target
-  Windows ARM64 device, run the pinned model through the connected engine path:
-  load, render/count, prefill, sampled text streaming, model stop/output limit,
-  cancellation and restart/reset followed by another request. Include supplied
-  history and context rejection, retaining exact revisions, artifacts,
-  settings, hardware, correctness and memory observations. Full local suites,
-  benchmarks and broader profile qualification remain outside this demonstration.
-
-  **Passed bounded source diagnostic:** the Snapdragon X Elite run verified
-  owned readiness and authentication, a 78-token supplied-history request with
-  two sampled tokens and length termination, identical seeded reset/replay,
-  rejection of an independently verified 9,052-token prompt followed by success,
-  active stream abandonment with closed admission and complete Job cleanup,
-  fresh owned restart followed by a successful request, and final owner-death
-  cleanup. Both backend listeners closed without an escaped child or watchdog
-  violation. M2 separately records byte-exact native logits/state and greedy
-  continuation at the same Prism source base `9899a25`.
-
-  The trial used exact diagnostic binaries with source bindings and both startup
-  checks explicitly set to 13.65 GiB. It began with 14.63 GiB free, peaked at
-  7.20 GiB sampled process private memory and retained at least 7.14 GiB free.
-  The 12 GiB Job cap and 4 GiB running reserve stayed enforced. Production
-  admission remains 16 GiB, and the released-runtime lock remains `0.1.1`.
-  The [receipt](../config/swift-owned-http-mvp.evidence.json) retains each patch,
-  binary hash, context-proof limitation, resource outcome and prior startup
-  failure. This does not qualify released packaging, full 8K/4K-output workloads,
-  throughput, creative quality, daily security or LoRA.
-
-  Separately, the owner-authorized three-token diagnostic succeeded with
-  13.73 GiB free and 7.02 GiB peak process commit. Approximately 13.7 GiB is
-  accepted for that bounded workload, as recorded in the
-  [follow-up receipt](../config/swift-native-mvp-followup.evidence.json).
-
-## Deferred until after the MVP
-
-Do not start these to close the Swift engine MVP. Reopen an item only when a
-concrete Swift failure proves it is a dependency, and narrow the work to that
-dependency.
-
-| Deferred area | Scope retained for later |
+| Milestone | Bounded scope |
 | --- | --- |
-| Full Prism conformance | All 70 Windows-applicable source contracts, the complete 22,817 eval/support geometry matrices, compact handoff repairs, full reference qualification and baseline ratcheting |
-| Broad performance work | All 1,530 backend performance workloads, profiling/optimization campaigns and new SIMD/ISA tuning |
-| Other models and formats | Other architecture builders/tokenizer families, PTQ1/alternate model profiles, remaining IQ/other encoders, quantization tools/statistics and codec-wide transport parity |
-| Generic APIs and lifecycle | Full model/context/session compatibility, generated models, GGUF saving, generic concurrency/state-file contracts and the public C ABI |
-| Training and speculation | Optimizers/datasets, backward/gradient operations, DSpark, speculative decoding and advanced recurrent rollback schedules |
-| Chat and grammar ecosystem | Non-Swift templates, general chat analysis/auto-parser parity, tool calls, multimodal content, grammar/schema/LLGuidance integration and full server API compatibility |
-| CLI and remote acquisition | All upstream example option contexts, broad CLI parity, general HF resolution, HTTPS/download/multi-shard compatibility; the MVP uses the existing pinned artifact setup |
-| Adapter and accelerator paths | LoRA forward execution and standard-profile qualification, per-device X1/X2 Adreno/Vulkan and Hexagon/NPU execution, automatic hardware profiles and other offload paths |
-| Application expansion | Native Rust UI features beyond the minimal chat demo, agent automation and writing/retrieval workflows; the separate application UI is not an engine-MVP dependency |
+| M1 — Model loading | Verified Swift artifact, all tensor layouts and the 8K graph's 16 attention and 48 recurrent blocks, within the CPU memory budget |
+| M2 — Forward parity | Scalar and baseline NEON logits, complete logical recurrent/convolution state and live FP16 KV rows against pinned native execution; unchanged `1e-3 + 1e-3 * abs(reference)` tolerance |
+| M3 — Prompt/tokenizer | Exact template bytes, token IDs, BOS/EOS policy, Unicode and supplied reasoning; complete output reservation and overflow rejection |
+| M4 — Sampling/termination | Production MT19937 draw ordering, seeded sampling, native tie handling, declared stop policy and cancellation/delivery rollback |
+| M5 — Session/broker | Owned Swift worker/session, identical canonical requests for counting and generation, 1 MiB request bound, deadlines, reset and recovery |
+| M6 — End-to-end operation | Actual-model supplied-history streaming, output-limit termination, seeded replay, context rejection/recovery, abandonment, owned shutdown and fresh restart |
 
-The [deferred migration backlog and evidence](prism-migration-backlog.md)
-preserves the previous detailed contracts, focused implementation results,
-historical CI failures/repairs and pending qualification. The
-[conformance guide](prism-upstream-tests.md),
-[71-source catalog](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/catalog.json) and
-[migration inventory](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/migration.json) remain the record
-of broader migration scope. Deferred does not mean passed, removed or complete.
+The source project owns the active
+[prompt parity fixtures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/swift-prompt-parity.json)
+and [sampler fixtures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/swift-sampler.json).
+These bounded checks do not establish full 8K-context/4K-output behavior or
+performance. Generic graph arithmetic and unrelated source contracts retain
+their existing requirements.
 
-This is a work-priority change. Keep existing required green source identities,
-immutable fixtures, upstream assertions/tolerances, explicit unsupported results
-and required production bridges. Runtime CI and its test tooling now belong to
-Prism Inference; Runner retains its application and released-runtime integration
-checks. Moving those checks does not ratchet `baseline.json` or report a new test
-verdict. Track implementation and measured qualification separately, and promote
-only the scope actually demonstrated.
+## Remaining Runner delivery
+
+- Review the exact source revision, required validation and immutable ARM64
+  bundle before preparing a release-lock candidate.
+- Promote only the checked released bytes through the runtime lock-update
+  procedure, then validate Runner's released-runtime integration.
+- Preserve the production 16 GiB available-memory admission, 12 GiB Job commit
+  limit and 4 GiB physical reserve. Temporary diagnostic settings are not
+  supported launch profiles.
+- Qualify full-context/long-output behavior, throughput, creative quality,
+  LoRA and daily-service isolation separately before claiming those outcomes.
+
+## Deferred runtime work
+
+Reopen a deferred area for this MVP only when a concrete Swift failure proves
+it is a dependency, and narrow the change to that dependency.
+
+| Area | Deferred scope |
+| --- | --- |
+| Full Prism conformance | Complete source contracts, eval/support geometry matrices, full reference qualification and baseline ratcheting |
+| Performance | Backend timing workloads, profiling, optimization campaigns and new SIMD/ISA tuning |
+| Models/formats | Other architectures and tokenizer families, alternate packed formats, quantizers, codec statistics and transport parity |
+| Generic APIs | Generated models, GGUF saving, concurrency, portable state files and the public C ABI |
+| Training/speculation | Optimizers, datasets, backward graphs, DSpark and speculative decoding |
+| Chat/grammar | Non-Swift templates, general parsers, tool calls, multimodal content, LLGuidance and broader server compatibility |
+| Acquisition/CLI | Broad option parity, general HF resolution, HTTPS/download and multi-shard behavior |
+| Adapters/accelerators | LoRA qualification, Adreno/Vulkan, Hexagon/NPU and automatic X1/X2 hardware profiles |
+| Application expansion | Agent automation, writing/retrieval workflows and UI features beyond the native chat demo |
+
+See the [deferred contracts](prism-migration-backlog.md) and
+[upstream validation ownership](prism-upstream-tests.md). Preserve required green
+source identities, immutable fixtures, original assertions/tolerances, explicit
+unsupported results and required production bridges. Runtime CI belongs to Prism
+Inference; Runner owns application and released-runtime integration checks.
+Full suites and all benchmarks remain CI-only.

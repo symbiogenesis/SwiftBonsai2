@@ -129,7 +129,6 @@ candidate alone does not promote the compiled runtime pin.
 
 Synthetic fixtures establish app policy, parser, artifact and process contracts.
 They do not establish daily filesystem/egress isolation, same-user backend bypass
-prevention, quality, throughput or sustained comfort. The separate bounded Swift
-[numerical](../config/swift-native-mvp-followup.evidence.json) and
-[owned HTTP](../config/swift-owned-http-mvp.evidence.json) receipts retain their
-exact source/diagnostic revisions and do not update ordinary release pins.
+prevention, quality, throughput or sustained comfort. Bounded source-runtime
+checks do not qualify the provisioned release; runtime promotion requires the
+separate reviewed release and lock-update procedure.

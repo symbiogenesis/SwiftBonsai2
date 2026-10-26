@@ -510,8 +510,8 @@ This is an experimental path. Bounded source-runtime checks qualify actual model
 loading, native logit/state parity, prompt/tokenizer and seeded sampler parity,
 and owned HTTP recovery. The provisioned `0.1.1` release predates those source
 repairs; reviewed prebuilt delivery remains open. See the
-[MVP checklist](prism-upstream-todo.md) for exact workloads and diagnostic
-admission patches. Full-context behavior, throughput and daily-service acceptance
+[MVP checklist](prism-upstream-todo.md) for supported scope and remaining release
+qualification. Full-context behavior, throughput and daily-service acceptance
 remain open. The server's private child protocol alone does not establish Job
 ownership or prevent same-user bypass.
 

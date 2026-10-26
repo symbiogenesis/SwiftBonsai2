@@ -333,15 +333,6 @@ components. Evidence and credentials remain retained; never share either key or
 the whole directory. CPU/LoRA checks use the packaged Rust maintenance tool and
 same Windows process boundary, with their separate fixed arguments/pins.
 
-The [bounded source HTTP diagnostic](../config/swift-owned-http-mvp.evidence.json)
-passed supplied-history streaming, private reset/replay, independently verified
-context rejection/recovery, active abandonment with owned shutdown, and a fresh
-owned restart followed by success. It binds exact source-server bytes through
-explicit temporary diagnostic patches, including matching 13.65 GiB parent and
-child startup checks. The 12 GiB Job cap and 4 GiB running reserve were retained.
-These are recorded diagnostic binaries; ordinary release pins and 16 GiB Swift
-startup admission remain unchanged.
-
 Restricted tokens, filesystem/egress isolation, same-user backend bypass
 prevention, everyday native UI acceptance and real-model quality/performance
 remain unqualified.
