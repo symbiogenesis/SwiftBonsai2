@@ -27,6 +27,34 @@ mod sealed;
 
 pub use sealed::{protect_private_data, unprotect_private_data};
 
+/// Queries the actual Windows process token, without trusting an environment flag.
+///
+/// # Errors
+/// Returns an unavailable/malformed token or a failed native query.
+pub fn is_app_container() -> io::Result<bool> {
+    native::is_app_container()
+}
+
+/// Validates an existing regular file for a read-only consumer.
+///
+/// Inside an actual Windows `AppContainer`, the OS-validated local volume root is
+/// not opened or searched for `.git`; PSEC can deny that metadata while granting
+/// the exact file. Every non-root ancestor still receives the usual checks.
+/// The trusted owner must validate and retain ancestry before granting the file;
+/// this helper never grants filesystem access or relaxes creation-path checks.
+///
+/// # Errors
+/// Rejects unsafe paths, unavailable token/drive facts, nonregular files,
+/// reparse points, Git ancestry and failed metadata queries.
+pub fn validate_read_path(path: &Path) -> io::Result<()> {
+    validate_path_inner(path, !is_app_container()?)?;
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.is_file() || metadata.file_attributes() & native::REPARSE_ATTRIBUTE != 0 {
+        return Err(invalid("Read access requires an existing regular file."));
+    }
+    Ok(())
+}
+
 /// Fresh owner-and-LocalSystem directory with a retained noninheritable reader.
 ///
 /// The protected inheritable DACL is installed during creation and verified
@@ -90,7 +118,7 @@ impl RetainedCredential {
     pub fn open(path: &Path) -> io::Result<Self> {
         use std::os::windows::fs::OpenOptionsExt as _;
 
-        validate_external_path(path)?;
+        validate_read_path(path)?;
         let mut reader = fs::OpenOptions::new()
             .read(true)
             .share_mode(1) // FILE_SHARE_READ; deny write and delete sharing.
@@ -243,6 +271,10 @@ impl PrivateCredentials {
 /// Returns an error for unsupported spelling, a nonlocal drive, unsafe ancestors,
 /// missing intermediate directories, or an unexpected filesystem error.
 pub fn validate_external_path(path: &Path) -> io::Result<()> {
+    validate_path_inner(path, true)
+}
+
+fn validate_path_inner(path: &Path, check_root: bool) -> io::Result<()> {
     let spelling = path
         .to_str()
         .ok_or_else(|| invalid("Path must be valid Unicode."))?;
@@ -275,7 +307,9 @@ pub fn validate_external_path(path: &Path) -> io::Result<()> {
     }
     let mut cursor = PathBuf::from(&normalized[..3]);
     native::validate_local_drive(&cursor)?;
-    check_existing(&cursor)?;
+    if check_root {
+        check_existing(&cursor)?;
+    }
     for (index, part) in components.iter().enumerate() {
         cursor.push(part);
         match check_existing(&cursor) {

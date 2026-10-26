@@ -24,7 +24,7 @@ use windows_sys::Win32::Security::{
     GetAce, GetAclInformation, GetSecurityDescriptorControl, GetSecurityDescriptorDacl,
     GetSecurityDescriptorOwner, GetTokenInformation, OWNER_SECURITY_INFORMATION,
     PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
-    TokenUser,
+    TokenIsAppContainer, TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CREATE_NEW, CreateDirectoryW, CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT,
@@ -121,7 +121,7 @@ impl Security {
     }
 }
 
-fn current_sid() -> io::Result<String> {
+fn current_token() -> io::Result<OwnedHandle> {
     let mut raw_token = ptr::null_mut();
     // SAFETY: This API has no preconditions and returns a borrowed pseudo handle.
     let process = unsafe { GetCurrentProcess() };
@@ -130,7 +130,37 @@ fn current_sid() -> io::Result<String> {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: OpenProcessToken succeeded and transfers ownership of this handle.
-    let token = unsafe { OwnedHandle::from_raw_handle(raw_token) };
+    Ok(unsafe { OwnedHandle::from_raw_handle(raw_token) })
+}
+
+pub(super) fn is_app_container() -> io::Result<bool> {
+    let token = current_token()?;
+    let mut value = 0_u32;
+    let mut returned = 0_u32;
+    // SAFETY: TokenIsAppContainer returns one DWORD into aligned writable
+    // storage. The queried token and both output slots stay live for the call.
+    if unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            TokenIsAppContainer,
+            ptr::from_mut(&mut value).cast(),
+            4,
+            &raw mut returned,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    if returned != 4 || value > 1 {
+        return Err(io::Error::other(
+            "Windows returned an invalid container token flag.",
+        ));
+    }
+    Ok(value != 0)
+}
+
+fn current_sid() -> io::Result<String> {
+    let token = current_token()?;
     let mut bytes = 0;
     // SAFETY: the null/zero buffer requests its required length; token is live.
     unsafe {

@@ -14,6 +14,22 @@ fn test_lane(name: &str) -> io::Result<PathBuf> {
 }
 
 #[test]
+fn read_validation_keeps_regular_file_and_repository_checks() -> io::Result<()> {
+    let parent = test_lane("read-validation")?;
+    let path = parent.join("input.bin");
+    fs::write(&path, b"approved input")?;
+    validate_read_path(&path)?;
+    assert!(validate_read_path(&parent).is_err());
+    assert!(validate_read_path(&parent.join("missing.bin")).is_err());
+    let repository = parent.join("repository");
+    fs::create_dir(&repository)?;
+    fs::write(repository.join(".git"), b"gitdir: elsewhere")?;
+    fs::write(repository.join("input.bin"), b"unapproved input")?;
+    assert!(validate_read_path(&repository.join("input.bin")).is_err());
+    Ok(())
+}
+
+#[test]
 #[allow(
     clippy::used_underscore_binding,
     reason = "Verify the noninheritable reader retained only to protect directory lifetime."
