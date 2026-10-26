@@ -238,13 +238,13 @@ fn digest(
     reader: &mut impl Read,
     expected: u64,
     output: &mut impl Write,
-) -> crate::Result<Vec<u8>> {
+    buffer: &mut [u8],
+) -> crate::Result<[u8; 32]> {
     let mut hash = Sha256::new();
     let mut count = 0_u64;
-    let mut buffer = vec![0; 64 * 1024];
     loop {
         let copied = reader
-            .read(&mut buffer)
+            .read(buffer)
             .map_err(|_| "Cannot read native source bytes.")?;
         if copied == 0 {
             break;
@@ -263,7 +263,7 @@ fn digest(
     if count != expected {
         return Err("Native source byte length differs from its archive.".into());
     }
-    Ok(hash.finalize().to_vec())
+    Ok(hash.finalize().into())
 }
 
 fn stage_source(
@@ -286,7 +286,8 @@ fn stage_source(
     {
         return Err("Source archive exceeds its byte bound.".into());
     }
-    let actual: String = digest(&mut file, bytes, &mut std::io::sink())?
+    let mut buffer = vec![0; 64 * 1024];
+    let actual: String = digest(&mut file, bytes, &mut std::io::sink(), &mut buffer)?
         .iter()
         .flat_map(|byte| {
             [
@@ -319,14 +320,14 @@ fn stage_source(
             .by_index(index)
             .map_err(|_| "Cannot reopen source ZIP entry.")?;
         if path.exists() {
-            let expected = digest(&mut entry, bytes, &mut std::io::sink())?;
+            let expected = digest(&mut entry, bytes, &mut std::io::sink(), &mut buffer)?;
             let mut existing = open_locked(&path)?;
             if existing
                 .metadata()
                 .map_err(|_| "Cannot inspect source cache.")?
                 .len()
                 != bytes
-                || digest(&mut existing, bytes, &mut std::io::sink())? != expected
+                || digest(&mut existing, bytes, &mut std::io::sink(), &mut buffer)? != expected
             {
                 return Err("Native source cache differs from its pinned archive.".into());
             }
@@ -336,7 +337,7 @@ fn stage_source(
                 .create_new(true)
                 .open(&path)
                 .map_err(|_| "Cannot create native source file.")?;
-            digest(&mut entry, bytes, &mut output)?;
+            digest(&mut entry, bytes, &mut output, &mut buffer)?;
             output
                 .flush()
                 .map_err(|_| "Cannot flush native source file.")?;
