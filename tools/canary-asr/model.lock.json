@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "model": "nvidia/canary-qwen-2.5b",
+  "revision": "b1469e1bba1cfe140205529c79c434ca47180960",
+  "license": "CC-BY-4.0",
+  "publisher": "NVIDIA Corporation",
+  "model_card": "https://huggingface.co/nvidia/canary-qwen-2.5b/blob/b1469e1bba1cfe140205529c79c434ca47180960/README.md",
+  "metadata_source": "https://huggingface.co/api/models/nvidia/canary-qwen-2.5b/revision/b1469e1bba1cfe140205529c79c434ca47180960?blobs=true",
+  "files": {
+    "config.json": {
+      "url": "https://huggingface.co/nvidia/canary-qwen-2.5b/resolve/b1469e1bba1cfe140205529c79c434ca47180960/config.json",
+      "bytes": 2382,
+      "sha256": "37d15b0445fade873944c9b0cda7221953ec2207169cb6488a3a57d90e629d52",
+      "digest_evidence": "SHA-256 of the 2382-byte immutable publisher config fetched on 2026-10-25"
+    },
+    "model.safetensors": {
+      "url": "https://huggingface.co/nvidia/canary-qwen-2.5b/resolve/b1469e1bba1cfe140205529c79c434ca47180960/model.safetensors",
+      "bytes": 5119120624,
+      "sha256": "800cb0d099cf655a8887d8b741c3a4afa9891e2b2949870251c4d58c72b59175",
+      "digest_evidence": "Immutable Hugging Face publisher LFS metadata; weights not downloaded in this session"
+    }
+  },
+  "qualification": {
+    "artifact_metadata": "reviewed-2026-10-25",
+    "actual_model_loading": "not-run",
+    "windows_arm64": "not-qualified",
+    "quality_memory_and_latency": "not-qualified"
+  }
+}
