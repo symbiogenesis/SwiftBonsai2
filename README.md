@@ -29,6 +29,8 @@ The native Rust engine lives in [Prism Inference](https://github.com/symbiogenes
 This project consumes a pinned prebuilt server; ordinary builds do not compile
 the inference engine. Provision it with `./scripts/Get-Inference.ps1 -DataDirectory <absolute-path>`.
 
+For a source checkout, run `git submodule update --init third_party/simd-json`
+before building or using the launcher to initialize the pinned dependency source.
 
 Once you've [set up the model and runtime](docs/development-guide.md#native-chat-app),
 run `./scripts/Start-Chat.ps1` to open the native Windows chat app.
