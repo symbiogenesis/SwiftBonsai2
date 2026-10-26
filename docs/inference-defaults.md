@@ -44,16 +44,17 @@ Rust reference defaults to greedy decoding and also offers explicit seeded
 reference sampling. Its independent SplitMix64 contract does not establish Prism
 sampler/RNG parity; it is not the chat backend.
 
-## Planned experimental extra effort mode
+## Experimental extra effort mode
 
-The [native Rust UI](ui-architecture.md) may later offer **Standard** (the default) and **Extra effort
-(experimental)**. This is a documented design only: no UI control, orchestration
-code or new broker option is implemented. The experimental label should explain:
-"Uses extra passes; takes longer; quality improvements are unproven."
+The [native Rust UI](ui-architecture.md) offers **Standard** (the default) and
+**Extra effort (experimental)**. The native response-mode control is an explicit
+opt-in; it explains that extra passes take longer and quality improvements are
+unproven. The workflow is implemented in the Rust client and adds no broker
+inference option.
 
-Adapt the scoped calls and compact working notes from
+The workflow follows the scoped calls and compact working notes described by
 [GVS5H](https://github.com/slee-persis/GVS5H/blob/master/codebase/v2-current/escalation/multiagent.py)
-into a small client workflow above the broker:
+as a small client workflow above the broker:
 
 1. Make a short plan that captures the user's constraints and considers distinct
    approaches.
@@ -69,8 +70,12 @@ not new instructions or approved canon. This needs no autonomous tool use or
 open-ended manager/worker loop.
 
 Each call keeps the existing sampler, native template and exact prompt/output
-admission. The current 8K context and 4K completion caps still apply, including
-reasoning. Count the plan and draft when included in later prompts; reject
+admission. The current 8K context and 4K maximum completion caps still apply,
+including reasoning. The native output control selects 512, 1,024, 2,048 or
+4,096 tokens per call, with 4,096 as the default. A smaller output reservation
+leaves more room for the prompt; it can also stop reasoning before an answer.
+The broker includes its existing 64-token template margin in admission.
+Count the plan and draft when included in later prompts; reject
 overflow instead of silently dropping history or raising limits. Apply one
 overall deadline and cancellation signal to the complete workflow, with progress
 labels for planning, drafting and reviewing. Keep incomplete or failed stages

@@ -49,8 +49,29 @@ uses a dark appearance, shows startup status and streams responses. If startup
 reports insufficient RAM, free memory and select **Retry model**. Each retry
 starts a fresh owned broker and repeats artifact verification and the standard
 16 GiB memory admission check. Conversation history stays in memory.
-Stopping an active response closes backend admission; restart the demo before
-sending again. Closing the window stops its owned broker and inference process.
+Stopping an active response closes backend admission and stops its owned broker
+and inference process. Select **Retry model** to start a fresh owned session,
+repeat artifact/memory admission, and continue with completed conversation turns
+retained in memory. Retry never resends a prompt automatically. Uncertain
+transport/protocol failures also require this explicit retry. Closing the window
+stops its owned broker and inference process.
+
+**Mode** defaults to **Standard**, which makes one completion request.
+**Extra effort (experimental)** makes up to three sequential planning, drafting
+and review requests to the same model, with visible stage labels and a shared
+ten-minute deadline. It keeps complete drafts visible for comparison. A
+truncated revision does not replace a complete draft. Extra passes take longer;
+quality improvements remain unproven.
+
+**Output cap** defaults to 4,096 tokens and offers 512, 1,024 and 2,048 tokens.
+Every completion cap includes reasoning, within the fixed 8,192-token total
+context. The broker also reserves 64 tokens for template accounting. These
+controls do not estimate an exact local token count or discard history; the
+broker still performs exact admission for every call. Locally
+rejected prompts return to the composer for editing. The broker does not return
+a diagnostic error body for context rejection, so an unexplained connection
+closure requires Retry model; consider a shorter conversation or smaller output
+cap before trying again.
 
 The window follows Windows high-contrast settings and distinguishes an answer
 that reached its token limit from a naturally completed answer. **Read aloud**

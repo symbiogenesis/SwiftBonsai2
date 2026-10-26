@@ -190,15 +190,25 @@ Start with manual excerpts or lexical search; add embeddings only for a
 demonstrated retrieval need. Image critique needs a matching qualified vision
 path; image generation needs a separate model and shared-memory budget.
 
-The native Rust UI should retain Standard as its default and may later offer an opt-in
+The native Rust UI retains Standard as its default and offers an opt-in
 **Extra effort (experimental)** mode: up to three sequential plan, draft and
-review/revision calls, with compact working state and the original draft kept.
-Prepare this as a small client workflow above the broker, retaining existing
+review/revision calls, with compact working state and the complete draft kept.
+This small client workflow runs above the broker, retaining existing
 inference settings and per-call limits, plus a shared deadline and cancellation.
 Focused behavior checks suffice for initial experimental exposure; an extensive
 benchmark campaign is not a prerequisite. Quality gains remain unproven. This is
-currently a documentation-only design, not an implemented mode. See the
-[mode contract](docs/inference-defaults.md#planned-experimental-extra-effort-mode).
+an opt-in demo feature, not a qualified creative-quality profile. See the
+[mode contract](docs/inference-defaults.md#experimental-extra-effort-mode).
+
+Completed demo experience follow-ups:
+
+- [x] Recover after Stop or an uncertain request failure through an explicit
+  fresh owned-model retry, preserving completed conversation turns. Restore
+  locally rejected prompts for editing instead of ending the demo session.
+- [x] Expose the bounded experimental plan/draft/review workflow with visible
+  progress and retained complete drafts; keep Standard as the default.
+- [x] Show the 8,192-token context bound and reasoning-inclusive completion
+  reservation, with native 512/1,024/2,048/4,096-token output-cap selection.
 
 ## 7. Memory and storage budgets
 

@@ -29,12 +29,23 @@ freed. Retrying creates a fresh broker attempt with new diagnostic storage and
 repeats the ordinary artifact, identity and 16 GiB admission checks. There is no
 automatic retry or reduced-memory profile.
 
+Stop and uncertain request failures also leave the window available for an
+explicit **Retry model**. The client tears down the owned backend before a fresh
+attempt, retains completed conversation turns, and never automatically replays
+an interrupted request. Local input-limit rejections restore the composer.
+Native controls expose the fixed 8,192-token context bound and select a
+reasoning-inclusive completion cap up to 4,096 tokens. Standard remains the
+default single-call workflow; opt-in Extra effort performs at most three
+sequential plan/draft/review calls with a shared deadline, stage labels and
+retained drafts. Its quality gains remain unproven.
+
 The demo uses the existing pinned Swift PQ2 CPU backend through the broker.
 Its pinned abliteration LoRA is enabled by default, with an explicit
 `-NoAbliterateLora` opt-out; the broker verifies and holds the selected adapter.
 The UI does not load model weights, select arbitrary runtime arguments, bypass
 artifact verification or change model, memory, context, sampler or thinking
-policy. A native UI does not by itself qualify runtime correctness, LoRA,
+policy. Completion selection stays within the broker's existing request bound.
+A native UI does not by itself qualify runtime correctness, LoRA,
 creative quality, performance or daily-service isolation.
 
 Use the [development guide](development-guide.md) for launch commands and
