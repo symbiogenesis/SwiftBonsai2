@@ -930,6 +930,18 @@ impl State {
         ui.add_space(16.0);
     }
 
+    fn thinking_controls(&mut self, ui: &mut egui::Ui) {
+        ui.checkbox(&mut self.enable_thinking, "Thinking");
+        ui.label(
+            RichText::new(
+                "Off by default. Applies to your next response and every Extra effort pass.",
+            )
+            .small()
+            .weak(),
+        );
+        ui.add_space(8.0);
+    }
+
     fn settings(&mut self, ctx: &egui::Context) {
         if !self.show_settings {
             return;
@@ -953,13 +965,7 @@ impl State {
                 self.recovery_controls(ui);
                 ui.heading("Response");
                 ui.add_enabled_ui(!self.busy, |ui| {
-                    ui.checkbox(&mut self.enable_thinking, "Thinking");
-                    ui.label(
-                        RichText::new("Off by default. Applies to your next response and every Extra effort pass.")
-                            .small()
-                            .weak(),
-                    );
-                    ui.add_space(8.0);
+                    self.thinking_controls(ui);
                     ui.checkbox(&mut self.extra_effort, "Extra effort (experimental)");
                     ui.label(
                         RichText::new(
