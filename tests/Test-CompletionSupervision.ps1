@@ -11,6 +11,7 @@ inference or executing a benchmark. Retains receipts and logs outside the checko
 param(
     [Parameter(Mandatory)][ValidateSet('ParentDeath', 'Timeout', 'ExitCode')][string]$Case,
     [string]$ToolPath,
+    [string]$ProbePath,
     [string]$ToolsModulePath
 )
 Set-StrictMode -Version Latest
@@ -20,20 +21,18 @@ if (-not $IsWindows) { throw 'Packaged process supervision checks require Window
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (-not $ToolsModulePath) { $ToolsModulePath = Join-Path $repo 'scripts/Bonsai.Tools.psm1' }
 Import-Module $ToolsModulePath
+if (-not $ProbePath) { $ProbePath = $env:BONSAI_COMPLETION_PROBE_PATH }
+if (-not $ProbePath) {
+    $selectedTool = if ($ToolPath) { $ToolPath } else { $env:BONSAI_TOOLS_PATH }
+    if ($selectedTool) { $ProbePath = Join-Path ([IO.Path]::GetDirectoryName($selectedTool)) 'bonsai-completion-test-probe.exe' }
+}
+if (-not $ProbePath -or -not [IO.Path]::IsPathFullyQualified($ProbePath) -or
+    $ProbePath -match '%[^%]+%' -or -not [IO.File]::Exists($ProbePath)) {
+    throw 'ProbePath must name the checked native completion test probe at an expanded absolute path.'
+}
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-SupervisionTest-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($scratch)
-$probe = Join-Path $scratch 'probe.ps1'
 $marker = Join-Path $scratch 'child.json'
-@'
-#requires -Version 7.6
-[CmdletBinding()]
-param([Parameter(Mandatory)][string]$Marker, [Parameter(Mandatory)][string]$Mode)
-$ErrorActionPreference = 'Stop'
-$identity = @{ ProcessId = $PID; CreationTime = [Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().ToFileTimeUtc() } | ConvertTo-Json
-[IO.File]::WriteAllText($Marker, $identity)
-if ($Mode -eq 'ExitCode') { [Console]::Out.Write('retained-failure-output'); exit 7 }
-Start-Sleep -Seconds 120
-'@ | Set-Content -LiteralPath $probe
 
 function Read-PublishedText {
     [CmdletBinding()]
@@ -65,8 +64,8 @@ param([string]$ModulePath, [string]$ToolPath, [string]$Lane, [string]$Probe, [st
 $ErrorActionPreference = 'Stop'
 Import-Module $ModulePath
 $null = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
-    schemaVersion = 1; executable = (Join-Path $PSHOME 'pwsh.exe')
-    arguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $Probe, '-Marker', $Marker, '-Mode', 'ParentDeath')
+    schemaVersion = 1; executable = $Probe
+    arguments = @('supervision', $Marker, 'ParentDeath')
     workingDirectory = $Lane; evidenceDirectory = $Lane; artifacts = @()
     memoryLimitBytes = 1GB; requiredAvailableBytes = 0; physicalReserveBytes = 0; timeoutSeconds = 120
     stdoutLimitBytes = 1MB; stderrLimitBytes = 1MB; requireNonemptyStdout = $false; ciOnly = $false
@@ -76,14 +75,17 @@ $null = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
         $start.WorkingDirectory = $scratch; $start.UseShellExecute = $false; $start.CreateNoWindow = $true
         $start.RedirectStandardOutput = $true; $start.RedirectStandardError = $true
         foreach ($argument in @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $ownerScript,
-            '-ModulePath', $ToolsModulePath, '-ToolPath', $ToolPath, '-Lane', $scratch, '-Probe', $probe, '-Marker', $marker)) {
+            '-ModulePath', $ToolsModulePath, '-ToolPath', $ToolPath, '-Lane', $scratch, '-Probe', $ProbePath, '-Marker', $marker)) {
             $start.ArgumentList.Add($argument)
         }
         $owner = [Diagnostics.Process]::Start($start)
         $stdout = $owner.StandardOutput.ReadToEndAsync(); $stderr = $owner.StandardError.ReadToEndAsync()
         $identity = Read-PublishedText $marker | ConvertFrom-Json -DateKind String
         $child = [Diagnostics.Process]::GetProcessById($identity.ProcessId)
-        if ($child.StartTime.ToUniversalTime().ToFileTimeUtc() -ne $identity.CreationTime) { throw 'Synthetic child PID was reused.' }
+        # Retain a live process handle before killing its caller. The native probe
+        # writes this fresh marker and sleeps until the supervisor stops it.
+        $null = $child.SafeHandle
+        if ($child.HasExited) { throw 'Synthetic child exited before caller-death observation.' }
         # Kill just PowerShell; do not recursively kill the Rust helper or probe.
         $owner.Kill()
         if (-not $owner.WaitForExit(10000) -or -not $child.WaitForExit(10000)) { throw 'Calling PowerShell death left the supervised native child running.' }
@@ -94,8 +96,8 @@ $null = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
         $failed = $false
         try {
             $null = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
-                schemaVersion = 1; executable = (Join-Path $PSHOME 'pwsh.exe')
-                arguments = @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $probe, '-Marker', $marker, '-Mode', $Case)
+                schemaVersion = 1; executable = $ProbePath
+                arguments = @('supervision', $marker, $Case)
                 workingDirectory = $scratch; evidenceDirectory = $scratch; artifacts = @()
                 memoryLimitBytes = 1GB; requiredAvailableBytes = 0; physicalReserveBytes = 0; timeoutSeconds = 2
                 stdoutLimitBytes = 1MB; stderrLimitBytes = 1MB; requireNonemptyStdout = $false; ciOnly = $false
@@ -116,7 +118,6 @@ $null = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
     if ($owner) {
         try { if (-not $owner.HasExited) { $owner.Kill($true); $null = $owner.WaitForExit(10000) } } finally { $owner.Dispose() }
     }
-    foreach ($generated in @($probe, (Join-Path $scratch 'owner.ps1'))) {
-        if ([IO.File]::Exists($generated)) { Remove-Item -LiteralPath $generated -Force }
-    }
+    $generated = Join-Path $scratch 'owner.ps1'
+    if ([IO.File]::Exists($generated)) { Remove-Item -LiteralPath $generated -Force }
 }
