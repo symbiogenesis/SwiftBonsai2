@@ -310,7 +310,7 @@ fn canonical_count_and_generation_share_body_and_drop_streams() {
         assert_eq!(
             generated["chat_template_kwargs"],
             serde_json::json!({
-                "enable_thinking": true,
+                "enable_thinking": false,
                 "reasoning_effort": "xhigh",
                 "preserve_thinking": true,
             })

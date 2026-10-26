@@ -300,6 +300,57 @@ fn typed_schema_rejects_aliases_controls_tools_and_media() {
 }
 
 #[test]
+fn thinking_defaults_off_and_explicit_selection_reaches_counting_and_generation() {
+    let default = prepare(CHAT).unwrap().admit(|_| Ok(100)).unwrap();
+    for enabled in [false, true] {
+        let body = serde_json::to_vec(&serde_json::json!({
+            "messages": [{"role": "user", "content": "Draft a scene with rain."}],
+            "enable_thinking": enabled,
+        }))
+        .unwrap();
+        let mut counted = Vec::new();
+        let admitted = prepare(&body)
+            .unwrap()
+            .admit(|canonical| {
+                counted = canonical.to_vec();
+                Ok(100)
+            })
+            .unwrap();
+        assert_eq!(counted, admitted.backend_body());
+        let canonical: serde_json::Value = serde_json::from_slice(admitted.backend_body()).unwrap();
+        assert_eq!(
+            canonical["chat_template_kwargs"],
+            serde_json::json!({
+                "enable_thinking": enabled,
+                "reasoning_effort": "xhigh",
+                "preserve_thinking": true,
+            })
+        );
+        assert!(canonical.get("enable_thinking").is_none());
+        if !enabled {
+            assert_eq!(default.backend_body(), admitted.backend_body());
+        }
+    }
+}
+
+#[test]
+fn thinking_rejects_null_nonboolean_values_and_duplicate_keys() {
+    for value in ["null", "0", "1", "\"false\"", "\"true\"", "[]", "{}"] {
+        rejected_body(
+            format!(
+                r#"{{"messages":[{{"role":"user","content":"hi"}}],"enable_thinking":{value}}}"#
+            )
+            .as_bytes(),
+            Rejection::ChatSchema,
+        );
+    }
+    rejected_body(
+        br#"{"messages":[{"role":"user","content":"hi"}],"enable_thinking":false,"enable_thinking":true}"#,
+        Rejection::ChatSchema,
+    );
+}
+
+#[test]
 fn compatibility_model_alias_never_selects_or_reaches_the_backend() {
     let plain = prepare(CHAT).unwrap().admit(|_| Ok(100)).unwrap();
     let body = serde_json::to_vec(&serde_json::json!({
@@ -513,7 +564,7 @@ fn exact_count_sees_identical_canonical_body_and_preserved_text() {
     assert_eq!(
         canonical["chat_template_kwargs"],
         serde_json::json!({
-            "enable_thinking": true,
+            "enable_thinking": false,
             "reasoning_effort": "xhigh",
             "preserve_thinking": true,
         })

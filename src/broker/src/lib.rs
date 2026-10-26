@@ -294,7 +294,7 @@ impl AuthorizedHead {
             frequency_penalty: 0.0,
             repeat_penalty: 1.0,
             chat_template_kwargs: ChatTemplateKwargs {
-                enable_thinking: true,
+                enable_thinking: chat.enable_thinking,
                 reasoning_effort: "xhigh",
                 preserve_thinking: true,
             },
@@ -324,6 +324,8 @@ struct ClientChat<'a> {
     max_completion_tokens: u32,
     #[serde(default = "default_stream")]
     stream: bool,
+    #[serde(default)]
+    enable_thinking: bool,
     #[serde(default, deserialize_with = "deserialize_abliteration_scale")]
     abliteration_scale: Option<f64>,
 }
