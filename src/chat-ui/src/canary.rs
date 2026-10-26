@@ -77,7 +77,7 @@ impl Media {
 
     fn accepts(self, value: &[u8]) -> bool {
         match self {
-            Self::Json => json_media_type(value),
+            Self::Json => crate::http::utf8_media_type(value, "application/json"),
             Self::Wave => value.eq_ignore_ascii_case(b"audio/wav"),
         }
     }
@@ -676,29 +676,6 @@ fn response_length(head: &[u8], expected: Media) -> Result<usize> {
         return Err(invalid);
     }
     length.ok_or(invalid)
-}
-
-fn json_media_type(value: &[u8]) -> bool {
-    let Ok(value) = std::str::from_utf8(value) else {
-        return false;
-    };
-    let mut parts = value.split(';');
-    if !parts
-        .next()
-        .is_some_and(|media| media.trim().eq_ignore_ascii_case("application/json"))
-    {
-        return false;
-    }
-    let Some(parameter) = parts.next() else {
-        return true;
-    };
-    let Some((name, charset)) = parameter.split_once('=') else {
-        return false;
-    };
-    name.trim().eq_ignore_ascii_case("charset")
-        && (charset.trim().eq_ignore_ascii_case("utf-8")
-            || charset.trim().eq_ignore_ascii_case("\"utf-8\""))
-        && parts.next().is_none()
 }
 
 #[cfg(test)]

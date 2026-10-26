@@ -1,6 +1,7 @@
 //! Unicode-safe incremental speech segmentation with a bounded text lifetime.
 
-use super::{Duration, Instant, MAX_SEGMENT, MAX_TEXT, VecDeque};
+use super::segmentation;
+use super::{Duration, Instant, MAX_TEXT, VecDeque};
 
 const LATENCY: Duration = Duration::from_millis(700);
 
@@ -42,10 +43,7 @@ impl Text {
         loop {
             let pending = self.pending[consumed..].trim_start();
             consumed = self.pending.len() - pending.len();
-            let maximum = pending
-                .char_indices()
-                .nth(MAX_SEGMENT)
-                .map(|(index, _)| index);
+            let maximum = segmentation::maximum(pending);
             let limit = maximum.unwrap_or(pending.len());
             let sentence = pending[..limit]
                 .char_indices()
@@ -61,15 +59,7 @@ impl Text {
                 });
             let boundary = sentence.or_else(|| {
                 if maximum.is_some() {
-                    Some(
-                        pending[..limit]
-                            .char_indices()
-                            .rev()
-                            .find(|(index, character)| {
-                                *index >= limit / 2 && character.is_whitespace()
-                            })
-                            .map_or(limit, |(index, _)| index),
-                    )
+                    Some(segmentation::word_boundary(pending, limit))
                 } else if self.finished {
                     Some(pending.len())
                 } else if expired {
@@ -112,7 +102,30 @@ impl Text {
 
 #[cfg(test)]
 mod tests {
-    use super::{Instant, LATENCY, MAX_SEGMENT, MAX_TEXT, Text};
+    use super::{Instant, LATENCY, MAX_TEXT, Text};
+    use crate::speech::{MAX_SEGMENT, segments};
+
+    #[test]
+    fn complete_and_streaming_speech_share_hard_clip_boundaries() -> Result<(), &'static str> {
+        let now = Instant::now();
+        for input in [
+            "a".repeat(MAX_SEGMENT),
+            "🙂".repeat(MAX_SEGMENT + 5),
+            "A bounded Unicode phrase 🙂 ".repeat(30),
+            format!(
+                "{} {}",
+                "é".repeat(MAX_SEGMENT / 2),
+                "x".repeat(MAX_SEGMENT)
+            ),
+        ] {
+            let expected = segments(&input).ok_or("Expected complete speech segments")?;
+            let mut streamed = Text::default();
+            streamed.append(&input, now)?;
+            streamed.finished = true;
+            assert_eq!(streamed.ready(now), expected);
+        }
+        Ok(())
+    }
 
     #[test]
     fn streaming_sentences_start_before_finish_and_final_tail_is_not_repeated()

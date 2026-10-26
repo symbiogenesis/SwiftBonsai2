@@ -1076,7 +1076,8 @@ fn parse_head(head: &[u8]) -> Result<(Framing, ResponseKind)> {
         }
     }
     let valid_media = match kind {
-        ResponseKind::Stream => content_type.is_some_and(is_event_stream),
+        ResponseKind::Stream => content_type
+            .is_some_and(|value| crate::http::utf8_media_type(value, "text/event-stream")),
         ResponseKind::ContextError => {
             content_type.is_some_and(|value| value.eq_ignore_ascii_case(b"application/json"))
         }
@@ -1111,29 +1112,6 @@ fn parse_head(head: &[u8]) -> Result<(Framing, ResponseKind)> {
         }
     };
     Ok((framing, kind))
-}
-
-fn is_event_stream(value: &[u8]) -> bool {
-    let Ok(value) = std::str::from_utf8(value) else {
-        return false;
-    };
-    let mut parts = value.split(';');
-    if !parts
-        .next()
-        .is_some_and(|media| media.trim().eq_ignore_ascii_case("text/event-stream"))
-    {
-        return false;
-    }
-    let Some(parameter) = parts.next() else {
-        return true;
-    };
-    let Some((name, charset)) = parameter.trim().split_once('=') else {
-        return false;
-    };
-    name.trim().eq_ignore_ascii_case("charset")
-        && (charset.trim().eq_ignore_ascii_case("utf-8")
-            || charset.trim().eq_ignore_ascii_case("\"utf-8\""))
-        && parts.next().is_none()
 }
 
 #[derive(Default)]

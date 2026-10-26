@@ -10,6 +10,8 @@ mod canary;
 #[cfg(windows)]
 mod client;
 #[cfg(windows)]
+mod http;
+#[cfg(windows)]
 mod native_speech;
 #[cfg(windows)]
 mod recovery;

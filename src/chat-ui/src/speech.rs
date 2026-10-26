@@ -23,7 +23,10 @@ use std::{
 };
 mod command_queue;
 mod pipeline;
+mod segmentation;
 mod stream;
+
+use segmentation::segments;
 
 const POLL: Duration = Duration::from_millis(50);
 const MAX_TEXT: usize = 32768;
@@ -254,35 +257,6 @@ fn take_warm<T>(
     idle.take()
         .filter(|warm| now < warm.until && healthy(&warm.value))
         .map(|warm| warm.value)
-}
-
-fn segments(text: &str) -> Option<VecDeque<String>> {
-    if text.trim().is_empty()
-        || text.contains('\0')
-        || text.encode_utf16().take(MAX_TEXT + 1).count() > MAX_TEXT
-    {
-        return None;
-    }
-    let mut remaining = text.trim();
-    let mut result = VecDeque::new();
-    while !remaining.is_empty() {
-        let maximum = remaining
-            .char_indices()
-            .nth(MAX_SEGMENT)
-            .map_or(remaining.len(), |(index, _)| index);
-        let boundary = if maximum < remaining.len() {
-            remaining[..maximum]
-                .char_indices()
-                .rev()
-                .find(|(index, character)| *index >= maximum / 2 && character.is_whitespace())
-                .map_or(maximum, |(index, _)| index)
-        } else {
-            maximum
-        };
-        result.push_back(remaining[..boundary].trim().to_owned());
-        remaining = remaining[boundary..].trim_start();
-    }
-    Some(result)
 }
 
 struct Input {
