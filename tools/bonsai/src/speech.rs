@@ -96,7 +96,7 @@ fn files(root: &Path, kind: &str, source: &str) -> crate::Result<Vec<Value>> {
         "QwenTts" => (
             "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
             "qwen-tts",
-            &["talker", "codec"],
+            &["talker", "codec", "voice_talker"],
         ),
         _ => return Err("Unsupported native speech model.".into()),
     };
@@ -162,7 +162,7 @@ fn files(root: &Path, kind: &str, source: &str) -> crate::Result<Vec<Value>> {
 pub fn run(request: Value) -> crate::Result<Value> {
     let request: Request = serde_json::from_value(request).map_err(|error| error.to_string())?;
     validate_external_path(&request.data_directory).map_err(|error| error.to_string())?;
-    let mut plans = Vec::with_capacity(3);
+    let mut plans = Vec::with_capacity(4);
     if matches!(request.model, Model::All | Model::Canary) {
         plans.extend(files(&request.data_directory, "Canary", ASR_LOCK)?);
     }
@@ -175,12 +175,14 @@ pub fn run(request: Value) -> crate::Result<Value> {
     }
     let mut result = json!({
         "CanaryModelPath": null, "TtsModelPath": null, "TtsCodecPath": null,
+        "TtsVoiceModelPath": null,
     });
     let mut total = 0_u64;
     for file in &plans {
         let property = match (file["Kind"].as_str(), file["Key"].as_str()) {
             (Some("Canary"), _) => "CanaryModelPath",
             (_, Some("talker")) => "TtsModelPath",
+            (_, Some("voice_talker")) => "TtsVoiceModelPath",
             _ => "TtsCodecPath",
         };
         result[property] = file["Path"].clone();
@@ -207,14 +209,15 @@ mod tests {
         let root = std::env::temp_dir().join("bonsai-native-speech-plan-uncreated");
         let all = run(json!({"dataDirectory": root, "model": "All"}))?;
         let plans = all["Plans"].as_array().ok_or("Expected plans.")?;
-        assert_eq!(plans.len(), 3);
-        assert_eq!(all["TotalBytes"], 5_131_533_376_u64);
+        assert_eq!(plans.len(), 4);
+        assert_eq!(all["TotalBytes"], 7_210_981_632_u64);
         assert_eq!(all["CanaryModelPath"], plans[0]["Path"]);
         assert_eq!(all["TtsModelPath"], plans[1]["Path"]);
         assert_eq!(all["TtsCodecPath"], plans[2]["Path"]);
+        assert_eq!(all["TtsVoiceModelPath"], plans[3]["Path"]);
         for (selection, count, absent) in [
             ("Canary", 1, "TtsModelPath"),
-            ("qWeNtTs", 2, "CanaryModelPath"),
+            ("qWeNtTs", 3, "CanaryModelPath"),
         ] {
             let plan = run(json!({"dataDirectory": root, "model": selection}))?;
             assert_eq!(plan["Plans"].as_array().map(Vec::len), Some(count));
@@ -249,6 +252,15 @@ mod tests {
             assert!(files(&root, "Canary", &pin.to_string()).is_err());
         }
         let mut pin: Value = serde_json::from_str(TTS_LOCK).map_err(|error| error.to_string())?;
+        pin["files"]
+            .as_object_mut()
+            .ok_or("Expected pinned TTS artifacts.")?
+            .remove("voice_talker");
+        assert!(files(&root, "QwenTts", &pin.to_string()).is_err());
+        let mut pin: Value = serde_json::from_str(TTS_LOCK).map_err(|error| error.to_string())?;
+        pin["files"]["voice_talker"]["sha256"] = json!("bad");
+        assert!(files(&root, "QwenTts", &pin.to_string()).is_err());
+        let mut pin: Value = serde_json::from_str(TTS_LOCK).map_err(|error| error.to_string())?;
         pin["files"]["extra"] = pin["files"]["codec"].clone();
         assert!(files(&root, "QwenTts", &pin.to_string()).is_err());
         Ok(())
@@ -262,8 +274,9 @@ mod tests {
             "dataDirectory": root, "model": "QwenTts", "ttsQuantization": "Q4_K_M",
         }))?;
         assert_ne!(q8["TtsModelPath"], q4["TtsModelPath"]);
+        assert_ne!(q8["TtsVoiceModelPath"], q4["TtsVoiceModelPath"]);
         assert_eq!(q8["TtsCodecPath"], q4["TtsCodecPath"]);
-        assert_eq!(q4["TotalBytes"], 1_473_781_440_u64);
+        assert_eq!(q4["TotalBytes"], 2_693_026_688_u64);
         assert_eq!(
             q4["Plans"][0]["Sha256"],
             "7605ed0cc5e72059f27468c27f70c070e05d1cc0c7b1c76bfb9cba717a59eee3"

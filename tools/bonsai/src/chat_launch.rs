@@ -431,6 +431,11 @@ fn launch_arguments(
             );
             argument(
                 &mut arguments,
+                "--tts-voice-model",
+                field(models, "TtsVoiceModelPath")?,
+            );
+            argument(
+                &mut arguments,
                 "--tts-quantization",
                 &request.tts_quantization,
             );

@@ -47,6 +47,7 @@ impl Operations for Recorder {
             "CanaryModelPath": self.root.join("canary.gguf"),
             "TtsModelPath": self.root.join("talker.gguf"),
             "TtsCodecPath": self.root.join("codec.gguf"),
+            "TtsVoiceModelPath": self.root.join("voice.gguf"),
             "TotalBytes": 1,
         }))
     }
@@ -183,6 +184,10 @@ fn ordinary_startup_only_prepares_owned_services_and_creates_independent_keys() 
     );
     assert!(!arguments.iter().any(|value| value == "--use-repacked-ptq1"));
     assert_eq!(value_after(arguments, "--tts-quantization")?, "Q8_0");
+    assert_eq!(
+        value_after(arguments, "--tts-voice-model")?,
+        fixture.root.join("voice.gguf").as_os_str()
+    );
     Ok(())
 }
 
