@@ -3,37 +3,9 @@
 use crate::{Audio, http::Error};
 
 pub(super) fn decode(bytes: &[u8]) -> Result<Vec<f32>, Error> {
-    if bytes.len() < 46
-        || bytes.len() > 960_044
-        || &bytes[..4] != b"RIFF"
-        || &bytes[8..16] != b"WAVEfmt "
-    {
-        return Err(Error::bad("invalid_audio"));
-    }
-    let u16_at = |offset| u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
-    let u32_at = |offset| {
-        u32::from_le_bytes([
-            bytes[offset],
-            bytes[offset + 1],
-            bytes[offset + 2],
-            bytes[offset + 3],
-        ])
-    };
-    if usize::try_from(u32_at(4)).ok() != Some(bytes.len() - 8)
-        || u32_at(16) != 16
-        || u16_at(20) != 1
-        || u16_at(22) != 1
-        || u32_at(24) != 16_000
-        || u32_at(28) != 32_000
-        || u16_at(32) != 2
-        || u16_at(34) != 16
-        || &bytes[36..40] != b"data"
-        || usize::try_from(u32_at(40)).ok() != Some(bytes.len() - 44)
-        || (bytes.len() - 44) % 2 != 0
-    {
-        return Err(Error::bad("invalid_audio"));
-    }
-    Ok(bytes[44..]
+    let pcm = bonsai_audio::mono_pcm16_data(bytes, 16_000, 16_000 * 30)
+        .ok_or_else(|| Error::bad("invalid_audio"))?;
+    Ok(pcm
         .as_chunks::<2>()
         .0
         .iter()
@@ -54,22 +26,8 @@ pub(super) fn header(audio: &Audio) -> Result<[u8; 44], Error> {
     {
         return Err(Error::new(502, "invalid_audio_output"));
     }
-    let length = u32::try_from(audio.samples.len() * 2)
-        .map_err(|_| Error::new(502, "invalid_audio_output"))?;
-    let mut bytes = [0; 44];
-    bytes[..4].copy_from_slice(b"RIFF");
-    bytes[4..8].copy_from_slice(&(length + 36).to_le_bytes());
-    bytes[8..16].copy_from_slice(b"WAVEfmt ");
-    bytes[16..20].copy_from_slice(&16_u32.to_le_bytes());
-    bytes[20..22].copy_from_slice(&1_u16.to_le_bytes());
-    bytes[22..24].copy_from_slice(&1_u16.to_le_bytes());
-    bytes[24..28].copy_from_slice(&24_000_u32.to_le_bytes());
-    bytes[28..32].copy_from_slice(&48_000_u32.to_le_bytes());
-    bytes[32..34].copy_from_slice(&2_u16.to_le_bytes());
-    bytes[34..36].copy_from_slice(&16_u16.to_le_bytes());
-    bytes[36..40].copy_from_slice(b"data");
-    bytes[40..44].copy_from_slice(&length.to_le_bytes());
-    Ok(bytes)
+    bonsai_audio::mono_pcm16_header(audio.sample_rate, audio.samples.len())
+        .ok_or_else(|| Error::new(502, "invalid_audio_output"))
 }
 
 // Callers provide at most PCM_SAMPLES samples and a PCM_BYTES output buffer.

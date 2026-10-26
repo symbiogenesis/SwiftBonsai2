@@ -22,7 +22,6 @@ use std::{
 const MODEL: &str = "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign";
 const MAX_TEXT: usize = 2048;
 const MAX_VOICE: usize = 1024;
-const MAX_AUDIO: usize = 5_760_044;
 const SYNTHESIS_LIMIT: Duration = Duration::from_secs(180);
 const READY_LIMIT: Duration = Duration::from_secs(5);
 
@@ -243,29 +242,9 @@ fn validate_wav(wav: &[u8]) -> Result<(), Failure> {
     let invalid = Failure::Message(
         "Qwen TTS must return a mono 24 kHz 16-bit PCM WAV clip of at most 120 seconds.",
     );
-    if wav.len() < 46 || wav.len() > MAX_AUDIO {
-        return Err(invalid);
-    }
-    let u16_at = |at| u16::from_le_bytes([wav[at], wav[at + 1]]);
-    let u32_at = |at| u32::from_le_bytes([wav[at], wav[at + 1], wav[at + 2], wav[at + 3]]);
-    if &wav[..4] != b"RIFF"
-        || usize::try_from(u32_at(4)).ok() != Some(wav.len() - 8)
-        || &wav[8..16] != b"WAVEfmt "
-        || u32_at(16) != 16
-        || u16_at(20) != 1
-        || u16_at(22) != 1
-        || u32_at(24) != 24000
-        || u32_at(28) != 48000
-        || u16_at(32) != 2
-        || u16_at(34) != 16
-        || &wav[36..40] != b"data"
-        || u32_at(40) == 0
-        || u32_at(40) % 2 != 0
-        || usize::try_from(u32_at(40)).ok() != Some(wav.len() - 44)
-    {
-        return Err(invalid);
-    }
-    Ok(())
+    bonsai_audio::mono_pcm16_data(wav, 24_000, 24_000 * 120)
+        .map(|_| ())
+        .ok_or(invalid)
 }
 
 #[cfg(test)]

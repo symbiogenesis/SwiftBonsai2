@@ -392,31 +392,9 @@ fn validate_wav(wav: &[u8]) -> Result<()> {
     let invalid = Failure::Message(
         "Canary requires a 16 kHz mono 16-bit PCM WAV clip of at most 30 seconds.",
     );
-    if wav.len() < 46 || wav.len() > MAX_REQUEST {
-        return Err(invalid);
-    }
-    let u16_at = |at| u16::from_le_bytes([wav[at], wav[at + 1]]);
-    let u32_at = |at| u32::from_le_bytes([wav[at], wav[at + 1], wav[at + 2], wav[at + 3]]);
-    let data_length = u32_at(40);
-    if &wav[..4] != b"RIFF"
-        || usize::try_from(u32_at(4)).ok() != Some(wav.len() - 8)
-        || &wav[8..16] != b"WAVEfmt "
-        || u32_at(16) != 16
-        || u16_at(20) != 1
-        || u16_at(22) != 1
-        || u32_at(24) != SAMPLE_RATE
-        || u32_at(28) != SAMPLE_RATE * 2
-        || u16_at(32) != 2
-        || u16_at(34) != 16
-        || &wav[36..40] != b"data"
-        || data_length == 0
-        || data_length % 2 != 0
-        || data_length > SAMPLE_RATE * 2 * CLIP_SECONDS
-        || usize::try_from(data_length).ok() != Some(wav.len() - 44)
-    {
-        return Err(invalid);
-    }
-    Ok(())
+    bonsai_audio::mono_pcm16_data(wav, SAMPLE_RATE, SAMPLE_RATE * CLIP_SECONDS)
+        .map(|_| ())
+        .ok_or(invalid)
 }
 
 fn normalize_wav(wav: &[u8], call: &Call<'_>) -> Result<Vec<u8>> {
@@ -476,20 +454,9 @@ fn normalize_wav(wav: &[u8], call: &Call<'_>) -> Result<Vec<u8>> {
     if !format || data.is_empty() || data.len() % 2 != 0 || data.len() > 960_000 {
         return Err(invalid);
     }
-    let length = u32::try_from(data.len()).map_err(|_| invalid)?;
+    let header = bonsai_audio::mono_pcm16_header(SAMPLE_RATE, data.len() / 2).ok_or(invalid)?;
     let mut canonical = Vec::with_capacity(44 + data.len());
-    canonical.extend_from_slice(b"RIFF");
-    canonical.extend_from_slice(&(36 + length).to_le_bytes());
-    canonical.extend_from_slice(b"WAVEfmt ");
-    canonical.extend_from_slice(&16_u32.to_le_bytes());
-    canonical.extend_from_slice(&1_u16.to_le_bytes());
-    canonical.extend_from_slice(&1_u16.to_le_bytes());
-    canonical.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
-    canonical.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
-    canonical.extend_from_slice(&2_u16.to_le_bytes());
-    canonical.extend_from_slice(&16_u16.to_le_bytes());
-    canonical.extend_from_slice(b"data");
-    canonical.extend_from_slice(&length.to_le_bytes());
+    canonical.extend_from_slice(&header);
     canonical.extend_from_slice(data);
     validate_wav(&canonical)?;
     call.check()?;

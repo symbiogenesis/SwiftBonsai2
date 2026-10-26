@@ -16,6 +16,7 @@ serde_json.workspace = true
 httparse = "=1.10.1"
 
 [target.'cfg(windows)'.dependencies]
+bonsai-audio = { path = "../audio" }
 eframe = { version = "=0.37.0", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "system_fonts", "wgpu"] }
 bonsai-windows-credentials = { path = "../windows-credentials" }
 bonsai-windows-process = { path = "../windows-process" }
