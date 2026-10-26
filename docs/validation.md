@@ -133,7 +133,16 @@ speech runtime or microphone. Ordinary runs require no GPU. For visual review,
 set `BONSAI_UI_CAPTURE_DIRECTORY` to an expanded absolute directory outside Git
 and select `window::interaction_tests::capture_chat_layouts_when_requested`;
 that case renders wide, narrow and empty layouts to PNG using the test renderer.
+The capture set also includes maximum-length drafts in wide and minimum-size
+windows.
 These captures do not establish native screen-reader, model or speech behavior.
+
+The focused `window::transcript::cache_tests::` and
+`window::transcript::search::performance_tests::` cases count layout/search work
+directly to guard completed-message reuse during streaming and find navigation.
+They are correctness regressions, with no elapsed-time or throughput claim. The
+`window::transcript::search::shortcuts::tests::` selection covers Find keyboard
+navigation, IME handling and Escape precedence without model or speech services.
 
 For prebuilt runtime promotion tooling, use
 `./tests/Test-Inference.ps1 -Case ReleaseLock`. It checks candidate generation

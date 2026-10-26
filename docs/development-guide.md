@@ -84,8 +84,15 @@ one, select a chat to resume it, or use **Rename** and confirmed **Delete**.
 Switching is available while the model is ready and idle. You can draft a
 message while the model prepares; sending waits for readiness.
 
+Long or pasted drafts scroll inside the composer, keeping the conversation and
+Microphone, Read aloud and Send/Stop controls visible. **Ctrl+End** moves to the
+end of a draft; **Shift+Enter** inserts a new line and **Enter** sends when ready.
+
 Use **Find** or **Ctrl+F** to search visible message text, **F3** / **Shift+F3**
 for the next / previous match, and **Latest** to return to the newest message.
+While Find has focus, **Enter** / **Shift+Enter** moves to the next / previous
+match. **Escape** closes Find and clears its highlights. A second **Escape**
+stops an active response or speech.
 Search is case-insensitive, supports Unicode, and excludes private thinking.
 The search controls stay above the scrolling transcript.
 

@@ -220,6 +220,12 @@ Completed native chat experience follow-ups:
   actionable setup guidance; remove the obsolete demo launcher.
 - [x] Allow drafting during model startup and keep settings usable at the minimum
   window size, with focused native interaction and rendered-layout checks.
+- [x] Keep long drafts in a bounded native composer scroller so transcript,
+  speech controls and Send/Stop remain reachable at the minimum window size.
+- [x] Reuse completed-message layouts and search results during streaming and
+  match navigation; keep hidden thinking updates out of answer layout work.
+- [x] Navigate Find with Enter/Shift+Enter and dismiss it with Escape before
+  global generation/speech cancellation, preserving the current draft.
 
 Next application exits: packaged installation/update/rollback, actual-model
 startup/long-chat/speech acceptance, Windows assistive-technology review, and
