@@ -46,6 +46,7 @@ bonsai-tools completion --request ABSOLUTE_JSON_PATH
 bonsai-tools qualification --request ABSOLUTE_JSON_PATH
 bonsai-tools speech-models --request ABSOLUTE_JSON_PATH
 bonsai-tools inference-lock --request ABSOLUTE_JSON_PATH
+bonsai-tools inference-capabilities --request ABSOLUTE_JSON_PATH
 bonsai-tools speech-build --request ABSOLUTE_JSON_PATH
 ```
 
@@ -69,6 +70,17 @@ ARM64 headers, source package versions and the compiler pin, then writes a new
 candidate lock and review evidence. It does not extract or execute the release
 bundle. `Get-Inference.ps1` keeps its separate provisioning path without a
 maintenance-tool or Cargo dependency.
+
+`Get-Inference.ps1 -IncludeCapabilities` additionally invokes
+`inference-capabilities` to verify the compiled release archive and every
+installed file, retaining their read handles through an owned ten-second,
+512 MiB model-free `--capabilities` probe. The exact v1 report is parsed with
+the shared CPU-policy contract and must match the pinned version and native
+Windows ARM64 target. Each output stream is limited to 16 KiB; stdout remains
+separate from stderr. The result adds `Capabilities` and `CapabilityVerification`,
+including the retained evidence directory. No model is loaded or profile selected.
+This option requires a trusted current maintenance tool (or the normal source
+build fallback) and rejects custom locks. Ordinary provisioning is unchanged.
 
 `speech-build` validates the compiled native compiler/source pins, checks compiler
 archive names in bulk and stages source ZIPs. ZIP identity, complete path inventory,

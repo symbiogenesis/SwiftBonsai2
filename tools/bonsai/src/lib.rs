@@ -28,5 +28,8 @@ pub mod speech;
 /// Offline review of a release receipt, exact source ZIP and ARM64 bundle.
 pub mod inference_lock;
 
+/// Model-free capability discovery from the exact pinned inference release.
+pub mod inference_capabilities;
+
 /// Native speech build locks and bounded source archive staging.
 pub mod speech_build;

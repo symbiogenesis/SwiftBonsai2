@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([void])]
-param([ValidateSet('All', 'Install', 'Archive', 'Lock', 'ReleaseLock')][string]$Case = 'All', [string]$ToolPath)
+param([ValidateSet('All', 'Install', 'Archive', 'Lock', 'ReleaseLock', 'Capabilities')][string]$Case = 'All', [string]$ToolPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -86,6 +86,13 @@ if ($Case -in @('All', 'Lock')) {
         [IO.File]::WriteAllText($fixture.LockPath, (ConvertTo-Json -InputObject $lock -Depth 8))
         Assert-Failure { Read-BonsaiInferenceLock -Path $fixture.LockPath } "Unsafe inference lock accepted: $mutation"
     }
+}
+if ($Case -in @('All', 'Capabilities')) {
+    $fixture = New-InferenceFixture -Name 'capabilities'
+    $script = Join-Path $PSScriptRoot '../scripts/Get-Inference.ps1'
+    Assert-Failure { & $script -DataDirectory $fixture.Root -LockPath $fixture.LockPath -IncludeCapabilities -VerifyOnly } 'Capability discovery accepted a caller-selected lock.'
+    Assert-Failure { & $script -DataDirectory $fixture.Root -ToolPath (Join-Path $fixture.Root 'tool.exe') -VerifyOnly } 'Provisioning silently accepted an unused tool override.'
+    Assert (-not [IO.Directory]::Exists((Join-Path $fixture.Root 'inference'))) 'Rejected capability options installed or executed a runtime.'
 }
 if ($Case -in @('All', 'ReleaseLock')) {
     $fixture = New-InferenceFixture -Name 'release-lock' -Entries ($names + @('bonsai-gguf.exe', 'LICENSE', 'NOTICE', 'PRISM-LICENSE.txt', 'CAMELID-LICENSE.txt'))
