@@ -3,6 +3,9 @@ resolver = "3"
 members = [
     "src/broker",
     "src/chat-ui",
+    "src/speech-asr",
+    "src/speech-tts",
+    "src/speech-service",
     "src/artifacts",
     "src/cpu-policy",
     "src/windows-process",

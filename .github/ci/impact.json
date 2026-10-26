@@ -11,9 +11,9 @@
     "bonsai-tools": ["config/swift-assessment.lock.json", "config/swift-lora.lock.json", "config/swift.ptq1-export.json", "config/swift-lora.qualification.json", "config/swift.metadata.json", "tests/fixtures/lora-qualification-v1.json"]
   },
   "groups": {
-    "broker": {"packages": ["bonsai-broker", "bonsai-chat"]},
+    "broker": {"packages": ["bonsai-broker", "bonsai-chat", "bonsai-speech-asr", "bonsai-speech-tts", "bonsai-speech-service"]},
     "maintenance": {
-      "packages": ["*"], "exclude_packages": ["bonsai-broker", "bonsai-chat"],
+      "packages": ["*"], "exclude_packages": ["bonsai-broker", "bonsai-chat", "bonsai-speech-asr", "bonsai-speech-tts", "bonsai-speech-service"],
       "groups": ["tools"]
     },
     "tools": {
