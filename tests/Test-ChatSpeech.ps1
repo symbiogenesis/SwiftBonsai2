@@ -11,7 +11,7 @@ if ($Case -ceq 'All' -and $env:GITHUB_ACTIONS -cne 'true') {
 }
 $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
-$scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-DemoSpeech-' + [guid]::NewGuid().ToString('N'))
+$scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-ChatSpeech-' + [guid]::NewGuid().ToString('N'))
 $scripts = Join-Path $scratch 'scripts'
 $data = Join-Path $scratch 'data'
 [void][IO.Directory]::CreateDirectory($scripts)
@@ -194,4 +194,4 @@ if ($Case -cin @('All', 'Cache')) {
     $null = New-Item -ItemType Junction -Path $alias -Target $data
     Assert-Failure { Invoke-ChatBuild -DataDirectory $alias -WorkingDirectory $working -RepositoryRoot $repo -Package bonsai-chat } 'A reparse cache path was accepted.'
 }
-Write-Output "Native demo speech $Case checks passed. Evidence: $scratch"
+Write-Output "Native chat speech $Case checks passed. Evidence: $scratch"

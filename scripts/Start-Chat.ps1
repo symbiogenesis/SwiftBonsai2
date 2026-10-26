@@ -86,7 +86,7 @@ if ($TtsKeyFile) {
 $DataDirectory = Resolve-ExternalPath -Path $DataDirectory
 if (-not [IO.Directory]::Exists($DataDirectory)) {
     if ($SpeechModelsOnly) { [void][IO.Directory]::CreateDirectory($DataDirectory) }
-    else { throw 'Provision Swift first with scripts/Get-Model.ps1 -LockPath config/swift-assessment.lock.json and scripts/Get-Engine.ps1 using the same lock and DataDirectory. See docs/development-guide.md#native-chat-demo.' }
+    else { throw 'Provision Swift first with scripts/Get-Model.ps1 -LockPath config/swift-assessment.lock.json and scripts/Get-Engine.ps1 using the same lock and DataDirectory. See docs/development-guide.md#native-chat-app.' }
 }
 foreach ($name in @('ChatPath', 'BrokerPath', 'AsrPath', 'TtsPath')) {
     $path = Get-Variable -Name $name -ValueOnly
