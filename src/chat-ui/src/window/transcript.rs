@@ -16,6 +16,7 @@ struct LayoutCache {
     pixels_per_point: f32,
     color: Color32,
     reasoning_color: Color32,
+    show_reasoning: bool,
     body: Arc<egui::Galley>,
     reasoning: Option<Arc<egui::Galley>>,
 }
@@ -162,13 +163,14 @@ impl Message {
                 && cache.pixels_per_point.to_bits() == pixels_per_point.to_bits()
                 && cache.color == color
                 && cache.reasoning_color == reasoning_color
+                && cache.show_reasoning == self.show_reasoning
         }) {
             return;
         }
         let body = ui.fonts_mut(|fonts| {
             fonts.layout(self.body.clone(), FontId::proportional(16.0), color, width)
         });
-        let reasoning = (!self.reasoning.is_empty()).then(|| {
+        let reasoning = (self.show_reasoning && !self.reasoning.is_empty()).then(|| {
             ui.fonts_mut(|fonts| {
                 fonts.layout(
                     self.reasoning.clone(),
@@ -183,6 +185,7 @@ impl Message {
             pixels_per_point,
             color,
             reasoning_color,
+            show_reasoning: self.show_reasoning,
             body,
             reasoning,
         });
@@ -193,9 +196,11 @@ impl Message {
             return 100.0;
         };
         let mut height = 40.0 + 24.0 + 12.0 + cache.body.size().y.max(20.0);
-        if let Some(reasoning) = &cache.reasoning {
+        if !self.reasoning.is_empty() {
             height += 32.0;
-            if self.show_reasoning {
+            if self.show_reasoning
+                && let Some(reasoning) = &cache.reasoning
+            {
                 height += reasoning.size().y + 8.0;
             }
         }
@@ -245,7 +250,7 @@ impl Message {
             } else if !self.body.is_empty() {
                 child.add(egui::Label::new(Arc::clone(&cache.body)).selectable(true));
             }
-            if let Some(reasoning) = &cache.reasoning {
+            if !self.reasoning.is_empty() {
                 child.add_space(8.0);
                 let label = if self.show_reasoning {
                     "Hide thinking"
@@ -254,8 +259,11 @@ impl Message {
                 };
                 if child.small_button(label).clicked() {
                     self.show_reasoning = !self.show_reasoning;
+                    child.ctx().request_repaint();
                 }
-                if self.show_reasoning {
+                if self.show_reasoning
+                    && let Some(reasoning) = &cache.reasoning
+                {
                     child.add_space(4.0);
                     child.add(egui::Label::new(Arc::clone(reasoning)).selectable(true));
                 }

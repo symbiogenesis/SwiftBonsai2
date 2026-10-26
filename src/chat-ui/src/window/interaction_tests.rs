@@ -132,6 +132,59 @@ fn transcript_export_preserves_roles_spacing_and_visible_unicode_only() {
 }
 
 #[test]
+fn thinking_toggle_reveals_current_streamed_reasoning_after_each_expansion() {
+    let mut chat = harness([1180.0, 860.0], true);
+    chat.state_mut()
+        .app
+        .model_event(Event::Reasoning("First thought.".to_owned()));
+    chat.run();
+    assert!(chat.query_by_label("First thought.").is_none());
+    chat.get_by_role_and_label(egui::Role::Button, "Show thinking")
+        .click();
+    chat.run();
+    assert!(chat.get_by_label("First thought.").rect().is_positive());
+
+    chat.state_mut()
+        .app
+        .model_event(Event::Reasoning(" A second thought.".to_owned()));
+    chat.run();
+    assert!(
+        chat.get_by_label("First thought. A second thought.")
+            .rect()
+            .is_positive()
+    );
+    chat.get_by_role_and_label(egui::Role::Button, "Hide thinking")
+        .click();
+    chat.run();
+    assert!(
+        chat.query_by_label("First thought. A second thought.")
+            .is_none()
+    );
+
+    chat.state_mut()
+        .app
+        .model_event(Event::Reasoning(" Latest thought.".to_owned()));
+    chat.run();
+    assert!(
+        chat.query_by_label("First thought. A second thought. Latest thought.")
+            .is_none()
+    );
+    chat.get_by_role_and_label(egui::Role::Button, "Show thinking")
+        .click();
+    chat.run();
+    assert!(
+        chat.get_by_label("First thought. A second thought. Latest thought.")
+            .rect()
+            .is_positive()
+    );
+    assert!(chat.get_by_label(ANSWER).rect().is_positive());
+    assert!(!chat.state().app.transcript.plain_text().contains("thought"));
+    assert!(chat.state().app.worker.is_none());
+    assert!(chat.state().app.speech.is_none());
+    assert!(chat.state().app.microphone.is_none());
+}
+
+#[test]
 fn streaming_append_preserves_a_real_transcript_text_selection() {
     let mut chat = harness([1180.0, 860.0], true);
     chat.run();
