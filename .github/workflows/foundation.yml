@@ -125,7 +125,7 @@ jobs:
           packages: '["bonsai-artifacts","bonsai-audio","bonsai-cpu-policy","bonsai-windows-process","bonsai-windows-credentials","bonsai-tools","bonsai-ci"]'
           affected: ${{ needs.changes.outputs.packages }}
       - name: Reuse a packaged CLI when only its consumers changed
-        if: needs.changes.outputs.tools == 'true' && steps.checks.outputs.has-packages != 'true'
+        if: needs.changes.outputs.tools == 'true' && !contains(fromJSON(needs.changes.outputs.packages), 'bonsai-tools')
         uses: ./.github/actions/bonsai-tools
       - name: Stage the checked maintenance CLI and revision receipt
         if: needs.changes.outputs.tools == 'true'
