@@ -21,3 +21,6 @@ pub mod server;
 
 /// Offline runtime archive staging through the shared artifact policy.
 pub mod install;
+
+/// Native speech artifact plans shared with the provisioning wrappers.
+pub mod speech;

@@ -95,7 +95,7 @@ unsupported terminal reasons, error events and missing completion reject.
 
 The PowerShell demo launcher provisions the pinned Canary Qwen 2.5B and Qwen3-TTS
 1.7B VoiceDesign Q8_0 GGUF files using immutable URLs and exact size/SHA-256
-verification. `-SpeechModelsOnly` provisions files without building or launching;
+verification. `-SpeechModelsOnly` provisions files without building or launching the app;
 `-NoSpeechModels` skips automatic speech setup. The launcher builds native ARM64
 Rust companions and creates separate protected credentials. Rust owns their
 HTTP/authentication, schema validation, WAV processing and model-file verification.

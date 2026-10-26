@@ -32,7 +32,12 @@ fn version_advertises_policy_commands_without_resolving_a_request_file()
     let commands = version["Commands"]
         .as_array()
         .ok_or("Missing command capabilities")?;
-    for name in ["server-policy", "runtime-stage", "runtime-verify"] {
+    for name in [
+        "server-policy",
+        "runtime-stage",
+        "runtime-verify",
+        "speech-models",
+    ] {
         assert!(commands.iter().any(|command| command == name));
     }
     for name in ["prism-source", "prism-baseline"] {

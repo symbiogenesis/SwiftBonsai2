@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([string])]
-param([ValidateSet('All', 'Models', 'Sources', 'Build')][string]$Case = 'All')
+param([ValidateSet('All', 'Models', 'Sources', 'Build')][string]$Case = 'All', [string]$ToolPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -34,7 +34,7 @@ if ($Case -in @('All', 'Models')) {
         }
     }
     $data = Join-Path $scratch 'uncreated data [literal]'
-    $all = Install-NativeSpeechModels -DataDirectory $data
+    $all = Install-NativeSpeechModels -DataDirectory $data -ToolPath $ToolPath
     $actual = @(& $module { $script:received.ToArray() })
     Assert ($actual.Count -eq 3) 'Native provisioning omitted or added model artifacts.'
     $asr = Get-Content -LiteralPath (Join-Path $repo 'src/speech-asr/model.lock.json') -Raw | ConvertFrom-Json
@@ -48,13 +48,13 @@ if ($Case -in @('All', 'Models')) {
     }
     Assert ($all.CanaryModelPath -ceq $actual[0].Path -and $all.TtsModelPath -ceq $actual[1].Path -and
         $all.TtsCodecPath -ceq $actual[2].Path -and $all.TotalBytes -eq ($pins.bytes | Measure-Object -Sum).Sum) 'Native model results lost their paths or byte total.'
-    $canary = Install-NativeSpeechModels -DataDirectory $data -Model Canary -VerifyOnly
-    $qwen = Install-NativeSpeechModels -DataDirectory $data -Model QwenTts -VerifyOnly
+    $canary = Install-NativeSpeechModels -DataDirectory $data -Model Canary -VerifyOnly -ToolPath $ToolPath
+    $qwen = Install-NativeSpeechModels -DataDirectory $data -Model QwenTts -VerifyOnly -ToolPath $ToolPath
     $counts = & $module { @($script:received.Count, $script:verified.Count) }
     Assert ($counts[0] -eq 3 -and $counts[1] -eq 3 -and $null -eq $canary.TtsModelPath -and
         $null -eq $canary.TtsCodecPath -and $null -eq $qwen.CanaryModelPath) 'Model selection or verify-only downloaded an unrelated model.'
     foreach ($invalid in @('relative', '%LOCALAPPDATA%\native', $repo, (Join-Path $scratch 'speech:stream'))) {
-        Assert-Failure { Install-NativeSpeechModels -DataDirectory $invalid } 'Unsafe native model storage was accepted.'
+        Assert-Failure { Install-NativeSpeechModels -DataDirectory $invalid -ToolPath $ToolPath } 'Unsafe native model storage was accepted.'
     }
     Assert (-not (Test-Path -LiteralPath $data)) 'Mocked native model provisioning wrote storage.'
 }

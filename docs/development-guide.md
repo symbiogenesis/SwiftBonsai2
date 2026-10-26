@@ -131,6 +131,12 @@ $speech.TtsCodecPath
 selects one engine's files. `Get-SpeechModels.ps1` remains an explicit utility for
 original reference snapshots; the demo no longer consumes those snapshots.
 
+Native artifact planning uses `bonsai-tools` with the crates' compiled model
+locks. Select a trusted packaged tool with `BONSAI_TOOLS_PATH` or the provisioning
+script's `-ToolPath`; otherwise the shared resolver builds the maintenance CLI
+in system temp. This also applies to model-only provisioning. It never loads a
+speech model or builds the speech engines.
+
 Native builds require the pinned Rust compiler and Visual Studio 18 ARM64 C++
 tools/Windows SDK. The provisioner downloads pinned LLVM ARM64 and native engine
 source archives into external storage. It changes only child compiler settings,

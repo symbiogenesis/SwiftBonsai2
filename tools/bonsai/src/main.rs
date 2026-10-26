@@ -19,6 +19,7 @@ const COMMANDS: &[&str] = &[
     "runtime-verify",
     "completion",
     "qualification",
+    "speech-models",
 ];
 
 fn read_request(path: &Path, maximum: u64) -> bonsai_tools::Result<serde_json::Value> {
@@ -60,7 +61,7 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
         }));
     }
     if arguments.len() != 3 || arguments[1] != "--request" {
-        return Err("Usage: bonsai-tools <credentials|memory|cpu-check-plan|server-policy|runtime-stage|runtime-verify|completion|qualification> --request ABSOLUTE_JSON_PATH; or --version".into());
+        return Err("Usage: bonsai-tools <credentials|memory|cpu-check-plan|server-policy|runtime-stage|runtime-verify|completion|qualification|speech-models> --request ABSOLUTE_JSON_PATH; or --version".into());
     }
     let maximum = if arguments[0] == "qualification" {
         MAX_QUALIFICATION_REQUEST_BYTES
@@ -79,6 +80,7 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
             bonsai_tools::completion::available_memory()
         }
         Some("qualification") => bonsai_tools::qualification::run(request),
+        Some("speech-models") => bonsai_tools::speech::run(request),
         _ => Err("Unknown maintenance command.".into()),
     }
 }

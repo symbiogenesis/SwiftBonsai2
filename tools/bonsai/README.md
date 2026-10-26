@@ -43,6 +43,7 @@ bonsai-tools runtime-stage --request ABSOLUTE_JSON_PATH
 bonsai-tools runtime-verify --request ABSOLUTE_JSON_PATH
 bonsai-tools completion --request ABSOLUTE_JSON_PATH
 bonsai-tools qualification --request ABSOLUTE_JSON_PATH
+bonsai-tools speech-models --request ABSOLUTE_JSON_PATH
 ```
 
 Requests are JSON objects read through a retained read-only handle, capped at
@@ -52,6 +53,12 @@ Success writes one JSON object to stdout; failure writes stderr diagnostics and
 returns nonzero. Credential receipts contain paths only. The bridge uses external
 native working directories, retains failed requests and preserves inherited
 Windows/profile environment variables.
+
+`speech-models` validates the compiled native Canary and Qwen GGUF locks and
+returns the selected download plan and aggregate paths/byte total. PowerShell
+retains resumable downloading and exact artifact verification; the Rust planner
+does not network, create model storage or load a model. Model-only provisioning
+uses the same packaged-tool selection or source-build fallback as other wrappers.
 
 `cpu-check-plan` combines the shared `bonsai-cpu-policy` plan with a current
 available-memory observation. Its request contains `operation: "plan"`,
