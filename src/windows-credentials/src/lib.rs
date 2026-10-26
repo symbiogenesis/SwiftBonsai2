@@ -19,6 +19,14 @@ use std::path::{Path, PathBuf};
 )]
 mod native;
 
+#[allow(
+    unsafe_code,
+    reason = "Audited user-scoped Windows data-protection boundary with owned, scrubbed output buffers."
+)]
+mod sealed;
+
+pub use sealed::{protect_private_data, unprotect_private_data};
+
 /// Independent credentials with retained read handles and scrubbed secret memory.
 ///
 /// Read handles deny write/delete opens for this object's lifetime. Secret bytes
