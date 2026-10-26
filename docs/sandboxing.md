@@ -2,9 +2,9 @@
 
 Runner's native UI requires Windows process containment for its owned inference,
 ASR and TTS workers. `bonsai-windows-process` composes the pinned **MXC 1.0.1**
-Process Security Environment (PSEC) with the existing suspended process creation,
-atomic Job assignment, exact worker PID, resource limits and restricted handle
-inheritance. Missing capabilities or rejected policies fail launch without an
+Process Security Environment (PSEC) with suspended process creation,
+verified Job ownership before resume, exact worker PID, resource limits and
+restricted handle inheritance. Missing capabilities or rejected policies fail launch without an
 uncontained retry. Actual-model and stronger broker-only isolation acceptance
 remain unqualified; this document records the implemented scope and its limits.
 
@@ -46,8 +46,9 @@ The owned-worker policy grants:
   inputs accept files, not broad data/profile directories.
 - Internal read-only Windows runtime directories. No drive-root grant is added:
   a native negative test showed that a generated read-only volume-root grant
-  exposed an unrelated credential. Worker ancestry checks need narrow validation
-  compatibility, not broader ancestor or volume permissions.
+  exposed an unrelated credential. The trusted owner validates and retains full
+  ancestry. Read validation inside an actual AppContainer skips only the denied
+  volume-root metadata check; local-drive and every non-root check remain in force.
 - Writable application scratch below a fresh protected owner/LocalSystem
   directory. Keys and parent-opened stdout/stderr remain outside that writable
   grant; only their specific standard handles are inherited.
@@ -96,8 +97,14 @@ The supported [Rust V1 spawn API](https://github.com/microsoft/mxc/blob/v1.0.1/d
 cannot accept Runner's existing Job and suspended-launch contract. The audited
 native boundary therefore uses the exact release's doc-hidden PSEC compatibility
 exports and generated FlatBuffer types to add the security-environment attribute
-alongside `JOB_LIST`, mitigations and the standard-handle list. The PSEC owner
-outlives process teardown. No executor wrapper is mistaken for the model PID.
+alongside `JOB_LIST`, mitigations and the standard-handle list. Windows' PSEC
+broker can omit the requested Job assignment, so the launcher verifies membership,
+assigns the still-suspended root when needed, verifies again and requires exactly
+one suspension before resume. The one-process Job limit is tested by an actual
+denied child creation; PSEC does not honor the requested child-policy attribute.
+The [native terminate-on-close flag](https://learn.microsoft.com/en-us/windows/win32/api/processmodel/ne-processmodel-process_security_environment_flags)
+also bounds the environment's lifetime. No executor wrapper is mistaken for the
+model PID.
 
 Microsoft marks those compatibility exports as unsupported SDK interfaces in the
 [SDK boundary](https://github.com/microsoft/mxc/blob/v1.0.1/src/mxc-sdk/src/lib.rs).
@@ -106,8 +113,11 @@ actual enforcement before changing either exact pin. Current-main documentation
 must not substitute for the shipped release's behavior. Prefer a supported
 composition hook when one becomes available.
 
-Creation-time defense in depth denies Win32k calls, legacy extension points and
-remote/low-integrity executable images and enables heap termination. It uses
+Ordinary headless `ProcessSpec::start` requests creation-time Win32k denial,
+legacy extension-point and remote/low-integrity image denial, and heap termination.
+The PSEC broker does not preserve every ordinary creation attribute; contained
+launches require verified Win32k denial, Job ownership and native lifetime control,
+and must not claim the other ordinary mitigations as proven. The ordinary policy uses
 [`PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute),
 not Job UI limits that prevent [nested Jobs](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs).
 Future GPU drivers or GUI helpers require separate compatibility review.
@@ -123,9 +133,11 @@ never an automatic recovery path for failed containment.
 Focused local checks and main-only Foundation suites follow the
 [validation policy](validation.md). Record the exact SDK, policy, OS/architecture,
 runtime and artifact identities. Distinguish portable parser/policy checks from
-actual native enforcement and actual-model acceptance. Required remaining evidence
-includes complete model/adapter/speech loading, cross-container private-temp
-isolation, outside-host network denial, lifecycle and cancellation under load,
+actual native enforcement and actual-model acceptance. Model-free native fixtures
+cover file and hard-link denial, retained artifact/key guards, separate private
+temp storage, child-process denial, exact listener identity, external TCP denial
+and worker teardown after abrupt owner death. Required remaining evidence
+includes complete model/adapter/speech loading, lifecycle and cancellation under load,
 and a separately implemented/proven broker-only transport. Native admission
 errors and pending qualification must not be reported as passed.
 

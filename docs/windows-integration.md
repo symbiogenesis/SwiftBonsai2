@@ -123,10 +123,8 @@ host-loopback permission includes other host services, inherited environment
 values require care, and stronger broker-only/same-user isolation and actual-model
 qualification remain outstanding. Keep the detailed policy and evidence there.
 
-Current headless workers receive creation-time Win32k, extension-point and
-image-loading mitigations. These reduce attack surface while preserving nested
-Jobs; they do not restrict ordinary file or network access. Build tools retain
-their inherited policy. See the sandbox architecture for the exact mitigations,
+Build tools retain their inherited policy. The sandbox architecture records
+the effective native and ordinary headless mitigations, verified Job handoff,
 compatibility limits and focused regression evidence.
 
 Focused synthetic regressions establish the repaired path, handle and lock
