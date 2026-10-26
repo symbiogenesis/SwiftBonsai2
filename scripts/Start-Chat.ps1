@@ -128,18 +128,21 @@ if (($AsrPath -and -not $ownCanary) -or ($TtsPath -and -not $ownTts)) {
     throw 'A prebuilt speech executable requires automatic setup for that service.'
 }
 $speechModels = $null
-if ($SpeechModelsOnly -or $ownCanary -or $ownTts) {
+if (-not $NoSpeechModels -and ($SpeechModelsOnly -or $ownCanary -or $ownTts)) {
     # Resolve once per launch, including repeated launches from the same shell.
     # Every maintenance operation below shares this checked executable.
-    Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1') -Force
-    if (-not $ToolPath -and $env:BONSAI_TOOLS_PATH) { $ToolPath = $env:BONSAI_TOOLS_PATH }
-    $ToolPath = Resolve-BonsaiRustTool -Name 'bonsai-tools' -ManifestRelativePath '../tools/bonsai/Cargo.toml' -ToolPath $ToolPath
+    if (-not $SpeechModelsOnly) {
+        Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1') -Force
+        if (-not $ToolPath -and $env:BONSAI_TOOLS_PATH) { $ToolPath = $env:BONSAI_TOOLS_PATH }
+        $ToolPath = Resolve-BonsaiRustTool -Name 'bonsai-tools' -ManifestRelativePath '../tools/bonsai/Cargo.toml' -ToolPath $ToolPath
+    }
     $selection = if ($SpeechModelsOnly -or ($ownCanary -and $ownTts)) { 'All' }
         elseif ($ownCanary) { 'Canary' } else { 'QwenTts' }
     $verification = if ($SpeechModelsOnly) { 'Verifying cached model hashes.' }
         else { 'Cached model hashes are checked by the speech service before use.' }
     Write-Information -MessageData "Preparing pinned native speech files ($selection, $TtsQuantization talker). $verification" -InformationAction Continue
-    $speechParameters = @{ DataDirectory = $DataDirectory; Model = $selection; TtsQuantization = $TtsQuantization; ToolPath = $ToolPath }
+    $speechParameters = @{ DataDirectory = $DataDirectory; Model = $selection; TtsQuantization = $TtsQuantization }
+    if ($ToolPath) { $speechParameters.ToolPath = $ToolPath }
     if (-not $SpeechModelsOnly) { $speechParameters.DeferCachedVerification = $true }
     $speechModels = & (Join-Path $PSScriptRoot 'Get-NativeSpeechModels.ps1') @speechParameters
     Write-Information -MessageData ("Canary model: {0}`nQwen VoiceDesign model: {1}`nQwen audio codec: {2}" -f
