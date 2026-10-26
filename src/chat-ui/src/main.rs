@@ -40,6 +40,7 @@ fn configuration(
     let (mut canary_executable, mut canary_model) = (None, None);
     let (mut tts_port, mut tts_key_file) = (None, None);
     let (mut tts_executable, mut tts_model, mut tts_codec) = (None, None, None);
+    let (mut tts_quantization, mut tts_threads) = (None, None);
     let mut no_abliterate_lora = false;
     let mut use_repacked_ptq1 = false;
     while let Some(option) = args.next() {
@@ -120,6 +121,23 @@ fn configuration(
                         .ok_or("A Qwen TTS codec GGUF path is required.")?,
                 ));
             }
+            Some("--tts-quantization") if tts_quantization.is_none() => {
+                let value = args.next().ok_or("A TTS quantization is required.")?;
+                if !matches!(value.to_str(), Some("Q8_0" | "Q4_K_M")) {
+                    return Err("TTS quantization must be Q8_0 or Q4_K_M.");
+                }
+                tts_quantization = value.into_string().ok();
+            }
+            Some("--tts-threads") if tts_threads.is_none() => {
+                tts_threads = Some(
+                    args.next()
+                        .and_then(|value| {
+                            value.to_str().and_then(|text| text.parse::<usize>().ok())
+                        })
+                        .filter(|count| (1..=256).contains(count))
+                        .ok_or("TTS threads must be between 1 and 256.")?,
+                );
+            }
             _ => {
                 return Err(
                     "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--use-repacked-ptq1] [--canary-key-file ABSOLUTE_FILE --canary-port 8766 [--canary-executable ABSOLUTE_EXE --canary-model ABSOLUTE_GGUF]] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-executable ABSOLUTE_EXE --tts-model ABSOLUTE_GGUF --tts-codec ABSOLUTE_GGUF]]",
@@ -134,6 +152,8 @@ fn configuration(
                 executable,
                 model,
                 codec: None,
+                quantization: None,
+                threads: None,
                 evidence: evidence
                     .clone()
                     .ok_or("An external evidence directory is required.")?,
@@ -148,6 +168,8 @@ fn configuration(
                 executable,
                 model,
                 codec: Some(codec),
+                quantization: tts_quantization.clone(),
+                threads: tts_threads,
                 evidence: evidence
                     .clone()
                     .ok_or("An external evidence directory is required.")?,
@@ -155,6 +177,9 @@ fn configuration(
         }
         _ => return Err("Configure all three native Qwen TTS launch paths with --tts-key-file."),
     };
+    if (tts_quantization.is_some() || tts_threads.is_some()) && tts_launch.is_none() {
+        return Err("TTS quantization and thread settings require an owned native TTS service.");
+    }
     let config = client::Config {
         broker: broker.ok_or("A broker executable is required.")?,
         data: data.ok_or("A provisioned data directory is required.")?,
@@ -311,6 +336,32 @@ mod tests {
             assert!(configuration(enabled.clone()).is_err());
             enabled.extend([OsString::from(key_flag), key.clone().into_os_string()]);
             let config = configuration(enabled.clone()).map_err(io::Error::other)?;
+            if key_flag == "--tts-key-file" {
+                let mut tuned = enabled.clone();
+                tuned.extend([
+                    OsString::from("--tts-quantization"),
+                    OsString::from("Q4_K_M"),
+                    OsString::from("--tts-threads"),
+                    OsString::from("10"),
+                ]);
+                let tuned = configuration(tuned).map_err(io::Error::other)?;
+                let launch = tuned
+                    .qwen_tts
+                    .and_then(|config| config.launch)
+                    .ok_or_else(|| io::Error::other("Missing owned TTS configuration"))?;
+                assert_eq!(launch.quantization.as_deref(), Some("Q4_K_M"));
+                assert_eq!(launch.threads, Some(10));
+                for (flag, value) in [
+                    ("--tts-threads", "0"),
+                    ("--tts-threads", "257"),
+                    ("--tts-threads", "-1"),
+                    ("--tts-quantization", "Q2_K"),
+                ] {
+                    let mut invalid = enabled.clone();
+                    invalid.extend([OsString::from(flag), OsString::from(value)]);
+                    assert!(configuration(invalid).is_err());
+                }
+            }
             assert!(
                 config
                     .canary
@@ -340,6 +391,11 @@ mod tests {
             let mut legacy = base.clone();
             legacy.extend([OsString::from(old_flag), broker.clone().into_os_string()]);
             assert!(configuration(legacy).is_err());
+        }
+        for (flag, value) in [("--tts-threads", "10"), ("--tts-quantization", "Q4_K_M")] {
+            let mut unowned = base.clone();
+            unowned.extend([OsString::from(flag), OsString::from(value)]);
+            assert!(configuration(unowned).is_err());
         }
         for path in [&broker, &model, &codec, &key] {
             fs::remove_file(path)?;
