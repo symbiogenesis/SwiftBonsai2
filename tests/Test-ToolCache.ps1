@@ -25,6 +25,12 @@ function Initialize-TestToolModule {
         [void][IO.Directory]::CreateDirectory($script:ToolScratch['bonsai-tools'])
         $script:BuildRecords = Join-Path $Directory 'builds.jsonl'
         $script:BuildExitCode = 0
+        function script:Clear-BonsaiWorkspaceBuild {
+            [CmdletBinding()]
+            [OutputType([void])]
+            param([string]$RepositoryRoot, [string]$CargoPath, [string]$Channel, [string]$TargetDirectory, [string]$WorkingDirectory)
+            $script:invalidation = $PSBoundParameters
+        }
         function script:Get-Command {
             [CmdletBinding()]
             [OutputType([pscustomobject])]
@@ -56,11 +62,14 @@ if ($Case -cin @('All', 'Reuse')) {
     $first = Resolve-BonsaiRustTool @parameters
     $second = Resolve-BonsaiRustTool @parameters
     $records = @(Get-Content -LiteralPath (Join-Path $scratch 'builds.jsonl') | ConvertFrom-Json)
-    Assert ($first -ceq $second -and $records.Count -eq 2 -and $records[1].Existed) 'Repeated source resolution discarded the cache or skipped Cargo freshness.'
+    Assert ($first -ceq $second -and $records.Count -eq 1) 'Unchanged source resolution invoked Cargo instead of reusing its checked executable.'
     $module = Initialize-TestToolModule -Directory $scratch -Repository $repo
     $third = Resolve-BonsaiRustTool @parameters
     $records = @(Get-Content -LiteralPath (Join-Path $scratch 'builds.jsonl') | ConvertFrom-Json)
-    Assert ($third -ceq $first -and $records.Count -eq 3 -and $records[2].Existed) 'A new launcher session discarded the cache or skipped Cargo freshness.'
+    Assert ($third -ceq $first -and $records.Count -eq 1) 'A new launcher session discarded the checked executable cache.'
+    $null = Resolve-BonsaiRustTool @parameters -ForceBuild
+    $records = @(Get-Content -LiteralPath (Join-Path $scratch 'builds.jsonl') | ConvertFrom-Json)
+    Assert ($records.Count -eq 2 -and $records[-1].Existed) 'ForceBuild skipped Cargo or discarded reusable compiler outputs.'
     $toolchain = Get-Content -LiteralPath (Join-Path $repo 'rust-toolchain.toml') -Raw
     $null = $toolchain -match '(?m)^channel\s*=\s*"(nightly-\d{4}-\d{2}-\d{2})"\s*$'
     $channel = '+' + $Matches[1] + '-aarch64-pc-windows-msvc'
@@ -72,7 +81,7 @@ if ($Case -cin @('All', 'Reuse')) {
     [IO.File]::WriteAllText($explicit, 'explicit tool fixture')
     Assert ((Resolve-BonsaiRustTool @parameters -ToolPath $explicit) -ceq $explicit) 'Explicit maintenance tool selection was replaced.'
     $records = @(Get-Content -LiteralPath (Join-Path $scratch 'builds.jsonl') | ConvertFrom-Json)
-    Assert ($records.Count -eq 3) 'An explicit maintenance executable triggered a build.'
+    Assert ($records.Count -eq 2) 'An explicit maintenance executable triggered a build.'
 }
 if ($Case -cin @('All', 'Integrity')) {
     $tool = Resolve-BonsaiRustTool @parameters
@@ -89,7 +98,7 @@ if ($Case -cin @('All', 'Integrity')) {
     try { Assert-Failure { Resolve-BonsaiRustTool @parameters } 'Concurrent cache preparation was accepted.' }
     finally { $lock.Dispose() }
     & $module { $script:BuildExitCode = 7 }
-    Assert-Failure { Resolve-BonsaiRustTool @parameters } 'A failed freshness check returned an executable.'
+    Assert-Failure { Resolve-BonsaiRustTool @parameters -ForceBuild } 'A failed forced build returned an executable.'
     & $module { $script:ToolCacheRoot = $args[0] } $repo
     Assert-Failure { Resolve-BonsaiRustTool @parameters } 'A maintenance cache was created inside Git.'
     Assert-Failure { Resolve-BonsaiRustTool @parameters -ToolPath 'relative.exe' } 'A relative explicit tool path was accepted.'

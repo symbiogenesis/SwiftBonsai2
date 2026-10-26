@@ -202,8 +202,9 @@ Native artifact planning uses `bonsai-tools` with the crates' compiled model
 locks. Select a trusted packaged tool with `BONSAI_TOOLS_PATH` or the provisioning
 script's `-ToolPath`; otherwise the shared resolver builds the maintenance CLI
 in a reusable external cache under `%LOCALAPPDATA%/SwiftBonsai2/build/tools/`,
-separated by checkout and pinned Rust compiler. Cargo checks freshness once per
-chat launch, and provisioning, native build planning and credential creation
+separated by checkout and pinned Rust compiler. Unchanged source inputs and
+SHA-256-checked executable receipts skip Cargo on repeat launches; changed inputs
+run the ordinary pinned build. Provisioning, native build planning and credential creation
 share that executable. Logs and requests stay in unique system-temp lanes.
 This also applies to model-only provisioning. It never loads a
 speech model or builds the speech engines.
@@ -285,8 +286,17 @@ real-model audio quality or latency.
 
 `Start-Chat.ps1` checks and builds the chat app and broker in a reusable external
 Cargo cache under `DataDirectory/build/chat/`, separated by checkout and pinned
-toolchain. Cargo checks source/dependency freshness on each launch; output hash
-receipts detect missing or changed cached executables and force a rebuild.
+toolchain. Repeat launches hash source/build inputs and cached executables, then
+reuse matching builds without running Cargo. Speech companions use the same
+checked reuse under `DataDirectory/build/native-speech/`, skipping LLVM verification,
+source staging and Visual Studio setup when unchanged. Source, lockfile, build
+configuration or environment changes invalidate the receipt; missing or changed
+executables rebuild. A cache miss invalidates local workspace compiler outputs
+to handle source edits with preserved timestamps; third-party Cargo builds remain
+cached. Model verification and memory admission still run in Rust.
+The first launch after this update builds new isolated speech outputs and records
+receipts. Use `-ForceBuild` to repeat Cargo and native build preparation explicitly,
+including after changing external compiler installations or dependency caches.
 Pass absolute `-ChatPath` and `-BrokerPath` values to select existing builds.
 A fresh system-temp lane retains compiler output in `chat-build.log` and app
 output in `chat.log`. `Start-Chat.ps1` is the supported launcher.

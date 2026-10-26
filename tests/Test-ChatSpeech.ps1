@@ -31,8 +31,9 @@ $toolResolver = @'
 function Resolve-BonsaiRustTool {
     [CmdletBinding()]
     [OutputType([string])]
-    param([string]$Name, [string]$ManifestRelativePath, [string]$ToolPath)
+    param([string]$Name, [string]$ManifestRelativePath, [string]$ToolPath, [switch]$ForceBuild)
     [IO.File]::AppendAllText('__RESOLVED__', "resolved`n")
+    [IO.File]::WriteAllText('__RESOLVED__.force', [string][bool]$ForceBuild)
     if ($ToolPath) { return $ToolPath }
     return '__TOOL__'
 }
@@ -65,9 +66,10 @@ $build = @'
 function Invoke-NativeSpeechBuild {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
-    param([string]$DataDirectory, [string]$WorkingDirectory, [string]$RepositoryRoot, [string]$Model, [string]$ToolPath)
+    param([string]$DataDirectory, [string]$WorkingDirectory, [string]$RepositoryRoot, [string]$Model, [string]$ToolPath, [switch]$ForceBuild)
     [IO.File]::WriteAllText((Join-Path $DataDirectory 'native-build-called'), $Model)
     [IO.File]::WriteAllText((Join-Path $DataDirectory 'build-tool'), $ToolPath)
+    [IO.File]::WriteAllText((Join-Path $DataDirectory 'build-force'), [string][bool]$ForceBuild)
     if ([IO.File]::Exists((Join-Path $DataDirectory 'native-build-failure'))) { throw 'Deliberate native build failure.' }
     [pscustomobject]@{ AsrPath = (Join-Path $DataDirectory 'asr.exe'); TtsPath = (Join-Path $DataDirectory 'tts.exe') }
 }
@@ -118,6 +120,9 @@ if ($Case -cin @('All', 'StartupWork')) {
     & $copy -DataDirectory $data -SpeechModelsOnly | Out-Null
     $plan = Get-Content -LiteralPath $planPath -Raw | ConvertFrom-Json
     Assert ($plan.Model -ceq 'All' -and -not $plan.Deferred) 'Explicit provisioning stopped fully verifying both engines.'
+    & $copy @launch -ForceBuild | Out-Null
+    Assert ([IO.File]::ReadAllText($resolved + '.force') -ceq 'True' -and
+        [IO.File]::ReadAllText((Join-Path $data 'build-force')) -ceq 'True') 'ForceBuild did not reach maintenance and speech build preparation.'
 }
 
 if ($Case -cin @('All', 'Launcher')) {
@@ -183,6 +188,12 @@ if ($Case -cin @('All', 'Cache')) {
     & $module {
         $script:builds = [Collections.Generic.List[object]]::new()
         $script:exitCode = 0
+        function script:Clear-BonsaiWorkspaceBuild {
+            [CmdletBinding()]
+            [OutputType([void])]
+            param([string]$RepositoryRoot, [string]$CargoPath, [string]$Channel, [string]$TargetDirectory, [string]$WorkingDirectory, [string]$BuildTarget)
+            $script:invalidation = $PSBoundParameters
+        }
         function script:Get-Command {
             [CmdletBinding()]
             [OutputType([pscustomobject])]
@@ -225,11 +236,14 @@ if ($Case -cin @('All', 'Cache')) {
     $second = Invoke-ChatBuild @parameters
     $builds = @(& $module { $script:builds.ToArray() })
     Assert ($first.TargetDirectory -ceq $second.TargetDirectory -and $first.ChatPath -ceq $second.ChatPath) 'Repeated launch discarded the reusable Cargo target.'
-    Assert ($builds.Count -eq 2 -and $builds[0].Existed -notcontains $true -and $builds[1].Existed -notcontains $false) 'Unchanged binaries were rebuilt or Cargo freshness was skipped.'
+    Assert ($builds.Count -eq 1 -and $builds[0].Existed -notcontains $true) 'Unchanged executables invoked Cargo instead of using their checked build receipt.'
+    $null = Invoke-ChatBuild @parameters -ForceBuild
+    $builds = @(& $module { $script:builds.ToArray() })
+    Assert ($builds.Count -eq 2 -and $builds[1].Existed -notcontains $false) 'ForceBuild skipped Cargo or discarded reusable compiler outputs.'
     foreach ($build in $builds) {
         Assert ($build.Executable -ceq 'cargo.exe' -and $build.TimeoutSeconds -eq 3600 -and $build.Arguments -contains '--locked' -and $build.Arguments -contains '--release' -and
             $build.Arguments -contains '--manifest-path' -and $build.Arguments[0] -match '^\+nightly-\d{4}-\d{2}-\d{2}-aarch64-pc-windows-msvc$' -and
-            $build.WorkingDirectory -ceq $working -and $build.LogPath.StartsWith($working + '\', [StringComparison]::OrdinalIgnoreCase)) 'Cache reuse lost Cargo freshness, the pinned compiler or external diagnostics.'
+            $build.WorkingDirectory -ceq $working -and $build.LogPath.StartsWith($working + '\', [StringComparison]::OrdinalIgnoreCase)) 'Cache rebuilding lost checksum freshness, the pinned compiler or external diagnostics.'
     }
     $digest = (Get-FileHash -LiteralPath $first.ChatPath -Algorithm SHA256).Hash
     [IO.File]::WriteAllText($first.ChatPath, 'changed executable')
@@ -239,12 +253,12 @@ if ($Case -cin @('All', 'Cache')) {
     [IO.File]::Delete($receiptPath)
     $null = Invoke-ChatBuild @parameters
     $builds = @(& $module { $script:builds.ToArray() })
-    Assert (-not $builds[2].Existed[1] -and -not $builds[3].Existed[1]) 'Changed or unreceipted outputs reached Cargo as trusted executables.'
+    Assert (-not $builds[2].Existed[1] -and -not $builds[3].Existed[1]) 'Changed or unreceipted outputs were trusted.'
     $lock = [IO.FileStream]::new((Join-Path $first.TargetDirectory 'build.lock'), [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     try { Assert-Failure { Invoke-ChatBuild @parameters } 'Concurrent cache mutation was accepted.' }
     finally { $lock.Dispose() }
     & $module { $script:exitCode = 7 }
-    Assert-Failure { Invoke-ChatBuild @parameters } 'A failed freshness check returned executable paths.'
+    Assert-Failure { Invoke-ChatBuild @parameters -ForceBuild } 'A failed forced build returned executable paths.'
     Assert-Failure { Invoke-ChatBuild -DataDirectory $repo -WorkingDirectory $working -RepositoryRoot $repo -Package bonsai-chat } 'A chat build wrote inside Git.'
     $alias = Join-Path $scratch 'cache-alias'
     $null = New-Item -ItemType Junction -Path $alias -Target $data

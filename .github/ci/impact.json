@@ -42,7 +42,7 @@
         "scripts/Bonsai.Common.psm1", "scripts/Bonsai.Tools.psm1", "scripts/Bonsai.Native.psm1",
         "tests/Test-Foundation.ps1", "tests/Test-Inference*.ps1", "tests/Test-Gguf.ps1",
         "tests/Test-Pq2Census.ps1", "tests/Test-Ptq1Export.ps1", "tests/Test-DevelopmentKeys.ps1",
-        "tests/Test-RustTooling.ps1", "tests/Test-ToolCache.ps1", "tests/*Support*", "tests/fixtures/**",
+        "tests/Test-RustTooling.ps1", "tests/Test-ToolCache.ps1", "scripts/Bonsai.BuildCache.psm1", "tests/Test-BuildCache.ps1", "tests/*Support*", "tests/fixtures/**",
         "config/prism-inference.lock.json", "config/model.metadata.json"
       ]
     },
