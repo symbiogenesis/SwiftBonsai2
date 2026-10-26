@@ -1,6 +1,6 @@
 //! Bounded conversation workspace. Visible partial output and committed model
 //! history remain separate, so switching never promotes an interrupted turn.
-use super::*;
+use super::{Command, RichText, State, Transcript, client, egui};
 
 pub(super) struct ConversationSnapshot {
     pub(super) transcript: Transcript,
@@ -210,7 +210,7 @@ impl State {
                                 .iter_mut()
                                 .find(|conversation| conversation.id == id)
                             {
-                                conversation.title = title.trim().to_owned();
+                                title.trim().clone_into(&mut conversation.title);
                                 conversation.renamed = true;
                             }
                             done = true;
