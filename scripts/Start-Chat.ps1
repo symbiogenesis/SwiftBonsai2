@@ -11,6 +11,7 @@ UseRepackedPtq1 explicitly selects the verified current-weight PTQ1 export.
 PQ2 remains the default; the alternate packing does not qualify output or speed.
 The native Settings pane adjusts its scale for the next response.
 Builds missing app executables with the pinned Rust compiler in an external reusable cache.
+ToolPath selects an explicit maintenance executable for speech provisioning and credentials.
 The native window owns its broker and inference-process lifetime. Session
 credentials and logs remain in a unique external session directory. App builds stay
 under DataDirectory/build/chat; Cargo checks source and compiler freshness at launch.
@@ -50,6 +51,7 @@ param(
     [string]$BrokerPath,
     [string]$AsrPath,
     [string]$TtsPath,
+    [string]$ToolPath,
     [ValidateSet('Q8_0', 'Q4_K_M')][string]$TtsQuantization = 'Q8_0',
     [ValidateRange(0, 256)][int]$TtsThreads = 0,
     [switch]$NoAbliterateLora,
@@ -101,7 +103,7 @@ if (-not [IO.Directory]::Exists($DataDirectory)) {
     if ($SpeechModelsOnly) { [void][IO.Directory]::CreateDirectory($DataDirectory) }
     else { throw 'Provision Swift first with scripts/Get-Model.ps1 -LockPath config/swift-assessment.lock.json and scripts/Get-Engine.ps1 using the same lock and DataDirectory. See docs/development-guide.md#native-chat-app.' }
 }
-foreach ($name in @('ChatPath', 'BrokerPath', 'AsrPath', 'TtsPath')) {
+foreach ($name in @('ChatPath', 'BrokerPath', 'AsrPath', 'TtsPath', 'ToolPath')) {
     $path = Get-Variable -Name $name -ValueOnly
     if ($path) {
         $path = Resolve-ExternalPath -Path $path
@@ -127,7 +129,9 @@ if (($AsrPath -and -not $ownCanary) -or ($TtsPath -and -not $ownTts)) {
 $speechModels = $null
 if (-not $NoSpeechModels) {
     Write-Information -MessageData "Preparing pinned native Canary and Qwen VoiceDesign files ($TtsQuantization talker). Verified cached files are reused." -InformationAction Continue
-    $speechModels = & (Join-Path $PSScriptRoot 'Get-NativeSpeechModels.ps1') -DataDirectory $DataDirectory -TtsQuantization $TtsQuantization
+    $speechParameters = @{ DataDirectory = $DataDirectory; TtsQuantization = $TtsQuantization }
+    if ($ToolPath) { $speechParameters.ToolPath = $ToolPath }
+    $speechModels = & (Join-Path $PSScriptRoot 'Get-NativeSpeechModels.ps1') @speechParameters
     Write-Information -MessageData ("Canary model: {0}`nQwen VoiceDesign model: {1}`nQwen audio codec: {2}" -f
         $speechModels.CanaryModelPath, $speechModels.TtsModelPath,
         $speechModels.TtsCodecPath) -InformationAction Continue
@@ -161,7 +165,9 @@ foreach ($service in @('Canary', 'Tts')) {
     if (($service -ceq 'Canary' -and $ownCanary) -or ($service -ceq 'Tts' -and $ownTts)) {
         $keyDirectory = Join-Path $scratch ($service.ToLowerInvariant() + '-credentials')
         [void][IO.Directory]::CreateDirectory($keyDirectory)
-        $keys = & (Join-Path $PSScriptRoot 'New-DevelopmentKeys.ps1') -ParentDirectory $keyDirectory
+        $keyParameters = @{ ParentDirectory = $keyDirectory }
+        if ($ToolPath) { $keyParameters.ToolPath = $ToolPath }
+        $keys = & (Join-Path $PSScriptRoot 'New-DevelopmentKeys.ps1') @keyParameters
         Set-Variable -Name ($service + 'KeyFile') -Value $keys.FrontendKeyFile
     }
 }
