@@ -41,6 +41,8 @@ fn version_advertises_policy_commands_without_resolving_a_request_file()
         "inference-lock",
         "inference-capabilities",
         "speech-build",
+        "source-build",
+        "chat-launch",
     ] {
         assert!(commands.iter().any(|command| command == name));
     }

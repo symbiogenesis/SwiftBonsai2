@@ -1,4 +1,4 @@
-//! Native speech build pins and bounded, nonexecuting source ZIP staging.
+//! Native speech pins, bounded source staging, provisioning and startup builds.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -40,16 +40,87 @@ enum Request {
         qwen_archive_path: PathBuf,
         ggml_archive_path: PathBuf,
     },
+    #[serde(rename = "environment", rename_all = "camelCase")]
+    Environment {
+        data_directory: PathBuf,
+        working_directory: PathBuf,
+    },
+    #[serde(rename = "build", rename_all = "camelCase")]
+    Build {
+        repository_root: PathBuf,
+        data_directory: PathBuf,
+        working_directory: PathBuf,
+        #[serde(default = "all_models")]
+        model: String,
+        #[serde(default)]
+        force_build: bool,
+    },
+    #[serde(rename = "models", rename_all = "camelCase")]
+    Models {
+        data_directory: PathBuf,
+        working_directory: PathBuf,
+        #[serde(default = "all_models")]
+        model: String,
+        #[serde(default = "default_quantization")]
+        tts_quantization: String,
+        #[serde(default)]
+        verify_only: bool,
+        #[serde(default)]
+        defer_cached_verification: bool,
+    },
 }
 
-/// Validate compiled build pins or stage bounded source bytes without executing code.
+fn all_models() -> String {
+    "All".into()
+}
+fn default_quantization() -> String {
+    "Q8_0".into()
+}
+
+/// Plans, provisions or builds native speech through explicit operation requests.
+///
+/// Planning and source-staging operations remain nonexecuting. Model provisioning,
+/// environment preparation and builds use the pinned native startup boundary.
 ///
 /// # Errors
 /// Rejects unsupported requests, unsafe paths, malformed pins, ZIP inventory or
-/// expansion faults, and source-cache contents that differ from the archive.
+/// expansion faults, source-cache contents that differ from the archive, invalid
+/// host prerequisites, bounded download failures and native compiler failures.
 pub fn run(request: Value) -> crate::Result<Value> {
     match serde_json::from_value(request).map_err(|_| "Invalid speech build request.")? {
         Request::Plan => build_plan(),
+        Request::Environment {
+            data_directory,
+            working_directory,
+        } => crate::native_startup::environment(&data_directory, &working_directory),
+        Request::Build {
+            repository_root,
+            data_directory,
+            working_directory,
+            model,
+            force_build,
+        } => crate::native_startup::build(
+            &repository_root,
+            &data_directory,
+            &working_directory,
+            &model,
+            force_build,
+        ),
+        Request::Models {
+            data_directory,
+            working_directory,
+            model,
+            tts_quantization,
+            verify_only,
+            defer_cached_verification,
+        } => crate::native_startup::models(
+            &data_directory,
+            &model,
+            &tts_quantization,
+            verify_only,
+            defer_cached_verification,
+            &working_directory,
+        ),
         Request::ValidateNames {
             archive_root,
             names,
@@ -124,7 +195,7 @@ fn artifact(value: &Value, url: &str) -> crate::Result<()> {
     Ok(())
 }
 
-fn build_plan() -> crate::Result<Value> {
+pub(crate) fn build_plan() -> crate::Result<Value> {
     let pin: Value = serde_json::from_str(include_str!("../../../config/native-speech.lock.json"))
         .map_err(|_| "Invalid native build lock JSON.")?;
     let model: Value =

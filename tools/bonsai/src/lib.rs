@@ -33,3 +33,14 @@ pub mod inference_capabilities;
 
 /// Native speech build locks and bounded source archive staging.
 pub mod speech_build;
+
+/// Checked source builds for the maintenance tool and native chat executables.
+pub mod source_build;
+
+/// Native chat validation, provisioning and launch orchestration.
+pub mod chat_launch;
+
+mod native_startup;
+mod startup_cache;
+mod startup_download;
+mod startup_process;
