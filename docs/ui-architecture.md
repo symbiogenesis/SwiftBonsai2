@@ -89,8 +89,10 @@ no preset, speaker file or reference recording is required. It applies to the
 next explicit read-aloud request. Only visible assistant answers are synthesized,
 as plain text; reasoning is excluded. Long answers are split into bounded text
 segments and synthesized/played sequentially with the same description. Stop
-speech cancels synthesis and native WAV playback. Missing/not-ready TTS disables
-output independently of Canary input, with no Windows-voice fallback. Images,
+speech cancels synthesis and native WAV playback. Missing/not-ready TTS prevents
+output independently of Canary input, with no Windows-voice fallback. Idle
+speech controls remain visible and show native setup/prerequisite guidance when
+selected; a missing service never activates the microphone or substitutes output. Images,
 video and generated images remain unavailable in the pinned Swift profile.
 
 This is not a claim of unrestricted OpenAI SDK or arbitrary local-server

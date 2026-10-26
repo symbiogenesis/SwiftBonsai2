@@ -76,12 +76,17 @@ speech synthesis. The Qwen service uses the pinned VoiceDesign weights and
 offline tokenizer assets, with `Auto` language selection. Descriptions guide
 the generated voice; they do not promise a persistent speaker identity.
 
-**Enable microphone** requests Windows microphone permission before recording.
+The visible **Microphone: off** button explains speech setup when Canary is not
+configured or ready. With Canary ready, selecting it requests Windows microphone
+permission before recording and changes the button to **Microphone: on**.
 The microphone remains off unless explicitly enabled, and capture pauses while
-each clip is transcribed. **Disable microphone**, Send, New conversation,
+each clip is transcribed. Selecting **Microphone: on** to turn it off, Send, New conversation,
 read-aloud or closing the window stops capture and cancels pending input.
 Transcripts appear in the composer for review; they are never sent automatically.
-Permission denial or a missing/not-ready Canary service keeps input disabled.
+Permission denial or a missing/not-ready Canary service keeps capture off.
+**Read aloud** explains missing Qwen service setup or the need for a completed
+answer when it cannot start. Speech controls remain visible and actionable while
+idle; they do not silently hide setup requirements behind greyed-out buttons.
 The UI does not download Canary weights or substitute another recognizer. The
 companion's supported runtime and memory requirements are separate from Swift's
 16 GiB admission check; Windows ARM64 Canary and Qwen TTS inference are not yet
