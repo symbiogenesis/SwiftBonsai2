@@ -8,7 +8,11 @@
     "filename": "clang+llvm-23.1.4-aarch64-pc-windows-msvc.tar.xz",
     "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.4/clang%2Bllvm-23.1.4-aarch64-pc-windows-msvc.tar.xz",
     "bytes": 771710768,
-    "sha256": "f0d2e32424850ffb9b6aef190587a8298353d858a8a7260f490c173fe98d6811"
+    "sha256": "f0d2e32424850ffb9b6aef190587a8298353d858a8a7260f490c173fe98d6811",
+    "executables": {
+      "clang-cl.exe": { "bytes": 102901760, "sha256": "d5487944bbd56cea6ac4fdde2496f58b32802a3276c24b32e231e0d72e2122c9" },
+      "llvm-rc.exe": { "bytes": 1113600, "sha256": "40cc704b6feb61217fa6867bc248aac1d0ca22495840ec20801f3570fdc1cd82" }
+    }
   },
   "sources": {
     "qwen": {
