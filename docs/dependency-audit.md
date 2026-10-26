@@ -134,6 +134,14 @@ learning-mode/Base64 coupling, and telemetry/build dependencies need feature
 gating too. Simply marking dependencies optional would break compilation.
 See the [published manifest](https://github.com/microsoft/mxc/blob/v1.0.1/src/mxc-sdk/Cargo.toml).
 
+Runner's hidden PSEC exports are unsupported compatibility interfaces, so their
+small dependency needs do not establish a supported SDK contract. A separate
+compile-only consumer of the documented `v1::spawn` API with `Containment::Process`
+also reproduced the broader dependency graph and passed Windows ARM64 checking.
+[MXC #1579](https://github.com/microsoft/mxc/issues/1579) therefore requests
+backend/capability-selective builds of the supported SDK, covering all plausibly
+optional runtime and build dependencies while retaining security validation.
+
 ### Renderer defaults are broader than the manifest suggests
 
 eframe defaults are disabled, but its `wgpu` feature enables `egui-wgpu/default`,
