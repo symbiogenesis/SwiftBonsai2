@@ -199,4 +199,110 @@ function Get-BonsaiHostCapability {
     }
 }
 
-Export-ModuleMember -Function Get-BonsaiHostCapability
+function Get-BonsaiCpuCompatibilityIdentity {
+    <#
+    .SYNOPSIS
+    Retains canonical static CPU observation records and their SHA-256 identities.
+    .DESCRIPTION
+    Accepts the version-one host capability projection, including one restored
+    with ConvertFrom-Json -AsHashtable. Only native Windows ARM64 CPU observations
+    are covered. Missing required OS, CPU or ISA facts produce unknown status and
+    null records/digests; a marketing name alone never establishes an identity.
+    Records exclude live memory, power, timestamps, tool paths and accelerator
+    inventory. CPU topology and unobserved optional ISA remain outside this scope.
+    Digests identify observations for review, not qualified execution or evidence.
+    The exact UTF-8 JSON strings are retained so reviewers can reproduce hashes.
+    #>
+    [CmdletBinding()]
+    [OutputType([Collections.Specialized.OrderedDictionary])]
+    param([Parameter(Mandatory)][Collections.IDictionary]$Capabilities)
+
+    if ($Capabilities['schema_version'] -isnot [int] -and $Capabilities['schema_version'] -isnot [long]) {
+        throw 'CPU compatibility identity requires an integer host schema version.'
+    }
+    if ($Capabilities['schema_version'] -ne 1 -or $Capabilities['kind'] -cne 'runner-host-capabilities') {
+        throw 'CPU compatibility identity requires the version-one host capability projection.'
+    }
+    $result = [ordered]@{
+        schema_version = 1
+        kind = 'runner-cpu-compatibility-identity'
+        scope = 'native-windows-arm64-cpu-observations-v1'
+        status = 'unknown'
+        fallback_reason = 'unknown-capability'
+        qualification = 'unqualified'
+        capability_class_json = $null
+        capability_class_sha256 = $null
+        backend_driver_json = $null
+        backend_driver_sha256 = $null
+    }
+    $os = Get-CapabilityProperty $Capabilities 'operating_system'
+    $process = Get-CapabilityProperty $Capabilities 'process'
+    $cpu = Get-CapabilityProperty $Capabilities 'cpu'
+    $isa = Get-CapabilityProperty $cpu 'isa'
+    if ((Get-CapabilityProperty $os 'status') -cne 'observed' -or
+        (Get-CapabilityProperty $process 'status') -cne 'observed' -or
+        (Get-CapabilityProperty $cpu 'status') -cne 'observed' -or
+        (Get-CapabilityProperty $isa 'status') -cne 'observed') { return $result }
+    $osArchitecture = Get-CapabilityText (Get-CapabilityProperty $os 'architecture')
+    $processArchitecture = Get-CapabilityText (Get-CapabilityProperty $process 'architecture')
+    $isaArchitecture = Get-CapabilityText (Get-CapabilityProperty $isa 'architecture')
+    $native = Get-CapabilityFlag (Get-CapabilityProperty $process 'is_native')
+    if ($osArchitecture -cne 'arm64' -or $processArchitecture -cne 'arm64' -or
+        $isaArchitecture -cne 'arm64' -or $native -cne $true -or
+        (Get-CapabilityProperty $isa 'scope') -cne 'current-process') { return $result }
+    $version = Get-CapabilityText (Get-CapabilityProperty $os 'version')
+    $buildNumber = Get-CapabilityText (Get-CapabilityProperty $os 'build_number')
+    $advsimd = Get-CapabilityFlag (Get-CapabilityProperty $isa 'advsimd')
+    $dotprod = Get-CapabilityFlag (Get-CapabilityProperty $isa 'dotprod')
+    if ($null -eq $version -or $version -ieq 'unknown' -or
+        $null -eq $buildNumber -or $buildNumber -ieq 'unknown' -or
+        $null -eq $advsimd -or $null -eq $dotprod -or ($dotprod -and -not $advsimd)) { return $result }
+    $identities = @(Get-CapabilityProperty $cpu 'identities')
+    if ($identities.Count -gt 64) { throw 'Too many CPU compatibility identities.' }
+    if ($identities.Count -eq 0) { return $result }
+    $processorJson = [Collections.Generic.List[string]]::new()
+    foreach ($identity in $identities) {
+        $name = Get-CapabilityText (Get-CapabilityProperty $identity 'name')
+        $manufacturer = Get-CapabilityText (Get-CapabilityProperty $identity 'manufacturer')
+        $cores = Get-CapabilityUInt64 (Get-CapabilityProperty $identity 'physical_cores')
+        $logical = Get-CapabilityUInt64 (Get-CapabilityProperty $identity 'logical_processors')
+        if ($null -eq $name -or $name -ieq 'unknown' -or
+            $null -eq $manufacturer -or $manufacturer -ieq 'unknown' -or
+            $null -eq $cores -or $cores -eq 0 -or $null -eq $logical -or $logical -lt $cores) { return $result }
+        $processorJson.Add(([ordered]@{
+            name = $name; manufacturer = $manufacturer
+            physical_cores = $cores; logical_processors = $logical
+        } | ConvertTo-Json -Compress))
+    }
+    # CIM enumeration order is not a compatibility fact. Sort fixed-field JSON
+    # ordinally, preserving repeated processor entries and their multiplicity.
+    $processorJson.Sort([StringComparer]::Ordinal)
+    $capabilityRecord = [ordered]@{
+        schema_version = 1
+        kind = 'runner-cpu-capability-class'
+        scope = $result.scope
+        architecture = 'arm64'
+        identities = @($processorJson | ForEach-Object { ConvertFrom-Json -InputObject $_ -AsHashtable -DateKind String })
+        isa = [ordered]@{ advsimd = $advsimd; dotprod = $dotprod }
+    }
+    # CPU execution has no accelerator-driver fact in this scope. Bind the OS;
+    # the verified runtime archive/source/target remain separate profile fields.
+    $backendRecord = [ordered]@{
+        schema_version = 1
+        kind = 'runner-cpu-backend-driver'
+        scope = $result.scope
+        backend = 'cpu'
+        operating_system = [ordered]@{ architecture = 'arm64'; version = $version; build_number = $buildNumber }
+    }
+    $result.capability_class_json = $capabilityRecord | ConvertTo-Json -Depth 6 -Compress
+    $result.backend_driver_json = $backendRecord | ConvertTo-Json -Depth 6 -Compress
+    $result.capability_class_sha256 = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData(
+        [Text.Encoding]::UTF8.GetBytes($result.capability_class_json)))
+    $result.backend_driver_sha256 = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData(
+        [Text.Encoding]::UTF8.GetBytes($result.backend_driver_json)))
+    $result.status = 'observed'
+    $result.fallback_reason = $null
+    return $result
+}
+
+Export-ModuleMember -Function Get-BonsaiHostCapability, Get-BonsaiCpuCompatibilityIdentity

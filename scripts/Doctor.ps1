@@ -295,6 +295,20 @@ try {
     }
     else { $issues.Add('No external data directory selected; storage capacity remains unverified.') }
 
+    $capabilities = Get-BonsaiHostCapability -Facts @{
+        OsArchitecture = $osArchitecture; ProcessArchitecture = $processArchitecture
+        OperatingSystem = $os; Computer = $computer; Processors = $cpus; Graphics = $gpus
+        Memory = $memoryStatus; NpuDrivers = $npuDrivers; Isa = $isa
+        Probes = @{
+            OperatingSystem = [bool]$probeResults['Win32_OperatingSystem']
+            Computer = [bool]$probeResults['Win32_ComputerSystem']
+            Processors = [bool]$probeResults['Win32_Processor']
+            Graphics = [bool]$probeResults['Win32_VideoController']
+            Memory = [bool]$probeResults['Win32_PerfFormattedData_PerfOS_Memory']
+            NpuDrivers = [bool]$probeResults['Win32_PnPSignedDriver']
+            Isa = $isaProbeSucceeded
+        }
+    }
     $report = [ordered] @{
         SchemaVersion = 1
         CollectedAtUtc = [DateTime]::UtcNow.ToString('o')
@@ -322,20 +336,8 @@ try {
         Graphics = @($gpus | ForEach-Object { [ordered] @{ Name = $_.Name; Vendor = $_.AdapterCompatibility; DriverVersion = $_.DriverVersion; DriverDate = if ($_.DriverDate) { $_.DriverDate.ToUniversalTime().ToString('o') } else { $null }; Status = $_.Status } })
         Tools = $tools
         Storage = $storage
-        Capabilities = Get-BonsaiHostCapability -Facts @{
-            OsArchitecture = $osArchitecture; ProcessArchitecture = $processArchitecture
-            OperatingSystem = $os; Computer = $computer; Processors = $cpus; Graphics = $gpus
-            Memory = $memoryStatus; NpuDrivers = $npuDrivers; Isa = $isa
-            Probes = @{
-                OperatingSystem = [bool]$probeResults['Win32_OperatingSystem']
-                Computer = [bool]$probeResults['Win32_ComputerSystem']
-                Processors = [bool]$probeResults['Win32_Processor']
-                Graphics = [bool]$probeResults['Win32_VideoController']
-                Memory = [bool]$probeResults['Win32_PerfFormattedData_PerfOS_Memory']
-                NpuDrivers = [bool]$probeResults['Win32_PnPSignedDriver']
-                Isa = $isaProbeSucceeded
-            }
-        }
+        Capabilities = $capabilities
+        CpuCompatibilityIdentity = Get-BonsaiCpuCompatibilityIdentity -Capabilities $capabilities
         Gaps = @($issues)
         Qualification = 'Inventory only: no engine, GPU backend, memory admission, or daily security policy has been qualified.'
     }
