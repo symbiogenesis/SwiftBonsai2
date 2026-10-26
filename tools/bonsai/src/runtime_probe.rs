@@ -33,9 +33,37 @@ pub(super) fn run(
     spec: &ProcessSpec,
     maximum: u64,
     label: &str,
-    mut checkpoint: impl FnMut() -> Result<()>,
+    checkpoint: impl FnMut() -> Result<()>,
 ) -> Result<Output> {
-    let process = OwnedProcess::start(spec).map_err(|error| error.to_string())?;
+    run_with(spec, maximum, label, checkpoint, OwnedProcess::start)
+}
+
+pub(super) fn inspect(
+    spec: &ProcessSpec,
+    maximum: u64,
+    label: &str,
+    checkpoint: impl FnMut() -> Result<()>,
+) -> Result<Output> {
+    // The native boundary permits only one fixed --version/--help argument.
+    // Legacy runtime inspection needs shell DLL initialization; this is not a
+    // qualification of that runtime under the model worker's Win32k denial.
+    run_with(
+        spec,
+        maximum,
+        label,
+        checkpoint,
+        OwnedProcess::start_inspection,
+    )
+}
+
+fn run_with(
+    spec: &ProcessSpec,
+    maximum: u64,
+    label: &str,
+    mut checkpoint: impl FnMut() -> Result<()>,
+    launch: fn(&ProcessSpec) -> std::io::Result<OwnedProcess>,
+) -> Result<Output> {
+    let process = launch(spec).map_err(|error| error.to_string())?;
     let deadline = Instant::now() + Duration::from_secs(10);
     let result = (|| loop {
         checkpoint()?;
@@ -52,7 +80,9 @@ pub(super) fn run(
             return if code == 0 {
                 Ok(())
             } else {
-                Err(format!("{label} probe failed."))
+                Err(format!(
+                    "{label} probe failed with exit code {code} (0x{code:08X})."
+                ))
             };
         }
     })();

@@ -46,6 +46,13 @@ setup runs `Get-Inference.ps1 -IncludeCapabilities`, validating the actual pinne
 runtime's model-free report through the checked maintenance tool. These checks
 do not establish publisher signing, actual-model behavior or device qualification.
 
+Pinned C++ runtime `--version` and `--help` checks use a fixed-command inspection
+launch that retains the 512 MiB and one-process Job limits, caller lifetime,
+output bounds and deadline. It permits Windows shell DLL initialization required
+by the release. Inference workers retain Win32k denial; a successful inspection
+does not qualify this legacy release for that worker policy. Rust runtime
+capability discovery continues to use the ordinary headless policy.
+
 Startup policy, checked build reuse, native compiler preparation and speech file
 provisioning are Rust maintenance regressions. Their focused cases cover warm
 launches that skip Cargo/preparation, changed and damaged inputs, owned-service

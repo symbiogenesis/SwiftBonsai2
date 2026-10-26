@@ -82,7 +82,7 @@ mod windows {
     ) -> Result<String> {
         let stdout = scratch.join(format!("{kind}.stdout.txt"));
         let stderr = scratch.join(format!("{kind}.stderr.txt"));
-        let output = crate::runtime_probe::run(
+        let output = crate::runtime_probe::inspect(
             &ProcessSpec {
                 executable: runtime.executable().to_owned(),
                 arguments: vec![format!("--{kind}").into()],
@@ -93,7 +93,7 @@ mod windows {
                 active_process_limit: 1,
             },
             1_048_576,
-            "Runtime version",
+            &format!("Runtime {kind}"),
             || parent.ensure_alive().map_err(|error| error.to_string()),
         )?;
         Ok(output.stdout + &output.stderr)
