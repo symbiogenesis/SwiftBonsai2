@@ -50,19 +50,20 @@ use windows_sys::{
                 EnableWindow, GetFocus, GetKeyState, SetFocus, VK_RETURN, VK_SHIFT,
             },
             WindowsAndMessaging::{
-                BS_OWNERDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow,
-                DispatchMessageW, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, ES_WANTRETURN,
-                GetClientRect, GetDlgCtrlID, GetMessageW, GetWindowTextLengthW, GetWindowTextW,
-                IDC_ARROW, IDI_APPLICATION, IsDialogMessageW, IsWindow, KillTimer, LoadCursorW,
-                LoadIconW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MINMAXINFO, MSG, MessageBoxW,
-                MoveWindow, PostQuitMessage, RegisterClassW, SPI_GETHIGHCONTRAST, SW_HIDE, SW_SHOW,
+                BS_OWNERDRAW, CB_ADDSTRING, CB_GETCURSEL, CB_SETCURSEL, CBS_DROPDOWNLIST,
+                CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
+                ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, ES_WANTRETURN, GetClientRect,
+                GetDlgCtrlID, GetMessageW, GetWindowTextLengthW, GetWindowTextW, IDC_ARROW,
+                IDI_APPLICATION, IsDialogMessageW, IsWindow, KillTimer, LoadCursorW, LoadIconW,
+                MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MINMAXINFO, MSG, MessageBoxW, MoveWindow,
+                PostQuitMessage, RegisterClassW, SPI_GETHIGHCONTRAST, SW_HIDE, SW_SHOW,
                 SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetTimer, SetWindowPos, SetWindowTextW,
                 ShowWindow, SystemParametersInfoW, TranslateMessage, WM_CLOSE, WM_COMMAND,
-                WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC, WM_DESTROY, WM_DPICHANGED,
-                WM_DRAWITEM, WM_ERASEBKGND, WM_GETFONT, WM_KEYDOWN, WM_PAINT, WM_SETFONT,
-                WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE, WM_THEMECHANGED, WM_TIMER, WNDCLASSW,
-                WS_CHILD, WS_CLIPCHILDREN, WS_EX_CONTROLPARENT, WS_OVERLAPPEDWINDOW, WS_TABSTOP,
-                WS_VISIBLE, WS_VSCROLL,
+                WM_CTLCOLORBTN, WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DESTROY,
+                WM_DPICHANGED, WM_DRAWITEM, WM_ERASEBKGND, WM_GETFONT, WM_KEYDOWN, WM_PAINT,
+                WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_SYSCOLORCHANGE, WM_THEMECHANGED,
+                WM_TIMER, WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN, WS_EX_CONTROLPARENT,
+                WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
             },
         },
     },
@@ -76,6 +77,12 @@ const THINKING: usize = 104;
 const RETRY: usize = 105;
 const DICTATE: usize = 106;
 const READ_ALOUD: usize = 107;
+const MODE: usize = 108;
+const OUTPUT_BUDGET: usize = 109;
+const OUTPUT_TOKENS: [u32; 4] = [512, 1024, 2048, 4096];
+const MODE_HINT: &str = "Extra effort uses 3 passes; takes longer; quality gains are unproven.";
+const CONTEXT_HINT: &str =
+    "8,192 context tokens. Output includes thinking; broker checks prompt + output + reserve.";
 const DEFAULT_VOICE: &str = "A warm, clear, natural adult voice with a calm conversational pace.";
 const TIMER: usize = 1;
 const BACKGROUND: u32 = 0x0016_1810;
@@ -115,6 +122,12 @@ struct State {
     speech_status: HWND,
     voice_label: HWND,
     voice_profile: HWND,
+    mode_label: HWND,
+    mode: HWND,
+    budget_label: HWND,
+    output_budget: HWND,
+    mode_hint: HWND,
+    context_hint: HWND,
     status: HWND,
     font: HFONT,
     title_font: HFONT,
@@ -138,6 +151,8 @@ struct State {
     speaking: bool,
     answer_complete: bool,
     last_answer: String,
+    retained_draft: String,
+    stage: Option<&'static str>,
 }
 
 struct Brush(HBRUSH);
@@ -277,12 +292,12 @@ fn display_color(color: u32) -> u32 {
         color
     }
 }
-fn color_control(wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+fn color_control(wparam: WPARAM, lparam: LPARAM, list: bool) -> LRESULT {
     let dc: HDC = without_provenance_mut(wparam);
     let control: HWND = without_provenance_mut(lparam.cast_unsigned());
     // SAFETY: WM_CTLCOLOR supplies a live control and message-scoped paint HDC.
     let id = unsafe { GetDlgCtrlID(control) };
-    let editor = matches!(id, 201..=204);
+    let editor = list || matches!(id, 108 | 109 | 201..=204);
     let colors = colors();
     let foreground = if id == 202 || (!editor && id != 301) {
         colors.muted
@@ -360,9 +375,13 @@ fn paint(window: HWND) {
                 .and_then(|state| state.as_ref().map(|state| state.show_thinking))
         })
         .unwrap_or(false);
-    let top = px(280);
+    let top = px(360);
     let bottom = bounds.bottom - px(184);
-    let split = if thinking { (bottom - top) / 3 } else { 0 };
+    let split = if thinking {
+        ((bottom - top) / 3).max(px(90))
+    } else {
+        0
+    };
     palette_with(|p| {
         // SAFETY: Brush and paint DC are live during this synchronous paint scope.
         unsafe {
@@ -639,6 +658,51 @@ fn edit(parent: HWND, readonly: bool, id: usize) -> io::Result<HWND> {
     Ok(handle)
 }
 
+fn selection(parent: HWND, id: usize, choices: &[&str], selected: usize) -> io::Result<HWND> {
+    let selection = control(
+        parent,
+        w!("COMBOBOX"),
+        "",
+        WS_TABSTOP | WS_VSCROLL | u32::try_from(CBS_DROPDOWNLIST).unwrap_or_default(),
+        id,
+    )?;
+    for choice in choices {
+        let text = wide(choice);
+        // SAFETY: The native dropdown copies this live UTF-16 string during the call.
+        if unsafe {
+            SendMessageW(
+                selection,
+                CB_ADDSTRING,
+                0,
+                text.as_ptr().addr().cast_signed(),
+            )
+        } < 0
+        {
+            return Err(io::Error::other("Could not populate the response setting."));
+        }
+    }
+    // SAFETY: The dropdown copies only static/null theme names synchronously.
+    unsafe {
+        SetWindowTheme(
+            selection,
+            if colors().high_contrast {
+                null()
+            } else {
+                w!("DarkMode_Explorer")
+            },
+            null(),
+        )
+    };
+    // SAFETY: selected is a valid index in the choices populated above.
+    unsafe { SendMessageW(selection, CB_SETCURSEL, selected, 0) };
+    Ok(selection)
+}
+
+fn selected(control: HWND) -> usize {
+    // SAFETY: This UI thread owns the live native dropdown; no pointers are passed.
+    usize::try_from(unsafe { SendMessageW(control, CB_GETCURSEL, 0, 0) }).unwrap_or_default()
+}
+
 fn voice_profile(parent: HWND) -> io::Result<HWND> {
     let control = edit(parent, false, 204)?;
     // SAFETY: This live native edit accepts a bounded scalar text limit.
@@ -698,6 +762,22 @@ impl State {
             )?,
             voice_label: control(window, w!("STATIC"), "&Voice profile", 0, 405)?,
             voice_profile: voice_profile(window)?,
+            mode_label: control(window, w!("STATIC"), "&Mode", 0, 406)?,
+            mode: selection(
+                window,
+                MODE,
+                &["Standard", "Extra effort (experimental)"],
+                0,
+            )?,
+            budget_label: control(window, w!("STATIC"), "&Output cap", 0, 407)?,
+            output_budget: selection(
+                window,
+                OUTPUT_BUDGET,
+                &["512 tokens", "1,024 tokens", "2,048 tokens", "4,096 tokens"],
+                3,
+            )?,
+            mode_hint: control(window, w!("STATIC"), MODE_HINT, 0, 408)?,
+            context_hint: control(window, w!("STATIC"), CONTEXT_HINT, 0, 409)?,
             status: control(
                 window,
                 w!("STATIC"),
@@ -727,6 +807,8 @@ impl State {
             speaking: false,
             answer_complete: false,
             last_answer: String::new(),
+            retained_draft: String::new(),
+            stage: None,
         })
     }
 
@@ -744,6 +826,10 @@ impl State {
         unsafe {
             EnableWindow(self.input, i32::from(self.ready && !self.busy));
         }
+        // SAFETY: The live selectors cannot change settings during an active request.
+        unsafe { EnableWindow(self.mode, i32::from(!self.busy)) };
+        // SAFETY: Same UI-thread control lifetime contract as above.
+        unsafe { EnableWindow(self.output_budget, i32::from(!self.busy)) };
         // SAFETY: Same control lifetime/thread contract as above.
         unsafe {
             EnableWindow(self.stop, i32::from(self.busy));
@@ -800,10 +886,10 @@ impl State {
         let height = bounds.bottom.max(p(520));
         let pad = p(32);
         let content = width - 2 * pad;
-        let top = p(280);
+        let top = p(360);
         let bottom = height - p(184);
         let split = if self.show_thinking {
-            (bottom - top) / 3
+            ((bottom - top) / 3).max(p(90))
         } else {
             0
         };
@@ -823,6 +909,7 @@ impl State {
             p(42),
         );
         self.layout_voice_profile(width, dpi);
+        self.layout_response_settings(width, dpi);
         place(
             self.transcript_label,
             pad + p(20),
@@ -928,6 +1015,24 @@ impl State {
         );
     }
 
+    fn layout_response_settings(&self, width: i32, dpi: i32) {
+        let p = |value: i32| value.saturating_mul(dpi) / 96;
+        let pad = p(32);
+        let content = width - 2 * pad;
+        place(self.mode_label, pad + p(2), p(274), p(47), p(24));
+        place(self.mode, pad + p(52), p(270), p(255), p(150));
+        place(self.budget_label, pad + p(321), p(274), p(80), p(24));
+        place(
+            self.output_budget,
+            pad + p(406),
+            p(270),
+            content - p(406),
+            p(180),
+        );
+        place(self.mode_hint, pad + p(2), p(308), content - p(4), p(20));
+        place(self.context_hint, pad + p(2), p(332), content - p(4), p(24));
+    }
+
     fn set_font(&mut self) {
         // SAFETY: Live HWND on this UI thread.
         let dpi = i32::try_from(unsafe { GetDpiForWindow(self.window) }.max(96)).unwrap_or(96);
@@ -948,6 +1053,8 @@ impl State {
             self.dictate,
             self.read_aloud,
             self.voice_profile,
+            self.mode,
+            self.output_budget,
         ] {
             apply_font(control, font);
         }
@@ -958,6 +1065,10 @@ impl State {
         apply_font(self.status, small);
         apply_font(self.speech_status, small);
         apply_font(self.voice_label, small);
+        apply_font(self.mode_label, small);
+        apply_font(self.budget_label, small);
+        apply_font(self.mode_hint, small);
+        apply_font(self.context_hint, small);
         apply_font(self.transcript_label, small);
         apply_font(self.reasoning_label, small);
         apply_font(self.input_label, small);
@@ -977,7 +1088,12 @@ impl State {
         PALETTE.with(|slot| *slot.borrow_mut() = Some(palette));
         let colors = colors();
         set_dark_frame(self.window, !colors.high_contrast);
-        for control in [self.input, self.voice_profile] {
+        for control in [
+            self.input,
+            self.voice_profile,
+            self.mode,
+            self.output_budget,
+        ] {
             // SAFETY: Live native edits and static/null theme pointers; calls are synchronous.
             unsafe {
                 SetWindowTheme(
@@ -1009,8 +1125,22 @@ impl State {
         }
         self.stop_speech();
         self.last_answer.clear();
+        self.retained_draft.clear();
+        self.stage = None;
         self.answer_complete = false;
-        if self.commands.send(Command::Send(text.to_owned())).is_err() {
+        let max_completion_tokens = OUTPUT_TOKENS
+            .get(selected(self.output_budget))
+            .copied()
+            .unwrap_or(4096);
+        if self
+            .commands
+            .send(Command::Send {
+                text: text.to_owned(),
+                max_completion_tokens,
+                extra_effort: selected(self.mode) == 1,
+            })
+            .is_err()
+        {
             self.fail("The model worker stopped. Close and restart the demo.");
             return;
         }
@@ -1028,7 +1158,23 @@ impl State {
         self.busy = true;
         set_text(
             self.status,
-            "Thinking...  Enter sends; Shift+Enter adds a line. Stop requires restarting the demo.",
+            "Thinking... Stop cancels; Retry model starts a fresh model session.",
+        );
+        self.update_buttons();
+    }
+
+    fn stop_generation(&mut self) {
+        if self.commands.send(Command::Stop).is_err() {
+            self.fail("The model worker stopped. Close and restart the demo.");
+            return;
+        }
+        self.stop_speech();
+        self.ready = false;
+        self.busy = false;
+        self.retryable = false;
+        set_text(
+            self.status,
+            "Stopping generation and closing the owned model session...",
         );
         self.update_buttons();
     }
@@ -1038,10 +1184,33 @@ impl State {
         self.ready = false;
         self.busy = false;
         self.retryable = false;
+        if !self.retained_draft.is_empty() {
+            self.last_answer.clone_from(&self.retained_draft);
+            self.answer_complete = true;
+        }
         set_text(self.status, message);
         transcript::turn(self.transcript, "Demo status", MUTED);
         transcript::append(self.transcript, message, MUTED, false);
         self.update_buttons();
+    }
+
+    fn reject(&mut self, message: &str, text: &str, retry_required: bool) {
+        self.busy = false;
+        self.ready = !retry_required;
+        self.retryable = false;
+        set_text(self.input, text);
+        if !self.retained_draft.is_empty() {
+            self.last_answer.clone_from(&self.retained_draft);
+            self.answer_complete = true;
+        }
+        set_text(self.status, message);
+        transcript::turn(self.transcript, "Request not completed", MUTED);
+        transcript::append(self.transcript, message, MUTED, false);
+        self.update_buttons();
+        if !retry_required {
+            // SAFETY: The enabled composer belongs to this UI thread.
+            unsafe { SetFocus(self.input) };
+        }
     }
 
     fn drain_events(&mut self) {
@@ -1063,10 +1232,7 @@ impl State {
                 Event::Retryable(message) => {
                     self.fail(&message);
                     self.retryable = true;
-                    set_text(
-                        self.status,
-                        "More free memory is needed. Close a few applications, then choose Retry model.",
-                    );
+                    set_text(self.status, &message);
                     self.update_buttons();
                 }
                 Event::Ready => {
@@ -1085,10 +1251,27 @@ impl State {
                         unsafe { SetFocus(self.input) };
                     }
                 }
+                Event::Rejected {
+                    message,
+                    text,
+                    retry_required,
+                } => {
+                    self.reject(&message, &text, retry_required);
+                }
+                Event::Stage(label) => {
+                    self.stage = Some(label);
+                    self.last_answer.clear();
+                    self.answer_complete = false;
+                    set_text(self.reasoning, "");
+                    transcript::turn(self.transcript, label, ACCENT);
+                    transcript::turn(self.reasoning, label, MUTED);
+                    set_text(self.status, label);
+                }
+                Event::Draft(text) => self.retained_draft = text,
                 Event::Text(text) => {
                     self.last_answer.push_str(&text);
                     append(self.transcript, &text);
-                    set_text(self.status, "Writing...");
+                    set_text(self.status, self.stage.unwrap_or("Writing..."));
                 }
                 Event::Reasoning(text) => {
                     transcript::append(self.reasoning, &text, MUTED, false);
@@ -1101,6 +1284,12 @@ impl State {
                         match completion {
                             Completion::Finished => {
                                 "Ready. Enter to send; Shift+Enter for a new line."
+                            }
+                            Completion::TokenLimit
+                                if !self.retained_draft.is_empty()
+                                    && self.last_answer == self.retained_draft =>
+                            {
+                                "Extra effort could not finish its review. The complete draft is retained above."
                             }
                             Completion::TokenLimit => {
                                 "Response reached its token limit and may be incomplete. You can ask Swift to continue."
@@ -1464,8 +1653,8 @@ unsafe extern "system" fn procedure(
     lparam: LPARAM,
 ) -> LRESULT {
     match message {
-        WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
-            return color_control(wparam, lparam);
+        WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC | WM_CTLCOLORBTN | WM_CTLCOLORLISTBOX => {
+            return color_control(wparam, lparam, message == WM_CTLCOLORLISTBOX);
         }
         WM_PAINT => {
             paint(window);
@@ -1547,22 +1736,19 @@ unsafe extern "system" fn procedure(
                         state.busy = false;
                         set_text(
                             state.status,
-                            "Starting Swift. Rechecking available memory...",
+                            "Starting Swift. Rechecking model, artifacts and available memory...",
                         );
                         state.update_buttons();
                     } else {
                         state.fail("The model worker stopped. Close and restart the demo.");
                     }
                 }
-                STOP if state.busy => {
-                    let _result = state.commands.send(Command::Stop);
-                    state.fail(
-                        "Stopped. Close and restart the demo to start a fresh model session.",
-                    );
-                }
+                STOP if state.busy => state.stop_generation(),
                 NEW if state.ready && !state.busy => {
                     state.stop_speech();
                     state.last_answer.clear();
+                    state.retained_draft.clear();
+                    state.stage = None;
                     state.answer_complete = false;
                     let _result = state.commands.send(Command::NewChat);
                     transcript::welcome(state.transcript);

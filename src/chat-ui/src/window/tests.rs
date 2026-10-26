@@ -142,3 +142,159 @@ fn speech_controls_stay_visible_and_explain_unconfigured_services_without_listen
     assert!(!enabled(state.read_aloud));
     Ok(())
 }
+
+fn response_state(window: HWND) -> io::Result<(State, Receiver<Command>, Sender<Event>)> {
+    let (commands, incoming_commands) = mpsc::channel();
+    let (events, incoming_events) = mpsc::channel();
+    let temporary = std::env::temp_dir();
+    let config = Config {
+        broker: temporary.join("unused-broker.exe"),
+        data: temporary.clone(),
+        evidence: temporary,
+        frontend_port: 5173,
+        backend_port: 8081,
+        use_abliterate_lora: true,
+        canary: None,
+        qwen_tts: None,
+    };
+    Ok((
+        State::create(window, commands, incoming_events, &config, None)?,
+        incoming_commands,
+        events,
+    ))
+}
+
+#[test]
+fn response_controls_preserve_limits_recover_composer_and_retain_complete_draft() -> io::Result<()>
+{
+    let _rich_edit = transcript::Library::load()?;
+    let window = HiddenWindow::create()?;
+    let (mut state, commands, events) = response_state(window.0)?;
+    state.ready = true;
+    state.layout();
+    state.update_buttons();
+    assert_eq!(selected(state.mode), 0);
+    assert_eq!(selected(state.output_budget), 3);
+    assert!(control_text(state.context_hint).contains("8,192"));
+    assert!(control_text(state.context_hint).contains("thinking"));
+    assert!(control_text(state.context_hint).contains("reserve"));
+    assert!(control_text(state.mode_hint).contains("unproven"));
+    // SAFETY: The test queries a live dropdown's scalar native window style.
+    let mode_style = unsafe { GetWindowLongPtrW(state.mode, GWL_STYLE) }.cast_unsigned();
+    assert_ne!(
+        mode_style & usize::try_from(WS_TABSTOP).unwrap_or_default(),
+        0
+    );
+    set_text(state.input, "  Original task  ");
+    state.submit();
+    assert!(matches!(commands.try_recv(), Ok(Command::Send {
+        text,
+        max_completion_tokens: 4096,
+        extra_effort: false,
+    }) if text == "Original task"));
+    assert!(!enabled(state.mode));
+    assert!(!enabled(state.output_budget));
+    events
+        .send(Event::Rejected {
+            message: "Choose a shorter task or a lower output cap.".to_owned(),
+            retry_required: false,
+            text: "Original task".to_owned(),
+        })
+        .map_err(io::Error::other)?;
+    state.drain_events();
+    assert_eq!(control_text(state.input), "Original task");
+    assert!(state.ready && !state.busy);
+    assert!(enabled(state.send) && enabled(state.new_chat));
+    assert!(enabled(state.mode) && enabled(state.output_budget));
+    // SAFETY: These valid dropdown indices select the explicit opt-in and 512 cap.
+    unsafe { SendMessageW(state.mode, CB_SETCURSEL, 1, 0) };
+    // SAFETY: Same scalar dropdown-selection contract as above.
+    unsafe { SendMessageW(state.output_budget, CB_SETCURSEL, 0, 0) };
+    state.submit();
+    assert!(matches!(commands.try_recv(), Ok(Command::Send {
+        text,
+        max_completion_tokens: 512,
+        extra_effort: true,
+    }) if text == "Original task"));
+    events
+        .send(Event::Stage("Extra effort: Drafting (2/3)"))
+        .map_err(io::Error::other)?;
+    events
+        .send(Event::Text("The complete draft.".to_owned()))
+        .map_err(io::Error::other)?;
+    events
+        .send(Event::Draft("The complete draft.".to_owned()))
+        .map_err(io::Error::other)?;
+    events
+        .send(Event::Stage("Extra effort: Reviewing (3/3)"))
+        .map_err(io::Error::other)?;
+    events
+        .send(Event::Text("Partial revision".to_owned()))
+        .map_err(io::Error::other)?;
+    state.drain_events();
+    assert_eq!(state.last_answer, "Partial revision");
+    assert_eq!(control_text(state.status), "Extra effort: Reviewing (3/3)");
+    state.stop_generation();
+    assert!(matches!(commands.try_recv(), Ok(Command::Stop)));
+    assert!(!state.ready && !state.busy && !state.retryable);
+    assert!(!enabled(state.retry));
+    events
+        .send(Event::Rejected {
+            message: "Stopped.".to_owned(),
+            retry_required: true,
+            text: "Original task".to_owned(),
+        })
+        .map_err(io::Error::other)?;
+    state.drain_events();
+    assert!(!state.ready && !enabled(state.send) && !enabled(state.new_chat));
+    assert!(!state.retryable && !enabled(state.retry));
+    events
+        .send(Event::Retryable(
+            "Generation stopped. Select Retry model to continue.".to_owned(),
+        ))
+        .map_err(io::Error::other)?;
+    state.drain_events();
+    assert!(state.retryable && !state.ready);
+    assert!(enabled(state.retry));
+    assert!(!enabled(state.send));
+    assert_eq!(control_text(state.input), "Original task");
+    assert_eq!(state.last_answer, "The complete draft.");
+    assert!(state.answer_complete);
+    assert!(!control_text(state.status).contains("memory"));
+    assert!(!state.dictation_requested && state.microphone_generation.is_none());
+    assert!(state.microphone.is_none());
+    Ok(())
+}
+
+#[test]
+fn response_controls_fit_the_minimum_window_without_overlapping_conversation() -> io::Result<()> {
+    let _rich_edit = transcript::Library::load()?;
+    let window = HiddenWindow::create()?;
+    let (mut state, _commands, _events) = response_state(window.0)?;
+    // SAFETY: Live hidden window queried only for its DPI value.
+    let dpi = i32::try_from(unsafe { GetDpiForWindow(window.0) }.max(96)).unwrap_or(96);
+    // SAFETY: This test owns the hidden window and uses the real minimum outer size.
+    unsafe { MoveWindow(window.0, 0, 0, 680 * dpi / 96, 800 * dpi / 96, 0) };
+    state.show_thinking = true;
+    state.layout();
+    let parent = bounds(window.0)?;
+    for control in [
+        state.mode,
+        state.output_budget,
+        state.context_hint,
+        state.transcript,
+        state.reasoning,
+    ] {
+        let child = bounds(control)?;
+        assert!(child.left >= parent.left && child.right <= parent.right);
+        assert!(child.top >= parent.top && child.bottom <= parent.bottom);
+        assert!(child.right > child.left && child.bottom > child.top);
+    }
+    assert!(bounds(state.mode)?.right < bounds(state.budget_label)?.left);
+    assert!(bounds(state.output_budget)?.bottom < bounds(state.mode_hint)?.top);
+    assert!(bounds(state.context_hint)?.bottom < bounds(state.transcript_label)?.top);
+    assert!(bounds(state.transcript)?.bottom < bounds(state.reasoning_label)?.top);
+    assert!(bounds(state.reasoning)?.bottom < bounds(state.input_label)?.top);
+    assert!(!state.dictation_requested && state.microphone.is_none());
+    Ok(())
+}
