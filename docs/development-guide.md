@@ -164,6 +164,9 @@ while another response is generating. Reasoning is
 not read aloud. Edit **Voice profile** to
 describe a voice, for example "A warm, low-pitched narrator with a calm pace and
 clear consonants." No voice preset or reference recording is required.
+The companion creates a fixed reference voice from this profile and reuses its
+speaker conditioning across paragraphs and messages. Change the profile explicitly
+to choose another voice. First use also prepares the reference before speech starts.
 
 Enable **Read aloud as responses arrive** beside the composer to read new
 responses while Swift writes them. The choice is off by default and belongs to
@@ -178,14 +181,14 @@ without replaying anything on restore.
 
 The app automatically provisions and configures both native ARM64 speech
 companions. Canary uses the selected NVIDIA Canary Qwen 2.5B model and Qwen uses
-the selected 1.7B VoiceDesign model. Rust implements the services, authentication,
+the selected 1.7B VoiceDesign and Base models. Rust implements the services, authentication,
 request validation, WAV processing and process ownership. Reviewed native GGML
 C++ engines perform inference. GPU/NPU acceleration is not enabled.
 
-The three pinned Q8_0 GGUF files total approximately 4.8 GiB and live below
+The four pinned Q8_0 GGUF files total approximately 6.7 GiB and live below
 `$data/speech/native/` in revision-specific directories. Exact size and SHA-256
 verification rejects altered caches. Ordinary chat launch checks cached file
-sizes without reading all 4.8 GiB; each Rust speech service verifies the exact
+sizes without reading all model bytes; each Rust speech service verifies the exact
 SHA-256 and retains the verified files before loading on first use. New downloads,
 `-SpeechModelsOnly` and standalone provisioning still verify full hashes. Interrupted downloads
 resume. Existing original snapshots and old private runtimes are preserved.
@@ -196,6 +199,7 @@ $speech = ./scripts/Start-Chat.ps1 -DataDirectory $data -SpeechModelsOnly
 $speech.CanaryModelPath
 $speech.TtsModelPath
 $speech.TtsCodecPath
+$speech.TtsVoiceModelPath
 ```
 
 `Get-NativeSpeechModels.ps1 -DataDirectory $data -Model Canary` or `-Model QwenTts`

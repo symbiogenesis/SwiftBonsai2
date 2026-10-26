@@ -151,7 +151,7 @@ is treated as a recoverable context rejection; other failures require retry.
 
 The Rust maintenance command behind the PowerShell entry point provisions the
 pinned Canary Qwen 2.5B and Qwen3-TTS
-1.7B VoiceDesign Q8_0 GGUF files using immutable URLs and exact size/SHA-256
+1.7B VoiceDesign and Base Q8_0 GGUF files using immutable URLs and exact size/SHA-256
 verification for downloads and explicit provisioning. Ordinary launch checks
 cached speech file sizes; Rust verifies SHA-256 and holds the verified files
 before loading a speech model on first use. `-SpeechModelsOnly` fully verifies
@@ -208,9 +208,17 @@ Read-aloud uses the separate, authenticated local
 no preset, speaker file or reference recording is required. It applies to the
 next read-aloud request or streaming response. Only visible assistant answers are synthesized,
 as plain text; reasoning is excluded. Long answers are split into bounded text
-segments and synthesized sequentially with the same description. Native PCM
-playback overlaps synthesis through a bounded queue; older independently managed
-companions retain complete-WAV playback. Stop speech cancels synthesis and native
+segments and synthesized sequentially with the same speaker reference. The companion
+designs one fixed reference phrase with a fixed seed from the voice profile, then
+releases VoiceDesign before loading Base. Base extracts speaker and acoustic
+conditioning once and reuses it for every segment and message with that profile.
+Answer text, paragraph boundaries and conversation/request identifiers never
+select the reference. A profile change creates a new reference; worker restarts
+regenerate it from the same fixed phrase, seed and profile. Only one talker model
+is resident at a time. No user recording or reference file is needed.
+Native PCM playback overlaps synthesis through a bounded queue; independently managed
+companions must advertise `consistent_voice: true`, and may use complete-WAV playback
+when streaming is unavailable. Older companions need an update. Stop speech cancels synthesis and native
 audio playback. Missing/not-ready TTS prevents
 output independently of Canary input, with no Windows-voice fallback. Idle
 speech controls remain visible and show native setup/prerequisite guidance when

@@ -85,7 +85,7 @@ $download = @'
 param([string]$DataDirectory, [string]$Model, [string]$TtsQuantization = 'Q8_0', [switch]$DeferCachedVerification, [string]$ToolPath)
 [IO.File]::WriteAllText((Join-Path $DataDirectory 'download-called'), '')
 [IO.File]::WriteAllText((Join-Path $DataDirectory 'download-plan.json'), (ConvertTo-Json @{ Model = $Model; Deferred = [bool]$DeferCachedVerification; ToolPath = $ToolPath }))
-[pscustomobject]@{ CanaryModelPath = 'canary.gguf'; TtsModelPath = 'talker.gguf'; TtsCodecPath = 'codec.gguf'; TotalBytes = 1 }
+[pscustomobject]@{ CanaryModelPath = 'canary.gguf'; TtsModelPath = 'talker.gguf'; TtsCodecPath = 'codec.gguf'; TtsVoiceModelPath = 'voice-talker.gguf'; TotalBytes = 1 }
 '@
 [IO.File]::WriteAllText((Join-Path $scripts 'Get-NativeSpeechModels.ps1'), $download)
 $build = @'

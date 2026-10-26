@@ -4,21 +4,22 @@ This library owns the native Qwen3-TTS 1.7B VoiceDesign GGML engine through a
 small Rust binding to its public C ABI. A reviewed build helper adds bounded
 thread control and a SIMD compile guard to a private copy of the external C++ core. The default talker
 and codec are independently pinned Q8_0 GGUF conversions
-of the named upstream checkpoint; the calling service must verify and retain both artifact files
+of the named upstream checkpoints; the calling service must verify and retain all artifact files
 before loading. Model identity, immutable URLs, byte lengths and SHA-256 values
 are recorded in `model.lock.json`.
 
 Only plain text plus a plain-language voice description are exposed. The native
-context must report `voice_design`; speaker presets, reference recordings and
-arbitrary native options are absent from this interface. Generated audio stays
+design context must report `voice_design`, and the reusable-speaker context must
+report `base`; speaker presets, user reference recordings and arbitrary native
+options are absent from this interface. Generated audio stays
 in memory, is copied before its native allocation is freed, and must be finite
 mono 24 kHz PCM within the existing 120-second bound. Suspected token-ceiling
 output is rejected. Upstream request-bearing diagnostics are discarded.
 
-`Synthesizer::load(model, codec)` initializes one owned CPU model, using two fewer
+`Synthesizer::load(model, codec, voice_model)` initializes the owned design model, using two fewer
 threads than the available CPU count to leave headroom for the UI and text
 runtime (minimum one inference thread).
-`load_with_threads(model, codec, Some(count))` explicitly selects 1–256 threads
+`load_with_threads(model, codec, voice_model, Some(count))` explicitly selects 1–256 threads
 for controlled evaluation. The companion accepts the same override as
 `--threads count`; it never changes the parent process's environment.
 `synthesize(text, voice)` returns `Audio { samples, sample_rate }`.
@@ -29,6 +30,17 @@ completion. Heard samples can precede a later generation failure. Run this in
 its separately supervised process so cancellation, startup/synthesis deadlines,
 memory admission and abrupt application exit remain enforced by the owner.
 The library does not open audio devices or network listeners.
+
+The first request for a voice profile designs a fixed reference phrase with seed
+42. Its text never comes from the message being read. The design model is released
+before loading the separately pinned Base talker, whose speaker embedding and RVQ
+reference codes are retained in memory and supplied with the reference transcript
+to both complete and streaming synthesis. Every paragraph and message with that
+profile reuses the same conditioning. An explicit profile change creates a new
+reference; process restarts regenerate it from the same phrase, seed and profile.
+This follows Qwen's [Voice Design then Clone workflow](https://github.com/QwenLM/Qwen3-TTS#voice-design-then-clone).
+Only one talker model is resident at a time, and reference acquisition failures
+fail speech without falling back to independently designed segment voices.
 
 The Rust binding retains the exact ABI-v6 structures and upstream defaults,
 with compile-time layout checks. Ordinary native status failures remain redacted
@@ -92,5 +104,5 @@ model, language, plain-text or voice-description contract.
 
 `--quantization Q8_0` selects the default compiled artifact lock.
 `--quantization Q4_K_M` explicitly selects the separate reviewed four-bit talker
-evaluation lock with the same VoiceDesign checkpoint and Q8 codec. It does not
+evaluation lock with the same VoiceDesign/Base checkpoints and Q8 codec. It does not
 accept arbitrary model files or establish equivalent quality or faster output.

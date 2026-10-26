@@ -61,7 +61,7 @@ $report = [ordered]@{
     OS = [Runtime.InteropServices.RuntimeInformation]::OSDescription
     Runner = $env:RUNNER_NAME; ResponseFormat = $ResponseFormat; Repetitions = $Repetitions
     ColdReadyDefinition = 'New process; operating-system file cache is not flushed.'
-    Sampling = 'Upstream defaults with random seeds; fixed public text and voice description.'
+    Sampling = 'Fixed design reference phrase and seed; reusable Base speaker conditioning; upstream text sampling defaults.'
     Text = 'The quick brown fox crossed the quiet garden.'
     VoiceDescription = 'A calm, clear narrator with a natural speaking pace.'
     QualityVerdict = 'pending-human-listening'; Records = [Collections.Generic.List[object]]::new()
@@ -106,6 +106,7 @@ try {
             $startInfo.CreateNoWindow = $true
             $startInfo.WorkingDirectory = $lane
             foreach ($argument in @('--model', $models.TtsModelPath, '--codec', $models.TtsCodecPath,
+                '--voice-model', $models.TtsVoiceModelPath,
                 '--token-file', $keys.FrontendKeyFile, '--port', [string]$port,
                 '--quantization', $quantization, '--threads', [string]$threadCount)) {
                 $startInfo.ArgumentList.Add($argument)
@@ -125,7 +126,7 @@ try {
                         try {
                             if ($healthResponse.IsSuccessStatusCode) {
                                 $health = $healthResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json
-                                $ready = $health.ready -and $health.model -ceq 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign'
+                                $ready = $health.ready -and $health.consistent_voice -and $health.model -ceq 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign'
                             }
                         } finally { $healthResponse.Dispose() }
                     } catch [Net.Http.HttpRequestException] { $ready = $false }

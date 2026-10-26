@@ -5,13 +5,17 @@ Read Aloud uses **Qwen3-TTS 12Hz 1.7B VoiceDesign** through the
 core. A plain-language voice description controls synthesis; no voice preset,
 speaker file or reference recording is required.
 
-`./scripts/Start-Chat.ps1` downloads and verifies the pinned Q8_0 talker and
-codec, builds native ARM64 companions, and configures Read Aloud automatically.
+`./scripts/Start-Chat.ps1` downloads and verifies the pinned Q8_0 VoiceDesign and
+Base talkers and codec, builds native ARM64 companions, and configures Read Aloud automatically.
 Enter a plain-language **Voice profile**, for example “A warm, low-pitched
 narrator with a calm pace and clear consonants.” It applies to the next explicit
 read-aloud request. Only the visible completed answer is spoken; reasoning is
-excluded. The voice description guides generation without guaranteeing a stable
-speaker identity between segments.
+excluded. The companion designs a fixed reference phrase with seed 42, then uses
+Base to retain and reuse its speaker embedding, acoustic codes and transcript for
+every segment and message with the same profile. Line breaks and message text do
+not redesign the voice. Changing the profile creates a new reference. After a
+worker restart, the same phrase, seed and profile regenerate that reference.
+VoiceDesign is released before Base loads; only one talker is resident at a time.
 
 Qwen loads on demand after Swift startup, with microphone input released first.
 The app synthesizes sequential text segments of at most 256 characters and plays
@@ -32,8 +36,8 @@ For only the native TTS model and codec:
 ```
 
 Use `-TtsQuantization Q4_K_M` on provisioning or `Start-Chat.ps1` to evaluate the
-smaller pinned Q4_K_M talker with the same Q8_0 codec. Q8_0 remains the default.
-Both files are verified against the selected immutable lock before loading;
+smaller pinned Q4_K_M talkers with the same Q8_0 codec. Q8_0 remains the default.
+All three files are verified against the selected immutable lock before loading;
 changing filenames never bypasses model verification. Q4 voice quality and speed
 must be evaluated before treating it as an equivalent replacement.
 
@@ -41,8 +45,8 @@ must be evaluated before treating it as an equivalent replacement.
 256); zero uses the automatic budget, which reserves two available logical CPUs.
 The standalone service accepts `--threads` and `--quantization Q4_K_M`.
 
-The native [model lock](../../src/speech-tts/model.lock.json) pins both files to
-immutable conversions of the named Qwen checkpoint. The model is Apache-2.0;
+The native [model lock](../../src/speech-tts/model.lock.json) pins all three files to
+immutable conversions of the named Qwen checkpoints. The models are Apache-2.0;
 preserve Qwen attribution and notices. The legacy `model.lock.json` here is only
 for the explicit original-snapshot download utility, not the app runtime.
 Existing raw snapshots and old private runtimes are not deleted or modified.
@@ -51,7 +55,7 @@ For an independently managed native companion, run from an external working
 directory with absolute external artifact/key paths:
 
 ```powershell
-& $ttsExecutable --model $speech.TtsModelPath --codec $speech.TtsCodecPath --token-file $ttsKey --port 8767
+& $ttsExecutable --model $speech.TtsModelPath --codec $speech.TtsCodecPath --voice-model $speech.TtsVoiceModelPath --token-file $ttsKey --port 8767
 ```
 
 Pass `-TtsKeyFile $ttsKey` to the demo. Use the repository's protected development
@@ -62,7 +66,7 @@ The service binds exclusively to `127.0.0.1` only after verified models load.
 HTTP/1.1 requires exact numeric-loopback Host, bearer authorization and
 `Connection: close`. Authenticated `GET /health` reports the fixed model, ready,
 `voice_design:true`, `sample_rate:24000`, `max_text_characters:2048`,
-`max_voice_characters:1024` and `streaming_pcm:true`.
+`max_voice_characters:1024`, `streaming_pcm:true` and `consistent_voice:true`.
 `POST /v1/audio/speech` accepts only:
 
 ```json
@@ -84,8 +88,9 @@ the same 120-second total bound. The terminating zero chunk is sent only after
 successful complete inference. Disconnects, invalid samples, model errors and
 suspected token truncation leave an incomplete response; played partial audio
 does not make that request successful. The client requires complete framing and
-rejects malformed, oversized or incomplete audio. It requests WAV from older
-independently managed services without the streaming capability.
+rejects malformed, oversized or incomplete audio. Independently managed services
+must advertise `consistent_voice:true`; services without streaming support may
+still return WAV. Older services need an update before the UI will read aloud.
 
 Both native compilation and actual synthetic speech generation have passed on
 Windows ARM64. These establish correctness of one path, not a performance
