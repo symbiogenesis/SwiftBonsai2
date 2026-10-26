@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use bonsai_windows_process::{OwnedProcess, ProcessSpec};
+use bonsai_windows_process::{OwnedProcess, ProcessSpec, SandboxPolicy};
 use windows_sys::Win32::Networking::WinSock::WSAEACCES;
 use windows_sys::Win32::System::Diagnostics::Debug::{GetErrorMode, RaiseException, SetErrorMode};
 
@@ -94,22 +94,58 @@ fn main() -> io::Result<()> {
             }
             fs::write("commit.txt", "unbounded")?;
         }
-        "owner" => {
-            let directory = std::env::current_dir()?;
-            let _owned = OwnedProcess::start(&ProcessSpec {
-                executable: std::env::current_exe()?,
-                arguments: vec![OsString::from("tree"), OsString::from(argument(&args, 1)?)],
-                working_directory: directory.clone(),
-                stdout: directory.join("owned.stdout"),
-                stderr: directory.join("owned.stderr"),
-                memory_limit_bytes: 256 * 1024 * 1024,
-                active_process_limit: 3,
-            })?;
-            fs::write("owner-ready.txt", "ready")?;
-            wait_forever();
-        }
+        "owner" => plain_owner(&args)?,
+        "sandbox-owner" => sandbox_owner(&args)?,
         _ => return Err(io::Error::other("unknown probe mode")),
     }
+    Ok(())
+}
+
+fn plain_owner(args: &[OsString]) -> io::Result<()> {
+    let directory = std::env::current_dir()?;
+    let _owned = OwnedProcess::start(&ProcessSpec {
+        executable: std::env::current_exe()?,
+        arguments: vec![OsString::from("tree"), OsString::from(argument(args, 1)?)],
+        working_directory: directory.clone(),
+        stdout: directory.join("owned.stdout"),
+        stderr: directory.join("owned.stderr"),
+        memory_limit_bytes: 256 * 1024 * 1024,
+        active_process_limit: 3,
+    })?;
+    fs::write("owner-ready.txt", "ready")?;
+    wait_forever();
+    Ok(())
+}
+
+fn sandbox_owner(args: &[OsString]) -> io::Result<()> {
+    let directory = std::env::current_dir()?;
+    let scratch = directory.join("scratch");
+    fs::create_dir(&scratch)?;
+    let executable = std::env::current_exe()?;
+    let process = OwnedProcess::start_sandboxed(
+        &ProcessSpec {
+            executable: executable.clone(),
+            arguments: vec![OsString::from("listen"), OsString::from(argument(args, 1)?)],
+            working_directory: scratch.clone(),
+            stdout: directory.join("owned.stdout"),
+            stderr: directory.join("owned.stderr"),
+            memory_limit_bytes: 256 * 1024 * 1024,
+            active_process_limit: 1,
+        },
+        &SandboxPolicy {
+            readonly_paths: vec![executable],
+            writable_directory: scratch,
+        },
+    )?;
+    fs::write(
+        "sandbox-owner-ready.txt",
+        format!(
+            "{}\n{}\n",
+            process.id(),
+            process_creation_file_time(process.id())?
+        ),
+    )?;
+    wait_forever();
     Ok(())
 }
 
@@ -211,11 +247,35 @@ fn child_process_policy() -> io::Result<u32> {
     Ok(flags)
 }
 
+fn child_creation_file_time(child: &std::process::Child) -> io::Result<u64> {
+    use std::os::windows::io::AsHandle as _;
+
+    handle_creation_file_time(child.as_handle())
+}
+
 #[allow(
     unsafe_code,
-    reason = "Record creation identity while retaining the unexpectedly spawned fixture's owning Child handle."
+    reason = "Retain query access to the exact disposable contained worker before reporting its creation identity."
 )]
-fn child_creation_file_time(child: &std::process::Child) -> io::Result<u64> {
+fn process_creation_file_time(id: u32) -> io::Result<u64> {
+    use std::os::windows::io::{AsHandle as _, FromRawHandle as _, OwnedHandle};
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    // SAFETY: Open only the newly owned worker's numeric PID for querying.
+    let raw = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, id) };
+    if raw.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: A successful OpenProcess returned a fresh, uniquely owned handle.
+    let process = unsafe { OwnedHandle::from_raw_handle(raw) };
+    handle_creation_file_time(process.as_handle())
+}
+
+#[allow(
+    unsafe_code,
+    reason = "Read creation identity through a live borrowed fixture process handle."
+)]
+fn handle_creation_file_time(process: std::os::windows::io::BorrowedHandle<'_>) -> io::Result<u64> {
     use std::os::windows::io::AsRawHandle as _;
     use windows_sys::Win32::Foundation::FILETIME;
     use windows_sys::Win32::System::Threading::GetProcessTimes;
@@ -224,11 +284,11 @@ fn child_creation_file_time(child: &std::process::Child) -> io::Result<u64> {
     let mut exit = FILETIME::default();
     let mut kernel = FILETIME::default();
     let mut user = FILETIME::default();
-    // SAFETY: Child retains its live process handle; four nonaliasing aligned
+    // SAFETY: The caller retains the live process handle; four nonaliasing aligned
     // FILETIME buffers stay writable for the synchronous identity query.
     let queried = unsafe {
         GetProcessTimes(
-            child.as_raw_handle(),
+            process.as_raw_handle(),
             &raw mut creation,
             &raw mut exit,
             &raw mut kernel,

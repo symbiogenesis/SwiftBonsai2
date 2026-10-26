@@ -14,8 +14,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use bonsai_windows_process::{
-    OwnedProcess, ProcessSpec, SandboxPolicy, ToolProcessSpec, available_memory_bytes,
-    listener_process_id, native_sandbox_available,
+    OwnedProcess, ParentProcess, ProcessSpec, SandboxPolicy, ToolProcessSpec,
+    available_memory_bytes, listener_process_id, native_sandbox_available,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -475,6 +475,70 @@ fn abrupt_owner_death_kills_entire_tree() -> io::Result<()> {
     owner.kill()?;
     let _ = owner.wait()?;
     result?;
+    until(|| listener_process_id(port).map(|pid| pid.is_none()))?;
+    Ok(())
+}
+
+#[test]
+#[ignore = "Requires native Windows PSEC v1.1 with terminate-on-close support."]
+fn native_sandbox_abrupt_owner_death_ends_worker_and_listener() -> io::Result<()> {
+    native_sandbox_available()?;
+    let lane = Lane::new("sandbox-owner-death")?;
+    let port = unused_port()?;
+    let mut owner = Command::new(env!("CARGO_BIN_EXE_bonsai-process-test-probe"))
+        .args(["sandbox-owner", &port.to_string()])
+        .current_dir(&lane.path)
+        .creation_flags(0x0800_0000)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(fs::File::create_new(
+            lane.path.join("owner.stdout"),
+        )?))
+        .stderr(Stdio::from(fs::File::create_new(
+            lane.path.join("owner.stderr"),
+        )?))
+        .spawn()?;
+    let ready_path = lane.path.join("sandbox-owner-ready.txt");
+    let observed = (|| {
+        until(|| {
+            if ready_path.exists() {
+                return Ok(true);
+            }
+            if let Some(status) = owner.try_wait()? {
+                return Err(io::Error::other(format!(
+                    "sandbox owner exited {status}: {}",
+                    fs::read_to_string(lane.path.join("owner.stderr"))?
+                )));
+            }
+            Ok(false)
+        })?;
+        let identity = fs::read_to_string(ready_path)?;
+        let mut fields = identity.lines();
+        let id = fields
+            .next()
+            .ok_or_else(|| io::Error::other("missing worker PID"))?
+            .parse::<u32>()
+            .map_err(io::Error::other)?;
+        let creation = fields
+            .next()
+            .ok_or_else(|| io::Error::other("missing worker creation time"))?
+            .parse::<u64>()
+            .map_err(io::Error::other)?;
+        let tracked = ParentProcess::open(id, creation)?;
+        tracked.ensure_alive()?;
+        until(|| listener_process_id(port).map(|pid| pid == Some(id)))?;
+        Ok::<_, io::Error>(tracked)
+    })();
+    // Always end the disposable owner, even when readiness validation fails.
+    let killed = owner.kill();
+    let waited = owner.wait();
+    let tracked = observed?;
+    killed?;
+    let _status = waited?;
+    until(|| match tracked.ensure_alive() {
+        Ok(()) => Ok(false),
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(true),
+        Err(error) => Err(error),
+    })?;
     until(|| listener_process_id(port).map(|pid| pid.is_none()))?;
     Ok(())
 }
