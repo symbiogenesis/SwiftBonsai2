@@ -30,6 +30,19 @@ fn abort_on_unwind<T>(call: impl FnOnce() -> T) -> T {
 /// One exclusively borrowed native model, freed only after its blocking calls.
 pub(super) struct Context(NonNull<c_void>);
 
+// The returned pointers borrow text/voice and are used only by the synchronous
+// synthesis call below; this helper never stores or dereferences them.
+fn synthesis_params(text: &CStr, voice: &CStr) -> qwen::TtsParams {
+    let mut params = qwen::TtsParams::default();
+    // SAFETY: params is the complete, exclusively writable pinned ABI-v6 POD.
+    unsafe { qwen::qt_tts_default_params(&raw mut params) };
+    params.text = text.as_ptr();
+    params.lang = c"auto".as_ptr();
+    params.instruct = voice.as_ptr();
+    params.max_new_tokens = 1500;
+    params
+}
+
 impl Context {
     #[allow(
         ffi_unwind_calls,
@@ -85,13 +98,7 @@ impl Context {
     )]
     pub(super) fn synthesize(&mut self, text: &CStr, voice: &CStr) -> io::Result<Vec<f32>> {
         let mut audio = NativeAudio(RawAudio::default());
-        let mut params = qwen::TtsParams::default();
-        // SAFETY: This is the complete, writable ABI-v6 POD layout.
-        unsafe { qwen::qt_tts_default_params(&raw mut params) };
-        params.text = text.as_ptr();
-        params.lang = c"auto".as_ptr();
-        params.instruct = voice.as_ptr();
-        params.max_new_tokens = 1500;
+        let params = synthesis_params(text, voice);
         // SAFETY: The exclusive context borrow prevents simultaneous calls.
         // Both bounded C strings stay alive until this blocking call returns.
         // The output points at a correctly laid out, initialized qt_audio POD;
@@ -120,13 +127,7 @@ impl Context {
             samples: 0,
             failed: false,
         });
-        let mut params = qwen::TtsParams::default();
-        // SAFETY: params is the complete, exclusively writable pinned POD.
-        unsafe { qwen::qt_tts_default_params(&raw mut params) };
-        params.text = text.as_ptr();
-        params.lang = c"auto".as_ptr();
-        params.instruct = voice.as_ptr();
-        params.max_new_tokens = 1500;
+        let mut params = synthesis_params(text, voice);
         params.on_chunk = Some(stream_chunk);
         params.on_chunk_user_data = (&raw const state).cast_mut().cast();
         // SAFETY: The pinned ABI blocks until its worker finishes callbacks.
@@ -136,11 +137,7 @@ impl Context {
             qwen::qt_synthesize(self.0.as_ptr(), &raw const params, std::ptr::null_mut())
         });
         let state = state.into_inner().map_err(|_| invalid_audio())?;
-        if status != 0
-            || state.failed
-            || state.samples == 0
-            || state.samples >= super::TOKEN_CEILING_SAMPLES
-        {
+        if status != 0 || state.failed || state.samples == 0 {
             return Err(invalid_audio());
         }
         Ok(())
@@ -155,18 +152,13 @@ struct StreamState<'a> {
 
 impl StreamState<'_> {
     fn push(&mut self, samples: &[f32]) -> bool {
-        if self.failed || samples.is_empty() || samples.iter().any(|sample| !sample.is_finite()) {
-            self.failed = true;
+        if self.failed {
             return false;
         }
-        let Some(total) = self.samples.checked_add(samples.len()) else {
+        let Some(total) = super::sample_count(samples, self.samples) else {
             self.failed = true;
             return false;
         };
-        if total > super::MAX_SAMPLES || total >= super::TOKEN_CEILING_SAMPLES {
-            self.failed = true;
-            return false;
-        }
         self.samples = total;
         if (self.sink)(samples).is_err() {
             self.failed = true;
@@ -230,15 +222,16 @@ impl NativeAudio {
         {
             return Err(invalid_audio());
         }
-        let mut samples = Vec::new();
-        samples
-            .try_reserve_exact(count)
-            .map_err(|_| io::Error::other("Could not allocate the bounded speech audio buffer."))?;
         // SAFETY: A successful pinned C API call returns an aligned allocation
         // of sample_count f32 elements owned by this guard. Count is positive,
         // bounded to 120 seconds and far below isize::MAX. The allocation stays
         // alive while copied and is freed only when this guard drops afterward.
         let source = unsafe { std::slice::from_raw_parts(self.0.samples, count) };
+        super::sample_count(source, 0).ok_or_else(invalid_audio)?;
+        let mut samples = Vec::new();
+        samples
+            .try_reserve_exact(count)
+            .map_err(|_| io::Error::other("Could not allocate the bounded speech audio buffer."))?;
         samples.extend_from_slice(source);
         Ok(samples)
     }

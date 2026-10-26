@@ -121,18 +121,15 @@ fn stream(
     let mut total = 0_usize;
     let mut failed = false;
     let result = engine.infer_stream(request, &mut |samples| {
-        if failed || samples.is_empty() || samples.iter().any(|sample| !sample.is_finite()) {
-            failed = true;
+        if failed {
             return Err(io::Error::other("Invalid streaming speech audio."));
         }
-        total = total.checked_add(samples.len()).ok_or_else(|| {
-            failed = true;
-            io::Error::other("Streaming speech exceeds its bound.")
-        })?;
-        if total > 24_000 * 120 {
-            failed = true;
-            return Err(io::Error::other("Streaming speech exceeds its bound."));
-        }
+        total = bonsai_audio::finite_sample_count(samples, total, wave::MAX_SAMPLES).ok_or_else(
+            || {
+                failed = true;
+                io::Error::other("Invalid streaming speech audio.")
+            },
+        )?;
         for chunk in samples.chunks(wave::PCM_SAMPLES) {
             if peer.write_all(frame.encode(chunk)).is_err() {
                 failed = true;

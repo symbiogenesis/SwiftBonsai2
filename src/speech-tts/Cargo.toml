@@ -11,6 +11,7 @@ categories = ["multimedia::audio"]
 description = "Owned native Qwen VoiceDesign speech inference for Bonsai"
 
 [dependencies]
+bonsai-audio = { path = "../audio" }
 bonsai-speech-service = { path = "../speech-service" }
 serde_json.workspace = true
 

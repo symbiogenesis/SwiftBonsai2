@@ -17,12 +17,12 @@ pub(super) fn decode(bytes: &[u8]) -> Result<Vec<f32>, Error> {
 pub(super) const PCM_SAMPLES: usize = 16_384;
 pub(super) const PCM_BYTES: usize = PCM_SAMPLES * 2;
 
+pub(super) const MAX_SAMPLES: usize = 2_880_000;
+
 // Validate all output before a caller can commit successful response headers.
 pub(super) fn header(audio: &Audio) -> Result<[u8; 44], Error> {
     if audio.sample_rate != 24_000
-        || audio.samples.is_empty()
-        || audio.samples.len() > 2_880_000
-        || audio.samples.iter().any(|sample| !sample.is_finite())
+        || bonsai_audio::finite_sample_count(&audio.samples, 0, MAX_SAMPLES).is_none()
     {
         return Err(Error::new(502, "invalid_audio_output"));
     }

@@ -1,10 +1,23 @@
-//! Canonical mono PCM16 WAV framing shared by speech clients and companions.
+//! Canonical PCM sample admission and mono PCM16 WAV framing.
 //!
 //! This codec accepts only a 44-byte PCM header followed by nonempty, complete
 //! little-endian samples. Callers select the sample rate and maximum sample
 //! count; optional chunks and extensible formats need explicit normalization
 //! before entering this boundary. Audio stays borrowed and no devices are opened.
 #![forbid(unsafe_code)]
+
+/// Admits a nonempty finite PCM chunk and returns its cumulative sample count.
+///
+/// `previous` counts samples already admitted; `maximum` is the caller's clip
+/// or stream bound. Returns `None` for nonfinite samples, overflow or a count
+/// exceeding that bound. Finite values outside -1 through 1 remain valid for
+/// callers that clip during PCM16 encoding. No samples are copied or changed.
+#[must_use]
+pub fn finite_sample_count(samples: &[f32], previous: usize, maximum: usize) -> Option<usize> {
+    let total = previous.checked_add(samples.len())?;
+    (!samples.is_empty() && total <= maximum && samples.iter().all(|sample| sample.is_finite()))
+        .then_some(total)
+}
 
 /// Returns the borrowed PCM payload of a canonical, bounded mono PCM16 WAV.
 ///
@@ -52,7 +65,19 @@ pub fn mono_pcm16_header(sample_rate: u32, samples: usize) -> Option<[u8; 44]> {
 
 #[cfg(test)]
 mod tests {
-    use super::{mono_pcm16_data, mono_pcm16_header};
+    use super::{finite_sample_count, mono_pcm16_data, mono_pcm16_header};
+
+    #[test]
+    fn complete_and_streamed_samples_share_finite_count_and_overflow_bounds() {
+        assert_eq!(finite_sample_count(&[-2.0, 2.0], 0, 2), Some(2));
+        assert_eq!(finite_sample_count(&[0.0], 1, 2), Some(2));
+        assert_eq!(finite_sample_count(&[0.0], 2, 2), None);
+        assert_eq!(finite_sample_count(&[0.0], usize::MAX, usize::MAX), None);
+        for samples in [&[][..], &[f32::NAN], &[f32::INFINITY], &[f32::NEG_INFINITY]] {
+            assert_eq!(finite_sample_count(samples, 0, 2), None);
+            assert_eq!(finite_sample_count(samples, 1, 2), None);
+        }
+    }
 
     // Independent wire fixture keeps header generation and validation honest.
     fn fixture(rate: u32) -> Vec<u8> {

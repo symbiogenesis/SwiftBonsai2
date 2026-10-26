@@ -91,16 +91,6 @@ impl Synthesizer {
         let text = bounded_input(text, MAX_TEXT)?;
         let voice = bounded_input(voice, MAX_VOICE)?;
         let audio = self.context.synthesize(&text, &voice)?;
-        if audio.is_empty()
-            || audio.len() > MAX_SAMPLES
-            || audio.len() >= TOKEN_CEILING_SAMPLES
-            || audio.iter().any(|sample| !sample.is_finite())
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "The native speech model returned invalid or incomplete audio.",
-            ));
-        }
         Ok(Audio {
             samples: audio,
             sample_rate: SAMPLE_RATE,
@@ -126,6 +116,16 @@ impl Synthesizer {
         let voice = bounded_input(voice, MAX_VOICE)?;
         self.context.synthesize_stream(&text, &voice, sink)
     }
+}
+
+// Shared by borrowed complete output and streaming callbacks. Native output is
+// admitted before copying or delivering it, with one token-completion policy.
+fn sample_count(samples: &[f32], previous: usize) -> Option<usize> {
+    bonsai_audio::finite_sample_count(
+        samples,
+        previous,
+        MAX_SAMPLES.min(TOKEN_CEILING_SAMPLES - 1),
+    )
 }
 
 fn select_threads(requested: Option<usize>, available: usize) -> io::Result<usize> {
@@ -177,7 +177,24 @@ fn bounded_input(text: &str, maximum: usize) -> io::Result<CString> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_TEXT, MAX_VOICE, bounded_input, select_threads};
+    use super::{
+        MAX_TEXT, MAX_VOICE, TOKEN_CEILING_SAMPLES, bounded_input, sample_count, select_threads,
+    };
+
+    #[test]
+    fn complete_and_streamed_samples_share_token_ceiling_and_finite_validation() {
+        assert_eq!(sample_count(&[0.0, 2.0], 0), Some(2));
+        assert_eq!(
+            sample_count(&[0.0], TOKEN_CEILING_SAMPLES - 2),
+            Some(TOKEN_CEILING_SAMPLES - 1)
+        );
+        assert_eq!(sample_count(&[0.0], TOKEN_CEILING_SAMPLES - 1), None);
+        assert_eq!(sample_count(&[0.0], usize::MAX), None);
+        for samples in [&[][..], &[f32::NAN], &[f32::INFINITY], &[f32::NEG_INFINITY]] {
+            assert_eq!(sample_count(samples, 0), None);
+            assert_eq!(sample_count(samples, 1), None);
+        }
+    }
 
     #[test]
     fn cpu_threads_reserve_ui_capacity_and_bound_explicit_overrides() -> std::io::Result<()> {
