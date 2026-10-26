@@ -10,6 +10,8 @@ pub(super) struct Text {
     units: usize,
     since: Option<Instant>,
     pub(super) finished: bool,
+    #[cfg(test)]
+    compacted_bytes: usize,
 }
 
 impl Text {
@@ -33,8 +35,10 @@ impl Text {
         let expired = self
             .since
             .is_some_and(|since| now.duration_since(since) >= LATENCY);
+        let mut consumed = 0;
         loop {
-            let pending = self.pending.trim_start();
+            let pending = self.pending[consumed..].trim_start();
+            consumed = self.pending.len() - pending.len();
             let maximum = pending
                 .char_indices()
                 .nth(MAX_SEGMENT)
@@ -82,13 +86,22 @@ impl Text {
             if !piece.is_empty() {
                 result.push_back(piece.to_owned());
             }
-            self.pending = pending[boundary..].trim_start().to_owned();
+            consumed += boundary;
         }
-        if self.pending.trim().is_empty() {
+        if consumed == self.pending.len() {
             self.pending.clear();
             self.since = None;
-        } else if !result.is_empty() {
-            self.since = Some(now);
+        } else {
+            if consumed > 0 {
+                #[cfg(test)]
+                {
+                    self.compacted_bytes += self.pending.len() - consumed;
+                }
+                self.pending.drain(..consumed);
+            }
+            if !result.is_empty() {
+                self.since = Some(now);
+            }
         }
         result
     }
@@ -149,6 +162,23 @@ mod tests {
         assert!(!text.ready(now).is_empty());
         assert!(text.append("x", now).is_err());
         assert!(Text::default().append("bad\0text", now).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn streaming_many_sentences_compact_only_the_final_unconsumed_tail() -> Result<(), &'static str>
+    {
+        let now = Instant::now();
+        let mut text = Text::default();
+        text.append(&format!("{}tail", "Sentence 🙂. ".repeat(1000)), now)?;
+        let ready = text.ready(now);
+        assert_eq!(ready.len(), 1000);
+        assert!(ready.iter().all(|part| part == "Sentence 🙂."));
+        assert_eq!(text.pending, "tail");
+        assert_eq!(text.compacted_bytes, "tail".len());
+        text.finished = true;
+        assert_eq!(text.ready(now), ["tail"]);
+        assert_eq!(text.compacted_bytes, "tail".len());
         Ok(())
     }
 }

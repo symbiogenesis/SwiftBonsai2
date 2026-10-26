@@ -21,6 +21,7 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+mod command_queue;
 mod pipeline;
 mod stream;
 
@@ -49,6 +50,7 @@ pub(crate) enum Command {
     },
     FinishStream,
     StopSpeaking,
+    OutputOverflow,
     Shutdown,
 }
 
@@ -88,7 +90,7 @@ struct Envelope {
 
 /// Sending Stop/Speak invalidates synthesis immediately, even during HTTP I/O.
 pub(crate) struct Commands {
-    sender: Sender<Envelope>,
+    sender: command_queue::Sender,
     current_output: Arc<AtomicU64>,
     current_input: Arc<AtomicU64>,
 }
@@ -118,10 +120,13 @@ impl Commands {
             self.current_output.load(Ordering::Acquire)
         };
         self.sender
-            .send(Envelope {
-                command,
-                output_generation: generation,
-            })
+            .send(
+                Envelope {
+                    command,
+                    output_generation: generation,
+                },
+                &self.current_output,
+            )
             .map_err(|error| mpsc::SendError(error.0.command))
     }
 }
@@ -135,7 +140,7 @@ pub(crate) struct Session {
 impl Session {
     #[cfg(test)]
     pub(crate) fn fixture() -> io::Result<(Self, Receiver<Command>)> {
-        let (sender, incoming) = mpsc::channel::<Envelope>();
+        let (sender, incoming) = command_queue::fixture_channel();
         let (outgoing, events) = mpsc::channel();
         let (observed, commands) = mpsc::channel();
         let current_input = Arc::new(AtomicU64::new(NO_INPUT));
@@ -193,7 +198,7 @@ pub(crate) fn start(
     canary_config: Option<canary::Config>,
     tts_config: Option<tts::Config>,
 ) -> io::Result<Session> {
-    let (sender, incoming) = mpsc::channel();
+    let (sender, incoming) = command_queue::channel();
     let (outgoing, events) = mpsc::channel();
     let current_input = Arc::new(AtomicU64::new(NO_INPUT));
     let current_output = Arc::new(AtomicU64::new(0));
@@ -458,7 +463,7 @@ const fn output_failure(failure: tts::Failure) -> &'static str {
 fn run(
     canary_config: Option<&canary::Config>,
     tts_config: Option<&tts::Config>,
-    commands: &Receiver<Envelope>,
+    commands: &command_queue::Receiver,
     events: &Sender<Event>,
     current_input: &AtomicU64,
     current_output: &Arc<AtomicU64>,
@@ -623,6 +628,17 @@ fn run(
                 }
             }
             Ok(Envelope {
+                command: Command::OutputOverflow,
+                output_generation,
+            }) => {
+                output = None;
+                warm = None;
+                let _sent = events.send(Event::Failed {
+                    generation: output_generation,
+                    message: command_queue::OVERFLOW_MESSAGE,
+                });
+            }
+            Ok(Envelope {
                 command: Command::StopSpeaking,
                 output_generation,
             }) => {
@@ -694,7 +710,7 @@ mod tests {
 
     #[test]
     fn streaming_append_and_finish_preserve_generation_until_replaced() -> io::Result<()> {
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = super::command_queue::channel();
         let current_output = Arc::new(AtomicU64::new(0));
         let current_input = Arc::new(AtomicU64::new(7));
         let commands = Commands {
@@ -768,7 +784,7 @@ mod tests {
 
     #[test]
     fn switching_speech_modes_invalidates_the_other_generation_immediately() -> io::Result<()> {
-        let (sender, _receiver) = mpsc::channel();
+        let (sender, _receiver) = super::command_queue::channel();
         let current_input = Arc::new(AtomicU64::new(7));
         let current_output = Arc::new(AtomicU64::new(3));
         let commands = Commands {
@@ -851,7 +867,7 @@ mod tests {
 
     #[test]
     fn stopped_and_replaced_readouts_reject_queued_output_events() -> io::Result<()> {
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = super::command_queue::channel();
         let (_events, events) = mpsc::channel();
         let session = Session {
             commands: Commands {
@@ -922,7 +938,7 @@ mod tests {
 
     #[test]
     fn stopping_output_invalidates_queued_synthesis_before_worker_receives_it() -> io::Result<()> {
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = super::command_queue::channel();
         let current_output = Arc::new(AtomicU64::new(0));
         let commands = Commands {
             sender,
