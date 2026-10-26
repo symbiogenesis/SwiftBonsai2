@@ -72,11 +72,10 @@ fn available_api() -> io::Result<ProcessSecurityEnvironmentApi> {
     let api = ProcessSecurityEnvironmentApi::load().map_err(native_error)?;
     if !api.supports_version(1, 1).map_err(native_error)?
         || !BaseContainerRunner::supports_ingress_host_loopback_allow()
-        || !BaseContainerRunner::supports_enumerate_paths()
     {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "native sandbox requires PSEC 1.1, enumeration-only paths and host-loopback ingress support",
+            "native sandbox requires PSEC 1.1 and host-loopback ingress support",
         ));
     }
     Ok(api)
@@ -161,16 +160,6 @@ fn validate_policy(spec: &ProcessSpec, policy: &SandboxPolicy) -> io::Result<Vec
             ));
         }
     }
-    // Native PSEC volume-root grants do not cascade to descendants. Worker
-    // artifact validators need root metadata, which fs_enumerate alone does not
-    // supply. Add only each required volume root; negative qualification must
-    // continue to prove that unrelated contents beneath that root stay denied.
-    let volume_roots: Vec<String> = readonly
-        .iter()
-        .filter_map(|path| Path::new(path).ancestors().last())
-        .map(path_text)
-        .collect::<io::Result<_>>()?;
-    readonly.extend(volume_roots);
     readonly.sort_unstable();
     readonly.dedup();
     Ok(readonly)
@@ -254,19 +243,6 @@ fn runtime_paths() -> io::Result<Vec<String>> {
 }
 
 fn policy_bytes(readonly: Vec<String>, scratch: Option<String>) -> Vec<u8> {
-    // Worker-side artifact and credential checks inspect directory metadata and
-    // `.git` ancestry. Enumeration grants preserve those checks without making
-    // unrelated file contents in a parent/profile directory readable.
-    let mut enumerate = Vec::new();
-    for path in readonly.iter().chain(scratch.iter()) {
-        for ancestor in Path::new(path).ancestors().skip(1) {
-            if let Some(text) = ancestor.to_str() {
-                enumerate.push(text.to_owned());
-            }
-        }
-    }
-    enumerate.sort_unstable();
-    enumerate.dedup();
     let mut egress = EndpointPolicyT::default();
     egress.default_action = FilterAction::deny;
     let mut ingress = IngressPolicyT::default();
@@ -288,7 +264,6 @@ fn policy_bytes(readonly: Vec<String>, scratch: Option<String>) -> Vec<u8> {
     spec.ui_restrictions = 0x03ff;
     spec.fs_read_only = (!readonly.is_empty()).then_some(readonly);
     spec.fs_read_write = scratch.map(|path| vec![path]);
-    spec.fs_enumerate = (!enumerate.is_empty()).then_some(enumerate);
     spec.network_policy = Some(Box::new(network));
     let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024);
     let policy = spec.pack(&mut builder);
