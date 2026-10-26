@@ -149,6 +149,7 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Ev
                 if !wait_for_retry(
                     &commands,
                     &events,
+                    &mut history,
                     "Not enough free memory. Swift needs 16 GiB available. Free some RAM, then select Retry model.",
                 ) {
                     return;
@@ -167,6 +168,7 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Ev
                 if !wait_for_retry(
                     &commands,
                     &events,
+                    &mut history,
                     &format!(
                         "{message}\nSelect Retry model to start a fresh model session. Completed turns remain in memory. If the request was too long, reduce the output budget or start a new conversation after retrying."
                     ),
@@ -178,7 +180,12 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Ev
     }
 }
 
-fn wait_for_retry(commands: &Receiver<Command>, events: &Sender<Event>, message: &str) -> bool {
+fn wait_for_retry(
+    commands: &Receiver<Command>,
+    events: &Sender<Event>,
+    history: &mut Vec<Message>,
+    message: &str,
+) -> bool {
     if notify(events, Event::Retryable(message.to_owned())).is_err() {
         return false;
     }
@@ -200,7 +207,11 @@ fn wait_for_retry(commands: &Receiver<Command>, events: &Sender<Event>, message:
                     return false;
                 }
             }
-            Ok(Command::NewChat | Command::Stop) | Err(RecvTimeoutError::Timeout) => {}
+            // The UI clears the visible conversation immediately. Honor a
+            // reset queued just before idle process death so a fresh transcript
+            // cannot silently retain the previous conversation after Retry.
+            Ok(Command::NewChat) => history.clear(),
+            Ok(Command::Stop) | Err(RecvTimeoutError::Timeout) => {}
         }
     }
 }
@@ -1334,6 +1345,11 @@ mod tests {
     fn memory_retry_requires_explicit_command_and_allows_shutdown() {
         let (commands, incoming) = std::sync::mpsc::channel();
         let (events, notifications) = std::sync::mpsc::channel();
+        let mut history = vec![Message {
+            role: "user",
+            content: "Previous conversation must not survive New conversation".into(),
+            reasoning_content: None,
+        }];
         assert_eq!(
             startup_failure(b"Development backend launch failed: Memory."),
             Failure::Memory
@@ -1354,7 +1370,13 @@ mod tests {
                 .is_ok()
         );
         assert!(commands.send(Command::Retry).is_ok());
-        assert!(wait_for_retry(&incoming, &events, "Select Retry model."));
+        assert!(wait_for_retry(
+            &incoming,
+            &events,
+            &mut history,
+            "Select Retry model."
+        ));
+        assert!(history.is_empty());
         assert!(matches!(notifications.try_recv(), Ok(Event::Retryable(_))));
         assert!(
             matches!(notifications.try_recv(), Ok(Event::Rejected { text, retry_required: true, .. })
@@ -1363,7 +1385,12 @@ mod tests {
         assert!(matches!(notifications.try_recv(), Ok(Event::Retryable(_))));
         assert!(notifications.try_recv().is_err());
         assert!(commands.send(Command::Shutdown).is_ok());
-        assert!(!wait_for_retry(&incoming, &events, "Select Retry model."));
+        assert!(!wait_for_retry(
+            &incoming,
+            &events,
+            &mut history,
+            "Select Retry model."
+        ));
     }
 
     #[test]
