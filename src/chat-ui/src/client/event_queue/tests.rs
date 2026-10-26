@@ -47,7 +47,7 @@ fn stream_entries_and_payload_are_bounded_and_lifecycle_order_is_retained() -> R
     assert!(matches!(receiver.try_recv(), Ok(Event::Stage("Review"))));
     assert!(matches!(receiver.try_recv(), Ok(Event::Draft(text)) if text == "Retained draft"));
     assert!(
-        matches!(receiver.try_recv(), Ok(Event::Committed(history)) if history[0].content == "Committed")
+        matches!(receiver.try_recv(), Ok(Event::Committed(history)) if history[0].content.as_ref() == "Committed")
     );
     assert!(matches!(
         receiver.try_recv(),

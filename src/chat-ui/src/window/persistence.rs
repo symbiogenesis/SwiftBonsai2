@@ -91,7 +91,7 @@ impl State {
                 "Conversation recovery reached its saved-state limits. Delete older conversations or disable saving.",
             ));
         }
-        let bytes = serde_json::to_vec(&WorkspaceView {
+        crate::bounded_json::to_vec(&WorkspaceView {
             version: 1,
             conversations: &self.conversations,
             active_conversation: self.active_conversation,
@@ -112,14 +112,16 @@ impl State {
                 warning: self.warning,
             },
             voice_profile: &self.voice_profile,
+        }, 8 * 1024 * 1024)
+        .map_err(|error| {
+            if error.io_error_kind() == Some(io::ErrorKind::FileTooLarge) {
+                io::Error::other(
+                    "Conversation recovery reached its 8 MiB limit. Delete older conversations or disable saving.",
+                )
+            } else {
+                io::Error::other(error)
+            }
         })
-        .map_err(io::Error::other)?;
-        if bytes.len() > 8 * 1024 * 1024 {
-            return Err(io::Error::other(
-                "Conversation recovery reached its 8 MiB limit. Delete older conversations or disable saving.",
-            ));
-        }
-        Ok(bytes)
     }
 
     fn restore_workspace(&mut self, bytes: &[u8]) -> io::Result<()> {
@@ -298,6 +300,28 @@ mod tests {
         let (commands, _incoming) = mpsc::channel();
         let (_events, incoming) = client::event_channel();
         State::create(commands, incoming, None, None)
+    }
+
+    #[test]
+    fn recovery_bounds_escaped_json_before_retaining_an_oversized_workspace() -> io::Result<()> {
+        let mut original = state();
+        // This is valid retained text, but its JSON escapes alone exceed the
+        // recovery limit. The encoder must stop rather than build that body.
+        original.last_answer = "\0".repeat(2 * 1024 * 1024);
+        let error = original
+            .workspace_bytes()
+            .err()
+            .ok_or_else(|| io::Error::other("Expected recovery byte rejection."))?;
+        assert!(error.to_string().contains("8 MiB limit"));
+        original.last_answer = "A recovered answer: 雨 🌱\n\"quoted\"".to_owned();
+        let bytes = original.workspace_bytes()?;
+        assert!(bytes.capacity() <= 8 * 1024 * 1024);
+        let mut restored = state();
+        restored.restore_workspace(&bytes)?;
+        assert_eq!(restored.last_answer, original.last_answer);
+        assert!(restored.committed.is_empty());
+        assert!(!restored.busy && !restored.speaking);
+        Ok(())
     }
 
     #[test]

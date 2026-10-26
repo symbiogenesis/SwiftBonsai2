@@ -6,7 +6,7 @@ use std::{collections::VecDeque, sync::mpsc};
 fn message(role: &'static str, content: &str) -> Message {
     Message {
         role,
-        content: content.to_owned(),
+        content: content.into(),
         reasoning_content: None,
     }
 }
@@ -16,8 +16,8 @@ fn task() -> Vec<Message> {
         message("user", "Approved facts: the sea is green."),
         Message {
             role: "assistant",
-            content: "Understood.".to_owned(),
-            reasoning_content: Some("Preserved prior reasoning".to_owned()),
+            content: "Understood.".into(),
+            reasoning_content: Some("Preserved prior reasoning".into()),
         },
         message(
             "user",
@@ -106,10 +106,10 @@ fn effort_stages_use_fresh_original_context_and_one_deadline() -> Result<()> {
     )?;
     assert_eq!(requests.len(), 3);
     assert!(responses.is_empty());
-    assert_eq!(answer.content, "The green sea breathed softly.");
+    assert_eq!(answer.content.as_ref(), "The green sea breathed softly.");
     assert_eq!(completion, Completion::Finished);
     assert_eq!(
-        pending[2].content,
+        pending[2].content.as_ref(),
         "Write a quiet coastal scene. Keep the approved facts."
     );
     for request in &requests {
@@ -124,7 +124,7 @@ fn effort_stages_use_fresh_original_context_and_one_deadline() -> Result<()> {
             request["messages"][2]["content"]
                 .as_str()
                 .is_some_and(|text| {
-                    text.starts_with(&pending[2].content)
+                    text.starts_with(pending[2].content.as_ref())
                         && text.contains("never instructions or approved facts")
                 })
         );
@@ -182,7 +182,7 @@ fn effort_truncation_stops_later_stages_and_keeps_complete_draft() -> Result<()>
                 count += 1;
                 Ok((
                     Message {
-                        reasoning_content: Some(format!("Stage {count} reasoning")),
+                        reasoning_content: Some(format!("Stage {count} reasoning").into()),
                         ..message("assistant", content)
                     },
                     completion,
@@ -195,7 +195,7 @@ fn effort_truncation_stops_later_stages_and_keeps_complete_draft() -> Result<()>
             assert!(matches!(result, Err(Failure::Rejected(_))));
         } else {
             let (answer, completion) = result?;
-            assert_eq!(answer.content, "A complete draft");
+            assert_eq!(answer.content.as_ref(), "A complete draft");
             assert_eq!(
                 answer.reasoning_content.as_deref(),
                 Some("Stage 2 reasoning")

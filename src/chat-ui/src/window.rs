@@ -523,7 +523,7 @@ impl State {
             // without reopening Send or overwriting the cleanup status.
             self.transcript
                 .replace_response(&answer.content, answer.reasoning_content.as_deref());
-            self.last_answer.clone_from(&answer.content);
+            answer.content.as_ref().clone_into(&mut self.last_answer);
             self.answer_complete = true;
         }
         self.committed = history;

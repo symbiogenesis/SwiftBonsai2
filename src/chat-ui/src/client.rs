@@ -15,7 +15,10 @@ use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command as ProcessCommand, Stdio},
-    sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError},
+    sync::{
+        Arc,
+        mpsc::{Receiver, RecvTimeoutError, TryRecvError},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -139,9 +142,11 @@ impl Drop for Broker {
 #[derive(Clone, Serialize)]
 pub(crate) struct Message {
     pub(crate) role: &'static str,
-    pub(crate) content: String,
+    // Completed payloads are immutable. Pending requests, UI notifications and
+    // restored conversations retain independent vectors but share these bytes.
+    pub(crate) content: Arc<str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) reasoning_content: Option<String>,
+    pub(crate) reasoning_content: Option<Arc<str>>,
 }
 
 impl<'de> Deserialize<'de> for Message {
@@ -163,8 +168,8 @@ impl<'de> Deserialize<'de> for Message {
         };
         Ok(Self {
             role,
-            content: stored.content,
-            reasoning_content: stored.reasoning_content,
+            content: stored.content.into(),
+            reasoning_content: stored.reasoning_content.map(Into::into),
         })
     }
 }
@@ -362,7 +367,7 @@ fn worker(
                 let mut pending = history.clone();
                 pending.push(Message {
                     role: "user",
-                    content: text.clone(),
+                    content: text.as_str().into(),
                     reasoning_content: None,
                 });
                 let scale = config.use_abliterate_lora.then_some(abliteration_scale);
@@ -618,20 +623,22 @@ fn serialize_request(
             "This conversation reached the 128-message limit. Select New conversation before sending again.",
         ));
     }
-    let body = serde_json::to_vec(&ChatRequest {
+    crate::bounded_json::to_vec(&ChatRequest {
         messages: history,
         max_completion_tokens,
         stream: true,
         enable_thinking,
         abliteration_scale,
+    }, MAX_REQUEST)
+    .map_err(|error| {
+        if error.io_error_kind() == Some(io::ErrorKind::FileTooLarge) {
+            Failure::Rejected(
+                "This conversation exceeded the request byte limit. Shorten your message or select New conversation.",
+            )
+        } else {
+            Failure::Message("Could not prepare the chat request.")
+        }
     })
-    .map_err(|_| Failure::Message("Could not prepare the chat request."))?;
-    if body.len() > MAX_REQUEST {
-        return Err(Failure::Rejected(
-            "This conversation exceeded the request byte limit. Shorten your message or select New conversation.",
-        ));
-    }
-    Ok(body)
 }
 
 fn notify(events: &EventSender, event: Event) -> Result<()> {
@@ -845,8 +852,8 @@ fn exchange(
     Ok((
         Message {
             role: "assistant",
-            content: sse.text,
-            reasoning_content: (!sse.reasoning.is_empty()).then_some(sse.reasoning),
+            content: sse.text.into(),
+            reasoning_content: (!sse.reasoning.is_empty()).then(|| sse.reasoning.into()),
         },
         completion,
     ))
@@ -1340,21 +1347,81 @@ mod tests {
     };
 
     #[test]
+    fn committed_and_pending_history_share_payloads_without_sharing_turn_mutations()
+    -> Result<(), Failure> {
+        use std::sync::{Arc, mpsc};
+
+        let prior = Message {
+            role: "assistant",
+            content: "A completed answer 🌱".repeat(8192).into(),
+            reasoning_content: Some("Retained reasoning 雨".repeat(8192).into()),
+        };
+        let mut history = vec![
+            Message {
+                role: "user",
+                content: "The original task".into(),
+                reasoning_content: None,
+            },
+            prior.clone(),
+        ];
+        let mut pending = history.clone();
+        assert!(Arc::ptr_eq(&history[1].content, &pending[1].content));
+        assert!(matches!(
+            (&history[1].reasoning_content, &pending[1].reasoning_content),
+            (Some(first), Some(second)) if Arc::ptr_eq(first, second)
+        ));
+        pending.push(Message {
+            role: "user",
+            content: "A new task".into(),
+            reasoning_content: None,
+        });
+        assert_eq!(history.len(), 2);
+        let (_commands, commands) = mpsc::channel();
+        let (events, incoming) = crate::client::event_channel();
+        finish_turn(
+            &mut history,
+            pending,
+            "A new task",
+            Ok((
+                Message {
+                    role: "assistant",
+                    content: "The new answer".into(),
+                    reasoning_content: None,
+                },
+                Completion::Finished,
+            )),
+            &events,
+            &commands,
+        )?;
+        let Ok(Event::Committed(mut visible)) = incoming.try_recv() else {
+            return Err(Failure::Message("Expected committed history."));
+        };
+        assert!(Arc::ptr_eq(&prior.content, &history[1].content));
+        assert!(Arc::ptr_eq(&visible[1].content, &history[1].content));
+        assert!(Arc::ptr_eq(&visible[3].content, &history[3].content));
+        visible[1].content = "Independent replacement".into();
+        visible.clear();
+        assert_eq!(history.len(), 4);
+        assert_eq!(history[1].content.as_ref(), prior.content.as_ref());
+        Ok(())
+    }
+
+    #[test]
     fn thinking_request_selection_preserves_supplied_reasoning() -> Result<(), Failure> {
         let history = [
             Message {
                 role: "user",
-                content: "Write a garden scene.".to_owned(),
+                content: "Write a garden scene.".into(),
                 reasoning_content: None,
             },
             Message {
                 role: "assistant",
-                content: "The garden grew quiet.".to_owned(),
-                reasoning_content: Some("Retained prior reasoning".to_owned()),
+                content: "The garden grew quiet.".into(),
+                reasoning_content: Some("Retained prior reasoning".into()),
             },
             Message {
                 role: "user",
-                content: "Continue.".to_owned(),
+                content: "Continue.".into(),
                 reasoning_content: None,
             },
         ];
@@ -1378,7 +1445,7 @@ mod tests {
     {
         let history = [Message {
             role: "user",
-            content: "Write a garden scene.".to_owned(),
+            content: "Write a garden scene.".into(),
             reasoning_content: None,
         }];
         for scale in [0.0, super::DEFAULT_ABLITERATION_SCALE, 2.0] {
@@ -1480,8 +1547,8 @@ mod tests {
                 },
                 Message {
                     role: "assistant",
-                    content: text,
-                    reasoning_content: Some(reasoning),
+                    content: text.into(),
+                    reasoning_content: Some(reasoning.into()),
                 },
                 Message {
                     role: "user",
@@ -2026,7 +2093,7 @@ mod tests {
             &commands,
         )?;
         assert_eq!(history.len(), 4);
-        assert_eq!(history[2].content, "Reviewed task");
+        assert_eq!(history[2].content.as_ref(), "Reviewed task");
         assert_eq!(
             history[1].reasoning_content.as_deref(),
             Some("Retained reasoning")
@@ -2066,7 +2133,7 @@ mod tests {
         ));
         let oversized = [Message {
             role: "user",
-            content: "x".repeat(super::MAX_REQUEST),
+            content: "x".repeat(super::MAX_REQUEST).into(),
             reasoning_content: None,
         }];
         assert!(matches!(

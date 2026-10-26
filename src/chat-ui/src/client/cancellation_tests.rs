@@ -55,7 +55,7 @@ fn stop_cancels_stalled_headers_and_body_and_closes_the_connection() -> io::Resu
 fn stop_wins_over_buffered_completion_and_connection_failure() {
     let answer = Message {
         role: "assistant",
-        content: "Completed in a buffer".to_owned(),
+        content: "Completed in a buffer".into(),
         reasoning_content: None,
     };
     for outcome in [

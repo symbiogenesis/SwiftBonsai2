@@ -118,19 +118,19 @@ fn completed_turn_winning_stop_race_keeps_visible_and_committed_answers_consiste
     state.model_event(Event::Committed(vec![
         client::Message {
             role: "user",
-            content: "A question".to_owned(),
+            content: "A question".into(),
             reasoning_content: None,
         },
         client::Message {
             role: "assistant",
-            content: "Complete answer".to_owned(),
-            reasoning_content: Some("Complete reasoning".to_owned()),
+            content: "Complete answer".into(),
+            reasoning_content: Some("Complete reasoning".into()),
         },
     ]));
     state.model_event(Event::Complete(Completion::Finished));
     assert_eq!(state.transcript.messages.len(), 2);
     assert!(state.transcript.plain_text().ends_with("Complete answer"));
-    assert_eq!(state.committed[1].content, state.last_answer);
+    assert_eq!(state.committed[1].content.as_ref(), state.last_answer);
     assert!(state.answer_complete);
     assert_eq!(state.status, status);
     assert!(!state.ready && !state.retryable && !state.warning);
@@ -428,13 +428,13 @@ fn conversation_workspace_preserves_drafts_settings_and_exact_committed_turns() 
     state.model_event(Event::Committed(vec![
         client::Message {
             role: "user",
-            content: "A garden story".to_owned(),
+            content: "A garden story".into(),
             reasoning_content: None,
         },
         client::Message {
             role: "assistant",
-            content: "Complete story".to_owned(),
-            reasoning_content: Some("Private reasoning".to_owned()),
+            content: "Complete story".into(),
+            reasoning_content: Some("Private reasoning".into()),
         },
     ]));
     state.model_event(Event::Complete(Completion::Finished));

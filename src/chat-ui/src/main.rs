@@ -6,6 +6,8 @@
 )]
 
 #[cfg(windows)]
+mod bounded_json;
+#[cfg(windows)]
 mod canary;
 #[cfg(windows)]
 mod client;
