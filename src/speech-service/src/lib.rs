@@ -102,6 +102,12 @@ pub trait Engine {
     fn streaming_pcm(&self) -> bool {
         false
     }
+    /// Whether one designed speaker reference is reused across synthesis requests.
+    ///
+    /// Description-only generation with a fresh voice per request must return false.
+    fn consistent_voice(&self) -> bool {
+        false
+    }
     /// Generate finite mono 24 kHz samples incrementally, blocking until complete.
     ///
     /// The sink may run on the native compute worker. Stop and return an error

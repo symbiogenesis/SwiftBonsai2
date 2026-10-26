@@ -24,6 +24,9 @@ impl Engine for Fake {
     fn kind(&self) -> Kind {
         self.kind
     }
+    fn consistent_voice(&self) -> bool {
+        self.kind == Kind::QwenTts
+    }
     fn infer(&mut self, request: Request<'_>) -> io::Result<Output> {
         self.calls.fetch_add(1, Ordering::AcqRel);
         match request {
@@ -252,8 +255,11 @@ fn native_http_preserves_exact_health_and_voice_design_audio() -> io::Result<()>
         assert_eq!(calls, 0);
         assert_eq!(
             health.as_object().map(serde_json::Map::len),
-            Some(if kind == Kind::QwenTts { 7 } else { 6 })
+            Some(if kind == Kind::QwenTts { 8 } else { 6 })
         );
+        if kind == Kind::QwenTts {
+            assert_eq!(health["consistent_voice"], true);
+        }
     }
     let body = speech();
     let (response, calls) = exchange(

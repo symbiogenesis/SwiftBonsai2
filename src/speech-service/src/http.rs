@@ -68,7 +68,7 @@ fn respond(
                 serde_json::json!({"model":kind.model(),"ready":true,"sample_rate":16000,"max_clip_seconds":30,"input_format":"pcm_s16le_wav","channels":1})
             }
             Kind::QwenTts => {
-                serde_json::json!({"model":kind.model(),"ready":true,"voice_design":true,"sample_rate":24000,"max_text_characters":2048,"max_voice_characters":1024,"streaming_pcm":engine.streaming_pcm()})
+                serde_json::json!({"model":kind.model(),"ready":true,"voice_design":true,"sample_rate":24000,"max_text_characters":2048,"max_voice_characters":1024,"streaming_pcm":engine.streaming_pcm(),"consistent_voice":engine.consistent_voice()})
             }
         };
         return send(peer, 200, "application/json", value.to_string().as_bytes())

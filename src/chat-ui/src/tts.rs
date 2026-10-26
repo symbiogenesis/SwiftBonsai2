@@ -71,6 +71,9 @@ impl Client {
                 {
                     return Err(Failure::Message("The Qwen TTS VoiceDesign model is not ready with the required audio format."));
                 }
+                if !health.consistent_voice {
+                    return Err(Failure::Message("Update the Qwen TTS companion to support a consistent voice across paragraphs and messages."));
+                }
                 self.1.store(health.streaming_pcm, Ordering::Release);
                 Ok(())
             });
@@ -119,7 +122,7 @@ impl Client {
         call.check().map_err(transport_failure).and(result)
     }
 
-    /// Stream the fixed PCM format; legacy companions retain the validated WAV path.
+    /// Stream fixed PCM; companions without PCM support use validated WAV output.
     pub(crate) fn synthesize_pcm(
         &self,
         text: &str,
@@ -214,6 +217,8 @@ struct Health {
     max_voice_characters: usize,
     #[serde(default)]
     streaming_pcm: bool,
+    #[serde(default)]
+    consistent_voice: bool,
 }
 
 #[derive(Serialize)]
@@ -342,7 +347,7 @@ mod tests {
                     wav()
                 } else {
                     assert!(head.starts_with(b"GET /health HTTP/1.1\r\n"));
-                    br#"{"model":"Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign","ready":true,"voice_design":true,"sample_rate":24000,"max_text_characters":2048,"max_voice_characters":1024}"#.to_vec()
+                    br#"{"model":"Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign","ready":true,"voice_design":true,"sample_rate":24000,"max_text_characters":2048,"max_voice_characters":1024,"consistent_voice":true}"#.to_vec()
                 };
                 let media = if synthesis {
                     "audio/wav"
@@ -368,6 +373,54 @@ mod tests {
             )
             .map_err(|_| io::Error::other("Synthesis protocol failed"))?;
         assert_eq!(result, wav());
+        server
+            .join()
+            .map_err(|_| io::Error::other("Fake TTS companion failed"))??;
+        Ok(())
+    }
+
+    #[test]
+    fn readiness_requires_reusable_speaker_conditioning() -> io::Result<()> {
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+        let (_credentials, client) = client(listener.local_addr()?.port())?;
+        let server = thread::spawn(move || -> io::Result<()> {
+            for consistent in [None, Some(false), Some(true)] {
+                let (mut stream, _) = listener.accept()?;
+                stream.set_read_timeout(Some(Duration::from_secs(3)))?;
+                let mut head = Vec::new();
+                while !head.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte)?;
+                    head.push(byte[0]);
+                    assert!(head.len() <= 16384);
+                }
+                assert!(head.starts_with(b"GET /health HTTP/1.1\r\n"));
+                let mut health = serde_json::json!({
+                    "model": MODEL, "ready": true, "voice_design": true,
+                    "sample_rate": 24000, "max_text_characters": 2048,
+                    "max_voice_characters": 1024,
+                });
+                if let Some(consistent) = consistent {
+                    health["consistent_voice"] = serde_json::Value::Bool(consistent);
+                }
+                let body = serde_json::to_vec(&health)?;
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                )?;
+                stream.write_all(&body)?;
+            }
+            Ok(())
+        });
+        for _ in 0..2 {
+            let error = client
+                .ready()
+                .err()
+                .ok_or_else(|| io::Error::other("Legacy random voices must be rejected"))?;
+            assert!(error.contains("consistent voice"));
+        }
+        client.ready().map_err(io::Error::other)?;
         server
             .join()
             .map_err(|_| io::Error::other("Fake TTS companion failed"))??;
