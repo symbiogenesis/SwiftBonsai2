@@ -149,6 +149,9 @@ files without building or launching the app;
 `-NoSpeechModels` skips automatic speech setup. Rust startup builds native ARM64
 Rust companions and creates separate protected credentials. Rust owns their
 HTTP/authentication, schema validation, WAV processing and model-file verification.
+Speech clients and companions share the dependency-free `bonsai-audio` crate's
+strict mono PCM16 WAV framing; each caller retains its own sample-rate, duration
+and error policy. The codec opens no devices and borrows validated payloads.
 Reviewed native GGML C++ cores implement inference. Separate executables avoid
 mixing different native GGML versions in one process.
 

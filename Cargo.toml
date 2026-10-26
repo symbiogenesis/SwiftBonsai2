@@ -7,6 +7,7 @@ members = [
     "src/speech-asr",
     "src/speech-tts",
     "src/speech-service",
+    "src/audio",
     "src/artifacts",
     "src/cpu-policy",
     "src/windows-process",

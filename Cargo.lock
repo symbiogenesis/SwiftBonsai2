@@ -479,6 +479,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "bonsai-audio"
+version = "0.1.0"
+
+[[package]]
 name = "bonsai-broker"
 version = "0.1.0"
 dependencies = [
@@ -500,6 +504,7 @@ dependencies = [
 name = "bonsai-chat"
 version = "0.1.0"
 dependencies = [
+ "bonsai-audio",
  "bonsai-windows-credentials",
  "bonsai-windows-process",
  "eframe",
@@ -545,6 +550,7 @@ name = "bonsai-speech-service"
 version = "0.1.0"
 dependencies = [
  "bonsai-artifacts",
+ "bonsai-audio",
  "bonsai-windows-credentials",
  "bonsai-windows-process",
  "httparse",

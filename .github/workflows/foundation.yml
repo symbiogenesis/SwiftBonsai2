@@ -122,7 +122,7 @@ jobs:
         uses: ./.github/actions/check-rust
         with:
           lane: maintenance
-          packages: '["bonsai-artifacts","bonsai-cpu-policy","bonsai-windows-process","bonsai-windows-credentials","bonsai-tools","bonsai-ci"]'
+          packages: '["bonsai-artifacts","bonsai-audio","bonsai-cpu-policy","bonsai-windows-process","bonsai-windows-credentials","bonsai-tools","bonsai-ci"]'
           affected: ${{ needs.changes.outputs.packages }}
       - name: Reuse a packaged CLI when only its consumers changed
         if: needs.changes.outputs.tools == 'true' && steps.checks.outputs.has-packages != 'true'
