@@ -52,7 +52,7 @@ other. The small Rust `bonsai-ci` planner and gate regression checks run before
 selection on every run. `tools/ci/` owns workspace discovery, successful-ancestor
 GitHub API lookup, conservative diff selection and aggregate gate enforcement;
 Foundation does not require a Python interpreter. It reads `.github/ci/impact.json`
-without running Cargo metadata or resolving manifests.
+without running Cargo metadata or resolving registry dependencies.
 
 The workspace and [package registry](../config/rust-packages.psd1) contain only
 these app packages. Upstream source/backend catalogs, baseline policy, codec
