@@ -53,6 +53,12 @@ if ($Case -in @('All', 'Models')) {
     $counts = & $module { @($script:received.Count, $script:verified.Count) }
     Assert ($counts[0] -eq 3 -and $counts[1] -eq 3 -and $null -eq $canary.TtsModelPath -and
         $null -eq $canary.TtsCodecPath -and $null -eq $qwen.CanaryModelPath) 'Model selection or verify-only downloaded an unrelated model.'
+    $q4 = Install-NativeSpeechModels -DataDirectory $data -Model QwenTts -TtsQuantization Q4_K_M -VerifyOnly -ToolPath $ToolPath
+    $q4Pin = Get-Content -LiteralPath (Join-Path $repo 'src/speech-tts/model-q4.lock.json') -Raw | ConvertFrom-Json
+    $q4Files = @(& $module { $script:verified.ToArray() }) | Select-Object -Last 2
+    Assert ($q4Files[0].Sha256 -ceq $q4Pin.files.talker.sha256 -and $q4Files[0].Bytes -eq $q4Pin.files.talker.bytes -and
+        $q4.TtsModelPath -ceq $q4Files[0].Path -and $q4.TtsModelPath -cne $qwen.TtsModelPath -and
+        $q4.TtsCodecPath -ceq $qwen.TtsCodecPath) 'Opt-in Q4 lost its separate talker identity or shared pinned Q8 codec.'
     foreach ($invalid in @('relative', '%LOCALAPPDATA%\native', $repo, (Join-Path $scratch 'speech:stream'))) {
         Assert-Failure { Install-NativeSpeechModels -DataDirectory $invalid -ToolPath $ToolPath } 'Unsafe native model storage was accepted.'
     }

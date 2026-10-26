@@ -20,9 +20,11 @@ function Install-NativeSpeechModels {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
     param([Parameter(Mandatory)][string]$DataDirectory,
-          [ValidateSet('All', 'Canary', 'QwenTts')][string]$Model = 'All', [switch]$VerifyOnly, [string]$ToolPath)
+          [ValidateSet('All', 'Canary', 'QwenTts')][string]$Model = 'All',
+          [ValidateSet('Q8_0', 'Q4_K_M')][string]$TtsQuantization = 'Q8_0',
+          [switch]$VerifyOnly, [string]$ToolPath)
     $result = Invoke-BonsaiTool -Command speech-models -ToolPath $ToolPath -Request @{
-        dataDirectory = Resolve-ExternalPath -Path $DataDirectory; model = $Model
+        dataDirectory = Resolve-ExternalPath -Path $DataDirectory; model = $Model; ttsQuantization = $TtsQuantization
     }
     foreach ($file in $result.Plans) {
         if ($VerifyOnly) { Test-LockedArtifact -Path $file.Path -Bytes $file.Bytes -Sha256 $file.Sha256 }

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "model": "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+  "repository": "Serveurperso/Qwen3-TTS-GGUF",
+  "revision": "b7ee2e8c7459c3bea99da23e3d178125a7d1713c",
+  "metadataSource": "https://huggingface.co/api/models/Serveurperso/Qwen3-TTS-GGUF/revision/b7ee2e8c7459c3bea99da23e3d178125a7d1713c?blobs=true",
+  "files": {
+    "talker": {
+      "filename": "qwen-talker-1.7b-voicedesign-Q4_K_M.gguf",
+      "url": "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-voicedesign-Q4_K_M.gguf",
+      "bytes": 1182630816,
+      "sha256": "7605ed0cc5e72059f27468c27f70c070e05d1cc0c7b1c76bfb9cba717a59eee3"
+    },
+    "codec": {
+      "filename": "qwen-tokenizer-12hz-Q8_0.gguf",
+      "url": "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-tokenizer-12hz-Q8_0.gguf",
+      "bytes": 291150624,
+      "sha256": "1883beeed99348fc35e23dd225e9082f93f6f8c109330a33d935baa8acdbfd94"
+    }
+  },
+  "nativeRuntime": {
+    "repository": "https://github.com/ServeurpersoCom/qwentts.cpp",
+    "revision": "5916bf7c79dbb4e66fc059cdc507a79a23a28bb4",
+    "ggmlRepository": "https://github.com/ServeurpersoCom/ggml",
+    "ggmlRevision": "cc5df49a6b878db2b68b9a7b45976e279594627d"
+  }
+}

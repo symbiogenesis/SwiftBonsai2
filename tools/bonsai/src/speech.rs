@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 const ASR_LOCK: &str = include_str!("../../../src/speech-asr/model.lock.json");
 const TTS_LOCK: &str = include_str!("../../../src/speech-tts/model.lock.json");
+const TTS_Q4_LOCK: &str = include_str!("../../../src/speech-tts/model-q4.lock.json");
 const MAX_BYTES: u64 = (1_u64 << 63) - 1;
 
 #[derive(Default, Deserialize)]
@@ -39,6 +40,26 @@ struct Request {
     data_directory: PathBuf,
     #[serde(default)]
     model: Model,
+    #[serde(default)]
+    tts_quantization: Quantization,
+}
+
+#[derive(Default, Deserialize)]
+enum Quantization {
+    #[default]
+    #[serde(rename = "Q8_0")]
+    Q8,
+    #[serde(rename = "Q4_K_M")]
+    Q4,
+}
+
+impl Quantization {
+    const fn lock(&self) -> &'static str {
+        match self {
+            Self::Q8 => TTS_LOCK,
+            Self::Q4 => TTS_Q4_LOCK,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -152,7 +173,11 @@ pub fn run(request: Value) -> crate::Result<Value> {
         plans.extend(files(&request.data_directory, "Canary", ASR_LOCK)?);
     }
     if matches!(request.model, Model::All | Model::QwenTts) {
-        plans.extend(files(&request.data_directory, "QwenTts", TTS_LOCK)?);
+        plans.extend(files(
+            &request.data_directory,
+            "QwenTts",
+            request.tts_quantization.lock(),
+        )?);
     }
     let mut result = json!({
         "CanaryModelPath": null, "TtsModelPath": null, "TtsCodecPath": null,
@@ -232,6 +257,29 @@ mod tests {
         let mut pin: Value = serde_json::from_str(TTS_LOCK).map_err(|error| error.to_string())?;
         pin["files"]["extra"] = pin["files"]["codec"].clone();
         assert!(files(&root, "QwenTts", &pin.to_string()).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn q4_is_explicit_and_reuses_the_pinned_q8_codec() -> crate::Result<()> {
+        let root = std::env::temp_dir().join("bonsai-q4-speech-plan-uncreated");
+        let q8 = run(json!({"dataDirectory": root, "model": "QwenTts"}))?;
+        let q4 = run(json!({
+            "dataDirectory": root, "model": "QwenTts", "ttsQuantization": "Q4_K_M",
+        }))?;
+        assert_ne!(q8["TtsModelPath"], q4["TtsModelPath"]);
+        assert_eq!(q8["TtsCodecPath"], q4["TtsCodecPath"]);
+        assert_eq!(q4["TotalBytes"], 1_473_781_440_u64);
+        assert_eq!(
+            q4["Plans"][0]["Sha256"],
+            "7605ed0cc5e72059f27468c27f70c070e05d1cc0c7b1c76bfb9cba717a59eee3"
+        );
+        assert!(
+            run(json!({
+                "dataDirectory": root, "model": "QwenTts", "ttsQuantization": "Q2",
+            }))
+            .is_err()
+        );
         Ok(())
     }
 }
