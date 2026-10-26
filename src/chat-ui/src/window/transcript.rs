@@ -3,6 +3,8 @@
 use eframe::egui::{self, Color32, FontId, RichText, Vec2};
 use std::sync::Arc;
 
+mod search;
+
 const MAX_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -17,6 +19,7 @@ struct LayoutCache {
     color: Color32,
     reasoning_color: Color32,
     show_reasoning: bool,
+    search_revision: u64,
     body: Arc<egui::Galley>,
     reasoning: Option<Arc<egui::Galley>>,
 }
@@ -42,6 +45,8 @@ pub(super) struct Transcript {
     pub(super) messages: Vec<Message>,
     #[serde(skip)]
     next_id: u64,
+    #[serde(skip)]
+    search: search::Search,
 }
 
 impl<'de> serde::Deserialize<'de> for Transcript {
@@ -80,12 +85,13 @@ impl Transcript {
             }) <= MAX_BYTES
     }
 
-
     pub(super) fn clear(&mut self) {
         self.messages.clear();
+        self.search = search::Search::default();
     }
 
     pub(super) fn remove_empty_response(&mut self) {
+        self.search.invalidate();
         if let Some(message) = self.messages.last_mut() {
             message.pending = false;
         }
@@ -99,6 +105,7 @@ impl Transcript {
     }
 
     pub(super) fn push(&mut self, role: Role, body: String) {
+        self.search.invalidate();
         self.next_id = self.next_id.wrapping_add(1);
         self.messages.push(Message {
             id: self.next_id,
@@ -113,6 +120,9 @@ impl Transcript {
     }
 
     pub(super) fn append(&mut self, text: &str, reasoning: bool) {
+        if !reasoning {
+            self.search.invalidate();
+        }
         if let Some(message) = self.messages.last_mut()
             && message.role == Role::Assistant
         {
@@ -145,6 +155,7 @@ impl Transcript {
             .map(|message| message.body.len().saturating_add(message.reasoning.len()))
             .sum();
         while bytes > MAX_BYTES && self.messages.len() > 2 {
+            self.search.invalidate();
             let removed = self.messages.remove(0);
             bytes = bytes.saturating_sub(removed.body.len() + removed.reasoning.len());
         }
@@ -182,14 +193,53 @@ impl Transcript {
         text
     }
 
+    pub(super) fn search_bar(&mut self, ui: &mut egui::Ui) {
+        self.search.bar(ui, &self.messages);
+    }
+
     pub(super) fn show(&mut self, ui: &mut egui::Ui, width: f32) {
+        self.search_bar(ui);
+        self.search.refresh(&self.messages);
         let width = width.max(120.0);
+        let latest = self.messages.last().map(|message| message.id);
         for message in &mut self.messages {
-            message.layout(ui, width - 40.0);
+            let ranges: Vec<_> = self
+                .search
+                .matches
+                .iter()
+                .filter(|found| found.message == message.id)
+                .map(|found| found.range.clone())
+                .collect();
+            let selected = self
+                .search
+                .matches
+                .get(self.search.active)
+                .filter(|found| found.message == message.id)
+                .map(|found| found.range.clone());
+            message.layout(
+                ui,
+                width - 40.0,
+                &ranges,
+                selected.as_ref(),
+                self.search.revision,
+            );
             let height = message.height();
             let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
-            if ui.is_rect_visible(rect) {
-                message.show(ui, rect);
+            let target = self
+                .search
+                .target
+                .as_ref()
+                .filter(|found| found.message == message.id);
+            if ui.is_rect_visible(rect) || target.is_some() {
+                let found_rect = message.show(ui, rect, target.map(|found| found.range.start));
+                if let Some(found_rect) = found_rect {
+                    ui.scroll_to_rect(found_rect, Some(egui::Align::Center));
+                    self.search.target = None;
+                }
+            }
+            if self.search.latest && latest == Some(message.id) {
+                ui.scroll_to_rect(rect, Some(egui::Align::Max));
+                self.search.latest = false;
             }
             ui.add_space(16.0);
         }
@@ -197,7 +247,14 @@ impl Transcript {
 }
 
 impl Message {
-    fn layout(&mut self, ui: &egui::Ui, width: f32) {
+    fn layout(
+        &mut self,
+        ui: &egui::Ui,
+        width: f32,
+        matches: &[std::ops::Range<usize>],
+        selected: Option<&std::ops::Range<usize>>,
+        search_revision: u64,
+    ) {
         let color = ui.visuals().text_color();
         let reasoning_color = ui.visuals().weak_text_color();
         let pixels_per_point = ui.ctx().pixels_per_point();
@@ -207,12 +264,27 @@ impl Message {
                 && cache.color == color
                 && cache.reasoning_color == reasoning_color
                 && cache.show_reasoning == self.show_reasoning
+                && cache.search_revision == search_revision
         }) {
             return;
         }
-        let body = ui.fonts_mut(|fonts| {
-            fonts.layout(self.body.clone(), FontId::proportional(16.0), color, width)
-        });
+        let mut job = egui::text::LayoutJob::default();
+        job.wrap.max_width = width;
+        let normal = egui::TextFormat::simple(FontId::proportional(16.0), color);
+        let mut previous = 0;
+        for range in matches {
+            job.append(&self.body[previous..range.start], 0.0, normal.clone());
+            let mut highlight = normal.clone();
+            highlight.background = ui.visuals().selection.bg_fill;
+            highlight.color = ui.visuals().selection.stroke.color;
+            if selected == Some(range) {
+                highlight.underline = egui::Stroke::new(2.0, highlight.color);
+            }
+            job.append(&self.body[range.clone()], 0.0, highlight);
+            previous = range.end;
+        }
+        job.append(&self.body[previous..], 0.0, normal);
+        let body = ui.fonts_mut(|fonts| fonts.layout_job(job));
         let reasoning = (self.show_reasoning && !self.reasoning.is_empty()).then(|| {
             ui.fonts_mut(|fonts| {
                 fonts.layout(
@@ -229,6 +301,7 @@ impl Message {
             color,
             reasoning_color,
             show_reasoning: self.show_reasoning,
+            search_revision,
             body,
             reasoning,
         });
@@ -250,7 +323,13 @@ impl Message {
         height
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, rect: egui::Rect) {
+    fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        rect: egui::Rect,
+        target: Option<usize>,
+    ) -> Option<egui::Rect> {
+        let mut found_rect = None;
         let fill = if self.role == Role::User {
             ui.visuals().faint_bg_color
         } else {
@@ -291,7 +370,17 @@ impl Message {
             if self.body.is_empty() && self.pending {
                 child.label(RichText::new("Thinking…").weak().italics());
             } else if !self.body.is_empty() {
-                child.add(egui::Label::new(Arc::clone(&cache.body)).selectable(true));
+                let response =
+                    child.add(egui::Label::new(Arc::clone(&cache.body)).selectable(true));
+                if let Some(target) = target {
+                    let characters = self.body[..target].chars().count();
+                    found_rect = Some(
+                        cache
+                            .body
+                            .pos_from_cursor(egui::text::CCursor::new(characters))
+                            .translate(response.rect.min.to_vec2()),
+                    );
+                }
             }
             if !self.reasoning.is_empty() {
                 child.add_space(8.0);
@@ -312,6 +401,7 @@ impl Message {
                 }
             }
         }
+        found_rect
     }
 }
 

@@ -267,3 +267,50 @@ fn capture_chat_layouts_when_requested() -> io::Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn find_controls_navigate_unicode_matches_and_refresh_streamed_text() {
+    let mut chat = Harness::builder()
+        .with_size([900.0, 760.0])
+        .with_context_setup(|context| {
+            configure(context);
+            context.add_font_provider(std::sync::Arc::new(
+                egui_system_font_provider::SystemFontProvider::new(),
+            ));
+        })
+        .build_ui_state(
+            |ui, transcript: &mut Transcript| {
+                egui::ScrollArea::vertical().show(ui, |ui| transcript.show(ui, 700.0));
+            },
+            {
+                let mut transcript = Transcript::default();
+                transcript.push(Role::User, "Élan and an idea".to_owned());
+                transcript.push(Role::Assistant, "An éLAN, then another Élan.".to_owned());
+                transcript.append("Reasoning with Élan stays private.", true);
+                transcript
+            },
+        );
+    chat.get_by_role_and_label(egui::Role::Button, "Find")
+        .click();
+    chat.run();
+    chat.get_by_role_and_label(egui::Role::TextInput, "Find in conversation")
+        .type_text("ÉLAN");
+    chat.run();
+    assert!(chat.get_by_label("1 of 3").rect().is_positive());
+    chat.get_by_role_and_label(egui::Role::Button, "Next match")
+        .click();
+    chat.run();
+    assert!(chat.get_by_label("2 of 3").rect().is_positive());
+    chat.get_by_role_and_label(egui::Role::Button, "Previous match")
+        .click();
+    chat.run();
+    assert!(chat.get_by_label("1 of 3").rect().is_positive());
+    chat.state_mut().append(" Élan", false);
+    chat.run();
+    assert!(chat.get_by_label("1 of 4").rect().is_positive());
+    assert!(!chat.state().plain_text().contains("Reasoning"));
+    chat.get_by_role_and_label(egui::Role::Button, "Find")
+        .click();
+    chat.run();
+    assert!(chat.query_by_label("Find in conversation").is_none());
+}
