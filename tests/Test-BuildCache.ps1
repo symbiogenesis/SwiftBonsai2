@@ -77,8 +77,10 @@ if ($Case -cin @('All', 'Fingerprint')) {
     if ($IsWindows) {
         $alias = Join-Path $fixture 'linked-source'
         $null = New-Item -ItemType Junction -Path $alias -Target (Join-Path $fixture 'src')
-        Assert-Failure { Get-BonsaiBuildFingerprint -RepositoryRoot $fixture } 'Reparse-point source inputs were accepted.'
+        try { Assert-Failure { Get-BonsaiBuildFingerprint -RepositoryRoot $fixture } 'Reparse-point source inputs were accepted.' }
+        finally { [IO.Directory]::Delete($alias) }
     }
+    [IO.File]::WriteAllText((Join-Path $fixture 'Cargo.toml'), '[package]')
 }
 if ($Case -cin @('All', 'Receipt')) {
     $fingerprint = Get-BonsaiBuildFingerprint -RepositoryRoot $fixture
