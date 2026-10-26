@@ -48,6 +48,8 @@ bonsai-tools speech-models --request ABSOLUTE_JSON_PATH
 bonsai-tools inference-lock --request ABSOLUTE_JSON_PATH
 bonsai-tools inference-capabilities --request ABSOLUTE_JSON_PATH
 bonsai-tools speech-build --request ABSOLUTE_JSON_PATH
+bonsai-tools source-build --request ABSOLUTE_JSON_PATH
+bonsai-tools chat-launch --request ABSOLUTE_JSON_PATH
 ```
 
 Requests are JSON objects read through a retained read-only handle, capped at
@@ -59,10 +61,18 @@ native working directories, retains failed requests and preserves inherited
 Windows/profile environment variables.
 
 `speech-models` validates the compiled native Canary and Qwen GGUF locks and
-returns the selected download plan and aggregate paths/byte total. PowerShell
-retains resumable downloading and exact artifact verification; the Rust planner
-does not network, create model storage or load a model. Model-only provisioning
-uses the same packaged-tool selection or source-build fallback as other wrappers.
+returns the selected download plan and aggregate paths/byte total without
+networking or loading models. `speech-build` also owns native compiler/source
+preparation, selected daemon builds and explicit model provisioning in Rust.
+Provisioning uses Windows curl 8.4+ for HTTPS-only resumable downloads, verifies
+exact bytes/SHA-256, then publishes exclusively. Ordinary startup size-checks
+cached speech files; the native services verify their hashes before first use.
+
+`source-build` owns content fingerprints, executable digest receipts and the
+pinned Cargo invocation for source maintenance/chat builds. Cache hits skip
+Cargo; rebuilds use content freshness without cache cleanup. `chat-launch` owns
+the source launcher's option validation, provisioning selection, credentials,
+arguments and native app lifetime. PowerShell remains a bootstrap/parameter bridge.
 
 `inference-lock` reviews independently selected Prism release and source ZIPs.
 It retains read-only input handles, checks bounded inventories, file hashes,
@@ -86,8 +96,9 @@ build fallback) and rejects custom locks. Ordinary provisioning is unchanged.
 archive names in bulk and stages source ZIPs. ZIP identity, complete path inventory,
 Windows aliases, entry types, expansion limits and existing cache bytes are checked
 in Rust. ZIP link entries become ordinary files containing their archived bytes.
-PowerShell keeps downloading, compiler TAR extraction, Visual Studio environment
-setup and process invocation.
+Its explicit `environment`, `build` and `models` operations additionally own
+downloads, compiler TAR extraction, Visual Studio environment setup and native
+process execution. Planning and source staging remain nonexecuting operations.
 
 Its `stage-sources` operation verifies and stages the compiled Qwen/GGML archive
 pair together, then checks the complete cache inventory before returning.

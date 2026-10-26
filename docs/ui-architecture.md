@@ -139,13 +139,14 @@ is treated as a recoverable context rejection; other failures require retry.
 
 ## Speech input and output
 
-The PowerShell chat launcher provisions the pinned Canary Qwen 2.5B and Qwen3-TTS
+The Rust maintenance command behind the PowerShell entry point provisions the
+pinned Canary Qwen 2.5B and Qwen3-TTS
 1.7B VoiceDesign Q8_0 GGUF files using immutable URLs and exact size/SHA-256
 verification for downloads and explicit provisioning. Ordinary launch checks
 cached speech file sizes; Rust verifies SHA-256 and holds the verified files
 before loading a speech model on first use. `-SpeechModelsOnly` fully verifies
 files without building or launching the app;
-`-NoSpeechModels` skips automatic speech setup. The launcher builds native ARM64
+`-NoSpeechModels` skips automatic speech setup. Rust startup builds native ARM64
 Rust companions and creates separate protected credentials. Rust owns their
 HTTP/authentication, schema validation, WAV processing and model-file verification.
 Reviewed native GGML C++ cores implement inference. Separate executables avoid

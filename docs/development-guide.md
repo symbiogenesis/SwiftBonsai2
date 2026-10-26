@@ -204,8 +204,12 @@ script's `-ToolPath`; otherwise the shared resolver builds the maintenance CLI
 in a reusable external cache under `%LOCALAPPDATA%/SwiftBonsai2/build/tools/`,
 separated by checkout and pinned Rust compiler. Unchanged source inputs and
 SHA-256-checked executable receipts skip Cargo on repeat launches; changed inputs
-run the ordinary pinned build. Provisioning, native build planning and credential creation
-share that executable. Logs and requests stay in unique system-temp lanes.
+run the pinned build with Cargo's content freshness checks. PowerShell only
+bootstraps the CLI; Rust owns source fingerprints, receipts and build execution.
+An immutable bootstrap copy permits rebuilding the CLI on Windows without
+replacing the running executable. Provisioning, native build planning and
+credential creation share that executable. Logs and requests stay in unique
+system-temp lanes.
 This also applies to model-only provisioning. It never loads a
 speech model or builds the speech engines.
 
@@ -215,6 +219,9 @@ source archives into external storage. It changes only child compiler settings,
 with no global installation or profile modification. Build outputs and evidence
 stay outside Git. `-AsrPath` and `-TtsPath` can supply already built executables;
 the service still verifies pinned model files when loading.
+Downloads use Windows' `System32/curl.exe` version 8.4 or newer with HTTPS-only
+redirects, resumable partial files and exact size/SHA-256 verification. Cached
+launches do not run curl. LLVM extraction uses Windows' `System32/tar.exe`.
 
 Canary loads after the first permitted microphone clip, stays warm while the
 microphone generation remains enabled, and stops when input is disabled or
@@ -284,21 +291,23 @@ qualified. Qwen uses the isolated x64 environment because the official
 torchaudio package has no Windows ARM64 wheel. UI/protocol tests do not establish
 real-model audio quality or latency.
 
-`Start-Chat.ps1` checks and builds the chat app and broker in a reusable external
+`Start-Chat.ps1` is a thin options/bootstrap bridge to Rust's `chat-launch`
+command. Rust owns option validation, speech setup, build selection, credentials
+and app launch. It checks and builds the chat app and broker in a reusable external
 Cargo cache under `DataDirectory/build/chat/`, separated by checkout and pinned
 toolchain. Repeat launches hash source/build inputs and cached executables, then
 reuse matching builds without running Cargo. Speech companions use the same
 checked reuse under `DataDirectory/build/native-speech/`, skipping LLVM verification,
 source staging and Visual Studio setup when unchanged. Source, lockfile, build
 configuration or environment changes invalidate the receipt; missing or changed
-executables rebuild. A cache miss invalidates local workspace compiler outputs
-to handle source edits with preserved timestamps; third-party Cargo builds remain
-cached. Model verification and memory admission still run in Rust.
+executables rebuild. Cargo's content freshness mode handles edits with preserved
+timestamps while retaining compiler outputs. No startup cache cleanup is needed.
+Model verification and memory admission still run in Rust.
 The first launch after this update builds new isolated speech outputs and records
 receipts. Use `-ForceBuild` to repeat Cargo and native build preparation explicitly,
 including after changing external compiler installations or dependency caches.
 Pass absolute `-ChatPath` and `-BrokerPath` values to select existing builds.
-A fresh system-temp lane retains compiler output in `chat-build.log` and app
+A fresh system-temp lane retains compiler output in `source-build-*.log` and app
 output in `chat.log`. `Start-Chat.ps1` is the supported launcher.
 The launcher allows one chat instance per Windows user. It acquires an exclusive
 handle to `%LOCALAPPDATA%/SwiftBonsai2/chat.lock` before speech provisioning or

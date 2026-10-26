@@ -46,6 +46,13 @@ setup runs `Get-Inference.ps1 -IncludeCapabilities`, validating the actual pinne
 runtime's model-free report through the checked maintenance tool. These checks
 do not establish publisher signing, actual-model behavior or device qualification.
 
+Startup policy, checked build reuse, native compiler preparation and speech file
+provisioning are Rust maintenance regressions. Their focused cases cover warm
+launches that skip Cargo/preparation, changed and damaged inputs, owned-service
+selection, model-only provisioning and bounded resumable downloads. PowerShell
+retains copied-package bridge and single-instance process checks; the former
+cache/native-startup script suites have been retired.
+
 For example, `src/broker/**` runs only broker checks. A change to a shared Windows
 boundary crate also checks its broker/CLI consumers. A CLI change runs its own
 crate checks and app integration, without testing unrelated crate sources.
