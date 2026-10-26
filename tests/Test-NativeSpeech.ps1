@@ -142,12 +142,16 @@ if ($Case -in @('All', 'Build')) {
     $all = Invoke-NativeSpeechBuild -DataDirectory (Join-Path $scratch 'data') -WorkingDirectory $working -RepositoryRoot $repo
     $builds = @(& $module { $script:builds.ToArray() })
     Assert ($builds.Count -eq 2 -and $all.AsrPath.EndsWith('bonsai-speech-asr.exe') -and $all.TtsPath.EndsWith('bonsai-speech-tts.exe')) 'Native build omitted an owned speech daemon.'
+    $target = Join-Path -Path $scratch -ChildPath 'data' -AdditionalChildPath 'build/native-speech'
+    Assert ($all.AsrPath.StartsWith($target + '\', [StringComparison]::OrdinalIgnoreCase) -and
+        $all.TtsPath.StartsWith($target + '\', [StringComparison]::OrdinalIgnoreCase)) 'Native daemon builds discarded the persistent external Cargo cache.'
     Assert ($builds[0].Environment.CC -ceq 'clang-cl.exe' -and $builds[0].Environment.CMAKE_GENERATOR -ceq 'Ninja' -and
         $builds[1].Environment.CC -ceq 'cl.exe' -and $builds[1].Environment.CMAKE_GENERATOR -ceq 'Visual Studio 18 2026') 'Native engines used incompatible compiler environments.'
     foreach ($build in $builds) {
         Assert ($build.Arguments -contains '--locked' -and $build.Arguments -contains '--release' -and
             $build.Arguments[0] -match '^\+nightly-\d{4}-\d{2}-\d{2}-aarch64-pc-windows-msvc$' -and
             $build.WorkingDirectory -ceq $working -and $build.Environment.Sentinel -ceq 'inherited') 'Native build lost its pinned compiler, external working directory or environment overlay.'
+        Assert ($build.Arguments[[array]::IndexOf($build.Arguments, '--target-dir') + 1] -ceq $target) 'Native build placed compiler artifacts in a disposable launch directory.'
         foreach ($name in @('SystemDrive', 'SystemRoot', 'windir', 'ProgramData', 'LOCALAPPDATA', 'APPDATA')) {
             Assert (-not $build.Environment.Contains($name)) 'Native build redirected a system or profile environment variable.'
         }

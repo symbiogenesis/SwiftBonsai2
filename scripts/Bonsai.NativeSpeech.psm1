@@ -319,8 +319,9 @@ function Invoke-NativeSpeechBuild {
     Builds selected native speech daemons in Release and verifies ARM64 PE outputs.
     .DESCRIPTION
     Returns AsrPath and TtsPath; unselected paths are null. Uses the repository's
-    pinned Rust toolchain and Cargo.lock. Logs and target artifacts are beneath
-    the explicitly external WorkingDirectory. No model is loaded during builds.
+    pinned Rust toolchain and Cargo.lock. Cargo reuses DataDirectory/build/native-speech;
+    process working directories and logs remain in the external WorkingDirectory.
+    No model is loaded during builds.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -335,7 +336,7 @@ function Invoke-NativeSpeechBuild {
     if ($toolchain -notmatch '(?m)^channel\s*=\s*"(nightly-\d{4}-\d{2}-\d{2})"\s*$') { throw 'Native build requires the repository-pinned Rust toolchain.' }
     $channel = $Matches[1] + '-aarch64-pc-windows-msvc'
     $native = Initialize-NativeSpeechBuild -DataDirectory $DataDirectory -WorkingDirectory $working
-    $target = Resolve-ExternalPath -Path (Join-Path $working 'native-speech-target')
+    $target = Resolve-ExternalPath -Path (Join-Path $DataDirectory 'build/native-speech')
     $result = [ordered]@{ AsrPath = $null; TtsPath = $null }
     foreach ($kind in @('Canary', 'QwenTts')) {
         if ($Model -ne 'All' -and $Model -ne $kind) { continue }
