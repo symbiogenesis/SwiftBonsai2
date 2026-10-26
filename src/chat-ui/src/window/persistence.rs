@@ -27,6 +27,10 @@ struct WorkspaceView<'a> {
 }
 
 #[derive(serde::Serialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Recovery serializes independent response choices and transcript status."
+)]
 struct ActiveView<'a> {
     transcript: &'a Transcript,
     committed: &'a [client::Message],
@@ -301,6 +305,9 @@ mod tests {
         assert!(!original.enable_thinking);
         original.enable_thinking = true;
         original.save_conversation();
+        original.conversations.push(Conversation::new(2));
+        original.active_conversation = 2;
+        original.next_conversation = 3;
         original.clear_conversation();
         assert!(!original.enable_thinking);
         let bytes = original.workspace_bytes()?;

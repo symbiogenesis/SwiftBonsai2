@@ -419,7 +419,7 @@ impl Message {
         child.add_space(8.0);
         if let Some(cache) = &self.cache {
             if self.body.is_empty() && self.pending {
-                child.label(RichText::new("Thinking…").weak().italics());
+                child.label(RichText::new("Responding…").weak().italics());
             } else if !self.body.is_empty() {
                 let response =
                     child.add(egui::Label::new(Arc::clone(&cache.body)).selectable(true));

@@ -270,7 +270,7 @@ impl State {
         self.input.clear();
         self.place_composer_cursor(0);
         self.busy = true;
-        self.set_status("Thinking…", false);
+        self.set_status("Responding…", false);
     }
 
     fn new_chat(&mut self) {

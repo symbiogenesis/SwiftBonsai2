@@ -58,6 +58,11 @@ retained in memory. Retry never resends a prompt automatically. Uncertain
 transport/protocol failures also require this explicit retry. Closing the window
 stops its owned broker and inference process.
 
+Thinking is off by default. Turn on **Settings → Response → Thinking** to enable
+it for the next response and every Extra effort pass. Each conversation keeps
+its own choice; saving conversations also saves that choice. Older saved
+conversations and newly created conversations start with thinking off.
+
 For a model-free visual check, build the chat executable into an external temp
 directory and open its sample preview:
 
@@ -253,8 +258,8 @@ The app uses the pinned Prism/llama CPU backend with original Swift PQ2 weights
 and the pinned adapter unless opted out. This development default does not
 qualify the [standard LoRA profile](swift-lora.md#required-standard-profile-qualification).
 The separate native inference release `0.1.2` includes the verified source fixes
-and is available through the opt-in `--native-engine` path. Thinking remains
-enabled, so even a short prompt can take time to produce a finished answer.
+and is available through the opt-in `--native-engine` path. Thinking is off by
+default; enable it under **Settings → Response** for the next response.
 Quality, throughput and daily-service qualification remain pending.
 
 Pass `Start-Chat.ps1 -UseRepackedPtq1` to explicitly select only the verified

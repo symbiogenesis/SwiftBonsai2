@@ -4,6 +4,10 @@ use super::{Command, RichText, State, Transcript, client, egui};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent response choices and transcript status are preserved for each conversation."
+)]
 pub(super) struct ConversationSnapshot {
     pub(super) transcript: Transcript,
     pub(super) committed: Vec<client::Message>,

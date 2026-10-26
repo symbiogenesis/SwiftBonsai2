@@ -26,7 +26,7 @@ per-device CPU/GPU/NPU plans; current launch policies remain CPU-only.
 | Execution | CPU only; scalar reference and eligible baseline NEON paths, with explicit unsupported-operation errors |
 | State | One 8,192-token conversation; FP16 attention K/V, F32 recurrent/convolution state and bounded allocations |
 | Input/output | Verified embedded template, exact prompt accounting, declared stop tokens and incremental text output |
-| Generation | [Current inference defaults](inference-defaults.md), thinking on/`xhigh`, preserved supplied reasoning history |
+| Generation | [Current inference defaults](inference-defaults.md), optional thinking with `xhigh` effort, preserved supplied reasoning history |
 | Lifecycle | Verified readiness, one active generation, authentication, streaming, cancellation, deadlines, reset and recovery |
 
 Use the pinned PQ2 artifact without LoRA for this engine MVP. Current-weight
