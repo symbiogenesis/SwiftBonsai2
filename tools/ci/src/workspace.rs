@@ -214,20 +214,24 @@ fn dependencies(
 }
 
 fn resolve(path: &Path) -> crate::Result<PathBuf> {
-    let mut result = PathBuf::new();
-    for component in path.components() {
-        match component {
-            std::path::Component::CurDir => (),
-            std::path::Component::ParentDir => {
-                result.pop();
-            }
-            component => {
-                result.push(component.as_os_str());
-                if result.exists() {
-                    result = result.canonicalize().map_err(|error| error.to_string())?;
-                }
-            }
+    match path.canonicalize() {
+        Ok(path) => return Ok(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => return Err(format!("{}: {error}", path.display())),
+    }
+    // Resolve existing ancestors without requiring an unrelated external path
+    // dependency to be installed. Manifest discovery only follows local members.
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("Cannot resolve {}", path.display()))?;
+    let mut result = resolve(parent)?;
+    match path.components().next_back() {
+        Some(std::path::Component::ParentDir) => {
+            result.pop();
         }
+        Some(std::path::Component::CurDir) => (),
+        Some(std::path::Component::Normal(name)) => result.push(name),
+        _ => return Err(format!("Cannot resolve {}", path.display())),
     }
     Ok(result)
 }
