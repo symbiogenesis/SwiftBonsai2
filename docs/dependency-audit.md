@@ -118,6 +118,22 @@ consider a separate supervisor executable only if the remaining size/build cost
 warrants its extra lifecycle and IPC complexity. Sandbox enforcement must remain
 mandatory and fail closed; dependency trimming must not weaken containment.
 
+Further source review confirmed that Runner's low-level PSEC calls use synchronous
+Windows APIs and generated FlatBuffers. Tokio is used by the SDK's Windows
+Sandbox/WSLC daemon and lifecycle paths, URL/ICU by proxy/network parsing, and
+chrono by learning-mode tracing. Those packages are not intrinsic to Runner's
+PSEC calls, but version 1.0.1 unconditionally compiles the broader facade. Existing
+optional features already exclude VM/WSL/Hyperlight paths; there is no published
+PSEC-only switch. Upstream main at `ad54c69452147bd4ca15d027388ad6074903dbff`
+has the same limitation.
+
+A minimal upstream PSEC module could expose the API loader, handle owner,
+capability queries and generated policy types without the full runner/proxy/
+learning-mode graph. Its errors and UTF-16 helpers must be separated from current
+learning-mode/Base64 coupling, and telemetry/build dependencies need feature
+gating too. Simply marking dependencies optional would break compilation.
+See the [published manifest](https://github.com/microsoft/mxc/blob/v1.0.1/src/mxc-sdk/Cargo.toml).
+
 ### Renderer defaults are broader than the manifest suggests
 
 eframe defaults are disabled, but its `wgpu` feature enables `egui-wgpu/default`,
