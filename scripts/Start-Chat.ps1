@@ -17,6 +17,8 @@ under DataDirectory/build/chat; Cargo checks source and compiler freshness at la
 NoSpeechModels skips speech model provisioning. SpeechModelsOnly downloads or
 verifies speech files and returns their paths without building or launching the app.
 The launcher builds native ARM64 Rust speech companions using pinned native engines.
+TtsQuantization optionally evaluates Q4_K_M VoiceDesign weights; Q8_0 stays default.
+TtsThreads sets owned TTS inference threads; zero uses its bounded native default.
 The app loads Canary only after an enabled, permitted microphone captures a clip;
 it loads Qwen only for Read Aloud.
 NoTts skips automatic TTS setup. Explicit keys select externally managed services.
@@ -36,6 +38,8 @@ Downloading files and preparing TTS never opens the microphone.
 .EXAMPLE
 ./scripts/Start-Chat.ps1 -SpeechModelsOnly
 .EXAMPLE
+./scripts/Start-Chat.ps1 -TtsQuantization Q4_K_M -TtsThreads 10
+.EXAMPLE
 ./scripts/Start-Chat.ps1 -NoSpeechModels
 #>
 [CmdletBinding()]
@@ -46,6 +50,8 @@ param(
     [string]$BrokerPath,
     [string]$AsrPath,
     [string]$TtsPath,
+    [ValidateSet('Q8_0', 'Q4_K_M')][string]$TtsQuantization = 'Q8_0',
+    [ValidateRange(0, 256)][int]$TtsThreads = 0,
     [switch]$NoAbliterateLora,
     [switch]$UseRepackedPtq1,
     [ValidateRange(1024, 65535)][int]$FrontendPort = 5173,
@@ -106,6 +112,9 @@ foreach ($name in @('ChatPath', 'BrokerPath', 'AsrPath', 'TtsPath')) {
 }
 $ownCanary = -not $CanaryKeyFile -and -not $NoSpeechModels
 $ownTts = -not $TtsKeyFile -and -not $NoTts -and -not $NoSpeechModels
+if (-not $ownTts -and ($TtsQuantization -cne 'Q8_0' -or $TtsThreads -ne 0)) {
+    throw 'TtsQuantization and TtsThreads require automatically owned TTS.'
+}
 if (($ownCanary -and $CanaryPort -in @($FrontendPort, $BackendPort)) -or
     ($ownTts -and $TtsPort -in @($FrontendPort, $BackendPort)) -or
     (($ownCanary -or $CanaryKeyFile) -and ($ownTts -or $TtsKeyFile) -and $CanaryPort -eq $TtsPort)) {
@@ -116,8 +125,8 @@ if (($AsrPath -and -not $ownCanary) -or ($TtsPath -and -not $ownTts)) {
 }
 $speechModels = $null
 if (-not $NoSpeechModels) {
-    Write-Information -MessageData 'Preparing pinned native Canary and Qwen VoiceDesign files (approximately 4.8 GiB total). Verified cached files are reused.' -InformationAction Continue
-    $speechModels = & (Join-Path $PSScriptRoot 'Get-NativeSpeechModels.ps1') -DataDirectory $DataDirectory
+    Write-Information -MessageData "Preparing pinned native Canary and Qwen VoiceDesign files ($TtsQuantization talker). Verified cached files are reused." -InformationAction Continue
+    $speechModels = & (Join-Path $PSScriptRoot 'Get-NativeSpeechModels.ps1') -DataDirectory $DataDirectory -TtsQuantization $TtsQuantization
     Write-Information -MessageData ("Canary model: {0}`nQwen VoiceDesign model: {1}`nQwen audio codec: {2}" -f
         $speechModels.CanaryModelPath, $speechModels.TtsModelPath,
         $speechModels.TtsCodecPath) -InformationAction Continue
@@ -172,6 +181,8 @@ if ($ownCanary) {
 }
 if ($ownTts) {
     $arguments += @('--tts-executable', $TtsPath, '--tts-model', $speechModels.TtsModelPath, '--tts-codec', $speechModels.TtsCodecPath)
+    $arguments += @('--tts-quantization', $TtsQuantization)
+    if ($TtsThreads -gt 0) { $arguments += @('--tts-threads', [string]$TtsThreads) }
 }
 $result = Invoke-BonsaiNativeProcess -Executable $ChatPath -ArgumentList $arguments -WorkingDirectory $scratch -LogPath (Join-Path $scratch 'chat.log')
 if ($result.ExitCode -ne 0) { throw "Chat stopped with exit code $($result.ExitCode). Evidence is retained under $scratch." }
