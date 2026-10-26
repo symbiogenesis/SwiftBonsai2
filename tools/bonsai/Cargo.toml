@@ -16,6 +16,16 @@ path = "src/main.rs"
 # Exercise the CLI through integration tests without linking an empty harness.
 test = false
 
+[features]
+test-probe = []
+
+[[bin]]
+name = "bonsai-completion-test-probe"
+path = "tests/support/completion_probe.rs"
+required-features = ["test-probe"]
+test = false
+doc = false
+
 [dependencies]
 bonsai-artifacts = { path = "../../src/artifacts" }
 bonsai-cpu-policy = { path = "../../src/cpu-policy" }
