@@ -9,7 +9,7 @@
     reason = "The window uses this crate-private worker boundary."
 )]
 
-use crate::{canary, tts};
+use crate::{canary, native_speech::Service, tts};
 use std::{
     collections::VecDeque,
     io,
@@ -27,7 +27,7 @@ const POLL: Duration = Duration::from_millis(50);
 const MAX_TEXT: usize = 32768;
 // Short clips keep CPU synthesis within its bounded request deadline. The HTTP
 // companion accepts larger inputs, but a readout retains and sequences all text.
-const MAX_SEGMENT: usize = 32;
+const MAX_SEGMENT: usize = 256;
 const NO_INPUT: u64 = u64::MAX;
 
 pub(crate) enum Command {
@@ -82,12 +82,22 @@ struct Envelope {
 pub(crate) struct Commands {
     sender: Sender<Envelope>,
     current_output: Arc<AtomicU64>,
+    current_input: Arc<AtomicU64>,
 }
 impl Commands {
     pub(crate) fn send(&self, command: Command) -> Result<(), mpsc::SendError<Command>> {
+        if matches!(
+            &command,
+            Command::StopListening | Command::Speak { .. } | Command::Shutdown
+        ) {
+            self.current_input.store(NO_INPUT, Ordering::Release);
+        }
         let generation = if matches!(
             &command,
-            Command::Speak { .. } | Command::StopSpeaking | Command::Shutdown
+            Command::Speak { .. }
+                | Command::StopSpeaking
+                | Command::Shutdown
+                | Command::Transcribe { .. }
         ) {
             self.current_output
                 .fetch_add(1, Ordering::AcqRel)
@@ -159,6 +169,7 @@ pub(crate) fn start(
         commands: Commands {
             sender,
             current_output,
+            current_input: Arc::clone(&current_input),
         },
         events,
         current_input,
@@ -238,7 +249,7 @@ struct Output {
     segments: VecDeque<String>,
     playback: Option<Playback>,
     prepared: bool,
-    service: Option<tts::Service>,
+    service: Option<Service>,
 }
 
 fn segments(text: &str) -> Option<VecDeque<String>> {
@@ -270,24 +281,84 @@ fn segments(text: &str) -> Option<VecDeque<String>> {
     Some(result)
 }
 
+struct Input {
+    client: canary::Client,
+    config: canary::Config,
+    generation: Option<u64>,
+    service: Option<Service>,
+}
+
+impl Input {
+    fn new(config: &canary::Config) -> Option<Self> {
+        let client = canary::Client::new(config).ok()?;
+        if config.launch.is_none() && client.ready().is_err() {
+            return None;
+        }
+        Some(Self {
+            client,
+            config: config.clone(),
+            generation: None,
+            service: None,
+        })
+    }
+
+    fn clear(&mut self) {
+        self.service = None;
+        self.generation = None;
+    }
+
+    fn transcribe(
+        &mut self,
+        generation: u64,
+        wav: &[u8],
+        current: &AtomicU64,
+    ) -> Result<String, canary::Failure> {
+        let call = canary::Call::new(generation, current, Duration::from_mins(15));
+        call.check()?;
+        if self.generation != Some(generation) {
+            self.clear();
+            self.service = self
+                .client
+                .start_service(&self.config, generation, current)?;
+            self.generation = Some(generation);
+        }
+        if let Some(service) = &self.service {
+            service.check()?;
+        }
+        let result = self.client.transcribe(generation, wav, current);
+        if let Some(service) = &self.service {
+            service.check()?;
+        }
+        call.check()?;
+        result
+    }
+}
+
 fn transcription(
-    client: Option<&canary::Client>,
+    input: Option<&mut Input>,
     generation: u64,
     wav: &[u8],
     current: &AtomicU64,
     events: &Sender<Event>,
 ) {
     if current.load(Ordering::Acquire) != generation {
+        if let Some(input) = input {
+            input.clear();
+        }
         return;
     }
-    let _sent = events.send(Event::Status(
-        "Transcribing with Canary Qwen 2.5B. Microphone capture is paused.",
-    ));
-    let result = client.map_or(
+    let _sent = events.send(Event::Status("Transcribing with native Canary Qwen 2.5B. Microphone capture is paused; disabling it cancels model loading."));
+    let result = input.map_or(
         Err(canary::Failure::Message(
-            "Canary Qwen 2.5B is unavailable. Check its companion service and key file.",
+            "Canary Qwen 2.5B is unavailable. Check the native speech configuration and key file.",
         )),
-        |client| client.transcribe(generation, wav, current),
+        |input| {
+            let result = input.transcribe(generation, wav, current);
+            if result.is_err() {
+                input.clear();
+            }
+            result
+        },
     );
     if current.load(Ordering::Acquire) != generation {
         return;
@@ -305,7 +376,6 @@ fn transcription(
         }
     }
 }
-
 fn render(
     output: &mut Output,
     client: Option<&tts::Client>,
@@ -391,16 +461,14 @@ fn run(
     current_input: &AtomicU64,
     current_output: &Arc<AtomicU64>,
 ) {
-    let canary = canary_config
-        .and_then(|config| canary::Client::new(config).ok())
-        .filter(|client| client.ready().is_ok());
+    let mut input = canary_config.and_then(Input::new);
     let tts = tts_config
         .and_then(|config| tts::Client::new(config).ok())
         .filter(|client| {
             tts_config.is_some_and(|config| config.launch.is_some()) || client.ready().is_ok()
         });
     let _sent = events.send(Event::Capabilities {
-        input: canary.is_some(),
+        input: input.is_some(),
         output: tts.is_some(),
     });
     let mut output: Option<Output> = None;
@@ -423,12 +491,15 @@ fn run(
                     generation: output_generation,
                     speaking: false,
                 });
-                transcription(canary.as_ref(), generation, &wav, current_input, events);
+                transcription(input.as_mut(), generation, &wav, current_input, events);
             }
             Ok(Envelope {
                 command: Command::StopListening,
                 ..
             }) => {
+                if let Some(input) = &mut input {
+                    input.clear();
+                }
                 let _sent = events.send(Event::Listening(false));
             }
             Ok(Envelope {
@@ -440,6 +511,9 @@ fn run(
                 output_generation,
             }) => {
                 output = None;
+                if let Some(input) = &mut input {
+                    input.clear();
+                }
                 if current_output.load(Ordering::Acquire) != output_generation {
                     continue;
                 }
@@ -483,6 +557,13 @@ fn run(
             }
             Err(RecvTimeoutError::Timeout) => {}
         }
+        if let Some(input) = &mut input
+            && input
+                .generation
+                .is_some_and(|generation| current_input.load(Ordering::Acquire) != generation)
+        {
+            input.clear();
+        }
         if let Some(active) = &mut output {
             let generation = active.generation;
             let outcome = render(active, tts.as_ref(), tts_config, current_output, events);
@@ -520,6 +601,89 @@ mod tests {
         },
         time::Duration,
     };
+
+    #[test]
+    fn switching_speech_modes_invalidates_the_other_generation_immediately() -> io::Result<()> {
+        let (sender, _receiver) = mpsc::channel();
+        let current_input = Arc::new(AtomicU64::new(7));
+        let current_output = Arc::new(AtomicU64::new(3));
+        let commands = Commands {
+            sender,
+            current_input: Arc::clone(&current_input),
+            current_output: Arc::clone(&current_output),
+        };
+        commands
+            .send(Command::Transcribe {
+                generation: 7,
+                wav: Vec::new(),
+            })
+            .map_err(io::Error::other)?;
+        assert_eq!(current_input.load(Ordering::Acquire), 7);
+        assert_ne!(current_output.load(Ordering::Acquire), 3);
+        commands
+            .send(Command::Speak {
+                text: "Answer".to_owned(),
+                voice_description: "Calm".to_owned(),
+            })
+            .map_err(io::Error::other)?;
+        assert_eq!(current_input.load(Ordering::Acquire), super::NO_INPUT);
+        current_input.store(8, Ordering::Release);
+        commands
+            .send(Command::StopListening)
+            .map_err(io::Error::other)?;
+        assert_eq!(current_input.load(Ordering::Acquire), super::NO_INPUT);
+        Ok(())
+    }
+
+    #[test]
+    fn stale_input_generation_releases_its_native_job_without_audio_or_transcript() -> io::Result<()>
+    {
+        use bonsai_windows_process::{OwnedProcess, ProcessSpec};
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("Bonsai-stale-input-{stamp}"));
+        std::fs::create_dir(&directory)?;
+        let credentials = bonsai_windows_credentials::PrivateCredentials::create(&directory)?;
+        let config = crate::canary::Config {
+            port: 8766,
+            key_file: credentials.frontend_path().to_owned(),
+            launch: None,
+        };
+        let process = Arc::new(OwnedProcess::start(&ProcessSpec {
+            executable: std::env::current_exe()?,
+            arguments: [
+                "--exact",
+                "native_speech::tests::resource_guard_fake_service",
+                "--ignored",
+            ]
+            .map(std::ffi::OsString::from)
+            .to_vec(),
+            working_directory: directory.clone(),
+            stdout: directory.join("fake.stdout"),
+            stderr: directory.join("fake.stderr"),
+            memory_limit_bytes: 512 * 1024 * 1024,
+            active_process_limit: 1,
+        })?);
+        let service = crate::native_speech::Service::monitored(Arc::clone(&process), || {
+            Ok(9 * 1024 * 1024 * 1024)
+        })
+        .map_err(|_| io::Error::other("Could not monitor disposable native service."))?;
+        let mut input = super::Input {
+            client: crate::canary::Client::new(&config).map_err(io::Error::other)?,
+            config,
+            generation: Some(41),
+            service: Some(service),
+        };
+        let (events, received) = mpsc::channel();
+        super::transcription(Some(&mut input), 41, &[], &AtomicU64::new(42), &events);
+        assert!(input.service.is_none());
+        assert!(input.generation.is_none());
+        assert!(received.try_recv().is_err());
+        assert!(process.wait_for_exit(Duration::from_secs(5))?.is_some());
+        Ok(())
+    }
 
     #[test]
     fn stop_retries_when_playback_starts_after_the_first_stop() -> io::Result<()> {
@@ -566,6 +730,7 @@ mod tests {
             commands: Commands {
                 sender,
                 current_output: Arc::new(AtomicU64::new(0)),
+                current_input: Arc::new(AtomicU64::new(super::NO_INPUT)),
             },
             events,
             current_input: Arc::new(AtomicU64::new(super::NO_INPUT)),
@@ -635,6 +800,7 @@ mod tests {
         let commands = Commands {
             sender,
             current_output: Arc::clone(&current_output),
+            current_input: Arc::new(AtomicU64::new(super::NO_INPUT)),
         };
         commands
             .send(Command::Speak {
@@ -680,7 +846,8 @@ mod tests {
     }
 
     #[test]
-    fn owned_tts_discovery_does_not_launch_or_load_a_model_before_read_aloud() -> io::Result<()> {
+    fn owned_speech_discovery_does_not_launch_or_load_models_before_explicit_use() -> io::Result<()>
+    {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(io::Error::other)?
@@ -693,21 +860,31 @@ mod tests {
         let config = crate::tts::Config {
             port: 8767,
             key_file: credentials.frontend_path().to_owned(),
-            launch: Some(crate::tts::Launch {
-                python: parent.join("unavailable-python.exe"),
-                service: parent.join("unavailable-service.py"),
-                snapshot: parent.join("unavailable-model"),
+            launch: Some(crate::native_speech::Launch {
+                executable: parent.join("unavailable-native.exe"),
+                codec: Some(parent.join("unavailable-codec.gguf")),
+                model: parent.join("unavailable-model.gguf"),
                 evidence: evidence.clone(),
             }),
         };
-        let session = start(None, Some(config.clone()))?;
+        let canary_config = crate::canary::Config {
+            port: 8766,
+            key_file: credentials.frontend_path().to_owned(),
+            launch: Some(crate::native_speech::Launch {
+                executable: parent.join("unavailable-canary.exe"),
+                model: parent.join("unavailable-canary.gguf"),
+                codec: None,
+                evidence: evidence.clone(),
+            }),
+        };
+        let session = start(Some(canary_config.clone()), Some(config.clone()))?;
         assert!(matches!(
             session
                 .events
                 .recv_timeout(Duration::from_secs(2))
                 .map_err(io::Error::other)?,
             Event::Capabilities {
-                input: false,
+                input: true,
                 output: true
             }
         ));
@@ -718,9 +895,15 @@ mod tests {
             client.start_service(&config, 1, &AtomicU64::new(2)),
             Err(crate::tts::Failure::Cancelled)
         ));
+        let canary = crate::canary::Client::new(&canary_config).map_err(io::Error::other)?;
+        assert!(matches!(
+            canary.start_service(&canary_config, 1, &AtomicU64::new(2)),
+            Err(crate::canary::Failure::Cancelled)
+        ));
         assert!(std::fs::read_dir(&evidence)?.next().is_none());
         drop(session);
         drop(client);
+        drop(canary);
         drop(credentials);
         std::fs::remove_dir(&evidence)?;
         std::fs::remove_dir_all(parent)?;

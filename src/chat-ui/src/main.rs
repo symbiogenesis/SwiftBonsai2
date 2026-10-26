@@ -10,6 +10,8 @@ mod canary;
 #[cfg(windows)]
 mod client;
 #[cfg(windows)]
+mod native_speech;
+#[cfg(windows)]
 #[allow(
     unsafe_code,
     reason = "Audited native WAV playback boundary; owned buffers live until playback completes."
@@ -33,8 +35,9 @@ fn configuration(
     let (mut broker, mut data, mut evidence) = (None, None, None);
     let (mut frontend_port, mut backend_port) = (None, None);
     let (mut canary_port, mut canary_key_file) = (None, None);
+    let (mut canary_executable, mut canary_model) = (None, None);
     let (mut tts_port, mut tts_key_file) = (None, None);
-    let (mut tts_python, mut tts_service, mut tts_snapshot) = (None, None, None);
+    let (mut tts_executable, mut tts_model, mut tts_codec) = (None, None, None);
     let mut no_abliterate_lora = false;
     while let Some(option) = args.next() {
         match option.to_str() {
@@ -84,41 +87,69 @@ fn configuration(
                     return Err("A Qwen TTS key-file path is required.");
                 }
             }
-            Some("--tts-python") if tts_python.is_none() => {
-                tts_python = Some(PathBuf::from(
-                    args.next().ok_or("A Qwen TTS Python path is required.")?,
+            Some("--canary-executable") if canary_executable.is_none() => {
+                canary_executable = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("A native Canary executable path is required.")?,
                 ));
             }
-            Some("--tts-service") if tts_service.is_none() => {
-                tts_service = Some(PathBuf::from(
-                    args.next().ok_or("A Qwen TTS service path is required.")?,
+            Some("--canary-model") if canary_model.is_none() => {
+                canary_model = Some(PathBuf::from(
+                    args.next().ok_or("A Canary GGUF model path is required.")?,
                 ));
             }
-            Some("--tts-snapshot") if tts_snapshot.is_none() => {
-                tts_snapshot = Some(PathBuf::from(
-                    args.next().ok_or("A Qwen TTS snapshot path is required.")?,
+            Some("--tts-executable") if tts_executable.is_none() => {
+                tts_executable = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("A native Qwen TTS executable path is required.")?,
+                ));
+            }
+            Some("--tts-model") if tts_model.is_none() => {
+                tts_model = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("A Qwen TTS GGUF model path is required.")?,
+                ));
+            }
+            Some("--tts-codec") if tts_codec.is_none() => {
+                tts_codec = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("A Qwen TTS codec GGUF path is required.")?,
                 ));
             }
             _ => {
                 return Err(
-                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--canary-key-file ABSOLUTE_FILE --canary-port 8766] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-python ABSOLUTE_EXE --tts-service ABSOLUTE_FILE --tts-snapshot ABSOLUTE_DIRECTORY]]",
+                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--canary-key-file ABSOLUTE_FILE --canary-port 8766 [--canary-executable ABSOLUTE_EXE --canary-model ABSOLUTE_GGUF]] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-executable ABSOLUTE_EXE --tts-model ABSOLUTE_GGUF --tts-codec ABSOLUTE_GGUF]]",
                 );
             }
         }
     }
-    let tts_launch = match (tts_python, tts_service, tts_snapshot) {
-        (None, None, None) => None,
-        (Some(python), Some(service), Some(snapshot)) if tts_key_file.is_some() => {
-            Some(tts::Launch {
-                python,
-                service,
-                snapshot,
+    let canary_launch = match (canary_executable, canary_model) {
+        (None, None) => None,
+        (Some(executable), Some(model)) if canary_key_file.is_some() => {
+            Some(native_speech::Launch {
+                executable,
+                model,
+                codec: None,
                 evidence: evidence
                     .clone()
                     .ok_or("An external evidence directory is required.")?,
             })
         }
-        _ => return Err("Configure all three Qwen TTS launch paths with --tts-key-file."),
+        _ => return Err("Configure both native Canary launch paths with --canary-key-file."),
+    };
+    let tts_launch = match (tts_executable, tts_model, tts_codec) {
+        (None, None, None) => None,
+        (Some(executable), Some(model), Some(codec)) if tts_key_file.is_some() => {
+            Some(native_speech::Launch {
+                executable,
+                model,
+                codec: Some(codec),
+                evidence: evidence
+                    .clone()
+                    .ok_or("An external evidence directory is required.")?,
+            })
+        }
+        _ => return Err("Configure all three native Qwen TTS launch paths with --tts-key-file."),
     };
     let config = client::Config {
         broker: broker.ok_or("A broker executable is required.")?,
@@ -130,6 +161,7 @@ fn configuration(
         canary: canary_key_file.map(|key_file| canary::Config {
             port: canary_port.unwrap_or(8766),
             key_file,
+            launch: canary_launch,
         }),
         qwen_tts: tts_key_file.map(|key_file| tts::Config {
             port: tts_port.unwrap_or(8767),
@@ -175,6 +207,9 @@ fn validate_configuration(
                 "Canary needs an existing key file and a distinct unprivileged local port.",
             );
         }
+        if let Some(launch) = &canary.launch {
+            launch.validate()?;
+        }
     }
     if has_tts_port && config.qwen_tts.is_none() {
         return Err("Configure --tts-key-file with --tts-port.");
@@ -196,28 +231,7 @@ fn validate_configuration(
             );
         }
         if let Some(launch) = &tts.launch {
-            for path in [&launch.python, &launch.service, &launch.snapshot] {
-                bonsai_windows_credentials::validate_external_path(path).map_err(
-                    |_| "Use existing expanded absolute external Qwen TTS launch paths.",
-                )?;
-            }
-            if !launch.python.is_file()
-                || !launch.service.is_file()
-                || !launch.snapshot.is_dir()
-                || !launch
-                    .python
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
-                || !launch
-                    .service
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("py"))
-                || !launch.service.with_file_name("model.lock.json").is_file()
-            {
-                return Err(
-                    "Qwen TTS launch requires its Python executable, reviewed service and adjacent model lock, and local snapshot.",
-                );
-            }
+            launch.validate()?;
         }
     }
     Ok(())
@@ -248,19 +262,18 @@ mod tests {
     use std::{ffi::OsString, fs, io};
 
     #[test]
-    fn owned_tts_configuration_requires_complete_existing_external_launch_inputs() -> io::Result<()>
-    {
+    fn native_speech_configuration_requires_complete_groups_and_rejects_python() -> io::Result<()> {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(io::Error::other)?
             .as_nanos();
-        let directory = std::env::temp_dir().join(format!("Bonsai-owned-tts-config-{stamp}"));
+        let directory = std::env::temp_dir().join(format!("Bonsai-native-speech-config-{stamp}"));
         fs::create_dir(&directory)?;
         let broker = directory.join("broker.exe");
-        let service = directory.join("server.py");
-        let lock = directory.join("model.lock.json");
-        let key = directory.join("tts.key");
-        for path in [&broker, &service, &lock, &key] {
+        let model = directory.join("model.gguf");
+        let codec = directory.join("codec.gguf");
+        let key = directory.join("speech.key");
+        for path in [&broker, &model, &codec, &key] {
             fs::write(path, b"")?;
         }
         let base = vec![
@@ -271,50 +284,63 @@ mod tests {
             OsString::from("--evidence-directory"),
             directory.clone().into_os_string(),
         ];
-        let mut enabled = base.clone();
-        enabled.extend([
-            OsString::from("--tts-python"),
-            broker.clone().into_os_string(),
-            OsString::from("--tts-service"),
-            service.clone().into_os_string(),
-            OsString::from("--tts-snapshot"),
-            directory.clone().into_os_string(),
-        ]);
-        assert!(configuration(enabled.clone()).is_err());
-        enabled.extend([
-            OsString::from("--tts-key-file"),
-            key.clone().into_os_string(),
-        ]);
-        let config = configuration(enabled.clone()).map_err(io::Error::other)?;
-        assert!(
-            config
-                .qwen_tts
-                .as_ref()
-                .is_some_and(|tts| tts.launch.is_some())
-        );
-        let mut partial = base;
-        partial.extend([
-            OsString::from("--tts-key-file"),
-            key.clone().into_os_string(),
-            OsString::from("--tts-python"),
-            broker.clone().into_os_string(),
-        ]);
-        assert!(configuration(partial).is_err());
-        let mut repeated = enabled.clone();
-        repeated.extend([
-            OsString::from("--tts-python"),
-            broker.clone().into_os_string(),
-        ]);
-        assert!(configuration(repeated).is_err());
-        fs::remove_file(lock)?;
-        assert!(configuration(enabled).is_err());
-        for path in [&broker, &service, &key] {
+        for (key_flag, launch_flags) in [
+            (
+                "--canary-key-file",
+                vec![("--canary-executable", &broker), ("--canary-model", &model)],
+            ),
+            (
+                "--tts-key-file",
+                vec![
+                    ("--tts-executable", &broker),
+                    ("--tts-model", &model),
+                    ("--tts-codec", &codec),
+                ],
+            ),
+        ] {
+            let mut enabled = base.clone();
+            for (flag, path) in &launch_flags {
+                enabled.extend([OsString::from(flag), path.as_os_str().to_owned()]);
+            }
+            assert!(configuration(enabled.clone()).is_err());
+            enabled.extend([OsString::from(key_flag), key.clone().into_os_string()]);
+            let config = configuration(enabled.clone()).map_err(io::Error::other)?;
+            assert!(
+                config
+                    .canary
+                    .as_ref()
+                    .is_some_and(|config| config.launch.is_some())
+                    || config
+                        .qwen_tts
+                        .as_ref()
+                        .is_some_and(|config| config.launch.is_some())
+            );
+            let mut partial = base.clone();
+            partial.extend([
+                OsString::from(key_flag),
+                key.clone().into_os_string(),
+                OsString::from(launch_flags[0].0),
+                broker.clone().into_os_string(),
+            ]);
+            assert!(configuration(partial).is_err());
+            let mut repeated = enabled;
+            repeated.extend([
+                OsString::from(launch_flags[0].0),
+                broker.clone().into_os_string(),
+            ]);
+            assert!(configuration(repeated).is_err());
+        }
+        for old_flag in ["--tts-python", "--tts-service", "--tts-snapshot"] {
+            let mut legacy = base.clone();
+            legacy.extend([OsString::from(old_flag), broker.clone().into_os_string()]);
+            assert!(configuration(legacy).is_err());
+        }
+        for path in [&broker, &model, &codec, &key] {
             fs::remove_file(path)?;
         }
         fs::remove_dir(directory)?;
         Ok(())
     }
-
     #[test]
     fn canary_configuration_requires_explicit_key_and_distinct_port() -> io::Result<()> {
         let stamp = std::time::SystemTime::now()

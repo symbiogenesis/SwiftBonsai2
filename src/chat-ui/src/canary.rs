@@ -9,6 +9,7 @@
     reason = "Only the native speech worker uses this crate-private adapter."
 )]
 
+use crate::native_speech::{Launch, Service};
 use serde::Deserialize;
 use std::{
     collections::HashSet,
@@ -40,6 +41,7 @@ const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 pub(crate) struct Config {
     pub(crate) port: u16,
     pub(crate) key_file: PathBuf,
+    pub(crate) launch: Option<Launch>,
 }
 
 /// Retains its credential handle to deny file writes and deletion while in use.
@@ -127,11 +129,15 @@ impl Client {
     /// Verify the exact model identity and admitted capture format, without audio.
     pub(crate) fn ready(&self) -> std::result::Result<(), &'static str> {
         let current = AtomicU64::new(0);
-        let call = Call {
-            generation: 0,
-            current: &current,
-            until: Instant::now() + READY_LIMIT,
-        };
+        self.ready_for(0, &current)
+            .map_err(|failure| match failure {
+                Failure::Cancelled => "The Canary readiness check was cancelled.",
+                Failure::Message(message) => message,
+            })
+    }
+
+    fn ready_for(&self, generation: u64, current: &AtomicU64) -> Result<()> {
+        let call = Call::new(generation, current, READY_LIMIT);
         let result = self.exchange("GET", "/health", None, &[], Media::Json, &call)
             .and_then(|body| {
                 let health: Health = serde_json::from_slice(&body).map_err(|_| {
@@ -150,10 +156,35 @@ impl Client {
                 }
                 Ok(())
             });
-        call.check().and(result).map_err(|failure| match failure {
-            Failure::Cancelled => "The Canary readiness check was cancelled.",
-            Failure::Message(message) => message,
-        })
+        call.check().and(result)
+    }
+
+    /// Start only for an explicitly captured clip and retain ownership between clips.
+    pub(crate) fn start_service(
+        &self,
+        config: &Config,
+        generation: u64,
+        current: &AtomicU64,
+    ) -> Result<Option<Service>> {
+        Call::new(generation, current, READY_LIMIT).check()?;
+        let Some(launch) = &config.launch else {
+            self.ready_for(generation, current)?;
+            return Ok(None);
+        };
+        if launch.codec.is_some() {
+            return Err(Failure::Message(
+                "Native Canary does not accept a speech codec.",
+            ));
+        }
+        Service::start(
+            launch,
+            &config.key_file,
+            config.port,
+            generation,
+            current,
+            || self.ready_for(generation, current),
+        )
+        .map(Some)
     }
 
     /// Transcribe one bounded mono PCM clip; a cancelled generation never returns text.
@@ -685,6 +716,7 @@ mod tests {
         let client = Client::new(&Config {
             port,
             key_file: credentials.frontend_path().to_owned(),
+            launch: None,
         })
         .map_err(io::Error::other)?;
         Ok((credentials, client))
