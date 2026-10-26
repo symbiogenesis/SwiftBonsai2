@@ -3,6 +3,7 @@ use super::{Message, egui};
 use std::{collections::BTreeMap, ops::Range};
 #[cfg(test)]
 mod performance_tests;
+mod shortcuts;
 
 const MAX_MATCHES: usize = 10_000;
 
@@ -139,8 +140,12 @@ impl Search {
                 }
             }
             if self.visibility != Visibility::Closed {
+                let field_id = ui.make_persistent_id("find-query");
+                self.navigate_on_enter(ui.ctx(), field_id);
                 let input = ui.add(
                     egui::TextEdit::singleline(&mut self.query)
+                        .id(field_id)
+                        .return_key(None)
                         .hint_text("Find in conversation")
                         .desired_width(190.0)
                         .char_limit(256),

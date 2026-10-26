@@ -19,6 +19,8 @@ use std::{
 
 #[cfg(test)]
 mod interaction_tests;
+#[cfg(test)]
+mod keyboard_tests;
 #[allow(
     unsafe_code,
     reason = "Audited UI-thread WinRT microphone initialization and teardown."
@@ -317,6 +319,19 @@ impl State {
         self.waiting_model = true;
         self.transcript.remove_empty_response();
         self.set_status("Stopping the response…", false);
+    }
+
+    fn handle_escape(&mut self, ctx: &egui::Context) {
+        if self.transcript.close_find_on_escape(ctx) {
+            self.focus_composer = true;
+        } else if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            if self.busy {
+                self.stop_generation();
+            } else if self.speaking || self.dictation_requested {
+                self.stop_speech();
+            }
+        }
     }
 
     fn retain_draft(&mut self) {
@@ -1378,13 +1393,7 @@ impl eframe::App for State {
         if ctx.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::N)) {
             self.new_chat();
         }
-        if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-            if self.busy {
-                self.stop_generation();
-            } else if self.speaking || self.dictation_requested {
-                self.stop_speech();
-            }
-        }
+        self.handle_escape(ctx);
         if self.last_theme_check.elapsed() >= Duration::from_secs(1) {
             ctx.set_visuals(platform::high_contrast_visuals().unwrap_or_else(forest_visuals));
             self.last_theme_check = Instant::now();

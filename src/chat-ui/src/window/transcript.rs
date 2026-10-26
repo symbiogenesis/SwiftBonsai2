@@ -209,6 +209,10 @@ impl Transcript {
         self.search.bar(ui, &self.messages);
     }
 
+    pub(super) fn close_find_on_escape(&mut self, ctx: &egui::Context) -> bool {
+        self.search.close_on_escape(ctx)
+    }
+
     pub(super) fn show(&mut self, ui: &mut egui::Ui, width: f32) {
         self.search.refresh(&self.messages);
         let width = width.max(120.0);
