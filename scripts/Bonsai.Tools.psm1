@@ -85,7 +85,8 @@ function Invoke-BonsaiTool {
     $requestPath = Join-Path $lane 'request.json'
     $payload = [ordered]@{}
     foreach ($key in $Request.Keys) { $payload[$key] = $Request[$key] }
-    if ($Command -in @('completion','runtime-verify')) {
+    if ($Command -in @('completion','runtime-verify') -or
+        ($Command -eq 'qualification' -and $Request['operation'] -eq 'capture')) {
         $currentProcess = [Diagnostics.Process]::GetCurrentProcess()
         try {
             $payload['parentProcessId'] = $PID

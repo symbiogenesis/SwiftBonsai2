@@ -4,6 +4,7 @@
     reason = "Fixed JSON controls and integer-valued identities require exact equality."
 )]
 
+mod capture;
 mod invocation;
 mod schema;
 mod score;
@@ -336,6 +337,9 @@ pub fn run(request: Value) -> Result<Value> {
         return Err("Qualification request must be an object.".into());
     };
     let operation: String = take(&mut request, "operation")?;
+    if operation == "capture" {
+        return capture::run(request);
+    }
     let policy = policy()?;
     let result = match operation.as_str() {
         "plan" => {
@@ -394,6 +398,10 @@ pub fn run(request: Value) -> Result<Value> {
 }
 
 fn read_json(path: &Path) -> Result<Value> {
+    read_json_with_limit(path, JSON_LIMIT)
+}
+
+fn read_json_with_limit(path: &Path, limit: u64) -> Result<Value> {
     let path = validate_path(path)?;
     let mut options = OpenOptions::new();
     options.read(true);
@@ -404,15 +412,15 @@ fn read_json(path: &Path) -> Result<Value> {
     }
     let file: File = options.open(path).map_err(|error| error.to_string())?;
     require(
-        file.metadata().map_err(|error| error.to_string())?.len() <= JSON_LIMIT,
+        file.metadata().map_err(|error| error.to_string())?.len() <= limit,
         "Qualification JSON exceeds its bounded input size.",
     )?;
     let mut bytes = Vec::new();
-    file.take(JSON_LIMIT + 1)
+    file.take(limit + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| error.to_string())?;
     require(
-        u64::try_from(bytes.len()).map_err(|error| error.to_string())? <= JSON_LIMIT,
+        u64::try_from(bytes.len()).map_err(|error| error.to_string())? <= limit,
         "Qualification JSON exceeds its bounded input size.",
     )?;
     let text = decode_text(&bytes)?;

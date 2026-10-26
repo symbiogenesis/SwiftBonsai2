@@ -77,6 +77,10 @@ in Rust. ZIP link entries become ordinary files containing their archived bytes.
 PowerShell keeps downloading, compiler TAR extraction, Visual Studio environment
 setup and process invocation.
 
+Its `stage-sources` operation verifies and stages the compiled Qwen/GGML archive
+pair together, then checks the complete cache inventory before returning.
+Existing source-tree redirection and extra-file rejection run inside that operation.
+
 `cpu-check-plan` combines the shared `bonsai-cpu-policy` plan with a current
 available-memory observation. Its request contains `operation: "plan"`,
 `dataDirectory`, `profile`, `useAbliterateLora` and `useRepackedPtq1`. It returns
@@ -103,6 +107,12 @@ They return all 24 paired and four zero-scale argument vectors with the same
 `ControlsSha256` used for scoring. Qualification `plan` optionally accepts
 `weightRepresentation` to include the shared capture memory policy. The sampler
 and reasoning settings of ordinary CPU checks remain distinct from qualification.
+
+Qualification `capture` retains the CI/device and admission requirements, derives
+the fixed batch in Rust and uses the existing completion supervisor once. It saves
+initial evidence, reconciles only completed sample receipts after ordinary batch
+failures, and retains pending human/logits/basis checks. Abrupt termination leaves
+the durable per-sample records and initial summary for inspection.
 
 Completion supervision retains verified artifact handles and owns the complete
 child Job lifetime. It checks parent PID/creation time/liveness, physical/process
