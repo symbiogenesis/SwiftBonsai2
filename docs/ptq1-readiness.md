@@ -41,13 +41,29 @@ PTQ1 hash now selects pinned graph arithmetic, with native rounding and
 four-lane fused dot accumulation in both scalar and baseline NEON kernels.
 Independent native operator captures and focused regressions cover the fixes.
 
-The attempted one-token full-model recheck **did not start**: the unchanged
+The first attempted one-token full-model recheck **did not start**: the unchanged
 16 GiB admission guard rejected available physical memory of 14,668,292,096
 bytes. Operator parity does not replace that full-model comparison. The earlier
 failed capture remains historical evidence until a corrected model run passes;
 adapter validity, quality and performance remain separate requirements. No
 benchmark ran, and defaults and memory enforcement remain unchanged. See the
 [repair evidence](ptq1-arithmetic-evidence.json) for the bounded result.
+
+At the owner's request, a subsequent one-token check provisionally lowered PTQ1
+admission by exactly 1,259,520,000 bytes to **15,920,349,184 bytes** (about
+14.827 GiB). The corrected automatic backend completed within the unchanged
+12 GiB Job limit and 4 GiB physical reserve, but numerical parity still failed:
+430,526 of 39,504,384 logits/state values exceeded the frozen tolerance across
+129 files; maximum absolute error was 0.06584501266479492. The greedy ID matched
+and 28 state files were byte-identical. Stored state first differs at zero-based
+block 14 and first exceeds tolerance at block 15; this narrows the next
+investigation without identifying the exact first divergent graph operation.
+
+The owner conditioned retaining the reduction on successful checks. Because the
+comparison failed, **the reduction was reverted**: production PTQ1 admission
+remains 16 GiB, as does PQ2 admission. The prepared policy patch and failed
+capture remain in the external admission-trial evidence lane. No benchmark or
+additional model capture was run after this failure.
 
 ## Explicit development use
 
