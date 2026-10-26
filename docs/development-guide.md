@@ -205,10 +205,10 @@ drop-in compatibility with every OpenAI client.
 The demo uses the pinned Prism/llama CPU backend with original Swift PQ2 weights
 and the pinned adapter unless opted out. This development default does not
 qualify the [standard LoRA profile](swift-lora.md#required-standard-profile-qualification).
-The separate native inference release `0.1.1` predates the
-verified source fixes and is not selected. Thinking remains enabled, so even a
-short prompt can take time to produce a finished answer. Quality, throughput and
-daily-service qualification remain pending.
+The separate native inference release `0.1.2` includes the verified source fixes
+and is available through the opt-in `--native-engine` path. Thinking remains
+enabled, so even a short prompt can take time to produce a finished answer.
+Quality, throughput and daily-service qualification remain pending.
 
 ## Planned X1/X2 configuration
 
@@ -508,8 +508,8 @@ to establish a fresh owned instance.
 
 This is an experimental path. Bounded source-runtime checks qualify actual model
 loading, native logit/state parity, prompt/tokenizer and seeded sampler parity,
-and owned HTTP recovery. The provisioned `0.1.1` release predates those source
-repairs; reviewed prebuilt delivery remains open. See the
+and owned HTTP recovery. The provisioned `0.1.2` release includes those source
+repairs and pins the reviewed binary and source identities. See the
 [MVP checklist](prism-upstream-todo.md) for supported scope and remaining release
 qualification. Full-context behavior, throughput and daily-service acceptance
 remain open. The server's private child protocol alone does not establish Job
