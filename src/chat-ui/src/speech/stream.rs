@@ -24,7 +24,10 @@ impl Text {
         }
         self.units += units;
         self.pending.push_str(text);
-        if !self.pending.trim().is_empty() && self.since.is_none() {
+        // The fallback is an idle timeout, not a periodic word-fragment timer.
+        // Keep collecting a continuous clause until punctuation or MAX_SEGMENT
+        // releases it; otherwise each brief fragment restarts model synthesis.
+        if !text.is_empty() && !self.pending.trim().is_empty() {
             self.since = Some(now);
         }
         Ok(())
@@ -150,6 +153,38 @@ mod tests {
             text.ready(now).front().map(|part| part.chars().count()),
             Some(5)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn streaming_latency_waits_for_idle_while_words_keep_arriving() -> Result<(), &'static str> {
+        let now = Instant::now();
+        let mut text = Text::default();
+        text.append("A clause", now)?;
+        let later = now + LATENCY - std::time::Duration::from_millis(1);
+        text.append(" continuing", later)?;
+        assert!(text.ready(now + LATENCY).is_empty());
+        assert!(
+            text.ready(later + LATENCY - std::time::Duration::from_millis(1))
+                .is_empty()
+        );
+        assert_eq!(text.ready(later + LATENCY), ["A clause"]);
+        text.append(" softly.", later + LATENCY)?;
+        text.finished = true;
+        assert_eq!(text.ready(later + LATENCY), ["continuing softly."]);
+        assert!(text.ready(later + LATENCY).is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn streaming_empty_append_does_not_defer_an_idle_clause() -> Result<(), &'static str> {
+        let now = Instant::now();
+        let mut text = Text::default();
+        text.append("A paused clause tail", now)?;
+        text.append("", now + LATENCY)?;
+        assert_eq!(text.ready(now + LATENCY), ["A paused clause"]);
+        text.finished = true;
+        assert_eq!(text.ready(now + LATENCY), ["tail"]);
         Ok(())
     }
 
