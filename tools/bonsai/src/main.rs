@@ -58,12 +58,36 @@ fn read_request(path: &Path, maximum: u64) -> bonsai_tools::Result<serde_json::V
     Ok(request)
 }
 
+fn initialize_startup(request: &mut serde_json::Value) -> bonsai_tools::Result<()> {
+    let object = request.as_object_mut().ok_or("Invalid startup request.")?;
+    let parent = match (
+        object.remove("parentProcessId"),
+        object.remove("parentCreationTimeFileTime"),
+    ) {
+        (None, None) => None,
+        (Some(id), Some(creation)) => {
+            let id = id
+                .as_u64()
+                .and_then(|id| u32::try_from(id).ok())
+                .filter(|id| *id != 0)
+                .ok_or("Invalid startup caller identity.")?;
+            let creation = creation
+                .as_u64()
+                .filter(|creation| *creation != 0)
+                .ok_or("Invalid startup caller identity.")?;
+            Some((id, creation))
+        }
+        _ => return Err("Incomplete startup caller identity.".into()),
+    };
+    bonsai_tools::startup_cancel::initialize(parent)
+}
+
 fn execute() -> bonsai_tools::Result<serde_json::Value> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     if arguments.len() == 1 && arguments[0] == "--version" {
         return Ok(serde_json::json!({
             "Name": "bonsai-tools", "Version": env!("CARGO_PKG_VERSION"),
-            "ProtocolVersion": 5, "Commands": COMMANDS
+            "ProtocolVersion": 5, "StartupProtocolVersion": 1, "Commands": COMMANDS
         }));
     }
     if arguments.len() != 3 || arguments[1] != "--request" {
@@ -77,7 +101,16 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
     } else {
         MAX_REQUEST_BYTES
     };
-    let request = read_request(Path::new(&arguments[2]), maximum)?;
+    let mut request = read_request(Path::new(&arguments[2]), maximum)?;
+    let startup = matches!(arguments[0].to_str(), Some("source-build" | "chat-launch"))
+        || (arguments[0] == "speech-build"
+            && matches!(
+                request["operation"].as_str(),
+                Some("models" | "environment" | "build")
+            ));
+    if startup {
+        initialize_startup(&mut request)?;
+    }
     match arguments[0].to_str() {
         Some("credentials") => bonsai_tools::credentials::run(request),
         Some("completion") => bonsai_tools::completion::run(request),

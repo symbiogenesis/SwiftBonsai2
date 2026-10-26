@@ -28,6 +28,7 @@ fn expected(bytes: u64, sha256: &str) -> crate::Result<()> {
 }
 
 fn digest_matches(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<bool> {
+    crate::startup_cancel::checkpoint()?;
     expected(bytes, sha256)?;
     if file.metadata().map_err(|error| error.to_string())?.len() != bytes {
         return Err("Artifact byte length differs from its lock.".into());
@@ -37,6 +38,7 @@ fn digest_matches(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<bo
     let mut hash = Sha256::new();
     let mut buffer = vec![0; 1024 * 1024];
     loop {
+        crate::startup_cancel::checkpoint()?;
         let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
         if read == 0 {
             break;
@@ -47,6 +49,7 @@ fn digest_matches(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<bo
 }
 
 fn check(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<()> {
+    crate::startup_cancel::checkpoint()?;
     if !digest_matches(file, bytes, sha256)? {
         return Err("Artifact SHA-256 differs from its lock; invalid bytes are retained.".into());
     }
@@ -253,6 +256,7 @@ fn receive_with(
     working: &Path,
     mut transfer: impl FnMut(&str, &Path, u64, u64, &Path) -> crate::Result<()>,
 ) -> crate::Result<()> {
+    crate::startup_cancel::checkpoint()?;
     expected(bytes, sha256)?;
     download_uri(uri)?;
     validate_external_path(path).map_err(|error| error.to_string())?;
@@ -291,6 +295,7 @@ fn receive_with(
     }
     let mut quarantined: Option<PathBuf> = None;
     let completed = loop {
+        crate::startup_cancel::checkpoint()?;
         if offset < bytes {
             transfer(uri, &partial, offset, bytes, working)?;
         }
@@ -325,6 +330,7 @@ fn receive_with(
         quarantined = Some(quarantine);
         offset = 0;
     };
+    crate::startup_cancel::checkpoint()?;
     match fs::hard_link(&partial, path) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
