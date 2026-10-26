@@ -22,6 +22,7 @@ byte correctness are prerequisites for interpreting timing.
 | Sonic 0.5.10 | 1.0026× | 1.1160× near body limit | No qualifying gain |
 | Fused Serde visitor | 1.0408× | 1.2442× small plain input | No qualifying gain |
 | SIMD-JSON 0.18.1 | Not timed | Strict Unicode mismatch | Reject |
+| SIMD-JSON fixed source `ff8f5c8` | 1.3807× | 1.9802× near body limit | No qualifying gain |
 
 SIMD-JSON's Serde adapter accepted `{"messages":[{"role":"user","content":"\ud800"}]}`
 and canonicalized the lone surrogate to `\u0000`; production serde_json rejects
@@ -32,8 +33,8 @@ Upstream revision
 [`ff8f5c8`](https://github.com/simd-lite/simd-json/commit/ff8f5c8bb75dfc56803321c2f5a92656c7de842f)
 rejects lone high surrogates, malformed surrogate escapes and second escapes
 outside the low-surrogate range. It is distinct from the evaluated `v0.18.1`
-tag despite carrying the same package version. No post-fix broker timing or
-production replacement is established; the exact source revision matters.
+tag despite carrying the same package version. The fixed-source screen below
+does not qualify a production replacement; the exact source revision matters.
 
 The complete fixed source is pinned as the `third_party/simd-json` Git submodule
 until an upstream release includes the required fixes. Initialize it with
@@ -49,6 +50,16 @@ rejection semantics. Supplemental scale-setting workloads include this fallback
 cost; any supplemental case over 5% slower prevents overall qualification even
 when the original six-case screen passes. A submodule checkout or successful
 build does not promote the parser.
+
+The [fixed-source CI comparison](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40405967479)
+tested Runner `9448284a4057fb70fb039520debef44250851a76` on Windows ARM64
+Cobalt 100 with the pinned nightly. All six original cases were slower:
+1.3807× equal-weight geometric-mean time and 1.9802× worst-case time near the
+body limit. Supplemental explicit-scale cases took 1.7289–1.7979× production
+time, including parsing fallback. Both the original and overall screens failed;
+retain serde_json. The `json-candidate-40405967479-1` artifact contains raw rounds,
+decisions and source/compiler/CPU/OS identities. This is broker preparation
+evidence on that hosted CPU, not Snapdragon inference throughput.
 
 Sonic's 3.5–4.7% history-case gains and the fused visitor's 6.9% gain at 128
 messages did not offset other regressions. These results reject the tested

@@ -321,8 +321,8 @@ Reference: [exact conformance requirements](docs/prism-upstream-tests.md).
 
 ## Deferred dependency experiments
 
-- Qualify the pinned SIMD-JSON submodule candidate at
-  `ff8f5c8bb75dfc56803321c2f5a92656c7de842f` only if
+- Reopen the pinned SIMD-JSON submodule experiment only after a concrete change
+  addresses the fixed-source timing no-go. Require that
   unchanged Unicode/duplicate/unknown-field/shape/bound/canonical-byte checks
   pass and main-only CI shows at least 5% lower equal-weight geometric-mean time
   with no case more than 5% slower. Preserve the existing dependency decision
