@@ -79,6 +79,7 @@ if ($Case -cin @('All', 'Launcher')) {
     & $copy @launch | Out-Null
     $record = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
     $arguments = @($record.Arguments)
+    Assert ($arguments -cnotcontains '--use-repacked-ptq1') 'Default launch silently changed the model packing.'
     Assert ($record.Executable -ceq $chat -and [IO.Directory]::Exists($record.WorkingDirectory)) 'Native app lost its external working directory.'
     Assert ([Environment]::CurrentDirectory -ceq $original) 'Launcher changed the caller process working directory.'
     foreach ($option in @('--canary-key-file', '--canary-executable', '--canary-model', '--tts-key-file', '--tts-executable', '--tts-model', '--tts-codec')) {
@@ -103,6 +104,9 @@ if ($Case -cin @('All', 'Launcher')) {
     $arguments = @((Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json).Arguments)
     Assert (-not [IO.File]::Exists((Join-Path $data 'native-build-called')) -and
         $arguments -cnotcontains '--tts-executable' -and $arguments -cnotcontains '--canary-executable') 'Text-only launch built or configured speech.'
+    & $copy @launch -NoSpeechModels -UseRepackedPtq1 -NoAbliterateLora | Out-Null
+    $arguments = @((Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json).Arguments)
+    Assert ($arguments -ccontains '--use-repacked-ptq1' -and $arguments -ccontains '--no-abliterate-lora') 'Explicit PTQ1 and adapter choices were not forwarded together.'
 }
 if ($Case -cin @('All', 'DownloadOnly')) {
     [IO.File]::Delete($receipt)

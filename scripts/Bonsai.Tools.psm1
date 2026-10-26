@@ -86,7 +86,7 @@ function Invoke-BonsaiTool {
     $payload = [ordered]@{}
     foreach ($key in $Request.Keys) { $payload[$key] = $Request[$key] }
     if ($Command -in @('completion','runtime-verify') -or
-        ($Command -eq 'qualification' -and $Request['operation'] -eq 'capture')) {
+        ($Command -eq 'qualification' -and $Request['operation'] -in @('capture', 'screen-capture'))) {
         $currentProcess = [Diagnostics.Process]::GetCurrentProcess()
         try {
             $payload['parentProcessId'] = $PID

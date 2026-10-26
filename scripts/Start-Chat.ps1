@@ -7,6 +7,8 @@ Uses the existing Swift model and pinned CPU runtime. Downloads and verifies
 the pinned native Canary STT and Qwen VoiceDesign TTS GGUF files by
 default, reusing verified files and resuming interrupted downloads.
 Enables the pinned abliteration LoRA at scale 1.3 unless NoAbliterateLora is set.
+UseRepackedPtq1 explicitly selects the verified current-weight PTQ1 export.
+PQ2 remains the default; the alternate packing does not qualify output or speed.
 The native Settings pane adjusts its scale for the next response.
 Builds missing app executables with the pinned Rust compiler in an external reusable cache.
 The native window owns its broker and inference-process lifetime. Session
@@ -26,6 +28,8 @@ Downloading files and preparing TTS never opens the microphone.
 .EXAMPLE
 ./scripts/Start-Chat.ps1 -NoAbliterateLora
 .EXAMPLE
+./scripts/Start-Chat.ps1 -UseRepackedPtq1
+.EXAMPLE
 ./scripts/Start-Chat.ps1 -CanaryKeyFile C:\Speech\canary.key -CanaryPort 8766
 .EXAMPLE
 ./scripts/Start-Chat.ps1 -CanaryKeyFile C:\Speech\canary.key -TtsKeyFile C:\Speech\qwen-tts.key
@@ -43,6 +47,7 @@ param(
     [string]$AsrPath,
     [string]$TtsPath,
     [switch]$NoAbliterateLora,
+    [switch]$UseRepackedPtq1,
     [ValidateRange(1024, 65535)][int]$FrontendPort = 5173,
     [ValidateRange(1024, 65535)][int]$BackendPort = 8081,
     [string]$CanaryKeyFile,
@@ -155,6 +160,7 @@ $arguments = @('--broker-path', $BrokerPath, '--data-directory', $DataDirectory,
     '--evidence-directory', $scratch, '--frontend-port', [string]$FrontendPort,
     '--backend-port', [string]$BackendPort)
 if ($NoAbliterateLora) { $arguments += '--no-abliterate-lora' }
+if ($UseRepackedPtq1) { $arguments += '--use-repacked-ptq1' }
 if ($CanaryKeyFile) {
     $arguments += @('--canary-key-file', $CanaryKeyFile, '--canary-port', [string]$CanaryPort)
 }

@@ -55,6 +55,7 @@ pub(crate) struct Config {
     pub(crate) frontend_port: u16,
     pub(crate) backend_port: u16,
     pub(crate) use_abliterate_lora: bool,
+    pub(crate) use_repacked_ptq1: bool,
     pub(crate) canary: Option<crate::canary::Config>,
     pub(crate) qwen_tts: Option<crate::tts::Config>,
 }
@@ -276,6 +277,9 @@ fn worker(
     let mut process = ProcessCommand::new(&config.broker);
     if config.use_abliterate_lora {
         process.arg("--use-abliterate-lora");
+    }
+    if config.use_repacked_ptq1 {
+        process.arg("--use-repacked-ptq1");
     }
     process
         .args([

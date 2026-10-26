@@ -257,6 +257,16 @@ and is available through the opt-in `--native-engine` path. Thinking remains
 enabled, so even a short prompt can take time to produce a finished answer.
 Quality, throughput and daily-service qualification remain pending.
 
+Pass `Start-Chat.ps1 -UseRepackedPtq1` to explicitly select only the verified
+current-weight PTQ1 export described in [the memory assessment](swift-memory.md).
+Direct `bonsai-chat` and development broker launches accept
+`--use-repacked-ptq1`. Missing or changed PTQ1 bytes fail verification; the app
+does not substitute the older publisher PTQ1 checkpoint or silently fall back.
+The pinned adapter remains available with the same opt-out and scale setting.
+The native Rust inference service rejects this option until its separate
+end-to-end PTQ1 qualification is complete. See [PTQ1 readiness](ptq1-readiness.md)
+for the small decision screen and remaining correctness/quality work.
+
 ## Planned X1/X2 configuration
 
 The recorded development machine is a 32 GB Snapdragon X Elite X1E-78-100.

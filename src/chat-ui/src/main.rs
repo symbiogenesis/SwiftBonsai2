@@ -41,9 +41,11 @@ fn configuration(
     let (mut tts_port, mut tts_key_file) = (None, None);
     let (mut tts_executable, mut tts_model, mut tts_codec) = (None, None, None);
     let mut no_abliterate_lora = false;
+    let mut use_repacked_ptq1 = false;
     while let Some(option) = args.next() {
         match option.to_str() {
             Some("--no-abliterate-lora") if !no_abliterate_lora => no_abliterate_lora = true,
+            Some("--use-repacked-ptq1") if !use_repacked_ptq1 => use_repacked_ptq1 = true,
             Some("--broker-path") if broker.is_none() => broker = args.next().map(PathBuf::from),
             Some("--data-directory") if data.is_none() => data = args.next().map(PathBuf::from),
             Some("--evidence-directory") if evidence.is_none() => {
@@ -120,7 +122,7 @@ fn configuration(
             }
             _ => {
                 return Err(
-                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--canary-key-file ABSOLUTE_FILE --canary-port 8766 [--canary-executable ABSOLUTE_EXE --canary-model ABSOLUTE_GGUF]] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-executable ABSOLUTE_EXE --tts-model ABSOLUTE_GGUF --tts-codec ABSOLUTE_GGUF]]",
+                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--use-repacked-ptq1] [--canary-key-file ABSOLUTE_FILE --canary-port 8766 [--canary-executable ABSOLUTE_EXE --canary-model ABSOLUTE_GGUF]] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-executable ABSOLUTE_EXE --tts-model ABSOLUTE_GGUF --tts-codec ABSOLUTE_GGUF]]",
                 );
             }
         }
@@ -160,6 +162,7 @@ fn configuration(
         frontend_port: frontend_port.unwrap_or(5173),
         backend_port: backend_port.unwrap_or(8081),
         use_abliterate_lora: !no_abliterate_lora,
+        use_repacked_ptq1,
         canary: canary_key_file.map(|key_file| canary::Config {
             port: canary_port.unwrap_or(8766),
             key_file,
@@ -396,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn demo_lora_is_default_and_opt_out_is_explicit() -> io::Result<()> {
+    fn model_packing_and_lora_defaults_require_explicit_opt_ins() -> io::Result<()> {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(io::Error::other)?
@@ -415,6 +418,14 @@ mod tests {
         ];
         let default = configuration(args.clone()).map_err(io::Error::other)?;
         assert!(default.use_abliterate_lora);
+        assert!(!default.use_repacked_ptq1);
+        let mut repacked = args.clone();
+        repacked.push("--use-repacked-ptq1".into());
+        let alternate = configuration(repacked.clone()).map_err(io::Error::other)?;
+        assert!(alternate.use_repacked_ptq1);
+        assert!(alternate.use_abliterate_lora);
+        repacked.push("--use-repacked-ptq1".into());
+        assert!(configuration(repacked).is_err());
         let mut disabled = args;
         disabled.push("--no-abliterate-lora".into());
         let opted_out = configuration(disabled.clone()).map_err(io::Error::other)?;

@@ -69,6 +69,10 @@ connection and do not guess at a token or memory cause. HTTP communication here
 uses numeric loopback on the same computer, rather than an Internet service.
 
 The app uses the existing pinned Swift PQ2 CPU backend through the broker.
+`Start-Chat.ps1 -UseRepackedPtq1` explicitly selects the verified current-weight
+PTQ1 artifact on that same backend. PQ2 remains the default. This selection
+retains the memory admission, running reserve, conversation and retry policies;
+it does not qualify equivalent outputs, speed or adapter correctness.
 Its pinned abliteration LoRA is enabled by default at scale **1.3**, with an
 explicit `-NoAbliterateLora` opt-out; the broker verifies and holds the selected
 adapter. Settings exposes a scale from 0 to 2 in 0.1 steps, applied to the next
