@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "target": "aarch64-pc-windows-msvc",
+  "compiler": {
+    "version": "23.1.4",
+    "directory": "llvm-23.1.4-arm64",
+    "root": "clang+llvm-23.1.4-aarch64-pc-windows-msvc",
+    "filename": "clang+llvm-23.1.4-aarch64-pc-windows-msvc.tar.xz",
+    "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.4/clang%2Bllvm-23.1.4-aarch64-pc-windows-msvc.tar.xz",
+    "bytes": 771710768,
+    "sha256": "f0d2e32424850ffb9b6aef190587a8298353d858a8a7260f490c173fe98d6811"
+  },
+  "sources": {
+    "qwen": {
+      "repository": "ServeurpersoCom/qwentts.cpp",
+      "revision": "5916bf7c79dbb4e66fc059cdc507a79a23a28bb4",
+      "root": "qwentts.cpp-5916bf7c79dbb4e66fc059cdc507a79a23a28bb4",
+      "filename": "qwentts-5916bf7c79dbb4e66fc059cdc507a79a23a28bb4.zip",
+      "url": "https://codeload.github.com/ServeurpersoCom/qwentts.cpp/zip/5916bf7c79dbb4e66fc059cdc507a79a23a28bb4",
+      "bytes": 1312465,
+      "sha256": "4311ccc1e7af891c67cab4950236fb57f23f2244a56f21273143fc82df767de3"
+    },
+    "ggml": {
+      "repository": "ServeurpersoCom/ggml",
+      "revision": "cc5df49a6b878db2b68b9a7b45976e279594627d",
+      "root": "ggml-cc5df49a6b878db2b68b9a7b45976e279594627d",
+      "filename": "ggml-cc5df49a6b878db2b68b9a7b45976e279594627d.zip",
+      "url": "https://codeload.github.com/ServeurpersoCom/ggml/zip/cc5df49a6b878db2b68b9a7b45976e279594627d",
+      "bytes": 5544012,
+      "sha256": "0a6650a2acc8d4c4f03a7c0301f41689f2d5d3f5bb01522ae391e971656820ca"
+    }
+  }
+}
