@@ -7,62 +7,85 @@
 use std::{
     ffi::{CStr, c_char, c_int, c_void},
     io,
+    panic::{AssertUnwindSafe, catch_unwind},
     ptr::NonNull,
 };
 
-#[repr(C)]
-struct RawAudio {
-    samples: *mut f32,
-    sample_count: c_int,
-    sample_rate: c_int,
-    channels: c_int,
-}
+mod qwen;
+use qwen::RawAudio;
 
-unsafe extern "C" {
-    fn bonsai_tts_load(model: *const c_char, codec: *const c_char) -> *mut c_void;
-    fn bonsai_tts_free(context: *mut c_void);
-    fn bonsai_tts_synthesize(
-        context: *mut c_void,
-        text: *const c_char,
-        voice: *const c_char,
-        audio: *mut RawAudio,
-    ) -> c_int;
-    fn bonsai_tts_audio_free(audio: *mut RawAudio);
+const extern "C" fn discard_log(_: c_int, _: *const c_char, _: *mut c_void) {}
+
+// A foreign exception may abort inside catch_unwind or return an opaque Err.
+// In the latter case abort without inspecting/dropping that payload or reusing
+// potentially damaged native state. The owning Windows Job isolates failure.
+fn abort_on_unwind<T>(call: impl FnOnce() -> T) -> T {
+    // No recovery uses the captured state, so unwinding cannot expose it again.
+    catch_unwind(AssertUnwindSafe(call)).unwrap_or_else(|_| std::process::abort())
 }
 
 /// One exclusively borrowed native model, freed only after its blocking calls.
 pub(super) struct Context(NonNull<c_void>);
 
 impl Context {
+    #[allow(
+        ffi_unwind_calls,
+        reason = "The potentially throwing Qwen call is contained by abort_on_unwind."
+    )]
     pub(super) fn load(model: &CStr, codec: &CStr) -> io::Result<Self> {
+        // SAFETY: The callback never dereferences, allocates, logs or panics and
+        // is valid for the process lifetime on every native worker thread.
+        unsafe { qwen::qt_log_set(discard_log, std::ptr::null_mut()) };
+        let mut params = qwen::InitParams::default();
+        // SAFETY: This is the complete, writable ABI-v6 POD layout.
+        unsafe { qwen::qt_init_default_params(&raw mut params) };
+        params.talker_path = model.as_ptr();
+        params.codec_path = codec.as_ptr();
+        params.device = c"CPU".as_ptr();
+        params.use_fa = false;
+        params.max_batch = 1;
+        params.codec_chunk_sec = 8.0;
         // SAFETY: Both paths are owned NUL-terminated strings retained by the
-        // Synthesizer. The pinned shim catches exceptions and returns ownership
-        // of a newly allocated context, or null without transferring resources.
-        let pointer = unsafe { bonsai_tts_load(model.as_ptr(), codec.as_ptr()) };
-        NonNull::new(pointer).map(Self).ok_or_else(|| {
+        // Synthesizer; params is the pinned ABI-v6 layout and survives the call.
+        // C-unwind permits an escaped foreign exception into abort_on_unwind.
+        let pointer = abort_on_unwind(|| unsafe { qwen::qt_init(&raw const params) });
+        let context = NonNull::new(pointer).map(Self).ok_or_else(|| {
             io::Error::other("The native Qwen VoiceDesign model could not initialize.")
-        })
+        })?;
+        // SAFETY: context owns a live initialization result; the returned static
+        // model-type string stays valid until that context is released.
+        let model_type = unsafe { qwen::qt_model_type(context.0.as_ptr()) };
+        if model_type.is_null()
+            // SAFETY: The pinned API returns a NUL-terminated model type here.
+            || unsafe { CStr::from_ptr(model_type) } != c"voice_design"
+        {
+            return Err(io::Error::other(
+                "The native Qwen VoiceDesign model could not initialize.",
+            ));
+        }
+        Ok(context)
     }
 
+    #[allow(
+        ffi_unwind_calls,
+        reason = "The potentially throwing Qwen call is contained by abort_on_unwind."
+    )]
     pub(super) fn synthesize(&mut self, text: &CStr, voice: &CStr) -> io::Result<Vec<f32>> {
-        let mut audio = NativeAudio(RawAudio {
-            samples: std::ptr::null_mut(),
-            sample_count: 0,
-            sample_rate: 0,
-            channels: 0,
-        });
+        let mut audio = NativeAudio(RawAudio::default());
+        let mut params = qwen::TtsParams::default();
+        // SAFETY: This is the complete, writable ABI-v6 POD layout.
+        unsafe { qwen::qt_tts_default_params(&raw mut params) };
+        params.text = text.as_ptr();
+        params.lang = c"auto".as_ptr();
+        params.instruct = voice.as_ptr();
+        params.max_new_tokens = 1500;
         // SAFETY: The exclusive context borrow prevents simultaneous calls.
         // Both bounded C strings stay alive until this blocking call returns.
         // The output points at a correctly laid out, initialized qt_audio POD;
-        // the shim catches C++ exceptions and NativeAudio owns any result.
-        let status = unsafe {
-            bonsai_tts_synthesize(
-                self.0.as_ptr(),
-                text.as_ptr(),
-                voice.as_ptr(),
-                &raw mut audio.0,
-            )
-        };
+        // C-unwind permits foreign exceptions into the aborting boundary.
+        let status = abort_on_unwind(|| unsafe {
+            qwen::qt_synthesize(self.0.as_ptr(), &raw const params, &raw mut audio.0)
+        });
         if status != 0 {
             return Err(io::Error::other("Native Qwen speech synthesis failed."));
         }
@@ -71,11 +94,15 @@ impl Context {
 }
 
 impl Drop for Context {
+    #[allow(
+        ffi_unwind_calls,
+        reason = "The potentially throwing Qwen call is contained by abort_on_unwind."
+    )]
     fn drop(&mut self) {
         // SAFETY: This object owns the one successful initialization result.
         // No synthesis call outlives its exclusive borrow, so the native worker
         // can be joined and all model allocations freed exactly once here.
-        unsafe { bonsai_tts_free(self.0.as_ptr()) };
+        abort_on_unwind(|| unsafe { qwen::qt_free(self.0.as_ptr()) });
     }
 }
 
@@ -111,7 +138,7 @@ impl Drop for NativeAudio {
     fn drop(&mut self) {
         // SAFETY: The initialized POD owns its native allocation, if any. The
         // matching allocator accepts an empty POD and clears it after freeing.
-        unsafe { bonsai_tts_audio_free(&raw mut self.0) };
+        unsafe { qwen::qt_audio_free(&raw mut self.0) };
     }
 }
 
@@ -120,4 +147,110 @@ fn invalid_audio() -> io::Error {
         io::ErrorKind::InvalidData,
         "Native Qwen returned an invalid audio buffer.",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Context, NativeAudio, abort_on_unwind, qwen};
+    use std::{error::Error, ffi::CString, fs, io, process::Command, time::SystemTime};
+
+    type TestResult = Result<(), Box<dyn Error>>;
+
+    #[test]
+    fn pinned_qwen_defaults_populate_complete_rust_abi() {
+        let mut init = qwen::InitParams::default();
+        // SAFETY: init is the complete initialized ABI-v6 POD, exclusively borrowed.
+        unsafe { qwen::qt_init_default_params(&raw mut init) };
+        assert_eq!(init.abi_version, 6);
+        assert!(init.talker_path.is_null() && init.codec_path.is_null());
+        assert!(init.use_fa && !init.clamp_fp16);
+        assert_eq!(init.max_batch, 1);
+        assert_eq!(init.codec_chunk_sec.to_bits(), 24.0_f32.to_bits());
+        assert!(init.device.is_null());
+
+        let mut tts = qwen::TtsParams::default();
+        // SAFETY: tts is the complete initialized ABI-v6 POD, exclusively borrowed.
+        unsafe { qwen::qt_tts_default_params(&raw mut tts) };
+        assert_eq!(tts.abi_version, 6);
+        assert!(tts.text.is_null() && tts.lang.is_null() && tts.instruct.is_null());
+        assert_eq!(tts.seed, -1);
+        assert!(tts.max_new_tokens > 0);
+        assert!(tts.speaker.is_null() && tts.ref_audio_24k.is_null() && tts.ref_text.is_null());
+        assert!(tts.dump_dir.is_null() && tts.cancel.is_none() && tts.on_chunk.is_none());
+        assert!(tts.cancel_user_data.is_null() && tts.on_chunk_user_data.is_null());
+        assert!(tts.ref_spk_emb.is_null() && tts.ref_codes.is_null());
+        assert_eq!(tts.ref_spk_dim, 0);
+        assert_eq!(tts.ref_frames, 0);
+    }
+
+    #[test]
+    fn native_load_failure_is_redacted_and_empty_audio_is_releasable() -> TestResult {
+        let missing = std::env::temp_dir().join(format!(
+            "Bonsai-Qwen-Missing-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .as_nanos()
+        ));
+        let path = CString::new(missing.to_str().ok_or("Non-UTF-8 temp path")?)?;
+        for _ in 0..2 {
+            let error = Context::load(&path, &path)
+                .err()
+                .ok_or("Unexpected model load")?;
+            assert_eq!(error.kind(), io::ErrorKind::Other);
+            assert_eq!(
+                error.to_string(),
+                "The native Qwen VoiceDesign model could not initialize."
+            );
+        }
+        let audio = NativeAudio(qwen::RawAudio::default());
+        assert_eq!(
+            audio.copy_samples().err().map(|error| error.kind()),
+            Some(io::ErrorKind::InvalidData)
+        );
+        drop(audio);
+        Ok(())
+    }
+
+    #[test]
+    #[allow(
+        clippy::panic,
+        reason = "The isolated child deliberately exercises the aborting unwind boundary."
+    )]
+    fn unexpected_unwind_terminates_companion() -> TestResult {
+        const CHILD: &str = "BONSAI_QWEN_UNWIND_TEST_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            abort_on_unwind(|| panic!("synthetic native-boundary unwind"));
+            return Err("Unwind boundary returned instead of aborting".into());
+        }
+        let working = std::env::temp_dir().join(format!(
+            "Bonsai-Qwen-Unwind-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .as_nanos()
+        ));
+        assert!(working.is_absolute() && !working.to_string_lossy().contains('%'));
+        fs::create_dir(&working)?;
+        let output = Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "native::tests::unexpected_unwind_terminates_companion",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .current_dir(&working)
+            .output()?;
+        assert!(!output.status.success());
+        assert_ne!(
+            output.status.code(),
+            Some(101),
+            "The child failed as an ordinary Rust test instead of aborting."
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("synthetic native-boundary unwind")
+        );
+        fs::remove_dir(&working)?;
+        Ok(())
+    }
 }

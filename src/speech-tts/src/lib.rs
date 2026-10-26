@@ -10,7 +10,7 @@ use std::{ffi::CString, io, path::Path};
 
 #[allow(
     unsafe_code,
-    reason = "Confine the documented owned C ABI and native audio buffer lifetime to one module."
+    reason = "Confine the audited Rust C ABI bindings and native audio buffer lifetime to one module."
 )]
 mod native;
 

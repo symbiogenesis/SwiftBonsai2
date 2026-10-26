@@ -22,13 +22,7 @@ fn main() -> io::Result<()> {
     ] {
         println!("cargo:rerun-if-env-changed={name}");
     }
-    for path in [
-        "native/bridge.cpp",
-        "native/CMakeLists.txt",
-        "model.lock.json",
-    ] {
-        println!("cargo:rerun-if-changed={path}");
-    }
+    println!("cargo:rerun-if-changed=model.lock.json");
     if env::var("CARGO_CFG_TARGET_OS").is_ok_and(|value| value != "windows") {
         return Ok(());
     }
@@ -61,30 +55,8 @@ fn main() -> io::Result<()> {
     )?;
     let engine_build = engine_build(&source, &native_work, &cmake, &generator)?;
     external_output(&engine_build)?;
-    let manifest = absolute_env("CARGO_MANIFEST_DIR")?;
-    let bridge = native_work.join("b");
-    fs::create_dir_all(&bridge)?;
-    let mut configure = Command::new(&cmake);
-    configure.args([
-        OsString::from("-S"),
-        manifest.join("native").into_os_string(),
-        OsString::from("-B"),
-        bridge.clone().into_os_string(),
-        OsString::from("-G"),
-        generator,
-        OsString::from("-A"),
-        OsString::from("ARM64"),
-        OsString::from(format!("-DBONSAI_TTS_SOURCE_DIR={}", source.display())),
-        OsString::from("-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL"),
-    ]);
-    run(&mut configure, &native_work)?;
-    build(&cmake, &bridge, "bonsai-qwen-bridge", &native_work)?;
     println!("cargo:rustc-link-search=native={}", output.display());
     for (name, path) in [
-        (
-            "bonsai-qwen-bridge",
-            bridge.join("Release/bonsai-qwen-bridge.lib"),
-        ),
         ("qwen-core", engine_build.join("Release/qwen-core.lib")),
         ("ggml", engine_build.join("ggml/src/Release/ggml.lib")),
         (
