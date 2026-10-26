@@ -43,8 +43,12 @@ feature exposes the comparison parser while ordinary requests retain serde_json.
 Both parsers share schema/history validation and canonical serialization; the
 candidate includes the immutable-input copy in its measured work. The main-only
 `json-candidate.yml` workflow runs correctness prerequisites before the same
-six-case, rotated-round timing gate. A submodule checkout or successful build
-does not promote the parser; promotion still requires the declared 5%/5% result.
+six-case, rotated-round timing gate. Requests with an explicit adapter scale and
+SIMD parsing failures use production parsing to retain its exact decimal and
+rejection semantics. Supplemental scale-setting workloads include this fallback
+cost; any supplemental case over 5% slower prevents overall qualification even
+when the original six-case screen passes. A submodule checkout or successful
+build does not promote the parser.
 
 Sonic's 3.5–4.7% history-case gains and the fused visitor's 6.9% gain at 128
 messages did not offset other regressions. These results reject the tested

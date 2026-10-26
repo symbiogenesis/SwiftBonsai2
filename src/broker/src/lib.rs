@@ -287,12 +287,15 @@ impl AuthorizedHead {
         let Ok(Object(chat)): Result<Object<ClientChat<'_>>, _> =
             simd_json::serde::from_slice(&mut mutable)
         else {
+            drop(mutable);
             return self.prepare(body);
         };
         // The parsers can round the same decimal scale to adjacent F64 values.
         // Retain the production lexeme conversion, including escaped key names
         // and numeric values near admission boundaries, instead of changing it.
         if chat.abliteration_scale.is_some() {
+            drop(chat);
+            drop(mutable);
             return self.prepare(body);
         }
         self.prepare_chat(&chat)
