@@ -22,7 +22,8 @@ use windows::{
 };
 use windows_future::{AsyncStatus, IAsyncAction, IAsyncOperation};
 
-const CLIP_LIMIT: Duration = Duration::from_secs(15);
+const CLIP_LIMIT: Duration = Duration::from_secs(5);
+const START_LIMIT: Duration = Duration::from_secs(15);
 const OPERATION_LIMIT: Duration = Duration::from_secs(45);
 const PERMISSION_LIMIT: Duration = Duration::from_secs(120);
 const MAX_WAV: u64 = 600 * 1024;
@@ -124,11 +125,60 @@ impl Pending {
     }
 }
 
+trait AudioResource {
+    fn close(self);
+}
+
+impl AudioResource for MediaCapture {
+    fn close(self) {
+        let _result = self.Close();
+    }
+}
+
+impl AudioResource for InMemoryRandomAccessStream {
+    fn close(self) {
+        let _result = self.Close();
+    }
+}
+
+/// A stopped recorder can be reused only by its explicitly enabled generation.
+struct CaptureResources<C, S> {
+    capture: Option<(u64, C)>,
+    stream: Option<S>,
+}
+
+impl<C: AudioResource, S: AudioResource> CaptureResources<C, S> {
+    const fn new() -> Self {
+        Self {
+            capture: None,
+            stream: None,
+        }
+    }
+
+    fn capture_for(&self, generation: u64) -> Option<&C> {
+        self.capture
+            .as_ref()
+            .and_then(|(owner, capture)| (*owner == generation).then_some(capture))
+    }
+
+    fn finish_clip(&mut self) {
+        if let Some(stream) = self.stream.take() {
+            stream.close();
+        }
+    }
+
+    fn close(&mut self) {
+        if let Some((_, capture)) = self.capture.take() {
+            capture.close();
+        }
+        self.finish_clip();
+    }
+}
+
 pub(super) struct Microphone {
     lifecycle: Lifecycle,
     capability: Option<AppCapability>,
-    capture: Option<MediaCapture>,
-    stream: Option<InMemoryRandomAccessStream>,
+    resources: CaptureResources<MediaCapture, InMemoryRandomAccessStream>,
     pending: Option<Pending>,
     pending_since: Instant,
     recording_since: Option<Instant>,
@@ -141,8 +191,7 @@ impl Microphone {
         Ok(Self {
             lifecycle: Lifecycle::default(),
             capability: None,
-            capture: None,
-            stream: None,
+            resources: CaptureResources::new(),
             pending: None,
             pending_since: Instant::now(),
             recording_since: None,
@@ -183,12 +232,7 @@ impl Microphone {
             pending.cancel();
         }
         self.recording_since = None;
-        if let Some(capture) = self.capture.take() {
-            let _result = capture.Close();
-        }
-        if let Some(stream) = self.stream.take() {
-            let _result = stream.Close();
-        }
+        self.resources.close();
     }
 
     pub(super) fn resume(&mut self, generation: u64) -> io::Result<()> {
@@ -197,7 +241,7 @@ impl Microphone {
         }
         if self
             .check_access()
-            .and_then(|()| self.initialize_capture())
+            .and_then(|()| self.begin_clip())
             .is_err()
         {
             self.stop();
@@ -230,7 +274,7 @@ impl Microphone {
         settings.SetStreamingCaptureMode(StreamingCaptureMode::Audio)?;
         let capture = MediaCapture::new()?;
         let operation = capture.InitializeWithSettingsAsync(&settings)?;
-        self.capture = Some(capture);
+        self.resources.capture = Some((self.lifecycle.generation, capture));
         self.set_pending(Pending::Initialize(operation));
         self.checked_access = Instant::now();
         Ok(())
@@ -242,12 +286,12 @@ impl Microphone {
         profile.SetAudio(&AudioEncodingProperties::CreatePcm(16_000, 1, 16)?)?;
         let stream = InMemoryRandomAccessStream::new()?;
         let capture = self
-            .capture
-            .as_ref()
+            .resources
+            .capture_for(self.lifecycle.generation)
             .ok_or_else(windows::core::Error::from_thread)?;
         let operation = capture.StartRecordToStreamAsync(&profile, &stream)?;
-        self.stream = Some(stream);
-        self.recording_since = Some(Instant::now());
+        self.resources.stream = Some(stream);
+        self.recording_since = None;
         self.set_pending(Pending::Start(operation));
         Ok(())
     }
@@ -275,6 +319,7 @@ impl Microphone {
             self.checked_access = Instant::now();
         }
         if self
+            .resources
             .stream
             .as_ref()
             .is_some_and(|stream| !stream.Size().is_ok_and(|size| size <= MAX_WAV))
@@ -284,11 +329,9 @@ impl Microphone {
             );
         }
         if matches!(self.pending, Some(Pending::Start(_)))
-            && self
-                .recording_since
-                .is_some_and(|started| started.elapsed() >= CLIP_LIMIT)
+            && self.pending_since.elapsed() >= START_LIMIT
         {
-            return Err("Windows could not start the microphone within the clip deadline.");
+            return Err("Windows could not start the microphone within its startup deadline.");
         }
         if let Some(pending) = self.pending.take() {
             let limit = if permission_pending {
@@ -317,8 +360,8 @@ impl Microphone {
             .is_some_and(|started| started.elapsed() >= CLIP_LIMIT)
         {
             let capture = self
-                .capture
-                .as_ref()
+                .resources
+                .capture_for(self.lifecycle.generation)
                 .ok_or("The microphone session ended.")?;
             let operation = capture
                 .StopRecordAsync()
@@ -355,6 +398,7 @@ impl Microphone {
                 operation
                     .GetResults()
                     .map_err(|_| "Windows could not start microphone recording.")?;
+                self.recording_since = Some(Instant::now());
                 Ok(Some(Event::Status(
                     "Recording microphone audio. Disable the microphone to cancel.",
                 )))
@@ -390,7 +434,9 @@ impl Microphone {
                     .map_err(|_| "The microphone clip could not be copied.")?;
                 let _result = reader.DetachStream();
                 let _result = reader.Close();
-                self.close_capture();
+                // StopRecordAsync already completed. Keep the initialized
+                // recorder, without recording, while this clip is transcribed.
+                self.resources.finish_clip();
                 self.lifecycle.accept_clip();
                 Ok(Some(Event::Clip {
                     generation: self.lifecycle.generation,
@@ -402,6 +448,7 @@ impl Microphone {
 
     fn load_clip(&mut self) -> windows::core::Result<()> {
         let stream = self
+            .resources
             .stream
             .as_ref()
             .ok_or_else(windows::core::Error::from_thread)?;
@@ -429,8 +476,47 @@ impl Drop for Microphone {
 
 #[cfg(test)]
 mod tests {
-    use super::Lifecycle;
-    use std::io;
+    use super::{AudioResource, CaptureResources, Lifecycle};
+    use std::{cell::Cell, io, rc::Rc};
+
+    struct Resource(Rc<Cell<bool>>);
+    impl AudioResource for Resource {
+        fn close(self) {
+            self.0.set(true);
+        }
+    }
+
+    #[test]
+    fn completed_clip_keeps_capture_for_its_generation_until_session_stops() -> io::Result<()> {
+        let capture_closed = Rc::new(Cell::new(false));
+        let stream_closed = Rc::new(Cell::new(false));
+        let mut lifecycle = Lifecycle::default();
+        let generation = lifecycle.begin()?;
+        let mut resources = CaptureResources::new();
+        resources.capture = Some((generation, Resource(Rc::clone(&capture_closed))));
+        resources.stream = Some(Resource(Rc::clone(&stream_closed)));
+        resources.finish_clip();
+        lifecycle.accept_clip();
+        assert!(stream_closed.get());
+        assert!(!capture_closed.get());
+        assert!(resources.stream.is_none());
+        assert!(resources.capture_for(generation).is_some());
+        assert!(lifecycle.resume(generation));
+        assert!(resources.capture_for(generation).is_some());
+        assert!(!capture_closed.get());
+
+        // Revocation and explicit disabling both take this full-close path.
+        lifecycle.accept_clip();
+        lifecycle.stop();
+        resources.close();
+        assert!(capture_closed.get());
+        assert!(resources.capture_for(generation).is_none());
+        assert!(!lifecycle.resume(generation));
+        let next = lifecycle.begin()?;
+        assert!(resources.capture_for(next).is_none());
+        assert!(!lifecycle.resume(generation));
+        Ok(())
+    }
 
     #[test]
     fn cancellation_prevents_late_permission_or_transcription_from_resuming() -> io::Result<()> {
