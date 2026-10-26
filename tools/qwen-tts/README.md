@@ -39,7 +39,11 @@ revision **`5ecdb67327fd37bb2e042aab12ff7391903235d3`** and includes:
 - All nine required root/tokenizer configuration, vocabulary and merge files.
 
 The service checks every locked size and SHA-256 before loading, with no caller
-hash/model override. Weight hashes come from immutable official publisher LFS
+hash/model override. Keep only these runtime files and optional root README,
+LICENSE/NOTICE files or `.gitattributes` in the snapshot. Extra runtime files,
+unrecognized directories and reparse/symlink entries are rejected before model
+imports so optional tokenizer/config files cannot override verified assets.
+Weight hashes come from immutable official publisher LFS
 metadata. Hashes of all configuration/tokenizer assets were computed from their
 small immutable publisher files; neither weight file was downloaded during
 implementation. Preserve the locked directory unchanged while the service runs:

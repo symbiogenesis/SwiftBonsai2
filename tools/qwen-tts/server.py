@@ -15,6 +15,7 @@ import re
 import select
 import socket
 import socketserver
+import stat
 import tempfile
 import time
 from typing import Protocol
@@ -393,8 +394,31 @@ def verified_snapshot(snapshot: Path) -> None:
     }
     if set(pin.get("files", {})) != expected:
         raise ValueError("invalid model artifacts")
+    reject_unpinned_files(snapshot, expected)
     for name, artifact in pin["files"].items():
         verified_file(snapshot / name, artifact["sha256"], artifact["bytes"])
+
+
+def reject_unpinned_files(snapshot: Path, expected: set[str]) -> None:
+    # Transformers may prefer optional tokenizer/config files when present.
+    # Reject these before importing it rather than hashing only the required set.
+    documentation = {"README.md", "LICENSE", "LICENSE.txt", "NOTICE", "NOTICE.txt", ".gitattributes"}
+    directories = {str(Path(name).parent).replace("\\", "/") for name in expected}
+    pending = [snapshot]
+    while pending:
+        directory = pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                metadata = entry.stat(follow_symlinks=False)
+                if entry.is_symlink() or getattr(metadata, "st_file_attributes", 0) & 0x400:
+                    raise ValueError("reparse model entry")
+                relative = Path(entry.path).relative_to(snapshot).as_posix()
+                if stat.S_ISDIR(metadata.st_mode):
+                    if relative not in directories:
+                        raise ValueError("unverified model directory")
+                    pending.append(Path(entry.path))
+                elif not stat.S_ISREG(metadata.st_mode) or relative not in expected | documentation:
+                    raise ValueError("unverified model artifact")
 
 
 def main() -> int:

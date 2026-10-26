@@ -120,6 +120,24 @@ class HttpContractTests(unittest.TestCase):
 
 
 class InputAndArtifactTests(unittest.TestCase):
+    def test_optional_runtime_assets_cannot_override_verified_tokenizer(self):
+        with tempfile.TemporaryDirectory(prefix="Qwen-extra-artifact-") as directory:
+            root = Path(directory)
+            (root / "speech_tokenizer").mkdir()
+            (root / "config.json").write_bytes(b"verified")
+            (root / "README.md").write_text("Publisher attribution", encoding="utf-8")
+            expected = {"config.json", "speech_tokenizer/config.json"}
+            server.reject_unpinned_files(root, expected)
+            for name in ("tokenizer.json", "added_tokens.json", "model.safetensors.index.json"):
+                extra = root / name
+                extra.write_bytes(b"unreviewed")
+                with self.assertRaises(ValueError):
+                    server.reject_unpinned_files(root, expected)
+                extra.unlink()
+            (root / "unexpected").mkdir()
+            with self.assertRaises(ValueError):
+                server.reject_unpinned_files(root, expected)
+
     def test_duplicate_json_surrogates_and_changed_artifacts_reject(self):
         body = json.dumps(speech())
         with self.assertRaises(server.RequestError):
