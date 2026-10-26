@@ -33,6 +33,18 @@ const RESOURCE_STOP: Duration = Duration::from_secs(5);
 const LOW_MEMORY: u8 = 1;
 const MEMORY_UNAVAILABLE: u8 = 2;
 
+fn sandbox_support_failure(kind: io::ErrorKind) -> Failure {
+    if kind == io::ErrorKind::InvalidInput {
+        Failure::Message(
+            "The speech sandbox rejected inherited service credentials. Restart the app from a terminal or app session without service credentials in its parent environment. Text chat remains available.",
+        )
+    } else {
+        Failure::Message(
+            "The required native Windows sandbox is unavailable for speech. Update Windows to a build with process containment and container-hosted loopback support. Text chat remains available.",
+        )
+    }
+}
+
 /// Fixed native executable and local GGUF artifacts; no arbitrary arguments.
 #[derive(Clone)]
 pub(crate) struct Launch {
@@ -176,11 +188,7 @@ impl Service {
     ) -> Result<Self, Failure> {
         let call = Call::new(generation, current, Duration::from_mins(15));
         call.check()?;
-        native_sandbox_available().map_err(|_| {
-            Failure::Message(
-                "The required native Windows sandbox is unavailable for speech. Update Windows to a build with process containment and container-hosted loopback support. Text chat remains available.",
-            )
-        })?;
+        native_sandbox_available().map_err(|error| sandbox_support_failure(error.kind()))?;
         if listener_process_id(port)
             .map_err(|_| Failure::Message("Could not check the local speech port."))?
             .is_some()
@@ -340,6 +348,18 @@ mod tests {
         fs, io, thread,
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
+
+    #[test]
+    fn speech_sandbox_guidance_distinguishes_parent_credentials_from_native_support() {
+        assert!(
+            matches!(super::sandbox_support_failure(io::ErrorKind::InvalidInput),
+                Failure::Message(message) if message.contains("parent environment") && !message.contains("Update Windows"))
+        );
+        for kind in [io::ErrorKind::Unsupported, io::ErrorKind::Other] {
+            assert!(matches!(super::sandbox_support_failure(kind),
+                    Failure::Message(message) if message.contains("Update Windows") && message.contains("loopback")));
+        }
+    }
     #[test]
     fn speech_memory_admission_preserves_room_for_the_running_chat_model() {
         assert!(admit_memory(START_AVAILABLE).is_ok());

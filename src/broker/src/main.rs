@@ -126,6 +126,9 @@ fn launched(args: Vec<OsString>) -> ExitCode {
 fn launch_failure(error: bonsai_broker::launcher::LaunchError) -> ExitCode {
     use bonsai_broker::launcher::LaunchError;
     let guidance = match error {
+        LaunchError::SandboxEnvironment => {
+            " Restart from a terminal or app session without inherited service credentials."
+        }
         LaunchError::SandboxUnavailable => {
             " Native Windows sandbox support with container-hosted loopback is unavailable. Update Windows to a supported build. No unisolated fallback was attempted."
         }

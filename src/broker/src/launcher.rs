@@ -79,6 +79,8 @@ pub enum LaunchError {
     Process,
     /// The required native containment and loopback capabilities are unavailable.
     SandboxUnavailable,
+    /// The parent environment carries credentials unsuitable for a model worker.
+    SandboxEnvironment,
     /// The required sandbox policy could not be applied; no unisolated retry occurs.
     Sandbox,
     /// The owned backend exited, failed readiness, or lost its listener identity.
@@ -283,9 +285,18 @@ impl LaunchConfig {
 
     fn check_sandbox_support(&self) -> Result<(), LaunchError> {
         if self.requires_native_sandbox() {
-            native_sandbox_available().map_err(|_| LaunchError::SandboxUnavailable)?;
+            native_sandbox_available()
+                .map_err(|error| Self::sandbox_support_error(error.kind()))?;
         }
         Ok(())
+    }
+
+    const fn sandbox_support_error(kind: io::ErrorKind) -> LaunchError {
+        if matches!(kind, io::ErrorKind::InvalidInput) {
+            LaunchError::SandboxEnvironment
+        } else {
+            LaunchError::SandboxUnavailable
+        }
     }
 
     fn adapter_guard(
@@ -844,6 +855,20 @@ mod lifecycle_tests;
 mod tests {
     use super::{LaunchConfig, LaunchError, LaunchProfile, validate_health};
     use std::ffi::OsString;
+
+    #[test]
+    fn sandbox_preflight_distinguishes_parent_credentials_from_native_support() {
+        assert_eq!(
+            LaunchConfig::sandbox_support_error(std::io::ErrorKind::InvalidInput),
+            LaunchError::SandboxEnvironment
+        );
+        for kind in [std::io::ErrorKind::Unsupported, std::io::ErrorKind::Other] {
+            assert_eq!(
+                LaunchConfig::sandbox_support_error(kind),
+                LaunchError::SandboxUnavailable
+            );
+        }
+    }
 
     fn arguments() -> Vec<OsString> {
         [

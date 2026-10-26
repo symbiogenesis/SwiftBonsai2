@@ -462,7 +462,11 @@ fn wait_ready(
 
 fn startup_failure(diagnostic: &[u8]) -> Failure {
     let text = String::from_utf8_lossy(diagnostic);
-    if text.contains("SandboxUnavailable") {
+    if text.contains("SandboxEnvironment") {
+        Failure::Message(
+            "The model sandbox rejected inherited service credentials. Restart the app from a terminal or app session without service credentials in its parent environment.",
+        )
+    } else if text.contains("SandboxUnavailable") {
         Failure::Message(
             "The required native Windows sandbox is unavailable. Update Windows to a build with process containment and container-hosted loopback support, then retry the model.",
         )
@@ -1838,6 +1842,10 @@ mod tests {
 
     #[test]
     fn startup_sandbox_failures_explain_support_and_policy_separately() {
+        assert!(
+            matches!(startup_failure(b"Development backend launch failed: SandboxEnvironment."),
+                Failure::Message(message) if message.contains("parent environment") && !message.contains("Update Windows"))
+        );
         assert!(
             matches!(startup_failure(b"Development backend launch failed: SandboxUnavailable."),
                 Failure::Message(message) if message.contains("Update Windows") && message.contains("loopback"))
