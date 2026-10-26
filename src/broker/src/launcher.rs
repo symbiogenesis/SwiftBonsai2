@@ -1,8 +1,8 @@
 //! Explicit Windows development launch of a compiled, pinned CPU backend.
 //!
 //! This owns lifetime, credentials, artifact handles and resource monitoring.
-//! It does not establish a restricted token, filesystem boundary or denied
-//! egress. Same-user processes and administrators remain in the trust boundary.
+//! The native sandbox is required unless the direct development caller explicitly
+//! selects the unisolated backend. Same-user interference remains unqualified.
 
 use crate::{
     artifacts::VerifiedArtifacts,
@@ -13,7 +13,8 @@ use crate::{
 };
 use bonsai_windows_credentials::{PrivateCredentials, validate_external_path};
 use bonsai_windows_process::{
-    OwnedProcess, ProcessSpec, available_memory_bytes, listener_process_id,
+    OwnedProcess, ProcessSpec, SandboxPolicy, available_memory_bytes, listener_process_id,
+    native_sandbox_available,
 };
 use std::{
     cell::Cell,
@@ -32,10 +33,11 @@ use tokio::{
     time::{interval, sleep, timeout},
 };
 
-/// Explicit acknowledgement is required even though the backend is owned.
+/// Explicit containment selection is required even though the backend is owned.
 pub const LAUNCH_USAGE: &str = concat!(
     "Windows CPU development launcher (daily isolation unqualified).\n",
-    "bonsai-broker --launch-development --allow-unisolated-backend\n",
+    "bonsai-broker --launch-development\n",
+    "  <--require-native-sandbox|--allow-unisolated-backend>\n",
     "  --data-directory <existing-external-directory>\n",
     "  --evidence-parent <existing-external-directory>\n",
     "  --frontend-port <0-or-1024..65535> --backend-port <1024..65535>\n",
@@ -75,6 +77,10 @@ pub enum LaunchError {
     Port,
     /// Atomic Job-owned process creation failed.
     Process,
+    /// The required native containment and loopback capabilities are unavailable.
+    SandboxUnavailable,
+    /// The required sandbox policy could not be applied; no unisolated retry occurs.
+    Sandbox,
     /// The owned backend exited, failed readiness, or lost its listener identity.
     Backend,
     /// Console cancellation occurred before readiness.
@@ -90,6 +96,11 @@ enum WeightRepresentation {
     CurrentRepackedPtq1,
 }
 
+enum BackendContainment {
+    NativeSandbox,
+    ExplicitUnisolated,
+}
+
 /// Parsed explicit development launch; paths and credentials have no Debug output.
 pub struct LaunchConfig {
     data: PathBuf,
@@ -98,6 +109,7 @@ pub struct LaunchConfig {
     backend_port: u16,
     max_waiting: usize,
     check_only: bool,
+    containment: BackendContainment,
     profile: LaunchProfile,
     native_engine: bool,
     use_abliterate_lora: bool,
@@ -112,13 +124,13 @@ pub struct LaunchCheck {
 }
 
 impl LaunchConfig {
-    /// Parse the launcher arguments, including both mandatory acknowledgements.
+    /// Parse the launcher arguments, including an explicit containment selection.
     ///
     /// # Errors
     /// Rejects unknown/repeated options, nondecimal ports and missing opt-ins.
     pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Self, LaunchError> {
         let mut args = args.into_iter();
-        let (mut launch, mut unisolated) = (false, false);
+        let (mut launch, mut unisolated, mut require_native_sandbox) = (false, false, false);
         let mut check_only = false;
         let mut native_engine = false;
         let mut use_abliterate_lora = false;
@@ -130,6 +142,9 @@ impl LaunchConfig {
             match argument.to_str() {
                 Some("--launch-development") if !launch => launch = true,
                 Some("--allow-unisolated-backend") if !unisolated => unisolated = true,
+                Some("--require-native-sandbox") if !require_native_sandbox => {
+                    require_native_sandbox = true;
+                }
                 Some("--check-only") if !check_only => check_only = true,
                 Some("--native-engine") if !native_engine => {
                     native_engine = true;
@@ -171,7 +186,7 @@ impl LaunchConfig {
         let max_waiting = max_waiting.unwrap_or(2);
         let profile = profile.unwrap_or_default();
         if !launch
-            || !unisolated
+            || unisolated == require_native_sandbox
             || (frontend_port != 0 && frontend_port < 1024)
             || backend_port < 1024
             || backend_port == frontend_port
@@ -191,6 +206,11 @@ impl LaunchConfig {
             backend_port,
             max_waiting,
             check_only,
+            containment: if require_native_sandbox {
+                BackendContainment::NativeSandbox
+            } else {
+                BackendContainment::ExplicitUnisolated
+            },
             profile,
             native_engine,
             use_abliterate_lora,
@@ -206,6 +226,12 @@ impl LaunchConfig {
     #[must_use]
     pub const fn is_check_only(&self) -> bool {
         self.check_only
+    }
+
+    /// Whether launch requires native containment rather than the explicit development opt-out.
+    #[must_use]
+    pub const fn requires_native_sandbox(&self) -> bool {
+        matches!(self.containment, BackendContainment::NativeSandbox)
     }
 
     /// Compiled profile selected by the exact CLI name, defaulting to the reference.
@@ -235,6 +261,7 @@ impl LaunchConfig {
     /// Returns path, policy or artifact failures; low available memory is reported
     /// in the result rather than preventing this read-only verification.
     pub fn check(&self) -> Result<LaunchCheck, LaunchError> {
+        self.check_sandbox_support()?;
         self.validate_paths()?;
         let plan = LaunchPlan::for_profile_with_options(
             &self.data,
@@ -252,6 +279,13 @@ impl LaunchConfig {
             memory_admitted: available_memory_bytes().map_err(|_| LaunchError::Memory)?
                 >= plan.required_available_bytes,
         })
+    }
+
+    fn check_sandbox_support(&self) -> Result<(), LaunchError> {
+        if self.requires_native_sandbox() {
+            native_sandbox_available().map_err(|_| LaunchError::SandboxUnavailable)?;
+        }
+        Ok(())
     }
 
     fn adapter_guard(
@@ -320,6 +354,11 @@ impl LaunchConfig {
         plan: LaunchPlan,
         credentials: &PrivateCredentials,
     ) -> Result<(ProcessSpec, Option<bonsai_artifacts::VerifiedFile>), LaunchError> {
+        // The worker may write only this child, never the sibling keys or logs.
+        // Its parent already has the credential owner's protected inheritable ACL.
+        let working_directory = credentials.directory().join("worker");
+        std::fs::create_dir(&working_directory).map_err(|_| LaunchError::Path)?;
+        validate_external_path(&working_directory).map_err(|_| LaunchError::Path)?;
         let native = self.native_executable_guard()?;
         let (executable, arguments, guard) = if let Some((executable, guard)) = native {
             let arguments = vec![
@@ -341,7 +380,7 @@ impl LaunchConfig {
             ProcessSpec {
                 executable,
                 arguments,
-                working_directory: credentials.directory().to_path_buf(),
+                working_directory,
                 stdout: credentials.directory().join("backend.stdout"),
                 stderr: credentials.directory().join("backend.stderr"),
                 memory_limit_bytes: plan.memory_limit_bytes,
@@ -349,6 +388,32 @@ impl LaunchConfig {
             },
             guard,
         ))
+    }
+
+    fn start_process(
+        &self,
+        specification: &ProcessSpec,
+        artifacts: &VerifiedArtifacts,
+        adapter: Option<&bonsai_artifacts::VerifiedFile>,
+        credentials: &PrivateCredentials,
+    ) -> Result<OwnedProcess, LaunchError> {
+        if !self.requires_native_sandbox() {
+            return OwnedProcess::start(specification).map_err(|_| LaunchError::Process);
+        }
+        let mut readonly_paths = artifacts.runtime_files();
+        readonly_paths.extend([
+            specification.executable.clone(),
+            artifacts.model().to_owned(),
+            credentials.backend_path().to_owned(),
+        ]);
+        readonly_paths.extend(adapter.map(|file| file.path().to_owned()));
+        readonly_paths.sort();
+        readonly_paths.dedup();
+        let policy = SandboxPolicy {
+            readonly_paths,
+            writable_directory: specification.working_directory.clone(),
+        };
+        OwnedProcess::start_sandboxed(specification, &policy).map_err(|_| LaunchError::Sandbox)
     }
 
     /// Verify pinned artifacts, create credentials, launch and await authenticated readiness.
@@ -375,6 +440,7 @@ impl LaunchConfig {
         if self.check_only {
             return Err(LaunchError::Arguments);
         }
+        self.check_sandbox_support()?;
         self.validate_paths()?;
         // Resolve policy before creating secrets or loading any native code.
         let pending_key = self.evidence_parent.join("not-created.key");
@@ -412,7 +478,8 @@ impl LaunchConfig {
         let (specification, native_executable) = self.specification(plan, &credentials)?;
         validate_external_path(&specification.executable).map_err(|_| LaunchError::Path)?;
         drop(reservation);
-        let process = OwnedProcess::start(&specification).map_err(|_| LaunchError::Process)?;
+        let process =
+            self.start_process(&specification, &artifacts, adapter.as_ref(), &credentials)?;
         let startup = wait_ready(
             &process,
             self.backend_port,
@@ -794,6 +861,32 @@ mod tests {
         .into_iter()
         .map(OsString::from)
         .collect()
+    }
+
+    #[test]
+    fn native_sandbox_requires_an_exclusive_explicit_launch_selection() {
+        let mut sandboxed = arguments();
+        sandboxed[1] = "--require-native-sandbox".into();
+        assert!(
+            LaunchConfig::parse(sandboxed.clone())
+                .is_ok_and(|config| config.requires_native_sandbox())
+        );
+        assert!(
+            LaunchConfig::parse(arguments()).is_ok_and(|config| !config.requires_native_sandbox())
+        );
+        for extra in ["--allow-unisolated-backend", "--require-native-sandbox"] {
+            let mut conflicting = sandboxed.clone();
+            conflicting.push(extra.into());
+            assert_eq!(
+                LaunchConfig::parse(conflicting).err(),
+                Some(LaunchError::Arguments)
+            );
+        }
+        sandboxed.remove(0);
+        assert_eq!(
+            LaunchConfig::parse(sandboxed).err(),
+            Some(LaunchError::Arguments)
+        );
     }
 
     #[test]

@@ -6,8 +6,10 @@
 )]
 
 use crate::canary::{Call, Failure};
+use bonsai_windows_credentials::PrivateDirectory;
 use bonsai_windows_process::{
-    OwnedProcess, ProcessSpec, available_memory_bytes, listener_process_id,
+    OwnedProcess, ProcessSpec, SandboxPolicy, available_memory_bytes, listener_process_id,
+    native_sandbox_available,
 };
 use std::{
     ffi::OsString,
@@ -19,7 +21,7 @@ use std::{
         mpsc::{self, Receiver, RecvTimeoutError, Sender},
     },
     thread::{self, JoinHandle},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 const GIB: u64 = 1024 * 1024 * 1024;
@@ -89,17 +91,19 @@ impl Launch {
         Ok(())
     }
 
-    fn specification(&self, key_file: &std::path::Path, port: u16) -> Result<ProcessSpec, Failure> {
+    fn specification(
+        &self,
+        key_file: &std::path::Path,
+        port: u16,
+    ) -> Result<(ProcessSpec, SandboxPolicy, PrivateDirectory), Failure> {
         self.validate().map_err(Failure::Message)?;
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| Failure::Message("Could not create the native speech evidence lane."))?
-            .as_nanos();
-        let directory = self
-            .evidence
-            .join(format!("native-speech-{}-{stamp}", std::process::id()));
-        fs::create_dir(&directory)
-            .map_err(|_| Failure::Message("Could not create the native speech evidence lane."))?;
+        let directory = PrivateDirectory::create(&self.evidence).map_err(|_| {
+            Failure::Message("Could not create the private native speech evidence lane.")
+        })?;
+        let working_directory = directory.path().join("worker");
+        fs::create_dir(&working_directory).map_err(|_| {
+            Failure::Message("Could not create the native speech worker directory.")
+        })?;
         let mut arguments = vec![
             OsString::from("--model"),
             self.model.clone().into_os_string(),
@@ -125,15 +129,28 @@ impl Launch {
             OsString::from("--port"),
             OsString::from(port.to_string()),
         ]);
-        Ok(ProcessSpec {
+        let specification = ProcessSpec {
             executable: self.executable.clone(),
             arguments,
-            working_directory: directory.clone(),
-            stdout: directory.join("service.stdout"),
-            stderr: directory.join("service.stderr"),
+            working_directory: working_directory.clone(),
+            stdout: directory.path().join("service.stdout"),
+            stderr: directory.path().join("service.stderr"),
             memory_limit_bytes: SERVICE_COMMIT_LIMIT,
             active_process_limit: 1,
-        })
+        };
+        let mut readonly_paths = vec![
+            self.executable.clone(),
+            self.model.clone(),
+            key_file.to_owned(),
+        ];
+        readonly_paths.extend(self.codec.iter().cloned());
+        readonly_paths.sort();
+        readonly_paths.dedup();
+        let policy = SandboxPolicy {
+            readonly_paths,
+            writable_directory: working_directory,
+        };
+        Ok((specification, policy, directory))
     }
 }
 
@@ -143,6 +160,8 @@ pub(crate) struct Service {
     resource_status: Arc<AtomicU8>,
     stop_monitor: Sender<()>,
     monitor: Option<JoinHandle<()>>,
+    // Retain the owner-only evidence directory until the Job and monitor stop.
+    _sandbox_directory: Option<PrivateDirectory>,
 }
 
 impl Service {
@@ -157,6 +176,11 @@ impl Service {
     ) -> Result<Self, Failure> {
         let call = Call::new(generation, current, Duration::from_mins(15));
         call.check()?;
+        native_sandbox_available().map_err(|_| {
+            Failure::Message(
+                "The required native Windows sandbox is unavailable for speech. Update Windows to a build with process containment and container-hosted loopback support. Text chat remains available.",
+            )
+        })?;
         if listener_process_id(port)
             .map_err(|_| Failure::Message("Could not check the local speech port."))?
             .is_some()
@@ -167,9 +191,11 @@ impl Service {
         }
         admit_memory(available_memory_bytes().map_err(|_| Failure::Message("Could not check available memory before loading speech. Text chat remains available."))?)?;
         call.check()?;
-        let process = OwnedProcess::start(&launch.specification(key_file, port)?)
-            .map_err(|_| Failure::Message("Could not start the native speech executable. Check the retained service evidence; text chat remains available."))?;
-        let service = Self::monitored(Arc::new(process), available_memory_bytes)?;
+        let (specification, policy, directory) = launch.specification(key_file, port)?;
+        let process = OwnedProcess::start_sandboxed(&specification, &policy)
+            .map_err(|_| Failure::Message("Could not apply the native speech sandbox or start its executable. Check the retained service evidence; text chat remains available."))?;
+        let service =
+            Self::monitored_in(Arc::new(process), available_memory_bytes, Some(directory))?;
         loop {
             call.check()?;
             service.check()?;
@@ -190,9 +216,18 @@ impl Service {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn monitored(
         process: Arc<OwnedProcess>,
         available: impl FnMut() -> io::Result<u64> + Send + 'static,
+    ) -> Result<Self, Failure> {
+        Self::monitored_in(process, available, None)
+    }
+
+    fn monitored_in(
+        process: Arc<OwnedProcess>,
+        available: impl FnMut() -> io::Result<u64> + Send + 'static,
+        directory: Option<PrivateDirectory>,
     ) -> Result<Self, Failure> {
         let resource_status = Arc::new(AtomicU8::new(0));
         let (stop_monitor, stopped) = mpsc::channel();
@@ -212,6 +247,7 @@ impl Service {
             resource_status,
             stop_monitor,
             monitor: Some(monitor),
+            _sandbox_directory: directory,
         })
     }
 

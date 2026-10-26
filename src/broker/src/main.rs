@@ -84,11 +84,14 @@ fn launched(args: Vec<OsString>) -> ExitCode {
                     ExitCode::FAILURE
                 }
             }
-            Err(error) => {
-                failure(format!("Development launch check failed: {error:?}.\n").as_bytes())
-            }
+            Err(error) => launch_failure(error),
         };
     }
+    let containment = if configuration.requires_native_sandbox() {
+        "Native filesystem and egress sandbox enforced; same-user bypass remains unqualified."
+    } else {
+        "Explicit unisolated development backend; filesystem, token and egress isolation remain unqualified."
+    };
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -99,13 +102,10 @@ fn launched(args: Vec<OsString>) -> ExitCode {
         let mut shutdown = std::pin::pin!(tokio::signal::ctrl_c());
         let owner = match configuration.start(shutdown.as_mut()).await {
             Ok(owner) => owner,
-            Err(error) => {
-                let message = format!("Development backend launch failed: {error:?}.\n");
-                return failure(message.as_bytes());
-            }
+            Err(error) => return launch_failure(error),
         };
         let notice = format!(
-            "DEVELOPMENT ONLY: owned {profile_name} backend ready; listening on http://127.0.0.1:{}.\nProtected credentials and technical evidence: {}\nFilesystem, token and egress isolation remain unqualified. Ctrl-C stops the complete owned Job.\n",
+            "DEVELOPMENT ONLY: owned {profile_name} backend ready; listening on http://127.0.0.1:{}.\nProtected credentials and technical evidence: {}\n{containment} Ctrl-C stops the complete owned Job.\n",
             owner.port(), owner.evidence_directory().display()
         );
         if std::io::stdout().write_all(notice.as_bytes()).is_err() {
@@ -120,6 +120,21 @@ fn launched(args: Vec<OsString>) -> ExitCode {
             }
         }
     })
+}
+
+#[cfg(windows)]
+fn launch_failure(error: bonsai_broker::launcher::LaunchError) -> ExitCode {
+    use bonsai_broker::launcher::LaunchError;
+    let guidance = match error {
+        LaunchError::SandboxUnavailable => {
+            " Native Windows sandbox support with container-hosted loopback is unavailable. Update Windows to a supported build. No unisolated fallback was attempted."
+        }
+        LaunchError::Sandbox => {
+            " Native sandbox policy could not be applied. No unisolated fallback was attempted."
+        }
+        _ => "",
+    };
+    failure(format!("Development backend launch failed: {error:?}.{guidance}\n").as_bytes())
 }
 
 #[cfg(not(windows))]

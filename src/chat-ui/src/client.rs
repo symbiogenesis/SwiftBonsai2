@@ -309,7 +309,7 @@ fn worker(
     process
         .args([
             "--launch-development",
-            "--allow-unisolated-backend",
+            "--require-native-sandbox",
             "--profile",
             "swift-pq2-assessment",
             "--data-directory",
@@ -462,7 +462,15 @@ fn wait_ready(
 
 fn startup_failure(diagnostic: &[u8]) -> Failure {
     let text = String::from_utf8_lossy(diagnostic);
-    if text.contains("Memory") {
+    if text.contains("SandboxUnavailable") {
+        Failure::Message(
+            "The required native Windows sandbox is unavailable. Update Windows to a build with process containment and container-hosted loopback support, then retry the model.",
+        )
+    } else if text.contains("Sandbox") {
+        Failure::Message(
+            "The native model sandbox could not apply its required policy. Check the retained broker diagnostics, then retry the model.",
+        )
+    } else if text.contains("Memory") {
         Failure::Memory
     } else if text.contains("Port") || text.contains("Service") {
         Failure::Message(
@@ -1826,6 +1834,18 @@ mod tests {
                 format!("HTTP/1.1 200 OK\r\nContent-Type: {media}\r\nContent-Length: 0\r\n\r\n");
             assert!(parse_head(head.as_bytes()).is_err());
         }
+    }
+
+    #[test]
+    fn startup_sandbox_failures_explain_support_and_policy_separately() {
+        assert!(
+            matches!(startup_failure(b"Development backend launch failed: SandboxUnavailable."),
+                Failure::Message(message) if message.contains("Update Windows") && message.contains("loopback"))
+        );
+        assert!(
+            matches!(startup_failure(b"Development backend launch failed: Sandbox."),
+                Failure::Message(message) if message.contains("required policy") && message.contains("diagnostics"))
+        );
     }
 
     #[test]

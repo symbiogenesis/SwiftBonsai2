@@ -12,7 +12,7 @@ pub struct VerifiedArtifacts {
     model: PathBuf,
     runtime_directory: PathBuf,
     archive_path: PathBuf,
-    _runtime: Option<VerifiedRuntime>,
+    runtime: Option<VerifiedRuntime>,
     _model: Option<VerifiedFile>,
 }
 impl VerifiedArtifacts {
@@ -23,7 +23,7 @@ impl VerifiedArtifacts {
             model: PathBuf::new(),
             runtime_directory: PathBuf::new(),
             archive_path: PathBuf::new(),
-            _runtime: None,
+            runtime: None,
             _model: None,
         }
     }
@@ -72,7 +72,7 @@ impl VerifiedArtifacts {
             model,
             runtime_directory: spec.runtime_directory,
             archive_path: spec.archive_path,
-            _runtime: Some(runtime),
+            runtime: Some(runtime),
             _model: Some(model_guard),
         })
     }
@@ -88,7 +88,7 @@ impl VerifiedArtifacts {
             model,
             runtime_directory: PathBuf::new(),
             archive_path: PathBuf::new(),
-            _runtime: None,
+            runtime: None,
             _model: Some(model_guard),
         })
     }
@@ -122,6 +122,15 @@ impl VerifiedArtifacts {
     #[must_use]
     pub fn runtime_directory(&self) -> &Path {
         &self.runtime_directory
+    }
+    /// Exact installed runtime files established by the retained verifier.
+    #[cfg(windows)]
+    pub(crate) fn runtime_files(&self) -> Vec<PathBuf> {
+        self.runtime
+            .iter()
+            .flat_map(VerifiedRuntime::files)
+            .map(|file| file.path().to_owned())
+            .collect()
     }
     /// Locked runtime ZIP path.
     #[must_use]
