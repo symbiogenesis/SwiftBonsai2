@@ -73,6 +73,21 @@ pinned Cargo invocation for source maintenance/chat builds. Cache hits skip
 Cargo; rebuilds use content freshness without cache cleanup. `chat-launch` owns
 the source launcher's option validation, provisioning selection, credentials,
 arguments and native app lifetime. PowerShell remains a bootstrap/parameter bridge.
+Build variants use independent, flushed-and-atomically-published receipts.
+Non-build documentation/helper changes preserve reuse; referenced embedded
+content and configuration changes invalidate it. Damaged outputs and incomplete
+receipts never count as ready. Source-cache entries publish only after full
+verified writes, and bad completed download partials get one fresh retry while
+retaining diagnostic bytes.
+
+Startup commands additionally advertise `StartupProtocolVersion: 1`. Their
+optional `parentProcessId` and `parentCreationTimeFileTime` fields bind long work
+to the caller's retained Windows creation identity. PowerShell supplies these
+fields automatically; selected older tools receive current-build guidance.
+Compiler/tool descendants belong to an atomic Windows Job with an inherited
+Unicode environment and child-only overlays. Cancellation waits for the tree to
+exit before build-lock release; owner death closes the Job. Model memory and
+process policies remain separate and unchanged.
 
 `inference-lock` reviews independently selected Prism release and source ZIPs.
 It retains read-only input handles, checks bounded inventories, file hashes,

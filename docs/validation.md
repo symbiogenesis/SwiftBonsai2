@@ -52,6 +52,12 @@ launches that skip Cargo/preparation, changed and damaged inputs, owned-service
 selection, model-only provisioning and bounded resumable downloads. PowerShell
 retains copied-package bridge and single-instance process checks; the former
 cache/native-startup script suites have been retired.
+Additional focused regressions cover build-variant reuse, non-build edits,
+embedded-input changes, incomplete receipts, interrupted source publication and
+bounded partial-download recovery. Synthetic compiler trees verify that
+cancellation, timeout and early root exit leave no descendants before the build
+lock can be reacquired. Native boundary checks retain Unicode/profile environment
+entries and reject protected-variable overlays.
 
 For example, `src/broker/**` runs only broker checks. A change to a shared Windows
 boundary crate also checks its broker/CLI consumers. A CLI change runs its own

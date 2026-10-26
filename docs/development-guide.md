@@ -303,6 +303,19 @@ configuration or environment changes invalidate the receipt; missing or changed
 executables rebuild. Cargo's content freshness mode handles edits with preserved
 timestamps while retaining compiler outputs. No startup cache cleanup is needed.
 Model verification and memory admission still run in Rust.
+Each build variant keeps its own atomic receipt, so another package selection
+does not erase its cache record. Receipts still require exact executable bytes.
+Documentation, CI and PowerShell helper edits do not rebuild unchanged Rust;
+embedded files, model/configuration pins and local dependency inputs remain
+tracked. Unknown embedded inputs disable reuse conservatively. Short cache
+labels leave room for MSVC's linker artifact paths.
+
+Startup commands retain the caller's process identity. Cancellation or caller
+exit stops the owned Windows Job and waits for compiler descendants before
+releasing the build lock. A startup-process crash also closes that Job. Source
+files and receipts are published only after complete writes; interrupted work
+can be retried. A corrupt completed download partial is preserved separately
+before one fresh attempt. Session credentials and diagnostics remain fresh.
 The first launch after this update builds new isolated speech outputs and records
 receipts. Use `-ForceBuild` to repeat Cargo and native build preparation explicitly,
 including after changing external compiler installations or dependency caches.
