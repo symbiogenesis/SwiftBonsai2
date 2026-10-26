@@ -16,6 +16,25 @@ fn test_lane(name: &str) -> io::Result<PathBuf> {
 #[test]
 #[allow(
     clippy::used_underscore_binding,
+    reason = "Verify the noninheritable reader retained only to protect directory lifetime."
+)]
+fn private_worker_storage_has_protected_acl_without_extra_credentials() -> io::Result<()> {
+    let parent = test_lane("worker-storage")?;
+    let directory = PrivateDirectory::create(&parent)?;
+    native::Security::new(true)?.verify(&directory._reader)?;
+    assert!(native::noninheritable(&directory._reader)?);
+    assert_eq!(fs::read_dir(directory.path())?.count(), 0);
+    fs::write(directory.path().join("scratch.txt"), b"worker output")?;
+    assert!(fs::rename(directory.path(), parent.join("renamed")).is_err());
+    let path = directory.path().to_path_buf();
+    drop(directory);
+    assert_eq!(fs::read(path.join("scratch.txt"))?, b"worker output");
+    Ok(())
+}
+
+#[test]
+#[allow(
+    clippy::used_underscore_binding,
     reason = "Check noninheritance of the handle retained only for its lifetime."
 )]
 fn retained_tokens_validate_content_and_hold_files_until_drop() -> io::Result<()> {

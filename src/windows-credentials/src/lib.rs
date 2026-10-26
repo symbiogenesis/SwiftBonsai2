@@ -27,6 +27,50 @@ mod sealed;
 
 pub use sealed::{protect_private_data, unprotect_private_data};
 
+/// Fresh owner-and-LocalSystem directory with a retained noninheritable reader.
+///
+/// The protected inheritable DACL is installed during creation and verified
+/// before publication. Storage is retained after drop for evidence inspection.
+/// The caller must control the existing parent; this is not same-user isolation.
+pub struct PrivateDirectory {
+    path: PathBuf,
+    _reader: File,
+}
+
+impl PrivateDirectory {
+    /// Creates new private storage without creating or exposing credentials.
+    ///
+    /// # Errors
+    /// Rejects unsafe/nonexisting parents, creation collisions, unavailable
+    /// randomness, unexpected ownership/DACLs and failed native/file operations.
+    pub fn create(parent: &Path) -> io::Result<Self> {
+        validate_external_path(parent)?;
+        if !fs::metadata(parent)?.is_dir() {
+            return Err(invalid(
+                "Private storage parent must be an existing directory.",
+            ));
+        }
+        let mut nonce = Secret::<16>::new();
+        native::random(&mut *nonce.0)?;
+        let path = parent.join(format!("SwiftBonsai-Private-{}", hex(&*nonce.0)));
+        let security = native::Security::new(true)?;
+        native::create_directory(&path, &security)?;
+        validate_external_path(&path)?;
+        let reader = native::open_reader(&path, true)?;
+        security.verify(&reader)?;
+        Ok(Self {
+            path,
+            _reader: reader,
+        })
+    }
+
+    /// Returns the retained directory's expanded absolute path.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
 /// An existing external token with a retained read handle and scrubbed secret memory.
 ///
 /// The handle denies write/delete opens until this value drops. Path checks do
