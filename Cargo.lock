@@ -564,6 +564,7 @@ dependencies = [
 name = "bonsai-speech-tts"
 version = "0.1.0"
 dependencies = [
+ "bonsai-audio",
  "bonsai-speech-service",
  "serde_json",
 ]

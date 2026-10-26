@@ -13,10 +13,8 @@ use crate::native_speech::{Launch, Service};
 use serde::Deserialize;
 use std::{
     collections::HashSet,
-    fs::{File, OpenOptions},
     io::{Read, Write},
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream},
-    os::windows::fs::{MetadataExt, OpenOptionsExt},
     path::PathBuf,
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
     time::{Duration, Instant},
@@ -33,8 +31,6 @@ const MAX_TEXT: usize = 32768;
 const IO_POLL: Duration = Duration::from_millis(250);
 const READY_LIMIT: Duration = Duration::from_secs(5);
 const TRANSCRIBE_LIMIT: Duration = Duration::from_secs(120);
-const REPARSE_POINT: u32 = 0x400;
-const OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 
 mod pcm;
 
@@ -49,8 +45,7 @@ pub(crate) struct Config {
 /// Retains its credential handle to deny file writes and deletion while in use.
 pub(crate) struct Client {
     port: u16,
-    key: String,
-    _key_file: File,
+    key: bonsai_windows_credentials::RetainedCredential,
 }
 
 /// Value-free failures are safe to present without exposing audio or credentials.
@@ -91,40 +86,14 @@ impl Client {
         if config.port < 1024 {
             return Err("Use an unprivileged local Canary port.");
         }
-        bonsai_windows_credentials::validate_external_path(&config.key_file)
-            .map_err(|_| "Use an existing absolute local Canary key path outside Git.")?;
-        let mut file = OpenOptions::new()
-            .read(true)
-            .share_mode(1) // FILE_SHARE_READ; deny write and delete sharing.
-            .custom_flags(OPEN_REPARSE_POINT)
-            .open(&config.key_file)
-            .map_err(|_| "The Canary credential file is unavailable.")?;
-        let metadata = file
-            .metadata()
-            .map_err(|_| "The Canary credential file is unavailable.")?;
-        if !metadata.is_file()
-            || metadata.len() != 64
-            || metadata.file_attributes() & REPARSE_POINT != 0
-        {
-            return Err("The Canary credential must be a regular 64-byte token file.");
-        }
-        let mut key = [0_u8; 64];
-        file.read_exact(&mut key)
-            .map_err(|_| "The Canary credential could not be read.")?;
-        if !key
-            .iter()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
-        {
-            return Err("The Canary credential must contain 64 lowercase hexadecimal bytes.");
-        }
-        let key = String::from_utf8(key.to_vec())
-            .map_err(|_| "The Canary credential has an invalid encoding.")?;
+        let key = bonsai_windows_credentials::RetainedCredential::open(&config.key_file).map_err(
+            |_| "Use an existing regular 64-byte lowercase hexadecimal Canary key file outside Git.",
+        )?;
         // Path checks and retained handles do not attest ACLs or freeze mutable
         // ancestors. The companion must create its key under a protected parent.
         Ok(Self {
             port: config.port,
             key,
-            _key_file: file,
         })
     }
 
@@ -315,7 +284,7 @@ impl Client {
         let head = format!(
             "{method} {route} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nAccept: application/json\r\nAccept-Encoding: identity\r\nContent-Length: {}\r\n{media}Connection: close\r\n\r\n",
             self.port,
-            self.key,
+            self.key.as_hex(),
             body.len()
         );
         write_all(&mut stream, head.as_bytes(), call)?;

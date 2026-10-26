@@ -5,6 +5,12 @@ existing external local-drive parent. Accessors expose directory/key paths and
 borrow the two secret strings. The type has no `Debug` implementation or
 secret-bearing errors.
 
+`RetainedCredential::open(path)` reads an existing regular external token file
+containing exactly 64 lowercase ASCII hex bytes. Speech clients and companions
+share this reader. It retains a noninheritable read handle that denies write and
+delete opens, and uses the same scrubbed secret storage as newly created keys.
+It does not attest the existing file's ACL or freeze mutable ancestors.
+
 Only the audited `src/native.rs` and `src/sealed.rs` boundaries may use unsafe Rust. `CreateDirectoryW` and
 `CreateFileW(CREATE_NEW)` establish protected ACLs at creation, granting full
 control only to the process user and LocalSystem. Directory ACLs allow

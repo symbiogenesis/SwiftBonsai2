@@ -27,6 +27,68 @@ mod sealed;
 
 pub use sealed::{protect_private_data, unprotect_private_data};
 
+/// An existing external token with a retained read handle and scrubbed secret memory.
+///
+/// The handle denies write/delete opens until this value drops. Path checks do
+/// not attest the file's ACL or freeze mutable ancestors; the caller must use an
+/// owner-controlled parent. This type never creates or modifies the token file.
+pub struct RetainedCredential {
+    key: Secret<64>,
+    _reader: File,
+}
+
+impl RetainedCredential {
+    /// Read exactly 64 lowercase ASCII hex bytes from a regular external file.
+    ///
+    /// # Errors
+    /// Rejects unsafe paths, reparse points, unavailable files, invalid lengths
+    /// or token syntax, and read failures. No error includes the secret bytes.
+    pub fn open(path: &Path) -> io::Result<Self> {
+        use std::os::windows::fs::OpenOptionsExt as _;
+
+        validate_external_path(path)?;
+        let mut reader = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1) // FILE_SHARE_READ; deny write and delete sharing.
+            .custom_flags(0x0020_0000) // FILE_FLAG_OPEN_REPARSE_POINT.
+            .open(path)?;
+        let metadata = reader.metadata()?;
+        if !metadata.is_file()
+            || metadata.len() != 64
+            || metadata.file_attributes() & native::REPARSE_ATTRIBUTE != 0
+        {
+            return Err(invalid("Use a regular 64-byte credential file."));
+        }
+        let mut key = Secret::<64>::new();
+        reader.read_exact(&mut *key.0)?;
+        let mut surplus = Secret::<1>::new();
+        if reader.read(&mut *surplus.0)? != 0
+            || !key
+                .0
+                .iter()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+        {
+            return Err(invalid("Use a lowercase hexadecimal credential."));
+        }
+        Ok(Self {
+            key,
+            _reader: reader,
+        })
+    }
+
+    /// Borrow the token bytes without copying or debug-formatting the secret.
+    #[must_use]
+    pub fn bytes(&self) -> &[u8; 64] {
+        &self.key.0
+    }
+
+    /// Borrow the validated token text. Callers must protect any copies.
+    #[must_use]
+    pub fn as_hex(&self) -> &str {
+        self.key.as_hex()
+    }
+}
+
 /// Independent credentials with retained read handles and scrubbed secret memory.
 ///
 /// Read handles deny write/delete opens for this object's lifetime. Secret bytes
@@ -280,7 +342,7 @@ impl<const N: usize> Secret<N> {
     }
 
     fn as_hex(&self) -> &str {
-        // Only encode_hex populates a published secret, so conversion cannot fail.
+        // Published secrets are encoded or validated ASCII hex, so conversion cannot fail.
         std::str::from_utf8(&*self.0).unwrap_or_default()
     }
 }

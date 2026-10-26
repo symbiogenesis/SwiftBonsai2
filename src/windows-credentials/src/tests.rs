@@ -16,6 +16,52 @@ fn test_lane(name: &str) -> io::Result<PathBuf> {
 #[test]
 #[allow(
     clippy::used_underscore_binding,
+    reason = "Check noninheritance of the handle retained only for its lifetime."
+)]
+fn retained_tokens_validate_content_and_hold_files_until_drop() -> io::Result<()> {
+    let lane = test_lane("retained")?;
+    let credentials = PrivateCredentials::create(&lane)?;
+    let path = credentials.frontend_path().to_owned();
+    let retained = RetainedCredential::open(&path)?;
+    // Keep assertions value-free even when the secret differs unexpectedly.
+    let same_text = retained.as_hex() == credentials.frontend_key();
+    let same_bytes = retained.bytes().as_slice() == credentials.frontend_key().as_bytes();
+    assert!(same_text);
+    assert!(same_bytes);
+    assert!(native::noninheritable(&retained._reader)?);
+    drop(credentials);
+    assert!(OpenOptions::new().write(true).open(&path).is_err());
+    assert!(fs::remove_file(&path).is_err());
+    drop(retained);
+    assert!(OpenOptions::new().write(true).open(&path).is_ok());
+
+    let malformed = lane.join("malformed.key");
+    for bytes in [
+        Vec::new(),
+        vec![b'a'; 63],
+        vec![b'a'; 65],
+        vec![b'A'; 64],
+        vec![b'g'; 64],
+        vec![b'\n'; 64],
+        vec![0xff; 64],
+    ] {
+        fs::write(&malformed, bytes)?;
+        assert!(RetainedCredential::open(&malformed).is_err());
+        // Failed validation releases its handle as well as its secret buffer.
+        assert!(OpenOptions::new().write(true).open(&malformed).is_ok());
+    }
+    assert!(RetainedCredential::open(&lane).is_err());
+    let repository = lane.join("repository");
+    fs::create_dir(&repository)?;
+    fs::write(repository.join(".git"), b"gitdir: elsewhere")?;
+    fs::write(repository.join("token.key"), [b'a'; 64])?;
+    assert!(RetainedCredential::open(&repository.join("token.key")).is_err());
+    Ok(())
+}
+
+#[test]
+#[allow(
+    clippy::used_underscore_binding,
     reason = "Inspect the handles retained only for their lifetime in production."
 )]
 fn credentials_have_protected_acls_distinct_keys_and_retained_readers() -> io::Result<()> {
