@@ -13,6 +13,22 @@ microphone access and does not implement a browser or WebView interface.
 
 ## Explicit local setup
 
+The PowerShell demo launcher downloads the pinned VoiceDesign model, bundled
+speech codec and tokenizer/config files automatically. To obtain the snapshot
+path without compiling or opening the demo:
+
+```powershell
+$speech = ./scripts/Start-Demo.ps1 -DataDirectory $data -SpeechModelsOnly
+$speech.TtsSnapshotPath
+```
+
+For TTS files alone, use
+`./scripts/Get-SpeechModels.ps1 -DataDirectory $data -Model QwenTts`. Add
+`-VerifyOnly` to check existing files offline. Downloads resume and exact size/
+SHA-256 checks guard publication; valid files are reused. `-NoSpeechModels` on
+the demo skips this provisioning step. The supported Python runtime and running
+service below remain separate requirements.
+
 Provision a dedicated, tested Python environment following
 [Qwen's official installation guidance](https://github.com/QwenLM/Qwen3-TTS#quickstart).
 The inspected upstream package declares `qwen-tts` 0.1.1, Transformers 4.57.3 and

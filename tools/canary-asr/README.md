@@ -13,6 +13,22 @@ published checkpoint is a Hugging Face directory containing `config.json` and
 
 ## Runtime and explicit provisioning
 
+The demo launcher downloads the pinned model and all required tokenizer files
+automatically into `<DataDirectory>/speech/` before opening the native app. To
+download without compiling or launching:
+
+```powershell
+$speech = ./scripts/Start-Demo.ps1 -DataDirectory $data -SpeechModelsOnly
+```
+
+Use `$speech.CanarySnapshotPath` for `--snapshot` and
+`$speech.CanaryTokenizerSnapshotPath` for `--tokenizer-snapshot` below. For STT
+files alone, run `./scripts/Get-SpeechModels.ps1 -DataDirectory $data -Model Canary`;
+add `-VerifyOnly` to check the existing cache without network requests. The
+downloader verifies exact sizes/SHA-256, resumes partial transfers and reuses
+valid files. `-NoSpeechModels` on the demo skips provisioning. Python runtime
+setup and starting the companion remain separate from downloading its files.
+
 Use a separate, tested Python environment with a compatible PyTorch stack,
 NVIDIA NeMo SpeechLM2, Transformers, and the audio dependencies specified by
 NVIDIA. The model card specifies PyTorch 2.6+ and NeMo 2.5+; SpeechLM2 APIs have

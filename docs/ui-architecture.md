@@ -67,6 +67,12 @@ unsupported terminal reasons, error events and missing completion reject.
 
 ## Speech input and output
 
+The PowerShell demo launcher provisions the pinned Canary, tokenizer and Qwen
+VoiceDesign files by default, using immutable URLs and exact size/SHA-256
+verification. `-SpeechModelsOnly` provisions files without building or launching;
+`-NoSpeechModels` skips that step. Runtime installation and service startup remain
+separate from artifact downloads and native presentation.
+
 Speech input uses NVIDIA Canary Qwen 2.5B through an explicitly configured,
 authenticated numeric-loopback [companion service](../tools/canary-asr/README.md).
 The Rust UI requests the Windows `microphone` capability on its UI thread before

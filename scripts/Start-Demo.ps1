@@ -3,11 +3,17 @@
 .SYNOPSIS
 Builds and opens the native Rust Swift Bonsai 2 chat demo.
 .DESCRIPTION
-Uses the existing Swift model and pinned CPU runtime; downloads no artifacts.
+Uses the existing Swift model and pinned CPU runtime. Downloads and verifies
+the pinned Canary STT, its tokenizer, and Qwen VoiceDesign TTS model files by
+default, reusing verified files and resuming interrupted downloads.
 Enables the pinned abliteration LoRA at scale 1 unless NoAbliterateLora is set.
 Builds missing app executables with the pinned Rust compiler in external temp.
 The native window owns its broker and inference-process lifetime. Build outputs,
 credentials and logs remain in the unique external demo directory.
+NoSpeechModels skips speech model provisioning. SpeechModelsOnly downloads or
+verifies speech files and returns their paths without building or launching.
+Speech inference services still require their supported Python environments;
+downloading weights does not install those environments or open the microphone.
 .EXAMPLE
 ./scripts/Start-Demo.ps1
 .EXAMPLE
@@ -18,9 +24,13 @@ credentials and logs remain in the unique external demo directory.
 ./scripts/Start-Demo.ps1 -CanaryKeyFile C:\Speech\canary.key -CanaryPort 8766
 .EXAMPLE
 ./scripts/Start-Demo.ps1 -CanaryKeyFile C:\Speech\canary.key -TtsKeyFile C:\Speech\qwen-tts.key
+.EXAMPLE
+./scripts/Start-Demo.ps1 -SpeechModelsOnly
+.EXAMPLE
+./scripts/Start-Demo.ps1 -NoSpeechModels
 #>
 [CmdletBinding()]
-[OutputType([string])]
+[OutputType([string], [pscustomobject])]
 param(
     [string]$DataDirectory = (Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'),
     [string]$ChatPath,
@@ -31,18 +41,24 @@ param(
     [string]$CanaryKeyFile,
     [ValidateRange(1024, 65535)][int]$CanaryPort = 8766,
     [string]$TtsKeyFile,
-    [ValidateRange(1024, 65535)][int]$TtsPort = 8767
+    [ValidateRange(1024, 65535)][int]$TtsPort = 8767,
+    [switch]$NoSpeechModels,
+    [switch]$SpeechModelsOnly
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 
-if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
-    [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
+if (-not $SpeechModelsOnly -and (-not $IsWindows -or
+    [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
+    [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64')) {
     throw 'Run the demo in native ARM64 PowerShell on Windows ARM64.'
 }
 if ($FrontendPort -eq $BackendPort) { throw 'FrontendPort and BackendPort must differ.' }
+if ($NoSpeechModels -and $SpeechModelsOnly) {
+    throw 'SpeechModelsOnly cannot be combined with NoSpeechModels.'
+}
 if ($PSBoundParameters.ContainsKey('CanaryPort') -and -not $CanaryKeyFile) {
     throw 'CanaryPort requires CanaryKeyFile.'
 }
@@ -64,7 +80,8 @@ if ($TtsKeyFile) {
 }
 $DataDirectory = Resolve-ExternalPath -Path $DataDirectory
 if (-not [IO.Directory]::Exists($DataDirectory)) {
-    throw 'DataDirectory must already contain the provisioned Swift model and CPU runtime. See docs/development-guide.md.'
+    if ($SpeechModelsOnly) { [void][IO.Directory]::CreateDirectory($DataDirectory) }
+    else { throw 'DataDirectory must already contain the provisioned Swift model and CPU runtime. See docs/development-guide.md.' }
 }
 foreach ($name in @('ChatPath', 'BrokerPath')) {
     $path = Get-Variable -Name $name -ValueOnly
@@ -75,6 +92,18 @@ foreach ($name in @('ChatPath', 'BrokerPath')) {
         }
         Set-Variable -Name $name -Value $path
     }
+}
+$speechModels = $null
+if (-not $NoSpeechModels) {
+    Write-Information -MessageData 'Preparing pinned Canary STT and Qwen VoiceDesign TTS files. First download is approximately 9 GiB; verified files are reused.' -InformationAction Continue
+    $speechModels = & (Join-Path $PSScriptRoot 'Get-SpeechModels.ps1') -DataDirectory $DataDirectory
+    Write-Information -MessageData ("Canary model: {0}`nCanary tokenizer: {1}`nQwen VoiceDesign model: {2}" -f
+        $speechModels.CanarySnapshotPath, $speechModels.CanaryTokenizerSnapshotPath,
+        $speechModels.TtsSnapshotPath) -InformationAction Continue
+}
+if ($SpeechModelsOnly) {
+    $speechModels
+    return
 }
 $scratch = Resolve-ExternalPath -Path (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Demo-' + [guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)

@@ -67,6 +67,28 @@ protected external key file:
 ./scripts/Start-Demo.ps1 -DataDirectory $data -CanaryKeyFile C:\Speech\canary.key -CanaryPort 8766
 ```
 
+`Start-Demo.ps1` downloads the pinned Canary model, its Qwen tokenizer/config
+files and Qwen VoiceDesign model files by default into revision-specific
+directories under `$data/speech/`. The first complete download is approximately
+9 GiB. Each file is checked for exact size and SHA-256; valid files are reused,
+and interrupted downloads resume through the existing `.partial` mechanism.
+Mismatched cached files are rejected rather than overwritten.
+
+To download and return the three snapshot paths without compiling or opening
+the demo, use:
+
+```powershell
+$speech = ./scripts/Start-Demo.ps1 -DataDirectory $data -SpeechModelsOnly
+$speech.CanarySnapshotPath
+$speech.CanaryTokenizerSnapshotPath
+$speech.TtsSnapshotPath
+```
+
+Pass `-NoSpeechModels` for a text-only launch or when speech model storage is
+managed separately. Downloads provision files only; the supported Python
+environments, protected service keys and running inference companions remain
+separate requirements. Downloads do not request microphone access.
+
 For speech output, prepare/start the independent
 [Qwen VoiceDesign companion](../tools/qwen-tts/README.md), then add
 `-TtsKeyFile C:\Speech\qwen-tts.key` (default local port 8767). Both companions
@@ -87,7 +109,7 @@ Permission denial or a missing/not-ready Canary service keeps capture off.
 **Read aloud** explains missing Qwen service setup or the need for a completed
 answer when it cannot start. Speech controls remain visible and actionable while
 idle; they do not silently hide setup requirements behind greyed-out buttons.
-The UI does not download Canary weights or substitute another recognizer. The
+The native UI does not download Canary weights or substitute another recognizer. The
 companion's supported runtime and memory requirements are separate from Swift's
 16 GiB admission check; Windows ARM64 Canary and Qwen TTS inference are not yet
 qualified. UI/protocol tests do not establish real-model audio quality or latency.
@@ -99,7 +121,8 @@ The pinned abliteration LoRA is enabled at scale 1 by default. Pass
 `--no-abliterate-lora`. Missing or altered adapter bytes fail startup with
 provisioning guidance; there is no automatic download or fallback.
 `-FrontendPort` and `-BackendPort` select distinct local API ports when the
-defaults are occupied. The script downloads no model/runtime artifacts and
+defaults are occupied. The script provisions speech model files by default; the
+Swift model and CPU runtime must already be provisioned. It
 retains credentials and technical evidence in external temp storage. Do not
 share those credentials or the complete evidence directory.
 

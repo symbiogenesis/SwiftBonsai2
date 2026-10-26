@@ -1242,7 +1242,7 @@ impl State {
 
     const fn microphone_help(&self) -> &'static str {
         if !self.canary_configured {
-            "Microphone recognition needs the Canary Qwen 2.5B model runtime and service. Install its runtime and model, start the service, then launch the demo with -CanaryKeyFile pointing to its protected key file. See tools/canary-asr/README.md. Windows permission is requested only when you enable a ready microphone; nothing is recording now."
+            "Microphone recognition needs the Canary Qwen 2.5B runtime and service. The PowerShell demo script downloads its pinned model files automatically. Set up the runtime, start the service, then launch the demo with -CanaryKeyFile pointing to its protected key file. See tools/canary-asr/README.md. Windows permission is requested only when you enable a ready microphone; nothing is recording now."
         } else if self.microphone.is_none() {
             "Windows microphone access could not initialize. Check Windows microphone privacy settings and restart the demo. Nothing is recording."
         } else {
@@ -1254,7 +1254,7 @@ impl State {
         if self.tts_configured {
             "Qwen3-TTS VoiceDesign is not ready. Start its service on the configured port, check its protected key file, then restart the demo. See tools/qwen-tts/README.md. Your voice description will be used when the service is ready."
         } else {
-            "Read aloud needs the Qwen3-TTS 1.7B VoiceDesign model runtime and service. Install its runtime and model, start the service, then launch the demo with -TtsKeyFile pointing to its protected key file. See tools/qwen-tts/README.md. Describe your desired voice in Voice profile; no preset or reference recording is required."
+            "Read aloud needs the Qwen3-TTS 1.7B VoiceDesign runtime and service. The PowerShell demo script downloads its pinned model files automatically. Set up the runtime, start the service, then launch the demo with -TtsKeyFile pointing to its protected key file. See tools/qwen-tts/README.md. Describe your desired voice in Voice profile; no preset or reference recording is required."
         }
     }
 

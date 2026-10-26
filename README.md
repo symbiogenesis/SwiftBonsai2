@@ -50,6 +50,8 @@ The UI supports explicit [Qwen3-TTS VoiceDesign read-aloud](tools/qwen-tts/READM
 with a plain-text voice profile and optional
 [Canary Qwen 2.5B microphone transcription](tools/canary-asr/README.md), guarded
 by Windows microphone permission and an off-by-default microphone toggle.
+The demo script downloads their pinned model files automatically; use
+`-SpeechModelsOnly` to download without launching, or `-NoSpeechModels` to skip.
 
 ## At a glance
 
