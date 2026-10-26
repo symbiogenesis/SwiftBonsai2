@@ -16,6 +16,12 @@
       "url": "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-tokenizer-12hz-Q8_0.gguf",
       "bytes": 291150624,
       "sha256": "1883beeed99348fc35e23dd225e9082f93f6f8c109330a33d935baa8acdbfd94"
+    },
+    "voice_talker": {
+      "filename": "qwen-talker-1.7b-base-Q4_K_M.gguf",
+      "url": "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-base-Q4_K_M.gguf",
+      "bytes": 1219245248,
+      "sha256": "ea393ebaf2167ea23ce9fc18b093822851358a950d7075cd47ab4f6ce23e887d"
     }
   },
   "nativeRuntime": {
