@@ -31,6 +31,24 @@ was run. Supporting snapshots and reports are retained in the session's external
 `runtime-correctness` evidence lane. Matching three chosen tokens does not
 override the numerical failure or authorize promotion.
 
+### Arithmetic repair follow-up
+
+The Rust runtime repair through `e2d8d6f` fixes three identified discrepancies:
+the verified PTQ1 hash previously selected generic graph arithmetic; Q8_0
+activation ties rounded differently from the pinned ARM64 runtime; and PTQ1
+dot products reduced and accumulated values in a different order. The exact
+PTQ1 hash now selects pinned graph arithmetic, with native rounding and
+four-lane fused dot accumulation in both scalar and baseline NEON kernels.
+Independent native operator captures and focused regressions cover the fixes.
+
+The attempted one-token full-model recheck **did not start**: the unchanged
+16 GiB admission guard rejected available physical memory of 14,668,292,096
+bytes. Operator parity does not replace that full-model comparison. The earlier
+failed capture remains historical evidence until a corrected model run passes;
+adapter validity, quality and performance remain separate requirements. No
+benchmark ran, and defaults and memory enforcement remain unchanged. See the
+[repair evidence](ptq1-arithmetic-evidence.json) for the bounded result.
+
 ## Explicit development use
 
 `scripts/Start-Chat.ps1 -UseRepackedPtq1` forwards the fixed selection through the
