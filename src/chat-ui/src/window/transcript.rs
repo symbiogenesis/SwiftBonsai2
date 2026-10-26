@@ -107,22 +107,35 @@ impl Transcript {
     }
 
     pub(super) fn plain_text(&self) -> String {
-        self.messages
+        let messages = self
+            .messages
             .iter()
             .filter(|message| !message.body.is_empty())
             .map(|message| {
-                format!(
-                    "{}\n{}",
+                (
                     if message.role == Role::User {
                         "You"
                     } else {
                         "Swift Bonsai"
                     },
-                    message.body
+                    message.body.as_str(),
                 )
-            })
-            .collect::<Vec<_>>()
-            .join("\n\n")
+            });
+        let capacity = messages
+            .clone()
+            .map(|(label, body)| label.len() + body.len() + 3)
+            .sum::<usize>()
+            .saturating_sub(2);
+        let mut text = String::with_capacity(capacity);
+        for (label, body) in messages {
+            if !text.is_empty() {
+                text.push_str("\n\n");
+            }
+            text.push_str(label);
+            text.push('\n');
+            text.push_str(body);
+        }
+        text
     }
 
     pub(super) fn show(&mut self, ui: &mut egui::Ui, width: f32) {

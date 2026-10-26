@@ -112,6 +112,26 @@ fn accessible_chat_controls_handle_enter_and_shift_enter() {
 }
 
 #[test]
+fn transcript_export_preserves_roles_spacing_and_visible_unicode_only() {
+    let mut transcript = Transcript::default();
+    assert!(transcript.plain_text().is_empty());
+    transcript.push(Role::User, "First line\n\n界".to_owned());
+    transcript.push(Role::Assistant, String::new());
+    transcript.append("Private thinking", true);
+    assert_eq!(transcript.plain_text(), "You\nFirst line\n\n界");
+    transcript.stage();
+    transcript.append("Answer 🌱\n", false);
+    transcript.append("More private thinking", true);
+    transcript.push(Role::User, String::new());
+    assert_eq!(
+        transcript.plain_text(),
+        "You\nFirst line\n\n界\n\nSwift Bonsai\nAnswer 🌱\n"
+    );
+    transcript.clear();
+    assert!(transcript.plain_text().is_empty());
+}
+
+#[test]
 fn streaming_append_preserves_a_real_transcript_text_selection() {
     let mut chat = harness([1180.0, 860.0], true);
     chat.run();
