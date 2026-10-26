@@ -69,6 +69,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
+$TtsQuantization = if ($TtsQuantization -ieq 'Q8_0') { 'Q8_0' } else { 'Q4_K_M' }
 
 if (-not $SpeechModelsOnly -and (-not $IsWindows -or
     [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or

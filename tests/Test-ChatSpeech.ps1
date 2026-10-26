@@ -87,7 +87,7 @@ if ($Case -cin @('All', 'Launcher')) {
     }
     Assert (-not ($arguments | Where-Object { $_ -match 'python|\.py$' })) 'Native launch retained a Python dependency.'
     Assert ([IO.File]::ReadAllText((Join-Path $data 'native-build-called')) -ceq 'All') 'Ordinary launch did not build both native engines.'
-    & $copy @launch -TtsQuantization Q4_K_M -TtsThreads 10 | Out-Null
+    & $copy @launch -TtsQuantization q4_k_m -TtsThreads 10 | Out-Null
     $tuned = @((Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json).Arguments)
     $quantizationAt = [Array]::IndexOf($tuned, '--tts-quantization')
     $threadsAt = [Array]::IndexOf($tuned, '--tts-threads')

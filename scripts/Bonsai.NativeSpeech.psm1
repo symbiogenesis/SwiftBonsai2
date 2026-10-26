@@ -23,6 +23,7 @@ function Install-NativeSpeechModels {
           [ValidateSet('All', 'Canary', 'QwenTts')][string]$Model = 'All',
           [ValidateSet('Q8_0', 'Q4_K_M')][string]$TtsQuantization = 'Q8_0',
           [switch]$VerifyOnly, [string]$ToolPath)
+    $TtsQuantization = if ($TtsQuantization -ieq 'Q8_0') { 'Q8_0' } else { 'Q4_K_M' }
     $result = Invoke-BonsaiTool -Command speech-models -ToolPath $ToolPath -Request @{
         dataDirectory = Resolve-ExternalPath -Path $DataDirectory; model = $Model; ttsQuantization = $TtsQuantization
     }

@@ -438,6 +438,23 @@ fn runner_ci_speech_selects_checked_tools_without_unrelated_lanes() -> TestResul
 }
 
 #[test]
+fn runner_ci_q4_lock_rebuilds_the_embedded_planner_and_tts() -> TestResult {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config: Value = serde_json::from_slice(&fs::read(root.join(".github/ci/impact.json"))?)?;
+    let plan = impact::select(
+        &root,
+        &["src/speech-tts/model-q4.lock.json".into()],
+        false,
+        &config,
+        "changed Q4 artifact identity",
+    )?;
+    assert!(plan.packages.contains(&"bonsai-tools".to_owned()));
+    assert!(plan.packages.contains(&"bonsai-speech-tts".to_owned()));
+    assert!(plan.groups["speech_tts"] && plan.groups["tools"]);
+    Ok(())
+}
+
+#[test]
 fn runner_ci_shared_changes_assign_every_package_to_exactly_one_lane() -> TestResult {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let config: Value = serde_json::from_slice(&fs::read(root.join(".github/ci/impact.json"))?)?;

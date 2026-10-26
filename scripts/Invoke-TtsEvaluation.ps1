@@ -43,7 +43,11 @@ Assert-Arm64PE -Path $TtsPath
 $keys = & (Join-Path $PSScriptRoot 'New-DevelopmentKeys.ps1') -ParentDirectory $evidence -ToolPath $ToolPath
 $key = [IO.File]::ReadAllText($keys.FrontendKeyFile)
 if ($key -cnotmatch '^[0-9a-f]{64}$') { throw 'Evaluation credential has invalid framing.' }
-$client = [Net.Http.HttpClient]::new()
+$handler = [Net.Http.HttpClientHandler]::new()
+$handler.UseProxy = $false
+$handler.AllowAutoRedirect = $false
+$handler.UseCookies = $false
+$client = [Net.Http.HttpClient]::new($handler)
 $client.Timeout = [TimeSpan]::FromSeconds(190)
 $client.DefaultRequestHeaders.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $key)
 $key = $null
