@@ -57,8 +57,14 @@ pub(crate) enum Event {
         message: &'static str,
     },
     Status(&'static str),
-    Speaking(bool),
-    Failed(&'static str),
+    Speaking {
+        generation: u64,
+        speaking: bool,
+    },
+    Failed {
+        generation: u64,
+        message: &'static str,
+    },
 }
 
 struct Envelope {
@@ -99,6 +105,11 @@ pub(crate) struct Session {
     worker: Option<JoinHandle<()>>,
 }
 impl Session {
+    /// Queued output events from cancelled or replaced readouts cannot change UI state.
+    pub(crate) fn is_current_output(&self, generation: u64) -> bool {
+        self.commands.current_output.load(Ordering::Acquire) == generation
+    }
+
     /// The UI calls this before disabling capture, sending text, or closing.
     pub(crate) fn set_input_generation(&self, generation: Option<u64>) {
         self.current_input
@@ -197,11 +208,22 @@ impl Playback {
 }
 impl Drop for Playback {
     fn drop(&mut self) {
-        stop_audio();
         if let Some(worker) = self.worker.take() {
-            let _joined = worker.join();
+            stop_and_join(worker, stop_audio);
         }
     }
+}
+
+fn stop_and_join(worker: JoinHandle<()>, mut stop: impl FnMut()) {
+    // A playback thread may have passed its generation check without entering
+    // PlaySound yet. Repeating Stop until it exits covers that pre-start window:
+    // a single Stop followed by join could miss the call and wait for the clip.
+    // The worker owns the WAV allocation until synchronous playback returns.
+    while !worker.is_finished() {
+        stop();
+        thread::sleep(Duration::from_millis(5));
+    }
+    let _joined = worker.join();
 }
 
 struct Output {
@@ -345,13 +367,16 @@ fn run(
             | Err(RecvTimeoutError::Disconnected) => break,
             Ok(Envelope {
                 command: Command::Transcribe { generation, wav },
-                ..
+                output_generation,
             }) => {
                 if current_input.load(Ordering::Acquire) != generation {
                     continue;
                 }
                 output = None;
-                let _sent = events.send(Event::Speaking(false));
+                let _sent = events.send(Event::Speaking {
+                    generation: output_generation,
+                    speaking: false,
+                });
                 transcription(canary.as_ref(), generation, &wav, current_input, events);
             }
             Ok(Envelope {
@@ -383,18 +408,30 @@ fn run(
                         segments,
                         playback: None,
                     });
-                    let _sent = events.send(Event::Speaking(true));
+                    let _sent = events.send(Event::Speaking {
+                        generation: output_generation,
+                        speaking: true,
+                    });
                 } else {
-                    let _sent = events.send(Event::Speaking(false));
-                    let _sent = events.send(Event::Failed("Read-aloud needs an answer up to 32,768 UTF-16 characters and a non-empty voice description up to 1,024 characters."));
+                    let _sent = events.send(Event::Speaking {
+                        generation: output_generation,
+                        speaking: false,
+                    });
+                    let _sent = events.send(Event::Failed {
+                        generation: output_generation,
+                        message: "Read-aloud needs an answer up to 32,768 UTF-16 characters and a non-empty voice description up to 1,024 characters.",
+                    });
                 }
             }
             Ok(Envelope {
                 command: Command::StopSpeaking,
-                ..
+                output_generation,
             }) => {
                 output = None;
-                let _sent = events.send(Event::Speaking(false));
+                let _sent = events.send(Event::Speaking {
+                    generation: output_generation,
+                    speaking: false,
+                });
             }
             Err(RecvTimeoutError::Timeout) => {}
         }
@@ -404,9 +441,15 @@ fn run(
             if !matches!(outcome, Ok(true)) {
                 output = None;
                 if current_output.load(Ordering::Acquire) == generation {
-                    let _sent = events.send(Event::Speaking(false));
+                    let _sent = events.send(Event::Speaking {
+                        generation,
+                        speaking: false,
+                    });
                     if let Err(message) = outcome {
-                        let _sent = events.send(Event::Failed(message));
+                        let _sent = events.send(Event::Failed {
+                            generation,
+                            message,
+                        });
                     }
                 }
             }
@@ -417,16 +460,98 @@ fn run(
 
 #[cfg(test)]
 mod tests {
-    use super::{Command, Commands, Event, MAX_SEGMENT, MAX_TEXT, segments, start};
+    use super::{
+        Command, Commands, Event, MAX_SEGMENT, MAX_TEXT, Session, segments, start, stop_and_join,
+    };
     use std::{
         io,
         sync::{
             Arc,
-            atomic::{AtomicU64, Ordering},
+            atomic::{AtomicBool, AtomicU64, Ordering},
             mpsc,
         },
         time::Duration,
     };
+
+    #[test]
+    fn stop_retries_when_playback_starts_after_the_first_stop() -> io::Result<()> {
+        let (start_sender, start_receiver) = mpsc::channel();
+        let (stop_sender, stop_receiver) = mpsc::channel();
+        let playing = Arc::new(AtomicBool::new(false));
+        let stopped = Arc::new(AtomicBool::new(false));
+        let worker_playing = Arc::clone(&playing);
+        let worker_stopped = Arc::clone(&stopped);
+        let worker = std::thread::Builder::new()
+            .name("fake-late-playback".to_owned())
+            .spawn(move || {
+                // Deterministically reproduce the gap between the generation
+                // check and entering a synchronous native playback operation.
+                if start_receiver.recv_timeout(Duration::from_secs(2)).is_err() {
+                    return;
+                }
+                worker_playing.store(true, Ordering::Release);
+                if stop_receiver.recv_timeout(Duration::from_secs(2)).is_ok() {
+                    worker_stopped.store(true, Ordering::Release);
+                }
+            })?;
+        let mut first_stop = Some(start_sender);
+        let mut stop_count = 0;
+        stop_and_join(worker, || {
+            stop_count += 1;
+            if playing.load(Ordering::Acquire) {
+                let _sent = stop_sender.send(());
+            }
+            if let Some(start) = first_stop.take() {
+                let _sent = start.send(());
+            }
+        });
+        assert!(stopped.load(Ordering::Acquire));
+        assert!(stop_count >= 2);
+        Ok(())
+    }
+
+    #[test]
+    fn stopped_and_replaced_readouts_reject_queued_output_events() -> io::Result<()> {
+        let (sender, receiver) = mpsc::channel();
+        let (_events, events) = mpsc::channel();
+        let session = Session {
+            commands: Commands {
+                sender,
+                current_output: Arc::new(AtomicU64::new(0)),
+            },
+            events,
+            current_input: Arc::new(AtomicU64::new(super::NO_INPUT)),
+            worker: None,
+        };
+        session
+            .commands
+            .send(Command::Speak {
+                text: "First answer".to_owned(),
+                voice_description: "Warm".to_owned(),
+            })
+            .map_err(io::Error::other)?;
+        let first = receiver.recv().map_err(io::Error::other)?.output_generation;
+        assert!(session.is_current_output(first));
+        session
+            .commands
+            .send(Command::StopSpeaking)
+            .map_err(io::Error::other)?;
+        let stopped = receiver.recv().map_err(io::Error::other)?.output_generation;
+        assert!(!session.is_current_output(first));
+        assert!(session.is_current_output(stopped));
+        session
+            .commands
+            .send(Command::Speak {
+                text: "Second answer".to_owned(),
+                voice_description: "Calm".to_owned(),
+            })
+            .map_err(io::Error::other)?;
+        let second = receiver.recv().map_err(io::Error::other)?.output_generation;
+        assert!(!session.is_current_output(first));
+        assert!(!session.is_current_output(stopped));
+        assert!(session.is_current_output(second));
+        Ok(())
+    }
 
     #[test]
     fn output_segments_preserve_unicode_and_bound_each_model_request() -> io::Result<()> {
