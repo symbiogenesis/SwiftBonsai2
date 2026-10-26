@@ -260,7 +260,9 @@ impl State {
                     )
                 })
                 .inner;
-            if active && self.focus_composer {
+            // Only scroll when the composer can consume this focus request in
+            // the same frame; pending focus during generation must not repaint forever.
+            if active && self.focus_composer && self.ready && !self.busy {
                 response.scroll_to_me(Some(egui::Align::Center));
             }
             if response.on_hover_text(&conversation.title).clicked() {
