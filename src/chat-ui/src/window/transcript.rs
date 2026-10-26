@@ -1,8 +1,10 @@
 //! Conversation-only messages with cached layout and viewport culling.
 //! Application diagnostics never enter this model.
 use eframe::egui::{self, Color32, FontId, RichText, Vec2};
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 
+#[cfg(test)]
+mod cache_tests;
 mod search;
 
 const MAX_BYTES: usize = 4 * 1024 * 1024;
@@ -18,8 +20,13 @@ struct LayoutCache {
     pixels_per_point: f32,
     color: Color32,
     reasoning_color: Color32,
-    show_reasoning: bool,
-    search_revision: u64,
+    // Message text is append-only after push; restore creates no layout cache.
+    body_bytes: usize,
+    matches: Vec<search::Match>,
+    selected: Option<Range<usize>>,
+    highlight_fill: Color32,
+    highlight_color: Color32,
+    reasoning_bytes: usize,
     body: Arc<egui::Galley>,
     reasoning: Option<Arc<egui::Galley>>,
 }
@@ -38,6 +45,9 @@ pub(super) struct Message {
     show_reasoning: bool,
     #[serde(skip)]
     cache: Option<LayoutCache>,
+    #[cfg(test)]
+    #[serde(skip)]
+    body_layouts: usize,
 }
 
 #[derive(Default, serde::Serialize)]
@@ -115,6 +125,8 @@ impl Transcript {
             pending: role == Role::Assistant,
             show_reasoning: false,
             cache: None,
+            #[cfg(test)]
+            body_layouts: 0,
         });
         self.trim();
     }
@@ -131,7 +143,7 @@ impl Transcript {
             } else {
                 message.body.push_str(text);
             }
-            message.cache = None;
+            // Layout keys track answer and reasoning lengths independently.
         }
         self.trim();
     }
@@ -201,27 +213,18 @@ impl Transcript {
         self.search.refresh(&self.messages);
         let width = width.max(120.0);
         let latest = self.messages.last().map(|message| message.id);
+        let mut remaining = self.search.matches.as_slice();
         for message in &mut self.messages {
-            let ranges: Vec<_> = self
-                .search
-                .matches
-                .iter()
-                .filter(|found| found.message == message.id)
-                .map(|found| found.range.clone())
-                .collect();
+            let count = remaining.partition_point(|found| found.message == message.id);
+            let ranges = &remaining[..count];
+            remaining = &remaining[count..];
             let selected = self
                 .search
                 .matches
                 .get(self.search.active)
                 .filter(|found| found.message == message.id)
-                .map(|found| found.range.clone());
-            message.layout(
-                ui,
-                width - 40.0,
-                &ranges,
-                selected.as_ref(),
-                self.search.revision,
-            );
+                .map(|found| &found.range);
+            message.layout(ui, width - 40.0, ranges, selected);
             let height = message.height();
             let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
             let target = self
@@ -250,28 +253,94 @@ impl Message {
         &mut self,
         ui: &egui::Ui,
         width: f32,
-        matches: &[std::ops::Range<usize>],
-        selected: Option<&std::ops::Range<usize>>,
-        search_revision: u64,
+        matches: &[search::Match],
+        selected: Option<&Range<usize>>,
     ) {
         let color = ui.visuals().text_color();
         let reasoning_color = ui.visuals().weak_text_color();
         let pixels_per_point = ui.ctx().pixels_per_point();
-        if self.cache.as_ref().is_some_and(|cache| {
-            (cache.width - width).abs() < 0.5
+        let highlight_fill = ui.visuals().selection.bg_fill;
+        let highlight_color = ui.visuals().selection.stroke.color;
+        let same_geometry = self.cache.as_ref().is_some_and(|cache| {
+            cache.width.to_bits() == width.to_bits()
                 && cache.pixels_per_point.to_bits() == pixels_per_point.to_bits()
-                && cache.color == color
-                && cache.reasoning_color == reasoning_color
-                && cache.show_reasoning == self.show_reasoning
-                && cache.search_revision == search_revision
-        }) {
-            return;
-        }
+        });
+        let body_unchanged = same_geometry
+            && self.cache.as_ref().is_some_and(|cache| {
+                cache.body_bytes == self.body.len()
+                    && cache.color == color
+                    && cache.matches == matches
+                    && cache.selected.as_ref() == selected
+                    && (matches.is_empty()
+                        || (cache.highlight_fill == highlight_fill
+                            && cache.highlight_color == highlight_color))
+            });
+        let reasoning_unchanged = same_geometry
+            && self.cache.as_ref().is_some_and(|cache| {
+                cache.reasoning_bytes == self.reasoning.len()
+                    && cache.reasoning_color == reasoning_color
+            });
+        let previous = self.cache.take();
+        let body = if body_unchanged && let Some(cache) = &previous {
+            Arc::clone(&cache.body)
+        } else {
+            #[cfg(test)]
+            {
+                self.body_layouts += 1;
+            }
+            self.layout_body(ui, width, matches, selected)
+        };
+        let reasoning = if !self.show_reasoning || self.reasoning.is_empty() {
+            None
+        } else if reasoning_unchanged
+            && let Some(cache) = &previous
+            && let Some(reasoning) = &cache.reasoning
+        {
+            Some(Arc::clone(reasoning))
+        } else {
+            Some(ui.fonts_mut(|fonts| {
+                fonts.layout(
+                    self.reasoning.clone(),
+                    FontId::proportional(14.0),
+                    reasoning_color,
+                    width,
+                )
+            }))
+        };
+        self.cache = Some(LayoutCache {
+            width,
+            pixels_per_point,
+            color,
+            reasoning_color,
+            body_bytes: self.body.len(),
+            matches: if body_unchanged {
+                previous.map_or_else(Vec::new, |cache| cache.matches)
+            } else {
+                matches.to_vec()
+            },
+            selected: selected.cloned(),
+            highlight_fill,
+            highlight_color,
+            reasoning_bytes: self.reasoning.len(),
+            body,
+            reasoning,
+        });
+    }
+
+    fn layout_body(
+        &self,
+        ui: &egui::Ui,
+        width: f32,
+        matches: &[search::Match],
+        selected: Option<&Range<usize>>,
+    ) -> Arc<egui::Galley> {
         let mut job = egui::text::LayoutJob::default();
         job.wrap.max_width = width;
-        let normal = egui::TextFormat::simple(FontId::proportional(16.0), color);
+        let normal =
+            egui::TextFormat::simple(FontId::proportional(16.0), ui.visuals().text_color());
         let mut previous = 0;
-        for range in matches {
+        for found in matches {
+            let range = &found.range;
             job.append(&self.body[previous..range.start], 0.0, normal.clone());
             let mut highlight = normal.clone();
             highlight.background = ui.visuals().selection.bg_fill;
@@ -283,29 +352,8 @@ impl Message {
             previous = range.end;
         }
         job.append(&self.body[previous..], 0.0, normal);
-        let body = ui.fonts_mut(|fonts| fonts.layout_job(job));
-        let reasoning = (self.show_reasoning && !self.reasoning.is_empty()).then(|| {
-            ui.fonts_mut(|fonts| {
-                fonts.layout(
-                    self.reasoning.clone(),
-                    FontId::proportional(14.0),
-                    reasoning_color,
-                    width,
-                )
-            })
-        });
-        self.cache = Some(LayoutCache {
-            width,
-            pixels_per_point,
-            color,
-            reasoning_color,
-            show_reasoning: self.show_reasoning,
-            search_revision,
-            body,
-            reasoning,
-        });
+        ui.fonts_mut(|fonts| fonts.layout_job(job))
     }
-
     fn height(&self) -> f32 {
         let Some(cache) = &self.cache else {
             return 100.0;

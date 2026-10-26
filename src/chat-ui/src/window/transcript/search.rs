@@ -1,6 +1,8 @@
 //! Plain-text find state. Only visible message bodies participate, never reasoning.
 use super::{Message, egui};
-use std::ops::Range;
+use std::{collections::BTreeMap, ops::Range};
+#[cfg(test)]
+mod performance_tests;
 
 const MAX_MATCHES: usize = 10_000;
 
@@ -18,6 +20,12 @@ enum Visibility {
     Focus,
 }
 
+struct CachedMatches {
+    // An id owns append-only text; restored transcripts start with a fresh Search.
+    body_bytes: usize,
+    ranges: Vec<Range<usize>>,
+}
+
 #[derive(Default)]
 pub(super) struct Search {
     visibility: Visibility,
@@ -29,6 +37,10 @@ pub(super) struct Search {
     pub(super) latest: bool,
     dirty: bool,
     limited: bool,
+    cached_query: String,
+    cached_messages: BTreeMap<u64, CachedMatches>,
+    #[cfg(test)]
+    scanned_messages: usize,
 }
 
 impl Search {
@@ -44,19 +56,41 @@ impl Search {
         let old_matches = std::mem::take(&mut self.matches);
         let previous = old_matches.get(self.active).cloned();
         self.limited = false;
-        if !self.query.is_empty() {
+        if self.query.is_empty() {
+            self.cached_query.clear();
+            self.cached_messages.clear();
+        } else {
             let query = self.query.to_lowercase();
+            if self.cached_query != query {
+                self.cached_messages.clear();
+                query.clone_into(&mut self.cached_query);
+            }
+            let mut previous_cache = std::mem::take(&mut self.cached_messages);
             for message in messages {
-                for range in find_ranges(&message.body, &query) {
+                let cached = previous_cache
+                    .remove(&message.id)
+                    .filter(|cached| cached.body_bytes == message.body.len())
+                    .unwrap_or_else(|| {
+                        #[cfg(test)]
+                        {
+                            self.scanned_messages += 1;
+                        }
+                        CachedMatches {
+                            body_bytes: message.body.len(),
+                            ranges: find_ranges(&message.body, &query),
+                        }
+                    });
+                for range in &cached.ranges {
                     if self.matches.len() == MAX_MATCHES {
                         self.limited = true;
                         break;
                     }
                     self.matches.push(Match {
                         message: message.id,
-                        range,
+                        range: range.clone(),
                     });
                 }
+                self.cached_messages.insert(message.id, cached);
                 if self.limited {
                     break;
                 }
@@ -170,6 +204,14 @@ impl Search {
 fn find_ranges(body: &str, query: &str) -> Vec<Range<usize>> {
     if query.is_empty() {
         return Vec::new();
+    }
+    if body.is_ascii() {
+        return body
+            .to_ascii_lowercase()
+            .match_indices(query)
+            .take(MAX_MATCHES + 1)
+            .map(|(start, found)| start..start + found.len())
+            .collect();
     }
     // Lowercasing may expand a Unicode scalar (for example İ). Map folded byte
     // boundaries back to complete original scalars so highlighting stays UTF-8 safe.
