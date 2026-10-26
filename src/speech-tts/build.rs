@@ -172,7 +172,23 @@ fn external_output(path: &Path) -> io::Result<()> {
 
 fn run(command: &mut Command, working: &Path) -> io::Result<()> {
     // Preserve the inherited Windows and profile environment; only the native
-    // current directory is selected for compiler probes and diagnostics.
+    // compiler selection is local to this VS ARM64 build. The Canary build in
+    // the same Cargo invocation requires clang-cl/Ninja; its compiler overrides
+    // must not select a different toolset for this engine's VS generator.
+    for key in [
+        "CC",
+        "CXX",
+        "CMAKE_C_COMPILER",
+        "CMAKE_CXX_COMPILER",
+        "CMAKE_C_COMPILER_TARGET",
+        "CMAKE_CXX_COMPILER_TARGET",
+        "CMAKE_GENERATOR_TOOLSET",
+        "CMAKE_TOOLCHAIN_FILE",
+        "RC",
+        "CL",
+    ] {
+        command.env_remove(key);
+    }
     let status = command.current_dir(working).status()?;
     if !status.success() {
         return Err(io::Error::other(
