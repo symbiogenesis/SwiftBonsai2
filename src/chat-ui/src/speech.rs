@@ -27,7 +27,7 @@ const POLL: Duration = Duration::from_millis(50);
 const MAX_TEXT: usize = 32768;
 // Short clips keep CPU synthesis within its bounded request deadline. The HTTP
 // companion accepts larger inputs, but a readout retains and sequences all text.
-const MAX_SEGMENT: usize = 160;
+const MAX_SEGMENT: usize = 32;
 const NO_INPUT: u64 = u64::MAX;
 
 pub(crate) enum Command {
@@ -316,6 +316,9 @@ fn render(
     if current.load(Ordering::Acquire) != output.generation {
         return Ok(false);
     }
+    if let Some(service) = &output.service {
+        service.check().map_err(output_failure)?;
+    }
     if !output.prepared {
         let client = client.ok_or("Qwen3-TTS VoiceDesign is unavailable. Check its installed runtime and protected key file.")?;
         let config = config.ok_or("Qwen3-TTS VoiceDesign has no local configuration.")?;
@@ -348,7 +351,13 @@ fn render(
     };
     let client = client
         .ok_or("Qwen3-TTS VoiceDesign is unavailable. Check its companion service and key file.")?;
-    let wav = match client.synthesize(&text, &output.voice, output.generation, current) {
+    let synthesis = client.synthesize(&text, &output.voice, output.generation, current);
+    // A pressure stop deliberately closes HTTP. Preserve its useful resource
+    // reason instead of reducing it to a generic transport failure.
+    if let Some(service) = &output.service {
+        service.check().map_err(output_failure)?;
+    }
+    let wav = match synthesis {
         Ok(wav) => wav,
         Err(tts::Failure::Cancelled) => return Ok(false),
         Err(tts::Failure::Message(message)) => return Err(message),
@@ -361,6 +370,13 @@ fn render(
             .map_err(|_| "Could not start native audio playback.")?,
     );
     Ok(true)
+}
+
+const fn output_failure(failure: tts::Failure) -> &'static str {
+    match failure {
+        tts::Failure::Message(message) => message,
+        tts::Failure::Cancelled => "Read aloud stopped.",
+    }
 }
 
 #[allow(

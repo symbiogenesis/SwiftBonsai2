@@ -31,6 +31,7 @@ const MAX_REQUEST: usize = 1024 * 1024;
 const MAX_EVENT: usize = 1024 * 1024;
 const READ_SIZE: usize = 8192;
 const EVIDENCE_PREFIX: &str = "Protected credentials and technical evidence: ";
+const RUNNING_MEMORY_MESSAGE: &str = "Swift stopped because its running memory requirements were no longer met. Close other apps, then select Retry model. Completed conversation turns remain in memory.";
 
 /// Fixed development launch inputs; paths and keys have no debug representation.
 #[derive(Clone)]
@@ -165,19 +166,21 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Ev
                 };
                 // worker has returned and its Broker guard has stopped/waited
                 // for the owned process before Retry can be offered.
-                if !wait_for_retry(
-                    &commands,
-                    &events,
-                    &mut history,
-                    &format!(
-                        "{message}\nSelect Retry model to start a fresh model session. Completed turns remain in memory. If the request was too long, reduce the output budget or start a new conversation after retrying."
-                    ),
-                ) {
+                if !wait_for_retry(&commands, &events, &mut history, &retry_guidance(message)) {
                     return;
                 }
             }
         }
     }
+}
+
+fn retry_guidance(message: &str) -> String {
+    if message == RUNNING_MEMORY_MESSAGE {
+        return message.to_owned();
+    }
+    format!(
+        "{message}\nSelect Retry model to start a fresh model session. Completed turns remain in memory. If the request was too long, reduce the output budget or start a new conversation after retrying."
+    )
 }
 
 fn wait_for_retry(
@@ -267,9 +270,8 @@ fn worker(
             .map_err(|_| Failure::Message("Could not inspect the owned broker."))?
             .is_some()
         {
-            return Err(Failure::Message(
-                "The model session ended. Select Retry model to continue.",
-            ));
+            let diagnostic = read_bounded_file(&stderr_path, MAX_HEAD).unwrap_or_default();
+            return Err(runtime_failure(&diagnostic));
         }
         match commands.recv_timeout(POLL) {
             Ok(Command::Shutdown) | Err(RecvTimeoutError::Disconnected) => return Ok(()),
@@ -398,6 +400,16 @@ fn startup_failure(diagnostic: &[u8]) -> Failure {
         Failure::Message(
             "Swift could not start. Check the retained broker diagnostic logs, then restart the demo.",
         )
+    }
+}
+
+fn runtime_failure(diagnostic: &[u8]) -> Failure {
+    if String::from_utf8_lossy(diagnostic)
+        .contains("Owned backend stopped after launcher failure: Memory.")
+    {
+        Failure::Message(RUNNING_MEMORY_MESSAGE)
+    } else {
+        Failure::Message("The model session ended. Select Retry model to continue.")
     }
 }
 
@@ -1338,6 +1350,28 @@ mod tests {
         };
         assert!(message.contains("Get-Adapter.ps1"));
         assert!(message.contains("-NoAbliterateLora"));
+        Ok(())
+    }
+
+    #[test]
+    fn running_memory_failure_explains_resources_without_output_budget_guidance()
+    -> Result<(), Failure> {
+        let Failure::Message(message) =
+            super::runtime_failure(b"Owned backend stopped after launcher failure: Memory.\n")
+        else {
+            return Err(Failure::Message(
+                "Running memory failure lost its explicit resource guidance",
+            ));
+        };
+        let guidance = super::retry_guidance(message);
+        assert!(guidance.contains("memory"));
+        assert!(guidance.contains("Close other apps"));
+        assert!(guidance.contains("Retry model"));
+        assert!(!guidance.contains("output budget"));
+        assert!(!guidance.contains("request was too long"));
+        assert!(
+            matches!(super::runtime_failure(b"unrelated service exit"), Failure::Message(other) if other != message)
+        );
         Ok(())
     }
 
