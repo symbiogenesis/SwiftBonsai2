@@ -225,8 +225,9 @@ fn chat_renders_at_minimum_window_size_without_starting_services() {
         )),
         ..egui::RawInput::default()
     };
-    let output = context.run_ui(input, |ui| state.draw(ui));
+    let mut output = context.run_ui(input, |ui| state.draw(ui));
     assert_ne!(output.shapes.len(), 0);
+    output.textures_delta.clear();
     assert!(state.worker.is_none());
     assert!(state.microphone.is_none());
     assert!(state.speech.is_none());
