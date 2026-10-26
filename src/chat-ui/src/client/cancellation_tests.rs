@@ -23,10 +23,14 @@ fn stop_cancels_stalled_headers_and_body_and_closes_the_connection() -> io::Resu
             }
             stream.write_all(response)?;
             let _sent = accepted.send(());
-            // Consume any request body still queued, then require EOF. A stop
-            // must release the actual connection as well as return to the UI.
+            // Consume any request body still queued, then require closure.
+            // Windows may reset an abandoned response instead of sending FIN.
             let mut remaining = Vec::new();
-            stream.read_to_end(&mut remaining)?;
+            match stream.read_to_end(&mut remaining) {
+                Ok(_) => {}
+                Err(error) if matches!(error.kind(), io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted) => {}
+                Err(error) => return Err(error),
+            }
             let _sent = closed.send(());
             Ok(())
         });
