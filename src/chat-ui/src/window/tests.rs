@@ -88,7 +88,8 @@ fn speech_controls_stay_visible_and_explain_unconfigured_services_without_listen
     assert!(enabled(state.voice_profile));
     assert_eq!(control_text(state.voice_profile), DEFAULT_VOICE);
     assert!(state.microphone_help().contains("-CanaryKeyFile"));
-    assert!(state.read_aloud_help().contains("-TtsKeyFile"));
+    assert!(state.read_aloud_help().contains("Start-Demo.ps1"));
+    assert!(state.read_aloud_help().contains("-NoTts"));
     state.speech_event(speech::Event::Capabilities {
         input: false,
         output: false,
