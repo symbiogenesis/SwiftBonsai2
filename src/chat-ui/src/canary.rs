@@ -150,9 +150,9 @@ impl Client {
 
     fn transcribe_clip(&self, wav: &[u8], call: &Call<'_>) -> Result<String> {
         call.check()?;
-        validate_wav(wav)?;
-        let boundary = boundary(wav, call)?;
-        let body = multipart(wav, &boundary)?;
+        let wav = normalize_wav(wav, call)?;
+        let boundary = boundary(&wav, call)?;
+        let body = multipart(&wav, &boundary)?;
         call.check()?;
         let content_type = format!("multipart/form-data; boundary={boundary}");
         let response = self.exchange(
@@ -286,6 +286,111 @@ fn validate_wav(wav: &[u8]) -> Result<()> {
         return Err(invalid);
     }
     Ok(())
+}
+
+fn normalize_wav(wav: &[u8], call: &Call<'_>) -> Result<Vec<u8>> {
+    let invalid = Failure::Message(
+        "Canary requires a 16 kHz mono 16-bit PCM WAV clip of at most 30 seconds.",
+    );
+    if wav.len() < 12
+        || wav.len() > MAX_REQUEST
+        || &wav[..4] != b"RIFF"
+        || &wav[8..12] != b"WAVE"
+        || usize::try_from(u32::from_le_bytes([wav[4], wav[5], wav[6], wav[7]])).ok()
+            != Some(wav.len() - 8)
+    {
+        return Err(invalid);
+    }
+    let mut offset = 12;
+    let mut format = false;
+    let mut data = None;
+    let mut chunks = 0;
+    while offset < wav.len() {
+        call.check()?;
+        chunks += 1;
+        let head_end = offset.checked_add(8).ok_or(invalid)?;
+        if chunks > 128 || head_end > wav.len() {
+            return Err(invalid);
+        }
+        let id = &wav[offset..offset + 4];
+        let length = usize::try_from(u32::from_le_bytes([
+            wav[offset + 4],
+            wav[offset + 5],
+            wav[offset + 6],
+            wav[offset + 7],
+        ]))
+        .map_err(|_| invalid)?;
+        let end = head_end.checked_add(length).ok_or(invalid)?;
+        let padded_end = end.checked_add(length % 2).ok_or(invalid)?;
+        if padded_end > wav.len() {
+            return Err(invalid);
+        }
+        match id {
+            b"fmt " => {
+                if format || !pcm_format(&wav[head_end..end]) {
+                    return Err(invalid);
+                }
+                format = true;
+            }
+            b"data" => {
+                if data.replace(&wav[head_end..end]).is_some() {
+                    return Err(invalid);
+                }
+            }
+            _ => {}
+        }
+        offset = padded_end;
+    }
+    let data = data.ok_or(invalid)?;
+    if !format || data.is_empty() || data.len() % 2 != 0 || data.len() > 960_000 {
+        return Err(invalid);
+    }
+    let length = u32::try_from(data.len()).map_err(|_| invalid)?;
+    let mut canonical = Vec::with_capacity(44 + data.len());
+    canonical.extend_from_slice(b"RIFF");
+    canonical.extend_from_slice(&(36 + length).to_le_bytes());
+    canonical.extend_from_slice(b"WAVEfmt ");
+    canonical.extend_from_slice(&16_u32.to_le_bytes());
+    canonical.extend_from_slice(&1_u16.to_le_bytes());
+    canonical.extend_from_slice(&1_u16.to_le_bytes());
+    canonical.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    canonical.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
+    canonical.extend_from_slice(&2_u16.to_le_bytes());
+    canonical.extend_from_slice(&16_u16.to_le_bytes());
+    canonical.extend_from_slice(b"data");
+    canonical.extend_from_slice(&length.to_le_bytes());
+    canonical.extend_from_slice(data);
+    validate_wav(&canonical)?;
+    call.check()?;
+    Ok(canonical)
+}
+
+fn pcm_format(format: &[u8]) -> bool {
+    if format.len() < 16 {
+        return false;
+    }
+    let u16_at = |at| u16::from_le_bytes([format[at], format[at + 1]]);
+    let u32_at =
+        |at| u32::from_le_bytes([format[at], format[at + 1], format[at + 2], format[at + 3]]);
+    if u16_at(2) != 1
+        || u32_at(4) != SAMPLE_RATE
+        || u32_at(8) != SAMPLE_RATE * 2
+        || u16_at(12) != 2
+        || u16_at(14) != 16
+    {
+        return false;
+    }
+    match u16_at(0) {
+        1 => format.len() == 16 || (format.len() == 18 && u16_at(16) == 0),
+        0xfffe => {
+            format.len() == 40
+                && u16_at(16) == 22
+                && u16_at(18) == 16
+                && u32_at(20).count_ones() <= 1
+                && format[24..] == [1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]
+        }
+        _ => false,
+    }
 }
 
 fn boundary(wav: &[u8], call: &Call<'_>) -> Result<String> {
@@ -501,7 +606,8 @@ fn json_media_type(value: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        Call, Client, Config, Failure, MODEL, boundary, multipart, response_length, validate_wav,
+        Call, Client, Config, Failure, MODEL, boundary, multipart, normalize_wav, response_length,
+        validate_wav,
     };
     use std::{
         fs,
@@ -706,6 +812,45 @@ mod tests {
         }
         assert!(validate_wav(&wav(&[])?).is_err());
         assert!(validate_wav(&wav(&[0])?).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn windows_extensible_capture_normalizes_ancillary_chunks_and_rejects_corruption()
+    -> io::Result<()> {
+        let canonical = wav(&[0, 0, 1, 0])?;
+        let mut extensible = b"RIFF\0\0\0\0WAVEJUNK\x03\0\0\0abc\0fmt \x28\0\0\0".to_vec();
+        let mut format = canonical[20..36].to_vec();
+        format[..2].copy_from_slice(&0xfffe_u16.to_le_bytes());
+        format.extend_from_slice(&22_u16.to_le_bytes());
+        format.extend_from_slice(&16_u16.to_le_bytes());
+        format.extend_from_slice(&4_u32.to_le_bytes());
+        format.extend_from_slice(&[1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]);
+        extensible.extend_from_slice(&format);
+        extensible.extend_from_slice(&canonical[36..]);
+        let riff_length = u32::try_from(extensible.len() - 8).map_err(io::Error::other)?;
+        extensible[4..8].copy_from_slice(&riff_length.to_le_bytes());
+        let current = AtomicU64::new(1);
+        let call = Call {
+            generation: 1,
+            current: &current,
+            until: Instant::now() + Duration::from_secs(1),
+        };
+        assert_eq!(
+            normalize_wav(&extensible, &call)
+                .map_err(|_| io::Error::other("Capture normalization failed"))?,
+            canonical
+        );
+        let mut duplicate = extensible.clone();
+        duplicate.extend_from_slice(&canonical[36..]);
+        let length = u32::try_from(duplicate.len() - 8).map_err(io::Error::other)?;
+        duplicate[4..8].copy_from_slice(&length.to_le_bytes());
+        assert!(normalize_wav(&duplicate, &call).is_err());
+        let mut float_format = extensible.clone();
+        float_format[56] = 3; // Extensible subtype changes from PCM to IEEE float.
+        assert!(normalize_wav(&float_format, &call).is_err());
+        extensible.pop();
+        assert!(normalize_wav(&extensible, &call).is_err());
         Ok(())
     }
 
