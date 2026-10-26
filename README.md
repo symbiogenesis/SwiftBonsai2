@@ -10,7 +10,7 @@ Creative writing · Brainstorming · Art direction
 ![UI: native Rust](https://img.shields.io/badge/UI-native_Rust-50855B?style=flat-square)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-50855B?style=flat-square)](LICENSE)
 
-[Get started](docs/development-guide.md) · [Documentation](#documentation) · [Roadmap](PLAN.md)
+[Get started](docs/development-guide.md) · [Documentation](#documentation) · [TODO](PLAN.md)
 
 </div>
 
@@ -64,7 +64,7 @@ and [local API contract](docs/broker-policy.md#public-request-contract).
 | **Hardware** | Snapdragon X and X2 · Windows ARM64 |
 | **Model** | Swift Bonsai 2 · `PQ2_0` |
 | **CPU profile** | One active request · 8K-token context · FP16 attention caches |
-| **Next milestones** | Daily-service acceptance and quality/performance qualification |
+| **Outstanding work** | [Central TODO](PLAN.md) |
 
 ## Memory footprint
 
@@ -122,7 +122,7 @@ See [benchmark context and current limits](docs/performance-expectations.md).
 | --- | --- |
 | [Development guide](docs/development-guide.md) | Requirements, setup, and development commands |
 | [Validation](docs/validation.md) | Code standards, focused tests, and CI |
-| [Implementation plan](PLAN.md) | Goals, design, and remaining work |
+| [TODO](PLAN.md) | All outstanding implementation and qualification work |
 
 ### Runtime and acceleration
 
