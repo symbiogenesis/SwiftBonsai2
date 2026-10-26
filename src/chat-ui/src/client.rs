@@ -151,8 +151,7 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: Sender<Ev
             Err(failure) => {
                 let message = match failure {
                     Failure::Stopped => "Generation stopped. Select Retry model to restart safely; completed conversation turns are retained. The interrupted turn has not been added to model history.",
-                    Failure::Message(message) => message,
-                    Failure::Rejected(message) => message,
+                    Failure::Message(message) | Failure::Rejected(message) => message,
                     Failure::Shutdown | Failure::Memory => return,
                 };
                 // worker has returned and its Broker guard has stopped/waited
