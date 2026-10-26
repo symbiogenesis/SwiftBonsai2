@@ -25,7 +25,9 @@ use windows_sys::Win32::Media::Audio::{PlaySoundW, SND_MEMORY, SND_NODEFAULT, SN
 
 const POLL: Duration = Duration::from_millis(50);
 const MAX_TEXT: usize = 32768;
-const MAX_SEGMENT: usize = 2048;
+// Short clips keep CPU synthesis within its bounded request deadline. The HTTP
+// companion accepts larger inputs, but a readout retains and sequences all text.
+const MAX_SEGMENT: usize = 160;
 const NO_INPUT: u64 = u64::MAX;
 
 pub(crate) enum Command {

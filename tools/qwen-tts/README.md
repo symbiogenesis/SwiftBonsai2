@@ -11,7 +11,31 @@ This process performs inference only. Presentation, controls, playback and
 microphone permission remain in the native application. This service has no
 microphone access and does not implement a browser or WebView interface.
 
-## Explicit local setup
+## Automatic demo setup
+
+`./scripts/Start-Demo.ps1` now configures Read Aloud automatically. In addition
+to the model files it provisions a private, pinned CPython 3.13 x64 environment
+and the complete Qwen dependency set. Windows x64 emulation supplies the runtime
+on ARM64: upstream torchaudio does not publish a Windows ARM64 wheel. Installation
+does not change global Python, PATH or file associations. Downloads are pinned
+by URL, byte length and SHA-256 in [`runtime.lock.json`](runtime.lock.json);
+package installation uses those local artifacts with dependency resolution and
+package index access disabled. Existing installations run an import/version probe.
+
+The launcher creates a separate protected credential and copies this service
+and its model lock to external demo storage. The native Rust speech worker
+starts the service only when Read Aloud is selected, waits for authenticated
+model readiness, and owns its complete process tree in a Windows Job. Finishing,
+cancelling or failing a readout closes that Job and releases the model. Another
+Read Aloud starts a fresh service, including after a cancelled synthesis.
+This avoids preloading Qwen before Swift's unchanged startup memory admission.
+
+Use `-NoTts` to skip automatic runtime setup, or `-NoSpeechModels` to skip speech
+downloads and automatic TTS. `-SpeechModelsOnly` downloads weights without
+installing a runtime. A supplied `-TtsKeyFile` selects an independently managed
+service and bypasses automatic runtime ownership.
+
+## Independently managed local setup
 
 The PowerShell demo launcher downloads the pinned VoiceDesign model, bundled
 speech codec and tokenizer/config files automatically. To obtain the snapshot
@@ -26,16 +50,16 @@ For TTS files alone, use
 `./scripts/Get-SpeechModels.ps1 -DataDirectory $data -Model QwenTts`. Add
 `-VerifyOnly` to check existing files offline. Downloads resume and exact size/
 SHA-256 checks guard publication; valid files are reused. `-NoSpeechModels` on
-the demo skips this provisioning step. The supported Python runtime and running
-service below remain separate requirements.
+the demo skips this provisioning step. For independently managed service
+operation, prepare the supported Python runtime and service below.
 
 Provision a dedicated, tested Python environment following
 [Qwen's official installation guidance](https://github.com/QwenLM/Qwen3-TTS#quickstart).
 The inspected upstream package declares `qwen-tts` 0.1.1, Transformers 4.57.3 and
 Accelerate 1.12.0, plus PyTorch/audio dependencies. Record the exact environment
-versions used for device acceptance. This repository does not install or update
-the Python environment during ordinary demo startup and never launches Qwen's
-Gradio/web demo.
+versions used for device acceptance. The automatic demo uses its separate pinned
+private environment; it never changes this independently managed environment or
+launches Qwen's Gradio/web demo.
 
 Native Windows ARM64 package compatibility, CPU latency, synthesis quality and
 combined memory admission alongside Swift and Canary have **not** been qualified.
@@ -158,8 +182,9 @@ speech is not played as a completed answer. Invalid/nonfinite/wrong-rate output
 also fails. Errors use value-free `{"error":{"code":"..."}}` JSON and 4xx/5xx
 status. Responses use `Cache-Control: no-store`.
 
-Long answers should be split by the native client at sentence/word boundaries
-into sequential requests of at most 2048 characters. Reusing the same description
+Long answers are split by the native client at word boundaries into sequential
+requests of at most 160 characters to bound CPU synthesis latency, within the
+service's 2048-character request ceiling. Reusing the same description
 guides the voice in each segment; it does not promise identical timbre across
 separately sampled clips. This adapter does not clone a real or reference voice.
 

@@ -52,6 +52,9 @@ with a plain-text voice profile and optional
 by Windows microphone permission and an off-by-default microphone toggle.
 The demo script downloads their pinned model files automatically; use
 `-SpeechModelsOnly` to download without launching, or `-NoSpeechModels` to skip.
+It also provisions a private Qwen TTS runtime and configures Read Aloud by
+default. Qwen loads on demand and releases its memory when reading ends.
+Use `-NoTts` to skip automatic TTS setup.
 
 ## At a glance
 

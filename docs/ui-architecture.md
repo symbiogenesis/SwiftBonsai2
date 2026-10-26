@@ -81,8 +81,15 @@ unsupported terminal reasons, error events and missing completion reject.
 The PowerShell demo launcher provisions the pinned Canary, tokenizer and Qwen
 VoiceDesign files by default, using immutable URLs and exact size/SHA-256
 verification. `-SpeechModelsOnly` provisions files without building or launching;
-`-NoSpeechModels` skips that step. Runtime installation and service startup remain
-separate from artifact downloads and native presentation.
+`-NoSpeechModels` skips that step and automatic TTS setup. The launcher also
+provisions a private, pinned Qwen TTS runtime and protected credential. The Rust
+app owns the TTS process tree through a Windows Job, starts it only for explicit
+Read Aloud, checks authenticated model readiness, and releases the tree when
+reading ends or is cancelled. This preserves Swift's unchanged startup memory
+admission. `-NoTts` skips automatic TTS setup; an explicit `-TtsKeyFile` instead
+connects to an independently managed companion. Canary runtime/service setup
+remains separate. Runtime installation and process orchestration stay outside
+presentation controls.
 
 Speech input uses NVIDIA Canary Qwen 2.5B through an explicitly configured,
 authenticated numeric-loopback [companion service](../tools/canary-asr/README.md).

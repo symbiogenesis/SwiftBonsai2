@@ -245,6 +245,11 @@ jobs:
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: '& (Join-Path $env:GITHUB_WORKSPACE "tests/Test-SpeechModels.ps1") -Case All'
+      - name: Pinned TTS runtime and automatic read-aloud wiring contracts
+        if: matrix.lane == 'foundation'
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: '& (Join-Path $env:GITHUB_WORKSPACE "tests/Test-TtsRuntime.ps1") -Case All'
       - name: Pinned inference binary contracts
         if: matrix.lane == 'foundation'
         shell: pwsh

@@ -12,8 +12,10 @@ The native window owns its broker and inference-process lifetime. Build outputs,
 credentials and logs remain in the unique external demo directory.
 NoSpeechModels skips speech model provisioning. SpeechModelsOnly downloads or
 verifies speech files and returns their paths without building or launching.
-Speech inference services still require their supported Python environments;
-downloading weights does not install those environments or open the microphone.
+The default demo also installs a private pinned Qwen TTS Python runtime. The
+native app starts its local TTS service only for Read Aloud, then releases it.
+NoTts skips this runtime setup. Canary runtime/service setup remains separate.
+Downloading files and preparing TTS never opens the microphone.
 .EXAMPLE
 ./scripts/Start-Demo.ps1
 .EXAMPLE
@@ -42,6 +44,7 @@ param(
     [ValidateRange(1024, 65535)][int]$CanaryPort = 8766,
     [string]$TtsKeyFile,
     [ValidateRange(1024, 65535)][int]$TtsPort = 8767,
+    [switch]$NoTts,
     [switch]$NoSpeechModels,
     [switch]$SpeechModelsOnly
 )
@@ -68,8 +71,8 @@ if ($CanaryKeyFile) {
         throw 'Canary needs an existing external key file and a distinct local port.'
     }
 }
-if ($PSBoundParameters.ContainsKey('TtsPort') -and -not $TtsKeyFile) {
-    throw 'TtsPort requires TtsKeyFile.'
+if ($NoTts -and $TtsKeyFile) {
+    throw 'NoTts cannot be combined with TtsKeyFile.'
 }
 if ($TtsKeyFile) {
     $TtsKeyFile = Resolve-ExternalPath -Path $TtsKeyFile
@@ -125,6 +128,25 @@ try {
         if (-not $ChatPath) { $ChatPath = Join-Path $target 'release/bonsai-chat.exe' }
         if (-not $BrokerPath) { $BrokerPath = Join-Path $target 'release/bonsai-broker.exe' }
     }
+    $ttsPython = $ttsService = $null
+    if (-not $TtsKeyFile -and -not $NoTts -and -not $NoSpeechModels) {
+        if ($TtsPort -in @($FrontendPort, $BackendPort) -or
+            ($CanaryKeyFile -and $TtsPort -eq $CanaryPort)) {
+            throw 'Qwen TTS needs a distinct local port.'
+        }
+        Import-Module (Join-Path $PSScriptRoot 'Bonsai.TtsRuntime.psm1')
+        Write-Information -MessageData 'Preparing the private Qwen TTS runtime. The first setup downloads its pinned Python dependencies; later launches reuse them.' -InformationAction Continue
+        $ttsPython = Install-QwenTtsRuntime -DataDirectory $DataDirectory -WorkingDirectory $scratch
+        $keys = & (Join-Path $PSScriptRoot 'New-DevelopmentKeys.ps1') -ParentDirectory $scratch
+        $TtsKeyFile = $keys.FrontendKeyFile
+        $serviceDirectory = Join-Path $scratch 'qwen-tts-service'
+        [void][IO.Directory]::CreateDirectory($serviceDirectory)
+        foreach ($file in @('server.py','model.lock.json')) {
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../tools/qwen-tts/$file") -Destination $serviceDirectory
+        }
+        $ttsService = Join-Path $serviceDirectory 'server.py'
+        Write-Information -MessageData 'Read Aloud is configured for local Qwen VoiceDesign. Its model loads only when requested, and the app releases it when reading finishes.' -InformationAction Continue
+    }
     Write-Information -MessageData "Opening Swift Bonsai 2. Closing its window stops the demo. Evidence: $scratch" -InformationAction Continue
     $start = [Diagnostics.ProcessStartInfo]::new($ChatPath)
     $start.UseShellExecute = $false
@@ -142,6 +164,12 @@ try {
     }
     if ($TtsKeyFile) {
         foreach ($argument in @('--tts-key-file', $TtsKeyFile, '--tts-port', [string]$TtsPort)) {
+            [void]$start.ArgumentList.Add($argument)
+        }
+    }
+    if ($ttsPython) {
+        foreach ($argument in @('--tts-python', $ttsPython, '--tts-service', $ttsService,
+                '--tts-snapshot', $speechModels.TtsSnapshotPath)) {
             [void]$start.ArgumentList.Add($argument)
         }
     }

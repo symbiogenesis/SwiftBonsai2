@@ -250,6 +250,11 @@ def _model_worker(connection, snapshot: str, device: str, scratch: str) -> None:
                 import torch
                 from qwen_tts import Qwen3TTSModel
 
+                if device == "cpu":
+                    # Keep autoregressive CPU work bounded; oversubscribing
+                    # emulated x64 kernels hurts short-clip responsiveness.
+                    torch.set_num_threads(4)
+                    torch.set_num_interop_threads(1)
                 model = Qwen3TTSModel.from_pretrained(
                     snapshot, local_files_only=True, trust_remote_code=False,
                     device_map="cpu" if device == "cpu" else "cuda:0",

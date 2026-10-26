@@ -105,15 +105,30 @@ $speech.CanaryTokenizerSnapshotPath
 $speech.TtsSnapshotPath
 ```
 
-Pass `-NoSpeechModels` for a text-only launch or when speech model storage is
-managed separately. Downloads provision files only; the supported Python
-environments, protected service keys and running inference companions remain
-separate requirements. Downloads do not request microphone access.
+The default demo also provisions a private pinned CPython x64 runtime and Qwen
+dependencies below `$data/speech/runtime/`, using Windows x64 emulation on ARM64.
+It does not modify global Python, PATH or file associations. All installation
+artifacts have exact download sizes and SHA-256 pins; cached installations run
+an import/version check before reuse. First setup downloads additional runtime
+dependencies. `-SpeechModelsOnly` returns before runtime setup.
 
-For speech output, prepare/start the independent
-[Qwen VoiceDesign companion](../tools/qwen-tts/README.md), then add
-`-TtsKeyFile C:\Speech\qwen-tts.key` (default local port 8767). Both companions
-may be configured together; their ports must be distinct. The demo verifies
+Read Aloud is configured automatically. Once an assistant answer is available,
+select it to load Qwen, synthesize with the **Voice profile** description and play
+the result. Initial model loading and CPU synthesis can take time. The native
+app owns the service and worker in a Windows Job and releases them when reading
+finishes, stops or fails. The service does not load before Swift's 16 GiB startup
+admission. No setup popup or manually managed service is needed for this path.
+
+Pass `-NoTts` to skip automatic TTS runtime setup, or `-NoSpeechModels` for a
+text-only launch with no speech downloads or automatic runtime setup. Downloads
+and TTS setup do not request microphone access. Canary's supported Python
+environment and running companion remain separate requirements.
+
+To use an independently managed
+[Qwen VoiceDesign companion](../tools/qwen-tts/README.md), add
+`-TtsKeyFile C:\Speech\qwen-tts.key` (default local port 8767); the demo then
+does not install or own its runtime. Both companions may be configured together;
+their ports must be distinct. The demo verifies
 their authenticated model/capability responses and never substitutes system
 speech synthesis. The Qwen service uses the pinned VoiceDesign weights and
 offline tokenizer assets, with `Auto` language selection. Descriptions guide
@@ -132,8 +147,10 @@ answer when it cannot start. Speech controls remain visible and actionable while
 idle; they do not silently hide setup requirements behind greyed-out buttons.
 The native UI does not download Canary weights or substitute another recognizer. The
 companion's supported runtime and memory requirements are separate from Swift's
-16 GiB admission check; Windows ARM64 Canary and Qwen TTS inference are not yet
-qualified. UI/protocol tests do not establish real-model audio quality or latency.
+16 GiB admission check; native Windows ARM64 Canary inference is not yet
+qualified. Qwen uses the isolated x64 environment because the official
+torchaudio package has no Windows ARM64 wheel. UI/protocol tests do not establish
+real-model audio quality or latency.
 
 `Start-Demo.ps1` builds the chat app and broker in a fresh system-temp lane.
 Pass absolute `-ChatPath` and `-BrokerPath` values to reuse existing builds.
