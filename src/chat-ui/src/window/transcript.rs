@@ -55,10 +55,20 @@ pub(super) struct Message {
 #[derive(Default, serde::Serialize)]
 pub(super) struct Transcript {
     pub(super) messages: Vec<Message>,
+    // All production text mutations go through this type. Keep the running
+    // total out of recovery data and rebuild it when messages are restored.
+    #[serde(skip)]
+    text_bytes: usize,
     #[serde(skip)]
     next_id: u64,
     #[serde(skip)]
     search: search::Search,
+    #[cfg(test)]
+    #[serde(skip)]
+    trim_message_visits: usize,
+    #[cfg(test)]
+    #[serde(skip)]
+    trim_batches: usize,
 }
 
 impl<'de> serde::Deserialize<'de> for Transcript {
@@ -76,6 +86,7 @@ impl<'de> serde::Deserialize<'de> for Transcript {
         for mut message in stored.messages {
             transcript.next_id = transcript.next_id.wrapping_add(1);
             message.id = transcript.next_id;
+            transcript.text_bytes = transcript.text_bytes.saturating_add(message.text_bytes());
             transcript.messages.push(message);
         }
         if !transcript.valid_saved() {
@@ -99,6 +110,7 @@ impl Transcript {
 
     pub(super) fn clear(&mut self) {
         self.messages.clear();
+        self.text_bytes = 0;
         self.search = search::Search::default();
     }
 
@@ -119,6 +131,7 @@ impl Transcript {
     pub(super) fn push(&mut self, role: Role, body: String) {
         self.search.invalidate();
         self.next_id = self.next_id.wrapping_add(1);
+        self.text_bytes = self.text_bytes.saturating_add(body.len());
         self.messages.push(Message {
             id: self.next_id,
             role,
@@ -142,10 +155,12 @@ impl Transcript {
             self.push(Role::Assistant, String::new());
         }
         if let Some(message) = self.messages.last_mut() {
+            self.text_bytes = self.text_bytes.saturating_sub(message.text_bytes());
             text.clone_into(&mut message.body);
             reasoning
                 .unwrap_or_default()
                 .clone_into(&mut message.reasoning);
+            self.text_bytes = self.text_bytes.saturating_add(message.text_bytes());
             message.cache = None;
         }
         self.trim();
@@ -164,6 +179,7 @@ impl Transcript {
             } else {
                 message.body.push_str(text);
             }
+            self.text_bytes = self.text_bytes.saturating_add(text.len());
             // Layout keys track answer and reasoning lengths independently.
         }
         self.trim();
@@ -182,15 +198,34 @@ impl Transcript {
     }
 
     fn trim(&mut self) {
-        let mut bytes: usize = self
+        if self.text_bytes <= MAX_BYTES {
+            return;
+        }
+        let mut removed = 0;
+        // Preserve the same final two messages as the original byte bound.
+        // Inspect only the evicted prefix, then move the retained suffix once.
+        for message in self
             .messages
             .iter()
-            .map(|message| message.body.len().saturating_add(message.reasoning.len()))
-            .sum();
-        while bytes > MAX_BYTES && self.messages.len() > 2 {
+            .take(self.messages.len().saturating_sub(2))
+        {
+            if self.text_bytes <= MAX_BYTES {
+                break;
+            }
+            #[cfg(test)]
+            {
+                self.trim_message_visits += 1;
+            }
+            self.text_bytes = self.text_bytes.saturating_sub(message.text_bytes());
+            removed += 1;
+        }
+        if removed > 0 {
             self.search.invalidate();
-            let removed = self.messages.remove(0);
-            bytes = bytes.saturating_sub(removed.body.len() + removed.reasoning.len());
+            drop(self.messages.drain(..removed));
+            #[cfg(test)]
+            {
+                self.trim_batches += 1;
+            }
         }
     }
 
@@ -294,6 +329,10 @@ impl Transcript {
 }
 
 impl Message {
+    const fn text_bytes(&self) -> usize {
+        self.body.len().saturating_add(self.reasoning.len())
+    }
+
     fn can_speak(&self) -> bool {
         self.role == Role::Assistant && !self.pending && !self.body.trim().is_empty()
     }
