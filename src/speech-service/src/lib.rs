@@ -19,6 +19,7 @@ use std::{
 
 mod credentials;
 mod http;
+pub mod launch;
 mod request;
 mod watchdog;
 mod wave;
@@ -66,7 +67,7 @@ pub enum Request<'a> {
         text: &'a str,
         /// Plain voice description containing at most 1,024 scalar values.
         voice_description: &'a str,
-        /// Auto or an explicitly supported language name.
+        /// Fixed Auto mode; the native model follows the input text's language.
         language: &'a str,
     },
 }
@@ -109,7 +110,24 @@ pub trait Engine {
 /// # Errors
 /// Rejects privileged ports, unsafe credentials, failed exclusive binding and
 /// failed listener accepts. Malformed individual requests receive bounded errors.
-pub fn serve(mut engine: impl Engine, port: u16, key_file: &Path) -> io::Result<()> {
+pub fn serve(engine: impl Engine, port: u16, key_file: &Path) -> io::Result<()> {
+    serve_with_ready(engine, port, key_file, |_| Ok(()))
+}
+
+/// Serves a loaded companion and invokes a value-free notification after binding.
+///
+/// The callback runs only after credential validation and exclusive listening
+/// have succeeded. It must not log credential bytes, text or audio.
+///
+/// # Errors
+/// Returns the same listener/credential failures as [`serve`], or callback I/O
+/// failure. The engine must already have loaded its independently verified files.
+pub fn serve_with_ready(
+    mut engine: impl Engine,
+    port: u16,
+    key_file: &Path,
+    on_ready: impl FnOnce(u16) -> io::Result<()>,
+) -> io::Result<()> {
     if port < 1024 {
         return Err(io::Error::other("Use an unprivileged speech port."));
     }
@@ -120,6 +138,7 @@ pub fn serve(mut engine: impl Engine, port: u16, key_file: &Path) -> io::Result<
     socket.bind(&SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into())?;
     socket.listen(1)?;
     let listener: TcpListener = socket.into();
+    on_ready(port)?;
     loop {
         let (mut peer, address) = listener.accept()?;
         if address.ip() != Ipv4Addr::LOCALHOST {

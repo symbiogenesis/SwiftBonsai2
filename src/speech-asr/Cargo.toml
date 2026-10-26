@@ -11,6 +11,8 @@ categories = ["multimedia::audio"]
 description = "Bounded native Canary-Qwen 2.5B recognition for Bonsai speech services"
 
 [dependencies]
+bonsai-speech-service = { path = "../speech-service" }
+serde_json.workspace = true
 transcribe-cpp = { version = "=0.4.1", default-features = false }
 
 [lints]

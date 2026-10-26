@@ -10,5 +10,9 @@ keywords = ["speech", "tts", "qwen", "ggml", "native"]
 categories = ["multimedia::audio"]
 description = "Owned native Qwen VoiceDesign speech inference for Bonsai"
 
+[dependencies]
+bonsai-speech-service = { path = "../speech-service" }
+serde_json.workspace = true
+
 [lints]
 workspace = true

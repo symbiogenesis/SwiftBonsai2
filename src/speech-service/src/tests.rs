@@ -18,6 +18,7 @@ const KEY: [u8; 64] = [b'a'; 64];
 struct Fake {
     kind: Kind,
     calls: Arc<AtomicUsize>,
+    transcript: String,
 }
 impl Engine for Fake {
     fn kind(&self) -> Kind {
@@ -32,7 +33,7 @@ impl Engine for Fake {
             } => {
                 assert_eq!(sample_rate, 16_000);
                 assert_eq!(samples.len(), 1);
-                Ok(Output::Transcript("recognized words".to_owned()))
+                Ok(Output::Transcript(self.transcript.clone()))
             }
             Request::Synthesize {
                 text,
@@ -57,13 +58,32 @@ fn exchange(
     headers: &[(&str, &str)],
     body: &[u8],
 ) -> io::Result<(Vec<u8>, usize)> {
+    exchange_transcript(kind, route, headers, body, "recognized words".to_owned())
+}
+
+fn exchange_transcript(
+    kind: Kind,
+    route: &str,
+    headers: &[(&str, &str)],
+    body: &[u8],
+    transcript: String,
+) -> io::Result<(Vec<u8>, usize)> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
     let port = listener.local_addr()?.port();
     let calls = Arc::new(AtomicUsize::new(0));
     let observed = Arc::clone(&calls);
     let server = thread::spawn(move || -> io::Result<()> {
         let (mut peer, _) = listener.accept()?;
-        http::handle(&mut peer, port, &KEY, &mut Fake { kind, calls });
+        http::handle(
+            &mut peer,
+            port,
+            &KEY,
+            &mut Fake {
+                kind,
+                calls,
+                transcript,
+            },
+        );
         Ok(())
     });
     let mut peer = TcpStream::connect((Ipv4Addr::LOCALHOST, port))?;
@@ -147,9 +167,7 @@ fn native_http_preserves_exact_health_and_voice_design_audio() -> io::Result<()>
 
 #[test]
 fn native_multipart_transcription_maps_pcm_without_disk_files() -> io::Result<()> {
-    let mut body = format!("--fixture\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{}\r\n--fixture\r\nContent-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\nContent-Type: audio/wav\r\n\r\n", crate::CANARY_MODEL).into_bytes();
-    body.extend_from_slice(&input_wav());
-    body.extend_from_slice(b"\r\n--fixture--\r\n");
+    let body = multipart_audio();
     let (response, calls) = exchange(
         Kind::Canary,
         "POST /v1/audio/transcriptions",
@@ -165,6 +183,37 @@ fn native_multipart_transcription_maps_pcm_without_disk_files() -> io::Result<()
         response
             .windows(b"recognized words".len())
             .any(|bytes| bytes == b"recognized words")
+    );
+    Ok(())
+}
+
+fn multipart_audio() -> Vec<u8> {
+    let mut body = format!("--fixture\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{}\r\n--fixture\r\nContent-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\nContent-Type: audio/wav\r\n\r\n", crate::CANARY_MODEL).into_bytes();
+    body.extend_from_slice(&input_wav());
+    body.extend_from_slice(b"\r\n--fixture--\r\n");
+    body
+}
+
+#[test]
+fn escaped_transcripts_cannot_exceed_the_clients_serialized_response_limit() -> io::Result<()> {
+    let body = multipart_audio();
+    let (response, calls) = exchange_transcript(
+        Kind::Canary,
+        "POST /v1/audio/transcriptions",
+        &[
+            ("Content-Type", "multipart/form-data; boundary=fixture"),
+            ("Content-Length", &body.len().to_string()),
+        ],
+        &body,
+        "\"".repeat(32768),
+    )?;
+    assert!(response.starts_with(b"HTTP/1.1 502"));
+    assert_eq!(calls, 1);
+    assert!(response.len() < 65536);
+    assert!(
+        response
+            .windows(b"model_failure".len())
+            .any(|bytes| bytes == b"model_failure")
     );
     Ok(())
 }
@@ -216,6 +265,18 @@ fn strict_json_and_wave_validation_rejects_untrusted_payloads() {
         })
         .is_err()
     );
+}
+
+#[test]
+fn native_voice_design_rejects_language_overrides_before_inference() -> io::Result<()> {
+    let mut value: serde_json::Value = serde_json::from_slice(&speech())?;
+    value["language"] = "English".into();
+    let body = serde_json::to_vec(&value)?;
+    assert_eq!(
+        request::body(Kind::QwenTts, "application/json", &body).err(),
+        Some(http::Error::bad("unsupported_language"))
+    );
+    Ok(())
 }
 
 #[test]

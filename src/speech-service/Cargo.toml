@@ -11,6 +11,7 @@ keywords = ["speech", "http", "native", "local", "audio"]
 categories = ["network-programming", "multimedia::audio"]
 
 [dependencies]
+bonsai-artifacts = { path = "../artifacts" }
 httparse = "=1.10.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

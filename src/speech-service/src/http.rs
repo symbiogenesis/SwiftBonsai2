@@ -82,6 +82,9 @@ fn respond(
             if text.len() <= 32768 && !text.contains('\0') =>
         {
             let body = serde_json::json!({"text":text,"model":kind.model()}).to_string();
+            if body.len() > 65536 {
+                return Err(Error::new(502, "model_failure"));
+            }
             send(peer, 200, "application/json", body.as_bytes())
         }
         (Kind::QwenTts, Ok(Output::Audio(audio))) => {

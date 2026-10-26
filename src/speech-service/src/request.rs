@@ -54,21 +54,7 @@ pub(super) fn body(kind: Kind, media: &str, bytes: &[u8]) -> Result<Prepared, Er
             if speech.response_format != "wav" {
                 return Err(Error::bad("unsupported_audio_format"));
             }
-            if ![
-                "Auto",
-                "Chinese",
-                "English",
-                "Japanese",
-                "Korean",
-                "German",
-                "French",
-                "Russian",
-                "Portuguese",
-                "Spanish",
-                "Italian",
-            ]
-            .contains(&speech.language.as_str())
-            {
+            if speech.language != "Auto" {
                 return Err(Error::bad("unsupported_language"));
             }
             if !text(&speech.input, 2048) {
