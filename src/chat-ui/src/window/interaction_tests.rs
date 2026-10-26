@@ -341,3 +341,140 @@ fn find_controls_navigate_unicode_matches_and_refresh_streamed_text() {
     chat.run();
     assert!(chat.query_by_label("Find in conversation").is_none());
 }
+
+#[test]
+fn long_conversation_find_scrolls_to_offscreen_matches_and_keeps_latest_reachable() {
+    const FIRST: &str = "Needle at the beginning of the conversation.";
+    const LAST: &str = "Needle at the end of the conversation.";
+    for size in [[1180.0, 860.0], [620.0, 760.0]] {
+        let mut chat = harness(size, false);
+        chat.state_mut()
+            .app
+            .transcript
+            .push(Role::User, FIRST.to_owned());
+        for index in 0..30 {
+            chat.state_mut().app.transcript.push(
+                Role::Assistant,
+                format!("Middle passage {index}.\nA detail about a character.\nAnother detail about the setting.\nA final detail about the scene."),
+            );
+        }
+        chat.state_mut()
+            .app
+            .transcript
+            .push(Role::Assistant, LAST.to_owned());
+        chat.state_mut().app.transcript.remove_empty_response();
+        chat.run();
+        assert!(chat.query_by_label(FIRST).is_none());
+        assert!(chat.get_by_label(LAST).rect().is_positive());
+        chat.get_by_role_and_label(egui::Role::Button, "Find")
+            .click();
+        chat.run();
+        chat.get_by_role_and_label(egui::Role::TextInput, "Find in conversation")
+            .type_text("Needle");
+        chat.run();
+        let controls = chat
+            .get_by_role_and_label(egui::Role::Button, "Find")
+            .rect();
+        let first = chat.get_by_label(FIRST).rect();
+        let composer = chat
+            .get_by_role_and_label(egui::Role::MultilineTextInput, "Message")
+            .rect();
+        assert!(first.top() >= controls.bottom());
+        assert!(first.bottom() < composer.top());
+        assert!(chat.query_by_label(LAST).is_none());
+        assert!(chat.get_by_label("1 of 2").rect().is_positive());
+
+        chat.get_by_role_and_label(egui::Role::Button, "Next match")
+            .click();
+        chat.run();
+        let last = chat.get_by_label(LAST).rect();
+        assert!(last.top() >= controls.bottom());
+        assert!(last.bottom() < composer.top());
+        assert!(chat.query_by_label(FIRST).is_none());
+        assert!(chat.get_by_label("2 of 2").rect().is_positive());
+        assert!(
+            (chat
+                .get_by_role_and_label(egui::Role::Button, "Find")
+                .rect()
+                .top()
+                - controls.top())
+            .abs()
+                < 0.5
+        );
+
+        chat.get_by_role_and_label(egui::Role::Button, "Previous match")
+            .click();
+        chat.run();
+        assert!(chat.get_by_label(FIRST).rect().is_positive());
+        assert!(chat.query_by_label(LAST).is_none());
+        chat.get_by_role_and_label(egui::Role::Button, "Latest")
+            .click();
+        chat.run();
+        assert!(chat.get_by_label(LAST).rect().is_positive());
+        assert!(chat.query_by_label(FIRST).is_none());
+        assert!(
+            (chat
+                .get_by_role_and_label(egui::Role::Button, "Find")
+                .rect()
+                .top()
+                - controls.top())
+            .abs()
+                < 0.5
+        );
+    }
+}
+
+#[test]
+fn real_text_selection_does_not_leak_when_conversation_message_ids_repeat() {
+    let mut chat = harness([1180.0, 860.0], true);
+    chat.run();
+    let original = chat.state().app.active_conversation;
+    let answer = chat.get_by_label(ANSWER).rect();
+    let start = answer.left_top() + egui::vec2(3.0, 8.0);
+    let end = answer.left_top() + egui::vec2(130.0, 8.0);
+    chat.hover_at(start);
+    chat.drag_at(start);
+    chat.run_steps(1);
+    chat.hover_at(end);
+    chat.run_steps(1);
+    chat.drop_at(end);
+    chat.run();
+    assert!(
+        chat.ctx
+            .plugin::<egui::text_selection::LabelSelectionState>()
+            .lock()
+            .has_selection()
+    );
+
+    // Switch without a pointer click, which would independently clear selection.
+    // Both transcripts assign their first two messages ids 1 and 2.
+    chat.state_mut().app.new_chat();
+    chat.state_mut()
+        .app
+        .transcript
+        .push(Role::User, "A different question.".to_owned());
+    chat.state_mut().app.transcript.push(
+        Role::Assistant,
+        "An unrelated answer that must not inherit another conversation's text selection."
+            .to_owned(),
+    );
+    chat.state_mut().app.transcript.remove_empty_response();
+    chat.run();
+    assert!(
+        !chat
+            .ctx
+            .plugin::<egui::text_selection::LabelSelectionState>()
+            .lock()
+            .has_selection()
+    );
+    chat.state_mut().app.switch_conversation(original);
+    chat.run();
+    assert!(chat.get_by_label(ANSWER).rect().is_positive());
+    assert!(
+        !chat
+            .ctx
+            .plugin::<egui::text_selection::LabelSelectionState>()
+            .lock()
+            .has_selection()
+    );
+}
