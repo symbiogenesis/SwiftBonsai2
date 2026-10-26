@@ -7,12 +7,13 @@ use std::os::windows::ffi::OsStrExt as _;
 use std::os::windows::io::{
     AsRawHandle as _, AsRawSocket as _, AsSocket, FromRawHandle as _, OwnedHandle,
 };
+use std::path::Path;
 use std::ptr::{self, null, null_mut};
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{
-    ERROR_INSUFFICIENT_BUFFER, FILETIME, HANDLE, INVALID_HANDLE_VALUE, WAIT_FAILED, WAIT_OBJECT_0,
-    WAIT_TIMEOUT,
+    ERROR_INSUFFICIENT_BUFFER, ERROR_INVALID_PARAMETER, ERROR_MORE_DATA, FILETIME, HANDLE,
+    INVALID_HANDLE_VALUE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::NetworkManagement::IpHelper::{
     GetExtendedTcpTable, MIB_TCPROW_OWNER_PID, TCP_TABLE_OWNER_PID_LISTENER,
@@ -26,26 +27,46 @@ use windows_sys::Win32::Storage::FileSystem::{
     OPEN_EXISTING,
 };
 use windows_sys::Win32::System::JobObjects::{
-    CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION,
-    JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
-    QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
+    CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+    JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION, JOB_OBJECT_LIMIT_JOB_MEMORY,
+    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
+    JobObjectBasicProcessIdList, JobObjectExtendedLimitInformation, QueryInformationJobObject,
+    SetInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::ProcessStatus::{
     K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX,
 };
 use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 use windows_sys::Win32::System::Threading::{
-    CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, DeleteProcThreadAttributeList,
-    EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, GetProcessTimes,
-    InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess,
+    CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
+    DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
+    GetProcessTimes, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess,
     PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST, PROCESS_INFORMATION,
     PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, ResumeThread, STARTF_USESHOWWINDOW,
     STARTF_USESTDHANDLES, STARTUPINFOEXW, UpdateProcThreadAttribute, WaitForSingleObject,
 };
 
-use crate::{ProcessMemory, ProcessSpec, invalid};
+use crate::{ProcessMemory, ProcessSpec, ToolProcessSpec, invalid};
+
+mod environment;
+
+pub(super) fn tool_environment(
+    overlay: &std::collections::BTreeMap<String, String>,
+) -> io::Result<Option<Vec<u16>>> {
+    if overlay.is_empty() {
+        return Ok(None);
+    }
+    environment::build(std::env::vars_os(), overlay).map(Some)
+}
+
+struct LaunchSpec<'a> {
+    executable: &'a Path,
+    working_directory: &'a Path,
+    stdout: &'a Path,
+    stderr: &'a Path,
+    limits: Option<(usize, u32)>,
+}
 
 pub(super) struct ParentProcess(OwnedHandle);
 
@@ -173,7 +194,43 @@ pub(super) struct NativeProcess {
 }
 
 impl NativeProcess {
-    pub(super) fn start(spec: &ProcessSpec, mut command: Vec<u16>) -> io::Result<Self> {
+    pub(super) fn start(spec: &ProcessSpec, command: Vec<u16>) -> io::Result<Self> {
+        Self::launch(
+            &LaunchSpec {
+                executable: &spec.executable,
+                working_directory: &spec.working_directory,
+                stdout: &spec.stdout,
+                stderr: &spec.stderr,
+                limits: Some((spec.memory_limit_bytes, spec.active_process_limit)),
+            },
+            command,
+            None,
+        )
+    }
+
+    pub(super) fn start_tool(
+        spec: &ToolProcessSpec,
+        command: Vec<u16>,
+        environment: Option<&[u16]>,
+    ) -> io::Result<Self> {
+        Self::launch(
+            &LaunchSpec {
+                executable: &spec.executable,
+                working_directory: &spec.working_directory,
+                stdout: &spec.stdout,
+                stderr: &spec.stderr,
+                limits: None,
+            },
+            command,
+            environment,
+        )
+    }
+
+    fn launch(
+        spec: &LaunchSpec<'_>,
+        mut command: Vec<u16>,
+        environment: Option<&[u16]>,
+    ) -> io::Result<Self> {
         let executable = wide(spec.executable.as_os_str());
         let directory = wide(spec.working_directory.as_os_str());
         // SAFETY: Null attributes/name request a new noninheritable unnamed Job.
@@ -183,11 +240,13 @@ impl NativeProcess {
             // A headless engine must terminate on an unhandled exception rather
             // than waiting for a Windows Error Reporting dialog. The Job applies
             // this policy to descendants without changing the owner's error mode.
-            | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION
-            | JOB_OBJECT_LIMIT_JOB_MEMORY
-            | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
-        limits.BasicLimitInformation.ActiveProcessLimit = spec.active_process_limit;
-        limits.JobMemoryLimit = spec.memory_limit_bytes;
+            | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
+        if let Some((memory, processes)) = spec.limits {
+            limits.BasicLimitInformation.LimitFlags |=
+                JOB_OBJECT_LIMIT_JOB_MEMORY | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+            limits.BasicLimitInformation.ActiveProcessLimit = processes;
+            limits.JobMemoryLimit = memory;
+        }
         // SAFETY: The handle is owned/live, class matches the initialized structure,
         // and the exact readable structure size is passed synchronously.
         check(unsafe {
@@ -235,7 +294,8 @@ impl NativeProcess {
         // SAFETY: All strings are terminated and mutable command storage is live.
         // Attributes hold stable buffers and live handles. HANDLE_LIST restricts
         // inheritance to the three streams; JOB_LIST assigns the Job atomically
-        // before child code can run. Null environment preserves OS/profile state.
+        // before child code can run. An optional complete double-NUL-terminated
+        // UTF-16 environment block stays allocated; null inherits unchanged.
         // Both process/thread handles are noninheritable, no breakaway is enabled.
         check(unsafe {
             CreateProcessW(
@@ -244,8 +304,11 @@ impl NativeProcess {
                 null(),
                 null(),
                 1,
-                CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW,
-                null(),
+                CREATE_SUSPENDED
+                    | EXTENDED_STARTUPINFO_PRESENT
+                    | CREATE_NO_WINDOW
+                    | CREATE_UNICODE_ENVIRONMENT,
+                environment.map_or(null(), |block| block.as_ptr().cast()),
                 directory.as_ptr(),
                 ptr::from_ref(&startup.StartupInfo),
                 &raw mut info,
@@ -298,9 +361,13 @@ impl NativeProcess {
             return Err(invalid("cleanup timeout must be positive"));
         }
         let start = Instant::now();
+        // Retain synchronization handles before termination: Windows removes a
+        // member from Job accounting shortly before signaling its process handle.
+        let members = self.members();
         // SAFETY: This owned/live Job has termination rights and contains only
         // processes atomically assigned by this owner and their descendants.
         check(unsafe { TerminateJobObject(self.job.as_raw_handle(), 1) })?;
+        let members = members?;
         loop {
             let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
             // SAFETY: The class matches the writable, initialized structure and
@@ -316,7 +383,10 @@ impl NativeProcess {
             })?;
             // Job accounting can reach zero just before the root handle becomes
             // signaled. A successful stop also guarantees try_wait sees exit.
-            if accounting.ActiveProcesses == 0 && self.try_wait()?.is_some() {
+            if accounting.ActiveProcesses == 0
+                && self.try_wait()?.is_some()
+                && members_exited(&members)?
+            {
                 return Ok(());
             }
             let Some(remaining) = timeout.checked_sub(start.elapsed()) else {
@@ -327,6 +397,95 @@ impl NativeProcess {
             };
             std::thread::sleep(remaining.min(Duration::from_millis(10)));
         }
+    }
+
+    fn members(&self) -> io::Result<Vec<OwnedHandle>> {
+        const MAX_MEMBERS: usize = 65_536;
+        let header_units = 8_usize.div_ceil(size_of::<usize>());
+        let mut capacity = 64;
+        for _ in 0..8 {
+            let mut storage = vec![0_usize; header_units + capacity];
+            let bytes = u32::try_from(size_of_val(storage.as_slice()))
+                .map_err(|_| invalid("Job process list is too large"))?;
+            // SAFETY: The usize-aligned allocation contains the two u32 header
+            // fields and `capacity` pointer-sized IDs. The class and exact
+            // writable byte length agree, and the Job handle remains owned.
+            let result = unsafe {
+                QueryInformationJobObject(
+                    self.job.as_raw_handle(),
+                    JobObjectBasicProcessIdList,
+                    storage.as_mut_ptr().cast(),
+                    bytes,
+                    null_mut(),
+                )
+            };
+            if result == 0 {
+                let error = io::Error::last_os_error();
+                if error.raw_os_error() != i32::try_from(ERROR_MORE_DATA).ok() {
+                    return Err(error);
+                }
+                capacity = (capacity * 2).min(MAX_MEMBERS);
+                continue;
+            }
+            // SAFETY: The initialized aligned buffer is at least eight bytes;
+            // the native class writes these two u32 counts before its ID array.
+            let [assigned, listed] = unsafe { ptr::read(storage.as_ptr().cast::<[u32; 2]>()) };
+            let assigned =
+                usize::try_from(assigned).map_err(|_| invalid("Job process count overflow"))?;
+            let listed =
+                usize::try_from(listed).map_err(|_| invalid("Job process count overflow"))?;
+            if assigned > MAX_MEMBERS || listed > capacity || listed > assigned {
+                return Err(invalid("Job process list exceeded its bound"));
+            }
+            if assigned > listed {
+                capacity = assigned;
+                continue;
+            }
+            let mut handles = Vec::with_capacity(listed);
+            for id in &storage[header_units..header_units + listed] {
+                let id =
+                    u32::try_from(*id).map_err(|_| invalid("Job process identifier overflow"))?;
+                // SAFETY: Each numeric PID came from this owned Job. The fresh
+                // noninheritable handle has synchronization/query rights only;
+                // it is retained immediately and never used to terminate by PID.
+                let handle = unsafe {
+                    OpenProcess(
+                        PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+                        0,
+                        id,
+                    )
+                };
+                match owned(handle) {
+                    Ok(handle) => {
+                        let mut belongs = 0;
+                        // SAFETY: Both process and Job handles remain owned;
+                        // the writable BOOL lives through this synchronous query.
+                        check(unsafe {
+                            IsProcessInJob(
+                                handle.as_raw_handle(),
+                                self.job.as_raw_handle(),
+                                &raw mut belongs,
+                            )
+                        })?;
+                        // A PID can exit and be reused between enumeration/open.
+                        // Retain only handles still belonging to this exact Job.
+                        if belongs != 0 {
+                            handles.push(handle);
+                        }
+                    }
+                    Err(error)
+                        if error.raw_os_error() == i32::try_from(ERROR_INVALID_PARAMETER).ok() =>
+                    {
+                        // A member can finish between querying and opening it.
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            return Ok(handles);
+        }
+        Err(io::Error::other(
+            "Job process list changed too often during cleanup",
+        ))
     }
 
     pub(super) fn peak_job_memory_bytes(&self) -> io::Result<usize> {
@@ -364,6 +523,19 @@ impl NativeProcess {
             working_set_bytes: counters.WorkingSetSize,
         })
     }
+}
+
+fn members_exited(members: &[OwnedHandle]) -> io::Result<bool> {
+    for member in members {
+        // SAFETY: Each noninheritable synchronization handle remains owned for
+        // this zero-timeout wait. No raw ownership is transferred.
+        match unsafe { WaitForSingleObject(member.as_raw_handle(), 0) } {
+            WAIT_OBJECT_0 => (),
+            WAIT_TIMEOUT => return Ok(false),
+            _ => return Err(io::Error::last_os_error()),
+        }
+    }
+    Ok(true)
 }
 
 pub(super) fn available_memory_bytes() -> io::Result<u64> {
