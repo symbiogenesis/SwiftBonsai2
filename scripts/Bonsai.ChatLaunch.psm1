@@ -76,13 +76,12 @@ function Invoke-ChatBuild {
             foreach ($name in $pending) { [IO.File]::Delete((Join-Path $cache ($name + '.build.json'))) }
             $cargo = Get-Command -Name cargo -CommandType Application -ErrorAction SilentlyContinue
             if (-not $cargo) { throw "Install Rust and the $channel toolchain, or supply -ChatPath and -BrokerPath. See docs/development-guide.md." }
-            Clear-BonsaiWorkspaceBuild -RepositoryRoot $repository -CargoPath $cargo.Source -Channel $channel -TargetDirectory $cache -WorkingDirectory $working -BuildTarget 'aarch64-pc-windows-msvc'
             $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', (Join-Path $repository 'Cargo.toml'),
                 '--target', 'aarch64-pc-windows-msvc', '--target-dir', $cache)
             foreach ($name in $pending) { $arguments += @('--package', $name) }
             $log = Join-Path $working 'chat-build.log'
             Write-Information -MessageData 'Checking the native chat build. Unchanged compiler outputs are reused.' -InformationAction Continue
-            $build = Invoke-BonsaiNativeProcess -Executable $cargo.Source -ArgumentList $arguments -WorkingDirectory $working -TimeoutSeconds 3600 -LogPath $log
+            $build = Invoke-BonsaiNativeProcess -Executable $cargo.Source -ArgumentList $arguments -WorkingDirectory $working -Environment @{ CARGO_BUILD_FINGERPRINT = 'content'; CARGO_UNSTABLE_CHECKSUM_FRESHNESS = 'true' } -TimeoutSeconds 3600 -LogPath $log
             if ($build.ExitCode -ne 0) { throw "Chat build failed. Inspect $log. Install the pinned Rust toolchain and native ARM64 Visual Studio C++ tools if required." }
         }
         $settled = if ($pending.Count) { Get-BonsaiBuildFingerprint -RepositoryRoot $repository -Identity $channel -WorkingDirectory $working } else { $fingerprint }

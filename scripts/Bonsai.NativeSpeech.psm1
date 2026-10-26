@@ -229,13 +229,14 @@ function Invoke-NativeSpeechBuild {
                 if ([IO.File]::Exists($executable)) { [IO.File]::Delete($executable) }
                 if ($null -eq $native) {
                     $native = Initialize-NativeSpeechBuild -DataDirectory $DataDirectory -WorkingDirectory $working -ToolPath $ToolPath
-                    Clear-BonsaiWorkspaceBuild -RepositoryRoot $repository -CargoPath 'cargo.exe' -Channel $channel -TargetDirectory $target -WorkingDirectory $working -BuildTarget 'aarch64-pc-windows-msvc'
                 }
                 $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', (Join-Path $repository 'Cargo.toml'), '--package', $package,
                     '--target', 'aarch64-pc-windows-msvc', '--target-dir', $target)
                 $log = Join-Path $working ($package + '-build.log')
                 $environment = @{}
                 foreach ($name in $native.Environment.Keys) { $environment[$name] = $native.Environment[$name] }
+                $environment['CARGO_BUILD_FINGERPRINT'] = 'content'
+                $environment['CARGO_UNSTABLE_CHECKSUM_FRESHNESS'] = 'true'
                 $build = Invoke-BonsaiNativeProcess -Executable 'cargo.exe' -ArgumentList $arguments -WorkingDirectory $working -Environment $environment -TimeoutSeconds 3600 -LogPath $log
                 if ($build.ExitCode -ne 0) { throw "Native $kind build failed; see $log" }
             }
