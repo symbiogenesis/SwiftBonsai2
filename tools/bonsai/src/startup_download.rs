@@ -27,7 +27,7 @@ fn expected(bytes: u64, sha256: &str) -> crate::Result<()> {
     Ok(())
 }
 
-fn check(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<()> {
+fn digest_matches(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<bool> {
     expected(bytes, sha256)?;
     if file.metadata().map_err(|error| error.to_string())?.len() != bytes {
         return Err("Artifact byte length differs from its lock.".into());
@@ -43,7 +43,11 @@ fn check(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<()> {
         }
         hash.update(&buffer[..read]);
     }
-    if !crate::startup_cache::hex(&hash.finalize()).eq_ignore_ascii_case(sha256) {
+    Ok(crate::startup_cache::hex(&hash.finalize()).eq_ignore_ascii_case(sha256))
+}
+
+fn check(file: &mut File, bytes: u64, sha256: &str) -> crate::Result<()> {
+    if !digest_matches(file, bytes, sha256)? {
         return Err("Artifact SHA-256 differs from its lock; invalid bytes are retained.".into());
     }
     Ok(())
@@ -181,6 +185,55 @@ fn download_tool(working: &Path) -> crate::Result<PathBuf> {
     Ok(curl)
 }
 
+fn transfer(
+    uri: &str,
+    partial: &Path,
+    offset: u64,
+    bytes: u64,
+    working: &Path,
+) -> crate::Result<()> {
+    let curl = download_tool(working)?;
+    let log = working.join(format!("download-{}.log", crate::native_startup::nonce()?));
+    let mut result = crate::startup_process::run(
+        curl.as_os_str(),
+        &curl_arguments(uri, partial, offset, bytes),
+        working,
+        &BTreeMap::new(),
+        Duration::from_secs(7_230),
+        &log,
+    )?;
+    if result.code == 33 && offset > 0 {
+        // curl refuses to append a full response when a server ignores Range.
+        // Restart this same locked partial rather than combining responses.
+        validate_external_path(partial).map_err(|error| error.to_string())?;
+        OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(partial)
+            .map_err(|error| error.to_string())?;
+        result = crate::startup_process::run(
+            curl.as_os_str(),
+            &curl_arguments(uri, partial, 0, bytes),
+            working,
+            &BTreeMap::new(),
+            Duration::from_secs(7_230),
+            &working.join(format!(
+                "download-restart-{}.log",
+                crate::native_startup::nonce()?
+            )),
+        )?;
+    }
+    if result.code != 0 {
+        return Err(format!(
+            "Pinned download failed ({}): {}; partial bytes retained at {}",
+            result.code,
+            result.stderr.trim(),
+            partial.display()
+        ));
+    }
+    Ok(())
+}
+
 /// Downloads a pinned artifact, resuming partial bytes and publishing exclusively.
 pub(crate) fn receive(
     uri: &str,
@@ -188,6 +241,17 @@ pub(crate) fn receive(
     bytes: u64,
     sha256: &str,
     working: &Path,
+) -> crate::Result<()> {
+    receive_with(uri, path, bytes, sha256, working, transfer)
+}
+
+fn receive_with(
+    uri: &str,
+    path: &Path,
+    bytes: u64,
+    sha256: &str,
+    working: &Path,
+    mut transfer: impl FnMut(&str, &Path, u64, u64, &Path) -> crate::Result<()>,
 ) -> crate::Result<()> {
     expected(bytes, sha256)?;
     download_uri(uri)?;
@@ -216,7 +280,7 @@ pub(crate) fn receive(
             .to_string_lossy()
     ));
     validate_external_path(&partial).map_err(|error| error.to_string())?;
-    let offset = match fs::symlink_metadata(&partial) {
+    let mut offset = match fs::symlink_metadata(&partial) {
         Ok(metadata) if metadata.is_file() && !is_redirect(&metadata) => metadata.len(),
         Ok(_) => return Err("Partial artifact is not an ordinary file.".into()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
@@ -225,49 +289,42 @@ pub(crate) fn receive(
     if offset > bytes {
         return Err("Partial artifact exceeds its locked length; bytes are retained.".into());
     }
-    if offset < bytes {
-        let curl = download_tool(working)?;
-        let log = working.join(format!("download-{}.log", crate::native_startup::nonce()?));
-        let mut result = crate::startup_process::run(
-            curl.as_os_str(),
-            &curl_arguments(uri, &partial, offset, bytes),
-            working,
-            &BTreeMap::new(),
-            Duration::from_secs(7_230),
-            &log,
-        )?;
-        if result.code == 33 && offset > 0 {
-            // curl refuses to append a full response when a server ignores Range.
-            // Restart this same locked partial rather than combining responses.
-            validate_external_path(&partial).map_err(|error| error.to_string())?;
-            OpenOptions::new()
-                .write(true)
-                .truncate(true)
-                .open(&partial)
-                .map_err(|error| error.to_string())?;
-            result = crate::startup_process::run(
-                curl.as_os_str(),
-                &curl_arguments(uri, &partial, 0, bytes),
-                working,
-                &BTreeMap::new(),
-                Duration::from_secs(7_230),
-                &working.join(format!(
-                    "download-restart-{}.log",
-                    crate::native_startup::nonce()?
-                )),
-            )?;
+    let mut quarantined: Option<PathBuf> = None;
+    let completed = loop {
+        if offset < bytes {
+            transfer(uri, &partial, offset, bytes, working)?;
         }
-        if result.code != 0 {
+        let mut completed = open_read(&partial)?;
+        if digest_matches(&mut completed, bytes, sha256)? {
+            break completed;
+        }
+        if let Some(quarantined) = &quarantined {
             return Err(format!(
-                "Pinned download failed ({}): {}; partial bytes retained at {}",
-                result.code,
-                result.stderr.trim(),
-                partial.display()
+                "Fresh artifact SHA-256 differs from its lock; invalid bytes retained at {} and {}.",
+                partial.display(),
+                quarantined.display()
             ));
         }
-    }
-    let mut completed = open_read(&partial)?;
-    check(&mut completed, bytes, sha256)?;
+        let quarantine = partial.with_file_name(format!(
+            ".bonsai-invalid-download-{}",
+            crate::startup_process::unique()
+        ));
+        validate_external_path(&partial).map_err(|error| error.to_string())?;
+        validate_external_path(&quarantine).map_err(|error| error.to_string())?;
+        // Link exclusively while the checked read handle still denies writes.
+        // A crash before unlinking only leaves another safe evidence alias.
+        fs::hard_link(&partial, &quarantine)
+            .map_err(|error| format!("Cannot preserve invalid download bytes: {error}"))?;
+        drop(completed);
+        fs::remove_file(&partial).map_err(|error| {
+            format!(
+                "Cannot restart partial download; invalid bytes retained at {}: {error}",
+                quarantine.display()
+            )
+        })?;
+        quarantined = Some(quarantine);
+        offset = 0;
+    };
     match fs::hard_link(&partial, path) {
         Ok(()) => {}
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -284,6 +341,123 @@ pub(crate) fn receive(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn recovery_fixture() -> crate::Result<(PathBuf, PathBuf, PathBuf, String)> {
+        let working = std::env::temp_dir().join(format!(
+            "Bonsai-DownloadRecovery-{}",
+            crate::native_startup::nonce()?
+        ));
+        validate_external_path(&working).map_err(|error| error.to_string())?;
+        fs::create_dir(&working).map_err(|error| error.to_string())?;
+        let path = working.join("artifact.bin");
+        let partial = working.join("artifact.bin.partial");
+        fs::write(&partial, b"wrong").map_err(|error| error.to_string())?;
+        let hash = crate::startup_cache::hex(&Sha256::digest(b"right"));
+        Ok((working, path, partial, hash))
+    }
+
+    fn quarantine_files(working: &Path) -> crate::Result<Vec<PathBuf>> {
+        fs::read_dir(working)
+            .map_err(|error| error.to_string())?
+            .filter_map(|entry| match entry {
+                Ok(entry)
+                    if entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(".bonsai-invalid-download-") =>
+                {
+                    Some(Ok(entry.path()))
+                }
+                Ok(_) => None,
+                Err(error) => Some(Err(error.to_string())),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn corrupt_completed_partial_is_preserved_and_fresh_retry_publishes() -> crate::Result<()> {
+        let (working, path, partial, hash) = recovery_fixture()?;
+        let mut transfers = 0;
+        receive_with(
+            "https://example.invalid/artifact",
+            &path,
+            5,
+            &hash,
+            &working,
+            |_, destination, offset, bytes, _| {
+                transfers += 1;
+                assert_eq!((offset, bytes), (0, 5));
+                assert_eq!(destination, partial);
+                assert!(!destination.exists());
+                fs::write(destination, b"right").map_err(|error| error.to_string())
+            },
+        )?;
+        assert_eq!(transfers, 1);
+        verify(&path, 5, &hash)?;
+        assert!(!partial.exists());
+        let evidence = quarantine_files(&working)?;
+        assert_eq!(evidence.len(), 1);
+        assert_eq!(
+            fs::read(evidence.first().ok_or("Missing quarantined download.")?)
+                .map_err(|error| error.to_string())?,
+            b"wrong"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn corrupt_fresh_retry_stops_without_publishing_or_replacing_existing_artifacts()
+    -> crate::Result<()> {
+        let (working, path, partial, hash) = recovery_fixture()?;
+        let mut transfers = 0;
+        assert!(
+            receive_with(
+                "https://example.invalid/artifact",
+                &path,
+                5,
+                &hash,
+                &working,
+                |_, destination, offset, _, _| {
+                    transfers += 1;
+                    assert_eq!(offset, 0);
+                    fs::write(destination, b"again").map_err(|error| error.to_string())
+                },
+            )
+            .is_err()
+        );
+        assert_eq!(transfers, 1);
+        assert!(!path.exists());
+        assert_eq!(
+            fs::read(&partial).map_err(|error| error.to_string())?,
+            b"again"
+        );
+        let evidence = quarantine_files(&working)?;
+        assert_eq!(evidence.len(), 1);
+        assert_eq!(
+            fs::read(evidence.first().ok_or("Missing quarantined download.")?)
+                .map_err(|error| error.to_string())?,
+            b"wrong"
+        );
+        fs::write(&path, b"final").map_err(|error| error.to_string())?;
+        assert!(
+            receive_with(
+                "https://example.invalid/artifact",
+                &path,
+                5,
+                &hash,
+                &working,
+                |_, _, _, _, _| {
+                    transfers += 1;
+                    Err("Published artifacts must never trigger a replacement transfer.".into())
+                },
+            )
+            .is_err()
+        );
+        assert_eq!(transfers, 1);
+        assert_eq!(fs::read(path).map_err(|error| error.to_string())?, b"final");
+        assert_eq!(quarantine_files(&working)?, evidence);
+        Ok(())
+    }
 
     #[test]
     fn locked_download_contract_rejects_unsafe_urls_and_bounds() {
