@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([void])]
-param([ValidateSet('All','Download','Configuration','Paths','PE','Doctor','Capabilities','ServerPolicy')][string]$Case = 'All')
+param([ValidateSet('All','Download','Configuration','Paths','PE','Doctor','Capabilities','ServerPolicy','ChatInstance')][string]$Case = 'All')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -14,6 +14,9 @@ $scratch = Resolve-ExternalPath $scratch
 [void][IO.Directory]::CreateDirectory($scratch)
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 
+if ($Case -in @('All','ChatInstance')) {
+    & (Join-Path $PSScriptRoot 'Test-ChatInstance.ps1')
+}
 
 
 if ($Case -in @('All','Configuration')) {
