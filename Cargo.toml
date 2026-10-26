@@ -11,6 +11,7 @@ members = [
     "src/windows-process",
     "src/windows-credentials",
     "tools/bonsai",
+    "tools/ci",
 ]
 
 [workspace.package]

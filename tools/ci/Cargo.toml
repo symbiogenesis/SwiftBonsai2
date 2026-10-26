@@ -1,0 +1,32 @@
+[package]
+name = "bonsai-ci"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Conservative workspace impact selection and fail-closed CI gates"
+keywords = ["ci", "workspace", "validation"]
+categories = ["development-tools"]
+
+[[bin]]
+name = "bonsai-ci"
+path = "src/main.rs"
+test = false
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+toml = { version = "=1.1.8", default-features = false, features = ["parse", "serde", "std"] }
+
+# Windows uses Schannel through Rust bindings, avoiding an additional C/assembly
+# compiler just to build the small CI command on native ARM64.
+[target.'cfg(windows)'.dependencies]
+ureq = { version = "=3.5.0", default-features = false, features = ["native-tls"] }
+
+[target.'cfg(not(windows))'.dependencies]
+ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }
+
+[lints]
+workspace = true

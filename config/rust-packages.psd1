@@ -12,5 +12,6 @@
         @{ Name = 'bonsai-artifacts'; Manifest = 'src/artifacts/Cargo.toml'; Group = 'Broker'; Features = @('*') }
         @{ Name = 'bonsai-cpu-policy'; Manifest = 'src/cpu-policy/Cargo.toml'; Group = 'Broker'; Features = @('*') }
         @{ Name = 'bonsai-tools'; Manifest = 'tools/bonsai/Cargo.toml'; Group = 'Broker'; Features = @('*') }
+        @{ Name = 'bonsai-ci'; Manifest = 'tools/ci/Cargo.toml'; Group = 'Broker'; Features = @('*') }
     )
 }

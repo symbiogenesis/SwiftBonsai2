@@ -1,0 +1,3 @@
+# Target-specific native-tls metadata includes OpenSSL's Syn 2 macros, while the
+# workspace's pinned Serde uses Syn 3. Neither version is under this crate's control.
+allowed-duplicate-crates = ["syn"]
