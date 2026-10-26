@@ -159,6 +159,15 @@ directly to guard completed-message reuse during streaming and find navigation.
 They are correctness regressions, with no elapsed-time or throughput claim. The
 `window::transcript::search::shortcuts::tests::` selection covers Find keyboard
 navigation, IME handling and Escape precedence without model or speech services.
+Transcript accounting cases also check exact byte totals across streaming,
+replacement, eviction and recovery, with no completed-message visits during
+ordinary append accounting. The `client::tests::http_payload_` cases gate the
+underlying reader to prove that ready SSE payload is delivered before the rest
+of its declared HTTP body or chunk ending arrives, while incomplete framing
+still rejects. The `speech::command_queue::tests::` and
+`speech::stream::tests::` selections check stalled-worker queue limits,
+coalescing, overload, cancellation, fresh-stream recovery and bounded tail
+compaction without loading a speech model or timing synthesis.
 
 For prebuilt runtime promotion tooling, use
 `./tests/Test-Inference.ps1 -Case ReleaseLock`. It checks candidate generation

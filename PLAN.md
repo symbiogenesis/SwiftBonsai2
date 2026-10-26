@@ -32,8 +32,9 @@ dependency or an explicitly chosen later milestone.
   capability-override rejection, bounded queues/bytes/tokens/duration and reliable
   cancellation when clients disconnect or stop consuming output. Extend the
   [bounded streaming regressions](docs/streaming-resources.md) to actual-model
-  stalled-consumer, speech/chat overlap and recovery trials; capture complete-task
-  latency and peak memory in target-device CI before claiming performance gains.
+  ready-prefix delivery, long-transcript updates, stalled-consumer speech backlog,
+  speech/chat overlap and recovery trials; capture complete-task latency and peak
+  memory in target-device CI before claiming performance gains.
 - Qualify recovery under load, allocation failure and backend loss without restart
   loops, silent profile changes, state corruption or automatic cloud fallback.
 
