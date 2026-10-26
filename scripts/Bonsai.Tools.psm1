@@ -43,7 +43,7 @@ function Resolve-BonsaiRustTool {
     if ($pin -notmatch '(?m)^channel\s*=\s*"(nightly-\d{4}-\d{2}-\d{2})"\s*$') { throw 'Use the repository-pinned Rust toolchain.' }
     $channel = $Matches[1] + '-aarch64-pc-windows-msvc'
     $identity = (Join-Path $repository 'tools/bonsai/Cargo.toml').ToUpperInvariant() + "`n" + $channel
-    $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($identity))).ToLowerInvariant()
+    $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($identity))).ToLowerInvariant().Substring(0, 24)
     $target = Resolve-ExternalPath -Path (Join-Path $script:ToolCacheRoot $key)
     [void][IO.Directory]::CreateDirectory($target)
     $scratch = Get-BonsaiToolScratch -Name $Name
