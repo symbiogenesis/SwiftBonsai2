@@ -26,6 +26,7 @@ const SAMPLE_RATE: u32 = 16000;
 const CLIP_SECONDS: u32 = 30;
 const MAX_REQUEST: usize = 1024 * 1024;
 const MAX_RESPONSE: usize = 64 * 1024;
+const MAX_WAVE_RESPONSE: usize = 5_760_044;
 const MAX_HEAD: usize = 16 * 1024;
 const MAX_TEXT: usize = 32768;
 const IO_POLL: Duration = Duration::from_millis(250);
@@ -53,6 +54,29 @@ pub(crate) struct Client {
 pub(crate) enum Failure {
     Cancelled,
     Message(&'static str),
+}
+
+/// Fixed response media and bounds for the two explicitly configured companions.
+#[derive(Clone, Copy)]
+pub(crate) enum Media {
+    Json,
+    Wave,
+}
+
+impl Media {
+    const fn limit(self) -> usize {
+        match self {
+            Self::Json => MAX_RESPONSE,
+            Self::Wave => MAX_WAVE_RESPONSE,
+        }
+    }
+
+    fn accepts(self, value: &[u8]) -> bool {
+        match self {
+            Self::Json => json_media_type(value),
+            Self::Wave => value.eq_ignore_ascii_case(b"audio/wav"),
+        }
+    }
 }
 
 type Result<T> = std::result::Result<T, Failure>;
@@ -108,7 +132,7 @@ impl Client {
             current: &current,
             until: Instant::now() + READY_LIMIT,
         };
-        let result = self.exchange("GET", "/health", None, &[], &call)
+        let result = self.exchange("GET", "/health", None, &[], Media::Json, &call)
             .and_then(|body| {
                 let health: Health = serde_json::from_slice(&body).map_err(|_| {
                     Failure::Message("The Canary companion returned an invalid capability response.")
@@ -160,6 +184,7 @@ impl Client {
             "/v1/audio/transcriptions",
             Some(&content_type),
             &body,
+            Media::Json,
             call,
         )?;
         call.check()?;
@@ -182,12 +207,13 @@ impl Client {
         Ok(transcript.text)
     }
 
-    fn exchange(
+    pub(crate) fn exchange(
         &self,
         method: &str,
         route: &str,
         content_type: Option<&str>,
         body: &[u8],
+        expected: Media,
         call: &Call<'_>,
     ) -> Result<Vec<u8>> {
         call.check()?;
@@ -215,7 +241,7 @@ impl Client {
         );
         write_all(&mut stream, head.as_bytes(), call)?;
         write_all(&mut stream, body, call)?;
-        read_response(&mut stream, call)
+        read_response(&mut stream, call, expected)
     }
 }
 
@@ -237,14 +263,22 @@ struct Transcript {
     model: String,
 }
 
-struct Call<'a> {
+pub(crate) struct Call<'a> {
     generation: u64,
     current: &'a AtomicU64,
     until: Instant,
 }
 
-impl Call<'_> {
-    fn check(&self) -> Result<()> {
+impl<'a> Call<'a> {
+    pub(crate) fn new(generation: u64, current: &'a AtomicU64, limit: Duration) -> Self {
+        Self {
+            generation,
+            current,
+            until: Instant::now() + limit,
+        }
+    }
+
+    pub(crate) fn check(&self) -> Result<()> {
         if self.current.load(Ordering::Acquire) != self.generation {
             Err(Failure::Cancelled)
         } else if Instant::now() >= self.until {
@@ -485,7 +519,7 @@ fn retry_poll(error: &std::io::Error) -> bool {
     )
 }
 
-fn read_response(stream: &mut TcpStream, call: &Call<'_>) -> Result<Vec<u8>> {
+fn read_response(stream: &mut TcpStream, call: &Call<'_>, expected: Media) -> Result<Vec<u8>> {
     let mut received = Vec::new();
     let mut buffer = [0; 4096];
     let end = loop {
@@ -501,7 +535,7 @@ fn read_response(stream: &mut TcpStream, call: &Call<'_>) -> Result<Vec<u8>> {
         let count = read(stream, &mut buffer[..size], call)?;
         received.extend_from_slice(&buffer[..count]);
     };
-    let length = response_length(&received[..end])?;
+    let length = response_length(&received[..end], expected)?;
     if received.len() - end > length {
         return Err(Failure::Message(
             "The Canary response exceeded its declared length.",
@@ -518,7 +552,7 @@ fn read_response(stream: &mut TcpStream, call: &Call<'_>) -> Result<Vec<u8>> {
     Ok(body)
 }
 
-fn response_length(head: &[u8]) -> Result<usize> {
+fn response_length(head: &[u8], expected: Media) -> Result<usize> {
     let invalid = Failure::Message("The Canary companion returned unsupported HTTP framing.");
     if !head.starts_with(b"HTTP/1.1 ")
         || head.iter().enumerate().any(|(index, &byte)| {
@@ -562,12 +596,12 @@ fn response_length(head: &[u8]) -> Result<usize> {
             length = std::str::from_utf8(header.value)
                 .ok()
                 .and_then(|value| value.parse::<usize>().ok())
-                .filter(|&value| value <= MAX_RESPONSE);
+                .filter(|&value| value <= expected.limit());
             if length.is_none() {
                 return Err(invalid);
             }
         } else if header.name.eq_ignore_ascii_case("content-type") {
-            media = json_media_type(header.value);
+            media = expected.accepts(header.value);
         } else if header.name.eq_ignore_ascii_case("connection")
             && !header.value.eq_ignore_ascii_case(b"close")
         {
@@ -606,8 +640,8 @@ fn json_media_type(value: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        Call, Client, Config, Failure, MODEL, boundary, multipart, normalize_wav, response_length,
-        validate_wav,
+        Call, Client, Config, Failure, MODEL, Media, boundary, multipart, normalize_wav,
+        response_length, validate_wav,
     };
     use std::{
         fs,
@@ -857,7 +891,7 @@ mod tests {
     #[test]
     fn strict_json_http_framing_rejects_duplicates_encodings_and_oversize() {
         let valid = b"HTTP/1.1 200 OK\r\nContent-Type: APPLICATION/JSON; charset=\"UTF-8\"\r\nContent-Length: 1\r\n\r\n";
-        assert_eq!(response_length(valid), Ok(1));
+        assert_eq!(response_length(valid, Media::Json), Ok(1));
         for headers in [
             "Content-Length: 1\r\nContent-Length: 1\r\n",
             "Content-Length: 1\r\nTransfer-Encoding: chunked\r\n",
@@ -868,11 +902,12 @@ mod tests {
         ] {
             let head =
                 format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n{headers}\r\n");
-            assert!(response_length(head.as_bytes()).is_err());
+            assert!(response_length(head.as_bytes(), Media::Json).is_err());
         }
         assert!(
             response_length(
-                b"HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Length: 1\n\n"
+                b"HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Length: 1\n\n",
+                Media::Json
             )
             .is_err()
         );
