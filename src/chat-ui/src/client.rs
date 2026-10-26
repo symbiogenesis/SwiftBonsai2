@@ -689,10 +689,10 @@ fn exchange(
     while let Some(count) = body.next(&mut bytes)? {
         sse.push(&bytes[..count], &mut |text, reasoning| {
             if !text.is_empty() {
-                notify(events, Event::Text(text.to_owned()))?;
+                notify(events, Event::Text(text))?;
             }
             if !reasoning.is_empty() {
-                notify(events, Event::Reasoning(reasoning.to_owned()))?;
+                notify(events, Event::Reasoning(reasoning))?;
             }
             Ok(())
         })?;
@@ -964,7 +964,7 @@ impl Sse {
     fn push(
         &mut self,
         bytes: &[u8],
-        delta: &mut impl FnMut(&str, &str) -> Result<()>,
+        delta: &mut impl FnMut(String, String) -> Result<()>,
     ) -> Result<()> {
         for &byte in bytes {
             if !self.started {
@@ -991,7 +991,7 @@ impl Sse {
     fn push_byte(
         &mut self,
         byte: u8,
-        delta: &mut impl FnMut(&str, &str) -> Result<()>,
+        delta: &mut impl FnMut(String, String) -> Result<()>,
     ) -> Result<()> {
         if self.after_cr {
             self.after_cr = false;
@@ -1011,7 +1011,7 @@ impl Sse {
         Ok(())
     }
 
-    fn process_line(&mut self, delta: &mut impl FnMut(&str, &str) -> Result<()>) -> Result<()> {
+    fn process_line(&mut self, delta: &mut impl FnMut(String, String) -> Result<()>) -> Result<()> {
         if self.line.is_empty() {
             self.dispatch(delta)?;
             self.event.clear();
@@ -1047,7 +1047,7 @@ impl Sse {
         Ok(())
     }
 
-    fn dispatch(&mut self, delta: &mut impl FnMut(&str, &str) -> Result<()>) -> Result<()> {
+    fn dispatch(&mut self, delta: &mut impl FnMut(String, String) -> Result<()>) -> Result<()> {
         if self.data.is_empty() {
             return Ok(());
         }
@@ -1094,7 +1094,7 @@ impl Sse {
                     .unwrap_or_default();
                 self.text.push_str(&text);
                 self.reasoning.push_str(&reasoning);
-                delta(&text, &reasoning)?;
+                delta(text, reasoning)?;
                 if let Some(reason) = choice.finish_reason {
                     self.completion = Some(match reason.as_str() {
                         "stop" => Completion::Finished,
@@ -1174,8 +1174,8 @@ mod tests {
         let mut bytes = [0; READ_SIZE];
         while let Some(count) = body.next(&mut bytes)? {
             sse.push(&bytes[..count], &mut |content, thought| {
-                text.push_str(content);
-                reasoning.push_str(thought);
+                text.push_str(&content);
+                reasoning.push_str(&thought);
                 Ok(())
             })?;
         }
@@ -1280,7 +1280,7 @@ mod tests {
             let mut text = String::new();
             for byte in wire {
                 sse.push(&[byte], &mut |content, _| {
-                    text.push_str(content);
+                    text.push_str(&content);
                     Ok(())
                 })?;
             }
