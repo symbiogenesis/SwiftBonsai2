@@ -987,6 +987,8 @@ impl State {
                 "●  Model ready"
             } else if self.retryable {
                 "●  Model paused"
+            } else if self.stopping {
+                "◌  Releasing model"
             } else if self.waiting_model {
                 "◌  Preparing model"
             } else {
@@ -1311,6 +1313,8 @@ impl State {
                                                 "Ask anything…"
                                             } else if self.retryable {
                                                 "Retry the model to continue…"
+                                            } else if self.stopping {
+                                                "Write while the model stops…"
                                             } else if self.waiting_model {
                                                 "Write while your local model prepares…"
                                             } else {
