@@ -15,6 +15,14 @@ use std::{
 mod qwen;
 use qwen::RawAudio;
 
+// A single public neutral fixture defines voice identity, never the text being
+// read. Recreating a stopped worker uses the same phrase and sampler seed.
+static REFERENCE_TEXT: &CStr = c"The morning light fills the quiet garden. I will read each sentence in the same clear, natural voice.";
+const VOICE_SEED: i64 = 42;
+const MAX_REFERENCE_SAMPLES: usize = 24_000 * 30;
+const CODEBOOKS: i32 = 16;
+const CODEC_HOP: usize = 1920;
+
 const extern "C" fn discard_log(_: c_int, _: *const c_char, _: *mut c_void) {}
 static LOGGING: Once = Once::new();
 static INITIALIZE: Mutex<()> = Mutex::new(());
@@ -30,17 +38,77 @@ fn abort_on_unwind<T>(call: impl FnOnce() -> T) -> T {
 /// One exclusively borrowed native model, freed only after its blocking calls.
 pub(super) struct Context(NonNull<c_void>);
 
-// The returned pointers borrow text/voice and are used only by the synchronous
-// synthesis call below; this helper never stores or dereferences them.
-fn synthesis_params(text: &CStr, voice: &CStr) -> qwen::TtsParams {
+// The returned pointers borrow their arguments and are used only during the
+// synchronous native call; no parameter object escapes its borrowed storage.
+fn synthesis_params(text: &CStr) -> qwen::TtsParams {
     let mut params = qwen::TtsParams::default();
     // SAFETY: params is the complete, exclusively writable pinned ABI-v6 POD.
     unsafe { qwen::qt_tts_default_params(&raw mut params) };
     params.text = text.as_ptr();
     params.lang = c"auto".as_ptr();
-    params.instruct = voice.as_ptr();
+    params.seed = VOICE_SEED;
     params.max_new_tokens = 1500;
     params
+}
+
+fn design_params(voice: &CStr) -> qwen::TtsParams {
+    let mut params = synthesis_params(REFERENCE_TEXT);
+    params.instruct = voice.as_ptr();
+    params
+}
+
+fn clone_params(text: &CStr, reference: &qwen::RawVoiceReference) -> qwen::TtsParams {
+    let mut params = synthesis_params(text);
+    params.ref_text = REFERENCE_TEXT.as_ptr();
+    params.ref_spk_emb = reference.speaker;
+    params.ref_spk_dim = reference.speaker_dimension;
+    params.ref_codes = reference.codes;
+    params.ref_frames = reference.frames;
+    params
+}
+
+/// Owned, validated speaker and RVQ conditioning shared by every text segment.
+pub(super) struct VoiceReference(qwen::RawVoiceReference);
+
+impl VoiceReference {
+    fn validate(&self) -> io::Result<()> {
+        let raw = &self.0;
+        let dimension = usize::try_from(raw.speaker_dimension).map_err(|_| invalid_audio())?;
+        let frames = usize::try_from(raw.frames).map_err(|_| invalid_audio())?;
+        if dimension == 0
+            || dimension > 8192
+            || frames == 0
+            || frames > MAX_REFERENCE_SAMPLES / CODEC_HOP
+            || raw.codebooks != CODEBOOKS
+            || raw.speaker.is_null()
+            || !raw.speaker.is_aligned()
+            || raw.codes.is_null()
+            || !raw.codes.is_aligned()
+        {
+            return Err(invalid_audio());
+        }
+        // SAFETY: Successful extraction from the pinned API allocates exactly
+        // speaker_dimension f32s and codebooks * frames i32s owned by this guard.
+        // Metadata is positive and bounded above; neither allocation is mutated
+        // or freed until the guard drops after the blocking synthesis call.
+        let speaker = unsafe { std::slice::from_raw_parts(raw.speaker, dimension) };
+        // SAFETY: Same pinned allocation contract; 16 * 375 is below isize::MAX.
+        let codes = unsafe { std::slice::from_raw_parts(raw.codes, frames * 16) };
+        if !speaker.iter().all(|sample| sample.is_finite())
+            || !codes.iter().all(|code| (0..2048).contains(code))
+        {
+            return Err(invalid_audio());
+        }
+        Ok(())
+    }
+}
+
+impl Drop for VoiceReference {
+    fn drop(&mut self) {
+        // SAFETY: The initialized POD exclusively owns both malloc allocations,
+        // if any. The matching release also accepts and clears an empty POD.
+        unsafe { qwen::qt_voice_ref_free(&raw mut self.0) };
+    }
 }
 
 impl Context {
@@ -48,7 +116,12 @@ impl Context {
         ffi_unwind_calls,
         reason = "The potentially throwing Qwen call is contained by abort_on_unwind."
     )]
-    pub(super) fn load(model: &CStr, codec: &CStr, threads: usize) -> io::Result<Self> {
+    pub(super) fn load(
+        model: &CStr,
+        codec: &CStr,
+        threads: usize,
+        expected_type: &CStr,
+    ) -> io::Result<Self> {
         let threads = c_int::try_from(threads).map_err(|_| invalid_audio())?;
         let _initialize = INITIALIZE
             .lock()
@@ -76,35 +149,80 @@ impl Context {
         // C-unwind permits an escaped foreign exception into abort_on_unwind.
         let pointer = abort_on_unwind(|| unsafe { qwen::qt_init(&raw const params) });
         let context = NonNull::new(pointer).map(Self).ok_or_else(|| {
-            io::Error::other("The native Qwen VoiceDesign model could not initialize.")
+            io::Error::other("The native Qwen speech model could not initialize.")
         })?;
         // SAFETY: context owns a live initialization result; the returned static
         // model-type string stays valid until that context is released.
         let model_type = unsafe { qwen::qt_model_type(context.0.as_ptr()) };
         if model_type.is_null()
             // SAFETY: The pinned API returns a NUL-terminated model type here.
-            || unsafe { CStr::from_ptr(model_type) } != c"voice_design"
+            || unsafe { CStr::from_ptr(model_type) } != expected_type
         {
             return Err(io::Error::other(
-                "The native Qwen VoiceDesign model could not initialize.",
+                "The native Qwen speech model could not initialize.",
             ));
         }
         Ok(context)
+    }
+
+    pub(super) fn design_reference(&mut self, voice: &CStr) -> io::Result<Vec<f32>> {
+        let samples = self.synthesize_audio(&design_params(voice))?;
+        if !(CODEC_HOP..=MAX_REFERENCE_SAMPLES).contains(&samples.len()) {
+            return Err(invalid_audio());
+        }
+        Ok(samples)
     }
 
     #[allow(
         ffi_unwind_calls,
         reason = "The potentially throwing Qwen call is contained by abort_on_unwind."
     )]
-    pub(super) fn synthesize(&mut self, text: &CStr, voice: &CStr) -> io::Result<Vec<f32>> {
+    pub(super) fn extract_voice(&mut self, samples: &[f32]) -> io::Result<VoiceReference> {
+        if !(CODEC_HOP..=MAX_REFERENCE_SAMPLES).contains(&samples.len())
+            || !samples.iter().all(|sample| sample.is_finite())
+        {
+            return Err(invalid_audio());
+        }
+        let count = c_int::try_from(samples.len()).map_err(|_| invalid_audio())?;
+        let mut reference = VoiceReference(qwen::RawVoiceReference::default());
+        // SAFETY: The exclusive context is a Base model with the pinned speaker
+        // encoder. Finite mono 24 kHz PCM stays alive until extraction's worker
+        // returns; output is a fully initialized, exclusively writable ABI POD.
+        let status = abort_on_unwind(|| unsafe {
+            qwen::qt_extract_voice_ref(
+                self.0.as_ptr(),
+                samples.as_ptr(),
+                count,
+                &raw mut reference.0,
+            )
+        });
+        if status != 0 {
+            return Err(invalid_audio());
+        }
+        reference.validate()?;
+        Ok(reference)
+    }
+
+    pub(super) fn synthesize(
+        &mut self,
+        text: &CStr,
+        reference: &VoiceReference,
+    ) -> io::Result<Vec<f32>> {
+        self.synthesize_audio(&clone_params(text, &reference.0))
+    }
+
+    #[allow(
+        ffi_unwind_calls,
+        reason = "The potentially throwing Qwen call is contained by abort_on_unwind."
+    )]
+    fn synthesize_audio(&mut self, params: &qwen::TtsParams) -> io::Result<Vec<f32>> {
         let mut audio = NativeAudio(RawAudio::default());
-        let params = synthesis_params(text, voice);
         // SAFETY: The exclusive context borrow prevents simultaneous calls.
-        // Both bounded C strings stay alive until this blocking call returns.
-        // The output points at a correctly laid out, initialized qt_audio POD;
+        // All strings and reference buffers borrowed by params survive this
+        // blocking call. Output is the complete initialized pinned audio POD;
         // C-unwind permits foreign exceptions into the aborting boundary.
         let status = abort_on_unwind(|| unsafe {
-            qwen::qt_synthesize(self.0.as_ptr(), &raw const params, &raw mut audio.0)
+            qwen::qt_synthesize(self.0.as_ptr(), &raw const *params, &raw mut audio.0)
         });
         if status != 0 {
             return Err(io::Error::other("Native Qwen speech synthesis failed."));
@@ -119,7 +237,7 @@ impl Context {
     pub(super) fn synthesize_stream(
         &mut self,
         text: &CStr,
-        voice: &CStr,
+        reference: &VoiceReference,
         sink: &mut (dyn FnMut(&[f32]) -> io::Result<()> + Send),
     ) -> io::Result<()> {
         let state = Mutex::new(StreamState {
@@ -127,11 +245,11 @@ impl Context {
             samples: 0,
             failed: false,
         });
-        let mut params = synthesis_params(text, voice);
+        let mut params = clone_params(text, &reference.0);
         params.on_chunk = Some(stream_chunk);
         params.on_chunk_user_data = (&raw const state).cast_mut().cast();
         // SAFETY: The pinned ABI blocks until its worker finishes callbacks.
-        // Text, voice, mutex and sink all outlive that call. The mutex serializes
+        // Text, reference, mutex and sink all outlive that call. The mutex serializes
         // accesses from the native worker; streaming permits a null audio out.
         let status = abort_on_unwind(|| unsafe {
             qwen::qt_synthesize(self.0.as_ptr(), &raw const params, std::ptr::null_mut())
@@ -254,10 +372,50 @@ fn invalid_audio() -> io::Error {
 
 #[cfg(test)]
 mod tests {
-    use super::{Context, NativeAudio, StreamState, abort_on_unwind, qwen};
+    use super::{
+        Context, NativeAudio, REFERENCE_TEXT, StreamState, VOICE_SEED, abort_on_unwind,
+        clone_params, design_params, qwen,
+    };
     use std::{error::Error, ffi::CString, fs, io, process::Command, time::SystemTime};
 
     type TestResult = Result<(), Box<dyn Error>>;
+
+    #[test]
+    fn every_utterance_borrows_the_same_speaker_codes_and_reference_transcript() {
+        let mut speaker = [0.5_f32; 8];
+        let mut codes = [1_i32; 32];
+        let reference = qwen::RawVoiceReference {
+            speaker: speaker.as_mut_ptr(),
+            speaker_dimension: 8,
+            codes: codes.as_mut_ptr(),
+            frames: 2,
+            codebooks: 16,
+        };
+        for text in [
+            c"First paragraph.",
+            c"Second paragraph.\n\nA line break.",
+            c"Another message.",
+        ] {
+            let params = clone_params(text, &reference);
+            assert_eq!(params.text, text.as_ptr());
+            assert_eq!(params.ref_spk_emb, speaker.as_ptr());
+            assert_eq!(params.ref_spk_dim, 8);
+            assert_eq!(params.ref_codes, codes.as_ptr());
+            assert_eq!(params.ref_frames, 2);
+            assert_eq!(params.ref_text, REFERENCE_TEXT.as_ptr());
+            assert!(params.instruct.is_null() && params.speaker.is_null());
+            assert!(params.ref_audio_24k.is_null());
+            assert_eq!(params.seed, VOICE_SEED);
+            assert!(params.seed >= 0);
+        }
+        for profile in [c"Warm narrator", c"Clear alto"] {
+            let design = design_params(profile);
+            assert_eq!(design.text, REFERENCE_TEXT.as_ptr());
+            assert_eq!(design.instruct, profile.as_ptr());
+            assert_eq!(design.seed, VOICE_SEED);
+            assert!(design.ref_spk_emb.is_null() && design.ref_codes.is_null());
+        }
+    }
 
     #[test]
     fn streaming_samples_reject_nonfinite_overflow_and_sink_failure() {
@@ -330,13 +488,13 @@ mod tests {
         ));
         let path = CString::new(missing.to_str().ok_or("Non-UTF-8 temp path")?)?;
         for _ in 0..2 {
-            let error = Context::load(&path, &path, 1)
+            let error = Context::load(&path, &path, 1, c"voice_design")
                 .err()
                 .ok_or("Unexpected model load")?;
             assert_eq!(error.kind(), io::ErrorKind::Other);
             assert_eq!(
                 error.to_string(),
-                "The native Qwen VoiceDesign model could not initialize."
+                "The native Qwen speech model could not initialize."
             );
         }
         let audio = NativeAudio(qwen::RawAudio::default());
@@ -345,6 +503,7 @@ mod tests {
             Some(io::ErrorKind::InvalidData)
         );
         drop(audio);
+        drop(super::VoiceReference(qwen::RawVoiceReference::default()));
         Ok(())
     }
 

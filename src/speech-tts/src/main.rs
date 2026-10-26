@@ -22,6 +22,10 @@ impl bonsai_speech_service::Engine for NativeEngine {
         true
     }
 
+    fn consistent_voice(&self) -> bool {
+        true
+    }
+
     fn infer_stream(
         &mut self,
         request: bonsai_speech_service::Request<'_>,
@@ -94,9 +98,14 @@ fn run() -> io::Result<()> {
                 .codec
                 .as_ref()
                 .ok_or_else(|| io::Error::other("Native speech codec is required."))?;
+            let voice_model = arguments
+                .voice_model
+                .as_ref()
+                .ok_or_else(|| io::Error::other("Native speech voice model is required."))?;
             let synthesizer = bonsai_speech_tts::Synthesizer::load_with_threads(
                 &arguments.model,
                 codec,
+                voice_model,
                 arguments.threads,
             )
             .map_err(|_| io::Error::other("Native Qwen model loading failed."))?;

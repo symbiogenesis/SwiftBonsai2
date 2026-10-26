@@ -46,6 +46,17 @@ pub(super) struct TtsParams {
     pub(super) ref_frames: c_int,
 }
 
+// malloc-owned latent buffers returned by qt_extract_voice_ref.
+#[repr(C)]
+#[derive(Default)]
+pub(super) struct RawVoiceReference {
+    pub(super) speaker: *mut f32,
+    pub(super) speaker_dimension: c_int,
+    pub(super) codes: *mut i32,
+    pub(super) frames: c_int,
+    pub(super) codebooks: c_int,
+}
+
 #[repr(C)]
 #[derive(Default)]
 pub(super) struct RawAudio {
@@ -64,6 +75,7 @@ unsafe extern "C" {
     pub(super) fn qt_tts_default_params(params: *mut TtsParams);
     pub(super) fn qt_model_type(context: *const c_void) -> *const c_char;
     pub(super) fn qt_audio_free(audio: *mut RawAudio);
+    pub(super) fn qt_voice_ref_free(reference: *mut RawVoiceReference);
     pub(super) fn qt_log_set(
         callback: extern "C" fn(c_int, *const c_char, *mut c_void),
         user_data: *mut c_void,
@@ -76,6 +88,12 @@ unsafe extern "C" {
 unsafe extern "C-unwind" {
     pub(super) fn qt_init(params: *const InitParams) -> *mut c_void;
     pub(super) fn qt_free(context: *mut c_void);
+    pub(super) fn qt_extract_voice_ref(
+        context: *mut c_void,
+        samples: *const f32,
+        count: c_int,
+        reference: *mut RawVoiceReference,
+    ) -> c_int;
     pub(super) fn qt_synthesize(
         context: *mut c_void,
         params: *const TtsParams,
@@ -106,6 +124,12 @@ const _: () = {
     assert!(offset_of!(TtsParams, ref_spk_emb) == 144);
     assert!(offset_of!(TtsParams, ref_codes) == 160);
     assert!(offset_of!(TtsParams, ref_frames) == 168);
+    assert!(size_of::<RawVoiceReference>() == 32 && align_of::<RawVoiceReference>() == 8);
+    assert!(offset_of!(RawVoiceReference, speaker) == 0);
+    assert!(offset_of!(RawVoiceReference, speaker_dimension) == 8);
+    assert!(offset_of!(RawVoiceReference, codes) == 16);
+    assert!(offset_of!(RawVoiceReference, frames) == 24);
+    assert!(offset_of!(RawVoiceReference, codebooks) == 28);
     assert!(size_of::<RawAudio>() == 24 && align_of::<RawAudio>() == 8);
     assert!(offset_of!(RawAudio, sample_count) == 8);
     assert!(offset_of!(RawAudio, sample_rate) == 12);
