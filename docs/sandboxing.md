@@ -101,7 +101,9 @@ alongside `JOB_LIST`, mitigations and the standard-handle list. Windows' PSEC
 broker can omit the requested Job assignment, so the launcher verifies membership,
 assigns the still-suspended root when needed, verifies again and requires exactly
 one suspension before resume. The one-process Job limit is tested by an actual
-denied child creation; PSEC does not honor the requested child-policy attribute.
+denied child creation. A redundant child-process creation attribute prevented
+ordinary native workers from initializing on the tested host; child denial
+therefore uses the verified Job limit, including for fixed-command inspection.
 The [native terminate-on-close flag](https://learn.microsoft.com/en-us/windows/win32/api/processmodel/ne-processmodel-process_security_environment_flags)
 also bounds the environment's lifetime. No executor wrapper is mistaken for the
 model PID.
