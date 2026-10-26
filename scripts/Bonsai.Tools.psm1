@@ -83,10 +83,9 @@ function Resolve-BonsaiRustTool {
         }
         [IO.File]::Delete($freshness)
         $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
-        Clear-BonsaiWorkspaceBuild -RepositoryRoot $repository -CargoPath $cargo -Channel $channel -TargetDirectory $target -WorkingDirectory $scratch
         $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', $manifest, '--target-dir', $target)
         $log = Join-Path $scratch ('cargo-build-' + [guid]::NewGuid().ToString('N') + '.log')
-        $result = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -LogPath $log
+        $result = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -Environment @{ CARGO_BUILD_FINGERPRINT = 'content'; CARGO_UNSTABLE_CHECKSUM_FRESHNESS = 'true' } -LogPath $log
         if ($result.ExitCode -ne 0) { throw "Tool build failed; inspect $log`n$($result.StandardError)" }
         if (-not [IO.File]::Exists($tool)) { throw "Tool build produced no executable; inspect $log" }
         $digest = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()

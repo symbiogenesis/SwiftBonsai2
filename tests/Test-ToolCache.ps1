@@ -41,10 +41,10 @@ function Initialize-TestToolModule {
         function script:Invoke-BonsaiNativeProcess {
             [CmdletBinding()]
             [OutputType([pscustomobject])]
-            param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [string]$LogPath)
+            param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [string]$LogPath, [Collections.IDictionary]$Environment)
             $target = $ArgumentList[[array]::IndexOf($ArgumentList, '--target-dir') + 1]
             $path = Join-Path $target 'release/bonsai-tools.exe'
-            $record = @{ Executable = $Executable; Arguments = $ArgumentList; WorkingDirectory = $WorkingDirectory; LogPath = $LogPath; Existed = [IO.File]::Exists($path) }
+            $record = @{ Executable = $Executable; Arguments = $ArgumentList; WorkingDirectory = $WorkingDirectory; LogPath = $LogPath; Existed = [IO.File]::Exists($path); Environment = $Environment }
             [IO.File]::AppendAllText($script:BuildRecords, (ConvertTo-Json -InputObject $record -Compress) + "`n")
             if (-not $script:BuildExitCode -and -not [IO.File]::Exists($path)) {
                 [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))

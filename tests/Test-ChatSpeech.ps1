@@ -204,7 +204,7 @@ if ($Case -cin @('All', 'Cache')) {
         function script:Invoke-BonsaiNativeProcess {
             [CmdletBinding()]
             [OutputType([pscustomobject])]
-            param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$LogPath)
+            param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$LogPath, [Collections.IDictionary]$Environment)
             $target = $ArgumentList[[array]::IndexOf($ArgumentList, '--target-dir') + 1]
             $existed = [Collections.Generic.List[bool]]::new()
             for ($index = 0; $index -lt $ArgumentList.Count; $index++) {
@@ -226,7 +226,7 @@ if ($Case -cin @('All', 'Cache')) {
                     $writer.Write([uint16]0xaa64)
                 } finally { $writer.Dispose() }
             }
-            $script:builds.Add([pscustomobject]@{ Executable = $Executable; TimeoutSeconds = $TimeoutSeconds; Arguments = $ArgumentList; WorkingDirectory = $WorkingDirectory; LogPath = $LogPath; Existed = $existed.ToArray() })
+            $script:builds.Add([pscustomobject]@{ Executable = $Executable; TimeoutSeconds = $TimeoutSeconds; Arguments = $ArgumentList; WorkingDirectory = $WorkingDirectory; LogPath = $LogPath; Existed = $existed.ToArray(); Environment = $Environment })
             return [pscustomobject]@{ ExitCode = $script:exitCode }
         }
     }
