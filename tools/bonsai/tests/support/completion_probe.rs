@@ -4,6 +4,7 @@
 use std::fs;
 use std::io::{self, Write as _};
 use std::process::ExitCode;
+use std::time::Duration;
 
 const TIMING: &[u8] = b"main: number of tokens in prompt = 15\ncommon_perf_print: prompt eval time = 100.5 ms / 15 tokens ( 6.7 ms per token, 149.25 tokens per second)\ncommon_perf_print: eval time = 200.0 ms / 3 runs ( 66.7 ms per token, 15 tokens per second)\ncommon_perf_print: samplers time = 0.50 ms / 19 tokens\n";
 
@@ -35,6 +36,24 @@ fn main() -> io::Result<ExitCode> {
         }
         "touch" => {
             fs::write("next-started.txt", b"unexpected")?;
+            Ok(ExitCode::SUCCESS)
+        }
+        "supervision" => {
+            let marker = arguments
+                .next()
+                .ok_or_else(|| io::Error::other("missing supervision marker path"))?;
+            let mode = arguments
+                .next()
+                .ok_or_else(|| io::Error::other("missing supervision mode"))?;
+            if !matches!(mode.as_str(), "ExitCode" | "ParentDeath" | "Timeout") {
+                return Err(io::Error::other("unknown supervision mode"));
+            }
+            fs::write(marker, format!("{{\"ProcessId\":{}}}", std::process::id()))?;
+            if mode == "ExitCode" {
+                let _ = emit(b"retained-failure-output", b"")?;
+                return Ok(ExitCode::from(7));
+            }
+            std::thread::sleep(Duration::from_secs(120));
             Ok(ExitCode::SUCCESS)
         }
         _ => Err(io::Error::other("unknown completion probe mode")),
