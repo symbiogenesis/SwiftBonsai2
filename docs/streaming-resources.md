@@ -40,6 +40,14 @@ client when a later backend or write failure closes the response. Stop and
 shutdown remain available when presentation has stopped consuming output;
 backpressure cannot authorize a retry or replay.
 
+After complete native PCM generation and validation, the speech service disarms
+and joins its cancellation watchdog before publishing the terminal zero chunk.
+A stop received during a pending socket peek takes precedence over its EOF.
+This prevents normal completion closure from terminating a warm speech worker;
+disconnects, extra data and deadlines still terminate active inference. Final
+framing keeps its bounded write timeout. Focused regressions cover a stop racing
+with EOF and consecutive PCM/WAV responses followed by immediate client closure.
+
 Focused regressions check byte identity, PCM clipping and rounding, bounded
 storage reuse, operation counts, pending reads, cancellation and failures. Such
 checks measure neither elapsed time nor device throughput. The removed encoded

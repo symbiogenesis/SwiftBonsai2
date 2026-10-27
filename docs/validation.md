@@ -20,6 +20,10 @@ process-lifetime working-set peak, Job commit peak and system available-memory
 minimum. Samples can miss brief allocations; mapped residency is outside Job
 commit, and Design/Base talkers never coexist. Failed sessions retain receipts
 and cannot enter completed paired comparisons.
+Receipts retain unsigned numeric/hex child exit status, its observation before
+or after supervisor shutdown, and the last observed phase/sample count. A child
+exit observed before supervisor shutdown rejects the trial even after complete
+audio; an earlier capture failure retains precedence.
 Select the owner-managed Snapdragon runner for device-specific conclusions;
 hosted ARM64 results describe only that hosted CPU. A successful run does not
 establish equivalent voice quality: the report leaves human listening pending.

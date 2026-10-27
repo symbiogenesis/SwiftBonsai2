@@ -53,7 +53,18 @@ by sixteen; generic arithmetic, BF16 and unqualified tails retain their prior
 behavior. Twelve native operator controls do not establish its effect on the
 full-model mismatch. The follow-up one-token capture was rejected before launch:
 11,230,294,016 physical bytes were available against the unchanged 15.5 GiB
-requirement. The earlier failed comparison remains the latest full-model verdict.
+requirement. That attempt produced no new numerical verdict.
+
+A subsequent bounded recheck of runtime `0.1.5` completed the same supplied token
+`[248045]` using a separate diagnostic envelope: 12 GiB available admission,
+8 GiB Job commit and the same 4 GiB running physical reserve. The direct Rust
+supervisor retained parent lifetime, artifact verification, output bounds and
+deadline without the PowerShell native-collector bootstrap. Peak Job commit was
+6,275,588,096 bytes (5.845 GiB); minimum available physical memory was
+7,574,892,544 bytes (7.055 GiB). All 129 output-file hashes matched the previous
+capture, with the same 430,526 out-of-tolerance values. Resource checks passed;
+numerical parity did not. This one-token envelope is not a full-context service
+profile, and Job commit is not total physical RAM.
 
 The exact packing difference would imply a candidate admission threshold of
 **15,383,478,272 bytes** from the current development budget if suitability and resource evidence justified that
