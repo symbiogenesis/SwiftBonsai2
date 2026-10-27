@@ -112,7 +112,6 @@ fn validate_fixed_contract(contract: &Value) -> Result<()> {
         ("/gates/minimumPerPromptMedianTpsRatio", 1.0),
         ("/gates/minimumQualityScore", 3.0),
         ("/gates/minimumPerPromptDimensionMedianQualityDelta", 0.0),
-        ("/gates/maximumPeakJobMemoryBytes", 12.0 * GIB),
         (
             "/gates/maximumPerPromptMedianJobMemoryPremiumBytes",
             0.75 * GIB,
@@ -124,6 +123,11 @@ fn validate_fixed_contract(contract: &Value) -> Result<()> {
             "Fixed qualification contract changed.",
         )?;
     }
+    require(
+        contract["gates"]["maximumPeakJobMemoryBytes"]
+            == json!(bonsai_cpu_policy::Profile::SwiftPq2Assessment.memory_limit_bytes()),
+        "Qualification Job-commit gate disagrees with the compiled Swift process limit.",
+    )?;
     for path in [
         "/execution/githubActionsRequired",
         "/gates/rejectUnwantedAdapterRefusals",

@@ -144,6 +144,9 @@ fn arm_samples<'a>(evidence: &'a Evidence, prompt: &str, arm: &str) -> Vec<&'a S
 }
 
 fn throughput_memory(evidence: &Evidence, policy: &Policy, results: &mut Results) -> Result<()> {
+    let job_memory_limit = policy.contract["gates"]["maximumPeakJobMemoryBytes"]
+        .as_f64()
+        .ok_or("Missing validated qualification Job-commit limit.")?;
     for prompt in &policy.prompts {
         let baseline = arm_samples(evidence, &prompt.id, "baseline");
         let adapter = arm_samples(evidence, &prompt.id, "adapter");
@@ -187,7 +190,7 @@ fn throughput_memory(evidence: &Evidence, policy: &Policy, results: &mut Results
         );
     }
     for sample in &evidence.samples {
-        if sample.peak_job_memory_bytes > 12.0 * GIB
+        if sample.peak_job_memory_bytes > job_memory_limit
             || sample.minimum_available_physical_bytes < 4.0 * GIB
         {
             results.memory = false;

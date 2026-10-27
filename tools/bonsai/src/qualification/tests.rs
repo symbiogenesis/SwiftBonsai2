@@ -68,6 +68,37 @@ fn frozen_plan_control_bytes_and_receipts() -> Result<()> {
 }
 
 #[test]
+fn qualification_job_commit_gate_matches_the_enforced_process_boundary() -> Result<()> {
+    let fixture = golden()?;
+    let accepted = &fixture["scenarios"][0];
+    let limit = bonsai_cpu_policy::Profile::SwiftPq2Assessment.memory_limit_bytes();
+    assert_eq!(limit, 12_348_030_976);
+    assert_eq!(
+        run(json!({"operation": "plan"}))?["Contract"]["gates"]["maximumPeakJobMemoryBytes"],
+        limit
+    );
+    for (observed, expected) in [(limit, "accepted"), (limit + 1, "rejected")] {
+        let mut evidence = accepted["evidence"].clone();
+        evidence["samples"][0]["peakJobMemoryBytes"] = json!(observed);
+        let report = run(json!({"operation": "score", "evidence": evidence,
+            "review": accepted["review"]}))?;
+        assert_eq!(report["Status"], expected);
+        assert_eq!(
+            report["Gates"]["MemoryAllowance"],
+            if observed == limit {
+                "passed"
+            } else {
+                "failed"
+            }
+        );
+    }
+    let mut weakened = super::policy()?.contract;
+    weakened["gates"]["maximumPeakJobMemoryBytes"] = json!(12_884_901_888_u64);
+    assert!(super::validate_fixed_contract(&weakened).is_err());
+    Ok(())
+}
+
+#[test]
 fn strict_shapes_ranges_and_required_nullable_fields() -> Result<()> {
     let golden = golden()?;
     let accepted = &golden["scenarios"][0];

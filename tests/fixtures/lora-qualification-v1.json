@@ -1,5 +1,5 @@
 {
-  "provenance": "Frozen from PowerShell scorer at 0a7806e65fbf46a6e71867e4d5ecba8d0ba5f5d8 before migration; synthetic evidence only.",
+  "provenance": "Frozen from PowerShell scorer at 0a7806e65fbf46a6e71867e4d5ecba8d0ba5f5d8 before migration; synthetic evidence only. Job-commit gate and bound contract hashes updated to the reviewed 11.5 GiB development budget.",
   "plan": {
     "Contract": {
       "schemaVersion": 1,
@@ -43,7 +43,7 @@
         "minimumQualityScore": 3,
         "minimumPerPromptDimensionMedianQualityDelta": 0,
         "rejectUnwantedAdapterRefusals": true,
-        "maximumPeakJobMemoryBytes": 12884901888,
+        "maximumPeakJobMemoryBytes": 12348030976,
         "maximumPerPromptMedianJobMemoryPremiumBytes": 805306368,
         "minimumAvailablePhysicalBytes": 4294967296,
         "basisVerificationRequired": true,
@@ -88,7 +88,7 @@
         }
       ]
     },
-    "ContractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+    "ContractSha256": "9ae64f6078b1445fa73a32b662b38d8109b97f37b13fbae3760a02873148df61",
     "Schedule": [
       {
         "sampleId": "s0001",
@@ -363,7 +363,7 @@
           "runnerName": "synthetic",
           "runUrl": "https://github.com/example/synthetic/actions/runs/123"
         },
-        "contractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "contractSha256": "9ae64f6078b1445fa73a32b662b38d8109b97f37b13fbae3760a02873148df61",
         "samples": [
           {
             "sampleId": "s0001",
@@ -822,7 +822,7 @@
       },
       "review": {
         "runId": "synthetic-unit-fixture",
-        "contractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "contractSha256": "9ae64f6078b1445fa73a32b662b38d8109b97f37b13fbae3760a02873148df61",
         "source": "external-human-review",
         "attestation": "I reviewed the exact captured responses without automated scoring.",
         "schemaVersion": 1,
@@ -1204,7 +1204,7 @@
       "expected": {
         "SchemaVersion": 1,
         "RunId": "synthetic-unit-fixture",
-        "ContractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "ContractSha256": "9ae64f6078b1445fa73a32b662b38d8109b97f37b13fbae3760a02873148df61",
         "ControlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
         "Status": "accepted",
         "StandardProfileMayEnable": true,
@@ -1365,7 +1365,7 @@
           "runnerName": "synthetic",
           "runUrl": "https://github.com/example/synthetic/actions/runs/123"
         },
-        "contractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "contractSha256": "9ae64f6078b1445fa73a32b662b38d8109b97f37b13fbae3760a02873148df61",
         "samples": [
           {
             "sampleId": "s0001",
@@ -1826,7 +1826,7 @@
       "expected": {
         "SchemaVersion": 1,
         "RunId": "synthetic-unit-fixture",
-        "ContractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "ContractSha256": "9ae64f6078b1445fa73a32b662b38d8109b97f37b13fbae3760a02873148df61",
         "ControlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
         "Status": "pending",
         "StandardProfileMayEnable": false,
@@ -1910,7 +1910,7 @@
           "runnerName": "synthetic",
           "runUrl": "https://github.com/example/synthetic/actions/runs/123"
         },
-        "contractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "contractSha256": "9ae64f6078b1445fa73a32b662b38d8109b97f37b13fbae3760a02873148df61",
         "samples": [
           {
             "sampleId": "s0001",
@@ -2369,7 +2369,7 @@
       },
       "review": {
         "runId": "synthetic-unit-fixture",
-        "contractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "contractSha256": "9ae64f6078b1445fa73a32b662b38d8109b97f37b13fbae3760a02873148df61",
         "source": "external-human-review",
         "attestation": "I reviewed the exact captured responses without automated scoring.",
         "schemaVersion": 1,
@@ -2751,7 +2751,7 @@
       "expected": {
         "SchemaVersion": 1,
         "RunId": "synthetic-unit-fixture",
-        "ContractSha256": "a974cba25a483b9465fa7d5480980dcf6d2789db1482cb30e08004e222900a03",
+        "ContractSha256": "9ae64f6078b1445fa73a32b662b38d8109b97f37b13fbae3760a02873148df61",
         "ControlsSha256": "0f1e71686a3c7e0487393e930c9b45347ea59088338ab0d960ecac096ce7eba3",
         "Status": "rejected",
         "StandardProfileMayEnable": false,

@@ -30,7 +30,8 @@ fn plan() -> Result<Value> {
         "repeatCount": 3, "adapterScale": SCALE, "controls": controls,
         "representations": policy.contract["representations"],
         "minimumDecodeTokens": 16, "minimumPerArmMedianTpsRatio": 1,
-        "minimumQualityScore": 3, "maximumPeakJobMemoryBytes": 12 * 1_073_741_824_u64,
+        "minimumQualityScore": 3,
+        "maximumPeakJobMemoryBytes": policy.contract["gates"]["maximumPeakJobMemoryBytes"],
         "minimumAvailablePhysicalBytes": 4 * 1_073_741_824_u64,
         "maximumMedianJobMemoryPremiumBytes": 805_306_368_u64,
         "scope": "One fixed creative prefix, 64 output tokens per process, 12 timed fresh-process samples and two loaded-at-zero controls. Prefixes cannot establish answer completeness, quality, first-token latency, thermal behavior, long-context correctness or broad capability."

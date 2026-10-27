@@ -74,6 +74,32 @@ fn fixed_prefix_screen_never_promotes_or_claims_quality() -> Result<()> {
 }
 
 #[test]
+fn screen_job_commit_gate_matches_the_enforced_process_boundary() -> Result<()> {
+    let limit = bonsai_cpu_policy::Profile::SwiftPq2Assessment.memory_limit_bytes();
+    assert_eq!(limit, 12_348_030_976);
+    assert_eq!(plan()?["Contract"]["maximumPeakJobMemoryBytes"], limit);
+    for representation in REPRESENTATIONS {
+        for (observed, expected) in [(limit, "continue"), (limit + 1, "rejected")] {
+            let mut evidence = evidence()?;
+            let sample = evidence["samples"]
+                .as_array_mut()
+                .and_then(|samples| {
+                    samples.iter_mut().find(|sample| {
+                        sample["weightRepresentation"] == representation
+                            && sample["arm"] == "baseline"
+                    })
+                })
+                .ok_or("Missing synthetic baseline sample.")?;
+            sample["peakJobMemoryBytes"] = json!(observed);
+            let report = score::score(&evidence, None)?;
+            assert_eq!(report["Status"], expected);
+            assert_eq!(report["DefaultMayChange"], false);
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn prefix_screen_rejects_regressions_and_mismatched_evidence() -> Result<()> {
     let base = evidence()?;
     for pointer in [

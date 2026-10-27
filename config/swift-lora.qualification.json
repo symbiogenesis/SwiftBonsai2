@@ -34,7 +34,7 @@
     "minimumQualityScore": 3,
     "minimumPerPromptDimensionMedianQualityDelta": 0,
     "rejectUnwantedAdapterRefusals": true,
-    "maximumPeakJobMemoryBytes": 12884901888,
+    "maximumPeakJobMemoryBytes": 12348030976,
     "maximumPerPromptMedianJobMemoryPremiumBytes": 805306368,
     "minimumAvailablePhysicalBytes": 4294967296,
     "basisVerificationRequired": true,

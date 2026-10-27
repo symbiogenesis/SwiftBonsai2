@@ -284,9 +284,12 @@ pub(super) fn score(evidence: &Value, review: Option<&Value>) -> Result<Value> {
     )?;
     let screen = plan()?;
     let samples = validate(evidence, &screen)?;
+    let job_memory_limit = screen["Contract"]["maximumPeakJobMemoryBytes"]
+        .as_f64()
+        .ok_or("Missing validated screen Job-commit limit.")?;
     let mut rejections = Vec::new();
     for sample in samples {
-        if metric(sample, "peakJobMemoryBytes", 1.0, 64.0 * GIB, true)? > 12.0 * GIB
+        if metric(sample, "peakJobMemoryBytes", 1.0, 64.0 * GIB, true)? > job_memory_limit
             || metric(
                 sample,
                 "minimumAvailablePhysicalBytes",
