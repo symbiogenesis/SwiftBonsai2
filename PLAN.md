@@ -38,9 +38,10 @@ memory, throughput and device qualification remain outstanding.
   stdout/stderr logs sequentially, eliminating duplicate full-output buffers
   while preserving lossy decoding, output limits and exact log ordering.
 
-Swift's owner-selected development budget now admits at 15.75 GiB available
-memory with an 11.75 GiB Job commit ceiling, reducing each by 256 MiB while
-preserving the 4 GiB physical reserve and memory-pressure shutdown. This is a
+Swift's owner-selected development budget now admits at 15.5 GiB available
+memory with an 11.5 GiB Job commit ceiling, reducing each by 512 MiB from the
+original 16/12 GiB budget while preserving the 4 GiB physical reserve and
+memory-pressure shutdown. This is a
 budget adjustment, not measured model-memory savings or completed qualification.
 Full-context/4K-output resource acceptance remains outstanding. Further
 current-weight PTQ1 reductions also need numerical qualification; see

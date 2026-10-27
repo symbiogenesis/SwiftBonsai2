@@ -5,7 +5,7 @@ Captures the mandatory fixed paired Swift LoRA evaluation on the target CI runne
 .DESCRIPTION
 Benchmarks run only on GitHub Actions main on the Snapdragon X Elite. Artifacts
 must already be provisioned. PlanOnly reads policy without starting a model or
-inference process. Every sample uses a fresh owned process, 11.75 GiB Job commit ceiling,
+inference process. Every sample uses a fresh owned process, 11.5 GiB Job commit ceiling,
 4 GiB physical reserve, fixed controls and a ten-minute deadline. Responses,
 timings, arguments and failures remain in unique external system-temp evidence.
 This CLI capture cannot establish logits parity or the SSM authoring basis;
@@ -50,7 +50,7 @@ if ($processors.Count -ne 1 -or $processors[0].Name -notmatch 'Snapdragon.*X.*El
 $overrides = @(Get-ChildItem Env: | Where-Object Name -Match '^(LLAMA_|LLAMACPP_|GGML_|AIP_|MTMD_|HF_TOKEN$|HF_ENDPOINT$|MODEL_ENDPOINT$)')
 if ($overrides.Count) { throw ('Inherited model/backend overrides are unsupported: ' + ($overrides.Name -join ', ')) }
 $admission = & (Join-Path $PSScriptRoot 'Invoke-CpuCheck.ps1') -DataDirectory $data -Profile swift-pq2-assessment -UseAbliterateLora -UseRepackedPtq1:$UseRepackedPtq1 -CheckOnly -ToolPath $ToolPath
-if ($admission.Status -cne 'admission-passed') { throw 'The shared 15.75 GiB available-memory admission requirement was not met.' }
+if ($admission.Status -cne 'admission-passed') { throw 'The shared 15.5 GiB available-memory admission requirement was not met.' }
 $lockPath = Join-Path $PSScriptRoot '../config/swift-assessment.lock.json'
 $lock = Read-BonsaiLock $lockPath
 $runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath $lockPath -VerifyOnly -ToolPath $ToolPath

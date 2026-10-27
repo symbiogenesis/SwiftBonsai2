@@ -52,5 +52,5 @@ TTS graph eviction trades cross-window reuse for bounded retained scratch;
 the latency cost of rebuilding windows and the complete-model memory benefit
 still need target-device qualification. The storage changes do not qualify a
 lower model admission threshold. Separately, the owner-selected Swift development
-budget uses 15.75 GiB admission and an 11.75 GiB Job cap, retaining the 4 GiB
+budget uses 15.5 GiB admission and an 11.5 GiB Job cap, retaining the 4 GiB
 physical reserve, memory-pressure shutdown and full context/output reservations.

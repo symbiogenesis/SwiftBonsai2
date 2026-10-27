@@ -119,8 +119,8 @@ fn swift_plan_selects_only_pinned_pq2_runtime_and_assessment_limits() {
     let Ok(plan) = plan else {
         return;
     };
-    assert_eq!(plan.memory_limit_bytes, 12_616_466_432);
-    assert_eq!(plan.required_available_bytes, 16_911_433_728);
+    assert_eq!(plan.memory_limit_bytes, 12_348_030_976);
+    assert_eq!(plan.required_available_bytes, 16_642_998_272);
     assert_eq!(
         u64::try_from(plan.memory_limit_bytes),
         Ok(plan.required_available_bytes - 4 * 1024 * 1024 * 1024)

@@ -9,7 +9,7 @@ The embedded template's thinking mode and xhigh effort are requested explicitly,
 with the publisher sampler. Sixteen generated tokens establish a bounded decode
 check, not answer quality or performance.
 Memory admission reserves the selected fixed service allowance plus 4 GiB available
-headroom. The reference remains 18 GiB; the explicit Swift assessment uses 11.75 GiB.
+headroom. The reference remains 18 GiB; the explicit Swift assessment uses 11.5 GiB.
 A Windows Job enforces job-wide committed memory, one active process,
 and kill-on-close ownership from creation. The additional one-second physical
 memory watchdog is not a peak measurement. This provides no filesystem, token,

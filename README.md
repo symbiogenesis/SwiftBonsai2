@@ -72,7 +72,7 @@ and [local API contract](docs/broker-policy.md#public-request-contract).
 
 | Model | Model file | Development budget | Free RAM to start |
 | --- | ---: | ---: | ---: |
-| **Swift Bonsai 2 `PQ2_0`** | **6.71 GiB** | **11.75 GiB** | **15.75 GiB** |
+| **Swift Bonsai 2 `PQ2_0`** | **6.71 GiB** | **11.5 GiB** | **15.5 GiB** |
 | Qwen3.8-27B `UD-Q3_K_XL` | 12.24 GiB | 18 GiB | 22 GiB |
 
 Swift's pinned model file is **about 45% smaller** than the Qwen reference. The

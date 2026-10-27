@@ -208,7 +208,7 @@ Speech intake checks include
 and the `request::tests::memory_multipart_` cases for fixed field storage and
 excess-field rejection before decoding.
 These are untimed storage/lifetime checks. They do not qualify the separately
-owner-selected 15.75 GiB admission/11.75 GiB Job development budget; its total
+owner-selected 15.5 GiB admission/11.5 GiB Job development budget; its total
 model-memory acceptance still requires complete-workload target-device evidence.
 
 The focused `window::transcript::cache_tests::` and

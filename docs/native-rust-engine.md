@@ -39,7 +39,7 @@ neither a measured TPS gain nor lower model-level peak RAM.
 | Input/output | Verified embedded template, exact prompt tokens, supplied reasoning history, declared stops and incremental text |
 | Generation | [Inference defaults](inference-defaults.md), optional thinking with `xhigh` effort, production MT19937 draw ordering and native sampler tie behavior |
 | Lifecycle | Verified readiness, identical canonical count/generation requests, one active generation, authentication, streaming, cancellation, deadlines, reset and recovery |
-| Admission | 15.75 GiB available physical memory, 11.75 GiB Job commit limit and 4 GiB running physical reserve; owner-selected development budget, with full-context resource qualification pending; diagnostic allowances are not launch profiles |
+| Admission | 15.5 GiB available physical memory, 11.5 GiB Job commit limit and 4 GiB running physical reserve; owner-selected development budget, with full-context resource qualification pending; diagnostic allowances are not launch profiles |
 
 This engine contract uses PQ2 without LoRA, prompt-cache reuse, speculation or
 accelerator offload. Current-weight PTQ1, other model families and adapter

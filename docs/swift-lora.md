@@ -155,7 +155,7 @@ quality acceptance. Fewer refusals, shorter output, retries or memory savings
 cannot compensate for throughput or quality regression.
 
 The owner accepts a modest bounded RAM premium: the fixed gate permits up to
-768 MiB median peak Job-commit increment per prompt within the same 11.75 GiB Job
+768 MiB median peak Job-commit increment per prompt within the same 11.5 GiB Job
 cap and 4 GiB physical reserve. Keep improving lossless allocation without
 requiring identical baseline RAM.
 

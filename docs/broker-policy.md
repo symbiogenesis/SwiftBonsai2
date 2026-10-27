@@ -330,7 +330,7 @@ Safe broker code delegates Win32 ownership to the audited
 `bonsai-windows-process` and protected credential creation to
 `bonsai-windows-credentials`. A fresh protected evidence directory contains two
 keys and new stdout/stderr files. The reference requires 22 GiB available RAM
-for its 18 GiB service; Swift requires 15.75 GiB for its 11.75 GiB service. Both retain
+for its 18 GiB service; Swift requires 15.5 GiB for its 11.5 GiB service. Both retain
 a 4 GiB physical reserve. Swift fixes batch/microbatch at 128/64; the reference
 retains 256/128. Suspended process creation atomically applies
 Job/standard-handle attributes: kill-on-close, the selected job-wide commit cap,

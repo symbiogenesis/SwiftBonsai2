@@ -113,10 +113,10 @@ which the template cannot render alone without a user query.
 
 Known allocation accounting includes the entire PQ2 file, live KV/recurrent
 state, shared rotation and deduplicated signs/metadata: **7,904,356,704 bytes**.
-The **11.75 GiB** Job commit allowance leaves 4,712,109,728 bytes for remaining
+The **11.5 GiB** Job commit allowance leaves 4,443,674,272 bytes for remaining
 runtime/scratch/temporary allocations. A separate **4 GiB** physical reserve
-requires **15.75 GiB available** for admission. The owner selected this 256 MiB
-reduction from the previous 12/16 GiB development budget; the reduction is not a
+requires **15.5 GiB available** for admission. The owner selected this 512 MiB
+reduction from the original 12/16 GiB development budget; the reduction is not a
 measured consequence of the application allocation changes. Full-context and
 4K-output peak-memory qualification remains outstanding. These are development limits;
 they do not lower Qwen's 22 GiB admission requirement.
