@@ -30,6 +30,8 @@ fn version_advertises_policy_commands_without_resolving_a_request_file()
     assert_eq!(version["Name"], "bonsai-tools");
     assert_eq!(version["ProtocolVersion"], 5);
     assert_eq!(version["StartupProtocolVersion"], 1);
+    assert_eq!(version["ChatLaunchProtocolVersion"], 1);
+    assert_eq!(version["BootstrapProtocolVersion"], 1);
     let commands = version["Commands"]
         .as_array()
         .ok_or("Missing command capabilities")?;
@@ -70,15 +72,21 @@ fn startup_rejects_invalid_caller_identity_before_build_work()
         json!({"parentProcessId": 0, "parentCreationTimeFileTime": 1}),
         json!({"parentProcessId": 1, "parentCreationTimeFileTime": "invalid"}),
     ] {
-        fs::write(&request, serde_json::to_vec(&identity)?)?;
-        let output = Command::new(env!("CARGO_BIN_EXE_bonsai-tools"))
-            .args(["source-build", "--request"])
-            .arg(&request)
-            .current_dir(&scratch)
-            .output()?;
-        assert!(!output.status.success());
-        assert_eq!(output.stdout, Vec::<u8>::new());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("startup caller identity"));
+        for command in ["source-build", "chat-launch", "chat-package"] {
+            let mut payload = identity.clone();
+            if command == "chat-package" {
+                payload["operation"] = "launch".into();
+            }
+            fs::write(&request, serde_json::to_vec(&payload)?)?;
+            let output = Command::new(env!("CARGO_BIN_EXE_bonsai-tools"))
+                .args([command, "--request"])
+                .arg(&request)
+                .current_dir(&scratch)
+                .output()?;
+            assert!(!output.status.success());
+            assert_eq!(output.stdout, Vec::<u8>::new());
+            assert!(String::from_utf8_lossy(&output.stderr).contains("startup caller identity"));
+        }
     }
     fs::remove_file(request)?;
     fs::remove_dir(scratch)?;

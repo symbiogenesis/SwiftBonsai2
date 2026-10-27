@@ -87,8 +87,11 @@ retained entry point resolves the current active version on each launch:
 & $installedLauncher -InstallationDirectory $installationDirectory -DataDirectory $data
 ```
 
-It verifies all selected package files, then supplies the packaged executables
-explicitly to the ordinary launcher. Pinned speech model provisioning and
+PowerShell verifies the selected manifest, maintenance executable and loader
+inventory before executing package code. One Rust operation then verifies all
+package files, checks that the bootstrap selection is unchanged and launches
+the fixed packaged executables. It avoids a separate inspection process,
+version probe and source-launcher import. Pinned speech model provisioning and
 credential creation use the packaged maintenance executable. Native inference
 continues to use existing artifact checks, admission, Jobs and retry policies.
 

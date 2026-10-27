@@ -22,6 +22,11 @@ frontend. The UI runs separately from the broker and inference process;
 network work runs off the native event loop. The toolkit supports other desktop
 platforms, but the broker ownership, credentials and speech integrations remain
 Windows-specific; this migration does not establish a cross-platform runner.
+PowerShell bootstraps a trusted maintenance executable; Rust owns source build
+reuse, immutable tool snapshots and the per-user launch guard through app
+teardown. Warm source launches reuse digest-checked capability receipts without
+a separate version process. Installed launches verify the selected package and
+open the app in one native operation after the PowerShell trust bootstrap.
 The launcher checks or builds the native presentation executable first. Its
 pending conversation shell then starts an owned Rust preparation worker, which
 builds/verifies the broker and speech companions and creates fresh credentials.

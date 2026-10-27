@@ -50,6 +50,7 @@ bonsai-tools inference-capabilities --request ABSOLUTE_JSON_PATH
 bonsai-tools speech-build --request ABSOLUTE_JSON_PATH
 bonsai-tools source-build --request ABSOLUTE_JSON_PATH
 bonsai-tools chat-launch --request ABSOLUTE_JSON_PATH
+bonsai-tools chat-package --request ABSOLUTE_JSON_PATH
 ```
 
 Requests are JSON objects read through a retained read-only handle, capped at
@@ -68,11 +69,18 @@ Provisioning uses Windows curl 8.4+ for HTTPS-only resumable downloads, verifies
 exact bytes/SHA-256, then publishes exclusively. Ordinary startup size-checks
 cached speech files; the native services verify their hashes before first use.
 
-`source-build` owns content fingerprints, executable digest receipts and the
-pinned Cargo invocation for source maintenance/chat builds. Cache hits skip
-Cargo; rebuilds use content freshness without cache cleanup. `chat-launch` owns
+`source-build` owns content fingerprints, executable digest receipts, immutable
+maintenance snapshots and the pinned Cargo invocation for source maintenance/chat
+builds. Native publication writes a bounded atomic bootstrap receipt with the
+snapshot digest and checked capabilities. Warm PowerShell bootstrap checks the
+receipt and image digest without starting a separate version process; changed
+images receive their version handshake in Rust. `-ForceBuild` can repair a
+damaged bootstrap through the cold compiler path. Cache hits skip Cargo;
+rebuilds use content freshness without cache cleanup. `chat-launch` owns
 the source launcher's option validation, provisioning selection, credentials,
 arguments and native app lifetime. PowerShell remains a bootstrap/parameter bridge.
+Rust holds the persistent per-user instance lock until the owned app tree exits;
+the PowerShell wrapper only probes for an existing owner before tool resolution.
 Build variants use independent, flushed-and-atomically-published receipts.
 Non-build documentation/helper changes preserve reuse; referenced embedded
 content and configuration changes invalidate it. Damaged outputs and incomplete
@@ -88,6 +96,18 @@ Compiler/tool descendants belong to an atomic Windows Job with an inherited
 Unicode environment and child-only overlays. Cancellation waits for the tree to
 exit before build-lock release; owner death closes the Job. Model memory and
 process policies remain separate and unchanged.
+
+`ChatLaunchProtocolVersion: 1` identifies native instance-lock ownership;
+PowerShell rejects older launch tools before sending a request.
+`BootstrapProtocolVersion: 1` identifies native maintenance snapshot publication.
+These additive contracts leave the general JSON protocol at version 5.
+
+`chat-package` supports inspection through `operation: "installed"` and combined
+verification/launch through `operation: "launch"`. Launch binds the directory,
+package ID and manifest digest selected by the PowerShell trust bootstrap,
+verifies the full fixed inventory, then derives executable paths in Rust.
+Caller options cannot override those paths or request a source build. The same
+native launcher opens the pending UI before preparing backend and speech services.
 
 `inference-lock` reviews independently selected Prism release and source ZIPs.
 It retains read-only input handles, checks bounded inventories, file hashes,
