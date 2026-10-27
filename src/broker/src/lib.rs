@@ -22,6 +22,7 @@ pub mod launch_policy;
 #[cfg(windows)]
 pub mod launcher;
 pub mod reception;
+mod request_buffer;
 pub mod response;
 pub mod runtime;
 pub mod scheduler;
@@ -326,7 +327,7 @@ impl AuthorizedHead {
             }]
         });
         let max_completion_tokens = chat.max_completion_tokens;
-        let body = serde_json::to_vec(&BackendChat {
+        let body = request_buffer::serialize(&BackendChat {
             messages: &chat.messages,
             max_completion_tokens,
             stream: chat.stream,
@@ -347,13 +348,7 @@ impl AuthorizedHead {
                 reasoning_effort: "xhigh",
                 preserve_thinking: true,
             },
-        })
-        .map_err(|_| Rejection::ChatSchema)?;
-        // Fixed sampler/template fields can grow an otherwise valid client
-        // body past the private backend's identical request-byte limit.
-        if body.len() > MAX_BODY_BYTES {
-            return Err(Rejection::BodySize);
-        }
+        })?;
         Ok(PendingChat {
             body,
             max_completion_tokens,

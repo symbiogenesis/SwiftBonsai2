@@ -91,7 +91,7 @@ pub(crate) async fn send_context_rejection<W: AsyncWrite + Unpin>(
 /// body limit, JSON syntax failure or backend/client I/O failure. Client writes
 /// may already be partial; callers must close the endpoints without retrying.
 pub async fn send_chat_response<W, R>(
-    mut client: W,
+    client: W,
     backend: Response<R>,
     chat: &AdmittedChat,
     supervisor_deadline: Instant,
@@ -100,10 +100,29 @@ where
     W: AsyncWrite + Unpin + 'static,
     R: AsyncRead + Unpin + 'static,
 {
+    send_chat_response_mode(
+        client,
+        backend,
+        chat.streams_response(),
+        supervisor_deadline,
+    )
+    .await
+}
+
+pub(crate) async fn send_chat_response_mode<W, R>(
+    mut client: W,
+    backend: Response<R>,
+    streaming: bool,
+    supervisor_deadline: Instant,
+) -> Result<(), ResponseError>
+where
+    W: AsyncWrite + Unpin + 'static,
+    R: AsyncRead + Unpin + 'static,
+{
     ensure_time(supervisor_deadline)?;
-    validate_metadata(&backend, chat.streams_response())?;
+    validate_metadata(&backend, streaming)?;
     let mut body = backend.into_body();
-    if chat.streams_response() {
+    if streaming {
         write_sse_response(&mut client, &mut body, supervisor_deadline).await
     } else {
         write_json_response(&mut client, &mut body, supervisor_deadline).await

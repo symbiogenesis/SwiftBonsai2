@@ -6,9 +6,9 @@
 
 use crate::{
     Rejection, RequestPolicy,
-    backend::{BackendError, BackendPolicy, count_and_admit, request_chat},
+    backend::{BackendError, BackendPolicy, count_and_admit, request_chat_owned},
     reception::{ReceiveError, receive_chat},
-    response::{ResponseError, send_chat_response, send_context_rejection},
+    response::{ResponseError, send_chat_response_mode, send_context_rejection},
 };
 use std::{future::poll_fn, pin::pin, task::Poll, time::Duration};
 use tokio::{
@@ -125,10 +125,11 @@ where
             .connect(deadline)
             .await
             .map_err(ServeError::Backend)?;
-        let response = request_chat(generation, &chat, backend.policy(), deadline)
+        let streaming = chat.streams_response();
+        let response = request_chat_owned(generation, chat, backend.policy(), deadline)
             .await
             .map_err(ServeError::Backend)?;
-        send_chat_response(output, response, &chat, deadline)
+        send_chat_response_mode(output, response, streaming, deadline)
             .await
             .map_err(ServeError::Response)
     });

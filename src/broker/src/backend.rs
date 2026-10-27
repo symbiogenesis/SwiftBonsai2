@@ -173,9 +173,31 @@ where
     .await
 }
 
-async fn exchange<S>(
+// Production transfers the body into the exchange so it can be released before
+// waiting for headers. Keep the borrowed public adapter for existing callers.
+pub(crate) async fn request_chat_owned<S>(
+    stream: S,
+    chat: AdmittedChat,
+    policy: &BackendPolicy,
+    deadline: Instant,
+) -> Result<Response<BackendBody<S>>, BackendError>
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    exchange(
+        stream,
+        chat.body,
+        chat.stream,
+        "/v1/chat/completions",
+        policy,
+        deadline,
+    )
+    .await
+}
+
+async fn exchange<S, B: AsRef<[u8]>>(
     mut stream: S,
-    body: &[u8],
+    body: B,
     streaming: bool,
     route: &str,
     policy: &BackendPolicy,
@@ -190,17 +212,20 @@ where
         "POST {route} HTTP/1.1\r\nHost: {}\r\nAuthorization: {}\r\nContent-Type: application/json\r\nAccept-Encoding: identity\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",
         policy.authority,
         policy.authorization,
-        body.len()
+        body.as_ref().len()
     );
     timeout_at(write_deadline, async {
         stream.write_all(head.as_bytes()).await?;
-        stream.write_all(body).await?;
+        stream.write_all(body.as_ref()).await?;
         stream.flush().await
     })
     .await
     .map_err(|_| BackendError::Deadline)?
     .map_err(|_| BackendError::Io)?;
     ensure_time(write_deadline)?;
+    // Counting borrows these exact bytes for subsequent generation. The owned
+    // generation path needs no prompt storage once the complete write is flushed.
+    drop(body);
 
     let mut reader = BufReader::with_capacity(8192, stream);
     let mut raw = Vec::with_capacity(MAX_HEADER_BYTES);
@@ -468,3 +493,6 @@ fn ensure_time(deadline: Instant) -> Result<(), BackendError> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod memory_tests;
