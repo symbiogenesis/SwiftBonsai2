@@ -122,12 +122,11 @@ if ($Case -cin @('All', 'Launcher')) {
             Assert ((& $packages { $script:Inspections }) -eq 0) 'Package inventory was checked after executing package code.'
         } finally { [IO.File]::Delete($extra) }
     }
-    # Keep the single-instance gate in this fixture without changing inherited
-    # profile variables or competing with the user's running chat session.
-    $common = Import-Module (Join-Path $installed.Directory 'scripts/Bonsai.Common.psm1') -Force -PassThru
-    & $common {
+    # Isolate the cheap duplicate probe without changing inherited profile paths
+    # or competing with a real chat session. Rust owns the held admission lease.
+    & $packages {
         param([string]$GuardDirectory)
-        $script:OriginalResolve = ${function:Resolve-ExternalPath}
+        $script:OriginalResolve = (Get-Command Resolve-ExternalPath -CommandType Function).ScriptBlock
         $script:GuardDirectory = $GuardDirectory
         function script:Resolve-ExternalPath {
             [CmdletBinding()]
@@ -137,49 +136,52 @@ if ($Case -cin @('All', 'Launcher')) {
             & $script:OriginalResolve -Path $Path
         }
     } (Join-Path $scratch 'instance-guard')
-    $native = Import-Module (Join-Path $installed.Directory 'scripts/Bonsai.Native.psm1') -Force -PassThru
-    & $native {
+    # The Rust command owns verified paths and singleton admission. Exercise its
+    # one-process launch bridge without executing a synthetic PE or real UI.
+    & $packages {
         $script:Calls = [Collections.Generic.List[object]]::new()
-        function script:Invoke-BonsaiNativeProcess {
+        $script:DuplicateResult = $false
+        function script:Invoke-ChatPackageCommand {
             [CmdletBinding()]
-            [OutputType([pscustomobject])]
-            param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$LogPath)
-            $request = if ($ArgumentList[0] -ceq 'chat-launch') { Get-Content -LiteralPath $ArgumentList[2] -Raw | ConvertFrom-Json -AsHashtable } else { $null }
-            $script:Calls.Add(@{ Executable = $Executable; Arguments = $ArgumentList; WorkingDirectory = $WorkingDirectory; TimeoutSeconds = $TimeoutSeconds; LogPath = $LogPath; Request = $request })
-            if ([IO.Path]::GetFileName($Executable) -cne 'bonsai-tools.exe') { throw 'Packaged launcher attempted a build or unexpected executable.' }
-            $output = switch ($ArgumentList[0]) {
-                '--version' { '{"Name":"bonsai-tools","Version":"0.1.0","ProtocolVersion":5,"StartupProtocolVersion":1,"Commands":["chat-launch"]}' }
-                'chat-launch' { '{"Status":"completed"}' }
-                default { throw 'Unexpected packaged maintenance command.' }
-            }
-            return [pscustomobject]@{ ExitCode = 0; StandardOutput = $output; StandardError = '' }
+            [OutputType([hashtable])]
+            param([string]$ToolPath, [Collections.IDictionary]$Request, [int]$TimeoutSeconds)
+            $script:Calls.Add(@{ ToolPath = $ToolPath; Request = $Request; TimeoutSeconds = $TimeoutSeconds })
+            if ($script:DuplicateResult) { return @{ Status = 'already-running'; Message = 'Native singleton race was handled.' } }
+            return @{ Status = 'completed' }
         }
     }
     $launcher = Join-Path $installed.Directory 'scripts/Start-InstalledChat.ps1'
     $originalDirectory = [Environment]::CurrentDirectory
     & $launcher -InstallationDirectory $root -DataDirectory $data -NoSpeechModels | Out-Null
-    $calls = @(& $native { $script:Calls.ToArray() })
-    Assert ($calls.Count -eq 2 -and $calls[-1].Request.NoSpeechModels -and -not $calls[-1].Request.ContainsKey('AsrPath')) 'Text-only package options changed at the Rust bridge.'
+    $calls = @(& $packages { $script:Calls.ToArray() })
+    Assert ($calls.Count -eq 1 -and $calls[-1].Request.options.NoSpeechModels -and
+        -not $calls[-1].Request.options.ContainsKey('AsrPath')) 'Text-only package options changed at the Rust bridge.'
     & $launcher -InstallationDirectory $root -DataDirectory $data -UseRepackedPtq1 -NoAbliterateLora | Out-Null
-    $calls = @(& $native { $script:Calls.ToArray() })
-    $request = $calls[-1].Request
+    $calls = @(& $packages { $script:Calls.ToArray() })
+    $request = $calls[-1].Request.options
     Assert ($request.UseRepackedPtq1 -and $request.NoAbliterateLora -and
-        $request.ChatPath -ceq (Join-Path $installed.Directory 'bin/bonsai-chat.exe') -and
-        $request.AsrPath -ceq (Join-Path $installed.Directory 'bin/bonsai-asr.exe') -and
-        $request.TtsPath -ceq (Join-Path $installed.Directory 'bin/bonsai-tts.exe')) 'Package paths or explicit model/adapter selections were not forwarded.'
+        -not $request.ContainsKey('ChatPath') -and -not $request.ContainsKey('AsrPath') -and
+        -not $request.ContainsKey('TtsPath')) 'Rust must own verified package paths and preserve explicit model/adapter selections.'
     & $launcher -InstallationDirectory $root -DataDirectory $data -NoTts -Verbose:$false | Out-Null
-    $calls = @(& $native { $script:Calls.ToArray() })
-    Assert ($calls[-1].Request.NoTts -and $calls[-1].Request.ContainsKey('AsrPath') -and
-        -not $calls[-1].Request.ContainsKey('TtsPath') -and -not $calls[-1].Request.ContainsKey('Verbose')) 'NoTts or common PowerShell parameter forwarding changed.'
+    $calls = @(& $packages { $script:Calls.ToArray() })
+    Assert ($calls.Count -eq 3 -and $calls[-1].Request.options.NoTts -and
+        -not $calls[-1].Request.options.ContainsKey('Verbose')) 'NoTts or common PowerShell parameter forwarding changed.'
     foreach ($call in $calls) {
-        Assert ($call.Executable.StartsWith((Join-Path $installed.Directory 'bin'), [StringComparison]::OrdinalIgnoreCase)) 'Packaged launch used a compiler or external executable.'
-        Assert ([IO.Path]::IsPathFullyQualified($call.WorkingDirectory) -and -not $call.WorkingDirectory.StartsWith($installed.Directory, [StringComparison]::OrdinalIgnoreCase)) 'Native process escaped its external scratch lane.'
+        Assert ($call.ToolPath -ceq (Join-Path $installed.Directory 'bin/bonsai-tools.exe') -and
+            $call.TimeoutSeconds -eq 0) 'Packaged launch used an unexpected tool or bounded the UI lifetime.'
+        Assert ($call.Request.operation -ceq 'launch' -and $call.Request.expectedDirectory -ceq $installed.Directory -and
+            $call.Request.expectedId -ceq $installed.Id -and $call.Request.expectedManifestSha256 -ceq $installed.ManifestSha256) 'The native launch did not bind the trusted selection.'
+        Assert ($call.Request.parentProcessId -eq $PID -and $call.Request.parentCreationTimeFileTime -gt 0) 'Native launch lost caller lifetime identity.'
     }
     Assert ([Environment]::CurrentDirectory -ceq $originalDirectory) 'The startup bridge changed the caller native working directory.'
-    $before = $calls.Count
+    Assert ((& $packages { $script:Inspections }) -eq 0) 'Installed launch spawned a separate full-package inspection.'
+    & $packages { $script:DuplicateResult = $true }
+    $messages = @(& $launcher -InstallationDirectory $root -DataDirectory $data 6>&1)
+    Assert ($messages.Count -eq 1 -and [string]$messages[0] -ceq 'Native singleton race was handled.') 'The native singleton duplicate result was discarded.'
+    $before = & $packages { $script:Calls.Count }
     $guard = [IO.FileStream]::new((Join-Path -Path $scratch -ChildPath 'instance-guard' -AdditionalChildPath 'chat.lock'), [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     try { & $launcher -InstallationDirectory $root -DataDirectory $data | Out-Null }
     finally { $guard.Dispose() }
-    Assert ((& $native { $script:Calls.Count }) -eq $before) 'A duplicate started maintenance work before returning.'
+    Assert ((& $packages { $script:Calls.Count }) -eq $before) 'A duplicate started maintenance work before returning.'
 }
 "Chat package $Case checks passed. Evidence: $scratch"

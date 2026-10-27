@@ -25,14 +25,15 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.ChatPackage.psm1')
-$package = Get-InstalledChatPackage -InstallationDirectory $InstallationDirectory -Native
-$parameters = @{}
-foreach ($name in $PSBoundParameters.Keys) { if ($name -cne 'InstallationDirectory') { $parameters[$name] = $PSBoundParameters[$name] } }
-$parameters.ChatPath = Join-Path $package.Directory 'bin/bonsai-chat.exe'
-$parameters.BrokerPath = Join-Path $package.Directory 'bin/bonsai-broker.exe'
-$parameters.ToolPath = Join-Path $package.Directory 'bin/bonsai-tools.exe'
-if (-not $NoSpeechModels) {
-    $parameters.AsrPath = Join-Path $package.Directory 'bin/bonsai-asr.exe'
-    if (-not $NoTts) { $parameters.TtsPath = Join-Path $package.Directory 'bin/bonsai-tts.exe' }
+$options = @{ DataDirectory = $DataDirectory }
+foreach ($name in @('NoSpeechModels', 'NoTts', 'NoAbliterateLora', 'UseRepackedPtq1',
+    'TtsQuantization', 'TtsThreads', 'FrontendPort', 'BackendPort', 'CanaryPort', 'TtsPort')) {
+    if ($PSBoundParameters.ContainsKey($name)) {
+        $value = $PSBoundParameters[$name]
+        $options[$name] = if ($value -is [switch]) { [bool]$value } else { $value }
+    }
 }
-& (Join-Path $package.Directory 'scripts/Start-Chat.ps1') @parameters
+$result = Start-InstalledChatPackage -InstallationDirectory $InstallationDirectory -Options $options
+if ($result.Contains('Status') -and $result.Status -ceq 'already-running') {
+    Write-Information -MessageData $result.Message -InformationAction Continue
+}

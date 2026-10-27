@@ -39,6 +39,14 @@ const FILES: &[&str] = &[
 enum Request {
     #[serde(rename_all = "camelCase")]
     Installed { installation_directory: PathBuf },
+    #[serde(rename_all = "camelCase")]
+    Launch {
+        installation_directory: PathBuf,
+        expected_directory: PathBuf,
+        expected_id: String,
+        expected_manifest_sha256: String,
+        options: Value,
+    },
 }
 
 #[derive(Deserialize)]
@@ -272,17 +280,99 @@ fn installed(root: &Path) -> crate::Result<Value> {
     }))
 }
 
-/// Verify the active package without invoking a compiler or loading a model.
+fn launch_options(package: &Value, options: Value) -> crate::Result<Value> {
+    let Value::Object(mut options) = options else {
+        return Err("Installed launch options must be an object.".into());
+    };
+    for name in options.keys() {
+        if !matches!(
+            name.as_str(),
+            "DataDirectory"
+                | "NoSpeechModels"
+                | "NoTts"
+                | "NoAbliterateLora"
+                | "UseRepackedPtq1"
+                | "TtsQuantization"
+                | "TtsThreads"
+                | "FrontendPort"
+                | "BackendPort"
+                | "CanaryPort"
+                | "TtsPort"
+        ) {
+            return Err(format!("Unsupported installed launch option: {name}"));
+        }
+    }
+    let directory = PathBuf::from(
+        package["Directory"]
+            .as_str()
+            .ok_or("Missing verified package directory.")?,
+    );
+    options.insert("RepositoryRoot".into(), json!(directory));
+    for (name, executable) in [("ChatPath", "bonsai-chat"), ("BrokerPath", "bonsai-broker")] {
+        options.insert(
+            name.into(),
+            json!(directory.join(format!("bin/{executable}.exe"))),
+        );
+    }
+    if options.get("NoSpeechModels").and_then(Value::as_bool) != Some(true) {
+        options.insert(
+            "AsrPath".into(),
+            json!(directory.join("bin/bonsai-asr.exe")),
+        );
+        if options.get("NoTts").and_then(Value::as_bool) != Some(true) {
+            options.insert(
+                "TtsPath".into(),
+                json!(directory.join("bin/bonsai-tts.exe")),
+            );
+        }
+    }
+    Ok(Value::Object(options))
+}
+
+fn checked_launch(
+    root: &Path,
+    expected_directory: &Path,
+    expected_id: &str,
+    expected_manifest_sha256: &str,
+    options: Value,
+    launch: impl FnOnce(Value) -> crate::Result<Value>,
+) -> crate::Result<Value> {
+    let package = installed(root)?;
+    if package["Directory"].as_str().map(Path::new) != Some(expected_directory)
+        || package["Id"] != expected_id
+        || package["ManifestSha256"] != expected_manifest_sha256
+    {
+        return Err("The verified installed package selection changed during launch.".into());
+    }
+    launch(launch_options(&package, options)?)
+}
+
+/// Verify an active package and optionally open its fixed native application.
 ///
 /// # Errors
 /// Rejects unsafe paths, malformed or oversized metadata, changed package bytes,
-/// non-ARM64 executables, and any inventory outside the fixed package layout.
+/// non-ARM64 executables, any inventory outside the fixed package layout, changed
+/// bootstrap selections, unsupported launch options and native startup failures.
 pub fn run(value: Value) -> crate::Result<Value> {
     let request: Request = serde_json::from_value(value).map_err(|error| error.to_string())?;
     match request {
         Request::Installed {
             installation_directory,
         } => installed(&installation_directory),
+        Request::Launch {
+            installation_directory,
+            expected_directory,
+            expected_id,
+            expected_manifest_sha256,
+            options,
+        } => checked_launch(
+            &installation_directory,
+            &expected_directory,
+            &expected_id,
+            &expected_manifest_sha256,
+            options,
+            crate::chat_launch::run,
+        ),
     }
 }
 
@@ -381,6 +471,76 @@ mod tests {
         fs::write(root.join("active.json"), vec![b' '; 32_769])
             .map_err(|error| error.to_string())?;
         assert!(installed(&root).is_err());
+        fs::remove_dir_all(root).map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    #[test]
+    fn combined_launch_verifies_selection_and_fixed_paths_before_handoff() -> crate::Result<()> {
+        let root = fixture()?;
+        let package = installed(&root)?;
+        let directory = PathBuf::from(package["Directory"].as_str().ok_or("Missing directory.")?);
+        let id = package["Id"].as_str().ok_or("Missing identity.")?;
+        let digest = package["ManifestSha256"]
+            .as_str()
+            .ok_or("Missing manifest digest.")?;
+        let options = json!({"DataDirectory": root.join("data"), "NoTts": true,
+            "UseRepackedPtq1": true, "TtsThreads": 0});
+        let result = checked_launch(&root, &directory, id, digest, options.clone(), |request| {
+            assert_eq!(request["RepositoryRoot"], json!(directory));
+            assert_eq!(
+                request["ChatPath"],
+                json!(directory.join("bin/bonsai-chat.exe"))
+            );
+            assert_eq!(
+                request["BrokerPath"],
+                json!(directory.join("bin/bonsai-broker.exe"))
+            );
+            assert_eq!(
+                request["AsrPath"],
+                json!(directory.join("bin/bonsai-asr.exe"))
+            );
+            assert!(request.get("TtsPath").is_none());
+            assert_eq!(request["UseRepackedPtq1"], true);
+            Ok(json!({"Status": "handed-off"}))
+        })?;
+        assert_eq!(result["Status"], "handed-off");
+        let text_only = launch_options(&package, json!({"NoSpeechModels": true}))?;
+        assert!(text_only.get("AsrPath").is_none() && text_only.get("TtsPath").is_none());
+        assert!(launch_options(&package, json!({"ChatPath": "outside.exe"})).is_err());
+        assert!(launch_options(&package, json!({"ForceBuild": true})).is_err());
+        for (expected_directory, expected_id, expected_digest) in [
+            (root.as_path(), id, digest),
+            (directory.as_path(), "changed", digest),
+            (directory.as_path(), id, "changed"),
+        ] {
+            let mut launched = false;
+            assert!(
+                checked_launch(
+                    &root,
+                    expected_directory,
+                    expected_id,
+                    expected_digest,
+                    options.clone(),
+                    |_| {
+                        launched = true;
+                        Ok(json!({}))
+                    }
+                )
+                .is_err()
+            );
+            assert!(!launched);
+        }
+        fs::write(directory.join("NOTICE"), b"tampered").map_err(|error| error.to_string())?;
+        let mut launched = false;
+        assert!(
+            checked_launch(&root, &directory, id, digest, options, |_| {
+                launched = true;
+                Ok(json!({}))
+            })
+            .is_err()
+        );
+        assert!(!launched);
         fs::remove_dir_all(root).map_err(|error| error.to_string())?;
         Ok(())
     }

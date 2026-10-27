@@ -200,39 +200,53 @@ function Get-InstalledChatPackage {
     $root = Resolve-ExternalPath $InstallationDirectory
     $selection = Read-ChatPackageSelection -InstallationDirectory $root
     if ($Native) {
-        # Bootstrap only the selected maintenance executable in PowerShell. Its
-        # independently selected manifest digest must be checked before any
-        # package executable runs; Rust verifies the complete package afterwards.
-        $directory = Resolve-ExternalPath (Join-Path -Path $root -ChildPath 'versions' -AdditionalChildPath $selection.active.id)
-        $manifestPath = Resolve-ExternalPath (Join-Path $directory 'package.json')
-        $info = Get-Item -LiteralPath $manifestPath
-        if ($info.Length -gt 32768) { throw 'Package manifest exceeds its byte limit.' }
-        Test-LockedArtifact -Path $manifestPath -Bytes $info.Length -Sha256 $selection.active.manifestSha256
-        $manifest = Read-ChatPackageJson -Path $manifestPath -Field @('schemaVersion', 'kind', 'version', 'sourceRevision', 'target', 'files')
-        if ($manifest.schemaVersion -isnot [long] -or $manifest.schemaVersion -ne 1 -or
-            $manifest.kind -cne 'bonsai-chat-package' -or $manifest.target -cne 'aarch64-pc-windows-msvc' -or
-            $manifest.version -isnot [string] -or $manifest.version -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -or $manifest.version.Length -gt 32 -or
-            $manifest.sourceRevision -isnot [string] -or $manifest.sourceRevision -cnotmatch '^[a-f0-9]{40}$' -or
-            $manifest.files -isnot [array] -or
-            ($manifest.version + '-' + $manifest.sourceRevision + '-' + $selection.active.manifestSha256) -cne $selection.active.id) {
-            throw 'Unsupported installed chat package identity.'
-        }
-        Assert-ChatPackageInventory -Directory $directory
-        $tools = @($manifest.files | Where-Object { $_ -is [Collections.IDictionary] -and $_.Contains('name') -and $_.name -ceq 'bin/bonsai-tools.exe' })
-        if ($tools.Count -ne 1 -or $tools[0].Count -ne 3 -or 'bytes' -cnotin $tools[0].Keys -or 'sha256' -cnotin $tools[0].Keys -or
-            $tools[0].bytes -isnot [long] -or $tools[0].bytes -le 0 -or $tools[0].bytes -gt 512MB -or
-            $tools[0].sha256 -isnot [string] -or $tools[0].sha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid packaged maintenance executable identity.' }
-        $tool = Resolve-ExternalPath (Join-Path $directory 'bin/bonsai-tools.exe')
-        Test-LockedArtifact -Path $tool -Bytes $tools[0].bytes -Sha256 $tools[0].sha256
-        Assert-Arm64PE -Path $tool
-        $package = Invoke-ChatPackageInspection -ToolPath $tool -InstallationDirectory $root
-        if ($package.Directory -cne $directory -or $package.Id -cne $selection.active.id -or
-            $package.ManifestSha256 -cne $selection.active.manifestSha256) { throw 'The verified installed package selection changed during launch.' }
+        $bootstrap = Get-ChatPackageBootstrap -InstallationDirectory $root
+        $package = Invoke-ChatPackageInspection -ToolPath $bootstrap.ToolPath -InstallationDirectory $root
+        if ($package.Directory -cne $bootstrap.Directory -or $package.Id -cne $bootstrap.Id -or
+            $package.ManifestSha256 -cne $bootstrap.ManifestSha256) { throw 'The verified installed package selection changed during launch.' }
         return [pscustomobject]$package
     }
     $package = Get-CheckedChatPackage -PackageDirectory (Join-Path -Path $root -ChildPath 'versions' -AdditionalChildPath $selection.active.id) -ManifestSha256 $selection.active.manifestSha256
     if ($package.Id -cne $selection.active.id) { throw 'Selected package identity disagrees with its manifest.' }
     return $package
+}
+
+function Get-ChatPackageBootstrap {
+    <# .SYNOPSIS
+    Checks the selected maintenance tool and its loader inventory before execution.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][string]$InstallationDirectory)
+    $root = Resolve-ExternalPath $InstallationDirectory
+    $selection = Read-ChatPackageSelection -InstallationDirectory $root
+    # Bootstrap only the selected maintenance executable in PowerShell. Its
+    # independently selected manifest digest must be checked before any
+    # package executable runs; Rust verifies the complete package afterwards.
+    $directory = Resolve-ExternalPath (Join-Path -Path $root -ChildPath 'versions' -AdditionalChildPath $selection.active.id)
+    $manifestPath = Resolve-ExternalPath (Join-Path $directory 'package.json')
+    $info = Get-Item -LiteralPath $manifestPath
+    if ($info.Length -gt 32768) { throw 'Package manifest exceeds its byte limit.' }
+    Test-LockedArtifact -Path $manifestPath -Bytes $info.Length -Sha256 $selection.active.manifestSha256
+    $manifest = Read-ChatPackageJson -Path $manifestPath -Field @('schemaVersion', 'kind', 'version', 'sourceRevision', 'target', 'files')
+    if ($manifest.schemaVersion -isnot [long] -or $manifest.schemaVersion -ne 1 -or
+        $manifest.kind -cne 'bonsai-chat-package' -or $manifest.target -cne 'aarch64-pc-windows-msvc' -or
+        $manifest.version -isnot [string] -or $manifest.version -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+$' -or $manifest.version.Length -gt 32 -or
+        $manifest.sourceRevision -isnot [string] -or $manifest.sourceRevision -cnotmatch '^[a-f0-9]{40}$' -or
+        $manifest.files -isnot [array] -or
+        ($manifest.version + '-' + $manifest.sourceRevision + '-' + $selection.active.manifestSha256) -cne $selection.active.id) {
+        throw 'Unsupported installed chat package identity.'
+    }
+    Assert-ChatPackageInventory -Directory $directory
+    $tools = @($manifest.files | Where-Object { $_ -is [Collections.IDictionary] -and $_.Contains('name') -and $_.name -ceq 'bin/bonsai-tools.exe' })
+    if ($tools.Count -ne 1 -or $tools[0].Count -ne 3 -or 'bytes' -cnotin $tools[0].Keys -or 'sha256' -cnotin $tools[0].Keys -or
+        $tools[0].bytes -isnot [long] -or $tools[0].bytes -le 0 -or $tools[0].bytes -gt 512MB -or
+        $tools[0].sha256 -isnot [string] -or $tools[0].sha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid packaged maintenance executable identity.' }
+    $tool = Resolve-ExternalPath (Join-Path $directory 'bin/bonsai-tools.exe')
+    Test-LockedArtifact -Path $tool -Bytes $tools[0].bytes -Sha256 $tools[0].sha256
+    Assert-Arm64PE -Path $tool
+    return [pscustomobject]@{ Directory = $directory; Id = $selection.active.id
+        ManifestSha256 = $selection.active.manifestSha256; ToolPath = $tool; InstallationDirectory = $root }
 }
 
 function Invoke-ChatPackageInspection {
@@ -242,17 +256,62 @@ function Invoke-ChatPackageInspection {
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
     param([Parameter(Mandatory)][string]$ToolPath, [Parameter(Mandatory)][string]$InstallationDirectory)
+    return Invoke-ChatPackageCommand -ToolPath $ToolPath -Request @{ operation = 'installed'; installationDirectory = $InstallationDirectory } -TimeoutSeconds 120
+}
+
+function Start-InstalledChatPackage {
+    <# .SYNOPSIS
+    Opens a verified installed app through one native verification and launch command.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Explicit synchronous app launch; native Rust owns admission and process lifetime.')]
+    [CmdletBinding()]
+    [OutputType([Collections.IDictionary], [hashtable])]
+    param([Parameter(Mandatory)][string]$InstallationDirectory,
+          [Parameter(Mandatory)][Collections.IDictionary]$Options)
+    # Return before package hashing for an existing instance. Rust repeats and
+    # owns admission across the actual UI lifetime; this probe holds no lease.
+    $instanceDirectory = Resolve-ExternalPath -Path (Join-Path $env:LOCALAPPDATA 'SwiftBonsai2')
+    [void][IO.Directory]::CreateDirectory($instanceDirectory)
+    $instancePath = Resolve-ExternalPath -Path (Join-Path $instanceDirectory 'chat.lock')
+    try {
+        $probe = [IO.FileStream]::new($instancePath, [IO.FileMode]::OpenOrCreate,
+            [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+        $probe.Dispose()
+    } catch [IO.IOException] {
+        if (($_.Exception.HResult -band 0xffff) -notin @(32, 33)) { throw }
+        return @{ Status = 'already-running'; Message = 'Swift Bonsai 2 is already starting or running. No second instance was opened.' }
+    }
+    $bootstrap = Get-ChatPackageBootstrap -InstallationDirectory $InstallationDirectory
+    $process = [Diagnostics.Process]::GetCurrentProcess()
+    try {
+        $request = @{ operation = 'launch'; installationDirectory = $bootstrap.InstallationDirectory
+            expectedDirectory = $bootstrap.Directory; expectedId = $bootstrap.Id
+            expectedManifestSha256 = $bootstrap.ManifestSha256; options = $Options
+            parentProcessId = $PID; parentCreationTimeFileTime = $process.StartTime.ToUniversalTime().ToFileTimeUtc() }
+    } finally { $process.Dispose() }
+    return Invoke-ChatPackageCommand -ToolPath $bootstrap.ToolPath -Request $request -TimeoutSeconds 0
+}
+
+function Invoke-ChatPackageCommand {
+    <# .SYNOPSIS
+    Invokes the trusted native package command with external process storage.
+    #>
+    [CmdletBinding()]
+    [OutputType([Collections.IDictionary])]
+    param([Parameter(Mandatory)][string]$ToolPath,
+          [Parameter(Mandatory)][Collections.IDictionary]$Request,
+          [Parameter(Mandatory)][ValidateRange(0,86400)][int]$TimeoutSeconds)
     $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-Package-' + [guid]::NewGuid().ToString('N')))
     [void][IO.Directory]::CreateDirectory($scratch)
-    $request = Join-Path $scratch 'request.json'
-    [IO.File]::WriteAllText($request, (ConvertTo-Json -Compress -InputObject @{ operation = 'installed'; installationDirectory = $InstallationDirectory }), [Text.UTF8Encoding]::new($false))
+    $requestPath = Join-Path $scratch 'request.json'
+    [IO.File]::WriteAllText($requestPath, (ConvertTo-Json -Compress -Depth 16 -InputObject $Request), [Text.UTF8Encoding]::new($false))
     $start = [Diagnostics.ProcessStartInfo]::new($ToolPath)
     $start.WorkingDirectory = $scratch
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true
     $start.RedirectStandardOutput = $true
     $start.RedirectStandardError = $true
-    foreach ($argument in @('chat-package', '--request', $request)) { $start.ArgumentList.Add($argument) }
+    foreach ($argument in @('chat-package', '--request', $requestPath)) { $start.ArgumentList.Add($argument) }
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $start
     $started = $false
@@ -261,7 +320,8 @@ function Invoke-ChatPackageInspection {
         $started = $true
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit(120000)) {
+        if ($TimeoutSeconds -eq 0) { $process.WaitForExit() }
+        elseif (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
             $process.Kill($true)
             [void]$process.WaitForExit(10000)
             throw "Packaged maintenance inspection timed out. Evidence: $scratch"
@@ -270,7 +330,7 @@ function Invoke-ChatPackageInspection {
         if ($process.ExitCode) { throw "Installed package verification failed: $($stderr.GetAwaiter().GetResult().Trim()) Evidence: $scratch" }
         $result = ConvertFrom-Json -InputObject $stdout.GetAwaiter().GetResult() -AsHashtable -NoEnumerate -DateKind String -Depth 16
         if ($result -isnot [Collections.IDictionary]) { throw 'The package verifier returned no JSON object.' }
-        [IO.File]::Delete($request)
+        [IO.File]::Delete($requestPath)
         [IO.Directory]::Delete($scratch, $false)
         return $result
     } finally {
@@ -344,4 +404,4 @@ function Set-ChatPackage {
     } finally { $guard.Dispose() }
 }
 
-Export-ModuleMember -Function New-ChatPackage, Get-CheckedChatPackage, Get-InstalledChatPackage, Set-ChatPackage
+Export-ModuleMember -Function New-ChatPackage, Get-CheckedChatPackage, Get-InstalledChatPackage, Set-ChatPackage, Start-InstalledChatPackage
