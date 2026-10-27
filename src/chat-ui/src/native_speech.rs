@@ -356,12 +356,106 @@ impl Drop for Service {
 #[cfg(test)]
 mod tests {
     use super::{Failure, GIB, RUNNING_RESERVE, START_AVAILABLE, Service, admit_memory};
-    use bonsai_windows_process::{OwnedProcess, ProcessSpec};
+    use bonsai_windows_process::{OwnedProcess, ProcessSpec, ToolProcessSpec};
     use std::{
         ffi::OsString,
-        fs, io, thread,
-        time::{Duration, SystemTime, UNIX_EPOCH},
+        fs, io,
+        io::Read as _,
+        path::{Path, PathBuf},
+        thread,
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
+
+    const RESOURCE_READY: &str = "BONSAI_RESOURCE_GUARD_READY";
+
+    fn resource_guard_executable(directory: &Path) -> io::Result<PathBuf> {
+        // The GUI test executable imports Windows presentation DLLs and cannot
+        // initialize under worker Win32k denial. Compile a std-only fixture with
+        // the compiler beside the pinned Cargo that built this test instead.
+        let compiler = Path::new(env!("CARGO")).with_file_name("rustc.exe");
+        let source = directory.join("resource_guard.rs");
+        let executable = directory.join("resource_guard.exe");
+        fs::write(
+            &source,
+            r#"#![forbid(unsafe_code)]
+fn main() -> std::io::Result<()> {
+    use std::io::Write as _;
+    println!("BONSAI_RESOURCE_GUARD_READY");
+    std::io::stdout().flush()?;
+    std::thread::sleep(std::time::Duration::from_secs(30));
+    Ok(())
+}
+"#,
+        )?;
+        let built = (|| {
+            let process = OwnedProcess::start_tool(&ToolProcessSpec {
+                executable: compiler,
+                arguments: vec![
+                    OsString::from("--edition=2024"),
+                    source.clone().into_os_string(),
+                    OsString::from("-o"),
+                    executable.clone().into_os_string(),
+                ],
+                working_directory: directory.to_owned(),
+                stdout: directory.join("compiler.stdout"),
+                stderr: directory.join("compiler.stderr"),
+                environment: std::collections::BTreeMap::new(),
+            })?;
+            let exit = process.wait_for_exit(Duration::from_secs(30))?;
+            if exit != Some(0) || !executable.is_file() {
+                process.stop(Duration::from_secs(5))?;
+                return Err(io::Error::other(format!(
+                    "Headless resource fixture compilation failed with {exit:?}:\n{}",
+                    resource_evidence(directory, "compiler")
+                )));
+            }
+            Ok(())
+        })();
+        let removed = fs::remove_file(source);
+        built?;
+        removed?;
+        Ok(executable)
+    }
+
+    fn resource_evidence(directory: &Path, name: &str) -> String {
+        ["stdout", "stderr"]
+            .map(|stream| {
+                let mut text = String::new();
+                let read = fs::File::open(directory.join(format!("{name}.{stream}")))
+                    .and_then(|file| file.take(8192).read_to_string(&mut text));
+                format!(
+                    "{stream}: {}",
+                    read.map_or_else(|error| error.to_string(), |_| text)
+                )
+            })
+            .join("\n")
+    }
+
+    fn await_resource_ready(
+        process: &OwnedProcess,
+        directory: &Path,
+        name: &str,
+    ) -> io::Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(exit) = process.try_wait()? {
+                return Err(io::Error::other(format!(
+                    "Resource fixture {name} exited before readiness with 0x{exit:08x}:\n{}",
+                    resource_evidence(directory, name)
+                )));
+            }
+            if resource_evidence(directory, name).contains(RESOURCE_READY) {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(io::Error::other(format!(
+                    "Resource fixture {name} did not become ready:\n{}",
+                    resource_evidence(directory, name)
+                )));
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
 
     #[test]
     fn designed_voice_model_is_required_and_granted_to_the_owned_worker() -> io::Result<()> {
@@ -423,12 +517,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Spawned only by the resource monitor regression as a disposable child."]
-    fn resource_guard_fake_service() {
-        thread::sleep(Duration::from_secs(30));
-    }
-
-    #[test]
     fn speech_memory_monitor_stops_only_its_owned_service() -> io::Result<()> {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -436,20 +524,19 @@ mod tests {
             .as_nanos();
         let directory = std::env::temp_dir().join(format!("Bonsai-TTS-Memory-{stamp}"));
         fs::create_dir(&directory)?;
+        let executable = resource_guard_executable(&directory)?;
         let start = |name: &str| {
-            OwnedProcess::start(&ProcessSpec {
-                executable: std::env::current_exe()?,
-                arguments: vec![
-                    OsString::from("--exact"),
-                    OsString::from("native_speech::tests::resource_guard_fake_service"),
-                    OsString::from("--ignored"),
-                ],
+            let process = OwnedProcess::start(&ProcessSpec {
+                executable: executable.clone(),
+                arguments: Vec::new(),
                 working_directory: directory.clone(),
                 stdout: directory.join(format!("{name}.stdout")),
                 stderr: directory.join(format!("{name}.stderr")),
                 memory_limit_bytes: 512 * 1024 * 1024,
                 active_process_limit: 1,
-            })
+            })?;
+            await_resource_ready(&process, &directory, name)?;
+            Ok::<_, io::Error>(process)
         };
         let unrelated = start("independent-chat-sentinel")?;
         let speech = Service::monitored(std::sync::Arc::new(start("speech")?), || {
@@ -461,14 +548,17 @@ mod tests {
                 .process
                 .wait_for_exit(Duration::from_secs(5))?
                 .is_some(),
-            "Speech memory pressure did not stop the owned child"
+            "Speech memory pressure did not stop the ready owned child:\n{}",
+            resource_evidence(&directory, "speech")
         );
         assert!(
             matches!(speech.check(), Err(Failure::Message(message)) if message.contains("memory") && message.contains("text chat"))
         );
+        let independent_exit = unrelated.try_wait()?;
         assert!(
-            unrelated.try_wait()?.is_none(),
-            "Speech pressure stopped an independent Job"
+            independent_exit.is_none(),
+            "Ready independent Job exited with {independent_exit:?} after speech pressure:\n{}",
+            resource_evidence(&directory, "independent-chat-sentinel")
         );
         drop(speech);
         unrelated.stop(Duration::from_secs(5))?;
