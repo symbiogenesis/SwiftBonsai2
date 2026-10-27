@@ -37,6 +37,11 @@ memory, throughput and device qualification remain outstanding.
 - [x] Transfer valid UTF-8 startup captures into their final strings and write
   stdout/stderr logs sequentially, eliminating duplicate full-output buffers
   while preserving lossy decoding, output limits and exact log ordering.
+- [x] Restore Rust recurrent/convolution checkpoints into existing live storage
+  after staging every fallible KV copy. Runtime 0.1.5 avoids another 149.625 MiB
+  of nominal transient Swift restore payload while preserving exact bits,
+  independent snapshots and failure atomicity; process peak qualification remains
+  outstanding. See the [runtime contract](docs/native-rust-engine.md).
 
 Swift's owner-selected development budget now admits at 15.5 GiB available
 memory with an 11.5 GiB Job commit ceiling, reducing each by 512 MiB from the

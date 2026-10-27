@@ -390,7 +390,7 @@ drop-in compatibility with every OpenAI client.
 The app uses the pinned Prism/llama CPU backend with original Swift PQ2 weights
 and the pinned adapter unless opted out. This development default does not
 qualify the [standard LoRA profile](swift-lora.md#required-standard-profile-qualification).
-The separate native inference release `0.1.4` supports the selected thinking mode
+The separate native inference release `0.1.5` supports the selected thinking mode
 and is available through the opt-in `--native-engine` path. Thinking is off by
 default; enable it under **Settings → Response** for the next response.
 Quality, throughput and daily-service qualification remain pending.
@@ -713,7 +713,7 @@ to establish a fresh owned instance.
 
 This is an experimental path. Bounded source-runtime checks qualify actual model
 loading, native logit/state parity, prompt/tokenizer and seeded sampler parity,
-and owned HTTP recovery. The provisioned `0.1.4` release includes those source
+and owned HTTP recovery. The provisioned `0.1.5` release includes those source
 repairs and pins the reviewed binary and source identities. See the
 [runtime contract](native-rust-engine.md) for supported scope and the
 [central TODO](../PLAN.md#runtime-and-correctness) for outstanding qualification.
@@ -735,10 +735,10 @@ and run identity, rather than copying them from an unreviewed receipt:
 
 ```powershell
 ./scripts/New-InferenceLock.ps1 `
-    -ReceiptPath (Join-Path $lane 'prism-inference-0.1.4-aarch64-pc-windows-msvc.receipt.json') `
-    -ArchivePath (Join-Path $lane 'prism-inference-0.1.4-aarch64-pc-windows-msvc.zip') `
+    -ReceiptPath (Join-Path $lane 'prism-inference-0.1.5-aarch64-pc-windows-msvc.receipt.json') `
+    -ArchivePath (Join-Path $lane 'prism-inference-0.1.5-aarch64-pc-windows-msvc.zip') `
     -SourceArchivePath (Join-Path $lane 'source.zip') `
-    -SourceRevision $reviewedRevision -Version 0.1.4 `
+    -SourceRevision $reviewedRevision -Version 0.1.5 `
     -RunId $reviewedRunId -RunAttempt 1 `
     -OutputPath (Join-Path $lane 'prism-inference.lock.candidate.json')
 ```

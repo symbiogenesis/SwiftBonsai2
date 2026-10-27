@@ -2,7 +2,7 @@
 
 The first H0 implementation supplies host inventory, model-free runtime
 inventory and checked profile/evidence structures. It does not select profiles.
-Released runtime provisioning uses its immutable `0.1.4` lock. The optional
+Released runtime provisioning uses its immutable `0.1.5` lock. The optional
 verified capability probe consumes that release without loading a model.
 
 ## Host inventory

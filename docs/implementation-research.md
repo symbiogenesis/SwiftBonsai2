@@ -30,7 +30,7 @@ changes neither the pinned engine nor its independent qualification gates.
 | Native Swift decode | Fixed 16-token PQ2/PTQ1 checks complete with and without the pinned adapter | No sustained TPS, creative-quality or daily-service acceptance |
 | Qwen reference | Verified mixed-type artifact and native CPU route; 18 GiB allowance plus 4 GiB reserve | Artifact checks and route availability do not establish actual-model acceptance |
 | LoRA storage | [Immutable B sharing](prism-storage-overlay.md) saves 2.5 MiB in the native allocation/math regression | Adapter basis, full-model performance and standard-profile quality remain gated |
-| Rust CPU reference | Verified loader, scalar/NEON hybrid graph, transactional generation, exact Swift chat/sampler, pinned `0.1.4` consumption and [bounded source parity/owned HTTP recovery](native-rust-engine.md) | These bounds do not establish broader-model/full-context, adapter or device qualification |
+| Rust CPU reference | Verified loader, scalar/NEON hybrid graph, transactional generation, exact Swift chat/sampler, pinned `0.1.5` consumption and [bounded source parity/owned HTTP recovery](native-rust-engine.md) | These bounds do not establish broader-model/full-context, adapter or device qualification |
 | Accelerators | [Adreno](adreno-gpu-plan.md) and [Hexagon](hexagon-npu-plan.md) have explicit implementation gates | Current launch profiles are CPU-only |
 | Hardware selection goal | [X1/X2 profile plan](hardware-profiles.md) defines capability discovery, separate phase/objective choices and qualified CPU fallback | No automatic selector, cross-generation performance verdict or accepted accelerator default exists yet |
 
