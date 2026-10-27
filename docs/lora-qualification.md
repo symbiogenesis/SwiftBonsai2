@@ -25,6 +25,12 @@ primary failure. Job commit excludes mapped weights; the one-second physical
 watchdog is not a continuous peak-RAM measurement. The memory premium is a
 policy allowance, not measured adapter allocation.
 
+The contract validator binds the Job cap to the compiled Swift process policy;
+both the standard scorer and PTQ1 prefix screen use that validated cap. The
+corrected contract hash rejects captures made against the former 12 GiB scoring
+allowance. Recapture under the current contract rather than rewriting historical
+evidence or review hashes.
+
 ## Capture on the target device
 
 The manually dispatched [workflow](../.github/workflows/swift-lora-qualification.yml)

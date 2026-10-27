@@ -73,7 +73,40 @@ scale and divides `127/maximum` directly for inverse scale. A source repair now
 matches every prepared byte and all 5,120 isolated projection outputs, with
 compact native-backed synthetic controls and separate activation-sharing
 eligibility. Generic/PQ2 preparation is preserved. This repair is prepared for
-runtime 0.1.6 CI; full-model rechecking and release/pin promotion remain pending.
+runtime 0.1.6. Its exact main revision `02c8a24` passed
+[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357453).
+The ARM64 bundle, all executable/notice entries and exact source archive passed
+offline verification, producing an external candidate lock. At review, the
+separate [conformance run](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357329)
+was queued; no conformance pass, release publication or active pin change is
+claimed. The active Runner pin remains 0.1.5.
+
+The corrected checker was rebuilt from that clean main revision with default
+features on native ARM64. Its three-token recheck `[248045, 872, 198]` was
+rejected before model launch: 10,117,419,008 physical bytes (9.422 GiB) were
+available against the separate diagnostic's 12 GiB admission requirement. The
+8 GiB diagnostic Job ceiling and 4 GiB physical reserve were preserved. This
+produced no new model outputs or numerical verdict; the retained failure above
+remains the latest completed full-model comparison. The
+[repair receipt](ptq1-arithmetic-evidence.json) binds the checker, failed launch
+and verified candidate hashes.
+
+The prepared offline comparator reconstructs every reference KV, convolution
+and recurrent value from the original hash-bound serialized native state,
+checks the exact file inventory and rejects nonfinite values. Its failure
+controls reproduced both retained one-token and three-token numerical failures
+exactly. This validates the comparison preparation, without supplying a new
+post-repair model verdict.
+
+After memory is available, repeat the supplied-token check on scalar and eligible
+NEON paths against the hash-bound native reference, comparing every logit and
+logical KV, convolution and recurrent state value at the unchanged tolerance.
+Requested backend names alone do not prove that NEON operations executed.
+Publish and pin only the checked release after reviewing its required gates;
+passing a bounded numerical check still leaves adapter execution, complete
+answers at the actual app settings, context/recovery and resource/comfort
+qualification outstanding. In particular, the scale-one standard LoRA harness
+does not establish PTQ1-versus-PQ2 answer parity at app scale 1.3.
 
 The exact packing difference would imply a candidate admission threshold of
 **15,383,478,272 bytes** from the current development budget if suitability and resource evidence justified that
