@@ -44,6 +44,7 @@ fn configuration(
     let (mut canary_executable, mut canary_model) = (None, None);
     let (mut tts_port, mut tts_key_file) = (None, None);
     let (mut tts_executable, mut tts_model, mut tts_codec) = (None, None, None);
+    let mut tts_voice_model = None;
     let (mut tts_quantization, mut tts_threads) = (None, None);
     let mut no_abliterate_lora = false;
     let mut use_repacked_ptq1 = false;
@@ -125,6 +126,12 @@ fn configuration(
                         .ok_or("A Qwen TTS codec GGUF path is required.")?,
                 ));
             }
+            Some("--tts-voice-model") if tts_voice_model.is_none() => {
+                tts_voice_model = Some(PathBuf::from(
+                    args.next()
+                        .ok_or("A Qwen TTS Base voice GGUF path is required.")?,
+                ));
+            }
             Some("--tts-quantization") if tts_quantization.is_none() => {
                 let value = args.next().ok_or("A TTS quantization is required.")?;
                 if !matches!(value.to_str(), Some("Q8_0" | "Q4_K_M")) {
@@ -144,7 +151,7 @@ fn configuration(
             }
             _ => {
                 return Err(
-                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--use-repacked-ptq1] [--canary-key-file ABSOLUTE_FILE --canary-port 8766 [--canary-executable ABSOLUTE_EXE --canary-model ABSOLUTE_GGUF]] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-executable ABSOLUTE_EXE --tts-model ABSOLUTE_GGUF --tts-codec ABSOLUTE_GGUF [--tts-quantization Q8_0|Q4_K_M] [--tts-threads 10]]]",
+                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--use-repacked-ptq1] [--canary-key-file ABSOLUTE_FILE --canary-port 8766 [--canary-executable ABSOLUTE_EXE --canary-model ABSOLUTE_GGUF]] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-executable ABSOLUTE_EXE --tts-model ABSOLUTE_GGUF --tts-codec ABSOLUTE_GGUF --tts-voice-model ABSOLUTE_GGUF [--tts-quantization Q8_0|Q4_K_M] [--tts-threads 10]]]",
                 );
             }
         }
@@ -156,6 +163,7 @@ fn configuration(
                 executable,
                 model,
                 codec: None,
+                voice_model: None,
                 quantization: None,
                 threads: None,
                 evidence: evidence
@@ -165,13 +173,16 @@ fn configuration(
         }
         _ => return Err("Configure both native Canary launch paths with --canary-key-file."),
     };
-    let tts_launch = match (tts_executable, tts_model, tts_codec) {
-        (None, None, None) => None,
-        (Some(executable), Some(model), Some(codec)) if tts_key_file.is_some() => {
+    let tts_launch = match (tts_executable, tts_model, tts_codec, tts_voice_model) {
+        (None, None, None, None) => None,
+        (Some(executable), Some(model), Some(codec), Some(voice_model))
+            if tts_key_file.is_some() =>
+        {
             Some(native_speech::Launch {
                 executable,
                 model,
                 codec: Some(codec),
+                voice_model: Some(voice_model),
                 quantization: tts_quantization.clone(),
                 threads: tts_threads,
                 evidence: evidence
@@ -179,7 +190,7 @@ fn configuration(
                     .ok_or("An external evidence directory is required.")?,
             })
         }
-        _ => return Err("Configure all three native Qwen TTS launch paths with --tts-key-file."),
+        _ => return Err("Configure all four native Qwen TTS launch paths with --tts-key-file."),
     };
     if (tts_quantization.is_some() || tts_threads.is_some()) && tts_launch.is_none() {
         return Err("TTS quantization and thread settings require an owned native TTS service.");
@@ -330,6 +341,7 @@ mod tests {
                     ("--tts-executable", &broker),
                     ("--tts-model", &model),
                     ("--tts-codec", &codec),
+                    ("--tts-voice-model", &model),
                 ],
             ),
         ] {
@@ -339,6 +351,14 @@ mod tests {
             }
             assert!(configuration(enabled.clone()).is_err());
             enabled.extend([OsString::from(key_flag), key.clone().into_os_string()]);
+            for (missing, _) in &launch_flags {
+                let incomplete = enabled
+                    .chunks_exact(2)
+                    .filter(|pair| pair[0] != *missing)
+                    .flat_map(|pair| pair.iter().cloned())
+                    .collect::<Vec<_>>();
+                assert!(configuration(incomplete).is_err());
+            }
             let config = configuration(enabled.clone()).map_err(io::Error::other)?;
             if key_flag == "--tts-key-file" {
                 assert_tts_tuning(&enabled)?;

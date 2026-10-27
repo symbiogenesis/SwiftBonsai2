@@ -980,6 +980,7 @@ mod tests {
             launch: Some(crate::native_speech::Launch {
                 executable: parent.join("unavailable-native.exe"),
                 codec: Some(parent.join("unavailable-codec.gguf")),
+                voice_model: Some(parent.join("unavailable-voice.gguf")),
                 quantization: None,
                 threads: None,
                 model: parent.join("unavailable-model.gguf"),
@@ -993,6 +994,7 @@ mod tests {
                 executable: parent.join("unavailable-canary.exe"),
                 model: parent.join("unavailable-canary.gguf"),
                 codec: None,
+                voice_model: None,
                 quantization: None,
                 threads: None,
                 evidence: evidence.clone(),

@@ -145,9 +145,9 @@ impl Client {
             self.ready_for(generation, current)?;
             return Ok(None);
         };
-        if launch.codec.is_some() {
+        if launch.codec.is_some() || launch.voice_model.is_some() {
             return Err(Failure::Message(
-                "Native Canary does not accept a speech codec.",
+                "Native Canary does not accept TTS model or codec paths.",
             ));
         }
         Service::start(
@@ -758,6 +758,7 @@ mod tests {
                 executable: evidence.join("unavailable-native.exe"),
                 model: evidence.join("unavailable-model.gguf"),
                 codec: None,
+                voice_model: None,
                 quantization: None,
                 threads: None,
                 evidence: evidence.clone(),

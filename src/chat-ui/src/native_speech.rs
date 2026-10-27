@@ -51,6 +51,7 @@ pub(crate) struct Launch {
     pub(crate) executable: PathBuf,
     pub(crate) model: PathBuf,
     pub(crate) codec: Option<PathBuf>,
+    pub(crate) voice_model: Option<PathBuf>,
     pub(crate) quantization: Option<String>,
     pub(crate) threads: Option<usize>,
     pub(crate) evidence: PathBuf,
@@ -66,14 +67,16 @@ impl Launch {
                 .threads
                 .is_some_and(|value| !(1..=256).contains(&value))
             || (self.codec.is_none() && (self.quantization.is_some() || self.threads.is_some()))
+            || self.codec.is_some() != self.voice_model.is_some()
         {
             return Err(
-                "Native TTS settings require a supported quantization and bounded thread count.",
+                "Native TTS needs both codec and Base voice models, a supported quantization and bounded thread count.",
             );
         }
         for path in [&self.executable, &self.model, &self.evidence]
             .into_iter()
             .chain(self.codec.iter())
+            .chain(self.voice_model.iter())
         {
             bonsai_windows_credentials::validate_external_path(path)
                 .map_err(|_| "Use existing expanded absolute native speech paths outside Git.")?;
@@ -89,12 +92,16 @@ impl Launch {
                 .model
                 .extension()
                 .is_some_and(|ext| ext.eq_ignore_ascii_case("gguf"))
-            || self.codec.as_ref().is_some_and(|codec| {
-                !codec.is_file()
-                    || !codec
-                        .extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("gguf"))
-            })
+            || self
+                .codec
+                .iter()
+                .chain(self.voice_model.iter())
+                .any(|codec| {
+                    !codec.is_file()
+                        || !codec
+                            .extension()
+                            .is_some_and(|ext| ext.eq_ignore_ascii_case("gguf"))
+                })
         {
             return Err(
                 "Native speech requires its executable, existing GGUF artifacts and evidence directory.",
@@ -122,6 +129,12 @@ impl Launch {
         ];
         if let Some(codec) = &self.codec {
             arguments.extend([OsString::from("--codec"), codec.clone().into_os_string()]);
+        }
+        if let Some(voice_model) = &self.voice_model {
+            arguments.extend([
+                OsString::from("--voice-model"),
+                voice_model.clone().into_os_string(),
+            ]);
         }
         if let Some(quantization) = &self.quantization {
             arguments.extend([
@@ -156,6 +169,7 @@ impl Launch {
             key_file.to_owned(),
         ];
         readonly_paths.extend(self.codec.iter().cloned());
+        readonly_paths.extend(self.voice_model.iter().cloned());
         readonly_paths.sort();
         readonly_paths.dedup();
         let policy = SandboxPolicy {
@@ -348,6 +362,46 @@ mod tests {
         fs, io, thread,
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
+
+    #[test]
+    fn designed_voice_model_is_required_and_granted_to_the_owned_worker() -> io::Result<()> {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("Bonsai-TTS-VoiceLaunch-{stamp}"));
+        fs::create_dir(&directory)?;
+        let executable = directory.join("tts.exe");
+        let model = directory.join("design.gguf");
+        let codec = directory.join("codec.gguf");
+        let voice = directory.join("base.gguf");
+        let key = directory.join("token.key");
+        for path in [&executable, &model, &codec, &voice, &key] {
+            fs::write(path, b"fixture")?;
+        }
+        let mut launch = super::Launch {
+            executable,
+            model,
+            codec: Some(codec),
+            voice_model: Some(voice.clone()),
+            quantization: None,
+            threads: None,
+            evidence: directory,
+        };
+        let (specification, policy, _private) = launch
+            .specification(&key, 8767)
+            .map_err(|_| io::Error::other("Could not prepare the synthetic speech worker"))?;
+        assert!(
+            specification
+                .arguments
+                .windows(2)
+                .any(|pair| { pair[0] == "--voice-model" && pair[1] == voice.as_os_str() })
+        );
+        assert!(policy.readonly_paths.contains(&voice));
+        launch.voice_model = None;
+        assert!(launch.validate().is_err());
+        Ok(())
+    }
 
     #[test]
     fn speech_sandbox_guidance_distinguishes_parent_credentials_from_native_support() {
