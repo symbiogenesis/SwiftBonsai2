@@ -1,5 +1,7 @@
 //! Native chat startup policy and orchestration behind the thin PowerShell entry point.
 
+mod instance;
+
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
@@ -599,6 +601,21 @@ fn working_directory(requested: Option<&Path>) -> crate::Result<PathBuf> {
 pub fn run(value: Value) -> crate::Result<Value> {
     crate::startup_cancel::checkpoint()?;
     let request: Request = serde_json::from_value(value).map_err(|error| error.to_string())?;
+    let _instance = if request.speech_models_only {
+        None
+    } else {
+        let directory = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .ok_or("LOCALAPPDATA is required for native chat admission.")?
+            .join("SwiftBonsai2");
+        let Some(guard) = instance::acquire(&directory)? else {
+            return Ok(json!({
+                "Status": "already-running",
+                "Message": "Swift Bonsai 2 is already starting or running. No second instance was opened."
+            }));
+        };
+        Some(guard)
+    };
     let plan = prepare(request, cfg!(all(windows, target_arch = "aarch64")))?;
     let working = working_directory(plan.request.working_directory.as_deref())?;
     if plan.request.speech_models_only {
