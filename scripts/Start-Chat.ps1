@@ -5,8 +5,9 @@ Opens the native Rust Swift Bonsai chat application.
 .DESCRIPTION
 Allows one launcher per Windows user from preparation until the app exits.
 A duplicate returns immediately; SpeechModelsOnly remains available.
-Rust validates options, reuses verified builds, provisions pinned speech files,
-creates credentials and launches the app. Unchanged launches skip Cargo and
+Rust validates options and opens the native app after checking its executable.
+An owned Rust worker prepares the broker, speech files and credentials while
+the window remains available for drafting. Unchanged launches skip Cargo and
 native compiler setup. ForceBuild repeats pinned build checks.
 SpeechModelsOnly fully verifies speech files without building or launching apps.
 NoSpeechModels disables automatic speech setup. Models load only when used.

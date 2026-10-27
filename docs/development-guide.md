@@ -301,7 +301,14 @@ real-model audio quality or latency.
 
 `Start-Chat.ps1` is a thin options/bootstrap bridge to Rust's `chat-launch`
 command. Rust owns option validation, speech setup, build selection, credentials
-and app launch. It checks and builds the chat app and broker in a reusable external
+and app launch. It first checks or builds only the chat executable, then opens
+the native conversation window. After the first UI tick, an owned Rust worker
+runs `chat-prepare` to prepare the broker, speech files, companions and credentials.
+You can draft while setup runs. Setup failures remain visible in the window;
+close and relaunch after correcting them. Closing during preparation stops the
+worker and its compiler descendants before the launch guard is released.
+Backend artifact verification and memory admission still gate model use.
+It checks and builds the chat app and broker in a reusable external
 Cargo cache under `DataDirectory/build/chat/`, separated by checkout and pinned
 toolchain. Repeat launches hash source/build inputs and cached executables, then
 reuse matching builds without running Cargo. Speech companions use the same
@@ -317,6 +324,9 @@ Documentation, CI and PowerShell helper edits do not rebuild unchanged Rust;
 embedded files, model/configuration pins and local dependency inputs remain
 tracked. Unknown embedded inputs disable reuse conservatively. Short cache
 labels leave room for MSVC's linker artifact paths.
+The bootstrap reuses a version probe only for the exact executable digest
+already checked during this launch. Changed tool bytes require fresh discovery,
+including a replacement that preserves its length and timestamp.
 
 Startup commands retain the caller's process identity. Cancellation or caller
 exit stops the owned Windows Job and waits for compiler descendants before
@@ -327,9 +337,14 @@ before one fresh attempt. Session credentials and diagnostics remain fresh.
 The first launch after this update builds new isolated speech outputs and records
 receipts. Use `-ForceBuild` to repeat Cargo and native build preparation explicitly,
 including after changing external compiler installations or dependency caches.
-Pass absolute `-ChatPath` and `-BrokerPath` values to select existing builds.
+Pass absolute `-ChatPath` and `-BrokerPath` values to select matching current
+builds. Older chat binaries do not support the launcher's deferred startup flags.
 A fresh system-temp lane retains compiler output in `source-build-*.log` and app
 output in `chat.log`. `Start-Chat.ps1` is the supported launcher.
+Installed launch checks the selected manifest, fixed package inventory and
+maintenance executable before running package code. Rust then verifies every
+packaged file's length, SHA-256 and required executable identity. Installation,
+activation and rollback retain their existing atomic selection behavior.
 The launcher allows one chat instance per Windows user. It acquires an exclusive
 handle to `%LOCALAPPDATA%/SwiftBonsai2/chat.lock` before speech provisioning or
 builds and holds it until the app exits. Rapid repeated launches return with an

@@ -22,6 +22,12 @@ frontend. The UI runs separately from the broker and inference process;
 network work runs off the native event loop. The toolkit supports other desktop
 platforms, but the broker ownership, credentials and speech integrations remain
 Windows-specific; this migration does not establish a cross-platform runner.
+The launcher checks or builds the native presentation executable first. Its
+pending conversation shell then starts an owned Rust preparation worker, which
+builds/verifies the broker and speech companions and creates fresh credentials.
+Drafts and recovered conversations survive that handoff. The window stays
+available on setup failure; closing it cancels preparation and waits for owned
+descendants. Model admission and artifact verification still precede model use.
 Owned model and speech workers require the native Windows containment described
 in the [worker sandbox architecture](sandboxing.md); microphone consent remains
 a separate UI capability check.
