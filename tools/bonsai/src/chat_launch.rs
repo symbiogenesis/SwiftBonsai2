@@ -7,10 +7,10 @@ use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bonsai_artifacts::validate_external_path;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -451,7 +451,11 @@ fn launch_arguments(
     Ok(arguments)
 }
 
-fn execute(plan: Plan, operations: &mut impl Operations, working: &Path) -> crate::Result<Value> {
+fn prepare_backend(
+    plan: Plan,
+    operations: &mut impl Operations,
+    working: &Path,
+) -> crate::Result<Value> {
     let Plan {
         mut request,
         own_canary,
@@ -499,11 +503,55 @@ fn execute(plan: Plan, operations: &mut impl Operations, working: &Path) -> crat
             *key = Some(operations.keys(&parent)?);
         }
     }
+    let arguments = launch_arguments(&request, models.as_ref(), own_canary, own_tts, working)?;
+    let arguments = arguments
+        .into_iter()
+        .map(|argument| {
+            argument
+                .into_string()
+                .map_err(|_| "Chat arguments must be Unicode.".to_owned())
+        })
+        .collect::<crate::Result<Vec<_>>>()?;
+    Ok(json!({"Arguments": arguments}))
+}
+
+fn launch_pending(
+    mut request: Request,
+    operations: &mut impl Operations,
+    working: &Path,
+    tool: &Path,
+) -> crate::Result<Value> {
+    // Only the presentation executable is needed before the native window can
+    // open. Backend builds, speech downloads and credentials run in the UI's
+    // owned preparation worker after its first frame.
+    if request.chat_path.is_none() {
+        let built = operations.apps(&request, &["bonsai-chat"], working)?;
+        request.chat_path = Some(path_field(&built, "ChatPath")?);
+    }
+    request.working_directory = Some(working.into());
+    let path = working.join(format!(
+        "chat-startup-{}.json",
+        crate::startup_process::unique()
+    ));
+    external(&path)?;
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|error| error.to_string())?;
+    serde_json::to_writer(file, &request).map_err(|error| error.to_string())?;
     let chat = request
         .chat_path
         .as_ref()
         .ok_or("Missing chat executable.")?;
-    let arguments = launch_arguments(&request, models.as_ref(), own_canary, own_tts, working)?;
+    let mut arguments = Vec::with_capacity(6);
+    argument(&mut arguments, "--startup-tool", tool);
+    argument(&mut arguments, "--startup-request", &path);
+    argument(
+        &mut arguments,
+        "--startup-data-directory",
+        &request.data_directory,
+    );
     let code = operations.launch(chat, &arguments, working)?;
     if code != 0 {
         return Err(format!(
@@ -539,7 +587,7 @@ fn working_directory(requested: Option<&Path>) -> crate::Result<PathBuf> {
     Err("Cannot create a fresh external chat session directory.".into())
 }
 
-/// Prepare the selected native applications, credentials and speech files, then run chat.
+/// Opens native chat before preparing its backend, credentials and speech files.
 ///
 /// Speech-only provisioning returns model paths without compiling or starting an
 /// application. Ordinary startup checks cached speech lengths; native services
@@ -553,7 +601,30 @@ pub fn run(value: Value) -> crate::Result<Value> {
     let request: Request = serde_json::from_value(value).map_err(|error| error.to_string())?;
     let plan = prepare(request, cfg!(all(windows, target_arch = "aarch64")))?;
     let working = working_directory(plan.request.working_directory.as_deref())?;
-    execute(plan, &mut Native, &working)
+    if plan.request.speech_models_only {
+        return prepare_backend(plan, &mut Native, &working);
+    }
+    let tool = std::env::current_exe().map_err(|error| error.to_string())?;
+    launch_pending(plan.request, &mut Native, &working, &tool)
+}
+
+/// Prepares the backend off the native UI thread and returns its validated arguments.
+///
+/// # Errors
+/// Retains the launcher's option, artifact, build, path and credential checks.
+/// The caller must own this process and its descendants until preparation stops.
+pub fn prepare_run(value: Value) -> crate::Result<Value> {
+    crate::startup_cancel::checkpoint()?;
+    let request: Request = serde_json::from_value(value).map_err(|error| error.to_string())?;
+    let plan = prepare(request, cfg!(all(windows, target_arch = "aarch64")))?;
+    if plan.request.speech_models_only {
+        return Err("Use chat-launch for SpeechModelsOnly provisioning.".into());
+    }
+    if plan.request.chat_path.is_none() {
+        return Err("Chat preparation requires the already launched chat executable.".into());
+    }
+    let working = working_directory(plan.request.working_directory.as_deref())?;
+    prepare_backend(plan, &mut Native, &working)
 }
 
 #[cfg(test)]

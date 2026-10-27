@@ -24,6 +24,8 @@ mod recovery;
 )]
 mod speech;
 #[cfg(windows)]
+mod startup;
+#[cfg(windows)]
 mod tts;
 #[cfg(windows)]
 mod window;
@@ -287,6 +289,11 @@ fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let result = if args.len() == 1 && args[0] == "--preview" {
         window::run_preview()
+    } else if args
+        .first()
+        .is_some_and(|argument| argument == "--startup-tool")
+    {
+        startup::Request::parse(&args).and_then(window::run_startup)
     } else {
         configuration(args)
             .map_err(std::io::Error::other)

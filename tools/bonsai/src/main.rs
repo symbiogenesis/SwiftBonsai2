@@ -26,6 +26,7 @@ const COMMANDS: &[&str] = &[
     "speech-build",
     "source-build",
     "chat-launch",
+    "chat-prepare",
     "chat-package",
 ];
 
@@ -103,12 +104,14 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
         MAX_REQUEST_BYTES
     };
     let mut request = read_request(Path::new(&arguments[2]), maximum)?;
-    let startup = matches!(arguments[0].to_str(), Some("source-build" | "chat-launch"))
-        || (arguments[0] == "speech-build"
-            && matches!(
-                request["operation"].as_str(),
-                Some("models" | "environment" | "build")
-            ));
+    let startup = matches!(
+        arguments[0].to_str(),
+        Some("source-build" | "chat-launch" | "chat-prepare")
+    ) || (arguments[0] == "speech-build"
+        && matches!(
+            request["operation"].as_str(),
+            Some("models" | "environment" | "build")
+        ));
     if startup {
         initialize_startup(&mut request)?;
     }
@@ -130,6 +133,7 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
         Some("speech-build") => bonsai_tools::speech_build::run(request),
         Some("source-build") => bonsai_tools::source_build::run(request),
         Some("chat-launch") => bonsai_tools::chat_launch::run(request),
+        Some("chat-prepare") => bonsai_tools::chat_launch::prepare_run(request),
         Some("chat-package") => bonsai_tools::chat_package::run(request),
         _ => Err("Unknown maintenance command.".into()),
     }

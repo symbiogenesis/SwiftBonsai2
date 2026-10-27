@@ -1,5 +1,33 @@
 use super::*;
 
+// Exercise backend selection/argument policy independently of the early window
+// handoff. This records the fully prepared launch without a real UI or model.
+fn execute(plan: Plan, operations: &mut impl Operations, working: &Path) -> crate::Result<Value> {
+    let chat = plan.request.chat_path.clone();
+    let models_only = plan.request.speech_models_only;
+    let prepared = prepare_backend(plan, operations, working)?;
+    if models_only {
+        return Ok(prepared);
+    }
+    let arguments = prepared["Arguments"]
+        .as_array()
+        .ok_or("Missing prepared arguments.")?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(OsString::from)
+                .ok_or_else(|| "Invalid argument.".to_owned())
+        })
+        .collect::<crate::Result<Vec<_>>>()?;
+    let chat = chat.unwrap_or_else(|| working.parent().unwrap_or(working).join("built-chat.exe"));
+    let code = operations.launch(&chat, &arguments, working)?;
+    if code != 0 {
+        return Err(format!("Chat stopped with exit code {code}."));
+    }
+    Ok(prepared)
+}
+
 #[derive(Debug, Eq, PartialEq)]
 enum Event {
     Models(String, bool),
@@ -126,7 +154,9 @@ fn fixture(name: &str) -> crate::Result<Fixture> {
     }
     for name in [
         "chat.exe",
+        "built-chat.exe",
         "broker.exe",
+        "built-broker.exe",
         "asr.exe",
         "tts.exe",
         "external.key",
@@ -158,6 +188,116 @@ fn value_after(arguments: &[OsString], option: &str) -> crate::Result<OsString> 
         .find(|pair| pair[0] == option)
         .map(|pair| pair[1].clone())
         .ok_or_else(|| format!("Missing launch option {option}."))
+}
+
+#[test]
+fn native_window_handoff_precedes_backend_downloads_builds_and_keys() -> crate::Result<()> {
+    for prebuilt_chat in [false, true] {
+        let mut fixture = fixture(if prebuilt_chat {
+            "early-prebuilt"
+        } else {
+            "early-build"
+        })?;
+        if !prebuilt_chat {
+            fixture
+                .request
+                .as_object_mut()
+                .ok_or("Expected request.")?
+                .remove("ChatPath");
+        }
+        fixture.request["ForceBuild"] = json!(true);
+        let plan = plan(fixture.request)?;
+        let mut recorder = Recorder::new(fixture.root.clone());
+        let tool = fixture.root.join("maintenance.exe");
+        launch_pending(plan.request, &mut recorder, &fixture.working, &tool)?;
+        assert_eq!(recorder.events.len(), if prebuilt_chat { 1 } else { 2 });
+        if !prebuilt_chat {
+            assert_eq!(
+                recorder.events[0],
+                Event::Apps(vec!["bonsai-chat".into()], true)
+            );
+        }
+        let (_, arguments, _) = recorder.launch()?;
+        assert_eq!(value_after(arguments, "--startup-tool")?, tool);
+        assert_eq!(
+            value_after(arguments, "--startup-data-directory")?,
+            fixture.root.join("data")
+        );
+        let request_path = PathBuf::from(value_after(arguments, "--startup-request")?);
+        let request: Request =
+            serde_json::from_slice(&fs::read(request_path).map_err(|error| error.to_string())?)
+                .map_err(|error| error.to_string())?;
+        assert!(request.chat_path.is_some());
+        assert!(request.force_build);
+        assert_eq!(
+            request.working_directory.as_deref(),
+            Some(fixture.working.as_path())
+        );
+        let deferred = prepare(request, true)?;
+        assert!(!deferred.app_packages.contains(&"bonsai-chat"));
+        assert_eq!(deferred.native_selection, Some("All"));
+    }
+    Ok(())
+}
+
+#[test]
+fn deferred_preparation_never_rebuilds_running_chat_and_keeps_backend_policy() -> crate::Result<()>
+{
+    let mut fixture = fixture("deferred-broker")?;
+    fixture
+        .request
+        .as_object_mut()
+        .ok_or("Expected request.")?
+        .remove("BrokerPath");
+    fixture.request["ForceBuild"] = json!(true);
+    let mut recorder = Recorder::new(fixture.root);
+    let prepared = prepare_backend(plan(fixture.request)?, &mut recorder, &fixture.working)?;
+    assert!(
+        recorder
+            .events
+            .contains(&Event::Apps(vec!["bonsai-broker".into()], true))
+    );
+    assert!(
+        recorder
+            .events
+            .iter()
+            .all(|event| !matches!(event, Event::Launch(..)))
+    );
+    assert!(
+        prepared["Arguments"]
+            .as_array()
+            .ok_or("Missing arguments.")?
+            .iter()
+            .any(|arg| arg == "--broker-path")
+    );
+    assert_eq!(
+        recorder
+            .events
+            .iter()
+            .filter(|event| matches!(event, Event::Keys(_)))
+            .count(),
+        2
+    );
+    Ok(())
+}
+
+#[test]
+fn early_window_failure_retains_nonzero_exit_and_skips_backend_work() -> crate::Result<()> {
+    let fixture = fixture("early-failure")?;
+    let mut recorder = Recorder::new(fixture.root.clone());
+    recorder.exit_code = 7;
+    let error = launch_pending(
+        plan(fixture.request)?.request,
+        &mut recorder,
+        &fixture.working,
+        &fixture.root.join("maintenance.exe"),
+    )
+    .err()
+    .ok_or("Expected native launch failure.")?;
+    assert!(error.contains("exit code 7"));
+    assert_eq!(recorder.events.len(), 1);
+    assert!(matches!(recorder.events[0], Event::Launch(..)));
+    Ok(())
 }
 
 #[test]

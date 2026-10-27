@@ -12,13 +12,10 @@ use eframe::egui::{self, Color32, RichText};
 use std::{
     collections::VecDeque,
     io,
-    sync::mpsc::{self, Sender},
+    sync::mpsc::{self, Receiver, Sender},
     thread::JoinHandle,
     time::{Duration, Instant},
 };
-
-#[cfg(test)]
-use std::sync::mpsc::Receiver;
 
 #[cfg(test)]
 mod interaction_tests;
@@ -60,6 +57,9 @@ struct State {
     commands: Sender<Command>,
     events: client::EventReceiver,
     worker: Option<JoinHandle<()>>,
+    startup_request: Option<crate::startup::Request>,
+    startup: Option<crate::startup::Session>,
+    startup_failure: Option<std::sync::Arc<std::sync::Mutex<Option<String>>>>,
     ready: bool,
     busy: bool,
     stopping: bool,
@@ -138,6 +138,9 @@ impl State {
             commands,
             events,
             worker: None,
+            startup_request: None,
+            startup: None,
+            startup_failure: None,
             ready: false,
             busy: false,
             stopping: false,
@@ -205,6 +208,85 @@ impl State {
         }
     }
 
+    fn pending_startup(
+        commands: Sender<Command>,
+        events: client::EventReceiver,
+        request: crate::startup::Request,
+    ) -> Self {
+        let mut state = Self::create(commands, events, None, None);
+        state.preview = false;
+        state.waiting_model = true;
+        state.abliteration_enabled = false;
+        state.startup_request = Some(request);
+        state.set_status(
+            "Preparing your local applications and speech files… You can draft a message now.",
+            false,
+        );
+        state
+    }
+
+    fn poll_startup(&mut self) {
+        if let Some(request) = self.startup_request.take() {
+            match crate::startup::Session::start(request) {
+                Ok(session) => self.startup = Some(session),
+                Err(error) => self.fail_startup(&error),
+            }
+        }
+        let Some(result) = self
+            .startup
+            .as_ref()
+            .and_then(crate::startup::Session::poll)
+        else {
+            return;
+        };
+        self.startup.take();
+        match result {
+            Ok(config) => {
+                if let Err(error) = self.attach_configuration(config) {
+                    self.fail_startup(&error);
+                }
+            }
+            Err(error) => self.fail_startup(&error),
+        }
+    }
+
+    fn fail_startup(&mut self, error: &io::Error) {
+        if let Some(failure) = &self.startup_failure
+            && let Ok(mut failure) = failure.lock()
+        {
+            *failure = Some(error.to_string());
+        }
+        self.fail("Preparation failed. Close this window and launch again. Your draft is still available to copy.");
+        self.record(&error.to_string());
+    }
+
+    fn attach_configuration(&mut self, config: Config) -> io::Result<()> {
+        self.attach_configuration_with(config, |config, incoming, events| {
+            std::thread::Builder::new()
+                .name("swift-chat-client".to_owned())
+                .spawn(move || client::run(config, incoming, events))
+        })
+    }
+
+    fn attach_configuration_with(
+        &mut self,
+        config: Config,
+        start: impl FnOnce(Config, Receiver<Command>, client::EventSender) -> io::Result<JoinHandle<()>>,
+    ) -> io::Result<()> {
+        let (commands, incoming) = mpsc::channel();
+        let (events, incoming_events) = client::event_channel();
+        self.abliteration_enabled = config.use_abliterate_lora;
+        self.canary_configured = config.canary.is_some();
+        self.tts_configured = config.qwen_tts.is_some();
+        self.speech = speech::start(config.canary.clone(), config.qwen_tts.clone()).ok();
+        self.speech_checked = self.speech.is_none();
+        self.microphone = microphone::Microphone::new().ok();
+        self.worker = Some(start(config, incoming, events)?);
+        self.commands = commands;
+        self.events = incoming_events;
+        self.set_status("Preparing your local model…", false);
+        Ok(())
+    }
     fn set_status(&mut self, message: &str, warning: bool) {
         self.record(message);
         message
@@ -401,6 +483,9 @@ impl State {
     }
 
     fn drain_events(&mut self) {
+        if self.startup_request.is_some() || self.startup.is_some() {
+            return;
+        }
         // Bound per-frame work even when the worker refills the bounded queue.
         for _ in 0..64 {
             match self.events.try_recv() {
@@ -895,6 +980,8 @@ impl State {
 
 impl Drop for State {
     fn drop(&mut self) {
+        self.startup_request.take();
+        self.startup.take();
         if let Some(recovery) = &self.recovery {
             if self.recovery_erase_pending {
                 recovery.finish_erase();
@@ -1578,6 +1665,7 @@ impl eframe::App for State {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let was_ready = self.ready;
         let was_busy = self.busy;
+        self.poll_startup();
         self.drain_events();
         if ((!was_ready && self.ready) || (was_busy && !self.busy && self.ready))
             && ctx.memory(|memory| {
@@ -1671,6 +1759,31 @@ pub(super) fn run(config: Config) -> io::Result<()> {
     .map_err(|error| io::Error::other(error.to_string()))
 }
 
+pub(super) fn run_startup(request: crate::startup::Request) -> io::Result<()> {
+    // Retain the established recovery ordering: restore before accepting a draft.
+    let recovery = crate::recovery::Recovery::open(&request.data);
+    let failure = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let reported_failure = std::sync::Arc::clone(&failure);
+    eframe::run_native(
+        "Swift Bonsai",
+        native_options(),
+        Box::new(move |cc| {
+            configure(&cc.egui_ctx);
+            let (commands, _incoming) = mpsc::channel();
+            let (_events, incoming_events) = client::event_channel();
+            let mut state = State::pending_startup(commands, incoming_events, request);
+            state.startup_failure = Some(reported_failure);
+            state.attach_recovery(recovery);
+            Ok(Box::new(state))
+        }),
+    )
+    .map_err(|error| io::Error::other(error.to_string()))?;
+    let error = failure
+        .lock()
+        .map_err(|_| io::Error::other("Cannot read native preparation result."))?
+        .take();
+    error.map_or(Ok(()), |error| Err(io::Error::other(error)))
+}
 /// Opens only a seeded interface; no backend, credential or audio operation runs.
 pub(super) fn run_preview() -> io::Result<()> {
     eframe::run_native("Swift Bonsai · Preview", native_options(), Box::new(|cc| {
@@ -1690,4 +1803,113 @@ pub(super) fn run_preview() -> io::Result<()> {
 
 pub(super) fn show_error(message: &str) {
     platform::show_error(message);
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use super::*;
+    use std::{ffi::OsString, fs, path::PathBuf};
+
+    fn fixture() -> io::Result<(crate::startup::Request, PathBuf)> {
+        let directory = std::env::temp_dir().join(format!(
+            "Bonsai-UI-Startup-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(io::Error::other)?
+                .as_nanos()
+        ));
+        fs::create_dir(&directory)?;
+        let request = directory.join("request.json");
+        let tool = directory.join("tool.exe");
+        fs::write(&request, "{}")?;
+        fs::write(&tool, [])?;
+        let arguments = vec![
+            OsString::from("--startup-tool"),
+            tool.into_os_string(),
+            OsString::from("--startup-request"),
+            request.into_os_string(),
+            OsString::from("--startup-data-directory"),
+            directory.clone().into_os_string(),
+        ];
+        Ok((crate::startup::Request::parse(&arguments)?, directory))
+    }
+
+    #[test]
+    fn pending_native_startup_preserves_draft_through_failure_and_configuration() -> io::Result<()>
+    {
+        let (request, directory) = fixture()?;
+        let (commands, incoming) = mpsc::channel();
+        let (_events, incoming_events) = client::event_channel();
+        let mut state = State::pending_startup(commands, incoming_events, request);
+        state.input = "A message drafted while applications prepare".into();
+        state.enable_thinking = true;
+        state.output_budget = 1;
+        state.voice_profile = "My chosen voice".into();
+        assert!(!state.preview && !state.ready && state.waiting_model);
+        assert!(state.worker.is_none() && state.speech.is_none() && state.microphone.is_none());
+        state.submit();
+        state.drain_events();
+        assert!(incoming.try_recv().is_err());
+        assert!(state.waiting_model && !state.warning);
+        let failure = std::sync::Arc::new(std::sync::Mutex::new(None));
+        state.startup_failure = Some(std::sync::Arc::clone(&failure));
+        assert!(
+            failure
+                .lock()
+                .map_err(|_| io::Error::other("Poisoned fixture."))?
+                .is_none()
+        );
+        state.fail_startup(&io::Error::other("Synthetic setup failure"));
+        assert_eq!(
+            failure
+                .lock()
+                .map_err(|_| io::Error::other("Poisoned fixture."))?
+                .as_deref(),
+            Some("Synthetic setup failure")
+        );
+        assert!(!state.waiting_model && state.warning && !state.retryable);
+        assert_eq!(state.input, "A message drafted while applications prepare");
+        assert!(state.transcript.messages.is_empty());
+        state.startup_request.take();
+        state.waiting_model = true;
+        let config = Config {
+            broker: directory.join("broker.exe"),
+            data: directory.clone(),
+            evidence: directory.clone(),
+            frontend_port: 5173,
+            backend_port: 8081,
+            use_abliterate_lora: false,
+            use_repacked_ptq1: false,
+            canary: None,
+            qwen_tts: None,
+        };
+        state.attach_configuration_with(config, |_, incoming, events| {
+            thread_for_fixture(incoming, events)
+        })?;
+        assert_eq!(state.input, "A message drafted while applications prepare");
+        assert!(state.enable_thinking && state.output_budget == 1);
+        assert_eq!(state.voice_profile, "My chosen voice");
+        assert!(!state.abliteration_enabled);
+        assert!(!state.preview && !state.ready);
+        drop(state);
+        fs::remove_dir_all(&directory)?;
+        Ok(())
+    }
+
+    fn thread_for_fixture(
+        incoming: Receiver<Command>,
+        events: client::EventSender,
+    ) -> io::Result<JoinHandle<()>> {
+        std::thread::Builder::new()
+            .name("startup-regression".into())
+            .spawn(move || {
+                let _retained_events = events;
+                while let Ok(command) = incoming.recv() {
+                    if matches!(command, Command::Shutdown) {
+                        break;
+                    }
+                }
+            })
+    }
 }
