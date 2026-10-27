@@ -208,6 +208,10 @@ impl Client {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "The companion wire schema exposes independent readiness and capability flags."
+)]
 struct Health {
     model: String,
     ready: bool,
