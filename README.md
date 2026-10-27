@@ -70,19 +70,31 @@ and [local API contract](docs/broker-policy.md#public-request-contract).
 
 ## Memory footprint
 
-| Model | Model file | Development budget | Free RAM to start |
+| Current app profile | Model file | Job commit ceiling | Available RAM to start |
 | --- | ---: | ---: | ---: |
 | **Swift Bonsai 2 `PQ2_0`** | **6.71 GiB** | **11.5 GiB** | **15.5 GiB** |
 | Qwen3.8-27B `UD-Q3_K_XL` | 12.24 GiB | 18 GiB | 22 GiB |
 
-Swift's pinned model file is **about 45% smaller** than the Qwen reference. The
-budgets above are configured development allowances, not measured peak usage.
+Swift's default PQ2 file is **6.71 GiB**; its verified current-weight PTQ1 repack
+is **5.54 GiB**, saving **1.17 GiB** of weight storage.
+
+The **Rust PTQ1 diagnostic measured 5.85 GiB peak Job commit** for one supplied
+token without LoRA. It completed with **12 GiB available-memory admission**, an
+**8 GiB commit cap** and a **4 GiB running physical reserve**. Numerical comparison
+against the pinned native reference still fails; full-context/4K-output resource
+qualification remains outstanding. See the [captured result](docs/ptq1-readiness.md#numerical-and-admission-boundaries).
+
+Rust runtime 0.1.5 also avoids **149.625 MiB of transient checkpoint-restore
+payload**. That storage bound and the one-token measurement describe different
+allocation lifetimes. Mapped weight residency requires separate accounting from
+Job commit.
 
 > [!NOTE]
-> Startup requires **currently available physical RAM**, including a 4 GiB safety
-> reserve. A machine with 16 GB installed does not meet the current Swift
-> requirement. Longer conversations, caching, and other applications need
-> additional headroom.
+> The table shows configured application launch budgets, including a 4 GiB
+> physical reserve. The optional PTQ1 app switch currently uses the same
+> 15.5 GiB admission check; the 12 GiB result above is a bounded Rust diagnostic.
+> Installed RAM also serves Windows and other applications. Longer conversations,
+> caching and speech need additional headroom.
 
 See the [Swift memory assessment](docs/swift-memory.md) and
 [Qwen reference accounting](docs/model-selection.md#source-only-compatibility-and-memory-sanity-check).
