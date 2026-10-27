@@ -27,6 +27,20 @@
     "numericalParityVerdict": "failed"
   },
   "followUp": {
+    "activationPreparationRepair": {
+      "sourceCommit": "1e9c88f2d3e2bf18060818fbbd01f50ceb870207",
+      "integratedCommit": "f8f1406",
+      "preparedRuntimeVersion": "0.1.6",
+      "firstDivergentOperation": "block 13 FFN down-projection",
+      "cause": "Pinned Q8_0 scale uses amax times rounded binary32 1/127, while inverse scale uses direct 127/amax division",
+      "syntheticFixtureBlocks": 4,
+      "expectedFixtureBytes": 136,
+      "isolatedProjectionRows": 5120,
+      "isolatedProjectionByteExact": true,
+      "genericAndPq2PreparationChanged": false,
+      "fullModelRecheckPending": true,
+      "releaseAndPinPromotionPendingCi": true
+    },
     "repairIntegratedSourceRevision": "0b24223350c29dbaa5f82486b1d5fa7abb1a51cc",
     "operatorCheckSourceRevision": "cdaf8c914cdf64001794c17b51f5f3ca741dee7f",
     "operatorScope": "Pinned F32/F16 projections at widths divisible by sixteen; generic arithmetic, BF16 and unqualified tails unchanged",

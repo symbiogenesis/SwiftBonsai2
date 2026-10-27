@@ -27,6 +27,8 @@ audio; an earlier capture failure retains precedence.
 Select the owner-managed Snapdragon runner for device-specific conclusions;
 hosted ARM64 results describe only that hosted CPU. A successful run does not
 establish equivalent voice quality: the report leaves human listening pending.
+The [completed hosted resource comparison](speech-memory.md) retains the paired
+counter differences and their qualification scope.
 All evaluation execution, including a single profile or short fixture, remains
 CI-only. Invoke the workflow on `main`; its script rejects local execution.
 `Invoke-TtsEvaluation.ps1 -PlanOnly` inspects the bounded schedule locally

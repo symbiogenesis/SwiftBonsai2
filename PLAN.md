@@ -142,7 +142,9 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
   startup, first-audio, synthesis latency and resource evidence. The implemented
   paired harness alternates fresh processes, separates bootstrap/warm synthesis
   and retains distinct process/Job/system memory observations and failure receipts;
-  hosted ARM64 results do not qualify Snapdragon behavior or listening quality.
+  the [hosted comparison](docs/speech-memory.md) completed with median Q4
+  reductions of 0.734 GiB Job commit and 1.532 GiB working set. These counter
+  domains are separate; Snapdragon behavior and listening quality remain open.
 - Investigate lossless adapter graph-reservation and rank-one accumulation changes
   only with allocator and strict rounding/order checks. Resolve unexplained memory
   counter differences before claiming saved RAM; preserve dynamic scale and
@@ -156,6 +158,9 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
   12/8 GiB diagnostic admission/commit envelope with the same 4 GiB reserve,
   but all output hashes and the numerical failure were unchanged. Keep PQ2 as
   rollback; see the [PTQ1 contract](docs/ptq1-readiness.md).
+  A later isolated projection replay identified and repaired pinned Q8 scale/
+  inverse arithmetic; runtime 0.1.6 source is prepared for CI, with full-model
+  rechecking and release/pin promotion still pending.
 - Promote PTQ1 to the default only after suitability and lower admission thresholds
   are demonstrated. Use the exact verified 1,259,520,000-byte packing difference
   for a candidate reduction; account for mapped residency separately from private

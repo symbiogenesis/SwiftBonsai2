@@ -66,6 +66,15 @@ capture, with the same 430,526 out-of-tolerance values. Resource checks passed;
 numerical parity did not. This one-token envelope is not a full-context service
 profile, and Job commit is not total physical RAM.
 
+Subsequent localization found the first difference in block 13's FFN
+down-projection: identical input/transform, but one prepared Q8_0 code differed.
+The pinned native binary multiplies the maximum by rounded binary32 `1/127` for
+scale and divides `127/maximum` directly for inverse scale. A source repair now
+matches every prepared byte and all 5,120 isolated projection outputs, with
+compact native-backed synthetic controls and separate activation-sharing
+eligibility. Generic/PQ2 preparation is preserved. This repair is prepared for
+runtime 0.1.6 CI; full-model rechecking and release/pin promotion remain pending.
+
 The exact packing difference would imply a candidate admission threshold of
 **15,383,478,272 bytes** from the current development budget if suitability and resource evidence justified that
 change. It is not the enforced threshold. Mapped weight residency and private
