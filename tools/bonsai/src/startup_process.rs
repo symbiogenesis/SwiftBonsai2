@@ -8,7 +8,7 @@ use std::{
     collections::BTreeMap,
     ffi::{OsStr, OsString},
     fs::{self, File},
-    io::Read as _,
+    io::{Read as _, Write as _},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     thread,
@@ -183,7 +183,23 @@ fn text(path: &Path) -> crate::Result<String> {
     if u64::try_from(bytes.len()).map_err(|error| error.to_string())? > MAX_OUTPUT {
         return Err("Tool output exceeded its bound.".into());
     }
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(decode_text(bytes))
+}
+
+fn decode_text(bytes: Vec<u8>) -> String {
+    // Tool output is normally UTF-8. Transfer its allocation instead of keeping
+    // the capture bytes alive while copying the complete decoded text.
+    String::from_utf8(bytes)
+        .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned())
+}
+
+fn write_log(log: &Path, output: &ProcessOutput) -> crate::Result<()> {
+    let mut file = File::create(log).map_err(|error| error.to_string())?;
+    // Keep the established stdout-then-stderr byte order without constructing
+    // another allocation as large as both retained streams together.
+    file.write_all(output.stdout.as_bytes())
+        .and_then(|()| file.write_all(output.stderr.as_bytes()))
+        .map_err(|error| error.to_string())
 }
 
 pub(crate) fn run(
@@ -305,8 +321,7 @@ fn run_with_checkpoint(
         stderr: text(&stderr_path)?,
         code: status,
     };
-    fs::write(log, format!("{}{}", output.stdout, output.stderr))
-        .map_err(|error| error.to_string())?;
+    write_log(log, &output)?;
     checkpoint()?;
     guard.finished = true;
     Ok(output)
@@ -315,6 +330,63 @@ fn run_with_checkpoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn utf8_capture_reuses_bytes_and_preserves_lossy_fallback() {
+        let mut bytes = Vec::with_capacity(1024 * 1024);
+        bytes.extend_from_slice("\u{feff}caf\u{e9} \u{1f331}\0\r\n\n".as_bytes());
+        let pointer = bytes.as_ptr();
+        let capacity = bytes.capacity();
+        let decoded = decode_text(bytes);
+        assert_eq!(decoded, "\u{feff}caf\u{e9} \u{1f331}\0\r\n\n");
+        assert_eq!(decoded.as_ptr(), pointer);
+        assert_eq!(decoded.capacity(), capacity);
+
+        for bytes in [
+            vec![],
+            vec![0xff],
+            vec![0xc3, 0x28],
+            vec![b'a', 0xf0, 0x9f, b'\n'],
+            vec![0xed, 0xa0, 0x80, 0xff, b'z'],
+        ] {
+            let expected = String::from_utf8_lossy(&bytes).into_owned();
+            assert_eq!(decode_text(bytes), expected);
+        }
+    }
+
+    #[test]
+    fn combined_capture_log_preserves_exact_stream_order_and_truncates() -> crate::Result<()> {
+        let scratch = std::env::temp_dir().join(format!("Bonsai-Process-{}", unique()));
+        fs::create_dir(&scratch).map_err(|error| error.to_string())?;
+        let log = scratch.join("capture.log");
+        fs::write(&log, "stale log contents that must disappear")
+            .map_err(|error| error.to_string())?;
+        let output = ProcessOutput {
+            stdout: "\u{feff}caf\u{e9} \u{1f331}\0\r\n".into(),
+            stderr: "diagnostic\u{fffd}\n\n".into(),
+            code: 7,
+        };
+        write_log(&log, &output)?;
+        assert_eq!(
+            fs::read(&log).map_err(|error| error.to_string())?,
+            "\u{feff}caf\u{e9} \u{1f331}\0\r\ndiagnostic\u{fffd}\n\n".as_bytes()
+        );
+        write_log(
+            &log,
+            &ProcessOutput {
+                stdout: String::new(),
+                stderr: String::new(),
+                code: 0,
+            },
+        )?;
+        assert_eq!(
+            fs::metadata(&log).map_err(|error| error.to_string())?.len(),
+            0
+        );
+        assert!(write_log(&scratch, &output).is_err());
+        fs::remove_file(log).map_err(|error| error.to_string())?;
+        fs::remove_dir(scratch).map_err(|error| error.to_string())
+    }
 
     #[test]
     fn relative_native_working_directories_reject_before_spawn() {
