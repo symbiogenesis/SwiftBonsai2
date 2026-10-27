@@ -9,7 +9,11 @@ use std::{
     io::{self, Read, Write},
     os::windows::fs::{MetadataExt as _, OpenOptionsExt as _},
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, SyncSender, TrySendError},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, SyncSender, TrySendError},
+    },
     thread::JoinHandle,
 };
 
@@ -17,9 +21,29 @@ const MAX_BYTES: usize = 8 * 1024 * 1024;
 const MAX_SEALED: u64 = 8 * 1024 * 1024 + 65_536;
 
 enum Command {
-    Save(u64, Vec<u8>),
+    Save(u64, Vec<u8>, SnapshotSlot),
     Erase(u64),
+    Fence(SyncSender<()>),
     Shutdown,
+}
+
+// Own the plaintext budget from before serialization until the worker has
+// finished encryption and replacement. Dropping a rejected command also frees it.
+struct SnapshotSlot(Arc<AtomicBool>);
+
+impl SnapshotSlot {
+    fn reserve(occupied: &Arc<AtomicBool>) -> Option<Self> {
+        occupied
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .ok()
+            .map(|_| Self(Arc::clone(occupied)))
+    }
+}
+
+impl Drop for SnapshotSlot {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 pub(crate) enum Event {
@@ -33,6 +57,7 @@ pub(crate) struct Recovery {
     pub(crate) events: Receiver<Event>,
     worker: Option<JoinHandle<()>>,
     operation: Cell<u64>,
+    snapshot_occupied: Arc<AtomicBool>,
 }
 
 pub(crate) struct Opened {
@@ -62,8 +87,11 @@ impl Recovery {
                 let _lock = lock;
                 while let Ok(command) = incoming.recv() {
                     let event = match command {
-                        Command::Save(operation, bytes) => {
-                            if save(&path, &bytes).is_ok() {
+                        Command::Save(operation, bytes, slot) => {
+                            let saved = save(&path, &bytes).is_ok();
+                            drop(bytes);
+                            drop(slot);
+                            if saved {
                                 Event::Saved(operation)
                             } else {
                                 Event::Failed(operation)
@@ -75,6 +103,10 @@ impl Recovery {
                             } else {
                                 Event::Failed(operation)
                             }
+                        }
+                        Command::Fence(complete) => {
+                            let _sent = complete.send(());
+                            continue;
                         }
                         Command::Shutdown => break,
                     };
@@ -89,28 +121,36 @@ impl Recovery {
                 events: outgoing,
                 worker: Some(worker),
                 operation: Cell::new(0),
+                snapshot_occupied: Arc::new(AtomicBool::new(false)),
             },
             saved,
             load_failed,
         })
     }
 
-    /// Returns false if the worker is occupied; retain dirty state and retry
-    /// later. The channel holds at most one bounded plaintext snapshot.
-    pub(crate) fn save(&self, bytes: Vec<u8>) -> bool {
+    /// Reserve the only plaintext snapshot before encoding. An occupied worker
+    /// skips encoding entirely; retain dirty state and retry the latest state.
+    pub(crate) fn save_with(
+        &self,
+        encode: impl FnOnce() -> io::Result<Vec<u8>>,
+    ) -> io::Result<bool> {
+        let Some(slot) = SnapshotSlot::reserve(&self.snapshot_occupied) else {
+            return Ok(false);
+        };
+        let bytes = encode()?;
         if bytes.is_empty() || bytes.len() > MAX_BYTES {
-            return false;
+            return Ok(false);
         }
         let operation = self.operation.get().saturating_add(1);
         if self
             .commands
-            .try_send(Command::Save(operation, bytes))
+            .try_send(Command::Save(operation, bytes, slot))
             .is_ok()
         {
             self.operation.set(operation);
-            true
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
@@ -137,12 +177,12 @@ impl Recovery {
 
     /// Flushes the last snapshot during window shutdown, preserving ordering
     /// with an erase or save that is already in progress.
-    pub(crate) fn finish(&self, bytes: Option<Vec<u8>>) {
-        if let Some(bytes) = bytes.filter(|bytes| !bytes.is_empty() && bytes.len() <= MAX_BYTES) {
-            let operation = self.operation.get().saturating_add(1);
-            if self.commands.send(Command::Save(operation, bytes)).is_ok() {
-                self.operation.set(operation);
-            }
+    pub(crate) fn finish_with(&self, encode: impl FnOnce() -> Option<Vec<u8>>) {
+        // Shutdown already waits for the worker. Wait before encoding its final
+        // state as well, so a slow save never overlaps a second plaintext copy.
+        let (complete, finished) = mpsc::sync_channel(0);
+        if self.commands.send(Command::Fence(complete)).is_ok() && finished.recv().is_ok() {
+            let _saved = self.save_with(|| Ok(encode().unwrap_or_default()));
         }
     }
 
@@ -168,8 +208,9 @@ impl ControlledRecovery {
             .recv_timeout(std::time::Duration::from_secs(5))
             .map_err(io::Error::other)?
         {
-            Command::Save(operation, _) => Ok(Event::Saved(operation)),
+            Command::Save(operation, _, _slot) => Ok(Event::Saved(operation)),
             Command::Erase(operation) => Ok(Event::Erased(operation)),
+            Command::Fence(_) => Err(io::Error::other("Unexpected recovery fence.")),
             Command::Shutdown => Err(io::Error::other("No recovery operation.")),
         }
     }
@@ -190,6 +231,7 @@ impl Recovery {
                 events: outgoing,
                 worker: None,
                 operation: Cell::new(0),
+                snapshot_occupied: Arc::new(AtomicBool::new(false)),
             },
             ControlledRecovery { incoming, events },
         )
@@ -198,8 +240,8 @@ impl Recovery {
 
 impl Drop for Recovery {
     fn drop(&mut self) {
-        let _sent = self.commands.send(Command::Shutdown);
         if let Some(worker) = self.worker.take() {
+            let _sent = self.commands.send(Command::Shutdown);
             let _joined = worker.join();
         }
     }
@@ -302,6 +344,93 @@ mod tests {
     use super::*;
 
     #[test]
+    fn recovery_reserves_snapshot_before_encoding_through_worker_completion() -> io::Result<()> {
+        let (store, controlled) = Recovery::controlled();
+        let encoded = Cell::new(0);
+        let encode = || {
+            encoded.set(encoded.get() + 1);
+            Ok(b"Latest bounded workspace".to_vec())
+        };
+        assert!(store.save_with(encode)?);
+        assert!(!store.save_with(encode)?);
+        assert_eq!(encoded.get(), 1);
+
+        // Model a worker that took the command but is still encrypting/writing.
+        let active = controlled
+            .incoming
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(io::Error::other)?;
+        assert!(!store.save_with(encode)?);
+        assert_eq!(encoded.get(), 1);
+        drop(active);
+
+        assert!(store.save_with(encode)?);
+        assert_eq!(encoded.get(), 2);
+        let _saved = controlled.next_completion()?;
+        assert!(
+            store
+                .save_with(|| Err(io::Error::other("Synthetic encoding failure.")))
+                .is_err()
+        );
+        assert!(!store.save_with(|| Ok(Vec::new()))?);
+        assert!(store.save_with(encode)?);
+        assert_eq!(encoded.get(), 3);
+        let _saved = controlled.next_completion()?;
+        drop(controlled);
+        Ok(())
+    }
+
+    #[test]
+    fn recovery_final_snapshot_waits_for_prior_plaintext_before_encoding() -> io::Result<()> {
+        let (store, controlled) = Recovery::controlled();
+        assert!(store.save_with(|| Ok(b"Prior workspace".to_vec()))?);
+        let active = controlled
+            .incoming
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(io::Error::other)?;
+        let encoded = Arc::new(AtomicBool::new(false));
+        let observed = Arc::clone(&encoded);
+        let occupied = Arc::clone(&store.snapshot_occupied);
+        let previous_slot = Arc::clone(&occupied);
+        let finalizing = std::thread::spawn(move || {
+            store.finish_with(|| {
+                // The final encoder has reserved the now-free slot itself.
+                assert!(occupied.load(Ordering::Acquire));
+                observed.store(true, Ordering::Release);
+                Some(b"Final workspace".to_vec())
+            });
+            store
+        });
+        let Command::Fence(complete) = controlled
+            .incoming
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(io::Error::other)?
+        else {
+            return Err(io::Error::other("Expected a final-save fence."));
+        };
+        assert!(!encoded.load(Ordering::Acquire));
+        // The worker finishes its previous command before acknowledging the
+        // fence. Only then may shutdown construct its final plaintext snapshot.
+        assert!(previous_slot.load(Ordering::Acquire));
+        drop(active);
+        assert!(!previous_slot.load(Ordering::Acquire));
+        complete.send(()).map_err(io::Error::other)?;
+        let _store = finalizing
+            .join()
+            .map_err(|_| io::Error::other("Final-save worker panicked."))?;
+        assert!(encoded.load(Ordering::Acquire));
+        let Command::Save(_, bytes, _slot) = controlled
+            .incoming
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(io::Error::other)?
+        else {
+            return Err(io::Error::other("Expected the final workspace."));
+        };
+        assert_eq!(bytes, b"Final workspace");
+        Ok(())
+    }
+
+    #[test]
     fn recovery_lock_prevents_path_replacement_until_owner_exits() -> io::Result<()> {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -363,14 +492,14 @@ mod tests {
         let store = opened.store;
         assert!(Recovery::open(&directory).is_err());
         let text = "A saved draft 🌱".as_bytes().to_vec();
-        assert!(store.save(text.clone()));
+        assert!(store.save_with(|| Ok(text.clone()))?);
         assert!(matches!(
             store.events.recv_timeout(std::time::Duration::from_secs(5)),
             Ok(Event::Saved(_))
         ));
         assert_eq!(read(&path)?, Some(text));
         let replacement = b"Revised draft".to_vec();
-        store.finish(Some(replacement.clone()));
+        store.finish_with(|| Some(replacement.clone()));
         assert!(matches!(
             store.events.recv_timeout(std::time::Duration::from_secs(5)),
             Ok(Event::Saved(_))
@@ -398,9 +527,9 @@ mod tests {
         fs::create_dir(&directory)?;
         let opened = Recovery::open(&directory)?;
         let store = opened.store;
-        store.finish(Some(b"First saved draft".to_vec()));
+        store.finish_with(|| Some(b"First saved draft".to_vec()));
         store.finish_erase();
-        store.finish(Some(b"Newer queued saved draft".to_vec()));
+        store.finish_with(|| Some(b"Newer queued saved draft".to_vec()));
         store.finish_erase();
         drop(store);
         assert!(!directory.join("chat-recovery.dpapi").exists());

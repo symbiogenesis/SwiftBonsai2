@@ -982,14 +982,14 @@ impl Drop for State {
     fn drop(&mut self) {
         self.startup_request.take();
         self.startup.take();
+        self.stop_speech();
         if let Some(recovery) = &self.recovery {
             if self.recovery_erase_pending {
                 recovery.finish_erase();
             } else if self.save_conversations {
-                recovery.finish(self.workspace_bytes().ok());
+                recovery.finish_with(|| self.workspace_bytes().ok());
             }
         }
-        self.stop_speech();
         self.microphone.take();
         self.speech.take();
         let _sent = self.commands.send(Command::Shutdown);

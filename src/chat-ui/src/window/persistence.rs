@@ -208,13 +208,12 @@ impl State {
             if let Some(recovery) = &self.recovery {
                 let _queued = recovery.erase();
             }
-        } else if self.save_conversations && self.recovery_dirty {
-            match self.workspace_bytes() {
-                Ok(bytes) => {
-                    if let Some(recovery) = &self.recovery {
-                        self.recovery_dirty = !recovery.save(bytes);
-                    }
-                }
+        } else if self.save_conversations
+            && self.recovery_dirty
+            && let Some(recovery) = &self.recovery
+        {
+            match recovery.save_with(|| self.workspace_bytes()) {
+                Ok(queued) => self.recovery_dirty = !queued,
                 Err(error) => {
                     self.recovery_notice = format!("Could not save conversations: {error}");
                 }
@@ -300,6 +299,42 @@ mod tests {
         let (commands, _incoming) = mpsc::channel();
         let (_events, incoming) = client::event_channel();
         State::create(commands, incoming, None, None)
+    }
+
+    #[test]
+    fn recovery_backpressure_skips_encoding_until_the_snapshot_slot_is_free() -> io::Result<()> {
+        let mut state = state();
+        let (store, controlled) = crate::recovery::Recovery::controlled();
+        state.recovery = Some(store);
+        state.save_conversations = true;
+        state.recovery_dirty = true;
+        state.last_recovery_save = Instant::now()
+            .checked_sub(Duration::from_secs(3))
+            .unwrap_or_else(Instant::now);
+        state.poll_recovery();
+        assert!(!state.recovery_dirty);
+
+        // Encoding this workspace would reject its saved-state limits. While
+        // the first snapshot occupies the budget, no new encoding is attempted.
+        state.last_answer = "x".repeat(4 * 1024 * 1024 + 1);
+        state.recovery_dirty = true;
+        state.last_recovery_save = Instant::now()
+            .checked_sub(Duration::from_secs(3))
+            .unwrap_or_else(Instant::now);
+        state.poll_recovery();
+        assert!(state.recovery_dirty);
+        assert!(!state.recovery_notice.starts_with("Could not save"));
+        let saved = controlled.next_completion()?;
+        controlled.complete(saved)?;
+        state.last_recovery_save = Instant::now()
+            .checked_sub(Duration::from_secs(3))
+            .unwrap_or_else(Instant::now);
+        state.poll_recovery();
+        assert!(state.recovery_notice.starts_with("Could not save"));
+        assert!(state.recovery_dirty);
+        state.save_conversations = false;
+        drop(controlled);
+        Ok(())
     }
 
     #[test]
