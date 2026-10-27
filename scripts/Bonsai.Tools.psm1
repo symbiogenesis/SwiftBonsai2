@@ -55,11 +55,15 @@ function Resolve-BonsaiRustTool {
         $expected = if ([IO.File]::Exists($receipt)) { [IO.File]::ReadAllText($receipt).Trim() } else { '' }
         $digest = if ([IO.File]::Exists($tool)) { (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }
         $compatible = $false
+        $version = $null
         if ($expected -cmatch '^[a-f0-9]{64}$' -and $digest -ceq $expected) {
             $probe = Invoke-BonsaiNativeProcess -Executable $tool -ArgumentList @('--version') -WorkingDirectory $scratch -TimeoutSeconds 10
             if (-not $probe.ExitCode) {
                 $version = $probe.StandardOutput | ConvertFrom-Json -AsHashtable -NoEnumerate -DateKind String
-                $compatible = $version.Contains('StartupProtocolVersion') -and $version.StartupProtocolVersion -eq 1 -and
+                $compatible = $version -is [Collections.IDictionary] -and
+                    $version.Name -ceq 'bonsai-tools' -and $version.Version -ceq '0.1.0' -and $version.ProtocolVersion -eq 5 -and
+                    $version.Contains('StartupProtocolVersion') -and $version.StartupProtocolVersion -eq 1 -and
+                    $version.Commands -is [array] -and @($version.Commands | Where-Object { $_ -isnot [string] }).Count -eq 0 -and
                     $version.Contains('Commands') -and 'source-build' -cin $version.Commands
             }
         }
@@ -80,13 +84,24 @@ function Resolve-BonsaiRustTool {
         [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($snapshot))
         if (-not [IO.File]::Exists($snapshot)) { [IO.File]::Copy($tool, $snapshot, $false) }
         if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash -ine $digest) { throw 'The maintenance bootstrap snapshot changed.' }
+        if ($compatible) {
+            $file = Get-Item -LiteralPath $snapshot
+            $script:CheckedTools[$snapshot + ':' + $file.Length + ':' + $file.LastWriteTimeUtc.Ticks] = $version
+        }
     } finally { $guard.Dispose() }
     $resolved = Invoke-BonsaiTool -Command source-build -ToolPath $snapshot -TimeoutSeconds 0 -Request @{
         operation = 'tool'; repositoryRoot = $repository; workingDirectory = $scratch;
         targetDirectory = $target; forceBuild = [bool]$ForceBuild
     }
     if ($resolved.ToolPath -cne $tool) { throw 'The maintenance build returned an unexpected executable path.' }
-    [IO.File]::WriteAllText($receipt, (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant())
+    $resolvedDigest = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
+    [IO.File]::WriteAllText($receipt, $resolvedDigest)
+    # Exact bytes already passed discovery above. Reuse those capabilities for
+    # the freshly checked source tool, avoiding two more warm-launch processes.
+    $file = Get-Item -LiteralPath $tool
+    $resolvedIdentity = $tool + ':' + $file.Length + ':' + $file.LastWriteTimeUtc.Ticks
+    [void]$script:CheckedTools.Remove($resolvedIdentity)
+    if ($compatible -and $resolvedDigest -ceq $digest) { $script:CheckedTools[$resolvedIdentity] = $version }
     return $tool
 }
 function Invoke-BonsaiTool {
