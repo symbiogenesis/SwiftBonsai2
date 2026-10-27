@@ -148,7 +148,7 @@ try {
             if (-not [IO.Path]::IsPathFullyQualified($WorkingDirectory) -or -not [IO.Directory]::Exists($WorkingDirectory)) {
                 throw 'Bootstrap passed an invalid native working directory.'
             }
-            $script:ProbeRecords.Add([pscustomobject]@{ Executable = $Executable; Arguments = $ArgumentList })
+            $script:ProbeRecords.Add([pscustomobject]@{ Executable = $Executable; Arguments = $ArgumentList; TimeoutSeconds = $TimeoutSeconds })
             if ($ArgumentList[0] -ceq '--version') {
                 return [pscustomobject]@{ ExitCode = 0; StandardOutput = $script:VersionJson; StandardError = '' }
             }
