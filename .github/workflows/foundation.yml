@@ -375,7 +375,8 @@ jobs:
           ./scripts/Get-Adapter.ps1 -DataDirectory $data
           ./scripts/Get-Adapter.ps1 -DataDirectory $data -VerifyOnly
           $result = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -ProfileName swift-pq2-assessment -CheckOnly
-          if ($result.ModelProcessStarted -or $result.RequiredAvailableBytes -ne 16GB) { throw 'Invalid Swift admission-only result.' }
+          if ($result.ModelProcessStarted -or $result.RequiredAvailableBytes -ne 16911433728 -or
+              $result.ServiceCeilingBytes -ne 12616466432 -or $result.AvailableMemoryFloorBytes -ne 4GB) { throw 'Invalid Swift admission-only result.' }
           $result | ConvertTo-Json
           $adapterCheck = ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -ProfileName swift-pq2-assessment -UseAbliterateLora -CheckOnly
           if ($adapterCheck.ModelProcessStarted -or -not $adapterCheck.AdapterRequested -or $adapterCheck.EstimatedAdapterBytes -ne 9682464) { throw 'Invalid explicit adapter admission-only result.' }

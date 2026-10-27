@@ -35,7 +35,7 @@ provides versioned installation, explicit update/rollback and launch without a
 checkout or compiler. The source-build path follows below.
 
 Use native Windows ARM64 PowerShell 7.6+, the pinned Rust toolchain, an existing
-Swift PQ2 model/runtime installation and at least **16 GiB of available RAM**.
+Swift PQ2 model/runtime installation and at least **15.75 GiB of available RAM**.
 The native app also requires serviced Windows 11 with PSEC 1.1 and container-hosted
 loopback support. Startup checks the actual capabilities and policy admission;
 it does not automatically retry with the caller's unrestricted authority.
@@ -58,7 +58,7 @@ starts and owns the development broker, uses a dark appearance, shows startup
 status and streams responses. If startup
 reports insufficient RAM, free memory and select **Retry model**. Each retry
 starts a fresh owned broker and repeats artifact verification and the standard
-16 GiB memory admission check. Conversation history stays in memory.
+15.75 GiB memory admission check. Conversation history stays in memory.
 Stopping an active response closes backend admission and stops its owned broker
 and inference process. Select **Retry model** to start a fresh owned session,
 repeat artifact/memory admission, and continue with completed conversation turns
@@ -241,7 +241,7 @@ stays warm for up to 30 idle seconds. Stop speech, failure, transcription and
 shutdown release it immediately; the memory monitor remains active while idle.
 Both speech services use separate owned Windows Jobs. Admission requires 9 GiB
 available; an independent monitor stops only speech below 5 GiB. The Job commit
-ceiling is 16 GiB. Swift's 16 GiB startup admission and 4 GiB running reserve are
+ceiling is 16 GiB. Swift's 15.75 GiB startup admission and 4 GiB running reserve are
 unchanged. Resource failures preserve text chat and the completed answer.
 
 TTS uses native ARM64 CPU inference. Its default thread budget reserves two of
@@ -294,7 +294,7 @@ cannot start. Speech controls remain visible and actionable while
 idle; they do not silently hide setup requirements behind greyed-out buttons.
 The native UI does not download Canary weights or substitute another recognizer. The
 companion's supported runtime and memory requirements are separate from Swift's
-16 GiB admission check; native Windows ARM64 Canary inference is not yet
+15.75 GiB admission check; native Windows ARM64 Canary inference is not yet
 qualified. Qwen uses the isolated x64 environment because the official
 torchaudio package has no Windows ARM64 wheel. UI/protocol tests do not establish
 real-model audio quality or latency.
@@ -492,7 +492,7 @@ here.
 | Profile | Service allowance | Required available RAM, including 4 GiB reserve |
 | --- | --- | --- |
 | `reference-cpu` (default Qwen) | 18 GiB | 22 GiB |
-| `swift-pq2-assessment` | 12 GiB | 16 GiB |
+| `swift-pq2-assessment` | 11.75 GiB | 15.75 GiB |
 
 Admission fails closed without closing other applications. The packaged
 [maintenance tool](../tools/bonsai/README.md) owns the process in a kill-on-close
@@ -625,7 +625,7 @@ admission reporting, without credentials, a listener or a process.
 The default selection remains `reference-cpu`. Pass
 `--profile swift-pq2-assessment` to select Swift's separately pinned Prism runtime
 and original PQ2 model, provisioned with `config/swift-assessment.lock.json`.
-That selection fixes batch/microbatch to 128/64, a 12 GiB Job cap and 16 GiB
+That selection fixes batch/microbatch to 128/64, an 11.75 GiB Job cap and 15.75 GiB
 available-RAM admission including the 4 GiB reserve. Add `--use-abliterate-lora`
 to load the pinned adapter and enable its bounded per-request scale with the
 Prism CPU server (default 1.3); the demo
@@ -690,7 +690,7 @@ selection requires the original pinned Swift model and verified Prism Inference
 release; it accepts no adapter, alternate model or inference overrides.
 The separately installed server executable is verified against the release lock
 and retained against replacement. Its child process
-receives the existing 12 GiB Job, 16 GiB available-memory admission, 4 GiB
+receives the shared 11.75 GiB Job, 15.75 GiB available-memory admission, 4 GiB
 reserve watchdog, protected keys and listener-PID checks. The seed is fixed at
 42. Native identity must match before the frontend opens. Interrupted frontend
 generation closes admission and stops the owned backend; restart the launcher

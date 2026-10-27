@@ -120,7 +120,7 @@ One NPU session is the bounded control. The [upstream design][hexagon-design]
 describes an approximate 3.5 GB mapping window/dynamic mapping for X1/v73; the
 selected signed X2/v81 runtime has its own DMA64/VTCM-only access constraints.
 Neither address window describes physical RAM capacity. Layer-partitioned sessions
-include their overhead and state duplication. The existing Swift 12 GiB service
+include their overhead and state duplication. The existing Swift 11.75 GiB service
 allowance and 4 GiB physical reserve remain fixed, including allocations outside
 Job commit. Qwen's 18 GiB allowance is not a Swift budget. Placement rejection or
 explicit qualified reduction cannot silently shorten context or change model policy.

@@ -33,7 +33,7 @@ if ($processors.Count -ne 1 -or $processors[0].Name -notmatch 'Snapdragon.*X.*El
 $pq2 = & (Join-Path $PSScriptRoot 'Invoke-CpuCheck.ps1') -DataDirectory $data -Profile swift-pq2-assessment -UseAbliterateLora -CheckOnly -ToolPath $ToolPath
 $ptq1 = & (Join-Path $PSScriptRoot 'Invoke-CpuCheck.ps1') -DataDirectory $data -Profile swift-pq2-assessment -UseAbliterateLora -UseRepackedPtq1 -CheckOnly -ToolPath $ToolPath
 if ($pq2.Status -cne 'admission-passed' -or $ptq1.Status -cne 'admission-passed') {
-    throw 'Both representations must meet the unchanged 16 GiB available-memory admission requirement.'
+    throw 'Both representations must meet the shared 15.75 GiB available-memory admission requirement.'
 }
 $lockPath = Join-Path $PSScriptRoot '../config/swift-assessment.lock.json'
 $lock = Read-BonsaiLock $lockPath

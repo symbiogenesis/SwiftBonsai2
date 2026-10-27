@@ -73,7 +73,7 @@ Toolkit support for non-Latin glyphs does not imply full
 bidirectional text editing or complete native-control accessibility parity.
 An insufficient-memory startup failure offers **Retry model** after RAM is
 freed. Retrying creates a fresh broker attempt with new diagnostic storage and
-repeats the ordinary artifact, identity and 16 GiB admission checks. There is no
+repeats the ordinary artifact, identity and 15.75 GiB admission checks. There is no
 automatic retry or reduced-memory profile.
 
 Stop and uncertain request failures also leave the window available for an

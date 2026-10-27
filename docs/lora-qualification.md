@@ -18,7 +18,7 @@ Every prompt independently requires:
 - Every applicable quality dimension at least **3/4** and no lower median than
   baseline; an independently reviewed unwanted adapter refusal rejects quality.
 - Median peak Job-commit premium at most **768 MiB**, within the unchanged
-  **12 GiB** Job cap and **4 GiB** available-physical-memory floor.
+  **11.75 GiB** Job cap and **4 GiB** available-physical-memory floor.
 
 Reduced refusals, shorter answers and memory savings cannot offset either
 primary failure. Job commit excludes mapped weights; the one-second physical

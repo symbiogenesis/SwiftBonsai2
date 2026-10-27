@@ -221,7 +221,7 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: EventSend
                     &commands,
                     &events,
                     &mut history,
-                    &Event::Retryable("Not enough free memory. Swift needs 16 GiB available. Free some RAM, then select Retry model.".to_owned()),
+                    &Event::Retryable("Not enough free memory. Swift needs 15.75 GiB available. Free some RAM, then select Retry model.".to_owned()),
                 ) {
                     return;
                 }

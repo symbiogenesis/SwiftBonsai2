@@ -17,9 +17,11 @@ Direct app/broker launches accept `--use-repacked-ptq1`. Verification retains
 the pinned artifact handle throughout the owned process lifetime. Arbitrary
 paths, checkpoint substitution and missing-file fallback are unsupported.
 
-Both packings retain **16 GiB available-memory admission**, a **12 GiB Job
+Both packings use **15.75 GiB available-memory admission**, an **11.75 GiB Job
 commit ceiling** and **4 GiB running physical reserve**, with the same context,
-retry and recovery policies. The experimental native Rust inference service
+retry and recovery policies. This owner-selected development budget reduces
+both former limits by 256 MiB; it does not promote PTQ1 or establish measured
+model-memory savings. The experimental native Rust inference service
 rejects PTQ1 selection. Codec/operator support and bounded native decode do not
 establish full-model Rust service parity.
 
@@ -47,7 +49,7 @@ state first differs at zero-based block 14 and first exceeds tolerance at
 block 15. PTQ1 full-model numerical parity therefore remains unqualified.
 
 The exact packing difference would imply a candidate admission threshold of
-**15,920,349,184 bytes** if suitability and resource evidence justified that
+**15,651,913,728 bytes** from the current development budget if suitability and resource evidence justified that
 change. It is not the enforced threshold. Mapped weight residency and private
 commit are separate accounting domains; serialized savings alone do not justify
 lowering admission or the Job ceiling. The host reserve remains mandatory.

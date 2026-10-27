@@ -13,7 +13,7 @@ dependency or an explicitly chosen later milestone.
 
 ## Completed memory reductions
 
-These three implementation steps address the allocation and bounded-resource
+These implementation steps address the allocation and bounded-resource
 work below. Their storage contracts are documented in
 [bounded streaming resources](docs/streaming-resources.md); complete-model peak
 memory, throughput and device qualification remain outstanding.
@@ -28,6 +28,23 @@ memory, throughput and device qualification remain outstanding.
 - [x] Bound canonical broker serialization as bytes are written and release the
   generation request allocation after write/flush, before response intake.
   Preserve the exact same canonical bytes for counting and generation.
+- [x] Admit one recovery snapshot before serializing it, retaining that slot
+  through encryption and disk completion. Skip occupied-worker serialization
+  and preserve dirty-state retry, explicit erase ordering and the final save.
+- [x] Parse speech multipart fields and header lines lazily, rejecting excess
+  fields without retaining a body-sized delimiter index. Reuse the authorized
+  HTTP intake allocation for the body and bound fallible request-body growth.
+- [x] Transfer valid UTF-8 startup captures into their final strings and write
+  stdout/stderr logs sequentially, eliminating duplicate full-output buffers
+  while preserving lossy decoding, output limits and exact log ordering.
+
+Swift's owner-selected development budget now admits at 15.75 GiB available
+memory with an 11.75 GiB Job commit ceiling, reducing each by 256 MiB while
+preserving the 4 GiB physical reserve and memory-pressure shutdown. This is a
+budget adjustment, not measured model-memory savings or completed qualification.
+Full-context/4K-output resource acceptance remains outstanding. Further
+current-weight PTQ1 reductions also need numerical qualification; see
+[its numerical and admission boundaries](docs/ptq1-readiness.md#numerical-and-admission-boundaries).
 
 ## Application and daily service
 

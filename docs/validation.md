@@ -196,6 +196,21 @@ failure and teardown against model-free allocations. Overlay checks also reject
 changed source anchors and preserve the immutable source cache. These are focused
 correctness checks; they do not measure model peak memory or rebuild latency.
 
+Recovery admission checks include
+`recovery::tests::recovery_reserves_snapshot_before_encoding_through_worker_completion`
+and
+`window::persistence::tests::recovery_backpressure_skips_encoding_until_the_snapshot_slot_is_free`.
+They hold a synthetic worker save open and verify that another snapshot is not
+encoded. Startup capture checks in `startup_process::tests::` cover UTF-8
+allocation ownership, unchanged lossy decoding and exact stdout/stderr log order.
+Speech intake checks include
+`http::intake_tests::memory_body_intake_reuses_headers_and_preserves_coalesced_audio`
+and the `request::tests::memory_multipart_` cases for fixed field storage and
+excess-field rejection before decoding.
+These are untimed storage/lifetime checks. They do not qualify the separately
+owner-selected 15.75 GiB admission/11.75 GiB Job development budget; its total
+model-memory acceptance still requires complete-workload target-device evidence.
+
 The focused `window::transcript::cache_tests::` and
 `window::transcript::search::performance_tests::` cases count layout/search work
 directly to guard completed-message reuse during streaming and find navigation.
