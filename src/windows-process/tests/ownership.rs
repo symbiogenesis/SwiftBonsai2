@@ -138,10 +138,19 @@ fn native_sandbox_limits_files_and_preserves_loopback_process_identity() -> io::
     ]);
     spec.working_directory.clone_from(&scratch);
     spec.active_process_limit = 1;
-    let policy = SandboxPolicy {
+    let mut policy = SandboxPolicy {
         readonly_paths: vec![spec.executable.clone(), model.clone(), backend_key],
         writable_directory: scratch.clone(),
     };
+    // The pinned Swift bundle needs 66 exact grants after adding its model, key
+    // and adapter. Exercise native admission at that real launch size as well as
+    // enforcing file/network/process authority on the resulting worker.
+    for index in 0..63 {
+        let dependency = lane.path.join(format!("runtime-{index}.bin"));
+        fs::write(&dependency, b"verified runtime fixture")?;
+        policy.readonly_paths.push(dependency);
+    }
+    assert_eq!(policy.readonly_paths.len(), 66);
     let process = OwnedProcess::start_sandboxed(&spec, &policy)
         .map_err(|error| io::Error::new(error.kind(), format!("first worker launch: {error}")))?;
     until(|| {

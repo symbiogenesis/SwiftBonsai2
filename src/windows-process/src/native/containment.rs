@@ -33,6 +33,11 @@ use crate::{ProcessSpec, SandboxPolicy, invalid, validate_path};
 // https://learn.microsoft.com/windows/win32/api/processmodel/ne-processmodel-process_security_environment_flags
 const TERMINATE_ON_CLOSE: u32 = 0x1;
 
+// The pinned Swift runtime contains 63 files before the model, backend key and
+// optional adapter are added. Keep a finite policy budget large enough for that
+// complete verified bundle; every grant still names one validated existing file.
+const MAX_READONLY_GRANTS: usize = 128;
+
 /// Owns only a native PSEC handle; creation and policy remain immutable thereafter.
 pub(super) struct Environment(ProcessSecurityEnvironment);
 
@@ -108,9 +113,9 @@ pub(super) fn child_environment(policy: &SandboxPolicy) -> io::Result<Vec<u16>> 
 }
 
 fn validate_policy(spec: &ProcessSpec, policy: &SandboxPolicy) -> io::Result<Vec<String>> {
-    if policy.readonly_paths.is_empty() || policy.readonly_paths.len() > 64 {
+    if policy.readonly_paths.is_empty() || policy.readonly_paths.len() > MAX_READONLY_GRANTS {
         return Err(invalid(
-            "native sandbox requires 1..64 explicit read-only grants",
+            "native sandbox requires 1..128 explicit read-only grants",
         ));
     }
     validate_local_path(&policy.writable_directory)?;
@@ -277,4 +282,56 @@ fn policy_bytes(readonly: Vec<String>, scratch: Option<String>) -> Vec<u8> {
     let policy = spec.pack(&mut builder);
     finish_process_security_environment_buffer(&mut builder, policy);
     builder.finished_data().to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, time::SystemTime};
+
+    use super::*;
+
+    #[test]
+    fn verified_runtime_grant_budget_admits_swift_bundle_and_rejects_overflow() -> io::Result<()> {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "Bonsai-SandboxGrantBudget-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory)?;
+        let scratch = directory.join("worker");
+        fs::create_dir(&scratch)?;
+        let specification = ProcessSpec {
+            executable: std::env::current_exe()?,
+            arguments: Vec::new(),
+            working_directory: scratch.clone(),
+            stdout: directory.join("backend.stdout"),
+            stderr: directory.join("backend.stderr"),
+            memory_limit_bytes: 256 * 1024 * 1024,
+            active_process_limit: 1,
+        };
+        let mut policy = SandboxPolicy {
+            readonly_paths: vec![specification.executable.clone()],
+            writable_directory: scratch,
+        };
+        // Model the complete 63-file pinned runtime plus model, key and adapter.
+        // Distinct real files exercise ancestry, overlap and file-kind validation.
+        for index in 1..=MAX_READONLY_GRANTS {
+            let file = directory.join(format!("verified-{index}.bin"));
+            fs::write(&file, b"verified fixture")?;
+            policy.readonly_paths.push(file);
+            if matches!(policy.readonly_paths.len(), 66 | MAX_READONLY_GRANTS) {
+                validate_policy(&specification, &policy)?;
+            }
+        }
+        let error = validate_policy(&specification, &policy)
+            .err()
+            .ok_or_else(|| io::Error::other("over-budget sandbox grants accepted"))?;
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(!specification.stdout.exists());
+        assert!(!specification.stderr.exists());
+        Ok(())
+    }
 }

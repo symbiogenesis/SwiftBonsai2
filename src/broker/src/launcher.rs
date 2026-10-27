@@ -424,7 +424,14 @@ impl LaunchConfig {
             readonly_paths,
             writable_directory: specification.working_directory.clone(),
         };
-        OwnedProcess::start_sandboxed(specification, &policy).map_err(|_| LaunchError::Sandbox)
+        OwnedProcess::start_sandboxed(specification, &policy).map_err(|error| {
+            // The native boundary emits fixed validation reasons or Windows API
+            // errors, never arguments, file contents or credential values. Keep
+            // that technical cause in the broker's retained stderr while the UI
+            // continues to receive only the value-free launch classification.
+            let _result = write_sandbox_failure(&mut io::stderr().lock(), &error);
+            LaunchError::Sandbox
+        })
     }
 
     /// Verify pinned artifacts, create credentials, launch and await authenticated readiness.
@@ -533,6 +540,15 @@ impl LaunchConfig {
             backend_port: self.backend_port,
         })
     }
+}
+
+fn write_sandbox_failure(output: &mut impl io::Write, error: &io::Error) -> io::Result<()> {
+    writeln!(
+        output,
+        "Native sandbox launch failed (kind={:?}, os={:?}): {error}",
+        error.kind(),
+        error.raw_os_error()
+    )
 }
 
 /// One ready development backend with retained artifact and credential handles.
@@ -856,6 +872,24 @@ mod tests {
     use super::{LaunchConfig, LaunchError, LaunchProfile, validate_health};
     use std::ffi::OsString;
 
+    #[test]
+    fn sandbox_failure_evidence_preserves_validation_and_windows_causes() -> std::io::Result<()> {
+        for error in [
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "native sandbox requires 1..128 explicit read-only grants",
+            ),
+            std::io::Error::from_raw_os_error(5),
+        ] {
+            let mut evidence = Vec::new();
+            super::write_sandbox_failure(&mut evidence, &error)?;
+            let evidence = String::from_utf8(evidence).map_err(std::io::Error::other)?;
+            assert!(evidence.contains(&error.to_string()));
+            assert!(evidence.contains(&format!("kind={:?}", error.kind())));
+            assert!(evidence.contains(&format!("os={:?}", error.raw_os_error())));
+        }
+        Ok(())
+    }
     #[test]
     fn sandbox_preflight_distinguishes_parent_credentials_from_native_support() {
         assert_eq!(
