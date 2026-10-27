@@ -623,22 +623,29 @@ fn serialize_request(
             "This conversation reached the 128-message limit. Select New conversation before sending again.",
         ));
     }
-    crate::bounded_json::to_vec(&ChatRequest {
-        messages: history,
-        max_completion_tokens,
-        stream: true,
-        enable_thinking,
-        abliteration_scale,
-    }, MAX_REQUEST)
+    crate::bounded_json::to_vec(
+        &ChatRequest {
+            messages: history,
+            max_completion_tokens,
+            stream: true,
+            enable_thinking,
+            abliteration_scale,
+        },
+        MAX_REQUEST,
+    )
     .map_err(|error| {
         if error.io_error_kind() == Some(io::ErrorKind::FileTooLarge) {
-            Failure::Rejected(
-                "This conversation exceeded the request byte limit. Shorten your message or select New conversation.",
-            )
+            request_byte_limit()
         } else {
             Failure::Message("Could not prepare the chat request.")
         }
     })
+}
+
+const fn request_byte_limit() -> Failure {
+    Failure::Rejected(
+        "This conversation exceeded the request byte limit. Shorten your message or select New conversation.",
+    )
 }
 
 fn notify(events: &EventSender, event: Event) -> Result<()> {

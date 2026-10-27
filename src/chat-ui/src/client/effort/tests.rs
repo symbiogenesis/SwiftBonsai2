@@ -27,6 +27,56 @@ fn task() -> Vec<Message> {
 }
 
 #[test]
+fn effort_working_material_keeps_json_bytes_and_rejects_oversized_temporaries() -> Result<()> {
+    let pending = task();
+    let original = serialize_request(&pending, 1024, false, None)?;
+    let options = ResponseOptions {
+        max_completion_tokens: 1024,
+        enable_thinking: false,
+        abliteration_scale: None,
+    };
+    let working = Working {
+        plan: Some("A plan: 雨 🌱\n\"quoted\""),
+        draft: Some("A draft with \\ and \t"),
+    };
+    let expected = serde_json::to_string(&working)
+        .map_err(|_| Failure::Message("Could not encode expected working material."))?;
+    let body = stage_request(&pending, "Draft the answer.", working, options)?;
+    let request: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|_| Failure::Message("Could not decode staged working material."))?;
+    assert!(
+        request["messages"][2]["content"]
+            .as_str()
+            .is_some_and(|content| {
+                content.ends_with(&format!("Generated working material (JSON):\n{expected}"))
+            })
+    );
+    for plan in [
+        "\0".repeat(MAX_REQUEST / 6 + 1),
+        "x".repeat(MAX_REQUEST),
+        // The working JSON fits, but adding the authoritative task and fixed
+        // instructions cannot fit even before the outer request is escaped.
+        "x".repeat(MAX_REQUEST - 64),
+    ] {
+        assert_eq!(
+            stage_request(
+                &pending,
+                "Draft the answer.",
+                Working {
+                    plan: Some(&plan),
+                    draft: None
+                },
+                options,
+            )
+            .err(),
+            Some(request_byte_limit()),
+        );
+        assert_eq!(serialize_request(&pending, 1024, false, None)?, original);
+    }
+    Ok(())
+}
+
+#[test]
 fn effort_applies_thinking_selection_to_every_stage() -> Result<()> {
     for enable_thinking in [false, true] {
         let (_commands, incoming) = mpsc::channel();
