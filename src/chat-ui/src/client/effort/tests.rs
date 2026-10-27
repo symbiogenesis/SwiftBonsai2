@@ -307,7 +307,7 @@ fn effort_cancellation_deadline_and_request_bounds_prevent_later_calls() {
     );
     assert!(matches!(expired, Err(Failure::Message(_))));
     assert_eq!(count, 1);
-    let oversized = vec![message("user", &"x".repeat(super::super::MAX_REQUEST))];
+    let oversized = vec![message("user", &"x".repeat(MAX_REQUEST))];
     let bounded = run_with(
         &oversized,
         ResponseOptions {
