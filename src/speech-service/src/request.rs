@@ -117,15 +117,15 @@ fn split_bytes<'a, 'd>(
     let mut remaining = Some(bytes);
     std::iter::from_fn(move || {
         let bytes = remaining.take()?;
-        if let Some(index) = bytes
-            .windows(delimiter.len())
-            .position(|window| window == delimiter)
-        {
-            remaining = Some(&bytes[index + delimiter.len()..]);
-            Some(&bytes[..index])
-        } else {
-            Some(bytes)
-        }
+        Some(
+            bytes
+                .windows(delimiter.len())
+                .position(|window| window == delimiter)
+                .map_or(bytes, |index| {
+                    remaining = Some(&bytes[index + delimiter.len()..]);
+                    &bytes[..index]
+                }),
+        )
     })
 }
 
