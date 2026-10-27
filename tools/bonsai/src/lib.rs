@@ -4,6 +4,37 @@
 /// A command result suitable for a JSON receipt or a diagnostic on stderr.
 pub type Result<T> = std::result::Result<T, String>;
 
+/// Commands exposed by the maintenance executable and its checked bootstrap receipts.
+pub const COMMANDS: &[&str] = &[
+    "credentials",
+    "memory",
+    "cpu-check-plan",
+    "cpu-check-report",
+    "server-policy",
+    "runtime-stage",
+    "runtime-verify",
+    "completion",
+    "qualification",
+    "speech-models",
+    "inference-lock",
+    "inference-capabilities",
+    "speech-build",
+    "source-build",
+    "chat-launch",
+    "chat-prepare",
+    "chat-package",
+];
+
+/// Returns the native maintenance protocol capabilities without reading a request.
+#[must_use]
+pub fn version() -> serde_json::Value {
+    serde_json::json!({
+        "Name": "bonsai-tools", "Version": env!("CARGO_PKG_VERSION"),
+        "ProtocolVersion": 5, "StartupProtocolVersion": 1,
+        "BootstrapProtocolVersion": 1, "ChatLaunchProtocolVersion": 1, "Commands": COMMANDS
+    })
+}
+
 /// Private credential creation through the existing audited Windows boundary.
 pub mod credentials;
 

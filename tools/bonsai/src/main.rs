@@ -10,25 +10,6 @@ const MAX_REQUEST_BYTES: u64 = 16 * 1024 * 1024;
 // Legacy in-memory scoring permits 24 responses of 1 Mi UTF-16 units each.
 // JSON escaping can use six bytes per unit, plus the bounded review records.
 const MAX_QUALIFICATION_REQUEST_BYTES: u64 = 160 * 1024 * 1024;
-const COMMANDS: &[&str] = &[
-    "credentials",
-    "memory",
-    "cpu-check-plan",
-    "cpu-check-report",
-    "server-policy",
-    "runtime-stage",
-    "runtime-verify",
-    "completion",
-    "qualification",
-    "speech-models",
-    "inference-lock",
-    "inference-capabilities",
-    "speech-build",
-    "source-build",
-    "chat-launch",
-    "chat-prepare",
-    "chat-package",
-];
 
 fn read_request(path: &Path, maximum: u64) -> bonsai_tools::Result<serde_json::Value> {
     if !path.is_absolute() {
@@ -87,15 +68,12 @@ fn initialize_startup(request: &mut serde_json::Value) -> bonsai_tools::Result<(
 fn execute() -> bonsai_tools::Result<serde_json::Value> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     if arguments.len() == 1 && arguments[0] == "--version" {
-        return Ok(serde_json::json!({
-            "Name": "bonsai-tools", "Version": env!("CARGO_PKG_VERSION"),
-            "ProtocolVersion": 5, "StartupProtocolVersion": 1, "Commands": COMMANDS
-        }));
+        return Ok(bonsai_tools::version());
     }
     if arguments.len() != 3 || arguments[1] != "--request" {
         return Err(format!(
             "Usage: bonsai-tools <{}> --request ABSOLUTE_JSON_PATH; or --version",
-            COMMANDS.join("|")
+            bonsai_tools::COMMANDS.join("|")
         ));
     }
     let maximum = if arguments[0] == "qualification" {
@@ -111,7 +89,8 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
         && matches!(
             request["operation"].as_str(),
             Some("models" | "environment" | "build")
-        ));
+        ))
+        || (arguments[0] == "chat-package" && request["operation"] == "launch");
     if startup {
         initialize_startup(&mut request)?;
     }

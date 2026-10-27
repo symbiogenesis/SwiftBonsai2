@@ -139,12 +139,12 @@ try {
         $script:FixtureTool = $null
         $script:VersionJson = ConvertTo-Json -Compress -InputObject @{
             Name = 'bonsai-tools'; Version = '0.1.0'; ProtocolVersion = 5
-            StartupProtocolVersion = 1; Commands = @('source-build', 'chat-launch')
+            StartupProtocolVersion = 1; BootstrapProtocolVersion = 1; ChatLaunchProtocolVersion = 1; Commands = @('source-build', 'chat-launch')
         }
         function script:Invoke-BonsaiNativeProcess {
             [CmdletBinding()]
             [OutputType([pscustomobject])]
-            param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [int]$TimeoutSeconds)
+            param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [int]$TimeoutSeconds, [Collections.IDictionary]$Environment, [string]$LogPath)
             if (-not [IO.Path]::IsPathFullyQualified($WorkingDirectory) -or -not [IO.Directory]::Exists($WorkingDirectory)) {
                 throw 'Bootstrap passed an invalid native working directory.'
             }
@@ -152,15 +152,25 @@ try {
             if ($ArgumentList[0] -ceq '--version') {
                 return [pscustomobject]@{ ExitCode = 0; StandardOutput = $script:VersionJson; StandardError = '' }
             }
+            if ($ArgumentList[0].StartsWith('+', [StringComparison]::Ordinal)) {
+                if ($null -eq $Environment -or $Environment.CARGO_BUILD_FINGERPRINT -cne 'content' -or -not $LogPath) { throw 'Cold bootstrap dropped its compiler environment or evidence.' }
+                [IO.File]::WriteAllBytes($script:FixtureTool, $script:FixtureBytes)
+                return [pscustomobject]@{ ExitCode = 0; StandardOutput = ''; StandardError = '' }
+            }
             $request = [IO.File]::ReadAllText($ArgumentList[2]) | ConvertFrom-Json -AsHashtable -NoEnumerate -DateKind String
             if ($ArgumentList[0] -ceq 'source-build') {
                 $script:ProbeRecords[$script:ProbeRecords.Count - 1] | Add-Member -NotePropertyName Request -NotePropertyValue $request
                 if ($script:ReplaceOutput) {
                     $stamp = [IO.File]::GetLastWriteTimeUtc($script:FixtureTool)
-                    [IO.File]::WriteAllBytes($script:FixtureTool, [byte[]](16..1))
+                    $bytes = [IO.File]::ReadAllBytes($script:FixtureTool); $bytes[511] = 1; [IO.File]::WriteAllBytes($script:FixtureTool, $bytes)
                     [IO.File]::SetLastWriteTimeUtc($script:FixtureTool, $stamp)
                 }
-                return [pscustomobject]@{ ExitCode = 0; StandardOutput = (ConvertTo-Json -Compress -InputObject @{ ToolPath = $script:FixtureTool }); StandardError = '' }
+                $digest = (Get-FileHash -LiteralPath $script:FixtureTool -Algorithm SHA256).Hash.ToLowerInvariant()
+                $snapshot = Join-Path -Path $request.targetDirectory -ChildPath 'bootstrap' -AdditionalChildPath ($digest + '.exe')
+                if (-not [IO.File]::Exists($snapshot)) { [IO.File]::Copy($script:FixtureTool, $snapshot) }
+                $version = ConvertFrom-Json -InputObject $script:VersionJson -AsHashtable
+                [IO.File]::WriteAllText((Join-Path $request.targetDirectory 'bootstrap.json'), (ConvertTo-Json -Compress -Depth 8 -InputObject @{ schemaVersion = 1; sha256 = $digest; version = $version }))
+                return [pscustomobject]@{ ExitCode = 0; StandardOutput = (ConvertTo-Json -Compress -Depth 8 -InputObject @{ ToolPath = $script:FixtureTool; BootstrapPath = $snapshot; ToolSha256 = $digest; Version = $version }); StandardError = '' }
             }
             if ($ArgumentList[0] -cne 'chat-launch') { throw 'Bootstrap unexpectedly invoked a compiler or unsupported command.' }
             return [pscustomobject]@{ ExitCode = 0; StandardOutput = '{}'; StandardError = '' }
@@ -172,26 +182,34 @@ try {
         $target = Join-Path $script:ToolCacheRoot $key
         [void][IO.Directory]::CreateDirectory((Join-Path $target 'release'))
         $script:FixtureTool = Join-Path $target 'release/bonsai-tools.exe'
-        [IO.File]::WriteAllBytes($script:FixtureTool, [byte[]](1..16))
-        [IO.File]::WriteAllText((Join-Path $target 'bonsai-tools.sha256'), (Get-FileHash -LiteralPath $script:FixtureTool -Algorithm SHA256).Hash.ToLowerInvariant())
+        $script:FixtureBytes = [byte[]]::new(512)
+        $script:FixtureBytes[0] = 77; $script:FixtureBytes[1] = 90
+        [BitConverter]::GetBytes([int]128).CopyTo($script:FixtureBytes, 60)
+        ([byte[]](80, 69, 0, 0, 100, 170)).CopyTo($script:FixtureBytes, 128)
+        [IO.File]::WriteAllBytes($script:FixtureTool, $script:FixtureBytes)
+        [void][IO.Directory]::CreateDirectory((Join-Path $target 'bootstrap'))
+        $digest = (Get-FileHash -LiteralPath $script:FixtureTool -Algorithm SHA256).Hash.ToLowerInvariant()
+        $initialSnapshot = Join-Path -Path $target -ChildPath 'bootstrap' -AdditionalChildPath ($digest + '.exe')
+        [IO.File]::Copy($script:FixtureTool, $initialSnapshot)
+        [IO.File]::WriteAllText((Join-Path $target 'bootstrap.json'), (ConvertTo-Json -Compress -Depth 8 -InputObject @{ schemaVersion = 1; sha256 = $digest; version = (ConvertFrom-Json -InputObject $script:VersionJson -AsHashtable) }))
 
         $resolved = Resolve-BonsaiRustTool -Name bonsai-tools -ManifestRelativePath '../tools/bonsai/Cargo.toml'
         $null = Invoke-BonsaiTool -Command chat-launch -ToolPath $resolved
         $probes = @($script:ProbeRecords | Where-Object { $_.Arguments[0] -ceq '--version' })
         $builds = @($script:ProbeRecords | Where-Object { $_.Arguments[0] -ceq 'source-build' })
-        if ($resolved -cne $script:FixtureTool -or $script:ProbeRecords.Count -ne 3 -or $probes.Count -ne 1 -or $builds.Count -ne 1 -or $builds[0].Request.forceBuild) {
-            throw 'Warm bootstrap must reuse one digest-verified version probe for source-build and chat-launch.'
+        if ($resolved -cne $initialSnapshot -or $script:ProbeRecords.Count -ne 2 -or $probes.Count -ne 0 -or $builds.Count -ne 1 -or $builds[0].Request.forceBuild -or -not $builds[0].Request.publishBootstrap) {
+            throw 'Warm bootstrap must use digest-bound Rust capabilities without an extra version process.'
         }
 
-        # Same-size replacement with its original timestamp must still discard
-        # capabilities associated with the previous digest at the final path.
+        # Same-size replacement with its original timestamp must still replace
+        # the immutable digest identity selected for the final launch.
         $script:ReplaceOutput = $true
         $resolved = Resolve-BonsaiRustTool -Name bonsai-tools -ManifestRelativePath '../tools/bonsai/Cargo.toml' -ForceBuild
         $null = Invoke-BonsaiTool -Command chat-launch -ToolPath $resolved
         $probes = @($script:ProbeRecords | Where-Object { $_.Arguments[0] -ceq '--version' })
         $builds = @($script:ProbeRecords | Where-Object { $_.Arguments[0] -ceq 'source-build' })
-        if ($probes.Count -ne 3 -or $builds.Count -ne 2 -or -not $builds[1].Request.forceBuild) {
-            throw 'Changed tool bytes must receive a fresh probe, and ForceBuild must reach Rust.'
+        if ($probes.Count -ne 0 -or $builds.Count -ne 2 -or -not $builds[1].Request.forceBuild -or $resolved -ceq $initialSnapshot) {
+            throw 'Changed tool bytes must select a new native-checked immutable image, and ForceBuild must reach Rust.'
         }
 
         $digest = (Get-FileHash -LiteralPath $script:FixtureTool -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -202,6 +220,16 @@ try {
         catch { $rejected = $_.Exception.Message -ceq 'The maintenance bootstrap snapshot changed.' }
         $builds = @($script:ProbeRecords | Where-Object { $_.Arguments[0] -ceq 'source-build' })
         if (-not $rejected -or $builds.Count -ne 2) { throw 'Tampered immutable bootstrap bytes reached execution.' }
+        # Explicit rebuild repairs only the selected fixed cache lane, including
+        # a corrupted immutable image with the same otherwise valid digest name.
+        $script:ReplaceOutput = $false
+        $script:FixtureBytes = [IO.File]::ReadAllBytes($script:FixtureTool)
+        $resolved = Resolve-BonsaiRustTool -Name bonsai-tools -ManifestRelativePath '../tools/bonsai/Cargo.toml' -ForceBuild
+        if ($resolved -cne $snapshot -or (Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash -ine $digest) { throw 'ForceBuild did not repair the owned immutable bootstrap.' }
+        [IO.File]::WriteAllText((Join-Path $target 'bootstrap.json'), '{}')
+        $null = Resolve-BonsaiRustTool -Name bonsai-tools -ManifestRelativePath '../tools/bonsai/Cargo.toml' -ForceBuild
+        $compilers = @($script:ProbeRecords | Where-Object { $_.Arguments[0].StartsWith('+', [StringComparison]::Ordinal) })
+        if ($compilers.Count -ne 2) { throw 'ForceBuild did not repair an invalid bootstrap receipt through a cold build.' }
     } $bootstrap
 } finally {
     Remove-Module -ModuleInfo $module -Force

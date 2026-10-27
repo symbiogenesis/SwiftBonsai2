@@ -26,7 +26,7 @@ function Get-BonsaiToolScratch {
 
 function Resolve-BonsaiRustTool {
     <# .SYNOPSIS
-    Bootstraps the maintenance CLI, then delegates source freshness/builds to Rust.
+    Cold-bootstraps Cargo once; Rust publishes checked immutable launch tools.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -45,29 +45,49 @@ function Resolve-BonsaiRustTool {
     $identity = (Join-Path $repository 'tools/bonsai/Cargo.toml').ToUpperInvariant() + "`n" + $channel
     $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($identity))).ToLowerInvariant().Substring(0, 24)
     $target = Resolve-ExternalPath -Path (Join-Path $script:ToolCacheRoot $key)
-    [void][IO.Directory]::CreateDirectory($target)
     $scratch = Get-BonsaiToolScratch -Name $Name
-    $tool = Resolve-ExternalPath -Path (Join-Path $target 'release/bonsai-tools.exe')
-    $receipt = Resolve-ExternalPath -Path (Join-Path $target 'bonsai-tools.sha256')
-    try { $guard = [IO.FileStream]::new((Join-Path $target 'build.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
-    catch { throw 'Another process is preparing this maintenance tool. Try again after it finishes.' }
+    $receiptPath = Resolve-ExternalPath (Join-Path $target 'bootstrap.json')
+    $version = $null
+    $snapshot = $null
     try {
-        $expected = if ([IO.File]::Exists($receipt)) { [IO.File]::ReadAllText($receipt).Trim() } else { '' }
-        $digest = if ([IO.File]::Exists($tool)) { (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant() } else { '' }
-        $compatible = $false
-        $version = $null
-        if ($expected -cmatch '^[a-f0-9]{64}$' -and $digest -ceq $expected) {
-            $probe = Invoke-BonsaiNativeProcess -Executable $tool -ArgumentList @('--version') -WorkingDirectory $scratch -TimeoutSeconds 10
-            if (-not $probe.ExitCode) {
-                $version = $probe.StandardOutput | ConvertFrom-Json -AsHashtable -NoEnumerate -DateKind String
-                $compatible = $version -is [Collections.IDictionary] -and
-                    $version.Name -ceq 'bonsai-tools' -and $version.Version -ceq '0.1.0' -and $version.ProtocolVersion -eq 5 -and
-                    $version.Contains('StartupProtocolVersion') -and $version.StartupProtocolVersion -eq 1 -and
-                    $version.Commands -is [array] -and @($version.Commands | Where-Object { $_ -isnot [string] }).Count -eq 0 -and
-                    $version.Contains('Commands') -and 'source-build' -cin $version.Commands
+        if ([IO.File]::Exists($receiptPath)) {
+            if ((Get-Item -LiteralPath $receiptPath).Length -gt 32768) { throw 'Maintenance bootstrap receipt exceeds its byte limit.' }
+            $receipt = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($receiptPath)) -AsHashtable -NoEnumerate -DateKind String
+            if ($receipt -isnot [Collections.IDictionary] -or $receipt.Count -ne 3 -or
+                -not $receipt.Contains('schemaVersion') -or $receipt.schemaVersion -ne 1 -or
+                -not $receipt.Contains('sha256') -or $receipt.sha256 -isnot [string] -or $receipt.sha256 -cnotmatch '^[a-f0-9]{64}$' -or
+                -not $receipt.Contains('version') -or $receipt.version -isnot [Collections.IDictionary]) { throw 'Invalid maintenance bootstrap receipt.' }
+            $digest = $receipt.sha256
+            $snapshot = Resolve-ExternalPath (Join-Path -Path $target -ChildPath 'bootstrap' -AdditionalChildPath ($digest + '.exe'))
+            if (-not [IO.File]::Exists($snapshot) -or (Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash -ine $digest) {
+                throw 'The maintenance bootstrap snapshot changed.'
+            }
+            # Rust published these capabilities after verifying this exact digest.
+            # Arbitrary user-selected tools still receive the ordinary version probe.
+            $version = $receipt.version
+            if (-not $version.Contains('BootstrapProtocolVersion') -or $version.BootstrapProtocolVersion -ne 1 -or
+                -not $version.Contains('Name') -or $version.Name -cne 'bonsai-tools' -or
+                -not $version.Contains('Version') -or $version.Version -cne '0.1.0' -or
+                -not $version.Contains('ProtocolVersion') -or $version.ProtocolVersion -ne 5 -or
+                -not $version.Contains('StartupProtocolVersion') -or $version.StartupProtocolVersion -ne 1 -or
+                -not $version.Contains('Commands') -or $version.Commands -isnot [array] -or
+                @($version.Commands | Where-Object { $_ -isnot [string] }).Count -ne 0 -or 'source-build' -cnotin $version.Commands) {
+                throw 'Use a current maintenance bootstrap receipt with bootstrap protocol 1.'
             }
         }
-        if (-not $compatible) {
+    } catch {
+        if (-not $ForceBuild) { throw }
+        $snapshot = $null
+        $version = $null
+    }
+    if ($null -eq $snapshot) {
+        # Without a trusted Rust receipt, PowerShell performs only the unavoidable
+        # initial compiler bootstrap. Subsequent builds and publication are Rust.
+        [void][IO.Directory]::CreateDirectory($target)
+        try { $guard = [IO.FileStream]::new((Join-Path $target 'build.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
+        catch { throw 'Another process is preparing this maintenance tool. Try again after it finishes.' }
+        try {
+            $tool = Resolve-ExternalPath (Join-Path $target 'release/bonsai-tools.exe')
             if ([IO.File]::Exists($tool)) { [IO.File]::Delete($tool) }
             $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
             $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', (Join-Path $repository 'tools/bonsai/Cargo.toml'), '--target-dir', $target)
@@ -76,33 +96,30 @@ function Resolve-BonsaiRustTool {
             if ($built.ExitCode) { throw "Maintenance bootstrap failed; see $log" }
             Assert-Arm64PE -Path $tool
             $digest = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
-            [IO.File]::WriteAllText($receipt, $digest)
-        }
-        # Windows cannot replace an executing EXE. Immutable snapshots let Rust
-        # rebuild the source CLI without locking its Cargo output at launch.
-        $snapshot = Resolve-ExternalPath -Path (Join-Path -Path $target -ChildPath 'bootstrap' -AdditionalChildPath ($digest + '.exe'))
-        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($snapshot))
-        if (-not [IO.File]::Exists($snapshot)) { [IO.File]::Copy($tool, $snapshot, $false) }
-        if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash -ine $digest) { throw 'The maintenance bootstrap snapshot changed.' }
-        if ($compatible) {
-            $file = Get-Item -LiteralPath $snapshot
-            $script:CheckedTools[$snapshot + ':' + $file.Length + ':' + $file.LastWriteTimeUtc.Ticks] = $version
-        }
-    } finally { $guard.Dispose() }
+            $snapshot = Resolve-ExternalPath (Join-Path -Path $target -ChildPath 'bootstrap' -AdditionalChildPath ($digest + '.exe'))
+            [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($snapshot))
+            if ($ForceBuild -and [IO.File]::Exists($snapshot) -and (Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash -ine $digest) { [IO.File]::Delete($snapshot) }
+            if (-not [IO.File]::Exists($snapshot)) { [IO.File]::Copy($tool, $snapshot, $false) }
+            if ((Get-FileHash -LiteralPath $snapshot -Algorithm SHA256).Hash -ine $digest) { throw 'The maintenance bootstrap snapshot changed.' }
+        } finally { $guard.Dispose() }
+    }
+    if ($null -ne $version) {
+        $file = Get-Item -LiteralPath $snapshot
+        $script:CheckedTools[$snapshot + ':' + $file.Length + ':' + $file.LastWriteTimeUtc.Ticks] = $version
+    }
     $resolved = Invoke-BonsaiTool -Command source-build -ToolPath $snapshot -TimeoutSeconds 0 -Request @{
         operation = 'tool'; repositoryRoot = $repository; workingDirectory = $scratch;
-        targetDirectory = $target; forceBuild = [bool]$ForceBuild
+        targetDirectory = $target; forceBuild = [bool]$ForceBuild; publishBootstrap = $true
     }
-    if ($resolved.ToolPath -cne $tool) { throw 'The maintenance build returned an unexpected executable path.' }
-    $resolvedDigest = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
-    [IO.File]::WriteAllText($receipt, $resolvedDigest)
-    # Exact bytes already passed discovery above. Reuse those capabilities for
-    # the freshly checked source tool, avoiding two more warm-launch processes.
-    $file = Get-Item -LiteralPath $tool
-    $resolvedIdentity = $tool + ':' + $file.Length + ':' + $file.LastWriteTimeUtc.Ticks
-    [void]$script:CheckedTools.Remove($resolvedIdentity)
-    if ($compatible -and $resolvedDigest -ceq $digest) { $script:CheckedTools[$resolvedIdentity] = $version }
-    return $tool
+    if ($resolved.ToolPath -cne (Join-Path $target 'release/bonsai-tools.exe') -or
+        $resolved.ToolSha256 -isnot [string] -or $resolved.ToolSha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'The maintenance build returned an unexpected executable identity.' }
+    $checked = Resolve-ExternalPath (Join-Path -Path $target -ChildPath 'bootstrap' -AdditionalChildPath ($resolved.ToolSha256 + '.exe'))
+    if ($resolved.BootstrapPath -cne $checked) { throw 'The maintenance build returned an unexpected bootstrap path.' }
+    # The native source-build operation checked the published image and performed
+    # a fresh version handshake whenever the build changed its bytes.
+    $file = Get-Item -LiteralPath $checked
+    $script:CheckedTools[$checked + ':' + $file.Length + ':' + $file.LastWriteTimeUtc.Ticks] = $resolved.Version
+    return $checked
 }
 function Invoke-BonsaiTool {
     <# .SYNOPSIS
@@ -135,6 +152,9 @@ function Invoke-BonsaiTool {
     }
     $version = $script:CheckedTools[$identity]
     if ($Command -cnotin $version.Commands) { throw "The selected maintenance tool does not support '$Command'; use a current build." }
+    if ($Command -ceq 'chat-launch' -and (-not $version.Contains('ChatLaunchProtocolVersion') -or $version.ChatLaunchProtocolVersion -ne 1)) {
+        throw 'Use a current bonsai-tools build with native chat admission protocol 1.'
+    }
     $startup = $Command -cin @('source-build', 'chat-launch') -or
         ($Command -ceq 'speech-build' -and $Request['operation'] -cin @('models', 'environment', 'build'))
     if ($startup -and (-not $version.Contains('StartupProtocolVersion') -or $version.StartupProtocolVersion -ne 1)) {

@@ -15,6 +15,8 @@ use sha2::{Digest as _, Sha256};
 
 use crate::{startup_cache as cache, startup_process};
 
+mod bootstrap;
+
 pub(crate) struct BuildSpec {
     pub(crate) repository_root: PathBuf,
     pub(crate) working_directory: PathBuf,
@@ -234,6 +236,8 @@ enum Request {
         target_directory: PathBuf,
         #[serde(default)]
         force_build: bool,
+        #[serde(default)]
+        publish_bootstrap: bool,
     },
     #[serde(rename_all = "camelCase")]
     Chat {
@@ -259,6 +263,7 @@ pub fn run(request: Value) -> crate::Result<Value> {
             working_directory,
             target_directory,
             force_build,
+            publish_bootstrap,
         } => {
             let channel = channel(&repository_root)?;
             let spec = BuildSpec {
@@ -272,9 +277,14 @@ pub fn run(request: Value) -> crate::Result<Value> {
                 force: force_build,
             };
             let paths = cached_build(&spec, || Ok(BTreeMap::new()))?;
-            Ok(
-                json!({"ToolPath": paths.get("bonsai-tools").ok_or("Missing maintenance build output.")?}),
-            )
+            let tool = paths
+                .get("bonsai-tools")
+                .ok_or("Missing maintenance build output.")?;
+            if publish_bootstrap {
+                bootstrap::publish(&spec.target_directory, &spec.working_directory, tool)
+            } else {
+                Ok(json!({"ToolPath": tool}))
+            }
         }
         Request::Chat {
             repository_root,
