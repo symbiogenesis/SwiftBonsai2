@@ -293,7 +293,43 @@ fn adapter_compatibility_and_argument_pairing_fail_closed() -> Result<(), String
     );
     assert_eq!(
         Profile::SwiftPq2Assessment.memory_limit_bytes(),
-        12 * 1024 * 1024 * 1024
+        12_616_466_432
+    );
+    Ok(())
+}
+
+#[test]
+fn swift_development_budget_keeps_four_gib_reserve_for_every_artifact() -> Result<(), String> {
+    let selected = Profile::SwiftPq2Assessment;
+    let ceiling =
+        u64::try_from(selected.memory_limit_bytes()).map_err(|error| error.to_string())?;
+    assert_eq!(ceiling, 12_616_466_432);
+    assert_eq!(selected.required_available_bytes(), 16_911_433_728);
+    assert_eq!(
+        selected.required_available_bytes() - ceiling,
+        4 * 1024 * 1024 * 1024
+    );
+    for use_adapter in [false, true] {
+        for use_ptq1 in [false, true] {
+            let fixed = policy(selected, use_adapter, use_ptq1)?;
+            assert_eq!(fixed["ServiceCeilingBytes"], ceiling);
+            assert_eq!(fixed["RequiredAvailableBytes"], 16_911_433_728_u64);
+            assert_eq!(fixed["AvailableMemoryFloorBytes"], 4_294_967_296_u64);
+            assert_eq!(fixed["ContextTokens"], 8192);
+            assert_eq!(fixed["BatchTokens"], 128);
+            assert_eq!(fixed["MicrobatchTokens"], 64);
+            assert_eq!(
+                fixed["EstimatedRuntimeHeadroomBytes"].as_u64(),
+                fixed["EstimatedKnownSubtotalBytes"]
+                    .as_u64()
+                    .map(|known| ceiling - known)
+            );
+        }
+    }
+    assert_eq!(Profile::ReferenceCpu.memory_limit_bytes(), 19_327_352_832);
+    assert_eq!(
+        Profile::ReferenceCpu.required_available_bytes(),
+        23_622_320_128
     );
     Ok(())
 }

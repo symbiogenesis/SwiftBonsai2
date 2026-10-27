@@ -134,4 +134,43 @@ mod tests {
         }
         Ok(())
     }
+
+    #[test]
+    fn swift_admission_checks_the_exact_reduced_boundary_for_every_artifact() -> crate::Result<()> {
+        for use_adapter in [false, true] {
+            for use_ptq1 in [false, true] {
+                let original = bonsai_cpu_policy::run(json!({
+                    "operation": "plan",
+                    "dataDirectory": std::env::temp_dir().join("Bonsai admission fixture"),
+                    "profile": "swift-pq2-assessment",
+                    "useAbliterateLora": use_adapter,
+                    "useRepackedPtq1": use_ptq1,
+                }))?;
+                for (available, admitted) in [
+                    (16_911_433_727_u64, false),
+                    (16_911_433_728, true),
+                    (17_179_869_184, true),
+                ] {
+                    let mut plan = original.clone();
+                    attach(&mut plan, available)?;
+                    let report = &plan["Report"];
+                    assert_eq!(report["AvailablePhysicalBytesAtAdmission"], available);
+                    assert_eq!(report["RequiredAvailableBytes"], 16_911_433_728_u64);
+                    assert_eq!(report["JobCommittedMemoryLimitBytes"], 12_616_466_432_u64);
+                    assert_eq!(report["AvailableMemoryFloorBytes"], 4_294_967_296_u64);
+                    assert_eq!(report["ModelProcessStarted"], false);
+                    assert_eq!(
+                        report["Status"],
+                        if admitted {
+                            "admission-passed"
+                        } else {
+                            "not-run-insufficient-available-memory"
+                        }
+                    );
+                    assert_eq!(report.get("Action").is_none(), admitted);
+                }
+            }
+        }
+        Ok(())
+    }
 }

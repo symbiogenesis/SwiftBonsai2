@@ -150,7 +150,7 @@ fn compiled_plan(request: &Request, policy: &Policy) -> Result<(Value, Value, Ru
                     .as_u64()
                     .is_some_and(|required| bytes >= required)
             }),
-        "The unchanged 16 GiB available-memory admission requirement was not met.",
+        "The compiled available-memory admission requirement was not met.",
     )?;
     let runtime = runtime_spec(request, lock)?;
     let mut controls = policy.contract["controls"].clone();
