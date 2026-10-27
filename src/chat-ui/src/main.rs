@@ -353,7 +353,9 @@ mod tests {
             enabled.extend([OsString::from(key_flag), key.clone().into_os_string()]);
             for (missing, _) in &launch_flags {
                 let incomplete = enabled
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .filter(|pair| pair[0] != *missing)
                     .flat_map(|pair| pair.iter().cloned())
                     .collect::<Vec<_>>();
