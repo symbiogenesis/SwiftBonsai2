@@ -98,7 +98,7 @@ if ($Case -cin @('All', 'Launcher')) {
         $script:Inspections = 0
         function script:Invoke-ChatPackageInspection {
             [CmdletBinding()]
-            [OutputType([Collections.IDictionary])]
+            [OutputType([hashtable])]
             param([string]$ToolPath, [string]$InstallationDirectory)
             $script:Inspections++
             $selection = Read-ChatPackageSelection -InstallationDirectory $InstallationDirectory
