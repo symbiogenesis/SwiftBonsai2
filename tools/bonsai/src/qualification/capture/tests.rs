@@ -71,11 +71,8 @@ fn fixture() -> Result<(Request, Context)> {
 
 fn completed(request: &Value, count: usize, failed: bool) -> Result<Value> {
     assert_eq!(request["ciOnly"], true);
-    assert_eq!(request["memoryLimitBytes"], 12_u64 * 1024 * 1024 * 1024);
-    assert_eq!(
-        request["requiredAvailableBytes"],
-        16_u64 * 1024 * 1024 * 1024
-    );
+    assert_eq!(request["memoryLimitBytes"], 12_616_466_432_u64);
+    assert_eq!(request["requiredAvailableBytes"], 16_911_433_728_u64);
     assert_eq!(request["physicalReserveBytes"], 4_u64 * 1024 * 1024 * 1024);
     assert_eq!(request["timeoutSeconds"], 600);
     assert_eq!(request["stdoutLimitBytes"], 4 * 1024 * 1024);
