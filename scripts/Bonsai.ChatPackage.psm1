@@ -84,7 +84,20 @@ function Get-CheckedChatPackage {
         Test-LockedArtifact -Path $path -Bytes $file.bytes -Sha256 $file.sha256
         if ($file.name.StartsWith('bin/', [StringComparison]::Ordinal)) { Assert-Arm64PE -Path $path }
     }
-    # Reject extras, including unnoticed executables, links and nested files.
+    Assert-ChatPackageInventory -Directory $directory
+    return [pscustomobject]@{ Directory = $directory; ManifestSha256 = $ManifestSha256; Manifest = $manifest
+        Id = $manifest.version + '-' + $manifest.sourceRevision + '-' + $ManifestSha256 }
+}
+
+function Assert-ChatPackageInventory {
+    <# .SYNOPSIS
+    Rejects package additions and links before Windows can load packaged code.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory)][string]$Directory)
+    $names = @(Get-ChatPackageFileName)
+    # Extra DLLs and loader redirection files must reject before tool execution.
     $fileCount = 0
     foreach ($container in @($directory, (Join-Path $directory 'bin'), (Join-Path $directory 'scripts'))) {
         [void](Resolve-ExternalPath $container)
@@ -102,8 +115,6 @@ function Get-CheckedChatPackage {
         }
     }
     if ($fileCount -ne $names.Count + 1) { throw 'Unexpected files in chat package.' }
-    return [pscustomobject]@{ Directory = $directory; ManifestSha256 = $ManifestSha256; Manifest = $manifest
-        Id = $manifest.version + '-' + $manifest.sourceRevision + '-' + $ManifestSha256 }
 }
 
 function New-ChatPackage {
@@ -206,6 +217,7 @@ function Get-InstalledChatPackage {
             ($manifest.version + '-' + $manifest.sourceRevision + '-' + $selection.active.manifestSha256) -cne $selection.active.id) {
             throw 'Unsupported installed chat package identity.'
         }
+        Assert-ChatPackageInventory -Directory $directory
         $tools = @($manifest.files | Where-Object { $_ -is [Collections.IDictionary] -and $_.Contains('name') -and $_.name -ceq 'bin/bonsai-tools.exe' })
         if ($tools.Count -ne 1 -or $tools[0].Count -ne 3 -or 'bytes' -cnotin $tools[0].Keys -or 'sha256' -cnotin $tools[0].Keys -or
             $tools[0].bytes -isnot [long] -or $tools[0].bytes -le 0 -or $tools[0].bytes -gt 512MB -or

@@ -114,6 +114,14 @@ if ($Case -cin @('All', 'Launcher')) {
     Assert-Failure { Get-InstalledChatPackage -InstallationDirectory $root -Native } 'A changed maintenance executable ran before its trust bootstrap.'
     Assert ((& $packages { $script:Inspections }) -eq 0) 'An unverified maintenance executable reached the process boundary.'
     [IO.File]::WriteAllBytes($tool, $originalTool)
+    foreach ($name in @('bin/adjacent.dll', 'bin/bonsai-tools.exe.local')) {
+        $extra = Join-Path $installed.Directory $name
+        [IO.File]::WriteAllText($extra, 'unexpected loader input')
+        try {
+            Assert-Failure { Get-InstalledChatPackage -InstallationDirectory $root -Native } 'Unexpected loader input reached the maintenance executable.'
+            Assert ((& $packages { $script:Inspections }) -eq 0) 'Package inventory was checked after executing package code.'
+        } finally { [IO.File]::Delete($extra) }
+    }
     # Keep the single-instance gate in this fixture without changing inherited
     # profile variables or competing with the user's running chat session.
     $common = Import-Module (Join-Path $installed.Directory 'scripts/Bonsai.Common.psm1') -Force -PassThru

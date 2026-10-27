@@ -40,6 +40,9 @@ pub mod source_build;
 /// Native chat validation, provisioning and launch orchestration.
 pub mod chat_launch;
 
+/// Installed native chat package selection and integrity checks.
+pub mod chat_package;
+
 /// Retained caller identity for cancellation of native startup work.
 pub mod startup_cancel;
 
