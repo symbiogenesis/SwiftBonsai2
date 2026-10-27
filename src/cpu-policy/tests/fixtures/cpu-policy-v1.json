@@ -111,9 +111,9 @@
       "policy": {
         "Name": "swift-pq2-assessment",
         "LockRelativePath": "../config/swift-assessment.lock.json",
-        "ServiceCeilingBytes": 12616466432,
+        "ServiceCeilingBytes": 12348030976,
         "AvailableMemoryFloorBytes": 4294967296,
-        "RequiredAvailableBytes": 16911433728,
+        "RequiredAvailableBytes": 16642998272,
         "ContextTokens": 8192,
         "BatchTokens": 128,
         "MicrobatchTokens": 64,
@@ -127,7 +127,7 @@
         "WeightRepresentation": "PQ2_0",
         "EstimatedTransformConstructionTemporaryBytes": 4194304,
         "EstimatedKnownSubtotalBytes": 7904356704,
-        "EstimatedRuntimeHeadroomBytes": 4712109728,
+        "EstimatedRuntimeHeadroomBytes": 4443674272,
         "EstimateScope": "Whole file plus persistent caches/transforms; temporary construction, tokenizer, graph/scratch and allocation overhead use remaining allowance. Source arithmetic, not measured peak."
       },
       "arguments": [
@@ -215,9 +215,9 @@
       "policy": {
         "Name": "swift-pq2-assessment",
         "LockRelativePath": "../config/swift-assessment.lock.json",
-        "ServiceCeilingBytes": 12616466432,
+        "ServiceCeilingBytes": 12348030976,
         "AvailableMemoryFloorBytes": 4294967296,
-        "RequiredAvailableBytes": 16911433728,
+        "RequiredAvailableBytes": 16642998272,
         "ContextTokens": 8192,
         "BatchTokens": 128,
         "MicrobatchTokens": 64,
@@ -231,7 +231,7 @@
         "WeightRepresentation": "PQ2_0",
         "EstimatedTransformConstructionTemporaryBytes": 4194304,
         "EstimatedKnownSubtotalBytes": 7914039168,
-        "EstimatedRuntimeHeadroomBytes": 4702427264,
+        "EstimatedRuntimeHeadroomBytes": 4433991808,
         "EstimateScope": "Whole file plus persistent caches/transforms; temporary construction, tokenizer, graph/scratch and allocation overhead use remaining allowance. Source arithmetic, not measured peak."
       },
       "arguments": [
@@ -321,9 +321,9 @@
       "policy": {
         "Name": "swift-pq2-assessment",
         "LockRelativePath": "../config/swift-assessment.lock.json",
-        "ServiceCeilingBytes": 12616466432,
+        "ServiceCeilingBytes": 12348030976,
         "AvailableMemoryFloorBytes": 4294967296,
-        "RequiredAvailableBytes": 16911433728,
+        "RequiredAvailableBytes": 16642998272,
         "ContextTokens": 8192,
         "BatchTokens": 128,
         "MicrobatchTokens": 64,
@@ -337,7 +337,7 @@
         "WeightRepresentation": "current-repacked-PTQ1_0",
         "EstimatedTransformConstructionTemporaryBytes": 4194304,
         "EstimatedKnownSubtotalBytes": 6644836704,
-        "EstimatedRuntimeHeadroomBytes": 5971629728,
+        "EstimatedRuntimeHeadroomBytes": 5703194272,
         "EstimateScope": "Whole file plus persistent caches/transforms; temporary construction, tokenizer, graph/scratch and allocation overhead use remaining allowance. Source arithmetic, not measured peak."
       },
       "arguments": [
@@ -425,9 +425,9 @@
       "policy": {
         "Name": "swift-pq2-assessment",
         "LockRelativePath": "../config/swift-assessment.lock.json",
-        "ServiceCeilingBytes": 12616466432,
+        "ServiceCeilingBytes": 12348030976,
         "AvailableMemoryFloorBytes": 4294967296,
-        "RequiredAvailableBytes": 16911433728,
+        "RequiredAvailableBytes": 16642998272,
         "ContextTokens": 8192,
         "BatchTokens": 128,
         "MicrobatchTokens": 64,
@@ -441,7 +441,7 @@
         "WeightRepresentation": "current-repacked-PTQ1_0",
         "EstimatedTransformConstructionTemporaryBytes": 4194304,
         "EstimatedKnownSubtotalBytes": 6654519168,
-        "EstimatedRuntimeHeadroomBytes": 5961947264,
+        "EstimatedRuntimeHeadroomBytes": 5693511808,
         "EstimateScope": "Whole file plus persistent caches/transforms; temporary construction, tokenizer, graph/scratch and allocation overhead use remaining allowance. Source arithmetic, not measured peak."
       },
       "arguments": [
@@ -527,5 +527,5 @@
     }
   ],
   "modelPath": "C:\\external model & fixtures\\Swift-Bonsai-2-PQ2_0.gguf",
-  "provenance": "Frozen from PowerShell policy at 8b8acf5688d41bd5fd16b4cd5e1d4ebadbe97b4d before Rust migration; synthetic values only. Swift admission, Job allowance and derived headroom subsequently updated to the reviewed 15.75/11.75 GiB development budget."
+  "provenance": "Frozen from PowerShell policy at 8b8acf5688d41bd5fd16b4cd5e1d4ebadbe97b4d before Rust migration; synthetic values only. Swift admission, Job allowance and derived headroom subsequently updated to the reviewed 15.5/11.5 GiB development budget."
 }

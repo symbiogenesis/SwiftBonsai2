@@ -293,7 +293,7 @@ fn adapter_compatibility_and_argument_pairing_fail_closed() -> Result<(), String
     );
     assert_eq!(
         Profile::SwiftPq2Assessment.memory_limit_bytes(),
-        12_616_466_432
+        12_348_030_976
     );
     Ok(())
 }
@@ -303,8 +303,8 @@ fn swift_development_budget_keeps_four_gib_reserve_for_every_artifact() -> Resul
     let selected = Profile::SwiftPq2Assessment;
     let ceiling =
         u64::try_from(selected.memory_limit_bytes()).map_err(|error| error.to_string())?;
-    assert_eq!(ceiling, 12_616_466_432);
-    assert_eq!(selected.required_available_bytes(), 16_911_433_728);
+    assert_eq!(ceiling, 12_348_030_976);
+    assert_eq!(selected.required_available_bytes(), 16_642_998_272);
     assert_eq!(
         selected.required_available_bytes() - ceiling,
         4 * 1024 * 1024 * 1024
@@ -313,7 +313,7 @@ fn swift_development_budget_keeps_four_gib_reserve_for_every_artifact() -> Resul
         for use_ptq1 in [false, true] {
             let fixed = policy(selected, use_adapter, use_ptq1)?;
             assert_eq!(fixed["ServiceCeilingBytes"], ceiling);
-            assert_eq!(fixed["RequiredAvailableBytes"], 16_911_433_728_u64);
+            assert_eq!(fixed["RequiredAvailableBytes"], 16_642_998_272_u64);
             assert_eq!(fixed["AvailableMemoryFloorBytes"], 4_294_967_296_u64);
             assert_eq!(fixed["ContextTokens"], 8192);
             assert_eq!(fixed["BatchTokens"], 128);

@@ -73,8 +73,8 @@ fn fixture() -> Result<(Request, Value)> {
 
 fn completed(native: &Value, count: usize) -> Result<Value> {
     assert_eq!(native["ciOnly"], true);
-    assert_eq!(native["memoryLimitBytes"], 12_616_466_432_u64);
-    assert_eq!(native["requiredAvailableBytes"], 16_911_433_728_u64);
+    assert_eq!(native["memoryLimitBytes"], 12_348_030_976_u64);
+    assert_eq!(native["requiredAvailableBytes"], 16_642_998_272_u64);
     assert_eq!(native["physicalReserveBytes"], 4_u64 * 1024 * 1024 * 1024);
     assert_eq!(native["timeoutSeconds"], 600);
     assert_eq!(native["parentCreationTimeFileTime"], 123);

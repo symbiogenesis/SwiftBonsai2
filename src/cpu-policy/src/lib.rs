@@ -40,7 +40,7 @@ pub enum Profile {
     /// Default Qwen reference, with an 18 GiB process allowance.
     #[default]
     ReferenceCpu,
-    /// Explicit Swift assessment, with an 11.75 GiB process allowance.
+    /// Explicit Swift assessment, with an 11.5 GiB process allowance.
     SwiftPq2Assessment,
 }
 
@@ -59,7 +59,7 @@ impl Profile {
     pub const fn memory_limit_bytes(self) -> usize {
         match self {
             Self::ReferenceCpu => MEMORY_LIMIT_BYTES,
-            Self::SwiftPq2Assessment => 47 * 256 * 1024 * 1024,
+            Self::SwiftPq2Assessment => 46 * 256 * 1024 * 1024,
         }
     }
 
@@ -68,7 +68,7 @@ impl Profile {
     pub const fn required_available_bytes(self) -> u64 {
         match self {
             Self::ReferenceCpu => REQUIRED_AVAILABLE_BYTES,
-            Self::SwiftPq2Assessment => 63 * 256 * 1024 * 1024,
+            Self::SwiftPq2Assessment => 62 * 256 * 1024 * 1024,
         }
     }
 

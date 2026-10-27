@@ -147,7 +147,8 @@ mod tests {
                     "useRepackedPtq1": use_ptq1,
                 }))?;
                 for (available, admitted) in [
-                    (16_911_433_727_u64, false),
+                    (16_642_998_271_u64, false),
+                    (16_642_998_272, true),
                     (16_911_433_728, true),
                     (17_179_869_184, true),
                 ] {
@@ -155,8 +156,8 @@ mod tests {
                     attach(&mut plan, available)?;
                     let report = &plan["Report"];
                     assert_eq!(report["AvailablePhysicalBytesAtAdmission"], available);
-                    assert_eq!(report["RequiredAvailableBytes"], 16_911_433_728_u64);
-                    assert_eq!(report["JobCommittedMemoryLimitBytes"], 12_616_466_432_u64);
+                    assert_eq!(report["RequiredAvailableBytes"], 16_642_998_272_u64);
+                    assert_eq!(report["JobCommittedMemoryLimitBytes"], 12_348_030_976_u64);
                     assert_eq!(report["AvailableMemoryFloorBytes"], 4_294_967_296_u64);
                     assert_eq!(report["ModelProcessStarted"], false);
                     assert_eq!(
