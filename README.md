@@ -70,31 +70,22 @@ and [local API contract](docs/broker-policy.md#public-request-contract).
 
 ## Memory footprint
 
-| Current app profile | Model file | Job commit ceiling | Available RAM to start |
-| --- | ---: | ---: | ---: |
-| **Swift Bonsai 2 `PQ2_0`** | **6.71 GiB** | **11.5 GiB** | **15.5 GiB** |
-| Qwen3.8-27B `UD-Q3_K_XL` | 12.24 GiB | 18 GiB | 22 GiB |
-
-Swift's default PQ2 file is **6.71 GiB**; its verified current-weight PTQ1 repack
-is **5.54 GiB**, saving **1.17 GiB** of weight storage.
-
-The **Rust PTQ1 diagnostic measured 5.85 GiB peak Job commit** for one supplied
-token without LoRA. It completed with **12 GiB available-memory admission**, an
-**8 GiB commit cap** and a **4 GiB running physical reserve**. Numerical comparison
-against the pinned native reference still fails; full-context/4K-output resource
-qualification remains outstanding. See the [captured result](docs/ptq1-readiness.md#numerical-and-admission-boundaries).
-
-Rust runtime 0.1.5 also avoids **149.625 MiB of transient checkpoint-restore
-payload**. That storage bound and the one-token measurement describe different
-allocation lifetimes. Mapped weight residency requires separate accounting from
-Job commit.
+| Model | Runtime | Model file | Job commit cap / measured peak | Available RAM admission | Restore copy saved vs. Rust 0.1.4 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| **Swift Bonsai 2 `PTQ1_0` (candidate)** | **Rust 0.1.5 diagnostic** | **5.54 GiB** | **8 GiB / 5.85 GiB** | **12 GiB** | **149.625 MiB** |
+| Swift Bonsai 2 `PTQ1_0` | PrismML C++ CPU | 5.54 GiB | 11.5 GiB / — | 15.5 GiB | — |
+| Swift Bonsai 2 `PQ2_0` (current default) | PrismML C++ CPU | 6.71 GiB | 11.5 GiB / — | 15.5 GiB | — |
+| Qwen3.8-27B `UD-Q3_K_XL` | llama.cpp reference | 12.24 GiB | 18 GiB / — | 22 GiB | — |
 
 > [!NOTE]
-> The table shows configured application launch budgets, including a 4 GiB
-> physical reserve. The optional PTQ1 app switch currently uses the same
-> 15.5 GiB admission check; the 12 GiB result above is a bounded Rust diagnostic.
-> Installed RAM also serves Windows and other applications. Longer conversations,
-> caching and speech need additional headroom.
+> The bold row is a one-token Rust diagnostic without LoRA. Its numerical
+> comparison still fails; full-context/4K-output, adapter and quality qualification
+> remain outstanding. PQ2 remains the app default. See the [captured result](docs/ptq1-readiness.md#numerical-and-admission-boundaries).
+>
+> Admission values are configured budgets including a 4 GiB physical reserve.
+> The restore-copy figure describes a transient allocation lifetime. Mapped weight
+> residency requires separate accounting from Job commit, and Windows, other
+> applications, caching and speech need additional headroom.
 
 See the [Swift memory assessment](docs/swift-memory.md) and
 [Qwen reference accounting](docs/model-selection.md#source-only-compatibility-and-memory-sanity-check).
