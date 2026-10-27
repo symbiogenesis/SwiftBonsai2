@@ -142,7 +142,8 @@ try {
         $started = $false
         $sessionComplete = $false
         $session = [ordered]@{ Id = $trial.Id; Quantization = $quantization; Threads = $threadCount
-            Repetition = $trial.Repetition; PairPosition = $trial.PairPosition; Status = 'running'; Memory = $null }
+            Repetition = $trial.Repetition; PairPosition = $trial.PairPosition; Status = 'running'; Memory = $null
+            CurrentPhase = 'startup'; CompletedPhases = [Collections.Generic.List[string]]::new(); FailedPhase = $null; Failure = $null }
         $report.Sessions.Add($session)
         $readyDeadline = [Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(300))
         try {
@@ -167,6 +168,7 @@ try {
             $cold.Stop()
             if (-not $ready) { throw 'The verified native evaluation companion did not become ready.' }
             foreach ($phase in @('bootstrap', 'warm')) {
+                $session.CurrentPhase = $phase
                 [IO.File]::WriteAllText((Join-Path $lane ('phase-' + $phase)), '')
                 $payload = @{
                     model = 'Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign'; input = $report.Text
@@ -217,6 +219,7 @@ try {
                         RealTimeFactor = $clock.Elapsed.TotalSeconds / $seconds; CompletePcm16 = $true
                         Clip = (Split-Path $lane -Leaf) + '/' + $clip
                     })
+                    $session.CompletedPhases.Add($phase)
                     $report | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $reportPath
                 } finally {
                     $clock.Stop(); $buffered.Dispose(); $request.Dispose()
@@ -225,6 +228,10 @@ try {
                 }
             }
             $sessionComplete = $true
+        } catch {
+            $session.FailedPhase = $session.CurrentPhase
+            $session.Failure = $_.Exception.GetBaseException().Message
+            throw
         } finally {
             $session.Status = 'failed'
             try {

@@ -17,6 +17,7 @@ use std::{
 const GIB: u64 = 1024 * 1024 * 1024;
 const INTERVAL: Duration = Duration::from_millis(25);
 const OUTPUT_LIMIT: u64 = 1024 * 1024;
+const PHASE_NAMES: [&str; 3] = ["startup", "bootstrap", "warm"];
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -195,12 +196,27 @@ fn execute(request: &Request, receipt: &mut Value) -> crate::Result<()> {
         receipt["PeakJobMemoryBytes"] = json!(peak);
     }
     receipt["WallMilliseconds"] = json!(start.elapsed().as_millis());
+    let exited_before_stop = process.try_wait().map_err(|error| error.to_string());
+    if let Ok(Some(code)) = &exited_before_stop {
+        record_exit(receipt, *code, true);
+    }
     let stopped = process
         .stop(Duration::from_secs(10))
         .map_err(|error| error.to_string());
+    if receipt["ChildExit"].is_null()
+        && let Ok(Some(code)) = process.try_wait()
+    {
+        record_exit(receipt, code, false);
+    }
     result?;
     job_peak?;
+    let _exit_before_stop = exited_before_stop?;
     stopped
+}
+
+fn record_exit(receipt: &mut Value, code: u32, before_supervisor_stop: bool) {
+    receipt["ChildExit"] = json!({"Code": code, "Hex": format!("0x{code:08X}"),
+        "ObservedBeforeSupervisorStop": before_supervisor_stop});
 }
 
 fn select_phase(current: usize, bootstrap: bool, warm: bool) -> crate::Result<usize> {
@@ -246,21 +262,22 @@ fn capture(
     let result = (|| {
         loop {
             parent.ensure_alive().map_err(|error| error.to_string())?;
-            if process
-                .try_wait()
-                .map_err(|error| error.to_string())?
-                .is_some()
-            {
-                return Err("TTS process exited before the completed evaluation.".into());
-            }
-            if start.elapsed() > Duration::from_secs(600) {
-                return Err("TTS evaluation exceeded its bounded session deadline.".into());
-            }
             phase = select_phase(
                 phase,
                 request.evidence_directory.join("phase-bootstrap").exists(),
                 request.evidence_directory.join("phase-warm").exists(),
             )?;
+            receipt["CurrentPhase"] = json!(PHASE_NAMES[phase]);
+            if let Some(code) = process.try_wait().map_err(|error| error.to_string())? {
+                record_exit(receipt, code, true);
+                return Err(format!(
+                    "TTS process exited during {} before the completed evaluation: {code} (0x{code:08X}).",
+                    PHASE_NAMES[phase]
+                ));
+            }
+            if start.elapsed() > Duration::from_secs(600) {
+                return Err("TTS evaluation exceeded its bounded session deadline.".into());
+            }
             let memory = process.memory_usage().map_err(|error| error.to_string())?;
             let available = available_memory_bytes().map_err(|error| error.to_string())?;
             phases[phase].observe(memory, available);
@@ -294,6 +311,10 @@ fn capture(
         }
     })();
     receipt["Phases"] = json!({"startup": phases[0].receipt(), "bootstrap": phases[1].receipt(), "warm": phases[2].receipt()});
+    if result.is_err() {
+        receipt["FailureObservation"] = json!({"Phase": PHASE_NAMES[phase],
+            "SamplesInPhase": phases[phase].samples, "ElapsedMilliseconds": start.elapsed().as_millis()});
+    }
     result
 }
 
@@ -301,6 +322,7 @@ pub(super) fn run(request: &Request) -> crate::Result<Value> {
     validate(request)?;
     let mut receipt = json!({"SchemaVersion": 1, "Status": "running", "ModelProcessStarted": false,
         "Quantization": request.quantization, "Threads": request.threads,
+        "CurrentPhase": "startup", "ChildExit": null, "FailureObservation": null,
         "SampleIntervalMilliseconds": 25, "Limits": {"RequiredAvailableBytes": 9 * GIB,
             "PhysicalReserveBytes": 5 * GIB, "CommitLimitBytes": 16 * GIB},
         "Containment": "One-process, kill-on-close Windows Job and headless mitigations; diagnostic evaluation does not establish daily-service isolation."});
@@ -312,6 +334,14 @@ pub(super) fn run(request: &Request) -> crate::Result<Value> {
     });
     if let Err(error) = &result {
         receipt["Failure"] = json!(error);
+        if receipt["FailureObservation"].is_null() {
+            let phase = receipt["CurrentPhase"]
+                .as_str()
+                .ok_or("Missing TTS failure phase.")?;
+            receipt["FailureObservation"] = json!({"Phase": phase,
+                "SamplesInPhase": receipt["Phases"][phase]["Samples"].as_u64().unwrap_or(0),
+                "ElapsedMilliseconds": receipt["WallMilliseconds"]});
+        }
     }
     save(&request.evidence_directory.join("memory.json"), &receipt)?;
     result.map(|()| receipt)
@@ -384,5 +414,18 @@ mod tests {
         };
         assert!(run(&request).is_err());
         assert!(!root.exists());
+    }
+
+    #[test]
+    fn exit_receipt_preserves_unsigned_windows_status_and_stop_origin() {
+        let mut receipt = json!({});
+        record_exit(&mut receipt, 70, true);
+        assert_eq!(receipt["ChildExit"]["Code"], 70);
+        assert_eq!(receipt["ChildExit"]["Hex"], "0x00000046");
+        assert_eq!(receipt["ChildExit"]["ObservedBeforeSupervisorStop"], true);
+        record_exit(&mut receipt, 0xC000_0005, false);
+        assert_eq!(receipt["ChildExit"]["Code"], 3_221_225_477_u32);
+        assert_eq!(receipt["ChildExit"]["Hex"], "0xC0000005");
+        assert_eq!(receipt["ChildExit"]["ObservedBeforeSupervisorStop"], false);
     }
 }

@@ -521,6 +521,173 @@ fn watchdog_terminates_only_its_companion_on_disconnect_extra_data_and_deadline(
     Ok(())
 }
 
+struct CompletionFake;
+
+impl Engine for CompletionFake {
+    fn kind(&self) -> Kind {
+        Kind::QwenTts
+    }
+    fn streaming_pcm(&self) -> bool {
+        true
+    }
+    fn infer(&mut self, _: Request<'_>) -> io::Result<Output> {
+        Ok(Output::Audio(Audio {
+            samples: vec![0.0; 4],
+            sample_rate: 24_000,
+        }))
+    }
+    fn infer_stream(
+        &mut self,
+        _: Request<'_>,
+        sink: &mut (dyn FnMut(&[f32]) -> io::Result<()> + Send),
+    ) -> io::Result<()> {
+        sink(&[0.0; 4])
+    }
+}
+
+const COMPLETED_REQUESTS: usize = 32;
+
+#[test]
+#[ignore = "Only spawned by the completed-response regression as a disposable companion."]
+fn completed_response_child() -> io::Result<()> {
+    let ready = std::path::PathBuf::from(
+        std::env::var_os("BONSAI_SPEECH_COMPLETION_READY")
+            .ok_or_else(|| io::Error::other("Missing fixture ready path."))?,
+    );
+    if !ready.is_absolute() {
+        return Err(io::Error::other("Use an absolute fixture ready path."));
+    }
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+    let port = listener.local_addr()?.port();
+    let pending = ready.with_extension("pending");
+    std::fs::write(&pending, port.to_string())?;
+    std::fs::rename(pending, ready)?;
+    let mut engine = CompletionFake;
+    for _ in 0..COMPLETED_REQUESTS {
+        let (mut peer, _) = listener.accept()?;
+        http::handle(&mut peer, port, &KEY, &mut engine);
+    }
+    Ok(())
+}
+
+struct DisposableChild(std::process::Child);
+
+impl Drop for DisposableChild {
+    fn drop(&mut self) {
+        let _killed = self.0.kill();
+        let _waited = self.0.wait();
+    }
+}
+
+fn read_completed_response(peer: &mut TcpStream, pcm: bool) -> io::Result<()> {
+    let mut bytes = Vec::new();
+    let mut one = [0];
+    while !bytes.ends_with(b"\r\n\r\n") {
+        peer.read_exact(&mut one)?;
+        bytes.extend_from_slice(&one);
+        if bytes.len() > 4096 {
+            return Err(io::Error::other("Unbounded fixture response head."));
+        }
+    }
+    assert!(bytes.starts_with(b"HTTP/1.1 200"));
+    if pcm {
+        bytes.clear();
+        while !bytes.ends_with(b"0\r\n\r\n") {
+            peer.read_exact(&mut one)?;
+            bytes.extend_from_slice(&one);
+            if bytes.len() > 128 {
+                return Err(io::Error::other("Unbounded fixture PCM body."));
+            }
+        }
+        assert_eq!(bytes, b"8\r\n\0\0\0\0\0\0\0\0\r\n0\r\n\r\n");
+    } else {
+        let head = std::str::from_utf8(&bytes).map_err(io::Error::other)?;
+        assert!(head.contains("Content-Length: 52\r\n"));
+        let mut wave = [0; 52];
+        peer.read_exact(&mut wave)?;
+        assert_eq!(&wave[..4], b"RIFF");
+    }
+    Ok(())
+}
+
+#[test]
+fn completed_pcm_and_wave_clients_can_close_before_the_next_request() -> io::Result<()> {
+    use std::{
+        process::{Command, Stdio},
+        time::{Instant, SystemTime, UNIX_EPOCH},
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(io::Error::other)?
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!("Bonsai-SpeechCompletion-{stamp}"));
+    std::fs::create_dir(&directory)?;
+    let ready = directory.join("ready");
+    let mut command = Command::new(std::env::current_exe()?);
+    command
+        .args(["--exact", "tests::completed_response_child", "--ignored"])
+        .env("BONSAI_SPEECH_COMPLETION_READY", &ready)
+        .current_dir(&directory)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        command.creation_flags(0x0800_0000);
+    }
+    let mut child = DisposableChild(command.spawn()?);
+    let until = Instant::now() + Duration::from_secs(10);
+    let port = loop {
+        if ready.exists() {
+            break std::fs::read_to_string(&ready)?
+                .parse::<u16>()
+                .map_err(io::Error::other)?;
+        }
+        if child.0.try_wait()?.is_some() || Instant::now() >= until {
+            return Err(io::Error::other(
+                "Completion fixture failed before readiness.",
+            ));
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    let key = std::str::from_utf8(&KEY).map_err(io::Error::other)?;
+    for index in 0..COMPLETED_REQUESTS {
+        let pcm = index % 2 == 0;
+        let body = String::from_utf8(speech()).map_err(io::Error::other)?;
+        let body = if pcm {
+            body.replace("\"wav\"", "\"pcm\"")
+        } else {
+            body
+        };
+        let mut peer = TcpStream::connect((Ipv4Addr::LOCALHOST, port))?;
+        peer.set_read_timeout(Some(Duration::from_secs(3)))?;
+        write!(
+            peer,
+            "POST /v1/audio/speech HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {key}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )?;
+        read_completed_response(&mut peer, pcm)?;
+        // Close on framing completion instead of waiting for server EOF, as an
+        // ordinary HTTP client does. The next request reuses the same engine.
+        drop(peer);
+    }
+    loop {
+        if let Some(status) = child.0.try_wait()? {
+            assert!(
+                status.success(),
+                "Completed speech companion failed: {status}"
+            );
+            break;
+        }
+        if Instant::now() >= until {
+            return Err(io::Error::other("Completion fixture failed to finish."));
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
+}
+
 #[cfg(windows)]
 #[test]
 fn protected_credential_keeps_a_read_handle_that_denies_writes() -> io::Result<()> {

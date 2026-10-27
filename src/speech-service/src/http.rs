@@ -112,7 +112,7 @@ fn stream(
     request: crate::Request<'_>,
     peer: &mut TcpStream,
 ) -> Result<(), Error> {
-    let _watchdog = Watchdog::start(peer, Duration::from_secs(180))
+    let watchdog = Watchdog::start(peer, Duration::from_secs(180))
         .map_err(|_| Error::new(503, "supervision_unavailable"))?;
     peer.set_write_timeout(Some(WRITE))
         .and_then(|()| peer.write_all(b"HTTP/1.1 200 Response\r\nContent-Type: audio/pcm\r\nTransfer-Encoding: chunked\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n"))
@@ -143,6 +143,11 @@ fn stream(
         // output is never confused with a successful complete synthesis.
         return Err(Error::new(0, "model_failure"));
     }
+    // Complete native output has been validated. Stop and join cancellation
+    // before publishing success: the peer can close as soon as it sees this
+    // terminal chunk, while an armed peek would interpret that EOF as cancel.
+    // Final framing retains the existing bounded write timeout.
+    drop(watchdog);
     peer.write_all(b"0\r\n\r\n")
         .map_err(|_| Error::new(0, "response_failed"))
 }
