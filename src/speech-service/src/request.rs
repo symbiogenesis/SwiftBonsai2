@@ -110,18 +110,34 @@ fn boundary(media: &str) -> Result<&str, Error> {
     Ok(value)
 }
 
-pub(super) fn split_bytes<'a>(bytes: &'a [u8], delimiter: &[u8]) -> Vec<&'a [u8]> {
-    let mut result = Vec::new();
-    let mut remaining = bytes;
-    while let Some(index) = remaining
-        .windows(delimiter.len())
-        .position(|window| window == delimiter)
-    {
-        result.push(&remaining[..index]);
-        remaining = &remaining[index + delimiter.len()..];
+fn split_bytes<'a, 'd>(
+    bytes: &'a [u8],
+    delimiter: &'d [u8],
+) -> impl Iterator<Item = &'a [u8]> + use<'a, 'd> {
+    let mut remaining = Some(bytes);
+    std::iter::from_fn(move || {
+        let bytes = remaining.take()?;
+        if let Some(index) = bytes
+            .windows(delimiter.len())
+            .position(|window| window == delimiter)
+        {
+            remaining = Some(&bytes[index + delimiter.len()..]);
+            Some(&bytes[..index])
+        } else {
+            Some(bytes)
+        }
+    })
+}
+
+fn multipart_parts<'a>(bytes: &'a [u8], separator: &[u8]) -> Result<[Option<&'a [u8]>; 3], Error> {
+    // The protocol allows only model, file and optional language. Do not first
+    // collect an attacker-controlled number of delimiter matches into a Vec.
+    let mut split = split_bytes(bytes, separator);
+    let parts = std::array::from_fn(|_| split.next());
+    if parts[1].is_none() || split.next().is_some() {
+        return Err(Error::bad("invalid_multipart"));
     }
-    result.push(remaining);
-    result
+    Ok(parts)
 }
 
 fn multipart(media: &str, body: &[u8]) -> Result<Vec<f32>, Error> {
@@ -133,12 +149,9 @@ fn multipart(media: &str, body: &[u8]) -> Result<Vec<f32>, Error> {
         .strip_prefix(start.as_bytes())
         .and_then(|value| value.strip_suffix(end.as_bytes()))
         .ok_or(Error::bad("invalid_multipart"))?;
-    let parts = split_bytes(interior, separator.as_bytes());
-    if !(2..=3).contains(&parts.len()) {
-        return Err(Error::bad("invalid_multipart"));
-    }
+    let parts = multipart_parts(interior, separator.as_bytes())?;
     let mut fields = HashMap::new();
-    for part in parts {
+    for part in parts.into_iter().flatten() {
         let at = part
             .windows(4)
             .position(|window| window == b"\r\n\r\n")
@@ -227,4 +240,56 @@ fn disposition_field(bytes: &[u8]) -> Result<(&str, bool), Error> {
         return Err(Error::bad("invalid_multipart"));
     }
     Ok((name, true))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Error, multipart, multipart_parts, split_bytes};
+
+    #[test]
+    fn memory_multipart_parts_borrow_a_fixed_number_of_fields() -> Result<(), Error> {
+        let bytes = b"model\r\n--a\r\nfile\r\n--a\r\nlanguage";
+        let parts = multipart_parts(bytes, b"\r\n--a\r\n")?;
+        assert_eq!(
+            parts,
+            [
+                Some(&b"model"[..]),
+                Some(&b"file"[..]),
+                Some(&b"language"[..])
+            ]
+        );
+        assert_eq!(parts[0].map(<[u8]>::as_ptr), Some(bytes.as_ptr()));
+        assert_eq!(parts[1].map(<[u8]>::as_ptr), Some(bytes[12..].as_ptr()));
+        assert_eq!(
+            multipart_parts(b"model\r\n--a\r\nfile", b"\r\n--a\r\n")?,
+            [Some(&b"model"[..]), Some(&b"file"[..]), None]
+        );
+        let mut lines = split_bytes(b"\r\nheader\r\n", b"\r\n");
+        assert_eq!(lines.next(), Some(&b""[..]));
+        assert_eq!(lines.next(), Some(&b"header"[..]));
+        assert_eq!(lines.next(), Some(&b""[..]));
+        assert_eq!(lines.next(), None);
+        assert_eq!(lines.next(), None);
+        Ok(())
+    }
+
+    #[test]
+    fn memory_multipart_field_overflow_is_rejected_before_field_decoding() {
+        let mut body = b"--a\r\n".to_vec();
+        // Near the admitted wire limit, the old eager split retained over
+        // 120,000 borrowed slices before discovering that only three fit.
+        for _ in 0..120_000 {
+            body.extend_from_slice(b"x\r\n--a\r\n");
+        }
+        body.extend_from_slice(b"invalid headers\r\n--a--\r\n");
+        assert!(body.len() < 1024 * 1024);
+        assert_eq!(
+            multipart("multipart/form-data; boundary=a", &body).err(),
+            Some(Error::bad("invalid_multipart"))
+        );
+        assert_eq!(
+            multipart_parts(b"only one field", b"\r\n--a\r\n").err(),
+            Some(Error::bad("invalid_multipart"))
+        );
+    }
 }

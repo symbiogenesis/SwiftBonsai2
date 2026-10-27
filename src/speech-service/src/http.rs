@@ -166,24 +166,31 @@ fn receive(peer: &mut TcpStream, port: u16, key: &[u8; 64], kind: Kind) -> Resul
         wire.extend_from_slice(&buffer[..count]);
     };
     let head = parse_head(&wire[..end], port, key, kind)?;
-    let mut body = wire.split_off(end);
-    if body.len() > head.length {
+    let prefix = wire.len() - end;
+    if prefix > head.length {
         return Err(Error::bad("invalid_framing"));
     }
     if head.health {
         return Ok(Prepared::Health);
     }
-    body.reserve(head.length - body.len());
-    while body.len() < head.length {
-        let mut buffer = [0; 16384];
-        let count = read(
-            peer,
-            &mut buffer[..(head.length - body.len()).min(16384)],
-            until,
-        )?;
-        body.extend_from_slice(&buffer[..count]);
+    let mut body = body_buffer(wire, end, head.length)?;
+    let mut filled = prefix;
+    while filled < head.length {
+        filled += read(peer, &mut body[filled..], until)?;
     }
     request::body(kind, &head.media, &body)
+}
+
+fn body_buffer(mut wire: Vec<u8>, end: usize, length: usize) -> Result<Vec<u8>, Error> {
+    // Reuse the authorized header allocation for the body, including coalesced
+    // bytes. Large audio intake then retains one wire buffer, and reading into
+    // its final slice avoids a second per-read staging copy.
+    wire.copy_within(end.., 0);
+    wire.truncate(wire.len() - end);
+    wire.try_reserve_exact(length - wire.len())
+        .map_err(|_| Error::new(503, "allocation_failed"))?;
+    wire.resize(length, 0);
+    Ok(wire)
 }
 
 fn read(peer: &mut TcpStream, buffer: &mut [u8], until: Instant) -> Result<usize, Error> {
@@ -407,6 +414,30 @@ fn write_before(peer: &mut TcpStream, mut remaining: &[u8], until: Instant) -> i
         remaining = &remaining[count..];
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod intake_tests {
+    use super::{Error, MAX_HEAD, body_buffer};
+
+    #[test]
+    fn memory_body_intake_reuses_headers_and_preserves_coalesced_audio() -> Result<(), Error> {
+        let mut wire = Vec::with_capacity(MAX_HEAD);
+        wire.extend_from_slice(b"headers\r\n\r\n\0\x80\xff\x7f");
+        let storage = wire.as_ptr();
+        let capacity = wire.capacity();
+        let body = body_buffer(wire, 11, 12)?;
+        assert_eq!(body.as_ptr(), storage);
+        assert_eq!(body.capacity(), capacity);
+        assert_eq!(&body[..4], b"\0\x80\xff\x7f");
+        assert_eq!(&body[4..], &[0; 8]);
+
+        let body = body_buffer(body, 0, 1024 * 1024)?;
+        assert_eq!(body.len(), 1024 * 1024);
+        assert_eq!(&body[..4], b"\0\x80\xff\x7f");
+        assert!(body[4..].iter().all(|byte| *byte == 0));
+        Ok(())
+    }
 }
 
 #[cfg(test)]

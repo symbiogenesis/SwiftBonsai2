@@ -306,6 +306,30 @@ fn native_multipart_transcription_maps_pcm_without_disk_files() -> io::Result<()
     Ok(())
 }
 
+#[test]
+fn memory_body_intake_preserves_the_maximum_declared_speech_payload() -> io::Result<()> {
+    let speech = speech();
+    let mut body = vec![b' '; 65536 - speech.len()];
+    body.extend_from_slice(&speech);
+    let (response, calls) = exchange(
+        Kind::QwenTts,
+        "POST /v1/audio/speech",
+        &[
+            ("Content-Type", "application/json"),
+            ("Content-Length", "65536"),
+        ],
+        &body,
+    )?;
+    assert!(response.starts_with(b"HTTP/1.1 200"));
+    assert_eq!(calls, 1);
+    let boundary = response
+        .windows(4)
+        .position(|bytes| bytes == b"\r\n\r\n")
+        .ok_or_else(|| io::Error::other("Missing response head"))?;
+    assert_eq!(&response[boundary + 4..][44..], b"\x01\x80\0\0\xff\x7f");
+    Ok(())
+}
+
 fn multipart_audio() -> Vec<u8> {
     let mut body = format!("--fixture\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{}\r\n--fixture\r\nContent-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\nContent-Type: audio/wav\r\n\r\n", crate::CANARY_MODEL).into_bytes();
     body.extend_from_slice(&input_wav());
