@@ -102,6 +102,8 @@ pub struct ProcessMemory {
     pub private_bytes: usize,
     /// Root-process resident working-set bytes.
     pub working_set_bytes: usize,
+    /// Operating-system lifetime peak working set, including mapped residency.
+    pub peak_working_set_bytes: usize,
 }
 
 /// Owns a complete native process tree; dropping it kills remaining processes.
@@ -273,7 +275,7 @@ impl OwnedProcess {
         self.0.peak_job_memory_bytes()
     }
 
-    /// Returns current root private commitment and resident working set.
+    /// Returns current root private commitment, working set and lifetime peak residency.
     ///
     /// # Errors
     /// Returns failed Windows process-memory queries.

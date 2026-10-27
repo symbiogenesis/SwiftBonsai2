@@ -110,6 +110,7 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
         Some("inference-lock") => bonsai_tools::inference_lock::run(request),
         Some("inference-capabilities") => bonsai_tools::inference_capabilities::run(request),
         Some("speech-build") => bonsai_tools::speech_build::run(request),
+        Some("speech-evaluation") => bonsai_tools::speech_evaluation::run(request),
         Some("source-build") => bonsai_tools::source_build::run(request),
         Some("chat-launch") => bonsai_tools::chat_launch::run(request),
         Some("chat-prepare") => bonsai_tools::chat_launch::prepare_run(request),

@@ -19,6 +19,7 @@ pub const COMMANDS: &[&str] = &[
     "inference-lock",
     "inference-capabilities",
     "speech-build",
+    "speech-evaluation",
     "source-build",
     "chat-launch",
     "chat-prepare",
@@ -64,6 +65,9 @@ pub mod inference_capabilities;
 
 /// Native speech build locks and bounded source archive staging.
 pub mod speech_build;
+
+/// CI-only paired speech plans and bounded native memory-capture sessions.
+pub mod speech_evaluation;
 
 /// Checked source builds for the maintenance tool and native chat executables.
 pub mod source_build;

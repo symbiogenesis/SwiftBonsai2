@@ -603,6 +603,7 @@ impl NativeProcess {
         Ok(ProcessMemory {
             private_bytes: counters.PrivateUsage,
             working_set_bytes: counters.WorkingSetSize,
+            peak_working_set_bytes: counters.PeakWorkingSetSize,
         })
     }
 }

@@ -127,13 +127,14 @@ function Invoke-BonsaiTool {
     #>
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
-    param([Parameter(Mandatory)][ValidateSet('credentials','memory','cpu-check-plan','cpu-check-report','server-policy','runtime-stage','runtime-verify','completion','qualification','speech-models','inference-lock','inference-capabilities','speech-build','source-build','chat-launch')][string]$Command,
+    param([Parameter(Mandatory)][ValidateSet('credentials','memory','cpu-check-plan','cpu-check-report','server-policy','runtime-stage','runtime-verify','completion','qualification','speech-models','inference-lock','inference-capabilities','speech-build','speech-evaluation','source-build','chat-launch')][string]$Command,
           [Collections.IDictionary]$Request = @{}, [string]$ToolPath,
           [ValidateRange(0,86400)][int]$TimeoutSeconds = 60)
     if (-not $ToolPath -and $env:BONSAI_TOOLS_PATH) { $ToolPath = $env:BONSAI_TOOLS_PATH }
     # The supervisor owns each sample deadline; hashing precedes that deadline
     # and paired captures can contain many ten-minute samples.
     if ($Command -eq 'completion' -and -not $PSBoundParameters.ContainsKey('TimeoutSeconds')) { $TimeoutSeconds = 0 }
+    if ($Command -eq 'speech-evaluation' -and $Request['operation'] -eq 'session' -and -not $PSBoundParameters.ContainsKey('TimeoutSeconds')) { $TimeoutSeconds = 0 }
     if ($Command -in @('runtime-stage','runtime-verify','inference-capabilities') -and -not $PSBoundParameters.ContainsKey('TimeoutSeconds')) { $TimeoutSeconds = 120 }
     $tool = Resolve-BonsaiRustTool -Name 'bonsai-tools' -ManifestRelativePath '../tools/bonsai/Cargo.toml' -ToolPath $ToolPath
     $scratch = Get-BonsaiToolScratch -Name 'bonsai-tools'
@@ -166,6 +167,7 @@ function Invoke-BonsaiTool {
     $payload = [ordered]@{}
     foreach ($key in $Request.Keys) { $payload[$key] = $Request[$key] }
     if ($startup -or $Command -in @('completion','runtime-verify','inference-capabilities') -or
+        ($Command -eq 'speech-evaluation' -and $Request['operation'] -eq 'session') -or
         ($Command -eq 'qualification' -and $Request['operation'] -in @('capture', 'screen-capture'))) {
         $currentProcess = [Diagnostics.Process]::GetCurrentProcess()
         try {
