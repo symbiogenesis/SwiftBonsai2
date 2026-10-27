@@ -174,15 +174,22 @@ fn capture(path: &Path) -> crate::Result<File> {
 }
 
 fn text(path: &Path) -> crate::Result<String> {
-    let mut bytes = Vec::new();
-    File::open(path)
+    let file = File::open(path).map_err(|error| error.to_string())?;
+    let length = file
+        .metadata()
         .map_err(|error| error.to_string())?
-        .take(MAX_OUTPUT + 1)
+        .len()
+        .min(MAX_OUTPUT + 1);
+    let mut bytes = Vec::with_capacity(usize::try_from(length).map_err(|error| error.to_string())?);
+    file.take(MAX_OUTPUT + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| error.to_string())?;
     if u64::try_from(bytes.len()).map_err(|error| error.to_string())? > MAX_OUTPUT {
         return Err("Tool output exceeded its bound.".into());
     }
+    // Size ordinary completed captures exactly. If the file changed after its
+    // metadata read, do not retain a speculative read_to_end growth allocation.
+    bytes.shrink_to_fit();
     Ok(decode_text(bytes))
 }
 
@@ -367,6 +374,8 @@ mod tests {
             code: 7,
         };
         write_log(&log, &output)?;
+        let captured = text(&log)?;
+        assert_eq!(captured.capacity(), captured.len());
         assert_eq!(
             fs::read(&log).map_err(|error| error.to_string())?,
             "\u{feff}caf\u{e9} \u{1f331}\0\r\ndiagnostic\u{fffd}\n\n".as_bytes()
