@@ -601,6 +601,9 @@ fn working_directory(requested: Option<&Path>) -> crate::Result<PathBuf> {
 pub fn run(value: Value) -> crate::Result<Value> {
     crate::startup_cancel::checkpoint()?;
     let request: Request = serde_json::from_value(value).map_err(|error| error.to_string())?;
+    if !request.speech_models_only && !cfg!(all(windows, target_arch = "aarch64")) {
+        return Err("Run chat in native ARM64 PowerShell on Windows ARM64.".into());
+    }
     let _instance = if request.speech_models_only {
         None
     } else {
