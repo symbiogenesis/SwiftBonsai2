@@ -265,6 +265,41 @@ impl Transcript {
         self.search.bar(ui, &self.messages);
     }
 
+    pub(super) fn find_button(&mut self, ui: &mut egui::Ui) {
+        self.search.button(ui);
+    }
+
+    pub(super) fn latest_button(&mut self, ui: &mut egui::Ui, viewport: egui::Rect) {
+        let rect = egui::Rect::from_center_size(
+            egui::pos2(viewport.center().x, viewport.bottom() - 30.0),
+            Vec2::splat(36.0),
+        );
+        let response = ui
+            .place(rect, egui::Button::new("").corner_radius(18))
+            .accessible_name("Latest")
+            .on_hover_text("Jump to the latest message");
+        let center = response.rect.center();
+        let stroke = ui.style().interact(&response).fg_stroke;
+        let painter = ui.painter_at(response.rect);
+        painter.line_segment(
+            [center - egui::vec2(0.0, 7.0), center + egui::vec2(0.0, 7.0)],
+            stroke,
+        );
+        painter.add(egui::Shape::line(
+            vec![
+                center + egui::vec2(-6.0, 1.0),
+                center + egui::vec2(0.0, 7.0),
+                center + egui::vec2(6.0, 1.0),
+            ],
+            stroke,
+        ));
+        if response.clicked() {
+            self.search.latest = true;
+            self.search.target = None;
+            ui.ctx().request_repaint();
+        }
+    }
+
     pub(super) fn close_find_on_escape(&mut self, ctx: &egui::Context) -> bool {
         self.search.close_on_escape(ctx)
     }
@@ -286,7 +321,6 @@ impl Transcript {
         let mut clicked_speaker = None;
         self.search.refresh(&self.messages);
         let width = width.max(120.0);
-        let latest = self.messages.last().map(|message| message.id);
         let mut remaining = self.search.matches.as_slice();
         for message in &mut self.messages {
             let count = remaining.partition_point(|found| found.message == message.id);
@@ -318,11 +352,11 @@ impl Transcript {
                     self.search.target = None;
                 }
             }
-            if self.search.latest && latest == Some(message.id) {
-                ui.scroll_to_rect(rect, Some(egui::Align::Max));
-                self.search.latest = false;
-            }
             ui.add_space(16.0);
+        }
+        if self.search.latest {
+            ui.scroll_to_cursor(Some(egui::Align::Max));
+            self.search.latest = false;
         }
         clicked_speaker
     }

@@ -1300,6 +1300,9 @@ impl State {
                 if ui.button("Settings").clicked() {
                     self.show_settings = !self.show_settings;
                 }
+                ui.add_enabled_ui(!self.transcript.messages.is_empty(), |ui| {
+                    self.transcript.find_button(ui);
+                });
             });
         });
         ui.add_space(8.0);
@@ -1604,7 +1607,7 @@ impl State {
                         self.transcript.search_bar(ui);
                     });
                 }
-                egui::ScrollArea::vertical()
+                let scroll = egui::ScrollArea::vertical()
                     .id_salt(("conversation-scroll", self.active_conversation))
                     .stick_to_bottom(true)
                     .auto_shrink([false, false])
@@ -1636,6 +1639,14 @@ impl State {
                             });
                         }
                     });
+                if !empty
+                    && scroll.content_size.y
+                        - scroll.inner_rect.height()
+                        - scroll.state.clamped_offset().y
+                        > 2.0
+                {
+                    self.transcript.latest_button(ui, scroll.inner_rect);
+                }
             });
         let ctx = ui.ctx().clone();
         self.settings(&ctx);

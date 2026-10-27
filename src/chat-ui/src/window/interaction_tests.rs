@@ -708,6 +708,8 @@ fn capture_chat_layouts_when_requested() -> io::Result<()> {
     for (name, size, seeded) in [
         ("conversation-wide.png", [1180.0, 860.0], true),
         ("conversation-narrow.png", [620.0, 760.0], true),
+        ("navigation-wide.png", [1180.0, 860.0], true),
+        ("navigation-narrow.png", [620.0, 640.0], true),
         ("empty-state.png", [1180.0, 860.0], false),
         ("settings-narrow.png", [620.0, 640.0], true),
         ("draft-wide.png", [1180.0, 860.0], true),
@@ -749,6 +751,21 @@ fn capture_chat_layouts_when_requested() -> io::Result<()> {
             chat.state_mut().app.input.push_str("\nEnd of draft.");
         }
         chat.run();
+        if name.starts_with("navigation-") {
+            for index in 0..20 {
+                chat.state_mut().app.transcript.push(
+                    Role::Assistant,
+                    format!("A detail to revisit {index}.\n\n{ANSWER}"),
+                );
+            }
+            chat.run();
+            chat.get_by_role_and_label(egui::Role::Button, "Find")
+                .click();
+            chat.run();
+            chat.get_by_role_and_label(egui::Role::TextInput, "Find in conversation")
+                .type_text("quiet bookshop");
+            chat.run();
+        }
         if name.starts_with("draft-") {
             chat.get_by_role_and_label(egui::Role::MultilineTextInput, "Message")
                 .focus();
@@ -779,6 +796,7 @@ fn find_controls_navigate_unicode_matches_and_refresh_streamed_text() {
         })
         .build_ui_state(
             |ui, transcript: &mut Transcript| {
+                transcript.find_button(ui);
                 transcript.search_bar(ui);
                 egui::ScrollArea::vertical().show(ui, |ui| transcript.show(ui, 700.0, None, true));
             },
@@ -819,7 +837,7 @@ fn find_controls_navigate_unicode_matches_and_refresh_streamed_text() {
 fn long_conversation_find_scrolls_to_offscreen_matches_and_keeps_latest_reachable() {
     const FIRST: &str = "Needle at the beginning of the conversation.";
     const LAST: &str = "Needle at the end of the conversation.";
-    for size in [[1180.0, 860.0], [620.0, 760.0]] {
+    for size in [[1180.0, 860.0], [620.0, 640.0]] {
         let mut chat = harness(size, false);
         chat.state_mut()
             .app
@@ -839,6 +857,10 @@ fn long_conversation_find_scrolls_to_offscreen_matches_and_keeps_latest_reachabl
         chat.run();
         assert!(chat.query_by_label(FIRST).is_none());
         assert!(chat.get_by_label(LAST).rect().is_positive());
+        assert!(
+            chat.query_by_role_and_label(egui::Role::Button, "Latest")
+                .is_none()
+        );
         chat.get_by_role_and_label(egui::Role::Button, "Find")
             .click();
         chat.run();
@@ -848,6 +870,15 @@ fn long_conversation_find_scrolls_to_offscreen_matches_and_keeps_latest_reachabl
         let controls = chat
             .get_by_role_and_label(egui::Role::Button, "Find")
             .rect();
+        assert!(
+            chat.query_all_by_role_and_label(egui::Role::Button, "Settings")
+                .any(|settings| {
+                    let settings = settings.rect();
+                    controls.right() <= settings.left()
+                        && settings.left() - controls.right() < 16.0
+                        && (controls.center().y - settings.center().y).abs() < 1.0
+                })
+        );
         let first = chat.get_by_label(FIRST).rect();
         let composer = chat
             .get_by_role_and_label(egui::Role::MultilineTextInput, "Message")
@@ -865,35 +896,42 @@ fn long_conversation_find_scrolls_to_offscreen_matches_and_keeps_latest_reachabl
         assert!(last.bottom() < composer.top());
         assert!(chat.query_by_label(FIRST).is_none());
         assert!(chat.get_by_label("2 of 2").rect().is_positive());
-        assert!(
-            (chat
-                .get_by_role_and_label(egui::Role::Button, "Find")
-                .rect()
-                .top()
-                - controls.top())
-            .abs()
-                < 0.5
-        );
+        assert!((chat.get_by_label("Find").rect().top() - controls.top()).abs() < 0.5);
 
         chat.get_by_role_and_label(egui::Role::Button, "Previous match")
             .click();
         chat.run();
         assert!(chat.get_by_label(FIRST).rect().is_positive());
         assert!(chat.query_by_label(LAST).is_none());
+        let latest = chat
+            .get_by_role_and_label(egui::Role::Button, "Latest")
+            .rect();
+        assert!((latest.width() - latest.height()).abs() < 0.5);
+        assert!((latest.center().x - composer.center().x).abs() < 12.0);
+        assert!(latest.top() > composer.top() - 100.0);
+        assert!(latest.bottom() < composer.top());
         chat.get_by_role_and_label(egui::Role::Button, "Latest")
             .click();
+        // Let scrolling and the disappearing button's hover animation settle.
+        chat.run_steps(8);
         chat.run();
         assert!(chat.get_by_label(LAST).rect().is_positive());
         assert!(chat.query_by_label(FIRST).is_none());
         assert!(
-            (chat
-                .get_by_role_and_label(egui::Role::Button, "Find")
-                .rect()
-                .top()
-                - controls.top())
-            .abs()
-                < 0.5
+            chat.query_by_role_and_label(egui::Role::Button, "Latest")
+                .is_none()
         );
+        chat.state_mut().app.transcript.append(
+            "\nNew details arriving in the latest response.\nA second detail.\nA third detail.",
+            false,
+        );
+        chat.run();
+        assert!(
+            chat.query_by_role_and_label(egui::Role::Button, "Latest")
+                .is_none()
+        );
+        assert!(chat.query_by_label(FIRST).is_none());
+        assert!((chat.get_by_label("Find").rect().top() - controls.top()).abs() < 0.5);
     }
 }
 

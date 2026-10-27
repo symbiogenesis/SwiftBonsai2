@@ -119,6 +119,37 @@ impl Search {
         self.revision = self.revision.wrapping_add(1);
     }
 
+    pub(super) fn button(&mut self, ui: &mut egui::Ui) {
+        let response = ui
+            .add(
+                egui::Button::new("")
+                    .min_size(egui::Vec2::splat(32.0))
+                    .selected(self.visibility != Visibility::Closed),
+            )
+            .accessible_name("Find")
+            .on_hover_text("Find in this conversation · Ctrl+F");
+        let center = response.rect.center();
+        let stroke = ui.style().interact(&response).fg_stroke;
+        let painter = ui.painter_at(response.rect);
+        painter.circle_stroke(center - egui::vec2(2.0, 2.0), 5.0, stroke);
+        painter.line_segment(
+            [center + egui::vec2(2.0, 2.0), center + egui::vec2(7.0, 7.0)],
+            stroke,
+        );
+        if response.clicked() {
+            self.visibility = if self.visibility == Visibility::Closed {
+                Visibility::Focus
+            } else {
+                Visibility::Closed
+            };
+            if self.visibility == Visibility::Closed {
+                self.query.clear();
+                self.target = None;
+                self.invalidate();
+            }
+        }
+    }
+
     pub(super) fn bar(&mut self, ui: &mut egui::Ui, messages: &[Message]) {
         let accepts_input = ui.memory(|memory| memory.allows_interaction(ui.layer_id()));
         if accepts_input
@@ -126,91 +157,68 @@ impl Search {
         {
             self.visibility = Visibility::Focus;
         }
+        if self.visibility == Visibility::Closed {
+            return;
+        }
         ui.horizontal_wrapped(|ui| {
-            if ui
-                .button("Find")
-                .on_hover_text("Find in this conversation · Ctrl+F")
-                .clicked()
-            {
-                self.visibility = if self.visibility == Visibility::Closed {
-                    Visibility::Focus
-                } else {
-                    Visibility::Closed
-                };
-                if self.visibility == Visibility::Closed {
-                    self.query.clear();
-                    self.invalidate();
-                }
+            let field_id = ui.make_persistent_id("find-query");
+            if accepts_input {
+                self.navigate_on_enter(ui.ctx(), field_id);
             }
-            if self.visibility != Visibility::Closed {
-                let field_id = ui.make_persistent_id("find-query");
-                if accepts_input {
-                    self.navigate_on_enter(ui.ctx(), field_id);
-                }
-                let input = ui.add(
-                    egui::TextEdit::singleline(&mut self.query)
-                        .id(field_id)
-                        .return_key(None)
-                        .hint_text("Find in conversation")
-                        .desired_width(190.0)
-                        .char_limit(256),
-                );
-                input.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Find in conversation")
-                });
-                if accepts_input && self.visibility == Visibility::Focus {
-                    input.request_focus();
-                    self.visibility = Visibility::Open;
-                }
-                if input.changed() {
-                    self.active = 0;
-                    self.matches.clear();
-                    self.invalidate();
-                    self.revision = self.revision.wrapping_add(1);
-                    self.refresh(messages);
-                    self.target = self.matches.first().cloned();
-                }
+            let input = ui.add(
+                egui::TextEdit::singleline(&mut self.query)
+                    .id(field_id)
+                    .return_key(None)
+                    .hint_text("Find in conversation")
+                    .desired_width(190.0)
+                    .char_limit(256),
+            );
+            input.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::Role::TextInput, true, "Find in conversation")
+            });
+            if accepts_input && self.visibility == Visibility::Focus {
+                input.request_focus();
+                self.visibility = Visibility::Open;
+            }
+            if input.changed() {
+                self.active = 0;
+                self.matches.clear();
+                self.invalidate();
+                self.revision = self.revision.wrapping_add(1);
                 self.refresh(messages);
-                let count = self.matches.len();
-                let label = if count == 0 {
-                    if self.query.is_empty() {
-                        "Message text only".to_owned()
-                    } else {
-                        "No matches".to_owned()
-                    }
-                } else {
-                    format!(
-                        "{} of {count}{}",
-                        self.active + 1,
-                        if self.limited { "+" } else { "" }
-                    )
-                };
-                ui.label(label);
-                let previous = ui.add_enabled(count > 0, egui::Button::new("Previous match"));
-                let next = ui.add_enabled(count > 0, egui::Button::new("Next match"));
-                if previous.clicked()
-                    || (accepts_input
-                        && ui.input_mut(|input| {
-                            input.consume_key(egui::Modifiers::SHIFT, egui::Key::F3)
-                        }))
-                {
-                    self.navigate(true);
-                } else if next.clicked()
-                    || (accepts_input
-                        && ui.input_mut(|input| {
-                            input.consume_key(egui::Modifiers::NONE, egui::Key::F3)
-                        }))
-                {
-                    self.navigate(false);
-                }
+                self.target = self.matches.first().cloned();
             }
-            if ui
-                .button("Latest")
-                .on_hover_text("Jump to the latest message")
-                .clicked()
+            self.refresh(messages);
+            let count = self.matches.len();
+            let label = if count == 0 {
+                if self.query.is_empty() {
+                    "Message text only".to_owned()
+                } else {
+                    "No matches".to_owned()
+                }
+            } else {
+                format!(
+                    "{} of {count}{}",
+                    self.active + 1,
+                    if self.limited { "+" } else { "" }
+                )
+            };
+            ui.label(label);
+            let previous = ui.add_enabled(count > 0, egui::Button::new("Previous match"));
+            let next = ui.add_enabled(count > 0, egui::Button::new("Next match"));
+            if previous.clicked()
+                || (accepts_input
+                    && ui.input_mut(|input| {
+                        input.consume_key(egui::Modifiers::SHIFT, egui::Key::F3)
+                    }))
             {
-                self.latest = true;
-                self.target = None;
+                self.navigate(true);
+            } else if next.clicked()
+                || (accepts_input
+                    && ui
+                        .input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::F3)))
+            {
+                self.navigate(false);
             }
         });
     }

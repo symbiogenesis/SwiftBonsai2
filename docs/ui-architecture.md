@@ -66,8 +66,11 @@ transport and speech status use separate controls; bounded application
 diagnostics have their own collapsible view rather than appearing as chat
 messages. The transcript supports selection and explicit copying without
 interpreting model output as HTML. Find highlights Unicode case-insensitive
-message-body matches, with previous/next navigation and jump-to-latest controls
-outside the transcript scroller. Reasoning is excluded from search. Focused
+message-body matches, with a magnifying-glass control beside Settings and
+previous/next navigation below the header. A circular down arrow floats at the
+bottom center of the transcript when newer messages are below the current view;
+selecting it resumes following the latest response. Reasoning is excluded from
+search. Focused
 interaction tests cover streaming selection, search and startup drafting.
 Toolkit support for non-Latin glyphs does not imply full
 bidirectional text editing or complete native-control accessibility parity.
