@@ -54,7 +54,13 @@ does not qualify this legacy release for that worker policy. Rust runtime
 capability discovery continues to use the ordinary headless policy.
 
 Startup policy, checked build reuse, native compiler preparation and speech file
-provisioning are Rust maintenance regressions. Their focused cases cover warm
+provisioning are Rust maintenance regressions. Early-window cases prove that
+only the presentation executable is required before the native shell opens,
+and deferred setup retains backend policy without relinking the running UI.
+Focused UI cases cover draft preservation, bounded preparation output, failure
+and owned descendant cleanup on cancellation. These are correctness checks;
+they do not measure startup latency or inference performance.
+Their focused cases cover warm
 launches that skip Cargo/preparation, changed and damaged inputs, owned-service
 selection, model-only provisioning and bounded resumable downloads. PowerShell
 retains copied-package bridge and single-instance process checks; the former
@@ -175,6 +181,20 @@ that case renders wide, narrow and empty layouts to PNG using the test renderer.
 The capture set also includes maximum-length drafts in wide and minimum-size
 windows.
 These captures do not establish native screen-reader, model or speech behavior.
+
+Memory-storage regressions use untimed ownership and encoded-byte checks:
+`request_buffer::tests::` and `backend::memory_tests::` in the broker;
+`bounded_json::tests::`,
+`client::tests::committed_and_pending_history_share_payloads_without_sharing_turn_mutations`
+and
+`window::persistence::tests::recovery_bounds_escaped_json_before_retaining_an_oversized_workspace`
+in the UI. The TTS
+`build_overlay::tests::generated_decode_workspace_eviction_releases_only_completed_graphs`
+case compiles the actual generated eviction block with the provisioned native
+compiler and checks graph lifetime, cache hits, window/batch changes, allocation
+failure and teardown against model-free allocations. Overlay checks also reject
+changed source anchors and preserve the immutable source cache. These are focused
+correctness checks; they do not measure model peak memory or rebuild latency.
 
 The focused `window::transcript::cache_tests::` and
 `window::transcript::search::performance_tests::` cases count layout/search work

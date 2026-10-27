@@ -1,7 +1,8 @@
 # Swift Bonsai 2 Runner TODO
 
-This is the single list of outstanding project work. Technical contracts,
-commands and supported-subset boundaries live in `docs/`.
+This is the single list of project work. Completed implementation steps are
+separate from outstanding qualification. Technical contracts, commands and
+supported-subset boundaries live in `docs/`.
 
 Prioritize actual-model application acceptance, daily-service isolation and
 creative/comfort qualification. Preserve the Swift CPU runtime boundary while
@@ -9,6 +10,24 @@ closing those exits. Hardware discovery and bounded Vulkan/Hexagon access
 investigations can proceed independently; automatic profile promotion requires
 qualified device evidence. Reopen broader Prism work only for a concrete Swift
 dependency or an explicitly chosen later milestone.
+
+## Completed memory reductions
+
+These three implementation steps address the allocation and bounded-resource
+work below. Their storage contracts are documented in
+[bounded streaming resources](docs/streaming-resources.md); complete-model peak
+memory, throughput and device qualification remain outstanding.
+
+- [x] Bound retained native TTS decode scratch to the current attention-window
+  graph, evicting completed obsolete graphs before replacement allocation while
+  preserving weights, KV, hidden-state storage and graph arithmetic.
+- [x] Share immutable committed chat content/reasoning across worker, UI and
+  request/restore snapshots; copy only the user task augmented by Extra effort.
+  Bound recovery/request serialization before oversized output accumulates.
+  Preserve independent histories, exact JSON text and interrupted-turn recovery.
+- [x] Bound canonical broker serialization as bytes are written and release the
+  generation request allocation after write/flush, before response intake.
+  Preserve the exact same canonical bytes for counting and generation.
 
 ## Application and daily service
 
