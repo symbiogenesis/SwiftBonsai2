@@ -208,10 +208,22 @@ fn execute(request: &Request, receipt: &mut Value) -> crate::Result<()> {
     {
         record_exit(receipt, code, false);
     }
-    result?;
+    capture_verdict(result, exited_before_stop)?;
     job_peak?;
-    let _exit_before_stop = exited_before_stop?;
     stopped
+}
+
+fn capture_verdict(
+    captured: crate::Result<()>,
+    exited_before_stop: crate::Result<Option<u32>>,
+) -> crate::Result<()> {
+    captured?;
+    if let Some(code) = exited_before_stop? {
+        return Err(format!(
+            "TTS process exited before supervisor shutdown: {code} (0x{code:08X})."
+        ));
+    }
+    Ok(())
 }
 
 fn record_exit(receipt: &mut Value, code: u32, before_supervisor_stop: bool) {
@@ -427,5 +439,30 @@ mod tests {
         assert_eq!(receipt["ChildExit"]["Code"], 3_221_225_477_u32);
         assert_eq!(receipt["ChildExit"]["Hex"], "0xC0000005");
         assert_eq!(receipt["ChildExit"]["ObservedBeforeSupervisorStop"], false);
+    }
+
+    #[test]
+    fn completed_capture_rejects_every_spontaneous_pre_stop_exit() {
+        for (code, hex) in [
+            (0, "0x00000000"),
+            (70, "0x00000046"),
+            (0xC000_0005, "0xC0000005"),
+        ] {
+            let mut receipt = json!({});
+            record_exit(&mut receipt, code, true);
+            assert!(capture_verdict(Ok(()), Ok(Some(code))).is_err());
+            assert_eq!(receipt["ChildExit"]["Code"], code);
+            assert_eq!(receipt["ChildExit"]["Hex"], hex);
+            assert_eq!(receipt["ChildExit"]["ObservedBeforeSupervisorStop"], true);
+            assert_eq!(
+                capture_verdict(Err("original capture failure".into()), Ok(Some(code))),
+                Err("original capture failure".into())
+            );
+        }
+        assert!(capture_verdict(Ok(()), Ok(None)).is_ok());
+        assert_eq!(
+            capture_verdict(Ok(()), Err("exit observation failed".into())),
+            Err("exit observation failed".into())
+        );
     }
 }
