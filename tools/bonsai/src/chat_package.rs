@@ -163,7 +163,7 @@ fn verify_file(directory: &Path, entry: &PackageFile) -> crate::Result<()> {
         return Err(format!("Package byte length mismatch: {}", entry.name));
     }
     let mut digest = Sha256::new();
-    let mut buffer = [0; 65_536];
+    let mut buffer = vec![0; 65_536];
     loop {
         let count = file.read(&mut buffer).map_err(|error| error.to_string())?;
         if count == 0 {
