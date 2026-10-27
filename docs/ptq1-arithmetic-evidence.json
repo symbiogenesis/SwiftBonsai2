@@ -26,6 +26,22 @@
     "comparisonSha256": "fdbc3e2084f366be76f87d4a676f44ebadcda66c38ab2f6f2c524eae0a02d58b",
     "numericalParityVerdict": "failed"
   },
+  "followUp": {
+    "repairIntegratedSourceRevision": "0b24223350c29dbaa5f82486b1d5fa7abb1a51cc",
+    "operatorCheckSourceRevision": "cdaf8c914cdf64001794c17b51f5f3ca741dee7f",
+    "operatorScope": "Pinned F32/F16 projections at widths divisible by sixteen; generic arithmetic, BF16 and unqualified tails unchanged",
+    "nativeFixtureRows": 12,
+    "nativeFixtureSha256": "5a00f4c15e67ba7dd49a4e38c833e07648e7f617e0c2fd6d57078f3e55e9c263",
+    "fullModelAttempt": {
+      "status": "admission-rejected",
+      "modelProcessStarted": false,
+      "minimumAvailablePhysicalBytes": 11230294016,
+      "requiredAvailablePhysicalBytes": 16642998272,
+      "jobCommitCeilingBytes": 12348030976,
+      "physicalReserveBytes": 4294967296,
+      "newNumericalVerdict": null
+    }
+  },
   "fullModelParityQualified": false,
   "adapterQualified": false,
   "qualityQualified": false,

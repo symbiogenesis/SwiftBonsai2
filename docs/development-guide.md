@@ -264,6 +264,21 @@ it has not been promoted as equivalent to Q8. Streaming reduces time to first
 sound, prefetch reduces segment gaps, and warm reuse avoids repeated model
 verification/loading. These changes do not establish a throughput improvement.
 
+Inspect the paired resource-evaluation schedule without model provisioning or
+inference:
+
+```powershell
+./scripts/Invoke-TtsEvaluation.ps1 -DataDirectory $data -PlanOnly
+```
+
+Actual evaluation runs only through the main-only TTS workflow. It alternates
+fresh Q8/Q4 processes and records bootstrap separately from warm synthesis,
+including sampled phase memory and process/Job high-water counters. Each active
+talker is 860,203,008 bytes (0.801 GiB) smaller in the Q4 lock; Design and Base
+are sequential, so their file reductions are not added as RAM savings. The codec
+is unchanged. Counter differences and retained clips require separate resource
+and listening review before profile promotion.
+
 `-NoTts` skips automatic TTS setup; `-NoSpeechModels` skips all automatic speech
 setup and downloads. Neither downloading nor compiling opens a microphone.
 The launcher provisions files only for automatically owned speech services;

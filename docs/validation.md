@@ -9,13 +9,26 @@ batching local filters.
 
 The manual [TTS evaluation](../.github/workflows/tts-evaluation.yml) compares the
 pinned Q8_0 and Q4_K_M VoiceDesign profiles with several CPU thread budgets.
-It records the tested revision, CPU identity, cold ready time, first audio,
-warm synthesis and real-time factor, retaining synthetic WAV clips for listening.
+It alternates fresh Q8/Q4 processes, reversing pair order between repetitions,
+and separates first-request voice bootstrap from warm Base synthesis. Receipts
+retain the tested revision, CPU, exact artifacts/executable, readiness, first
+audio, real-time factor and synthetic WAV clips for listening. A Rust supervisor
+owns a one-process kill-on-close Job, caller lifetime, deadlines and bounded logs,
+preserving 9 GiB admission, a 16 GiB commit ceiling and a 5 GiB physical reserve.
+Memory reports distinguish sampled 25 ms phase private/resident maxima, the OS
+process-lifetime working-set peak, Job commit peak and system available-memory
+minimum. Samples can miss brief allocations; mapped residency is outside Job
+commit, and Design/Base talkers never coexist. Failed sessions retain receipts
+and cannot enter completed paired comparisons.
 Select the owner-managed Snapdragon runner for device-specific conclusions;
 hosted ARM64 results describe only that hosted CPU. A successful run does not
 establish equivalent voice quality: the report leaves human listening pending.
 All evaluation execution, including a single profile or short fixture, remains
 CI-only. Invoke the workflow on `main`; its script rejects local execution.
+`Invoke-TtsEvaluation.ps1 -PlanOnly` inspects the bounded schedule locally
+without provisioning or loading a speech model. Focused `speech_evaluation::tests::`
+and `speech_evaluation::windows::tests::` checks cover scheduling, context policy,
+phase ordering, incomplete stops, counter domains and prelaunch rejection.
 
 The [UI architecture](ui-architecture.md) requires first-party UI application
 code to remain pure Rust and native. Native UI builds and focused client checks

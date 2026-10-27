@@ -134,7 +134,10 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
   relabel the scale-one/512-token contract or choose a scale from one response.
 - Evaluate Q8_0/Q4_K_M speech profiles and bounded CPU thread choices through
   target-device CI and independent listening, retaining voice quality alongside
-  startup, first-audio, synthesis latency and resource evidence.
+  startup, first-audio, synthesis latency and resource evidence. The implemented
+  paired harness alternates fresh processes, separates bootstrap/warm synthesis
+  and retains distinct process/Job/system memory observations and failure receipts;
+  hosted ARM64 results do not qualify Snapdragon behavior or listening quality.
 - Investigate lossless adapter graph-reservation and rank-one accumulation changes
   only with allocator and strict rounding/order checks. Resolve unexplained memory
   counter differences before claiming saved RAM; preserve dynamic scale and
@@ -142,7 +145,10 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
 - Qualify current-weight PTQ1 full-model logits/live state on scalar and NEON,
   including no-LoRA/LoRA basis and forward execution. After correctness, run the
   bounded paired device screen and review complete responses, context/recovery,
-  quality and comfort. Keep PQ2 as rollback; see the [PTQ1 contract](docs/ptq1-readiness.md).
+  quality and comfort. Native-backed aligned F32/F16 projection repairs remain
+  operator evidence; the follow-up model capture was rejected before launch by
+  the unchanged admission guard. Keep PQ2 as rollback; see the
+  [PTQ1 contract](docs/ptq1-readiness.md).
 - Promote PTQ1 to the default only after suitability and lower admission thresholds
   are demonstrated. Use the exact verified 1,259,520,000-byte packing difference
   for a candidate reduction; account for mapped residency separately from private

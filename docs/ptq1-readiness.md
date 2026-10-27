@@ -48,6 +48,13 @@ logits/state values, with maximum absolute error 0.06584501266479492. Stored
 state first differs at zero-based block 14 and first exceeds tolerance at
 block 15. PTQ1 full-model numerical parity therefore remains unqualified.
 
+A subsequent native-backed repair covers pinned F32/F16 projection rows divisible
+by sixteen; generic arithmetic, BF16 and unqualified tails retain their prior
+behavior. Twelve native operator controls do not establish its effect on the
+full-model mismatch. The follow-up one-token capture was rejected before launch:
+11,230,294,016 physical bytes were available against the unchanged 15.5 GiB
+requirement. The earlier failed comparison remains the latest full-model verdict.
+
 The exact packing difference would imply a candidate admission threshold of
 **15,383,478,272 bytes** from the current development budget if suitability and resource evidence justified that
 change. It is not the enforced threshold. Mapped weight residency and private
