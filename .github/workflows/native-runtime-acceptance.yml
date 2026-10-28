@@ -66,8 +66,36 @@ jobs:
               '--package', 'bonsai-broker', '--test', 'native_model')
             $listed = @(& cargo @arguments -- --list --ignored)
             if ($LASTEXITCODE -ne 0 -or $listed -cnotcontains ($case + ': test')) { throw 'Required actual-model case was not found.' }
-            & cargo @arguments $case -- --exact --ignored --nocapture
-            if ($LASTEXITCODE -ne 0) { throw 'Actual-model application acceptance failed.' }
+            # The model owner must not inherit Actions' artifact/OIDC/GitHub
+            # credentials. Scope this omission to the test child; retain the
+            # complete Windows/profile environment and the production guard.
+            $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
+            $start = [Diagnostics.ProcessStartInfo]::new($cargo)
+            $start.WorkingDirectory = $env:BONSAI_NATIVE_WORK
+            $start.UseShellExecute = $false
+            $start.CreateNoWindow = $true
+            $start.RedirectStandardOutput = $true
+            $start.RedirectStandardError = $true
+            foreach ($argument in @($arguments) + @($case, '--', '--exact', '--ignored', '--nocapture')) {
+              $start.ArgumentList.Add($argument)
+            }
+            foreach ($name in @('ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNNER_INPUT_TOKEN')) {
+              [void]$start.Environment.Remove($name)
+            }
+            $child = [Diagnostics.Process]::Start($start)
+            try {
+              $stdout = $child.StandardOutput.ReadToEndAsync()
+              $stderr = $child.StandardError.ReadToEndAsync()
+              $child.WaitForExit()
+              [Console]::Out.Write($stdout.GetAwaiter().GetResult())
+              [Console]::Error.Write($stderr.GetAwaiter().GetResult())
+              $code = $child.ExitCode
+            } finally {
+              try {
+                if (-not $child.HasExited) { $child.Kill($true); $child.WaitForExit() }
+              } finally { $child.Dispose() }
+            }
+            if ($code -ne 0) { throw 'Actual-model application acceptance failed.' }
             $receipt = Join-Path $env:BONSAI_NATIVE_EVIDENCE 'acceptance.json'
             if (-not (Test-Path -LiteralPath $receipt -PathType Leaf)) { throw 'Actual-model acceptance receipt is missing.' }
             $hostReport.Passed = $true
