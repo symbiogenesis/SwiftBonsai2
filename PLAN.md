@@ -88,6 +88,13 @@ current-weight PTQ1 reductions also need numerical qualification; see
 
 ## Runtime and correctness
 
+Default-runtime promotion retains the current standard profile's adapter at
+scale 1.3. Use the [promotion contract and offline evidence evaluator](docs/runtime-promotion.md)
+to bind each independent requirement to exact source/release/application
+identities; missing reports remain pending. The explicit native app selection
+and main-only actual-model lifecycle workflow provide integration and capture
+paths. Neither changes the default or satisfies the remaining device gates.
+
 - Audit comparison and reusable engine/kernel sources at immutable revisions,
   including model/adapter/tensor/transform identities, hardware assumptions,
   numerical evidence, licenses and notices. Keep PQ2, current-weight PTQ1 and

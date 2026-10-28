@@ -78,7 +78,9 @@ fn key(owner: &LaunchedService) -> String {
 }
 
 fn request(messages: Value, streaming: bool, limit: u32) -> Value {
-    json!({"messages": messages, "stream": streaming, "max_completion_tokens": limit})
+    let mut body = json!({"stream": streaming, "max_completion_tokens": limit});
+    body["messages"] = messages;
+    body
 }
 
 async fn connect(port: u16, key: &str, body: &Value) -> TcpStream {
@@ -150,7 +152,7 @@ fn streamed_response(bytes: &[u8]) {
             break;
         }
     }
-    assert!(body.is_empty());
+    assert_eq!(body, b"");
     let payload = std::str::from_utf8(&payload).unwrap();
     let mut terminal = false;
     let mut done = false;
