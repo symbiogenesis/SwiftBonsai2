@@ -24,7 +24,10 @@ Runner Foundation, full 8K state/logit parity, exact prompts/sampling/stops,
 4K-output lifecycle/recovery, complete-model resources, adapter basis/logits,
 independent standard-scale TPS and human quality, actual-model sandbox/transport,
 speech/offline recovery, sustained device/creative acceptance and installation
-with reproducible rollback. Every device gate requires the real self-hosted
+with reproducible rollback. Released private-service adapter readiness and
+per-request scale/state lifecycle are an explicit separate gate: source graph
+support and adapter-disabled smoke checks cannot satisfy it.
+Every device gate requires the real self-hosted
 Snapdragon X Elite ARM64 runner. Generic hosted ARM64 cannot satisfy those gates.
 Full suites and every benchmark remain CI-only; focused local correctness checks
 remain allowed.

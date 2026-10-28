@@ -136,6 +136,13 @@ const GATES: &[Gate] = &[
         human: false,
         requirement: "Matched native/Rust artifact and standard-adapter trials retain cold load, prefill, decode and complete-task latency, resources and losing outcomes; demonstrate at least 10% lower end-to-end latency or a reviewed capacity/energy benefit within accepted latency and quality limits.",
     },
+    Gate {
+        id: "released-adapter-service-integration",
+        repository: PRISM,
+        device: true,
+        human: false,
+        requirement: "The selected released private service and worker explicitly verify the pinned adapter identity, advertise matching readiness and support scale 1.3 plus bounded 0..2 changes with fresh compatible state. Canonical count/generation, zero/nonzero streaming, cancellation, reset and rollback reject stale adapter/scale state. A source-only graph or adapter-disabled service cannot satisfy this gate.",
+    },
 ];
 
 #[derive(Deserialize)]
