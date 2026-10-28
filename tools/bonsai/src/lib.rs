@@ -15,6 +15,7 @@ pub const COMMANDS: &[&str] = &[
     "runtime-verify",
     "completion",
     "qualification",
+    "runtime-promotion",
     "speech-models",
     "inference-lock",
     "inference-capabilities",
@@ -47,6 +48,9 @@ pub mod runtime;
 
 /// Fixed qualification plans, canonical identities, and offline gate scoring.
 pub mod qualification;
+
+/// Exact standard-profile promotion policy and offline evidence completeness review.
+pub mod runtime_promotion;
 
 /// Pure server preflight policy shared with the development broker.
 pub mod server;

@@ -40,6 +40,7 @@ fn version_advertises_policy_commands_without_resolving_a_request_file()
         "cpu-check-report",
         "runtime-stage",
         "runtime-verify",
+        "runtime-promotion",
         "speech-models",
         "inference-lock",
         "inference-capabilities",

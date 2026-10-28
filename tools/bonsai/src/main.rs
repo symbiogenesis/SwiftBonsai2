@@ -106,6 +106,7 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
             bonsai_tools::completion::available_memory()
         }
         Some("qualification") => bonsai_tools::qualification::run(request),
+        Some("runtime-promotion") => bonsai_tools::runtime_promotion::run(request),
         Some("speech-models") => bonsai_tools::speech::run(request),
         Some("inference-lock") => bonsai_tools::inference_lock::run(request),
         Some("inference-capabilities") => bonsai_tools::inference_capabilities::run(request),
