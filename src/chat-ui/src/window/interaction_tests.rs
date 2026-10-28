@@ -413,7 +413,7 @@ fn abliteration_startup_opt_out_disables_settings_control() {
     chat.state_mut().app.show_settings = true;
     chat.run();
     assert!(
-        chat.get_by_label("Disabled at launch. Restart without -NoAbliterateLora to enable it.")
+        chat.get_by_label("Disabled by the selected launch options.")
             .rect()
             .is_positive()
     );

@@ -1114,7 +1114,7 @@ impl State {
             RichText::new(if self.abliteration_enabled {
                 "0 turns it off. Applies to your next response."
             } else {
-                "Disabled at launch. Restart without -NoAbliterateLora to enable it."
+                "Disabled by the selected launch options."
             })
             .small()
             .weak(),
@@ -1892,6 +1892,7 @@ mod startup_tests {
             backend_port: 8081,
             use_abliterate_lora: false,
             use_repacked_ptq1: false,
+            native_engine: false,
             canary: None,
             qwen_tts: None,
         };

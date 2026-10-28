@@ -50,10 +50,12 @@ fn configuration(
     let (mut tts_quantization, mut tts_threads) = (None, None);
     let mut no_abliterate_lora = false;
     let mut use_repacked_ptq1 = false;
+    let mut native_engine = false;
     while let Some(option) = args.next() {
         match option.to_str() {
             Some("--no-abliterate-lora") if !no_abliterate_lora => no_abliterate_lora = true,
             Some("--use-repacked-ptq1") if !use_repacked_ptq1 => use_repacked_ptq1 = true,
+            Some("--native-engine") if !native_engine => native_engine = true,
             Some("--broker-path") if broker.is_none() => broker = args.next().map(PathBuf::from),
             Some("--data-directory") if data.is_none() => data = args.next().map(PathBuf::from),
             Some("--evidence-directory") if evidence.is_none() => {
@@ -153,10 +155,13 @@ fn configuration(
             }
             _ => {
                 return Err(
-                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--use-repacked-ptq1] [--canary-key-file ABSOLUTE_FILE --canary-port 8766 [--canary-executable ABSOLUTE_EXE --canary-model ABSOLUTE_GGUF]] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-executable ABSOLUTE_EXE --tts-model ABSOLUTE_GGUF --tts-codec ABSOLUTE_GGUF --tts-voice-model ABSOLUTE_GGUF [--tts-quantization Q8_0|Q4_K_M] [--tts-threads 10]]]",
+                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--use-repacked-ptq1] [--native-engine (requires --no-abliterate-lora and PQ2)] [--canary-key-file ABSOLUTE_FILE --canary-port 8766 [--canary-executable ABSOLUTE_EXE --canary-model ABSOLUTE_GGUF]] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-executable ABSOLUTE_EXE --tts-model ABSOLUTE_GGUF --tts-codec ABSOLUTE_GGUF --tts-voice-model ABSOLUTE_GGUF [--tts-quantization Q8_0|Q4_K_M] [--tts-threads 10]]]",
                 );
             }
         }
+    }
+    if native_engine && (!no_abliterate_lora || use_repacked_ptq1) {
+        return Err("The Rust runtime requires --no-abliterate-lora and original PQ2 weights.");
     }
     let canary_launch = match (canary_executable, canary_model) {
         (None, None) => None,
@@ -205,6 +210,7 @@ fn configuration(
         backend_port: backend_port.unwrap_or(8081),
         use_abliterate_lora: !no_abliterate_lora,
         use_repacked_ptq1,
+        native_engine,
         canary: canary_key_file.map(|key_file| canary::Config {
             port: canary_port.unwrap_or(8766),
             key_file,
@@ -513,6 +519,7 @@ mod tests {
         let default = configuration(args.clone()).map_err(io::Error::other)?;
         assert!(default.use_abliterate_lora);
         assert!(!default.use_repacked_ptq1);
+        assert!(!default.native_engine);
         let mut repacked = args.clone();
         repacked.push("--use-repacked-ptq1".into());
         let alternate = configuration(repacked.clone()).map_err(io::Error::other)?;
@@ -520,6 +527,18 @@ mod tests {
         assert!(alternate.use_abliterate_lora);
         repacked.push("--use-repacked-ptq1".into());
         assert!(configuration(repacked).is_err());
+        let mut native = args.clone();
+        native.push("--native-engine".into());
+        assert!(configuration(native.clone()).is_err());
+        native.push("--no-abliterate-lora".into());
+        let rust = configuration(native.clone()).map_err(io::Error::other)?;
+        assert!(rust.native_engine);
+        assert!(!rust.use_abliterate_lora);
+        let mut duplicate_native = native.clone();
+        duplicate_native.push("--native-engine".into());
+        assert!(configuration(duplicate_native).is_err());
+        native.push("--use-repacked-ptq1".into());
+        assert!(configuration(native).is_err());
         let mut disabled = args;
         disabled.push("--no-abliterate-lora".into());
         let opted_out = configuration(disabled.clone()).map_err(io::Error::other)?;

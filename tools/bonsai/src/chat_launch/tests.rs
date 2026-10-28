@@ -323,6 +323,7 @@ fn ordinary_startup_only_prepares_owned_services_and_creates_independent_keys() 
         value_after(arguments, "--tts-key-file")?
     );
     assert!(!arguments.iter().any(|value| value == "--use-repacked-ptq1"));
+    assert!(!arguments.iter().any(|value| value == "--native-engine"));
     assert_eq!(value_after(arguments, "--tts-quantization")?, "Q8_0");
     assert_eq!(
         value_after(arguments, "--tts-voice-model")?,
@@ -475,6 +476,40 @@ fn missing_app_selection_and_force_build_reach_build_owners() -> crate::Result<(
 }
 
 #[test]
+fn explicit_rust_runtime_survives_early_window_and_backend_preparation() -> crate::Result<()> {
+    let mut fixture = fixture("native-runtime")?;
+    fixture.request["NativeEngine"] = json!(true);
+    fixture.request["NoAbliterateLora"] = json!(true);
+    fixture.request["NoSpeechModels"] = json!(true);
+    let mut recorder = Recorder::new(fixture.root.clone());
+    launch_pending(
+        plan(fixture.request)?.request,
+        &mut recorder,
+        &fixture.working,
+        &fixture.root.join("maintenance.exe"),
+    )?;
+    let (_, arguments, _) = recorder.launch()?;
+    let request_path = PathBuf::from(value_after(arguments, "--startup-request")?);
+    let request =
+        serde_json::from_slice(&fs::read(request_path).map_err(|error| error.to_string())?)
+            .map_err(|error| error.to_string())?;
+    let deferred = prepare(request, true)?;
+    assert!(deferred.request.native_engine && deferred.request.no_abliterate_lora);
+    let prepared = prepare_backend(deferred, &mut recorder, &fixture.working)?;
+    let arguments = prepared["Arguments"]
+        .as_array()
+        .ok_or("Missing arguments.")?;
+    assert!(arguments.iter().any(|value| value == "--native-engine"));
+    assert!(
+        arguments
+            .iter()
+            .any(|value| value == "--no-abliterate-lora")
+    );
+    assert!(!arguments.iter().any(|value| value == "--use-repacked-ptq1"));
+    Ok(())
+}
+
+#[test]
 fn invalid_options_reject_before_provisioning() -> crate::Result<()> {
     let fixture = fixture("invalid")?;
     for patch in [
@@ -488,6 +523,8 @@ fn invalid_options_reject_before_provisioning() -> crate::Result<()> {
         json!({"NoTts": true, "TtsKeyFile": fixture.root.join("external.key")}),
         json!({"NoSpeechModels": true, "AsrPath": fixture.root.join("asr.exe")}),
         json!({"TtsThreads": 257}),
+        json!({"NativeEngine": true}),
+        json!({"NativeEngine": true, "NoAbliterateLora": true, "UseRepackedPtq1": true}),
         json!({"ChatPath": fixture.root.join("external.key")}),
         json!({"DataDirectory": "relative-data"}),
         json!({"DataDirectory": fixture.root.join("missing-data")}),

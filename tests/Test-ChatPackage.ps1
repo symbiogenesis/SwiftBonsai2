@@ -166,6 +166,10 @@ if ($Case -cin @('All', 'Launcher')) {
     $calls = @(& $packages { $script:Calls.ToArray() })
     Assert ($calls.Count -eq 3 -and $calls[-1].Request.options.NoTts -and
         -not $calls[-1].Request.options.ContainsKey('Verbose')) 'NoTts or common PowerShell parameter forwarding changed.'
+    & $launcher -InstallationDirectory $root -DataDirectory $data -NativeEngine -NoAbliterateLora -NoSpeechModels | Out-Null
+    $calls = @(& $packages { $script:Calls.ToArray() })
+    Assert ($calls.Count -eq 4 -and $calls[-1].Request.options.NativeEngine -and
+        $calls[-1].Request.options.NoAbliterateLora) 'Installed launch lost the explicit Rust runtime selection.'
     foreach ($call in $calls) {
         Assert ($call.ToolPath -ceq (Join-Path $installed.Directory 'bin/bonsai-tools.exe') -and
             $call.TimeoutSeconds -eq 0) 'Packaged launch used an unexpected tool or bounded the UI lifetime.'

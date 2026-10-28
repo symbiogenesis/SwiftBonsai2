@@ -65,6 +65,7 @@ pub(crate) struct Config {
     pub(crate) backend_port: u16,
     pub(crate) use_abliterate_lora: bool,
     pub(crate) use_repacked_ptq1: bool,
+    pub(crate) native_engine: bool,
     pub(crate) canary: Option<crate::canary::Config>,
     pub(crate) qwen_tts: Option<crate::tts::Config>,
 }
@@ -311,6 +312,9 @@ fn worker(
     if config.use_repacked_ptq1 {
         process.arg("--use-repacked-ptq1");
     }
+    if config.native_engine {
+        process.arg("--native-engine");
+    }
     process
         .args([
             "--launch-development",
@@ -491,7 +495,7 @@ fn startup_failure(diagnostic: &[u8]) -> Failure {
         )
     } else if text.contains("Artifacts") {
         Failure::Message(
-            "The pinned Swift model or CPU runtime could not be verified. Provision both with the Swift assessment lock.",
+            "The pinned Swift model or selected CPU runtime could not be verified. Provision the model with the Swift assessment lock. Use scripts/Get-Inference.ps1 for -NativeEngine, or scripts/Get-Engine.ps1 with the Swift assessment lock for the publisher runtime.",
         )
     } else {
         Failure::Message("Swift could not start. Check the retained broker diagnostic logs.")

@@ -39,6 +39,8 @@ struct Request {
     no_abliterate_lora: bool,
     #[serde(default)]
     use_repacked_ptq1: bool,
+    #[serde(default)]
+    native_engine: bool,
     #[serde(default = "default_frontend_port")]
     frontend_port: u16,
     #[serde(default = "default_backend_port")]
@@ -143,6 +145,9 @@ fn validate_paths(request: &Request) -> crate::Result<()> {
     repository(&request.repository_root)?;
     external(&request.data_directory)?;
     if !request.data_directory.is_dir() && !request.speech_models_only {
+        if request.native_engine {
+            return Err("Provision Swift first with scripts/Get-Model.ps1 -LockPath config/swift-assessment.lock.json and scripts/Get-Inference.ps1 using the same DataDirectory. See docs/development-guide.md#native-chat-app.".into());
+        }
         return Err("Provision Swift first with scripts/Get-Model.ps1 -LockPath config/swift-assessment.lock.json and scripts/Get-Engine.ps1 using the same lock and DataDirectory. See docs/development-guide.md#native-chat-app.".into());
     }
     if let Some(working) = &request.working_directory {
@@ -213,6 +218,9 @@ fn prepare(mut request: Request, native_host: bool) -> crate::Result<Plan> {
     }
     if request.no_tts && request.tts_key_file.is_some() {
         return Err("NoTts cannot be combined with TtsKeyFile.".into());
+    }
+    if request.native_engine && (!request.no_abliterate_lora || request.use_repacked_ptq1) {
+        return Err("NativeEngine requires NoAbliterateLora and original PQ2 weights; Rust adapter and repacked PTQ1 integration remain unqualified.".into());
     }
     validate_paths(&request)?;
     let own_canary = request.canary_key_file.is_none() && !request.no_speech_models;
@@ -385,6 +393,9 @@ fn launch_arguments(
     }
     if request.use_repacked_ptq1 {
         arguments.push("--use-repacked-ptq1".into());
+    }
+    if request.native_engine {
+        arguments.push("--native-engine".into());
     }
     if let Some(key) = &request.canary_key_file {
         argument(&mut arguments, "--canary-key-file", key);

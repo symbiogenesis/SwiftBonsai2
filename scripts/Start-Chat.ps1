@@ -11,6 +11,8 @@ the window remains available for drafting. Unchanged launches skip Cargo and
 native compiler setup. ForceBuild repeats pinned build checks.
 SpeechModelsOnly fully verifies speech files without building or launching apps.
 NoSpeechModels disables automatic speech setup. Models load only when used.
+NativeEngine explicitly selects the pinned Rust runtime and requires
+NoAbliterateLora; repacked PTQ1 is unsupported by this integration.
 .EXAMPLE
 ./scripts/Start-Chat.ps1 -UseRepackedPtq1
 .EXAMPLE
@@ -23,7 +25,7 @@ param(
     [string]$ChatPath, [string]$BrokerPath, [string]$AsrPath, [string]$TtsPath, [string]$ToolPath,
     [ValidateSet('Q8_0', 'Q4_K_M')][string]$TtsQuantization = 'Q8_0',
     [ValidateRange(0, 256)][int]$TtsThreads = 0,
-    [switch]$NoAbliterateLora, [switch]$UseRepackedPtq1,
+    [switch]$NoAbliterateLora, [switch]$UseRepackedPtq1, [switch]$NativeEngine,
     [ValidateRange(1024, 65535)][int]$FrontendPort = 5173,
     [ValidateRange(1024, 65535)][int]$BackendPort = 8081,
     [string]$CanaryKeyFile, [ValidateRange(1024, 65535)][int]$CanaryPort = 8766,
