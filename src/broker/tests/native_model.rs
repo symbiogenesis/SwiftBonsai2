@@ -167,6 +167,10 @@ fn streamed_response(bytes: &[u8]) {
             done = true;
             continue;
         }
+        assert!(
+            !terminal,
+            "No generation event may follow a terminal reason."
+        );
         let event: Value = serde_json::from_str(line).unwrap();
         assert!(event.get("error").is_none());
         let choices = event["choices"].as_array().unwrap();
@@ -344,6 +348,7 @@ fn native_acceptance_requires_framed_terminal_generation() {
         framed(&format!("{content}{terminal}")),
         framed(&format!("{content}{done}")),
         framed(&format!("{terminal}{done}")),
+        framed(&format!("{content}{terminal}{content}{done}")),
         framed(&format!("{content}{terminal}{done}{terminal}")),
         truncated,
     ] {

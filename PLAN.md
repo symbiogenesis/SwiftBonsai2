@@ -103,8 +103,11 @@ paths. Neither changes the default or satisfies the remaining device gates.
   workloads, including scalar/NEON logits, complete live KV/recurrent/convolution
   state, exact prompts/token IDs, sampler/termination and lifecycle recovery.
   Preserve the declared `1e-3 + 1e-3 * abs(reference)` numerical tolerance.
-- Complete Rust adapter execution and its full-model basis/logits/generation
-  qualification before admitting adapter-enabled replacement profiles. Keep
+- Qualify the [explicit rank-one Rust graph implementation](https://github.com/symbiogenesis/prism-inference/blob/c192575cb70be3aa2c4b6e2a5c313c6d4bd68525/docs/rank-one-adapter.md)
+  with native writer-level basis and full-model zero/nonzero logits/state
+  evidence, then integrate private-service scale changes and lifecycle before
+  admitting adapter-enabled replacement profiles. Source-only numerical
+  execution and synthetic regressions do not enable adapters in the service. Keep
   current-weight PTQ1 and other model/format support separately qualified.
 - Measure complete model-level allocation, scratch lifetimes and peak memory for
   reusable logits, state-only prompt ingestion, activation sharing, physical FP16
