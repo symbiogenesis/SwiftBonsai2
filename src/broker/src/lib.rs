@@ -33,6 +33,8 @@ mod wire;
 
 #[cfg(all(test, feature = "json-candidate"))]
 mod json_candidate;
+#[cfg(feature = "json-candidate")]
+mod json_candidate_parser;
 
 use http::{HeaderMap, HeaderValue, Method, Version, request::Parts, uri::PathAndQuery};
 use serde::{Deserialize, Deserializer, Serialize, de};
@@ -264,7 +266,9 @@ impl AuthorizedHead {
     /// Qualify the pinned SIMD-JSON candidate against ordinary request parsing.
     ///
     /// Copies and pads the bounded immutable body because SIMD-JSON parses in
-    /// place. The padded tape path avoids a second internal input copy.
+    /// place. The padded tape path avoids a second internal input copy. This
+    /// compatibility entry point starts with fresh scratch; the qualification
+    /// harness also measures repeated requests with reusable parser scratch.
     /// Schema, history, settings and canonical serialization use the production
     /// policy. Requests with a decoded `abliteration_scale` field, and candidate
     /// parsing failures, use the production parser to retain its exact numeric
@@ -275,31 +279,7 @@ impl AuthorizedHead {
     /// failures return [`Rejection::ChatSchema`].
     #[cfg(feature = "json-candidate")]
     pub fn prepare_simd_json(self, body: &[u8]) -> Result<PendingChat, Rejection> {
-        self.check_body_size(body)?;
-        let mut mutable = Vec::new();
-        mutable
-            .try_reserve_exact(body.len() + simd_json::INPUT_PADDING)
-            .map_err(|_| Rejection::ChatSchema)?;
-        mutable.extend_from_slice(body);
-        mutable.resize(body.len() + simd_json::INPUT_PADDING, b' ');
-        let mut buffers = simd_json::Buffers::default();
-        let mut tape = simd_json::Tape::null();
-        let Ok(Object(chat)): Result<Object<ClientChat<'_>>, _> =
-            simd_json::fill_tape_padded(&mut mutable, body.len(), &mut buffers, &mut tape)
-                .and_then(|()| tape.deserialize())
-        else {
-            drop(mutable);
-            return self.prepare(body);
-        };
-        // The parsers can round the same decimal scale to adjacent F64 values.
-        // Retain the production lexeme conversion, including escaped key names
-        // and numeric values near admission boundaries, instead of changing it.
-        if chat.abliteration_scale.is_some() {
-            drop(chat);
-            drop(mutable);
-            return self.prepare(body);
-        }
-        self.prepare_chat(&chat)
+        json_candidate_parser::JsonCandidateScratch::default().prepare(self, body)
     }
 
     const fn check_body_size(&self, body: &[u8]) -> Result<(), Rejection> {

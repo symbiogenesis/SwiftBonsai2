@@ -403,16 +403,18 @@ Reference: [exact conformance requirements](docs/prism-upstream-tests.md).
   APIs only if independently built speech companions show a worthwhile build/size
   benefit. Keep containment,
   accessibility and native UI behavior intact; all timing benchmarks remain CI-only.
-- Reopen the pinned SIMD-JSON submodule experiment only after a concrete change
-  addresses the fixed-source timing no-go. Require that
+- Qualify the pinned SIMD-JSON tape-reuse experiment after merged upstream
+  [PR #495](https://github.com/simd-lite/simd-json/pull/495). The updated optional
+  candidate reuses input/parser buffers and the recovered tape; CI comparison is
+  pending. Require that
   unchanged Unicode/duplicate/unknown-field/shape/bound/canonical-byte checks
   pass and main-only CI shows at least 5% lower equal-weight geometric-mean time
-  with no case more than 5% slower. Preserve the existing dependency decision
+  with no case more than 5% slower in both cold and reused-request screens,
+  including supplemental scale-setting cases. Preserve the existing dependency decision
   until those gates pass; see [dependency contracts](docs/dependency-choice.md).
   [Follow-up #1](https://github.com/symbiogenesis/SwiftBonsai2Runner/issues/1)
-  also rejected the padded tape path. Upstream
-  [tape reuse #494](https://github.com/simd-lite/simd-json/issues/494) remains
-  unqualified for this workload.
+  also rejected the earlier padded tape path; those measurements do not qualify
+  the new reuse path for this workload.
 
 ## Optional agents
 

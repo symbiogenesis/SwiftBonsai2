@@ -31,11 +31,11 @@ jobs:
           "BONSAI_JSON_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           "CARGO_TARGET_DIR=$(Join-Path $evidence 'target')" >> $env:GITHUB_ENV
           $source = git -C (Join-Path $env:GITHUB_WORKSPACE 'third_party/simd-json') rev-parse HEAD
-          if ($source -cne 'ff8f5c8bb75dfc56803321c2f5a92656c7de842f') { throw 'Unexpected candidate source revision.' }
+          if ($source -cne '77ec80113f9990ef7fd89b0ee859e7415bfc4827') { throw 'Unexpected candidate source revision.' }
           [ordered]@{
             Revision = $env:GITHUB_SHA
             ParserSource = $source
-            ParserPath = 'padded-tape-serde'
+            ParserPath = 'padded-tape-serde-reuse'
             Compiler = (cargo +nightly-2026-10-22-aarch64-pc-windows-msvc --version)
             Rustc = (rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV)
             OS = [Environment]::OSVersion.VersionString
@@ -49,8 +49,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --release --locked --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') -p bonsai-broker --features json-candidate --lib json_candidate::fixed_candidate_
+          cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --release --locked --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') -p bonsai-broker --features json-candidate --lib json_candidate_parser::tests::
           cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --release --locked --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') -p bonsai-broker --features json-candidate --test request_policy
-      - name: Compare complete immutable-body preparation and destruction
+      - name: Compare cold and reused immutable-body preparation
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
@@ -60,11 +61,16 @@ jobs:
           $result = Get-Content -Raw -LiteralPath (Join-Path $env:BONSAI_JSON_EVIDENCE 'comparison.json') | ConvertFrom-Json
           @(
             "Candidate path: $($result.candidate_path)",
-            "Original six-case median-time geometric mean: $($result.original_six_geometric_mean_time_ratio)",
-            "Original six-case worst median-time ratio: $($result.original_six_worst_case_time_ratio)",
-            "Meets the original six-case 5%/5% screen: $($result.original_six_qualifies)",
-            "Supplemental float-setting worst median-time ratio: $($result.supplemental_worst_case_time_ratio)",
-            "Overall screen qualifies, including supplemental no-regression requirement: $($result.qualifies)",
+            "Cold six-case median-time geometric mean: $($result.cold.original_six_geometric_mean_time_ratio)",
+            "Cold six-case worst median-time ratio: $($result.cold.original_six_worst_case_time_ratio)",
+            "Cold supplemental float-setting worst median-time ratio: $($result.cold.supplemental_worst_case_time_ratio)",
+            "Cold screen qualifies: $($result.cold.qualifies)",
+            "Reused six-case median-time geometric mean: $($result.reused.original_six_geometric_mean_time_ratio)",
+            "Reused six-case worst median-time ratio: $($result.reused.original_six_worst_case_time_ratio)",
+            "Reused supplemental float-setting worst median-time ratio: $($result.reused.supplemental_worst_case_time_ratio)",
+            "Reused screen qualifies: $($result.reused.qualifies)",
+            'Cold timing includes scratch setup and destruction. Reused timing excludes scratch creation and final destruction; both include immutable-input preparation and output destruction.',
+            "Both screens qualify, including supplemental no-regression requirements: $($result.qualifies)",
             'Production remains on serde_json. This hosted CPU result does not establish inference TPS or Snapdragon behavior.'
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
       - name: Retain comparison and host identities

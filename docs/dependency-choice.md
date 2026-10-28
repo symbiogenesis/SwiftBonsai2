@@ -40,8 +40,9 @@ outside the low-surrogate range. It is distinct from the evaluated `v0.18.1`
 tag despite carrying the same package version. The fixed-source screen below
 does not qualify a production replacement; the exact source revision matters.
 
-The complete fixed source is pinned as the `third_party/simd-json` Git submodule
-until an upstream release includes the required fixes. Initialize it with
+The complete upstream source, including the Unicode fixes and merged tape-reuse
+API described below, is pinned as the `third_party/simd-json` Git submodule
+until an upstream release includes these changes. Initialize it with
 `git submodule update --init third_party/simd-json` before Cargo commands. It is
 excluded from the first-party workspace. The broker's optional `json-candidate`
 feature exposes the comparison parser while ordinary requests retain serde_json.
@@ -81,11 +82,23 @@ The decimal fallback remains necessary:
 SIMD-JSON's correctly rounded conversion can differ from serde_json's default
 conversion, even when neither parser has a bug.
 
-Upstream [issue #494](https://github.com/simd-lite/simd-json/issues/494) and
-[PR #495](https://github.com/simd-lite/simd-json/pull/495) address a separate gap:
-typed Serde callers cannot recover the tape allocation for reuse. The proposed
-`Deserializer::from_tape` preserves borrowing and validation; it has no measured
-broker speedup yet. The open [AVX-512 PR #475](https://github.com/simd-lite/simd-json/pull/475)
+Upstream [PR #495](https://github.com/simd-lite/simd-json/pull/495), addressing
+[issue #494](https://github.com/simd-lite/simd-json/issues/494), merged on
+2026-10-27 as
+[`77ec801`](https://github.com/simd-lite/simd-json/commit/77ec80113f9990ef7fd89b0ee859e7415bfc4827),
+the current submodule pin. `Deserializer::from_tape` lets typed Serde callers
+recover and reset the tape allocation while preserving borrowing and validation.
+The optional `padded-tape-serde-reuse` comparison now reuses the padded input
+buffer, parser buffers and tape across sequential requests. Each request still
+copies the immutable body and performs production validation, canonical
+serialization and decimal/error fallback. Cold requests include scratch setup
+and destruction in timing; reused requests exclude scratch creation and final
+destruction, while retaining per-request work and output destruction. Both
+screens retain the six original workloads, supplemental scale cases and unchanged
+5%/5% gates; overall qualification requires both screens to pass. The new CI
+comparison is pending and has no measured broker speedup. The earlier copying
+and padded-path results remain evidence for their respective revisions and paths.
+The open [AVX-512 PR #475](https://github.com/simd-lite/simd-json/pull/475)
 targets x86, while [#479](https://github.com/simd-lite/simd-json/pull/479) and
 [#477](https://github.com/simd-lite/simd-json/pull/477) concern code cleanup and
 `no_std`. None supplies evidence to overturn this Windows ARM64 decision.
