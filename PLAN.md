@@ -152,19 +152,17 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
 - Qualify current-weight PTQ1 full-model logits/live state on scalar and NEON,
   including no-LoRA/LoRA basis and forward execution. After correctness, run the
   bounded paired device screen and review complete responses, context/recovery,
-  quality and comfort. Native-backed aligned F32/F16 projection repairs remain
-  operator evidence; the follow-up model capture was rejected before launch by
-  the full-service admission guard. A later one-token check passed a separate
-  12/8 GiB diagnostic admission/commit envelope with the same 4 GiB reserve,
-  but all output hashes and the numerical failure were unchanged. Keep PQ2 as
-  rollback; see the [PTQ1 contract](docs/ptq1-readiness.md).
-  A later isolated projection replay identified and repaired pinned Q8 scale/
-  inverse arithmetic. Runtime 0.1.6 main passed Foundation and its ARM64 release
-  bundle/source passed offline candidate-lock verification; conformance was
-  queued at review, with release/pin promotion pending. The rebuilt three-token
-  recheck was admission-rejected before launch at 9.422 GiB available versus
-  its separate 12 GiB diagnostic requirement, preserving the 8 GiB Job ceiling
-  and 4 GiB reserve. No post-repair numerical verdict is available yet.
+  quality and comfort. The Q8 scale/inverse repair in runtime 0.1.6 now matches
+  the native reference byte for byte over all 483 logits/live-state files
+  (118,611,456 values) for three supplied tokens on the automatic ARM64 backend,
+  without LoRA. The separate 12/8 GiB diagnostic admission/commit envelope
+  preserved the 4 GiB reserve; it is not a service profile. Scalar completed two
+  tokens before its 180-second deadline; a 360-second retry was rejected before
+  launch by the unchanged admission guard. Completed scalar/explicit NEON and
+  broader context/adapter checks remain pending. Runtime Foundation and
+  conformance passed at exact main `02c8a24`; the checked 0.1.6 release was
+  published, fresh download bytes verified and Runner's pin updated. Keep PQ2
+  as rollback; see the [PTQ1 contract](docs/ptq1-readiness.md).
 - Promote PTQ1 to the default only after suitability and lower admission thresholds
   are demonstrated. Use the exact verified 1,259,520,000-byte packing difference
   for a candidate reduction; account for mapped residency separately from private

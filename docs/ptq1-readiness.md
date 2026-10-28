@@ -40,73 +40,50 @@ convolution and recurrent state. The fixed acceptance tolerance is
 `1e-3 + 1e-3 * abs(reference)`; matching selected token IDs cannot override a
 failure in logits or state.
 
-The retained [full-model comparison](ptq1-arithmetic-evidence.json) records the
-numerical acceptance failure. Native Q8 preparation and PTQ1
-four-lane fused accumulation fixes do not establish full-model parity. The
-corrected one-token capture still exceeded the bound for 430,526 of 39,504,384
-logits/state values, with maximum absolute error 0.06584501266479492. Stored
-state first differs at zero-based block 14 and first exceeds tolerance at
-block 15. PTQ1 full-model numerical parity therefore remains unqualified.
+Runtime **0.1.6** now passes the bounded no-adapter comparison for supplied tokens
+`[248045, 872, 198]` on the automatic ARM64 backend: all **483 files and
+118,611,456 logits/live-state values match the native reference byte for byte**,
+with zero maximum absolute error. Greedy IDs also match `[198, 198, 220]`.
+The [repair receipt](ptq1-arithmetic-evidence.json) binds the clean source,
+checker, native reference, comparison and supervision hashes. It preserves the
+earlier failures, including the 430,526 out-of-tolerance one-token values.
 
-A subsequent native-backed repair covers pinned F32/F16 projection rows divisible
-by sixteen; generic arithmetic, BF16 and unqualified tails retain their prior
-behavior. Twelve native operator controls do not establish its effect on the
-full-model mismatch. The follow-up one-token capture was rejected before launch:
-11,230,294,016 physical bytes were available against the unchanged 15.5 GiB
-requirement. That attempt produced no new numerical verdict.
+The repaired Q8_0 preparation matches the pinned DLL's maximum multiplied by
+rounded binary32 `1/127` for scale and direct `127/maximum` inverse scale. This
+resolved a halfway-code difference first localized in block 13's FFN
+down-projection. Generic/PQ2 preparation is preserved. The offline comparator
+reconstructs every reference KV, convolution and recurrent value from the
+original hash-bound serialized native state, checks the exact file inventory
+and rejects nonfinite values. Both historical failure controls were reproduced
+exactly before the new comparison.
 
-A subsequent bounded recheck of runtime `0.1.5` completed the same supplied token
-`[248045]` using a separate diagnostic envelope: 12 GiB available admission,
-8 GiB Job commit and the same 4 GiB running physical reserve. The direct Rust
-supervisor retained parent lifetime, artifact verification, output bounds and
-deadline without the PowerShell native-collector bootstrap. Peak Job commit was
-6,275,588,096 bytes (5.845 GiB); minimum available physical memory was
-7,574,892,544 bytes (7.055 GiB). All 129 output-file hashes matched the previous
-capture, with the same 430,526 out-of-tolerance values. Resource checks passed;
-numerical parity did not. This one-token envelope is not a full-context service
-profile, and Job commit is not total physical RAM.
+The successful capture used a separate **12 GiB admission / 8 GiB Job ceiling**
+diagnostic envelope with the unchanged **4 GiB physical reserve**. Peak Job commit
+was 6,275,977,216 bytes (5.845 GiB), and minimum available physical memory was
+8,027,590,656 bytes (7.476 GiB). The direct Rust supervisor retained caller
+lifetime, exact artifact verification, output bounds and deadline. This is
+three-token resource evidence, not full-context service admission; Job commit
+does not include mapped weights or measure total physical RAM.
 
-Subsequent localization found the first difference in block 13's FFN
-down-projection: identical input/transform, but one prepared Q8_0 code differed.
-The pinned native binary multiplies the maximum by rounded binary32 `1/127` for
-scale and divides `127/maximum` directly for inverse scale. A source repair now
-matches every prepared byte and all 5,120 isolated projection outputs, with
-compact native-backed synthetic controls and separate activation-sharing
-eligibility. Generic/PQ2 preparation is preserved. This repair is prepared for
-runtime 0.1.6. Its exact main revision `02c8a24` passed
-[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357453).
-The ARM64 bundle, all executable/notice entries and exact source archive passed
-offline verification, producing an external candidate lock. At review, the
-separate [conformance run](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357329)
-was queued; no conformance pass, release publication or active pin change is
-claimed. The active Runner pin remains 0.1.5.
+Scalar execution completed two supplied tokens before its 180-second diagnostic
+deadline. Its incomplete capture is not accepted. A fresh attempt with a
+360-second deadline was admission-rejected before launch, with 9,289,871,360
+physical bytes available against the same 12 GiB requirement. Completed scalar
+and explicit NEON controls remain pending. The retained default-feature build
+and compiler configuration establish ARM64 NEON eligibility; the checker does
+not emit observed per-operation backend counters.
 
-The corrected checker was rebuilt from that clean main revision with default
-features on native ARM64. Its three-token recheck `[248045, 872, 198]` was
-rejected before model launch: 10,117,419,008 physical bytes (9.422 GiB) were
-available against the separate diagnostic's 12 GiB admission requirement. The
-8 GiB diagnostic Job ceiling and 4 GiB physical reserve were preserved. This
-produced no new model outputs or numerical verdict; the retained failure above
-remains the latest completed full-model comparison. The
-[repair receipt](ptq1-arithmetic-evidence.json) binds the checker, failed launch
-and verified candidate hashes.
-
-The prepared offline comparator reconstructs every reference KV, convolution
-and recurrent value from the original hash-bound serialized native state,
-checks the exact file inventory and rejects nonfinite values. Its failure
-controls reproduced both retained one-token and three-token numerical failures
-exactly. This validates the comparison preparation, without supplying a new
-post-repair model verdict.
-
-After memory is available, repeat the supplied-token check on scalar and eligible
-NEON paths against the hash-bound native reference, comparing every logit and
-logical KV, convolution and recurrent state value at the unchanged tolerance.
-Requested backend names alone do not prove that NEON operations executed.
-Publish and pin only the checked release after reviewing its required gates;
-passing a bounded numerical check still leaves adapter execution, complete
-answers at the actual app settings, context/recovery and resource/comfort
-qualification outstanding. In particular, the scale-one standard LoRA harness
-does not establish PTQ1-versus-PQ2 answer parity at app scale 1.3.
+The exact runtime main revision `02c8a24` passed
+[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357453)
+and [conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357329).
+Both checked Windows bundles were published as
+[0.1.6](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.6),
+fresh published asset bytes were verified, and Runner's release lock was updated.
+The Rust service still selects PQ2. Longer trajectories/full-context behavior,
+adapter execution, complete answers at actual app settings, context/recovery and
+resource/comfort qualification remain outstanding. In particular, the scale-one
+standard LoRA harness does not establish PTQ1-versus-PQ2 answer parity at app
+scale 1.3.
 
 The exact packing difference would imply a candidate admission threshold of
 **15,383,478,272 bytes** from the current development budget if suitability and resource evidence justified that

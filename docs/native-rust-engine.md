@@ -16,15 +16,21 @@ acceptance contract.
 ## Swift CPU supported subset
 
 The bounded CPU contract targets the exact Swift Bonsai 2 model on Windows
-ARM64, initially the 32 GB Snapdragon X Elite. Runner's pinned `0.1.5` release
+ARM64, initially the 32 GB Snapdragon X Elite. Runner's pinned `0.1.6` release
 contains the bounded source CPU implementation. Release identity and focused
 integration do not establish full-context behavior, sustained performance,
 creative quality, adapter correctness or daily-service isolation.
 
-The pinned `0.1.5` bundle comes from reviewed main revision
-`7d3bbfe58986a026f0f2a73693d3e6aed66a1a20` and successful
-[Foundation run 40440977347](https://github.com/symbiogenesis/prism-inference/actions/runs/40440977347).
-It retains sampler candidate storage between tokens without copying scratch into
+The pinned `0.1.6` bundle comes from reviewed main revision
+`02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0` and successful
+[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357453)
+and [conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357329)
+runs. It repairs pinned PTQ1 Q8_0 scale/inverse arithmetic; the bounded automatic
+ARM64 three-token check now matches every native logit/live-state byte. Completed
+scalar/explicit NEON controls and broader qualification remain pending; see the
+[PTQ1 contract](ptq1-readiness.md). Generic/PQ2 preparation is preserved.
+
+It retains the 0.1.5 sampler candidate storage between tokens without copying scratch into
 transaction clones, and reads attention values in 32-channel tiles with at most
 2 KiB accumulator payload. Frozen sampler, graph and bitwise attention fixtures
 preserve the prior arithmetic and recovery contracts. These changes establish
@@ -36,7 +42,7 @@ and convolution bits into existing live allocations. This avoids another
 independent checkpoints and failure atomicity. The release also adds native-backed
 aligned F32/F16 projection controls and their pinned accumulation repair; generic,
 BF16 and unqualified tail arithmetic remain unchanged. Operator fixtures and
-storage bounds do not establish full-model PTQ1 parity or lower admission.
+storage bounds do not establish broader PTQ1 qualification or lower admission.
 
 | Area | Contract |
 | --- | --- |

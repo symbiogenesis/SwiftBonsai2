@@ -39,7 +39,7 @@
       "isolatedProjectionByteExact": true,
       "genericAndPq2PreparationChanged": false,
       "fullModelRecheckPending": true,
-      "releaseAndPinPromotionPendingCi": true,
+      "releaseAndPinPromotionPendingCi": false,
       "postRepairFullModelAttempt": {
         "runtimeSourceRevision": "02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0",
         "checkerSha256": "8a594ae9bb3c3f6481dc43092200e0baed058fb93201369f5b2bb56e207bdfa2",
@@ -57,14 +57,70 @@
         "newNumericalVerdict": null,
         "scope": "Three supplied-token diagnostic only; production resource policy unchanged"
       },
+      "postRepairRechecks": [
+        {
+          "runtimeSourceRevision": "02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0",
+          "checkerSha256": "8a594ae9bb3c3f6481dc43092200e0baed058fb93201369f5b2bb56e207bdfa2",
+          "inputTokens": [248045, 872, 198],
+          "backendRequested": "auto",
+          "status": "completed",
+          "exitCode": 0,
+          "modelProcessStarted": true,
+          "requiredAvailablePhysicalBytes": 12884901888,
+          "jobCommitCeilingBytes": 8589934592,
+          "physicalReserveBytes": 4294967296,
+          "deadlineSeconds": 180,
+          "peakJobCommitBytes": 6275977216,
+          "minimumAvailablePhysicalBytes": 8027590656,
+          "files": 483,
+          "elements": 118611456,
+          "failedElements": 0,
+          "byteExactFiles": 483,
+          "maximumAbsoluteError": 0,
+          "greedyActualAndReference": [198, 198, 220],
+          "comparisonSha256": "5f5d10cafc03b2490008ec9725b84f84afd53cdbca78387d6fd94d955e7fd7a0",
+          "supervisionSha256": "d1c39e0ad251364d1c1e81cee3508ceb65177c1c2ef7909cc89cb6aca7ad4f19",
+          "numericalParityVerdict": "passed-bounded-three-token",
+          "backendEvidence": "Default-feature ARM64 build with experimental-neon and target_feature=neon; immutable source establishes eligibility, not observed per-operation counters",
+          "scope": "No adapter; all logits and logical live KV/convolution/recurrent state for three supplied tokens only"
+        },
+        {
+          "backendRequested": "scalar",
+          "inputTokens": [248045, 872, 198],
+          "status": "deadline-exceeded",
+          "modelProcessStarted": true,
+          "completedStepReceipts": 2,
+          "requiredAvailablePhysicalBytes": 12884901888,
+          "jobCommitCeilingBytes": 8589934592,
+          "physicalReserveBytes": 4294967296,
+          "deadlineSeconds": 180,
+          "peakJobCommitBytes": 6275649536,
+          "minimumAvailablePhysicalBytes": 7501414400,
+          "supervisionSha256": "87ab18507bcab6525898d43d497a0f68763eecb3ba3755f96a06c6939475970f",
+          "numericalParityVerdict": null
+        },
+        {
+          "backendRequested": "scalar",
+          "inputTokens": [248045, 872, 198],
+          "status": "admission-rejected",
+          "modelProcessStarted": false,
+          "requiredAvailablePhysicalBytes": 12884901888,
+          "jobCommitCeilingBytes": 8589934592,
+          "physicalReserveBytes": 4294967296,
+          "deadlineSeconds": 360,
+          "minimumAvailablePhysicalBytes": 9289871360,
+          "supervisionSha256": "0825235be134099387042acb04f5d88da4daf516b9a6537416d2c76451c70d1d",
+          "numericalParityVerdict": null
+        }
+      ],
       "runtimeLockCandidate": {
         "runtimeSourceRevision": "02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0",
         "version": "0.1.6",
         "foundationRunUrl": "https://github.com/symbiogenesis/prism-inference/actions/runs/40449357453",
         "foundationVerdict": "success",
         "conformanceRunUrl": "https://github.com/symbiogenesis/prism-inference/actions/runs/40449357329",
-        "conformanceStatusWhenReviewed": "queued",
-        "conformanceVerdict": null,
+        "conformanceStatusWhenReviewed": "completed",
+        "conformanceVerdict": "success",
         "target": "aarch64-pc-windows-msvc",
         "archiveBytes": 2929268,
         "archiveSha256": "990f3aad6b4d139440b674a40dddafefcc6d7d1460efe22cfc44d183108ce71f",
@@ -73,8 +129,10 @@
         "sourceArchiveSha256": "f1b5378cb42389dc19a4488edbe4b90da75da26f92910af6619ae51c08749939",
         "candidateLockSha256": "09db19bc9ca030b3e6203359f3b2edbadff3babe1813bf09e7de6c52b3b7c4fb",
         "offlineBundleVerificationPassed": true,
-        "published": false,
-        "activeRunnerPinChanged": false
+        "published": true,
+        "releaseUrl": "https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.6",
+        "publishedAssetBytesVerified": true,
+        "activeRunnerPinChanged": true
       },
       "preparedComparisonVerifier": {
         "scriptSha256": "8741bf7579ee8217fa5f1c87ed2fd4a54034e7660857b75cc8c3195913582573",
@@ -100,7 +158,7 @@
           "maximumAbsoluteError": 0.19140625,
           "priorFailureReproduced": true
         },
-        "postRepairModelVerdict": null
+        "postRepairModelVerdict": "passed-bounded-auto-three-token"
       }
     },
     "repairIntegratedSourceRevision": "0b24223350c29dbaa5f82486b1d5fa7abb1a51cc",
@@ -142,7 +200,9 @@
       "scope": "One supplied token only; no full-context, adapter, quality, throughput or production admission qualification"
     }
   },
+  "boundedNoAdapterAutoParityQualified": true,
   "fullModelParityQualified": false,
+  "remainingNumericalScope": "Completed scalar and explicit NEON controls, longer trajectories/full-context behavior and adapter execution remain unqualified",
   "adapterQualified": false,
   "qualityQualified": false,
   "defaultMayChange": false,
