@@ -56,7 +56,8 @@
         "scripts/Invoke-Ptq1Screen.ps1", "scripts/Get-Ptq1Screen.ps1", "tests/Test-Ptq1Screen.ps1",
         "tests/Test-NativeProcess.ps1", "tests/Test-CompletionSupervision.ps1",
         "tests/Test-EngineBuild.ps1", "tests/Test-Lora*.ps1", "tests/*Support*", "tests/fixtures/**",
-        ".github/workflows/swift-lora-qualification.yml", ".github/workflows/swift-ptq1-screen.yml"
+        ".github/workflows/swift-lora-qualification.yml", ".github/workflows/swift-ptq1-screen.yml",
+        "scripts/Get-RuntimePromotion.ps1", ".github/workflows/native-runtime-acceptance.yml"
       ]
     },
     "scripts": {"groups": ["foundation_scripts", "native_scripts"]},

@@ -1,0 +1,91 @@
+name: Native Rust actual-model application acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  # Actual-model captures share the physical laptop and memory budget.
+  group: swift-lora-snapdragon
+  cancel-in-progress: false
+jobs:
+  acceptance:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Prepare private external working and evidence directories
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP ('Native-Runtime-Acceptance-' + [guid]::NewGuid().ToString('N'))
+          foreach ($name in @('work', 'evidence')) {
+            [void][IO.Directory]::CreateDirectory((Join-Path $root $name))
+          }
+          "BONSAI_NATIVE_WORK=$(Join-Path $root 'work')" >> $env:GITHUB_ENV
+          "BONSAI_NATIVE_EVIDENCE=$(Join-Path $root 'evidence')" >> $env:GITHUB_ENV
+          "BONSAI_NATIVE_DATA=$(Join-Path $env:LOCALAPPDATA 'SwiftBonsai2')" >> $env:GITHUB_ENV
+          "CARGO_TARGET_DIR=$(Join-Path $env:RUNNER_TEMP 'Bonsai-Native-Acceptance-Target')" >> $env:GITHUB_ENV
+      - name: Verify already provisioned pinned release without downloading weights
+        shell: pwsh
+        working-directory: ${{ env.BONSAI_NATIVE_WORK }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Get-Inference.ps1') -DataDirectory $env:BONSAI_NATIVE_DATA -VerifyOnly
+      - name: Exercise actual-model broker lifecycle under the required native sandbox
+        shell: pwsh
+        working-directory: ${{ env.BONSAI_NATIVE_WORK }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          [Environment]::CurrentDirectory = $env:BONSAI_NATIVE_WORK
+          $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+          if ($cpu.Name -notmatch 'Snapdragon.*X.*Elite') { throw 'Actual Snapdragon X Elite identity is required; no generic ARM substitute.' }
+          $hostReport = [ordered]@{
+            SchemaVersion=1; Revision=$env:GITHUB_SHA; RunId=$env:GITHUB_RUN_ID
+            RunAttempt=$env:GITHUB_RUN_ATTEMPT; Cpu=$cpu.Name
+            Os=[Environment]::OSVersion.VersionString
+            Architecture=[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+            Passed=$false; DefaultRuntimeQualified=$false
+          }
+          try {
+            $case = 'pinned_native_model_streams_recovers_and_restarts_in_required_sandbox'
+            $manifest = Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml'
+            $arguments = @('+nightly-2026-10-22', 'test', '--locked', '--release', '--manifest-path', $manifest,
+              '--package', 'bonsai-broker', '--test', 'native_model')
+            $listed = @(& cargo @arguments -- --list --ignored)
+            if ($LASTEXITCODE -ne 0 -or $listed -cnotcontains ($case + ': test')) { throw 'Required actual-model case was not found.' }
+            & cargo @arguments $case -- --exact --ignored --nocapture
+            if ($LASTEXITCODE -ne 0) { throw 'Actual-model application acceptance failed.' }
+            $receipt = Join-Path $env:BONSAI_NATIVE_EVIDENCE 'acceptance.json'
+            if (-not (Test-Path -LiteralPath $receipt -PathType Leaf)) { throw 'Actual-model acceptance receipt is missing.' }
+            $hostReport.Passed = $true
+          } finally {
+            $hostReport | ConvertTo-Json -Depth 4 |
+              Set-Content -LiteralPath (Join-Path $env:BONSAI_NATIVE_EVIDENCE 'host.json') -Encoding utf8NoBOM
+          }
+          @('Bounded actual-model Rust application lifecycle passed under required native containment.',
+            'No adapter was enabled. Full-context numerical/resource, performance, quality and daily-service qualification remain separate.',
+            'This workflow cannot promote the default runtime.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+      - name: Retain only credential-free acceptance receipts
+        if: always() && env.BONSAI_NATIVE_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-runtime-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          # Protected child directories contain keys. Never upload recursively.
+          path: |
+            ${{ env.BONSAI_NATIVE_EVIDENCE }}/acceptance.json
+            ${{ env.BONSAI_NATIVE_EVIDENCE }}/host.json
+          if-no-files-found: error
+          retention-days: 14

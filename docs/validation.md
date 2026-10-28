@@ -45,6 +45,20 @@ an accepted implementation path.
 
 ## Runner gates
 
+The manually dispatched [native-runtime application acceptance](../.github/workflows/native-runtime-acceptance.yml)
+runs one explicitly ignored actual-model broker case on the owner-managed
+Snapdragon X Elite runner and settled `main`. It requires already provisioned
+original PQ2 and the pinned Rust release, native sandbox admission, unchanged
+memory limits and retained exact artifact handles. It covers supplied-history
+streaming, framed context rejection and reuse, owned shutdown, abandonment after
+generated content and fresh restart. It uploads only explicit credential-free
+receipts; protected credential directories are excluded. Failure or missing
+resources reject the run without an unisolated retry. Its short outputs do not
+qualify 8K context, 4K generation, numerical state, LoRA, sustained resources,
+performance or broker-only isolation. The [promotion evidence evaluator](runtime-promotion.md)
+keeps these requirements separate. The ignored case never runs in ordinary
+Foundation suites or locally.
+
 [Foundation](../.github/workflows/foundation.yml) runs only on `main` pushes or
 manual dispatch, skipping documentation-only pushes (root Markdown and `docs/`).
 Its lightweight planner selects changed Cargo packages and every transitive

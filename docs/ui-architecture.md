@@ -105,6 +105,13 @@ connection and do not guess at a token or memory cause. HTTP communication here
 uses numeric loopback on the same computer, rather than an Internet service.
 
 The app uses the existing pinned Swift PQ2 CPU backend through the broker.
+`Start-Chat.ps1 -NativeEngine -NoAbliterateLora` explicitly selects the separately
+verified Rust Prism release with the original PQ2 model. The selection survives
+deferred preparation, source/installed launches and explicit retries. Rust's
+current service rejects adapters and PTQ1; conflicting selections fail before
+preparation. This experimental path preserves required native containment and
+does not promote the default or establish full-model/device qualification. See
+the [runtime promotion contract](runtime-promotion.md).
 `Start-Chat.ps1 -UseRepackedPtq1` explicitly selects the verified current-weight
 PTQ1 artifact on that same backend. PQ2 remains the default. This selection
 retains the memory admission, running reserve, conversation and retry policies;

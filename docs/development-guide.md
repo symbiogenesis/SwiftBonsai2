@@ -390,8 +390,21 @@ drop-in compatibility with every OpenAI client.
 The app uses the pinned Prism/llama CPU backend with original Swift PQ2 weights
 and the pinned adapter unless opted out. This development default does not
 qualify the [standard LoRA profile](swift-lora.md#required-standard-profile-qualification).
-The separate native inference release `0.1.6` supports the selected thinking mode
-and is available through the opt-in `--native-engine` path. Thinking is off by
+The separate native inference release `0.1.6` supports the selected thinking mode.
+To use it in the native app, provision that release and select it explicitly:
+
+```powershell
+./scripts/Get-Inference.ps1 -DataDirectory $data
+./scripts/Start-Chat.ps1 -DataDirectory $data -NativeEngine -NoAbliterateLora
+```
+
+`Start-InstalledChat.ps1` accepts the same `-NativeEngine -NoAbliterateLora`
+selection. The broker and direct app use `--native-engine`. This path requires
+original PQ2 weights and an explicit adapter opt-out; selecting PTQ1 or leaving
+the adapter enabled rejects before preparation. A missing or rejected Rust
+runtime fails launch without switching engines. The publisher runtime remains
+the default until the [promotion requirements](runtime-promotion.md) pass.
+Thinking is off by
 default; enable it under **Settings → Response** for the next response.
 Quality, throughput and daily-service qualification remain pending.
 

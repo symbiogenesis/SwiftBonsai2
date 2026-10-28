@@ -7,6 +7,9 @@ and owns application, broker, artifact provisioning and released-runtime
 integration. The pinned native Prism engine is the comparison and fallback.
 The canonical [runtime and correctness work](../PLAN.md#runtime-and-correctness)
 is maintained only in `PLAN.md`.
+The [default-runtime promotion contract](runtime-promotion.md) binds the complete
+standard profile, including scale-1.3 LoRA, to reviewed evidence. Its offline
+evaluator reports missing evidence as pending and never changes runtime selection.
 
 The application UI is a separate [pure-Rust native client](ui-architecture.md)
 of the broker's local HTTP/JSON/SSE contract. Native UI availability does not
