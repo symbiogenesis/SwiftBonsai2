@@ -20,6 +20,13 @@ dispatched kernels still require code-generation, numerical and performance
 qualification. Class values do not identify Snapdragon core names.
 See [native ISA semantics](hardware-capabilities.md).
 
+A follow-up model-free probe on the same date observed effective mode `balanced`
+and active scheme `381b4222-f694-41f0-9685-ff5bb260df2e`. The combined CLI accepted
+identical observed conditions and rejected an injected effective-mode change
+while AC remained unchanged. The checked native speech host query also confirmed
+X2E94100 and Windows `10.0.26300`; plan inspection still returned 24 samples
+with no model process started. These are discovery/correctness observations.
+
 The manual [X2 CPU workflow](../.github/workflows/x2-cpu-evaluation.yml) supplies
 a bounded first thread screen on the owner-managed native ARM64 runner, on
 settled `main`. It shares the existing model-capture concurrency group. All
@@ -87,14 +94,25 @@ verification. Job commit excludes mapped weight residency, and one-second
 physical-memory observations can miss brief pressure.
 
 Initial and final native observations include AC/battery, battery-saver and
-charge snapshots where Windows supplies them. These are power conditions,
+charge snapshots where Windows supplies them, plus the active power-scheme GUID
+and checked effective power mode from documented version-two notifications.
+Scheme/mode observations are sequential and the initial notification has a
+bounded one-second wait. These are power conditions,
 not energy measurements; transitions within a trial are not sampled. A power
 or topology change calls for a new controlled run before interpreting ratios.
-The report's `ExecutionConditions` now enforces that boundary: changed or
-unknown native topology, AC state or battery-saver state suppress all ratios,
+The report's `ExecutionConditions` enforces that boundary: changed or unknown
+native topology, AC state, battery-saver state, active power scheme or effective
+mode suppress all ratios,
 while preserving raw samples and token-count comparability separately. Charge
 percentage and transient CPU parking/allocation flags do not determine this
-check. Equal boundary snapshots cannot rule out changes within a sample.
+check. Equal boundary snapshots cannot rule out changes within a sample or
+edits to individual settings within the same power scheme. Older reports without
+the policy snapshot remain readable but cannot establish stable conditions.
+
+All device capture/qualification workflows, including TTS and sandbox trials,
+share one non-cancelling physical-runner concurrency group. This prevents other
+repository CI trials from overlapping the screen on the laptop; unrelated
+applications can still compete for its resources.
 
 Candidate/control ratios are emitted only when both samples reach the 128-token
 cap with matching prompt/decode counts. Early natural completion remains visible
@@ -115,6 +133,15 @@ the workflow on settled `main` and retain its evidence. Local model execution
 does not replace that CI capture. No new thread default has been selected.
 
 ## Device evidence separation
+
+Native speech builds use a separate checked host identity for build-cache reuse.
+CPU registry identity, Windows kernel version, native target and OS feature
+observations partition the entire Cargo/native output directory and its receipt.
+Changing from X1 to X2 repeats native compilation and CMake's ISA probes.
+Speech CI retains the same host identity in every compiled-cache restore prefix
+and verifies it in the static-library receipt. This prevents an older machine's
+native output from silently bypassing X2 compilation; it does not select new
+thread counts or qualify a speech performance gain.
 
 New LoRA and PTQ1 captures retain the observed processor name and distinguish
 `Snapdragon X Elite`, `Snapdragon X2 Elite` and `Snapdragon X2 Elite Extreme`.

@@ -333,7 +333,12 @@ Cargo cache under `DataDirectory/build/chat/`, separated by checkout and pinned
 toolchain. Repeat launches hash source/build inputs and cached executables, then
 reuse matching builds without running Cargo. Speech companions use the same
 checked reuse under `DataDirectory/build/native-speech/`, skipping LLVM verification,
-source staging and Visual Studio setup when unchanged. Source, lockfile, build
+source staging and Visual Studio setup when unchanged. Native speech also partitions
+the Cargo output directory and receipt by checked CPU registry identity, Windows
+kernel version and OS processor-feature observations. Moving a data directory
+from X1 to X2 therefore builds fresh native objects and repeats CMake's native
+ISA probes. Unavailable mandatory host facts reject reuse/build rather than
+selecting an older host's outputs. Source, lockfile, build
 configuration or environment changes invalidate the receipt; missing or changed
 executables rebuild. Cargo's content freshness mode handles edits with preserved
 timestamps while retaining compiler outputs. No startup cache cleanup is needed.
@@ -425,7 +430,9 @@ end-to-end PTQ1 qualification is complete. See the
 
 ## X1/X2 configuration boundary
 
-The recorded development machine is a 32 GB Snapdragon X Elite X1E-78-100.
+The current development machine reports Snapdragon X2 Elite Extreme X2E94100;
+the previous development machine was a 32 GB Snapdragon X Elite X1E-78-100.
+See the retained [X2 inventory and bounded CPU screen](x2-cpu-optimization.md).
 The ultimate target covers Snapdragon X1 and X2 Windows ARM64 systems with
 [automatic hardware profiles](hardware-profiles.md). That selector is planned;
 current released launch policies remain explicit CPU profiles and provide no

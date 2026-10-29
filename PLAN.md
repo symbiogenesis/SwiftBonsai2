@@ -50,6 +50,9 @@ no-go decision, including losing cases.
 
 - Qualify actual-model startup, supplied-history streaming, full 8K-context/4K-output
   requests, long conversations, speech input/output, offline restart and recovery.
+  Include speech startup after moving an existing X1 data directory to X2 and
+  after CPU-feature/Windows changes; host-bound Cargo/native cache regressions
+  remain model-free, while actual speech behavior requires device acceptance.
   Exercise Stop, abandonment, deadlines, memory pressure, process cleanup and
   explicit retry without replaying interrupted turns. Include Find across streamed
   appends, response replacements and conversation switches in long-conversation
@@ -314,8 +317,9 @@ existing full-context/continuation/LoRA gates.
   Run the bounded [X2 CPU thread screen](docs/x2-cpu-optimization.md) on settled
   main and retain results before selecting a new default. Restore/register the
   owner-managed ARM64 runner first; the 2026-10-29 CI inventory reports none.
-  Retain the screen's topology/power condition verdict and suppress comparisons
-  when observations change or are unknown. Extend the screen
+  Retain the screen's verdict for topology, AC/battery saver, active power scheme
+  and effective mode; suppress comparisons when observations change or are
+  unknown. Extend the screen
   only when its phase measurements identify a useful next candidate.
   Compare supported event-based waits with polling using idle CPU, wake latency,
   active decode and cancellation responsiveness. Inventory native Windows timing,

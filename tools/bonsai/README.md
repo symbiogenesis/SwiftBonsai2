@@ -135,6 +135,17 @@ Its explicit `environment`, `build` and `models` operations additionally own
 downloads, compiler TAR extraction, Visual Studio environment setup and native
 process execution. Planning and source staging remain nonexecuting operations.
 
+The model-free `speech-build` request `{"operation":"host"}` returns the native
+Windows ARM64 `runner-native-speech-host` report and its full `HostCacheKey`.
+Its versioned SHA-256 identity binds CPU registry name/vendor/identifier, Windows
+kernel version, native target and positive Windows processor-feature flags from
+a bounded query. It excludes power state, parking and thread counts. Missing
+mandatory observations reject. Native speech builds partition their Cargo
+directory and receipt by this identity, so changing CPU/OS/features repeats
+native compilation instead of reusing another host's CMake or Cargo objects.
+The build result retains the report as `NativeBuildHost`; discovery does not
+qualify optional kernels or portable distribution.
+
 Its `stage-sources` operation verifies and stages the compiled Qwen/GGML archive
 pair together, then checks the complete cache inventory before returning.
 Existing source-tree redirection and extra-file rejection run inside that operation.

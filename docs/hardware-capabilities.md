@@ -41,6 +41,15 @@ projection and CPU compatibility digest retain their original scope.
 The separate `power_snapshot` uses `GetSystemPowerStatus` for AC/battery,
 battery-saver and charge observations, preserving unknown AC/charge sentinels.
 These live conditions do not enter a compatibility digest or measure energy.
+The separate `power_policy_snapshot` reports the active scheme GUID and effective
+power mode using [PowerGetActiveScheme](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powergetactivescheme)
+and the initial notification from
+[PowerRegisterForEffectivePowerModeNotifications](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powerregisterforeffectivepowermodenotifications)
+version two. Registration uses
+a bounded one-second initial wait and is removed before a successful return.
+Missing/unknown policy observations remain explicit unknowns and suppress X2
+screen comparisons. Equal snapshots neither capture edits within a scheme nor
+exclude intervening changes. No Windows power setting is changed.
 
 The additive `isa` section queries `IsProcessorFeaturePresent` from a native
 ARM64 process for NEON/AdvSimd (19), dot product (43) and **NEON I8MM (66)**.

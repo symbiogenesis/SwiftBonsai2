@@ -7,6 +7,18 @@ Local builds, Release analyzers and focused named tests are allowed. Complete
 suites and every benchmark run only in CI; do not approximate a full suite by
 batching local filters.
 
+All qualification/capture workflows targeting the physical Snapdragon runner,
+including speech and sandbox trials, share the non-cancelling
+`swift-lora-snapdragon` concurrency group. Hosted targets keep independent groups.
+This prevents overlapping jobs from consuming the laptop's CPU and memory while
+the X2 thread screen runs; it does not establish an otherwise idle machine.
+
+Speech CI keys Cargo/native static outputs by the same checked native build-host
+identity used by source startup, before restoring any compiled cache. Every
+restore prefix retains that identity. Version-two static-library receipts bind
+the full host hash, source identity and each library's SHA-256 before reuse.
+Each speech lane retains its model-free host report, including cache hits.
+
 The manual [TTS evaluation](../.github/workflows/tts-evaluation.yml) compares the
 pinned Q8_0 and Q4_K_M VoiceDesign profiles with several CPU thread budgets.
 It alternates fresh Q8/Q4 processes, reversing pair order between repetitions,
