@@ -248,6 +248,10 @@ The focused `window::transcript::cache_tests::` and
 `window::transcript::search::performance_tests::` cases count layout/search work
 directly to guard completed-message reuse during streaming and find navigation.
 They are correctness regressions, with no elapsed-time or throughput claim. The
+`streamed_find_scans_only_appended_bytes_and_keeps_one_continuation` case checks
+linear appended-byte work and tail-only scratch. The Unicode append-boundary
+oracle, replacement and saturated-lookahead cases preserve matching behavior
+across streamed updates without rescanning an unchanged prefix. The
 `bounded_find_matches_folded_reference_across_expansion_and_prefix_boundaries`
 case compares the bounded matcher with the prior folded-buffer behavior;
 `bounded_find_scratch_depends_on_query_bytes_and_retains_the_result_lookahead`

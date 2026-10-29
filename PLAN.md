@@ -15,7 +15,9 @@ dependency or an explicitly chosen later milestone.
 - Qualify actual-model startup, supplied-history streaming, full 8K-context/4K-output
   requests, long conversations, speech input/output, offline restart and recovery.
   Exercise Stop, abandonment, deadlines, memory pressure, process cleanup and
-  explicit retry without replaying interrupted turns.
+  explicit retry without replaying interrupted turns. Include Find across streamed
+  appends, response replacements and conversation switches in long-conversation
+  acceptance; the incremental matching regressions remain model-free.
 - Review Windows assistive-technology support, keyboard/focus behavior, scaling,
   high contrast, minimum-window layout and multilingual text input with the
   actual native application.

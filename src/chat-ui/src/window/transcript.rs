@@ -155,6 +155,7 @@ impl Transcript {
             self.push(Role::Assistant, String::new());
         }
         if let Some(message) = self.messages.last_mut() {
+            self.search.replaced(message.id);
             self.text_bytes = self.text_bytes.saturating_sub(message.text_bytes());
             text.clone_into(&mut message.body);
             reasoning

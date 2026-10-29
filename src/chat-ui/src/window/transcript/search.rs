@@ -22,9 +22,28 @@ enum Visibility {
 }
 
 struct CachedMatches {
-    // An id owns append-only text; restored transcripts start with a fresh Search.
+    // Streaming appends preserve an entry; replacement explicitly removes it.
+    // Restored transcripts start with a fresh Search.
     body_bytes: usize,
     ranges: Vec<Range<usize>>,
+    // Only the changing tail retains query-sized continuation scratch.
+    continuation: Option<FoldedMatcher>,
+}
+
+impl CachedMatches {
+    fn scan(body: &str, query: &str, tail: bool) -> (Self, usize) {
+        let mut matcher = FoldedMatcher::new(query.as_bytes());
+        let mut ranges = Vec::new();
+        let scanned = matcher.extend(body, 0, &mut ranges);
+        (
+            Self {
+                body_bytes: body.len(),
+                ranges,
+                continuation: tail.then_some(matcher),
+            },
+            scanned,
+        )
+    }
 }
 
 #[derive(Default)]
@@ -42,11 +61,18 @@ pub(super) struct Search {
     cached_messages: BTreeMap<u64, CachedMatches>,
     #[cfg(test)]
     scanned_messages: usize,
+    #[cfg(test)]
+    scanned_bytes: usize,
 }
 
 impl Search {
     pub(super) const fn invalidate(&mut self) {
         self.dirty = true;
+    }
+
+    pub(super) fn replaced(&mut self, message: u64) {
+        self.cached_messages.remove(&message);
+        self.invalidate();
     }
 
     pub(super) fn refresh(&mut self, messages: &[Message]) {
@@ -68,19 +94,43 @@ impl Search {
             }
             let mut previous_cache = std::mem::take(&mut self.cached_messages);
             for message in messages {
-                let cached = previous_cache
-                    .remove(&message.id)
-                    .filter(|cached| cached.body_bytes == message.body.len())
-                    .unwrap_or_else(|| {
-                        #[cfg(test)]
-                        {
-                            self.scanned_messages += 1;
-                        }
-                        CachedMatches {
-                            body_bytes: message.body.len(),
-                            ranges: find_ranges(&message.body, &query),
-                        }
-                    });
+                let tail = messages.last().is_some_and(|last| last.id == message.id);
+                let mut cached = previous_cache.remove(&message.id).unwrap_or_else(|| {
+                    let (cached, scanned) = CachedMatches::scan(&message.body, &query, tail);
+                    #[cfg(test)]
+                    {
+                        self.scanned_messages += 1;
+                        self.scanned_bytes += scanned;
+                    }
+                    let _ = scanned;
+                    cached
+                });
+                if cached.body_bytes != message.body.len() {
+                    let scanned = if tail
+                        && cached.body_bytes < message.body.len()
+                        && let Some(matcher) = &mut cached.continuation
+                    {
+                        matcher.extend(
+                            &message.body[cached.body_bytes..],
+                            cached.body_bytes,
+                            &mut cached.ranges,
+                        )
+                    } else {
+                        let (fresh, scanned) = CachedMatches::scan(&message.body, &query, tail);
+                        cached = fresh;
+                        scanned
+                    };
+                    cached.body_bytes = message.body.len();
+                    #[cfg(test)]
+                    {
+                        self.scanned_messages += 1;
+                        self.scanned_bytes += scanned;
+                    }
+                    let _ = scanned;
+                }
+                if !tail {
+                    cached.continuation = None;
+                }
                 for range in &cached.ranges {
                     if self.matches.len() == MAX_MATCHES {
                         self.limited = true;
@@ -224,48 +274,29 @@ impl Search {
     }
 }
 
+#[cfg(test)]
 fn find_ranges(body: &str, query: &str) -> Vec<Range<usize>> {
     if query.is_empty() {
         return Vec::new();
     }
     let mut matcher = FoldedMatcher::new(query.as_bytes());
-    if body.is_ascii() {
-        for (start, byte) in body.bytes().enumerate() {
-            if matcher.push(byte.to_ascii_lowercase(), start, start + 1) {
-                break;
-            }
-        }
-    } else {
-        // Preserve scalar lowercasing, including expansions such as İ, while
-        // retaining offsets for only the query-sized folded suffix.
-        'source: for (start, character) in body.char_indices() {
-            let end = start + character.len_utf8();
-            for lower in character.to_lowercase() {
-                let mut encoded = [0; 4];
-                for &byte in lower.encode_utf8(&mut encoded).as_bytes() {
-                    if matcher.push(byte, start, end) {
-                        break 'source;
-                    }
-                }
-            }
-        }
-    }
-    matcher.ranges
+    let mut ranges = Vec::new();
+    matcher.extend(body, 0, &mut ranges);
+    ranges
 }
 
 // KMP keeps matching work linear even for repeated prefixes. Both scratch
 // vectors depend on the query length, never the retained message length.
-struct FoldedMatcher<'a> {
-    query: &'a [u8],
+struct FoldedMatcher {
+    query: Vec<u8>,
     fallback: Vec<usize>,
     starts: Vec<usize>,
     next: usize,
     matched: usize,
-    ranges: Vec<Range<usize>>,
 }
 
-impl<'a> FoldedMatcher<'a> {
-    fn new(query: &'a [u8]) -> Self {
+impl FoldedMatcher {
+    fn new(query: &[u8]) -> Self {
         let mut fallback = vec![0; query.len()];
         let mut matched = 0;
         for index in 1..query.len() {
@@ -278,17 +309,49 @@ impl<'a> FoldedMatcher<'a> {
             fallback[index] = matched;
         }
         Self {
-            query,
+            query: query.to_vec(),
             fallback,
             starts: vec![0; query.len()],
             next: 0,
             matched: 0,
-            ranges: Vec::new(),
         }
     }
 
+    fn extend(&mut self, body: &str, offset: usize, ranges: &mut Vec<Range<usize>>) -> usize {
+        if ranges.len() > MAX_MATCHES {
+            return 0;
+        }
+        if body.is_ascii() {
+            for (start, byte) in body.bytes().enumerate() {
+                if self.push(
+                    byte.to_ascii_lowercase(),
+                    offset + start,
+                    offset + start + 1,
+                    ranges,
+                ) {
+                    return start + 1;
+                }
+            }
+        } else {
+            // Preserve scalar lowercasing and original UTF-8 highlight bounds,
+            // including matches that cross successive streamed append calls.
+            for (start, character) in body.char_indices() {
+                let end = start + character.len_utf8();
+                for lower in character.to_lowercase() {
+                    let mut encoded = [0; 4];
+                    for &byte in lower.encode_utf8(&mut encoded).as_bytes() {
+                        if self.push(byte, offset + start, offset + end, ranges) {
+                            return end;
+                        }
+                    }
+                }
+            }
+        }
+        body.len()
+    }
+
     // True means the global result limit's one-match lookahead is complete.
-    fn push(&mut self, byte: u8, start: usize, end: usize) -> bool {
+    fn push(&mut self, byte: u8, start: usize, end: usize, ranges: &mut Vec<Range<usize>>) -> bool {
         self.starts[self.next] = start;
         self.next += 1;
         if self.next == self.query.len() {
@@ -302,18 +365,17 @@ impl<'a> FoldedMatcher<'a> {
         }
         if self.matched == self.query.len() {
             let range = self.starts[self.next]..end;
-            if self
-                .ranges
+            if ranges
                 .last()
                 .is_none_or(|previous| previous.end <= range.start)
             {
-                self.ranges.push(range);
+                ranges.push(range);
             }
             // match_indices consumes each folded match before searching again,
             // even when two matches map to the same expanded source scalar.
             self.matched = 0;
         }
-        self.ranges.len() > MAX_MATCHES
+        ranges.len() > MAX_MATCHES
     }
 }
 
