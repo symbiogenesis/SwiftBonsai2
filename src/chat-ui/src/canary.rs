@@ -140,7 +140,7 @@ impl Client {
     ) -> Result<Option<Service>> {
         let call = Call::new(generation, current, READY_LIMIT);
         call.check()?;
-        let _validated = normalize_wav(wav, &call)?;
+        normalize_wav(wav, &call)?;
         let Some(launch) = &config.launch else {
             self.ready_for(generation, current)?;
             return Ok(None);
@@ -180,19 +180,23 @@ impl Client {
 
     fn transcribe_clip(&self, wav: &[u8], call: &Call<'_>) -> Result<String> {
         call.check()?;
-        let wav = normalize_wav(wav, call)?;
-        let boundary = boundary(&wav, call)?;
-        let body = multipart(&wav, &boundary)?;
-        call.check()?;
-        let content_type = format!("multipart/form-data; boundary={boundary}");
-        let response = self.exchange(
-            "POST",
-            "/v1/audio/transcriptions",
-            Some(&content_type),
-            &body,
-            Media::Json,
-            call,
-        )?;
+        // Normalize the header only. PCM remains borrowed from the captured
+        // clip, and upload framing is released before waiting for inference.
+        let mut stream = {
+            let wav = normalize_wav(wav, call)?;
+            let boundary = boundary(&wav, call)?;
+            let body = multipart(wav, &boundary)?;
+            call.check()?;
+            let content_type = format!("multipart/form-data; boundary={boundary}");
+            self.connection_parts(
+                "POST",
+                "/v1/audio/transcriptions",
+                Some(&content_type),
+                &body.parts(),
+                call,
+            )?
+        };
+        let response = read_response(&mut stream, call, Media::Json)?;
         call.check()?;
         let transcript: Transcript = serde_json::from_slice(&response).map_err(|_| {
             Failure::Message("The Canary companion returned an invalid transcription.")
@@ -265,12 +269,21 @@ impl Client {
         body: &[u8],
         call: &Call<'_>,
     ) -> Result<TcpStream> {
+        self.connection_parts(method, route, content_type, &[body], call)
+    }
+
+    fn connection_parts(
+        &self,
+        method: &str,
+        route: &str,
+        content_type: Option<&str>,
+        body: &[&[u8]],
+        call: &Call<'_>,
+    ) -> Result<TcpStream> {
         call.check()?;
-        if body.len() > MAX_REQUEST {
-            return Err(Failure::Message(
-                "The Canary request exceeded its size limit.",
-            ));
-        }
+        let length = request_length(body).ok_or(Failure::Message(
+            "The Canary request exceeded its size limit.",
+        ))?;
         let address = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, self.port));
         let timeout = IO_POLL.min(call.until.saturating_duration_since(Instant::now()));
         let mut stream = TcpStream::connect_timeout(&address, timeout)
@@ -286,10 +299,12 @@ impl Client {
             "{method} {route} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nAccept: application/json\r\nAccept-Encoding: identity\r\nContent-Length: {}\r\n{media}Connection: close\r\n\r\n",
             self.port,
             self.key.as_hex(),
-            body.len()
+            length
         );
         write_all(&mut stream, head.as_bytes(), call)?;
-        write_all(&mut stream, body, call)?;
+        for part in body {
+            write_all(&mut stream, part, call)?;
+        }
         Ok(stream)
     }
 }
@@ -358,6 +373,7 @@ impl<'a> Call<'a> {
     }
 }
 
+#[cfg(test)]
 fn validate_wav(wav: &[u8]) -> Result<()> {
     let invalid = Failure::Message(
         "Canary requires a 16 kHz mono 16-bit PCM WAV clip of at most 30 seconds.",
@@ -367,7 +383,14 @@ fn validate_wav(wav: &[u8]) -> Result<()> {
         .ok_or(invalid)
 }
 
-fn normalize_wav(wav: &[u8], call: &Call<'_>) -> Result<Vec<u8>> {
+// A normalized WAV owns only its fixed header. The clip's validated samples
+// are immutable and stay in the capture allocation through the upload.
+struct CanonicalWav<'a> {
+    header: [u8; 44],
+    data: &'a [u8],
+}
+
+fn normalize_wav<'a>(wav: &'a [u8], call: &Call<'_>) -> Result<CanonicalWav<'a>> {
     let invalid = Failure::Message(
         "Canary requires a 16 kHz mono 16-bit PCM WAV clip of at most 30 seconds.",
     );
@@ -425,12 +448,8 @@ fn normalize_wav(wav: &[u8], call: &Call<'_>) -> Result<Vec<u8>> {
         return Err(invalid);
     }
     let header = bonsai_audio::mono_pcm16_header(SAMPLE_RATE, data.len() / 2).ok_or(invalid)?;
-    let mut canonical = Vec::with_capacity(44 + data.len());
-    canonical.extend_from_slice(&header);
-    canonical.extend_from_slice(data);
-    validate_wav(&canonical)?;
     call.check()?;
-    Ok(canonical)
+    Ok(CanonicalWav { header, data })
 }
 
 fn pcm_format(format: &[u8]) -> bool {
@@ -461,10 +480,23 @@ fn pcm_format(format: &[u8]) -> bool {
     }
 }
 
-fn boundary(wav: &[u8], call: &Call<'_>) -> Result<String> {
+fn boundary(wav: &CanonicalWav<'_>, call: &Call<'_>) -> Result<String> {
     const PREFIX: &[u8] = b"bonsai-canary-";
+    const WINDOW: usize = PREFIX.len() + 16;
     let mut used = HashSet::new();
-    for (index, window) in wav.windows(PREFIX.len() + 16).enumerate() {
+    // Scan the two source slices plus their bounded join, including a marker
+    // split across the normalized header and PCM without joining the clip.
+    let tail = WINDOW - 1;
+    let mut join = [0; 2 * (WINDOW - 1)];
+    join[..tail].copy_from_slice(&wav.header[wav.header.len() - tail..]);
+    let prefix = tail.min(wav.data.len());
+    join[tail..tail + prefix].copy_from_slice(&wav.data[..prefix]);
+    let windows = wav
+        .header
+        .windows(WINDOW)
+        .chain(join[..tail + prefix].windows(WINDOW))
+        .chain(wav.data.windows(WINDOW));
+    for (index, window) in windows.enumerate() {
         if index % 8192 == 0 {
             call.check()?;
         }
@@ -489,25 +521,50 @@ fn boundary(wav: &[u8], call: &Call<'_>) -> Result<String> {
     Ok(format!("bonsai-canary-{counter:016x}"))
 }
 
-fn multipart(wav: &[u8], boundary: &str) -> Result<Vec<u8>> {
+struct Multipart<'a> {
+    fields: String,
+    wav: CanonicalWav<'a>,
+    ending: String,
+}
+
+impl Multipart<'_> {
+    const fn parts(&self) -> [&[u8]; 4] {
+        [
+            self.fields.as_bytes(),
+            &self.wav.header,
+            self.wav.data,
+            self.ending.as_bytes(),
+        ]
+    }
+}
+
+fn multipart<'a>(wav: CanonicalWav<'a>, boundary: &str) -> Result<Multipart<'a>> {
     let fields = format!(
         "--{boundary}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{MODEL}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.wav\"\r\nContent-Type: audio/wav\r\n\r\n"
     );
     let ending = format!("\r\n--{boundary}--\r\n");
-    let length = fields.len() + wav.len() + ending.len();
-    if length > MAX_REQUEST {
+    let body = Multipart {
+        fields,
+        wav,
+        ending,
+    };
+    if request_length(&body.parts()).is_none() {
         return Err(Failure::Message(
             "The Canary upload exceeded its size limit.",
         ));
     }
-    let mut body = Vec::with_capacity(length);
-    body.extend_from_slice(fields.as_bytes());
-    body.extend_from_slice(wav);
-    body.extend_from_slice(ending.as_bytes());
     Ok(body)
 }
 
-fn write_all(stream: &mut TcpStream, mut bytes: &[u8], call: &Call<'_>) -> Result<()> {
+fn request_length(parts: &[&[u8]]) -> Option<usize> {
+    parts.iter().try_fold(0_usize, |length, part| {
+        length
+            .checked_add(part.len())
+            .filter(|&total| total <= MAX_REQUEST)
+    })
+}
+
+fn write_all(stream: &mut impl Write, mut bytes: &[u8], call: &Call<'_>) -> Result<()> {
     while !bytes.is_empty() {
         call.check()?;
         let result = stream.write(bytes);
@@ -651,8 +708,8 @@ fn response_length(head: &[u8], expected: Media) -> Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Call, Client, Config, Failure, MODEL, Media, boundary, multipart, normalize_wav,
-        response_length, validate_wav,
+        Call, Client, Config, Failure, MAX_REQUEST, MODEL, Media, boundary, multipart,
+        normalize_wav, request_length, response_length, validate_wav, write_all,
     };
     use std::{
         fs,
@@ -683,6 +740,21 @@ mod tests {
         bytes.extend_from_slice(&length.to_le_bytes());
         bytes.extend_from_slice(data);
         Ok(bytes)
+    }
+
+    fn extensible_wav(canonical: &[u8]) -> io::Result<Vec<u8>> {
+        let mut extensible = b"RIFF\0\0\0\0WAVEJUNK\x03\0\0\0abc\0fmt \x28\0\0\0".to_vec();
+        let mut format = canonical[20..36].to_vec();
+        format[..2].copy_from_slice(&0xfffe_u16.to_le_bytes());
+        format.extend_from_slice(&22_u16.to_le_bytes());
+        format.extend_from_slice(&16_u16.to_le_bytes());
+        format.extend_from_slice(&4_u32.to_le_bytes());
+        format.extend_from_slice(&[1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]);
+        extensible.extend_from_slice(&format);
+        extensible.extend_from_slice(&canonical[36..]);
+        let length = u32::try_from(extensible.len() - 8).map_err(io::Error::other)?;
+        extensible[4..8].copy_from_slice(&length.to_le_bytes());
+        Ok(extensible)
     }
 
     fn client(port: u16) -> io::Result<(bonsai_windows_credentials::PrivateCredentials, Client)> {
@@ -803,6 +875,18 @@ mod tests {
                 let (mut stream, _) = listener.accept()?;
                 let upload = request(&mut stream)?;
                 assert!(upload.starts_with(b"POST /v1/audio/transcriptions HTTP/1.1\r\n"));
+                let body_at = upload
+                    .windows(4)
+                    .position(|bytes| bytes == b"\r\n\r\n")
+                    .ok_or_else(|| io::Error::other("Missing upload header terminator."))?
+                    + 4;
+                let mut expected_body = format!(
+                    "--bonsai-canary-0000000000000000\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{MODEL}\r\n--bonsai-canary-0000000000000000\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.wav\"\r\nContent-Type: audio/wav\r\n\r\n"
+                )
+                .into_bytes();
+                expected_body.extend_from_slice(&expected);
+                expected_body.extend_from_slice(b"\r\n--bonsai-canary-0000000000000000--\r\n");
+                assert_eq!(&upload[body_at..], expected_body);
                 assert!(
                     upload
                         .windows(authorization.len())
@@ -886,10 +970,12 @@ mod tests {
             until: Instant::now() + Duration::from_secs(1),
             cancelled: None,
         };
-        let marker =
-            boundary(&audio, &call).map_err(|_| io::Error::other("Boundary preparation failed"))?;
+        let normalized = normalize_wav(&audio, &call)
+            .map_err(|_| io::Error::other("Capture normalization failed"))?;
+        let marker = boundary(&normalized, &call)
+            .map_err(|_| io::Error::other("Boundary preparation failed"))?;
         assert_eq!(marker, "bonsai-canary-0000000000000001");
-        assert!(multipart(&audio, &marker).is_ok());
+        assert!(multipart(normalized, &marker).is_ok());
         for offset in [4, 16, 20, 22, 24, 28, 32, 34, 40] {
             let mut invalid = audio.clone();
             invalid[offset] ^= 1;
@@ -904,17 +990,7 @@ mod tests {
     fn windows_extensible_capture_normalizes_ancillary_chunks_and_rejects_corruption()
     -> io::Result<()> {
         let canonical = wav(&[0, 0, 1, 0])?;
-        let mut extensible = b"RIFF\0\0\0\0WAVEJUNK\x03\0\0\0abc\0fmt \x28\0\0\0".to_vec();
-        let mut format = canonical[20..36].to_vec();
-        format[..2].copy_from_slice(&0xfffe_u16.to_le_bytes());
-        format.extend_from_slice(&22_u16.to_le_bytes());
-        format.extend_from_slice(&16_u16.to_le_bytes());
-        format.extend_from_slice(&4_u32.to_le_bytes());
-        format.extend_from_slice(&[1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113]);
-        extensible.extend_from_slice(&format);
-        extensible.extend_from_slice(&canonical[36..]);
-        let riff_length = u32::try_from(extensible.len() - 8).map_err(io::Error::other)?;
-        extensible[4..8].copy_from_slice(&riff_length.to_le_bytes());
+        let mut extensible = extensible_wav(&canonical)?;
         let current = AtomicU64::new(1);
         let call = Call {
             generation: 1,
@@ -922,11 +998,10 @@ mod tests {
             until: Instant::now() + Duration::from_secs(1),
             cancelled: None,
         };
-        assert_eq!(
-            normalize_wav(&extensible, &call)
-                .map_err(|_| io::Error::other("Capture normalization failed"))?,
-            canonical
-        );
+        let normalized = normalize_wav(&extensible, &call)
+            .map_err(|_| io::Error::other("Capture normalization failed"))?;
+        assert_eq!(normalized.header, canonical[..44]);
+        assert_eq!(normalized.data, &canonical[44..]);
         let mut duplicate = extensible.clone();
         duplicate.extend_from_slice(&canonical[36..]);
         let length = u32::try_from(duplicate.len() - 8).map_err(io::Error::other)?;
@@ -937,6 +1012,79 @@ mod tests {
         assert!(normalize_wav(&float_format, &call).is_err());
         extensible.pop();
         assert!(normalize_wav(&extensible, &call).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn multipart_upload_borrows_pcm_and_preserves_bytes_under_partial_writes() -> io::Result<()> {
+        struct PartialWriter(Vec<u8>);
+
+        impl Write for PartialWriter {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                let count = bytes.len().min(7);
+                self.0.extend_from_slice(&bytes[..count]);
+                Ok(count)
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let current = AtomicU64::new(1);
+        let call = Call::new(1, &current, Duration::from_secs(10));
+        let canonical = wav(b"bonsai-canary-0000000000000000")?;
+        let extensible = extensible_wav(&canonical)?;
+        for capture in [&canonical, &extensible] {
+            let normalized = normalize_wav(capture, &call)
+                .map_err(|_| io::Error::other("Capture normalization failed"))?;
+            assert_eq!(normalized.header, canonical[..44]);
+            assert_eq!(normalized.data, &canonical[44..]);
+            assert!(std::ptr::eq(
+                normalized.data.as_ptr(),
+                capture[capture.len() - normalized.data.len()..].as_ptr()
+            ));
+            let marker = boundary(&normalized, &call)
+                .map_err(|_| io::Error::other("Boundary preparation failed"))?;
+            assert_eq!(marker, "bonsai-canary-0000000000000001");
+            let body = multipart(normalized, &marker)
+                .map_err(|_| io::Error::other("Multipart preparation failed"))?;
+            let parts = body.parts();
+            assert!(std::ptr::eq(parts[2].as_ptr(), body.wav.data.as_ptr()));
+            let mut written = PartialWriter(Vec::new());
+            for part in parts {
+                write_all(&mut written, part, &call)
+                    .map_err(|_| io::Error::other("Multipart upload failed"))?;
+            }
+            let mut expected = format!(
+                "--{marker}\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n{MODEL}\r\n--{marker}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.wav\"\r\nContent-Type: audio/wav\r\n\r\n"
+            )
+            .into_bytes();
+            expected.extend_from_slice(&canonical);
+            expected.extend_from_slice(format!("\r\n--{marker}--\r\n").as_bytes());
+            assert_eq!(request_length(&body.parts()), Some(expected.len()));
+            assert_eq!(written.0, expected);
+        }
+        // A maximum-duration clip still borrows the entire payload and admits
+        // only its actual multipart size. No normalized/upload PCM copy exists.
+        let maximum = wav(&vec![0; 960_000])?;
+        let normalized = normalize_wav(&maximum, &call)
+            .map_err(|_| io::Error::other("Maximum capture normalization failed"))?;
+        assert!(std::ptr::eq(
+            normalized.data.as_ptr(),
+            maximum[44..].as_ptr()
+        ));
+        let body = multipart(normalized, "bonsai-canary-0000000000000000")
+            .map_err(|_| io::Error::other("Maximum multipart preparation failed"))?;
+        assert!(request_length(&body.parts()).is_some());
+        assert_eq!(request_length(&[&vec![0; MAX_REQUEST], &[0]]), None);
+        current.store(2, Ordering::Release);
+        let mut written = PartialWriter(Vec::new());
+        assert_eq!(
+            write_all(&mut written, b"late PCM", &call),
+            Err(Failure::Cancelled)
+        );
+        assert!(written.0.is_empty());
         Ok(())
     }
 

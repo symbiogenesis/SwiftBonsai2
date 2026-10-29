@@ -240,6 +240,12 @@ Speech intake checks include
 `http::intake_tests::memory_body_intake_reuses_headers_and_preserves_coalesced_audio`
 and the `request::tests::memory_multipart_` cases for fixed field storage and
 excess-field rejection before decoding.
+The UI's
+`canary::tests::multipart_upload_borrows_pcm_and_preserves_bytes_under_partial_writes`
+case checks borrowed PCM identity, canonical/extensible WAV byte equality,
+collision-free multipart boundaries, partial writes, maximum clip admission and
+cancelled writes. The authenticated transcription case also checks exact upload
+bytes. These checks do not load Canary or measure transcription latency.
 These are untimed storage/lifetime checks. They do not qualify the separately
 owner-selected 15.5 GiB admission/11.5 GiB Job development budget; its total
 model-memory acceptance still requires complete-workload target-device evidence.
