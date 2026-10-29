@@ -79,8 +79,10 @@ no-go decision, including losing cases.
 - Qualify the complete transport/security boundary: numeric loopback, exact
   Host/Origin/routes, private credentials, tools/MCP and dynamic-loading rejection,
   capability-override rejection, bounded queues/bytes/tokens/duration and reliable
-  cancellation when clients disconnect or stop consuming output. Extend the
-  [bounded streaming regressions](docs/streaming-resources.md) to actual-model
+  cancellation when clients disconnect or stop consuming output. Qualify linear
+  speech-header scanning under fragmented delivery at the exact header limits;
+  comparison counts and coalesced-body framing remain model-free checks. Extend
+  the [bounded streaming regressions](docs/streaming-resources.md) to actual-model
   ready-prefix delivery, long-transcript updates, stalled-consumer speech backlog,
   speech/chat overlap with recycled PCM playback buffers and WinMM descriptors,
   including segment changes, Stop, driver refusal and recovery trials.

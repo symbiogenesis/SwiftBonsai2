@@ -613,9 +613,10 @@ fn retry_poll(error: &std::io::Error) -> bool {
 fn read_response(stream: &mut TcpStream, call: &Call<'_>, expected: Media) -> Result<Vec<u8>> {
     let mut received = Vec::new();
     let mut buffer = [0; 4096];
+    let mut header_end = crate::http::HeaderEnd::default();
     let end = loop {
-        if let Some(separator) = received.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
-            break separator + 4;
+        if let Some(end) = header_end.find(&received) {
+            break end;
         }
         if received.len() >= MAX_HEAD {
             return Err(Failure::Message(
@@ -731,9 +732,9 @@ fn response_length(head: &[u8], expected: Media) -> Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Call, Client, Config, Failure, MAX_REQUEST, MAX_RESPONSE, MAX_WAVE_RESPONSE, MODEL, Media,
-        boundary, multipart, normalize_wav, request_length, response_body, response_length,
-        validate_wav, write_all,
+        Call, Client, Config, Failure, MAX_HEAD, MAX_REQUEST, MAX_RESPONSE, MAX_WAVE_RESPONSE,
+        MODEL, Media, boundary, multipart, normalize_wav, request_length, response_body,
+        response_length, validate_wav, write_all,
     };
     use std::{
         fs,
@@ -1109,6 +1110,29 @@ mod tests {
             Err(Failure::Cancelled)
         );
         assert_eq!(written.0, b"");
+        Ok(())
+    }
+
+    #[test]
+    fn fragmented_response_headers_keep_exact_limit_framing_and_coalesced_body()
+    -> Result<(), Failure> {
+        let mut head = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 4\r\nX-Padding: ".to_vec();
+        head.resize(MAX_HEAD - 4, b'x');
+        head.extend_from_slice(b"\r\n\r\n");
+        for split in 1..=4 {
+            let mut scan = crate::http::HeaderEnd::default();
+            assert_eq!(scan.find(&head[..MAX_HEAD - split]), None);
+            let mut wire = head.clone();
+            wire.extend_from_slice(b"body");
+            let storage = wire.as_ptr();
+            let end = scan.find(&wire).ok_or(Failure::Cancelled)?;
+            assert_eq!(end, MAX_HEAD);
+            let length = response_length(&wire[..end], Media::Json)?;
+            assert_eq!(length, 4);
+            let body = response_body(wire, end, length, |_| Err(Failure::Cancelled))?;
+            assert_eq!(body, b"body");
+            assert_eq!(body.as_ptr(), storage);
+        }
         Ok(())
     }
 

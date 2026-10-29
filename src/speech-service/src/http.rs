@@ -39,6 +39,30 @@ struct Head {
     media: String,
 }
 
+#[derive(Default)]
+struct HeaderEnd {
+    next: usize,
+    #[cfg(test)]
+    comparisons: usize,
+}
+
+impl HeaderEnd {
+    fn find(&mut self, bytes: &[u8]) -> Option<usize> {
+        for (offset, window) in bytes[self.next..].windows(4).enumerate() {
+            #[cfg(test)]
+            {
+                self.comparisons += 1;
+            }
+            if window == b"\r\n\r\n" {
+                return Some(self.next + offset + 4);
+            }
+        }
+        // An unchanged prefix cannot gain a delimiter; retain only its overlap.
+        self.next = bytes.len().saturating_sub(3);
+        None
+    }
+}
+
 pub(super) fn handle(peer: &mut TcpStream, port: u16, key: &[u8; 64], engine: &mut impl Engine) {
     let result = receive(peer, port, key, engine.kind())
         .and_then(|prepared| respond(engine, &prepared, peer));
@@ -155,9 +179,10 @@ fn stream(
 fn receive(peer: &mut TcpStream, port: u16, key: &[u8; 64], kind: Kind) -> Result<Prepared, Error> {
     let until = Instant::now() + INTAKE;
     let mut wire = Vec::with_capacity(MAX_HEAD);
+    let mut header_end = HeaderEnd::default();
     let end = loop {
-        if let Some(at) = wire.windows(4).position(|window| window == b"\r\n\r\n") {
-            break at + 4;
+        if let Some(end) = header_end.find(&wire) {
+            break end;
         }
         if wire.len() >= MAX_HEAD {
             return Err(Error::new(431, "header_limit"));
@@ -423,7 +448,62 @@ fn write_before(peer: &mut TcpStream, mut remaining: &[u8], until: Instant) -> i
 
 #[cfg(test)]
 mod intake_tests {
-    use super::{Error, MAX_HEAD, body_buffer};
+    use super::{Error, HeaderEnd, Kind, MAX_HEAD, body_buffer, parse_head};
+
+    #[test]
+    fn fragmented_headers_scan_each_window_once_and_preserve_coalesced_audio() {
+        let mut head = vec![b'x'; MAX_HEAD - 4];
+        head.extend_from_slice(b"\r\n\r\n");
+        for fragment in [1, 2, 3, 7, 4096, MAX_HEAD] {
+            let mut scan = HeaderEnd::default();
+            let mut received = Vec::new();
+            for chunk in head.chunks(fragment) {
+                received.extend_from_slice(chunk);
+                let expected = (received.len() == head.len()).then_some(head.len());
+                assert_eq!(scan.find(&received), expected);
+            }
+            assert_eq!(scan.comparisons, head.len() - 3);
+        }
+        for split in 1..=4 {
+            let mut scan = HeaderEnd::default();
+            assert_eq!(scan.find(&head[..head.len() - split]), None);
+            let mut wire = head.clone();
+            wire.extend_from_slice(b"\0\x80\xff\x7f\r\n\r\n");
+            assert_eq!(scan.find(&wire), Some(head.len()));
+            assert_eq!(&wire[head.len()..], b"\0\x80\xff\x7f\r\n\r\n");
+            assert_eq!(scan.comparisons, head.len() - 3);
+        }
+    }
+
+    #[test]
+    fn fragmented_request_headers_keep_exact_limit_framing_and_coalesced_audio() -> Result<(), Error>
+    {
+        let key = [b'a'; 64];
+        let mut head = format!(
+            "POST /v1/audio/transcriptions HTTP/1.1\r\nHost: 127.0.0.1:1234\r\nAuthorization: Bearer {}\r\nContent-Length: 4\r\nContent-Type: multipart/form-data; boundary=a\r\nX-Padding: ",
+            "a".repeat(64)
+        )
+        .into_bytes();
+        head.resize(MAX_HEAD - 4, b'x');
+        head.extend_from_slice(b"\r\n\r\n");
+        for split in 1..=4 {
+            let mut scan = HeaderEnd::default();
+            assert_eq!(scan.find(&head[..MAX_HEAD - split]), None);
+            let mut wire = head.clone();
+            wire.extend_from_slice(b"\0\x80\xff\x7f");
+            let storage = wire.as_ptr();
+            let end = scan.find(&wire).ok_or(Error::bad("incomplete_request"))?;
+            assert_eq!(end, MAX_HEAD);
+            let parsed = parse_head(&wire[..end], 1234, &key, Kind::Canary)?;
+            assert!(!parsed.health);
+            assert_eq!(parsed.length, 4);
+            assert_eq!(parsed.media, "multipart/form-data; boundary=a");
+            let body = body_buffer(wire, end, parsed.length)?;
+            assert_eq!(body, b"\0\x80\xff\x7f");
+            assert_eq!(body.as_ptr(), storage);
+        }
+        Ok(())
+    }
 
     #[test]
     fn memory_body_intake_reuses_headers_and_preserves_coalesced_audio() -> Result<(), Error> {

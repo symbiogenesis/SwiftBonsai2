@@ -243,6 +243,13 @@ Speech intake checks include
 `http::intake_tests::memory_body_intake_reuses_headers_and_preserves_coalesced_audio`
 and the `request::tests::memory_multipart_` cases for fixed field storage and
 excess-field rejection before decoding.
+The `fragmented_headers_scan_each_window_once_and_preserve_coalesced_payload`
+native HTTP case and companion `fragmented_headers_scan_each_window_once_and_preserve_coalesced_audio`
+case count delimiter comparisons under bytewise and larger fragments. The
+`fragmented_response_headers_keep_exact_limit_framing_and_coalesced_body` and
+`fragmented_request_headers_keep_exact_limit_framing_and_coalesced_audio` cases
+parse exact-limit headers across every delimiter split and preserve body storage.
+These establish untimed framing/work behavior; device latency remains unqualified.
 The UI's
 `canary::tests::multipart_upload_borrows_pcm_and_preserves_bytes_under_partial_writes`
 case checks borrowed PCM identity, canonical/extensible WAV byte equality,
