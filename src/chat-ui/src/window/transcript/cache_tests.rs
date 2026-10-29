@@ -109,6 +109,85 @@ fn transcript_accounting_streaming_visits_no_completed_messages() {
 }
 
 #[test]
+fn transcript_accounting_caps_empty_messages_before_bytes_require_eviction() {
+    let mut transcript = Transcript::default();
+    for _ in 0..MAX_MESSAGES {
+        transcript.push(Role::User, String::new());
+    }
+    let retained = transcript.messages[1].id;
+    transcript.push(Role::Assistant, String::new());
+    assert_eq!(transcript.messages.len(), MAX_MESSAGES);
+    assert_eq!(transcript.messages[0].id, retained);
+    assert_eq!(transcript.trim_message_visits, 1);
+    assert_eq!(transcript.trim_batches, 1);
+    assert!(transcript.valid_saved());
+    assert!(
+        transcript
+            .messages
+            .last()
+            .is_some_and(|message| message.pending)
+    );
+    for _ in 0..4096 {
+        transcript.append("x", false);
+    }
+    assert_byte_accounting(&transcript);
+    assert_eq!(transcript.trim_message_visits, 1);
+    assert_eq!(transcript.trim_batches, 1);
+}
+
+#[test]
+fn transcript_accounting_count_eviction_preserves_find_and_recovery()
+-> Result<(), serde_json::Error> {
+    let mut transcript = Transcript::default();
+    for _ in 0..MAX_MESSAGES {
+        transcript.push(Role::User, "hit".to_owned());
+    }
+    transcript.search.query = "hit".to_owned();
+    transcript.search.refresh(&transcript.messages);
+    transcript.search.active = 10;
+    let selected = transcript.search.matches[10].clone();
+    transcript.push(Role::Assistant, "new hit".to_owned());
+    transcript.search.refresh(&transcript.messages);
+    assert_eq!(transcript.messages.len(), MAX_MESSAGES);
+    assert_eq!(transcript.search.matches.len(), MAX_MESSAGES);
+    assert_eq!(transcript.search.active, 9);
+    assert!(transcript.search.matches[transcript.search.active] == selected);
+    assert!(transcript.search.matches.iter().all(|found| {
+        transcript
+            .messages
+            .iter()
+            .any(|message| message.id == found.message)
+    }));
+    assert_byte_accounting(&transcript);
+    let restored: Transcript = serde_json::from_slice(&serde_json::to_vec(&transcript)?)?;
+    assert_eq!(restored.messages.len(), MAX_MESSAGES);
+    assert_eq!(restored.messages[0].body, "hit");
+    assert_eq!(restored.messages[MAX_MESSAGES - 1].body, "new hit");
+    assert_byte_accounting(&restored);
+    Ok(())
+}
+
+#[test]
+fn transcript_accounting_count_and_byte_eviction_remove_one_combined_prefix() {
+    let mut transcript = Transcript::default();
+    transcript.push(Role::User, "x".repeat(MAX_BYTES / 2));
+    transcript.push(Role::Assistant, "y".repeat(MAX_BYTES / 2));
+    for _ in 2..MAX_MESSAGES {
+        transcript.push(Role::User, String::new());
+    }
+    let retained = transcript.messages[2].id;
+    // The count bound requires one eviction, but freeing that message alone
+    // leaves the byte budget exceeded. Drain the combined prefix only once.
+    transcript.push(Role::Assistant, "z".repeat(MAX_BYTES / 2 + 1));
+    assert_eq!(transcript.messages.len(), MAX_MESSAGES - 1);
+    assert_eq!(transcript.messages[0].id, retained);
+    assert_eq!(transcript.trim_message_visits, 2);
+    assert_eq!(transcript.trim_batches, 1);
+    assert!(transcript.valid_saved());
+    assert_byte_accounting(&transcript);
+}
+
+#[test]
 fn transcript_accounting_bulk_eviction_drains_only_the_required_prefix() {
     let mut transcript = Transcript::default();
     for _ in 0..8 {
@@ -187,12 +266,14 @@ fn transcript_accounting_restore_rebuilds_total_without_changing_saved_schema()
     assert_eq!(restored.trim_message_visits, 0);
 
     let mut message_limit = Transcript::default();
-    for _ in 0..512 {
+    for _ in 0..MAX_MESSAGES {
         message_limit.push(Role::User, String::new());
     }
     assert!(serde_json::from_slice::<Transcript>(&serde_json::to_vec(&message_limit)?).is_ok());
-    message_limit.push(Role::User, String::new());
-    assert!(!message_limit.valid_saved());
-    assert!(serde_json::from_slice::<Transcript>(&serde_json::to_vec(&message_limit)?).is_err());
+    let mut saved = serde_json::to_value(&message_limit)?;
+    if let Some(messages) = saved["messages"].as_array_mut() {
+        messages.push(serde_json::json!({"role": "User", "body": "", "reasoning": ""}));
+    }
+    assert!(serde_json::from_value::<Transcript>(saved).is_err());
     Ok(())
 }

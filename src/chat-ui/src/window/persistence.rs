@@ -37,7 +37,7 @@ pub(super) fn deserialize_transcript_messages<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    deserialize_bounded_sequence(deserializer, 512)
+    deserialize_bounded_sequence(deserializer, super::transcript::MAX_MESSAGES)
 }
 
 // Reject an extra element before deserializing its payload. Post-parse checks

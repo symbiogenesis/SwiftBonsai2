@@ -8,6 +8,7 @@ mod cache_tests;
 mod search;
 
 const MAX_BYTES: usize = 4 * 1024 * 1024;
+pub(super) const MAX_MESSAGES: usize = 512;
 const SPEAKER_SIZE: f32 = 36.0;
 const SPEAKER_FOOTER_HEIGHT: f32 = 64.0;
 
@@ -101,7 +102,7 @@ impl<'de> serde::Deserialize<'de> for Transcript {
 
 impl Transcript {
     pub(super) fn valid_saved(&self) -> bool {
-        self.messages.len() <= 512
+        self.messages.len() <= MAX_MESSAGES
             && self.messages.iter().fold(0_usize, |total, message| {
                 total
                     .saturating_add(message.body.len())
@@ -200,18 +201,19 @@ impl Transcript {
     }
 
     fn trim(&mut self) {
-        if self.text_bytes <= MAX_BYTES {
+        if self.text_bytes <= MAX_BYTES && self.messages.len() <= MAX_MESSAGES {
             return;
         }
         let mut removed = 0;
-        // Preserve the same final two messages as the original byte bound.
-        // Inspect only the evicted prefix, then move the retained suffix once.
+        // Bound message ownership and per-frame traversal even when messages
+        // contain little or no text. Preserve the final two messages under the
+        // byte policy; inspect only the evicted prefix and move the suffix once.
         for message in self
             .messages
             .iter()
             .take(self.messages.len().saturating_sub(2))
         {
-            if self.text_bytes <= MAX_BYTES {
+            if self.text_bytes <= MAX_BYTES && self.messages.len() - removed <= MAX_MESSAGES {
                 break;
             }
             #[cfg(test)]

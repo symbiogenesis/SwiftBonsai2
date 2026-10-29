@@ -47,7 +47,9 @@ device and installed drivers.
 The window uses a dark palette, maps Windows high-contrast settings to its
 Rust-drawn widgets and keeps an in-memory workspace of up to 16 conversations.
 Each conversation retains its draft, response settings, visible transcript and
-separate exact committed model history. Switching while idle never promotes an
+separate exact committed model history. The visible transcript retains at most
+512 messages; count and byte-budget eviction remove the oldest visible messages
+without changing committed model history. Switching while idle never promotes an
 interrupted turn to model history. Each conversation row has a labelled actions
 menu for rename, copying and deletion. Rename and delete use centered native
 modals; deletion names its target, blocks background input and shows completion

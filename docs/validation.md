@@ -280,7 +280,13 @@ These checks do not establish actual-model latency or process peak memory. The
 navigation, IME handling and Escape precedence without model or speech services.
 Transcript accounting cases also check exact byte totals across streaming,
 replacement, eviction and recovery, with no completed-message visits during
-ordinary append accounting. The `client::tests::http_payload_` cases gate the
+ordinary append accounting. The `transcript_accounting_caps_empty_messages_before_bytes_require_eviction`,
+`transcript_accounting_count_eviction_preserves_find_and_recovery` and
+`transcript_accounting_count_and_byte_eviction_remove_one_combined_prefix`
+cases enforce the shared 512-message live/restore bound, retain Find selection
+and byte accounting, and remove one combined count/byte prefix. They do not
+exercise an actual long-conversation application session.
+The `client::tests::http_payload_` cases gate the
 underlying reader to prove that ready SSE payload is delivered before the rest
 of its declared HTTP body or chunk ending arrives, while incomplete framing
 still rejects. The `speech::command_queue::tests::` and

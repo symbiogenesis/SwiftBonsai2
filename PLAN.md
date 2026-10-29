@@ -54,7 +54,9 @@ no-go decision, including losing cases.
   explicit retry without replaying interrupted turns. Include Find across streamed
   appends, response replacements and conversation switches in long-conversation
   acceptance, including append-only result/cache reuse and saturated results.
-  The matching and cached-result work-count regressions remain model-free.
+  Exercise the 512-message live transcript boundary during retry-heavy sessions,
+  Find navigation and recovery. Matching, cached-result and combined count/byte
+  eviction regressions remain model-free.
 - Review Windows assistive-technology support, keyboard/focus behavior, scaling,
   high contrast, minimum-window layout and multilingual text input with the
   actual native application.
