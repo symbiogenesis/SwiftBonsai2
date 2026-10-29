@@ -31,6 +31,39 @@ fn power(report: &Value, field: &str) -> Option<bool> {
         .flatten()
 }
 
+fn power_policy(report: &Value) -> Option<(&str, &str)> {
+    let policy = &report["power_policy_snapshot"];
+    if policy["status"] != "observed"
+        || policy["source"]
+            != "PowerGetActiveScheme/PowerRegisterForEffectivePowerModeNotifications"
+        || policy["notification_version"] != 2
+    {
+        return None;
+    }
+    let scheme = policy["active_scheme"].as_str()?;
+    let mode = policy["effective_mode"].as_str()?;
+    let valid_scheme = scheme.len() == 36
+        && scheme.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
+            }
+        })
+        && scheme != "00000000-0000-0000-0000-000000000000";
+    let valid_mode = matches!(
+        mode,
+        "battery-saver"
+            | "better-battery"
+            | "balanced"
+            | "high-performance"
+            | "max-performance"
+            | "game-mode"
+            | "mixed-reality"
+    );
+    (valid_scheme && valid_mode).then_some((scheme, mode))
+}
+
 pub(super) fn compare(request: Value) -> crate::Result<Value> {
     let request: Request = serde_json::from_value(request).map_err(|error| error.to_string())?;
     if request.operation != "compare-conditions" {
@@ -64,6 +97,11 @@ pub(super) fn compare(request: Value) -> crate::Result<Value> {
             _ => unknown.push(unavailable),
         }
     }
+    match (power_policy(&request.before), power_policy(&request.after)) {
+        (Some(before), Some(after)) if before != after => changed.push("power-policy-changed"),
+        (Some(_), Some(_)) => {}
+        _ => unknown.push("power-policy-unavailable"),
+    }
     let status = if !changed.is_empty() {
         "changed"
     } else if !unknown.is_empty() {
@@ -74,7 +112,7 @@ pub(super) fn compare(request: Value) -> crate::Result<Value> {
     Ok(json!({
         "Status": status, "Comparable": status == "observed-stable",
         "Changed": changed, "Unknown": unknown,
-        "Scope": "Batch boundary observations only; changes within samples are not monitored. Charge level and live CPU availability flags are not compatibility conditions. No energy verdict.",
+        "Scope": "Batch boundary observations only; changes within samples and edits to individual scheme settings are not monitored. Active scheme and effective power mode are live policy conditions. Charge level and live CPU availability flags are not compatibility conditions. No energy verdict.",
     }))
 }
 
@@ -90,6 +128,10 @@ mod tests {
             "availability": [{"id": 1, "parked": false}],
             "power_snapshot": {"status": "observed", "source": "GetSystemPowerStatus",
                 "ac_online": true, "battery_saver": false, "battery_percent": 80},
+            "power_policy_snapshot": {"status": "observed",
+                "source": "PowerGetActiveScheme/PowerRegisterForEffectivePowerModeNotifications",
+                "notification_version": 2,
+                "active_scheme": "381b4222-f694-41f0-9685-ff5bb260df2e", "effective_mode": "balanced"},
         })
     }
 
@@ -155,6 +197,69 @@ mod tests {
         let mut input = json!({"operation": "compare-conditions", "before": observation(), "after": observation()});
         input["allowChanged"] = json!(true);
         assert!(compare(input).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn condition_comparison_rejects_power_mode_drift_on_unchanged_ac_and_missing_policy()
+    -> crate::Result<()> {
+        for (field, value) in [
+            ("effective_mode", json!("max-performance")),
+            (
+                "active_scheme",
+                json!("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"),
+            ),
+        ] {
+            let mut after = observation();
+            after["power_policy_snapshot"][field] = value;
+            let compared = result(&after)?;
+            assert_eq!(compared["Status"], "changed");
+            assert_eq!(compared["Comparable"], false);
+            assert_eq!(compared["Changed"], json!(["power-policy-changed"]));
+        }
+        for policy in [
+            Value::Null,
+            json!({"status": "unknown"}),
+            {
+                let mut policy = observation()["power_policy_snapshot"].clone();
+                policy["effective_mode"] = json!("future-mode");
+                policy
+            },
+            {
+                let mut policy = observation()["power_policy_snapshot"].clone();
+                policy["active_scheme"] = json!("unknown");
+                policy
+            },
+            {
+                let mut policy = observation()["power_policy_snapshot"].clone();
+                policy["active_scheme"] = json!("00000000-0000-0000-0000-000000000000");
+                policy
+            },
+            {
+                let mut policy = observation()["power_policy_snapshot"].clone();
+                policy["notification_version"] = json!(1);
+                policy
+            },
+        ] {
+            let mut after = observation();
+            after["power_policy_snapshot"] = policy;
+            let compared = result(&after)?;
+            assert_eq!(compared["Status"], "unknown");
+            assert_eq!(compared["Comparable"], false);
+            assert_eq!(compared["Unknown"], json!(["power-policy-unavailable"]));
+        }
+        let mut legacy = observation();
+        legacy
+            .as_object_mut()
+            .ok_or("Missing observation object.")?
+            .remove("power_policy_snapshot");
+        assert_eq!(result(&legacy)?["Comparable"], false);
+        assert_eq!(
+            super::super::run(json!({
+                "operation": "compare-conditions", "before": legacy, "after": observation(),
+            }))?["Comparable"],
+            false
+        );
         Ok(())
     }
 }

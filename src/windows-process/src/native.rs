@@ -58,6 +58,7 @@ mod environment;
 mod host;
 mod isa;
 mod power;
+mod power_policy;
 
 pub(super) fn cpu_sets() -> io::Result<Vec<crate::CpuSet>> {
     cpu::query()
@@ -73,6 +74,10 @@ pub(super) fn native_build_host() -> io::Result<crate::NativeBuildHost> {
 
 pub(super) fn power_status() -> io::Result<crate::PowerStatus> {
     power::query()
+}
+
+pub(super) fn power_policy() -> io::Result<crate::PowerPolicy> {
+    power_policy::query()
 }
 
 pub(super) fn sandbox_available() -> io::Result<()> {

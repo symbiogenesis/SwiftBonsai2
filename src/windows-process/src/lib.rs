@@ -165,6 +165,71 @@ pub fn power_status() -> io::Result<PowerStatus> {
     native::power_status()
 }
 
+/// Checked Windows effective power mode, using notification contract version two.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EffectivePowerMode {
+    /// Battery saver, also named energy saver high savings in newer SDKs.
+    BatterySaver,
+    /// Better battery, also named energy saver standard in newer SDKs.
+    BetterBattery,
+    /// Balanced performance.
+    Balanced,
+    /// High performance under the legacy high-performance overlay.
+    HighPerformance,
+    /// Maximum performance.
+    MaxPerformance,
+    /// Game-mode power policy.
+    GameMode,
+    /// Windows mixed-reality power policy.
+    MixedReality,
+}
+
+impl EffectivePowerMode {
+    /// Stable observation label; no energy or performance outcome is inferred.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::BatterySaver => "battery-saver",
+            Self::BetterBattery => "better-battery",
+            Self::Balanced => "balanced",
+            Self::HighPerformance => "high-performance",
+            Self::MaxPerformance => "max-performance",
+            Self::GameMode => "game-mode",
+            Self::MixedReality => "mixed-reality",
+        }
+    }
+}
+
+/// Sequential observations of Windows power scheme and effective power mode.
+///
+/// These are changing policy conditions, not an immutable compatibility identity.
+/// A scheme identifier does not capture edits to individual power settings.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PowerPolicy {
+    /// Active scheme GUID in lowercase canonical hyphenated notation.
+    pub active_scheme: String,
+    /// Latest observed mode from a temporary version-two notification registration.
+    pub effective_mode: EffectivePowerMode,
+}
+
+/// Observes active power scheme and effective mode without changing settings.
+///
+/// Uses [PowerGetActiveScheme](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powergetactivescheme)
+/// and the initial current-value notification from
+/// [PowerRegisterForEffectivePowerModeNotifications](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powerregisterforeffectivepowermodenotifications).
+/// The registration is removed before returning a successful snapshot. No polling,
+/// user power-mode names, undocumented overlay API or energy estimate is used.
+/// Waiting for the initial asynchronous notification is bounded to one second;
+/// native cleanup then waits for the short callback to finish.
+///
+/// # Errors
+/// Returns native failures, a missing initial notification, an unknown mode or
+/// a malformed scheme. A failed notification cleanup disables future mode queries
+/// in this process rather than accumulating registrations or reusing stale data.
+pub fn power_policy() -> io::Result<PowerPolicy> {
+    native::power_policy()
+}
+
 /// Explicit launch inputs; no shell or executable search path is used.
 #[derive(Debug)]
 pub struct ProcessSpec {

@@ -27,6 +27,19 @@ fn power_snapshot() -> Value {
         "ac_online": null, "battery_saver": null, "battery_percent": null})
 }
 
+fn power_policy_snapshot() -> Value {
+    #[cfg(windows)]
+    if let Ok(policy) = bonsai_windows_process::power_policy() {
+        return json!({"status": "observed",
+            "source": "PowerGetActiveScheme/PowerRegisterForEffectivePowerModeNotifications",
+            "notification_version": 2, "active_scheme": policy.active_scheme,
+            "effective_mode": policy.effective_mode.as_str()});
+    }
+    json!({"status": "unknown",
+        "source": "PowerGetActiveScheme/PowerRegisterForEffectivePowerModeNotifications",
+        "notification_version": 2, "active_scheme": null, "effective_mode": null})
+}
+
 #[cfg(windows)]
 fn observed(sets: &[bonsai_windows_process::CpuSet]) -> Value {
     use std::collections::BTreeSet;
@@ -91,6 +104,7 @@ pub fn run(request: &Value) -> crate::Result<Value> {
     report["source"] = json!("GetSystemCpuSetInformation");
     report["qualification"] = json!("unqualified");
     report["power_snapshot"] = power_snapshot();
+    report["power_policy_snapshot"] = power_policy_snapshot();
     report["isa"] = isa_snapshot();
     Ok(report)
 }
