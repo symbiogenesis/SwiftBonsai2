@@ -4,8 +4,12 @@ Outstanding hardware-selection work is tracked only in
 [PLAN.md](../PLAN.md#hardware-selection). This document defines the eligibility,
 ranking and state boundaries for native Windows ARM64 X1/X2 execution. Current
 released launch policies are CPU-only; no automatic selector or qualified
-accelerator default is established. The recorded development device is the
-32 GB Snapdragon X1E-78-100.
+accelerator default is established. As of 2026-10-29, the development device is
+an ASUS Zenbook A16 reporting Snapdragon X2 Elite Extreme X2E94100, 18 physical
+and logical cores, and Adreno X2-90 driver 32.0.149.0. The earlier X1E-78-100
+remains a separate qualification target. These inventory observations do not
+qualify performance or optional ISA. The bounded [X2 CPU screen](x2-cpu-optimization.md)
+retains phase-specific thread controls and device identity for CI measurement.
 
 ## Device classes and observed identity
 

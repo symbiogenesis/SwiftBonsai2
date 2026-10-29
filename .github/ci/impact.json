@@ -55,6 +55,7 @@
         "scripts/Build-Engine.ps1", "scripts/Invoke-*Completion.ps1", "scripts/Invoke-Lora*.ps1",
         "scripts/Bonsai.Build.psm1", "scripts/Bonsai.Qualification.psm1", "scripts/Get-LoraQualification.ps1",
         "scripts/Invoke-Ptq1Screen.ps1", "scripts/Get-Ptq1Screen.ps1", "tests/Test-Ptq1Screen.ps1",
+        "scripts/Invoke-X2CpuEvaluation.ps1", ".github/workflows/x2-cpu-evaluation.yml",
         "tests/Test-NativeProcess.ps1", "tests/Test-CompletionSupervision.ps1",
         "tests/Test-EngineBuild.ps1", "tests/Test-Lora*.ps1", "tests/*Support*", "tests/fixtures/**",
         ".github/workflows/swift-lora-qualification.yml", ".github/workflows/swift-ptq1-screen.yml",

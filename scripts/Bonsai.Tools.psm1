@@ -127,7 +127,7 @@ function Invoke-BonsaiTool {
     #>
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
-    param([Parameter(Mandatory)][ValidateSet('credentials','memory','cpu-check-plan','cpu-check-report','server-policy','runtime-stage','runtime-verify','completion','qualification','runtime-promotion','speech-models','inference-lock','inference-capabilities','speech-build','speech-evaluation','source-build','chat-launch')][string]$Command,
+    param([Parameter(Mandatory)][ValidateSet('credentials','memory','host-cpu','cpu-evaluation','cpu-check-plan','cpu-check-report','server-policy','runtime-stage','runtime-verify','completion','qualification','runtime-promotion','speech-models','inference-lock','inference-capabilities','speech-build','speech-evaluation','source-build','chat-launch')][string]$Command,
           [Collections.IDictionary]$Request = @{}, [string]$ToolPath,
           [ValidateRange(0,86400)][int]$TimeoutSeconds = 60)
     if (-not $ToolPath -and $env:BONSAI_TOOLS_PATH) { $ToolPath = $env:BONSAI_TOOLS_PATH }

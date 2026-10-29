@@ -1,0 +1,81 @@
+name: Snapdragon X2 CPU thread screening
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  # All model captures share the physical laptop and its memory budget.
+  group: swift-lora-snapdragon
+  cancel-in-progress: false
+jobs:
+  evaluate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+      - name: Build the exact packaged maintenance tools
+        uses: ./.github/actions/bonsai-tools
+      - name: Capture bounded X2 Elite Extreme thread pairs
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-X2CpuEvaluation.ps1'
+          $data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
+          # Keep Actions upload credentials in this step, outside the complete
+          # evaluation/model process tree. Preserve CI identity and Windows env.
+          $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME 'pwsh.exe'))
+          $start.WorkingDirectory = $env:RUNNER_TEMP
+          $start.UseShellExecute = $false
+          $start.CreateNoWindow = $true
+          $start.RedirectStandardOutput = $true
+          $start.RedirectStandardError = $true
+          foreach ($argument in @('-NoProfile', '-File', $script, '-DataDirectory', $data)) {
+            $start.ArgumentList.Add($argument)
+          }
+          foreach ($name in @('ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNNER_INPUT_TOKEN')) {
+            [void]$start.Environment.Remove($name)
+          }
+          $child = [Diagnostics.Process]::Start($start)
+          try {
+            $stdout = $child.StandardOutput.ReadToEndAsync()
+            $stderr = $child.StandardError.ReadToEndAsync()
+            $child.WaitForExit()
+            [Console]::Out.Write($stdout.GetAwaiter().GetResult())
+            [Console]::Error.Write($stderr.GetAwaiter().GetResult())
+            $code = $child.ExitCode
+          } finally {
+            try {
+              if (-not $child.HasExited) { $child.Kill($true); $child.WaitForExit() }
+            } finally { $child.Dispose() }
+          }
+          if ($code -ne 0) { throw 'X2 CPU screening failed; inspect retained evidence.' }
+          $entry = @(Get-Content -LiteralPath $env:GITHUB_ENV | Where-Object { $_.StartsWith('BONSAI_X2_CPU_EVIDENCE=') })
+          if ($entry.Count -ne 1) { throw 'X2 CPU evidence path is missing or ambiguous.' }
+          $evidence = $entry[0].Substring('BONSAI_X2_CPU_EVIDENCE='.Length)
+          $report = Get-Content -LiteralPath (Join-Path $evidence 'cpu-evaluation.json') -Raw | ConvertFrom-Json
+          @('CPU: ' + $report.ProcessorName,
+            'Fresh-process CPU thread screening only. Defaults remain unchanged.',
+            'Prompt/decode timings are separate; complete process time includes loading.',
+            'CLI template defaults differ from chat; energy, quality and sustained comfort remain unqualified.',
+            'Ratios below one favor the candidate; unmatched natural-length outputs have no fixed-length comparison.') |
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          $report.Comparisons | ConvertTo-Json -Depth 8 | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+      - name: Retain credential-free synthetic CPU evidence
+        if: always() && env.BONSAI_X2_CPU_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: x2-cpu-${{ github.run_id }}-${{ github.run_attempt }}
+          # Explicit text/JSON evidence only; the verified adapter copy is excluded.
+          path: |
+            ${{ env.BONSAI_X2_CPU_EVIDENCE }}/**/*.json
+            ${{ env.BONSAI_X2_CPU_EVIDENCE }}/**/*.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 1

@@ -303,13 +303,17 @@ existing full-context/continuation/LoRA gates.
 
 ## Hardware selection
 
-- Extend shared discovery beyond scoped CPU observations: native CPU/OS ISA and
-  topology, actual SoC/SKU, GPU/NPU API/features/architecture, driver/runtime/firmware,
+- Extend shared discovery beyond scoped CPU observations and native CPU sets:
+  native CPU/OS optional ISA, independently checked SoC/SKU, GPU/NPU
+  API/features/architecture, driver/runtime/firmware,
   signed backend readiness and static accelerator identities. Reuse the checked
   representation in Doctor and launch policy; keep unknowns explicit and live
   resource budgets separate from immutable compatibility evidence.
 - Qualify safe scalar/NEON CPU controls independently on X1 and X2, including
   optional ISA eligibility and phase-specific thread/batch/wait/power choices.
+  Run the bounded [X2 CPU thread screen](docs/x2-cpu-optimization.md) on settled
+  main and retain results before selecting a new default; extend the screen
+  only when its phase measurements identify a useful next candidate.
   Compare supported event-based waits with polling using idle CPU, wake latency,
   active decode and cancellation responsiveness. Inventory native Windows timing,
   energy/thermal and memory observations plus their sampling limits; absent valid

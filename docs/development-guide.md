@@ -22,6 +22,11 @@ Prism inference support remains future work.
 [Adreno](adreno-gpu-plan.md) and [Hexagon](hexagon-npu-plan.md) integration remain
 planned. Current launch policies select CPU execution.
 
+For the current Snapdragon X2 Elite Extreme device, the bounded
+[CPU thread screen](x2-cpu-optimization.md) compares separate prefill/decode
+budgets in target-device CI. Local `-PlanOnly` inspection and native CPU inventory
+load no model; measured evidence is required before changing launch defaults.
+
 A native Rust chat app is available through `Start-Chat.ps1`.
 Owned model and speech workers require the native Windows containment described
 in the [worker sandbox architecture](sandboxing.md). Complete actual-model and

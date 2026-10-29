@@ -97,6 +97,8 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
     match arguments[0].to_str() {
         Some("credentials") => bonsai_tools::credentials::run(request),
         Some("completion") => bonsai_tools::completion::run(request),
+        Some("host-cpu") => bonsai_tools::host_cpu::run(&request),
+        Some("cpu-evaluation") => bonsai_tools::cpu_evaluation::run(request),
         Some("cpu-check-plan") => bonsai_tools::completion::cpu_check_plan(request),
         Some("cpu-check-report") => bonsai_tools::completion::cpu_check_report(request),
         Some("server-policy") => bonsai_tools::server::run(request),

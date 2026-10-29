@@ -29,6 +29,23 @@ not contain hostnames, serial numbers, user identities or network inventory.
 The outer Doctor tool inventory still contains local paths; review it before
 sharing.
 
+An optional `Doctor.ps1 -ToolPath <existing-bonsai-tools.exe>` adds
+`NativeCpuObservations` from the Rust `host-cpu` command. Its separate v1
+`runner-native-cpu-observations` report retains group-relative CPU-set topology,
+raw efficiency/scheduling classes and current-process allocation/parking flags.
+Static topology and live availability have separate fields. Query allocation,
+record count and retries are bounded; malformed or unavailable observations
+produce explicit unknowns rather than a core-count guess. Doctor never builds
+a tool for this option. Without it, the property is null and the existing host
+projection and CPU compatibility digest retain their original scope.
+The separate `power_snapshot` uses `GetSystemPowerStatus` for AC/battery,
+battery-saver and charge observations, preserving unknown AC/charge sentinels.
+These live conditions do not enter a compatibility digest or measure energy.
+
+CPU-set IDs do not establish persistent affinity, process affinity eligibility,
+optional ISA or Snapdragon core names. The [X2 CPU screen](x2-cpu-optimization.md)
+retains this native inventory alongside its processor observation and fixed plan.
+
 Names such as X1/X2 and a signed driver do not establish optional ISA, GPU/NPU
 execution or deployment trust. An emulated process's ISA result cannot qualify
 a native runtime. Current memory is a diagnostic snapshot, never a substitute

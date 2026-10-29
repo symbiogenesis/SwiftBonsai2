@@ -8,6 +8,8 @@ pub type Result<T> = std::result::Result<T, String>;
 pub const COMMANDS: &[&str] = &[
     "credentials",
     "memory",
+    "host-cpu",
+    "cpu-evaluation",
     "cpu-check-plan",
     "cpu-check-report",
     "server-policy",
@@ -42,6 +44,12 @@ pub mod credentials;
 
 /// Bounded completion supervision with retained process and artifact ownership.
 pub mod completion;
+
+/// Model-free native CPU topology and current-process availability observations.
+pub mod host_cpu;
+
+/// Bounded paired CPU tuning plans for the X2 Elite Extreme CI lane.
+pub mod cpu_evaluation;
 
 /// Offline runtime verification and bounded probes with retained artifact guards.
 pub mod runtime;

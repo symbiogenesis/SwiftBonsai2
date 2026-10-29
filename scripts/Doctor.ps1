@@ -9,6 +9,8 @@ OutputPath is optional, must be a new absolute file outside Git, and its parent
 must already exist. The JSON contains exact tool paths; review it before sharing.
 Version commands run in a unique system-temp directory with the inherited environment.
 Presence, executable architecture, and version do not establish backend correctness.
+ToolPath optionally selects an existing checked maintenance executable for native
+CPU-set observations. Omitting it keeps inventory independent of a Rust build.
 .EXAMPLE
 ./scripts/Doctor.ps1
 .EXAMPLE
@@ -27,6 +29,7 @@ https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-videocontroll
 param(
     [string] $DataPath,
     [string] $OutputPath,
+    [string] $ToolPath,
     [switch] $PassThru
 )
 
@@ -309,6 +312,15 @@ try {
             Isa = $isaProbeSucceeded
         }
     }
+    $nativeCpu = $null
+    if ($ToolPath) {
+        Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
+        $nativeCpu = Invoke-BonsaiTool -Command host-cpu -ToolPath $ToolPath -Request @{}
+        if ($nativeCpu.schema_version -ne 1 -or $nativeCpu.kind -cne 'runner-native-cpu-observations') {
+            throw 'The selected maintenance tool returned an unsupported native CPU observation.'
+        }
+        if ($nativeCpu.status -cne 'observed') { $issues.Add('Native CPU-set observations unavailable; topology remains unknown.') }
+    }
     $report = [ordered] @{
         SchemaVersion = 1
         CollectedAtUtc = [DateTime]::UtcNow.ToString('o')
@@ -337,6 +349,7 @@ try {
         Tools = $tools
         Storage = $storage
         Capabilities = $capabilities
+        NativeCpuObservations = $nativeCpu
         CpuCompatibilityIdentity = Get-BonsaiCpuCompatibilityIdentity -Capabilities $capabilities
         Gaps = @($issues)
         Qualification = 'Inventory only: no engine, GPU backend, memory admission, or daily security policy has been qualified.'
@@ -359,6 +372,9 @@ try {
         else { 'OS-usable physical memory: unavailable' }
         foreach ($cpu in $report.Processors) { "CPU: $($cpu.Name.Trim()) ($($cpu.Cores) cores, $($cpu.LogicalProcessors) logical)" }
         foreach ($gpu in $report.Graphics) { "GPU: $($gpu.Name); driver $($gpu.DriverVersion)" }
+        if ($null -ne $nativeCpu -and $nativeCpu.status -ceq 'observed') {
+            "Native CPU sets: $($nativeCpu.topology.logical_processors) logical; $($nativeCpu.topology.physical_cores) cores; efficiency classes $($nativeCpu.topology.efficiency_classes -join ', ')"
+        }
         foreach ($tool in $tools) {
             $summary = if ($tool.Present) { "$($tool.Architecture); $($tool.Version ?? $tool.VersionStatus)" } else { 'not found' }
             "$($tool.Name): $summary"
