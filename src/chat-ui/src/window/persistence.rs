@@ -9,11 +9,93 @@ use super::{
 #[serde(deny_unknown_fields)]
 struct SavedWorkspace {
     version: u32,
+    #[serde(deserialize_with = "deserialize_conversations")]
     conversations: Vec<Conversation>,
     active_conversation: u64,
     next_conversation: u64,
     active: ConversationSnapshot,
     voice_profile: String,
+}
+
+fn deserialize_conversations<'de, D>(deserializer: D) -> Result<Vec<Conversation>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_bounded_sequence(deserializer, MAX_CONVERSATIONS)
+}
+
+pub(super) fn deserialize_history<'de, D>(deserializer: D) -> Result<Vec<client::Message>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_bounded_sequence(deserializer, 128)
+}
+
+pub(super) fn deserialize_transcript_messages<'de, D>(
+    deserializer: D,
+) -> Result<Vec<super::transcript::Message>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_bounded_sequence(deserializer, 512)
+}
+
+// Reject an extra element before deserializing its payload. Post-parse checks
+// alone let a small file containing many empty objects allocate a large graph
+// of messages or conversations before discovering that it cannot be restored.
+fn deserialize_bounded_sequence<'de, D, T>(
+    deserializer: D,
+    limit: usize,
+) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    struct BoundedSequence<T> {
+        limit: usize,
+        marker: std::marker::PhantomData<T>,
+    }
+
+    struct ExcessItem;
+
+    impl<'de> serde::Deserialize<'de> for ExcessItem {
+        fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            Err(serde::de::Error::custom(
+                "Saved collection exceeds its item limit.",
+            ))
+        }
+    }
+
+    impl<'de, T: serde::Deserialize<'de>> serde::de::Visitor<'de> for BoundedSequence<T> {
+        type Value = Vec<T>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(formatter, "a sequence of at most {} items", self.limit)
+        }
+
+        fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut items = Vec::new();
+            while items.len() < self.limit {
+                let Some(item) = sequence.next_element()? else {
+                    return Ok(items);
+                };
+                items.push(item);
+            }
+            let _: Option<ExcessItem> = sequence.next_element()?;
+            Ok(items)
+        }
+    }
+
+    deserializer.deserialize_seq(BoundedSequence {
+        limit,
+        marker: std::marker::PhantomData,
+    })
 }
 
 #[derive(serde::Serialize)]
@@ -299,6 +381,115 @@ mod tests {
         let (commands, _incoming) = mpsc::channel();
         let (_events, incoming) = client::event_channel();
         State::create(commands, incoming, None, None)
+    }
+
+    #[test]
+    fn recovery_rejects_excess_conversations_before_decoding_their_payloads() -> io::Result<()> {
+        let mut original = state();
+        original.input = "Keep this draft after any rejected restore.".to_owned();
+        let mut saved: serde_json::Value =
+            serde_json::from_slice(&original.workspace_bytes()?).map_err(io::Error::other)?;
+        let active = saved["active"].clone();
+        let mut conversations = vec![saved["conversations"][0].clone()];
+        for index in 1..MAX_CONVERSATIONS {
+            conversations.push(serde_json::json!({
+                "id": index + 1,
+                "title": "Saved conversation",
+                "renamed": false,
+                "saved": active,
+            }));
+        }
+        saved["conversations"] = serde_json::json!(conversations);
+        saved["next_conversation"] = serde_json::json!(MAX_CONVERSATIONS + 1);
+        original.restore_workspace(&serde_json::to_vec(&saved).map_err(io::Error::other)?)?;
+        assert_eq!(original.conversations.len(), MAX_CONVERSATIONS);
+        conversations.push(serde_json::json!({"invalid excess conversation": true}));
+        saved["conversations"] = serde_json::json!(conversations);
+        let error = original
+            .restore_workspace(&serde_json::to_vec(&saved).map_err(io::Error::other)?)
+            .err()
+            .ok_or_else(|| io::Error::other("Expected an early conversation limit."))?;
+        assert!(error.to_string().contains("item limit"));
+        assert_eq!(original.conversations.len(), MAX_CONVERSATIONS);
+        assert_eq!(
+            original.input,
+            "Keep this draft after any rejected restore."
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn recovery_rejects_excess_messages_before_decoding_their_payloads() -> io::Result<()> {
+        let mut original = state();
+        // Empty strings still allocate message/container ownership. Stop at the
+        // count limit, including inactive conversations, before decoding a new
+        // object. A malformed extra object must not change the reported cause.
+        for inactive in [false, true] {
+            for transcript in [false, true] {
+                let mut saved: serde_json::Value =
+                    serde_json::from_slice(&state().workspace_bytes()?)
+                        .map_err(io::Error::other)?;
+                if inactive {
+                    let active = saved["active"].clone();
+                    saved["conversations"]
+                        .as_array_mut()
+                        .ok_or_else(|| io::Error::other("Expected conversation list."))?
+                        .push(serde_json::json!({
+                            "id": 2, "title": "Inactive", "renamed": false, "saved": active,
+                        }));
+                    saved["next_conversation"] = serde_json::json!(3);
+                }
+                let snapshot = if inactive {
+                    &mut saved["conversations"][1]["saved"]
+                } else {
+                    &mut saved["active"]
+                };
+                let limit: usize = if transcript { 512 } else { 128 };
+                let messages =
+                    if transcript {
+                        (0..limit)
+                        .map(|_| serde_json::json!({"role": "User", "body": "", "reasoning": ""}))
+                        .collect::<Vec<_>>()
+                    } else {
+                        (0..limit)
+                        .map(|index| serde_json::json!({
+                            "role": if index.is_multiple_of(2) { "user" } else { "assistant" },
+                            "content": "",
+                        }))
+                        .collect::<Vec<_>>()
+                    };
+                let field = if transcript {
+                    &mut snapshot["transcript"]["messages"]
+                } else {
+                    &mut snapshot["committed"]
+                };
+                *field = serde_json::json!(messages);
+                let bytes = serde_json::to_vec(&saved).map_err(io::Error::other)?;
+                original.restore_workspace(&bytes)?;
+                let accepted = original.workspace_bytes()?;
+                let snapshot = if inactive {
+                    &mut saved["conversations"][1]["saved"]
+                } else {
+                    &mut saved["active"]
+                };
+                let field = if transcript {
+                    &mut snapshot["transcript"]["messages"]
+                } else {
+                    &mut snapshot["committed"]
+                };
+                field
+                    .as_array_mut()
+                    .ok_or_else(|| io::Error::other("Expected message list."))?
+                    .push(serde_json::json!({"invalid excess message": true}));
+                let error = original
+                    .restore_workspace(&serde_json::to_vec(&saved).map_err(io::Error::other)?)
+                    .err()
+                    .ok_or_else(|| io::Error::other("Expected an early message limit."))?;
+                assert!(error.to_string().contains("item limit"));
+                assert_eq!(original.workspace_bytes()?, accepted);
+            }
+        }
+        Ok(())
     }
 
     #[test]

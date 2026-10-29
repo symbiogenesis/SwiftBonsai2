@@ -79,6 +79,7 @@ impl<'de> serde::Deserialize<'de> for Transcript {
         #[derive(serde::Deserialize)]
         #[serde(deny_unknown_fields)]
         struct StoredTranscript {
+            #[serde(deserialize_with = "super::persistence::deserialize_transcript_messages")]
             messages: Vec<Message>,
         }
         let stored = StoredTranscript::deserialize(deserializer)?;

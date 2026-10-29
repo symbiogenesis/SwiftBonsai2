@@ -275,6 +275,9 @@ still rejects. The `speech::command_queue::tests::` and
 `speech::stream::tests::` selections check stalled-worker queue limits,
 coalescing, overload, cancellation, fresh-stream recovery and bounded tail
 compaction without loading a speech model or timing synthesis.
+The `window::persistence::tests::recovery_rejects_excess_` cases accept the exact
+conversation/history/transcript count limits, reject an extra object before
+decoding its fields and preserve the live workspace on failure.
 
 For prebuilt runtime promotion tooling, use
 `./tests/Test-Inference.ps1 -Case ReleaseLock`. It checks candidate generation

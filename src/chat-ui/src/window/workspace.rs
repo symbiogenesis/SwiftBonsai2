@@ -10,6 +10,7 @@ use super::{Command, RichText, State, Transcript, client, egui};
 )]
 pub(super) struct ConversationSnapshot {
     pub(super) transcript: Transcript,
+    #[serde(deserialize_with = "super::persistence::deserialize_history")]
     pub(super) committed: Vec<client::Message>,
     pub(super) input: String,
     pub(super) last_answer: String,

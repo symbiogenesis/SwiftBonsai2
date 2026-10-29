@@ -45,6 +45,8 @@ dependency or an explicitly chosen later milestone.
   memory in target-device CI before claiming performance gains.
 - Qualify recovery under load, allocation failure and backend loss without restart
   loops, silent profile changes, state corruption or automatic cloud fallback.
+  Extend the bounded restore-count and unchanged-workspace regressions to these
+  actual-application failure trials.
 
 ## Runtime and correctness
 
