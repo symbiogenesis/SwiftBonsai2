@@ -241,13 +241,13 @@ impl Receiver {
                 },
             )
             .map_err(|_| mpsc::RecvTimeoutError::Disconnected)?;
-        let outcome = if let Some(envelope) = queue.pop() {
-            Ok(envelope)
-        } else if queue.sender_closed {
-            Err(mpsc::RecvTimeoutError::Disconnected)
-        } else {
-            Err(mpsc::RecvTimeoutError::Timeout)
-        };
+        let outcome = queue.pop().ok_or_else(|| {
+            if queue.sender_closed {
+                mpsc::RecvTimeoutError::Disconnected
+            } else {
+                mpsc::RecvTimeoutError::Timeout
+            }
+        });
         drop(queue);
         outcome
     }

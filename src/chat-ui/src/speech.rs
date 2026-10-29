@@ -785,7 +785,7 @@ mod tests {
             current_input: Arc::clone(&current_input),
             current_output: Arc::clone(&current_output),
         };
-        let (events, received) = mpsc::channel();
+        let (events, notifications) = mpsc::channel();
         let (complete, finished) = mpsc::channel();
         let worker = std::thread::spawn(move || {
             super::run(
@@ -800,7 +800,9 @@ mod tests {
         });
         let guard = Duration::from_secs(2);
         assert!(matches!(
-            received.recv_timeout(guard).map_err(io::Error::other)?,
+            notifications
+                .recv_timeout(guard)
+                .map_err(io::Error::other)?,
             Event::Capabilities {
                 input: false,
                 output: false
@@ -812,7 +814,7 @@ mod tests {
             .map_err(io::Error::other)?;
         let generation = commands.current_output.load(Ordering::Acquire);
         assert!(matches!(
-            received.recv_timeout(guard).map_err(io::Error::other)?,
+            notifications.recv_timeout(guard).map_err(io::Error::other)?,
             Event::Speaking { generation: stopped, speaking: false } if stopped == generation
         ));
         assert_eq!(waiting.recv_timeout(guard).map_err(io::Error::other)?, None);
