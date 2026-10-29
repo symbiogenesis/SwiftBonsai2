@@ -53,7 +53,17 @@ use windows_sys::Win32::System::Threading::{
 use crate::{ProcessMemory, ProcessSpec, SandboxPolicy, ToolProcessSpec, invalid};
 
 mod containment;
+mod cpu;
 mod environment;
+mod power;
+
+pub(super) fn cpu_sets() -> io::Result<Vec<crate::CpuSet>> {
+    cpu::query()
+}
+
+pub(super) fn power_status() -> io::Result<crate::PowerStatus> {
+    power::query()
+}
 
 pub(super) fn sandbox_available() -> io::Result<()> {
     containment::available()

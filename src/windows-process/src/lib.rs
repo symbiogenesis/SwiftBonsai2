@@ -25,6 +25,84 @@ use std::time::Duration;
 )]
 mod native;
 
+/// One observed Windows CPU Set; processor indices are relative to `group`.
+///
+/// Efficiency and scheduling classes are raw operating-system observations,
+/// not Snapdragon core names or evidence that a particular thread count wins.
+/// Parking and allocation are changing state rather than compatibility identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent operating-system CPU Set flags are retained without inventing a policy state machine."
+)]
+pub struct CpuSet {
+    /// Windows CPU Set identifier, valid for the current system observation.
+    pub id: u32,
+    /// Processor group containing this CPU Set's home processor.
+    pub group: u16,
+    /// Home logical processor within its group.
+    pub logical_processor_index: u8,
+    /// Group-relative core index; shared by hardware threads on one core.
+    pub core_index: u8,
+    /// Group-relative shared last-level cache index.
+    pub last_level_cache_index: u8,
+    /// Group-relative NUMA node index.
+    pub numa_node_index: u8,
+    /// Windows efficiency class; larger values identify faster, less efficient cores.
+    pub efficiency_class: u8,
+    /// Raw Windows scheduling class, without an inferred performance policy.
+    pub scheduling_class: u8,
+    /// Whether Windows currently reports the CPU Set as parked.
+    pub parked: bool,
+    /// Whether Windows reports the CPU Set as allocated.
+    pub allocated: bool,
+    /// Whether the CPU Set is allocated to this querying process.
+    pub allocated_to_target_process: bool,
+    /// Whether Windows reports the CPU Set as real-time.
+    pub real_time: bool,
+}
+
+/// Reads bounded, current-process Windows CPU Set topology without changing affinity.
+///
+/// The returned records are sorted by processor group and logical processor.
+/// Unknown future record types are skipped. Observations do not establish ISA,
+/// runtime eligibility, process affinity restrictions or a qualified CPU profile.
+/// See [the Windows API contract](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemcpusetinformation).
+///
+/// # Errors
+/// Returns native query failures, `Unsupported` when no known CPU Set records
+/// exist, or `InvalidData` for malformed, duplicate or oversized records. A
+/// changing required buffer size is retried at most three times.
+pub fn cpu_sets() -> io::Result<Vec<CpuSet>> {
+    native::cpu_sets()
+}
+
+/// Current Windows power-source and battery-saver snapshot.
+///
+/// These changing status values are neither energy telemetry nor immutable
+/// hardware identity. Equal snapshots do not rule out intervening changes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PowerStatus {
+    /// Whether AC power is connected; `None` preserves Windows' unknown sentinel.
+    pub ac_online: Option<bool>,
+    /// Whether Windows currently reports battery saver as enabled.
+    pub battery_saver: bool,
+    /// Reported remaining battery percentage; `None` preserves unknown status.
+    pub battery_percent: Option<u8>,
+}
+
+/// Reads a power-status snapshot without changing power policy or device settings.
+///
+/// See [the Windows power-status contract](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-system_power_status).
+/// No energy consumption, thermal condition or effective performance mode is inferred.
+///
+/// # Errors
+/// Returns native query failures or `InvalidData` for undocumented field values.
+/// Documented unknown AC and battery-percentage sentinels remain `None`.
+pub fn power_status() -> io::Result<PowerStatus> {
+    native::power_status()
+}
+
 /// Explicit launch inputs; no shell or executable search path is used.
 #[derive(Debug)]
 pub struct ProcessSpec {
