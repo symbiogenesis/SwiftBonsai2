@@ -22,6 +22,9 @@ const POLL: Duration = Duration::from_millis(5);
 const PACKET_BYTES: usize = 4_800;
 const PREFETCH_PACKETS: usize = 160; // 16 seconds / 768,000 bytes, outside WinMM.
 const PLAYBACK_PACKETS: usize = 8;
+// Only released packets enter this pool. Full queues discard excess buffers,
+// keeping retained spare PCM capacity to one WinMM queue (38,400 bytes).
+const RECYCLED_PACKETS: usize = PLAYBACK_PACKETS;
 // Cover the native codec's 640 ms steady bursts, including after an underrun.
 const PREROLL_PACKETS: usize = 7;
 const CODEC_BURST: Duration = Duration::from_millis(640);
@@ -109,12 +112,19 @@ fn produce(
     stop: &Arc<AtomicBool>,
 ) -> Result<(), tts::Failure> {
     let (sender, incoming) = mpsc::sync_channel(PREFETCH_PACKETS);
+    let (recycle, recycled) = mpsc::sync_channel(RECYCLED_PACKETS);
     let output_stop = Arc::clone(stop);
     let output_current = Arc::clone(current);
     let playback = thread::Builder::new()
         .name("bonsai-tts-pcm".to_owned())
         .spawn(move || {
-            let result = consume(&incoming, generation, &output_current, &output_stop);
+            let result = consume(
+                &incoming,
+                generation,
+                &output_current,
+                &output_stop,
+                recycle,
+            );
             if result.is_err() {
                 output_stop.store(true, Ordering::Release);
             }
@@ -123,7 +133,7 @@ fn produce(
         .map_err(|_| AUDIO_FAILURE)?;
     let synthesis = (|| {
         let mut pending = None;
-        let mut frames = Frames::default();
+        let mut frames = Frames::reusing(recycled);
         while let Some(text) = next_segment(segments, &mut pending, generation, current, stop)? {
             client.synthesize_pcm(&text, voice, generation, current, stop, |pcm| {
                 frames.push(pcm, |packet| {
@@ -133,7 +143,6 @@ fn produce(
             frames
                 .finish(|packet| send(&sender, Audio::Frame(packet), generation, current, stop))?;
             send(&sender, Audio::SegmentEnd, generation, current, stop)?;
-            frames = Frames::default();
         }
         Ok(())
     })();
@@ -186,17 +195,33 @@ fn next_segment(
 
 struct Frames {
     pending: Vec<u8>,
+    recycled: Option<Receiver<Vec<u8>>>,
 }
 
 impl Default for Frames {
     fn default() -> Self {
         Self {
             pending: Vec::with_capacity(PACKET_BYTES),
+            recycled: None,
         }
     }
 }
 
 impl Frames {
+    fn reusing(recycled: Receiver<Vec<u8>>) -> Self {
+        Self {
+            recycled: Some(recycled),
+            ..Self::default()
+        }
+    }
+
+    fn replacement(&self) -> Vec<u8> {
+        self.recycled
+            .as_ref()
+            .and_then(|recycled| recycled.try_recv().ok())
+            .unwrap_or_else(|| Vec::with_capacity(PACKET_BYTES))
+    }
+
     fn push(
         &mut self,
         mut pcm: &[u8],
@@ -207,26 +232,32 @@ impl Frames {
             self.pending.extend_from_slice(&pcm[..count]);
             pcm = &pcm[count..];
             if self.pending.len() == PACKET_BYTES {
-                sink(std::mem::replace(
-                    &mut self.pending,
-                    Vec::with_capacity(PACKET_BYTES),
-                ))?;
+                let replacement = self.replacement();
+                sink(std::mem::replace(&mut self.pending, replacement))?;
             }
         }
         Ok(())
     }
 
     fn finish(
-        self,
+        &mut self,
         sink: impl FnOnce(Vec<u8>) -> Result<(), tts::Failure>,
     ) -> Result<(), tts::Failure> {
         if self.pending.is_empty() {
             Ok(())
         } else if self.pending.len() % 2 == 0 {
-            sink(self.pending)
+            let replacement = self.replacement();
+            sink(std::mem::replace(&mut self.pending, replacement))
         } else {
             Err(AUDIO_FAILURE)
         }
+    }
+}
+
+fn recycle(sender: &SyncSender<Vec<u8>>, mut pcm: Vec<u8>) {
+    if pcm.capacity() == PACKET_BYTES {
+        pcm.clear();
+        let _returned = sender.try_send(pcm);
     }
 }
 
@@ -263,13 +294,14 @@ fn consume(
     generation: u64,
     current: &AtomicU64,
     stop: &AtomicBool,
+    recycle: SyncSender<Vec<u8>>,
 ) -> Result<(), tts::Failure> {
     consume_with(
         incoming,
         generation,
         current,
         stop,
-        &mut WaveOutput::open()?,
+        &mut WaveOutput::open(recycle)?,
     )
 }
 
@@ -432,7 +464,7 @@ struct Buffer {
     // WinMM mutates this descriptor until unprepare releases it. No Rust reference
     // to the WAVEHDR itself exists while the driver owns it.
     header: UnsafeCell<WAVEHDR>,
-    _pcm: Vec<u8>,
+    pcm: Vec<u8>,
 }
 
 struct WaveOutput {
@@ -440,10 +472,11 @@ struct WaveOutput {
     // The driver retains WAVEHDR addresses. Boxing keeps them stable as this queue moves.
     buffers: VecDeque<Box<Buffer>>,
     header_bytes: u32,
+    recycle: SyncSender<Vec<u8>>,
 }
 
 impl WaveOutput {
-    fn open() -> Result<Self, tts::Failure> {
+    fn open(recycle: SyncSender<Vec<u8>>) -> Result<Self, tts::Failure> {
         let format = WAVEFORMATEX {
             wFormatTag: 1,
             nChannels: 1,
@@ -463,6 +496,7 @@ impl WaveOutput {
             handle,
             buffers: VecDeque::new(),
             header_bytes: u32::try_from(size_of::<WAVEHDR>()).map_err(|_| AUDIO_FAILURE)?,
+            recycle,
         })
     }
 }
@@ -501,7 +535,7 @@ impl Output for WaveOutput {
                 dwBufferLength: u32::try_from(pcm.len()).map_err(|_| AUDIO_FAILURE)?,
                 ..WAVEHDR::default()
             }),
-            _pcm: pcm,
+            pcm,
         });
         // SAFETY: This exclusive boxed header and its owned PCM allocation remain stable until
         // unprepare confirms release; the descriptor size matches the native ABI.
@@ -526,7 +560,11 @@ impl Output for WaveOutput {
                 waveOutUnprepareHeader(self.handle, buffer.header.get(), self.header_bytes)
             } {
                 0 => {
-                    self.buffers.pop_front();
+                    if let Some(buffer) = self.buffers.pop_front() {
+                        // Successful unprepare releases the driver ownership;
+                        // only then may packetization reuse the PCM allocation.
+                        recycle(&self.recycle, buffer.pcm);
+                    }
                 }
                 33 => break, // WAVERR_STILLPLAYING: retain both allocations.
                 _ => return Err(AUDIO_FAILURE),
@@ -680,6 +718,69 @@ mod tests {
         );
         assert_eq!(packets.concat(), source);
         Ok(())
+    }
+
+    #[test]
+    fn pcm_packet_allocations_reuse_only_returned_playback_storage() -> Result<(), Failure> {
+        let (recycle, recycled) = mpsc::sync_channel(super::RECYCLED_PACKETS);
+        let mut frames = Frames::reusing(recycled);
+        let first_pointer = frames.pending.as_ptr();
+        let mut packets = VecDeque::new();
+        frames.push(&vec![1; PACKET_BYTES], |packet| {
+            packets.push_back(packet);
+            Ok(())
+        })?;
+        assert_ne!(frames.pending.as_ptr(), first_pointer);
+        let first = packets.pop_front().ok_or(super::AUDIO_FAILURE)?;
+        assert_eq!(first.as_ptr(), first_pointer);
+        assert_eq!(first, vec![1; PACKET_BYTES]);
+        super::recycle(&recycle, first);
+
+        frames.push(&vec![2; PACKET_BYTES], |packet| {
+            packets.push_back(packet);
+            Ok(())
+        })?;
+        assert_eq!(frames.pending.as_ptr(), first_pointer);
+        assert_eq!(frames.pending, Vec::<u8>::new());
+        assert_eq!(frames.pending.capacity(), PACKET_BYTES);
+        assert_eq!(packets.front(), Some(&vec![2; PACKET_BYTES]));
+
+        frames.push(&[3; 42], |_| Err(super::AUDIO_FAILURE))?;
+        frames.finish(|packet| {
+            assert_eq!(packet.as_ptr(), first_pointer);
+            assert_eq!(packet, [3; 42]);
+            Ok(())
+        })?;
+        assert_eq!(frames.pending, Vec::<u8>::new());
+        frames.finish(|_| Err(super::AUDIO_FAILURE))?;
+        frames.push(&[4; 64], |_| Err(super::AUDIO_FAILURE))?;
+        frames.finish(|packet| {
+            assert_eq!(packet, [4; 64]);
+            Ok(())
+        })?;
+        frames.push(&[5], |_| Err(super::AUDIO_FAILURE))?;
+        assert_eq!(frames.finish(|_| Ok(())), Err(super::AUDIO_FAILURE));
+        Ok(())
+    }
+
+    #[test]
+    fn pcm_recycling_has_a_fixed_capacity_and_never_waits_for_the_producer() {
+        let (sender, receiver) = mpsc::sync_channel(super::RECYCLED_PACKETS);
+        for _ in 0..super::RECYCLED_PACKETS * 3 {
+            super::recycle(&sender, vec![7; PACKET_BYTES]);
+        }
+        let returned: Vec<_> = receiver.try_iter().collect();
+        assert_eq!(returned.len(), super::RECYCLED_PACKETS);
+        assert!(returned.iter().all(Vec::is_empty));
+        assert_eq!(
+            returned.iter().map(Vec::capacity).sum::<usize>(),
+            PLAYBACK_PACKETS * PACKET_BYTES
+        );
+        // A larger external allocation cannot expand retained spare capacity.
+        super::recycle(&sender, vec![0; PACKET_BYTES * 2]);
+        assert!(receiver.try_recv().is_err());
+        drop(receiver);
+        super::recycle(&sender, vec![0; PACKET_BYTES]);
     }
 
     #[test]

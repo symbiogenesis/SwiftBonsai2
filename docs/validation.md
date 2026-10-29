@@ -278,6 +278,12 @@ compaction without loading a speech model or timing synthesis.
 The `window::persistence::tests::recovery_rejects_excess_` cases accept the exact
 conversation/history/transcript count limits, reject an extra object before
 decoding its fields and preserve the live workspace on failure.
+The `speech::pipeline::tests::pcm_` cases check packet-allocation reuse,
+segment-tail framing, bounded spare capacity and nonblocking recycling. The existing
+`tiny_pcm_callbacks_form_fixed_frames_and_flush_the_final_tail_exactly` and
+synthetic output cases retain byte identity and bounded playback behavior.
+These checks do not measure target-device peak memory or speech/chat overlap
+latency, and they do not exercise a physical audio driver.
 
 For prebuilt runtime promotion tooling, use
 `./tests/Test-Inference.ps1 -Case ReleaseLock`. It checks candidate generation
