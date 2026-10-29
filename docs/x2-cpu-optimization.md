@@ -6,6 +6,20 @@ Adreno X2-90 driver `32.0.149.0` (2026-10-29 inventory). These observations
 identify the next tuning target. They do not establish optional ISA support,
 GPU/NPU readiness or a faster qualified profile.
 
+An additional model-free native probe on 2026-10-29, using the pinned Rust
+toolchain's `aarch64-pc-windows-msvc` maintenance executable on Windows
+`10.0.26300.0`, reports 18 physical/logical cores in processor group 0,
+efficiency and scheduling classes `[0, 1]`, and positive Windows NEON,
+dot-product and **NEON I8MM** availability flags. The processor name was
+independently read from `HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0`.
+Model-free plan inspection selected `d6-p6`, `d4-p12` and `d8-p18` with 24
+scheduled samples and `ModelProcessStarted: false`. The built CLI accepted an
+unchanged native observation and rejected a copy with changed AC state.
+These observations identify eligible instruction experiments; separately
+dispatched kernels still require code-generation, numerical and performance
+qualification. Class values do not identify Snapdragon core names.
+See [native ISA semantics](hardware-capabilities.md).
+
 The manual [X2 CPU workflow](../.github/workflows/x2-cpu-evaluation.yml) supplies
 a bounded first thread screen on the owner-managed native ARM64 runner, on
 settled `main`. It shares the existing model-capture concurrency group. All
@@ -76,6 +90,11 @@ Initial and final native observations include AC/battery, battery-saver and
 charge snapshots where Windows supplies them. These are power conditions,
 not energy measurements; transitions within a trial are not sampled. A power
 or topology change calls for a new controlled run before interpreting ratios.
+The report's `ExecutionConditions` now enforces that boundary: changed or
+unknown native topology, AC state or battery-saver state suppress all ratios,
+while preserving raw samples and token-count comparability separately. Charge
+percentage and transient CPU parking/allocation flags do not determine this
+check. Equal boundary snapshots cannot rule out changes within a sample.
 
 Candidate/control ratios are emitted only when both samples reach the 128-token
 cap with matching prompt/decode counts. Early natural completion remains visible
@@ -88,6 +107,12 @@ follow-up complete-task, quality, responsiveness and sustained-comfort study.
 The screen supplies no energy verdict and does not enable GPU/NPU execution.
 Changing the standard profile still requires independent device evidence under
 the [hardware selection contract](hardware-profiles.md).
+
+As of the 2026-10-29 repository CI inventory, the GitHub Actions API reports
+zero registered self-hosted runners and no X2 screen runs. Register or restore
+the owner-managed native ARM64 runner with `swift-bonsai-snapdragon`, then run
+the workflow on settled `main` and retain its evidence. Local model execution
+does not replace that CI capture. No new thread default has been selected.
 
 ## Device evidence separation
 

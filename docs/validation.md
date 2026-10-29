@@ -347,6 +347,16 @@ candidate alone does not promote the compiled runtime pin.
 
 ## Acceptance limits
 
+The native ARM64 ISA regression
+`native::isa::tests::native_isa_queries_neon_dotprod_and_neon_i8mm_independently`
+checks exact Windows NEON/dot-product/NEON-I8MM feature IDs with an injected
+query. The maintenance case
+`cpu_evaluation::conditions::tests::condition_comparison_rejects_known_drift_and_unknowns_without_treating_charge_as_energy`
+checks screen comparison eligibility across topology/power changes and missing
+observations. These model-free checks neither execute optional kernels nor
+qualify performance; native ISA observations and device screen status are
+retained in [the X2 tuning record](x2-cpu-optimization.md).
+
 The main-only [native sandbox qualification](../.github/workflows/sandbox-qualification.yml)
 workflow runs the explicitly ignored PSEC fixtures on hosted ARM64 or the selected
 owner-managed host. It records the revision, SDK and OS identities and retains

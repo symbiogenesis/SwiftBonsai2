@@ -55,10 +55,15 @@ use crate::{ProcessMemory, ProcessSpec, SandboxPolicy, ToolProcessSpec, invalid}
 mod containment;
 mod cpu;
 mod environment;
+mod isa;
 mod power;
 
 pub(super) fn cpu_sets() -> io::Result<Vec<crate::CpuSet>> {
     cpu::query()
+}
+
+pub(super) fn arm64_isa() -> io::Result<crate::Arm64Isa> {
+    isa::query()
 }
 
 pub(super) fn power_status() -> io::Result<crate::PowerStatus> {

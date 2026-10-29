@@ -303,16 +303,19 @@ existing full-context/continuation/LoRA gates.
 
 ## Hardware selection
 
-- Extend shared discovery beyond scoped CPU observations and native CPU sets:
-  native CPU/OS optional ISA, independently checked SoC/SKU, GPU/NPU
-  API/features/architecture, driver/runtime/firmware,
+- Extend shared discovery beyond scoped CPU observations, native CPU sets and
+  native Windows NEON/dotprod/I8MM availability reports: independently checked
+  SoC/SKU, GPU/NPU API/features/architecture, driver/runtime/firmware,
   signed backend readiness and static accelerator identities. Reuse the checked
   representation in Doctor and launch policy; keep unknowns explicit and live
   resource budgets separate from immutable compatibility evidence.
 - Qualify safe scalar/NEON CPU controls independently on X1 and X2, including
   optional ISA eligibility and phase-specific thread/batch/wait/power choices.
   Run the bounded [X2 CPU thread screen](docs/x2-cpu-optimization.md) on settled
-  main and retain results before selecting a new default; extend the screen
+  main and retain results before selecting a new default. Restore/register the
+  owner-managed ARM64 runner first; the 2026-10-29 CI inventory reports none.
+  Retain the screen's topology/power condition verdict and suppress comparisons
+  when observations change or are unknown. Extend the screen
   only when its phase measurements identify a useful next candidate.
   Compare supported event-based waits with polling using idle CPU, wake latency,
   active decode and cancellation responsiveness. Inventory native Windows timing,
@@ -373,8 +376,10 @@ References: [selection contract](docs/hardware-profiles.md),
   compatible activation preparation and bounded cache-sized LUT/weight tiles.
   Reuse weights across tokens without a persistent INT8/FP16 expansion. Count LUT
   construction and scratch; stop if those costs erase the reuse benefit.
-- Audit Windows optional-ISA detection against SDK/OS APIs before separately
-  dispatched dotprod and i8mm variants. Inspect Release code generation and
+- Use the audited native Windows NEON/dotprod/I8MM availability observations
+  in [capability discovery](docs/hardware-capabilities.md) to establish the
+  installed OS/process eligibility before separately dispatched variants.
+  Inspect Release code generation and
   forbidden-ISA leakage; require reliable detection, parity and useful benefit.
 - Optimize measured Hadamard/elementwise, activation/quantizer, reduction and tiled
   prefill bottlenecks through safe APIs or an audited isolated unsafe boundary.

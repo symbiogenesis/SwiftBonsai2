@@ -42,6 +42,20 @@ The separate `power_snapshot` uses `GetSystemPowerStatus` for AC/battery,
 battery-saver and charge observations, preserving unknown AC/charge sentinels.
 These live conditions do not enter a compatibility digest or measure energy.
 
+The additive `isa` section queries `IsProcessorFeaturePresent` from a native
+ARM64 process for NEON/AdvSimd (19), dot product (43) and **NEON I8MM (66)**.
+The separate SVE I8MM flag (57) is not a substitute. Non-ARM64 processes retain
+unknown/null ISA fields even if Windows reports ARM hardware underneath them.
+These observations remain independent of CPU-set query success and of Doctor's
+existing .NET-based compatibility digest. `dispatch_qualified` remains false.
+Under [Microsoft's API contract](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-isprocessorfeaturepresent),
+a false result means unsupported **or undetected by the HAL**, not proof of
+absent silicon support. Windows 11 24H2 / Server 2025 added I8MM detection;
+older systems cannot provide positive eligibility through that flag. The
+pinned Windows bindings lack the I8MM constant, so the native boundary retains
+its documented SDK 26100 value explicitly. No optional instruction is executed
+by discovery and no kernel dispatch or runtime selection changes.
+
 CPU-set IDs do not establish persistent affinity, process affinity eligibility,
 optional ISA or Snapdragon core names. The [X2 CPU screen](x2-cpu-optimization.md)
 retains this native inventory alongside its processor observation and fixed plan.

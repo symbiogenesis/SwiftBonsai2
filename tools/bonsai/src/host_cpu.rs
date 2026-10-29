@@ -2,6 +2,20 @@
 
 use serde_json::{Value, json};
 
+fn isa_snapshot() -> Value {
+    #[cfg(windows)]
+    if let Ok(isa) = bonsai_windows_process::arm64_isa() {
+        return json!({"status": "observed", "source": "IsProcessorFeaturePresent",
+            "scope": "current-native-arm64-process", "advsimd": isa.advsimd,
+            "dotprod": isa.dotprod, "i8mm": isa.i8mm,
+            "negative_result": "unsupported-or-not-detected", "dispatch_qualified": false});
+    }
+    json!({"status": "unknown", "source": "IsProcessorFeaturePresent",
+        "scope": "current-native-arm64-process", "advsimd": null,
+        "dotprod": null, "i8mm": null,
+        "negative_result": "unsupported-or-not-detected", "dispatch_qualified": false})
+}
+
 fn power_snapshot() -> Value {
     #[cfg(windows)]
     if let Ok(power) = bonsai_windows_process::power_status() {
@@ -77,6 +91,7 @@ pub fn run(request: &Value) -> crate::Result<Value> {
     report["source"] = json!("GetSystemCpuSetInformation");
     report["qualification"] = json!("unqualified");
     report["power_snapshot"] = power_snapshot();
+    report["isa"] = isa_snapshot();
     Ok(report)
 }
 

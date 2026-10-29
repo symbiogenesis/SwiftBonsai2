@@ -77,6 +77,35 @@ pub fn cpu_sets() -> io::Result<Vec<CpuSet>> {
     native::cpu_sets()
 }
 
+/// Windows-reported availability of native ARM64 packed-kernel instructions.
+///
+/// A positive flag is an OS observation, not kernel correctness or performance
+/// qualification. A negative flag means unsupported **or not detected** by the
+/// Windows HAL; it does not prove that the silicon lacks the instruction set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Arm64Isa {
+    /// `PF_ARM_NEON_INSTRUCTIONS_AVAILABLE` (19).
+    pub advsimd: bool,
+    /// `PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE` (43), including SDOT/UDOT.
+    pub dotprod: bool,
+    /// `PF_ARM_V82_I8MM_INSTRUCTIONS_AVAILABLE` (66), NEON integer matrix multiply.
+    pub i8mm: bool,
+}
+
+/// Queries native ARM64 instruction availability without executing optional ISA.
+///
+/// Uses [the Windows processor-feature API](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-isprocessorfeaturepresent).
+/// I8MM detection requires Windows 11 24H2 / Server 2025 or later; earlier HALs
+/// can return false even on capable hardware. This does not change dispatch,
+/// infer support from a processor name, or inspect an emulated process's ISA.
+///
+/// # Errors
+/// Returns `Unsupported` outside an ARM64 build; emulated x86/x64 callers cannot
+/// produce a native ARM64 eligibility observation.
+pub fn arm64_isa() -> io::Result<Arm64Isa> {
+    native::arm64_isa()
+}
+
 /// Current Windows power-source and battery-saver snapshot.
 ///
 /// These changing status values are neither energy telemetry nor immutable
