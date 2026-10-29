@@ -1376,6 +1376,63 @@ impl State {
         });
     }
 
+    fn microphone_button(&mut self, ui: &mut egui::Ui) {
+        let response = ui
+            .add_enabled(
+                self.dictation_requested || (!self.busy && !self.speaking),
+                egui::Button::new("")
+                    .min_size(egui::Vec2::splat(32.0))
+                    .selected(self.dictation_requested),
+            )
+            .accessible_name("Microphone")
+            .on_hover_text(if self.dictation_requested {
+                "Turn microphone off · cancel dictation"
+            } else {
+                "Dictate into your message · never sends automatically"
+            });
+        let center = response.rect.center();
+        let stroke = ui.style().interact(&response).fg_stroke;
+        let painter = ui.painter_at(response.rect);
+        painter.rect_stroke(
+            egui::Rect::from_center_size(center - egui::vec2(0.0, 3.0), egui::vec2(7.0, 12.0)),
+            4.0,
+            stroke,
+            egui::StrokeKind::Middle,
+        );
+        let cradle = [
+            (-7.0, -2.0),
+            (-7.0, 0.0),
+            (-6.5, 2.7),
+            (-5.0, 5.0),
+            (-2.7, 6.5),
+            (0.0, 7.0),
+            (2.7, 6.5),
+            (5.0, 5.0),
+            (6.5, 2.7),
+            (7.0, 0.0),
+            (7.0, -2.0),
+        ]
+        .map(|(x, y)| center + egui::vec2(x, y));
+        painter.add(egui::Shape::line(cradle.to_vec(), stroke));
+        painter.line_segment(
+            [
+                center + egui::vec2(0.0, 7.0),
+                center + egui::vec2(0.0, 10.0),
+            ],
+            stroke,
+        );
+        painter.line_segment(
+            [
+                center + egui::vec2(-4.0, 10.0),
+                center + egui::vec2(4.0, 10.0),
+            ],
+            stroke,
+        );
+        if response.clicked() {
+            self.toggle_dictation();
+        }
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "Keep composer focus, IME and action dispatch together."
@@ -1510,22 +1567,6 @@ impl State {
                             self.submit();
                         }
                         ui.horizontal_wrapped(|ui| {
-                            if ui
-                                .add_enabled(
-                                    self.dictation_requested || (!self.busy && !self.speaking),
-                                    egui::Button::new(if self.dictation_requested {
-                                        "● Microphone on"
-                                    } else {
-                                        "Microphone"
-                                    }),
-                                )
-                                .on_hover_text(
-                                    "Dictate into your message · never sends automatically",
-                                )
-                                .clicked()
-                            {
-                                self.toggle_dictation();
-                            }
                             self.read_aloud_controls(ui);
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
@@ -1548,27 +1589,33 @@ impl State {
                                     {
                                         self.submit();
                                     }
+                                    self.microphone_button(ui);
                                 },
                             );
                         });
                     });
-                ui.add_space(4.0);
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(
-                        RichText::new(if self.busy || !self.ready {
-                            &self.status
-                        } else {
-                            "Enter to send · Shift+Enter for a new line"
-                        })
-                        .small()
-                        .weak(),
-                    );
-                    if self.help.is_none()
-                        && (self.speech_notice || self.dictation_requested || self.speaking)
-                    {
-                        ui.label(RichText::new(&self.speech_status).small());
-                    }
-                });
+                // Text-only status should grow with its contents, without
+                // reserving the horizontal helper's button-height row.
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), 0.0),
+                    egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true),
+                    |ui| {
+                        ui.label(
+                            RichText::new(if self.busy || !self.ready {
+                                &self.status
+                            } else {
+                                "Enter to send · Shift+Enter for a new line"
+                            })
+                            .small()
+                            .weak(),
+                        );
+                        if self.help.is_none()
+                            && (self.speech_notice || self.dictation_requested || self.speaking)
+                        {
+                            ui.label(RichText::new(&self.speech_status).small());
+                        }
+                    },
+                );
             });
         });
     }
@@ -1599,7 +1646,12 @@ impl State {
             .show(ui, |ui| {
                 self.header(ui, narrow);
                 egui::Panel::bottom("composer-panel")
-                    .frame(egui::Frame::new().inner_margin(egui::Margin::symmetric(0, 12)))
+                    .frame(egui::Frame::new().inner_margin(egui::Margin {
+                        left: 0,
+                        right: 0,
+                        top: 12,
+                        bottom: 4,
+                    }))
                     .show(ui, |ui| self.composer(ui));
                 let empty = self.transcript.messages.is_empty();
                 if !empty {
