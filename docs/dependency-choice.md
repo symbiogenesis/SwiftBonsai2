@@ -40,13 +40,14 @@ outside the low-surrogate range. It is distinct from the evaluated `v0.18.1`
 tag despite carrying the same package version. The fixed-source screen below
 does not qualify a production replacement; the exact source revision matters.
 
-The complete upstream **0.19.0** release, including the Unicode fixes and merged
-tape-reuse API described below, is pinned as the `third_party/simd-json` Git
-submodule at [`00a71f6`](https://github.com/simd-lite/simd-json/commit/00a71f6a931f7f365c23d7fc8d1f84ad693304d3).
-Initialize it with
-`git submodule update --init third_party/simd-json` before Cargo commands. It is
-excluded from the first-party workspace. The broker's optional `json-candidate`
-feature exposes the comparison parser while ordinary requests retain serde_json.
+The published upstream **0.19.0** release, including the Unicode fixes and merged
+tape-reuse API described below, is pinned as an exact crates.io dependency in the
+[broker manifest](../src/broker/Cargo.toml), with its registry checksum retained
+in [Cargo.lock](../Cargo.lock). Its upstream release revision is
+[`00a71f6`](https://github.com/simd-lite/simd-json/commit/00a71f6a931f7f365c23d7fc8d1f84ad693304d3).
+Cargo fetches the crate; source checkouts require no submodule initialization.
+The broker's optional `json-candidate` feature exposes the comparison parser while
+ordinary requests retain serde_json.
 Both parsers share schema/history validation and canonical serialization; the
 candidate includes the immutable-input copy in its measured work. The main-only
 `json-candidate.yml` workflow runs correctness prerequisites before the same
@@ -54,7 +55,7 @@ six-case, rotated-round timing gate. Requests with an explicit adapter scale and
 SIMD parsing failures use production parsing to retain its exact decimal and
 rejection semantics. Supplemental scale-setting workloads include this fallback
 cost; any supplemental case over 5% slower prevents overall qualification even
-when the original six-case screen passes. A submodule checkout or successful
+when the original six-case screen passes. A dependency update or successful
 build does not promote the parser.
 
 The [fixed-source CI comparison](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40405967479)

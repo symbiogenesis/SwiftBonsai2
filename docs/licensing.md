@@ -29,7 +29,7 @@ Dependency terms apply independently of the application's license.
 | `fearless_simd` 1.1.0 | Apache-2.0 OR MIT | Optional native ARM64 Windows kernels; retain applicable license/attribution. |
 | `subtle` 2.6.1 | BSD-3-Clause | Retain copyright, conditions and disclaimer; respect non-endorsement. |
 | `zip` 9.1.3 | MIT | Retain the notice; enabled deflate dependencies also have permissive options. |
-| `simd-json` 0.19.0 | Apache-2.0 OR MIT | Qualification-only source submodule; retain the selected license and attribution in NOTICE. |
+| `simd-json` 0.19.0 | Apache-2.0 OR MIT | Qualification-only published crate; retain its selected license terms and the attribution in NOTICE when redistributing. |
 | `zlib-rs` | Zlib | Retain source notices and identify altered versions. |
 | `unicode-ident` | (MIT OR Apache-2.0) AND Unicode-3.0 | Include Unicode-3.0 notices as well as the selected code license. |
 | `r-efi` | MIT OR Apache-2.0 OR LGPL-2.1-or-later | A permissive alternative is available; LGPL is not required. |

@@ -191,7 +191,7 @@ establish inference performance. Evidence remains outside Git in
 | `toml` | Keep CI manifest parsing with only parse/serde/std enabled. |
 | `ureq` | Keep CI-only synchronous HTTPS; Windows uses Schannel and non-Windows Rustls. Defaults/compression remain disabled. |
 | `transcribe-cpp` | Keep required static CPU ASR engine with defaults disabled. Bundled CMake source has no source download in the reviewed build script; MSVC optimization is explicitly enabled. |
-| `simd-json` | Keep qualification-only optional feature and pinned submodule; never used by ordinary requests. Existing measured results are slower and do not support promotion. |
+| `simd-json` | Keep qualification-only optional feature and exact crates.io release pin; never used by ordinary requests. Existing measured results are slower and do not support promotion. |
 | `mxc-sdk`, `flatbuffers` | Concurrent sandbox work: security purpose is clear, footprint is substantial; preserve integration and pursue upstream backend modularity. |
 | Internal crates | Keep process/credential boundaries, shared audio codec, policies and artifact checks; no unused direct path dependency found. |
 
@@ -230,7 +230,7 @@ refreshed the complete Cargo lockfile. Updated:
 | Dependency | Previous | Current |
 | --- | --- | --- |
 | `zip` | 9.1.2 | 9.1.3 |
-| Optional `simd-json` | 0.18.1 at `77ec801` | 0.19.0 at `00a71f6` |
+| Optional `simd-json` | 0.18.1 at `77ec801` | crates.io 0.19.0, upstream `00a71f6` |
 | `openssl-probe` | 0.2.1 | 0.2.2 |
 | `rustix` | 1.1.5 | 1.1.6 |
 | `schannel` | 0.1.29 | 0.1.30 |
@@ -241,8 +241,10 @@ refreshed the complete Cargo lockfile. Updated:
 hardening while retaining the existing minimal deflate features. The
 [SIMD-JSON 0.19.0 release](https://github.com/simd-lite/simd-json/commit/00a71f6a931f7f365c23d7fc8d1f84ad693304d3)
 contains both the Unicode fixes and tape-reuse API; only package-version metadata
-differs from the previous submodule pin. Updated the workflow guard, comparison
-report and attribution to the release revision. Ordinary parsing still uses
+differs from the previous source pin. The optional dependency now uses the exact
+published crates.io release and Cargo.lock checksum instead of a Git submodule.
+CI records the resolved registry package identity; source checkout instructions
+and attribution follow the published crate. Ordinary parsing still uses
 serde_json; this update supplies no new timing or qualification evidence.
 The [.NET 10 release page](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
 lists SDK 10.0.403, which is also installed on the validation host.

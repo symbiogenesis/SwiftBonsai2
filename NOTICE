@@ -15,12 +15,13 @@ The Rust runtime, codecs, GGUF tooling and storage adapter are maintained in
 https://github.com/symbiogenesis/prism-inference. Released binaries retain
 their bundled Apache and third-party notices.
 
-The optional broker JSON comparison uses simd-json as a complete source submodule:
-https://github.com/simd-lite/simd-json
-Revision: 00a71f6a931f7f365c23d7fc8d1f84ad693304d3
+The optional broker JSON comparison uses the published simd-json 0.19.0 crate:
+https://crates.io/crates/simd-json/0.19.0
+Upstream: https://github.com/simd-lite/simd-json
+Upstream release revision: 00a71f6a931f7f365c23d7fc8d1f84ad693304d3
 Authors: Heinz N. Gies, Sunny Gleason and contributors
-Licensed under Apache-2.0 OR MIT. Original license texts are retained in
-third_party/simd-json/LICENSE-APACHE and third_party/simd-json/LICENSE-MIT.
+Licensed under Apache-2.0 OR MIT. The crate includes the original license texts
+as LICENSE-APACHE and LICENSE-MIT; retain the applicable terms when redistributing.
 
 Upstream: https://github.com/PrismML-Eng/llama.cpp
 Codec reference: 73bfe6cc485554822f80c473a3c0c4f25e80f41b
