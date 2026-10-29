@@ -252,7 +252,11 @@ They are correctness regressions, with no elapsed-time or throughput claim. The
 case compares the bounded matcher with the prior folded-buffer behavior;
 `bounded_find_scratch_depends_on_query_bytes_and_retains_the_result_lookahead`
 checks query-sized scratch and result limits over a long repeated prefix.
-The
+The `canary::pcm::tests::pcm_framing_reuses_one_buffer_without_byte_sized_source_reads`
+and `pcm_ready_prefix_arrives_before_remaining_chunk_or_framing` cases check source
+read counts and gate payload delivery without timing. Companion cases cover odd
+read fragmentation, buffered cancellation, truncation and terminal validation.
+These checks do not establish actual-model latency or process peak memory. The
 `window::transcript::search::shortcuts::tests::` selection covers Find keyboard
 navigation, IME handling and Escape precedence without model or speech services.
 Transcript accounting cases also check exact byte totals across streaming,

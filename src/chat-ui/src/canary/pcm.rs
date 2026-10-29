@@ -6,32 +6,34 @@ const MAX_PCM: usize = 24_000 * 2 * 120;
 const INVALID: Failure = Failure::Message("The local speech stream was incomplete or invalid.");
 
 pub(super) fn decode(
-    mut read: impl FnMut(&mut [u8]) -> Result<usize>,
+    read: impl FnMut(&mut [u8]) -> Result<usize>,
+    mut check: impl FnMut() -> Result<()>,
     mut sink: impl FnMut(&[u8]) -> Result<()>,
 ) -> Result<()> {
+    let mut reader = Buffered::new(read);
     let mut head = Vec::new();
     while !head.ends_with(b"\r\n\r\n") {
+        check()?;
         if head.len() == MAX_HEAD {
             return Err(INVALID);
         }
-        let mut byte = [0];
-        exact(&mut read, &mut byte)?;
-        head.push(byte[0]);
+        head.push(reader.byte()?);
     }
     validate_head(&head)?;
+    drop(head);
     let mut total = 0_usize;
-    let mut buffer = [0; 16_384];
     loop {
-        let mut line = Vec::new();
-        while !line.ends_with(b"\r\n") {
-            if line.len() == 10 {
+        let mut line = [0; 10];
+        let mut count = 0;
+        while !line[..count].ends_with(b"\r\n") {
+            check()?;
+            if count == line.len() {
                 return Err(INVALID);
             }
-            let mut byte = [0];
-            exact(&mut read, &mut byte)?;
-            line.push(byte[0]);
+            line[count] = reader.byte()?;
+            count += 1;
         }
-        let digits = &line[..line.len() - 2];
+        let digits = &line[..count - 2];
         if digits.is_empty() || !digits.iter().all(u8::is_ascii_hexdigit) {
             return Err(INVALID);
         }
@@ -39,10 +41,12 @@ pub(super) fn decode(
             .map_err(|_| INVALID)?;
         if length == 0 {
             let mut end = [0; 2];
-            exact(&mut read, &mut end)?;
-            if end != *b"\r\n" || total == 0 || read(&mut [0])? != 0 {
+            reader.exact(&mut end)?;
+            check()?;
+            if end != *b"\r\n" || total == 0 || reader.fill()? {
                 return Err(INVALID);
             }
+            check()?;
             return Ok(());
         }
         total = total
@@ -54,28 +58,82 @@ pub(super) fn decode(
         }
         let mut remaining = length;
         while remaining != 0 {
-            let count = remaining.min(buffer.len());
-            exact(&mut read, &mut buffer[..count])?;
-            sink(&buffer[..count])?;
+            check()?;
+            if !reader.fill()? {
+                return Err(INVALID);
+            }
+            let count = remaining.min(reader.end - reader.start) & !1;
+            check()?;
+            if count == 0 {
+                // A read can split one PCM16 sample. Retain only that sample,
+                // rather than waiting to fill a larger audio block.
+                let mut sample = [0; 2];
+                reader.exact(&mut sample)?;
+                check()?;
+                sink(&sample)?;
+                remaining -= sample.len();
+                continue;
+            }
+            sink(&reader.buffer[reader.start..reader.start + count])?;
+            reader.start += count;
             remaining -= count;
         }
         let mut end = [0; 2];
-        exact(&mut read, &mut end)?;
+        reader.exact(&mut end)?;
+        check()?;
         if end != *b"\r\n" {
             return Err(INVALID);
         }
     }
 }
 
-fn exact(read: &mut impl FnMut(&mut [u8]) -> Result<usize>, mut bytes: &mut [u8]) -> Result<()> {
-    while !bytes.is_empty() {
-        let count = read(bytes)?;
-        if count == 0 || count > bytes.len() {
+// Metadata and PCM share the same fixed storage. Byte-at-a-time framing never
+// becomes byte-at-a-time socket I/O, and available audio never waits for a full
+// buffer. The explicit guard in decode still observes cancellation while data
+// is already buffered.
+struct Buffered<F> {
+    read: F,
+    buffer: [u8; 16_384],
+    start: usize,
+    end: usize,
+}
+
+impl<F: FnMut(&mut [u8]) -> Result<usize>> Buffered<F> {
+    const fn new(read: F) -> Self {
+        Self {
+            read,
+            buffer: [0; 16_384],
+            start: 0,
+            end: 0,
+        }
+    }
+
+    fn fill(&mut self) -> Result<bool> {
+        if self.start == self.end {
+            self.start = 0;
+            self.end = (self.read)(&mut self.buffer)?;
+            if self.end > self.buffer.len() {
+                return Err(INVALID);
+            }
+        }
+        Ok(self.start != self.end)
+    }
+
+    fn byte(&mut self) -> Result<u8> {
+        if !self.fill()? {
             return Err(INVALID);
         }
-        bytes = &mut bytes[count..];
+        let byte = self.buffer[self.start];
+        self.start += 1;
+        Ok(byte)
     }
-    Ok(())
+
+    fn exact(&mut self, bytes: &mut [u8]) -> Result<()> {
+        for byte in bytes {
+            *byte = self.byte()?;
+        }
+        Ok(())
+    }
 }
 
 fn validate_head(head: &[u8]) -> Result<()> {
@@ -124,8 +182,8 @@ fn validate_head(head: &[u8]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Failure, decode};
-    use std::io::Read;
+    use super::{Failure, INVALID, MAX_PCM, decode};
+    use std::{cell::Cell, io::Read};
 
     const HEAD: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Type: audio/pcm\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
 
@@ -146,6 +204,7 @@ mod tests {
             let mut pcm = Vec::new();
             let result = decode(
                 |data| reader.read(data).map_err(|_| Failure::Cancelled),
+                || Ok(()),
                 |chunk| {
                     pcm.extend_from_slice(chunk);
                     Ok(())
@@ -166,6 +225,7 @@ mod tests {
         assert!(
             decode(
                 |data| reader.read(data).map_err(|_| Failure::Cancelled),
+                || Ok(()),
                 |_| Ok(())
             )
             .is_err()
@@ -179,6 +239,7 @@ mod tests {
         let mut delivered = false;
         let result = decode(
             |data| reader.read(data).map_err(|_| Failure::Cancelled),
+            || Ok(()),
             |_| {
                 delivered = true;
                 Err(Failure::Cancelled)
@@ -186,5 +247,137 @@ mod tests {
         );
         assert!(delivered);
         assert_eq!(result, Err(Failure::Cancelled));
+    }
+
+    #[test]
+    fn pcm_framing_reuses_one_buffer_without_byte_sized_source_reads() -> Result<(), Failure> {
+        let bytes = [HEAD, b"2\r\nxx\r\n2\r\nyy\r\n0\r\n\r\n"].concat();
+        let mut reader = bytes.as_slice();
+        let mut reads = 0;
+        let mut pcm = Vec::new();
+        decode(
+            |data| {
+                assert_eq!(data.len(), 16_384);
+                reads += 1;
+                reader.read(data).map_err(|_| Failure::Cancelled)
+            },
+            || Ok(()),
+            |chunk| {
+                pcm.extend_from_slice(chunk);
+                Ok(())
+            },
+        )?;
+        assert_eq!(pcm, b"xxyy");
+        assert_eq!(reads, 2, "one source read plus the required EOF check");
+        Ok(())
+    }
+
+    #[test]
+    fn pcm_ready_prefix_arrives_before_remaining_chunk_or_framing() -> Result<(), Failure> {
+        let bytes = [HEAD, b"8\r\n\x01\x00\x02\x00\x03\x00\x04\x00\r\n0\r\n\r\n"].concat();
+        let prefix = HEAD.len() + 3 + 4;
+        let mut offset = 0;
+        let delivered = Cell::new(false);
+        let mut pcm = Vec::new();
+        decode(
+            |data| {
+                let limit = if offset < prefix {
+                    prefix
+                } else {
+                    assert!(
+                        delivered.get(),
+                        "ready samples must precede another source read"
+                    );
+                    bytes.len()
+                };
+                let count = data.len().min(limit - offset);
+                data[..count].copy_from_slice(&bytes[offset..offset + count]);
+                offset += count;
+                Ok(count)
+            },
+            || Ok(()),
+            |chunk| {
+                assert_eq!(chunk.len() % 2, 0);
+                delivered.set(true);
+                pcm.extend_from_slice(chunk);
+                Ok(())
+            },
+        )?;
+        assert_eq!(pcm, [1, 0, 2, 0, 3, 0, 4, 0]);
+        Ok(())
+    }
+
+    #[test]
+    fn pcm_fragmentation_preserves_complete_samples_and_terminal_validation() -> Result<(), Failure>
+    {
+        let bytes = [
+            HEAD,
+            b"6\r\n\x01\x80\x02\x00\xff\x7f\r\n2\r\n\x00\x80\r\n0\r\n\r\n",
+        ]
+        .concat();
+        for fragment in [1, 2, 3, 7, 16_384] {
+            let mut reader = bytes.as_slice();
+            let mut pcm = Vec::new();
+            decode(
+                |data| {
+                    let count = fragment.min(data.len());
+                    reader
+                        .read(&mut data[..count])
+                        .map_err(|_| Failure::Cancelled)
+                },
+                || Ok(()),
+                |chunk| {
+                    assert_ne!(chunk.len(), 0);
+                    assert_eq!(chunk.len() % 2, 0);
+                    pcm.extend_from_slice(chunk);
+                    Ok(())
+                },
+            )?;
+            assert_eq!(pcm, [1, 128, 2, 0, 255, 127, 0, 128]);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn pcm_buffered_data_still_observes_cancellation_and_rejects_truncation() {
+        let bytes = [HEAD, b"2\r\nxx\r\n2\r\nyy\r\n0\r\n\r\n"].concat();
+        let mut reader = bytes.as_slice();
+        let cancelled = Cell::new(false);
+        let mut delivered = 0;
+        let result = decode(
+            |data| reader.read(data).map_err(|_| Failure::Cancelled),
+            || {
+                if cancelled.get() {
+                    Err(Failure::Cancelled)
+                } else {
+                    Ok(())
+                }
+            },
+            |_| {
+                delivered += 1;
+                cancelled.set(true);
+                Ok(())
+            },
+        );
+        assert_eq!(result, Err(Failure::Cancelled));
+        assert_eq!(delivered, 1);
+        for body in [
+            b"4\r\nxx".as_slice(),
+            b"4\r\nxxx".as_slice(),
+            b"2\r\nxxX\n0\r\n\r\n".as_slice(),
+            b"2\r\nxx\r\n0\r\n\r\nextra".as_slice(),
+            format!("{:x}\r\n", MAX_PCM + 2).as_bytes(),
+        ] {
+            let bytes = [HEAD, body].concat();
+            let mut reader = bytes.as_slice();
+            assert_eq!(
+                decode(
+                    |data| reader.read(data).map_err(|_| Failure::Cancelled),
+                    || Ok(()),
+                    |_| Ok(()),
+                ),
+                Err(INVALID)
+            );
+        }
     }
 }

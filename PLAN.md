@@ -40,6 +40,9 @@ memory, throughput and device qualification remain outstanding.
 - [x] Bound Unicode transcript-find scratch to the query length, eliminating
   whole-message folded text and per-byte offset tables. Preserve scalar lowercase
   expansion, original UTF-8 highlights, nonoverlapping matches and result limits.
+- [x] Buffer native speech PCM framing in fixed storage and deliver available
+  complete samples without filling a larger block first. Preserve split-sample
+  handling, cancellation, byte limits and strict terminal framing/EOF checks.
 - [x] Restore Rust recurrent/convolution checkpoints into existing live storage
   after staging every fallible KV copy. Runtime 0.1.5 avoids another 149.625 MiB
   of nominal transient Swift restore payload while preserving exact bits,

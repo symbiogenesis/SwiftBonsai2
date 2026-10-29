@@ -252,6 +252,7 @@ impl Client {
                     }
                 }
             },
+            || call.check(),
             sink,
         )
     }
