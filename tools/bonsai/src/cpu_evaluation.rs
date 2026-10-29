@@ -131,6 +131,9 @@ fn arguments(model: &str, threads: Threads, prompt: &str) -> Result<Vec<String>>
 /// Rejects unknown fields, unsupported operations/devices, unbounded CPU counts,
 /// unavailable candidate budgets and invalid compiled CPU plans.
 pub fn run(request: Value) -> Result<Value> {
+    if request["operation"] == "compare-sample-conditions" {
+        return conditions::compare_samples(request);
+    }
     if request["operation"] == "compare-conditions" {
         return conditions::compare(request);
     }

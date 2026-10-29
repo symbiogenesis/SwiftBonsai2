@@ -11,6 +11,26 @@ struct Request {
     after: Value,
 }
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+struct SampleBoundaries {
+    #[serde(default)]
+    before: Value,
+    #[serde(default)]
+    after: Value,
+    // Retained receipts may contain this derived value. Always recompute it.
+    #[serde(default, rename = "Comparison")]
+    _comparison: Option<serde::de::IgnoredAny>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SampleRequest {
+    operation: String,
+    baseline: Option<SampleBoundaries>,
+    candidate: Option<SampleBoundaries>,
+}
+
 fn observed_topology(report: &Value) -> Option<&Value> {
     (report["schema_version"] == 1
         && report["kind"] == "runner-native-cpu-observations"
@@ -69,12 +89,13 @@ pub(super) fn compare(request: Value) -> crate::Result<Value> {
     if request.operation != "compare-conditions" {
         return Err("Unsupported CPU condition comparison operation.".into());
     }
+    Ok(compare_observations(&request.before, &request.after))
+}
+
+fn compare_observations(before: &Value, after: &Value) -> Value {
     let mut changed = Vec::new();
     let mut unknown = Vec::new();
-    match (
-        observed_topology(&request.before),
-        observed_topology(&request.after),
-    ) {
+    match (observed_topology(before), observed_topology(after)) {
         (Some(before), Some(after)) if before != after => changed.push("topology-changed"),
         (Some(_), Some(_)) => {}
         _ => unknown.push("topology-unavailable"),
@@ -91,13 +112,13 @@ pub(super) fn compare(request: Value) -> crate::Result<Value> {
             "battery-saver-unavailable",
         ),
     ] {
-        match (power(&request.before, field), power(&request.after, field)) {
+        match (power(before, field), power(after, field)) {
             (Some(before), Some(after)) if before != after => changed.push(change),
             (Some(_), Some(_)) => {}
             _ => unknown.push(unavailable),
         }
     }
-    match (power_policy(&request.before), power_policy(&request.after)) {
+    match (power_policy(before), power_policy(after)) {
         (Some(before), Some(after)) if before != after => changed.push("power-policy-changed"),
         (Some(_), Some(_)) => {}
         _ => unknown.push("power-policy-unavailable"),
@@ -109,11 +130,66 @@ pub(super) fn compare(request: Value) -> crate::Result<Value> {
     } else {
         "observed-stable"
     };
-    Ok(json!({
+    json!({
         "Status": status, "Comparable": status == "observed-stable",
         "Changed": changed, "Unknown": unknown,
         "Scope": "Batch boundary observations only; changes within samples and edits to individual scheme settings are not monitored. Active scheme and effective power mode are live policy conditions. Charge level and live CPU availability flags are not compatibility conditions. No energy verdict.",
-    }))
+    })
+}
+
+pub(super) fn compare_samples(request: Value) -> crate::Result<Value> {
+    let request: SampleRequest =
+        serde_json::from_value(request).map_err(|error| error.to_string())?;
+    if request.operation != "compare-sample-conditions" {
+        return Err("Unsupported CPU sample condition comparison operation.".into());
+    }
+    let baseline = request.baseline.unwrap_or_default();
+    let candidate = request.candidate.unwrap_or_default();
+    let details = [
+        (
+            "Baseline",
+            compare_observations(&baseline.before, &baseline.after),
+        ),
+        (
+            "Candidate",
+            compare_observations(&candidate.before, &candidate.after),
+        ),
+        (
+            "BetweenSamples",
+            compare_observations(&baseline.after, &candidate.before),
+        ),
+    ];
+    let mut changed = Vec::new();
+    let mut unknown = Vec::new();
+    for (name, comparison) in &details {
+        for (field, reasons) in [("Changed", &mut changed), ("Unknown", &mut unknown)] {
+            for reason in comparison[field]
+                .as_array()
+                .ok_or("Missing CPU condition comparison reasons.")?
+            {
+                reasons.push(format!(
+                    "{name}:{}",
+                    reason.as_str().ok_or("Invalid CPU condition reason.")?
+                ));
+            }
+        }
+    }
+    let status = if !changed.is_empty() {
+        "changed"
+    } else if !unknown.is_empty() {
+        "unknown"
+    } else {
+        "observed-stable"
+    };
+    let mut result = json!({
+        "Status": status, "Comparable": status == "observed-stable",
+        "Changed": changed, "Unknown": unknown,
+        "Scope": "All four sample boundary observations must agree; transitions within a sample remain unobserved. Retained derived comparisons are never trusted. No energy verdict.",
+    });
+    for (name, comparison) in details {
+        result[name] = comparison;
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -139,6 +215,90 @@ mod tests {
         super::super::run(
             json!({"operation": "compare-conditions", "before": observation(), "after": after}),
         )
+    }
+
+    #[test]
+    fn sample_conditions_require_all_four_observed_boundaries() -> crate::Result<()> {
+        let stable = json!({
+            "operation": "compare-sample-conditions",
+            "baseline": {"Before": observation(), "After": observation()},
+            "candidate": {"Before": observation(), "After": observation()},
+        });
+        assert_eq!(super::super::run(stable.clone())?["Comparable"], true);
+
+        // Batch start/end agree even though both samples span a policy change.
+        let mut excursion = stable.clone();
+        for (sample, boundary) in [("baseline", "After"), ("candidate", "Before")] {
+            excursion[sample][boundary]["power_policy_snapshot"]["effective_mode"] =
+                json!("max-performance");
+            excursion[sample]["Comparison"] = json!({"Comparable": true});
+        }
+        assert_eq!(
+            result(&excursion["candidate"]["After"])?["Comparable"],
+            true
+        );
+        let compared = super::super::run(excursion)?;
+        assert_eq!(compared["Status"], "changed");
+        assert_eq!(compared["Comparable"], false);
+        assert_eq!(compared["Baseline"]["Comparable"], false);
+        assert_eq!(compared["Candidate"]["Comparable"], false);
+        assert_eq!(compared["BetweenSamples"]["Comparable"], true);
+
+        // Both individual samples are stable, but use different power modes.
+        let mut between = stable.clone();
+        for boundary in ["Before", "After"] {
+            between["candidate"][boundary]["power_policy_snapshot"]["effective_mode"] =
+                json!("max-performance");
+        }
+        let compared = super::super::run(between)?;
+        assert_eq!(compared["Comparable"], false);
+        assert_eq!(compared["Baseline"]["Comparable"], true);
+        assert_eq!(compared["Candidate"]["Comparable"], true);
+        assert_eq!(
+            compared["Changed"],
+            json!(["BetweenSamples:power-policy-changed"])
+        );
+
+        for incomplete in [
+            json!({"operation": "compare-sample-conditions"}),
+            json!({"operation": "compare-sample-conditions", "baseline": null,
+                "candidate": {"Comparison": {"Comparable": true}}}),
+            {
+                let mut input = stable.clone();
+                input["baseline"] = json!({"Before": observation()});
+                input
+            },
+        ] {
+            let compared = super::super::run(incomplete)?;
+            assert_eq!(compared["Status"], "unknown");
+            assert_eq!(compared["Comparable"], false);
+            assert!(
+                compared["Unknown"]
+                    .as_array()
+                    .is_some_and(|reasons| !reasons.is_empty())
+            );
+        }
+
+        let mut live_changes = stable.clone();
+        live_changes["candidate"]["After"]["power_snapshot"]["battery_percent"] = json!(79);
+        live_changes["baseline"]["After"]["availability"][0]["parked"] = json!(true);
+        assert_eq!(super::super::run(live_changes)?["Comparable"], true);
+
+        for input in [
+            {
+                let mut input = stable.clone();
+                input["allowChanged"] = json!(true);
+                input
+            },
+            {
+                let mut input = stable;
+                input["baseline"]["allowChanged"] = json!(true);
+                input
+            },
+        ] {
+            assert!(super::super::run(input).is_err());
+        }
+        Ok(())
     }
 
     #[test]
