@@ -80,7 +80,8 @@ no-go decision, including losing cases.
   cancellation when clients disconnect or stop consuming output. Extend the
   [bounded streaming regressions](docs/streaming-resources.md) to actual-model
   ready-prefix delivery, long-transcript updates, stalled-consumer speech backlog,
-  speech/chat overlap with recycled PCM playback buffers and recovery trials.
+  speech/chat overlap with recycled PCM playback buffers and WinMM descriptors,
+  including segment changes, Stop, driver refusal and recovery trials.
   Include borrowed-PCM microphone uploads without full canonical-WAV or multipart
   copies, retaining exact upload framing and cancellation. Qualify shared buffered
   speech response intake with direct final-storage reads, including maximum-size

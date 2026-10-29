@@ -313,6 +313,11 @@ The `speech::pipeline::tests::pcm_` cases check packet-allocation reuse,
 segment-tail framing, bounded spare capacity and nonblocking recycling. The existing
 `tiny_pcm_callbacks_form_fixed_frames_and_flush_the_final_tail_exactly` and
 synthetic output cases retain byte identity and bounded playback behavior.
+The `speech::pipeline::tests::playback_` cases check stable descriptor allocation
+reuse, cleared packed WinMM fields, the eight-descriptor bound and retained
+header/PCM identity when unprepare refuses release. Fake release callbacks
+exercise the production ownership helper, including teardown quarantine; they
+do not invoke WinMM or qualify an actual audio driver.
 These checks do not measure target-device peak memory or speech/chat overlap
 latency, and they do not exercise a physical audio driver.
 

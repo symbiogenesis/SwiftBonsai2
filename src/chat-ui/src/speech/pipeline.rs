@@ -467,10 +467,88 @@ struct Buffer {
     pcm: Vec<u8>,
 }
 
+#[derive(Default)]
+struct PlaybackBuffers {
+    // WinMM retains these addresses. Moving the boxes never moves the headers.
+    queued: VecDeque<Box<Buffer>>,
+    // Only successfully unprepared, empty descriptors enter this bounded pool.
+    #[allow(
+        clippy::vec_box,
+        reason = "Reused WinMM descriptors must keep their original stable addresses."
+    )]
+    spare: Vec<Box<Buffer>>,
+}
+
+impl PlaybackBuffers {
+    fn take(&mut self, mut pcm: Vec<u8>) -> Result<Box<Buffer>, tts::Failure> {
+        if self.queued.len() >= PLAYBACK_PACKETS
+            || pcm.is_empty()
+            || pcm.len() > PACKET_BYTES
+            || pcm.len() % 2 != 0
+        {
+            return Err(AUDIO_FAILURE);
+        }
+        let header = WAVEHDR {
+            lpData: pcm.as_mut_ptr(),
+            dwBufferLength: u32::try_from(pcm.len()).map_err(|_| AUDIO_FAILURE)?,
+            ..WAVEHDR::default()
+        };
+        let mut buffer = self.spare.pop().unwrap_or_else(|| {
+            Box::new(Buffer {
+                header: UnsafeCell::new(WAVEHDR::default()),
+                pcm: Vec::new(),
+            })
+        });
+        // The driver has released this descriptor (or has never seen it).
+        *buffer.header.get_mut() = header;
+        buffer.pcm = pcm;
+        Ok(buffer)
+    }
+
+    fn reap(
+        &mut self,
+        mut unprepare: impl FnMut(*mut WAVEHDR) -> u32,
+        returned: &SyncSender<Vec<u8>>,
+    ) -> Result<(), tts::Failure> {
+        while let Some(buffer) = self.queued.front() {
+            match unprepare(buffer.header.get()) {
+                0 => {
+                    if let Some(mut buffer) = self.queued.pop_front() {
+                        // Successful unprepare releases both native addresses.
+                        // Remove every stale driver field and PCM pointer before reuse.
+                        *buffer.header.get_mut() = WAVEHDR::default();
+                        recycle(returned, std::mem::take(&mut buffer.pcm));
+                        if self.spare.len() < PLAYBACK_PACKETS {
+                            self.spare.push(buffer);
+                        }
+                    }
+                }
+                33 => break, // WAVERR_STILLPLAYING: retain both allocations.
+                _ => return Err(AUDIO_FAILURE),
+            }
+        }
+        Ok(())
+    }
+
+    fn drain(
+        &mut self,
+        mut unprepare: impl FnMut(*mut WAVEHDR) -> u32,
+        mut retain: impl FnMut(Box<Buffer>),
+    ) -> bool {
+        let mut released = true;
+        while let Some(buffer) = self.queued.pop_front() {
+            if unprepare(buffer.header.get()) != 0 {
+                retain(buffer);
+                released = false;
+            }
+        }
+        released
+    }
+}
+
 struct WaveOutput {
     handle: HWAVEOUT,
-    // The driver retains WAVEHDR addresses. Boxing keeps them stable as this queue moves.
-    buffers: VecDeque<Box<Buffer>>,
+    buffers: PlaybackBuffers,
     header_bytes: u32,
     recycle: SyncSender<Vec<u8>>,
 }
@@ -494,7 +572,7 @@ impl WaveOutput {
         }
         Ok(Self {
             handle,
-            buffers: VecDeque::new(),
+            buffers: PlaybackBuffers::default(),
             header_bytes: u32::try_from(size_of::<WAVEHDR>()).map_err(|_| AUDIO_FAILURE)?,
             recycle,
         })
@@ -503,7 +581,7 @@ impl WaveOutput {
 
 impl Output for WaveOutput {
     fn queued(&self) -> usize {
-        self.buffers.len()
+        self.buffers.queued.len()
     }
 
     fn pause(&mut self) -> Result<(), tts::Failure> {
@@ -525,26 +603,16 @@ impl Output for WaveOutput {
         }
     }
 
-    fn push(&mut self, mut pcm: Vec<u8>) -> Result<(), tts::Failure> {
-        if pcm.is_empty() || pcm.len() > PACKET_BYTES || pcm.len() % 2 != 0 {
-            return Err(AUDIO_FAILURE);
-        }
-        let buffer = Box::new(Buffer {
-            header: UnsafeCell::new(WAVEHDR {
-                lpData: pcm.as_mut_ptr(),
-                dwBufferLength: u32::try_from(pcm.len()).map_err(|_| AUDIO_FAILURE)?,
-                ..WAVEHDR::default()
-            }),
-            pcm,
-        });
+    fn push(&mut self, pcm: Vec<u8>) -> Result<(), tts::Failure> {
+        let buffer = self.buffers.take(pcm)?;
         // SAFETY: This exclusive boxed header and its owned PCM allocation remain stable until
         // unprepare confirms release; the descriptor size matches the native ABI.
         if unsafe { waveOutPrepareHeader(self.handle, buffer.header.get(), self.header_bytes) } != 0
         {
             return Err(AUDIO_FAILURE);
         }
-        self.buffers.push_back(buffer);
-        let buffer = self.buffers.back().ok_or(AUDIO_FAILURE)?;
+        self.buffers.queued.push_back(buffer);
+        let buffer = self.buffers.queued.back().ok_or(AUDIO_FAILURE)?;
         // SAFETY: The prepared header and PCM remain owned by buffers until the driver releases them.
         if unsafe { waveOutWrite(self.handle, buffer.header.get(), self.header_bytes) } != 0 {
             return Err(AUDIO_FAILURE);
@@ -553,24 +621,14 @@ impl Output for WaveOutput {
     }
 
     fn reap(&mut self) -> Result<(), tts::Failure> {
-        while let Some(buffer) = self.buffers.front() {
-            // SAFETY: Only WinMM accesses a submitted header; unprepare atomically tests whether
-            // the driver released it, avoiding unsynchronized Rust reads of driver-written flags.
-            match unsafe {
-                waveOutUnprepareHeader(self.handle, buffer.header.get(), self.header_bytes)
-            } {
-                0 => {
-                    if let Some(buffer) = self.buffers.pop_front() {
-                        // Successful unprepare releases the driver ownership;
-                        // only then may packetization reuse the PCM allocation.
-                        recycle(&self.recycle, buffer.pcm);
-                    }
-                }
-                33 => break, // WAVERR_STILLPLAYING: retain both allocations.
-                _ => return Err(AUDIO_FAILURE),
-            }
-        }
-        Ok(())
+        self.buffers.reap(
+            |header| {
+                // SAFETY: The submitted header remains boxed and owned by buffers.
+                // Unprepare tests release without reading driver-written flags in Rust.
+                unsafe { waveOutUnprepareHeader(self.handle, header, self.header_bytes) }
+            },
+            &self.recycle,
+        )
     }
 }
 
@@ -579,20 +637,18 @@ impl Drop for WaveOutput {
         // SAFETY: This thread exclusively owns the live handle; reset stops playback and returns
         // queued buffers before unprepare and release. No callbacks can outlive these buffers.
         let reset = unsafe { waveOutReset(self.handle) };
-        let mut released = reset == 0;
-        while let Some(buffer) = self.buffers.pop_front() {
-            // SAFETY: The header remains allocated while asking the driver to release it.
-            if unsafe {
-                waveOutUnprepareHeader(self.handle, buffer.header.get(), self.header_bytes)
-            } != 0
-            {
+        let released = self.buffers.drain(
+            |header| {
+                // SAFETY: The header remains allocated while asking the driver to release it.
+                unsafe { waveOutUnprepareHeader(self.handle, header, self.header_bytes) }
+            },
+            |buffer| {
                 // An abnormal driver refusal cannot justify freeing memory still owned by WinMM.
                 // This bounded allocation survives to process exit instead of becoming dangling.
                 let _retained = Box::leak(buffer);
-                released = false;
-            }
-        }
-        if released {
+            },
+        );
+        if reset == 0 && released {
             // SAFETY: Reset succeeded and all prepared buffers have been released.
             let _closed = unsafe { waveOutClose(self.handle) };
         }
@@ -781,6 +837,160 @@ mod tests {
         assert!(receiver.try_recv().is_err());
         drop(receiver);
         super::recycle(&sender, vec![0; PACKET_BYTES]);
+    }
+
+    #[test]
+    fn playback_descriptors_reuse_released_allocations_and_clear_native_fields()
+    -> Result<(), Failure> {
+        let (sender, returned) = mpsc::sync_channel(PLAYBACK_PACKETS);
+        let mut buffers = super::PlaybackBuffers::default();
+        let mut addresses = Vec::new();
+        for _ in 0..PLAYBACK_PACKETS {
+            let mut buffer = buffers.take(vec![7; PACKET_BYTES])?;
+            addresses.push(buffer.header.get());
+            // Simulate fields written during preparation/playback before putting
+            // this descriptor in the fake driver's queue. No audio device is used.
+            let header = buffer.header.get_mut();
+            header.dwBytesRecorded = u32::MAX;
+            header.dwFlags = u32::MAX;
+            header.dwLoops = u32::MAX;
+            header.dwUser = usize::MAX;
+            header.lpNext = std::ptr::dangling_mut();
+            header.reserved = usize::MAX;
+            buffers.queued.push_back(buffer);
+        }
+        for _ in 0..16 {
+            buffers.reap(
+                |header| {
+                    assert!(addresses.contains(&header));
+                    0
+                },
+                &sender,
+            )?;
+            assert!(buffers.queued.is_empty());
+            assert_eq!(buffers.spare.len(), PLAYBACK_PACKETS);
+            assert_eq!(returned.try_iter().count(), PLAYBACK_PACKETS);
+            for invalid in [Vec::new(), vec![0], vec![0; PACKET_BYTES + 2]] {
+                assert!(buffers.take(invalid).is_err());
+                assert_eq!(buffers.spare.len(), PLAYBACK_PACKETS);
+            }
+            for buffer in &mut buffers.spare {
+                assert_eq!(buffer.pcm, b"");
+                assert_eq!(buffer.pcm.capacity(), 0);
+                let header = buffer.header.get_mut();
+                assert!(header.lpData.is_null());
+                assert_eq!({ header.dwBufferLength }, 0);
+                assert_eq!({ header.dwBytesRecorded }, 0);
+                assert_eq!({ header.dwFlags }, 0);
+                assert_eq!({ header.dwLoops }, 0);
+                assert_eq!({ header.dwUser }, 0);
+                assert!(header.lpNext.is_null());
+                assert_eq!({ header.reserved }, 0);
+            }
+            for index in 0..PLAYBACK_PACKETS {
+                let bytes = if index == 0 { 42 } else { PACKET_BYTES };
+                let mut pcm = Vec::with_capacity(PACKET_BYTES);
+                pcm.resize(bytes, 3);
+                let pcm_address = pcm.as_ptr();
+                let mut buffer = buffers.take(pcm)?;
+                assert!(addresses.contains(&buffer.header.get()));
+                let header = buffer.header.get_mut();
+                assert_eq!(header.lpData.cast_const(), pcm_address);
+                assert_eq!(usize::try_from(header.dwBufferLength).ok(), Some(bytes));
+                assert_eq!(buffer.pcm, vec![3; bytes]);
+                buffers.queued.push_back(buffer);
+            }
+            assert!(buffers.spare.is_empty());
+            // Rejection cannot consume a spare descriptor or exceed the native
+            // queue bound, even when a caller bypasses the consume loop.
+            assert!(buffers.take(vec![0; 2]).is_err());
+            assert_eq!(buffers.queued.len(), PLAYBACK_PACKETS);
+            assert_eq!(
+                buffers.queued.front().map(|buffer| buffer.pcm.len()),
+                Some(42)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn playback_descriptors_keep_driver_owned_storage_on_unprepare_refusal() -> Result<(), Failure>
+    {
+        let (sender, returned) = mpsc::sync_channel(PLAYBACK_PACKETS);
+        let mut buffers = super::PlaybackBuffers::default();
+        let buffer = buffers.take(vec![9; PACKET_BYTES])?;
+        let header = buffer.header.get();
+        let pcm = buffer.pcm.as_ptr();
+        buffers.queued.push_back(buffer);
+        for result in [33, 1] {
+            assert_eq!(
+                buffers.reap(
+                    |address| {
+                        assert_eq!(address, header);
+                        result
+                    },
+                    &sender
+                ),
+                if result == 33 {
+                    Ok(())
+                } else {
+                    Err(super::AUDIO_FAILURE)
+                }
+            );
+            assert_eq!(buffers.queued.len(), 1);
+            assert!(buffers.spare.is_empty());
+            assert!(returned.try_recv().is_err());
+            let retained = buffers.queued.front().ok_or(super::AUDIO_FAILURE)?;
+            assert_eq!(retained.header.get(), header);
+            assert_eq!(retained.pcm.as_ptr(), pcm);
+            assert_eq!(retained.pcm, vec![9; PACKET_BYTES]);
+        }
+        buffers.reap(|_| 0, &sender)?;
+        assert_eq!(buffers.spare.len(), 1);
+        assert_eq!(returned.try_recv().ok().map(|pcm| pcm.as_ptr()), Some(pcm));
+        Ok(())
+    }
+
+    #[test]
+    fn playback_descriptor_teardown_quarantines_only_refused_active_buffers() -> Result<(), Failure>
+    {
+        let (sender, returned) = mpsc::sync_channel(PLAYBACK_PACKETS);
+        let mut buffers = super::PlaybackBuffers::default();
+        // Establish one spare descriptor. Teardown must never ask the driver to
+        // unprepare it again or quarantine already released storage.
+        let spare = buffers.take(vec![1; PACKET_BYTES])?;
+        let spare_address = spare.header.get();
+        buffers.queued.push_back(spare);
+        buffers.reap(|_| 0, &sender)?;
+        assert!(returned.try_recv().is_ok());
+        let mut active = Vec::new();
+        for _ in 0..3 {
+            let buffer = super::PlaybackBuffers::default().take(vec![8; PACKET_BYTES])?;
+            active.push((buffer.header.get(), buffer.pcm.as_ptr()));
+            buffers.queued.push_back(buffer);
+        }
+        let mut calls = 0;
+        let mut quarantined = Vec::new();
+        assert!(!buffers.drain(
+            |header| {
+                assert_ne!(header, spare_address);
+                assert_eq!(header, active[calls].0);
+                calls += 1;
+                u32::from(calls != 2)
+            },
+            |buffer| quarantined.push(buffer)
+        ));
+        assert_eq!(calls, 3);
+        assert!(buffers.queued.is_empty());
+        assert_eq!(buffers.spare.len(), 1);
+        assert_eq!(quarantined.len(), 2);
+        drop(buffers);
+        for (buffer, index) in quarantined.iter().zip([0, 2]) {
+            assert_eq!(buffer.header.get(), active[index].0);
+            assert_eq!(buffer.pcm.as_ptr(), active[index].1);
+            assert_eq!(buffer.pcm, vec![8; PACKET_BYTES]);
+        }
+        Ok(())
     }
 
     #[test]
