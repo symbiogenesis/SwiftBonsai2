@@ -27,6 +27,8 @@ use std::{
 mod cancellation_tests;
 mod effort;
 mod event_queue;
+#[cfg(test)]
+mod memory_tests;
 
 pub(crate) use event_queue::{EventReceiver, EventSender, channel as event_channel};
 
@@ -379,6 +381,9 @@ fn worker(
                     serialize_request(&pending, max_completion_tokens, enable_thinking, scale)
                         .and_then(|request| {
                             if extra_effort {
+                                // Validate the original request locally; effort
+                                // constructs its own stage bodies.
+                                drop(request);
                                 effort::run(
                                     config.frontend_port,
                                     &key,
@@ -392,7 +397,7 @@ fn worker(
                                     events,
                                 )
                             } else {
-                                generate(config.frontend_port, &key, &request, commands, events)
+                                generate(config.frontend_port, &key, request, commands, events)
                             }
                         });
                 finish_turn(history, pending, &text, outcome, events, commands)?;
@@ -774,7 +779,7 @@ impl Write for Interruptible<'_> {
 fn generate(
     port: u16,
     key: &str,
-    request: &[u8],
+    request: Vec<u8>,
     commands: &Receiver<Command>,
     events: &EventSender,
 ) -> Result<(Message, Completion)> {
@@ -791,7 +796,7 @@ fn generate(
 fn generate_until(
     port: u16,
     key: &str,
-    request: &[u8],
+    request: Vec<u8>,
     commands: &Receiver<Command>,
     events: &EventSender,
     until: Instant,
@@ -820,31 +825,35 @@ fn generate_until(
         until,
         interrupted: None,
     };
-    let outcome = exchange(&mut connection, port, key, request, events);
+    let outcome = exchange(&mut connection, port, key, request, events, commands, until);
     let _checked = connection.check();
     connection.interrupted.map_or(outcome, Err)
 }
 
 fn exchange(
-    connection: &mut Interruptible<'_>,
+    connection: &mut (impl Read + Write),
     port: u16,
     key: &str,
-    request: &[u8],
+    request: impl AsRef<[u8]>,
     events: &EventSender,
+    commands: &Receiver<Command>,
+    until: Instant,
 ) -> Result<(Message, Completion)> {
     let header = format!(
         "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {key}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        request.len()
+        request.as_ref().len()
     );
     // Keep the sending half open: the broker interprets half-close as abandonment.
     connection
         .write_all(header.as_bytes())
-        .and_then(|()| connection.write_all(request))
+        .and_then(|()| connection.write_all(request.as_ref()))
+        .and_then(|()| connection.flush())
         .map_err(|_| {
             Failure::Message("Could not send your message to the model on this computer.")
         })?;
-    let commands = connection.commands;
-    let until = connection.until;
+    // The canonical request is no longer needed once sent. Release its
+    // allocation before response headers or streaming backpressure can wait.
+    drop(request);
     let mut body = HttpBody::new(connection)?;
     let mut sse = Sse::default();
     let mut bytes = [0; READ_SIZE];

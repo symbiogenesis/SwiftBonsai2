@@ -112,7 +112,7 @@ fn run_with(
     commands: &Receiver<Command>,
     events: &EventSender,
     until: Instant,
-    mut generate: impl FnMut(&[u8], Instant) -> Result<(Message, Completion)>,
+    mut generate: impl FnMut(Vec<u8>, Instant) -> Result<(Message, Completion)>,
 ) -> Result<(Message, Completion)> {
     active(commands, until)?;
     notify(events, Event::Stage(PLAN))?;
@@ -126,7 +126,7 @@ fn run_with(
         },
         options,
     )?;
-    let (plan, completion) = generate(&request, until)?;
+    let (plan, completion) = generate(request, until)?;
     active(commands, until)?;
     if completion == Completion::TokenLimit {
         notify(
@@ -154,7 +154,7 @@ fn run_with(
         },
         options,
     )?;
-    let (draft, completion) = generate(&request, until)?;
+    let (draft, completion) = generate(request, until)?;
     active(commands, until)?;
     if completion == Completion::TokenLimit {
         notify(events, Event::Stage("Draft incomplete; review skipped"))?;
@@ -181,7 +181,7 @@ fn run_with(
         },
         options,
     )?;
-    let (revision, completion) = generate(&request, until)?;
+    let (revision, completion) = generate(request, until)?;
     active(commands, until)?;
     if completion == Completion::TokenLimit {
         notify(

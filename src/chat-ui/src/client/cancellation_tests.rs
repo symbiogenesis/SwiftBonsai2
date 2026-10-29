@@ -38,7 +38,7 @@ fn stop_cancels_stalled_headers_and_body_and_closes_the_connection() -> io::Resu
         let (events, _notifications) = event_channel();
         let (finished, result) = mpsc::channel();
         let worker = thread::spawn(move || {
-            let outcome = generate(port, "inert-test-key", b"{}", &incoming, &events);
+            let outcome = generate(port, "inert-test-key", b"{}".to_vec(), &incoming, &events);
             let _sent = finished.send(outcome.err());
         });
         assert!(ready.recv_timeout(Duration::from_secs(3)).is_ok());

@@ -93,7 +93,7 @@ fn effort_applies_thinking_selection_to_every_stage() -> Result<()> {
             &events,
             Instant::now() + DEADLINE,
             |body, _| {
-                let request: serde_json::Value = serde_json::from_slice(body)
+                let request: serde_json::Value = serde_json::from_slice(&body)
                     .map_err(|_| Failure::Message("invalid thinking stage JSON"))?;
                 assert_eq!(request["enable_thinking"], enable_thinking);
                 assert_eq!(
@@ -146,7 +146,7 @@ fn effort_stages_use_fresh_original_context_and_one_deadline() -> Result<()> {
         |body, deadline| {
             assert_eq!(deadline, until);
             requests.push(
-                serde_json::from_slice::<serde_json::Value>(body)
+                serde_json::from_slice::<serde_json::Value>(&body)
                     .map_err(|_| Failure::Message("invalid synthetic request"))?,
             );
             responses

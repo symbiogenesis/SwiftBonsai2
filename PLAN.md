@@ -43,6 +43,10 @@ memory, throughput and device qualification remain outstanding.
 - [x] Buffer native speech PCM framing in fixed storage and deliver available
   complete samples without filling a larger block first. Preserve split-sample
   handling, cancellation, byte limits and strict terminal framing/EOF checks.
+- [x] Release native chat request serialization after write/flush, before response
+  intake, for Standard and each Extra effort pass. Release the original local
+  validation body before constructing effort stages; preserve exact request bytes,
+  shared deadlines, partial-write failure and interrupted-turn behavior.
 - [x] Restore Rust recurrent/convolution checkpoints into existing live storage
   after staging every fallible KV copy. Runtime 0.1.5 avoids another 149.625 MiB
   of nominal transient Swift restore payload while preserving exact bits,

@@ -252,7 +252,10 @@ They are correctness regressions, with no elapsed-time or throughput claim. The
 case compares the bounded matcher with the prior folded-buffer behavior;
 `bounded_find_scratch_depends_on_query_bytes_and_retains_the_result_lookahead`
 checks query-sized scratch and result limits over a long repeated prefix.
-The `canary::pcm::tests::pcm_framing_reuses_one_buffer_without_byte_sized_source_reads`
+The `client::memory_tests::` cases assert that owned request bytes survive partial
+writes and flush, are released before the first response read, and are released
+on send failures. They also preserve exact wire bytes and successful terminal SSE
+and HTTP framing. The `canary::pcm::tests::pcm_framing_reuses_one_buffer_without_byte_sized_source_reads`
 and `pcm_ready_prefix_arrives_before_remaining_chunk_or_framing` cases check source
 read counts and gate payload delivery without timing. Companion cases cover odd
 read fragmentation, buffered cancellation, truncation and terminal validation.
