@@ -60,6 +60,16 @@ caller lifetime and bounded logs. The batch supervisor verifies and holds exact
 model, adapter and runtime files. No model download or runtime/default promotion
 occurs during the screen.
 
+Before verifying model bytes or starting thread trials, execution runs the exact
+verified completion executable with only `--version` under the ordinary headless
+worker policy. This model-free preflight retains a separate `worker-preflight/`
+receipt and bounded logs, with a 512 MiB Job and ten-second deadline. Failure
+stops the screen and leaves `ModelTrialsRequested: false` in its report. The shared
+supervisor's `ModelProcessStarted` field means an executable was started; the
+preflight's explicit `ModelLoaded: false` distinguishes it from model trials.
+PlanOnly remains nonexecuting. The relaxed inspection launch cannot satisfy
+this worker check.
+
 ## Inspecting the plan
 
 From native ARM64 PowerShell 7.6+, use an existing checked maintenance executable

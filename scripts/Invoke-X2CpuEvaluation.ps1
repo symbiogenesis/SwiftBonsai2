@@ -12,6 +12,9 @@ The native supervisor owns fresh processes, artifact handles, caller lifetime,
 PlanOnly observes hardware and builds a plan without loading a model. CLI template
 defaults differ from chat; results do not promote defaults or qualify quality,
 energy, sustained comfort, GPU or NPU execution.
+Execution first checks the verified completion executable with a model-free
+--version invocation under the required worker policy. A failed check retains
+its receipt and stops before model verification or thread trials.
 #>
 [CmdletBinding()]
 [OutputType([pscustomobject])]
@@ -89,16 +92,41 @@ $report = [ordered]@{
     TimingDefinitions = @{
         PromptMilliseconds = 'Pinned native prompt eval; actual prompt token count retained.'
         DecodeMilliseconds = 'Pinned native eval time; count excludes first sampled token.'
-        WallMilliseconds = 'Owned process creation through exit and final supervision; includes model load; excludes prior artifact verification.'
+        WallMilliseconds = 'Owned process creation through exit and final supervision; includes model load; excludes artifact verification and CPU/power boundary observations.'
         Memory = 'Job commit peak excludes mapped weight residency; one-second physical observations can miss brief pressure.'
     }
     Qualification = 'screen-only'; DefaultProfileChanged = $false
+    ModelTrialsRequested = $false
+    WorkerPreflight = [ordered]@{
+        Kind = 'model-free-worker-startup'; Status = 'pending'; Arguments = @('--version')
+        ModelLoaded = $false; WorkerPolicy = 'required-headless'
+    }
     Records = [Collections.Generic.List[object]]::new()
     Comparisons = [Collections.Generic.List[object]]::new()
 }
 try {
     $plan | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath (Join-Path $evidence 'plan.json') -Encoding utf8
     $native | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath (Join-Path $evidence 'native-cpu.json') -Encoding utf8
+    $report | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $reportPath -Encoding utf8
+    $preflightLane = Join-Path $evidence 'worker-preflight'
+    [void][IO.Directory]::CreateDirectory($preflightLane)
+    $report.WorkerPreflight.Status = 'running'
+    $report | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $reportPath -Encoding utf8
+    # Use the ordinary headless worker, not the relaxed inspection launch.
+    # ciOnly is false solely to skip model timing parsing for this fixed command;
+    # the enclosing script already enforced main/device CI before reaching here.
+    $preflight = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
+        schemaVersion = 1; executable = Join-Path $runtime.Runtime.runtimeDirectory 'llama-completion.exe'
+        arguments = @('--version'); workingDirectory = $preflightLane; evidenceDirectory = $preflightLane
+        runtime = $runtime.Runtime; artifacts = @()
+        memoryLimitBytes = 536870912
+        requiredAvailableBytes = [long]$cpu.Policy.RequiredAvailableBytes
+        physicalReserveBytes = [long]$cpu.Policy.AvailableMemoryFloorBytes
+        timeoutSeconds = 10; stdoutLimitBytes = 65536; stderrLimitBytes = 65536
+        requireNonemptyStdout = $false; ciOnly = $false
+    }
+    $report.WorkerPreflight.Status = 'passed'
+    $report.WorkerPreflight['Supervision'] = $preflight
     $report | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $reportPath -Encoding utf8
     $adapterCopy = Join-Path $evidence 'bonsai-abliterate-lora.gguf'
     [IO.File]::Copy($adapter.AdapterPath, $adapterCopy, $false)
@@ -110,6 +138,7 @@ try {
         $samples.Add(@{ id = $trial.Id; arguments = $trial.Arguments; evidenceDirectory = $lane })
     }
     $report.Status = 'running'
+    $report.ModelTrialsRequested = $true
     $report | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $reportPath -Encoding utf8
     $supervision = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -TimeoutSeconds 0 -Request @{
         schemaVersion = 1; executable = Join-Path $runtime.Runtime.runtimeDirectory 'llama-completion.exe'
@@ -178,6 +207,7 @@ try {
         Samples = $report.Records.Count; Qualification = $report.Qualification; DefaultProfileChanged = $false }
 } catch {
     $report.Status = 'failed'
+    if ($report.WorkerPreflight.Status -ceq 'running') { $report.WorkerPreflight.Status = 'failed' }
     $report['Failure'] = $_.Exception.Message
     $report | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $reportPath -Encoding utf8
     Write-Warning "X2 CPU evaluation failure evidence retained at $evidence"
