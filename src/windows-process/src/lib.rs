@@ -106,6 +106,39 @@ pub fn arm64_isa() -> io::Result<Arm64Isa> {
     native::arm64_isa()
 }
 
+/// Stable observed host facts for partitioning host-native compiler outputs.
+///
+/// This is build-cache identity, not a runtime compatibility or ISA qualification
+/// verdict. It deliberately excludes changing CPU availability and power state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeBuildHost {
+    /// Bounded CPU description from the native hardware registry.
+    pub processor_name: String,
+    /// CPU architecture, family, model and revision reported by Windows.
+    pub processor_identifier: String,
+    /// CPU vendor reported by the native hardware registry.
+    pub vendor_identifier: String,
+    /// Actual running kernel major, minor and build numbers from `RtlGetVersion`.
+    pub windows_version: [u32; 3],
+    /// Sorted available Windows processor-feature IDs in the bounded range 0..256.
+    ///
+    /// Includes optional ARM features queried by the pinned native GGML build;
+    /// negative observations mean unsupported or not detected by the Windows HAL.
+    pub processor_features: Vec<u32>,
+}
+
+/// Observes native Windows ARM64 compiler-host facts without executing optional ISA.
+///
+/// Reads fixed hardware-registry values, the actual kernel version and bounded
+/// `IsProcessorFeaturePresent` flags. No affinity, power or compiler policy changes.
+///
+/// # Errors
+/// Returns `Unsupported` outside an ARM64 process, native query failures, or
+/// `InvalidData` when mandatory identity values are absent, malformed or oversized.
+pub fn native_build_host() -> io::Result<NativeBuildHost> {
+    native::native_build_host()
+}
+
 /// Current Windows power-source and battery-saver snapshot.
 ///
 /// These changing status values are neither energy telemetry nor immutable

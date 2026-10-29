@@ -55,6 +55,7 @@ use crate::{ProcessMemory, ProcessSpec, SandboxPolicy, ToolProcessSpec, invalid}
 mod containment;
 mod cpu;
 mod environment;
+mod host;
 mod isa;
 mod power;
 
@@ -64,6 +65,10 @@ pub(super) fn cpu_sets() -> io::Result<Vec<crate::CpuSet>> {
 
 pub(super) fn arm64_isa() -> io::Result<crate::Arm64Isa> {
     isa::query()
+}
+
+pub(super) fn native_build_host() -> io::Result<crate::NativeBuildHost> {
+    host::query()
 }
 
 pub(super) fn power_status() -> io::Result<crate::PowerStatus> {

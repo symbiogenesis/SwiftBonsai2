@@ -54,6 +54,44 @@ fn require_host() -> crate::Result<()> {
     Ok(())
 }
 
+#[cfg(any(windows, test))]
+fn host_report(identity: &Value) -> Value {
+    use sha2::{Digest as _, Sha256};
+
+    let digest = Sha256::digest(format!("runner-native-speech-host-v1\n{identity}").as_bytes());
+    json!({"SchemaVersion": 1, "Kind": "runner-native-speech-host",
+        "HostCacheKey": crate::identity::hex(&digest), "Host": identity})
+}
+
+/// Reports checked build-host identity without provisioning or compiling anything.
+pub(crate) fn host() -> crate::Result<Value> {
+    require_host()?;
+    #[cfg(windows)]
+    {
+        let host =
+            bonsai_windows_process::native_build_host().map_err(|error| error.to_string())?;
+        Ok(host_report(&json!({
+            "Target": TARGET, "ProcessorName": host.processor_name,
+            "ProcessorIdentifier": host.processor_identifier,
+            "VendorIdentifier": host.vendor_identifier,
+            "WindowsVersion": host.windows_version, "ProcessorFeatures": host.processor_features,
+        })))
+    }
+    #[cfg(not(windows))]
+    Err("Native speech host identity requires native ARM64 Windows.".into())
+}
+
+fn host_cache_directory(data: &Path, repo: &Path, channel: &str, host_key: &str) -> PathBuf {
+    // A changed receipt alone cannot invalidate Cargo's already compiled native
+    // objects. Partition the complete target directory, keeping its label short
+    // enough for the MSVC archive paths on ordinary Windows user profiles.
+    data.join("build/native-speech")
+        .join(crate::source_build::cache_key(
+            repo,
+            &format!("{channel}\n{host_key}"),
+        ))
+}
+
 fn checked_process(
     executable: &Path,
     arguments: &[OsString],
@@ -365,11 +403,11 @@ pub(crate) fn build(
     external(data)?;
     external(working)?;
     let channel = crate::source_build::channel(repo)?;
-    let target_directory = data
-        .join("build/native-speech")
-        .join(crate::source_build::cache_key(repo, &channel));
+    let native_host = host()?;
+    let target_directory =
+        host_cache_directory(data, repo, &channel, text(&native_host, "HostCacheKey")?);
     let identity = format!(
-        "{}\n{}",
+        "{}\n{}\n{native_host}",
         crate::speech_build::build_plan()?,
         crate::startup_cache::digest_file(
             &std::env::current_exe().map_err(|error| error.to_string())?
@@ -390,7 +428,8 @@ pub(crate) fn build(
             .map_err(|error| error.to_string())
     })?;
     Ok(
-        json!({"AsrPath": outputs.get("bonsai-speech-asr"), "TtsPath": outputs.get("bonsai-speech-tts")}),
+        json!({"AsrPath": outputs.get("bonsai-speech-asr"), "TtsPath": outputs.get("bonsai-speech-tts"),
+            "NativeBuildHost": native_host}),
     )
 }
 
@@ -453,6 +492,60 @@ fn provision_models(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_host_identity_partitions_complete_cargo_output_directories() -> crate::Result<()> {
+        let identity = json!({"Target": TARGET,
+            "ProcessorName": "Snapdragon X2 Elite Extreme - X2E94100",
+            "ProcessorIdentifier": "ARMv8 (64-bit) Family 8 Model 2 Revision 201",
+            "VendorIdentifier": "Qualcomm Technologies Inc",
+            "WindowsVersion": [10, 0, 26300], "ProcessorFeatures": [19, 43, 66]});
+        let report = host_report(&identity);
+        assert_eq!(report, host_report(&identity));
+        let key = text(&report, "HostCacheKey")?;
+        assert!(crate::identity::is_lower_hex(key, 64));
+        let data = Path::new("C:/data");
+        let repo = Path::new("C:/source");
+        let channel = "nightly-2026-10-22-aarch64-pc-windows-msvc";
+        let directory = host_cache_directory(data, repo, channel, key);
+        assert_eq!(
+            directory
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::len),
+            Some(24)
+        );
+        assert_ne!(
+            directory,
+            data.join("build/native-speech")
+                .join(crate::source_build::cache_key(repo, channel))
+        );
+        for (field, value) in [
+            ("ProcessorName", json!("Snapdragon X Elite - X1E78100")),
+            (
+                "ProcessorIdentifier",
+                json!("ARMv8 (64-bit) Family 8 Model 1 Revision 1"),
+            ),
+            ("VendorIdentifier", json!("Another vendor")),
+            ("WindowsVersion", json!([10, 0, 26301])),
+            ("ProcessorFeatures", json!([19, 43])),
+        ] {
+            let mut changed = identity.clone();
+            changed[field] = value;
+            let changed = host_report(&changed);
+            let changed_key = text(&changed, "HostCacheKey")?;
+            assert_ne!(key, changed_key);
+            assert_ne!(
+                directory,
+                host_cache_directory(data, repo, channel, changed_key)
+            );
+        }
+        assert!(
+            crate::speech_build::run(json!({"operation": "host", "processorName": "injected"}))
+                .is_err()
+        );
+        Ok(())
+    }
 
     #[test]
     fn native_environment_preserves_system_settings_and_pinned_compilers() -> crate::Result<()> {

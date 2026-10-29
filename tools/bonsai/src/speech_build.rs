@@ -22,6 +22,8 @@ const MAX_ENTRIES: usize = 20_000;
 enum Request {
     #[serde(rename = "plan")]
     Plan,
+    #[serde(rename = "host")]
+    Host,
     #[serde(rename = "validate-names", rename_all = "camelCase")]
     ValidateNames {
         archive_root: String,
@@ -88,8 +90,13 @@ fn default_quantization() -> String {
 /// expansion faults, source-cache contents that differ from the archive, invalid
 /// host prerequisites, bounded download failures and native compiler failures.
 pub fn run(request: Value) -> crate::Result<Value> {
+    if request["operation"] == "host" && request.as_object().is_none_or(|fields| fields.len() != 1)
+    {
+        return Err("Native speech host identity does not accept caller-supplied facts.".into());
+    }
     match serde_json::from_value(request).map_err(|_| "Invalid speech build request.")? {
         Request::Plan => build_plan(),
+        Request::Host => crate::native_startup::host(),
         Request::Environment {
             data_directory,
             working_directory,
