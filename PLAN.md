@@ -11,7 +11,7 @@ investigations can proceed independently; automatic profile promotion requires
 qualified device evidence. Reopen broader Prism work only for a concrete Swift
 dependency or an explicitly chosen later milestone.
 
-## Completed memory reductions
+## Completed memory and streaming reductions
 
 These implementation steps address the allocation and bounded-resource
 work below. Their storage contracts are documented in
@@ -37,6 +37,9 @@ memory, throughput and device qualification remain outstanding.
 - [x] Transfer valid UTF-8 startup captures into their final strings and write
   stdout/stderr logs sequentially, eliminating duplicate full-output buffers
   while preserving lossy decoding, output limits and exact log ordering.
+- [x] Bound Unicode transcript-find scratch to the query length, eliminating
+  whole-message folded text and per-byte offset tables. Preserve scalar lowercase
+  expansion, original UTF-8 highlights, nonoverlapping matches and result limits.
 - [x] Restore Rust recurrent/convolution checkpoints into existing live storage
   after staging every fallible KV copy. Runtime 0.1.5 avoids another 149.625 MiB
   of nominal transient Swift restore payload while preserving exact bits,

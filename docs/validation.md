@@ -248,6 +248,11 @@ The focused `window::transcript::cache_tests::` and
 `window::transcript::search::performance_tests::` cases count layout/search work
 directly to guard completed-message reuse during streaming and find navigation.
 They are correctness regressions, with no elapsed-time or throughput claim. The
+`bounded_find_matches_folded_reference_across_expansion_and_prefix_boundaries`
+case compares the bounded matcher with the prior folded-buffer behavior;
+`bounded_find_scratch_depends_on_query_bytes_and_retains_the_result_lookahead`
+checks query-sized scratch and result limits over a long repeated prefix.
+The
 `window::transcript::search::shortcuts::tests::` selection covers Find keyboard
 navigation, IME handling and Escape precedence without model or speech services.
 Transcript accounting cases also check exact byte totals across streaming,

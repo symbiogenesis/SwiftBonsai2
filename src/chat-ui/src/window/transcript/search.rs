@@ -228,47 +228,93 @@ fn find_ranges(body: &str, query: &str) -> Vec<Range<usize>> {
     if query.is_empty() {
         return Vec::new();
     }
+    let mut matcher = FoldedMatcher::new(query.as_bytes());
     if body.is_ascii() {
-        return body
-            .to_ascii_lowercase()
-            .match_indices(query)
-            .take(MAX_MATCHES + 1)
-            .map(|(start, found)| start..start + found.len())
-            .collect();
-    }
-    // Lowercasing may expand a Unicode scalar (for example İ). Map folded byte
-    // boundaries back to complete original scalars so highlighting stays UTF-8 safe.
-    let mut folded = String::new();
-    let mut offsets = Vec::new();
-    for (start, character) in body.char_indices() {
-        let end = start + character.len_utf8();
-        for lower in character.to_lowercase() {
-            for _ in 0..lower.len_utf8() {
-                offsets.push((start, end));
-            }
-            folded.push(lower);
-        }
-    }
-    let mut ranges = Vec::new();
-    for (start, found) in folded.match_indices(query) {
-        let Some(&(original_start, _)) = offsets.get(start) else {
-            continue;
-        };
-        let Some(&(_, original_end)) = offsets.get(start + found.len() - 1) else {
-            continue;
-        };
-        let range = original_start..original_end;
-        if ranges
-            .last()
-            .is_none_or(|previous: &Range<usize>| previous.end <= range.start)
-        {
-            ranges.push(range);
-            if ranges.len() > MAX_MATCHES {
+        for (start, byte) in body.bytes().enumerate() {
+            if matcher.push(byte.to_ascii_lowercase(), start, start + 1) {
                 break;
             }
         }
+    } else {
+        // Preserve scalar lowercasing, including expansions such as İ, while
+        // retaining offsets for only the query-sized folded suffix.
+        'source: for (start, character) in body.char_indices() {
+            let end = start + character.len_utf8();
+            for lower in character.to_lowercase() {
+                let mut encoded = [0; 4];
+                for &byte in lower.encode_utf8(&mut encoded).as_bytes() {
+                    if matcher.push(byte, start, end) {
+                        break 'source;
+                    }
+                }
+            }
+        }
     }
-    ranges
+    matcher.ranges
+}
+
+// KMP keeps matching work linear even for repeated prefixes. Both scratch
+// vectors depend on the query length, never the retained message length.
+struct FoldedMatcher<'a> {
+    query: &'a [u8],
+    fallback: Vec<usize>,
+    starts: Vec<usize>,
+    next: usize,
+    matched: usize,
+    ranges: Vec<Range<usize>>,
+}
+
+impl<'a> FoldedMatcher<'a> {
+    fn new(query: &'a [u8]) -> Self {
+        let mut fallback = vec![0; query.len()];
+        let mut matched = 0;
+        for index in 1..query.len() {
+            while matched > 0 && query[index] != query[matched] {
+                matched = fallback[matched - 1];
+            }
+            if query[index] == query[matched] {
+                matched += 1;
+            }
+            fallback[index] = matched;
+        }
+        Self {
+            query,
+            fallback,
+            starts: vec![0; query.len()],
+            next: 0,
+            matched: 0,
+            ranges: Vec::new(),
+        }
+    }
+
+    // True means the global result limit's one-match lookahead is complete.
+    fn push(&mut self, byte: u8, start: usize, end: usize) -> bool {
+        self.starts[self.next] = start;
+        self.next += 1;
+        if self.next == self.query.len() {
+            self.next = 0;
+        }
+        while self.matched > 0 && byte != self.query[self.matched] {
+            self.matched = self.fallback[self.matched - 1];
+        }
+        if byte == self.query[self.matched] {
+            self.matched += 1;
+        }
+        if self.matched == self.query.len() {
+            let range = self.starts[self.next]..end;
+            if self
+                .ranges
+                .last()
+                .is_none_or(|previous| previous.end <= range.start)
+            {
+                self.ranges.push(range);
+            }
+            // match_indices consumes each folded match before searching again,
+            // even when two matches map to the same expanded source scalar.
+            self.matched = 0;
+        }
+        self.ranges.len() > MAX_MATCHES
+    }
 }
 
 #[cfg(test)]
