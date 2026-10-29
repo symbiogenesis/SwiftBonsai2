@@ -1,3 +1,7 @@
+# Outstanding work
+
+Use [PLAN.md](PLAN.md) as the source of truth for all outstanding project work.
+
 # UI architecture
 
 The first-party UI must remain native and written entirely in Rust. Use native
