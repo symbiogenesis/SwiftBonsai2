@@ -90,7 +90,8 @@ and native topology,
 exact arguments, response hashes, raw synthetic captures and per-sample
 supervision. Prompt evaluation, decode and full process wall time remain
 separate. Process wall time includes loading and excludes prior artifact
-verification. Job commit excludes mapped weight residency, and one-second
+verification and the CPU/power observations immediately before process creation
+and after owned teardown. Job commit excludes mapped weight residency, and one-second
 physical-memory observations can miss brief pressure.
 
 Initial and final native observations include AC/battery, battery-saver and
@@ -102,12 +103,24 @@ not energy measurements; transitions within a trial are not sampled. A power
 or topology change calls for a new controlled run before interpreting ratios.
 The report's `ExecutionConditions` enforces that boundary: changed or unknown
 native topology, AC state, battery-saver state, active power scheme or effective
-mode suppress all ratios,
-while preserving raw samples and token-count comparability separately. Charge
-percentage and transient CPU parking/allocation flags do not determine this
-check. Equal boundary snapshots cannot rule out changes within a sample or
-edits to individual settings within the same power scheme. Older reports without
-the policy snapshot remain readable but cannot establish stable conditions.
+mode suppress all ratios, while preserving raw samples and token-count
+comparability separately.
+
+The screen also requests the completion supervisor's optional
+`observeCpuConditions` capture. Each sample retains `CpuConditions.Before`,
+`After` and `Comparison` in its supervision receipt. Observations occur before
+process creation and after owned teardown, outside `WallMilliseconds`; they do
+not poll the model process. Each pair's `PairExecutionConditions` checks both
+samples and the transition between them. A power mode that changes for one pair
+and returns before the batch ends therefore cannot pass solely because the
+batch's initial and final observations match. Ratios require both this pair gate
+and the existing batch gate; missing or malformed sample observations suppress
+them. Older receipts without sample observations remain readable as raw evidence.
+
+Charge percentage and transient CPU parking/allocation flags do not determine
+these checks. Equal boundary snapshots cannot rule out changes within a sample
+or edits to individual settings within the same power scheme. These captures
+do not measure energy.
 
 All device capture/qualification workflows, including TTS and sandbox trials,
 share one non-cancelling physical-runner concurrency group. This prevents other
@@ -131,6 +144,24 @@ zero registered self-hosted runners and no X2 screen runs. Register or restore
 the owner-managed native ARM64 runner with `swift-bonsai-snapdragon`, then run
 the workflow on settled `main` and retain its evidence. Local model execution
 does not replace that CI capture. No new thread default has been selected.
+
+A model-free headless-start check on 2026-10-29 also found that the verified
+legacy `llama-completion.exe --version` exits with `3221225794` (`0xC0000142`,
+DLL initialization failure) under the normal completion supervisor. The check
+used a ten-second deadline, 512 MiB Job allowance and one process; no model was
+selected or loaded. The repeated probe verified and retained all 63 runtime
+files through exit against pinned source
+`73bfe6cc485554822f80c473a3c0c4f25e80f41b` and archive SHA-256
+`cc808b33d35c72a3bd5c69a0d609d422426feb9dce23868e77992b6c33b8ddb3`.
+Read-only PE inspection found the dependency chain
+`llama-completion.exe` -> `llama-completion-impl.dll` -> `llama-common.dll` ->
+`SHELL32.dll`. This is consistent with the existing shell-initialization concern,
+but does not prove the failing DLL. Retained local diagnostics include
+`runtime-verification.json` and `verified-headless/supervision.json` in the
+external `Bonsai-X2-HeadlessProbe-dcbb58f9ed3440ff809d03673989ec31` temp directory.
+Resolve the runtime's headless-start compatibility and repeat the bounded probe
+before attempting a device screen. The inspection-only version/help policy
+does not qualify a model worker or authorize weakening its Win32k denial.
 
 ## Device evidence separation
 

@@ -365,7 +365,15 @@ checks exact Windows NEON/dot-product/NEON-I8MM feature IDs with an injected
 query. The maintenance case
 `cpu_evaluation::conditions::tests::condition_comparison_rejects_known_drift_and_unknowns_without_treating_charge_as_energy`
 checks screen comparison eligibility across topology/power changes and missing
-observations. These model-free checks neither execute optional kernels nor
+observations. The X2 screen additionally retains CPU/power snapshots before and
+after each owned sample, outside process wall time. Its pair comparison rejects
+changed boundary observations for either sample or between the pair, even
+when the full batch returns to its initial power mode. Missing or malformed
+sample observations suppress ratios. These are boundary checks, with no
+inside-sample monitoring or energy result. The model-free legacy completion
+headless-start check retained in the X2 record failed DLL initialization;
+inspection-only version/help success does not qualify normal worker startup.
+These model-free checks neither execute optional kernels nor
 qualify performance; native ISA observations and device screen status are
 retained in [the X2 tuning record](x2-cpu-optimization.md).
 

@@ -317,8 +317,12 @@ existing full-context/continuation/LoRA gates.
   Run the bounded [X2 CPU thread screen](docs/x2-cpu-optimization.md) on settled
   main and retain results before selecting a new default. Restore/register the
   owner-managed ARM64 runner first; the 2026-10-29 CI inventory reports none.
+  Resolve the provisioned legacy completion runtime's model-free headless-start
+  failure (`0xC0000142`) before capture; audit its shell DLL dependency chain
+  and repeat a bounded `--version` probe without relaxing worker mitigations.
   Retain the screen's verdict for topology, AC/battery saver, active power scheme
-  and effective mode; suppress comparisons when observations change or are
+  and effective mode at batch and per-sample boundaries, including the transition
+  between paired samples; suppress comparisons when observations change or are
   unknown. Extend the screen
   only when its phase measurements identify a useful next candidate.
   Compare supported event-based waits with polling using idle CPU, wake latency,
