@@ -89,7 +89,7 @@ impl Queue {
         Some(envelope)
     }
 
-    const fn pending(&self) -> bool {
+    fn pending(&self) -> bool {
         self.commands.is_empty() && !self.sender_closed
     }
 
