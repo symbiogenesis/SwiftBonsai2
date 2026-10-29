@@ -20,7 +20,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: tts-evaluation-${{ inputs.target }}
+  # Every laptop capture shares its CPU and memory with the X2/LoRA screens.
+  group: ${{ inputs.target == 'snapdragon' && 'swift-lora-snapdragon' || 'tts-evaluation-hosted-arm64' }}
   cancel-in-progress: false
 jobs:
   evaluate:

@@ -10,7 +10,8 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: sandbox-qualification-${{ inputs.target }}
+  # Native builds and process trials must not overlap laptop performance capture.
+  group: ${{ inputs.target == 'snapdragon' && 'swift-lora-snapdragon' || 'sandbox-qualification-hosted-arm64' }}
   cancel-in-progress: false
 jobs:
   qualify:
