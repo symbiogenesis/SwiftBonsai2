@@ -252,6 +252,12 @@ They are correctness regressions, with no elapsed-time or throughput claim. The
 linear appended-byte work and tail-only scratch. The Unicode append-boundary
 oracle, replacement and saturated-lookahead cases preserve matching behavior
 across streamed updates without rescanning an unchanged prefix. The
+`streamed_find_appends_only_new_results_without_rebuilding_completed_caches`,
+`streamed_find_saturated_prefix_skips_tail_cache_and_result_work` and
+`streamed_find_exact_limit_preserves_results_when_lookahead_becomes_limited`
+cases additionally count copied results and rebuilt cache entries, preserve
+selection/navigation during appends and check saturation followed by eviction.
+The
 `bounded_find_matches_folded_reference_across_expansion_and_prefix_boundaries`
 case compares the bounded matcher with the prior folded-buffer behavior;
 `bounded_find_scratch_depends_on_query_bytes_and_retains_the_result_lookahead`

@@ -21,6 +21,14 @@ enum Visibility {
     Focus,
 }
 
+#[derive(Default, PartialEq, Eq)]
+enum Refresh {
+    #[default]
+    Clean,
+    Tail,
+    Full,
+}
+
 struct CachedMatches {
     // Streaming appends preserve an entry; replacement explicitly removes it.
     // Restored transcripts start with a fresh Search.
@@ -55,7 +63,7 @@ pub(super) struct Search {
     pub(super) revision: u64,
     pub(super) target: Option<Match>,
     pub(super) latest: bool,
-    dirty: bool,
+    pending_refresh: Refresh,
     limited: bool,
     cached_query: String,
     cached_messages: BTreeMap<u64, CachedMatches>,
@@ -63,11 +71,23 @@ pub(super) struct Search {
     scanned_messages: usize,
     #[cfg(test)]
     scanned_bytes: usize,
+    #[cfg(test)]
+    rebuilt_cache_entries: usize,
+    #[cfg(test)]
+    copied_matches: usize,
 }
 
 impl Search {
     pub(super) const fn invalidate(&mut self) {
-        self.dirty = true;
+        self.pending_refresh = Refresh::Full;
+    }
+
+    // Appending answer bytes preserves every existing match and cache entry.
+    // Structural changes, replacement and query changes still invalidate fully.
+    pub(super) const fn appended(&mut self) {
+        if matches!(self.pending_refresh, Refresh::Clean) {
+            self.pending_refresh = Refresh::Tail;
+        }
     }
 
     pub(super) fn replaced(&mut self, message: u64) {
@@ -76,10 +96,14 @@ impl Search {
     }
 
     pub(super) fn refresh(&mut self, messages: &[Message]) {
-        if !self.dirty {
+        if self.pending_refresh == Refresh::Clean {
             return;
         }
-        self.dirty = false;
+        let tail = self.pending_refresh == Refresh::Tail;
+        self.pending_refresh = Refresh::Clean;
+        if tail && self.extend_tail(messages) {
+            return;
+        }
         let old_matches = std::mem::take(&mut self.matches);
         let previous = old_matches.get(self.active).cloned();
         self.limited = false;
@@ -94,6 +118,10 @@ impl Search {
             }
             let mut previous_cache = std::mem::take(&mut self.cached_messages);
             for message in messages {
+                #[cfg(test)]
+                {
+                    self.rebuilt_cache_entries += 1;
+                }
                 let tail = messages.last().is_some_and(|last| last.id == message.id);
                 let mut cached = previous_cache.remove(&message.id).unwrap_or_else(|| {
                     let (cached, scanned) = CachedMatches::scan(&message.body, &query, tail);
@@ -140,6 +168,10 @@ impl Search {
                         message: message.id,
                         range: range.clone(),
                     });
+                    #[cfg(test)]
+                    {
+                        self.copied_matches += 1;
+                    }
                 }
                 self.cached_messages.insert(message.id, cached);
                 if self.limited {
@@ -154,6 +186,63 @@ impl Search {
         if old_matches != self.matches {
             self.revision = self.revision.wrapping_add(1);
         }
+    }
+
+    // No completed-message walk, map reconstruction or result-prefix copy is
+    // needed for ordinary streamed appends. The matcher's continuation can
+    // finish a match that started before this append, but never changes an
+    // already emitted nonoverlapping range.
+    fn extend_tail(&mut self, messages: &[Message]) -> bool {
+        if self.query.is_empty() || self.limited {
+            return true;
+        }
+        let Some(message) = messages.last() else {
+            return false;
+        };
+        let Some(cached) = self.cached_messages.get_mut(&message.id) else {
+            return false;
+        };
+        let Some(matcher) = &mut cached.continuation else {
+            return false;
+        };
+        if cached.body_bytes > message.body.len() {
+            return false;
+        }
+        if cached.body_bytes == message.body.len() {
+            return true;
+        }
+        let previous_ranges = cached.ranges.len();
+        let scanned = matcher.extend(
+            &message.body[cached.body_bytes..],
+            cached.body_bytes,
+            &mut cached.ranges,
+        );
+        cached.body_bytes = message.body.len();
+        #[cfg(test)]
+        {
+            self.scanned_messages += 1;
+            self.scanned_bytes += scanned;
+        }
+        let _ = scanned;
+        let previous_matches = self.matches.len();
+        for range in &cached.ranges[previous_ranges..] {
+            if self.matches.len() == MAX_MATCHES {
+                self.limited = true;
+                break;
+            }
+            self.matches.push(Match {
+                message: message.id,
+                range: range.clone(),
+            });
+            #[cfg(test)]
+            {
+                self.copied_matches += 1;
+            }
+        }
+        if self.matches.len() != previous_matches {
+            self.revision = self.revision.wrapping_add(1);
+        }
+        true
     }
 
     fn navigate(&mut self, backwards: bool) {

@@ -53,7 +53,8 @@ no-go decision, including losing cases.
   Exercise Stop, abandonment, deadlines, memory pressure, process cleanup and
   explicit retry without replaying interrupted turns. Include Find across streamed
   appends, response replacements and conversation switches in long-conversation
-  acceptance; the incremental matching regressions remain model-free.
+  acceptance, including append-only result/cache reuse and saturated results.
+  The matching and cached-result work-count regressions remain model-free.
 - Review Windows assistive-technology support, keyboard/focus behavior, scaling,
   high contrast, minimum-window layout and multilingual text input with the
   actual native application.

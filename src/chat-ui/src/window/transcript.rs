@@ -171,7 +171,7 @@ impl Transcript {
 
     pub(super) fn append(&mut self, text: &str, reasoning: bool) {
         if !reasoning {
-            self.search.invalidate();
+            self.search.appended();
         }
         if let Some(message) = self.messages.last_mut()
             && message.role == Role::Assistant
