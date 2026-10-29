@@ -15,6 +15,37 @@ fn golden() -> Result<Value> {
 }
 
 #[test]
+fn x2_qualification_retains_observed_family_and_rejects_mislabeled_evidence() -> Result<()> {
+    let fixture = golden()?;
+    let accepted = &fixture["scenarios"][0];
+    let mut evidence = accepted["evidence"].clone();
+    evidence["execution"]["deviceModel"] = json!("Snapdragon X2 Elite Extreme");
+    assert!(
+        run(json!({"operation": "score", "evidence": evidence, "review": accepted["review"]}))
+            .is_err()
+    );
+    evidence["execution"]["processorName"] = json!("Snapdragon(R) X2 Elite Extreme - X2E-96-100");
+    let report =
+        run(json!({"operation": "score", "evidence": evidence, "review": accepted["review"]}))?;
+    assert_eq!(report["Status"], "accepted");
+    assert_eq!(
+        report["Execution"]["deviceModel"],
+        "Snapdragon X2 Elite Extreme"
+    );
+    evidence["execution"]["deviceModel"] = json!("Snapdragon X Elite");
+    assert!(
+        run(json!({"operation": "score", "evidence": evidence, "review": accepted["review"]}))
+            .is_err()
+    );
+    evidence["execution"]["deviceModel"] = json!("Snapdragon X2 Elite");
+    assert!(
+        run(json!({"operation": "score", "evidence": evidence, "review": accepted["review"]}))
+            .is_err()
+    );
+    Ok(())
+}
+
+#[test]
 fn frozen_plan_control_bytes_and_receipts() -> Result<()> {
     let golden = golden()?;
     let plan = run(json!({"operation": "plan"}))?;

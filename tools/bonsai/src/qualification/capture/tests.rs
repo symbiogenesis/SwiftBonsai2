@@ -120,6 +120,35 @@ fn completed(request: &Value, count: usize, failed: bool) -> Result<Value> {
 }
 
 #[test]
+fn x2_capture_records_extreme_instead_of_legacy_x1_label() -> Result<()> {
+    let (mut request, context) = fixture()?;
+    request.processor_name = "Snapdragon(R) X2 Elite Extreme - X2E-96-100".into();
+    let receipt = capture_with(&request, &context, |native| completed(&native, 28, false))?;
+    assert_eq!(receipt["DeviceModel"], "Snapdragon X2 Elite Extreme");
+    let evidence = read_json(&request.evidence_directory.join("evidence.json"))?;
+    assert_eq!(
+        evidence["execution"]["deviceModel"],
+        "Snapdragon X2 Elite Extreme"
+    );
+    assert_eq!(
+        evidence["execution"]["processorName"],
+        request.processor_name
+    );
+    assert_eq!(
+        read_json(&request.evidence_directory.join("qualification.json"))?["Execution"]["deviceModel"],
+        "Snapdragon X2 Elite Extreme"
+    );
+    fs::remove_dir_all(
+        request
+            .evidence_directory
+            .parent()
+            .ok_or("Missing fixture root.")?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[test]
 fn capture_completion_preserves_exact_responses_and_pending_proofs() -> Result<()> {
     let (request, context) = fixture()?;
     let result = capture_with(&request, &context, |native| completed(&native, 28, false))?;

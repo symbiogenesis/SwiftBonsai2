@@ -555,9 +555,13 @@ pub(super) fn score(evidence: Value, review: Option<Value>, policy: &Policy) -> 
     require(
         execution.github_actions
             && execution.runner_architecture == "Arm64"
-            && execution.device_model == "Snapdragon X Elite"
+            && bonsai_cpu_policy::hardware::SnapdragonFamily::from_evidence(
+                &execution.device_model,
+                execution.processor_name.as_deref(),
+            )
+            .is_some()
             && valid_run_url(&execution.run_url),
-        "Qualification requires a recorded CI run on the pinned Snapdragon ARM64 device.",
+        "Qualification requires a recorded CI run with matching Snapdragon X/X2 ARM64 identity.",
     )?;
     string(&execution.runner_name, 128)?;
     let (controls_digest, _) = control_identity(&evidence.controls, policy)?;
@@ -577,8 +581,7 @@ pub(super) fn score(evidence: Value, review: Option<Value>, policy: &Policy) -> 
         "accepted"
     };
     let pass = |flag| if flag { "passed" } else { "failed" };
-    Ok(
-        json!({"SchemaVersion": 1, "RunId": evidence.run_id, "ContractSha256": policy.contract_sha256, "ControlsSha256": controls_digest,
+    let mut report = json!({"SchemaVersion": 1, "RunId": evidence.run_id, "ContractSha256": policy.contract_sha256, "ControlsSha256": controls_digest,
         "Status": status, "StandardProfileMayEnable": status == "accepted", "Gates": {
             "Throughput": pass(results.throughput),
             "Quality": if results.quality_failed { "failed" } else if results.quality_pending { "pending" } else { "passed" },
@@ -586,6 +589,13 @@ pub(super) fn score(evidence: Value, review: Option<Value>, policy: &Policy) -> 
             "ZeroScaleIdentity": if results.zero { "passed" } else { "not-passed" },
             "NonzeroApplication": if results.nonzero { "passed" } else { "not-passed" }},
         "Prompts": results.prompts, "Rejections": results.rejections, "Pending": results.pending,
-        "Scope": "Matched pinned representation only. Job commit is not total RAM. Human review identity is recorded, not authenticated. No serving configuration was changed."}),
-    )
+        "Scope": "Matched pinned representation only. Job commit is not total RAM. Human review identity is recorded, not authenticated. No serving configuration was changed."});
+    // Preserve frozen legacy X1 receipts while binding new observations in
+    // reports so a device-specific result cannot lose its family identity.
+    if let Some(processor_name) = &execution.processor_name {
+        report["Execution"] = json!({"deviceModel": execution.device_model,
+            "processorName": processor_name, "runnerArchitecture": execution.runner_architecture,
+            "runUrl": execution.run_url, "runnerName": execution.runner_name});
+    }
+    Ok(report)
 }

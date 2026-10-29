@@ -5,6 +5,7 @@ use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
 use bonsai_artifacts::{open_locked_file, validate_external_path};
+use bonsai_cpu_policy::hardware::SnapdragonFamily;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -207,6 +208,8 @@ struct Execution {
     run_attempt: u32,
     architecture: String,
     device_model: String,
+    #[serde(default)]
+    processor_name: Option<String>,
     self_hosted: bool,
 }
 
@@ -362,9 +365,13 @@ fn validate_record(
     require(
         !gate.device
             || (execution.architecture == "ARM64"
-                && execution.device_model == "Snapdragon X Elite"
+                && SnapdragonFamily::from_evidence(
+                    &execution.device_model,
+                    execution.processor_name.as_deref(),
+                )
+                .is_some()
                 && execution.self_hosted),
-        "Promotion gate requires the actual self-hosted Snapdragon X Elite ARM64 device.",
+        "Promotion gate requires matching self-hosted Snapdragon X/X2 Elite ARM64 identity.",
     )?;
     if record.status == Status::Passed {
         require(
@@ -423,10 +430,27 @@ fn score(value: Value, policy: &Value, directory: &Path) -> crate::Result<Value>
     }
     let mut status = Status::Passed;
     let mut gates = Vec::new();
+    let mut device_family = None;
     for gate in GATES {
         let record = records.get(gate.id);
         let verdict = if let Some(record) = record {
             validate_record(gate, record, policy, directory)?;
+            if gate.device && record.status != Status::Pending {
+                let execution = record
+                    .execution
+                    .as_ref()
+                    .ok_or("Missing completed device execution.")?;
+                let family = SnapdragonFamily::from_evidence(
+                    &execution.device_model,
+                    execution.processor_name.as_deref(),
+                )
+                .ok_or("Unknown promotion device identity.")?;
+                require(
+                    device_family.is_none_or(|existing| existing == family),
+                    "Device-dependent promotion gates cannot mix Snapdragon families.",
+                )?;
+                device_family = Some(family);
+            }
             record.status
         } else {
             Status::Pending
@@ -442,7 +466,7 @@ fn score(value: Value, policy: &Value, directory: &Path) -> crate::Result<Value>
                     execution.repository, execution.run_id, execution.run_attempt
                 )
             });
-        gates.push(json!({"id": gate.id, "status": match verdict {Status::Passed => "passed", Status::Pending => "pending", Status::Rejected => "rejected"}, "runUrl": run_url, "reportSha256": record.and_then(|record| record.report.as_ref()).map(|report| &report.sha256)}));
+        gates.push(json!({"id": gate.id, "status": match verdict {Status::Passed => "passed", Status::Pending => "pending", Status::Rejected => "rejected"}, "runUrl": run_url, "deviceModel": record.and_then(|record| record.execution.as_ref()).map(|execution| &execution.device_model), "processorName": record.and_then(|record| record.execution.as_ref()).and_then(|execution| execution.processor_name.as_ref()), "reportSha256": record.and_then(|record| record.report.as_ref()).map(|report| &report.sha256)}));
     }
     Ok(
         json!({"schemaVersion": 1, "status": match status {Status::Passed => "passed", Status::Pending => "pending", Status::Rejected => "rejected"}, "promotionReady": status == Status::Passed, "gates": gates, "scope": "Offline integrity and reviewer-attested evidence completeness only. CI provenance and human identity require independent review. Does not collect qualification, authenticate attestations, enable serving defaults or qualify PTQ1."}),

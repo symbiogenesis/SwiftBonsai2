@@ -5,6 +5,7 @@ use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
 use bonsai_artifacts::RuntimeSpec;
+use bonsai_cpu_policy::hardware::SnapdragonFamily;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -57,18 +58,14 @@ fn ci_context(processor_name: &str) -> Result<Context> {
     }
     let run_id = std::env::var("GITHUB_RUN_ID").unwrap_or_default();
     let runner_name = std::env::var("RUNNER_NAME").unwrap_or_default();
-    let processor = processor_name.to_ascii_lowercase();
-    let device = processor
-        .split_once("snapdragon")
-        .and_then(|(_, suffix)| suffix.split_once('x'))
-        .is_some_and(|(_, suffix)| suffix.contains("elite"));
+    let device = SnapdragonFamily::from_processor_name(processor_name);
     require(
         cfg!(all(windows, target_arch = "aarch64"))
-            && device
+            && device.is_some()
             && !run_id.is_empty()
             && run_id.bytes().all(|byte| byte.is_ascii_digit())
             && !runner_name.trim().is_empty(),
-        "Paired capture requires the identified native Snapdragon X Elite CI runner.",
+        "Paired capture requires an identified native Snapdragon X/X2 Elite CI runner.",
     )?;
     Ok(Context {
         run_url: format!(
@@ -421,6 +418,8 @@ fn capture_with(
     context: &Context,
     supervise: impl FnOnce(Value) -> Result<Value>,
 ) -> Result<Value> {
+    let device = SnapdragonFamily::from_processor_name(&request.processor_name)
+        .ok_or("Capture requires a recognized Snapdragon X/X2 Elite processor name.")?;
     let policy = policy()?;
     let (plan, controls, runtime) = compiled_plan(request, &policy)?;
     let root = validate_path(&request.evidence_directory)?;
@@ -449,7 +448,8 @@ fn capture_with(
         evidence: json!({
             "schemaVersion": 1, "runId": request.run_id, "contractSha256": policy.contract_sha256,
             "execution": {"githubActions": true, "runUrl": context.run_url, "runnerArchitecture": "Arm64",
-                "deviceModel": "Snapdragon X Elite", "runnerName": context.runner_name},
+                "deviceModel": device.device_model(), "processorName": request.processor_name,
+                "runnerName": context.runner_name},
             "controls": controls, "samples": [], "zeroScaleChecks": [],
             "basis": {"status": "pending", "evidenceSha256": null, "reviewerId": null,
                 "note": "The artifact does not declare the source SSM basis; residual-writer verification remains required."},
@@ -459,6 +459,7 @@ fn capture_with(
         receipt: json!({
             "Status": "capturing", "StartedUtc": request.started_utc, "EvidenceDirectory": request.evidence_directory,
             "ProcessorName": request.processor_name, "RuntimePackage": plan["Lock"]["runtime"]["asset"],
+            "DeviceModel": device.device_model(),
             "RuntimeFiles": request.runtime["RuntimeFiles"], "ModelBytes": plan["Artifact"]["Bytes"],
             "SourceRevision": context.source_revision,
             "TimingScope": "native single-token eval runs/ms, excluding prompt evaluation; not exact sampled token count or first-token latency",
@@ -495,8 +496,10 @@ pub(super) fn run(request: Map<String, Value>) -> Result<Value> {
 
 pub(super) fn screen_context(processor_name: &str) -> Result<Value> {
     let context = ci_context(processor_name)?;
+    let device = SnapdragonFamily::from_processor_name(processor_name)
+        .ok_or("Screen requires a recognized Snapdragon X/X2 Elite processor name.")?;
     Ok(json!({"githubActions": true, "runUrl": context.run_url,
-        "runnerArchitecture": "Arm64", "deviceModel": "Snapdragon X Elite",
+        "runnerArchitecture": "Arm64", "deviceModel": device.device_model(), "processorName": processor_name,
         "runnerName": context.runner_name, "sourceRevision": context.source_revision}))
 }
 

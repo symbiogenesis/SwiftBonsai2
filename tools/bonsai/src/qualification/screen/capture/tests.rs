@@ -155,6 +155,33 @@ fn screen_capture_uses_fourteen_bounded_processes_without_promoting() -> Result<
 }
 
 #[test]
+fn x2_screen_capture_rejects_x1_context_before_native_execution() -> Result<()> {
+    let (mut request, mut context) = fixture()?;
+    request.processor_name = "Snapdragon(R) X2 Elite Extreme - X2E-96-100".into();
+    assert!(
+        capture_with(&request, &context, |_| Err(
+            "Native execution must not start.".into()
+        ))
+        .is_err()
+    );
+    assert!(
+        !request
+            .evidence_directory
+            .join("screen-evidence.json")
+            .exists()
+    );
+    context["deviceModel"] = json!("Snapdragon X2 Elite Extreme");
+    context["processorName"] = json!(request.processor_name);
+    let receipt = capture_with(&request, &context, |native| completed(&native, 14))?;
+    assert_eq!(receipt["DeviceModel"], "Snapdragon X2 Elite Extreme");
+    assert_eq!(
+        read_json(&request.evidence_directory.join("screen-report.json"))?["Execution"]["deviceModel"],
+        "Snapdragon X2 Elite Extreme"
+    );
+    Ok(())
+}
+
+#[test]
 fn screen_capture_retains_completed_prefix_on_native_failure() -> Result<()> {
     let (request, context) = fixture()?;
     assert!(

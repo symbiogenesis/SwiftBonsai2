@@ -163,11 +163,26 @@ fn reconcile(root: &Path, evidence: &mut Value, screen: &Value, incomplete: bool
     Ok(())
 }
 
+fn device_model(request: &Request, context: &Value) -> Result<&'static str> {
+    let device =
+        bonsai_cpu_policy::hardware::SnapdragonFamily::from_processor_name(&request.processor_name)
+            .ok_or("Screen requires a recognized Snapdragon X/X2 Elite processor name.")?;
+    require(
+        context["deviceModel"] == device.device_model()
+            && context
+                .get("processorName")
+                .is_none_or(|name| name == &request.processor_name),
+        "Screen context and observed processor identity disagree.",
+    )?;
+    Ok(device.device_model())
+}
+
 fn capture_with(
     request: &Request,
     context: &Value,
     supervise: impl FnOnce(Value) -> Result<Value>,
 ) -> Result<Value> {
+    let device = device_model(request, context)?;
     let (pq2, pq2_controls, runtime) = compiled(request, 0)?;
     let (ptq1, ptq1_controls, _) = compiled(request, 1)?;
     let plans = [pq2, ptq1];
@@ -204,6 +219,7 @@ fn capture_with(
         "samples": [], "zeroScaleChecks": []});
     let mut receipt = json!({"Status": "capturing", "StartedUtc": request.started_utc,
         "EvidenceDirectory": root, "ModelProcessStarted": false, "DefaultMayChange": false,
+        "DeviceModel": device, "ProcessorName": request.processor_name,
         "StandardProfileMayEnable": false});
     capture::save(&root.join("screen-evidence.json"), &evidence, true)?;
     capture::save(&root.join("screen-receipt.json"), &receipt, true)?;

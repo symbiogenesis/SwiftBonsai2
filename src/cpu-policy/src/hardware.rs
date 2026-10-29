@@ -9,6 +9,81 @@ use serde::{Deserialize, Serialize};
 const MAX_DOCUMENT_BYTES: usize = 16 * 1024;
 const MAX_CONTRACTS: usize = 16;
 
+/// Observed Snapdragon marketing family; this never implies SKU or ISA support.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnapdragonFamily {
+    /// Original Snapdragon X Elite family.
+    XElite,
+    /// Snapdragon X2 Elite family without the Extreme designation.
+    X2Elite,
+    /// Snapdragon X2 Elite Extreme family.
+    X2EliteExtreme,
+}
+
+impl SnapdragonFamily {
+    /// Recognize a bounded processor name while keeping X1 and X2 distinct.
+    ///
+    /// Trademark punctuation and an optional Qualcomm prefix are tolerated.
+    /// The name is only an inventory observation, never execution eligibility.
+    #[must_use]
+    pub fn from_processor_name(name: &str) -> Option<Self> {
+        if name.is_empty() || name.len() > 512 || name.chars().any(char::is_control) {
+            return None;
+        }
+        let lowercase = name.to_ascii_lowercase();
+        let mut words = lowercase
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .filter(|word| !word.is_empty() && !matches!(*word, "r" | "tm"));
+        let mut word = words.next()?;
+        if word == "qualcomm" {
+            word = words.next()?;
+        }
+        if word != "snapdragon" {
+            return None;
+        }
+        word = words.next()?;
+        let generation = word;
+        if words.next()? != "elite" {
+            return None;
+        }
+        let extreme = words.next() == Some("extreme");
+        match (generation, extreme) {
+            ("x" | "x1", false) => Some(Self::XElite),
+            ("x2", false) => Some(Self::X2Elite),
+            ("x2", true) => Some(Self::X2EliteExtreme),
+            _ => None,
+        }
+    }
+
+    /// Exact evidence label; the legacy X1 spelling remains stable.
+    #[must_use]
+    pub const fn device_model(self) -> &'static str {
+        match self {
+            Self::XElite => "Snapdragon X Elite",
+            Self::X2Elite => "Snapdragon X2 Elite",
+            Self::X2EliteExtreme => "Snapdragon X2 Elite Extreme",
+        }
+    }
+
+    /// Check an evidence label against the observed name when present.
+    ///
+    /// Only legacy X1 receipts may omit the processor observation. Newer family
+    /// labels require the matching name so relabeling old evidence rejects.
+    #[must_use]
+    pub fn from_evidence(device_model: &str, processor_name: Option<&str>) -> Option<Self> {
+        let family = match device_model {
+            "Snapdragon X Elite" => Self::XElite,
+            "Snapdragon X2 Elite" => Self::X2Elite,
+            "Snapdragon X2 Elite Extreme" => Self::X2EliteExtreme,
+            _ => return None,
+        };
+        let matches_observation = processor_name.map_or(family == Self::XElite, |name| {
+            Self::from_processor_name(name) == Some(family)
+        });
+        matches_observation.then_some(family)
+    }
+}
+
 fn parse<T: serde::de::DeserializeOwned>(input: &str) -> Result<T, String> {
     if input.len() > MAX_DOCUMENT_BYTES {
         return Err("Hardware contract exceeds its byte limit.".into());

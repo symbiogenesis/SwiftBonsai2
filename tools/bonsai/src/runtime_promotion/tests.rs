@@ -77,6 +77,34 @@ fn reviewed_pass_requires_report_device_main_and_human_identity() -> crate::Resu
             score(input.clone(), &policy, &directory)?["status"],
             "passed"
         );
+        let mut x2 = input.clone();
+        for record in x2["gates"]
+            .as_array_mut()
+            .ok_or("Missing promotion gates.")?
+        {
+            if GATES
+                .iter()
+                .any(|gate| gate.device && record["id"] == gate.id)
+            {
+                record["execution"]["deviceModel"] = json!("Snapdragon X2 Elite Extreme");
+                record["execution"]["processorName"] =
+                    json!("Snapdragon(R) X2 Elite Extreme - X2E-96-100");
+            }
+        }
+        let x2_result = score(x2.clone(), &policy, &directory)?;
+        assert_eq!(x2_result["status"], "passed");
+        assert_eq!(
+            x2_result["gates"][4]["deviceModel"],
+            "Snapdragon X2 Elite Extreme"
+        );
+        x2["gates"][4]["execution"] = input["gates"][4]["execution"].clone();
+        assert!(
+            score(x2, &policy, &directory).is_err(),
+            "Mixed X1/X2 device evidence was accepted."
+        );
+        let mut mislabeled = input.clone();
+        mislabeled["gates"][4]["execution"]["processorName"] = json!("Snapdragon X2 Elite Extreme");
+        assert!(score(mislabeled, &policy, &directory).is_err());
         let manifest = directory.join("promotion.json");
         std::fs::write(
             &manifest,

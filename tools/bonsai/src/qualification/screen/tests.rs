@@ -74,6 +74,23 @@ fn fixed_prefix_screen_never_promotes_or_claims_quality() -> Result<()> {
 }
 
 #[test]
+fn x2_screen_requires_matching_observation_and_retains_device_scope() -> Result<()> {
+    let mut evidence = evidence()?;
+    evidence["execution"]["deviceModel"] = json!("Snapdragon X2 Elite Extreme");
+    assert!(score::score(&evidence, None).is_err());
+    evidence["execution"]["processorName"] = json!("Snapdragon(R) X2 Elite Extreme - X2E-94-100");
+    let report = score::score(&evidence, None)?;
+    assert_eq!(report["Status"], "continue");
+    assert_eq!(report["Execution"], evidence["execution"]);
+    evidence["execution"]["deviceModel"] = json!("Snapdragon X Elite");
+    assert!(score::score(&evidence, None).is_err());
+    evidence["execution"]["deviceModel"] = json!("Snapdragon X2 Elite Extreme");
+    evidence["execution"]["processorName"] = Value::Null;
+    assert!(score::score(&evidence, None).is_err());
+    Ok(())
+}
+
+#[test]
 fn screen_job_commit_gate_matches_the_enforced_process_boundary() -> Result<()> {
     let limit = bonsai_cpu_policy::Profile::SwiftPq2Assessment.memory_limit_bytes();
     assert_eq!(limit, 12_348_030_976);

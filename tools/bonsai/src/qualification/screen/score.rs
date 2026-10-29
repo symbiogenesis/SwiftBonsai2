@@ -26,8 +26,12 @@ fn median(mut values: Vec<f64>) -> Result<f64> {
 }
 
 fn execution(value: &Value) -> Result<()> {
+    let mut legacy = value.clone();
+    if let Some(fields) = legacy.as_object_mut() {
+        fields.remove("processorName");
+    }
     object(
-        value,
+        &legacy,
         &[
             "githubActions",
             "runUrl",
@@ -47,7 +51,15 @@ fn execution(value: &Value) -> Result<()> {
     require(
         value["githubActions"] == true
             && value["runnerArchitecture"] == "Arm64"
-            && value["deviceModel"] == "Snapdragon X Elite"
+            && value["deviceModel"].as_str().is_some_and(|model| {
+                let observation = value.get("processorName");
+                observation.is_none_or(Value::is_string)
+                    && bonsai_cpu_policy::hardware::SnapdragonFamily::from_evidence(
+                        model,
+                        observation.and_then(Value::as_str),
+                    )
+                    .is_some()
+            })
             && !run.is_empty()
             && run.bytes().all(|byte| byte.is_ascii_digit())
             && source.len() == 40
@@ -306,14 +318,16 @@ pub(super) fn score(evidence: &Value, review: Option<&Value>) -> Result<Value> {
     }
     zero_controls(evidence, samples, &mut rejections)?;
     let comparisons = comparisons(samples, &mut rejections)?;
-    Ok(
-        json!({"SchemaVersion": 1, "RunId": evidence["runId"], "ContractSha256": screen["ContractSha256"],
+    let mut report = json!({"SchemaVersion": 1, "RunId": evidence["runId"], "ContractSha256": screen["ContractSha256"],
         "Status": if rejections.is_empty() { "continue" } else { "rejected" },
         "Decision": if rejections.is_empty() { "continue-correctness-and-review" } else { "stop-candidate" },
         "DefaultMayChange": false, "StandardProfileMayEnable": false,
         "Comparisons": comparisons, "Rejections": rejections,
         "Gates": {"Quality": "pending", "AuthoringBasis": "pending", "NativeLogits": "pending", "FullQualification": "not-run"},
         "SerializedSavingBytes": 1_259_520_000_u64,
-        "Scope": "Reject-or-continue diagnostic from 64-token prefixes at LoRA scale 1.3. Job commit excludes mapped weight residency and is not total RAM. Complete quality, logits/basis correctness, long-context, first-token and sustained-device behavior remain unqualified. No serving configuration was changed."}),
-    )
+        "Scope": "Reject-or-continue diagnostic from 64-token prefixes at LoRA scale 1.3. Job commit excludes mapped weight residency and is not total RAM. Complete quality, logits/basis correctness, long-context, first-token and sustained-device behavior remain unqualified. No serving configuration was changed."});
+    if evidence["execution"].get("processorName").is_some() {
+        report["Execution"] = evidence["execution"].clone();
+    }
+    Ok(report)
 }

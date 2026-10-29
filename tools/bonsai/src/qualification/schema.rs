@@ -69,7 +69,7 @@ object!(Execution {
     runner_architecture: String => "runnerArchitecture",
     device_model: String => "deviceModel",
     runner_name: String => "runnerName",
-});
+} optional { processor_name: String => "processorName" });
 object!(Basis {
     status: String => "status",
     evidence_sha256: Option<String> => "evidenceSha256",

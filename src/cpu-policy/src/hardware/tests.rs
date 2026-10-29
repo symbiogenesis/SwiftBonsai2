@@ -5,6 +5,72 @@ use serde_json::{Value, json};
 
 const RUNTIME: &str = include_str!("../../tests/fixtures/runtime-capabilities-v1.json");
 
+#[test]
+fn snapdragon_evidence_preserves_x2_extreme_and_rejects_family_relabeling() {
+    for (name, family) in [
+        ("Qualcomm Snapdragon X Elite", SnapdragonFamily::XElite),
+        (
+            "Snapdragon(R) X Elite - X1E78100 - Qualcomm(R) Oryon(TM) CPU",
+            SnapdragonFamily::XElite,
+        ),
+        (
+            "Snapdragon(R) X2 Elite - X2E-88-100",
+            SnapdragonFamily::X2Elite,
+        ),
+        (
+            "Snapdragon(R) X2 Elite Extreme - X2E-96-100 - Qualcomm(R) Oryon(TM) CPU",
+            SnapdragonFamily::X2EliteExtreme,
+        ),
+        (
+            "Qualcomm(R) Snapdragon(R) X2 Elite(TM) Extreme - X2E-94-100",
+            SnapdragonFamily::X2EliteExtreme,
+        ),
+    ] {
+        assert_eq!(SnapdragonFamily::from_processor_name(name), Some(family));
+        assert_eq!(
+            SnapdragonFamily::from_evidence(family.device_model(), Some(name)),
+            Some(family)
+        );
+        for other in [
+            SnapdragonFamily::XElite,
+            SnapdragonFamily::X2Elite,
+            SnapdragonFamily::X2EliteExtreme,
+        ] {
+            if other != family {
+                assert_eq!(
+                    SnapdragonFamily::from_evidence(other.device_model(), Some(name)),
+                    None
+                );
+            }
+        }
+    }
+    assert_eq!(
+        SnapdragonFamily::from_evidence("Snapdragon X Elite", None),
+        Some(SnapdragonFamily::XElite)
+    );
+    assert_eq!(
+        SnapdragonFamily::from_evidence("Snapdragon X2 Elite Extreme", None),
+        None
+    );
+    for name in [
+        "Snapdragon X3 Elite",
+        "Snapdragon X Plus",
+        "Snapdragon X Elite Extreme",
+        "unverified Snapdragon X2 Elite",
+        "Snapdragon X2 Elite\n",
+    ] {
+        assert_eq!(SnapdragonFamily::from_processor_name(name), None, "{name}");
+    }
+    assert_eq!(
+        SnapdragonFamily::from_processor_name(&"x".repeat(513)),
+        None
+    );
+    assert_eq!(
+        SnapdragonFamily::from_evidence("unknown", Some("Snapdragon X2 Elite Extreme")),
+        None
+    );
+}
+
 fn key() -> Value {
     json!({
         "schema_version": 1,
