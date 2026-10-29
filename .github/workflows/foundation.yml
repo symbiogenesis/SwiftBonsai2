@@ -42,7 +42,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          submodules: true
           fetch-depth: 0
       - name: Select the exact Linux CI compiler and external paths
         working-directory: ${{ runner.temp }}
@@ -101,7 +100,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          submodules: true
       - uses: ./.github/actions/check-rust
         with:
           lane: ${{ matrix.lane }}
@@ -116,7 +114,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          submodules: true
       - name: Check the affected maintenance crates
         id: checks
         uses: ./.github/actions/check-rust
@@ -169,7 +166,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          submodules: true
       - name: Use the current run's checked maintenance CLI for source provisioning
         uses: ./.github/actions/use-bonsai-tools
       - uses: ./.github/actions/check-rust
@@ -186,7 +182,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          submodules: true
       - name: Install the C# analyzer SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -228,7 +223,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          submodules: true
       - name: Download the CI executable checked by the planner job
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -255,7 +249,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          submodules: true
       - name: Use the checked maintenance CLI
         uses: ./.github/actions/use-bonsai-tools
       - name: Full foundation suite
@@ -364,7 +357,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          submodules: true
       - name: Use the checked maintenance CLI
         uses: ./.github/actions/use-bonsai-tools
       - name: Swift assessment policy and pinned ARM64 runtime

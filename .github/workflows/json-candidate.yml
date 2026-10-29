@@ -15,7 +15,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          submodules: true
       - uses: ./.github/actions/rust-toolchain
         with:
           toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
@@ -30,11 +29,18 @@ jobs:
           [void][IO.Directory]::CreateDirectory($evidence)
           "BONSAI_JSON_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           "CARGO_TARGET_DIR=$(Join-Path $evidence 'target')" >> $env:GITHUB_ENV
-          $source = git -C (Join-Path $env:GITHUB_WORKSPACE 'third_party/simd-json') rev-parse HEAD
-          if ($source -cne '00a71f6a931f7f365c23d7fc8d1f84ad693304d3') { throw 'Unexpected candidate source revision.' }
+          $lock = [IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'Cargo.lock'))
+          $parsers = [regex]::Matches($lock, '(?m)^name = "simd-json"\r?\nversion = "([^"]+)"\r?\nsource = "([^"]+)"\r?\nchecksum = "([0-9a-f]{64})"\r?$')
+          if ($parsers.Count -ne 1) { throw 'Expected one checksummed simd-json registry dependency.' }
+          $parser = $parsers[0]
+          if ($parser.Groups[1].Value -cne '0.19.0' -or $parser.Groups[2].Value -cne 'registry+https://github.com/rust-lang/crates.io-index') {
+            throw 'Unexpected candidate registry identity.'
+          }
           [ordered]@{
             Revision = $env:GITHUB_SHA
-            ParserSource = $source
+            ParserSource = $parser.Groups[2].Value
+            ParserVersion = $parser.Groups[1].Value
+            ParserChecksum = $parser.Groups[3].Value
             ParserPath = 'padded-tape-serde-reuse'
             Compiler = (cargo +nightly-2026-10-22-aarch64-pc-windows-msvc --version)
             Rustc = (rustc +nightly-2026-10-22-aarch64-pc-windows-msvc -vV)
