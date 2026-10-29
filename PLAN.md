@@ -1,8 +1,7 @@
 # Swift Bonsai 2 Runner TODO
 
-This is the single list of project work. Completed implementation steps are
-separate from outstanding qualification. Technical contracts, commands and
-supported-subset boundaries live in `docs/`.
+This is the single list of outstanding project work. Current implementation
+contracts, commands, evidence and supported-subset boundaries live in `docs/`.
 
 Prioritize actual-model application acceptance, daily-service isolation and
 creative/comfort qualification. Preserve the Swift CPU runtime boundary while
@@ -10,57 +9,6 @@ closing those exits. Hardware discovery and bounded Vulkan/Hexagon access
 investigations can proceed independently; automatic profile promotion requires
 qualified device evidence. Reopen broader Prism work only for a concrete Swift
 dependency or an explicitly chosen later milestone.
-
-## Completed memory and streaming reductions
-
-These implementation steps address the allocation and bounded-resource
-work below. Their storage contracts are documented in
-[bounded streaming resources](docs/streaming-resources.md); complete-model peak
-memory, throughput and device qualification remain outstanding.
-
-- [x] Bound retained native TTS decode scratch to the current attention-window
-  graph, evicting completed obsolete graphs before replacement allocation while
-  preserving weights, KV, hidden-state storage and graph arithmetic.
-- [x] Share immutable committed chat content/reasoning across worker, UI and
-  request/restore snapshots; copy only the user task augmented by Extra effort.
-  Bound recovery/request serialization before oversized output accumulates.
-  Preserve independent histories, exact JSON text and interrupted-turn recovery.
-- [x] Bound canonical broker serialization as bytes are written and release the
-  generation request allocation after write/flush, before response intake.
-  Preserve the exact same canonical bytes for counting and generation.
-- [x] Admit one recovery snapshot before serializing it, retaining that slot
-  through encryption and disk completion. Skip occupied-worker serialization
-  and preserve dirty-state retry, explicit erase ordering and the final save.
-- [x] Parse speech multipart fields and header lines lazily, rejecting excess
-  fields without retaining a body-sized delimiter index. Reuse the authorized
-  HTTP intake allocation for the body and bound fallible request-body growth.
-- [x] Transfer valid UTF-8 startup captures into their final strings and write
-  stdout/stderr logs sequentially, eliminating duplicate full-output buffers
-  while preserving lossy decoding, output limits and exact log ordering.
-- [x] Bound Unicode transcript-find scratch to the query length, eliminating
-  whole-message folded text and per-byte offset tables. Preserve scalar lowercase
-  expansion, original UTF-8 highlights, nonoverlapping matches and result limits.
-- [x] Buffer native speech PCM framing in fixed storage and deliver available
-  complete samples without filling a larger block first. Preserve split-sample
-  handling, cancellation, byte limits and strict terminal framing/EOF checks.
-- [x] Release native chat request serialization after write/flush, before response
-  intake, for Standard and each Extra effort pass. Release the original local
-  validation body before constructing effort stages; preserve exact request bytes,
-  shared deadlines, partial-write failure and interrupted-turn behavior.
-- [x] Restore Rust recurrent/convolution checkpoints into existing live storage
-  after staging every fallible KV copy. Runtime 0.1.5 avoids another 149.625 MiB
-  of nominal transient Swift restore payload while preserving exact bits,
-  independent snapshots and failure atomicity; process peak qualification remains
-  outstanding. See the [runtime contract](docs/native-rust-engine.md).
-
-Swift's owner-selected development budget now admits at 15.5 GiB available
-memory with an 11.5 GiB Job commit ceiling, reducing each by 512 MiB from the
-original 16/12 GiB budget while preserving the 4 GiB physical reserve and
-memory-pressure shutdown. This is a
-budget adjustment, not measured model-memory savings or completed qualification.
-Full-context/4K-output resource acceptance remains outstanding. Further
-current-weight PTQ1 reductions also need numerical qualification; see
-[its numerical and admission boundaries](docs/ptq1-readiness.md#numerical-and-admission-boundaries).
 
 ## Application and daily service
 
@@ -78,7 +26,7 @@ current-weight PTQ1 reductions also need numerical qualification; see
 - Establish a restricted inference identity with read-only approved artifacts,
   private bounded cache/temp storage, denied unrelated files/credentials and
   denied egress. Prevent same-user backend bypass; Jobs, ACLs and loopback alone
-  are insufficient. Qualify the implemented native MXC containment, including
+  are insufficient. Qualify native MXC containment, including
   actual-model loading and private temporary storage. Close its broader host
   loopback authority with proven broker-only communication, preserving atomic
   Job limits and exact worker identity without weaker fallback tiers. Follow the
@@ -101,9 +49,7 @@ current-weight PTQ1 reductions also need numerical qualification; see
 Default-runtime promotion retains the current standard profile's adapter at
 scale 1.3. Use the [promotion contract and offline evidence evaluator](docs/runtime-promotion.md)
 to bind each independent requirement to exact source/release/application
-identities; missing reports remain pending. The explicit native app selection
-and main-only actual-model lifecycle workflow provide integration and capture
-paths. Neither changes the default or satisfies the remaining device gates.
+identities; missing reports remain pending.
 
 - Audit comparison and reusable engine/kernel sources at immutable revisions,
   including model/adapter/tensor/transform identities, hardware assumptions,
@@ -159,30 +105,18 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
   relabel the scale-one/512-token contract or choose a scale from one response.
 - Evaluate Q8_0/Q4_K_M speech profiles and bounded CPU thread choices through
   target-device CI and independent listening, retaining voice quality alongside
-  startup, first-audio, synthesis latency and resource evidence. The implemented
-  paired harness alternates fresh processes, separates bootstrap/warm synthesis
-  and retains distinct process/Job/system memory observations and failure receipts;
-  the [hosted comparison](docs/speech-memory.md) completed with median Q4
-  reductions of 0.734 GiB Job commit and 1.532 GiB working set. These counter
-  domains are separate; Snapdragon behavior and listening quality remain open.
+  startup, first-audio, synthesis latency and resource evidence. Use the
+  [paired speech comparison contract](docs/validation.md) and
+  [hosted resource evidence](docs/speech-memory.md).
 - Investigate lossless adapter graph-reservation and rank-one accumulation changes
   only with allocator and strict rounding/order checks. Resolve unexplained memory
   counter differences before claiming saved RAM; preserve dynamic scale and
   load-without-apply behavior.
-- Qualify current-weight PTQ1 full-model logits/live state on scalar and NEON,
-  including no-LoRA/LoRA basis and forward execution. After correctness, run the
-  bounded paired device screen and review complete responses, context/recovery,
-  quality and comfort. The Q8 scale/inverse repair in runtime 0.1.6 now matches
-  the native reference byte for byte over all 483 logits/live-state files
-  (118,611,456 values) for three supplied tokens on the automatic ARM64 backend,
-  without LoRA. The separate 12/8 GiB diagnostic admission/commit envelope
-  preserved the 4 GiB reserve; it is not a service profile. Scalar completed two
-  tokens before its 180-second deadline; a 360-second retry was rejected before
-  launch by the unchanged admission guard. Completed scalar/explicit NEON and
-  broader context/adapter checks remain pending. Runtime Foundation and
-  conformance passed at exact main `02c8a24`; the checked 0.1.6 release was
-  published, fresh download bytes verified and Runner's pin updated. Keep PQ2
-  as rollback; see the [PTQ1 contract](docs/ptq1-readiness.md).
+- Qualify current-weight PTQ1 full-model logits/live state on scalar and explicit
+  NEON, including no-LoRA/LoRA basis and forward execution. After correctness,
+  run the bounded paired device screen and review complete responses,
+  context/recovery, quality and comfort. Keep PQ2 as rollback; use the
+  [PTQ1 contract](docs/ptq1-readiness.md).
 - Promote PTQ1 to the default only after suitability and lower admission thresholds
   are demonstrated. Use the exact verified 1,259,520,000-byte packing difference
   for a candidate reduction; account for mapped residency separately from private
@@ -404,7 +338,7 @@ Reference: [exact conformance requirements](docs/prism-upstream-tests.md).
 
 ## Deferred dependency experiments
 
-- Follow the [2026-10-26 dependency audit](docs/dependency-audit.md) and
+- Follow the [dependency audit](docs/dependency-audit.md) and
   [MXC #1579](https://github.com/microsoft/mxc/issues/1579) for backend/capability
   dependency features in the supported SDK before changing supervisor boundaries.
   Keep all three supported Windows wgpu
@@ -413,18 +347,12 @@ Reference: [exact conformance requirements](docs/prism-upstream-tests.md).
   APIs only if independently built speech companions show a worthwhile build/size
   benefit. Keep containment,
   accessibility and native UI behavior intact; all timing benchmarks remain CI-only.
-- Qualify the pinned SIMD-JSON tape-reuse experiment after merged upstream
-  [PR #495](https://github.com/simd-lite/simd-json/pull/495). The updated optional
-  candidate reuses input/parser buffers and the recovered tape; CI comparison is
-  pending. Require that
-  unchanged Unicode/duplicate/unknown-field/shape/bound/canonical-byte checks
-  pass and main-only CI shows at least 5% lower equal-weight geometric-mean time
+- Qualify the pinned SIMD-JSON tape-reuse candidate through main-only CI. Require
+  unchanged Unicode/duplicate/unknown-field/shape/bound/canonical-byte checks to
+  pass and at least 5% lower equal-weight geometric-mean time
   with no case more than 5% slower in both cold and reused-request screens,
   including supplemental scale-setting cases. Preserve the existing dependency decision
   until those gates pass; see [dependency contracts](docs/dependency-choice.md).
-  [Follow-up #1](https://github.com/symbiogenesis/SwiftBonsai2Runner/issues/1)
-  also rejected the earlier padded tape path; those measurements do not qualify
-  the new reuse path for this workload.
 
 ## Optional agents
 
