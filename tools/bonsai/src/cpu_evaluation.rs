@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 
 use crate::Result;
 
+mod conditions;
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Request {
@@ -119,7 +121,7 @@ fn arguments(model: &str, threads: Threads, prompt: &str) -> Result<Vec<String>>
     Ok(result)
 }
 
-/// Return a fixed paired X2 Elite Extreme CPU screening schedule without executing it.
+/// Plan a fixed X2 CPU screen or compare its observed execution conditions.
 ///
 /// The caller supplies observed processor identity/count, verifies native topology
 /// and retains the report. Plans never establish evidence, change launch defaults
@@ -129,6 +131,9 @@ fn arguments(model: &str, threads: Threads, prompt: &str) -> Result<Vec<String>>
 /// Rejects unknown fields, unsupported operations/devices, unbounded CPU counts,
 /// unavailable candidate budgets and invalid compiled CPU plans.
 pub fn run(request: Value) -> Result<Value> {
+    if request["operation"] == "compare-conditions" {
+        return conditions::compare(request);
+    }
     let request: Request = serde_json::from_value(request).map_err(|error| error.to_string())?;
     if request.operation != "plan"
         || SnapdragonFamily::from_processor_name(&request.processor_name)

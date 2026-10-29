@@ -64,7 +64,8 @@ jobs:
             'Fresh-process CPU thread screening only. Defaults remain unchanged.',
             'Prompt/decode timings are separate; complete process time includes loading.',
             'CLI template defaults differ from chat; energy, quality and sustained comfort remain unqualified.',
-            'Ratios below one favor the candidate; unmatched natural-length outputs have no fixed-length comparison.') |
+            ('Execution conditions: ' + $report.ExecutionConditions.Status),
+            'Ratios below one favor the candidate; mismatched token counts or changed/unknown boundary conditions suppress ratios.') |
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
           $report.Comparisons | ConvertTo-Json -Depth 8 | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
       - name: Retain credential-free synthetic CPU evidence

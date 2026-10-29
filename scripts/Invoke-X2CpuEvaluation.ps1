@@ -142,15 +142,22 @@ try {
         }
         $report.Records.Add($record)
     }
+    $report['NativeCpuAfter'] = Invoke-BonsaiTool -Command host-cpu -ToolPath $ToolPath
+    $report['ExecutionConditions'] = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -Request @{
+        operation = 'compare-conditions'; before = $native; after = $report.NativeCpuAfter
+    }
     for ($index = 0; $index -lt $report.Records.Count; $index += 2) {
         $pair = @($report.Records[$index], $report.Records[$index + 1])
         $baseline = @($pair | Where-Object Role -CEQ 'baseline')[0]
         $candidate = @($pair | Where-Object Role -CEQ 'candidate')[0]
-        $comparable = $baseline.ReachedTokenCap -and $candidate.ReachedTokenCap -and
+        $matchingTokenCounts = $baseline.ReachedTokenCap -and $candidate.ReachedTokenCap -and
             $baseline.Timing.PromptTokens -eq $candidate.Timing.PromptTokens -and
             $baseline.Timing.DecodeTokens -eq $candidate.Timing.DecodeTokens
+        $comparable = $matchingTokenCounts -and $report.ExecutionConditions.Comparable
         $report.Comparisons.Add([ordered]@{
             CandidateId = $candidate.CandidateId; Workload = $candidate.Workload; Repetition = $candidate.Repetition
+            MatchingTokenCountsAtFixedCap = $matchingTokenCounts
+            ExecutionConditionsStatus = $report.ExecutionConditions.Status
             ComparableAtFixedTokenCap = $comparable
             CandidateOverBaselinePromptMilliseconds = if ($comparable) { $candidate.Timing.PromptMilliseconds / $baseline.Timing.PromptMilliseconds } else { $null }
             CandidateOverBaselineDecodeMilliseconds = if ($comparable) { $candidate.Timing.DecodeMilliseconds / $baseline.Timing.DecodeMilliseconds } else { $null }
@@ -158,7 +165,6 @@ try {
             ExactResponseMatch = $baseline.ResponseSha256 -ceq $candidate.ResponseSha256
         })
     }
-    $report['NativeCpuAfter'] = Invoke-BonsaiTool -Command host-cpu -ToolPath $ToolPath
     $report.Status = 'completed'
     $report.CompletedUtc = [DateTime]::UtcNow.ToString('o')
     $report | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $reportPath -Encoding utf8
