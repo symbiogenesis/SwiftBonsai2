@@ -182,6 +182,43 @@ captures run only in reviewed main-only CI; matching target devices supply
 Hexagon evidence. Native diagnostics use absolute system-temp lanes with inherited
 Windows system/profile variables. Moving links are research leads, not pins.
 
+## 2026 research evidence
+
+Sources reviewed **2026-10-29**. Distinguish papers' prepared-model/static-graph
+routes from ggml's direct HVX/HMX kernels and from a signed Windows package.
+The [research register](research-register.md) owns the central bibliography.
+
+| Source and date | Useful mechanism or observation | Applicability and disposition |
+| --- | --- | --- |
+| [Is Your NPU Ready for LLMs?](https://arxiv.org/html/2607.05475v2), v2 2026-10-16 | Across five frameworks on Android phones, offload, activation quantization, polling and NPU wake-up costs materially change phase/energy outcomes. | High-priority profiling questions. Its rooted SM8650/8750/8850 phones and QPT instrumentation do not supply Windows telemetry or X1/X2 qualification. The paper estimates a combined tuning benefit; do not report it as an implemented laptop result. |
+| [When NPUs Are Not Always Faster](https://arxiv.org/html/2605.27435v1), 2026-05-22 preprint | Controlled queue/quantize/compute decomposition finds CPU-winning prefill and only modest NPU decode benefit in its configuration. | Useful counterexample to a universal NPU-prefill rule: Android 15, Snapdragon 8 Gen 3/v75, Q4_0 and llama.cpp b7588. Synchronous operator profiling changes scheduling; no phase ranking transfers to current Swift. |
+| [Energy-Efficient On-Device RAG on a Mobile NPU](https://arxiv.org/html/2606.11257v1), 2026-06-09 preprint | Windows ARM64 X Elite deployment records static-graph loading-order failures, fixed context limits and pipeline energy accounting. | Relevant deployment evidence, with important confounders: 64 GB X1E80100, Qwen3-4B QAIRT versus GGUF, different assembled context, and a reranker retained on NPU in all configurations. Its headline end-to-end benefit is not a same-artifact 32 GB Swift comparison or a GPU hardware ceiling. |
+| [ShadowNPU](https://arxiv.org/html/2508.16703v4), v4 2026-04-08, MobiSys 2026 | NPU pilot scores select token indices for sparse higher-precision attention; graph bucketing and per-head pipelining reduce crossings. | Approximation lane. Snapdragon 8 Gen 2/3 smartphone evidence changes attention computation and quantization. Applicable conceptually to Swift's full-attention blocks, not its recurrent state or unchanged dense-attention contract. |
+| [Quant.npu](https://arxiv.org/html/2605.20295v1), 2026-05-19 preprint | Fully static activation/weight quantization removes repeated runtime parameter calculation using optimized rotations/scales and mixed precision. | New-artifact lane. Its phone NPU results do not make dynamic Q8_K/Q8_0 quantization replaceable by fixed scales while preserving current logits. Calibration/optimization is distinct from lossless PTQ1 packing. |
+| [Inference in the Shadows: Sereno](https://www.usenix.org/conference/osdi26/presentation/xin), OSDI, July 2026; [paper](https://www.usenix.org/system/files/osdi26-xin.pdf) | Snapdragon-phone experiments find foreground jank can worsen markedly while LLM throughput barely moves. Speculative verification creates yield points for bandwidth-aware control. | High-priority evaluation lesson: measure foreground/audio service as well as TPS. Its Android traffic-priority diagnosis does not establish Windows arbitration, and its speculative scheduler needs a verifier and accepted-prefix recovery before reuse here. |
+
+These studies disagree on phase winners because their hardware, frameworks,
+quantizers and scheduling differ. Keep the CPU control competitive and charge
+communication, quantization and the complete fallback region. An isolated HMX
+GEMM win is insufficient when graph breaks, dynamic shapes or activation
+preparation dominate. Preserve fixed context/output reservations when comparing
+prepared packages; a shorter prompt is a different workload.
+
+Two recent upstream changes also supply concrete implementation checks:
+
+- [IM2COL DMA ring fix, PR #30189](https://github.com/ggml-org/llama.cpp/pull/30189),
+  merged **2026-10-09**, repairs silently dropped DDR-to-VTCM transfers when a
+  bounded descriptor ring fills. The reported failure concerns convolution/
+  patch embedding, not a demonstrated Swift defect. Audit every accepted DMA
+  path for queue saturation, initialization and completion before buffer reuse;
+  successful small shapes do not establish larger-tile correctness.
+- [llama.cpp b11913](https://github.com/ggml-org/llama.cpp/releases/tag/b11913),
+  prerelease **2026-10-27**, adds a VTCM-size override. A configurable request
+  does not increase available VTCM or qualify concurrent-session capacity.
+  Bind effective allocation and failure behavior to the selected signed runtime;
+  this source change does not update Runner's pinned engine or authorize an
+  inherited environment override.
+
 [rust-runtime]: https://github.com/symbiogenesis/prism-inference/blob/main/README.md
 [geniex-sdk]: https://github.com/qualcomm/GenieX/blob/main/sdk/README.md
 [geniex-models]: https://geniex.aihub.qualcomm.com/en/models/supported

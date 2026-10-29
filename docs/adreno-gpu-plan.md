@@ -118,6 +118,34 @@ Native diagnostics use absolute system-temp working/output paths and inherited
 Windows system/profile variables. Moving links below are research leads rather
 than immutable build identities.
 
+## 2026 research evidence
+
+Sources reviewed **2026-10-29**. These findings inform experiments under the
+contracts above; they enable no backend or power-policy change. The
+[research register](research-register.md) indexes the wider literature.
+
+| Source and date | Mechanism worth testing | Scope and transfer limit |
+| --- | --- | --- |
+| Qualcomm's [IWOCL Adreno presentation](https://www.iwocl.org/wp-content/uploads/IWOCL-2026-Wang-Llamacpp.pdf), [2026-05-06 program](https://www.iwocl.org/iwocl-2026/conference-program/) | Vectorized unpack/GEMV, separated quantization fields, image-backed weights, per-kernel tiling, compilation caches and recordable submissions. | Includes Windows-on-Snapdragon X/X2, but several headline X2 MoE kernels use internal inline assembly. Public OpenCL C, internal kernels and Vulkan are distinct implementations. No Swift PQ2/PTQ1 result is supplied. |
+| [Act Before It's Too Late: Power-Efficient LLM Inference on Mobile Device](https://doi.org/10.1145/3745756.3809208), MobiSys, published 2026-06-20 | TurboInfer detects short GPU stalls and adapts frequency at millisecond granularity instead of inferring useful work from coarse utilization. | Phone GPU/PMU and frequency-control evidence motivates measuring submission gaps and energy. It does not establish equivalent counters or control authority on Windows; its power savings are not Vulkan/Snapdragon X measurements. |
+| [Is Your NPU Ready for LLMs?](https://arxiv.org/html/2607.05475v2), v2 2026-10-16 | PowerBench separates CPU/GPU/NPU energy and exposes quantization, offload, polling and wake-up overheads. | Root-enabled Android phones, SM8650/8750/8850 and QPT-driver instrumentation. Phase winners depend on framework, shapes and arithmetic; these observations do not rank this laptop's Vulkan and CPU implementations. |
+
+The Qualcomm slides explicitly distinguish Adreno features exposed through
+OpenCL from their availability in Vulkan. Image/texture-backed weights and
+on-chip residency are useful layout leads, but a Vulkan experiment needs its
+own observable features, byte accounting and shader implementation. Recordable
+submission ideas likewise require supported APIs and valid resource lifetimes;
+an internal-kernel result cannot establish a public-source implementation's speed.
+
+Treat CPU preparation, GPU queue service and shared-DRAM traffic as separate
+candidate bottlenecks. Reducing a kernel's duration can leave host submission
+gaps unchanged. Conversely, keeping more work resident can increase register
+pressure or interfere with the native UI and codec. Include foreground frame
+delivery and speech underruns in the existing sustained-comfort observation;
+the [Hexagon research evidence](hexagon-npu-plan.md#2026-research-evidence)
+includes a measured example where inference TPS hid foreground contention.
+Vendor power controls are research leads, not new ordinary-launch requirements.
+
 [prism-audit]: https://github.com/PrismML-Eng/Bonsai-demo/blob/main/BACKEND-SUPPORT.md
 [opencl]: https://github.com/PrismML-Eng/llama.cpp/blob/prism/docs/backend/OPENCL.md
 [directml]: https://learn.microsoft.com/en-us/windows/ai/directml/dml

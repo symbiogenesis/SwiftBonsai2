@@ -230,6 +230,56 @@ error metric, Q/K norm assumptions, randomness, failure probability, dimensional
 regime and decoding horizon before applying a bound. A guarantee on one head's
 attention error or vector inner products is not a bound on creative-answer quality.
 
+### T9. Per-call certificates need a run-wide failure budget
+
+**Derivation.** If each attention call has failure probability at most `delta_i`
+conditional on the preceding execution, the union bound gives
+`P(any failed certificate) <= sum(delta_i)`. For a declared maximum of `K` calls,
+assigning `delta_i <= delta_total/K` is sufficient. Independence between failures
+is not required, but each conditional guarantee must remain valid under adaptive
+queries. Reusing randomness without the theorem's assumptions can break that
+premise. [Perturbed-retrieval attention](https://arxiv.org/abs/2610.24991v1)
+explicitly uses fresh perturbations for decoding calls. A head/output error
+certificate still does not certify the selected token or complete answer.
+
+### T10. Recurrent quantization error depends on the trajectory
+
+**Derivation.** For the same affine transitions `A_t`, let `E_t` be the difference
+between exact and perturbed state, and `R_t` collect the local update error.
+Then `E_t = E_(t-1)*A_t + R_t`. Submultiplicativity and expansion give
+`norm(E_T) <= norm(E_0)*product(norm(A_j))`
+`+ sum_i(norm(R_i)*product_(j>i)(norm(A_j)))`.
+This is a conditional bound for those transitions, not a uniform stability
+guarantee for a model whose perturbed hidden states also change future gates.
+Small one-step MSE does not control persistent, directionally correlated error.
+[Low-rank bypass/directional rounding](https://arxiv.org/abs/2610.15709v1) and
+[decay-aware live-state precision](https://arxiv.org/abs/2608.27513v2) address that
+issue experimentally; their results do not establish exact FP32 continuation.
+
+### T11. Quantization search theorems optimize a stated objective
+
+[CoS-VQ](https://arxiv.org/abs/2610.37336v1) proves properties of surrogate search
+over finite candidate pools, not a global optimum over all quantized models.
+[YAQA](https://arxiv.org/abs/2505.22988v3) bounds a second-order error under its
+Hessian approximation, rounding and incoherence assumptions; this is not an
+unconditional nonlinear KL or generated-answer bound.
+[FastKron](https://arxiv.org/abs/2608.06291v2) proves equivalence of core rounding
+algorithms in its arithmetic model and reduces their sequential depth/work.
+That complexity excludes other preparation stages and concerns offline
+quantization, not token-generation complexity. Retain the objective, feasible
+set and included work whenever a source uses "optimal" or "equivalent".
+
+### T12. A logit-error bound preserves greedy choice only with a margin
+
+**Derivation.** If every logit changes by at most `epsilon` in absolute value,
+the original top-two margin `Delta` can shrink by at most `2*epsilon`.
+Thus `Delta > 2*epsilon` is sufficient to retain the unique greedy winner.
+Without a margin condition, an arbitrarily small perturbation can swap a near
+tie. A maximum-logit-difference measurement alone cannot prove equal tokens,
+and greedy rank preservation does not prove equal sampling probabilities.
+Apply this distinction to reordered kernels and approximate quantizers;
+the standard sampler/continuation checks remain necessary.
+
 ## Research catalog
 
 Dates below identify the cited paper version, venue or author report. Mutable
@@ -248,6 +298,17 @@ repositories are observations as of the review date, not immutable evidence.
 | L7: [Sherry](https://arxiv.org/abs/2601.07892), 2026-01-12; [ACL 2026 paper](https://aclanthology.org/2026.acl-long.513.pdf) | Trained fine-grained sparsity constrains allowed patterns to reach 1.25 bits/weight. Does not encode arbitrary existing ternary blocks below T1's bound. | Requires new trained artifacts. |
 | L8: [FairyFuse](https://arxiv.org/abs/2604.20913), 2026-04-22 preprint | Fused masked-add/subtract kernels for a particular widely-linear ternary model on AVX-512. Fusion concepts transfer more readily than its model or instruction sequence. | Deferred; different model/ISA. |
 | L9: [ShiftAdd ggml proposal](https://github.com/ggml-org/llama.cpp/discussions/31051), 2026-10-23 | Recent sign-plane representation proposal. The author's CPU results trail conventional quants; faster layout/LUT work is still proposed. | Unmerged watch item; retain the negative result. |
+| L10: [Pushing the Envelope of LLM Inference with Ultra-Low-Bit Quantized Models](https://arxiv.org/abs/2508.06753v3), v3 2026-08-27 | Interleaved two-bit weights unpack directly into VNNI's consumption layout; shape-specific kernels remove redundant rearrangement. | High-priority layout idea, AVX2/VNNI/Xe2 evidence. Base Bonsai results are not Swift; derive an independent NEON layout. |
+| L11: [ELUTQ](https://arxiv.org/abs/2510.19482v4), v4 2026-02-01; [code](https://github.com/Nkniexin/ELUTQ) | Hierarchical nonuniform quantization remains executable through bit-serial LUTs. | New artifacts; RK3588/M2 CPU evidence is useful but does not establish PQ2/PTQ1 or Windows support. |
+| L12: [Shannonic](https://proceedings.mlsys.org/paper_files/paper/2026/hash/96f39c8de84678cb2a908cd52bfd7819-Abstract-Conference.html), MLSys 2026 | Lossless range-partitioned ANS reduces table state; its theorem compares specified probability-allocation/offset losses. | Not universally better than ideal ANS. Communication-bound wins do not prove faster local matvec; charge independent streams and decode work. |
+| L13: [QTEA](https://arxiv.org/abs/2609.00224v2), v2 2026-09-02, EMNLP 2026 acceptance listed; [code](https://github.com/Intelligent-Microsystems-Lab/QTEA) | Ternary bulk plus salient-column 1:4 residuals and columnwise refinement. | New PTQ artifact/residual memory. GPU/CUDA Graph results and architecture estimates are not post-layout silicon or NEON evidence. |
+| L14: [HARP](https://arxiv.org/abs/2605.29843v2), v2 2026-09-02; [code](https://github.com/brain-lab-research/HARP) | Learned sparse butterfly/mixed-radix orthogonal transforms replace fixed preprocessing. | New fitted artifacts. Full-precision equivalence does not preserve stored quantized Swift; fitting, parameters and transforms count. |
+| L15: [Leech Lattice Vector Quantization](https://arxiv.org/abs/2603.11021v2), v2 2026-07-07 | Structured 24D indexing avoids materializing a huge codebook. | New-artifact research; sphere-packing optimality is not universal model-quantization optimality. |
+| L16: [Tetra](https://arxiv.org/abs/2609.35465v1), 2026-09-28; [Rust/CUDA code](https://github.com/pjmalandrino/llvq); [author report](https://huggingface.co/blog/Pier-Jean/llvq-init), 2026-08-29 | Fused lattice reconstruction distinguishes serialized bitrate from bytes read by execution. | L40S/new-artifact evidence includes quality losses. Independent implementation; Rust source does not qualify Windows Arm. |
+| L17: [XOR-Trellis](https://arxiv.org/abs/2610.00432v1), submission history 2026-09-30 | Parity/XOR structure and a small FP4 palette replace a larger state-to-value lookup. | New trellis quantizer; gate-level analysis is not commodity-CPU end-to-end speed. |
+| L18: [T-SAR](https://past.date-conference.com/proceedings-archive/2026/DATA/705.pdf), DATE 2026; [2025 preprint](https://arxiv.org/abs/2511.13676v1) | Activation/output-persistent LUT scheduling with reorganized SIMD hardware. | Requires new ISA/datapath support; modified gem5 results do not apply as a stock-Snapdragon software patch. |
+| L19: [ExaGEMM](https://arxiv.org/abs/2607.14622v1), 2026-07-16, ICCAD 2026 acceptance listed | Cost/register-feasibility models prune low-bit layout/instruction design choices. | Hardware/compiler methodology; new ISA and simulation underlie reported gains. |
+| L20: [BITCOS / Breaking the 1.58-bit Barrier](https://arxiv.org/abs/2609.16338v1), 2026-09-14 preprint | Zero-density-dependent lossless ternary representation. | Primary reference for the existing rejected layout: Swift misses its break-even versus same-scale PTQ1. See T1 and the packing decision. |
 
 Useful counterexamples from upstream reports: [missing blocked ternary ARM
 paths](https://github.com/ggml-org/llama.cpp/issues/27276) (2026-08-17),
@@ -279,7 +340,11 @@ charging both representations and avoiding a universal ARM-kernel preference.
 | H16: [Multiplication-only GDN inverse approximation](https://arxiv.org/abs/2606.06034v1), 2026-06-04 preprint | Truncated Neumann terms, masking and residual correction target NPU-friendly matmuls. T5 explains the missing step between nilpotence and a short accurate truncation. | Approximation after faithful chunking; phone NPU evidence does not qualify Windows X/X2. |
 | H17: [Gated DeltaNet-2](https://arxiv.org/abs/2605.22791v1), 2026-05-21 technical report | Decouples erase/write gates and changes the recurrence, with a new chunkwise derivation. | Requires new architecture/artifacts; no inference-only substitution for Swift. |
 | H18: [EAGLE-3](https://arxiv.org/abs/2503.01840), 2025-03-03; [code](https://github.com/SafeAILab/EAGLE) | Trains direct-token proposals using multi-layer target features rather than predicting only top-layer features. | Trained-drafter reference; target feature/adapter compatibility, extra memory and T6's sampling contract remain prerequisites. |
-| H19: [DFlash](https://proceedings.mlr.press/v306/chen26bv.html), ICML 2026; [code](https://github.com/z-lab/dflash) | Block diffusion drafts multiple tokens in one parallel pass conditioned on target features, reducing sequential drafting work. | Requires a compatible trained drafter and hybrid block verifier. Published speedups do not establish CPU break-even or acceptance for creative prose. |
+| H19: [DFlash](https://proceedings.mlr.press/v306/chen26bv.html), ICML 2026; [v2 2026-05-28](https://arxiv.org/abs/2602.06036v2); [code](https://github.com/z-lab/dflash) | Block diffusion drafts multiple tokens in one parallel pass conditioned on target features. Includes nonzero-temperature evaluations. | Requires a compatible trained drafter and hybrid block verifier. GPU results do not establish CPU break-even or acceptance for creative prose. |
+| H20: [KVBuffer](https://arxiv.org/abs/2605.19049v1), 2026-05-18 preprint | Buffer keys/deltas/decays and defer full state writes; verify without a full state per draft position. | High conceptual priority. Four-L40S/FP32-state/FP16-buffer evidence; pending updates belong in checkpoint and commit identity. |
+| H21: [TreeWY](https://arxiv.org/abs/2608.20961v2), v2 2026-10-22 preprint | Ancestor-masked WY tree verification retains pseudo-values and reconstructs the accepted path. | Candidate after verifier infrastructure. B200/greedy/prefix-cache-disabled evidence; acknowledges non-bit-identical tokens and latency losses for wider trees. |
+| H22: [DFlash 2](https://inco.ai/blog/dflash2/), 2026-08-18 author report | Parallel candidate scoring, path selection and block-local convolution improve learned draft coherence. | Compatible trained-artifact research. Qwen3.8-27B support does not establish Swift/LoRA compatibility; expose actual conditional proposal probabilities. |
+| H23: [VeriCache](https://arxiv.org/abs/2605.17613v1), 2026-05-17 preprint | Compressed KV drafts while separately retained full KV verifies. | Greedy-output qualification; sampling needs correction. Full plus compressed storage and multi-request overlap prevent treating this as a laptop RAM saving. |
 
 The source history of H2 gives an April submission despite its May arXiv ID
 and later HTML front matter. H14's submission history likewise supplies its date.
@@ -323,6 +388,78 @@ replacing exact KV/state or re-quantizing the selected model by default.
 | Q15: [Analysis and Detection of Stagnation in Floating-Point Summation](https://arxiv.org/abs/2610.10819v2), v2 2026-10-09 preprint | Detects contributions disappearing under accumulation rounding. | Diagnostic watch item for proposed low-precision reductions, not evidence of a present Swift defect. |
 | Q16: [Energy Cost of Completing Tasks with Quantized Language-Model Agents](https://arxiv.org/abs/2610.32417v2), v2 2026-10-26 preprint | Task-level evaluation shows how reduced energy/token can coexist with more energy/completed task through longer outputs or extra attempts. | Evaluation lesson; agent/GPU results are not creative-writing or Snapdragon measurements. |
 | Q17: [KIVI](https://proceedings.mlr.press/v235/liu24bz.html), ICML 2024; [code](https://github.com/jy-yuan/KIVI) | Per-channel key quantization and per-token value quantization address their different observed distributions. | Foundational lossy-KV control for comparing newer codecs. Residual windows, scales, layout and compute overhead count; reported serving gains do not qualify Swift or recurrent-state compression. |
+| Q18: [DASC](https://arxiv.org/abs/2608.30386v2), v2 2026-10-09 preprint | Ragged checkpoints omit shorter-retention heads/channels, zero-filling or approximately refreshing them. | Approximate checkpoint capacity; live state/convolution remain separate. Not exact suffix restoration. |
+| Q19: [DAMP](https://arxiv.org/abs/2608.27513v2), v2 2026-09-30 preprint | Calibrated FP16/INT8 live recurrent state with stochastic rounding and reordering. | Approximation, batches 16–256. Latest v2 differs from earlier indexed speed figures; no batch-one/Swift quality acceptance. |
+| Q20: [Preserving Updates in Low-Bit Recurrent State Quantization](https://arxiv.org/abs/2610.15709v1), 2026-10-11 preprint | Low-rank bypass and bounded directional rounding retain small coherent updates. | Approximation. Charge bypass, merge scratch and rollback/checkpoint lifetimes; T10 explains why local MSE is insufficient. |
+| Q21: [Minima / Why Gated DeltaNet Survives 4-Bit Quantization](https://arxiv.org/abs/2609.04098v1), 2026-09-03 preprint | W4A4 projection/gate quantization with scale fixes and empirical error attenuation. | New NVFP4 artifact, not four-bit recurrent state; FP32 replay does not prove uniform stability. Larger than current packed Swift. |
+| Q22: [vAttention: Verified Sparse Attention via Sampling](https://proceedings.iclr.cc/paper_files/paper/2026/hash/55cb562b1f5af71f6707f3ff3c7941e6-Abstract-Conference.html), ICLR 2026; [code](https://github.com/skylight-org/sparse-attention-hub) | Important-token selection plus residual sampling with relative operator-output analysis. | Approximation; practical pilot/CLT budgets differ from conservative certificates. Distinct from Microsoft's same-name memory project. |
+| Q23: [Certified Sparse Attention via Perturbed Retrieval](https://arxiv.org/abs/2610.24991v1), 2026-10-18 preprint | Anytime-valid attention-output certificates with fresh per-call perturbations. | AVX512-VNNI reference retains full KV plus indexes: reported 40% storage overhead and a linear compressed-key scan. Sample/value-read bounds are not total-work bounds. See T9. |
+| Q24: [DoSA](https://arxiv.org/abs/2610.13990v1), submission history 2026-09-26 | Conservative bounds skip candidates unable to enter an existing sparse indexer's exact Top-K. | Exact sparse-indexer selection, not dense softmax equality. Requires learned indexers absent from Swift. |
+| Q25: [iS-KV](https://arxiv.org/abs/2610.02815v1), 2026-10-02 preprint | Recent exact window plus block-incremental SVD for older history; update coefficients when bases change. | Lossy capacity research. Persistent-KV figures omit weights/reconstruction; charge simultaneous old/new factors and scratch. |
+| Q26: [JoLT](https://arxiv.org/abs/2607.12550v4), v4 2026-09-24; [code](https://github.com/rahulk98/JoLT-Master-Thesis) | Joint Tucker-rank/residual-bit allocation under a byte budget. | Capacity/quality research, under ICLR 2027 review. Its batch-one A100 fused decode is 7.5–65.9x slower than dense at all measured points; near-lossless is empirical. |
+| Q27: [CoS-VQ](https://arxiv.org/abs/2610.37336v1), 2026-10-27 preprint; [code](https://github.com/xzktx003/Cos_VQ) | Joint shared-scale/codeword search through tangent majorization and lower envelopes; evaluates Qwen3.8-27B. | Promising new-artifact research. Optimality is restricted to surrogate/candidate pools; accepted reconstruction needs true-error verification. A100/RTX4090 evidence, not Swift. |
+| Q28: [YAQA / Model-Preserving Adaptive Rounding](https://arxiv.org/abs/2505.22988v3), v3 2026-06-03, ICML 2026; [code](https://github.com/Cornell-RelaxML/yaqa-quantization) | Kronecker-factored Hessian sketches incorporate output-side sensitivity in rounding. | Offline/new-artifact method; theorem bounds second-order error under assumptions, not full-model KL or quality. See T11. |
+| Q29: [FastKron](https://arxiv.org/abs/2608.06291v2), v2 2026-09-27, originally titled BaKron | Anti-diagonal parallelism/deferred updates reduce core rounding to `O(m+n)` depth and `O(m*n*(m+n))` work. | Offline quantization algorithm. Equivalence/work bounds exclude preprocessing and do not forecast inference speed. |
+| Q30: [Search Your Block Floating Point Scales!](https://arxiv.org/abs/2605.12464v1), 2026-05-12, MLSys 2026 | Search representable scales instead of assuming absmax minimizes block MSE. | Exhaustive legal-scale search is blockwise optimal; a short window is empirical. Changed Q8_K/Q8_0 scale selection changes the contract. |
+| Q31: [HyperQuant](https://arxiv.org/abs/2606.23406v1), 2026-06-22 preprint | Hadamard/lattice quantization, bit stripping and Rice coding combine representation and entropy techniques. | Deferred H100/new-artifact research. Charge transforms and executable bytes; unbiased inner products are not exact softmax. |
+
+### 2026 mobile acceleration and speech
+
+The [Adreno](adreno-gpu-plan.md#2026-research-evidence),
+[Hexagon](hexagon-npu-plan.md#2026-research-evidence) and
+[speech](speech-memory.md#2026-speech-inference-research) guides retain device,
+runtime-access and measurement details.
+
+| ID / source and date | Mechanism or observation | Disposition |
+| --- | --- | --- |
+| E1: [Qualcomm IWOCL Adreno talk](https://www.iwocl.org/wp-content/uploads/IWOCL-2026-Wang-Llamacpp.pdf), [2026-05-06 program](https://www.iwocl.org/iwocl-2026/conference-program/) | Packed layouts, vector unpacking, image-backed weights and recorded submissions, including X/X2. | High-priority implementation reference. Internal assembly headlines, public OpenCL C and Vulkan have different availability/features. |
+| E2: [TurboInfer / Act Before It's Too Late](https://doi.org/10.1145/3745756.3809208), MobiSys, 2026-06-20 | Detect short GPU stalls and adapt frequency at millisecond scale. | Phone telemetry/control research; no equivalent Windows authority or Vulkan/X1 power result established. |
+| E3: [PowerBench / Is Your NPU Ready for LLMs?](https://arxiv.org/html/2607.05475v2), v2 2026-10-16 | Separate quantization, offload, polling and NPU wake/sleep costs. | Rooted Android/framework study; combined tuning estimate is not a completed laptop implementation. Paper lists SIGMETRICS 2027 acceptance. |
+| E4: [When NPUs Are Not Always Faster](https://arxiv.org/html/2605.27435v1), 2026-05-22 preprint | CPU wins prefill in its Android/v75/Q4_0 configuration. | Phase-ranking counterexample, not a Swift ranking; synchronous profiling affects scheduling. |
+| E5: [Energy-Efficient On-Device RAG](https://arxiv.org/html/2606.11257v1), 2026-06-09 preprint | Windows Arm X Elite prepared-package deployment exposes static-context/loading-order constraints. | 64 GB machine, different QAIRT/GGUF/context configurations and NPU reranking in every arm; not a same-artifact 32 GB Swift comparison. |
+| E6: [ShadowNPU](https://arxiv.org/html/2508.16703v4), v4 2026-04-08, MobiSys 2026 | NPU pilot scores select sparse higher-precision attention with graph bucketing/pipelining. | Approximation on phones; does not optimize GDN or preserve existing dense attention. |
+| E7: [Quant.npu](https://arxiv.org/html/2605.20295v1), 2026-05-19 preprint | Optimized rotations/scales enable fully static quantization. | New-artifact/calibration lane; fixed scales do not preserve current dynamic Q8_K/Q8_0 arithmetic. |
+| E8: [Sereno](https://www.usenix.org/conference/osdi26/presentation/xin), OSDI, July 2026 | Bandwidth-aware yield points protect foreground work when model TPS hides contention. | High-priority comfort lesson. Android arbitration and speculative recovery requirements must be checked independently on Windows. |
+| E9: [Hexagon DMA-ring fix](https://github.com/ggml-org/llama.cpp/pull/30189), merged 2026-10-09 | Repairs dropped DDR-to-VTCM descriptors on queue saturation. | Implementation correctness reference for DMA bounds/completion; not a demonstrated Swift defect. |
+| E10: [llama.cpp b11913](https://github.com/ggml-org/llama.cpp/releases/tag/b11913), prerelease 2026-10-27 | VTCM-size override adds a capacity-control input. | Watch item: requested versus effective storage/failure semantics; does not increase hardware capacity or update Runner's pin. |
+| P1: [Qwen3-TTS Technical Report](https://arxiv.org/abs/2601.15621), 2026-01-22 | Talker, residual-code predictor and codec have different rates and first-packet dependencies. | Stage-accounting reference; publisher first-packet results omit this native path's bootstrap/playback costs. |
+| P2: [RVQ Position Aware Speculative Decoding](https://arxiv.org/html/2609.37007v1), 2026-09-29 preprint | Small learned offsets plus tree verification reduce residual-code serial work. | New artifacts, 0.6B CustomVoice/Apple evidence; RVQ speed is not complete 1.7B GGML readout speed. |
+| P3: [One Megakernel Is Not Enough](https://arxiv.org/html/2610.35336v1), 2026-10-26 preprint | Fusion boundaries depend on rates, register pressure, resource residency and first-audio dependencies. | CUDA/H100 reference; best among measured supported designs, not globally optimal fusion. |
+| P4: [Pushing the Limits of On-Device Streaming ASR](https://arxiv.org/html/2604.14493v2), v2 2026-04-19 preprint | Cache-aware streaming, right context and selective quantization/fusion. | CPU timings use 32 EPYC cores; Canary-1B-v2 comparison differs from selected Canary-Qwen-2.5B. File size is not peak RAM. |
+| P5: [Beyond the Benchmark: Qwen3-TTS Failure Modes](https://arxiv.org/html/2610.23678v1), 2026-10-16 preprint | Conditioning/domain affect timbre, timing and prosody; automatic and listening rankings can disagree. | Listening-methodology reference. Voice-cloning evidence does not qualify the app's designed reference. |
+
+### 2026 systems, measurement and output-budget work
+
+The follow-up survey also considers overhead around tensor math and the number
+of tokens needed to complete a task. These are different optimization objectives.
+The [implementation guide](implementation-research.md#2026-literature-runtime-overhead-and-work-placement),
+[performance guide](performance-expectations.md#2026-literature-measurement-and-comparison)
+and [defaults guide](inference-defaults.md#2026-literature-token-budgets-are-a-separate-experiment)
+record the project implications in more detail.
+
+| ID / source and date | Mechanism or evidence | Disposition |
+| --- | --- | --- |
+| S1: [ProfInfer](https://proceedings.mlsys.org/paper_files/paper/2026/hash/03dbc11a22e79cd38bea53cf518c2371-Abstract-Conference.html), MLSys 2026 | Operator/graph tracing and hardware counters locate real work/traffic bottlenecks. | Profiling methodology; eBPF implementation is not a Windows tracer. |
+| S2: [Optimizing Deployment Configurations](https://proceedings.mlsys.org/paper_files/paper/2026/hash/97dc07f1253ab33ee514f395a82fa7cc-Abstract-Conference.html), MLSys 2026 | Large configuration search under latency constraints shows phase, hardware and architecture dependence. | Evaluation reference; production Llama/GPU evidence does not rank local profiles. |
+| S3: [Beyond the Buzz](https://proceedings.mlsys.org/paper_files/paper/2026/hash/d49cee5f3a79d97d719df255689d83d7-Abstract-Conference.html), MLSys 2026 | Prefill/decode disaggregation depends on workload mix, rate matching and coordination. | Phase-placement lesson; no automatic benefit for one local request. |
+| S4: [Elastic Gang](https://arxiv.org/abs/2607.04668v1), 2026-07-06 | Acknowledged epochs permit safe per-token changes in a barriered CPU inference gang. | Bare-metal x86 Rust OS preprint; inspect protocol assumptions before any threadpool adaptation. |
+| S5: [Rust rvllm copy-elimination report](https://ermolushka.github.io/posts/rvllm-memcpy/), 2026-09-24 | Hidden tensor/cache copies can dominate decode despite fast arithmetic. | Author report, M5/360M/F32-expanded model; candidate diagnostic, not evidence of a Prism defect. |
+| S6: [Event-triggered local inference](https://bobodell.com/blog/event-triggered-local-llm-inference-sglang-idle-cpu), 2026-08-17 | Distinguish busy polling from useful work; evaluate idle and active wait policies separately. | Linux/SGLang author report; wake latency and active decode remain part of a comparison. |
+| S7: [Shepherd Model Gateway](https://pytorch.org/blog/lightseek-smg/), 2026-04-30, updated June 2 | Native Rust tokenization/stream processing separates CPU pipeline work from GPU execution. | Architecture report; Runner already has Rust boundaries and a narrower protocol. |
+| S8: [Sequential Isolation Protocol](https://arxiv.org/abs/2610.09778v1), 2026-10-07 | Repeated controlled runs reduce comparison variance on a specified A100/vLLM stack. | Evaluation methodology; its variance/saturation numbers are not laptop acceptance thresholds. |
+| S9: [Edge-continuum measurement study](https://arxiv.org/abs/2609.08307v1), 2026-09-08, WIMS 2026 acceptance listed | Joint latency/quality/energy frontier can change after delivery overhead is included. | Jetson/server QA workload; no general CPU-versus-GPU or Snapdragon verdict. |
+| S10: [MLPerf Client v2.0](https://mlcommons.org/benchmarks/client/), documentation reviewed 2026-10-29 | Client prompt/output-length workloads, separate TTFT/decode and quality gates; Windows Arm/X/X2 coverage. | Benchmark design reference using other models; experimental power tools and vendor paths do not qualify Swift. |
+| B1: [ESTAR](https://arxiv.org/abs/2602.10004v1), 2026-02-10 | Learned trajectory/stop signals and RL reduce reasoning length. | New trained components/artifacts; not unchanged-target inference acceleration. |
+| B2: [Budget Guidance](https://aclanthology.org/2026.findings-acl.1866/), ACL Findings, July 2026 | A remaining-length predictor guides token sampling toward a budget. | Base fine-tuning is avoided, but a compatible predictor and changed output policy remain. |
+| B3: [BudgetThinker](https://aclanthology.org/2026.findings-emnlp.1465/), EMNLP Findings, October 2026 | Specialized remaining-budget tokens and supervised/RL training regulate reasoning length. | New training/control-token contract; not a setting of the selected Swift artifact. |
+| B4: [CASE](https://aclanthology.org/2026.findings-emnlp.1983/), EMNLP Findings, October 2026 | Confidence-based filtering and adaptive stopping save work relative to fixed-budget self-consistency. | Multiple-candidate baseline; not a demonstrated win over the current single completion. |
+
+### Withdrawn or unresolved reports
+
+| ID / source and date | Finding | Disposition |
+| --- | --- | --- |
+| N1: [PolarQuant: Optimal Gaussian Weight Quantization via Hadamard Rotation](https://arxiv.org/abs/2603.29078v2), withdrawn 2026-04-20 | Author withdrawal reports errors needing correction; positive snippets remain indexed. | Withdrawn; do not use its performance/quality claims. Distinct from Google's differently titled PolarQuant. |
+| N2: [Litespark CPU report](https://mindbeam.ai/research/litespark-inference), 2026-06-16; [HN discovery thread](https://news.ycombinator.com/item?id=48910545) | Fusion/SDOT/prefill ideas coexist with unresolved storage arithmetic and logit-ranking claims. | Unverified report; no speed/memory conclusion adopted. A logit difference alone cannot establish unchanged ranking without T12's margin condition. |
 
 ## Implementation sources to inspect
 
@@ -335,6 +472,7 @@ runtime replacements. Pin the relevant source revision before an experiment.
 | [Microsoft BitNet](https://github.com/microsoft/BitNet), [T-MAC](https://github.com/microsoft/T-MAC), [Vec-LUT](https://github.com/OpenBitSys/vlut.cpp) | Packed lookup kernels, table construction, activation tiling and CPU prefill | Model quantizers, scale groups, exact/approximate paths and temporary layouts differ. |
 | [KleidiAI on Arm GitLab](https://gitlab.arm.com/kleidi/kleidiai), [official GitHub mirror](https://github.com/ARM-software/kleidiai) | Arm microkernels, packing APIs, fusion, DotProd/I8MM and architecture dispatch | Canonical GitLab was bot-protected during review; the official mirror was readable. C/assembly examples inform a Rust port; SME/SVE/optional ISA availability cannot be inferred for Snapdragon. |
 | [Flash Linear Attention](https://github.com/fla-org/flash-linear-attention) | Chunkwise GDN, recurrent controls and state layouts | GPU/Triton implementation is an algebra/layout reference; retain Swift gates, normalization, convolution and grouped transforms. |
+| [cuLA v0.2.0 release notes](https://github.com/inclusionAI/cuLA/releases/tag/v0.2.0), reviewed 2026-10-29 | Lists KVBuffer MTP verification/commit, packed KDA decode, convolution fusion and synchronization repairs | Release-note evidence only; individual PR fetches were unavailable. KDA/Lightning/CUDA paths are not a qualified Swift GDN/Rust/ARM64 implementation. |
 | [llama.cpp](https://github.com/ggml-org/llama.cpp), including [Hexagon backend](https://github.com/ggml-org/llama.cpp/tree/master/ggml/src/ggml-hexagon) | Packed kernels, Vulkan, KV placement, threading and HVX/HMX examples | Upstream model/backend availability does not establish signed Windows deployment or exact Swift support. |
 | [FlashInfer](https://github.com/flashinfer-ai/flashinfer) and [MLC-LLM](https://github.com/mlc-ai/mlc-llm) | Attention planning, cache layouts, kernel specialization and compilation | CUDA/TVM and platform-specific paths; study mechanisms without assuming CPU/Adreno performance transfer. |
 | [SGLang](https://github.com/sgl-project/sglang), [vLLM](https://github.com/vllm-project/vllm) | Prefix ownership, hybrid cache budgets, chunk scheduling and speculative commit | Multi-request GPU serving has different objectives from one local conversation. A PR is not a merged, qualified implementation. |
@@ -398,6 +536,29 @@ Hacker News through 2026-10-29, including recent GDN, low-bit CPU, attention,
 hybrid caching, speculation and memory-planning work. Search is incomplete;
 absence here is not evidence that an algorithm or implementation does not exist.
 No recurring task is installed by this document.
+
+### 2026 follow-up search coverage
+
+The expanded search on 2026-10-29 prioritized 2026 submissions, revised versions,
+conference proceedings and source changes. It followed citations from the
+initial catalog, searched for counterexamples and withdrawn work, and inspected
+original papers or maintainer reports behind community links.
+
+| Source family | Search/inspection scope | What is retained |
+| --- | --- | --- |
+| arXiv and author full texts | Ternary/low-bit kernels, recurrent-state compression, attention certification, speculation, mobile inference, speech and performance methodology | Submission/revision dates, assumptions, numerical identity, actual hardware, overhead exclusions and negative results |
+| MLSys, ICLR, ACL/EMNLP, MobiSys, OSDI, DATE and related 2026 proceedings | Kernel/compression co-design, client inference, memory hierarchy, scheduling, responsiveness and token efficiency | Venue-backed papers where inspectable; a paper's future-venue acceptance statement remains labelled as such |
+| GitHub and Arm GitLab | Original implementations, recent backend PRs/releases, codec layouts and known bugs | Source or PR status at review, platform boundaries and code availability; no adoption or runtime pin update |
+| Author/vendor blogs and Hacker News links | Implementation lessons, fresh speculative systems, CPU copies/idle polling and mobile backend experience | Primary report with date/workload and caveats; comments and headlines are discovery leads |
+
+Topic findings live in the [algorithm guide](inference-algorithms.md),
+[SIMD guide](simd-plan.md), [memory options](swift-memory-options.md),
+[Adreno](adreno-gpu-plan.md), [Hexagon](hexagon-npu-plan.md),
+[speech memory](speech-memory.md), [implementation research](implementation-research.md),
+[performance](performance-expectations.md) and [defaults](inference-defaults.md).
+This is an expanded, bounded search of accessible sources, not a proof of
+literature completeness. No models, benchmark tools or third-party code were
+installed as part of the review.
 
 For a refresh, search recent versions and citation chains around these subjects:
 `ternary LUT ARM NEON inference`, `batched low-bit prefill`, `Gated DeltaNet

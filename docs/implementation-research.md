@@ -167,3 +167,29 @@ to preserve the pinned constant-time dependency's release contract. See
 Local focused regressions establish specific correctness/ownership properties.
 Full suites and all benchmarks remain CI-only; synthetic storage
 reuse and hosted build timings are not laptop inference-performance evidence.
+
+## 2026 literature: runtime overhead and work placement
+
+Reviewed 2026-10-29. These sources extend the
+[research register](research-register.md), without establishing a new Runner
+profile or a defect in the pinned Prism runtime.
+
+| Source | Mechanism worth inspecting | Boundary for this project |
+| --- | --- | --- |
+| [ProfInfer, MLSys 2026](https://proceedings.mlsys.org/paper_files/paper/2026/hash/03dbc11a22e79cd38bea53cf518c2371-Abstract-Conference.html) | Correlate operator/graph timelines with hardware counters before choosing a kernel, layout or scheduling experiment. | Its eBPF probes target a different runtime/OS environment. Transfer the attribution method; Windows tracing and instrumentation need their own overhead check. |
+| [Rust rvllm optimization report, 2026-09-24](https://ermolushka.github.io/posts/rvllm-memcpy/) | Hidden cache replacement and broadcast/contiguous operations can copy large tensors on every token. Distinguish a tensor view, shared immutable allocation and independent mutable cache. | Author report on M5/SmolLM2-360M with weights expanded to F32. Frozen output checks support that experiment; its throughput gains are not predictions for packed Swift or evidence Prism repeats those copies. |
+| [SMG, 2026-04-30, updated June 2](https://pytorch.org/blog/lightseek-smg/) | Separate tokenization, streaming parsing and other CPU work from accelerator execution; measure pipeline backpressure at each boundary. | Rust gateway/GIL evidence concerns distributed Python serving. Runner already uses Rust and a bounded supported protocol; adopting its broad gRPC/API/tool surface is unnecessary. |
+| [Elastic Gang, 2026-07-06](https://arxiv.org/abs/2607.04668v1) | A generation-tagged acknowledgement protocol changes a barriered inference participant set between tokens while other OS work continues. | Bare-metal x86 Rust OS preprint, not a Windows scheduler library. Dynamic membership requires an explicit barrier/epoch correctness contract; existing safe phase/thread controls are the comparison. |
+| [Event-triggered SGLang report, 2026-08-17](https://bobodell.com/blog/event-triggered-local-llm-inference-sglang-idle-cpu) | Measure idle polling separately from active inference. Parking idle workers can remove CPU work, while affinity alone only changes where a poll loop runs. | First-person Linux/dual-GPU report. Wake latency and active decoding can favor different wait policies; it does not establish a universally optimal sleep flag for Prism. |
+| [Beyond the Buzz, MLSys 2026](https://proceedings.mlsys.org/paper_files/paper/2026/hash/d49cee5f3a79d97d719df255689d83d7-Abstract-Conference.html) | Prefill/decode separation pays off only in suitable workloads after transfer, rate matching and coordination costs. | Multi-node serving study. Local CPU/Adreno/Hexagon phase placement still needs complete hybrid-state handoff and measured break-even; disaggregation is not automatically beneficial. |
+
+The review order is actual work/traffic first, representation and ownership
+second, then finer scheduling/fusion. Preallocated buffers can still hide
+repeated full-size copies; an in-place write can accidentally alias a snapshot.
+Record allocation/copy lifetimes and independent state ownership together.
+The [streaming resource contracts](streaming-resources.md) already bound Runner's
+queues and text/PCM storage; runtime experiments belong upstream in Prism.
+
+All timing, tracing and actual-model comparisons remain CI-only under
+[validation](validation.md). Use [the performance guide](performance-expectations.md#2026-literature-measurement-and-comparison)
+for the measurement implications of this survey.

@@ -151,6 +151,89 @@ Generic inverse-state rollback is unsafe mathematically: the transition
 can underflow/saturate, and convolution overwrites history. Use snapshots,
 saved factors and forward reconstruction with numerical checks.
 
+### 2026 state-traffic and verification research
+
+Reviewed through **2026-10-29**. These are research candidates, not features of
+the selected runtime. [KVBuffer](https://arxiv.org/html/2605.19049v1)
+(2026-05-18 preprint) buffers recent GDN decay factors, keys and delta values,
+defers state writeback and computes subsequent outputs from the base state plus
+the buffer. Chunkwise verification avoids a full recurrent snapshot per draft
+position. Its SGLang/Qwen3-Next results use four L40S GPUs, FP32 state and FP16
+buffered vectors; they do not establish bitwise replay of Prism's arithmetic.
+Charge the buffer, flush work and precision conversion. A checkpoint must contain
+or first materialize the pending updates, including convolution history; a
+buffered state cannot be serialized as if it were the current materialized state.
+
+[TreeWY](https://arxiv.org/html/2608.20961v2) (v2 2026-10-22 preprint) generalizes
+WY verification to a draft tree using ancestor-masked triangular equations.
+It retains pseudo-values rather than one complete state per node and reconstructs
+only the accepted path. The algebra is exact over the reals; its production
+BF16 path explicitly does **not** produce bit-identical baseline token streams.
+The vLLM/B200 evaluation disables prefix caching and uses greedy MTP; wider trees
+can lose latency despite saving state memory. Keep tree topology, full-attention
+causality, convolution, failed commit and prefix-cache integration as separate
+obligations. A state-memory reduction is not itself faster batch-one decode.
+
+### Trained parallel proposals and full-state verification
+
+[DFlash](https://arxiv.org/abs/2602.06036v2) (ICML 2026, camera-ready 2026-05-28;
+[source](https://github.com/z-lab/dflash)) predicts a block in one diffusion
+drafter pass conditioned on target hidden features. The target remains the
+autoregressive verifier. Its evaluations include nonzero temperature, but the
+published models, feature interface and GPU execution do not qualify Swift's
+ternary weights, adapter or CPU path. Include drafter weights, its KV, retained
+target features and verification scratch in admission; compare complete cycles,
+not only proposal latency.
+
+The author's [DFlash 2 report](https://inco.ai/blog/dflash2/) (2026-08-18) adds
+parallel adjacent-candidate scoring, a lightweight path selector and block-local
+dynamic convolution. Its Qwen3.8-27B drafter is a useful compatibility lead, not
+evidence that it matches Swift/LoRA. This is an author engineering report with
+released drafters, rather than a second peer-reviewed paper. Proposal selection
+must expose the actual conditional proposal probabilities to stochastic rejection
+sampling; selecting the most coherent path alone does not preserve the target
+distribution. These learned components require compatible provisioned artifacts;
+they are not a new inference-only option for the existing model lock.
+
+[VeriCache](https://arxiv.org/html/2605.17613v1) (2026-05-17 preprint) instead
+drafts using compressed KV and verifies using the same model with full KV,
+retained in another memory/storage tier. Its identical-output claim is defined
+for greedy decoding except hardware nondeterminism; a sampling extension still
+needs the acceptance contract above. Its throughput relies on overlapping
+interconnect transfers and GPU work across requests. The current one-request
+CPU runner does not inherit that overlap, and keeping full plus compressed KV
+can increase total laptop memory. Hybrid verification must also restore complete
+GDN/convolution state, which KV verification alone does not supply.
+
+### Certified sparse attention is a separate approximation
+
+[vAttention](https://proceedings.iclr.cc/paper_files/paper/2026/hash/55cb562b1f5af71f6707f3ff3c7941e6-Abstract-Conference.html)
+(ICLR 2026) combines important-token selection with tail sampling and derives
+relative attention-output error bounds. Its practical budget uses pilot estimates
+and a CLT approximation; the conservative and optimistic variants have different
+assumptions. A user-selected `(epsilon, delta)` is not an exact-output promise
+or a certificate for the entire generated answer.
+
+[Certified Sparse Attention via Perturbed Retrieval](https://arxiv.org/html/2610.24991v1)
+(2026-10-18 preprint) derives anytime-valid per-call output certificates with
+exact candidate generation and fresh independent perturbations at each decode
+step. A run-wide failure target must be apportioned across heads, layers and
+steps. Its context-independent value-read bound does not eliminate the linear
+compressed-key scan. The CPU implementation uses AVX-512 VNNI and retains full
+16-bit KV plus auxiliary indexes; its reported layout adds 40% storage.
+This is a bounded-error/read-traffic lead, not a smaller exact cache or a
+Snapdragon kernel. Both methods also need a reference consistent with Prism's
+FP16 probability rounding before their error bounds can be transferred.
+
+[DoSA](https://arxiv.org/abs/2610.13990v1) (submission history 2026-09-26)
+uses conservative score bounds to avoid fully scoring candidates that cannot
+enter an existing sparse indexer's Top-K. Its exactness concerns that indexer's
+selection, including numerical bounds and recovery, not equality between sparse
+and dense attention. Swift has no such learned sparse indexer; adopting one
+would require compatible model architecture/artifacts. The transferable idea is
+safe early rejection with a full-computation fallback, not silently dropping
+full-attention tokens.
+
 ## Compression and approximation constraints
 
 An independent 128-trit block has `3^128` possibilities and needs

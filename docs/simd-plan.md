@@ -76,11 +76,15 @@ hold five at stride 8, and bytes 24–25 hold four at stride 2. Q4_0 stores 16 l
 nibbles before 16 high nibbles. Canonicality and byte order remain exact.
 
 For arbitrary signed i8 activations, including -128, a 128-element PQ2 dot has
-absolute sum at most 32,768. A 32-element ternary sum is at most 4,096 and its
-PQ2 counterpart at most 8,192. Every intermediate/correction requires an i32
-bound; Rust overflow flags do not check wrapping SIMD arithmetic. Block scales
-apply before accumulation into subsequent blocks. Malformed scales and
-noncanonical PTQ1 bytes remain errors even at zero scale.
+tight signed range `[-32768, 32512]`; the final integer does fit i16. That does
+not certify an unpacking or correction scheme: an uncorrected dot with unsigned
+codes `0..3` instead ranges over `[-49152, 48768]` and needs wider storage.
+A 32-element ternary sum has absolute bound 4,096 and its PQ2 counterpart 8,192.
+Bound every intermediate and correction independently before narrowing lanes;
+Rust overflow flags do not check wrapping SIMD arithmetic. See the
+[integer derivation](research-register.md#t3-exact-low-bit-dots-need-bounds-at-every-intermediate).
+Block scales apply before accumulation into subsequent blocks. Malformed scales
+and noncanonical PTQ1 bytes remain errors even at zero scale.
 
 Q8_K chooses the first signed value with strictly greater absolute magnitude,
 uses `-127 / maximum`, ties-to-even rounding and an f32 scale. Q8_0 uses an
@@ -130,6 +134,35 @@ Hosted ARM64 supplies correctness infrastructure; target-device CI supplies
 performance/thermal/energy evidence. Four threads and total core count are control
 settings, not universal optima; phase placement and mixed-device contention are
 part of a profile's declared scope.
+
+## CPU kernel research reviewed in October 2026
+
+The [research register](research-register.md) records the broader literature and
+proof obligations. These additional sources were reviewed on **2026-10-29**;
+they identify experiments, not implemented support or a change to acceptance.
+The most direct opportunity remains reducing packed-weight preparation and
+reusing each tile across prompt tokens under the existing arithmetic contract.
+
+| Source and version | Mechanism worth investigating | Boundary for Swift |
+| --- | --- | --- |
+| [Pushing the Envelope of LLM Inference with Ultra-Low-Bit Quantized Models](https://arxiv.org/abs/2508.06753v3), v3 2026-08-27 | Interleave two-bit weights so unpacking directly produces the dot instruction's consumption layout; generate shape-specific microkernels. | AVX2/VNNI and Intel Xe2 evidence. A NEON layout must match its own lane geometry, quantizers and scale groups; count repacking and retained copies. |
+| [ELUTQ](https://arxiv.org/abs/2510.19482v4), v4 2026-02-01; [source](https://github.com/Nkniexin/ELUTQ) | Hierarchical linear quantization makes a nonuniform code family executable through bit-serial LUTs; evaluates RK3588/M2 CPUs as well as NVIDIA GPUs. | Its nonuniform weight quantization changes the artifact. Bit-serial scheduling is a technique reference, not an exact PQ2/PTQ1 conversion. |
+| [Shannonic](https://proceedings.mlsys.org/paper_files/paper/2026/hash/96f39c8de84678cb2a908cd52bfd7819-Abstract-Conference.html), MLSys 2026 | Range-partitioned tabled ANS reduces entropy-code table state; independent streams can expose parallel decoding. | Lossless bytes do not establish faster matvec. Charge stream indexes, decode dependency, scratch and bytes actually consumed; most evaluation uses 8-bit tensors and communication-bound workloads. |
+| [QTEA](https://arxiv.org/abs/2609.00224v2), v2 2026-09-02; [source](https://github.com/Intelligent-Microsystems-Lab/QTEA) | Ternary bulk weights plus column-semi-sparse residual compensation keep exceptional work more regular than arbitrary sparse outliers. | New PTQ artifact and residual storage. Reported execution uses GPU/CUDA Graph and architecture estimates, not an ARM CPU implementation. |
+| [HARP](https://arxiv.org/abs/2605.29843v2), v2 2026-09-02 | Learned sparse butterfly rotations and mixed-radix schedules offer an alternative to fixed Hadamard preprocessing. | Full-precision algebraic equivalence does not preserve already quantized Swift weights. Fitting, parameter storage and runtime transforms count; throughput is measured on RTX 5080. |
+| [LLVQ](https://arxiv.org/abs/2603.11021v2), v2 2026-07-07; [Tetra](https://arxiv.org/abs/2609.35465v1), 2026-09-28 | Structured lattice indexing and fused reconstruction avoid materializing enormous codebooks; Tetra explicitly distinguishes serialized codes from the representation read by its kernel. | New quantized artifacts. Tetra's Rust/CUDA implementation reports L40S measurements and quality losses; neither Rust source nor compact files qualify a Windows ARM64 backend. |
+| [XOR-Trellis](https://arxiv.org/abs/2610.00432v1), 2026-09-30 | Factor a state-to-weight map into parity/XOR logic and a small FP4 palette rather than a large lookup. | New trellis quantizer; gate-level reconstruction work does not establish a commodity-CPU inference speedup. |
+| [T-SAR](https://arxiv.org/abs/2511.13676v1), DATE 2026; [ExaGEMM](https://arxiv.org/abs/2607.14622v1), 2026-07-16 | Model LUT/register feasibility and jointly select layouts, tile sizes and instruction support. | Both introduce hardware/ISA changes. Their simulated improvements are not software-only optimizations for an existing Snapdragon CPU. |
+
+For an exact kernel experiment, retain original packed bytes as the storage
+control, separate decode from genuine multi-token prefill, and identify the
+unpack, activation-preparation, integer-dot and scale stages. A borrowed layout
+must prove its own bounds, including unsigned-code intermediates above. An
+entropy codec needs enough independently decodable streams to feed the kernel
+without recreating a persistent expanded model. Larger LUTs and more live
+accumulators can spill registers or evict useful cache lines; select tiles from
+measured complete-workload evidence in CI. New quantizers, rotations and
+instruction sets remain separate research identities.
 
 [fearless]: https://docs.rs/fearless_simd/1.1.0/fearless_simd/
 [target-feature]: https://doc.rust-lang.org/reference/attributes/codegen.html#the-target_feature-attribute

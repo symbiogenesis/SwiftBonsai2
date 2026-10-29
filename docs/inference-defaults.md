@@ -160,3 +160,26 @@ The optional abliteration adapter retains its existing
 [independent quality and throughput gates](lora-qualification.md). Fewer refusals
 do not establish better reasoning or prose. This defaults change does not
 promote an adapter, weight representation, accelerator or daily-service profile.
+
+## 2026 literature: token budgets are a separate experiment
+
+Reviewed 2026-10-29. Faster kernels reduce the cost of a token; reasoning-budget
+methods change how many tokens or candidate answers are generated. That can
+change the result, sampler or model, so it is a separate comparison from
+unchanged-model kernel acceleration. Current defaults and exact admission remain
+the controls.
+
+| Source | Mechanism | Transfer boundary |
+| --- | --- | --- |
+| [ESTAR](https://arxiv.org/abs/2602.10004v1), 2026-02-10 preprint | Trajectory classifier, supervised stop signals and stop-aware RL reduce redundant reasoning. | Requires trained components/model changes. Reasoning-dataset accuracy is not proof that early stopping preserves arbitrary Swift answers. |
+| [Budget Guidance](https://aclanthology.org/2026.findings-acl.1866/), ACL Findings, July 2026; [code/models](https://github.com/UMass-Embodied-AGI/BudgetGuidance) | A lightweight remaining-length predictor guides token generation toward a target budget without fine-tuning the base LLM. | Predictor compatibility and the guided output distribution still change the experiment. Budget adherence and math-task results do not establish creative quality or lower peak memory. |
+| [BudgetThinker](https://aclanthology.org/2026.findings-emnlp.1465/), EMNLP Findings, October 2026; [code](https://github.com/MobileLLM/BudgetThinker) | Periodic remaining-budget control tokens plus supervised/curriculum RL teach budget-aware generation. | Requires compatible training/control tokens; this is not an extra prompt switch for the pinned Swift artifact. |
+| [CASE](https://aclanthology.org/2026.findings-emnlp.1983/), EMNLP Findings, October 2026 | Confidence-weighted solution filtering and adaptive stopping reduce work relative to fixed-budget self-consistency. | Multi-sample/voting baseline. Saving tokens against that baseline does not show a gain over the current single completion, nor justify silently adding parallel candidates. |
+
+Evaluate time/energy to a useful completed answer, including predictor overhead,
+extra prefills, failed attempts and any human revision. Preserve user-selected
+thinking and Extra effort behavior, exact context/output reservations, cancellation
+and truthful truncation status. There is no quality acceptance for these methods
+on current Swift/LoRA, and this literature update does not enable them. See the
+[measurement guide](performance-expectations.md#2026-literature-measurement-and-comparison)
+and [central source register](research-register.md).
