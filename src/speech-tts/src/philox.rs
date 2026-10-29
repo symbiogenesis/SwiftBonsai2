@@ -104,10 +104,6 @@ mod tests {
                 for counter in [0, 1, u32::MAX] {
                     let draw = uniform(seed, subsequence, counter);
                     assert!(draw.is_finite() && draw > 0.0 && draw <= 1.0);
-                    assert_eq!(
-                        draw.to_bits(),
-                        uniform(seed, subsequence, counter).to_bits()
-                    );
                 }
             }
         }

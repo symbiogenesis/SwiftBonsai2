@@ -15,6 +15,17 @@ use std::{
 mod qwen;
 use qwen::RawAudio;
 
+#[cfg(test)]
+mod philox_tests;
+
+// SAFETY: This unique private static-link symbol is declared by the reviewed
+// Qwen overlay. Its scalar arguments carry no pointer or lifetime obligations.
+// The pure Rust implementation allocates nothing and cannot unwind.
+#[unsafe(no_mangle)]
+extern "C" fn bonsai_qt_philox_uniform(seed: i64, subsequence: i64, counter: u32) -> f32 {
+    super::philox::uniform(seed, subsequence, counter)
+}
+
 // A single public neutral fixture defines voice identity, never the text being
 // read. Recreating a stopped worker uses the same phrase and sampler seed.
 static REFERENCE_TEXT: &CStr = c"The morning light fills the quiet garden. I will read each sentence in the same clear, natural voice.";

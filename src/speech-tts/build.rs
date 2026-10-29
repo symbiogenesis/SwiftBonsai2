@@ -27,6 +27,7 @@ fn main() -> io::Result<()> {
     }
     println!("cargo:rerun-if-changed=model.lock.json");
     println!("cargo:rerun-if-changed=build_overlay.rs");
+    println!("cargo:rerun-if-changed=tests/reference/philox.h");
     if env::var("CARGO_CFG_TARGET_OS").is_ok_and(|value| value != "windows") {
         return Ok(());
     }

@@ -1,4 +1,4 @@
-//! Reviewed CPU thread, graph-cache and SIMD guards for private pinned sources.
+//! Reviewed Rust sampler, CPU thread, graph-cache and SIMD private-source overlay.
 
 use std::{fs, io, path::Path};
 
@@ -19,6 +19,38 @@ const EVICT_DECODE_GRAPHS: &str =
     }
 ";
 type Transform = fn(&str) -> io::Result<String>;
+
+// Retain the pinned native implementation only as an independent test oracle
+// and exact build anchor. Production replaces the entire header with this
+// declaration; both sampler callers draw directly from the Rust scalar export.
+const PHILOX_REFERENCE: &str = include_str!("tests/reference/philox.h");
+const PHILOX_DECLARATION: &str = "#pragma once\n#include <cstdint>\n\n// Runner's allocation-free safe Rust Philox4x32-10 implementation.\nextern \"C\" float bonsai_qt_philox_uniform(int64_t seed, int64_t subsequence, uint32_t counter);\n";
+const SEMANTIC_DRAW: &str = "    philox_uniform_fill(seed, philox_subseq, 0u, &u, 1);";
+const PREDICTOR_DRAW: &str =
+    "                philox_uniform_fill(s.seed, s.subseq_base + 1 + g, 0u, &u, 1);";
+
+fn philox(text: &str) -> io::Result<String> {
+    if text.replace("\r\n", "\n") != PHILOX_REFERENCE.replace("\r\n", "\n") {
+        return Err(io::Error::other("Pinned Qwen Philox source differs."));
+    }
+    Ok(PHILOX_DECLARATION.to_owned())
+}
+
+fn semantic_sampling(text: &str) -> io::Result<String> {
+    replace_once(
+        text,
+        SEMANTIC_DRAW,
+        "    u = bonsai_qt_philox_uniform(seed, philox_subseq, 0u);",
+    )
+}
+
+fn predictor_sampling(text: &str) -> io::Result<String> {
+    replace_once(
+        text,
+        PREDICTOR_DRAW,
+        "                u = bonsai_qt_philox_uniform(s.seed, s.subseq_base + 1 + g, 0u);",
+    )
+}
 
 fn replace_once(text: &str, before: &str, after: &str) -> io::Result<String> {
     if text.matches(before).count() != 1 {
@@ -69,11 +101,14 @@ fn decode_graphs(text: &str) -> io::Result<String> {
 )]
 pub(super) fn prepare(source: &Path, destination: &Path) -> io::Result<()> {
     copy(source, destination)?;
-    let transforms: [(&str, Transform); 4] = [
+    let transforms: [(&str, Transform); 7] = [
         ("src/backend.h", backend),
         ("src/qwen.cpp", api),
         ("ggml/src/ggml-cpu/vec.cpp", vectors),
         ("src/talker-forward.h", decode_graphs),
+        ("src/philox.h", philox),
+        ("src/sampling.h", semantic_sampling),
+        ("src/sampling-graph.h", predictor_sampling),
     ];
     for (relative, transform) in transforms {
         let path = destination.join(relative);
@@ -120,8 +155,9 @@ fn redirected(metadata: &fs::Metadata) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        DECODE_GRAPH, EVICT_DECODE_GRAPHS, THREAD_COUNT, api, backend, decode_graphs, prepare,
-        vectors,
+        DECODE_GRAPH, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION, PHILOX_REFERENCE, PREDICTOR_DRAW,
+        SEMANTIC_DRAW, THREAD_COUNT, api, backend, decode_graphs, philox, predictor_sampling,
+        prepare, semantic_sampling, vectors,
     };
 
     #[test]
@@ -144,6 +180,9 @@ mod tests {
         fs::write(source.join("src/backend.h"), &header)?;
         fs::write(source.join("src/qwen.cpp"), "extern \"C\" {\n}")?;
         fs::write(source.join("src/talker-forward.h"), DECODE_GRAPH)?;
+        fs::write(source.join("src/philox.h"), PHILOX_REFERENCE)?;
+        fs::write(source.join("src/sampling.h"), SEMANTIC_DRAW)?;
+        fs::write(source.join("src/sampling-graph.h"), PREDICTOR_DRAW)?;
         fs::create_dir_all(source.join("ggml/src/ggml-cpu"))?;
         fs::write(
             source.join("ggml/src/ggml-cpu/vec.cpp"),
@@ -170,7 +209,45 @@ mod tests {
         assert!(
             fs::read_to_string(copy.join("src/talker-forward.h"))?.contains(EVICT_DECODE_GRAPHS)
         );
+        assert_eq!(
+            fs::read_to_string(source.join("src/philox.h"))?,
+            PHILOX_REFERENCE
+        );
+        assert_eq!(
+            fs::read_to_string(copy.join("src/philox.h"))?,
+            PHILOX_DECLARATION
+        );
+        for relative in ["src/sampling.h", "src/sampling-graph.h"] {
+            assert!(fs::read_to_string(source.join(relative))?.contains("philox_uniform_fill"));
+            assert!(fs::read_to_string(copy.join(relative))?.contains("bonsai_qt_philox_uniform"));
+        }
         fs::remove_dir_all(scratch)?;
+        Ok(())
+    }
+
+    #[test]
+    fn rust_philox_overlay_removes_native_algorithm_and_rejects_source_drift() -> std::io::Result<()>
+    {
+        assert_eq!(philox(PHILOX_REFERENCE)?, PHILOX_DECLARATION);
+        assert!(!PHILOX_DECLARATION.contains("philox4x32_10"));
+        assert!(!PHILOX_DECLARATION.contains("philox_uniform_fill"));
+        for changed in [PHILOX_DECLARATION, "changed", &PHILOX_REFERENCE.repeat(2)] {
+            assert!(philox(changed).is_err());
+        }
+        let draws: [(super::Transform, &str); 2] = [
+            (semantic_sampling, SEMANTIC_DRAW),
+            (predictor_sampling, PREDICTOR_DRAW),
+        ];
+        for (transform, draw) in draws {
+            let original = format!("before\n{draw}\nafter\n");
+            let patched = transform(&original)?;
+            assert!(patched.starts_with("before\n") && patched.ends_with("\nafter\n"));
+            assert!(!patched.contains("philox_uniform_fill"));
+            assert!(patched.contains("bonsai_qt_philox_uniform"));
+            assert!(transform(&patched).is_err());
+            assert!(transform("changed").is_err());
+            assert!(transform(&original.repeat(2)).is_err());
+        }
         Ok(())
     }
 

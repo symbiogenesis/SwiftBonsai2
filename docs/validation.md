@@ -359,6 +359,18 @@ candidate alone does not promote the compiled runtime pin.
 
 ## Acceptance limits
 
+The TTS `philox::tests::` known-answer block and f32 rounding cases, together
+with `native::philox_tests::rust_philox_scalar_abi_matches_pinned_cpp_bits`,
+qualify the safe Rust scalar generator against the unmodified pinned Qwen
+source across 4,411 deterministic edge/corpus cases. The comparison invokes the
+Rust C ABI export without loading a model. The build-overlay regression
+`rust_philox_overlay_removes_native_algorithm_and_rejects_source_drift` checks
+both sampler call replacements and complete native algorithm removal. Run the
+oracle with the provisioned `BONSAI_TTS_COMPILER` and native compiler environment,
+as with the existing decode-cache fixture. Actual-model speech behavior and
+performance remain separate CI qualification; see the
+[Rust sampler port](../src/speech-tts/README.md#rust-sampler-port).
+
 The native ARM64 ISA regression
 `native::isa::tests::native_isa_queries_neon_dotprod_and_neon_i8mm_independently`
 checks exact Windows NEON/dot-product/NEON-I8MM feature IDs with an injected

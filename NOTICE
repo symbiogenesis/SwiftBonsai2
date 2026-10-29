@@ -15,6 +15,12 @@ The Rust runtime, codecs, GGUF tooling and storage adapter are maintained in
 https://github.com/symbiogenesis/prism-inference. Released binaries retain
 their bundled Apache and third-party notices.
 
+The speech sampler's Rust Philox implementation and its test-only C++ reference
+derive from src/philox.h in https://github.com/ServeurpersoCom/qwentts.cpp,
+revision 5916bf7c79dbb4e66fc059cdc507a79a23a28bb4.
+Copyright (c) 2023-2026 The omnivoice.cpp authors.
+MIT permission terms are retained in src/speech-tts/LICENSE.qwen-core.
+
 The optional broker JSON comparison uses the published simd-json 0.19.0 crate:
 https://crates.io/crates/simd-json/0.19.0
 Upstream: https://github.com/simd-lite/simd-json

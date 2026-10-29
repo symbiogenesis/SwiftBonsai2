@@ -220,6 +220,9 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
   separately. Record first generated PCM versus first audible output and chunk
   supply gaps/underruns. Conditioning reuse, bounded graph retention and PCM
   recycling already exist; optimize measured remaining work, not those labels.
+  Include the Rust Philox semantic/predictor draw path in actual-model speech
+  acceptance; exact block/rounding vectors and pinned-C++ bit comparisons remain
+  model-free checks, separate from output, listening and resource qualification.
 - Qualify chat alone, warm TTS alone and concurrent chat/TTS under a small set of
   shared CPU-thread budgets. Include native UI frame delivery, audio continuity,
   useful-answer time and sustained memory/heat. Qualify cold speech command waits,

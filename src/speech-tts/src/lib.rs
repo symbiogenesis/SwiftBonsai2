@@ -18,6 +18,8 @@ use std::{
 )]
 mod native;
 
+mod philox;
+
 #[cfg(test)]
 #[path = "../build_overlay.rs"]
 mod build_overlay;

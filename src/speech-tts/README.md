@@ -1,8 +1,10 @@
 # Native Qwen VoiceDesign inference
 
 This library owns the native Qwen3-TTS 1.7B VoiceDesign GGML engine through a
-small Rust binding to its public C ABI. A reviewed build helper adds bounded
-thread control and a SIMD compile guard to a private copy of the external C++ core. The default talker
+small Rust binding to its public C ABI. Safe Rust implements the shared Philox
+random draws for the semantic and predictor samplers. A reviewed build helper
+routes both callers to Rust and adds bounded thread control and a SIMD compile
+guard to a private copy of the external C++ core. The default talker
 and codec are independently pinned Q8_0 GGUF conversions
 of the named upstream checkpoints; the calling service must verify and retain all artifact files
 before loading. Model identity, immutable URLs, byte lengths and SHA-256 values
@@ -76,7 +78,8 @@ reviewed overlay (`build_overlay.rs`) requires active ARM64 NEON kernels, adds a
 and replaces the upstream logical-CPUs-divided-by-two heuristic when that setter
 is used. Exact replacement anchors reject mismatched inputs. The immutable
 provisioned source cache is never patched. Cached native libraries must include
-this overlay; the hosted cache identity covers all build helper sources.
+this overlay; the hosted cache identity covers all build helper sources and
+the embedded pinned Philox source anchor.
 The build script builds only the external CPU
 static `qwen-core` target; Cargo compiles all Runner-owned glue as Rust. The
 third-party Qwen/GGML inference core still requires a C++ compiler. Shared libraries, dynamic backend
@@ -92,6 +95,31 @@ Apache-2.0; preserve its attribution and notices when distributing model files.
 Local builds and focused tests are allowed. Full suites and every benchmark
 remain CI-only. Window launch or successful compilation alone does not qualify
 speech content, voice quality, latency or combined memory use with Swift.
+
+## Rust sampler port
+
+`src/philox.rs` ports the pinned engine's Philox4x32-10 generator with no unsafe
+code, allocations or additional dependencies. Both native stochastic samplers
+call its private scalar C ABI export. The build overlay replaces the complete
+native `philox.h` algorithm with that declaration and rewrites each single-draw
+call, preserving the seed, subsequence and counter arguments. Changed source
+anchors reject the build. The sampler policy and GGML graph stay upstream.
+
+Wrapping integer arithmetic, signed seed/subsequence bit patterns and separate
+f32 rounding match the pinned source. Its upper endpoint can round to `1.0`;
+the port deliberately retains this behavior. Known-answer block and rounding
+tests accompany a 4,411-case model-free comparison of the Rust scalar export
+against the unmodified C++ source in `tests/reference/philox.h`. That source is
+compiled only into the independent test oracle. The derived Rust module and
+reference retain the attribution in `LICENSE.qwen-core`.
+
+The source audit also considered the BPE tokenizer, sampling policy, mel
+constants and resampler. BPE needs vocabulary/lifecycle integration and exact
+Unicode/token qualification; sampling policy and mel changes need separate
+numerical evidence. Resampling is outside the current already-24-kHz reference
+path. The exact integer generator is the bounded production port justified
+here. Full-model speech output, quality and resource acceptance remain CI work
+under `PLAN.md`; bit parity alone makes no performance claim.
 
 The companion retains complete WAV output and additionally accepts the fixed
 `response_format: "pcm"` supported subset. It advertises `streaming_pcm: true`
