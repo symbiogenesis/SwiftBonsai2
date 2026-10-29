@@ -59,7 +59,7 @@ jobs:
           if ($entry.Count -ne 1) { throw 'X2 CPU evidence path is missing or ambiguous.' }
           $evidence = $entry[0].Substring('BONSAI_X2_CPU_EVIDENCE='.Length)
           $report = Get-Content -LiteralPath (Join-Path $evidence 'cpu-evaluation.json') -Raw | ConvertFrom-Json
-          @('CPU: ' + $report.ProcessorName,
+          @(('CPU: ' + $report.ProcessorName),
             'Fresh-process CPU thread screening only. Defaults remain unchanged.',
             'Prompt/decode timings are separate; complete process time includes loading.',
             'CLI template defaults differ from chat; energy, quality and sustained comfort remain unqualified.',
