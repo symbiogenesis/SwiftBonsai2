@@ -1,5 +1,9 @@
 # Inference algorithms and mathematical constraints
 
+The [research and proof register](research-register.md) indexes the wider
+literature, recent implementations and engineering reports, distinguishing
+mathematical guarantees from experimental results and project applicability.
+
 This reference defines numerical and state constraints for the
 [Rust engine](native-rust-engine.md). Outstanding algorithm and qualification
 work lives in [PLAN.md](../PLAN.md#runtime-and-correctness).

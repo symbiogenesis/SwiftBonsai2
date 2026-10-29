@@ -146,6 +146,7 @@ See [benchmark context and current limits](docs/performance-expectations.md).
 
 | Guide | What you'll find |
 | --- | --- |
+| [Research and proof register](docs/research-register.md) | Dated papers, proofs, GitHub/GitLab implementations and engineering reports, with applicability and experiment priorities |
 | [Model and memory research](docs/swift-memory.md) | The current Swift assessment and experiments |
 | [Inference algorithms](docs/inference-algorithms.md) | LUT/prefill/cache opportunities, mathematical limits, and experimental boundaries |
 | [Implementation decisions](docs/implementation-research.md) | Design rationale and evidence limits |
