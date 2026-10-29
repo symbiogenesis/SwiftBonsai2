@@ -19,6 +19,7 @@ runs:
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'
         if (-not $env:BONSAI_TOOLS_PATH) { throw 'Native preparation requires the current run checked maintenance CLI.' }
+        if ($env:NATIVE_SPEECH_HOST_KEY -cnotmatch '^[a-f0-9]{64}$') { throw 'Native preparation requires the checked host cache identity.' }
         Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.NativeSpeech.psm1')
         $native = Initialize-NativeSpeechBuild -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-NativeSpeech') -WorkingDirectory $env:RUNNER_TEMP
         foreach ($key in $native.Environment.Keys) { "$key=$($native.Environment[$key])" >> $env:GITHUB_ENV }
@@ -30,7 +31,7 @@ runs:
       with:
         # Only the four static libraries and their receipt; no stale CMake paths.
         path: ${{ runner.temp }}/BQ-CI
-        key: qwen-static-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-${{ hashFiles('Cargo.lock', 'src/speech-tts/build*.rs', 'src/speech-tts/model*.lock.json', 'config/native-speech.lock.json', 'scripts/Bonsai.NativeSpeech.psm1', 'tools/bonsai/src/speech_build.rs', '.github/actions/native-speech/action.yml', 'rust-toolchain.toml') }}
+        key: qwen-static-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-${{ hashFiles('Cargo.lock', 'src/speech-tts/build*.rs', 'src/speech-tts/model*.lock.json', 'config/native-speech.lock.json', 'scripts/Bonsai.NativeSpeech.psm1', 'tools/bonsai/src/speech_build.rs', '.github/actions/native-speech/action.yml', 'rust-toolchain.toml') }}
     - name: Build missing static libraries with the reviewed Cargo build script
       if: inputs.lane == 'tts' && steps.static-cache.outputs.cache-hit != 'true'
       shell: pwsh
@@ -59,7 +60,8 @@ runs:
           Copy-Item -LiteralPath (Join-Path $outputs[0].out_dir "$name.lib") -Destination $destination
           $files[$relative] = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
         }
-        @{ SourceId = $env:STATIC_SOURCE_ID; Files = $files } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package 'receipt.json')
+        @{ SchemaVersion = 2; SourceId = $env:STATIC_SOURCE_ID; HostCacheKey = $env:NATIVE_SPEECH_HOST_KEY; Files = $files } |
+          ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package 'receipt.json')
     - name: Verify and share the static libraries across Cargo phases
       if: inputs.lane == 'tts'
       shell: pwsh
@@ -72,16 +74,18 @@ runs:
         $package = Join-Path $env:RUNNER_TEMP 'BQ-CI'
         $receipt = Get-Content -LiteralPath (Join-Path $package 'receipt.json') -Raw | ConvertFrom-Json -AsHashtable
         $expected = @('Release/qwen-core.lib', 'ggml/src/Release/ggml.lib', 'ggml/src/Release/ggml-base.lib', 'ggml/src/Release/ggml-cpu.lib')
-        if ($receipt.SourceId -cne $env:STATIC_SOURCE_ID -or $receipt.Files.Count -ne $expected.Count) { throw 'Native static library cache identity differs.' }
+        if ($env:NATIVE_SPEECH_HOST_KEY -cnotmatch '^[a-f0-9]{64}$' -or $receipt.SchemaVersion -ne 2 -or
+            $receipt.HostCacheKey -cne $env:NATIVE_SPEECH_HOST_KEY -or
+            $receipt.SourceId -cne $env:STATIC_SOURCE_ID -or $receipt.Files.Count -ne $expected.Count) { throw 'Native static library cache source or host identity differs.' }
         foreach ($relative in $expected) {
           if ($receipt.Files[$relative] -cne (Get-FileHash -LiteralPath (Join-Path $package $relative) -Algorithm SHA256).Hash.ToLowerInvariant()) { throw 'Native static library cache digest differs.' }
         }
         "BONSAI_TTS_NATIVE_BUILD_DIR=$package" >> $env:GITHUB_ENV
     - name: Retain native preparation build evidence
-      if: always() && inputs.lane == 'tts' && steps.static-cache.outputs.cache-hit != 'true' && env.NATIVE_SPEECH_EVIDENCE != ''
+      if: always() && env.NATIVE_SPEECH_EVIDENCE != ''
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
-        name: native-speech-preparation-${{ github.run_id }}
+        name: native-speech-preparation-${{ inputs.lane }}-${{ github.run_id }}
         path: ${{ env.NATIVE_SPEECH_EVIDENCE }}
         if-no-files-found: error
         compression-level: 1

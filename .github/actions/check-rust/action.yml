@@ -48,6 +48,8 @@ runs:
       if: steps.packages.outputs.has-packages == 'true'
       shell: pwsh
       working-directory: ${{ runner.temp }}
+      env:
+        RUST_LANE: ${{ inputs.lane }}
       run: |
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'
@@ -58,7 +60,23 @@ runs:
         }
         "CARGO_HOME=$cargoHome" >> $env:GITHUB_ENV
         "CARGO_TARGET_DIR=$target" >> $env:GITHUB_ENV
-        "BROKER_CACHE_HOST=$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)" >> $env:GITHUB_ENV
+        $hostKey = "$env:ImageOS-$env:ImageVersion-$([Environment]::OSVersion.Version)"
+        if ($env:RUST_LANE -cin @('asr', 'tts')) {
+          if (-not $env:BONSAI_TOOLS_PATH) { throw 'Native speech cache selection requires the checked maintenance CLI.' }
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Tools.psm1')
+          $nativeHost = Invoke-BonsaiTool -Command speech-build -Request @{ operation = 'host' }
+          if ($nativeHost.SchemaVersion -ne 1 -or $nativeHost.Kind -cne 'runner-native-speech-host' -or
+              $nativeHost.HostCacheKey -cnotmatch '^[a-f0-9]{64}$') { throw 'Native speech host cache identity is unavailable.' }
+          # Cargo objects and CMake's native ISA probes must both miss after a CPU
+          # change; a static-library receipt alone cannot invalidate Cargo output.
+          $hostKey += '-' + $nativeHost.HostCacheKey
+          "NATIVE_SPEECH_HOST_KEY=$($nativeHost.HostCacheKey)" >> $env:GITHUB_ENV
+          $evidence = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-NativePreparation'
+          [void][IO.Directory]::CreateDirectory($evidence)
+          $nativeHost | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $evidence 'host.json')
+          "NATIVE_SPEECH_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+        }
+        "BROKER_CACHE_HOST=$hostKey" >> $env:GITHUB_ENV
     - name: Reuse locked Cargo downloads and this lane's build artifacts
       if: steps.packages.outputs.has-packages == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
