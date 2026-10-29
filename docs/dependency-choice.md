@@ -40,9 +40,10 @@ outside the low-surrogate range. It is distinct from the evaluated `v0.18.1`
 tag despite carrying the same package version. The fixed-source screen below
 does not qualify a production replacement; the exact source revision matters.
 
-The complete upstream source, including the Unicode fixes and merged tape-reuse
-API described below, is pinned as the `third_party/simd-json` Git submodule
-until an upstream release includes these changes. Initialize it with
+The complete upstream **0.19.0** release, including the Unicode fixes and merged
+tape-reuse API described below, is pinned as the `third_party/simd-json` Git
+submodule at [`00a71f6`](https://github.com/simd-lite/simd-json/commit/00a71f6a931f7f365c23d7fc8d1f84ad693304d3).
+Initialize it with
 `git submodule update --init third_party/simd-json` before Cargo commands. It is
 excluded from the first-party workspace. The broker's optional `json-candidate`
 feature exposes the comparison parser while ordinary requests retain serde_json.
@@ -85,8 +86,10 @@ conversion, even when neither parser has a bug.
 Upstream [PR #495](https://github.com/simd-lite/simd-json/pull/495), addressing
 [issue #494](https://github.com/simd-lite/simd-json/issues/494), merged on
 2026-10-27 as
-[`77ec801`](https://github.com/simd-lite/simd-json/commit/77ec80113f9990ef7fd89b0ee859e7415bfc4827),
-the current submodule pin. `Deserializer::from_tape` lets typed Serde callers
+[`77ec801`](https://github.com/simd-lite/simd-json/commit/77ec80113f9990ef7fd89b0ee859e7415bfc4827).
+The current 0.19.0 release pin contains that commit and the Unicode fixes;
+its only change from `77ec801` is the package-version declaration.
+`Deserializer::from_tape` lets typed Serde callers
 recover and reset the tape allocation while preserving borrowing and validation.
 The optional `padded-tape-serde-reuse` comparison now reuses the padded input
 buffer, parser buffers and tape across sequential requests. Each request still

@@ -31,7 +31,7 @@ jobs:
           "BONSAI_JSON_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           "CARGO_TARGET_DIR=$(Join-Path $evidence 'target')" >> $env:GITHUB_ENV
           $source = git -C (Join-Path $env:GITHUB_WORKSPACE 'third_party/simd-json') rev-parse HEAD
-          if ($source -cne '77ec80113f9990ef7fd89b0ee859e7415bfc4827') { throw 'Unexpected candidate source revision.' }
+          if ($source -cne '00a71f6a931f7f365c23d7fc8d1f84ad693304d3') { throw 'Unexpected candidate source revision.' }
           [ordered]@{
             Revision = $env:GITHUB_SHA
             ParserSource = $source

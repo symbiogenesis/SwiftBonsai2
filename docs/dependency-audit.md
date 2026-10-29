@@ -1,4 +1,8 @@
-# Rust dependency audit — 2026-10-26
+# Dependency audit
+
+The original review below is dated 2026-10-26. The
+[2026-10-29 refresh](#dependency-refresh-2026-10-29) records the current updates
+and fresh security scan.
 
 The direct dependencies are purposeful and mostly well trimmed. The audit found
 one unused direct declaration and an available ZIP hardening update; both were
@@ -178,7 +182,7 @@ establish inference performance. Evidence remains outside Git in
 | `http`, `httparse` | Keep complementary typed HTTP policy and bounded wire parsing. A general web framework would add scope. |
 | `subtle` | Keep constant-time bearer comparisons; release debug assertions remain disabled as required by its contract. |
 | `sha2` | Keep artifact/tool verification; remove only the unused broker edge. |
-| `zip` | Keep minimal deflate configuration at 9.1.2; custom extraction policies remain necessary. |
+| `zip` | Keep minimal deflate configuration at 9.1.3; custom extraction policies remain necessary. |
 | `socket2` | Keep pre-bind options, bounded backlog and Windows exclusive-address behavior. |
 | `windows-sys` | Keep selected Win32 process/credentials/audio/accessibility APIs. |
 | `windows`, `windows-future` | Keep compatible WinRT microphone permission/capture APIs. They serve a different role from windows-sys. |
@@ -217,3 +221,60 @@ at the user's request; the new workflow first runs after publication or dispatch
 Raw audit JSON, source/release checks, metadata and local-check logs are retained
 outside Git in the session directory
 `C:\Users\symbi\AppData\Local\Temp\Bonsai-DependencyAudit-b2037a17954346d992abd517055f1ecb`.
+
+## Dependency refresh 2026-10-29
+
+Checked every direct Rust dependency against current upstream releases and
+refreshed the complete Cargo lockfile. Updated:
+
+| Dependency | Previous | Current |
+| --- | --- | --- |
+| `zip` | 9.1.2 | 9.1.3 |
+| Optional `simd-json` | 0.18.1 at `77ec801` | 0.19.0 at `00a71f6` |
+| `openssl-probe` | 0.2.1 | 0.2.2 |
+| `rustix` | 1.1.5 | 1.1.6 |
+| `schannel` | 0.1.29 | 0.1.30 |
+| `unicode-width` | 0.2.2 | 0.2.3 |
+| .NET SDK | 10.0.402 | 10.0.403 |
+
+[ZIP 9.1.3](https://github.com/zip-rs/zip2/releases/tag/v9.1.3) adds archive
+hardening while retaining the existing minimal deflate features. The
+[SIMD-JSON 0.19.0 release](https://github.com/simd-lite/simd-json/commit/00a71f6a931f7f365c23d7fc8d1f84ad693304d3)
+contains both the Unicode fixes and tape-reuse API; only package-version metadata
+differs from the previous submodule pin. Updated the workflow guard, comparison
+report and attribution to the release revision. Ordinary parsing still uses
+serde_json; this update supplies no new timing or qualification evidence.
+The [.NET 10 release page](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
+lists SDK 10.0.403, which is also installed on the validation host.
+
+`cargo update --dry-run --verbose` resolves zero further compatible updates.
+The newer `windows-future 0.100.0` remains incompatible with the selected
+`windows 0.62.2` family, so its 0.3.2 pin remains deliberate. GitHub Actions,
+PSScriptAnalyzer 1.25.0, cargo-audit 0.22.2 and LLVM 23.1.4 were already current.
+The pinned nightly and independently qualified inference/speech source, binary
+and model locks remain separate from routine library updates; runtime changes
+still require the [reviewed promotion procedure](development-guide.md#prepare-a-runtime-lock-update).
+
+Fresh `cargo-audit 0.22.2 --deny yanked` passed against RustSec revision
+`ee1a49a2769a24a596afc1c20cb33748d2769586` (1,386 advisories, 490 dependencies):
+zero known vulnerabilities and no yanked-package warnings. The same three Unix
+accessibility maintenance notices documented above remain visible. Raw JSON is
+retained outside Git at
+`C:\Users\symbi\AppData\Local\Temp\Runner-DependencyAudit-ee63cbf6ce19403d9afcfef303829a94\audit.json`.
+
+Format, all-feature Release Clippy (all targets), rustdoc and native builds passed
+for the ten workspace packages outside the separately provisioned ASR/TTS engine
+binaries. This includes the chat UI, broker, maintenance CLI and shared speech
+service. Fixed existing strict-lint failures in the optional comparison path
+without changing parsing behavior. Four exact Release regressions passed:
+
+- `tests::zipped_installation_verifies_deflated_payload_and_rejects_drift`
+- `speech_build::tests::source_staging_preserves_bytes_and_rejects_changed_archive_or_cache`
+- `json_candidate::fixed_candidate_preserves_unicode_and_rejections`
+- `json_candidate_parser::tests::reuse_preserves_parity_through_failures_and_size_changes`
+
+PSScriptAnalyzer 1.25.0 passed all 62 PowerShell files; the strict Release C# build
+passed for the one extracted helper under SDK 10.0.403. Complete suites and
+benchmarks remain CI-only and were not run locally. Rust validation logs are in
+`C:\Users\symbi\AppData\Local\Temp\Runner-DependencyUpdate-1793293946274`; standards evidence is in
+`C:\Users\symbi\AppData\Local\Temp\SwiftBonsai-Standards-4f0235a8a0164835a225fed72989ab83`.

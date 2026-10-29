@@ -256,21 +256,19 @@ fn timed(body: &[u8], candidate: bool, pinned: bool, iterations: usize, reused: 
     if reused {
         // Prime both paths outside timing. Reused candidate storage survives the
         // measured batch; cold candidate setup and teardown stay per-request.
-        let result = if let Some(scratch) = &mut scratch {
-            reused_canonical(black_box(body), pinned, scratch)
-        } else {
-            canonical(black_box(body), candidate, pinned)
-        };
+        let result = scratch.as_mut().map_or_else(
+            || canonical(black_box(body), candidate, pinned),
+            |scratch| reused_canonical(black_box(body), pinned, scratch),
+        );
         assert!(result.is_ok());
         drop(black_box(result));
     }
     let started = Instant::now();
     for _ in 0..iterations {
-        let result = if let Some(scratch) = &mut scratch {
-            reused_canonical(black_box(body), pinned, scratch)
-        } else {
-            canonical(black_box(body), candidate, pinned)
-        };
+        let result = scratch.as_mut().map_or_else(
+            || canonical(black_box(body), candidate, pinned),
+            |scratch| reused_canonical(black_box(body), pinned, scratch),
+        );
         assert!(result.is_ok());
         drop(black_box(result));
     }
@@ -375,7 +373,7 @@ fn ci_comparison() -> Result<(), Box<dyn Error>> {
     let cold = compare_screen(false)?;
     let reused = compare_screen(true)?;
     let report = Report {
-        source_revision: "77ec80113f9990ef7fd89b0ee859e7415bfc4827",
+        source_revision: "00a71f6a931f7f365c23d7fc8d1f84ad693304d3",
         candidate_path: "padded-tape-serde-reuse",
         tested_revision: std::env::var("GITHUB_SHA")?,
         architecture: std::env::consts::ARCH,

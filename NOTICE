@@ -17,7 +17,7 @@ their bundled Apache and third-party notices.
 
 The optional broker JSON comparison uses simd-json as a complete source submodule:
 https://github.com/simd-lite/simd-json
-Revision: 77ec80113f9990ef7fd89b0ee859e7415bfc4827
+Revision: 00a71f6a931f7f365c23d7fc8d1f84ad693304d3
 Authors: Heinz N. Gies, Sunny Gleason and contributors
 Licensed under Apache-2.0 OR MIT. Original license texts are retained in
 third_party/simd-json/LICENSE-APACHE and third_party/simd-json/LICENSE-MIT.

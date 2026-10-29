@@ -4,6 +4,10 @@ use crate::{AuthorizedHead, ClientChat, Object, PendingChat, Rejection};
 use serde::Deserialize;
 
 /// Bounded input and parser allocations retained between qualification calls.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "Sibling qualification modules share this type; a public export violates unreachable_pub."
+)]
 pub(super) struct JsonCandidateScratch {
     input: Vec<u8>,
     buffers: simd_json::Buffers,
@@ -90,8 +94,8 @@ mod tests {
             head().prepare(body).map(summarize)
         );
         assert_eq!(body, original);
-        assert!(scratch.input.is_empty());
-        assert!(scratch.tape.0.is_empty());
+        assert_eq!(scratch.input, <[u8; 0]>::default());
+        assert_eq!(scratch.tape.0, <[simd_json::Node<'_>; 0]>::default());
     }
 
     #[test]
