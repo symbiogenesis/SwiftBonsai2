@@ -82,7 +82,9 @@ no-go decision, including losing cases.
   ready-prefix delivery, long-transcript updates, stalled-consumer speech backlog,
   speech/chat overlap with recycled PCM playback buffers and recovery trials.
   Include borrowed-PCM microphone uploads without full canonical-WAV or multipart
-  copies, retaining exact upload framing and cancellation. Capture complete-task
+  copies, retaining exact upload framing and cancellation. Qualify shared buffered
+  speech response intake with direct final-storage reads, including maximum-size
+  WAV fallback, partial responses and cancellation. Capture complete-task
   latency and peak memory in target-device CI before claiming performance gains.
 - Qualify recovery under load, allocation failure and backend loss without restart
   loops, silent profile changes, state corruption or automatic cloud fallback.

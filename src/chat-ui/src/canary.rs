@@ -627,20 +627,43 @@ fn read_response(stream: &mut TcpStream, call: &Call<'_>, expected: Media) -> Re
         received.extend_from_slice(&buffer[..count]);
     };
     let length = response_length(&received[..end], expected)?;
-    if received.len() - end > length {
+    let body = response_body(received, end, length, |bytes| read(stream, bytes, call))?;
+    call.check()?;
+    Ok(body)
+}
+
+fn response_body(
+    mut received: Vec<u8>,
+    end: usize,
+    length: usize,
+    mut read: impl FnMut(&mut [u8]) -> Result<usize>,
+) -> Result<Vec<u8>> {
+    let prefix = received.len() - end;
+    if prefix > length {
         return Err(Failure::Message(
             "The Canary response exceeded its declared length.",
         ));
     }
-    let mut body = Vec::with_capacity(length);
-    body.extend_from_slice(&received[end..]);
-    while body.len() < length {
-        let size = buffer.len().min(length - body.len());
-        let count = read(stream, &mut buffer[..size], call)?;
-        body.extend_from_slice(&buffer[..count]);
+    // Keep the authorized header allocation, moving only coalesced payload.
+    // Read the rest directly into its final storage instead of copying every
+    // socket read through a staging buffer, including complete TTS WAV clips.
+    received.copy_within(end.., 0);
+    received.truncate(prefix);
+    received
+        .try_reserve_exact(length - prefix)
+        .map_err(|_| Failure::Message("Could not allocate the bounded local speech response."))?;
+    received.resize(length, 0);
+    let mut filled = prefix;
+    while filled < length {
+        let count = read(&mut received[filled..])?;
+        if count == 0 {
+            return Err(Failure::Message(
+                "The Canary response ended before its framing completed.",
+            ));
+        }
+        filled += count;
     }
-    call.check()?;
-    Ok(body)
+    Ok(received)
 }
 
 fn response_length(head: &[u8], expected: Media) -> Result<usize> {
@@ -708,8 +731,9 @@ fn response_length(head: &[u8], expected: Media) -> Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Call, Client, Config, Failure, MAX_REQUEST, MODEL, Media, boundary, multipart,
-        normalize_wav, request_length, response_length, validate_wav, write_all,
+        Call, Client, Config, Failure, MAX_REQUEST, MAX_RESPONSE, MAX_WAVE_RESPONSE, MODEL, Media,
+        boundary, multipart, normalize_wav, request_length, response_body, response_length,
+        validate_wav, write_all,
     };
     use std::{
         fs,
@@ -1084,8 +1108,103 @@ mod tests {
             write_all(&mut written, b"late PCM", &call),
             Err(Failure::Cancelled)
         );
-        assert!(written.0.is_empty());
+        assert_eq!(written.0, b"");
         Ok(())
+    }
+
+    #[test]
+    fn response_body_reuses_the_header_allocation_and_coalesced_payload() -> Result<(), Failure> {
+        for coalesced in [0, 2, 4] {
+            let mut received = Vec::with_capacity(4096);
+            received.extend_from_slice(b"headers\r\n\r\n");
+            let end = received.len();
+            received.extend_from_slice(&b"body"[..coalesced]);
+            let pointer = received.as_ptr();
+            let capacity = received.capacity();
+            let mut reads = 0;
+            let body = response_body(received, end, 4, |bytes| {
+                reads += 1;
+                assert_eq!(bytes.as_ptr(), pointer.wrapping_add(coalesced));
+                assert_eq!(bytes.len(), 4 - coalesced);
+                bytes.copy_from_slice(&b"body"[coalesced..]);
+                Ok(bytes.len())
+            })?;
+            assert_eq!(body, b"body");
+            assert_eq!(body.as_ptr(), pointer);
+            assert_eq!(body.capacity(), capacity);
+            assert_eq!(reads, usize::from(coalesced != 4));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn response_body_reads_maximum_clips_directly_into_final_storage_under_partial_reads()
+    -> Result<(), Failure> {
+        for (media, length, name) in [
+            (Media::Json, MAX_RESPONSE, "application/json"),
+            (Media::Wave, MAX_WAVE_RESPONSE, "audio/wav"),
+        ] {
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: {name}\r\nContent-Length: {length}\r\n\r\n"
+            );
+            assert_eq!(response_length(head.as_bytes(), media), Ok(length));
+            let oversized = head.replace(&length.to_string(), &(length + 1).to_string());
+            assert!(response_length(oversized.as_bytes(), media).is_err());
+            let expected: Vec<_> = (0_u8..=255).cycle().take(length).collect();
+            let mut received = head.into_bytes();
+            let end = received.len();
+            let mut filled = 37;
+            received.extend_from_slice(&expected[..filled]);
+            let mut destinations = Vec::new();
+            let body = response_body(received, end, length, |bytes| {
+                assert_eq!(bytes.len(), length - filled);
+                destinations.push((filled, bytes.as_ptr()));
+                let count = bytes.len().min(6001);
+                bytes[..count].copy_from_slice(&expected[filled..filled + count]);
+                filled += count;
+                Ok(count)
+            })?;
+            assert_eq!(body, expected);
+            assert_eq!(filled, length);
+            for (offset, pointer) in destinations {
+                assert_eq!(body[offset..].as_ptr(), pointer);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn response_body_rejects_excess_truncation_and_cancelled_partial_reads() {
+        let mut reads = 0;
+        assert!(
+            response_body(b"headersbodyx".to_vec(), 7, 4, |_| {
+                reads += 1;
+                Ok(0)
+            })
+            .is_err()
+        );
+        assert_eq!(
+            reads, 0,
+            "Reject excess bytes before reading or allocating."
+        );
+        assert!(response_body(b"headersbo".to_vec(), 7, 4, |_| Ok(0)).is_err());
+        assert_eq!(
+            response_body(b"headersb".to_vec(), 7, 4, |bytes| {
+                reads += 1;
+                if reads == 1 {
+                    bytes[0] = b'o';
+                    Ok(1)
+                } else {
+                    Err(Failure::Cancelled)
+                }
+            }),
+            Err(Failure::Cancelled)
+        );
+        assert_eq!(reads, 2);
+        assert!(
+            response_body(Vec::new(), 0, 0, |_| Err(Failure::Cancelled))
+                .is_ok_and(|body| body.is_empty())
+        );
     }
 
     #[test]

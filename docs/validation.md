@@ -246,6 +246,11 @@ case checks borrowed PCM identity, canonical/extensible WAV byte equality,
 collision-free multipart boundaries, partial writes, maximum clip admission and
 cancelled writes. The authenticated transcription case also checks exact upload
 bytes. These checks do not load Canary or measure transcription latency.
+The `canary::tests::response_body_` cases preserve the header allocation and
+coalesced payload, check direct final-storage reads under partial delivery at
+the JSON/WAV limits, and reject excess, truncated or cancelled input. The
+authenticated transcription and strict HTTP-framing cases exercise the shared
+adapter contract. These checks do not measure response latency or peak memory.
 These are untimed storage/lifetime checks. They do not qualify the separately
 owner-selected 15.5 GiB admission/11.5 GiB Job development budget; its total
 model-memory acceptance still requires complete-workload target-device evidence.
