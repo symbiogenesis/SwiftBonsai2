@@ -2,6 +2,11 @@
 
 Use [PLAN.md](PLAN.md) as the source of truth for all outstanding project work.
 
+# Parallel work and commits
+
+Each worker in a parallel fan-out must use its own individual Git worktree.
+Within each worktree, place each logical change in its own individual commit.
+
 # UI architecture
 
 The first-party UI must remain native and written entirely in Rust. Use native
