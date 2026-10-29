@@ -124,6 +124,7 @@ try {
         physicalReserveBytes = [long]$cpu.Policy.AvailableMemoryFloorBytes
         timeoutSeconds = [int]$plan.PerSampleTimeoutSeconds
         stdoutLimitBytes = 4194304; stderrLimitBytes = 67108864; requireNonemptyStdout = $true; ciOnly = $true
+        observeCpuConditions = $true
     }
     foreach ($trial in $plan.Schedule) {
         $sample = @($supervision.Samples | Where-Object Id -CEQ $trial.Id)
@@ -137,6 +138,7 @@ try {
             DecodeThreads = $trial.DecodeThreads; PrefillThreads = $trial.PrefillThreads
             Timing = $sample.Timing; Counts = $sample.Counts; WallMilliseconds = $sample.WallMilliseconds
             PeakJobMemoryBytes = $sample.PeakJobMemoryBytes; MinimumAvailablePhysicalBytes = $sample.MinimumAvailablePhysicalBytes
+            CpuConditions = $sample.CpuConditions
             ResponseSha256 = $captured.Sha256
             ReachedTokenCap = $sample.Counts.GeneratedSampledTokens -eq $plan.GeneratedTokenCap
         }
@@ -153,11 +155,15 @@ try {
         $matchingTokenCounts = $baseline.ReachedTokenCap -and $candidate.ReachedTokenCap -and
             $baseline.Timing.PromptTokens -eq $candidate.Timing.PromptTokens -and
             $baseline.Timing.DecodeTokens -eq $candidate.Timing.DecodeTokens
-        $comparable = $matchingTokenCounts -and $report.ExecutionConditions.Comparable
+        $pairConditions = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -Request @{
+            operation = 'compare-sample-conditions'; baseline = $baseline.CpuConditions; candidate = $candidate.CpuConditions
+        }
+        $comparable = $matchingTokenCounts -and $report.ExecutionConditions.Comparable -and $pairConditions.Comparable
         $report.Comparisons.Add([ordered]@{
             CandidateId = $candidate.CandidateId; Workload = $candidate.Workload; Repetition = $candidate.Repetition
             MatchingTokenCountsAtFixedCap = $matchingTokenCounts
             ExecutionConditionsStatus = $report.ExecutionConditions.Status
+            PairExecutionConditions = $pairConditions
             ComparableAtFixedTokenCap = $comparable
             CandidateOverBaselinePromptMilliseconds = if ($comparable) { $candidate.Timing.PromptMilliseconds / $baseline.Timing.PromptMilliseconds } else { $null }
             CandidateOverBaselineDecodeMilliseconds = if ($comparable) { $candidate.Timing.DecodeMilliseconds / $baseline.Timing.DecodeMilliseconds } else { $null }

@@ -64,7 +64,8 @@ jobs:
             'Prompt/decode timings are separate; complete process time includes loading.',
             'CLI template defaults differ from chat; energy, quality and sustained comfort remain unqualified.',
             ('Execution conditions: ' + $report.ExecutionConditions.Status),
-            'Ratios below one favor the candidate; mismatched token counts or changed/unknown boundary conditions suppress ratios.') |
+            'Each sample retains native CPU/power observations before launch and after teardown, outside its wall timer.',
+            'Ratios below one favor the candidate; mismatched token counts or changed/unknown batch/sample/pair conditions suppress ratios.') |
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
           $report.Comparisons | ConvertTo-Json -Depth 8 | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
       - name: Retain credential-free synthetic CPU evidence

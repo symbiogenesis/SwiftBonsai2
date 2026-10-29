@@ -69,8 +69,66 @@ fn batch_preserves_outputs_and_retains_verified_inputs() -> Result<()> {
             serde_json::from_slice(&fs::read(lane.join(id).join("supervision.json"))?)?;
         assert_eq!(receipt["Status"], "completed");
         assert_eq!(receipt["ExitCode"], 0);
+        assert!(receipt.get("CpuConditions").is_none());
         assert!(!lane.join(id).join("capture.json").exists());
     }
+    Ok(())
+}
+
+#[test]
+fn cpu_conditions_are_retained_per_sample_through_failed_sample() -> Result<()> {
+    let (lane, mut request) = fixture("cpu-conditions")?;
+    let mut samples = Vec::new();
+    for (id, arguments) in [
+        ("first", json!(["stdout", "first-response"])),
+        ("second", json!(["stdout", "second-response"])),
+        ("failed", json!(["partial-failure"])),
+        ("missing", json!(["touch"])),
+    ] {
+        let evidence = lane.join(id);
+        fs::create_dir(&evidence)?;
+        samples.push(json!({"id": id, "evidenceDirectory": evidence,
+            "arguments": arguments}));
+    }
+    request["arguments"] = json!([]);
+    request["samples"] = json!(samples);
+    request["observeCpuConditions"] = json!(true);
+    let failure = bonsai_tools::completion::run(request)
+        .err()
+        .ok_or("Failed sample was accepted.")?;
+    assert!(failure.contains("exit code 7"), "{failure}");
+    let batch: Value = serde_json::from_slice(&fs::read(lane.join("supervision.json"))?)?;
+    assert_eq!(batch["Samples"].as_array().map(Vec::len), Some(3));
+    for (index, id) in ["first", "second", "failed"].into_iter().enumerate() {
+        let receipt: Value =
+            serde_json::from_slice(&fs::read(lane.join(id).join("supervision.json"))?)?;
+        assert_eq!(receipt, batch["Samples"][index]);
+        assert_eq!(receipt["ModelProcessStarted"], true);
+        assert!(receipt["WallMilliseconds"].is_u64());
+        assert_eq!(
+            receipt["Status"],
+            if id == "failed" {
+                "failed"
+            } else {
+                "completed"
+            }
+        );
+        let conditions = &receipt["CpuConditions"];
+        for boundary in ["Before", "After"] {
+            assert_eq!(conditions[boundary]["schema_version"], 1);
+            assert_eq!(
+                conditions[boundary]["kind"],
+                "runner-native-cpu-observations"
+            );
+        }
+        let recomputed = bonsai_tools::cpu_evaluation::run(json!({
+            "operation": "compare-conditions",
+            "before": conditions["Before"], "after": conditions["After"],
+        }))?;
+        assert_eq!(conditions["Comparison"], recomputed);
+    }
+    assert!(!lane.join("missing").join("stdout.txt").exists());
+    assert!(!lane.join("next-started.txt").exists());
     Ok(())
 }
 

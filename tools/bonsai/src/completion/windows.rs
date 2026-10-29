@@ -53,6 +53,8 @@ struct Request {
     stderr_limit_bytes: Option<u64>,
     require_nonempty_stdout: bool,
     ci_only: bool,
+    #[serde(default)]
+    observe_cpu_conditions: bool,
     parent_process_id: u32,
     parent_creation_time_file_time: u64,
 }
@@ -269,6 +271,11 @@ fn execute_one(
     parent: &ParentProcess,
     receipt: &mut Value,
 ) -> Result<()> {
+    if request.observe_cpu_conditions {
+        receipt["CpuConditions"] = json!({
+            "Before": crate::host_cpu::run(&json!({}))?,
+        });
+    }
     let available = available_memory_bytes().map_err(|error| error.to_string())?;
     receipt["MinimumAvailablePhysicalBytes"] = json!(available);
     if available < request.required_available_bytes {
@@ -299,6 +306,18 @@ fn execute_one(
     if let Err(error) = stopped {
         receipt["CancellationFailure"] = json!(error);
         return result.and(Err(error));
+    }
+    // Observe after owned teardown, including failed samples, outside the
+    // process wall timer. These are boundary observations, not in-sample
+    // monitoring; a return to the same conditions within a sample is invisible.
+    if request.observe_cpu_conditions {
+        let after = crate::host_cpu::run(&json!({}))?;
+        let comparison = crate::cpu_evaluation::run(json!({
+            "operation": "compare-conditions",
+            "before": receipt["CpuConditions"]["Before"], "after": after,
+        }))?;
+        receipt["CpuConditions"]["After"] = after;
+        receipt["CpuConditions"]["Comparison"] = comparison;
     }
     if let Some(text) = result? {
         let captured = super::capture::assemble(text, receipt);
