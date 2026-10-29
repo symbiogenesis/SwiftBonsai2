@@ -30,6 +30,8 @@ struct Queue {
     stream: StreamState,
     sender_closed: bool,
     receiver_closed: bool,
+    #[cfg(test)]
+    waiting: Option<mpsc::Sender<Option<Duration>>>,
 }
 
 type Shared = Arc<(Mutex<Queue>, Condvar)>;
@@ -81,6 +83,25 @@ const fn is_input(command: &Command) -> bool {
 }
 
 impl Queue {
+    fn pop(&mut self) -> Option<Envelope> {
+        let envelope = self.commands.pop_front()?;
+        self.bytes -= bytes(&envelope.command);
+        Some(envelope)
+    }
+
+    const fn pending(&self) -> bool {
+        self.commands.is_empty() && !self.sender_closed
+    }
+
+    #[cfg(test)]
+    fn observe_wait(&self, timeout: Option<Duration>) {
+        if self.pending()
+            && let Some(waiting) = &self.waiting
+        {
+            let _sent = waiting.send(timeout);
+        }
+    }
+
     fn retain(&mut self, keep: impl Fn(&Command) -> bool) {
         self.commands.retain(|envelope| keep(&envelope.command));
         self.bytes = self
@@ -213,11 +234,14 @@ impl Receiver {
                 lock.lock()
                     .map_err(|_| mpsc::RecvTimeoutError::Disconnected)?,
                 timeout,
-                |queue| queue.commands.is_empty() && !queue.sender_closed,
+                |queue| {
+                    #[cfg(test)]
+                    queue.observe_wait(Some(timeout));
+                    queue.pending()
+                },
             )
             .map_err(|_| mpsc::RecvTimeoutError::Disconnected)?;
-        let outcome = if let Some(envelope) = queue.commands.pop_front() {
-            queue.bytes -= bytes(&envelope.command);
+        let outcome = if let Some(envelope) = queue.pop() {
             Ok(envelope)
         } else if queue.sender_closed {
             Err(mpsc::RecvTimeoutError::Disconnected)
@@ -228,14 +252,33 @@ impl Receiver {
         outcome
     }
 
-    #[cfg(test)]
     pub(super) fn recv(&self) -> Result<Envelope, mpsc::RecvTimeoutError> {
-        loop {
-            match self.recv_timeout(Duration::from_secs(1)) {
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-                outcome => return outcome,
-            }
-        }
+        let (lock, wake) = &*self.0;
+        let mut queue = wake
+            .wait_while(
+                lock.lock()
+                    .map_err(|_| mpsc::RecvTimeoutError::Disconnected)?,
+                |queue| {
+                    #[cfg(test)]
+                    queue.observe_wait(None);
+                    queue.pending()
+                },
+            )
+            .map_err(|_| mpsc::RecvTimeoutError::Disconnected)?;
+        let outcome = queue.pop().ok_or(mpsc::RecvTimeoutError::Disconnected);
+        drop(queue);
+        outcome
+    }
+
+    #[cfg(test)]
+    pub(super) fn observe_waits(&self) -> Result<mpsc::Receiver<Option<Duration>>, std::io::Error> {
+        let (waiting, observed) = mpsc::channel();
+        self.0
+            .0
+            .lock()
+            .map_err(|_| std::io::Error::other("Queue poisoned"))?
+            .waiting = Some(waiting);
+        Ok(observed)
     }
 }
 
@@ -282,6 +325,27 @@ mod tests {
                 voice_description: "Warm".to_owned(),
             })
             .map_err(io::Error::other)
+    }
+
+    #[test]
+    fn blocking_speech_receiver_wakes_when_the_sender_disconnects() -> io::Result<()> {
+        let (sender, receiver) = channel();
+        let waiting = receiver.observe_waits()?;
+        let (complete, finished) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let _sent = complete.send(receiver.recv());
+        });
+        let guard = Duration::from_secs(2);
+        assert_eq!(waiting.recv_timeout(guard).map_err(io::Error::other)?, None);
+        drop(sender);
+        assert!(matches!(
+            finished.recv_timeout(guard).map_err(io::Error::other)?,
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+        worker
+            .join()
+            .map_err(|_| io::Error::other("Speech queue fixture failed"))?;
+        Ok(())
     }
 
     #[test]

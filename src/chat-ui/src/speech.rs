@@ -259,6 +259,24 @@ fn take_warm<T>(
         .map(|warm| warm.value)
 }
 
+fn receive_command<T>(
+    commands: &command_queue::Receiver,
+    output: Option<&Output>,
+    warm: Option<&Idle<T>>,
+    input: Option<&Input>,
+) -> Result<Envelope, RecvTimeoutError> {
+    // Retained owners still need expiry, cancellation and health checks even
+    // without incoming commands. A cold worker has no periodic work to do.
+    if output.is_some()
+        || warm.is_some()
+        || input.is_some_and(|input| input.generation.is_some() || input.service.is_some())
+    {
+        commands.recv_timeout(POLL)
+    } else {
+        commands.recv()
+    }
+}
+
 struct Input {
     client: canary::Client,
     config: canary::Config,
@@ -463,7 +481,7 @@ fn run(
         }) {
             warm = None;
         }
-        match commands.recv_timeout(POLL) {
+        match receive_command(commands, output.as_ref(), warm.as_ref(), input.as_ref()) {
             Ok(Envelope {
                 command: Command::Shutdown,
                 ..
@@ -754,6 +772,147 @@ mod tests {
             assert!(idle.is_none());
         }
         assert_eq!(drops.load(Ordering::Acquire), 3);
+    }
+
+    #[test]
+    fn cold_speech_worker_waits_for_commands_and_wakes_for_stop_and_shutdown() -> io::Result<()> {
+        let (sender, receiver) = super::command_queue::channel();
+        let waiting = receiver.observe_waits()?;
+        let current_input = Arc::new(AtomicU64::new(super::NO_INPUT));
+        let current_output = Arc::new(AtomicU64::new(0));
+        let commands = Commands {
+            sender,
+            current_input: Arc::clone(&current_input),
+            current_output: Arc::clone(&current_output),
+        };
+        let (events, received) = mpsc::channel();
+        let (complete, finished) = mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            super::run(
+                None,
+                None,
+                &receiver,
+                &events,
+                &current_input,
+                &current_output,
+            );
+            let _sent = complete.send(());
+        });
+        let guard = Duration::from_secs(2);
+        assert!(matches!(
+            received.recv_timeout(guard).map_err(io::Error::other)?,
+            Event::Capabilities {
+                input: false,
+                output: false
+            }
+        ));
+        assert_eq!(waiting.recv_timeout(guard).map_err(io::Error::other)?, None);
+        commands
+            .send(Command::StopSpeaking)
+            .map_err(io::Error::other)?;
+        let generation = commands.current_output.load(Ordering::Acquire);
+        assert!(matches!(
+            received.recv_timeout(guard).map_err(io::Error::other)?,
+            Event::Speaking { generation: stopped, speaking: false } if stopped == generation
+        ));
+        assert_eq!(waiting.recv_timeout(guard).map_err(io::Error::other)?, None);
+        commands.send(Command::Shutdown).map_err(io::Error::other)?;
+        finished.recv_timeout(guard).map_err(io::Error::other)?;
+        worker
+            .join()
+            .map_err(|_| io::Error::other("Speech fixture worker failed"))?;
+        Ok(())
+    }
+
+    #[test]
+    fn speech_command_wait_preserves_monitoring_for_warm_active_and_retained_input()
+    -> io::Result<()> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("Bonsai-speech-waits-{stamp}"));
+        std::fs::create_dir(&directory)?;
+        let credentials = bonsai_windows_credentials::PrivateCredentials::create(&directory)?;
+        let config = crate::canary::Config {
+            port: 8766,
+            key_file: credentials.frontend_path().to_owned(),
+            launch: None,
+        };
+        for (active, warm, generation) in [
+            (false, false, None),
+            (true, false, None),
+            (false, true, None),
+            (false, false, Some(41)),
+        ] {
+            let input = super::Input {
+                client: crate::canary::Client::new(&config).map_err(io::Error::other)?,
+                config: config.clone(),
+                generation,
+                service: None,
+            };
+            let output = active.then(|| super::Output {
+                generation: 0,
+                voice: "Calm".to_owned(),
+                segments: super::VecDeque::new(),
+                stream: Some(super::stream::Text::default()),
+                failure: None,
+                pipeline: None,
+                prepared: false,
+                service: None,
+            });
+            let warm = warm.then(|| super::Idle {
+                value: (),
+                until: std::time::Instant::now() + super::WARM_IDLE,
+            });
+            let monitored = active || warm.is_some() || generation.is_some();
+            let (sender, receiver) = super::command_queue::channel();
+            let waiting = receiver.observe_waits()?;
+            let (complete, finished) = mpsc::channel();
+            let worker = std::thread::spawn(move || {
+                loop {
+                    match super::receive_command(
+                        &receiver,
+                        output.as_ref(),
+                        warm.as_ref(),
+                        Some(&input),
+                    ) {
+                        Err(mpsc::RecvTimeoutError::Timeout) => {}
+                        command => {
+                            let _sent = complete.send(command);
+                            break;
+                        }
+                    }
+                }
+            });
+            let guard = Duration::from_secs(2);
+            assert_eq!(
+                waiting.recv_timeout(guard).map_err(io::Error::other)?,
+                monitored.then_some(super::POLL)
+            );
+            sender
+                .send(
+                    super::Envelope {
+                        command: Command::StopSpeaking,
+                        output_generation: 1,
+                    },
+                    &AtomicU64::new(1),
+                )
+                .map_err(|_| io::Error::other("Could not wake speech fixture"))?;
+            assert!(matches!(
+                finished.recv_timeout(guard).map_err(io::Error::other)?,
+                Ok(super::Envelope {
+                    command: Command::StopSpeaking,
+                    output_generation: 1
+                })
+            ));
+            worker
+                .join()
+                .map_err(|_| io::Error::other("Speech wait fixture failed"))?;
+        }
+        drop(credentials);
+        std::fs::remove_dir_all(directory)?;
+        Ok(())
     }
 
     #[test]

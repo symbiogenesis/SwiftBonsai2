@@ -208,9 +208,11 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
   recycling already exist; optimize measured remaining work, not those labels.
 - Qualify chat alone, warm TTS alone and concurrent chat/TTS under a small set of
   shared CPU-thread budgets. Include native UI frame delivery, audio continuity,
-  useful-answer time and sustained memory/heat. Check idle CPU/waits and wake/Stop
-  responsiveness during the existing 30-second warm TTS lease. Preserve ASR/TTS
-  mutual exclusion and independent reserves; postpone speech speculation unless
+  useful-answer time and sustained memory/heat. Qualify cold speech command waits,
+  which now block until notified, separately from the retained periodic monitoring
+  of active output, warm TTS and retained Canary input. Check idle CPU/waits and
+  wake/Stop responsiveness during the existing 30-second warm TTS lease. Preserve
+  ASR/TTS mutual exclusion and independent reserves; postpone speech speculation unless
   an existing compatible native artifact or a measured laptop-feasible tiny fit
   is available for the selected 1.7B path, rather than the paper's 0.6B model.
   Before any such fit, require a native residual-code verifier, sampler correction,

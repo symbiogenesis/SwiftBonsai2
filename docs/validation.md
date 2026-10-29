@@ -287,6 +287,14 @@ still rejects. The `speech::command_queue::tests::` and
 `speech::stream::tests::` selections check stalled-worker queue limits,
 coalescing, overload, cancellation, fresh-stream recovery and bounded tail
 compaction without loading a speech model or timing synthesis.
+The focused
+`speech::tests::cold_speech_worker_waits_for_commands_and_wakes_for_stop_and_shutdown`,
+`speech::tests::speech_command_wait_preserves_monitoring_for_warm_active_and_retained_input`
+and
+`speech::command_queue::tests::blocking_speech_receiver_wakes_when_the_sender_disconnects`
+cases observe the actual queue wait policy and synchronize command/disconnect
+wakeups. They retain periodic monitoring while resources are owned and establish
+no elapsed-time, idle CPU or energy result.
 The `window::persistence::tests::recovery_rejects_excess_` cases accept the exact
 conversation/history/transcript count limits, reject an extra object before
 decoding its fields and preserve the live workspace on failure.
