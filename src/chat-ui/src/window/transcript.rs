@@ -23,15 +23,22 @@ struct LayoutCache {
     pixels_per_point: f32,
     color: Color32,
     reasoning_color: Color32,
-    // Message text is append-only after push; restore creates no layout cache.
-    body_bytes: usize,
-    matches: Vec<search::Match>,
+    body_revision: u64,
+    // Search owns the ranges. For an unchanged body and effective query, the
+    // visible ranges are always the same prefix; eviction may change its count.
+    highlights: HighlightKey,
     selected: Option<Range<usize>>,
     highlight_fill: Color32,
     highlight_color: Color32,
     reasoning_bytes: usize,
     body: Arc<egui::Galley>,
     reasoning: Option<Arc<egui::Galley>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct HighlightKey {
+    query_revision: u64,
+    count: usize,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -41,6 +48,8 @@ pub(super) struct Message {
     pub(super) id: u64,
     pub(super) role: Role,
     pub(super) body: String,
+    #[serde(skip)]
+    body_revision: u64,
     reasoning: String,
     #[serde(skip)]
     pending: bool,
@@ -51,6 +60,9 @@ pub(super) struct Message {
     #[cfg(test)]
     #[serde(skip)]
     body_layouts: usize,
+    #[cfg(test)]
+    #[serde(skip)]
+    highlight_range_visits: std::cell::Cell<usize>,
 }
 
 #[derive(Default, serde::Serialize)]
@@ -138,12 +150,15 @@ impl Transcript {
             id: self.next_id,
             role,
             body,
+            body_revision: 0,
             reasoning: String::new(),
             pending: role == Role::Assistant,
             show_reasoning: false,
             cache: None,
             #[cfg(test)]
             body_layouts: 0,
+            #[cfg(test)]
+            highlight_range_visits: std::cell::Cell::new(0),
         });
         self.trim();
     }
@@ -160,6 +175,7 @@ impl Transcript {
             self.search.replaced(message.id);
             self.text_bytes = self.text_bytes.saturating_sub(message.text_bytes());
             text.clone_into(&mut message.body);
+            message.body_revision = message.body_revision.wrapping_add(1);
             reasoning
                 .unwrap_or_default()
                 .clone_into(&mut message.reasoning);
@@ -181,9 +197,12 @@ impl Transcript {
                 message.reasoning.push_str(text);
             } else {
                 message.body.push_str(text);
+                if !text.is_empty() {
+                    message.body_revision = message.body_revision.wrapping_add(1);
+                }
             }
             self.text_bytes = self.text_bytes.saturating_add(text.len());
-            // Layout keys track answer and reasoning lengths independently.
+            // Layout keys track answer revisions and reasoning lengths independently.
         }
         self.trim();
     }
@@ -336,7 +355,15 @@ impl Transcript {
                 .get(self.search.active)
                 .filter(|found| found.message == message.id)
                 .map(|found| &found.range);
-            message.layout(ui, width - 40.0, ranges, selected);
+            let highlights = HighlightKey {
+                query_revision: if ranges.is_empty() {
+                    0
+                } else {
+                    self.search.query_revision
+                },
+                count,
+            };
+            message.layout(ui, width - 40.0, ranges, highlights, selected);
             let height = message.height();
             let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
             let target = self
@@ -454,6 +481,7 @@ impl Message {
         ui: &egui::Ui,
         width: f32,
         matches: &[search::Match],
+        highlights: HighlightKey,
         selected: Option<&Range<usize>>,
     ) {
         let color = ui.visuals().text_color();
@@ -467,9 +495,9 @@ impl Message {
         });
         let body_unchanged = same_geometry
             && self.cache.as_ref().is_some_and(|cache| {
-                cache.body_bytes == self.body.len()
+                cache.body_revision == self.body_revision
                     && cache.color == color
-                    && cache.matches == matches
+                    && cache.highlights == highlights
                     && cache.selected.as_ref() == selected
                     && (matches.is_empty()
                         || (cache.highlight_fill == highlight_fill
@@ -512,12 +540,8 @@ impl Message {
             pixels_per_point,
             color,
             reasoning_color,
-            body_bytes: self.body.len(),
-            matches: if body_unchanged {
-                previous.map_or_else(Vec::new, |cache| cache.matches)
-            } else {
-                matches.to_vec()
-            },
+            body_revision: self.body_revision,
+            highlights,
             selected: selected.cloned(),
             highlight_fill,
             highlight_color,
@@ -540,6 +564,11 @@ impl Message {
             egui::TextFormat::simple(FontId::proportional(16.0), ui.visuals().text_color());
         let mut previous = 0;
         for found in matches {
+            #[cfg(test)]
+            {
+                self.highlight_range_visits
+                    .set(self.highlight_range_visits.get() + 1);
+            }
             let range = &found.range;
             job.append(&self.body[previous..range.start], 0.0, normal.clone());
             let mut highlight = normal.clone();

@@ -80,6 +80,148 @@ fn transcript_highlights_follow_selection_colors_without_reflowing_plain_message
     assert_eq!(layout_counts(chat.state()), vec![2, 1]);
 }
 
+#[test]
+fn highlighted_layout_cache_keeps_constant_size_keys_during_streaming_and_navigation() {
+    let mut transcript = Transcript::default();
+    let highlights = 10_000;
+    transcript.push(Role::User, "hit ".repeat(highlights));
+    transcript.push(Role::Assistant, "A streamed answer".to_owned());
+    transcript.search.query = "hit".to_owned();
+    let mut chat = harness(transcript);
+    chat.run();
+    assert_eq!(chat.state().search.matches.len(), highlights);
+    let visits = chat.state().messages[0].highlight_range_visits.get();
+    assert_eq!(visits, highlights);
+
+    for _ in 0..8 {
+        chat.state_mut().append(" plain continuation", false);
+        chat.run();
+    }
+    assert_eq!(chat.state().messages[0].body_layouts, 1);
+    assert_eq!(
+        chat.state().messages[0].highlight_range_visits.get(),
+        visits
+    );
+    assert!(
+        chat.state().messages[0]
+            .cache
+            .as_ref()
+            .is_some_and(|cache| {
+                cache.highlights.count == highlights && cache.selected.as_ref() == Some(&(0..3))
+            })
+    );
+
+    // Selection changes redraw the affected highlight job once, then later
+    // frames reuse its fixed-size identity without retaining a range vector.
+    chat.state_mut().search.active = highlights - 1;
+    chat.state_mut().search.revision += 1;
+    chat.run();
+    assert_eq!(
+        chat.state().messages[0].highlight_range_visits.get(),
+        visits * 2
+    );
+    chat.run();
+    assert_eq!(
+        chat.state().messages[0].highlight_range_visits.get(),
+        visits * 2
+    );
+}
+
+#[test]
+fn highlight_identity_tracks_same_length_queries_replacement_and_result_eviction() {
+    let mut transcript = Transcript::default();
+    transcript.push(Role::User, "hit cat".to_owned());
+    transcript.push(Role::Assistant, "hit cat".to_owned());
+    transcript.search.query = "hit".to_owned();
+    let mut chat = harness(transcript);
+    chat.run();
+    let query_revision = chat.state().search.query_revision;
+    assert_eq!(layout_counts(chat.state()), vec![1, 1]);
+
+    // Counts and byte lengths stay unchanged while every highlight moves.
+    chat.state_mut().search.query = "cat".to_owned();
+    chat.state_mut().search.invalidate();
+    chat.run();
+    assert_ne!(chat.state().search.query_revision, query_revision);
+    assert_eq!(layout_counts(chat.state()), vec![2, 2]);
+    assert!(
+        chat.state()
+            .search
+            .matches
+            .iter()
+            .all(|found| found.range == (4..7))
+    );
+    assert!(
+        chat.state().messages[0]
+            .cache
+            .as_ref()
+            .is_some_and(|cache| { cache.selected.as_ref() == Some(&(4..7)) })
+    );
+
+    chat.state_mut().search.active = 1;
+    chat.state_mut().search.revision += 1;
+    chat.run();
+    assert_eq!(layout_counts(chat.state()), vec![3, 3]);
+    assert!(
+        chat.state().messages[1]
+            .cache
+            .as_ref()
+            .is_some_and(|cache| { cache.selected.as_ref() == Some(&(4..7)) })
+    );
+    chat.state_mut().replace_response("cat hit", None);
+    chat.run();
+    assert_eq!(layout_counts(chat.state()), vec![3, 4]);
+    assert_eq!(chat.state().search.matches[1].range, 0..3);
+    assert!(
+        chat.state().messages[1]
+            .cache
+            .as_ref()
+            .is_some_and(|cache| {
+                cache.body_revision == chat.state().messages[1].body_revision
+                    && cache.selected.as_ref() == Some(&(0..3))
+            })
+    );
+
+    // Closing Find clears its query. Reopening the same query must acquire a
+    // new identity even though the message bodies never changed.
+    chat.state_mut().search.query.clear();
+    chat.state_mut().search.invalidate();
+    chat.run();
+    assert_eq!(layout_counts(chat.state()), vec![4, 5]);
+    assert!(chat.state().messages.iter().all(|message| {
+        message
+            .cache
+            .as_ref()
+            .is_some_and(|cache| cache.highlights.count == 0)
+    }));
+    chat.state_mut().search.query = "cat".to_owned();
+    chat.state_mut().search.invalidate();
+    chat.run();
+    assert_eq!(layout_counts(chat.state()), vec![5, 6]);
+    assert!(chat.state().messages.iter().all(|message| {
+        message
+            .cache
+            .as_ref()
+            .is_some_and(|cache| cache.highlights.count == 1)
+    }));
+
+    // Removing a saturated prefix exposes a previously hidden match without
+    // changing that later message's body or the effective query.
+    let mut transcript = Transcript::default();
+    transcript.push(Role::User, "hit ".repeat(10_001));
+    transcript.push(Role::Assistant, "hit".to_owned());
+    transcript.search.query = "hit".to_owned();
+    let mut chat = harness(transcript);
+    chat.run();
+    assert_eq!(chat.state().messages[1].highlight_range_visits.get(), 0);
+    chat.state_mut().messages.remove(0);
+    chat.state_mut().search.invalidate();
+    chat.run();
+    assert_eq!(chat.state().search.matches.len(), 1);
+    assert_eq!(chat.state().messages[0].body_layouts, 2);
+    assert_eq!(chat.state().messages[0].highlight_range_visits.get(), 1);
+}
+
 fn assert_byte_accounting(transcript: &Transcript) {
     assert_eq!(
         transcript.text_bytes,

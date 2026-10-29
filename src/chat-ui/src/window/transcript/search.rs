@@ -66,6 +66,9 @@ pub(super) struct Search {
     pending_refresh: Refresh,
     limited: bool,
     cached_query: String,
+    // Independent of navigation/result revisions: completed highlights remain
+    // valid when only selection or the streaming tail changes.
+    pub(super) query_revision: u64,
     cached_messages: BTreeMap<u64, CachedMatches>,
     #[cfg(test)]
     scanned_messages: usize,
@@ -108,11 +111,15 @@ impl Search {
         let previous = old_matches.get(self.active).cloned();
         self.limited = false;
         if self.query.is_empty() {
+            if !self.cached_query.is_empty() {
+                self.query_revision = self.query_revision.wrapping_add(1);
+            }
             self.cached_query.clear();
             self.cached_messages.clear();
         } else {
             let query = self.query.to_lowercase();
             if self.cached_query != query {
+                self.query_revision = self.query_revision.wrapping_add(1);
                 self.cached_messages.clear();
                 query.clone_into(&mut self.cached_query);
             }

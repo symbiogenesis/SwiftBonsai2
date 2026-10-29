@@ -262,6 +262,12 @@ The focused `window::transcript::cache_tests::` and
 `window::transcript::search::performance_tests::` cases count layout/search work
 directly to guard completed-message reuse during streaming and find navigation.
 They are correctness regressions, with no elapsed-time or throughput claim. The
+`highlighted_layout_cache_keeps_constant_size_keys_during_streaming_and_navigation`
+and `highlight_identity_tracks_same_length_queries_replacement_and_result_eviction`
+cases check fixed-size highlight identities at 10,000 results, unchanged-layout
+range visits, navigation, same-length query/body changes, clearing/reopening Find
+and results exposed by eviction. Layout caches retain no duplicate range vectors.
+The
 `streamed_find_scans_only_appended_bytes_and_keeps_one_continuation` case checks
 linear appended-byte work and tail-only scratch. The Unicode append-boundary
 oracle, replacement and saturated-lookahead cases preserve matching behavior
