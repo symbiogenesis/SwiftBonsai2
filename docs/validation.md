@@ -217,6 +217,9 @@ These captures do not establish native screen-reader, model or speech behavior.
 
 Memory-storage regressions use untimed ownership and encoded-byte checks:
 `request_buffer::tests::` and `backend::memory_tests::` in the broker;
+`response::memory_tests::` additionally checks direct final-storage JSON reads,
+uninitialized spare tails, bounded growth, exact-limit probing, framing errors,
+deadlines and cancellation ownership;
 `bounded_json::tests::`,
 `client::tests::committed_and_pending_history_share_payloads_without_sharing_turn_mutations`
 and

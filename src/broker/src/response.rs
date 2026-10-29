@@ -281,19 +281,39 @@ async fn collect_json<R: AsyncRead + Unpin>(
     body: &mut R,
     deadline: Instant,
 ) -> Result<Vec<u8>, ResponseError> {
-    // Most responses are small; grow toward the same hard cap only as needed.
-    let mut bytes = Vec::with_capacity(RESPONSE_BUFFER_BYTES);
-    let mut buffer = [0u8; RESPONSE_BUFFER_BYTES];
+    // Read into the final allocation's spare capacity without staging a copy or
+    // initializing bytes that the reader will immediately overwrite. Reserve
+    // explicitly so read_buf never supplies Vec's unbounded growth policy.
+    let mut bytes = Vec::new();
     loop {
-        let bound = buffer.len().min(MAX_RESPONSE_BYTES - bytes.len() + 1);
-        let count = read_before(body, &mut buffer[..bound], deadline).await?;
+        if bytes.len() == MAX_RESPONSE_BYTES {
+            // Keep the exact-limit overflow probe outside the accepted storage.
+            if read_before(body, &mut [0u8; 1], deadline).await? != 0 {
+                return Err(ResponseError::BodyLimit);
+            }
+            break;
+        }
+        ensure_time(deadline)?;
+        if bytes.len() == bytes.capacity() {
+            let target = bytes
+                .capacity()
+                .saturating_mul(2)
+                .clamp(RESPONSE_BUFFER_BYTES, MAX_RESPONSE_BYTES);
+            bytes
+                .try_reserve_exact(target - bytes.len())
+                .map_err(|_| ResponseError::BodyLimit)?;
+        }
+        let bound = RESPONSE_BUFFER_BYTES.min(MAX_RESPONSE_BYTES - bytes.len());
+        let limit = u64::try_from(bound).map_err(|_| ResponseError::BodyLimit)?;
+        let mut bounded = (&mut *body).take(limit);
+        let count = timeout_at(deadline, bounded.read_buf(&mut bytes))
+            .await
+            .map_err(|_| ResponseError::Deadline)?
+            .map_err(|_| ResponseError::BackendIo)?;
+        ensure_time(deadline)?;
         if count == 0 {
             break;
         }
-        if count > MAX_RESPONSE_BYTES - bytes.len() {
-            return Err(ResponseError::BodyLimit);
-        }
-        bytes.extend_from_slice(&buffer[..count]);
     }
     // Check UTF-8 explicitly: IgnoredAny need not materialize string values.
     std::str::from_utf8(&bytes).map_err(|_| ResponseError::JsonSyntax)?;
@@ -351,3 +371,6 @@ fn ensure_time(deadline: Instant) -> Result<(), ResponseError> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod memory_tests;

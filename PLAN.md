@@ -85,8 +85,10 @@ no-go decision, including losing cases.
   Include borrowed-PCM microphone uploads without full canonical-WAV or multipart
   copies, retaining exact upload framing and cancellation. Qualify shared buffered
   speech response intake with direct final-storage reads, including maximum-size
-  WAV fallback, partial responses and cancellation. Capture complete-task
-  latency and peak memory in target-device CI before claiming performance gains.
+  WAV fallback, partial responses and cancellation. Include broker nonstreaming
+  JSON reads into bounded final storage, exact-cap overflow probing and truncated
+  framing; their ownership and read-buffer regressions remain model-free. Capture
+  complete-task latency and peak memory in target-device CI before claiming gains.
 - Qualify recovery under load, allocation failure and backend loss without restart
   loops, silent profile changes, state corruption or automatic cloud fallback.
   Extend the bounded restore-count and unchanged-workspace regressions to these
