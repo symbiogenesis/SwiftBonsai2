@@ -10,7 +10,8 @@ must already exist. The JSON contains exact tool paths; review it before sharing
 Version commands run in a unique system-temp directory with the inherited environment.
 Presence, executable architecture, and version do not establish backend correctness.
 ToolPath optionally selects an existing checked maintenance executable for native
-CPU-set observations. Omitting it keeps inventory independent of a Rust build.
+CPU-set and bounded Vulkan observations. Omitting it keeps inventory independent
+of a Rust build. Vulkan inventory never selects or qualifies an inference backend.
 .EXAMPLE
 ./scripts/Doctor.ps1
 .EXAMPLE
@@ -313,6 +314,7 @@ try {
         }
     }
     $nativeCpu = $null
+    $nativeGpu = $null
     if ($ToolPath) {
         Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
         $nativeCpu = Invoke-BonsaiTool -Command host-cpu -ToolPath $ToolPath -Request @{}
@@ -320,6 +322,11 @@ try {
             throw 'The selected maintenance tool returned an unsupported native CPU observation.'
         }
         if ($nativeCpu.status -cne 'observed') { $issues.Add('Native CPU-set observations unavailable; topology remains unknown.') }
+        $nativeGpu = Invoke-BonsaiTool -Command host-gpu -ToolPath $ToolPath -Request @{}
+        if ($nativeGpu.schema_version -ne 1 -or $nativeGpu.kind -cne 'runner-native-gpu-observations') {
+            throw 'The selected maintenance tool returned an unsupported native GPU observation.'
+        }
+        if ($nativeGpu.status -cne 'observed') { $issues.Add('Native Vulkan observations unavailable; API capabilities remain unknown.') }
     }
     $report = [ordered] @{
         SchemaVersion = 1
@@ -350,6 +357,7 @@ try {
         Storage = $storage
         Capabilities = $capabilities
         NativeCpuObservations = $nativeCpu
+        NativeGpuObservations = $nativeGpu
         CpuCompatibilityIdentity = Get-BonsaiCpuCompatibilityIdentity -Capabilities $capabilities
         Gaps = @($issues)
         Qualification = 'Inventory only: no engine, GPU backend, memory admission, or daily security policy has been qualified.'

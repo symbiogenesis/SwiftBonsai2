@@ -25,6 +25,67 @@ use std::time::Duration;
 )]
 mod native;
 
+/// Model-free observations from the native system Vulkan loader.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VulkanInventory {
+    /// Loader-reported packed Vulkan API version, without vendor decoding.
+    pub loader_api_version: u32,
+    /// Declared application/instance API version, capped at Vulkan 1.3.
+    pub application_api_version: u32,
+    /// Enumerated adapters, including explicitly identified software devices.
+    pub adapters: Vec<VulkanAdapter>,
+}
+
+/// One Vulkan physical device; observations do not qualify an inference backend.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VulkanAdapter {
+    /// Driver-reported device name, not an independently established `SoC` SKU.
+    pub name: String,
+    /// Numeric Vulkan vendor identifier.
+    pub vendor_id: u32,
+    /// Numeric Vulkan device identifier.
+    pub device_id: u32,
+    /// Vendor-specific raw driver version; never decoded as a Vulkan version.
+    pub driver_version: u32,
+    /// Device-supported packed Vulkan API version.
+    pub api_version: u32,
+    /// Stable Vulkan device-type label.
+    pub device_type: &'static str,
+    /// Whether the API identifies an integrated or discrete hardware GPU.
+    pub hardware_gpu: bool,
+    /// Compute-capable queue families and their queue counts.
+    pub compute_queues: Vec<(u32, u32)>,
+    /// Advertised device extension names, sorted for stable inspection.
+    pub extensions: Vec<String>,
+    /// Heap sizes and device-local flags; these are capacities, not free budgets.
+    pub memory_heaps: Vec<(u64, bool)>,
+    /// Supported half-precision shader arithmetic, unknown before Vulkan 1.1 queries.
+    pub shader_float16: Option<bool>,
+    /// Supported integer-dot shader feature, unknown before Vulkan 1.1 queries.
+    pub shader_integer_dot_product: Option<bool>,
+    /// Subgroup width when Vulkan 1.1 properties are available.
+    pub subgroup_size: Option<u32>,
+    /// Raw subgroup operation flags when Vulkan 1.1 properties are available.
+    pub subgroup_operations: Option<u32>,
+    /// Raw shader-stage flags restricting the reported subgroup operations.
+    pub subgroup_stages: Option<u32>,
+}
+
+/// Query the native system Vulkan loader without creating a logical device.
+///
+/// Requires a native ARM64 process and rejects Vulkan environment overrides.
+/// Enumeration storage is bounded. Driver calls themselves have no timeout;
+/// callers must isolate this operation in a deadline-owned child process, as
+/// the maintenance `host-gpu` command does. No kernels, surfaces or windows are
+/// created, and no device memory is allocated.
+///
+/// # Errors
+/// Returns unsupported target, missing loader, malformed/oversized native data
+/// or Vulkan failures. Installed loader/ICD trust is not established by a query.
+pub fn vulkan_inventory() -> io::Result<VulkanInventory> {
+    native::vulkan_inventory()
+}
+
 /// One observed Windows CPU Set; processor indices are relative to `group`.
 ///
 /// Efficiency and scheduling classes are raw operating-system observations,

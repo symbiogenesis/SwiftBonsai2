@@ -69,6 +69,69 @@ CPU-set IDs do not establish persistent affinity, process affinity eligibility,
 optional ISA or Snapdragon core names. The [X2 CPU screen](x2-cpu-optimization.md)
 retains this native inventory alongside its processor observation and fixed plan.
 
+With the same explicit `-ToolPath`, Doctor also adds `NativeGpuObservations`
+from `bonsai-tools host-gpu`. Its separate v1
+`runner-native-gpu-observations` report queries the absolute Windows system
+`vulkan-1.dll` from a native ARM64 child. The child retains the ordinary headless
+worker mitigations, a 512 MiB one-process Job, bounded output and a ten-second
+query deadline; failure leaves `status: unknown` and `adapters: null`. Successful
+enumeration of zero devices returns an observed empty list. Vulkan environment
+overrides (`VK_*`) reject; custom loaders, layers and ICD paths cannot be requested.
+The installed graphics stack is still a trust boundary, and a successful query
+does not verify its DLL signatures or dependency provenance.
+
+The probe creates only a Vulkan instance, with no requested layers/extensions,
+logical device, queue submissions, model, surface or device-memory allocation.
+Its fixed storage caps are 16 adapters, 64 queue families per adapter and 1,024
+device extensions; incomplete/oversized enumeration rejects without unbounded
+allocation or retry. It retains driver-reported names, raw vendor/device/driver
+IDs, packed API versions, compute queue counts, extension names and memory-heap
+capacities. Raw driver versions have vendor-specific encoding and are not
+decoded as Vulkan API versions. CPU and virtual adapters are explicitly marked
+`hardware_gpu: false`; discovery never enables them as inference fallbacks.
+
+When Vulkan 1.1 queries and the corresponding core version or advertised
+extensions allow it, the report additionally observes subgroup width/operation
+and supported-stage flags, shader FP16 and integer-dot features. The declared
+application API is the loader version capped at 1.3 and is retained separately;
+core feature eligibility uses the lower application/device API version.
+Unknown or unqueried observations stay null.
+Extension presence alone does not qualify cooperative-matrix arithmetic,
+Swift packed operations or an inference backend. Cooperative-matrix execution,
+live memory budgets, exact SoC SKU, signed-driver readiness and full dependency
+identities remain unqualified/unknown. Heap capacities are not available-memory
+budgets; shared host/device memory must not be counted twice for admission.
+`backend_ready` remains false, and the existing CPU compatibility digest and
+launch policy retain their current scope. No performance or energy is measured.
+
+The native query follows the [Khronos physical-device contract](https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDeviceProperties.html)
+and [Vulkan properties2 contract](https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDeviceProperties2.html),
+using the already locked [ash loader bindings](https://docs.rs/ash/0.38.0+1.3.281/ash/struct.Entry.html).
+Core-version gating follows [the application API contract](https://docs.vulkan.org/refpages/latest/refpages/source/VkApplicationInfo.html).
+
+A model-free native ARM64 probe on this X2 host on 2026-10-29 returned the
+explicit unknown report: the system loader loaded, but instance creation failed
+with `VK_ERROR_INCOMPATIBLE_DRIVER` (`-9`) under the ordinary headless child
+policy. The bounded child stderr remains in the external
+`SwiftBonsai-GpuInventory-15116-1793325174261883700` temp evidence directory.
+This result does not identify the cause or establish absent hardware support.
+Do not enable a Vulkan profile from this result; keep the CPU fallback and
+investigate driver/policy compatibility separately without weakening inference
+worker mitigations. No model was loaded and no shader or benchmark was run.
+
+A separately labelled ten-second diagnostic under the existing ordinary
+`Invoke-BonsaiNativeProcess` tool policy succeeded on that date. It observed
+loader API 1.3.301, declared application API 1.3.0 and device API 1.4.295;
+the driver reported `Qualcomm(R) Adreno(TM) X2-90 GPU`, vendor ID `20803`,
+device ID `909329968` and raw driver version `2151018496`. FP16 and integer-dot
+shader feature queries returned true, and subgroup width was 64. This separate
+tool-policy result is retained in the external task lane's
+`gpu-tool-policy.json` and `gpu-tool-policy.log`. It does not prove which
+headless mitigation causes the difference, qualify driver provenance or establish
+model-worker access. The shipped inventory command keeps its ordinary headless
+policy and returns unknown; it has no tool-policy retry. Both probes created
+only a Vulkan instance, with no logical device or shader execution.
+
 Names such as X1/X2 and a signed driver do not establish optional ISA, GPU/NPU
 execution or deployment trust. An emulated process's ISA result cannot qualify
 a native runtime. Current memory is a diagnostic snapshot, never a substitute

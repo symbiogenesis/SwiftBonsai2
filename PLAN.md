@@ -333,8 +333,9 @@ existing full-context/continuation/LoRA gates.
 
 ## Hardware selection
 
-- Extend shared discovery beyond scoped CPU observations, native CPU sets and
-  native Windows NEON/dotprod/I8MM availability reports: independently checked
+- Extend shared discovery beyond scoped CPU observations, native CPU sets,
+  native Windows NEON/dotprod/I8MM reports and bounded Vulkan inventory:
+  independently checked
   SoC/SKU, GPU/NPU API/features/architecture, driver/runtime/firmware,
   signed backend readiness and static accelerator identities. Reuse the checked
   representation in Doctor and launch policy; keep unknowns explicit and live
@@ -446,6 +447,11 @@ Reference: [CPU arithmetic and dispatch contracts](docs/simd-plan.md).
   Vulkan queues/features/extensions/limits, subgroup/FP16/integer-dot/cooperative
   matrix support and available memory-budget telemetry. Reject software/emulated
   execution and preserve explicit unknowns/conservative admission.
+  Resolve the retained X2 `host-gpu` instance-creation no-go before qualifying
+  worker GPU access. The separate bounded tool-policy inventory observes Adreno
+  X2-90 features but does not qualify the headless worker path or identify the
+  cause of its failure. Preserve the distinct evidence and unchanged CPU policy;
+  see [native Vulkan discovery](docs/hardware-capabilities.md#host-inventory).
 - Bound a public native Windows ARM64 OpenCL feasibility comparison alongside
   Vulkan, checking actual source/binary availability, packed Swift operations,
   fallback and API features. End with a reproducible candidate or no-go; keep

@@ -39,6 +39,7 @@ fn version_advertises_policy_commands_without_resolving_a_request_file()
         "server-policy",
         "cpu-check-report",
         "host-cpu",
+        "host-gpu",
         "cpu-evaluation",
         "runtime-stage",
         "runtime-verify",

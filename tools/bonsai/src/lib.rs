@@ -9,6 +9,7 @@ pub const COMMANDS: &[&str] = &[
     "credentials",
     "memory",
     "host-cpu",
+    "host-gpu",
     "cpu-evaluation",
     "cpu-check-plan",
     "cpu-check-report",
@@ -47,6 +48,9 @@ pub mod completion;
 
 /// Model-free native CPU topology and current-process availability observations.
 pub mod host_cpu;
+
+/// Bounded model-free Vulkan adapter observations, without backend selection.
+pub mod host_gpu;
 
 /// Bounded paired CPU tuning plans for the X2 Elite Extreme CI lane.
 pub mod cpu_evaluation;
