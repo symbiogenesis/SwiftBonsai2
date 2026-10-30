@@ -36,6 +36,10 @@ struct Sample {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "Independent wire switches select capture validation, CI policy and optional observations."
+)]
 struct Request {
     schema_version: u32,
     executable: PathBuf,
@@ -55,6 +59,8 @@ struct Request {
     ci_only: bool,
     #[serde(default)]
     observe_cpu_conditions: bool,
+    #[serde(default)]
+    observe_output_progress: bool,
     parent_process_id: u32,
     parent_creation_time_file_time: u64,
 }
@@ -67,6 +73,7 @@ impl Request {
             || self.physical_reserve_bytes > self.required_available_bytes
             || self.artifacts.len() > 256
             || self.arguments.len() > 4096
+            || (self.observe_output_progress && self.stdout_limit_bytes.is_none())
         {
             return Err("Invalid completion schema, limits or input count.".into());
         }
@@ -174,13 +181,15 @@ fn verification_checkpoint(
     Ok(())
 }
 
-fn check_output(path: &Path, limit: Option<u64>) -> Result<()> {
-    if let Some(limit) = limit
-        && fs::metadata(path).map_err(|error| error.to_string())?.len() > limit
-    {
-        return Err("Native operation exceeded its diagnostic output limit.".into());
+fn check_output(path: &Path, limit: Option<u64>) -> Result<Option<u64>> {
+    if let Some(limit) = limit {
+        let bytes = fs::metadata(path).map_err(|error| error.to_string())?.len();
+        if bytes > limit {
+            return Err("Native operation exceeded its diagnostic output limit.".into());
+        }
+        return Ok(Some(bytes));
     }
-    Ok(())
+    Ok(None)
 }
 
 fn save(path: &Path, receipt: &Value) -> Result<()> {
@@ -344,7 +353,7 @@ fn supervise(
     let mut minimum = receipt["MinimumAvailablePhysicalBytes"]
         .as_u64()
         .ok_or("Missing admission memory observation.")?;
-    let mut memory = super::memory::Observation::default();
+    let mut memory = super::memory::Observation::new(request.observe_output_progress);
     receipt["ProcessMemory"] = memory.receipt(INTERVAL);
     let exit = loop {
         parent.ensure_alive().map_err(|error| error.to_string())?;
@@ -357,16 +366,28 @@ fn supervise(
         if start.elapsed() >= Duration::from_secs(request.timeout_seconds) {
             return Err("Native operation exceeded its safety timeout.".into());
         }
-        check_output(&spec.stdout, request.stdout_limit_bytes)?;
-        check_output(&spec.stderr, request.stderr_limit_bytes)?;
-        observe_memory(request, process, &mut minimum, &mut memory, receipt)?;
+        let stdout_bytes = check_output(&spec.stdout, request.stdout_limit_bytes)?;
+        let _ = check_output(&spec.stderr, request.stderr_limit_bytes)?;
+        if request.observe_output_progress
+            && let Some(bytes) = stdout_bytes
+        {
+            memory.observe_stdout(bytes, start.elapsed(), false);
+            receipt["ProcessMemory"] = memory.receipt(INTERVAL);
+        }
+        observe_memory(request, process, &mut minimum, &mut memory, false, receipt)?;
     };
     receipt["ExitCode"] = json!(exit);
     receipt["WallMilliseconds"] = json!(start.elapsed().as_millis());
     parent.ensure_alive().map_err(|error| error.to_string())?;
-    check_output(&spec.stdout, request.stdout_limit_bytes)?;
-    check_output(&spec.stderr, request.stderr_limit_bytes)?;
-    observe_memory(request, process, &mut minimum, &mut memory, receipt)?;
+    let stdout_bytes = check_output(&spec.stdout, request.stdout_limit_bytes)?;
+    let _ = check_output(&spec.stderr, request.stderr_limit_bytes)?;
+    if request.observe_output_progress
+        && let Some(bytes) = stdout_bytes
+    {
+        memory.observe_stdout(bytes, start.elapsed(), true);
+        receipt["ProcessMemory"] = memory.receipt(INTERVAL);
+    }
+    observe_memory(request, process, &mut minimum, &mut memory, true, receipt)?;
     if exit != 0 {
         return Err(format!("Native operation failed with exit code {exit}."));
     }
@@ -414,6 +435,7 @@ fn observe_memory(
     process: &OwnedProcess,
     minimum: &mut u64,
     observation: &mut super::memory::Observation,
+    root_exited: bool,
     receipt: &mut Value,
 ) -> Result<()> {
     *minimum = (*minimum).min(available_memory_bytes().map_err(|error| error.to_string())?);
@@ -426,7 +448,7 @@ fn observe_memory(
         Ok(memory) => {
             // Retain even the observation that rejects a sample. This reuses
             // safety queries without adding a separate profiling poll loop.
-            observation.observe(memory);
+            observation.observe(memory, root_exited);
             receipt["ProcessMemory"] = observation.receipt(INTERVAL);
             if memory.private_bytes > request.memory_limit_bytes
                 || memory.working_set_bytes > request.memory_limit_bytes

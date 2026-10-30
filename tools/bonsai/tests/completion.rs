@@ -194,6 +194,46 @@ fn unknown_request_fields_and_changed_artifacts_cannot_start_children() -> Resul
     Ok(())
 }
 
+#[test]
+fn output_progress_requires_bounded_stdout_and_partitions_only_observed_samples() -> Result<()> {
+    let (lane, mut request) = fixture("output-progress")?;
+    request["observeOutputProgress"] = json!(true);
+    request["stdoutLimitBytes"] = Value::Null;
+    assert!(bonsai_tools::completion::run(request.clone()).is_err());
+    assert!(!lane.join("stdout.txt").exists());
+    request["stdoutLimitBytes"] = json!(4096);
+    let receipt = bonsai_tools::completion::run(request)?;
+    check_memory_observations(&receipt)?;
+    let memory = &receipt["ProcessMemory"];
+    let output = &memory["OutputProgress"];
+    assert_eq!(output["AttributionOnly"], true);
+    assert!(
+        output["StdoutObservations"]
+            .as_u64()
+            .is_some_and(|n| n >= 1)
+    );
+    assert!(output["FirstNonemptyStdoutObservedMilliseconds"].is_u64());
+    assert!(output["FirstNonemptyStdoutObservationAfterRootExit"].is_boolean());
+    let mut samples = 0;
+    for stage in [
+        "BeforeFirstNonemptyStdout",
+        "AfterFirstNonemptyStdout",
+        "AfterRootExit",
+    ] {
+        let count = output[stage]["Samples"]
+            .as_u64()
+            .ok_or("Missing stage count.")?;
+        samples += count;
+        assert!(output[stage].get("LifetimePeakWorkingSetBytes").is_none());
+        for field in ["SampledPeakPrivateBytes", "SampledPeakWorkingSetBytes"] {
+            assert_eq!(output[stage][field].is_null(), count == 0);
+        }
+    }
+    assert_eq!(memory["Samples"], samples);
+    assert!(output.get("FirstTokenLatencyMilliseconds").is_none());
+    Ok(())
+}
+
 #[cfg(target_arch = "aarch64")]
 fn synthetic_ci_child(name: &str) -> Result<bool> {
     const CHILD: &str = "BONSAI_SYNTHETIC_CI_FIXTURE";

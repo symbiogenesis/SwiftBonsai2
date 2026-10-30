@@ -1,6 +1,12 @@
 name: Snapdragon X2 CPU thread screening
 on:
   workflow_dispatch:
+    inputs:
+      observe_output_progress:
+        description: Capture output/memory attribution separately, suppressing timing ratios
+        type: boolean
+        default: false
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -21,6 +27,8 @@ jobs:
       - name: Capture bounded X2 Elite Extreme thread pairs
         shell: pwsh
         working-directory: ${{ runner.temp }}
+        env:
+          BONSAI_X2_ATTRIBUTION: ${{ inputs.observe_output_progress }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
@@ -38,6 +46,8 @@ jobs:
           foreach ($argument in @('-NoProfile', '-File', $script, '-DataDirectory', $data)) {
             $start.ArgumentList.Add($argument)
           }
+          if ($env:BONSAI_X2_ATTRIBUTION -cnotin @('true', 'false')) { throw 'Invalid attribution input.' }
+          if ($env:BONSAI_X2_ATTRIBUTION -ceq 'true') { $start.ArgumentList.Add('-ObserveOutputProgress') }
           foreach ($name in @('ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNNER_INPUT_TOKEN')) {
             [void]$start.Environment.Remove($name)
           }
@@ -65,6 +75,8 @@ jobs:
             'CLI template defaults differ from chat; energy, quality and sustained comfort remain unqualified.',
             ('Execution conditions: ' + $report.ExecutionConditions.Status),
             'Each sample retains native CPU/power observations before launch and after teardown, outside its wall timer.',
+            ('Instrumented output/memory attribution: ' + $report.InstrumentedAttribution),
+            'Attribution captures suppress every timing ratio; file output boundaries do not establish startup/prefill/decode or first-token latency.',
             'Ratios below one favor the candidate; mismatched token counts or changed/unknown batch/sample/pair conditions suppress ratios.') |
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
           $report.Comparisons | ConvertTo-Json -Depth 8 | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY

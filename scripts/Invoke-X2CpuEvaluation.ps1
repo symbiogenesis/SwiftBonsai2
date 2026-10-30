@@ -12,6 +12,9 @@ The native supervisor owns fresh processes, artifact handles, caller lifetime,
 PlanOnly observes hardware and builds a plan without loading a model. CLI template
 defaults differ from chat; results do not promote defaults or qualify quality,
 energy, sustained comfort, GPU or NPU execution.
+ObserveOutputProgress enables a separate attribution capture using existing
+capped-stdout checks. It suppresses all timing ratios and does not identify
+startup/prefill/decode phases or first-token latency.
 Execution first checks the verified completion executable with a model-free
 --version invocation under the required worker policy. A failed check retains
 its receipt and stops before model verification or thread trials.
@@ -21,7 +24,8 @@ its receipt and stops before model verification or thread trials.
 param(
     [Parameter(Mandatory)][string]$DataDirectory,
     [string]$ToolPath,
-    [switch]$PlanOnly
+    [switch]$PlanOnly,
+    [switch]$ObserveOutputProgress
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -53,6 +57,7 @@ $plan = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -Request @
     logicalProcessors = [int]$native.topology.logical_processors
 }
 $plan['HostIdentity'] = $native.host_identity
+$plan['InstrumentedAttribution'] = [bool]$ObserveOutputProgress
 if ($PlanOnly) { return [pscustomobject]$plan }
 if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main' -or
     $env:GITHUB_REPOSITORY -cne 'symbiogenesis/SwiftBonsai2Runner' -or
@@ -101,9 +106,10 @@ $report = [ordered]@{
         PromptMilliseconds = 'Pinned native prompt eval; actual prompt token count retained.'
         DecodeMilliseconds = 'Pinned native eval time; count excludes first sampled token.'
         WallMilliseconds = 'Owned process creation through exit and final supervision; includes model load; excludes artifact verification and CPU/power boundary observations.'
-        Memory = 'ProcessMemory retains sampled private/current working-set maxima and OS lifetime peak working set from existing one-second safety queries plus final exit. Sampled maxima can miss brief peaks. Working set includes mapped residency; Job commit excludes it. These domains overlap and must not be added. No phase attribution or energy measurement.'
+        Memory = 'ProcessMemory retains sampled private/current working-set maxima and OS lifetime peak working set from existing one-second safety queries plus final exit. Optional OutputProgress partitions current samples around the first observed nonempty capped stdout and root exit; these are file/exit observations, not startup/prefill/decode phases or first-token latency. Sampled maxima can miss brief peaks. Working set includes mapped residency; Job commit excludes it. These domains overlap and must not be added. No energy measurement.'
     }
     Qualification = 'screen-only'; DefaultProfileChanged = $false
+    InstrumentedAttribution = [bool]$ObserveOutputProgress
     ModelTrialsRequested = $false
     WorkerPreflight = [ordered]@{
         Kind = 'model-free-worker-startup'; Status = 'pending'; Arguments = @('--version')
@@ -162,6 +168,7 @@ try {
         timeoutSeconds = [int]$plan.PerSampleTimeoutSeconds
         stdoutLimitBytes = 4194304; stderrLimitBytes = 67108864; requireNonemptyStdout = $true; ciOnly = $true
         observeCpuConditions = $true
+        observeOutputProgress = [bool]$ObserveOutputProgress
     }
     foreach ($trial in $plan.Schedule) {
         $sample = @($supervision.Samples | Where-Object Id -CEQ $trial.Id)
@@ -196,13 +203,14 @@ try {
         $pairConditions = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -Request @{
             operation = 'compare-sample-conditions'; baseline = $baseline.CpuConditions; candidate = $candidate.CpuConditions
         }
-        $comparable = $matchingTokenCounts -and $report.ExecutionConditions.Comparable -and $pairConditions.Comparable
+        $comparable = -not $ObserveOutputProgress -and $matchingTokenCounts -and $report.ExecutionConditions.Comparable -and $pairConditions.Comparable
         $report.Comparisons.Add([ordered]@{
             CandidateId = $candidate.CandidateId; Workload = $candidate.Workload; Repetition = $candidate.Repetition
             MatchingTokenCountsAtFixedCap = $matchingTokenCounts
             ExecutionConditionsStatus = $report.ExecutionConditions.Status
             PairExecutionConditions = $pairConditions
             ComparableAtFixedTokenCap = $comparable
+            InstrumentedAttribution = [bool]$ObserveOutputProgress
             CandidateOverBaselinePromptMilliseconds = if ($comparable) { $candidate.Timing.PromptMilliseconds / $baseline.Timing.PromptMilliseconds } else { $null }
             CandidateOverBaselineDecodeMilliseconds = if ($comparable) { $candidate.Timing.DecodeMilliseconds / $baseline.Timing.DecodeMilliseconds } else { $null }
             CandidateOverBaselineWallMilliseconds = if ($comparable) { $candidate.WallMilliseconds / $baseline.WallMilliseconds } else { $null }

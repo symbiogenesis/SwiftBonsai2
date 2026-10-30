@@ -230,6 +230,25 @@ teardown. Fresh processes retain OS file cache; they are not cold-storage trials
 Private commit, working set, Job commit and available RAM overlap: never add them. These
 aggregates identify neither phase allocations/lifetimes, complete model storage nor energy.
 
+For a separate main-only CI attribution capture, select the X2 workflow's
+`observe_output_progress` dispatch input, or pass `-ObserveOutputProgress` to
+`Invoke-X2CpuEvaluation.ps1` in its owning CI lane. The default remains off.
+Supervision's optional `observeOutputProgress: true` requires a finite stdout cap and reuses the existing
+file-length checks; it reads no payload and creates no extra polling loop.
+`ProcessMemory.OutputProgress` partitions current-counter samples before the first
+observed nonempty stdout, after that observation while the root has not been observed
+exited, and after root exit. It retains the last observed empty-file time, first
+nonempty-file time and whether that first observation happened after exit. Missing
+boundaries and unsampled stage peaks remain null, with zero stage samples.
+
+These are file/exit observations: prompt echoes, progress, buffering, final markers and
+an exit racing a running observation prevent startup/prefill/decode or first-token
+claims. The final exit observation belongs only to the exit bucket. The OS lifetime
+working-set peak remains process-wide; stage maxima cannot be summed. Instrumented
+captures set `InstrumentedAttribution: true` and suppress every timing ratio even when
+conditions and token counts match. Actual-model coverage, phase instrumentation inside
+the runtime and complete allocation/lifetime attribution remain pending.
+
 Timing ratios require **both** gates below; invalid conditions preserve raw samples and
 independent token-count comparability:
 
