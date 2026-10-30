@@ -1,24 +1,23 @@
 # Dependency audit and choices
 
 Retain **Serde 1.0.229, serde_json 1.0.154, Tokio 1.54.1 and the native Rust UI**.
-The reviewed alternatives did not qualify. This page combines dependency usage,
-security/footprint evidence and parser/runtime comparisons; [PLAN.md](../PLAN.md#deferred-dependency-experiments)
-owns pending experiments. Pins live in [Cargo.toml](../Cargo.toml) and [Cargo.lock](../Cargo.lock).
+The reviewed alternatives did not qualify. [PLAN.md](../PLAN.md#deferred-dependency-experiments)
+owns pending experiments; [Cargo.toml](../Cargo.toml) and [Cargo.lock](../Cargo.lock)
+own pins, and [licensing](licensing.md) owns distribution terms.
 
 ## Scope and security result
 
-The 2026-10-26 review covered all 12 workspace manifests, the lockfile, direct
-source usage, normal/build/dev features, cached manifests and selected build
-scripts, including Windows ARM64, all-target and optional `json-candidate` graphs.
-It was not an exhaustive transitive/native-source audit.
+The reviewed scope is all 12 workspace manifests, the lockfile, direct usage,
+normal/build/dev features, cached manifests and selected build scripts, including
+Windows ARM64, all-target and optional `json-candidate` graphs. It excludes an
+exhaustive transitive/native-source audit.
 
-| Audit snapshot | Packages / database | Result |
-| --- | --- | --- |
-| Baseline `f9c7ade2de57eb537f397429eed42a297740fd06` | 449 locked; RustSec `3279c99911354c400e1d41e47c7d60e39258b147`, 1,378 advisories | No known vulnerabilities or yanked packages |
-| Concurrent MXC integration; then ZIP 9.1.2 | 492 locked; same database | Same result |
-| [2026-10-29 selection](#reviewed-pins-and-tooling) | 490 dependencies; RustSec `ee1a49a2769a24a596afc1c20cb33748d2769586`, 1,386 advisories | Same result with `cargo-audit 0.22.2 --deny yanked` |
+The **2026-10-29** audit of 490 dependencies with `cargo-audit 0.22.2 --deny yanked`
+found no known vulnerabilities or yanked packages against RustSec
+`ee1a49a2769a24a596afc1c20cb33748d2769586` (1,386 advisories). This is a dated
+snapshot, not a claim of continuing freshness.
 
-All scans retained three unmaintained-package notices: `zvariant 5.15.1`
+Three unmaintained-package notices remain: `zvariant 5.15.1`
 ([0370](https://rustsec.org/advisories/RUSTSEC-2026-0370.html)), `zbus_names 4.3.5`
 ([0371](https://rustsec.org/advisories/RUSTSEC-2026-0371.html)), and `zvariant_derive 5.15.1`
 ([0372](https://rustsec.org/advisories/RUSTSEC-2026-0372.html)). They enter through
@@ -45,9 +44,10 @@ blanket ignores.
 
 ## Dependency footprint and duplication
 
-Counts are distinct name/version pairs in Windows ARM64 **normal + build** trees,
-including internal/root crates, at the 2026-10-26 review. They are not linked-code
-counts, binary sizes or runtime costs. Cargo unifies requested features, so each
+The 2026-10-26 comparison uses baseline
+`f9c7ade2de57eb537f397429eed42a297740fd06`. Counts are distinct name/version pairs
+in Windows ARM64 **normal + build** trees, including internal/root crates, not
+linked code, binary size or runtime cost. Cargo feature unification means each
 executable's graph can differ from the workspace graph.
 
 | Selection | Baseline | With MXC integration |
@@ -108,10 +108,11 @@ its lifecycle/IPC cost; containment must remain mandatory and fail closed.
 backends remain real fallbacks; upstream `NativeOptions` selects `PRIMARY | GL`
 unless overridden by the environment.
 
-Production browser/Metal defaults are excluded. At the original baseline the
-all-target chat graph falls 368 → 366; the Windows graph is unchanged, and GPU
-test dependencies still request Metal/all Windows backends. No size/speed gain
-is claimed. Removing a Windows backend requires a separate support/device decision.
+Production browser/Metal defaults are excluded. Compared with the baseline,
+the all-target chat graph has 366 rather than 368 packages; the Windows graph is
+unchanged, and GPU test dependencies still request Metal/all Windows backends.
+This establishes no size/speed gain. Removing a Windows backend requires a
+separate support/device decision.
 Font parsers, color-font rendering, `vello_cpu` and `glifo` serve actual native UI
 functionality, not an inference framework or browser frontend.
 
@@ -130,7 +131,7 @@ are unused, and there is no build script. The review covers slice/array bounds,
 widening, bitcasts, baseline NEON and the dependency's internal unsafe boundary;
 runtime source forbids unsafe code. See the
 [immutable source](https://github.com/linebender/fearless_simd/tree/b8a50a2c9ce03ee5384038ae8e6f45749662e2f6/fearless_simd),
-[SIMD contract](simd-plan.md) and [license terms](licensing.md#reviewed-dependencies).
+[SIMD contract](cpu-kernels.md) and [license terms](licensing.md#reviewed-dependencies).
 
 ## Direct dependency decisions
 
@@ -190,13 +191,13 @@ regressions; these are workload-specific prototype decisions, not library rankin
 | [Copying path](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40405967479) | `9448284a4057fb70fb039520debef44250851a76`; `json-candidate-40405967479-1` | 1.7289–1.7979× production |
 | [Padded path](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40408246424) | `6a582c1a61ef0ebb2c28df256b08bc927cedd6f9`; `json-candidate-40408246424-1` | Up to 1.9431× production |
 
-Both ran on Windows ARM64 Cobalt 100 with the pinned nightly. Correctness passed,
-but all six original cases were slower and both original/overall screens failed.
-Artifacts retain rounds, decisions and compiler/CPU/OS/source identities. These
-separate runs do not isolate copy-removal speedup. [Follow-up #1](https://github.com/symbiogenesis/SwiftBonsai2Runner/issues/1)
+Both Windows ARM64 Cobalt 100/pinned-nightly runs passed correctness but failed
+the original and overall screens: every original case was slower. Artifacts
+retain rounds and compiler/CPU/OS/source identities; separate runs do not isolate
+copy-removal speedup. The [padded path (#1)](https://github.com/symbiogenesis/SwiftBonsai2Runner/issues/1)
 uses `fill_tape_padded` then `Tape::deserialize` (`padded-tape-serde`), avoiding the
-Serde entry point's internal copy while timing immutable-body copy, padding,
-allocation, validation, serialization and destruction.
+Serde entry point's internal copy. Immutable-body copy, padding, allocation,
+validation, serialization and destruction remain timed.
 
 ### Current candidate and pending gate
 
@@ -221,8 +222,7 @@ correctly rounded SIMD conversion can differ from serde_json's default without
 either being wrong. Supplemental scale cases include fallback cost. Main-only
 `json-candidate.yml` runs correctness before the original six-case and supplemental
 5%/5% gates; any case over 5% slower rejects qualification.
-**Both cold/reused screens must pass; results remain pending.** Updating/building
-the crate neither promotes it nor erases earlier losing results.
+**Both cold/reused screens must pass; qualification remains pending.**
 The reviewed open [AVX-512 #475](https://github.com/simd-lite/simd-json/pull/475)
 targets x86; [#479](https://github.com/simd-lite/simd-json/pull/479)/[#477](https://github.com/simd-lite/simd-json/pull/477)
 concern cleanup/`no_std`, not evidence for changing this ARM64 decision.
@@ -270,17 +270,15 @@ Selection reviewed **2026-10-29**; this date is not a claim of continuing freshn
 | PSScriptAnalyzer / cargo-audit / LLVM | 1.25.0 / 0.22.2 / 23.1.4 |
 
 At review, `cargo update --dry-run --verbose` found no further compatible updates;
-Actions/tool pins were current and windows-future 0.3.2 was deliberate. Registry
-selection adds no SIMD-JSON qualification evidence. Nightly, inference/speech
-sources/binaries and model locks require their separate
+Actions/tool pins were current and windows-future 0.3.2 was deliberate. Nightly,
+inference/speech sources/binaries and model locks require separate
 [runtime review](development-guide.md#prepare-a-runtime-lock-update).
 
 ## Validation and evidence
 
 The 2026-10-29 evidence covers all-feature/all-target Release Clippy, format,
 rustdoc and native builds for ten workspace packages, excluding separately
-provisioned ASR/TTS binaries. Optional-comparison lint fixes preserve parsing.
-Exact Release regressions:
+provisioned ASR/TTS binaries. Focused Release regressions:
 
 - `tests::zipped_installation_verifies_deflated_payload_and_rejects_drift`
 - `speech_build::tests::source_staging_preserves_bytes_and_rejects_changed_archive_or_cache`
@@ -288,12 +286,11 @@ Exact Release regressions:
 - `json_candidate_parser::tests::reuse_preserves_parity_through_failures_and_size_changes`
 
 PSScriptAnalyzer covers 62 scripts; strict Release C# covers the extracted helper
-under SDK 10.0.403. The original 2026-10-26 audit also retains format/Release
+under SDK 10.0.403. The 2026-10-26 evidence also covers format/Release
 Clippy/docs/build for `bonsai-artifacts`, `bonsai-broker`, `bonsai-tools`, archive
 path/expansion/hostile-source regressions, actionlint 1.7.12 and YAML/event/permission
-checks. The original audit has no hosted-validation receipts. Neither review
-includes local full-suite/benchmark evidence or establishes a performance gain;
-full suites and benchmarks remain CI-only.
+checks, without hosted-validation receipts. These checks establish no performance
+gain; full suites and benchmarks remain CI-only.
 Evidence directories under `C:\Users\symbi\AppData\Local\Temp\`:
 
 | Evidence | Path suffix |
