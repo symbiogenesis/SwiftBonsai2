@@ -98,9 +98,8 @@ inputs/receipts, non-build versus embedded-input changes, interrupted publicatio
 model-only provisioning and resumable partial downloads. Synthetic compiler trees
 must leave no descendants after cancellation/timeout/early root exit before lock
 reacquisition. Environment checks preserve Unicode/profile entries and reject
-protected overlays. PowerShell retains copied-package/single-instance checks;
-old cache/native-startup script suites are retired. These establish correctness,
-not startup speed or inference performance.
+protected overlays. PowerShell checks copied packages and single-instance launch. These establish
+correctness, not startup speed or inference performance.
 
 Upstream-only coverage runs in Prism's [conformance](https://github.com/symbiogenesis/prism-inference/blob/main/.github/workflows/runtime-conformance.yml),
 [Foundation](https://github.com/symbiogenesis/prism-inference/blob/main/.github/workflows/foundation.yml),
@@ -202,41 +201,22 @@ narrow, empty and maximum-draft/minimum-window layouts. Captures do not qualify
 native screen readers, actual-model streaming or audio.
 
 The [streaming/storage contract](streaming-resources.md) owns resource invariants.
-Use these untimed regression locations; pointer/byte/work-count checks establish
-ownership and bounded work, not device latency or process peak memory.
+Choose one named regression from the source locations below. These untimed checks
+establish byte/pointer identity, ownership and bounded work; they measure neither
+device latency nor process peak memory. Module prefixes locate cases, not permission
+to run a complete module or reconstruct a suite locally.
 
-| Area | Focused selections / properties |
+| Area / source | Regression coverage |
 | --- | --- |
-| Broker request/backend storage | `request_buffer::tests::`, `backend::memory_tests::`, `backend::payload_tests::`: final-destination reads, fragments/prefixes/chunks, empty reads and sticky truncation/I/O teardown; eligible payloads bypass 8 KiB staging, tails stay bounded. |
-| Broker final JSON | `response::memory_tests::`: spare-tail initialization, bounded growth, exact-cap overflow probe, framing, deadlines and cancellation. |
-| UI history/recovery bytes | `bounded_json::tests::`; `client::tests::committed_and_pending_history_share_payloads_without_sharing_turn_mutations`; `window::persistence::tests::recovery_bounds_escaped_json_before_retaining_an_oversized_workspace`. |
-| TTS generated graph eviction | `build_overlay::tests::generated_decode_workspace_eviction_releases_only_completed_graphs`: compile actual generated block with provisioned compiler; verify hits, window/batch changes, allocation failure, lifetime/teardown, immutable source and drift rejection. |
-| Recovery backpressure | `recovery::tests::recovery_reserves_snapshot_before_encoding_through_worker_completion`; `window::persistence::tests::recovery_backpressure_skips_encoding_until_the_snapshot_slot_is_free`: held synthetic save prevents another encoding. |
-| Startup capture | `startup_process::tests::`: UTF-8 allocation ownership, unchanged lossy decode, exact stdout/stderr order. |
-| Speech intake | `http::intake_tests::memory_body_intake_reuses_headers_and_preserves_coalesced_audio`; `request::tests::memory_multipart_`: fixed fields and excess rejection before decode. |
-| Linear headers | `fragmented_headers_scan_each_window_once_and_preserve_coalesced_payload` / `fragmented_headers_scan_each_window_once_and_preserve_coalesced_audio`: count delimiter comparisons. `fragmented_response_headers_keep_exact_limit_framing_and_coalesced_body` / `fragmented_request_headers_keep_exact_limit_framing_and_coalesced_audio`: every delimiter split at exact limits. |
-| Borrowed microphone upload | `canary::tests::multipart_upload_borrows_pcm_and_preserves_bytes_under_partial_writes`: canonical/extensible WAV identity, boundary collision avoidance, partial/cancelled writes, max clip; authenticated transcription checks wire bytes. |
-| Speech final-storage response | `canary::tests::response_body_`: retained headers/coalesced payload, direct JSON/WAV reads under partial delivery, exact limits, overflow/truncation/cancellation; authenticated transcription/strict framing share the contract. |
-| Request send ownership | `client::memory_tests::`: owned bytes survive partial writes/flush, release before first response read or on failure, preserve wire bytes and terminal SSE/HTTP. |
-| Ready speech PCM | `canary::pcm::tests::pcm_framing_reuses_one_buffer_without_byte_sized_source_reads`; `pcm_ready_prefix_arrives_before_remaining_chunk_or_framing`: gated delivery/read counts, odd fragments, buffered cancellation, truncation and terminal validation. |
-| Ready chat SSE | `client::tests::http_payload_`: ready payload precedes remaining body/chunk framing, while truncation still rejects. |
-| Speech backpressure | `speech::command_queue::tests::`, `speech::stream::tests::`: stalled-worker bounds, coalescing, overload, cancellation, fresh recovery and tail compaction. |
-| Speech waits | `speech::tests::cold_speech_worker_waits_for_commands_and_wakes_for_stop_and_shutdown`; `speech::tests::speech_command_wait_preserves_monitoring_for_warm_active_and_retained_input`; `speech::command_queue::tests::blocking_speech_receiver_wakes_when_the_sender_disconnects`: command/disconnect wakeups with periodic monitoring while resources are owned. |
-| Recovery counts | `window::persistence::tests::recovery_rejects_excess_`: exact count limits, reject extra objects before fields, preserve live workspace. |
-| PCM/WinMM recycling | `speech::pipeline::tests::pcm_`, `tiny_pcm_callbacks_form_fixed_frames_and_flush_the_final_tail_exactly`, synthetic output and `speech::pipeline::tests::playback_`: bounded packet/spare reuse, segment tails, byte identity, nonblocking recycling, stable descriptors/cleared packed fields, eight-descriptor limit, retained PCM/header on unprepare refusal and quarantine teardown. Fake callbacks do not invoke a driver. |
-
-Find/transcript work checks use `window::transcript::cache_tests::` and
-`window::transcript::search::performance_tests::`. They count work directly and
-make no elapsed-time claim:
-
-| Exact cases | Guard |
-| --- | --- |
-| `highlighted_layout_cache_keeps_constant_size_keys_during_streaming_and_navigation`; `highlight_identity_tracks_same_length_queries_replacement_and_result_eviction` | Fixed identities at 10,000 results, unchanged-range visits, navigation, same-length edits, Find reopen/eviction; no duplicated range vectors. |
-| `streamed_find_scans_only_appended_bytes_and_keeps_one_continuation` | Linear appended-byte work, tail scratch; Unicode append oracle, replacement/saturated lookahead avoid prefix rescans. |
-| `streamed_find_appends_only_new_results_without_rebuilding_completed_caches`; `streamed_find_saturated_prefix_skips_tail_cache_and_result_work`; `streamed_find_exact_limit_preserves_results_when_lookahead_becomes_limited` | Result-copy/cache counts, preserved navigation/selection, saturation then eviction. |
-| `bounded_find_matches_folded_reference_across_expansion_and_prefix_boundaries`; `bounded_find_scratch_depends_on_query_bytes_and_retains_the_result_lookahead` | Prior folded-match oracle; query-sized scratch and lookahead limits. |
-| `window::transcript::search::shortcuts::tests::` | Find keyboard/IME/Escape precedence without services. |
-| `transcript_accounting_caps_empty_messages_before_bytes_require_eviction`; `transcript_accounting_count_eviction_preserves_find_and_recovery`; `transcript_accounting_count_and_byte_eviction_remove_one_combined_prefix` | Shared 512-message live/restore bound, exact byte totals across append/replacement/eviction/recovery, one combined count/byte eviction prefix, preserved Find selection, no completed-message visits for ordinary append accounting. |
+| Broker [`request_buffer`](../src/broker/src/request_buffer.rs), [`backend` storage/payload tests](../src/broker/src/backend/) and [`response` memory tests](../src/broker/src/response/memory_tests.rs) | Final-destination/spare-tail reads, bounded growth, fragments/coalesced prefixes/chunk tails, empty reads, sticky truncation/I/O failure, exact-cap overflow probes, framing, deadlines and cancellation. Eligible payloads bypass 8 KiB staging. |
+| UI [`bounded_json`](../src/chat-ui/src/bounded_json.rs), [`client` memory tests](../src/chat-ui/src/client/memory_tests.rs), [`recovery`](../src/chat-ui/src/recovery.rs) and [`persistence`](../src/chat-ui/src/window/persistence.rs) | Escaped-byte limits before full encoding; immutable body sharing with independent turn vectors; request bytes retained through partial write/flush and released before response reads/on failure; snapshot reservation through encryption/save; busy saves skip encoding. Exact restore counts reject extra objects before fields and preserve the live workspace. |
+| [`startup_process`](../tools/bonsai/src/startup_process.rs) | UTF-8 allocation transfer, lossy-decode identity and stdout-before-stderr ordering. |
+| Speech service [`http`](../src/speech-service/src/http.rs), [`request`](../src/speech-service/src/request.rs) and UI [`canary`](../src/chat-ui/src/canary.rs) | Borrowed multipart fields/PCM, pre-decode excess-field rejection, canonical/extensible WAV identity, boundary collisions, maximum clip, authenticated wire bytes and partial/cancelled writes. Final-storage JSON/WAV reads cover retained headers, coalesced/partial delivery, exact limits, overflow and truncation. Header tests count delimiter comparisons and cover every delimiter split at exact limits. |
+| UI [`client`](../src/chat-ui/src/client.rs) and [`canary::pcm`](../src/chat-ui/src/canary/pcm.rs) | Ready prefixes arrive before remaining body/chunk framing. Gated reads check fixed-buffer reuse, odd PCM fragments, buffered cancellation, truncation and terminal validation without byte-sized socket reads. |
+| [`speech` workers](../src/chat-ui/src/speech/) and [`command_queue`](../src/chat-ui/src/speech/command_queue.rs) | Stalled-worker queue/payload bounds, coalescing, overload, tail compaction, cancellation and fresh recovery. Cold workers wake on command/disconnect/Stop/shutdown; active, warm and retained-input workers continue periodic monitoring. |
+| [`speech::pipeline`](../src/chat-ui/src/speech/pipeline.rs) | Bounded packet/spare reuse across segment tails, byte identity, nonblocking recycling, stable descriptors with cleared fields, eight-descriptor limit, retained PCM/header on unprepare refusal and quarantine teardown. Fake callbacks do not invoke an audio driver. |
+| TTS [`build_overlay`](../src/speech-tts/build_overlay.rs) | Compiles the actual generated decode block with the provisioned compiler; checks cache hits, window/batch replacement, allocation failure, completed-graph lifetime/teardown, immutable source and drift rejection. |
+| Transcript [`cache_tests`](../src/chat-ui/src/window/transcript/cache_tests.rs), [`search` work tests](../src/chat-ui/src/window/transcript/search/performance_tests.rs) and [`shortcuts`](../src/chat-ui/src/window/transcript/search/shortcuts.rs) | Fixed highlight identities at 10,000 results; navigation, same-length replacements/queries, Find reopen/eviction and no duplicated range vectors. Appends scan/copy only new bytes/results with one continuation, query-sized scratch and folded-Unicode oracle checks; saturated prefixes skip tail work while preserving lookahead, selection and navigation. Accounting checks exact totals and a combined count/byte eviction prefix at the shared 512-message live/restore limit, without visiting completed messages on ordinary append. Keyboard/IME/Escape precedence needs no service. |
 
 For promotion tooling, `./tests/Test-Inference.ps1 -Case ReleaseLock` (also in
 Foundation `-Case All`) uses synthetic bundles without a model. Candidate generation
@@ -266,3 +246,21 @@ throughput, sustained comfort, physical audio-driver behavior or speech/chat ove
 In particular, untimed storage checks do not qualify the 15.5 GiB admission/11.5 GiB
 Job budget. Source checks do not qualify a provisioned binary; release acceptance
 requires independently reviewed artifacts and promotion evidence.
+
+## Promotion criteria
+
+Every promoted runtime/profile must:
+
+- Pass its correctness, security, full-state recovery, creative-quality and
+  resource gates, including independent LoRA decode-TPS and quality requirements.
+- Keep memory bounded without sustained paging, with owner-accepted
+  responsiveness, heat and fan behavior during sustained use.
+- Show paired target-device CI benefit: initially **10% lower end-to-end latency**,
+  or documented capacity/energy benefit within accepted latency/quality limits.
+  Predeclare tolerances and retain losing/no-go results.
+- Reproduce on settled `main` with immutable artifact, build and device identities,
+  run/capture references, limitations and a rollback profile.
+
+Full suites and benchmarks run only in their owning main-only CI workflows.
+Local builds, analyzers and focused correctness checks remain allowed. Passing
+an experiment or synthetic check does not waive any independent promotion gate.
