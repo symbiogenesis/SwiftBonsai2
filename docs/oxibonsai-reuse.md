@@ -22,7 +22,7 @@ immutable release update is separate.
 
 ## GGUF: adopt regression scenarios
 
-Useful source references are the [metadata
+Source references: the [metadata
 parser](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-core/src/gguf/metadata.rs),
 [tensor
 descriptors](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-core/src/gguf/tensor_info.rs),
@@ -30,8 +30,8 @@ descriptors](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158
 parser](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-core/src/gguf/streaming.rs)
 and [edge-case
 tests](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-core/tests/gguf_edge_cases.rs).
-They make hostile declared lengths/counts, duplicate metadata/tensor names, bounded
-allocation before input arrives, and nesting depth explicit review topics.
+Review boundaries include hostile lengths/counts, duplicate metadata/tensor names,
+allocation bounds before input arrives and nesting depth.
 
 Runner keeps `bonsai-gguf.exe` as format authority: little-endian v3 with an explicit
 Prism dialect. Released-tool checks use the actual provisioned binary, independent
@@ -100,14 +100,12 @@ target-device CI for useful benefit. Oxi's AArch64 prefetch helper is a no-op wi
 its nightly compiler cfg; the presence of a prefetch API alone does not establish
 executed hints.
 
-Runner imports no Oxi kernel/parser dependency. [Implementation status](#implementation-status)
-describes current regression coverage and controls; [PLAN.md](../PLAN.md#cpu-kernels)
-tracks outstanding work.
+Runner imports no Oxi kernel/parser dependency. [Implemented coverage](#implementation-status)
+is below; [PLAN.md](../PLAN.md#cpu-kernels) owns delivery.
 
 ## Additional optimization and data-structure review
 
-These comparisons use the same `1d10c48` revision as the 2026-10-29 review above.
-They establish neither benchmark results nor Snapdragon gains.
+All comparisons use `1d10c48`; none establishes Snapdragon performance.
 
 | Candidate | Source evidence and decision |
 | --- | --- |
@@ -171,7 +169,7 @@ manifest](runtime-candidates/oxibonsai-row-parallel.json) retain the independent
 authored implementation and checks. Its newer Prism base `ff3d54d` and reviewed
 complete-tree match do not promote Runner's older release pin.
 
-Retained passing evidence has two scopes:
+Passing evidence has two scopes:
 
 - Runner: focused delimiter/inventory/parser parity, burst/refill/concurrency/deadline,
   real-loopback/client framing/history and affected Release Clippy checks.

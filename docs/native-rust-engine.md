@@ -11,21 +11,20 @@ feature parity does not qualify inference.
 
 ## Swift CPU supported subset
 
-The exact Swift CPU target is native Windows ARM64, initially the 32 GB Snapdragon X
-Elite. Runner pins **0.1.6**, main revision `02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0`,
-with successful
+The target is native Windows ARM64, initially the 32 GB Snapdragon X Elite. Runner
+pins **0.1.6**, main revision `02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0`, with passing
 [Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357453)
 and
 [conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357329).
 Release/focused integration does not establish full-context, sustained-performance,
 creative, adapter or daily-isolation acceptance.
 
-| Retained implementation | Evidence boundary |
+| Implementation | Evidence boundary |
 | --- | --- |
-| PTQ1 Q8_0 scale/inverse repair | Automatic ARM64 three-token logits/live state match native bytes; scalar/explicit NEON and broader qualification remain pending in the [PTQ1 contract](swift-memory.md#current-weight-ptq1-option). Generic/PQ2 preparation is preserved. |
-| Reused sampler candidates; 32-channel attention-value tiles with at most 2 KiB accumulator payload | Retains 0.1.5 storage without copying scratch into transaction clones; frozen sampler/graph and bitwise attention fixtures preserve arithmetic/recovery. No measured TPS or model-peak-RAM gain. |
+| PTQ1 Q8_0 scale/inverse | Automatic ARM64 three-token logits/live state match native bytes; scalar/explicit NEON and broader qualification remain pending in the [PTQ1 contract](swift-memory.md#current-weight-ptq1-option). Generic/PQ2 preparation is preserved. |
+| Reused sampler candidates; 32-channel attention-value tiles with at most 2 KiB accumulator payload | Transaction clones exclude scratch; frozen sampler/graph and bitwise attention fixtures preserve arithmetic/recovery. No measured TPS or model-peak-RAM gain. |
 | Atomic checkpoint restore | Stages fallible KV copies, then restores recurrent/convolution bits into live storage, preserving independent checkpoints and failure atomicity. Avoids 156,893,184 bytes (149.625 MiB) transient Swift payload. |
-| Aligned F32/F16 projection controls and accumulation repair | Native-backed operator evidence only; generic, BF16 and unqualified tails are unchanged. No broader PTQ1 or reduced-admission claim. |
+| Aligned F32/F16 projections | Native-backed operator evidence only; generic, BF16 and unqualified tails are unchanged. No broader PTQ1 or reduced-admission claim. |
 
 | Area | Contract |
 | --- | --- |
@@ -38,11 +37,11 @@ creative, adapter or daily-isolation acceptance.
 | Lifecycle | Verified readiness, identical canonical count/generation requests, one active generation, authentication, streaming, cancellation, deadlines, reset and recovery |
 | Admission | 15.5 GiB available physical memory, 11.5 GiB Job commit limit and 4 GiB running physical reserve; owner-selected development budget, with full-context resource qualification pending; diagnostic allowances are not launch profiles |
 
-The service subset is **PQ2 without LoRA, cache reuse, speculation or offload**.
-PTQ1, other families and adapters require separate qualification, including [LoRA
+The service supports **PQ2 without LoRA, cache reuse, speculation or offload**.
+PTQ1, other families and adapters need separate qualification, including [LoRA
 TPS/quality](swift-lora.md#standard-profile-qualification). [Hardware discovery](hardware-capabilities.md)
-reports inventory; the runtime determines kernel eligibility. Kernel `Auto` is distinct
-from Runner's planned qualified-device selector.
+reports inventory; runtime kernel eligibility/`Auto` does not implement Runner's planned
+qualified-device selector.
 
 Bounded Swift numerical comparisons use the unchanged `1e-3 + 1e-3 * abs(reference)`
 tolerance for logits, complete logical recurrent/convolution state and live FP16 KV rows
@@ -70,10 +69,10 @@ speculation are separate numerical experiments. The [algorithm
 reference](inference-algorithms.md) defines packed-lookup, attention-rounding, chunkwise
 recurrence and state-recovery constraints.
 
-Owned Rust model and LoRA tensors are replacement storage; ggml pointer bindings are
-not. Device and operating-system calls stay behind audited safe boundaries. A CPU
-replacement has no C/C++ inference-library dependency. Source reuse requires immutable
-revisions, licensing/notices, hardware assumptions and correctness evidence.
+A CPU replacement owns Rust model/LoRA storage, has no C/C++ inference-library dependency
+and confines device/OS calls to audited safe boundaries; ggml pointer bindings do not
+satisfy it. Source reuse needs immutable revisions, licenses/notices, hardware assumptions
+and correctness evidence.
 
 The performance objective is roughly 2× end-to-end throughput; 3–5× depends on major
 baseline inefficiencies and is a stretch hypothesis. Prefill, decode and completed-task
@@ -87,8 +86,8 @@ include speculation. Neither establishes unchanged-arithmetic Snapdragon gains.
 
 ## Token and worker API semantics
 
-These generic token-driver interfaces are distinct from the pinned Swift chat session
-and its native sampler. Their boundaries remain explicit:
+These generic token-driver APIs are separate from the pinned Swift chat session and
+native sampler:
 
 | Interface | Supported behavior |
 | --- | --- |
@@ -121,10 +120,10 @@ arithmetic and whole-request rollback, with cancellation and deadline checks bet
 tokens. Sequential blocks do not imply tiled matrix-matrix execution or measured prefill
 benefit.
 
-Prepared matvecs share activation preparation only for matching input,
-basis/permutation, width and quantizer contracts; mixed Q8_K/Q8_0 and transformed/plain
-inputs remain separate. Preparation is scoped to a call. Full-attention state stores
-exact binary16 bits and widens them before scalar products; convolution/GDN stays FP32.
+Matvec activation preparation is call-scoped and shared only for matching input,
+basis/permutation, width and quantizer; mixed Q8_K/Q8_0 or transformed/plain inputs stay
+separate. Full-attention state stores exact binary16 bits and widens them before scalar
+products; convolution/GDN stays FP32.
 Snapshot budgets conservatively charge every referenced sealed 64-token KV page, page
 table, mutable-tail capacity and recurrent state per snapshot, without depending on
 sharing for admission.
@@ -160,9 +159,9 @@ none establishes a defect or new profile in the pinned runtime.
 | S6 Event-triggered SGLang | Measure idle polling, wake latency and active decode separately; affinity only relocates polling. |
 | S3 Beyond the Buzz | Charge state handoff, rate matching and coordination before selecting CPU/GPU/NPU phase placement. |
 
-Measure work/traffic before changing representation, ownership, scheduling or fusion.
-Preallocation can hide full-size copies; in-place writes can alias snapshots.
-Record allocation lifetimes alongside independent state ownership.
+Measure work/traffic and allocation lifetimes before changing representation, ownership,
+scheduling or fusion: preallocation can hide full-size copies, and in-place writes can
+alias snapshots.
 [Streaming contracts](streaming-resources.md) cover Runner queues/text/PCM;
 runtime experiments belong in Prism. Follow the
 [measurement guide](performance-expectations.md#2026-literature-measurement-and-comparison)

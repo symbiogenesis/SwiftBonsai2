@@ -1,15 +1,15 @@
 # Qwen reference model
 
-**[Swift](swift-memory.md) is the implementation priority.** Qwen is the reproducible
-reference in [runtime.lock.json](../config/runtime.lock.json), a separate
-development-only profile without accepted daily service.
+[runtime.lock.json](../config/runtime.lock.json) pins Qwen as a reproducible,
+development-only reference. [Swift](swift-memory.md) remains the implementation
+priority; neither profile has daily-service acceptance.
 
 The reference is **Qwen3.8-27B UD-Q3_K_XL**, revision
 `4ca720788d1e01f1bff70c033e0d0028fd02e502`, with **Gemma 4 12B IT QAT Q4_0** as a
-literature-nominated fallback. Selection rests on published evidence, without a local
-candidate benchmark. Confidence is moderate for the base-model creative preference
-and low for the exact quantized artifact and laptop comfort. Only Qwen is provisioned
-by the default scripts; the fallback is not selected.
+literature-nominated fallback. Published evidence gives moderate confidence in the
+base-model creative preference, but low confidence in this quantization and laptop
+comfort. There is no local candidate benchmark. Default provisioning selects Qwen;
+the fallback is not selected.
 
 ## Literature gate
 
@@ -31,12 +31,12 @@ data](https://eqbench.com/creative_writing_longform.js?v=1.0.9). Missing entries
 missing evidence, not zero scores.
 
 Gemma 12B has a slightly higher raw rubric score and more weight-memory headroom.
-The [published Qwen
+The [Qwen
 samples](https://eqbench.com/results/creative-writing-v3/Qwen__Qwen3.8-27B.html) and
 [Gemma
 samples](https://eqbench.com/results/creative-writing-v3/google__gemma-4-12B-it.html)
-show weaknesses in both continuity and constraint following. Longform chapter scores
-decline for both. Neither model has established local creative quality.
+show continuity and constraint-following weaknesses; both models' longform chapter
+scores decline. Local creative quality is unqualified.
 
 The [CW methodology](https://github.com/EQ-bench/creative-writing-bench) uses 32
 prompts, three iterations and pairwise comparisons truncated to 4,000 characters.
@@ -72,8 +72,7 @@ handles MTP separately; its [CPU
 backend](https://github.com/ggml-org/llama.cpp/tree/36e36e63a54fc8f85b95e9c499a022b597e478dd/ggml/src/ggml-cpu)
 supports the artifact's tensor types, SSM convolution and Gated Delta Net. The
 [release](https://github.com/ggml-org/llama.cpp/releases/tag/b11840) includes a native
-Windows ARM64 CPU archive. These are source-compatibility findings, not execution or
-performance qualification.
+Windows ARM64 CPU archive. This establishes source compatibility only.
 
 For one sequence, 8,192 context tokens, FP16 K/V, speculation off, no prompt cache and
 no retained checkpoints:
@@ -86,8 +85,8 @@ subtotal                           13,840,157,600 bytes = 12.8897 GiB
 remaining under 18 GiB               5,487,195,232 bytes = 5.1103 GiB
 ```
 
-Batch 256 / microbatch 128 must also fit scratch, graph buffers and allocation overhead.
-This accounting is not peak residency. Reuse/checkpoints are disabled because the server
+Batch 256 / microbatch 128 also needs scratch, graph buffers and allocation overhead;
+the subtotal is not peak residency. Reuse/checkpoints stay disabled because server
 defaults exceed this estimate. The immutable file retains its MTP block, but speculation
 and projector/vision allocations are not admitted. The guarded CPU check requires 22 GiB
 available and has refused launch on the recorded host; the profile remains

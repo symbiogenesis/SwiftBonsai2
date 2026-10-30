@@ -1,8 +1,8 @@
 # Inference defaults and quality evidence
 
-Chat defaults to thinking off and preserves the native template and publisher's evaluated sampler.
-Thinking is opt-in; its evaluated configuration remains available without a claim that it is best
-for this laptop or creative writing. Actual-model application acceptance remains pending.
+Chat preserves the native template and publisher's evaluated sampler, with thinking off
+by default. These settings are not qualified as optimal for laptop use or creative
+writing. Actual-model application acceptance is pending.
 
 ## Applied defaults
 
@@ -22,9 +22,8 @@ for this laptop or creative writing. Actual-model application acceptance remains
 | Cache reuse / speculation | Disabled | Current memory/state and execution baseline; these are not established quality improvements |
 
 CPU checks, server plans and the Rust development launcher pass sampler/reasoning arguments
-explicitly. However, the pinned completion renderer omits template kwargs during formatting:
-its single-turn check relies on the verified template's thinking-on/`xhigh` defaults, rather than
-the parsed switches. The server request path applies the selected settings explicitly.
+explicitly. The pinned completion renderer nevertheless omits template kwargs: its single-turn
+check uses the template's thinking-on/`xhigh` defaults. Server requests apply selected settings.
 
 For exact counting and generation, the broker uses the identical canonical body with
 `chat_template_kwargs`: selected `enable_thinking` (default false), `reasoning_effort: "xhigh"`,
@@ -47,9 +46,9 @@ is a Rust client workflow with no new broker option, following
 2. Draft from the original task, relevant sources and plan.
 3. Review against original constraints and revise, retaining the draft for comparison.
 
-At most three sequential calls use the same model with fresh contexts containing the original
-task and relevant state. User instructions/approved facts remain authoritative; generated notes
-and references are data. No autonomous tools or open-ended manager loop are enabled.
+The same model makes at most three sequential calls, each with a fresh context containing
+the original task and relevant state. User instructions and approved facts stay authoritative;
+generated notes/references are data. There are no autonomous tools or open-ended manager loop.
 
 Each call retains sampler/template/exact admission: 8K context, reasoning-inclusive caps
 512/1,024/2,048/4,096 (default 4,096), and the broker's 64-token margin. Smaller caps leave more
@@ -58,10 +57,10 @@ overflow rather than dropping history or raising limits. A shared deadline/cance
 all stages, with progress labels. Retain failed/incomplete stages; truncated revisions neither
 replace complete drafts nor become finished answers.
 
-Focused checks cover default single-call behavior, stage order, bounds, cancellation and draft
-retention. The opt-in can be exposed before extensive benchmarking; promotion or quality/speed
-claims require evidence. GVS5H coding results do not establish Swift creative quality.
-Benchmarks remain CI-only; service/security gates apply independently.
+Focused checks cover single-call defaults, stage order, bounds, cancellation and draft retention.
+The experimental option has no qualified quality/speed gain; GVS5H coding results do not establish
+Swift creative quality. Promotion requires evidence, with independent service/security gates and
+CI-only benchmarks.
 
 ## What the benchmarks establish
 
@@ -72,8 +71,8 @@ optimal sampler/effort/prompt nor creative-writing gains.
 [Qwen guidance](https://huggingface.co/Qwen/Qwen3.8-27B#best-practices) supports the thinking sampler,
 warns stronger presence penalties can hurt, and separately defines non-thinking settings.
 Both exact GGUF templates (SHA-256 checked against committed metadata) accept `xhigh`/`medium`/`low`,
-default to `xhigh`, and support `preserve_thinking`. Explicit effort pins behavior without claiming
-a gain; reasoning replay still requires client retention. Do not mix the separate sampler modes.
+default to `xhigh`, and support `preserve_thinking`. Pinning effort is not evidence of a gain.
+Clients must retain reasoning for replay; the two sampler modes stay separate.
 
 No reviewed Swift PQ2 creative A/B supports a superior custom system prompt.
 [Persona](https://aclanthology.org/2025.emnlp-main.1364/) and
@@ -88,8 +87,8 @@ passes quality. Prefix reuse saves computation, not added knowledge/reasoning.
 ## Capacity and execution limits
 
 Profiles admit **8,192 total context tokens** and **4,096 maximum completion tokens**, including
-reasoning. The 16-token load/decode check and paired LoRA 512-token cap are experiment controls,
-not answer-quality evidence or chat recommendations. See [memory](swift-memory.md) and
+reasoning. The 16-token load/decode and paired LoRA 512-token caps are experiment controls,
+not chat recommendations or answer-quality evidence. See [memory](swift-memory.md) and
 [broker admission](broker-policy.md).
 
 These limits cannot reproduce Swift's 32K example or longer published reasoning runs. Truncation
@@ -117,6 +116,5 @@ trained artifacts, so compare them separately from faster kernels:
 
 Measure time/energy to a useful completed answer, including predictor work, extra prefills, failed
 attempts and human revision. Preserve selected thinking/Extra effort, exact reservations,
-cancellation and truthful truncation. These methods are neither quality-qualified on current Swift/LoRA nor enabled in
-the pinned profile. See
-[measurement](performance-expectations.md#2026-literature-measurement-and-comparison).
+cancellation and truthful truncation. These methods are disabled and unqualified on current
+Swift/LoRA. See [measurement](performance-expectations.md#2026-literature-measurement-and-comparison).

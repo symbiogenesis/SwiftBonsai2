@@ -1,7 +1,7 @@
 # Runtime source candidates
 
-These patches are independent review artifacts, with separate bases and evidence.
-Neither changes Runner's release lock or qualifies a production runtime.
+Each patch has its own base, manifest and evidence. These source-review artifacts
+neither change Runner's release lock nor qualify a production runtime.
 
 ## Row-parallel candidate
 
@@ -49,10 +49,10 @@ docs; runtime/docs attribute OxiBonsai's scheduling idea and pin.
 
 ### Focused validation
 
-Formatting, Release Clippy for enabled runtime/server library, binary and test targets,
-scalar-only library Clippy, and Release rustdoc passed. Nine focused test executions
-passed, covering seven distinct names (worker policy and server options ran with the
-feature both enabled and disabled):
+Passing validation covers formatting, Release Clippy for enabled runtime/server
+library/binary/tests, scalar-only library Clippy and Release rustdoc. Nine test
+executions cover seven cases; worker policy and server options run with the feature
+both enabled and disabled:
 
 | Target | Focused case |
 | --- | --- |
@@ -139,11 +139,10 @@ exist; only `common_params_parse` is called, with no model or backend initializa
 The JSON-named external evidence also retains bounded fixture-failure receipts for a
 missing model option and default prompt escaping.
 
-The final patch was applied to pristine pinned files with explicit LF settings; all
-three resulting file hashes match the tested source. The directory's `.gitattributes`
-preserves patch bytes. Build logs, original controls and bounded raw receipts remain in
-the external evidence directory. The checked JSON contains no credentials, inherited
-environment, hostname or user path.
+With explicit LF settings, applying the patch to pristine pinned files reproduces all
+three tested source hashes; `.gitattributes` preserves patch bytes. External evidence
+retains build logs, controls and bounded raw receipts. Checked-in JSON excludes
+credentials, inherited environment, hostname and user paths.
 
 ### Reproduce
 

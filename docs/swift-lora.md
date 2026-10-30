@@ -1,12 +1,12 @@
 # Swift LoRA: artifact, basis and qualification
 
-The pinned OrcaRouter adapter passes bounded native ARM64 loading/decode;
-**effectiveness, correctness and quality on Swift remain unqualified**. The native app
-enables it experimentally at scale **1.3**; `Start-Chat.ps1 -NoAbliterateLora` opts out.
-Settings accepts 0 to 2 in 0.1 steps for the next response and every Extra effort pass,
-without reloading; zero disables correction but retains the adapter. This default
-has no established optimum or standard/daily-service acceptance.
-The broker also exposes an explicit development option. No local training is needed.
+The native app enables the pinned OrcaRouter adapter experimentally at scale **1.3**;
+`Start-Chat.ps1 -NoAbliterateLora` opts out. Settings accepts 0 to 2 in 0.1 steps for the
+next response and every Extra effort pass, without reloading; zero disables correction
+but retains the adapter. Bounded native ARM64 loading/decode passes, but **Swift basis
+correctness, effectiveness, quality and standard/daily-service acceptance are unqualified**.
+No optimal scale is established. The broker has an explicit development option;
+no local training is needed.
 [PLAN.md](../PLAN.md#creative-quality-adapters-and-memory) owns remaining work.
 
 ## Artifact and published evidence
@@ -93,8 +93,8 @@ with the adapter and **1,487,458,304 bytes** for the base: a diagnostic differen
 weights and do not isolate adapter allocation. They establish bounded loading/decode,
 not reliable refusal changes, quality or performance.
 
-The delta does not identify persistent buffers, workspace high-water allocations or
-graph lifetimes. The
+The difference does not isolate persistent buffers, workspace high-water allocations
+or graph lifetimes. The
 [allocator](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-alloc.c)
 already reuses eligible SCALE/ADD parent storage; explicit in-place calls do not
 guarantee savings. F32 factor/input multiplication needs no activation-type conversion
@@ -107,15 +107,14 @@ overlap.
 
 ## Allocation semantics
 
-Common initialization reserves the base graph, then reserves again when activating
-adapters. It frees old compute buffers before replacement, so the commit delta does
-not demonstrate coexistence. Prism Inference owns the immutable B-storage overlay,
+Adapter activation reserves the graph again after base initialization, freeing old
+compute buffers before replacement. The commit difference does not prove coexistence.
+Prism Inference owns the immutable B-storage overlay,
 native regression and
 [builder](https://github.com/symbiogenesis/prism-inference/blob/main/scripts/Build-PrismEngine.ps1).
 Its [overlay guide](https://github.com/symbiogenesis/prism-inference/blob/main/docs/prism-storage-overlay.md)
-records byte-identical operations and a 2.5 MiB storage saving. Runner consumes
-reviewed pins; the installed assessment runtime does not automatically include
-the source overlay.
+records byte-identical operations and a 2.5 MiB storage saving. The installed assessment
+runtime does not automatically include the source overlay; Runner consumes reviewed pins.
 
 All 129 B tensors are byte-identical F32 `[1,5120]`, SHA-256
 `1cdf553ae2623501140ec2e52c3dfa6a80d33fcfe6f91a6d3c4dcd5f887eeca0`. The overlay shares

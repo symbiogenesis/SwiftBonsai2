@@ -23,19 +23,17 @@ nor prose quality. Measure useful-answer time under the protocol below.
 | Historical runtime correction | GPQA/C-Eval were not rerun on current merged weights. |
 | Evaluation configuration | Supports the [sampler baseline](inference-defaults.md#applied-defaults), without a sampler/effort/prompt sweep or creative-writing comparison. |
 
-Small score differences are not established gains; token counts do not measure latency.
+Small score differences do not establish gains; token counts do not measure latency.
 The publisher reports uneven instruction following, tool use and open-ended coding. See
 [Swift's evaluation and limitations](https://ukisai.com/swift-bonsai-2#evaluation) and its
 [evaluation artifact](https://huggingface.co/ukisai/Swift-Bonsai-2-GGUF/blob/main/benchmark_results.json).
 
-The [Swift artifact/memory contract](swift-memory.md) records bounded 16-token
-Prism CPU decode and current-weight PTQ1 results; the [Rust runtime contract](native-rust-engine.md)
-owns its NEON/hybrid-graph evidence. These checks do not establish complete-answer
-performance. [PLAN.md](../PLAN.md) owns outstanding release/profile qualification.
-
-Snapdragon TPS, sustained comfort, creative quality, GPU/NPU profiles, daily-service isolation
-and actual-model application acceptance remain unqualified. Follow [validation policy](validation.md)
-and the independent [LoRA performance/quality gates](swift-lora.md#standard-profile-qualification).
+The [memory guide](swift-memory.md) records 16-token Prism CPU decode and PTQ1 results;
+the [Rust runtime contract](native-rust-engine.md) owns NEON/hybrid-graph evidence.
+Neither establishes complete-answer performance. Snapdragon TPS, sustained comfort,
+creative quality, GPU/NPU profiles, isolation and actual-model app acceptance remain
+unqualified. [PLAN.md](../PLAN.md) owns delivery; [validation](validation.md) and
+independent [LoRA gates](swift-lora.md#standard-profile-qualification) govern acceptance.
 
 ## X1/X2 configuration evidence
 
@@ -81,12 +79,10 @@ timing/profile captures and benchmarks remain [CI-only](validation.md).
 
 ## Q4 speech resource comparison
 
-The [paired hosted ARM64
-run](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40445129576) at Runner
-revision `90db7f71033adeb2e262ec6f97f7dc360fceb9c8` completed all eight fresh-process sessions and
-sixteen bootstrap/warm WAV records on a four-core Cobalt 100. Independent framing checks passed for
-every clip. No spontaneous worker exits occurred; all termination codes were observed after
-supervisor stop.
+The [hosted ARM64 comparison](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/40445129576)
+at Runner `90db7f71033adeb2e262ec6f97f7dc360fceb9c8` covers eight fresh-process sessions
+and sixteen bootstrap/warm WAV records on a four-core Cobalt 100. Every clip passes
+independent framing checks. Workers exit only after supervisor stop; none exits spontaneously.
 
 Positive differences below mean lower Q4 usage. Counter domains are separate.
 
@@ -103,11 +99,11 @@ sequential, so their reductions count once for active weights. The Q8 codec is u
 observed working-set reduction does not identify its allocation cause. Job commit excludes mapped
 residency; neither counter is added to the other or treated as complete system RAM.
 
-Phase private/resident maxima were sampled every 25 ms and can miss brief allocations. The lowest
-sampled system availability was 7.015308 GiB, above the unchanged 5 GiB reserve. Admission remained
-9 GiB with a 16 GiB commit ceiling. These results describe this hosted CPU and short public
-fixtures. Snapdragon, long-clip and independent listening qualification remain outstanding; Q8 stays
-the default. Work items remain in [PLAN.md](../PLAN.md).
+Private/resident sampling at 25 ms can miss brief allocations. Minimum sampled system
+availability is 7.015308 GiB, above the 5 GiB reserve; admission is 9 GiB and the commit
+ceiling 16 GiB. These hosted-CPU, short-fixture results do not qualify Snapdragon,
+long clips or independent listening. Q8 remains default; [PLAN.md](../PLAN.md) owns
+qualification.
 
 The report SHA-256 is `9b9aecf03a2c0a2467a3b3c8f316c4ee0c2c237dbe67e22975fa5c9b07285eb4`. The TTS
 executable was 1,914,368 bytes, SHA-256

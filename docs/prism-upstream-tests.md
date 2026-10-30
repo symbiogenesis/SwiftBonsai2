@@ -1,34 +1,29 @@
 # Runtime conformance contract
 
-Runtime algorithms, source/backend catalogs, codec parity, native overlays and source
-tests belong to [Prism Inference](https://github.com/symbiogenesis/prism-inference). The
-[complete conformance
+[Prism Inference](https://github.com/symbiogenesis/prism-inference) owns runtime
+algorithms, backend/source catalogs, codecs, native overlays and source tests.
+Upstream acceptance is defined by its [conformance
 guide](https://github.com/symbiogenesis/prism-inference/blob/main/docs/prism-upstream-tests.md),
-[71-source
-catalog](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/catalog.json),
-[migration
-inventory](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/migration.json),
-[main-only runtime
-workflow](https://github.com/symbiogenesis/prism-inference/blob/main/.github/workflows/runtime-conformance.yml)
-and [focused
-diagnostics](https://github.com/symbiogenesis/prism-inference/blob/main/.github/workflows/prism-focused.yml)
-define upstream acceptance. This page records Runner's boundaries; [PLAN.md](../PLAN.md#deferred-prism-migration)
-alone tracks deferred migration work.
+[71-source catalog](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/catalog.json),
+[migration inventory](https://github.com/symbiogenesis/prism-inference/blob/main/tools/prism/upstream/migration.json),
+[main-only workflow](https://github.com/symbiogenesis/prism-inference/blob/main/.github/workflows/runtime-conformance.yml)
+and [focused diagnostics](https://github.com/symbiogenesis/prism-inference/blob/main/.github/workflows/prism-focused.yml).
+This page defines Runner's boundary; [PLAN.md](../PLAN.md#deferred-prism-migration)
+owns deferred migration.
 
-Runner's [Foundation](../.github/workflows/foundation.yml) validates the app, broker,
-process ownership, provisioning and release integration, without building the upstream
-catalog or running runtime algorithm/codec suites. Full suites/benchmarks are CI-only
-in their owning repository. The target is Windows ARM64 on Snapdragon X Elite; Apple
-work is excluded. Hosted Windows ARM64 results cannot establish Snapdragon performance.
+Runner's [Foundation](../.github/workflows/foundation.yml) covers the app, broker,
+process ownership, provisioning and releases. It neither builds the upstream catalog
+nor runs runtime algorithm/codec suites. Full suites and benchmarks are CI-only in
+the owning repository. The target is Windows ARM64 on Snapdragon X Elite; Apple is
+excluded. Hosted ARM64 results do not establish Snapdragon performance.
 
 ## Source fidelity and evidence
 
-Production safe Rust functionality and thin adapters retain every imported source's
-inputs, assertions, numerical tolerances, schedules and stopping rules. Constructors,
-source-specific expected output and focused tests do not substitute for full source
-execution. Required production bridges remain in place while original C++ tests stay
-retired. The [source reuse review](#source-reuse-review) records extraction sources and
-supported-subset limits.
+Safe Rust implementations and thin adapters preserve imported inputs, assertions,
+tolerances, schedules and stopping rules. Constructors, source-specific expected output
+and focused tests cannot substitute for full source execution. Production bridges stay
+in place; original C++ tests remain retired. The [reuse review](#source-reuse-review)
+records extraction sources and supported subsets.
 
 | Acceptance dimension | Required scope |
 | --- | --- |
@@ -160,8 +155,8 @@ qualification.
 
 ## Source reuse review
 
-Reuse follows pinned source contracts and licenses; upstream comments do not authorize
-running scripts. Reuse introduces no framework dependency.
+Source reuse preserves pinned contracts/licenses and adds no framework dependency.
+Upstream comments do not authorize script execution.
 
 | Project and pinned revision | Relevant code | Decision |
 | --- | --- | --- |
