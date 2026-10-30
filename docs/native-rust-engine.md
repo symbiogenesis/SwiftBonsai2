@@ -1,51 +1,32 @@
 # Native Rust Prism engine contract
 
-[Prism Inference](https://github.com/symbiogenesis/prism-inference) owns the
-safe Rust CPU runtime, tokenizer, packed kernels and hybrid graph. Runner
-consumes its immutable [release lock](../config/prism-inference.lock.json)
-and owns application, broker, artifact provisioning and released-runtime
-integration. The pinned native Prism engine is the comparison and fallback.
-The canonical [runtime and correctness work](../PLAN.md#runtime-and-correctness)
-is maintained only in `PLAN.md`.
-The [default-runtime promotion contract](runtime-promotion.md) binds the complete
-standard profile, including scale-1.3 LoRA, to reviewed evidence. Its offline
-evaluator reports missing evidence as pending and never changes runtime selection.
-
-The application UI is a separate [pure-Rust native client](ui-architecture.md)
-of the broker's local HTTP/JSON/SSE contract. Native UI availability does not
-expand runtime qualification. Server/browser UI parity is outside the engine
-acceptance contract.
+[Prism Inference](https://github.com/symbiogenesis/prism-inference) owns the safe Rust
+CPU runtime, tokenizer, packed kernels and hybrid graph. Runner owns the app, broker,
+provisioning and [immutable release integration](../config/prism-inference.lock.json);
+the publisher's pinned native engine remains comparison and fallback.
+[PLAN.md](../PLAN.md#runtime-and-correctness) owns outstanding work; the [promotion
+evaluator](runtime-promotion.md) requires the complete scale-1.3 LoRA profile and
+reports missing evidence as pending without changing selection. The [native Rust
+UI](ui-architecture.md) is a separate broker client; its availability and browser/server
+UI parity do not qualify the runtime.
 
 ## Swift CPU supported subset
 
-The bounded CPU contract targets the exact Swift Bonsai 2 model on Windows
-ARM64, initially the 32 GB Snapdragon X Elite. Runner's pinned `0.1.6` release
-contains the bounded source CPU implementation. Release identity and focused
-integration do not establish full-context behavior, sustained performance,
-creative quality, adapter correctness or daily-service isolation.
-
-The pinned `0.1.6` bundle comes from reviewed main revision
-`02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0` and successful
+The exact Swift CPU target is native Windows ARM64, initially the 32 GB Snapdragon X
+Elite. Runner pins **0.1.6**, main revision `02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0`,
+with successful
 [Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357453)
-and [conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357329)
-runs. It repairs pinned PTQ1 Q8_0 scale/inverse arithmetic; the bounded automatic
-ARM64 three-token check now matches every native logit/live-state byte. Completed
-scalar/explicit NEON controls and broader qualification remain pending; see the
-[PTQ1 contract](ptq1-readiness.md). Generic/PQ2 preparation is preserved.
+and
+[conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357329).
+Release/focused integration does not establish full-context, sustained-performance,
+creative, adapter or daily-isolation acceptance.
 
-It retains the 0.1.5 sampler candidate storage between tokens without copying scratch into
-transaction clones, and reads attention values in 32-channel tiles with at most
-2 KiB accumulator payload. Frozen sampler, graph and bitwise attention fixtures
-preserve the prior arithmetic and recovery contracts. These changes establish
-neither a measured TPS gain nor lower model-level peak RAM.
-
-Checkpoint restore stages all fallible KV copies before restoring exact recurrent
-and convolution bits into existing live allocations. This avoids another
-156,893,184 bytes (149.625 MiB) of transient Swift restore payload while preserving
-independent checkpoints and failure atomicity. The release also adds native-backed
-aligned F32/F16 projection controls and their pinned accumulation repair; generic,
-BF16 and unqualified tail arithmetic remain unchanged. Operator fixtures and
-storage bounds do not establish broader PTQ1 qualification or lower admission.
+| Retained implementation | Evidence boundary |
+| --- | --- |
+| PTQ1 Q8_0 scale/inverse repair | Automatic ARM64 three-token logits/live state match native bytes; scalar/explicit NEON and broader qualification remain pending in the [PTQ1 contract](ptq1-readiness.md). Generic/PQ2 preparation is preserved. |
+| Reused sampler candidates; 32-channel attention-value tiles with at most 2 KiB accumulator payload | Retains 0.1.5 storage without copying scratch into transaction clones; frozen sampler/graph and bitwise attention fixtures preserve arithmetic/recovery. No measured TPS or model-peak-RAM gain. |
+| Atomic checkpoint restore | Stages fallible KV copies, then restores recurrent/convolution bits into live storage, preserving independent checkpoints and failure atomicity. Avoids 156,893,184 bytes (149.625 MiB) transient Swift payload. |
+| Aligned F32/F16 projection controls and accumulation repair | Native-backed operator evidence only; generic, BF16 and unqualified tails are unchanged. No broader PTQ1 or reduced-admission claim. |
 
 | Area | Contract |
 | --- | --- |
@@ -58,58 +39,57 @@ storage bounds do not establish broader PTQ1 qualification or lower admission.
 | Lifecycle | Verified readiness, identical canonical count/generation requests, one active generation, authentication, streaming, cancellation, deadlines, reset and recovery |
 | Admission | 15.5 GiB available physical memory, 11.5 GiB Job commit limit and 4 GiB running physical reserve; owner-selected development budget, with full-context resource qualification pending; diagnostic allowances are not launch profiles |
 
-This engine contract uses PQ2 without LoRA, prompt-cache reuse, speculation or
-accelerator offload. Current-weight PTQ1, other model families and adapter
-execution have separate identities and qualification. The LoRA-enabled standard
-profile retains its independent [TPS and quality requirements](swift-lora.md#required-standard-profile-qualification).
-The hardware [capability contract](hardware-capabilities.md) reports inventory;
-kernel eligibility stays in the runtime. Kernel-level `Auto` is not Runner's
-planned qualified-device profile selector.
+This subset is PQ2 without LoRA, cache reuse, speculation or offload. PTQ1, other
+families and adapters qualify separately, including independent [LoRA TPS/quality
+gates](lora-qualification.md). [Hardware discovery](hardware-capabilities.md) reports
+inventory; the runtime owns kernel eligibility. Kernel `Auto` is distinct from Runner's
+planned qualified-device selector.
 
-Bounded Swift numerical comparisons use the unchanged
-`1e-3 + 1e-3 * abs(reference)` tolerance for logits, complete logical
-recurrent/convolution state and live FP16 KV rows against pinned native
-execution. Exact chat/tokenizer and sampler references belong to the source
-project's [prompt fixtures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/swift-prompt-parity.json)
-and [sampler fixtures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/swift-sampler.json).
-Bounded supplied-history streaming, output-limit termination, seeded replay,
-context rejection/recovery, abandonment, owned shutdown and fresh restart have
-a narrower scope than full 8K-context/4K-output or daily acceptance.
+Bounded Swift numerical comparisons use the unchanged `1e-3 + 1e-3 * abs(reference)`
+tolerance for logits, complete logical recurrent/convolution state and live FP16 KV rows
+against pinned native execution. Exact chat/tokenizer and sampler references belong to
+the source project's [prompt
+fixtures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/swift-prompt-parity.json)
+and [sampler
+fixtures](https://github.com/symbiogenesis/prism-inference/blob/main/tests/fixtures/swift-sampler.json).
+Supplied-history streaming, output-limit termination, seeded replay, context
+rejection/recovery, abandonment, shutdown and restart checks are bounded evidence; full
+8K-context/4K-output and daily acceptance remain pending.
 
 ## Numerical and replacement boundaries
 
-Preserve exact model/adapter identities, decoded scales, activation/cache
-precision, transforms, attention topology, sampler and ordinary decoding.
-PQ2, verified current-weight PTQ1 and the Qwen reference are distinct lanes;
-lossless weights do not imply identical activation arithmetic. Generic PQ2's
-fourth symbol remains valid even when Swift's particular census is ternary.
+Preserve exact model/adapter identities, decoded scales, activation/cache precision,
+transforms, attention topology, sampler and ordinary decoding. PQ2, verified
+current-weight PTQ1 and the Qwen reference are distinct lanes; lossless weights do not
+imply identical activation arithmetic. Generic PQ2's fourth symbol remains valid even
+when Swift's particular census is ternary.
 
-Lossless layout changes, SIMD, tiling, buffer reuse, fusion and scheduling use
-the same arithmetic contract. Reassociation and altered reductions/FMA need
-declared numerical tolerances. Precision reduction, approximate attention,
-pruning, retraining and speculation are separate numerical experiments.
-The [algorithm reference](inference-algorithms.md) defines packed-lookup,
-attention-rounding, chunkwise recurrence and state-recovery constraints.
+Lossless layout changes, SIMD, tiling, buffer reuse, fusion and scheduling use the same
+arithmetic contract. Reassociation and altered reductions/FMA need declared numerical
+tolerances. Precision reduction, approximate attention, pruning, retraining and
+speculation are separate numerical experiments. The [algorithm
+reference](inference-algorithms.md) defines packed-lookup, attention-rounding, chunkwise
+recurrence and state-recovery constraints.
 
-Owned Rust model and LoRA tensors are replacement storage; ggml pointer
-bindings are not. Device and operating-system calls stay behind audited safe
-boundaries. A CPU replacement has no C/C++ inference-library dependency.
-Source reuse requires immutable revisions, licensing/notices, hardware
-assumptions and correctness evidence.
+Owned Rust model and LoRA tensors are replacement storage; ggml pointer bindings are
+not. Device and operating-system calls stay behind audited safe boundaries. A CPU
+replacement has no C/C++ inference-library dependency. Source reuse requires immutable
+revisions, licensing/notices, hardware assumptions and correctness evidence.
 
-The performance objective is roughly 2× end-to-end throughput; 3–5× depends on
-major baseline inefficiencies and is a stretch hypothesis. Prefill, decode and
-completed-task time are separate measurements, with cold load/repacking,
-allocation/copying, synchronization, memory traffic and the measured critical
-path included. [Orangu's published results](https://mnemosyne-systems.github.io/orangu/doc/server.html#scope)
-on CIX P1/Mali use [different activation/repacking choices](https://mnemosyne-systems.github.io/orangu/doc/server-internals.html);
+The performance objective is roughly 2× end-to-end throughput; 3–5× depends on major
+baseline inefficiencies and is a stretch hypothesis. Prefill, decode and completed-task
+time are separate measurements, with cold load/repacking, allocation/copying,
+synchronization, memory traffic and the measured critical path included. [Orangu's
+published results](https://mnemosyne-systems.github.io/orangu/doc/server.html#scope) on
+CIX P1/Mali use [different activation/repacking
+choices](https://mnemosyne-systems.github.io/orangu/doc/server-internals.html);
 [Camelid's results](https://github.com/timtoole02/Camelid/blob/main/docs/BONSAI2.md)
 include speculation. Neither establishes unchanged-arithmetic Snapdragon gains.
 
 ## Token and worker API semantics
 
-These generic token-driver interfaces are distinct from the pinned Swift chat
-session and its native sampler. Their boundaries remain explicit:
+These generic token-driver interfaces are distinct from the pinned Swift chat session
+and its native sampler. Their boundaries remain explicit:
 
 | Interface | Supported behavior |
 | --- | --- |
@@ -128,44 +108,41 @@ session and its native sampler. Their boundaries remain explicit:
 
 ## Transactional state
 
-Generation, graph work and caller-owned cloneable sampling state participate
-in one transaction. Admission, sampling, decoder, delivery, cancellation and
-deadline failures restore state, including failed graph recovery. Successful
-stop draws advance sampling state without entering conversation history.
-Absolute deadlines bracket synchronous decoder and delivery work; an in-flight
-operation must return before expiry is detected.
+Generation, graph work and caller-owned cloneable sampling state participate in one
+transaction. Admission, sampling, decoder, delivery, cancellation and deadline failures
+restore state, including failed graph recovery. Successful stop draws advance sampling
+state without entering conversation history. Absolute deadlines bracket synchronous
+decoder and delivery work; an in-flight operation must return before expiry is detected.
 
 Reusable logits and graph scratch never alias independently owned checkpoints.
-State-only prompt ingestion omits unused output/logit work while validating
-every computed state value; final uncached tokens and decode steps produce
-logits, and exact prefix hits restore saved output. Explicit 1–256-token blocks
-retain sequential arithmetic and whole-request rollback, with cancellation
-and deadline checks between tokens. Sequential blocks do not imply tiled
-matrix-matrix execution or measured prefill benefit.
+State-only prompt ingestion omits unused output/logit work while validating every
+computed state value; final uncached tokens and decode steps produce logits, and exact
+prefix hits restore saved output. Explicit 1–256-token blocks retain sequential
+arithmetic and whole-request rollback, with cancellation and deadline checks between
+tokens. Sequential blocks do not imply tiled matrix-matrix execution or measured prefill
+benefit.
 
 Prepared matvecs share activation preparation only for matching input,
-basis/permutation, width and quantizer contracts; mixed Q8_K/Q8_0 and
-transformed/plain inputs remain separate. Preparation is scoped to a call.
-Full-attention state stores exact binary16 bits and widens them before scalar
-products; convolution/GDN stays FP32. Snapshot budgets conservatively charge
-every referenced sealed 64-token KV page, page table, mutable-tail capacity
-and recurrent state per snapshot, without depending on sharing for admission.
+basis/permutation, width and quantizer contracts; mixed Q8_K/Q8_0 and transformed/plain
+inputs remain separate. Preparation is scoped to a call. Full-attention state stores
+exact binary16 bits and widens them before scalar products; convolution/GDN stays FP32.
+Snapshot budgets conservatively charge every referenced sealed 64-token KV page, page
+table, mutable-tail capacity and recurrent state per snapshot, without depending on
+sharing for admission.
 
 ## Acceptance ownership
 
-The [conformance contract](prism-upstream-tests.md) preserves original source
-inputs, assertions, tolerances, unsupported results and production bridges.
-Full source conformance, generic APIs and accelerator coverage are separate
-from the bounded Swift subset. Future release promotions use the
-[lock-update procedure](development-guide.md#prepare-a-runtime-lock-update);
-reviewed source, immutable released bytes and Runner integration are distinct
-acceptance inputs.
+The [conformance contract](prism-upstream-tests.md) preserves original source inputs,
+assertions, tolerances, unsupported results and production bridges. Full source
+conformance, generic APIs and accelerator coverage are separate from the bounded Swift
+subset. Future release promotions use the [lock-update
+procedure](development-guide.md#prepare-a-runtime-lock-update); reviewed source,
+immutable released bytes and Runner integration are distinct acceptance inputs.
 
-Under [validation policy](validation.md), local builds, analyzers, assembly
-inspection and focused correctness checks are allowed. Full suites and every
-benchmark run only in CI. Device promotion requires reviewed main-only CI on
-the actual target; generic hosted ARM64 evidence supplies no Snapdragon
-performance verdict. Qualified profiles retain reproducible native fallback,
-standard LoRA TPS/quality gates and no material correctness, quality, security
-or resource regression. Runtime/backend changes require complete-state phase
-handoff and a compatible state/numerical identity.
+Under [validation policy](validation.md), local builds, analyzers, assembly inspection
+and focused correctness checks are allowed. Full suites and every benchmark run only in
+CI. Device promotion requires reviewed main-only CI on the actual target; generic hosted
+ARM64 evidence supplies no Snapdragon performance verdict. Qualified profiles retain
+reproducible native fallback, standard LoRA TPS/quality gates and no material
+correctness, quality, security or resource regression. Runtime/backend changes require
+complete-state phase handoff and a compatible state/numerical identity.

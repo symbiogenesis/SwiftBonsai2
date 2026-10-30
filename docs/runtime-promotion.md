@@ -1,9 +1,9 @@
 # Rust default-runtime promotion evidence
 
-`Get-RuntimePromotion.ps1` reports the reviewed requirements for replacing the
-current Swift PQ2 standard profile with Rust Prism while retaining its pinned
-LoRA at scale 1.3. It reads the compiled release/model/adapter/template locks and
-requires an explicit full Runner revision. PTQ1 remains a separate lane.
+`Get-RuntimePromotion.ps1` reports the reviewed requirements for replacing the current
+Swift PQ2 standard profile with Rust Prism while retaining its pinned LoRA at scale 1.3.
+It reads the compiled release/model/adapter/template locks and requires an explicit full
+Runner revision. PTQ1 remains a separate lane.
 
 ```powershell
 $revision = git rev-parse main
@@ -12,34 +12,29 @@ $plan.policy.requiredGates
 ./scripts/Get-RuntimePromotion.ps1 -RunnerRevision $revision -EvidencePath D:\Evidence\promotion.json
 ```
 
-This is an offline evidence-completeness and byte-integrity check. It never
-starts inference, runs benchmarks, changes the default, authenticates a reviewer
-or verifies GitHub metadata over the network. Before accepting a passed result,
-independently inspect the named CI runs, source revisions, reports and reviewer
-identities. A caller choosing to authorize promotion must require
-`promotionReady: true`; successful command execution alone is insufficient.
+The evaluator checks offline completeness and byte integrity, without inference,
+benchmarks, selection changes, reviewer authentication or network provenance checks.
+Independently review CI/source/report/reviewer identities and require `promotionReady:
+true`; command success alone cannot authorize promotion.
 
-The policy requires release provenance, full runtime Foundation and conformance,
-Runner Foundation, full 8K state/logit parity, exact prompts/sampling/stops,
-4K-output lifecycle/recovery, complete-model resources, adapter basis/logits,
-independent standard-scale TPS and human quality, actual-model sandbox/transport,
-speech/offline recovery, sustained device/creative acceptance and installation
-with reproducible rollback. Released private-service adapter readiness and
-per-request scale/state lifecycle are an explicit separate gate: source graph
-support and adapter-disabled smoke checks cannot satisfy it.
-Every device gate requires the real self-hosted
-Snapdragon X Elite ARM64 runner. Generic hosted ARM64 cannot satisfy those gates.
-Full suites and every benchmark remain CI-only; focused local correctness checks
-remain allowed.
-Paired target-device promotion also requires the predeclared 10% end-to-end
-latency benefit or a reviewed capacity/energy benefit within accepted limits;
-the independent same-engine LoRA TPS gate cannot replace that comparison.
+Required gates cover release provenance, runtime Foundation/conformance, Runner
+Foundation, 8K logits/full state, prompts/sampling/stops, 4K-output lifecycle/recovery,
+complete-model resources, adapter basis/logits, standard-scale TPS/human quality,
+actual-model sandbox/transport, speech/offline recovery, sustained device/creative
+acceptance, installation and rollback. Released private-service adapter readiness and
+per-request scale/state lifecycle qualify independently of source-graph support or
+adapter-disabled smoke checks.
 
-The 1 MiB UTF-8 JSON evidence manifest must live outside Git alongside its
-retained reports. Copy `policySha256` and the entire `policy.identities` object
-from the plan. `gates` may omit unfinished work; every omitted gate stays pending.
-A complete pending skeleton is also returned as `evidenceTemplate` by the plan.
-A supplied record has this shape:
+Device gates require the real self-hosted Snapdragon X Elite ARM64 runner. Paired
+promotion requires predeclared **10% end-to-end latency benefit**, or reviewed
+capacity/energy benefit within accepted limits; same-engine LoRA TPS is independent.
+Full suites/benchmarks stay CI-only; focused local correctness checks are allowed.
+
+The 1 MiB UTF-8 JSON evidence manifest must live outside Git alongside its retained
+reports. Copy `policySha256` and the entire `policy.identities` object from the plan.
+`gates` may omit unfinished work; every omitted gate stays pending. A complete pending
+skeleton is also returned as `evidenceTemplate` by the plan. A supplied record has this
+shape:
 
 ```json
 {
@@ -69,20 +64,18 @@ A supplied record has this shape:
 }
 ```
 
-Each completed (`passed` or `rejected`) gate requires a nonempty report, bounded
-to 16 MiB, with an exact lowercase SHA-256 and a relative path without traversal.
-Reports must remain outside Git, namespace paths and reparse points. Runtime
-gates bind the selected Prism source revision; application gates bind the supplied
-settled Runner revision. Each named CI execution must use `refs/heads/main`.
-Passed gates require an identified reviewer; human quality and sustained comfort
-also require `humanReviewed: true`. Pending records need only `id`, `status` and
-a bounded nonempty `note`.
+Each completed (`passed` or `rejected`) gate requires a nonempty report, bounded to 16
+MiB, with an exact lowercase SHA-256 and a relative path without traversal. Reports must
+remain outside Git, namespace paths and reparse points. Runtime gates bind the selected
+Prism source revision; application gates bind the supplied settled Runner revision. Each
+named CI execution must use `refs/heads/main`. Passed gates require an identified
+reviewer; human quality and sustained comfort also require `humanReviewed: true`.
+Pending records need only `id`, `status` and a bounded nonempty `note`.
 
-Unknown or duplicate gates, malformed identities, non-main provenance, wrong
-devices, missing reports and digest mismatches fail the command. Any known
-rejected gate makes the aggregate rejected even when other work remains pending.
-Only every required gate passing produces `promotionReady: true`.
+Unknown or duplicate gates, malformed identities, non-main provenance, wrong devices,
+missing reports and digest mismatches fail the command. Any known rejected gate makes
+the aggregate rejected even when other work remains pending. Only every required gate
+passing produces `promotionReady: true`.
 
-The numerical, security, quality and resource evidence still needs to be
-collected and reviewed under [validation policy](validation.md), the
-[runtime contract](native-rust-engine.md) and the [canonical work list](../PLAN.md).
+Evidence collection/review follows [validation](validation.md), the [runtime
+contract](native-rust-engine.md) and [PLAN.md](../PLAN.md).
