@@ -30,7 +30,9 @@ This project consumes a pinned prebuilt server; ordinary builds do not compile
 the inference engine. Provision it with `./scripts/Get-Inference.ps1 -DataDirectory <absolute-path>`.
 
 Once you've [set up the model and runtime](docs/development-guide.md#native-chat-app),
-run `./scripts/Start-Chat.ps1` to open the native Windows chat app.
+run `./scripts/Start-Chat.ps1 -NativeEngine` to select the Rust engine, or
+`./scripts/Start-Chat.ps1` for the publisher C++ default. Updating the Rust runtime
+pin alone does not change that selection. Both open the native Windows chat app.
 
 Keep separate conversations and unsent drafts, rename your chats, and find text
 with **Ctrl+F**. Enable **Save conversations on this device** in Settings to

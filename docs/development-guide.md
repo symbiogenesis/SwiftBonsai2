@@ -278,6 +278,12 @@ its control. Provision the native release before selecting it:
 ./scripts/Start-Chat.ps1 -DataDirectory $data -NativeEngine -NoAbliterateLora
 ```
 
+A publisher startup diagnostic of `process=exited-0xC0000142` means Windows failed
+runtime initialization. **Retry model** repeats the selected runtime; it does not
+switch to Rust. Close the window and relaunch with `-NativeEngine` after provisioning
+with `Get-Inference.ps1`. Retain the same data directory, model and adapter options;
+`-NativeEngine` alone keeps original PQ2 and the approved adapter selected.
+
 Publisher Prism stays default until [runtime promotion](native-rust-engine.md#default-runtime-promotion).
 Thinking uses the same setting across engines; native quality, throughput and
 daily-service qualification remain pending. Native HTTP remains numeric loopback
