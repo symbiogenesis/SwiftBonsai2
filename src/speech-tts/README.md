@@ -1,9 +1,10 @@
 # Native Qwen VoiceDesign inference
 
 This library owns the native Qwen3-TTS 1.7B VoiceDesign GGML engine through a
-small Rust binding to its public C ABI. Safe Rust implements the shared Philox
-random draws for the semantic and predictor samplers. A reviewed build helper
-routes both callers to Rust and adds bounded thread control and a SIMD compile
+small Rust binding to its public C ABI. Safe Rust initializes the complete
+parameter structures, selects bounded CPU thread counts and implements shared
+Philox random draws for the semantic and predictor samplers. A reviewed build helper
+routes native thread selection and random draws to Rust and adds a SIMD compile
 guard to a private copy of the external C++ core. The default talker
 and codec are independently pinned Q8_0 GGUF conversions
 of the named upstream checkpoints; the calling service must verify and retain all artifact files
@@ -65,8 +66,9 @@ That contract owns sample limits and avoided-copy bounds; its
 
 ## Native ABI and failure handling
 
-The Rust binding retains the exact ABI-v6 structures and upstream defaults,
-with compile-time layout checks. Ordinary native status failures remain redacted
+The Rust binding retains the exact ABI-v6 structures and initializes upstream
+defaults in safe Rust, with compile-time layout checks and a field-by-field
+comparison against the pinned native functions in tests. Ordinary native status failures remain redacted
 Rust errors. Unlike the former C++ catch-all bridge, an unexpected C++ exception
 escaping initialization, synthesis or release terminates the supervised speech
 companion. The binding uses `C-unwind` and an aborting `catch_unwind` boundary;
@@ -95,9 +97,10 @@ reuses an externally provisioned compatible native build.
 
 The Cargo build script performs no downloads. Before a fresh native build, it
 copies the verified source tree into its unique external build lane. A minimal,
-reviewed overlay (`build_overlay.rs`) requires active ARM64 NEON kernels, adds a bounded atomic CPU-thread setter
-and replaces the upstream logical-CPUs-divided-by-two heuristic when that setter
-is used. Exact replacement anchors reject mismatched inputs. The immutable
+reviewed overlay (`build_overlay.rs`) requires active ARM64 NEON kernels and
+replaces the upstream CPU-thread policy helper with a Rust callback. The native
+logical CPU query remains unchanged; Rust owns the atomic override and fallback
+policy. Exact replacement anchors reject mismatched inputs. The immutable
 provisioned source cache is never patched. Cached native libraries must include
 this overlay; the hosted cache identity covers all build helper sources and
 the embedded pinned Philox source anchor.
@@ -116,6 +119,25 @@ Apache-2.0; preserve its attribution and notices when distributing model files.
 Local builds and focused tests are allowed. Full suites and every benchmark
 remain CI-only. Window launch or successful compilation alone does not qualify
 speech content, voice quality, latency or combined memory use with Swift.
+
+## Rust parameter and CPU thread helpers
+
+`native/qwen.rs` initializes every field of the ABI-v6 initialization and
+synthesis parameters in safe Rust, preserving the pinned `qwen.cpp` and
+`sampling-defaults.h` values. Production no longer calls the native default
+initializers. A model-free regression compares every field against those linked
+native functions, including float bits and unused pointer/callback fields;
+padding bytes are never compared. Runner's CPU-only initialization, fixed seed,
+voice conditioning and output limits still override the same fields.
+
+`native/cpu_threads.rs` owns the 1–256 thread override and the original
+logical-CPUs-divided-by-two, minimum-one fallback, preserving the pinned Windows
+unsigned-to-signed cast. Invalid selections return an error without changing
+the override. Native backend initialization calls an allocation-free Rust scalar
+export; the initialization lock keeps the selection stable while talker,
+predictor and codec backends load. The private source copy contains no
+Runner-specific C++ atomic or setter. Focused regressions cover fallback edge
+cases, all accepted counts, rejected updates and source-anchor drift.
 
 ## Rust sampler port
 
@@ -138,8 +160,8 @@ The source audit also considered the BPE tokenizer, sampling policy, mel
 constants and resampler. BPE needs vocabulary/lifecycle integration and exact
 Unicode/token qualification; sampling policy and mel changes need separate
 numerical evidence. Resampling is outside the current already-24-kHz reference
-path. The exact integer generator is the bounded production port justified
-here. Full-model speech output, quality and resource acceptance remain CI work
+path. These larger native helpers retain their existing ownership and numerical
+boundaries. Full-model speech output, quality and resource acceptance remain CI work
 under `PLAN.md`; bit parity alone makes no performance claim.
 
 ## Native waveform ownership
