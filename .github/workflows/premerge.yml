@@ -1,0 +1,63 @@
+name: Premerge portable checks
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: premerge-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  portable:
+    # Untrusted pull requests run only on a disposable hosted runner. This
+    # focused screen cannot qualify native Windows or actual-model behavior.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    env:
+      CARGO_TARGET_DIR: ${{ runner.temp }}/SwiftBonsai-Premerge
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ runner.temp }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-unknown-linux-gnu
+          components: rustfmt
+      - name: Check workspace Rust formatting
+        run: cargo +nightly-2026-10-22 fmt --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" --all -- --check
+      - name: Compile portable policy, broker and CI targets
+        run: >-
+          cargo +nightly-2026-10-22 check --locked --release
+          --manifest-path "$GITHUB_WORKSPACE/Cargo.toml"
+          --package bonsai-ci --package bonsai-cpu-policy --package bonsai-broker
+          --all-targets
+      - name: Run selected model-free routing and policy regressions
+        run: |
+          set -euo pipefail
+          exact_test() {
+            local case_name="$1"
+            shift
+            # An accidentally renamed/removed case must not silently pass with
+            # zero tests. Listing compiles the target without executing it.
+            local listed
+            listed="$(cargo +nightly-2026-10-22 test --locked --release --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" "$@" "$case_name" -- --exact --list)"
+            if ! printf '%s\n' "$listed" | grep -Fx -- "$case_name: test"; then
+              echo "Required focused regression is missing: $case_name" >&2
+              return 1
+            fi
+            cargo +nightly-2026-10-22 test --locked --release --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" "$@" "$case_name" -- --exact
+          }
+          exact_test leaf_change_selects_transitive_consumers_without_sibling --package bonsai-ci --test routing
+          exact_test failed_planner_and_malformed_results_cannot_pass --package bonsai-ci --test routing
+          exact_test tests::swift_development_budget_keeps_four_gib_reserve_for_every_artifact --package bonsai-cpu-policy --lib
+          exact_test rejects_alternate_hosts_and_browser_origins --package bonsai-broker --test request_policy
+          exact_test typed_schema_rejects_aliases_controls_tools_and_media --package bonsai-broker --test request_policy
+          exact_test context_admission_fails_closed_at_boundary_and_overflow --package bonsai-broker --test request_policy

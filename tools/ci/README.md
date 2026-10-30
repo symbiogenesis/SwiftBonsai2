@@ -36,3 +36,10 @@ all selected jobs, including maintenance and speech.
 The routing, baseline, output and gate regressions are Rust tests. Use named
 focused selections locally with external targets/working directories; complete
 suites remain CI-only under [the validation policy](../../docs/validation.md).
+
+[Premerge portable checks](../../.github/workflows/premerge.yml) run on hosted
+Linux ARM64 for pull requests to `main` and manual dispatch. They check workspace
+formatting, compile portable CI/CPU-policy/broker targets and run six exact named
+routing, gate and request-policy regressions. Missing named cases fail the screen.
+This limited check uses read-only repository permissions and no models or physical
+devices; main-only Foundation and device acceptance remain separate requirements.

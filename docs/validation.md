@@ -47,6 +47,13 @@ Model-free acceptance regressions:
 
 ### Foundation and routing
 
+[Premerge portable checks](../.github/workflows/premerge.yml) provide a limited
+hosted Linux ARM64 screen for pull requests to `main` and manual dispatch: workspace
+Rust formatting, portable CI/CPU-policy/broker compilation and six exact named
+model-free routing, gate and request-policy regressions. A missing named case fails.
+The read-only workflow runs no complete suite, model, benchmark or self-hosted job;
+it qualifies neither native Windows behavior nor actual-model/device acceptance.
+
 [Foundation](../.github/workflows/foundation.yml) runs on `main` pushes/manual
 dispatch, skipping root-Markdown/`docs/`-only pushes. Its [Rust planner](../tools/ci/README.md)
 reads [impact routing](../.github/ci/impact.json), selects changed packages plus
