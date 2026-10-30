@@ -36,6 +36,13 @@ its separately supervised process so cancellation, startup/synthesis deadlines,
 memory admission and abrupt application exit remain enforced by the owner.
 The library does not open audio devices or network listeners.
 
+The [companion HTTP contract](../../tools/qwen-tts/README.md#http-contract)
+owns request schemas, health capabilities, complete WAV and streaming PCM framing,
+completion rules and wire limits. App provisioning, controls, CPU budgets and
+service lifetime belong to the [speech operation guide](../../docs/development-guide.md#speech-setup-and-operation).
+
+## Voice conditioning
+
 The first request for a voice profile designs a fixed reference phrase with seed
 42. Its text never comes from the message being read. The design model is released
 before loading the separately pinned Base talker, whose speaker embedding and RVQ
@@ -43,19 +50,20 @@ reference codes are retained in memory and supplied with the reference transcrip
 to both complete and streaming synthesis. Every paragraph and message with that
 profile reuses the same conditioning. An explicit profile change creates a new
 reference; process restarts regenerate it from the same phrase, seed and profile.
+Line breaks and request/conversation IDs never choose the reference.
 This follows Qwen's [Voice Design then Clone workflow](https://github.com/QwenLM/Qwen3-TTS#voice-design-then-clone).
 Only one talker model is resident at a time, and reference acquisition failures
 fail speech without falling back to independently designed segment voices.
 
-Voice bootstrap also retains its original native waveform across Design
-teardown, Base loading and synchronous reference extraction. It does not copy
-the reference into a Rust vector; the separate 1,920-to-720,000-sample reference
-bound remains enforced. This removes one float allocation and a copy of up to
-2,880,000 bytes (2.75 MiB) per profile acquisition. The matching native allocator
-releases it after extraction or any failed handoff. Pointer-identity and
-model-free lifecycle checks cover success, Base load failure, extraction failure
-and reference bounds; actual startup latency, peak memory and speech output on
-X2 still require target-device CI qualification.
+Voice bootstrap retains its independently allocated native waveform across Design
+teardown, Base loading and synchronous reference extraction. The matching native
+allocator releases it after extraction or any failed handoff. Pointer-identity
+and model-free lifecycle checks cover success, Base load failure, extraction
+failure and the reference limits in the [resource contract](../../docs/streaming-resources.md#native-speech-generation-and-streaming).
+That contract owns sample limits and avoided-copy bounds; its
+[evidence limits](../../docs/streaming-resources.md#evidence-limits) govern device qualification.
+
+## Native ABI and failure handling
 
 The Rust binding retains the exact ABI-v6 structures and upstream defaults,
 with compile-time layout checks. Ordinary native status failures remain redacted
@@ -134,14 +142,7 @@ path. The exact integer generator is the bounded production port justified
 here. Full-model speech output, quality and resource acceptance remain CI work
 under `PLAN.md`; bit parity alone makes no performance claim.
 
-The companion retains complete WAV output and additionally accepts the fixed
-`response_format: "pcm"` supported subset. It advertises `streaming_pcm: true`
-in health and returns HTTP/1.1 chunked `audio/pcm`: signed 16-bit little-endian,
-mono, 24,000 Hz, at most 120 seconds. Every chunk must contain complete samples.
-The final zero-length HTTP chunk is sent only after validated complete model
-generation; disconnects, rejected samples and suspected token truncation close
-the stream without that terminator. Neither PCM nor WAV extends the accepted
-model, language, plain-text or voice-description contract.
+## Native waveform ownership
 
 Complete WAV requests retain the native `qt_audio` allocation through bounded
 PCM conversion and HTTP writes. `Synthesizer::synthesize_owned` validates the
@@ -153,22 +154,18 @@ available. In pinned `pipeline-tts.cpp`, `fill_qt_audio` makes an independent
 context owns or mutates it after synchronous synthesis returns, and Rust never
 adopts it as a vector.
 
-This removes one full native-to-Rust float copy and its overlapping allocation
-from complete WAV responses. The unchanged native token-truncation ceiling
-admits at most 2,876,159 samples, or 11,504,636 bytes (about 11 MiB) for that copy.
-This is a storage bound, not a measured process-memory saving. The service still
-validates complete finite mono 24 kHz audio before successful headers, retains
-one bounded PCM conversion buffer and disarms/joins its watchdog after inference
-returns and before response writes. Streaming PCM, voice conditioning, sampling,
-admission and reserves are unchanged.
+The [resource contract](../../docs/streaming-resources.md#native-speech-generation-and-streaming)
+owns sample ceilings, conversion buffers and avoided-copy bounds. The service
+disarms/joins its watchdog after inference returns and before response writes.
+Native ownership preserves streaming PCM, voice conditioning, sampling, admission
+and reserves.
 
 Model-free regressions retain the original sample pointer, exercise the actual
 pinned native release on success and invalid output, check exactly one owner
 drop after validation/write failures, and compare complete HTTP/WAV bytes from
-both storage variants. Actual X2 peak memory, latency, long speech/chat overlap
-and independent listening remain target-device CI work under `PLAN.md`.
+both storage variants. Device acceptance follows the
+[resource evidence limits](../../docs/streaming-resources.md#evidence-limits)
+and [PLAN.md](../../PLAN.md).
 
-`--quantization Q8_0` selects the default compiled artifact lock.
-`--quantization Q4_K_M` explicitly selects the separate reviewed four-bit talker
-evaluation lock with the same VoiceDesign/Base checkpoints and Q8 codec. It does not
-accept arbitrary model files or establish equivalent quality or faster output.
+The [companion artifact contract](../../tools/qwen-tts/README.md#artifacts)
+defines its explicit quantization selections and immutable verification boundary.

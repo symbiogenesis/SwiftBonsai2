@@ -1,49 +1,18 @@
 # Native Qwen3-TTS VoiceDesign
 
-Read Aloud uses **Qwen3-TTS 12Hz 1.7B VoiceDesign** through the
+The speech companion uses **Qwen3-TTS 12Hz 1.7B VoiceDesign/Base** through the
 [native Rust companion](../../src/speech-tts/README.md) and a reviewed GGML C++
 core. A plain-language voice description controls synthesis; no voice preset,
 speaker file or reference recording is required.
 
-`./scripts/Start-Chat.ps1` downloads and verifies the pinned Q8_0 VoiceDesign and
-Base talkers and codec, builds native ARM64 companions, and configures Read Aloud automatically.
-Enter a plain-language **Voice profile**, for example “A warm, low-pitched
-narrator with a calm pace and clear consonants.” It applies to the next explicit
-read-aloud request. Only the visible completed answer is spoken; reasoning is
-excluded. The companion designs a fixed reference phrase with seed 42, then uses
-Base to retain and reuse its speaker embedding, acoustic codes and transcript for
-every segment and message with the same profile. Line breaks and message text do
-not redesign the voice. Changing the profile creates a new reference. After a
-worker restart, the same phrase, seed and profile regenerate that reference.
-VoiceDesign is released before Base loads; only one talker is resident at a time.
+The [speech setup and operation guide](../../docs/development-guide.md#speech-setup-and-operation)
+owns app provisioning, voice controls, manual/streaming read-aloud, CPU budgets,
+service lifetime and resource limits. The native library owns
+[fixed voice conditioning](../../src/speech-tts/README.md#voice-conditioning);
+[streaming resources](../../docs/streaming-resources.md#speech-scheduling-and-playback)
+defines bounded segmentation and playback.
 
-Qwen loads on demand after Swift startup, with microphone input released first.
-The app synthesizes sequential text segments of at most 256 characters and plays
-bounded PCM buffers while synthesis continues. It prepares subsequent audio while
-earlier audio plays. After a successful readout, the monitored owned service stays
-warm for at most 30 idle seconds. Stop speech, failure, transcription and shutdown
-release it immediately. Stop speech cancels loading, synthesis and playback.
-The independent speech Job has a 16 GiB commit ceiling, requires 9 GiB available
-before startup and stops only speech below a 5 GiB physical-memory reserve.
-Text chat and the completed answer survive a speech resource failure.
-
-Use `-NoTts` to disable automatic output setup, `-NoSpeechModels` for a text-only
-automatic launch, or `-SpeechModelsOnly` to download without building/launching.
-For only the native TTS model and codec:
-
-```powershell
-./scripts/Get-NativeSpeechModels.ps1 -DataDirectory $data -Model QwenTts
-```
-
-Use `-TtsQuantization Q4_K_M` on provisioning or `Start-Chat.ps1` to evaluate the
-smaller pinned Q4_K_M talkers with the same Q8_0 codec. Q8_0 remains the default.
-All three files are verified against the selected immutable lock before loading;
-changing filenames never bypasses model verification. Q4 voice quality and speed
-must be evaluated before treating it as an equivalent replacement.
-
-`Start-Chat.ps1 -TtsThreads 10` sets an explicit CPU thread budget (1 through
-256); zero uses the automatic budget, which reserves two available logical CPUs.
-The standalone service accepts `--threads` and `--quantization Q4_K_M`.
+## Artifacts
 
 The native [model lock](../../src/speech-tts/model.lock.json) pins all three files to
 immutable conversions of the named Qwen checkpoints. The models are Apache-2.0;
@@ -51,16 +20,29 @@ preserve Qwen attribution and notices. The legacy `model.lock.json` here is only
 for the explicit original-snapshot download utility, not the app runtime.
 Existing raw snapshots and old private runtimes are not deleted or modified.
 
+`--quantization Q8_0` selects the default compiled artifact lock.
+`--quantization Q4_K_M` selects the separately reviewed four-bit VoiceDesign/Base talker lock with the
+same Q8_0 codec. All three files must match the selected immutable lock before
+loading; arbitrary files or changed filenames cannot bypass verification. Q4
+quality and speed remain unqualified.
+
+## Standalone service
+
 For an independently managed native companion, run from an external working
-directory with absolute external artifact/key paths:
+directory with absolute external artifact/key paths. `$speech` contains the
+verified paths returned by the setup guide's `-SpeechModelsOnly` command:
 
 ```powershell
 & $ttsExecutable --model $speech.TtsModelPath --codec $speech.TtsCodecPath --voice-model $speech.TtsVoiceModelPath --token-file $ttsKey --port 8767
 ```
 
-Pass `-TtsKeyFile $ttsKey` to the demo. Use the repository's protected development
+Pass `-TtsKeyFile $ttsKey` to `Start-Chat.ps1` as described in the setup guide.
+`--threads 1` through `256` selects an explicit inference budget; omitting it
+uses the library's automatic budget. Use the repository's protected development
 key tooling: exactly 64 lowercase hex bytes, no newline, owner/LocalSystem access.
 The key value must never appear in arguments, environment variables or logs.
+
+## HTTP contract
 
 The service binds exclusively to `127.0.0.1` only after verified models load.
 HTTP/1.1 requires exact numeric-loopback Host, bearer authorization and
@@ -84,13 +66,17 @@ terminates only this companion; the UI owns its process tree.
 
 `response_format:"pcm"` selects `audio/pcm` streamed with HTTP/1.1 chunked
 response framing. Samples are signed 16-bit little-endian, mono, 24 kHz, with
-the same 120-second total bound. The terminating zero chunk is sent only after
-successful complete inference. Disconnects, invalid samples, model errors and
-suspected token truncation leave an incomplete response; played partial audio
+the same 120-second total bound; each chunk contains complete samples. PCM and
+WAV retain the same model, language, plain-text and voice-description subset.
+The terminating zero chunk is sent only after successful complete inference.
+Disconnects, invalid samples, model errors and suspected token truncation leave
+an incomplete response; played partial audio
 does not make that request successful. The client requires complete framing and
 rejects malformed, oversized or incomplete audio. Independently managed services
 must advertise `consistent_voice:true`; services without streaming support may
 still return WAV. Older services need an update before the UI will read aloud.
+
+## Qualification
 
 Both native compilation and actual synthetic speech generation have passed on
 Windows ARM64. These establish correctness of one path, not a performance

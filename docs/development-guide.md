@@ -164,11 +164,10 @@ selecting another response switches playback. Empty/streaming responses cannot
 start manual playback. Only visible answer text is spoken, excluding reasoning.
 Describe the **Voice profile**, for example "A warm, low-pitched narrator with a
 calm pace and clear consonants." No preset or reference recording is required.
-VoiceDesign makes one fixed reference phrase with a fixed seed/profile, then
-releases before Base extracts/reuses conditioning across segments and messages.
-Text, paragraphs and request/conversation IDs never choose the reference.
-Changing profile creates another; restarts regenerate the same fixed inputs.
-This conditioning design does not guarantee perceived speaker identity.
+The native library's [fixed voice conditioning](../src/speech-tts/README.md#voice-conditioning)
+reuses one reference across segments and messages with the same profile.
+Changing the profile creates a new reference; restarts regenerate it from the
+same fixed inputs. This design does not guarantee perceived speaker identity.
 
 **Read aloud as responses arrive** is off by default per conversation. It sends
 visible answer deltas in bounded sentence/word chunks while Swift generates;
@@ -180,18 +179,20 @@ switch, generation Stop or model failure cancels speech. Saving retains the
 checkbox without replay on restore. Working drafts and reasoning are excluded.
 
 Owned speech uses separate Windows Jobs and mutual exclusion: read-aloud releases
-Canary before Qwen loads; transcription releases Qwen. Canary stays warm only for
-the enabled input generation. Qwen synthesizes sequential 256-character segments
-with bounded streaming playback/prefetch and stays warm at most 30 idle seconds
-after success. Stop, failure, transcription or shutdown releases it immediately;
+Canary before Qwen loads; transcription releases Qwen. Canary loads only after
+the first captured clip and stays warm only for the enabled input generation.
+Qwen loads on demand after Swift startup, synthesizes sequential 256-character
+segments with bounded streaming playback/prefetch and stays warm at most 30 idle
+seconds after success. Stop, failure, transcription or shutdown releases it immediately;
 resource monitoring continues while warm. Each service requires 9 GiB available,
 a 5 GiB physical reserve and a 16 GiB Job commit ceiling. Swift retains its
 15.5 GiB admission/4 GiB reserve; speech failure preserves text chat and answers.
 [Streaming resources](streaming-resources.md) owns queue, segmentation and playback bounds.
 
-TTS automatically reserves two logical CPUs; `-TtsThreads 1` through `256` selects
-an explicit budget and zero restores automatic sizing. More threads do not imply
-better throughput. Q8_0 remains the default. Evaluate smaller Q4_K_M talkers with
+TTS automatically reserves two logical CPUs, with at least one inference thread;
+`-TtsThreads 1` through `256` selects an explicit budget and zero restores
+automatic sizing. More threads do not imply better throughput. Q8_0 remains the
+default. Evaluate smaller Q4_K_M talkers with
 the unchanged Q8 codec explicitly:
 
 ```powershell

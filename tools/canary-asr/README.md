@@ -6,19 +6,11 @@ transcribe.cpp engine.
 The first-party UI remains Rust and native; inference includes a reviewed C++
 GGML core. This is not a claim of pure-Rust tensor inference.
 
-Run `./scripts/Start-Chat.ps1` to provision the immutable Q8_0 GGUF, build native
-ARM64 companions and configure the microphone button. It remains off until
-explicitly enabled and Windows microphone permission is granted. Canary loads
-only after the first captured clip, remains warm while that microphone generation
-is enabled, and stops when input is disabled or cancelled. Starting Read Aloud
-releases input first. Recognized text goes to the composer without sending.
+The [speech setup and operation guide](../../docs/development-guide.md#speech-setup-and-operation)
+owns app provisioning, microphone permission/capture, transcript review,
+ASR/TTS exclusion, service lifetime and resource limits.
 
-`./scripts/Start-Chat.ps1 -SpeechModelsOnly` downloads without compiling or
-opening the microphone. For only Canary use:
-
-```powershell
-./scripts/Get-NativeSpeechModels.ps1 -DataDirectory $data -Model Canary
-```
+## Artifacts
 
 The native [model lock](../../src/speech-asr/model.lock.json) pins the conversion,
 source model revision, exact size and SHA-256. Canary is Copyright NVIDIA
@@ -27,16 +19,23 @@ Corporation, CC BY 4.0; retain attribution and the model license. The legacy
 snapshots for the explicit `Get-SpeechModels.ps1` utility; the app does not load
 them, and existing downloaded snapshots are preserved.
 
+## Standalone service
+
 For a separately managed native companion, run its built executable from an
-external working directory, with absolute external model and protected key paths:
+external working directory, with absolute external model and protected key paths.
+`$speech` contains the verified paths returned by the setup guide's
+`-SpeechModelsOnly` command:
 
 ```powershell
 & $asrExecutable --model $speech.CanaryModelPath --token-file $canaryKey --port 8766
 ```
 
-Then pass `-CanaryKeyFile $canaryKey` to the demo. A key contains exactly 64
-lowercase hex bytes without a newline, protected for the owner and LocalSystem.
+Then pass `-CanaryKeyFile $canaryKey` to `Start-Chat.ps1` as described in the setup
+guide. A key contains exactly 64 lowercase hex bytes without a newline,
+protected for the owner and LocalSystem.
 Never pass its value through arguments, environment variables or logs.
+
+## HTTP contract
 
 The service binds exclusively to `127.0.0.1` after loading and retaining verified
 model files. All requests require exact `Host: 127.0.0.1:<port>`, bearer auth,
@@ -47,7 +46,6 @@ ready, `sample_rate:16000`, `max_clip_seconds:30`, `channels:1` and
 `POST /v1/audio/transcriptions` accepts bounded multipart fields `model` (exact
 `nvidia/canary-qwen-2.5b`), `file` (mono 16 kHz signed PCM16 RIFF WAV), and optional
 `language:"en"`. The complete body is at most 1 MiB; clips are at most 30 seconds.
-The UI records five-second clips in memory, pausing while each is transcribed.
 A successful response is `{"text":"...","model":"nvidia/canary-qwen-2.5b"}`.
 Unknown or duplicate fields, aliases, Origin/forwarding headers, chunked/encoded
 uploads and connection reuse are rejected. Errors contain only bounded codes.
@@ -57,6 +55,8 @@ authentication, validation, PCM handling and deadlines. One request runs at a
 time. Cancellation, disconnect or the 120-second inference deadline terminates
 only the separately owned speech process. Model input and audio remain in memory
 and are not logged or persisted. No cloud fallback is configured.
+
+## Qualification
 
 A native Windows ARM64 build and one real public-fixture transcription have
 passed locally. General recognition accuracy, GPU/NPU acceleration and performance

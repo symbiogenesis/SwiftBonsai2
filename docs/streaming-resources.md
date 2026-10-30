@@ -69,11 +69,16 @@ cancellation.
 
 | Boundary | Storage and work contract |
 | --- | --- |
-| Complete WAV response | Borrows native float samples through their matching allocation owner during validation, PCM conversion and HTTP writes, without a full Rust waveform copy. Success, invalid output and write failure release the owner. The complete clip is validated before success headers. A reusable 32 KiB conversion buffer and 44-byte header avoid an encoded clip allocation of up to 5,760,044 bytes. The pinned sample ceiling bounds avoided float-copy overlap at 11,504,636 bytes; neither figure is measured process peak memory. |
-| Voice bootstrap | The independently owned VoiceDesign waveform survives Design teardown and synchronous Base extraction, releasing on success/failure. Design/Base remain mutually exclusive. Native ownership avoids a Rust copy and temporary overlap of at most 720,000 float samples (2,880,000 bytes) per profile acquisition. Startup latency and process peak memory remain unmeasured. |
+| Complete WAV response | Borrows native float samples through their matching allocation owner during validation, PCM conversion and HTTP writes, without a full Rust waveform copy. Success, invalid output and write failure release the owner. The complete clip is validated before success headers. A reusable 32 KiB conversion buffer and 44-byte header avoid an encoded clip allocation of up to 5,760,044 bytes. The pinned 2,876,159-sample ceiling bounds avoided float-copy overlap at 11,504,636 bytes; neither figure is measured process peak memory. |
+| Voice bootstrap | The independently owned VoiceDesign waveform survives Design teardown and synchronous Base extraction, releasing on success/failure. Design/Base remain mutually exclusive. The reference must contain 1,920–720,000 float samples. Native ownership avoids a Rust copy and temporary overlap of at most 2,880,000 bytes (2.75 MiB) per profile acquisition. Startup latency and process peak memory remain unmeasured. |
 | Streaming PCM output | Reuses a 32 KiB payload buffer with fixed HTTP-framing spare space. Each encoded chunk uses one write, avoiding a vector allocation and separate prefix/payload/suffix writes. |
 | PCM intake | Reuses a fixed 16 KiB buffer for HTTP headers, chunk framing and PCM. Parses buffered metadata without byte-sized socket reads; chunk-size lines use ten fixed bytes. Releases available even-byte prefixes immediately, retaining at most one split sample in two stack bytes. Checks cancellation/deadlines even for buffered data; requires exact chunk endings, terminal framing and EOF. |
 | TTS decode graphs | The private pinned-source overlay retains at most one talker decode graph context/native allocator workspace rather than up to sixteen attention windows. Obsolete workspaces are freed before replacement, after CPU execution completes. Weights, KV and hidden-state bridge retain separate persistent ownership. Small host staging-vector capacities stay cached; revisiting an earlier window rebuilds its workspace. |
+
+The TTS library documents [native waveform allocation and regression provenance](../src/speech-tts/README.md#native-waveform-ownership)
+and [voice-conditioning lifetime evidence](../src/speech-tts/README.md#voice-conditioning).
+The companion's [HTTP contract](../tools/qwen-tts/README.md#http-contract) owns
+WAV/PCM schemas and wire completion rules.
 
 ## Completion and cancellation
 
