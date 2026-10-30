@@ -10,20 +10,20 @@ are separate developer workflows, not additional app-setup steps.
 
 ## Current state
 
-Swift PQ2_0 CPU is the priority low-memory profile. Load/decode, optional pretrained
-LoRA and current-weight lossless PTQ1 export have development evidence; quality,
-performance and daily-service acceptance remain pending. Swift and Qwen
-`reference-cpu` use separate immutable pins. See [memory](swift-memory.md),
-[LoRA qualification](swift-lora.md#standard-profile-qualification) and [memory options](swift-memory-options.md).
-No new training is required. [Prism Inference](https://github.com/symbiogenesis/prism-inference)
-is a separately published experimental Rust runtime, initially for Swift/Bonsai.
+The app explicitly selects Swift PQ2 CPU with a pinned pretrained adapter;
+Qwen `reference-cpu`, current-weight PTQ1 and experimental
+[Prism Inference](https://github.com/symbiogenesis/prism-inference) use separate
+immutable selections. No training is required. [Runtime selection](#runtime-selection)
+defines supported combinations; [memory](swift-memory.md) and
+[LoRA qualification](swift-lora.md#standard-profile-qualification) distinguish
+development evidence from pending quality, performance and service acceptance.
 
-Current launches explicitly select CPU. [Adreno](adreno-gpu-plan.md),
-[Hexagon](hexagon-npu-plan.md) and [automatic profiles](hardware-capabilities.md#automatic-profile-selection) remain
-planned. The [X2 CPU screen](simd-plan.md#x2-cpu-thread-screen) compares prefill/decode budgets
-in target-device CI; local inventory/`-PlanOnly` loads no model and cannot promote
-defaults. Owned UI model/speech workers require [native containment](sandboxing.md);
-actual-model and broker-only/same-user isolation acceptance remain pending.
+[Automatic profiles](hardware-capabilities.md#automatic-profile-selection),
+[Adreno](adreno-gpu-plan.md) and [Hexagon](hexagon-npu-plan.md) remain unqualified.
+Inventory and `-PlanOnly` load no model and cannot promote defaults; the
+[X2 thread screen](simd-plan.md#x2-cpu-thread-screen) runs in device CI.
+Owned UI inference/speech requires [native containment](sandboxing.md), whose
+actual-model and broker-only/same-user isolation limits still apply.
 
 ## Native chat app
 
@@ -49,13 +49,12 @@ available during setup. Setup errors stay visible; close and relaunch after
 correcting them. Closing stops preparation, compiler descendants and owned model
 workers. Artifact verification and memory admission still precede model use.
 
-**Stop** tears down the owned broker/backend. After teardown, **Retry model**
-starts a fresh owned instance, repeating identity, artifact and 15.5 GiB admission
-checks while retaining completed turns. Use the same explicit retry after
-uncertain transport/protocol failures or after freeing RAM for a failed startup.
-There is no automatic replay or reduced-memory fallback. Interrupted prompts
-return only to an empty composer, preserving any newly typed draft. A local
-connection closure alone does not establish a token or memory failure.
+**Stop** tears down the owned broker/backend. **Retry model** waits for teardown,
+then repeats identity, artifact and 15.5 GiB admission checks with a fresh instance
+and retained completed turns. Retry explicitly after uncertain transport/protocol
+failures or after freeing RAM. Requests never replay automatically or fall back
+to a smaller profile. Interrupted prompts return only to an empty composer,
+preserving newer drafts; a closed connection alone identifies no token/memory cause.
 
 ### Conversations and response settings
 
@@ -281,13 +280,12 @@ evidence directories private.
 
 ## X1/X2 configuration boundary
 
-The current machine is Snapdragon X2 Elite Extreme X2E94100; the previous machine
-was a 32 GB X Elite X1E-78-100. [Retained inventory](simd-plan.md#x2-cpu-thread-screen) records
-observations. [Hardware profiles](hardware-capabilities.md#automatic-profile-selection) owns planned automatic
-capability/driver/workload/objective selection, qualified prefill/decode placement,
-actual-budget admission and supported CPU fallback/refusal. Released policies
-remain explicit CPU selections; SKU names or TOPS never authorize acceleration.
-Outstanding work stays in [PLAN.md](../PLAN.md).
+Retained inventories cover Snapdragon X2 Elite Extreme X2E94100 and a 32 GB
+X Elite X1E-78-100; see [device evidence](simd-plan.md#x2-cpu-thread-screen).
+Policies still select CPU explicitly. [Hardware profiles](hardware-capabilities.md#automatic-profile-selection)
+defines qualification for automatic device/workload/objective selection, phase
+placement, live-budget admission and CPU fallback/refusal. SKU names and TOPS
+never authorize acceleration; [PLAN.md](../PLAN.md) owns pending work.
 
 ## Inventory and provisioning
 
@@ -426,12 +424,11 @@ implements authentication, request bounds and lifecycle controls.
 
 ## Explicit development broker
 
-The [broker contract](broker-policy.md) defines strict authenticated text chat,
-exact token-count admission, bounded HTTP I/O and cancellation. It permits one
-active request plus zero through eight waiting connections. Queue wait is at
-most thirty seconds and the total request deadline is ten minutes. Clients must
-keep their sending side open until the response finishes. Interrupted generation
-permanently closes admission; there is no automatic restart or reset.
+The [broker contract](broker-policy.md) defines authentication, exact counting,
+HTTP bounds and cancellation: one active request, zero through eight waiting,
+30-second queue wait and ten-minute total deadline. Keep the sending side open
+until completion. Interrupted generation closes admission permanently; recovery
+requires explicit backend teardown/relaunch.
 
 Build from an external native working directory:
 
@@ -507,19 +504,15 @@ try {
 Append `--check-only` for read-only artifact/policy verification and memory
 admission reporting, without credentials, a listener or a process.
 
-The default selection remains `reference-cpu`. Pass
-`--profile swift-pq2-assessment` to select Swift's separately pinned Prism runtime
+Pass `--profile swift-pq2-assessment` for Swift's separately pinned Prism runtime
 and original PQ2 model, provisioned with `config/swift-assessment.lock.json`.
-That selection fixes batch/microbatch to 128/64, an 11.5 GiB Job cap and 15.5 GiB
-available-RAM admission including the 4 GiB reserve. Add `--use-abliterate-lora`
-to load the pinned adapter and enable its bounded per-request scale with the
-Prism CPU server (default 1.3); the demo
-requests this automatically. Direct broker launches omit it by default.
-The native inference backend does not support this option. The publisher Prism
-CPU backend supports the pinned adapter with either original PQ2 or the explicit
-`--use-repacked-ptq1` current-weight export.
-Profile names are exact; arbitrary adapters,
-models, runtimes and inference overrides remain rejected.
+It fixes batch/microbatch to 128/64, an 11.5 GiB Job cap and 15.5 GiB admission,
+including the 4 GiB reserve. Add `--use-abliterate-lora` for the pinned adapter
+and per-request scale (default 1.3); the native UI requests it automatically,
+while direct broker launches omit it. Publisher Prism accepts the adapter with
+PQ2 or explicit `--use-repacked-ptq1`; native Rust rejects adapters and PTQ1.
+The [runtime-selection table](#runtime-selection) lists app options. Profile names
+are exact; arbitrary adapters, models, runtimes and inference overrides reject.
 
 The [launcher contract](broker-policy.md#owned-windows-development-launcher) owns
 retained artifact handles, fresh protected credentials/evidence, health/authentication
@@ -576,11 +569,11 @@ native identity before frontend readiness. Ordinary 11.5 GiB Job / 15.5 GiB admi
 4 GiB watchdog, protected keys and listener checks apply. Interrupted generation
 closes admission and stops the backend; relaunch creates a fresh owned instance.
 
-Release 0.1.6 includes reviewed source loading/logit/state/tokenizer/sampler/recovery
-repairs. [The runtime contract](native-rust-engine.md) defines their exact supported
-scope; [PLAN.md](../PLAN.md#runtime-and-correctness) tracks full-context, throughput
-and daily-service qualification. Private child protocol alone proves neither Job
-ownership nor same-user bypass prevention.
+The [runtime contract](native-rust-engine.md) defines release 0.1.6's supported
+loading, logits/state, tokenizer, sampler and recovery behavior;
+[PLAN.md](../PLAN.md#runtime-and-correctness) owns pending qualification.
+Private child protocol alone proves neither Job ownership nor same-user bypass
+prevention.
 
 ### Prepare a runtime lock update
 

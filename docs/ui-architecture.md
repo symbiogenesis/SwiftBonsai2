@@ -1,14 +1,13 @@
-# Pure-Rust native UI and local API compatibility
+# Native Rust UI and local API contract
 
-The first-party UI must remain a **pure-Rust native application**. Application
-code, state, events, rendering integration and network clients belong in Rust;
-native OS APIs and audited Rust bindings are permitted. PowerShell may provision,
-build and launch it.
+The first-party UI must remain **entirely native Rust**: application code, state,
+events, rendering integration and network clients. Native OS APIs and audited
+Rust bindings are permitted; PowerShell may provision, build and launch it.
 
 Do not add a JavaScript/TypeScript frontend, HTML/CSS UI, browser shell, WebView,
-Electron or web-rendered Tauri frontend, or adopt the inference server's browser
-UI. A replacement toolkit must preserve this boundary without a browser runtime
-or second frontend language. Interoperability belongs at the HTTP API boundary.
+Electron or web-rendered Tauri frontend, or the inference server's browser UI.
+A replacement toolkit must preserve this boundary. Interoperability belongs at
+the HTTP API boundary.
 
 ## Native application
 
@@ -43,29 +42,28 @@ owned descendants. Artifact verification and memory admission precede model use.
 Owned inference and speech require [native containment](sandboxing.md), with no
 uncontained fallback. Microphone consent is a separate UI capability check.
 
-The UI cannot load weights, select arbitrary runtime arguments or bypass broker
-artifact, model, memory, context or sampler policy. The development guide owns
-explicit PQ2/PTQ1/native-engine and adapter selections; none establishes runtime
-promotion or full-model/device qualification.
+The UI cannot load weights, choose arbitrary runtime arguments or bypass broker
+artifact, model, memory, context or sampler policy. Explicit
+[runtime/format and adapter choices](development-guide.md#runtime-selection) do not
+establish promotion or full-model/device qualification.
 
 ### Conversation and failure semantics
 
 | Component | Contract |
 | --- | --- |
-| Workspace | Up to 16 conversations, each with draft, response settings, visible transcript and separate exact committed history. Transcript count/byte eviction (at most 512 messages) never changes model history. |
-| Presentation | Only user/assistant content enters the transcript. Setup/retry/transport/speech status use separate controls; bounded diagnostics are collapsible. Output is selectable plain text, never interpreted HTML. Rename/delete use centered native modals; deletion names its target and blocks background input. Cancel/Escape preserves the conversation/draft. |
-| Recovery | Off by default; user-scoped DPAPI, 8 MiB bound, atomic replacement outside Git and one writer/data directory. A fresh broker restores only completed history, without request replay, microphone or playback. Interrupted visible text stays separate. [Recovery operation](development-guide.md#optional-recovery-and-preview) owns saved fields, unreadable-file preservation, explicit saving/deletion choices and same-user protection limits. |
-| Stop/retry | Stop freezes queued stream updates and wakes network waits. **Retry model** waits for owned-backend teardown, creates fresh credentials/diagnostics and repeats artifact/identity/15.5 GiB admission checks. Completed turns survive; no automatic resend or reduced profile. An interrupted prompt returns only to an empty composer, preserving newer drafts. If completion wins the Stop race, visible answer and committed history agree. |
-| Rejections/failures | Recognized local input rejections restore the draft and retain readiness. Unexpected disconnects require retry and do not identify a token/memory cause. [Broker policy](broker-policy.md#native-client-completion-and-recovery) owns the exact error/completion rules. |
-| Response settings | The explicit Thinking boolean, output limit and adapter scale apply to the next response and every Extra effort pass; controls lock during generation. [Settings](development-guide.md#conversations-and-response-settings) owns bounds, defaults and Standard/experimental Extra effort execution. Extra effort quality gains remain unproven. |
+| Workspace | At most 16 conversations, each with its own draft, response settings, visible transcript and exact committed history. Transcript count/byte eviction (at most 512 messages) never changes model history. |
+| Presentation | Only user/assistant content enters the selectable plain-text transcript; never interpret output as HTML. Setup/retry/transport/speech status use separate controls and bounded collapsible diagnostics. Rename/delete use centered native modals; deletion names the target and blocks background input. Cancel/Escape preserves the conversation/draft. |
+| Recovery | Off by default; user-scoped DPAPI, 8 MiB bound, atomic replacement outside Git and one writer/data directory. Restore completed history without request replay, microphone or playback; keep interrupted visible text separate. [Recovery operation](development-guide.md#optional-recovery-and-preview) defines saved fields, unreadable-file preservation, explicit saving/deletion and same-user limits. |
+| Stop/retry | Stop freezes queued updates and wakes network waits. Retry waits for owned-backend teardown, creates fresh credentials/diagnostics and repeats artifact, identity and 15.5 GiB admission checks. Preserve completed turns and newer drafts; restore an interrupted prompt only to an empty composer. Never replay automatically or reduce the profile. If completion wins the Stop race, the visible answer and committed history agree. |
+| Rejections/failures | Recognized local input rejections restore the draft and retain readiness. Other disconnects require retry and identify no token/memory cause. [Broker policy](broker-policy.md#native-client-completion-and-recovery) defines accepted errors and completion. |
+| Response settings | Thinking, output cap and adapter scale apply to the next response and every Extra effort pass; lock controls during generation. [Settings](development-guide.md#conversations-and-response-settings) defines defaults, bounds and execution; Extra effort quality gains remain unproven. |
 
-Find controls follow the [development guide](development-guide.md#conversations-and-response-settings).
-[Streaming resources](streaming-resources.md#native-chat-and-transcript) owns
-incremental matching, highlight/underline cache invalidation and work bounds.
-
+[Find controls](development-guide.md#conversations-and-response-settings) search
+visible message bodies. [Streaming resources](streaming-resources.md#native-chat-and-transcript)
+defines incremental matching, highlight/underline-cache invalidation and work bounds.
 `bonsai-chat.exe --preview` uses the same presentation with marked sample content
-and no broker, credentials, microphone or speech service. It checks layout and
-interaction, not model/speech behavior.
+and no broker, credentials, microphone or speech service; it checks layout and
+interaction only.
 
 ## Interoperability belongs at the API boundary
 
@@ -83,26 +81,25 @@ cannot bypass ownership, admission, credentials or context limits.
 ## Speech input and output
 
 Rust owns companion HTTP/authentication, schema validation, WAV processing and
-verified model files; reviewed native GGML C++ cores perform inference in
-separate executables, avoiding mixed GGML versions. The shared dependency-free
-`bonsai-audio` codec borrows validated mono PCM16 WAV payloads and opens no
-devices; callers retain their own sample-rate, duration and error policies.
-The [development guide](development-guide.md#speech-setup-and-operation) owns
-provisioning, controls, voice conditioning, resource budgets and service lifetime.
-The [Canary](../tools/canary-asr/README.md) and
-[Qwen](../tools/qwen-tts/README.md) READMEs own their protocols.
+verified model files. Reviewed native GGML C++ cores infer in separate executables
+to avoid mixing GGML versions. The dependency-free `bonsai-audio` codec borrows
+validated mono PCM16 WAV payloads and opens no devices; callers retain their own
+sample-rate, duration and error policies.
 
 Microphone access is requested on the UI thread only after explicit action.
-Denied/cancelled/unavailable access fails closed; stale permission, capture or
-transcription results cannot reactivate it. [Speech operation](development-guide.md#speech-setup-and-operation)
-owns in-memory clip format, capture/transcription lifecycle and explicit review
-before send. Audio uses authenticated numeric loopback, never a cloud service.
+Denied, cancelled or unavailable access fails closed; stale permission, capture
+or transcription results cannot reactivate it. Audio stays on authenticated
+numeric loopback. Transcripts require review before send; speech output uses only
+visible assistant answers, excluding reasoning/private drafts.
 
-Speech uses only visible assistant answers; reasoning/private drafts are excluded.
-The development guide owns fixed profile conditioning, mutually exclusive talkers,
-external `consistent_voice: true` capabilities, complete-WAV fallback and missing-service
-guidance. Service failure never silently substitutes another recognizer or a Windows
-voice. Images, video and image generation remain unavailable in the pinned Swift profile.
+[Speech operation](development-guide.md#speech-setup-and-operation) defines
+provisioning, capture lifecycle, fixed voice conditioning, mutually exclusive
+talkers, budgets, service lifetime and external-service requirements (including
+`consistent_voice: true` and complete-WAV fallback). The [Canary](../tools/canary-asr/README.md)
+and [Qwen](../tools/qwen-tts/README.md) READMEs define companion protocols.
+Service failure exposes setup guidance without substituting a recognizer or
+Windows voice. Images, video and image generation remain unavailable in the
+pinned Swift profile.
 
 ## Review and validation
 

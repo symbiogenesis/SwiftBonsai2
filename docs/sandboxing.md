@@ -4,11 +4,11 @@ Runner's native UI requires Windows process containment for its owned inference,
 ASR and TTS workers. `bonsai-windows-process` composes the pinned **MXC 1.0.1**
 Process Security Environment (PSEC) with suspended process creation,
 verified Job ownership before resume, exact worker PID, resource limits and
-restricted handle inheritance. Missing capabilities or rejected policies fail launch without an
-uncontained retry. Actual-model and stronger broker-only isolation acceptance
-remain unqualified. This document also owns the Runner-native handle, storage,
-thread and audio contracts; separately published Prism/speech engines need their
-own reviews. The [UI architecture](ui-architecture.md) remains binding.
+restricted handle inheritance. Missing capabilities or rejected policies fail
+launch without an uncontained retry. Actual-model and broker-only isolation
+remain unqualified. This page defines Runner's handle, storage, thread and audio
+contracts; separately published Prism/speech engines need independent review.
+The [UI architecture](ui-architecture.md) remains binding.
 
 ## Windows consent and capabilities
 
@@ -20,6 +20,10 @@ these are kernel-enforced grants, not a generic permission prompt for each file.
 A Windows Firewall prompt or rule is another independent control. A denied
 Firewall request must be distinguished from a rejected PSEC policy during diagnosis.
 
+The UI stops capture on observed revocation. Deadlines/revocation are cooperative,
+not an OS-enforced recording quota while the UI/processes are suspended. Model
+capability reports grant no Windows permissions. See [speech operation](development-guide.md#speech-setup-and-operation).
+
 ## Technology selection
 
 | Technology | Role |
@@ -29,9 +33,7 @@ Firewall request must be distinguished from a rejected PSEC policy during diagno
 | [LiteBox](https://github.com/microsoft/litebox) | Research only. Its [Windows userland platform](https://github.com/microsoft/litebox/blob/main/litebox_platform_windows_userland/src/lib.rs) targets x86_64 and explicitly shares writable host memory with the guest; it is not this application's security boundary. |
 | [Windows Sandbox through MXC](https://github.com/microsoft/mxc/blob/v1.0.1/docs/backends/windows-sandbox/windows-sandbox.md) | Experimental future Windows VM lane. Upstream teardown is best-effort and a hard-killed launcher can leave an orphan VM. Model sharing, transport, resource accounting and cleanup need separate qualification. |
 
-No performance benefit is assumed from a technology name. All performance
-evaluation remains CI-only. The UI and transport contracts remain
-[pure Rust/native](ui-architecture.md).
+Technology selection establishes no performance benefit; evaluation is CI-only.
 
 ## Worker authority
 
@@ -46,11 +48,11 @@ The owned-worker policy grants:
 - Read-only access to exact selected executable/runtime files, model, tokenizer
   or codec, adapter and only that worker's backend credential. Public policy
   inputs accept files, not broad data/profile directories.
-- Internal read-only Windows runtime directories, with no drive-root grant:
-  a native negative test showed that a generated read-only volume-root grant
-  exposed an unrelated credential. The trusted owner validates and retains full
-  ancestry. Read validation inside an actual AppContainer skips only the denied
-  volume-root metadata check; local-drive and every non-root check remain in force.
+- Internal read-only Windows runtime directories, never a drive-root grant
+  (native negative evidence shows it exposes unrelated credentials). The trusted
+  owner validates and retains full ancestry. Inside an actual AppContainer, read
+  validation skips only the denied volume-root metadata check; local-drive and
+  every non-root check remain in force.
 - Writable application scratch below a fresh protected owner/LocalSystem
   directory. Keys and parent-opened stdout/stderr remain outside that writable
   grant; only their specific standard handles are inherited.
@@ -83,8 +85,9 @@ Existing artifact verification and retained handles remain in force. Jobs still
 enforce process count and committed memory; the physical-RAM watchdog remains
 necessary for mapped weights. Scratch and log storage do not acquire a disk quota
 merely by being private. Same-user processes outside the sandbox can still read
-owner-protected credentials or interfere with endpoints; administrator or trusted
-owner compromise remains outside this worker boundary.
+owner-protected credentials or interfere with endpoints. Administrator/trusted
+owner compromise is outside this boundary. The daily profile remains disabled
+pending the [broker boundary](broker-policy.md) and [PLAN acceptance](../PLAN.md).
 
 ## Native integration contract
 
@@ -140,10 +143,10 @@ runtime and artifact identities. Distinguish portable parser/policy checks from
 actual native enforcement and actual-model acceptance. Model-free native fixtures
 cover file and hard-link denial, retained artifact/key guards, separate private
 temp storage, child-process denial, exact listener identity, external TCP denial
-and worker teardown after abrupt owner death. Required remaining evidence
-includes complete model/adapter/speech loading, lifecycle and cancellation under load,
-and a separately implemented/proven broker-only transport. Native admission
-errors and pending qualification must not be reported as passed.
+and worker teardown after abrupt owner death. They do not qualify real
+model/adapter/speech loading, cancellation under load, broker-only transport,
+performance or sustained comfort; [PLAN.md](../PLAN.md) owns
+that acceptance. Native admission errors and pending qualification are not passes.
 
 The public API still rejects tools, arbitrary executables, dynamic runtime
 selection and unsupported media. Model output remains inert text. Future plugins
@@ -173,6 +176,9 @@ overlays. Never clear it, relocate system/profile folders or run native diagnost
 from a repository working directory; use [external validation lanes](validation.md).
 
 ## Files, locks and publication
+
+Credentials use system CSPRNG bytes, protected ACLs, noninheritable retained
+handles and scrubbed buffers; recovery uses user-scoped DPAPI.
 
 | Purpose | Mechanism |
 | --- | --- |
@@ -228,19 +234,3 @@ stop/reset and unprepare-before-free ordering. Microsoft
 [recommends newer audio APIs](https://learn.microsoft.com/en-us/windows/win32/multimedia/waveform-functions);
 WASAPI/AudioGraph migration still needs device-change, suspend/resume,
 cancellation and latency qualification.
-
-## Permissions and capability isolation
-
-Credentials use system CSPRNG bytes, protected ACLs, noninheritable retained
-handles and scrubbed buffers; recovery uses user-scoped DPAPI. The UI requests
-`AppCapability` microphone access only after user action and stops capture on
-observed revocation. Deadlines/revocation are cooperative, not an OS-enforced
-recording quota while UI/processes are suspended. Model-capability reports are
-not Windows permission grants; microphone permission does not sandbox inference.
-
-Owned UI inference/speech requires PSEC; explicitly unisolated development retains
-caller authority. The daily profile remains disabled pending the
-[broker boundary](broker-policy.md) and acceptance in [PLAN.md](../PLAN.md).
-Focused synthetic regressions establish repaired path/handle/lock behavior;
-Foundation owns full suites. Real models, audio hardware, restricted-identity
-acceptance, performance and comfort require independent evidence.

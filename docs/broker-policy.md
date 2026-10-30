@@ -327,22 +327,20 @@ See [commands](development-guide.md#explicit-development-broker).
 
 `--launch-development` with exactly one of `--require-native-sandbox` or
 `--allow-unisolated-backend` selects `launcher::LaunchConfig`.
-Only compiled-in pins and fixed arguments are accepted: `reference-cpu` is the
-default, and `--profile swift-pq2-assessment` explicitly selects Swift's separate
-model/runtime lock. Arbitrary executables, models, profile JSON and overrides
-are rejected. Swift defaults to original PQ2 weights. The explicit
-`--use-repacked-ptq1` option selects only the pinned current-weight export;
-missing or altered bytes reject startup without substitution or fallback.
-That option is rejected with the native Rust inference service pending its
-separate end-to-end qualification.
-`--use-abliterate-lora` loads only the pinned adapter with the Prism CPU backend
-and enables the bounded per-request scale described above; it is rejected for
-the reference profile and `--native-engine`.
-The app requests it by default and offers `-NoAbliterateLora`; direct broker
-launches omit it by default. `--check-only`
-verifies policy/artifacts and reports memory admission without credentials or a
-process. Neither selection establishes real-model service qualification. Inherited
-LLAMA/LLAMACPP/GGML/AIP/MTMD and model-endpoint/token overrides are rejected;
+Only compiled-in pins and fixed arguments are accepted; reject arbitrary
+executables, models, profile JSON and overrides. The default is `reference-cpu`;
+`--profile swift-pq2-assessment` selects Swift's separate model/runtime lock.
+
+| Launcher option | Boundary |
+| --- | --- |
+| Default weights | Original PQ2; no format substitution. |
+| `--use-repacked-ptq1` | Only the pinned current-weight export; missing/altered bytes reject. Unsupported with native Rust pending separate end-to-end qualification. |
+| `--use-abliterate-lora` | Only the pinned adapter on publisher Prism CPU; enables bounded per-request scale. Reject for reference/native Rust. The app requests it by default (`-NoAbliterateLora` opts out); direct broker launch omits it. |
+| `--check-only` | Verify policy/artifacts and report admission without credentials or a process. |
+
+[Runtime selection](development-guide.md#runtime-selection) lists app options.
+Selection establishes no real-model qualification. Inherited
+LLAMA/LLAMACPP/GGML/AIP/MTMD and model-endpoint/token overrides reject;
 Windows/profile environment variables are preserved.
 
 `artifacts::VerifiedArtifacts` verifies complete model/ZIP size/hash, safe archive
@@ -350,7 +348,7 @@ paths/expansion, exact installed runtime contents and ARM64 PE images. Retained
 Windows handles deny write/delete access to artifacts and ancestors during use.
 When selected, the adapter's pinned size/SHA-256 is also verified and its handle
 retained through backend shutdown; missing or altered files fail startup.
-This does not attest source-to-binary builds or restricted execution.
+Artifact verification attests neither source-to-binary builds nor restricted execution.
 
 Safe broker code delegates Win32 ownership to `bonsai-windows-process` and protected
 keys to `bonsai-windows-credentials`. Fresh protected evidence holds two keys and
@@ -383,12 +381,10 @@ components. Evidence and credentials remain retained; never share either key or
 the whole directory. CPU/LoRA checks use the packaged Rust maintenance tool and
 same Windows process boundary, with their separate fixed arguments/pins.
 
-The native UI requires `--require-native-sandbox`; direct development may explicitly
-select the exclusive `--allow-unisolated-backend` opt-out. The
-[sandbox contract](sandboxing.md) owns exact file grants, private/OS-managed temp,
-verified atomic Job ownership and coarse host-loopback limits. Broker-only/same-user
-bypass prevention, actual-model acceptance, quality and performance remain pending.
-Synthetic loopback/stream checks do not qualify them. Use
-[launch commands](development-guide.md#owned-windows-development-backend) and
-[validation](validation.md); dependency/toolchain pins live in Cargo files and
-full suites run only in main-only Foundation CI.
+The UI requires native containment; the direct-development opt-out is explicit.
+[Sandboxing](sandboxing.md) defines file grants, private/OS-managed temp, atomic
+Job ownership and coarse host-loopback limits. Synthetic loopback/stream checks
+do not qualify broker-only/same-user bypass prevention, actual-model behavior,
+quality or performance. Use [launch commands](development-guide.md#owned-windows-development-backend)
+and [validation](validation.md); Cargo files own dependency/toolchain pins and
+main-only Foundation CI owns full suites.
