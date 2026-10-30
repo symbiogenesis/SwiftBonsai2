@@ -17,12 +17,9 @@ jobs:
     # focused screen cannot qualify native Windows or actual-model behavior.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
-    env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/SwiftBonsai-Premerge
     defaults:
       run:
         shell: bash
-        working-directory: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,14 +29,23 @@ jobs:
           toolchain: nightly-2026-10-22-aarch64-unknown-linux-gnu
           components: rustfmt
       - name: Check workspace Rust formatting
+        working-directory: ${{ runner.temp }}
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/SwiftBonsai-Premerge
         run: cargo +nightly-2026-10-22 fmt --manifest-path "$GITHUB_WORKSPACE/Cargo.toml" --all -- --check
       - name: Compile portable policy, broker and CI targets
+        working-directory: ${{ runner.temp }}
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/SwiftBonsai-Premerge
         run: >-
           cargo +nightly-2026-10-22 check --locked --release
           --manifest-path "$GITHUB_WORKSPACE/Cargo.toml"
           --package bonsai-ci --package bonsai-cpu-policy --package bonsai-broker
           --all-targets
       - name: Run selected model-free routing and policy regressions
+        working-directory: ${{ runner.temp }}
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/SwiftBonsai-Premerge
         run: |
           set -euo pipefail
           exact_test() {
