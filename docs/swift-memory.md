@@ -188,12 +188,9 @@ token IDs cannot override a logits/state failure.
 | Diagnostic resource envelope | **12 GiB admission / 8 GiB Job / 4 GiB reserve**; peak commit 6,275,977,216 bytes (5.845 GiB), minimum available physical 8,027,590,656 (7.476 GiB). Direct Rust supervision retains caller lifetime, artifact verification, output cap and deadline. Three tokens do not qualify service admission; Job commit excludes mapped weights/total RAM. |
 | Scalar control | Two supplied tokens before 180-second deadline: incomplete, not accepted. Fresh 360-second attempt rejected before launch at 9,289,871,360 available bytes versus 12 GiB required. Completed scalar/explicit NEON controls remain pending. Default-feature ARM64 build establishes NEON eligibility, without observed per-operation counters. |
 
-Exact runtime main `02c8a24` passed
-[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357453)
-and
-[conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357329).
-Runner pins the verified Windows bundles from
-[0.1.6](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.6).
+The [Rust runtime contract](native-rust-engine.md#swift-cpu-supported-subset)
+owns the provisioned release, source revision and current CI status; the table
+above retains this diagnostic's exact version and evidence limits.
 Longer/full-context trajectories, adapters, completed app-setting answers, recovery
 and resource/comfort remain pending.
 The scale-one LoRA harness does not prove PTQ1/PQ2 answer parity at app scale 1.3.

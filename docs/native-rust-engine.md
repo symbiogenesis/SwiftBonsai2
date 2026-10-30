@@ -12,7 +12,8 @@ feature parity does not qualify inference.
 ## Swift CPU supported subset
 
 The target is native Windows ARM64, initially the 32 GB Snapdragon X Elite. Runner
-pins **0.1.6**, main revision `02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0`, with passing
+pins [**0.1.6**](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.6),
+main revision `02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0`, with passing
 [Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357453)
 and
 [conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357329).
