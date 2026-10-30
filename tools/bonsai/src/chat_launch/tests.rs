@@ -324,6 +324,11 @@ fn ordinary_startup_only_prepares_owned_services_and_creates_independent_keys() 
     );
     assert!(!arguments.iter().any(|value| value == "--use-repacked-ptq1"));
     assert!(!arguments.iter().any(|value| value == "--native-engine"));
+    assert!(
+        !arguments
+            .iter()
+            .any(|value| value == "--native-row-workers")
+    );
     assert_eq!(value_after(arguments, "--tts-quantization")?, "Q8_0");
     assert_eq!(
         value_after(arguments, "--tts-voice-model")?,
@@ -479,6 +484,7 @@ fn missing_app_selection_and_force_build_reach_build_owners() -> crate::Result<(
 fn explicit_rust_runtime_survives_early_window_and_backend_preparation() -> crate::Result<()> {
     let mut fixture = fixture("native-runtime")?;
     fixture.request["NativeEngine"] = json!(true);
+    fixture.request["NativeRowWorkers"] = json!(4);
     fixture.request["NoAbliterateLora"] = json!(true);
     fixture.request["NoSpeechModels"] = json!(true);
     let mut recorder = Recorder::new(fixture.root.clone());
@@ -495,11 +501,17 @@ fn explicit_rust_runtime_survives_early_window_and_backend_preparation() -> crat
             .map_err(|error| error.to_string())?;
     let deferred = prepare(request, true)?;
     assert!(deferred.request.native_engine && deferred.request.no_abliterate_lora);
+    assert_eq!(deferred.request.native_row_workers, 4);
     let prepared = prepare_backend(deferred, &mut recorder, &fixture.working)?;
     let arguments = prepared["Arguments"]
         .as_array()
         .ok_or("Missing arguments.")?;
     assert!(arguments.iter().any(|value| value == "--native-engine"));
+    assert!(
+        arguments
+            .windows(2)
+            .any(|args| args[0] == "--native-row-workers" && args[1] == "4")
+    );
     assert!(
         arguments
             .iter()
@@ -539,6 +551,12 @@ fn native_alternate_profiles_keep_verified_launch_options() -> crate::Result<()>
 fn invalid_options_reject_before_provisioning() -> crate::Result<()> {
     let fixture = fixture("invalid")?;
     for patch in [
+        json!({"NativeRowWorkers": 4}),
+        json!({"NativeEngine": true, "NativeRowWorkers": 2}),
+        json!({"NativeEngine": true, "NativeRowWorkers": 0}),
+        json!({"NativeEngine": true, "NativeRowWorkers": "4"}),
+        json!({"NativeEngine": true, "NativeRowWorkers": 4.0}),
+        json!({"NativeEngine": true, "NativeRowWorkers": null}),
         json!({"FrontendPort": 8081}),
         json!({"FrontendPort": 80}),
         json!({"CanaryPort": 5173}),

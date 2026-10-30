@@ -86,10 +86,12 @@ try {
     Assert (-not $request.Contains('ToolPath') -and -not $request.Contains('Verbose') -and -not $request.Contains('WorkingDirectory')) 'Bootstrap controls or session creation leaked into the native request.'
     Assert ($resolved.ToolPath -ceq (Join-Path $scratch 'selected.exe') -and $resolved.ForceBuild -eq $true) 'Tool override or ForceBuild was lost.'
     Assert ([IO.File]::Exists($lockPath)) 'The persistent probe sentinel was deleted.'
-    & $invokeCopy @{ DataDirectory = $data; NoSpeechModels = $true; NoAbliterateLora = $true; NativeEngine = $true }
+    & $invokeCopy @{ DataDirectory = $data; NoSpeechModels = $true; NoAbliterateLora = $true; NativeEngine = $true; NativeRowWorkers = 4 }
     $request = ConvertFrom-Json -AsHashtable -InputObject ([IO.File]::ReadAllText($receipt))
-    Assert ($request.NativeEngine -eq $true -and $request.NoAbliterateLora -eq $true -and
+    Assert ($request.NativeEngine -eq $true -and $request.NativeRowWorkers -eq 4 -and $request.NoAbliterateLora -eq $true -and
         -not $request.Contains('UseRepackedPtq1')) 'The explicit Rust runtime selection was lost.'
+    Assert-Failure { & $invokeCopy @{ DataDirectory = $data; NativeRowWorkers = 4 } } 'Four workers accepted the publisher runtime.'
+    Assert-Failure { & $invokeCopy @{ DataDirectory = $data; NativeEngine = $true; NativeRowWorkers = 2 } } 'An unsupported worker count was accepted.'
     [IO.File]::Delete($receipt)
     [IO.File]::Delete($resolution)
     $guard = [IO.FileStream]::new($lockPath, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)

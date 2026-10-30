@@ -1929,6 +1929,7 @@ mod startup_tests {
             use_abliterate_lora: false,
             use_repacked_ptq1: false,
             native_engine: false,
+            native_row_workers: 1,
             canary: None,
             qwen_tts: None,
         };
