@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "review-only-prism-source-candidate",
+  "repository": "https://github.com/symbiogenesis/prism-inference",
+  "base": {
+    "commit": "ff3d54de662ddd951dc0ca51d9581129b55239bf",
+    "url": "https://github.com/symbiogenesis/prism-inference/archive/ff3d54de662ddd951dc0ca51d9581129b55239bf.zip",
+    "bytes": 4172334,
+    "sha256": "db75181860eb2e805a4225f96f7b598f75fa3b148c4ff50b7031af668d912c43"
+  },
+  "sourceCommit": "5ff5f3c4719362da6efcbb58114b702db282e5b2",
+  "patch": {
+    "filename": "oxibonsai-row-parallel.patch",
+    "bytes": 48007,
+    "sha256": "abde194f1a981b10d6ec0a736d09ae6368b87563e69e8598accdea2a2fff65b7"
+  },
+  "feature": "parallel-rows",
+  "workerArgument": "--row-workers",
+  "workers": {
+    "default": 1,
+    "minimum": 1,
+    "maximum": 16,
+    "requestedStackBytes": 524288
+  },
+  "activation": "requires-reviewed-source-integration-CI-and-runtime-release"
+}

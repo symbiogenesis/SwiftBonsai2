@@ -1,0 +1,1043 @@
+From 5ff5f3c4719362da6efcbb58114b702db282e5b2 Mon Sep 17 00:00:00 2001
+From: Edward Miller <symbiogenesis@outlook.com>
+Date: Thu, 29 Oct 2026 20:34:05 -0500
+Subject: [PATCH] Add explicit shared-slice workers to Swift packed projections
+
+---
+ .github/workflows/foundation.yml |   7 +
+ Cargo.lock                       |   1 +
+ Cargo.toml                       |   2 +
+ docs/build-and-validation.md     |   4 +
+ docs/index.md                    |   1 +
+ docs/parallel-rows.md            |  78 +++++++++++
+ server/Cargo.toml                |   3 +
+ server/src/main.rs               |   2 +-
+ server/src/native_child.rs       |  46 ++++++-
+ src/bin/swift_worker.rs          |  15 ++-
+ src/graph.rs                     |  24 +++-
+ src/kernels.rs                   |  45 ++++++-
+ src/kernels/parallel_rows.rs     | 221 +++++++++++++++++++++++++++++++
+ src/swift_session.rs             |  21 ++-
+ tests/graph.rs                   |  32 +++++
+ tests/parallel_rows.rs           | 180 +++++++++++++++++++++++++
+ 16 files changed, 665 insertions(+), 17 deletions(-)
+ create mode 100644 docs/parallel-rows.md
+ create mode 100644 src/kernels/parallel_rows.rs
+ create mode 100644 tests/parallel_rows.rs
+
+diff --git a/.github/workflows/foundation.yml b/.github/workflows/foundation.yml
+index a7d8fbf9cf1e199c763ef5a3adf5a936c5c9a89c..e171ab7b437982e9cbd8569db0e6495db0a74856 100644
+--- a/.github/workflows/foundation.yml
++++ b/.github/workflows/foundation.yml
+@@ -200,6 +200,13 @@ jobs:
+               cargo +nightly-2026-10-22 build --manifest-path $manifest -p prism-inference --locked --offline --release --no-default-features --features experimental-neon --lib
+               cargo +nightly-2026-10-22 clippy --manifest-path $manifest -p prism-inference --locked --offline --release --no-default-features --all-targets -- -D warnings
+               cargo +nightly-2026-10-22 test --manifest-path $manifest -p prism-inference --locked --offline --release --no-default-features --test simd simd_
++              cargo +nightly-2026-10-22 clippy --manifest-path $manifest -p prism-inference --locked --offline --release --features parallel-rows --all-targets -- -D warnings
++              cargo +nightly-2026-10-22 test --manifest-path $manifest -p prism-inference --locked --offline --release --features parallel-rows --test parallel_rows
++              cargo +nightly-2026-10-22 test --manifest-path $manifest -p prism-inference --locked --offline --release --features parallel-rows --test graph graph_parallel_rows_preserve_logits_checkpoints_and_recovery -- --exact
++            }
++            if ('prism-inference-server' -cin $packages) {
++              cargo +nightly-2026-10-22 clippy --manifest-path $manifest -p prism-inference-server --locked --offline --release --features parallel-rows --all-targets -- -D warnings
++              cargo +nightly-2026-10-22 test --manifest-path $manifest -p prism-inference-server --locked --offline --release --features parallel-rows --lib native_child::tests::
+             }
+             if ('bonsai-gguf' -cin $packages) {
+               cargo +nightly-2026-10-22 build --manifest-path $manifest -p bonsai-gguf --locked --offline --release --no-default-features --lib
+diff --git a/Cargo.lock b/Cargo.lock
+index 13979bd9ca4f889ef8273b344b255833d45046e6..0ece29fa26349f9f1286703ad050495b0b16a88b 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -584,6 +584,7 @@ dependencies = [
+  "bonsai-ternary",
+  "fancy-regex",
+  "fearless_simd",
++ "rayon",
+  "regex",
+  "sentencepiece-rs",
+  "serde",
+diff --git a/Cargo.toml b/Cargo.toml
+index f86dfaab67aba90177b7d492f15eefa4b7bfa063..dc4f795046723d8e487d870689603b9b71dfe56d 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -19,6 +19,7 @@ name = "bonsai_prism_runtime"
+ default = ["cli", "experimental-neon"]
+ cli = ["dep:serde", "dep:serde_json"]
+ experimental-neon = ["dep:fearless_simd"]
++parallel-rows = ["dep:rayon"]
+ 
+ [[bin]]
+ name = "prism-inference"
+@@ -40,6 +41,7 @@ required-features = ["cli"]
+ 
+ [dependencies]
+ aho-corasick = "=1.1.5"
++rayon = { version = "=1.12.0", optional = true }
+ bonsai-ternary = { version = "=0.1.0", path = "tools/ternary" }
+ bonsai-gguf = { version = "=0.1.0", path = "tools/gguf", default-features = false }
+ bonsai-prism = { version = "=0.1.1", path = "tools/prism" }
+diff --git a/docs/build-and-validation.md b/docs/build-and-validation.md
+index ed86198e9bef8d378fd2acf016ec4937bcf89426..eaacafb447eff392aaf05aa580dc74ef67110f8a 100644
+--- a/docs/build-and-validation.md
++++ b/docs/build-and-validation.md
+@@ -26,10 +26,14 @@ Default features are `cli` (JSON token driver) and `experimental-neon`.
+ | Cargo feature selection | Result |
+ | --- | --- |
+ | Defaults | Token driver/library with eligible NEON selection |
++| `--features parallel-rows` | Opt-in persistent packed-row pool; trusted worker count still defaults to one |
+ | `--no-default-features --features experimental-neon --lib` | NEON-enabled library without JSON driver |
+ | `--no-default-features --lib` | Scalar-only library |
+ | `--no-default-features --features cli` | Scalar-only token driver |
+ 
++See [explicit row workers](parallel-rows.md) for worker budgets, unchanged row
++arithmetic, CLI/service configuration and qualification limits.
++
+ ## Build a checkout
+ 
+ Use the pinned Rust nightly-2026-10-22 and an absolute manifest/target path from
+diff --git a/docs/index.md b/docs/index.md
+index 65caa289a0b021016c4efe8e21e239c3f49de329..5f37acd9d2758d4be0d348f6eee2cfe246fc76d3 100644
+--- a/docs/index.md
++++ b/docs/index.md
+@@ -14,6 +14,7 @@ generation path targets Swift/Bonsai; broader Prism models are planned.
+ | Keep a tokenizer process alive | [Persistent token worker](cli-and-workers.md#persistent-token-worker) |
+ | Integrate a worker or the private HTTP server | [Swift worker and private server](cli-and-workers.md#swift-worker-and-private-http-server) |
+ | Understand budgets and failure recovery | [Runtime contracts](runtime-contracts.md) |
++| Configure opt-in packed projection workers | [Explicit row workers](parallel-rows.md) |
+ | Compile, check or package the workspace | [Building and validation](build-and-validation.md) |
+ | Run upstream source/backend and codec checks | [Runtime conformance](prism-upstream-tests.md) |
+ | Capture explicit rank-one adapter correctness evidence | [Adapter correctness path](rank-one-adapter.md) |
+diff --git a/docs/parallel-rows.md b/docs/parallel-rows.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..72e5dd25212bbd7960becf7c354921331f5555ab
+--- /dev/null
++++ b/docs/parallel-rows.md
+@@ -0,0 +1,78 @@
++# Explicit packed-projection row workers
++
++The `parallel-rows` Cargo feature provides a private persistent Rayon 1.12.0
++pool for PQ2/PTQ1 matrix rows. It is opt-in and all constructors retain serial
++execution until configured. It does not promote a device profile or establish
++a speedup. Full-model and target-device qualification remain separate.
++
++The implementation independently adapts the borrowed-slice scheduling idea in
++[OxiBonsai parallel.rs](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-kernels/src/parallel.rs)
++at `1d10c48e14754ff6999158f8fa13c7c92b40b0dc` (Apache-2.0, COOLJAPAN OU).
++It retains Prism's original packed formats, quantizers, kernels and scale order.
++No Oxi source text or serialized fixtures are copied.
++
++## Resource and arithmetic contract
++
++- `RowParallelism::new(n)` accepts 1 through 16 workers. One creates no threads;
++  higher values require the feature. Pool creation failure is an error rather
++  than a silent fallback. Environment/global Rayon settings do not choose the
++  worker count.
++- Policy clones share one persistent pool. Each worker requests a 512 KiB stack,
++  charged in addition to ordinary graph/model storage by the process owner.
++  Different independently created policies create independent pools; callers
++  should share one policy rather than multiply worker budgets.
++- One projection prepares activations once. Contiguous row tasks borrow the
++  original immutable packed bytes and Q8_K/Q8_0 arrays, then write disjoint
++  regions of the already reserved output. No matrix, activation or per-worker
++  weight copy is created. At most the configured number of row tasks exists.
++- Each row executes the same selected scalar/NEON dot function as serial mode.
++  Integer grouping and every floating scale/add remain unchanged. Floating and
++  other packed types retain their prior serial paths; single-row work is serial.
++- Per-task failure storage is bounded by the worker count and reused. All tasks
++  join before returning the first failure in row order. Failed matrix output is
++  empty; graph/runtime transaction rollback retains its existing behavior.
++- Cancellation/deadline checks remain cooperative between synchronous decoder
++  operations. Row parallelism does not preempt a matrix operation or add a
++  separate cancellation claim. Reset and checkpoint restore preserve the worker
++  policy, while checkpoints contain no pool, scratch or mutable output aliases.
++
++## Library, worker and private HTTP entry points
++
++Library callers construct a policy before loading a model:
++
++```rust,no_run
++use bonsai_prism_runtime::kernels::RowParallelism;
++let policy = RowParallelism::new(2)?;
++// graph.set_row_parallelism(policy.clone());
++// SwiftSession::load_with_row_parallelism(path, backend, seed, policy)?;
++# Ok::<(), bonsai_prism_runtime::Error>(())
++```
++
++`Qwen35::row_workers()` reports the configured budget. Its existing
++`backend_statistics().parallel_row_operations` counts actual packed attempts
++using the pool, including provisional or failed operations. It is distinct
++from scalar/NEON ISA selection and does not count committed tokens.
++
++Build `prism-inference` or `prism-inference-server` with `--features parallel-rows`.
++The Swift JSONL worker and private `--native-engine-child` HTTP server accept
++`--row-workers 1..16`, default 1. Values above one reject if built without the
++feature. This is a trusted launch option, never a client-controlled HTTP field;
++all existing authentication, model identity, process containment and memory
++admission requirements still apply. Public request/readiness schemas are unchanged.
++
++## Validation
++
++Focused controls cover explicit budgets, actual Swift column widths, awkward
++row counts, both PQ2 activation contracts, PTQ1, prepared siblings, scalar/NEON
++selection, pinned accumulation, malformed payloads, failed output cleanup,
++floating fallback, borrowed row addresses and deterministic failure order.
++Graph controls cover full-attention/recurrent logits, checkpoint restore,
++reset and failed evaluation recovery. CI's feature-variant lane executes these
++with the feature enabled; ordinary feature-disabled builds retain rejection
++controls. Full suites and every benchmark remain CI-only.
++
++The optional dependency is permissively licensed (`rayon`, `rayon-core` and
++their enabled dependencies offer Apache-2.0/MIT terms). Distributors retain the
++selected upstream licenses and notices from the exact locked crates. Adding a
++feature does not qualify its thread scheduling, end-to-end latency, sustained
++memory or energy on Snapdragon.
+diff --git a/server/Cargo.toml b/server/Cargo.toml
+index 71fbc6d51db97293c8d8d931ae917433c97898cf..a709e724b062ddb1ad5606bfb2d0491d8fe25393 100644
+--- a/server/Cargo.toml
++++ b/server/Cargo.toml
+@@ -10,6 +10,9 @@ description = "Bounded private HTTP server for Prism CPU inference"
+ keywords = ["inference", "prism", "gguf"]
+ categories = ["science"]
+ 
++[features]
++parallel-rows = ["bonsai-prism-runtime/parallel-rows"]
++
+ 
+ [dependencies]
+ bonsai-prism-runtime = { package = "prism-inference", path = "..", version = "=0.1.6" }
+diff --git a/server/src/main.rs b/server/src/main.rs
+index 8fe05a9080565a7c9b3923779206cb27c7268cac..ec118f0815bfa212dad5fed4609ded63aa4dc31a 100644
+--- a/server/src/main.rs
++++ b/server/src/main.rs
+@@ -5,7 +5,7 @@ use std::{io::Write, process::ExitCode};
+ fn main() -> ExitCode {
+     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+     if arguments.len() == 1 && arguments[0] == "--help" {
+-        return if std::io::stdout().write_all(b"prism-inference-server --native-engine-child --model <absolute-pinned-gguf> --port <1024..65535> --key-file <absolute-private-key> --seed <u32>\nPrivate HTTP backend for an owning process/Job launcher. Current model: Swift Bonsai PQ2.\n").is_ok() { ExitCode::SUCCESS } else { ExitCode::FAILURE };
++        return if std::io::stdout().write_all(b"prism-inference-server --native-engine-child --model <absolute-pinned-gguf> --port <1024..65535> --key-file <absolute-private-key> --seed <u32> [--row-workers <1..16>]\nPrivate HTTP backend for an owning process/Job launcher. Current model: Swift Bonsai PQ2.\n").is_ok() { ExitCode::SUCCESS } else { ExitCode::FAILURE };
+     }
+     #[cfg(windows)]
+     if prism_inference_server::native_child::run(arguments).is_ok() {
+diff --git a/server/src/native_child.rs b/server/src/native_child.rs
+index 798f0c2fa112d404d8f0467cde3d3266d3abaf03..d556a8ac2665483346c9ad0789ed57d4102097fa 100644
+--- a/server/src/native_child.rs
++++ b/server/src/native_child.rs
+@@ -2,7 +2,10 @@
+ 
+ use std::{ffi::OsString, io, path::PathBuf};
+ 
+-use bonsai_prism_runtime::{kernels::MatvecBackend, swift_session::SwiftSession};
++use bonsai_prism_runtime::{
++    kernels::{MAX_ROW_WORKERS, MatvecBackend, RowParallelism},
++    swift_session::SwiftSession,
++};
+ use bonsai_windows_credentials::validate_external_path;
+ 
+ use crate::service::bound_loopback_socket;
+@@ -12,6 +15,7 @@ struct Config {
+     key: PathBuf,
+     port: u16,
+     seed: u32,
++    row_workers: usize,
+ }
+ 
+ fn invalid() -> io::Error {
+@@ -25,6 +29,7 @@ fn parse(arguments: impl IntoIterator<Item = OsString>) -> io::Result<Config> {
+     let mut arguments = arguments.into_iter();
+     let mut child = false;
+     let (mut model, mut key, mut port, mut seed) = (None, None, None, None);
++    let mut row_workers = None;
+     while let Some(argument) = arguments.next() {
+         if argument == "--native-engine-child" && !child {
+             child = true;
+@@ -52,6 +57,15 @@ fn parse(arguments: impl IntoIterator<Item = OsString>) -> io::Result<Config> {
+                         .map_err(|_| invalid())?,
+                 );
+             }
++            Some("--row-workers") if row_workers.is_none() => {
++                row_workers = Some(
++                    value
++                        .to_str()
++                        .ok_or_else(invalid)?
++                        .parse::<usize>()
++                        .map_err(|_| invalid())?,
++                );
++            }
+             _ => return Err(invalid()),
+         }
+     }
+@@ -60,7 +74,13 @@ fn parse(arguments: impl IntoIterator<Item = OsString>) -> io::Result<Config> {
+         key: key.ok_or_else(invalid)?,
+         port: port.filter(|&n| n >= 1024).ok_or_else(invalid)?,
+         seed: seed.filter(|&n| n != u32::MAX).ok_or_else(invalid)?,
++        row_workers: row_workers.unwrap_or(1),
+     };
++    if !(1..=MAX_ROW_WORKERS).contains(&config.row_workers)
++        || (config.row_workers > 1 && !cfg!(feature = "parallel-rows"))
++    {
++        return Err(invalid());
++    }
+     if !child {
+         return Err(invalid());
+     }
+@@ -91,8 +111,14 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> io::Result<()> {
+         ));
+     }
+     let (_key_guard, key) = crate::configuration::read_key(&config.key).map_err(|_| invalid())?;
+-    let session = SwiftSession::load(&config.model, MatvecBackend::Auto, config.seed)
+-        .map_err(|_| io::Error::other("verified native Swift loading failed"))?;
++    let parallelism = RowParallelism::new(config.row_workers).map_err(|_| invalid())?;
++    let session = SwiftSession::load_with_row_parallelism(
++        &config.model,
++        MatvecBackend::Auto,
++        config.seed,
++        parallelism,
++    )
++    .map_err(|_| io::Error::other("verified native Swift loading failed"))?;
+     let runtime = tokio::runtime::Builder::new_current_thread()
+         .enable_all()
+         .build()?;
+@@ -109,7 +135,7 @@ mod tests {
+     use super::*;
+ 
+     #[test]
+-    fn native_child_rejects_unknown_duplicate_relative_and_unbounded_options() {
++    fn native_child_rejects_unknown_duplicate_relative_and_unbounded_options() -> io::Result<()> {
+         let good = [
+             "--native-engine-child",
+             "--model",
+@@ -130,12 +156,21 @@ mod tests {
+             .join("native-backend.key")
+             .into_os_string();
+         assert!(parse(good.clone()).is_ok());
++        assert_eq!(parse(good.clone())?.row_workers, 1);
++        for value in ["0", "17", "invalid"] {
++            let mut args = good.to_vec();
++            args.extend(["--row-workers", value].map(OsString::from));
++            assert!(parse(args).is_err());
++        }
++        let mut parallel = good.to_vec();
++        parallel.extend(["--row-workers", "2"].map(OsString::from));
++        assert_eq!(parse(parallel).is_ok(), cfg!(feature = "parallel-rows"));
+         for extra in [
+             vec!["--seed", "1"],
+             vec!["--profile", "swift-pq2-assessment"],
+             vec!["--native-engine-child"],
+         ] {
+-            let mut args = good.clone().to_vec();
++            let mut args = good.to_vec();
+             args.extend(extra.into_iter().map(OsString::from));
+             assert!(parse(args).is_err());
+         }
+@@ -150,5 +185,6 @@ mod tests {
+         let mut args = good;
+         args[8] = OsString::from(u32::MAX.to_string());
+         assert!(parse(args).is_err());
++        Ok(())
+     }
+ }
+diff --git a/src/bin/swift_worker.rs b/src/bin/swift_worker.rs
+index 4643037dfef9fea1f833a4c19336518dadbbf97f..a3014228599a68b75736ed186494f66e7020af1e 100644
+--- a/src/bin/swift_worker.rs
++++ b/src/bin/swift_worker.rs
+@@ -10,7 +10,10 @@ use std::{
+ };
+ 
+ use bonsai_prism_runtime::{
+-    Result, kernels::MatvecBackend, model::swift, runtime::Cancellation,
++    Result,
++    kernels::{MatvecBackend, RowParallelism},
++    model::swift,
++    runtime::Cancellation,
+     swift_session::SwiftSession,
+ };
+ use serde_json::json;
+@@ -21,7 +24,7 @@ use request::{MAX_FRAME_BYTES, Request};
+ #[path = "../swift_worker_output.rs"]
+ mod delivery;
+ use delivery::{Delivery, write_record};
+-const USAGE: &[u8] = b"Usage: bonsai-swift-worker --model <absolute-pinned-swift-gguf> --seed <u32> [--backend <auto|scalar>]\nJSONL: {\"op\":\"count\",\"id\":1,\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}],\"max_tokens\":16}\nUse op=complete with timeout_seconds (1..600), or {\"op\":\"reset\",\"id\":2}.\nInput frames require LF and are bounded to 1 MiB. Output is flushed JSONL.\nDeltas are provisional until complete. Close the worker for transport cancellation;\nlibrary owners can also cancel cooperatively through the session Cancellation.\nExisting process admission and ownership policies must wrap this worker.\nFull-model correctness and device qualification require retained comparison evidence.\n";
++const USAGE: &[u8] = b"Usage: bonsai-swift-worker --model <absolute-pinned-swift-gguf> --seed <u32> [--backend <auto|scalar>] [--row-workers <1..16>]\nJSONL: {\"op\":\"count\",\"id\":1,\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}],\"max_tokens\":16}\nUse op=complete with timeout_seconds (1..600), or {\"op\":\"reset\",\"id\":2}.\nInput frames require LF and are bounded to 1 MiB. Output is flushed JSONL.\nDeltas are provisional until complete. Close the worker for transport cancellation;\nlibrary owners can also cancel cooperatively through the session Cancellation.\nExisting process admission and ownership policies must wrap this worker.\nFull-model correctness and device qualification require retained comparison evidence.\n";
+ 
+ fn bad() -> bonsai_prism_runtime::Error {
+     io::Error::new(io::ErrorKind::InvalidInput, "invalid Swift worker options").into()
+@@ -32,6 +35,7 @@ fn load() -> Result<SwiftSession> {
+     let mut model = None;
+     let mut seed = None;
+     let mut backend = None;
++    let mut row_workers = None;
+     while let Some(key) = args.next() {
+         let value = args.next().ok_or_else(bad)?;
+         match key.to_str() {
+@@ -46,14 +50,19 @@ fn load() -> Result<SwiftSession> {
+                     _ => return Err(bad()),
+                 });
+             }
++            Some("--row-workers") if row_workers.is_none() => {
++                row_workers = Some(value.to_str().ok_or_else(bad)?.parse::<usize>()?);
++            }
+             _ => return Err(bad()),
+         }
+     }
+     let model = model.filter(|path| path.is_absolute()).ok_or_else(bad)?;
+-    SwiftSession::load(
++    let parallelism = RowParallelism::new(row_workers.unwrap_or(1))?;
++    SwiftSession::load_with_row_parallelism(
+         &model,
+         backend.unwrap_or(MatvecBackend::Auto),
+         seed.ok_or_else(bad)?,
++        parallelism,
+     )
+ }
+ 
+diff --git a/src/graph.rs b/src/graph.rs
+index c5ceb48e560a4bcd91b73df90be03cba914c5e08..3db990b403549ffdf0622dff88c93ad3e648e503 100644
+--- a/src/graph.rs
++++ b/src/graph.rs
+@@ -13,8 +13,8 @@ use bonsai_ternary::half_to_float;
+ 
+ use crate::kernels::pinned_activations::{silu_in_place, swiglu_in_place, swiglu_into};
+ use crate::kernels::{
+-    MatvecBackend, MatvecDiagnostics, MatvecScratch, MatvecStatistics, half_bits, rms_norm_into,
+-    rms_norm_pinned_into, round_f16, row, row_into, silu, softmax,
++    MatvecBackend, MatvecDiagnostics, MatvecScratch, MatvecStatistics, RowParallelism, half_bits,
++    rms_norm_into, rms_norm_pinned_into, round_f16, row, row_into, silu, softmax,
+ };
+ use crate::model::lora::{RankOneAdapter, Scratch as AdapterScratch};
+ use crate::model::{Model, Tensor};
+@@ -1327,6 +1327,26 @@ impl Qwen35 {
+         self.workspace.projection.matvec.requested_backend()
+     }
+ 
++    /// Sets explicit packed-base-projection row scheduling for subsequent tokens.
++    ///
++    /// Weights and prepared Q8 activations remain borrowed and immutable; rows
++    /// keep their exact kernel arithmetic. Other graph work remains serial.
++    /// Reset and checkpoint restoration preserve this resource policy. It does
++    /// not change numerical/state identity or preempt in-flight projections;
++    /// cancellation is still checked between synchronous decoder operations.
++    pub fn set_row_parallelism(&mut self, parallelism: RowParallelism) {
++        self.workspace
++            .projection
++            .matvec
++            .set_row_parallelism(parallelism);
++    }
++
++    /// Configured packed-projection row-worker budget, serial by default.
++    #[must_use]
++    pub const fn row_workers(&self) -> usize {
++        self.workspace.projection.matvec.row_workers()
++    }
++
+     /// Diagnostics for the latest matrix attempt, including provisional work.
+     ///
+     /// This describes one projection, not every projection in a token or graph.
+diff --git a/src/kernels.rs b/src/kernels.rs
+index 3fdfb7980f9ca8a20fe9dbf4c8ccdd12bc1fde48..5afcd9cce9c976d238992ada9edeebc29fdad887 100644
+--- a/src/kernels.rs
++++ b/src/kernels.rs
+@@ -23,6 +23,8 @@ mod iqfit;
+ mod iquants;
+ mod kquants;
+ mod legacy;
++mod parallel_rows;
++pub use parallel_rows::{MAX_ROW_WORKERS, RowParallelism};
+ pub(crate) mod pinned_activations;
+ pub(crate) mod pinned_attention;
+ pub(crate) mod pinned_convolution;
+@@ -1170,6 +1172,8 @@ pub struct MatvecScratch {
+     diagnostics: MatvecDiagnostics,
+     statistics: MatvecStatistics,
+     pinned_accumulation: bool,
++    row_parallelism: RowParallelism,
++    row_errors: Vec<Option<crate::Error>>,
+     #[cfg(test)]
+     preparations: usize,
+ }
+@@ -1320,6 +1324,8 @@ impl MatvecDiagnostics {
+ /// or performance. Counters saturate at [`u64::MAX`] and retain no input data.
+ #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+ pub struct MatvecStatistics {
++    /// Packed matrix attempts using the explicit persistent row-worker pool.
++    pub parallel_row_operations: u64,
+     /// Activation preparations attempted, including unused prepared guards.
+     pub preparations: u64,
+     /// Preparations rejected before a matrix could be attempted.
+@@ -1393,6 +1399,8 @@ impl Default for MatvecScratch {
+             diagnostics: MatvecDiagnostics::new(MatvecBackend::Auto),
+             statistics: MatvecStatistics::default(),
+             pinned_accumulation: false,
++            row_parallelism: RowParallelism::default(),
++            row_errors: Vec::new(),
+             #[cfg(test)]
+             preparations: 0,
+         }
+@@ -1400,6 +1408,19 @@ impl Default for MatvecScratch {
+ }
+ 
+ impl MatvecScratch {
++    /// Changes only row scheduling, preserving prepared arithmetic and storage.
++    /// Existing callers remain serial until explicitly configured.
++    pub fn set_row_parallelism(&mut self, parallelism: RowParallelism) {
++        self.row_errors.clear();
++        self.row_parallelism = parallelism;
++    }
++
++    /// Explicit persistent row-worker budget; small/floating operations stay serial.
++    #[must_use]
++    pub const fn row_workers(&self) -> usize {
++        self.row_parallelism.workers()
++    }
++
+     /// Prepares one exact activation vector for compatible sibling projections.
+     ///
+     /// Quantization or floating activation rounding occurs once. Compatibility
+@@ -1684,15 +1705,31 @@ impl PreparedMatvec<'_> {
+             }
+             PQ2 if columns.is_multiple_of(256) => {
+                 let dot = scratch.select_pq2();
+-                for bytes in tensor.data.chunks_exact(row_bytes) {
+-                    output.push(dot(bytes, &scratch.q8k)?);
++                if scratch.row_parallelism.uses_pool(rows) {
++                    scratch.statistics.parallel_row_operations =
++                        scratch.statistics.parallel_row_operations.saturating_add(1);
+                 }
++                scratch.row_parallelism.fill(
++                    &tensor.data,
++                    row_bytes,
++                    output,
++                    &mut scratch.row_errors,
++                    |bytes| dot(bytes, &scratch.q8k),
++                )?;
+             }
+             PQ2 | PTQ1 => {
+                 let dot = scratch.select_q8_groups();
+-                for bytes in tensor.data.chunks_exact(row_bytes) {
+-                    output.push(dot(tensor.kind, bytes, &scratch.q8)?);
++                if scratch.row_parallelism.uses_pool(rows) {
++                    scratch.statistics.parallel_row_operations =
++                        scratch.statistics.parallel_row_operations.saturating_add(1);
+                 }
++                scratch.row_parallelism.fill(
++                    &tensor.data,
++                    row_bytes,
++                    output,
++                    &mut scratch.row_errors,
++                    |bytes| dot(tensor.kind, bytes, &scratch.q8),
++                )?;
+             }
+             Q4_0 | Q4_1 | Q5_0 | Q5_1 | Q8_0 => {
+                 scratch.diagnostics = scratch.diagnostics.select(false);
+diff --git a/src/kernels/parallel_rows.rs b/src/kernels/parallel_rows.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..23bc125b0ccb87ba7b46fbfba684854569c30e6f
+--- /dev/null
++++ b/src/kernels/parallel_rows.rs
+@@ -0,0 +1,221 @@
++//! Explicit, bounded row scheduling over borrowed immutable weight/activation slices.
++//!
++//! Independently implemented after reviewing `OxiBonsai`'s borrowed-slice row
++//! partitioning at 1d10c48e14754ff6999158f8fa13c7c92b40b0dc,
++//! crates/oxibonsai-kernels/src/parallel.rs (Apache-2.0, COOLJAPAN OU).
++//! The original Prism row kernels and their arithmetic remain unchanged.
++
++#[cfg(feature = "parallel-rows")]
++use std::sync::Arc;
++
++use crate::{Result, invalid};
++
++/// Largest explicit number of persistent projection workers.
++pub const MAX_ROW_WORKERS: usize = 16;
++
++/// Shared private row-worker pool, independent of Rayon global configuration.
++///
++/// One worker retains serial execution and creates no threads. Larger budgets
++/// require `parallel-rows`; clones share the same persistent pool. Each thread
++/// has a requested 512 KiB stack, additionally charged by the process owner.
++/// This does not select an ISA or establish target-device benefit.
++#[derive(Clone)]
++pub struct RowParallelism {
++    workers: usize,
++    #[cfg(feature = "parallel-rows")]
++    pool: Option<Arc<rayon::ThreadPool>>,
++}
++
++#[cfg(all(test, feature = "parallel-rows"))]
++mod tests {
++    use std::sync::Arc;
++
++    use bonsai_ternary::pack_ptq;
++
++    use super::super::{MatvecBackend, MatvecScratch, matvec_into};
++    use super::RowParallelism;
++    use crate::{Result, invalid, model::Tensor};
++
++    #[test]
++    fn pinned_parallel_rows_preserve_both_activation_contracts() -> Result<()> {
++        let policy = RowParallelism::new(2)?;
++        for (kind, columns) in [(142, 5120), (142, 384), (143, 6144)] {
++            let mut block = [0x66_u8; 34];
++            block[..2].copy_from_slice(&0x3555_u16.to_le_bytes());
++            let encoded = if kind == 143 {
++                pack_ptq(&block)?.to_vec()
++            } else {
++                block.to_vec()
++            };
++            let tensor = Tensor {
++                name: "pinned-row-control".into(),
++                dimensions: vec![columns, 7],
++                kind,
++                data: Arc::from(encoded.repeat(columns / 128 * 7)),
++            };
++            let input: Vec<_> = (0..columns)
++                .map(|index| [1.5, -127.0, 0.0, -0.0, 63.5][index % 5])
++                .collect();
++            for backend in [MatvecBackend::Scalar, MatvecBackend::Auto] {
++                let mut serial = MatvecScratch::with_pinned_backend(backend);
++                let mut parallel = MatvecScratch::with_pinned_backend(backend);
++                parallel.set_row_parallelism(policy.clone());
++                let (mut expected, mut actual) = (Vec::new(), Vec::new());
++                matvec_into(&tensor, &input, &mut expected, &mut serial)?;
++                matvec_into(&tensor, &input, &mut actual, &mut parallel)?;
++                assert_eq!(
++                    actual
++                        .iter()
++                        .map(|value| value.to_bits())
++                        .collect::<Vec<_>>(),
++                    expected
++                        .iter()
++                        .map(|value| value.to_bits())
++                        .collect::<Vec<_>>()
++                );
++                assert_eq!(parallel.statistics().parallel_row_operations, 1);
++            }
++        }
++        Ok(())
++    }
++
++    #[test]
++    fn row_tasks_borrow_original_storage_and_return_first_row_failure() -> Result<()> {
++        let policy = RowParallelism::new(2)?;
++        let data = [0_u8, 1, 2, 3, 4, 5, 6, 7];
++        let mut output = Vec::with_capacity(data.len());
++        let mut errors = Vec::new();
++        let error = policy.fill(&data, 1, &mut output, &mut errors, |row| {
++            assert_eq!(
++                row.as_ptr(),
++                data.as_ptr().wrapping_add(usize::from(row[0]))
++            );
++            assert!(
++                std::thread::current()
++                    .name()
++                    .is_some_and(|name| name.starts_with("prism-row-"))
++            );
++            if row[0] == 3 || row[0] == 7 {
++                Err(invalid(format!("rejected row {}", row[0])))
++            } else {
++                Ok(f32::from(row[0]))
++            }
++        });
++        assert_eq!(
++            error.map_err(|error| error.to_string()),
++            Err("rejected row 3".to_owned())
++        );
++        assert!(errors.is_empty());
++        assert!(errors.capacity() <= 2);
++        Ok(())
++    }
++}
++
++impl Default for RowParallelism {
++    fn default() -> Self {
++        Self {
++            workers: 1,
++            #[cfg(feature = "parallel-rows")]
++            pool: None,
++        }
++    }
++}
++
++impl RowParallelism {
++    /// Creates an explicit worker policy before model loading or graph work.
++    ///
++    /// # Errors
++    /// Rejects zero, counts above [`MAX_ROW_WORKERS`], unavailable feature
++    /// support, or failure to create every requested worker. No global pool is
++    /// initialized and no larger or silently reduced budget is substituted.
++    pub fn new(workers: usize) -> Result<Self> {
++        if !(1..=MAX_ROW_WORKERS).contains(&workers) {
++            return Err(invalid("row worker count must be from 1 through 16"));
++        }
++        if workers == 1 {
++            return Ok(Self::default());
++        }
++        #[cfg(feature = "parallel-rows")]
++        {
++            let pool = rayon::ThreadPoolBuilder::new()
++                .num_threads(workers)
++                .stack_size(512 * 1024)
++                .thread_name(|index| format!("prism-row-{index}"))
++                .build()?;
++            Ok(Self {
++                workers,
++                pool: Some(Arc::new(pool)),
++            })
++        }
++        #[cfg(not(feature = "parallel-rows"))]
++        Err(invalid("multiple row workers require parallel-rows"))
++    }
++
++    /// Configured worker budget, including the serial value one.
++    #[must_use]
++    pub const fn workers(&self) -> usize {
++        self.workers
++    }
++
++    pub(super) const fn uses_pool(&self, rows: usize) -> bool {
++        self.workers > 1 && rows > 1
++    }
++
++    pub(super) fn fill(
++        &self,
++        data: &[u8],
++        row_bytes: usize,
++        output: &mut Vec<f32>,
++        errors: &mut Vec<Option<crate::Error>>,
++        dot: impl Fn(&[u8]) -> Result<f32> + Sync,
++    ) -> Result<()> {
++        errors.clear();
++        #[cfg(not(feature = "parallel-rows"))]
++        if self.uses_pool(data.len() / row_bytes) {
++            return Err(invalid("multiple row workers require parallel-rows"));
++        }
++        #[cfg(feature = "parallel-rows")]
++        if let Some(pool) = &self.pool
++            && data.len() / row_bytes > 1
++        {
++            use rayon::prelude::*;
++
++            let rows = data.len() / row_bytes;
++            let task_rows = rows.div_ceil(self.workers);
++            let tasks = rows.div_ceil(task_rows);
++            errors.try_reserve_exact(tasks)?;
++            errors.resize_with(tasks, || None);
++            // The caller reserves the exact row count fallibly before entry.
++            // At most workers disjoint output chunks borrow original weights.
++            output.resize(rows, 0.0);
++            pool.install(|| {
++                output
++                    .par_chunks_mut(task_rows)
++                    .zip(errors.par_iter_mut())
++                    .enumerate()
++                    .for_each(|(task, (chunk, error))| {
++                        let start = task * task_rows * row_bytes;
++                        let bytes = &data[start..start + chunk.len() * row_bytes];
++                        for (value, row) in chunk.iter_mut().zip(bytes.chunks_exact(row_bytes)) {
++                            match dot(row) {
++                                Ok(result) => *value = result,
++                                Err(failure) => {
++                                    *error = Some(failure);
++                                    break;
++                                }
++                            }
++                        }
++                    });
++            });
++            // Join all tasks, then return the earliest failing row chunk. The
++            // outer matvec transaction clears all provisional output on error.
++            let failure = errors.iter_mut().find_map(Option::take);
++            errors.clear();
++            return failure.map_or(Ok(()), Err);
++        }
++        for bytes in data.chunks_exact(row_bytes) {
++            output.push(dot(bytes)?);
++        }
++        Ok(())
++    }
++}
+diff --git a/src/swift_session.rs b/src/swift_session.rs
+index e6297fd2e84a4a3c900d47a669510f300c5282af..2ef07b458eb6456888fdfc7ad530413918ccdd0d 100644
+--- a/src/swift_session.rs
++++ b/src/swift_session.rs
+@@ -11,7 +11,7 @@ use crate::{
+     Result,
+     graph::Qwen35,
+     invalid,
+-    kernels::MatvecBackend,
++    kernels::{MatvecBackend, RowParallelism},
+     model::swift::{self, LoadReceipt},
+     runtime::{Cancellation, Completion, Limits, Prefill, Runtime},
+     sampling::SwiftSampler,
+@@ -91,12 +91,29 @@ impl SwiftSession {
+     /// # Errors
+     /// Rejects artifact/metadata/inventory drift, graph errors or allocation bounds.
+     pub fn load(path: &Path, backend: MatvecBackend, seed: u32) -> Result<Self> {
++        Self::load_with_row_parallelism(path, backend, seed, RowParallelism::default())
++    }
++
++    /// Loads the pinned session with an explicitly constructed row-worker pool.
++    ///
++    /// Default loading remains serial. The pool is shared by packed projections
++    /// and survives reset; existing transaction/cancellation behavior is retained.
++    ///
++    /// # Errors
++    /// Returns the same loading, identity and state errors as [`Self::load`].
++    pub fn load_with_row_parallelism(
++        path: &Path,
++        backend: MatvecBackend,
++        seed: u32,
++        parallelism: RowParallelism,
++    ) -> Result<Self> {
+         let sampler = SwiftSampler::new(seed)?;
+         let (model, receipt) = swift::load(path, MODEL_MEMORY_BYTES)?;
+         let chat = SwiftChatSession::from_model(&model)?;
+         let vocabulary = Vocabulary::from_metadata(&model.metadata, swift::VOCAB_SIZE)?;
+-        let decoder =
++        let mut decoder =
+             Qwen35::with_state_budget(model, swift::CONTEXT_TOKENS, STATE_MEMORY_BYTES, backend)?;
++        decoder.set_row_parallelism(parallelism);
+         let runtime = Runtime::new(
+             decoder,
+             Limits {
+diff --git a/tests/graph.rs b/tests/graph.rs
+index 56a1b620f9e7273751f4ebf0db8e3e4930c6c937..bfd3b27cb623944992e6048cbe05d00d97d841dc 100644
+--- a/tests/graph.rs
++++ b/tests/graph.rs
+@@ -802,6 +802,7 @@ fn assert_backend_state_parity(
+     request: MatvecBackend,
+ ) -> Result<()> {
+     let bits = |values: Vec<f32>| values.into_iter().map(f32::to_bits).collect::<Vec<_>>();
++    let row_workers = selected.row_workers();
+     assert_eq!(scalar.requested_backend(), MatvecBackend::Scalar);
+     assert_eq!(selected.requested_backend(), request);
+     for token in [0, 1, 0] {
+@@ -833,6 +834,7 @@ fn assert_backend_state_parity(
+     selected.restore(&selected_checkpoint)?;
+     assert_eq!(bits(selected.evaluate(1)?), expected);
+     assert_eq!(selected.requested_backend(), request);
++    assert_eq!(selected.row_workers(), row_workers);
+     Ok(())
+ }
+ 
+@@ -868,6 +870,36 @@ fn graph_backend_selection_matches_scalar_logits_checkpoints_and_recovery() -> R
+     Ok(())
+ }
+ 
++#[cfg(feature = "parallel-rows")]
++#[test]
++fn graph_parallel_rows_preserve_logits_checkpoints_and_recovery() -> Result<()> {
++    use bonsai_prism_runtime::kernels::RowParallelism;
++
++    let policy = RowParallelism::new(2)?;
++    for recurrent in [false, true] {
++        for (kind, width) in [(142, 128), (142, 256), (143, 128)] {
++            let serial = Qwen35::with_backend(
++                backend_fixture(recurrent, kind, width)?,
++                16,
++                MatvecBackend::Scalar,
++            )?;
++            let mut parallel = Qwen35::with_backend(
++                backend_fixture(recurrent, kind, width)?,
++                16,
++                MatvecBackend::Auto,
++            )?;
++            parallel.set_row_parallelism(policy.clone());
++            assert_eq!(parallel.row_workers(), 2);
++            parallel.ingest(0)?;
++            assert!(parallel.backend_statistics().parallel_row_operations > 0);
++            parallel.reset()?;
++            assert_eq!(parallel.row_workers(), 2);
++            assert_backend_state_parity(serial, parallel, MatvecBackend::Auto)?;
++        }
++    }
++    Ok(())
++}
++
+ #[test]
+ fn graph_backend_diagnostics_distinguish_latest_projection_from_complete_graph() -> Result<()> {
+     let mut decoder = Qwen35::new(backend_fixture(false, 142, 128)?, 16)?;
+diff --git a/tests/parallel_rows.rs b/tests/parallel_rows.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..4db5ffd65e2a37a570735ab52f5eb53b4f66ce16
+--- /dev/null
++++ b/tests/parallel_rows.rs
+@@ -0,0 +1,180 @@
++#![forbid(unsafe_code)]
++//! Exact arithmetic and failure controls for explicitly budgeted projection rows.
++
++use bonsai_prism_runtime::Result;
++use bonsai_prism_runtime::kernels::{MAX_ROW_WORKERS, RowParallelism};
++
++#[test]
++fn row_worker_policy_is_explicit_and_bounded() -> Result<()> {
++    assert_eq!(RowParallelism::default().workers(), 1);
++    assert_eq!(RowParallelism::new(1)?.workers(), 1);
++    assert!(RowParallelism::new(0).is_err());
++    assert!(RowParallelism::new(MAX_ROW_WORKERS + 1).is_err());
++    #[cfg(feature = "parallel-rows")]
++    assert_eq!(RowParallelism::new(2)?.workers(), 2);
++    #[cfg(not(feature = "parallel-rows"))]
++    assert!(RowParallelism::new(2).is_err());
++    Ok(())
++}
++
++#[cfg(feature = "parallel-rows")]
++mod enabled {
++    use std::sync::Arc;
++
++    use bonsai_prism_runtime::kernels::{MatvecBackend, MatvecScratch, matvec_into};
++    use bonsai_prism_runtime::model::Tensor;
++    use bonsai_ternary::pack_ptq;
++
++    use super::{Result, RowParallelism};
++
++    fn packed(kind: u32, columns: usize, rows: usize) -> Result<Tensor> {
++        let mut data = Vec::new();
++        for row in 0..rows {
++            for group in 0..columns / 128 {
++                let mut block = [0_u8; 34];
++                let scale = [0x3400_u16, 0xb400, 0, 0x8000][(row + group) % 4];
++                block[..2].copy_from_slice(&scale.to_le_bytes());
++                for index in 0..128 {
++                    let symbols = if kind == 143 { 3 } else { 4 };
++                    let code = u8::try_from((row * 3 + group * 5 + index / 7 + index) % symbols)?;
++                    block[2 + index / 4] |= code << (2 * (index % 4));
++                }
++                if kind == 143 {
++                    let mut encoded = pack_ptq(&{
++                        let mut nonzero = block;
++                        nonzero[..2].copy_from_slice(&0x3400_u16.to_le_bytes());
++                        nonzero
++                    })?;
++                    encoded[26..].copy_from_slice(&scale.to_le_bytes());
++                    data.extend_from_slice(&encoded);
++                } else {
++                    data.extend_from_slice(&block);
++                }
++            }
++        }
++        Ok(Tensor {
++            name: "parallel-control".into(),
++            dimensions: vec![columns, rows],
++            kind,
++            data: Arc::from(data),
++        })
++    }
++
++    fn assert_bits(first: &[f32], second: &[f32]) {
++        assert_eq!(
++            first
++                .iter()
++                .map(|value| value.to_bits())
++                .collect::<Vec<_>>(),
++            second
++                .iter()
++                .map(|value| value.to_bits())
++                .collect::<Vec<_>>()
++        );
++    }
++
++    #[test]
++    fn parallel_rows_preserve_packed_arithmetic_and_prepared_siblings() -> Result<()> {
++        let policy = RowParallelism::new(3)?;
++        for backend in [MatvecBackend::Scalar, MatvecBackend::Auto] {
++            // Actual Swift input widths plus odd-group fallback and awkward rows.
++            for (kind, width, rows) in [
++                (142, 5120, 17),
++                (142, 17408, 7),
++                (143, 6144, 19),
++                (142, 384, 11),
++            ] {
++                let tensor = packed(kind, width, rows)?;
++                let owner = Arc::clone(&tensor.data);
++                let input: Vec<_> = (0..width)
++                    .map(|index| [0.0, -0.0, 1.5, -2.5, 63.5, -127.0][index % 6])
++                    .collect();
++                let mut serial = MatvecScratch::with_backend(backend);
++                let mut parallel = MatvecScratch::with_backend(backend);
++                parallel.set_row_parallelism(policy.clone());
++                let mut expected = Vec::new();
++                let mut actual = Vec::new();
++                matvec_into(&tensor, &input, &mut expected, &mut serial)?;
++                let mut prepared = parallel.prepare(&tensor, &input)?;
++                prepared.matvec_into(&tensor, &mut actual)?;
++                assert_bits(&actual, &expected);
++                let first_pointer = actual.as_ptr();
++                prepared.matvec_into(&tensor, &mut actual)?;
++                assert_bits(&actual, &expected);
++                assert_eq!(actual.as_ptr(), first_pointer);
++                assert_eq!(parallel.row_workers(), 3);
++                assert_eq!(parallel.statistics().parallel_row_operations, 2);
++                assert_eq!(parallel.selected_backend(), serial.selected_backend());
++                assert!(Arc::ptr_eq(&owner, &tensor.data));
++                assert_eq!(Arc::strong_count(&tensor.data), 2);
++            }
++        }
++        Ok(())
++    }
++
++    #[test]
++    fn parallel_rows_clear_failed_output_and_recover_with_serial_float_fallback() -> Result<()> {
++        let mut parallel = MatvecScratch::with_backend(MatvecBackend::Auto);
++        parallel.set_row_parallelism(RowParallelism::new(2)?);
++        let tensor = packed(143, 128, 9)?;
++        let input = vec![0.75; 128];
++        let mut output = vec![f32::NAN];
++        let mut malformed = tensor.clone();
++        let mut data = malformed.data.to_vec();
++        data[5 * 28 + 24] = 255;
++        malformed.data = Arc::from(data.clone());
++        // Native PTQ aliases are decodable; only the lossless wire exporter
++        // requires canonical bytes. Scheduling preserves their current meaning.
++        let mut alias_reference = Vec::new();
++        matvec_into(
++            &malformed,
++            &input,
++            &mut alias_reference,
++            &mut MatvecScratch::default(),
++        )?;
++        matvec_into(&malformed, &input, &mut output, &mut parallel)?;
++        assert_bits(&output, &alias_reference);
++        data[5 * 28 + 26..5 * 28 + 28].copy_from_slice(&0x7c00_u16.to_le_bytes());
++        malformed.data = Arc::from(data);
++        assert!(matvec_into(&malformed, &input, &mut output, &mut parallel).is_err());
++        assert_eq!(output, Vec::<f32>::new());
++        assert!(!parallel.diagnostics().succeeded);
++        matvec_into(&tensor, &input, &mut output, &mut parallel)?;
++        assert_eq!(output.len(), 9);
++        let mut invalid_scale = packed(142, 256, 9)?;
++        let mut bytes = invalid_scale.data.to_vec();
++        bytes[8 * 68..8 * 68 + 2].copy_from_slice(&0x7e00_u16.to_le_bytes());
++        invalid_scale.data = Arc::from(bytes);
++        assert!(matvec_into(&invalid_scale, &[0.75; 256], &mut output, &mut parallel).is_err());
++        assert_eq!(output, Vec::<f32>::new());
++        let mut truncated = tensor.clone();
++        truncated.data = Arc::from(&tensor.data[..tensor.data.len() - 1]);
++        assert!(matvec_into(&truncated, &input, &mut output, &mut parallel).is_err());
++        assert_eq!(output, Vec::<f32>::new());
++        let dispatched = parallel.statistics().parallel_row_operations;
++        let floats = Tensor {
++            name: "floating-fallback".into(),
++            dimensions: vec![2, 2],
++            kind: 0,
++            data: Arc::from(
++                [1.0_f32, -0.0, -0.25, 0.75]
++                    .into_iter()
++                    .flat_map(f32::to_le_bytes)
++                    .collect::<Vec<_>>(),
++            ),
++        };
++        let mut expected = Vec::new();
++        matvec_into(
++            &floats,
++            &[1.5, -2.0],
++            &mut expected,
++            &mut MatvecScratch::default(),
++        )?;
++        matvec_into(&floats, &[1.5, -2.0], &mut output, &mut parallel)?;
++        assert_bits(&output, &expected);
++        assert_eq!(parallel.statistics().parallel_row_operations, dispatched);
++        assert!(matvec_into(&tensor, &[f32::NAN; 128], &mut output, &mut parallel).is_err());
++        assert_eq!(output, Vec::<f32>::new());
++        Ok(())
++    }
++}

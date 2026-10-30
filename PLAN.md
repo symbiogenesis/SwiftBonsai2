@@ -96,16 +96,17 @@ no-go decision, including losing cases.
   JSON reads into bounded final storage, exact-cap overflow probing and truncated
   framing; their ownership and read-buffer regressions remain model-free. Capture
   complete-task latency and peak memory in target-device CI before claiming gains.
-- Qualify literal chat-control spellings and attempted forged role/turn delimiters
-  in user/system content, supplied assistant history and reasoning at the exact
-  Swift template/tokenizer boundary. Declare reject/escape/literal behavior and
-  preserve identical count/generation policy before changing accepted content;
-  include nested delimiter cases from the
+- Extend the implemented exact 33-spelling Swift control-token rejection,
+  fixed HTTP 400 recovery and count/generation identity regressions to actual
+  template/tokenizer sessions. Include user/system content, supplied assistant
+  history/reasoning, split text parts, JSON escapes and literal lookalikes;
+  qualify the reference profile's separate vocabulary. See the
   [OxiBonsai security review](docs/oxibonsai-reuse.md#security-features-and-transfer-boundaries).
-- If rapid request churn is material despite current admission bounds, screen a
-  fixed-size global burst-rate budget separately from active/queued capacity.
-  Retain trusted local identity, bounded state, monotonic refill and explicit
-  retry behavior; do not import Oxi's soft client-map cap or forwarding headers.
+- Qualify the implemented fixed-size global burst budget (8 requests, refill
+  1/second) under actual application request/recovery patterns. Preserve absolute
+  deadlines, complete HTTP 429 delivery during request writes, constant-space
+  body draining, service reuse and explicit resend without replay. Its focused
+  framing/refill/concurrency/deadline checks remain model-free.
 - Qualify recovery under load, allocation failure and backend loss without restart
   loops, silent profile changes, state corruption or automatic cloud fallback.
   Extend the bounded restore-count and unchanged-workspace regressions to these
@@ -376,12 +377,13 @@ References: [selection contract](docs/hardware-profiles.md),
 
 - Freeze artifact/runtime/compiler/format/shape/ISA and numerical contracts, then
   use CI hotspot, bandwidth, packing and dispatch evidence to select optimizations.
-- Screen [shared-slice row parallelism](docs/oxibonsai-reuse.md#additional-optimization-and-data-structure-review)
+- Qualify the [shared-slice row-parallel source candidate](docs/oxibonsai-reuse.md#implementation-status)
   in Prism's actual Swift prepared-projection path: serial control versus two
   small worker budgets on three real shapes, sharing immutable packed weights
-  and prepared Q8 activations. Keep each row's arithmetic and transactional
-  failures exact, bound task sizes/scratch and include cancellation, threadpool
-  overhead and whole-request CI cost. Avoid copied per-task weight matrices.
+  and prepared Q8 activations. Extend the implemented bitwise/error/restore
+  controls to complete model state, cancellation, pool/task accounting and
+  whole-request target-device CI cost. Review the exact source and a released
+  binary before changing Runner's pin or enabling a multi-worker profile.
 - Complete full-model and memory qualification of baseline NEON PQ2, odd-group
   PQ2 and PTQ1. Retain scalar forcing, bounded loads/quantization, ordered scales,
   malformed-input rejection and actual-backend diagnostics; qualify the single

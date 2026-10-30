@@ -105,9 +105,9 @@ checking generated assembly for spills and target-device CI for useful benefit.
 Oxi's AArch64 prefetch helper is a no-op without its nightly compiler cfg;
 the presence of a prefetch API alone does not establish executed hints.
 
-No Oxi kernel, parser dependency, runtime selection or performance claim is
-introduced by this review. Outstanding implementation work stays in
-[PLAN.md](../PLAN.md#cpu-kernels).
+The initial review imported no Oxi kernel or parser dependency. Subsequent
+implementation is recorded under [implementation status](#implementation-status);
+outstanding qualification stays in [PLAN.md](../PLAN.md#cpu-kernels).
 
 ## Additional optimization and data-structure review
 
@@ -159,3 +159,37 @@ breaker has no serving-path caller. These settings/helpers do not add Windows
 worker isolation, exact artifact identity or stronger default access control to
 Runner. Retain the current numeric-loopback, mandatory credentials, exact
 Host/Origin/routes, value-free diagnostics and fail-closed worker launch.
+
+## Implementation status
+
+The follow-up implementation used separate Git worktrees and individual commits.
+Runner now implements exact rejection of the 33 control/user-defined spellings
+from the verified Swift tokenizer, after decoding and concatenating text parts.
+The inventory is bound to model and tokenizer metadata identities. Ordinary
+lookalikes remain unchanged. The owned service returns a fixed framed HTTP 400
+before contacting either backend endpoint and remains reusable.
+
+One fixed-size service-wide budget now admits a burst of eight authenticated
+requests and refills one request per monotonic second. Its HTTP 429 response
+includes `Retry-After: 1`; an allocation-free, bounded drain preserves complete
+delivery to clients still writing the rejected body. Native chat recognizes only
+the exact bounded, fully framed errors, restores the draft and retains committed
+history without automatic resend. See the current [broker policy](broker-policy.md)
+and [native client contract](ui-architecture.md).
+
+Prism's row-parallel implementation is delivered as a
+[reviewable source candidate](runtime-candidates/README.md), with its exact
+[patch/base manifest](runtime-candidates/oxibonsai-row-parallel.json). It uses
+private persistent workers over shared packed weights/prepared activations,
+explicit 1-through-16 worker selection and serial fallback/default. The source
+commit is based on newer Prism main `ff3d54d`, rather than Runner's older released
+pin. The preserved patch was applied in another worktree and its entire Git tree
+matched the tested source commit. The runtime source feature is not an activation
+or a release promotion in Runner.
+
+Focused delimiter/inventory/parser-parity, burst/refill/concurrency/deadline,
+real-loopback error/recovery and native-client framing/history checks passed,
+along with affected Release Clippy. The runtime's focused bitwise, borrowed-row,
+malformed-payload, graph-state/checkpoint and feature-policy checks, formatting,
+Release Clippy and rustdoc passed. Full suites, performance/actual-model device
+qualification and the reviewed runtime release remain pending in `PLAN.md`.
