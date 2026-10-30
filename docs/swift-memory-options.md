@@ -1,16 +1,15 @@
 # Swift memory options
 
-This allocation audit uses the [PQ2 lock](../config/swift-assessment.lock.json), [symbol
-census](../config/swift.pq2-census.json) and Prism
-`73bfe6cc485554822f80c473a3c0c4f25e80f41b`. Calculated byte savings are not measured
-peak RAM or throughput. The [assessment's](swift-memory.md#native-cpu-status) limits,
-reserve and watchdogs still apply. Lossless work excludes older checkpoints, weight/KV
-precision changes, adapters as "savings" and local training; [PLAN.md](../PLAN.md#creative-quality-adapters-and-memory)
-owns outstanding work.
+This audit uses the [pinned Swift artifacts and census](swift-memory.md#pinned-artifacts)
+and Prism `73bfe6cc485554822f80c473a3c0c4f25e80f41b`. Calculated storage savings are
+not measured peak RAM or throughput; the [CPU limits, reserve and watchdogs](swift-memory.md#native-cpu-status)
+still apply. Lossless allocation work preserves the checkpoint, weight/KV precision
+and adapter behavior. Approximate research is labelled separately below;
+[PLAN.md](../PLAN.md#creative-quality-adapters-and-memory) owns outstanding work.
 
 | Option | Current contract | Quantified scope and limitation |
 | --- | --- | --- |
-| Current-symbol PQ2 → PTQ1 | Verified export and bounded native decode | Saves 1,259,520,000 weight bytes (1.1730 GiB); broader [numerical/output qualification](ptq1-readiness.md#numerical-and-admission-boundaries) and performance remain pending. |
+| Current-symbol PQ2 → PTQ1 | Verified export and bounded native decode | Saves 1,259,520,000 weight bytes (1.1730 GiB); broader [numerical/output qualification](swift-memory.md#numerical-and-admission-boundaries) and performance remain pending. |
 | mmap, no repack | Selected | Avoids a separate complete private weight copy only for tensors supported by the mapped backend buffer type. |
 | Microbatch | 64 selected | A 32-token variant changes execution grouping and its memory benefit is unmeasured. |
 | Output rows | Completion normally samples one row | One F32 logits row is 993,280 bytes; graph logits and persistent host output have distinct lifetimes. |
@@ -45,27 +44,20 @@ preserve symbols, raw scale bits, other tensor bytes and tokenizer/template/tran
 metadata without floating-point quantization. Bounded caller-owned buffers and
 batchwise byte-identical PQ2 reconstruction checks avoid a complete expanded model.
 
-For the actual census:
-
-```text
-209,920,000 blocks × (34 − 28) = 1,259,520,000 saved payload bytes
-verified complete PTQ1 file  = 5,946,648,928 bytes
-```
+The [verified export](swift-memory.md#current-weight-ptq1-option) saves
+`209,920,000 × (34 − 28) = 1,259,520,000` payload bytes.
 
 All converted tensor block counts are divisible by sixteen, retaining 32-byte alignment.
 Non-tensor bytes occupy the 11,120,992-byte header/data-offset region; there are no
-source inter-tensor or trailing gaps. The [export
-receipt](../config/swift.ptq1-export.json) records the verified final length and digest.
-Retain the original source on disk, but avoid holding complete old/new buffers
-simultaneously.
+source inter-tensor or trailing gaps. Retain the original source on disk, but avoid
+holding complete old/new buffers simultaneously.
 
 The [ARM dot
 kernel](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-cpu/arch/arm/quants.c)
-decodes PTQ in place rather than retaining an expanded model. However, [CPU type
+decodes PTQ in place without retaining an expanded model. [CPU type
 traits](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-cpu/ggml-cpu.c)
-use Q8_K activations for PQ2 and Q8_0 for PTQ1. Equal decoded weights do not imply equal
-logits, tokens or speed. Preserving PQ2's activation route would require a distinct
-qualified PTQ1×Q8_K kernel.
+select the distinct activation routes documented in [PTQ1 numerical boundaries](swift-memory.md#numerical-and-admission-boundaries).
+Preserving PQ2's Q8_K route would require a separately qualified PTQ1×Q8_K kernel.
 
 ## Packing decision
 
@@ -144,17 +136,13 @@ reservation](https://learn.microsoft.com/en-us/windows/win32/procthread/thread-s
 is not committed/resident memory. PE headers and actual stack depth determine whether
 stack settings represent a material allocation bound.
 
-The [PTQ1 contract](ptq1-readiness.md#supported-selection-and-resource-policy) owns
-selection and unchanged admission: serialized savings alone cannot lower the service
-cap or physical reserve.
-
 ## 2026 state and cache research outside the lossless scope
 
-Reviewed through **2026-10-29**. The [research register](research-register.md) owns paper
-versions, source evidence and proof limits; the tables below summarize memory-policy
-implications. These candidates do not change lossless packing, FP16 KV/FP32 recurrent
-state or admission. Account separately for Swift's 16 attention and 48 recurrent layers:
-KV compression does not compress GDN state or weights.
+The [research register](research-register.md) owns versions and proof limits for
+sources reviewed through **2026-10-29**. These candidates do not change current
+packing, FP16 KV/FP32 recurrent state or admission. Account separately for Swift's
+16 attention and 48 recurrent layers: KV compression affects neither GDN state nor
+weights.
 
 ### Persistent checkpoint compression versus live-state quantization
 
