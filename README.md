@@ -69,19 +69,22 @@ and [local API contract](docs/broker-policy.md#public-request-contract).
 
 | Model | Runtime | Model file | Job commit cap / measured peak | Available RAM admission | Restore copy saved vs. Rust 0.1.4 |
 | --- | --- | ---: | ---: | ---: | ---: |
-| **Swift Bonsai 2 `PTQ1_0` (diagnostic only)** | **Rust 0.1.6 diagnostic** | **5.54 GiB** | **8 GiB / 5.85 GiB** | **12 GiB** | **149.625 MiB** |
+| **Swift Bonsai 2 `PTQ1_0` (diagnostic only)** | **Rust 0.1.7 source + LoRA 1.3** | **5.54 GiB** | **11.5 GiB / 5.85 GiB** | **15.5 GiB** | **149.625 MiB** |
 | Swift Bonsai 2 `PTQ1_0` | PrismML C++ CPU | 5.54 GiB | 11.5 GiB / — | 15.5 GiB | — |
 | Swift Bonsai 2 `PQ2_0` (current default) | PrismML C++ CPU | 6.71 GiB | 11.5 GiB / — | 15.5 GiB | — |
 | Qwen3.8-27B `UD-Q3_K_XL` | llama.cpp reference | 12.24 GiB | 18 GiB / — | 22 GiB | — |
 
 > [!NOTE]
-> **PTQ1 is not release-approved.** The [current pinned-profile decision](docs/swift-memory.md#release-decision)
-> is no-go: publisher worker startup fails on the tested X2, and Rust 0.1.6 cannot
-> serve PTQ1 with the app's adapter. This does not reject the lossless packing format.
-> The bold row is a three-token Rust diagnostic without LoRA. All logits and live
-> state match the native reference byte for byte on the automatic ARM64 backend.
-> Completed scalar/explicit NEON controls, full-context/4K-output, adapter and
-> quality qualification remain outstanding. PQ2 remains the app default. See the
+> **PTQ1 is diagnostic only; shipping it as the app default remains no-go.**
+> The [Rust service fix](https://github.com/symbiogenesis/prism-inference/pull/2)
+> implements explicit PTQ1 and the approved adapter. The bold row is its one-token
+> source diagnostic at scale 1.3: all **129 files / 39,504,384 logits and live-state
+> values** match the native reference byte for byte on the automatic ARM64 backend.
+> The entire device job completed within four minutes. Actual service acceptance,
+> scalar/explicit NEON and zero-scale controls, full-context/4K-output, adapter basis,
+> quality and benefit qualification remain outstanding. PQ2 remains the app default.
+> The [release decision](docs/swift-memory.md#release-decision) preserves the earlier
+> runtime failures without rejecting the lossless packing format. See the
 > [captured result](docs/swift-memory.md#numerical-and-admission-boundaries).
 >
 > Admission values are configured budgets including a 4 GiB physical reserve.

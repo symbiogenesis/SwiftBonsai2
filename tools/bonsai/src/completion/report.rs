@@ -112,7 +112,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn frozen_powershell_reports_preserve_every_field_and_admission_boundary() -> crate::Result<()>
+    fn frozen_reports_preserve_admission_fields_with_reviewed_shorter_deadline() -> crate::Result<()>
     {
         let fixture: Value =
             serde_json::from_str(include_str!("../../tests/fixtures/cpu-reports-v1.json"))
@@ -129,7 +129,11 @@ mod tests {
                     .ok_or("Invalid memory fixture.")?,
             )?;
             plan["Report"]["RecordedAtUtc"] = fixture["recordedAtUtc"].clone();
-            assert_eq!(plan["Report"], case["expected"]);
+            let mut expected = case["expected"].clone();
+            // Keep the historical capture intact while enforcing the new device budget.
+            assert_eq!(expected["TimeoutSeconds"], 600);
+            expected["TimeoutSeconds"] = json!(180);
+            assert_eq!(plan["Report"], expected);
             assert_eq!(plan["ReportFieldOrder"], case["fieldOrder"]);
         }
         Ok(())

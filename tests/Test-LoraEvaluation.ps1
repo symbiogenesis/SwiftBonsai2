@@ -28,5 +28,5 @@ foreach ($vector in $fixture.controlVectors) {
 }
 $plan = & (Join-Path $PSScriptRoot '../scripts/Invoke-LoraQualification.ps1') -DataDirectory ([IO.Path]::GetTempPath()) -PlanOnly -UseRepackedPtq1 -ToolPath $ToolPath
 Assert (-not $plan.ModelProcessStarted -and $plan.PairedSamples -eq 24 -and $plan.ZeroScaleSamples -eq 4 -and
-    $plan.ServiceCeilingBytes -eq 12348030976 -and $plan.PhysicalReserveBytes -eq 4GB -and $plan.PerSampleTimeoutSeconds -eq 600) 'The nonlaunching wrapper lost the shared capture policy.'
+    $plan.ServiceCeilingBytes -eq 12348030976 -and $plan.PhysicalReserveBytes -eq 4GB -and $plan.PerSampleTimeoutSeconds -eq 180) 'The nonlaunching wrapper lost the shared capture policy.'
 'Focused packaged LoRA invocation checks passed.'
