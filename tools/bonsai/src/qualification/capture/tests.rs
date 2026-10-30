@@ -74,7 +74,7 @@ fn completed(request: &Value, count: usize, failed: bool) -> Result<Value> {
     assert_eq!(request["memoryLimitBytes"], 12_348_030_976_u64);
     assert_eq!(request["requiredAvailableBytes"], 16_642_998_272_u64);
     assert_eq!(request["physicalReserveBytes"], 4_u64 * 1024 * 1024 * 1024);
-    assert_eq!(request["timeoutSeconds"], 600);
+    assert_eq!(request["timeoutSeconds"], 180);
     assert_eq!(request["stdoutLimitBytes"], 4 * 1024 * 1024);
     assert_eq!(request["stderrLimitBytes"], 64 * 1024 * 1024);
     assert_eq!(request["parentCreationTimeFileTime"], 123);

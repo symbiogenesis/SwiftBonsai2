@@ -19,8 +19,10 @@ and installation gates below with reproducible evidence before expanding that pr
 
 Follow the [research scope, budgets and experiment
 checklist](docs/research-register.md#experiment-scope-and-budgets): existing native
-Windows ARM64 X Elite/X2 Elite hardware, independent family qualification, 30-minute
-feasibility and two-hour initial-compute budgets. Apply the [promotion
+Windows ARM64 X Elite/X2 Elite hardware, independent family qualification and a
+five-minute total ceiling for owner-device diagnostics, model trials and benchmarks,
+including self-hosted CI. Prefer smaller trials; longer qualification remains pending.
+Apply the [promotion
 criteria](#promotion-criteria) before changing defaults or admission. Full suites,
 benchmarks and performance captures stay in owning CI.
 
@@ -31,8 +33,8 @@ benchmarks and performance captures stay in owning CI.
 - Qualify startup, supplied-history streaming, full 8K context and 4K output, long
   conversations, speech, offline restart and recovery. Cover Stop, abandonment,
   deadlines, memory pressure, owned-process cleanup and explicit retry without replay.
-  Run optional `extended_history` and `stalled_consumer` workloads on the owner-managed
-  X2 runner under the [acceptance
+  Redesign `extended_history` and `stalled_consumer` workloads to fit the owner's
+  five-minute total budget before enabling them on the X2 runner under the [acceptance
   contract](docs/validation.md#actual-model-application-acceptance). Retain context
   rejection, same-instance reuse, termination and usage, Stop, Job and listener cleanup
   and fresh-owner evidence. Fixture size and output reservations do not prove exact
