@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "kind": "historical-prism019-runner146-runtime-promotion-snapshot",
+  "runnerRevision": "146b46b5973640a51d6ced992f06d8e3c0dd18d5",
+  "runtimeRevision": "7aca2251f09acb345d4afb53d5ce411f81017745",
+  "runtimeRelease": "v0.1.9",
+  "profile": "swift-pq2-standard-lora-1.3",
+  "policySha256": "a337d349b6ef7d06f2291c1d1e4d46845f564da849e191b7dcb7d2665597e90f",
+  "maintenanceToolSha256": "eec96ef6b4d4dc38392b7602adb4854ccd199a20c87a3edcd83e56a10052ff2d",
+  "checkedToolArtifact": {
+    "runId": "41102772874",
+    "artifactId": 13000875600,
+    "sha256": "669b4069227d54f1ec2f6d84c0855f2bebe7576ed390cae92aecb66b4200936e"
+  },
+  "reviewerId": "Codex:/root/evidence_audit",
+  "humanReviewed": false,
+  "gateCounts": {
+    "passed": 4,
+    "pending": 13,
+    "rejected": 0
+  },
+  "passedGates": [
+    "released-binary-provenance",
+    "runtime-foundation",
+    "runtime-conformance",
+    "runner-foundation"
+  ],
+  "evaluatorStatus": "pending",
+  "promotionReady": false,
+  "scope": "Hosted documentary and CI gates only at exact historical146. All13complete application/device gates remain pending; no transfer to later Runner source, no default promotion.",
+  "applicationSmoke": "docs/evidence/pq2-native-service-row4.json",
+  "limits": {
+    "ownerDeviceDiagnosticMaximumSeconds": 300,
+    "contextTokens": 8192,
+    "maxCompletionTokens": 4096,
+    "adapterScale": 1.3,
+    "defaultRowWorkers": 1,
+    "defaultsChanged": false,
+    "limitsChanged": false
+  },
+  "executions": [
+    {
+      "operation": "runtime-promotion/plan",
+      "request": "plan-request.json",
+      "exitCode": 0,
+      "elapsedMilliseconds": 1197.3186999966856,
+      "timeoutSeconds": 30
+    },
+    {
+      "operation": "runtime-promotion/file-score",
+      "request": "score-request.json",
+      "exitCode": 0,
+      "elapsedMilliseconds": 36.548199990647845,
+      "timeoutSeconds": 30
+    }
+  ],
+  "modelExecutions": 0,
+  "inferenceRuntimeExecutions": 0,
+  "localBuilds": 0,
+  "durableArchive": {
+    "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\runtime-promotion-019-146b46b-20261030\\snapshot-20261030T182421Z",
+    "manifest": "file-manifest.json",
+    "manifestSha256": "1786b1e27028b9cf10694cc697c1228a67995b0d57228e5866e5fee2f871bc34",
+    "manifestBytes": 5674,
+    "fileCountExcludingManifest": 34,
+    "retainedBytesExcludingManifest": 5291397,
+    "allDigestsVerified": true,
+    "preScoreManifestSha256": "92c71d897d4e95907c37d7011113f0709ef028c9dd74575a948609eab0ae7dd0",
+    "credentialsOrModelWeightsIncluded": false
+  },
+  "runnerFoundationArchive": {
+    "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\runner-foundation-146b46b-20261030\\attempt-41102772874",
+    "manifestSha256": "251d6d666b4b8d5d2e6fe9cd84b01af049752beed0a68a55bcfe2e19ec9b03a9"
+  }
+}
