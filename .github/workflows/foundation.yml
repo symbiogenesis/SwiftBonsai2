@@ -298,7 +298,7 @@ jobs:
         if: matrix.lane == 'native'
         shell: pwsh
         run: |
-          foreach ($case in @('Capture','Failure','Environment','Timeout','Drain')) {
+          foreach ($case in @('Capture','Failure','Environment','Timeout','Drain','OwnedCapture','OwnedFailure','OwnedEnvironment','OwnedTimeout','OwnedDrain','OwnedGate','OwnedOwnerExit')) {
             ./tests/Test-NativeProcess.ps1 -Case $case
           }
       - name: Packaged supervisor caller death and failure contracts

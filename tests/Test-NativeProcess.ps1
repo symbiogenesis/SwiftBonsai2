@@ -8,7 +8,7 @@ checks exercise process mechanics without models, builds, or benchmarks.
 #>
 [CmdletBinding()]
 [OutputType([string])]
-param([Parameter(Mandatory)][ValidateSet('Capture', 'Failure', 'Environment', 'Timeout', 'Drain')][string]$Case)
+param([Parameter(Mandatory)][ValidateSet('Capture', 'Failure', 'Environment', 'Timeout', 'Drain', 'OwnedCapture', 'OwnedFailure', 'OwnedEnvironment', 'OwnedTimeout', 'OwnedDrain', 'OwnedGate', 'OwnedOwnerExit')][string]$Case)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -17,7 +17,7 @@ Import-Module -Name (Join-Path $PSScriptRoot '../scripts/Bonsai.Native.psm1') -F
 $executable = [Environment]::ProcessPath
 $scratch = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-NativeProcessTest-' + [guid]::NewGuid().ToString('N'))))
 if (-not [IO.Path]::IsPathFullyQualified($scratch) -or $scratch -match '%[^%]+%') { throw 'The native test lane must be expanded and absolute.' }
-$workingDirectory = Join-Path $scratch 'working directory & literal'
+$workingDirectory = Join-Path $scratch ("working directory & literal unicode-$([char]0x03bb)")
 [void][IO.Directory]::CreateDirectory($workingDirectory)
 $probe = Join-Path $scratch 'native probe.ps1'
 [IO.File]::WriteAllText($probe, @'
@@ -108,6 +108,7 @@ function Invoke-Probe {
     }
     if ($Environment) { $parameters.Environment = $Environment }
     if ($LogPath) { $parameters.LogPath = $LogPath }
+    if ($Case.StartsWith('Owned', [StringComparison]::Ordinal)) { $parameters.OwnDescendants = $true }
     return Invoke-BonsaiNativeProcess @parameters
 }
 function Stop-TestProcess {
@@ -123,9 +124,13 @@ function Stop-TestProcess {
 }
 
 switch ($Case) {
-    'Capture' {
+    { $_ -in @('Capture', 'OwnedCapture') } {
         $arguments = @('', 'space and & shell | symbols', 'a"b', 'C:\trailing slash\', 'slash\\"quote', '$(literal); < > %PATH%', "unicode-$([char]0x03bb)")
-        $result = Invoke-Probe -Mode Arguments -Arguments $arguments
+        $inputEncoding = [Console]::InputEncoding
+        try {
+            if ($Case -eq 'OwnedCapture') { [Console]::InputEncoding = [Text.Encoding]::ASCII }
+            $result = Invoke-Probe -Mode Arguments -Arguments $arguments
+        } finally { [Console]::InputEncoding = $inputEncoding }
         Assert ($result.ExitCode -eq 0) 'The literal argument probe failed.'
         $actual = @($result.StandardOutput | ConvertFrom-Json -DateKind String)
         Assert ($actual.Count -eq $arguments.Count) 'The literal native argument count changed.'
@@ -138,10 +143,15 @@ switch ($Case) {
         # pwsh with no arguments is interactive; use a benign native executable
         # to exercise the empty argument collection without an input dependency.
         $noArgumentExecutable = if ($IsWindows) { Join-Path $env:SystemRoot 'System32/hostname.exe' } else { '/bin/pwd' }
-        $result = Invoke-BonsaiNativeProcess -Executable $noArgumentExecutable -ArgumentList @() -WorkingDirectory $workingDirectory -TimeoutSeconds 30
+        if ($Case -eq 'OwnedCapture') {
+            $copiedExecutable = Join-Path $scratch ("hostname-$([char]0x03bb).exe")
+            [IO.File]::Copy($noArgumentExecutable, $copiedExecutable)
+            $noArgumentExecutable = $copiedExecutable
+        }
+        $result = Invoke-BonsaiNativeProcess -Executable $noArgumentExecutable -ArgumentList @() -WorkingDirectory $workingDirectory -TimeoutSeconds 30 -OwnDescendants:($Case -eq 'OwnedCapture')
         Assert ($result.ExitCode -eq 0 -and $result.StandardOutput.Length -gt 0) 'An empty native argument collection was rejected.'
     }
-    'Failure' {
+    { $_ -in @('Failure', 'OwnedFailure') } {
         $log = Join-Path $scratch 'nonzero.log'
         $result = Invoke-Probe -Mode Failure -LogPath $log
         Assert ($result.ExitCode -eq 37) 'The helper threw or changed a nonzero exit code.'
@@ -153,7 +163,7 @@ switch ($Case) {
         $null = Assert-Failure { Invoke-BonsaiNativeProcess -Executable (Join-Path $scratch 'missing.exe') -ArgumentList @() -WorkingDirectory $workingDirectory } 'A missing executable was accepted.'
         $null = Assert-Failure { Invoke-Probe -Mode Failure -LogPath 'relative.log' } 'A relative native log path was accepted.'
     }
-    'Environment' {
+    { $_ -in @('Environment', 'OwnedEnvironment') } {
         $variableName = 'SWIFTBONSAI_NATIVE_TEST_' + [guid]::NewGuid().ToString('N')
         $original = [Environment]::GetEnvironmentVariable($variableName)
         try {
@@ -169,18 +179,19 @@ switch ($Case) {
             }
         } finally { [Environment]::SetEnvironmentVariable($variableName, $original) }
     }
-    { $_ -in @('Timeout', 'Drain') } {
+    { $_ -in @('Timeout', 'Drain', 'OwnedTimeout', 'OwnedDrain') } {
         $marker = Join-Path $scratch 'process-tree.json'
         $log = Join-Path $scratch 'timeout.log'
-        $mode = if ($Case -eq 'Timeout') { 'Tree' } else { 'Drain' }
+        $mode = if ($Case -in @('Timeout', 'OwnedTimeout')) { 'Tree' } else { 'Drain' }
         $processIds = @()
         try {
             $message = Assert-Failure -PassThru { Invoke-Probe -Mode $mode -Arguments @($marker) -TimeoutSeconds 10 -LogPath $log } 'The long-running process or inherited output pipe was not bounded.'
             Assert ([IO.File]::Exists($marker)) 'The synthetic process did not publish its ownership marker.'
             $processIds = @([IO.File]::ReadAllText($marker) | ConvertFrom-Json -DateKind String)
             Assert ($processIds.Count -eq 2) 'The synthetic process tree marker was incomplete.'
-            if ($Case -eq 'Timeout') {
-                Assert ($message -match 'exceeded|timed out|timeout') 'The long-running process failed for a reason other than timeout.'
+            if ($Case -in @('Timeout', 'OwnedTimeout', 'OwnedDrain')) {
+                $expected = if ($Case -eq 'OwnedDrain') { 'left running descendants' } else { 'exceeded|timed out|timeout' }
+                Assert ($message -match $expected) 'The long-running process failed for a reason other than the expected lifecycle rejection.'
                 Assert ([IO.File]::Exists($log)) 'Timeout output was not retained.'
                 $output = [IO.File]::ReadAllText($log)
                 Assert ($output.Contains('before-timeout stdout') -and $output.Contains('before-timeout stderr')) 'The timeout log omitted pre-timeout output.'
@@ -198,6 +209,104 @@ switch ($Case) {
                 Assert ($message -match 'output drain timed out') 'An inherited pipe failed for a reason other than bounded output drainage.'
             }
         } finally {
+            if (-not $processIds.Count -and [IO.File]::Exists($marker)) { $processIds = @([IO.File]::ReadAllText($marker) | ConvertFrom-Json -DateKind String) }
+            foreach ($processId in $processIds) { Stop-TestProcess -ProcessId ([int]$processId) }
+        }
+    }
+    'OwnedGate' {
+        if (-not $IsWindows) { throw 'Bootstrap gate owner-death checks require Windows.' }
+        $modulePath = Join-Path $PSScriptRoot '../scripts/Bonsai.Native.psm1'
+        $tokens = $null
+        $errors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile($modulePath, [ref]$tokens, [ref]$errors)
+        Assert (-not $errors.Count) 'The bootstrap module could not be parsed.'
+        $assignment = $ast.Find({ param([Management.Automation.Language.Ast]$Node) $Node -is [Management.Automation.Language.AssignmentStatementAst] -and $Node.Left.Extent.Text -ceq '$trampoline' }, $true)
+        $code = $assignment.Right.Expression.Value
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))
+        $marker = Join-Path $scratch 'waiting-gate.pid'
+        $ownerScript = Join-Path $scratch 'gate owner.ps1'
+        [IO.File]::WriteAllText($ownerScript, @'
+#requires -Version 7.6
+param([string]$Code, [string]$Marker)
+$ErrorActionPreference = 'Stop'
+$start = [Diagnostics.ProcessStartInfo]::new([Environment]::ProcessPath)
+$start.UseShellExecute = $false
+$start.CreateNoWindow = $true
+$start.RedirectStandardInput = $true
+foreach ($argument in @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $Code)) { $start.ArgumentList.Add($argument) }
+$child = [Diagnostics.Process]::Start($start)
+try { [IO.File]::WriteAllText($Marker, [string]$child.Id); Start-Sleep -Seconds 300 } finally { $child.Dispose() }
+'@)
+        $start = [Diagnostics.ProcessStartInfo]::new($executable)
+        $start.UseShellExecute = $false
+        $start.CreateNoWindow = $true
+        $start.WorkingDirectory = $workingDirectory
+        foreach ($argument in @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $ownerScript, $encoded, $marker)) { $start.ArgumentList.Add($argument) }
+        $owner = [Diagnostics.Process]::Start($start)
+        $waiting = $null
+        try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(30)
+            while (-not [IO.File]::Exists($marker) -and [DateTime]::UtcNow -lt $deadline -and -not $owner.HasExited) { Start-Sleep -Milliseconds 50 }
+            Assert ([IO.File]::Exists($marker)) 'The unassigned gate did not publish its process identity.'
+            $waiting = [Diagnostics.Process]::GetProcessById([int][IO.File]::ReadAllText($marker))
+            $null = $waiting.Handle
+            Assert (-not $waiting.HasExited) 'The trampoline ran without its assignment gate.'
+            $owner.Kill()
+            Assert ($owner.WaitForExit(10000)) 'The gate owner did not exit.'
+            Assert ($waiting.WaitForExit(10000)) 'Owner death before assignment left the trampoline running.'
+            Assert ($waiting.ExitCode -eq 125) "Owner death before assignment returned $($waiting.ExitCode), instead of the no-launch gate rejection."
+        } finally {
+            if (-not $owner.HasExited) { $owner.Kill($true); $null = $owner.WaitForExit(10000) }
+            $owner.Dispose()
+            if ($null -ne $waiting) {
+                if (-not $waiting.HasExited) { $waiting.Kill($true); $null = $waiting.WaitForExit(10000) }
+                $waiting.Dispose()
+            }
+        }
+    }
+    'OwnedOwnerExit' {
+        if (-not $IsWindows) { throw 'Bootstrap owner-death checks require Windows.' }
+        $marker = Join-Path $scratch 'owned-process-tree.json'
+        $lockPath = Join-Path $scratch 'build.lock'
+        $ownerScript = Join-Path $scratch 'bootstrap owner.ps1'
+        [IO.File]::WriteAllText($ownerScript, @'
+#requires -Version 7.6
+param([string]$ModulePath, [string]$ProbePath, [string]$WorkingDirectory, [string]$MarkerPath, [string]$LockPath)
+$ErrorActionPreference = 'Stop'
+Import-Module $ModulePath
+$guard = [IO.FileStream]::new($LockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+try {
+    $null = Invoke-BonsaiNativeProcess -Executable ([Environment]::ProcessPath) -ArgumentList @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $ProbePath, '-Mode', 'Tree', $MarkerPath) -WorkingDirectory $WorkingDirectory -OwnDescendants
+} finally { $guard.Dispose() }
+'@)
+        $start = [Diagnostics.ProcessStartInfo]::new($executable)
+        $start.UseShellExecute = $false
+        $start.CreateNoWindow = $true
+        $start.WorkingDirectory = $workingDirectory
+        foreach ($argument in @('-NoLogo', '-NoProfile', '-NonInteractive', '-File', $ownerScript, (Join-Path $PSScriptRoot '../scripts/Bonsai.Native.psm1'), $probe, $workingDirectory, $marker, $lockPath)) { $start.ArgumentList.Add($argument) }
+        $owner = [Diagnostics.Process]::Start($start)
+        $processIds = @()
+        try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(30)
+            while (-not [IO.File]::Exists($marker + '.child') -and [DateTime]::UtcNow -lt $deadline -and -not $owner.HasExited) { Start-Sleep -Milliseconds 50 }
+            Assert ([IO.File]::Exists($marker + '.child')) 'The owned tool tree did not reach its running state.'
+            $processIds = @([IO.File]::ReadAllText($marker) | ConvertFrom-Json -DateKind String)
+            # Kill only the owner. Kernel Job ownership, not Process.Kill(true),
+            # must clean both the tool root and its independently running child.
+            $owner.Kill()
+            Assert ($owner.WaitForExit(10000)) 'The synthetic bootstrap owner did not exit.'
+            foreach ($processId in $processIds) {
+                $process = $null
+                try {
+                    try { $process = [Diagnostics.Process]::GetProcessById([int]$processId) } catch [ArgumentException] { continue }
+                    Assert ($process.WaitForExit(10000)) "Bootstrap owner death left process $processId running."
+                } finally { if ($null -ne $process) { $process.Dispose() } }
+            }
+            $guard = [IO.FileStream]::new($lockPath, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+            $guard.Dispose()
+        } finally {
+            if (-not $owner.HasExited) { $owner.Kill($true); $null = $owner.WaitForExit(10000) }
+            $owner.Dispose()
             if (-not $processIds.Count -and [IO.File]::Exists($marker)) { $processIds = @([IO.File]::ReadAllText($marker) | ConvertFrom-Json -DateKind String) }
             foreach ($processId in $processIds) { Stop-TestProcess -ProcessId ([int]$processId) }
         }

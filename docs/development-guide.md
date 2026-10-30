@@ -227,6 +227,14 @@ immutable bootstrap copy permits rebuilding without replacing the running tool.
 This resolver also serves model-only provisioning without loading models or
 building speech engines.
 
+Cold Cargo bootstrap gates a no-profile PowerShell trampoline into a verified,
+unnamed kill-on-close Windows Job before starting Cargo, preserving Unicode
+arguments, inherited environment and separate output streams. Caller loss before
+assignment closes the gate without launching Cargo; unexpected surviving
+descendants reject the build, and Job cleanup precedes release of the live
+caller's build lock. Rust owns subsequent builds and publication; ordinary
+native-tool probes retain their existing cleanup unless `OwnDescendants` is selected.
+
 Chat/broker outputs use `DataDirectory/build/chat/`; companions use
 `DataDirectory/build/native-speech/`. Source/build fingerprints and SHA-256 executable
 receipts skip Cargo, LLVM checks, source staging and VS setup when unchanged.

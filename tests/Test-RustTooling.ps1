@@ -155,7 +155,7 @@ try {
         function script:Invoke-BonsaiNativeProcess {
             [CmdletBinding()]
             [OutputType([pscustomobject])]
-            param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [int]$TimeoutSeconds, [Collections.IDictionary]$Environment, [string]$LogPath)
+            param([string]$Executable, [string[]]$ArgumentList, [string]$WorkingDirectory, [int]$TimeoutSeconds, [Collections.IDictionary]$Environment, [string]$LogPath, [switch]$OwnDescendants)
             if (-not [IO.Path]::IsPathFullyQualified($WorkingDirectory) -or -not [IO.Directory]::Exists($WorkingDirectory)) {
                 throw 'Bootstrap passed an invalid native working directory.'
             }
@@ -164,7 +164,7 @@ try {
                 return [pscustomobject]@{ ExitCode = 0; StandardOutput = $script:VersionJson; StandardError = '' }
             }
             if ($ArgumentList[0].StartsWith('+', [StringComparison]::Ordinal)) {
-                if ($null -eq $Environment -or $Environment.CARGO_BUILD_FINGERPRINT -cne 'content' -or -not $LogPath) { throw 'Cold bootstrap dropped its compiler environment or evidence.' }
+                if ($null -eq $Environment -or $Environment.CARGO_BUILD_FINGERPRINT -cne 'content' -or -not $LogPath -or -not $OwnDescendants) { throw 'Cold bootstrap dropped its compiler environment, evidence or descendant ownership.' }
                 [IO.File]::WriteAllBytes($script:FixtureTool, $script:FixtureBytes)
                 return [pscustomobject]@{ ExitCode = 0; StandardOutput = ''; StandardError = '' }
             }

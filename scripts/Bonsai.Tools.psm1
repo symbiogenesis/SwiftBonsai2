@@ -92,7 +92,7 @@ function Resolve-BonsaiRustTool {
             $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
             $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', (Join-Path $repository 'tools/bonsai/Cargo.toml'), '--target-dir', $target)
             $log = Join-Path $scratch 'bootstrap-build.log'
-            $built = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -Environment @{ CARGO_BUILD_FINGERPRINT = 'content'; CARGO_UNSTABLE_CHECKSUM_FRESHNESS = 'true' } -LogPath $log -TimeoutSeconds 3600
+            $built = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -Environment @{ CARGO_BUILD_FINGERPRINT = 'content'; CARGO_UNSTABLE_CHECKSUM_FRESHNESS = 'true' } -LogPath $log -TimeoutSeconds 3600 -OwnDescendants
             if ($built.ExitCode) { throw "Maintenance bootstrap failed; see $log" }
             Assert-Arm64PE -Path $tool
             $digest = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
