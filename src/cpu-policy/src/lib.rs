@@ -180,7 +180,7 @@ pub fn policy(
         "BatchTokens": profile.batch_tokens(),
         "MicrobatchTokens": profile.microbatch_tokens(),
         "TokenLimit": 16,
-        "TimeoutSeconds": 600,
+        "TimeoutSeconds": 180,
         "EstimatedWeightBytes": weights,
         "EstimatedKvBytes": kv,
         "EstimatedRecurrentBytes": recurrent,
