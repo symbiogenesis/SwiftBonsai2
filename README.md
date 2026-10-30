@@ -120,34 +120,12 @@ See [benchmark context and current limits](docs/performance-expectations.md).
 
 ## Documentation
 
-### Start here
-
-| Guide | What you'll find |
-| --- | --- |
-| [Development guide](docs/development-guide.md) | Requirements, setup, and development commands |
-| [Validation](docs/validation.md) | Code standards, focused tests, and CI |
-| [Windows integration](docs/windows-integration.md) | Handle ownership, locking, threads, permissions and isolation limits |
-| [TODO](PLAN.md) | All outstanding implementation and qualification work |
-
-### Runtime and acceleration
-
-| Guide | What you'll find |
-| --- | --- |
-| [Automatic X1/X2 configuration](docs/hardware-profiles.md) | Capability, profile selection, phase placement and fallback contracts |
-| [Prism Inference](https://github.com/symbiogenesis/prism-inference) | Independent Rust runtime, published crates and prebuilt server binaries |
-| [CPU SIMD contracts](docs/simd-plan.md) | Packed NEON kernels, numerical contracts, safe dispatch, and qualification |
-| [Adreno GPU contracts](docs/adreno-gpu-plan.md) | Vulkan placement, arithmetic and device qualification boundaries |
-| [Hexagon NPU contracts](docs/hexagon-npu-plan.md) | Signed runtime access, exact Swift kernels/state, placement, and qualification |
-
-### Research
-
-| Guide | What you'll find |
-| --- | --- |
-| [Research and proof register](docs/research-register.md) | Dated papers, proofs, GitHub/GitLab implementations and engineering reports, with applicability and experiment priorities |
-| [Model and memory research](docs/swift-memory.md) | The current Swift assessment and experiments |
-| [Inference algorithms](docs/inference-algorithms.md) | LUT/prefill/cache opportunities, mathematical limits, and experimental boundaries |
-| [Implementation decisions](docs/implementation-research.md) | Design rationale and evidence limits |
-| [Inference defaults](docs/inference-defaults.md) | Sampling, thinking, prompt/harness and cache choices backed by published evidence |
+The [documentation index](docs/README.md) maps every guide and technical contract.
+Start with [setup and development](docs/development-guide.md),
+[validation](docs/validation.md), or the [outstanding work](PLAN.md).
+For design and research, use [application contracts](docs/README.md#application-contracts),
+[models and runtime](docs/README.md#models-memory-and-runtime), and
+[hardware and inference](docs/README.md#hardware-and-inference).
 
 ---
 
