@@ -6,16 +6,16 @@ development-only profile without accepted daily service.
 
 The reference is **Qwen3.8-27B UD-Q3_K_XL**, revision
 `4ca720788d1e01f1bff70c033e0d0028fd02e502`, with **Gemma 4 12B IT QAT Q4_0** as a
-literature-nominated fallback. Qwen was selected from published evidence, not a local
-candidate benchmark. Confidence is moderate for the base-model creative preference and
-low for the exact quantized artifact and laptop comfort. Only Qwen is provisioned by the
-default scripts; the fallback is not selected.
+literature-nominated fallback. Selection rests on published evidence, without a local
+candidate benchmark. Confidence is moderate for the base-model creative preference
+and low for the exact quantized artifact and laptop comfort. Only Qwen is provisioned
+by the default scripts; the fallback is not selected.
 
 ## Literature gate
 
-The October 22–23, 2026 review found the following published results. EQ-Bench is
-independent of the publishers but uses LLM judging. Its entries do not identify the
-exact GGUF packs pinned here.
+Published results reviewed **2026-10-22–23** favor Qwen on aggregate creative
+scores. EQ-Bench is independent of the publishers but uses LLM judging; its entries
+do not identify the exact GGUF packs pinned here.
 
 | Published identity | Creative Writing v3 Elo | Raw rubric /20 | Longform score |
 | --- | ---: | ---: | ---: |
@@ -30,8 +30,8 @@ Writing](https://eqbench.com/creative_writing_longform.html), and [versioned lon
 data](https://eqbench.com/creative_writing_longform.js?v=1.0.9). Missing entries are
 missing evidence, not zero scores.
 
-Qwen leads aggregate creative scores; Gemma 12B has a slightly higher raw rubric score
-and more weight-memory headroom. The [published Qwen
+Gemma 12B has a slightly higher raw rubric score and more weight-memory headroom.
+The [published Qwen
 samples](https://eqbench.com/results/creative-writing-v3/Qwen__Qwen3.8-27B.html) and
 [Gemma
 samples](https://eqbench.com/results/creative-writing-v3/google__gemma-4-12B-it.html)
