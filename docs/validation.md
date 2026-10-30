@@ -54,6 +54,15 @@ terminal reason, reported usage when supplied and cleanup. Partial failure retai
 completed observations with `passed: false`. This does not establish complete-state
 parity, adapter authoring basis, performance, output quality or default promotion.
 
+Explicit `profile: pq2-adapter-row4` selects original PQ2, the approved adapter at
+scale 1.3 and pinned Prism 0.1.9 with `--native-row-workers 4`. It requires exactly
+one four-token-cap stream, verified model/adapter readiness and owned Job/listener
+cleanup within the same budget. Its receipt binds the runtime lock, original
+model identity and adapter lock, and distinguishes the configured worker count
+from an independently observed thread count. It runs no optional requests or
+retry. Multi-scale, rejection/reuse, history, context, restart, quality, sustained
+service and TPS gates remain unrun; this smoke cannot enable a default.
+
 Before runner temp cleanup, the workflow reads only `backend.stdout` and
 `backend.stderr` from at most eight immediate protected session directories, with
 a 64 KiB limit per log and strict UTF-8 decoding. It validates both actual keys
