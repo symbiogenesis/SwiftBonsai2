@@ -2,8 +2,8 @@
 
 use std::{fs, io, path::Path};
 
-const THREAD_COUNT: &str = "    int n = (int) std::thread::hardware_concurrency() / 2;";
-const THREAD_OVERRIDE: &str = "    int n = bonsai_cpu_threads.load(std::memory_order_relaxed);\n    if (n <= 0) { n = (int) std::thread::hardware_concurrency() / 2; }";
+const THREAD_COUNT: &str = "static int backend_cpu_n_threads(void) {\n    int n = (int) std::thread::hardware_concurrency() / 2;\n    return n > 0 ? n : 1;\n}\n";
+const THREAD_OVERRIDE: &str = "static int backend_cpu_n_threads(void) {\n    return bonsai_qt_cpu_threads(std::thread::hardware_concurrency());\n}\n";
 const DECODE_GRAPH: &str =
     "    TalkerDecodeGraph * tg = &graphs[(size_t) ((n_kv_pad + 255) / 256 - 1)];\n";
 const EVICT_DECODE_GRAPHS: &str =
@@ -63,17 +63,9 @@ fn backend(text: &str) -> io::Result<String> {
     let text = replace_once(
         text,
         "#include <thread>",
-        "#include <thread>\n#include <atomic>\ninline std::atomic<int> bonsai_cpu_threads{0};",
+        "#include <thread>\n\n// Runner owns bounded thread selection; the native call only queries the OS.\nextern \"C\" int bonsai_qt_cpu_threads(unsigned int logical_threads);",
     )?;
     replace_once(&text, THREAD_COUNT, THREAD_OVERRIDE)
-}
-
-fn api(text: &str) -> io::Result<String> {
-    replace_once(
-        text,
-        "extern \"C\" {\n",
-        "extern \"C\" {\n\nvoid bonsai_qt_set_cpu_threads(int n) {\n    if (n >= 1 && n <= 256) { bonsai_cpu_threads.store(n, std::memory_order_relaxed); }\n}\n",
-    )
 }
 
 fn vectors(text: &str) -> io::Result<String> {
@@ -101,9 +93,8 @@ fn decode_graphs(text: &str) -> io::Result<String> {
 )]
 pub(super) fn prepare(source: &Path, destination: &Path) -> io::Result<()> {
     copy(source, destination)?;
-    let transforms: [(&str, Transform); 7] = [
+    let transforms: [(&str, Transform); 6] = [
         ("src/backend.h", backend),
-        ("src/qwen.cpp", api),
         ("ggml/src/ggml-cpu/vec.cpp", vectors),
         ("src/talker-forward.h", decode_graphs),
         ("src/philox.h", philox),
@@ -156,8 +147,8 @@ fn redirected(metadata: &fs::Metadata) -> bool {
 mod tests {
     use super::{
         DECODE_GRAPH, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION, PHILOX_REFERENCE, PREDICTOR_DRAW,
-        SEMANTIC_DRAW, THREAD_COUNT, api, backend, decode_graphs, philox, predictor_sampling,
-        prepare, semantic_sampling, vectors,
+        SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE, backend, decode_graphs, philox,
+        predictor_sampling, prepare, semantic_sampling, vectors,
     };
 
     #[test]
@@ -191,8 +182,10 @@ mod tests {
         let copy = scratch.join("patched");
         prepare(&source, &copy)?;
         assert_eq!(fs::read_to_string(source.join("src/backend.h"))?, header);
-        assert!(
-            fs::read_to_string(copy.join("src/backend.h"))?.contains("bonsai_cpu_threads.load")
+        assert!(fs::read_to_string(copy.join("src/backend.h"))?.contains("bonsai_qt_cpu_threads"));
+        assert_eq!(
+            fs::read_to_string(copy.join("src/qwen.cpp"))?,
+            fs::read_to_string(source.join("src/qwen.cpp"))?
         );
         assert_eq!(
             fs::read_to_string(source.join("ggml/src/ggml-cpu/vec.cpp"))?,
@@ -252,18 +245,23 @@ mod tests {
     }
 
     #[test]
-    fn overlay_rejects_changed_inputs_and_adds_only_bounded_thread_control() -> std::io::Result<()>
+    fn thread_overlay_routes_native_queries_to_rust_and_rejects_source_drift() -> std::io::Result<()>
     {
-        let source = format!("#include <thread>\n{THREAD_COUNT}\n");
+        let source = format!("#include <thread>\n{THREAD_COUNT}\nremaining backend\n");
         let patched = backend(&source)?;
-        assert!(patched.contains("inline std::atomic<int> bonsai_cpu_threads"));
-        assert!(patched.contains("bonsai_cpu_threads.load"));
+        assert!(
+            patched
+                .contains("extern \"C\" int bonsai_qt_cpu_threads(unsigned int logical_threads);")
+        );
+        assert!(patched.contains(THREAD_OVERRIDE));
+        assert!(patched.ends_with("remaining backend\n"));
+        assert!(!patched.contains("std::atomic") && !patched.contains("std::memory_order"));
+        assert!(!patched.contains("bonsai_qt_set_cpu_threads"));
         assert!(backend(&patched).is_err());
         assert!(backend(&source.replace(THREAD_COUNT, "changed")).is_err());
-        assert!(backend(&(source.clone() + &source)).is_err());
-        let api = api("extern \"C\" {\nrest of API\n}")?;
-        assert!(api.contains("n >= 1 && n <= 256"));
-        assert!(api.contains("rest of API"));
+        assert!(backend(&source.replace("return n > 0 ? n : 1;", "return n;")).is_err());
+        assert!(backend(&source.replace("#include <thread>", "changed")).is_err());
+        assert!(backend(&source.repeat(2)).is_err());
         Ok(())
     }
 

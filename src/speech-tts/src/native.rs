@@ -5,13 +5,14 @@
 )]
 
 use std::{
-    ffi::{CStr, c_char, c_int, c_void},
+    ffi::{CStr, c_char, c_int, c_uint, c_void},
     io,
     panic::{AssertUnwindSafe, catch_unwind},
     ptr::NonNull,
     sync::{Mutex, Once},
 };
 
+mod cpu_threads;
 mod qwen;
 use qwen::RawAudio;
 
@@ -24,6 +25,16 @@ mod philox_tests;
 #[unsafe(no_mangle)]
 extern "C" fn bonsai_qt_philox_uniform(seed: i64, subsequence: i64, counter: u32) -> f32 {
     super::philox::uniform(seed, subsequence, counter)
+}
+
+static CPU_THREADS: cpu_threads::CpuThreads = cpu_threads::CpuThreads::new();
+
+// SAFETY: This unique private static-link symbol is declared by the reviewed
+// overlay. Scalar CPU counts have no pointer/lifetime obligations. The Rust
+// policy reads an atomic and uses bounded integer arithmetic without unwinding.
+#[unsafe(no_mangle)]
+extern "C" fn bonsai_qt_cpu_threads(logical_threads: c_uint) -> c_int {
+    CPU_THREADS.get(logical_threads)
 }
 
 // A single public neutral fixture defines voice identity, never the text being
@@ -132,7 +143,6 @@ impl Context {
         threads: usize,
         expected_type: &CStr,
     ) -> io::Result<Self> {
-        let threads = c_int::try_from(threads).map_err(|_| invalid_audio())?;
         let _initialize = INITIALIZE
             .lock()
             .map_err(|_| io::Error::other("Native initialization failed."))?;
@@ -151,9 +161,9 @@ impl Context {
             codec_chunk_sec: 8.0,
             ..qwen::InitParams::default()
         };
-        // SAFETY: The reviewed overlay atomically stores a validated bounded
-        // count. INITIALIZE prevents another context changing it during init.
-        unsafe { qwen::bonsai_qt_set_cpu_threads(threads) };
+        // INITIALIZE keeps the selected count stable while native initialization
+        // queries it for the talker, predictor and codec CPU backends.
+        CPU_THREADS.set(threads)?;
         // SAFETY: Both paths are owned NUL-terminated strings retained by the
         // Synthesizer; params is the pinned ABI-v6 layout and survives the call.
         // C-unwind permits an escaped foreign exception into abort_on_unwind.
