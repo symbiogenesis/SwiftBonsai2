@@ -1,0 +1,153 @@
+name: Rust PQ2 bounded row-worker qualification
+on:
+  workflow_dispatch:
+    inputs:
+      run_device:
+        description: Run the single five-minute owner-device trial after hosted preparation
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: swift-lora-snapdragon
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-11-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/bonsai-tools
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Validate fixed complete-state and metadata controls without models
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -B tools/row-parallel/test_compare.py
+          foreach ($caseName in @('Plan', 'HostedGuard', 'OwnerGuard')) {
+            ./tests/Test-NativeRowQualification.ps1 -Case $caseName
+          }
+      - name: Prepare source-bound parallel-capable checker and checked maintenance tools
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $capture = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-RowCaptureTools'
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-NativeRowCaptureTools.ps1') -OutputDirectory $capture | ConvertTo-Json -Depth 6
+          $package = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-CheckedRowTools'
+          [void][IO.Directory]::CreateDirectory($package)
+          $tool = Join-Path $package 'bonsai-tools.exe'
+          $probe = Join-Path $package 'bonsai-completion-test-probe.exe'
+          Copy-Item -LiteralPath $env:BONSAI_TOOLS_PATH -Destination $tool
+          Copy-Item -LiteralPath $env:BONSAI_COMPLETION_PROBE_PATH -Destination $probe
+          @{
+            SchemaVersion = 2; Revision = $env:GITHUB_SHA
+            Sha256 = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
+            ProbeSha256 = (Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash.ToLowerInvariant()
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package 'receipt.json') -Encoding utf8NoBOM
+      - name: Share source-bound checker
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: row-capture-tools-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/SwiftBonsai-RowCaptureTools
+          if-no-files-found: error
+          retention-days: 90
+      - name: Share checked maintenance tools for this revision
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: bonsai-tools-windows-arm64-${{ github.sha }}
+          path: ${{ runner.temp }}/SwiftBonsai-CheckedRowTools
+          if-no-files-found: error
+          retention-days: 90
+  qualify:
+    needs: prepare
+    if: github.ref == 'refs/heads/main' && inputs.run_device
+    runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/use-bonsai-tools
+      - name: Download this run's immutable checker bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: row-capture-tools-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/SwiftBonsai-RowCaptureTools
+      - name: Compare serial and four-worker fixed forward evaluation
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME 'pwsh.exe'))
+          $start.WorkingDirectory = $env:RUNNER_TEMP
+          $start.UseShellExecute = $false
+          $start.CreateNoWindow = $true
+          $start.RedirectStandardOutput = $true
+          $start.RedirectStandardError = $true
+          foreach ($argument in @('-NoProfile', '-File', (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-NativeRowQualification.ps1'), '-DataDirectory', (Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'), '-CaptureToolsDirectory', (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-RowCaptureTools'))) {
+            $start.ArgumentList.Add($argument)
+          }
+          foreach ($name in @('ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNNER_INPUT_TOKEN')) {
+            [void]$start.Environment.Remove($name)
+          }
+          $child = [Diagnostics.Process]::Start($start)
+          try {
+            $stdout = $child.StandardOutput.ReadToEndAsync()
+            $stderr = $child.StandardError.ReadToEndAsync()
+            if (-not $child.WaitForExit(240000)) { throw 'The complete row-worker trial exceeded its 240-second process budget.' }
+            [Console]::Out.Write($stdout.GetAwaiter().GetResult())
+            [Console]::Error.Write($stderr.GetAwaiter().GetResult())
+            $code = $child.ExitCode
+          } finally {
+            try {
+              if (-not $child.HasExited) {
+                $child.Kill($true)
+                if (-not $child.WaitForExit(10000)) { throw 'Row trial cleanup exceeded ten seconds.' }
+              }
+            } finally { $child.Dispose() }
+          }
+          if ($code -ne 0) { throw 'The bounded row-worker trial failed; inspect retained evidence.' }
+          @('Original PQ2 and approved adapter at scale 1.3; supplied public token [248045].',
+            'One serial and one four-worker process, sequentially, under unchanged admission/Job/reserve limits.',
+            'Compare every logits and live KV/convolution/recurrent value byte for byte and require observed parallel dispatch.',
+            'Evaluation durations exclude loading and dump I/O; one observation is not application TPS or statistical benefit.',
+            'All setup, capture and comparison share one 240-second process budget inside this five-minute owner job.',
+            'No engine, worker, model or admission default may change from this result alone.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+      - name: Retain credential-free fixed-input captures and failures
+        if: always() && env.BONSAI_ROW_QUALIFICATION_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-row-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/qualification.json
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/comparison.json
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/comparison.txt
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/capture-tools.json
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/maintenance-tools.json
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/serial/*.json
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/serial/*.txt
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/serial/*.f32le
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/serial/state-0/*.f32le
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/parallel/*.json
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/parallel/*.txt
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/parallel/*.f32le
+            ${{ env.BONSAI_ROW_QUALIFICATION_EVIDENCE }}/parallel/state-0/*.f32le
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 1

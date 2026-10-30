@@ -185,3 +185,44 @@ Unicode paths, continuation/state, adapters and cancellation under production
 containment before a Runner lock update and settled-main X2 CI preflight/thread screen.
 The retained checks are model-free and establish no speed, memory, energy or promotion
 verdict. Benchmarks and full suites remain CI-only.
+
+### Hosted headless comparator preparation
+
+The explicit [hosted candidate workflow](../../.github/workflows/publisher-headless-candidate.yml)
+uses [Build-HeadlessPublisherCandidate.ps1](../../scripts/Build-HeadlessPublisherCandidate.ps1)
+to apply this exact patch to the verified source archive. It builds separate
+`llama-completion`, `llama-server`, `llama-bench` and argument-fixture executables.
+The existing installed publisher bundle, Runner runtime locks, app selection,
+worker mitigations and filesystem grants are unchanged. The workflow has no
+owner-device job and downloads no model artifacts.
+
+The compiler archive and its ARM64 executables reuse the retained LLVM 23.1.4
+identities. The build records its hosted image, installed MSVC/SDK, compiler,
+supervisor, CMake flags/cache and all packaged file digests. It uses four compile
+jobs and restores the publisher toolchain's global `armv8.7-a` and floating-point
+flags. Shared CPU libraries remain enabled; dynamic backend loading, OpenMP,
+optional accelerators, UI, TLS fetching and subprocess support are disabled.
+This differs from the released Clang 20 bundle and the earlier baseline-NEON
+argument pilot; numerical and performance qualification remain pending.
+
+A bounded static PE audit checks every candidate EXE/DLL, including normal and
+delay imports, then follows mandatory system imports through the hosted image's
+API-set mapping. GUI modules reject the candidate. Optional Windows delay imports
+are retained in the report rather than described as absent: core Windows DLLs
+themselves expose optional GUI APIs. Export forwarders and runtime `LoadLibrary`
+calls are outside this static audit. The separate effective-mitigation probes
+remain required; a named-import graph alone is not startup qualification.
+
+On the hosted runner, completion/server receive only `--version` and the benchmark
+tool receives only `--help` (its pinned CLI has no version switch); the seven
+argument fixtures call parsing without loading their nonexistent model paths.
+The unchanged supervisor retains all candidate artifact handles through a
+one-process 512 MiB Job, ten-second deadline and 64 KiB output bounds. The fixture
+requires effective Win32k, extension-point and unsafe-image denial. Actions
+credentials are removed from the preparation child before these probes.
+
+The resulting artifact is a source-bound candidate for review, not an installed
+runtime or a model speed result. A passed hosted preparation still needs a
+separately authorized owner-device trial within the existing five-minute total
+budget and the independent numerical, adapter, resource and quality gates before
+any release or lock update.

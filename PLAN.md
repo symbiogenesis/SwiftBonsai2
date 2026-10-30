@@ -334,10 +334,14 @@ bandwidth, packing and dispatch evidence.
 
 - Qualify the [shared-slice row-parallel
   candidate](docs/oxibonsai-reuse.md#implementation-status) in Swift prepared
-  projections: serial versus two small worker budgets on three shapes, shared packed
-  weights and prepared Q8 activations, complete state, cancellation, pool and task
-  accounting and whole-request cost. Review source and released binary before repinning
-  or enabling workers.
+  projections: first use the [single serial-versus-four-worker
+  trial](docs/native-rust-engine.md#bounded-parallel-row-qualification) for original
+  PQ2 and the approved adapter at scale 1.3 within one five-minute owner job.
+  Preserve shared packed weights and prepared Q8 activations, complete state,
+  cancellation, pool/task accounting and whole-request cost. Leave further shapes,
+  formats and worker budgets pending; do not split a longer matrix across short jobs.
+  Review source and released bytes before repinning or enabling workers, and qualify
+  actual prompt/response latency independently of fixed-step evaluation timing.
 - Qualify full-model and memory behavior of NEON PQ2, odd-group PQ2 and PTQ1. Preserve
   scalar forcing, diagnostics, fourth-symbol support and [intermediate LUT and
   correction bounds](docs/cpu-kernels.md#packed-arithmetic) before narrowing. Prototype

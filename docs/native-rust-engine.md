@@ -207,6 +207,42 @@ runtime experiments belong in Prism. Follow the
 [measurement guide](performance-expectations.md#2026-literature-measurement-and-comparison)
 for CI-only timing/tracing, actual-model comparisons and evidence limits.
 
+## Bounded parallel-row qualification
+
+The published 0.1.8 app path uses one compute worker. The 0.1.9 candidate makes
+the existing bounded `parallel-rows` implementation available in its binary
+bundle; all runtime entry points still default to one worker. Feature availability
+does not qualify a worker budget or change the selected engine.
+
+The [row-worker workflow](../.github/workflows/native-row-qualification.yml) builds
+its exact source/hash-bound checker on hosted Windows ARM64 without models.
+Its default invocation prepares tools only. An explicitly requested device trial
+compares one worker with four workers on the exact original PQ2 model, approved
+adapter at scale 1.3 and public supplied token `[248045]`. Four matches the existing
+publisher CPU budget. There is one candidate, no automatic retry or worker matrix.
+All device setup, loading, capture, comparison and cleanup must fit the owner's
+five-minute limit; the child process has a shared 240-second work allowance.
+Admission, Job limit and physical reserve remain 15.5 GiB, 11.5 GiB and 4 GiB.
+
+```powershell
+./scripts/Invoke-NativeRowQualification.ps1 -DataDirectory $data -PlanOnly
+```
+
+The comparator requires the exact model/adapter/scale graph identity, observed
+parallel dispatch, every logical KV/convolution/recurrent component and all logits
+to match byte for byte, including finite values and exact extents. Four-worker
+packed-row and complete-state checkpoint/reset/error-recovery fixtures run in
+Prism's owning CI before any device trial. Raw evaluation durations exclude model
+loading, snapshots and output I/O. One fixed-step observation is not application
+TPS, prefill attribution, statistical benefit or promotion evidence. Exhausting
+the budget retains a failure/partial report and leaves the gate pending.
+
+Prompt processing remains sequential across tokens, and current request reset
+semantics recompute supplied history. Preserve adapter-scale and checkpoint
+provenance while investigating those costs. The 4,096-token output gate alone
+would require more than 17 tokens/s to fit a 240-second case before any prefill;
+optimize and estimate first rather than scheduling a trial that cannot fit.
+
 ## Default-runtime promotion
 
 `Get-RuntimePromotion.ps1` reports the reviewed requirements for replacing the current

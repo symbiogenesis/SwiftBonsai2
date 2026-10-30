@@ -1,0 +1,69 @@
+name: Publisher headless CPU source candidate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Require the exact hosted preparation boundary
+        shell: pwsh
+        run: ./tests/Test-HeadlessPublisherCandidate.ps1
+      - uses: ./.github/actions/bonsai-tools
+      - name: Check static dependency rejection without executable targets
+        shell: pwsh
+        run: python -B tools/runtime-candidates/test_pe_closure.py
+      - name: Build and check separate candidate without model artifacts
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $output = Join-Path $env:RUNNER_TEMP ('Publisher-Headless-Candidate-' + [guid]::NewGuid().ToString('N'))
+          "BONSAI_HEADLESS_CANDIDATE=$output" >> $env:GITHUB_ENV
+          $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME 'pwsh.exe'))
+          $start.WorkingDirectory = $env:RUNNER_TEMP
+          $start.UseShellExecute = $false
+          $start.CreateNoWindow = $true
+          $start.RedirectStandardOutput = $true
+          $start.RedirectStandardError = $true
+          foreach ($argument in @('-NoProfile', '-File', (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-HeadlessPublisherCandidate.ps1'), '-OutputDirectory', $output)) {
+            $start.ArgumentList.Add($argument)
+          }
+          foreach ($name in @('ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNNER_INPUT_TOKEN')) {
+            [void]$start.Environment.Remove($name)
+          }
+          $child = [Diagnostics.Process]::Start($start)
+          try {
+            $stdout = $child.StandardOutput.ReadToEndAsync()
+            $stderr = $child.StandardError.ReadToEndAsync()
+            if (-not $child.WaitForExit(2100000)) { throw 'Hosted source-candidate preparation exceeded its aggregate deadline.' }
+            [Console]::Out.Write($stdout.GetAwaiter().GetResult())
+            [Console]::Error.Write($stderr.GetAwaiter().GetResult())
+            $code = $child.ExitCode
+          } finally {
+            try {
+              if (-not $child.HasExited) {
+                $child.Kill($true)
+                if (-not $child.WaitForExit(10000)) { throw 'Hosted candidate cleanup did not complete.' }
+              }
+            } finally { $child.Dispose() }
+          }
+          if ($code -ne 0) { throw 'Hosted headless source candidate failed; no runtime pin or device launch changed.' }
+      - name: Retain public-source candidate and bounded model-free evidence
+        if: always() && env.BONSAI_HEADLESS_CANDIDATE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: publisher-headless-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BONSAI_HEADLESS_CANDIDATE }}
+          if-no-files-found: error
+          retention-days: 90
