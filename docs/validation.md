@@ -434,6 +434,12 @@ candidate alone does not promote the compiled runtime pin.
 
 ## Acceptance limits
 
+The TTS `voice_bootstrap` selections check native reference pointer identity,
+the separate reference sample limits, and production handoff ownership across
+Design teardown, Base initialization and extraction. Model-free failure cases
+release the waveform once and retain at most one model. These checks do not
+qualify actual speech output, X2 startup latency or process peak memory.
+
 The TTS `philox::tests::` known-answer block and f32 rounding cases, together
 with `native::philox_tests::rust_philox_scalar_abi_matches_pinned_cpp_bits`,
 qualify the safe Rust scalar generator against the unmodified pinned Qwen

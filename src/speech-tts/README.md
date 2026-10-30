@@ -14,7 +14,7 @@ Only plain text plus a plain-language voice description are exposed. The native
 design context must report `voice_design`, and the reusable-speaker context must
 report `base`; speaker presets, user reference recordings and arbitrary native
 options are absent from this interface. Generated audio stays
-in memory, is copied before its native allocation is freed, and must be finite
+in memory and must be finite
 mono 24 kHz PCM within the existing 120-second bound. Suspected token-ceiling
 output is rejected. Upstream request-bearing diagnostics are discarded.
 
@@ -25,6 +25,9 @@ runtime (minimum one inference thread).
 for controlled evaluation. The companion accepts the same override as
 `--threads count`; it never changes the parent process's environment.
 `synthesize(text, voice)` returns `Audio { samples, sample_rate }`.
+`synthesize_owned(text, voice)` retains the independently allocated native
+waveform and exposes validated samples through `AsRef<[f32]>`; the companion
+uses this owner through bounded PCM conversion and HTTP writes.
 `synthesize_stream(text, voice, sink)` emits validated mono 24 kHz chunks on the
 native worker while generation continues. The sink is synchronously scoped and
 serialized by a mutex; a rejected chunk or caught sink panic prevents successful
@@ -43,6 +46,16 @@ reference; process restarts regenerate it from the same phrase, seed and profile
 This follows Qwen's [Voice Design then Clone workflow](https://github.com/QwenLM/Qwen3-TTS#voice-design-then-clone).
 Only one talker model is resident at a time, and reference acquisition failures
 fail speech without falling back to independently designed segment voices.
+
+Voice bootstrap also retains its original native waveform across Design
+teardown, Base loading and synchronous reference extraction. It does not copy
+the reference into a Rust vector; the separate 1,920-to-720,000-sample reference
+bound remains enforced. This removes one float allocation and a copy of up to
+2,880,000 bytes (2.75 MiB) per profile acquisition. The matching native allocator
+releases it after extraction or any failed handoff. Pointer-identity and
+model-free lifecycle checks cover success, Base load failure, extraction failure
+and reference bounds; actual startup latency, peak memory and speech output on
+X2 still require target-device CI qualification.
 
 The Rust binding retains the exact ABI-v6 structures and upstream defaults,
 with compile-time layout checks. Ordinary native status failures remain redacted

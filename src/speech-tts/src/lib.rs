@@ -81,6 +81,22 @@ struct Voice {
 // an unrelated voice or retain two loaded models.
 struct VoiceCache<T>(Option<(CString, T)>);
 
+// The pinned native waveform allocation is independent of its model context.
+// Keep its owner until synchronous Base extraction returns, including failures,
+// while releasing Design before allocating Base's model and workers.
+fn finish_voice_bootstrap<C, S: AsRef<[f32]>, R>(
+    design: C,
+    samples: S,
+    load_base: impl FnOnce() -> io::Result<C>,
+    extract: impl FnOnce(&mut C, &[f32]) -> io::Result<R>,
+) -> io::Result<(C, R)> {
+    drop(design);
+    let mut base = load_base()?;
+    let reference = extract(&mut base, samples.as_ref())?;
+    drop(samples);
+    Ok((base, reference))
+}
+
 impl<T> VoiceCache<T> {
     fn get_or_create(
         &mut self,
@@ -158,12 +174,12 @@ impl Synthesizer {
                 None => native::Context::load(model_path, codec_path, *threads, c"voice_design")?,
             };
             let samples = context.design_reference(profile)?;
-            // Free Design's model and worker before loading Base. No user text
-            // participates in reference generation, including the first call.
-            drop(context);
-            let mut context =
-                native::Context::load(voice_model_path, codec_path, *threads, c"base")?;
-            let reference = context.extract_voice(&samples)?;
+            let (context, reference) = finish_voice_bootstrap(
+                context,
+                samples,
+                || native::Context::load(voice_model_path, codec_path, *threads, c"base"),
+                native::Context::extract_voice,
+            )?;
             Ok(Voice { context, reference })
         })
     }
@@ -287,9 +303,85 @@ fn bounded_input(text: &str, maximum: usize) -> io::Result<CString> {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_TEXT, MAX_VOICE, TOKEN_CEILING_SAMPLES, VoiceCache, bounded_input, sample_count,
-        select_threads,
+        MAX_TEXT, MAX_VOICE, TOKEN_CEILING_SAMPLES, VoiceCache, bounded_input,
+        finish_voice_bootstrap, sample_count, select_threads,
     };
+
+    #[test]
+    fn voice_bootstrap_keeps_one_waveform_through_model_switch_and_releases_on_every_exit()
+    -> std::io::Result<()> {
+        use std::{cell::Cell, io, rc::Rc};
+
+        struct Model(Rc<Cell<usize>>);
+        impl Drop for Model {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() - 1);
+            }
+        }
+        struct Samples {
+            data: Vec<f32>,
+            releases: Rc<Cell<usize>>,
+        }
+        impl AsRef<[f32]> for Samples {
+            fn as_ref(&self) -> &[f32] {
+                &self.data
+            }
+        }
+        impl Drop for Samples {
+            fn drop(&mut self) {
+                self.releases.set(self.releases.get() + 1);
+            }
+        }
+
+        // Success, Base initialization failure, then extraction failure.
+        for failure in 0..3 {
+            let models = Rc::new(Cell::new(1));
+            let releases = Rc::new(Cell::new(0));
+            let samples = Samples {
+                data: vec![0.25, -0.5, 1.0],
+                releases: Rc::clone(&releases),
+            };
+            let original = samples.data.as_ptr();
+            let extracted = Cell::new(false);
+            let result = finish_voice_bootstrap(
+                Model(Rc::clone(&models)),
+                samples,
+                || {
+                    assert_eq!(models.get(), 0, "Design must be released before Base loads");
+                    assert_eq!(releases.get(), 0, "Base load still owns the waveform");
+                    if failure == 1 {
+                        return Err(io::Error::other("injected Base load failure"));
+                    }
+                    models.set(1);
+                    Ok(Model(Rc::clone(&models)))
+                },
+                |_, samples| {
+                    extracted.set(true);
+                    assert_eq!(models.get(), 1);
+                    assert_eq!(releases.get(), 0);
+                    assert_eq!(samples.as_ptr(), original);
+                    assert_eq!(samples, [0.25, -0.5, 1.0]);
+                    if failure == 2 {
+                        return Err(io::Error::other("injected extraction failure"));
+                    }
+                    Ok(42)
+                },
+            );
+            assert_eq!(releases.get(), 1);
+            assert_eq!(extracted.get(), failure != 1);
+            if failure == 0 {
+                let (base, reference) = result?;
+                assert_eq!(reference, 42);
+                assert_eq!(models.get(), 1);
+                drop(base);
+            } else {
+                assert!(result.is_err());
+            }
+            assert_eq!(models.get(), 0);
+            assert_eq!(releases.get(), 1);
+        }
+        Ok(())
+    }
 
     #[test]
     fn selected_voice_is_reused_until_profile_changes_and_failures_never_fallback()

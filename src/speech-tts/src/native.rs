@@ -176,12 +176,9 @@ impl Context {
         Ok(context)
     }
 
-    pub(super) fn design_reference(&mut self, voice: &CStr) -> io::Result<Vec<f32>> {
-        let samples = self.synthesize_audio(&design_params(voice))?;
-        if !(CODEC_HOP..=MAX_REFERENCE_SAMPLES).contains(&samples.len()) {
-            return Err(invalid_audio());
-        }
-        Ok(samples)
+    pub(super) fn design_reference(&mut self, voice: &CStr) -> io::Result<NativeSamples> {
+        self.generate_audio(&design_params(voice))?
+            .into_reference_samples()
     }
 
     #[allow(
@@ -394,6 +391,14 @@ impl NativeAudio {
         Ok(NativeSamples { audio: self, count })
     }
 
+    fn into_reference_samples(self) -> io::Result<NativeSamples> {
+        let samples = self.into_samples()?;
+        if !(CODEC_HOP..=MAX_REFERENCE_SAMPLES).contains(&samples.count) {
+            return Err(invalid_audio());
+        }
+        Ok(samples)
+    }
+
     fn copy_samples(&self) -> io::Result<Vec<f32>> {
         let source = self.samples()?;
         let mut samples = Vec::new();
@@ -485,6 +490,32 @@ mod tests {
                 Some(io::ErrorKind::InvalidData)
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn voice_bootstrap_retains_native_reference_storage_and_its_separate_bounds() -> TestResult {
+        for count in [super::CODEC_HOP, super::MAX_REFERENCE_SAMPLES] {
+            let expected = vec![0.25; count];
+            let audio = native_audio(&expected)?;
+            let original = audio.0.samples.cast_const();
+            let samples = audio.into_reference_samples()?;
+            assert_eq!(samples.as_ref().as_ptr(), original);
+            assert_eq!(samples.as_ref(), expected);
+            drop(samples); // Actual native release, independent of any model.
+        }
+        for count in [super::CODEC_HOP - 1, super::MAX_REFERENCE_SAMPLES + 1] {
+            assert_eq!(
+                native_audio(&vec![0.0; count])?
+                    .into_reference_samples()
+                    .err()
+                    .map(|error| error.kind()),
+                Some(io::ErrorKind::InvalidData)
+            );
+        }
+        let mut invalid = vec![0.0; super::CODEC_HOP];
+        invalid[super::CODEC_HOP - 1] = f32::INFINITY;
+        assert!(native_audio(&invalid)?.into_reference_samples().is_err());
         Ok(())
     }
 

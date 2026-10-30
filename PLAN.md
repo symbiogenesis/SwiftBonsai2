@@ -259,6 +259,9 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
   separately. Record first generated PCM versus first audible output and chunk
   supply gaps/underruns. Conditioning reuse, bounded graph retention and PCM
   recycling already exist; optimize measured remaining work, not those labels.
+  Qualify native-owned VoiceDesign reference samples through Design teardown
+  and Base extraction on first use, profile changes and bootstrap failures;
+  pointer/ownership and model-ordering regressions remain model-free.
   Include the Rust Philox semantic/predictor draw path in actual-model speech
   acceptance; exact block/rounding vectors and pinned-C++ bit comparisons remain
   model-free checks, separate from output, listening and resource qualification.
