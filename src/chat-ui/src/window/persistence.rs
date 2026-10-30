@@ -375,7 +375,7 @@ fn valid_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::window::{Role, mpsc};
+    use crate::window::{Role, mpsc, transcript::MAX_MESSAGES};
 
     fn state() -> State {
         let (commands, _incoming) = mpsc::channel();
@@ -811,13 +811,27 @@ mod tests {
         let path = directory.join("chat-recovery.dpapi");
         let valid = std::fs::read(&path)?;
 
-        // Rejected attempts can accumulate many short visible messages while
-        // remaining inside the byte limit. Never write a state restore rejects.
-        for _ in 0..513 {
+        // Normal retry-heavy transcripts evict their oldest messages and remain
+        // recoverable at the live message limit.
+        for _ in 0..=MAX_MESSAGES {
             state
                 .transcript
                 .push(Role::User, "Rejected attempt".to_owned());
         }
+        assert_eq!(state.transcript.messages.len(), MAX_MESSAGES);
+        let mut bounded = self::state();
+        bounded.restore_workspace(&state.workspace_bytes()?)?;
+        assert_eq!(
+            bounded.transcript.plain_text(),
+            state.transcript.plain_text()
+        );
+        assert!(bounded.committed.is_empty());
+
+        // Deliberately bypass live eviction to exercise the invalid-state guard.
+        // Never replace the last valid snapshot with a state restore rejects.
+        let mut excess = Transcript::default();
+        excess.push(Role::User, "Excess message".to_owned());
+        state.transcript.messages.extend(excess.messages);
         assert!(state.workspace_bytes().is_err());
         state.recovery_dirty = true;
         state.last_recovery_save = Instant::now()
