@@ -1,16 +1,16 @@
 # Swift memory options
 
-This allocation audit binds the [exact PQ2 lock](../config/swift-assessment.lock.json),
-[symbol census](../config/swift.pq2-census.json) and Prism
-`73bfe6cc485554822f80c473a3c0c4f25e80f41b`. Calculations describe serialized bytes or
-opportunities, not measured peak RAM/throughput. Keep the [assessment](swift-memory.md)
-limits, reserve and watchdogs. Lossless work excludes older checkpoints, weight/KV
-precision changes, adapters as "savings" and local training. Outstanding work lives in
-[PLAN.md](../PLAN.md#creative-quality-adapters-and-memory).
+This allocation audit uses the [PQ2 lock](../config/swift-assessment.lock.json), [symbol
+census](../config/swift.pq2-census.json) and Prism
+`73bfe6cc485554822f80c473a3c0c4f25e80f41b`. Calculated byte savings are not measured
+peak RAM or throughput. The [assessment's](swift-memory.md#native-cpu-status) limits,
+reserve and watchdogs still apply. Lossless work excludes older checkpoints, weight/KV
+precision changes, adapters as "savings" and local training; [PLAN.md](../PLAN.md#creative-quality-adapters-and-memory)
+owns outstanding work.
 
 | Option | Current contract | Quantified scope and limitation |
 | --- | --- | --- |
-| Current-symbol PQ2 → PTQ1 | Verified export and bounded native decode | Saves 1,259,520,000 weight bytes (1.1730 GiB); native output and performance are unqualified. |
+| Current-symbol PQ2 → PTQ1 | Verified export and bounded native decode | Saves 1,259,520,000 weight bytes (1.1730 GiB); broader [numerical/output qualification](ptq1-readiness.md#numerical-and-admission-boundaries) and performance remain pending. |
 | mmap, no repack | Selected | Avoids a separate complete private weight copy only for tensors supported by the mapped backend buffer type. |
 | Microbatch | 64 selected | A 32-token variant changes execution grouping and its memory benefit is unmeasured. |
 | Output rows | Completion normally samples one row | One F32 logits row is 993,280 bytes; graph logits and persistent host output have distinct lifetimes. |
@@ -41,8 +41,9 @@ define the representation. The [Rust ternary
 crate](https://github.com/symbiogenesis/prism-inference/blob/main/tools/ternary/README.md)
 and [GGUF
 exporter](https://github.com/symbiogenesis/prism-inference/blob/main/tools/gguf/README.md)
-copy symbols/raw scales without floating-point quantization, using bounded caller-owned
-buffers and exact PQ2 reconstruction checks.
+preserve symbols, raw scale bits, other tensor bytes and tokenizer/template/transform
+metadata without floating-point quantization. Bounded caller-owned buffers and
+batchwise byte-identical PQ2 reconstruction checks avoid a complete expanded model.
 
 For the actual census:
 
@@ -143,34 +144,34 @@ reservation](https://learn.microsoft.com/en-us/windows/win32/procthread/thread-s
 is not committed/resident memory. PE headers and actual stack depth determine whether
 stack settings represent a material allocation bound.
 
-Serialized byte savings alone do not justify reducing the service cap or physical
-reserve. The [PTQ1 contract](ptq1-readiness.md) describes the supported selection and
-unchanged admission threshold.
+The [PTQ1 contract](ptq1-readiness.md#supported-selection-and-resource-policy) owns
+selection and unchanged admission: serialized savings alone cannot lower the service
+cap or physical reserve.
 
 ## 2026 state and cache research outside the lossless scope
 
-Reviewed through **2026-10-29**; source details and proof limits live in the [research
-register](research-register.md). These candidates do not change the selected lossless
-packing, FP16 KV/FP32 recurrent state or admission. Swift's 16 full-attention and 48
-recurrent layers need separate ledgers: KV compression does not compress GDN state or
-model weights.
+Reviewed through **2026-10-29**. The [research register](research-register.md) owns paper
+versions, source evidence and proof limits; the tables below summarize memory-policy
+implications. These candidates do not change lossless packing, FP16 KV/FP32 recurrent
+state or admission. Account separately for Swift's 16 attention and 48 recurrent layers:
+KV compression does not compress GDN state or weights.
 
 ### Persistent checkpoint compression versus live-state quantization
 
-| Source | Distinction and Swift boundary |
+| Candidate ([register Q18–Q21](research-register.md#approximation-quantization-theory-and-numerical-analysis)) | Swift boundary |
 | --- | --- |
-| [DASC](https://arxiv.org/html/2608.30386v2), v2 2026-10-09 | Ragged checkpoints omit selected GDN heads/KDA channels, then zero-fill or approximately refresh them. Live state stays full precision; convolution is uncompressed. Count selection, packing and tensor-parallel balancing. Multi-GPU SGLang capacity results do not justify omitting Swift state; compare exact sparse checkpoints plus suffix replay first. |
-| [DAMP](https://arxiv.org/html/2608.27513v2), v2 2026-09-30 | Calibrated FP16 high-risk channels plus INT8 live state, scaling/reordering and stochastic rounding average 9.9 bits including specified metadata. Batches 16-256 and substantial uniform-four-bit accuracy loss do not establish exact continuation, batch-one gain or Swift/LoRA quality. |
-| [Preserving Updates](https://arxiv.org/html/2610.15709v1), 2026-10-11 | Low-rank pending-update bypass and bounded directional rounding address repeated small-update loss. RTX 3060/batches 16-48 are approximation evidence. Charge factors, scales, merge scratch and checkpoint/rollback lifetimes; per-step MSE does not bound coherent sequence error. |
-| [Minima W4A4](https://arxiv.org/html/2609.04098v1), 2026-09-03 | Quantizes projection weights/activations, including gates; perturbation replay keeps recurrence FP32. Neither four-bit state nor uniform stability is proved. Fused projections must retain per-module scales. Its new NVFP4 Qwen artifact is larger than Swift and is not lossless repacking. |
+| DASC | Omits checkpoint GDN heads/KDA channels, with zero-fill or approximate refresh; live state stays full precision and convolution uncompressed. Compare exact sparse checkpoints plus suffix replay first. |
+| DAMP | Mixed FP16/INT8 live state is approximate. Its 9.9-bit average and batch-16–256 results establish neither exact continuation, batch-one gain nor Swift/LoRA quality. |
+| Preserving Updates | Low-rank bypass and directional rounding address small-update loss. Charge factors/scales, merge scratch and checkpoint/rollback lifetimes; per-step MSE does not bound sequence error. |
+| Minima W4A4 | Quantizes projections/gates, retaining FP32 recurrence and per-module fused scales. Its larger NVFP4 Qwen artifact is neither four-bit state nor lossless Swift repacking; uniform stability remains unproved. |
 
 ### Low-rank full-attention KV and reconstruction costs
 
-| Source | Representation, evidence and accounting |
+| Candidate ([register Q25–Q26](research-register.md#approximation-quantization-theory-and-numerical-analysis), [H23](research-register.md#hybrid-recurrence-prefix-caching-and-speculative-decoding)) | Representation and accounting |
 | --- | --- |
-| [iS-KV](https://arxiv.org/html/2610.02815v1), 2026-10-02 | Exact recent window plus approximate block-incremental-SVD older history. Basis updates must transform historical coordinates. Count bases, coefficients, protected prompt/window, FP32 updates, reconstruction and simultaneous old/new factors; persistent-KV ratios exclude weights and scratch. |
-| [JoLT](https://arxiv.org/html/2607.12550v4), v4 2026-09-24 | Tucker cache plus rotated low-bit residual allocates rank/precision under one byte budget. "Near-lossless" is empirical quality. Batch-one A100 fused decode is **7.5-65.9 times slower** than dense at every measured point; count decomposition, reconstruction and residual scratch. |
-| [VeriCache](https://arxiv.org/html/2605.17613v1), 2026-05-17 | Compressed drafts plus a separately retained full verification cache; greedy-output qualification. GPU-residency savings can increase total storage. Count both caches, transfers, verification and hybrid state; one shared-memory request lacks the evaluated independent-resource overlap. |
+| iS-KV | Exact recent window, approximate older SVD history; basis updates transform historical coordinates. Count bases, coefficients, protected prompt/window, FP32 updates, reconstruction and simultaneous old/new factors; persistent-KV ratios exclude weights/scratch. |
+| JoLT | Tucker cache plus rotated low-bit residual, jointly budgeted. "Near-lossless" describes empirical quality; retained batch-one A100 decode is **7.5–65.9× slower** than dense. Count decomposition, reconstruction and residual scratch. |
+| VeriCache | Compressed drafts plus full verification cache, qualified for greedy output. Count both caches, transfers, verification and hybrid state: GPU-residency savings can increase total storage, and one shared-memory request lacks the evaluated resource overlap. |
 
 An exact recent window does not make older low-rank history exact. Basis and
 coefficient/checkpoint identities must commit or roll back together. None of these
@@ -188,16 +189,17 @@ profile, full-continuation/quality checks and target-device CI evidence.
 
 Lossless byte coding and new quantized weights have different contracts. Smaller files
 or lower reconstruction error do not establish fewer executable bytes or faster
-generation; the [register](research-register.md) owns source details.
+generation. Source versions and results live in the register's [compression](research-register.md#packed-projections-cpu-kernels-and-compression)
+and [quantization](research-register.md#approximation-quantization-theory-and-numerical-analysis) catalogs.
 
-| Source | Applicable idea and boundary |
+| Candidate / register ID | Memory and arithmetic boundary |
 | --- | --- |
-| [Shannonic](https://proceedings.mlsys.org/paper_files/paper/2026/hash/96f39c8de84678cb2a908cd52bfd7819-Abstract-Conference.html), MLSys 2026 | Range-partitioned ANS trades table state against independent-stream indexes/decode. Can preserve symbols/scales; communication-bound wins do not establish local inference savings. |
-| [QTEA](https://arxiv.org/abs/2609.00224v2), v2 2026-09-02 | Ternary bulk plus salient-column residuals is a new quantizer/artifact with residual/index cost; GPU/architecture estimates do not establish CPU benefit. |
-| [Tetra](https://arxiv.org/abs/2609.35465v1), 2026-09-28 | Lattice reconstruction separates serialized bitrate from kernel-streamed codebook/scale/layout bytes. New weights have measured quality losses. |
-| [CoS-VQ](https://arxiv.org/abs/2610.37336v1), 2026-10-27 | Joint shared-scale/vector-codeword search on the same Qwen base family; restricted-surrogate optimality needs true-error verification and does not establish a global quality/memory optimum or Swift compatibility. |
-| [YAQA](https://arxiv.org/abs/2505.22988v3), ICML 2026; [FastKron](https://arxiv.org/abs/2608.06291v2), v2 2026-09-27 | Hessian-aware rounding and parallel core quantization concern offline preparation. Charge Hessians/factors and preprocessing; work/depth gains do not imply faster generation. |
-| [Search Your Block Floating Point Scales!](https://arxiv.org/abs/2605.12464v1), MLSys 2026 | Scale search can improve block MSE over absmax. Exhaustive finite-search optimality differs from a heuristic short window; changing scales changes Q8_K/Q8_0 arithmetic. |
+| Shannonic / L12 | Lossless ANS can preserve symbols/scales; charge table state, independent-stream indexes and decode work. Communication wins do not prove local inference savings. |
+| QTEA / L13 | New ternary/residual artifact; charge residuals/indexes. GPU/architecture estimates do not establish CPU benefit. |
+| Tetra / L16 | Distinguish serialized bits from streamed codebook/scale/layout bytes; new weights have measured quality losses. |
+| CoS-VQ / Q27 | Shared-scale/codeword search on the Qwen base family; surrogate optimality needs true-error verification and proves no global quality/memory optimum or Swift compatibility. |
+| YAQA / Q28; FastKron / Q29 | Offline rounding/quantization: charge Hessians/factors and preprocessing. Work/depth gains do not imply faster generation. |
+| Search Your Block Floating Point Scales! / Q30 | Exhaustive legal-scale optimality differs from a heuristic short window; changing scales changes Q8_K/Q8_0 arithmetic. |
 
 Cross-block entropy coding does not contradict the independent fixed-block bound.
 Changing codebooks, scales, rotations, sparsity or residual weights is not lossless

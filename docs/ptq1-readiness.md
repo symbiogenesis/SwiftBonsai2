@@ -1,10 +1,10 @@
 # Current-weight PTQ1 contract
 
-PQ2 remains the app default. `Swift-Bonsai-2-current-repacked-PTQ1_0.gguf` preserves
-current weights, raw scales and other tensors; it is distinct from the publisher's older
-checkpoint. The [export receipt](../config/swift.ptq1-export.json) proves 1,259,520,000
-fewer serialized bytes (**1.173019409 GiB**), not equal activation arithmetic, outputs,
-speed or physical-memory savings.
+PQ2 remains the app default. The [current-weight export](swift-memory.md#current-weight-ptq1-option),
+`Swift-Bonsai-2-current-repacked-PTQ1_0.gguf`, preserves weights, raw scales and other
+tensors; it is distinct from the publisher's older checkpoint. Its [receipt](../config/swift.ptq1-export.json)
+proves 1,259,520,000 fewer serialized bytes (**1.173019409 GiB**), not equal activation
+arithmetic, outputs, speed or physical-memory savings.
 [PLAN.md](../PLAN.md#creative-quality-adapters-and-memory) owns outstanding
 qualification and memory policy.
 
@@ -17,11 +17,10 @@ substitutions and missing-file fallback are unsupported. The experimental Rust s
 still rejects PTQ1; codec/operator support does not establish service parity.
 
 Both packings retain **15.5 GiB available admission / 11.5 GiB Job ceiling / 4 GiB
-running physical reserve**, context, retry and recovery. This owner-selected 512 MiB
-reduction from 16/12 GiB is not measured PTQ1 savings or promotion. The approved adapter
-can run on either packing, with experimental app scale 1.3; structure, changed text and
-greedy agreement do not settle basis, Swift transfer or quality. [Independent LoRA
-gates](lora-qualification.md) still apply.
+running physical reserve**, context, retry and recovery. The [assessment](swift-memory.md#native-cpu-status)
+explains this owner-selected budget; it is not measured PTQ1 savings or promotion.
+Either packing can use the [experimental adapter](swift-lora.md) at app scale 1.3,
+subject to [independent LoRA qualification](lora-qualification.md).
 
 ## Numerical and admission boundaries
 
@@ -72,8 +71,8 @@ Inspect a capture offline:
 ./scripts/Get-Ptq1Screen.ps1 -EvidencePath C:/external/screen-evidence.json
 ```
 
-The screen enforces artifacts/resources, retains failures and compares per-arm median
-decode throughput. Rejection blocks the candidate; continue means only that this small
-prefix screen did not reject it. It cannot establish quality of completed answers,
-long-context/statistical equivalence, total physical RAM, default promotion or
-app-scale-1.3 acceptance under the scale-one/512-token LoRA contract.
+The screen verifies artifacts/resources, retains failures and compares each
+configuration's median decode throughput. Rejection blocks the candidate; continue
+means only that this small prefix screen did not reject it. It cannot establish
+completed-answer quality, long-context/statistical equivalence, total physical RAM,
+default promotion or acceptance under the separate scale-one/512-token LoRA contract.

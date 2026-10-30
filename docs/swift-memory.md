@@ -1,9 +1,9 @@
 # Swift Bonsai 2 memory assessment
 
-**Swift is the memory and implementation priority.** Its bounded native CPU decode
-passes; creative quality, performance and daily-service isolation remain unqualified.
-The reproducible [Qwen reference](model-selection.md) has a separate lock/profile. No
-local training or fine-tuning is planned.
+**Swift is the implementation priority.** Bounded native CPU decode passes; creative
+quality, performance and daily-service isolation remain unqualified. The [Qwen
+reference](model-selection.md) has a separate lock/profile. No local training or
+fine-tuning is planned.
 
 ## Pinned artifacts
 
@@ -41,12 +41,10 @@ repacking under the census rules; no floating-point weight conversion is involve
 
 ## Current-weight PTQ1 option
 
-Prism **PTQ1_0** uses group-128 base-3 packing. It is distinct from the weight-changing
-PTQ1.61 research algorithm and the older published PTQ model. The [Rust
-exporter](https://github.com/symbiogenesis/prism-inference/blob/main/tools/gguf/README.md),
-exposed through [Export-SwiftPtq1.ps1](../scripts/Export-SwiftPtq1.ps1), preserves
-current symbols, raw scale bits, other tensor bytes and tokenizer/template/transform
-metadata. It verifies byte-identical PQ2 reconstruction for every converted batch.
+Prism **PTQ1_0** uses group-128 base-3 packing, distinct from the weight-changing
+PTQ1.61 research algorithm and older published PTQ model. The [exact-packing
+audit](swift-memory-options.md#exact-ptq1-packing) documents the exporter, preserved
+symbols/scales/tensors/metadata and batchwise byte-identical PQ2 reconstruction.
 
 The verified output is **5,946,648,928 bytes**, saving **1,259,520,000 bytes (1.1730
 GiB)**. Its [receipt](../config/swift.ptq1-export.json) records SHA-256
@@ -54,11 +52,10 @@ GiB)**. Its [receipt](../config/swift.ptq1-export.json) records SHA-256
 blocks and 258,720 working-buffer bytes. Native pinned PQ2/PTQ dequantizers also agree
 bit-for-bit on 853,760 synthetic values.
 
-PTQ uses Q8_0 activations while PQ2 uses Q8_K. Equal weights therefore do not prove
-equal logits, text or speed. `-UseRepackedPtq1` selects only this exact derived artifact
-and retains the same memory allowance. Bounded 16-token native decode passes with and
-without the approved adapter. See the [allocation audit](swift-memory-options.md); the
-[packing decision](swift-memory-options.md#packing-decision) excludes BITCOS.
+PTQ uses Q8_0 activations; PQ2 uses Q8_K. Equal weights do not prove equal logits,
+text or speed. The [PTQ1 contract](ptq1-readiness.md) owns selection, numerical evidence
+and unchanged admission; the [packing decision](swift-memory-options.md#packing-decision)
+excludes BITCOS.
 
 The pretrained [LoRA](swift-lora.md) changes behavior and adds runtime cost; it has
 independent standard-profile qualification.
@@ -102,15 +99,17 @@ The fixed check uses an 8K context, FP16 K/V, F32 recurrent/convolution state, b
 deadline. It retains Swift's embedded template/default reasoning and omits the explicit
 system preamble, which the template cannot render alone without a user query.
 
-Known allocation accounting includes the entire PQ2 file, live KV/recurrent state,
-shared rotation and deduplicated signs/metadata: **7,904,356,704 bytes**. The **11.5
-GiB** Job commit allowance leaves 4,443,674,272 bytes for remaining
-runtime/scratch/temporary allocations. A separate **4 GiB** physical reserve requires
-**15.5 GiB available** for admission. The owner selected this 512 MiB reduction from the
-original 12/16 GiB development budget; the reduction is not a measured consequence of
-the application allocation changes. Full-context and 4K-output peak-memory qualification
-remains outstanding. These are development limits; they do not lower Qwen's 22 GiB
-admission requirement.
+| Accounting domain | Current bound |
+| --- | ---: |
+| PQ2 file + live KV/recurrent state + shared rotation + deduplicated signs/metadata | 7,904,356,704 bytes |
+| Job commit allowance | 11.5 GiB |
+| Remaining allowance for runtime/scratch/temporary allocations | 4,443,674,272 bytes |
+| Running physical reserve | 4 GiB |
+| Available physical memory required at admission | 15.5 GiB |
+
+The owner chose this 512 MiB reduction from the original 12/16 GiB development budget;
+allocation changes did not establish it. Full-context/4K-output peak memory remains
+unqualified. Qwen retains its separate 22 GiB admission requirement.
 
 PQ2 and current-weight PTQ1 both complete the bounded decode, with and without the
 approved adapter. A recorded base check reported about 1.49 GB peak Job commit. Job
