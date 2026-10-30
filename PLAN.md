@@ -356,7 +356,7 @@ existing full-context/continuation/LoRA gates.
 
 ## Hardware selection
 
-- Extend shared discovery beyond scoped CPU observations, native CPU sets,
+- Extend shared discovery beyond native CPU registry/kernel/feature identity, CPU sets,
   native Windows NEON/dotprod/I8MM reports and bounded Vulkan/OpenCL inventories:
   independently checked
   SoC/SKU, GPU/NPU API/features/architecture, driver/runtime/firmware,
@@ -375,8 +375,9 @@ existing full-context/continuation/LoRA gates.
   now passes CPU-enabled model-free startup and Unicode/quoting checks on X2;
   integrate/release it upstream and qualify the exact binary before updating
   Runner's pin. The currently provisioned runtime remains unchanged.
-  Retain the screen's verdict for topology, AC/battery saver, active power scheme
-  and effective mode at batch and per-sample boundaries, including the transition
+  Retain the screen's verdict for native CPU/kernel/feature identity, topology,
+  AC/battery saver, active power scheme and effective mode at batch and per-sample
+  boundaries, including the transition
   between paired samples; suppress comparisons when observations change or are
   unknown. Extend the screen
   only when its phase measurements identify a useful next candidate.

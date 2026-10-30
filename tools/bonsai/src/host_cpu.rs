@@ -2,6 +2,27 @@
 
 use serde_json::{Value, json};
 
+pub(super) const HOST_IDENTITY_SOURCE: &str =
+    "HKLM/HARDWARE/DESCRIPTION/System/CentralProcessor/0;RtlGetVersion;IsProcessorFeaturePresent";
+
+fn host_identity_snapshot() -> Value {
+    #[cfg(windows)]
+    if let Ok(host) = bonsai_windows_process::native_build_host() {
+        return observed_host_identity(&host);
+    }
+    json!({"status": "unknown", "source": HOST_IDENTITY_SOURCE,
+        "processor_name": null, "processor_identifier": null, "vendor_identifier": null,
+        "windows_version": null, "processor_features": null})
+}
+
+#[cfg(windows)]
+fn observed_host_identity(host: &bonsai_windows_process::NativeBuildHost) -> Value {
+    json!({"status": "observed", "source": HOST_IDENTITY_SOURCE,
+        "processor_name": host.processor_name, "processor_identifier": host.processor_identifier,
+        "vendor_identifier": host.vendor_identifier, "windows_version": host.windows_version,
+        "processor_features": host.processor_features})
+}
+
 fn isa_snapshot() -> Value {
     #[cfg(windows)]
     if let Ok(isa) = bonsai_windows_process::arm64_isa() {
@@ -103,6 +124,7 @@ pub fn run(request: &Value) -> crate::Result<Value> {
     report["scope"] = json!("current-process");
     report["source"] = json!("GetSystemCpuSetInformation");
     report["qualification"] = json!("unqualified");
+    report["host_identity"] = host_identity_snapshot();
     report["power_snapshot"] = power_snapshot();
     report["power_policy_snapshot"] = power_policy_snapshot();
     report["isa"] = isa_snapshot();
@@ -123,6 +145,33 @@ mod tests {
             json!({"topology": {}}),
         ] {
             assert!(run(&request).is_err());
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn host_identity_retains_native_cpu_kernel_and_feature_facts_separately() {
+        let host = bonsai_windows_process::NativeBuildHost {
+            processor_name: "Snapdragon X2 Elite Extreme - X2E94100".into(),
+            processor_identifier: "ARMv8 (64-bit) Family 8 Model 0 Revision 1".into(),
+            vendor_identifier: "Qualcomm Technologies Inc".into(),
+            windows_version: [10, 0, 26300],
+            processor_features: vec![19, 43, 66],
+        };
+        let identity = super::observed_host_identity(&host);
+        assert_eq!(identity["status"], "observed");
+        assert_eq!(identity["processor_name"], host.processor_name);
+        assert_eq!(identity["processor_identifier"], host.processor_identifier);
+        assert_eq!(identity["vendor_identifier"], host.vendor_identifier);
+        assert_eq!(identity["windows_version"], json!([10, 0, 26300]));
+        assert_eq!(identity["processor_features"], json!([19, 43, 66]));
+        for live_field in [
+            "ac_online",
+            "battery_saver",
+            "battery_percent",
+            "availability",
+        ] {
+            assert!(identity.get(live_field).is_none());
         }
     }
 

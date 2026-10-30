@@ -69,6 +69,23 @@ CPU-set IDs do not establish persistent affinity, process affinity eligibility,
 optional ISA or Snapdragon core names. The [X2 CPU screen](x2-cpu-optimization.md)
 retains this native inventory alongside its processor observation and fixed plan.
 
+The additive native CPU `host_identity` section reuses the bounded checked
+speech-build host query: CPU name, architecture/family/model/revision and vendor
+from the fixed native hardware-registry key, actual Windows kernel version from
+`RtlGetVersion`, and the sorted available Windows processor-feature IDs in
+`0..256`. Missing, malformed or oversized registry values leave the entire
+identity explicitly unknown. These facts are separate from live availability and
+power snapshots. Doctor retains them in `NativeCpuObservations`; no new digest,
+automatic dispatch or backend permission is inferred from the marketing name.
+The name is an independently collected Windows registry observation, not a
+verified silicon SKU or firmware identity. The X2 screen requires its processor
+name to agree with CIM and retains the exact identity in the plan and receipts.
+Changed or unknown host identity suppresses timing comparisons, including older
+receipts that lack this section. Kernel/feature changes require a fresh capture;
+the full bounded `processor_features` list supplies this comparison rather than
+the separate descriptive `isa` flags. Existing optional-ISA and numerical
+qualification requirements still apply.
+
 With the same explicit `-ToolPath`, Doctor also adds `NativeGpuObservations`
 from `bonsai-tools host-gpu`. Its separate v1
 `runner-native-gpu-observations` report queries the absolute Windows system

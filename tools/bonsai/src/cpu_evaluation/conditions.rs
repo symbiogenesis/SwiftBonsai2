@@ -44,6 +44,54 @@ fn observed_topology(report: &Value) -> Option<&Value> {
     .then_some(&report["topology"])
 }
 
+fn observed_host_identity(report: &Value) -> Option<&Value> {
+    let identity = &report["host_identity"];
+    if report["architecture"] != "aarch64"
+        || identity["status"] != "observed"
+        || identity["source"] != crate::host_cpu::HOST_IDENTITY_SOURCE
+    {
+        return None;
+    }
+    for field in [
+        "processor_name",
+        "processor_identifier",
+        "vendor_identifier",
+    ] {
+        let text = identity[field].as_str()?;
+        if text.is_empty()
+            || text.len() > 2048
+            || text.trim().is_empty()
+            || text.trim().eq_ignore_ascii_case("unknown")
+            || text.chars().any(char::is_control)
+        {
+            return None;
+        }
+    }
+    let version = identity["windows_version"].as_array()?;
+    if version.len() != 3
+        || version.iter().any(|part| {
+            part.as_u64()
+                .is_none_or(|part| u32::try_from(part).is_err())
+        })
+        || version[0].as_u64()? == 0
+        || version[2].as_u64()? == 0
+    {
+        return None;
+    }
+    let features = identity["processor_features"].as_array()?;
+    if features.len() > 256
+        || features
+            .iter()
+            .any(|feature| feature.as_u64().is_none_or(|feature| feature >= 256))
+        || features
+            .windows(2)
+            .any(|pair| pair[0].as_u64() >= pair[1].as_u64())
+    {
+        return None;
+    }
+    Some(identity)
+}
+
 fn power(report: &Value, field: &str) -> Option<bool> {
     (report["power_snapshot"]["status"] == "observed"
         && report["power_snapshot"]["source"] == "GetSystemPowerStatus")
@@ -95,6 +143,14 @@ pub(super) fn compare(request: Value) -> crate::Result<Value> {
 fn compare_observations(before: &Value, after: &Value) -> Value {
     let mut changed = Vec::new();
     let mut unknown = Vec::new();
+    match (
+        observed_host_identity(before),
+        observed_host_identity(after),
+    ) {
+        (Some(before), Some(after)) if before != after => changed.push("host-identity-changed"),
+        (Some(_), Some(_)) => {}
+        _ => unknown.push("host-identity-unavailable"),
+    }
     match (observed_topology(before), observed_topology(after)) {
         (Some(before), Some(after)) if before != after => changed.push("topology-changed"),
         (Some(_), Some(_)) => {}
@@ -133,7 +189,7 @@ fn compare_observations(before: &Value, after: &Value) -> Value {
     json!({
         "Status": status, "Comparable": status == "observed-stable",
         "Changed": changed, "Unknown": unknown,
-        "Scope": "Batch boundary observations only; changes within samples and edits to individual scheme settings are not monitored. Active scheme and effective power mode are live policy conditions. Charge level and live CPU availability flags are not compatibility conditions. No energy verdict.",
+        "Scope": "Batch boundary observations only; CPU registry identity, Windows kernel version and reported feature set must match independently of live power conditions. Changes within samples and edits to individual scheme settings are not monitored. Charge level and live CPU availability flags are not compatibility conditions. No energy verdict.",
     })
 }
 
@@ -201,6 +257,11 @@ mod tests {
             "schema_version": 1, "kind": "runner-native-cpu-observations",
             "status": "observed", "architecture": "aarch64", "scope": "current-process",
             "source": "GetSystemCpuSetInformation", "topology": {"logical_processors": 18},
+            "host_identity": {"status": "observed", "source": crate::host_cpu::HOST_IDENTITY_SOURCE,
+                "processor_name": "Snapdragon X2 Elite Extreme - X2E94100",
+                "processor_identifier": "ARMv8 (64-bit) Family 8 Model 0 Revision 1",
+                "vendor_identifier": "Qualcomm Technologies Inc", "windows_version": [10, 0, 26300],
+                "processor_features": [19, 43, 66]},
             "availability": [{"id": 1, "parked": false}],
             "power_snapshot": {"status": "observed", "source": "GetSystemPowerStatus",
                 "ac_online": true, "battery_saver": false, "battery_percent": 80},
@@ -357,6 +418,72 @@ mod tests {
         let mut input = json!({"operation": "compare-conditions", "before": observation(), "after": observation()});
         input["allowChanged"] = json!(true);
         assert!(compare(input).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn condition_comparison_binds_exact_native_host_even_when_core_counts_match()
+    -> crate::Result<()> {
+        for (field, changed) in [
+            (
+                "processor_name",
+                json!("Snapdragon X2 Elite Extreme - X2E96100"),
+            ),
+            (
+                "processor_identifier",
+                json!("ARMv8 (64-bit) Family 8 Model 0 Revision 2"),
+            ),
+            ("vendor_identifier", json!("Different Vendor")),
+            ("windows_version", json!([10, 0, 26301])),
+            ("processor_features", json!([19, 43])),
+        ] {
+            let mut after = observation();
+            after["host_identity"][field] = changed;
+            let compared = result(&after)?;
+            assert_eq!(compared["Comparable"], false);
+            assert_eq!(compared["Changed"], json!(["host-identity-changed"]));
+        }
+        for (field, malformed) in [
+            ("status", json!("unknown")),
+            ("source", json!("CIM")),
+            ("processor_name", Value::Null),
+            ("processor_name", json!("unknown")),
+            ("processor_name", json!(" ")),
+            ("processor_name", json!("X2\n")),
+            ("processor_name", json!("x".repeat(2049))),
+            ("windows_version", json!([10, 0])),
+            ("windows_version", json!([10, 0, 0])),
+            ("windows_version", json!([10, 0, 4_294_967_296_u64])),
+            ("processor_features", Value::Null),
+            ("processor_features", json!([19, 19])),
+            ("processor_features", json!([66, 19])),
+            ("processor_features", json!([256])),
+            ("processor_features", json!(["19"])),
+            ("processor_features", json!(vec![19; 257])),
+        ] {
+            let mut after = observation();
+            after["host_identity"][field] = malformed;
+            let compared = result(&after)?;
+            assert_eq!(compared["Comparable"], false, "accepted {field}");
+            assert_eq!(compared["Unknown"], json!(["host-identity-unavailable"]));
+        }
+        let mut legacy = observation();
+        legacy
+            .as_object_mut()
+            .ok_or("Missing observation object.")?
+            .remove("host_identity");
+        assert_eq!(result(&legacy)?["Comparable"], false);
+        let mut pair = json!({
+            "operation": "compare-sample-conditions",
+            "baseline": {"Before": observation(), "After": observation()},
+            "candidate": {"Before": observation(), "After": observation()},
+        });
+        pair["candidate"]["Before"]["host_identity"]["processor_features"] = json!([19, 43]);
+        pair["candidate"]["Comparison"] = json!({"Comparable": true});
+        let compared = super::super::run(pair)?;
+        assert_eq!(compared["Comparable"], false);
+        assert_eq!(compared["Candidate"]["Comparable"], false);
+        assert_eq!(compared["BetweenSamples"]["Comparable"], false);
         Ok(())
     }
 

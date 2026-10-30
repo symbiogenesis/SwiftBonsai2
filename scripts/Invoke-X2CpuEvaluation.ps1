@@ -41,10 +41,18 @@ if ($processors.Count -ne 1 -or $native.status -cne 'observed' -or
     $processors[0].NumberOfLogicalProcessors -ne $native.topology.logical_processors) {
     throw 'CPU evaluation requires matching observed CIM and native CPU topology.'
 }
+$initialConditions = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -Request @{
+    operation = 'compare-conditions'; before = $native; after = $native
+}
+if ('host-identity-unavailable' -cin $initialConditions.Unknown -or
+    $processors[0].Name.Trim() -cne $native.host_identity.processor_name.Trim()) {
+    throw 'CPU evaluation requires complete native host identity and matching CIM/native processor names.'
+}
 $plan = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -Request @{
     operation = 'plan'; dataDirectory = $data; processorName = $processors[0].Name
     logicalProcessors = [int]$native.topology.logical_processors
 }
+$plan['HostIdentity'] = $native.host_identity
 if ($PlanOnly) { return [pscustomobject]$plan }
 if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main' -or
     $env:GITHUB_REPOSITORY -cne 'symbiogenesis/SwiftBonsai2Runner' -or

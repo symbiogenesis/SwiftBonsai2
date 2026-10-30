@@ -27,6 +27,15 @@ while AC remained unchanged. The checked native speech host query also confirmed
 X2E94100 and Windows `10.0.26300`; plan inspection still returned 24 samples
 with no model process started. These are discovery/correctness observations.
 
+A further model-free check on 2026-10-29 observed the new native `host_identity`:
+the bounded hardware-registry name agrees with CIM on `X2E94100`, the native
+kernel is `10.0.26300`, and 18 logical processors still produce 24 planned
+samples with `ModelProcessStarted: false`. The built CLI accepted identical
+native identity/power observations, rejected an injected kernel-build change
+and rejected a legacy observation missing host identity. Its native report,
+plan and comparison receipts remain in the external
+`Bonsai-PerfNext3-20261029/x2-evidence` directory. No model or timing trial ran.
+
 The manual [X2 CPU workflow](../.github/workflows/x2-cpu-evaluation.yml) supplies
 a bounded first thread screen on the owner-managed native ARM64 runner, on
 settled `main`. It shares the existing model-capture concurrency group. All
@@ -82,7 +91,10 @@ and an absolute data directory outside Git:
 
 Plan inspection probes hardware and reads compiled policy without loading a
 model. It requires an observed X2 Elite Extreme name and agreement between CIM
-and the native CPU-set count. The planner never treats a name as kernel
+and the native CPU-set count, plus agreement between the CIM processor name and
+the bounded native registry name. Missing native processor/kernel/feature
+identity rejects planning. The plan retains `HostIdentity`, separate from live
+power or CPU availability. The planner never treats a name as kernel
 eligibility. Unknown topology or a foreign device rejects the screen.
 
 Doctor's optional `NativeCpuObservations` uses the same Rust `host-cpu` command.
@@ -96,7 +108,8 @@ group-relative core/cache/NUMA indices and relative efficiency classes in the
 ## Reading evidence
 
 The workflow retains the plan, observed processor name, OS build, process ISA
-and native topology,
+and native topology, the native registry CPU identity, actual Windows kernel
+version and Windows processor-feature set,
 exact arguments, response hashes, raw synthetic captures and per-sample
 supervision. Prompt evaluation, decode and full process wall time remain
 separate. Process wall time includes loading and excludes prior artifact
@@ -127,7 +140,8 @@ not energy measurements; transitions within a trial are not sampled. A power
 or topology change calls for a new controlled run before interpreting ratios.
 The report's `ExecutionConditions` enforces that boundary: changed or unknown
 native topology, AC state, battery-saver state, active power scheme or effective
-mode suppress all ratios, while preserving raw samples and token-count
+mode, or changed/unknown native CPU/kernel/feature identity suppress all ratios,
+while preserving raw samples and token-count
 comparability separately.
 
 The screen also requests the completion supervisor's optional
@@ -140,6 +154,9 @@ and returns before the batch ends therefore cannot pass solely because the
 batch's initial and final observations match. Ratios require both this pair gate
 and the existing batch gate; missing or malformed sample observations suppress
 them. Older receipts without sample observations remain readable as raw evidence.
+Receipts predating `host_identity` likewise remain readable as raw evidence and
+cannot satisfy the identity comparison. A name agreement is an independent
+Windows observation, not proof of the physical SoC SKU or optional-kernel parity.
 
 Charge percentage and transient CPU parking/allocation flags do not determine
 these checks. Equal boundary snapshots cannot rule out changes within a sample
