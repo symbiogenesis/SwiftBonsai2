@@ -7,14 +7,18 @@ concurrency:
   group: swift-lora-snapdragon
   cancel-in-progress: false
 jobs:
-  numerics:
+  prepare:
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
-    timeout-minutes: 5
+    runs-on: windows-11-arm
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - uses: ./.github/actions/bonsai-tools
+      - name: Check the hosted-only build boundary
+        shell: pwsh
+        run: ./tests/Test-NativePtq1CaptureTools.ps1 -Case HostedGuard
       - name: Validate fixed native-state decoding and control binding
         shell: pwsh
         run: >-
@@ -24,6 +28,57 @@ jobs:
           NativeStateTests.test_comparator_enforces_finite_values_exact_extents_and_original_tolerance
           NativeStateTests.test_control_binding_rejects_changed_adapter_scale_tokens_and_backend
           NativeStateTests.test_capture_pre_read_bounds_reject_oversized_json_and_logits
+      - name: Prepare exact capture binaries and maintenance receipt without models
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $capture = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Ptq1CaptureTools'
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-NativePtq1CaptureTools.ps1') -OutputDirectory $capture | ConvertTo-Json -Depth 5
+          $package = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-CheckedTools'
+          [void][IO.Directory]::CreateDirectory($package)
+          $tool = Join-Path $package 'bonsai-tools.exe'
+          $probe = Join-Path $package 'bonsai-completion-test-probe.exe'
+          Copy-Item -LiteralPath $env:BONSAI_TOOLS_PATH -Destination $tool
+          Copy-Item -LiteralPath $env:BONSAI_COMPLETION_PROBE_PATH -Destination $probe
+          @{
+            SchemaVersion = 2; Revision = $env:GITHUB_SHA
+            Sha256 = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
+            ProbeSha256 = (Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash.ToLowerInvariant()
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package 'receipt.json') -Encoding utf8NoBOM
+      - name: Share source-bound capture binaries
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ptq1-capture-tools-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/SwiftBonsai-Ptq1CaptureTools
+          if-no-files-found: error
+          retention-days: 90
+      - name: Share checked maintenance tools for this source revision
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: bonsai-tools-windows-arm64-${{ github.sha }}
+          path: ${{ runner.temp }}/SwiftBonsai-CheckedTools
+          if-no-files-found: error
+          retention-days: 90
+  numerics:
+    needs: prepare
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/use-bonsai-tools
+      - name: Download this run's source-bound capture tools
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: ptq1-capture-tools-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/SwiftBonsai-Ptq1CaptureTools
       - name: Capture and compare the fixed one-token smoke
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -49,7 +104,7 @@ jobs:
           try {
             $stdout = $child.StandardOutput.ReadToEndAsync()
             $stderr = $child.StandardError.ReadToEndAsync()
-            $child.WaitForExit()
+            if (-not $child.WaitForExit(240000)) { throw 'The complete PTQ1 smoke exceeded its 240-second process budget.' }
             [Console]::Out.Write($stdout.GetAwaiter().GetResult())
             [Console]::Error.Write($stderr.GetAwaiter().GetResult())
             $code = $child.ExitCode
