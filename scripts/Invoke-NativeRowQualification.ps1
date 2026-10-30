@@ -98,6 +98,12 @@ try {
     $data = Resolve-ExternalPath $DataDirectory
     $bundle = Resolve-ExternalPath $CaptureToolsDirectory
     $ToolPath = Resolve-ExternalPath $ToolPath
+    $python = @(Get-Command python -CommandType Application -ErrorAction Stop)[0].Source
+    $bundleEntries = @(Get-ChildItem -LiteralPath $bundle -Force)
+    if ($bundleEntries.Count -ne 2 -or @($bundleEntries | Where-Object {
+        $_.PSIsContainer -or ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+        $_.Name -cnotin @('swift_model_check.exe', 'capture-tools.json')
+    }).Count) { throw 'The capture bundle must contain exactly the ordinary checker and receipt files.' }
     $receiptPath = Join-Path $bundle 'capture-tools.json'
     if ((Get-Item -LiteralPath $receiptPath).Length -gt 65536) { throw 'Capture receipt exceeds its pre-read bound.' }
     $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json -DateKind String
@@ -133,6 +139,12 @@ try {
     $processor = @(Get-CimInstance Win32_Processor -Property Name -OperationTimeoutSec ([int][Math]::Min(10, (Get-RowWorkAllowance))))
     if ($processor.Count -ne 1 -or $processor[0].Name -notmatch 'Snapdragon.*X.*Elite') { throw 'Expected one native Snapdragon X/X2 Elite processor.' }
     $report['ProcessorName'] = $processor[0].Name
+    $activeModels = @(Get-CimInstance Win32_Process -OperationTimeoutSec ([int][Math]::Min(10, (Get-RowWorkAllowance))) -Filter (
+        "Name='bonsai-chat.exe' OR Name='bonsai-broker.exe' OR Name='prism-inference-server.exe' OR " +
+        "Name='llama-server.exe' OR Name='llama-completion.exe' OR Name='llama-bench.exe' OR " +
+        "Name='swift_model_check.exe' OR Name='swift-ptq1-reference.exe' OR " +
+        "Name='bonsai-speech-asr.exe' OR Name='bonsai-speech-tts.exe'"))
+    if ($activeModels.Count) { throw 'Close the existing Bonsai app and project model processes before qualification; this script will not interrupt them.' }
     if ([IO.DriveInfo]::new([IO.Path]::GetPathRoot($evidence)).AvailableFreeSpace -lt $plan.RequiredFreeDiskBytes) { throw 'Row qualification needs at least 1 GiB external disk headroom.' }
     $checked = Invoke-BonsaiTool -Command cpu-check-report -ToolPath $ToolPath -TimeoutSeconds (Get-RowWorkAllowance -ForTool) -Request @{
         operation = 'plan'; dataDirectory = $data; profile = 'swift-pq2-assessment'; useAbliterateLora = $true; useRepackedPtq1 = $false
@@ -148,6 +160,7 @@ try {
     $artifacts += @{ path = $admission.ModelPath; bytes = 7206168928; sha256 = $checked.Artifact.Sha256 }
     $artifacts += @{ path = $adapter.AdapterPath; bytes = 9682464; sha256 = $adapter.Sha256 }
     $report['Admission'] = $admission
+    $report['AdmissionScope'] = 'Resource planning only; publisher arguments and adapter scale in the shared admission report are not executed. Actual Rust arguments, capture controls and scale 1.3 are recorded separately.'
     foreach ($condition in $plan.Conditions) {
         $lane = Join-Path $evidence $condition.Name
         [void][IO.Directory]::CreateDirectory($lane)
@@ -173,7 +186,6 @@ try {
         $report.Samples.Add(@{ Condition = $condition.Name; RowWorkers = $condition.RowWorkers; Supervision = $supervision })
         Save-RowReport -Report $report -Path $reportPath
     }
-    $python = @(Get-Command python -CommandType Application -ErrorAction Stop)[0].Source
     $comparison = Join-Path $evidence 'comparison.json'
     $compared = Invoke-BonsaiNativeProcess -Executable $python -WorkingDirectory $evidence -TimeoutSeconds (Get-RowWorkAllowance) -LogPath (Join-Path $evidence 'comparison.txt') -ArgumentList @(
         '-B', (Join-Path $repo 'tools/row-parallel/compare.py'), '--serial', (Join-Path $evidence 'serial'),
