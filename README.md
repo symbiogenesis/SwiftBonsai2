@@ -80,8 +80,10 @@ and [local API contract](docs/broker-policy.md#public-request-contract).
 > implements explicit PTQ1 and the approved adapter. The bold row is its one-token
 > source diagnostic at scale 1.3: all **129 files / 39,504,384 logits and live-state
 > values** match the native reference byte for byte on the automatic ARM64 backend.
-> The entire device job completed within four minutes. Actual service acceptance,
-> scalar/explicit NEON and zero-scale controls, full-context/4K-output, adapter basis,
+> The entire device job completed within four minutes. Released Rust 0.1.8 also
+> passes a bounded [sandboxed startup, stream and cleanup smoke](docs/evidence/ptq1-native-service.json).
+> Broader service acceptance, scalar/explicit NEON and zero-scale controls,
+> full-context/4K-output, adapter basis,
 > quality and benefit qualification remain outstanding. PQ2 remains the app default.
 > The [release decision](docs/swift-memory.md#release-decision) preserves the earlier
 > runtime failures without rejecting the lossless packing format. See the

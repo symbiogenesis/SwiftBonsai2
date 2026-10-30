@@ -25,6 +25,15 @@ The first required-container X2 PTQ1/adapter attempt on 0.1.7
 readiness or streaming. The retained receipt does not establish whether weights
 loaded. The separate numerical checker result cannot qualify this service path.
 
+The [0.1.8 replacement attempt](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41020705958)
+passes exact model/adapter readiness and one scale-1.3 streamed request under the
+required native sandbox, followed by an empty owned Job and released listener.
+The four-token cap produces one reported output token, three visible UTF-8 bytes
+and a natural `stop`. The owner job completes in three minutes. Optional zero-scale
+and invalid-scale/reuse checks are skipped; restart, cancellation, full context/output,
+quality and resource/benefit qualification remain pending. This is an application
+smoke, not completed-answer or default-runtime acceptance.
+
 Version 0.1.8 uses the reviewed Windows read-consumer helper at Runner revision
 `abe04b4a8eff18388af96f0e75c8a8d180b81989`. Inside an actual AppContainer, it skips
 only the denied volume-root metadata check; the owner still validates ancestry,

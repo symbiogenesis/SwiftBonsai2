@@ -129,7 +129,9 @@
     }
   },
   "qualificationBoundary": {
-    "serverApplicationAcceptance": "pending-not-qualified",
+    "serverApplicationAcceptance": "bounded-smoke-passed-broader-qualification-pending",
+    "boundedApplicationSmokeRun": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41020705958",
+    "boundedApplicationSmokeReceipt": "docs/evidence/ptq1-native-service.json",
     "applicationAcceptanceEstablishedByThisReceipt": false,
     "fullPtq1ReleaseQualityApproved": false,
     "ptq1PromotedToDefault": false,
@@ -137,7 +139,7 @@
     "previousNumericalSmokeReceipt": "docs/evidence/ptq1-rust-smoke.json",
     "priorNumericalReleaseAndNegativeAttemptArchivesModified": false,
     "pending": [
-      "published server actual-model application acceptance",
+      "broader published-server lifecycle and application acceptance",
       "scalar and explicit NEON numerical comparisons",
       "no-adapter and loaded-at-zero exact identity controls",
       "nonzero adapter change control",

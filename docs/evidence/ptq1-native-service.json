@@ -1,9 +1,16 @@
 {
-  "schemaVersion": 1,
-  "kind": "published-native-ptq1-approved-adapter-service-attempt",
-  "status": "failed-initial-owner-startup",
-  "recordedAtUtc": "2026-10-30T06:48:45.703670+00:00",
-  "scope": "Preserved negative application-acceptance attempt against the exact published Rust 0.1.7 ARM64 server. This receipt establishes no stream, numerical parity or full profile qualification.",
+  "schemaVersion": 2,
+  "kind": "published-native-ptq1-approved-adapter-service-history",
+  "status": "bounded-native-service-smoke-passed-full-qualification-pending",
+  "recordedAtUtc": "2026-10-30T07:45:04.8201322+00:00",
+  "scope": "Preserved negative 0.1.7 startup attempt and successful published 0.1.8 required-sandbox PTQ1+approved-adapter smoke. The current attempt proves one scale-1.3 response and owned cleanup only; full PTQ1 release quality and default promotion remain unapproved.",
+  "currentAttempt": "41020705958",
+  "qualification": {
+    "boundedApplicationSmokePassed": true,
+    "fullPtq1ReleaseQualityApproved": false,
+    "defaultRuntimeQualified": false,
+    "promotionApproved": false
+  },
   "attempts": [
     {
       "runId": "41014805669",
@@ -163,6 +170,238 @@
         ],
         "numericalSmokeUnaffected": true,
         "failureMustRemainRetainedAfterAnyFuturePass": true
+      },
+      "archiveCollection": {
+        "modelRuns": 0,
+        "comparatorRuns": 0,
+        "publications": 0
+      }
+    },
+    {
+      "runId": "41020705958",
+      "runAttempt": 1,
+      "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41020705958",
+      "runnerRevision": "1540297e7656094c92922fd77f723b38948b612a",
+      "workflow": ".github/workflows/native-runtime-acceptance.yml",
+      "profile": "ptq1-adapter",
+      "test": "pinned_native_ptq1_adapter_starts_and_streams_within_device_budget",
+      "ciConclusion": "success",
+      "hostedPreparation": {
+        "jobId": 123947133661,
+        "conclusion": "success",
+        "startedAtUtc": "2026-10-30T07:32:31Z",
+        "completedAtUtc": "2026-10-30T07:36:44Z",
+        "modelExecuted": false,
+        "toolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+        "compilerIdentity": "rustc 1.101.0-nightly (1a2c4797e 2026-10-21)\nbinary: rustc\ncommit-hash: 1a2c4797ef2570bd76ca5dee34449169bc7dc457\ncommit-date: 2026-10-21\nhost: aarch64-pc-windows-msvc\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4",
+        "toolsSourceId": "50ab4edca73d7614f3aacc41e7abc3ad4832f05ec9c6f80a46772f96a84cad37",
+        "files": [
+          {
+            "Name": "native-model-acceptance.exe",
+            "Bytes": 2564608,
+            "Sha256": "4934ebc3a6aad382568a0c8eb45e425b6e77f766cde62b3258559e314992666b"
+          },
+          {
+            "Name": "bonsai-tools.exe",
+            "Bytes": 3167232,
+            "Sha256": "1200c89bf1fc5f38b30228232f33f77273662a5661240281e9277b8bd218386d"
+          }
+        ]
+      },
+      "ownerExecution": {
+        "jobId": 123948492730,
+        "conclusion": "success",
+        "apiStartedAtUtc": "2026-10-30T07:37:40Z",
+        "completedAtUtc": "2026-10-30T07:40:40Z",
+        "apiElapsedSeconds": 180.0,
+        "earliestStepStartedAtUtc": "2026-10-30T07:37:29Z",
+        "conservativeEarliestStepThroughJobEndSeconds": 191.0,
+        "timestampNote": "The job API starts after its first setup step; both durations are retained. These lifecycle durations are not performance benchmarks.",
+        "testElapsedSeconds": 147.3,
+        "wholeJobLimitSeconds": 300,
+        "aggregateCaseLimitSeconds": 240,
+        "cleanupHardWaitSeconds": 10,
+        "hostCpu": "Snapdragon(R) X2 Elite Extreme - X2E94100 - Qualcomm Oryon(TM) CPU",
+        "hostOs": "Microsoft Windows NT 10.0.26300.0",
+        "hostArchitecture": "Arm64"
+      },
+      "outcome": {
+        "phase": "completed",
+        "passed": true,
+        "verifiedReadinessObserved": true,
+        "modelAndApprovedAdapterReadinessObserved": true,
+        "streams": [
+          {
+            "finishReason": "stop",
+            "phase": "required-scale-1.3-stream",
+            "reportedCompletionTokens": 1,
+            "requestedCompletionCap": 4,
+            "requestedScale": 1.3,
+            "requestedScaleF64Bits": "3ff4cccccccccccd",
+            "visibleContentBytes": 3
+          }
+        ],
+        "requiredScale13StreamPassed": true,
+        "outputLimitNote": "The request cap was four tokens; the completed response reported one token, three visible UTF-8 bytes and finish_reason stop. No four-token output or quality claim follows.",
+        "scaleZeroExecuted": false,
+        "invalidScaleRejected": false,
+        "sameOwnerAfterInvalidScalePassed": false,
+        "optionalChecksStatus": "Skipped under the same aggregate budget and conservative cleanup reserve; remain pending.",
+        "initialCleanup": {
+          "completedOperations": 1,
+          "exit": "shutdown",
+          "failedOperations": 0,
+          "listenerReleased": true,
+          "ownedJobEmpty": true
+        }
+      },
+      "runtime": {
+        "release": "v0.1.8",
+        "sourceRevision": "fce300b94234c2dd70756dd4bbc33ea703848cb6",
+        "asset": {
+          "bytes": 3014310,
+          "filename": "prism-inference-0.1.8-aarch64-pc-windows-msvc.zip",
+          "sha256": "7e97e8a14778ff334df4b6f4cc41c1128ddafc48b02dd069617af7895a1d3487",
+          "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.8/prism-inference-0.1.8-aarch64-pc-windows-msvc.zip"
+        },
+        "server": {
+          "bytes": 1945088,
+          "name": "prism-inference-server.exe",
+          "sha256": "4251750cec9a86f672755ca4845d699890f2979a466e84386e8d246b04155f41"
+        }
+      },
+      "model": {
+        "bytes": 5946648928,
+        "sha256": "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5"
+      },
+      "adapter": {
+        "requested": true,
+        "receiptAdapterEnabled": true,
+        "bytes": 9682464,
+        "sha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42"
+      },
+      "containment": {
+        "requiredNativeSandbox": true,
+        "weakenedForAttempt": false,
+        "limitsChangedByThisReceipt": false,
+        "defaultsChangedByThisReceipt": false,
+        "ownedJobEmpty": true,
+        "listenerReleased": true,
+        "postRunRootConfirmation": {
+          "registeredEphemeralRunners": 0,
+          "namedModelProcesses": 0,
+          "ephemeralCredentialsRemoved": true,
+          "provenance": "Root post-run confirmation; not an independent execution observation by the archive collector."
+        }
+      },
+      "artifacts": [
+        {
+          "id": 12961508092,
+          "name": "native-acceptance-bin-41020705958-1",
+          "bytes": 2542759,
+          "sha256": "207d21c63edf05651fca4ce1069136878b2afd0d93707692c90b910ab8ec45d2",
+          "digestProvenance": "GitHub API; compressed artifact ZIP was not independently downloaded or rehashed. Only explicitly whitelisted receipt/log contents were downloaded."
+        },
+        {
+          "id": 12961238776,
+          "name": "tools-build-prepare-41020705958-1-aeb0f5d40e0d4e3baa1d453931bdaaf2",
+          "bytes": 1552,
+          "sha256": "62ed9d349c0e74fdc5bf44a00dfbda4a3a34caf4d898ad5fc9d8aa900d0c6c69",
+          "digestProvenance": "GitHub API; compressed artifact ZIP was not independently downloaded or rehashed. Only explicitly whitelisted receipt/log contents were downloaded."
+        },
+        {
+          "id": 12961218585,
+          "name": "native-runtime-acceptance-41020705958-1",
+          "bytes": 4600,
+          "sha256": "f4126e3e188070f55ea4bb3168b17cba8054cb3b5c6bb56e8d3652c82e145432",
+          "digestProvenance": "GitHub API; compressed artifact ZIP was not independently downloaded or rehashed. Only explicitly whitelisted receipt/log contents were downloaded."
+        },
+        {
+          "id": 12960774856,
+          "name": "native-runtime-startup-diagnostics-41020705958-1",
+          "bytes": 872,
+          "sha256": "4fbde8582d39dbb4462821ba2beda4086d6c9e8b7ca5adcbe30ae46604af3f26",
+          "digestProvenance": "GitHub API; compressed artifact ZIP was not independently downloaded or rehashed. Only explicitly whitelisted receipt/log contents were downloaded."
+        }
+      ],
+      "retainedReceipts": [
+        {
+          "path": "receipts/acceptance.json",
+          "bytes": 8203,
+          "sha256": "a766b9557d7bf4a2285ca1a6c5e3cd1a524a9c232fb0081bae3d86e506c1d764"
+        },
+        {
+          "path": "receipts/host.json",
+          "bytes": 725,
+          "sha256": "b1797bb19afdbc35da091790f12d1f2af357b990b104b6477e1d01f75b979f39"
+        },
+        {
+          "path": "receipts/hosted-build.json",
+          "bytes": 906,
+          "sha256": "c61ae155162fec1b1b3a0ffe846e6b385a6e9706f9a967782f1aaa6119197a3b"
+        },
+        {
+          "path": "diagnostics/startup-diagnostics.json",
+          "bytes": 919,
+          "sha256": "5706706f95a0fa254996394dfe82d6e384d9e2bd1dde704f044e7c06dd88e093"
+        },
+        {
+          "path": "diagnostics/startup-backend.stdout.txt",
+          "bytes": 26,
+          "sha256": "3fd3f5e62afac60156fe648a5cac1b58c8be90f7fd7fb828dc2f3096b891e883"
+        },
+        {
+          "path": "diagnostics/startup-backend.stderr.txt",
+          "bytes": 26,
+          "sha256": "3fd3f5e62afac60156fe648a5cac1b58c8be90f7fd7fb828dc2f3096b891e883"
+        }
+      ],
+      "sourceBindings": "source-bindings.json",
+      "startupDiagnostics": {
+        "ready": true,
+        "classification": "bounded-sanitized-logs-retained",
+        "startupFailureMarkers": [],
+        "sanitizedLogsContainOnlySessionHeaders": true,
+        "rawPrivateLogsOrCredentialsIncluded": false
+      },
+      "durableArchive": {
+        "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\native-ptq1-service-20261030\\attempt-41020705958",
+        "manifest": "manifest.json",
+        "bytes": 1886,
+        "sha256": "1f0e138baa0c039dec0a6bf9ba93465fc80289b90ea73ef0767508ecd2f97a59",
+        "fileCountExcludingManifest": 10,
+        "retainedBytesExcludingManifest": 25335,
+        "allCopyAndManifestDigestsVerified": true,
+        "privateBackendCredentialsIncluded": false,
+        "privateRawBackendLogsIncluded": false,
+        "sanitizedBackendLogsIncluded": true
+      },
+      "qualification": {
+        "boundedApplicationSmokePassed": true,
+        "applicationAcceptancePassed": true,
+        "applicationAcceptanceScope": "Only the explicitly selected bounded PTQ1+approved-adapter startup, one scale-1.3 stream and owned shutdown case.",
+        "fullApplicationAcceptancePassed": false,
+        "fullPtq1ReleaseQualityApproved": false,
+        "defaultRuntimeQualified": false,
+        "promotionApproved": false,
+        "requiredContainmentRelaxed": false,
+        "completeStateParityQualified": false,
+        "authoringBasisQualified": false,
+        "performanceQualified": false,
+        "qualityQualified": false,
+        "pendingIndependentGates": [
+          "scale-zero",
+          "invalid-scale-400-and-same-owner-reuse",
+          "signed-zero-and-scale-2",
+          "context-rejection-and-reuse",
+          "fresh-owner-restart",
+          "supplied-history",
+          "extended-history",
+          "stalled-consumer",
+          "full-context-and-output"
+        ],
+        "numericalSmokeUnaffected": true,
+        "earlierFailureMustRemainRetained": true
       },
       "archiveCollection": {
         "modelRuns": 0,
