@@ -119,6 +119,18 @@ and forced-DX12 previews were responsive and closed. This does not qualify every
 backend/device or inference performance. Evidence:
 `C:\Users\symbi\AppData\Local\Temp\Bonsai-WgpuRefine-2143bcc4c15b4cdfbfa4b483ea4d7937`.
 
+### Native inference source review
+
+The external Rust runtime pins optional `fearless_simd` 1.1.0 to source revision
+`b8a50a2c9ce03ee5384038ae8e6f45749662e2f6`, crate SHA-256
+`3296eb97d869113eaf148a6bdf01884e90b3828ad7ae2340b0f93362fc158611`, matching its
+Cargo.lock. Default `std` has no external dependencies; `libm`/the macro crate
+are unused, and there is no build script. The review covers slice/array bounds,
+widening, bitcasts, baseline NEON and the dependency's internal unsafe boundary;
+runtime source forbids unsafe code. See the
+[immutable source](https://github.com/linebender/fearless_simd/tree/b8a50a2c9ce03ee5384038ae8e6f45749662e2f6/fearless_simd),
+[SIMD contract](simd-plan.md) and [license terms](licensing.md#reviewed-dependencies).
+
 ## Direct dependency decisions
 
 | Dependency | Decision |
@@ -185,7 +197,9 @@ uses `fill_tape_padded` then `Tape::deserialize` (`padded-tape-serde`), avoiding
 Serde entry point's internal copy while timing immutable-body copy, padding,
 allocation, validation, serialization and destruction.
 
-The current optional `json-candidate` pins published **0.19.0**, upstream
+### Current candidate and pending gate
+
+The optional `json-candidate` now pins published **0.19.0**, upstream
 [`00a71f6`](https://github.com/simd-lite/simd-json/commit/00a71f6a931f7f365c23d7fc8d1f84ad693304d3),
 with Cargo.lock registry checksum; no submodule is required. It includes Unicode
 fixes and [PR #495](https://github.com/simd-lite/simd-json/pull/495) for
@@ -194,16 +208,20 @@ fixes and [PR #495](https://github.com/simd-lite/simd-json/pull/495) for
 Only package-version metadata differs from that commit. `Deserializer::from_tape`
 recovers/resets tape allocation while preserving borrowing/validation.
 
-`padded-tape-serde-reuse` reuses padded input, parser buffers and tape across
-requests. Cold timing includes scratch setup/destruction; reused timing excludes
-those but includes each request's copy, validation, canonical serialization,
-output destruction and decimal/error fallback. Explicit adapter scales and SIMD
-parse failures use production parsing: correctly rounded SIMD conversion can
-differ from serde_json's default without either being wrong. Supplemental cases
-include that cost; any >5% regression rejects overall qualification. Main-only
-`json-candidate.yml` runs correctness before the unchanged six-case plus scale
-5%/5% gates. **Both cold/reused screens must pass; their result remains pending.**
-A release update/build does not promote the parser or erase earlier losing results.
+`padded-tape-serde-reuse` reuses padded input, parser buffers and tape across requests:
+
+| Screen | Included work |
+| --- | --- |
+| Cold | Scratch setup/destruction plus all per-request work below. |
+| Reused | Immutable-body copy, validation, canonical serialization, output destruction and decimal/error fallback; excludes scratch setup/destruction. |
+
+Explicit adapter scales and SIMD parse failures fall back to production parsing:
+correctly rounded SIMD conversion can differ from serde_json's default without
+either being wrong. Supplemental scale cases include fallback cost. Main-only
+`json-candidate.yml` runs correctness before the original six-case and supplemental
+5%/5% gates; any case over 5% slower rejects qualification.
+**Both cold/reused screens must pass; results remain pending.** Updating/building
+the crate neither promotes it nor erases earlier losing results.
 The reviewed open [AVX-512 #475](https://github.com/simd-lite/simd-json/pull/475)
 targets x86; [#479](https://github.com/simd-lite/simd-json/pull/479)/[#477](https://github.com/simd-lite/simd-json/pull/477)
 concern cleanup/`no_std`, not evidence for changing this ARM64 decision.
@@ -240,8 +258,8 @@ All benchmarks run in CI only.
 The original audit passed format, Release Clippy/docs/build for `bonsai-artifacts`,
 `bonsai-broker`, `bonsai-tools`; named regressions covered archive paths, expansion
 budgets and hostile source names. actionlint 1.7.12 and YAML/event/permission checks
-passed. No local full suite/benchmark or performance gain was claimed; hosted
-validation was not dispatched in that local-only review. Raw audit/source/metadata/logs:
+passed. That review dispatched no hosted validation and ran no local full suite
+or benchmark; it claimed no performance gain. Raw audit/source/metadata/logs:
 `C:\Users\symbi\AppData\Local\Temp\Bonsai-DependencyAudit-b2037a17954346d992abd517055f1ecb`.
 
 ## Dependency refresh 2026-10-29

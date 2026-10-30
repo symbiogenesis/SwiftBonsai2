@@ -85,21 +85,15 @@ permission to ship a user's or the operating system's fonts. Review each font's
 own terms before adding it to a release. These font terms do not relicense the
 original application code.
 
-The [native Rust reference](https://github.com/symbiogenesis/prism-inference/blob/main/README.md) uses independently published
-GGUF/ternary/Prism crates. Its graph/scalar numerical code follows pinned Prism
-sources; notices are retained in
-[PRISM-LICENSE.txt](https://github.com/symbiogenesis/prism-inference/blob/main/PRISM-LICENSE.txt) and root NOTICE.
-Optional `fearless_simd` 1.1.0 is pinned to source revision
-`b8a50a2c9ce03ee5384038ae8e6f45749662e2f6`, crate SHA-256
-`3296eb97d869113eaf148a6bdf01884e90b3828ad7ae2340b0f93362fc158611`
-matching Cargo.lock. Its default `std` feature has no external dependencies;
-`libm`/the macro crate are unused, and it has no build script. The review covers
-slice/array bounds, widening, bitcasts, baseline NEON and its internal unsafe
-boundary; runtime source forbids unsafe code. See the
-[immutable source](https://github.com/linebender/fearless_simd/tree/b8a50a2c9ce03ee5384038ae8e6f45749662e2f6/fearless_simd)
-and [SIMD plan](simd-plan.md).
-
 ## External engines
+
+The [native Rust reference](https://github.com/symbiogenesis/prism-inference/blob/main/README.md)
+uses independently published GGUF/ternary/Prism crates. Its graph/scalar numerical
+code follows pinned Prism sources; preserve
+[PRISM-LICENSE.txt](https://github.com/symbiogenesis/prism-inference/blob/main/PRISM-LICENSE.txt)
+and root NOTICE. The optional `fearless_simd` pin, checksum and technical review
+live in the [dependency audit](dependency-audit.md#native-inference-source-review);
+its license options appear in the dependency table above.
 
 The [OxiBonsai source review](oxibonsai-reuse.md) pins v0.2.3 revision
 `1d10c48e14754ff6999158f8fa13c7c92b40b0dc`. Its selected GGUF/NEON sources
