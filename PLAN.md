@@ -111,7 +111,10 @@ identities; missing reports remain pending.
 - Audit comparison and reusable engine/kernel sources at immutable revisions,
   including model/adapter/tensor/transform identities, hardware assumptions,
   numerical evidence, licenses and notices. Keep PQ2, current-weight PTQ1 and
-  the Qwen reference as separate controls.
+  the Qwen reference as separate controls. The
+  [OxiBonsai review](docs/oxibonsai-reuse.md) records Apache-2.0 compatibility,
+  GGUF regression reuse and the Q1/TQ2 versus PQ2/PTQ1 arithmetic boundary;
+  any future kernel pilot belongs in Prism and still needs measured justification.
 - Qualify the pinned native Rust runtime over full-context/long-output Swift
   workloads, including scalar/NEON logits, complete live KV/recurrent/convolution
   state, exact prompts/token IDs, sampler/termination and lifecycle recovery.
@@ -396,6 +399,12 @@ References: [selection contract](docs/hardware-profiles.md),
   prefill bottlenecks through safe APIs or an audited isolated unsafe boundary.
   Expand boundary/tie/extreme/unaligned/malformed/rollback and non-ARM/absent-ISA
   fixtures; recheck dependency/license/code generation after relevant changes.
+- If the packed integer-dot dependency chain is material, screen the
+  [OxiBonsai two-accumulator idea](docs/oxibonsai-reuse.md#neon-retain-concepts-preserve-swift-arithmetic)
+  in Prism's existing `i32x4` loop: control versus two independent accumulators
+  on three real Swift shapes, retaining signed widening, exact integer dots,
+  Q8 groups and ordered floating scales/adds. Inspect register spills and
+  require target-device CI benefit before changing Runner's runtime pin.
 - Compare scalar Rust, optimized Rust and applicable Prism controls in paired
   target-device CI, separating hot/streaming weights, packing/dispatch, prefill,
   decode, task cost, allocations and sustained energy/thermal behavior. Admit

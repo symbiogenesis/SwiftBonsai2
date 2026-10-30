@@ -101,6 +101,12 @@ and [SIMD plan](simd-plan.md).
 
 ## External engines
 
+The [OxiBonsai source review](oxibonsai-reuse.md) pins v0.2.3 revision
+`1d10c48e14754ff6999158f8fa13c7c92b40b0dc`. Its selected GGUF/NEON sources
+declare Apache-2.0, compatible with Runner's original license. Preserve COOLJAPAN
+OU (Team Kitasan) attribution and identify modifications if importing source.
+This review does not add Oxi crates or approve its optional backend dependencies.
+
 | Artifact | Pinned source | Terms |
 | --- | --- | --- |
 | Reference llama.cpp | `36e36e63a54fc8f85b95e9c499a022b597e478dd` | [MIT](https://github.com/ggml-org/llama.cpp/blob/36e36e63a54fc8f85b95e9c499a022b597e478dd/LICENSE) |
