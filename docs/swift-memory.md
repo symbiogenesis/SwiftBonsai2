@@ -166,7 +166,7 @@ publisher Prism CPU server; direct app/broker launches use `--use-repacked-ptq1`
 artifact handle stays verified/held through owned teardown. Arbitrary paths, checkpoint
 substitutions and missing-file fallback are unsupported. The explicit experimental
 `-NativeEngine` route implements this selection and the approved adapter in Rust
-0.1.7; service implementation alone does not establish release qualification.
+0.1.8 prerelease; service implementation alone does not establish release qualification.
 
 Both packings retain the [CPU resource policy](#native-cpu-status), context, retry
 and recovery. Serialized savings alone do not lower admission or promote PTQ1.
