@@ -34,6 +34,10 @@ if ($AnalyzerModulePath) {
 if ($analyzer.Name -ne 'PSScriptAnalyzer' -or $analyzer.Version -ne $requiredAnalyzerVersion) {
     throw "Standards validation requires exactly PSScriptAnalyzer $requiredAnalyzerVersion."
 }
+# Exported-function rules resolve this cmdlet's parameters on parallel workers.
+# Initialize its lazy metadata on the caller thread first: PowerShell 7.6 can
+# otherwise throw inside CommandInfo.ResolveParameter during unchanged-file scans.
+$null = (Get-Command -Name Export-ModuleMember -CommandType Cmdlet -ErrorAction Stop).Parameters
 if (-not $DotNetPath) { $DotNetPath = (Get-Command -Name dotnet -CommandType Application -ErrorAction Stop).Source }
 if (-not [IO.Path]::IsPathFullyQualified($DotNetPath) -or $DotNetPath -match '%[^%]+%' -or
     -not [IO.File]::Exists($DotNetPath)) { throw 'DotNetPath must name an existing expanded absolute executable.' }
