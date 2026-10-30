@@ -27,8 +27,8 @@ runs an explicitly ignored case on the owner-managed Snapdragon X/X2 runner.
 The default case requires provisioned original PQ2, the pinned Rust release, native
 sandbox admission, unchanged limits and retained artifact handles. It tests supplied-history
 streaming, framed context rejection/reuse, shutdown, abandonment after content,
-and fresh restart. Only credential-free receipts are uploaded; protected key
-directories are excluded. Failure rejects without an unrestricted retry.
+and fresh restart. Uploads contain credential-free receipts and bounded sanitized
+worker logs; protected key directories are excluded. Failure rejects without an unrestricted retry.
 Ordinary Foundation/local runs never execute the ignored case.
 
 All owner-laptop diagnostics share a **five-minute total ceiling**, including
@@ -53,6 +53,16 @@ Credential-free progress receipts bind the complete runtime/model/adapter locks,
 terminal reason, reported usage when supplied and cleanup. Partial failure retains
 completed observations with `passed: false`. This does not establish complete-state
 parity, adapter authoring basis, performance, output quality or default promotion.
+
+Before runner temp cleanup, the workflow reads only `backend.stdout` and
+`backend.stderr` from at most eight immediate protected session directories, with
+a 64 KiB limit per log and strict UTF-8 decoding. It validates both actual keys
+for every session, redacts those values across all retained logs, checks again
+before publication, and suppresses logs when key validation fails. Only two fixed
+sanitized top-level log names and `startup-diagnostics.json` enter the upload
+selection. `host.json` retains fixed broker startup stage/error/exit-status markers;
+the acceptance test process exit code is recorded separately. No raw exception,
+argument or key content is copied into those classifications.
 
 | Workload | Required behavior | Evidence limit |
 | --- | --- | --- |
