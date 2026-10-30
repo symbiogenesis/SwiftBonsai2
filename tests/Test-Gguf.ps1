@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([void])]
-param([ValidateSet('All','Parser','Strings','Arrays','Artifact')][string]$Case = 'All')
+param([ValidateSet('All','Parser','Strings','Arrays','HostileDescriptors','Artifact')][string]$Case = 'All')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -238,6 +238,82 @@ if ($Case -in @('All','Arrays')) {
         $writer.Write([uint32]7); $writer.Write([uint64]1); $writer.Write([byte]1)
     } | Out-Null
     Assert-Failure { (Read-TestGguf $deepPath) } 'Boolean array validation bypassed the existing nesting limit.'
+}
+if ($Case -in @('All','HostileDescriptors')) {
+    # Independently authored fixtures inspired by OxiBonsai, Apache-2.0, copyright 2026
+    # COOLJAPAN OU (Team Kitasan), revision 1d10c48e14754ff6999158f8fa13c7c92b40b0dc.
+    # Paths relative to upstream crates/oxibonsai-core/:
+    # tests/fuzz_gguf.rs (oversized descriptor counts), tests/gguf_edge_cases.rs
+    # and src/gguf/streaming.rs (duplicate keys/names).
+    # Independent implementation: PowerShell serialization, Runner's pinned v3
+    # CLI, positive controls, exact parser diagnostics, and overlapping extents.
+    Import-Module (Join-Path $repo 'scripts/Bonsai.Native.psm1')
+    Import-Module (Join-Path $repo 'scripts/Bonsai.Gguf.psm1')
+    $descriptorTool = Resolve-GgufTool -GgufToolPath $env:BONSAI_GGUF_TOOL
+    function Get-DescriptorFixture {
+        [CmdletBinding()]
+        [OutputType([hashtable])]
+        param()
+        $memory = [IO.MemoryStream]::new()
+        $writer = [IO.BinaryWriter]::new($memory, [Text.Encoding]::UTF8, $true)
+        try {
+            $writer.Write([uint32]0x46554747); $writer.Write([uint32]3)
+            $writer.Write([uint64]2); $writer.Write([uint64]3)
+            Write-Key -Writer $writer -Key 'general.architecture' -Type 8; Write-TestGgufText $writer 'synthetic'
+            Write-Key -Writer $writer -Key 'test.first' -Type 4; $writer.Write([uint32]1)
+            $secondKey = $memory.Position + 8
+            Write-Key -Writer $writer -Key 'test.other' -Type 4; $writer.Write([uint32]2)
+            Write-TestGgufText $writer 'a.weight'; $writer.Write([uint32]1); $writer.Write([uint64]16)
+            $writer.Write([uint32]0); $firstOffset = $memory.Position; $writer.Write([uint64]0)
+            $secondName = $memory.Position + 8
+            Write-TestGgufText $writer 'b.weight'; $writer.Write([uint32]1); $writer.Write([uint64]16)
+            $writer.Write([uint32]0); $secondOffset = $memory.Position; $writer.Write([uint64]64)
+            while ($memory.Position % 32) { $writer.Write([byte]0) }
+            $writer.Write([byte[]]::new(128)); $writer.Flush()
+            return @{
+                Bytes = $memory.ToArray(); SecondKey = $secondKey; SecondName = $secondName
+                FirstOffset = $firstOffset; SecondOffset = $secondOffset
+            }
+        } finally { $writer.Dispose(); $memory.Dispose() }
+    }
+    $descriptorFixture = Get-DescriptorFixture
+    $descriptorPath = Join-Path $scratch 'descriptors.gguf'
+    [IO.File]::WriteAllBytes($descriptorPath, $descriptorFixture.Bytes)
+    $descriptorReport = Read-TestGguf $descriptorPath
+    Assert ($descriptorReport.MetadataCount -eq 3 -and $descriptorReport.TensorCount -eq 2 -and
+        $descriptorReport.Scalars['test.first'] -eq 1 -and $descriptorReport.Scalars['test.other'] -eq 2) 'Descriptor positive control failed.'
+    # Descriptor order need not match payload order; extent validation must sort.
+    $reversed = [byte[]]$descriptorFixture.Bytes.Clone()
+    [Array]::Copy([BitConverter]::GetBytes([uint64]64), 0, $reversed, $descriptorFixture.FirstOffset, 8)
+    [Array]::Copy([BitConverter]::GetBytes([uint64]0), 0, $reversed, $descriptorFixture.SecondOffset, 8)
+    $reversedPath = Join-Path $scratch 'reversed-descriptors.gguf'
+    [IO.File]::WriteAllBytes($reversedPath, $reversed)
+    Assert ((Read-TestGguf $reversedPath).TensorCount -eq 2) 'Nonoverlapping out-of-order descriptors were rejected.'
+    foreach ($mutation in @('tensor-count-limit','metadata-count-limit','tensor-count-overflow','metadata-count-overflow',
+        'duplicate-key','duplicate-name','partial-overlap','identical-extent')) {
+        $bytes = [byte[]]$descriptorFixture.Bytes.Clone()
+        $position = 0L; $replacement = [byte[]]@(); $diagnostic = ''
+        switch ($mutation) {
+            'tensor-count-limit' { $position = 8; $replacement = [BitConverter]::GetBytes([uint64]100001); $diagnostic = 'tensor/KV count exceeds inspection limit' }
+            'metadata-count-limit' { $position = 16; $replacement = [BitConverter]::GetBytes([uint64]10001); $diagnostic = 'tensor/KV count exceeds inspection limit' }
+            'tensor-count-overflow' { $position = 8; $replacement = [BitConverter]::GetBytes([uint64]::MaxValue); $diagnostic = 'tensor/KV count exceeds inspection limit' }
+            'metadata-count-overflow' { $position = 16; $replacement = [BitConverter]::GetBytes([uint64]::MaxValue); $diagnostic = 'tensor/KV count exceeds inspection limit' }
+            'duplicate-key' { $position = $descriptorFixture.SecondKey; $replacement = [Text.Encoding]::UTF8.GetBytes('test.first'); $diagnostic = 'duplicate metadata key' }
+            'duplicate-name' { $position = $descriptorFixture.SecondName; $replacement = [Text.Encoding]::UTF8.GetBytes('a.weight'); $diagnostic = 'duplicate tensor name' }
+            'partial-overlap' { $position = $descriptorFixture.SecondOffset; $replacement = [BitConverter]::GetBytes([uint64]32); $diagnostic = 'tensor payload extent is truncated or overlapping' }
+            'identical-extent' { $position = $descriptorFixture.SecondOffset; $replacement = [BitConverter]::GetBytes([uint64]0); $diagnostic = 'tensor payload extent is truncated or overlapping' }
+        }
+        [Array]::Copy($replacement, 0, $bytes, $position, $replacement.Length)
+        $badPath = Join-Path $scratch ($mutation + '.gguf')
+        [IO.File]::WriteAllBytes($badPath, $bytes)
+        # Hashing each mutated fixture ensures identity verification passes. A
+        # crash, timeout or setup failure must not count as parser rejection.
+        $arguments = @('inspect', '--model', $badPath, '--expected-bytes', [string]$bytes.Length,
+            '--expected-sha256', (Get-FileHash -LiteralPath $badPath -Algorithm SHA256).Hash, '--dialect', 'Stock')
+        $rejection = Invoke-BonsaiNativeProcess -Executable $descriptorTool -ArgumentList $arguments -WorkingDirectory $scratch -TimeoutSeconds 15
+        Assert ($rejection.ExitCode -eq 1 -and -not $rejection.StandardOutput -and
+            $rejection.StandardError.Contains('GGUF:') -and $rejection.StandardError.Contains($diagnostic)) "Expected bounded parser rejection for $mutation; received: $($rejection.StandardError)"
+    }
 }
 if ($Case -in @('All','Artifact')) {
     $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
