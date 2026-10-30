@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "rustSource": {
+    "commit": "7aca2251f09acb345d4afb53d5ce411f81017745",
+    "url": "https://github.com/symbiogenesis/prism-inference/archive/7aca2251f09acb345d4afb53d5ce411f81017745.zip",
+    "bytes": 4199748,
+    "sha256": "b84fc882cbc7ee95109bdca0fe4bfa2246c674d7c021612ce3a9311ad74ea719"
+  },
+  "buildFeatures": [
+    "parallel-rows"
+  ],
+  "qualificationScope": "One fixed original PQ2/approved-adapter forward step, serial and four row workers. No default or performance promotion."
+}
