@@ -74,6 +74,14 @@ bottom center of the transcript when newer messages are below the current view;
 selecting it resumes following the latest response. Reasoning is excluded from
 search. Focused
 interaction tests cover streaming selection, search and startup drafting.
+Find navigation reuses the highlighted text galley and paints the active result's
+underline from separately cached glyph runs. Only the active result retains
+underline geometry; moving between results does not rebuild all highlight
+sections or copy the message body. Wrapped rows, Unicode byte ranges and font
+fallback baselines use the galley's existing glyph geometry. Body, query,
+highlight-color, width and display-scale changes invalidate the relevant cache.
+Focused work-count checks cover saturated results and navigation; actual X2
+long-conversation frame delivery remains part of device acceptance.
 Toolkit support for non-Latin glyphs does not imply full
 bidirectional text editing or complete native-control accessibility parity.
 An insufficient-memory startup failure offers **Retry model** after RAM is

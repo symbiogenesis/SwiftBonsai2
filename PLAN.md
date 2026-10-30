@@ -71,8 +71,10 @@ no-go decision, including losing cases.
   Exercise the 512-message live transcript boundary during retry-heavy sessions,
   Find navigation and recovery. Matching, cached-result and combined count/byte
   eviction regressions remain model-free. Qualify fixed-size highlight layout
-  keys under saturated Find, navigation, query changes and response replacement;
-  their invalidation and layout-work regressions also remain model-free.
+  keys and separately cached active-result underlines under saturated Find,
+  navigation, Unicode wrapping, query changes and response replacement. Include
+  width/display-scale changes and selection preservation; their invalidation,
+  glyph-coverage and layout-work regressions also remain model-free.
 - Review Windows assistive-technology support, keyboard/focus behavior, scaling,
   high contrast, minimum-window layout and multilingual text input with the
   actual native application.

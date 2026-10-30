@@ -28,6 +28,9 @@ struct LayoutCache {
     // visible ranges are always the same prefix; eviction may change its count.
     highlights: HighlightKey,
     selected: Option<Range<usize>>,
+    // Only the active result owns underline geometry. Navigation reuses the
+    // highlighted galley instead of rebuilding every match's layout section.
+    underline: Vec<[egui::Pos2; 2]>,
     highlight_fill: Color32,
     highlight_color: Color32,
     reasoning_bytes: usize,
@@ -60,6 +63,9 @@ pub(super) struct Message {
     #[cfg(test)]
     #[serde(skip)]
     body_layouts: usize,
+    #[cfg(test)]
+    #[serde(skip)]
+    underline_layouts: usize,
     #[cfg(test)]
     #[serde(skip)]
     highlight_range_visits: std::cell::Cell<usize>,
@@ -157,6 +163,8 @@ impl Transcript {
             cache: None,
             #[cfg(test)]
             body_layouts: 0,
+            #[cfg(test)]
+            underline_layouts: 0,
             #[cfg(test)]
             highlight_range_visits: std::cell::Cell::new(0),
         });
@@ -498,7 +506,6 @@ impl Message {
                 cache.body_revision == self.body_revision
                     && cache.color == color
                     && cache.highlights == highlights
-                    && cache.selected.as_ref() == selected
                     && (matches.is_empty()
                         || (cache.highlight_fill == highlight_fill
                             && cache.highlight_color == highlight_color))
@@ -516,7 +523,29 @@ impl Message {
             {
                 self.body_layouts += 1;
             }
-            self.layout_body(ui, width, matches, selected)
+            self.layout_body(ui, width, matches)
+        };
+        let underline = if let Some(selected) = selected {
+            if body_unchanged
+                && let Some(cache) = &previous
+                && cache.selected.as_ref() == Some(selected)
+            {
+                // Move the geometry below, after the other cache fields are read.
+                None
+            } else {
+                #[cfg(test)]
+                {
+                    self.underline_layouts += 1;
+                }
+                Some(active_underline(
+                    &self.body,
+                    &body,
+                    selected,
+                    pixels_per_point,
+                ))
+            }
+        } else {
+            Some(Vec::new())
         };
         let reasoning = if !self.show_reasoning || self.reasoning.is_empty() {
             None
@@ -543,6 +572,8 @@ impl Message {
             body_revision: self.body_revision,
             highlights,
             selected: selected.cloned(),
+            underline: underline
+                .unwrap_or_else(|| previous.map_or_else(Vec::new, |cache| cache.underline)),
             highlight_fill,
             highlight_color,
             reasoning_bytes: self.reasoning.len(),
@@ -556,7 +587,6 @@ impl Message {
         ui: &egui::Ui,
         width: f32,
         matches: &[search::Match],
-        selected: Option<&Range<usize>>,
     ) -> Arc<egui::Galley> {
         let mut job = egui::text::LayoutJob::default();
         job.wrap.max_width = width;
@@ -574,9 +604,6 @@ impl Message {
             let mut highlight = normal.clone();
             highlight.background = ui.visuals().selection.bg_fill;
             highlight.color = ui.visuals().selection.stroke.color;
-            if selected == Some(range) {
-                highlight.underline = egui::Stroke::new(2.0, highlight.color);
-            }
             job.append(&self.body[range.clone()], 0.0, highlight);
             previous = range.end;
         }
@@ -651,6 +678,12 @@ impl Message {
             } else if !self.body.is_empty() {
                 let response =
                     child.add(egui::Label::new(Arc::clone(&cache.body)).selectable(true));
+                for line in &cache.underline {
+                    child.painter().line_segment(
+                        line.map(|point| point + response.rect.min.to_vec2()),
+                        egui::Stroke::new(2.0, cache.highlight_color),
+                    );
+                }
                 if let Some(target) = target {
                     let characters = self.body[..target].chars().count();
                     found_rect = Some(
@@ -682,6 +715,50 @@ impl Message {
         }
         found_rect
     }
+}
+
+// Match byte offsets map to Unicode scalar indices in the galley. Retain only
+// the selected glyph runs, splitting wrapped rows and font fallback baselines
+// in the same way as epaint's TextFormat underline. Newlines own no glyph.
+fn active_underline(
+    body: &str,
+    galley: &egui::Galley,
+    selected: &Range<usize>,
+    pixels_per_point: f32,
+) -> Vec<[egui::Pos2; 2]> {
+    let start = body[..selected.start].chars().count();
+    let end = start + body[selected.clone()].chars().count();
+    let mut offset = 0;
+    let mut lines: Vec<[egui::Pos2; 2]> = Vec::new();
+    let stroke = egui::Stroke::new(2.0, Color32::PLACEHOLDER);
+    for row in &galley.rows {
+        if offset >= end {
+            break;
+        }
+        let first = start.saturating_sub(offset).min(row.glyphs.len());
+        let last = end.saturating_sub(offset).min(row.glyphs.len());
+        let mut run: Option<[egui::Pos2; 2]> = None;
+        for glyph in &row.glyphs[first..last] {
+            let mut y = glyph.logical_rect().bottom();
+            stroke.round_center_to_pixel(pixels_per_point, &mut y);
+            let right = egui::pos2(glyph.max_x(), y) + row.pos.to_vec2();
+            if let Some(line) = &mut run
+                && line[0].y.to_bits() == right.y.to_bits()
+            {
+                line[1] = right;
+            } else {
+                if let Some(line) = run.take() {
+                    lines.push(line);
+                }
+                run = Some([egui::pos2(glyph.pos.x, y) + row.pos.to_vec2(), right]);
+            }
+        }
+        if let Some(line) = run {
+            lines.push(line);
+        }
+        offset += row.char_count_including_newline().0;
+    }
+    lines
 }
 
 #[cfg(test)]
