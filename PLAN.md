@@ -196,8 +196,9 @@ identities and leaves missing evidence pending.
 - Qualify [native-owned VoiceDesign
   references](docs/streaming-resources.md#native-speech-generation-and-streaming)
   through Design teardown and Base extraction on first use, profile changes and
-  bootstrap failure. Include Rust Philox semantic and predictor sampling in
-  actual-model, listening and resource acceptance; exact vectors/C++ bit comparisons are
+  bootstrap failure. Include Rust parameter defaults, CPU thread selection and
+  Philox semantic and predictor sampling in actual-model, listening and resource
+  acceptance; exact vectors/C++ field and bit comparisons are
   insufficient.
 - Qualify chat alone, warm TTS and overlap with a small shared thread-budget set: UI
   frames, audio continuity, useful-answer time, sustained memory and heat. Check cold
