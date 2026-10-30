@@ -219,9 +219,6 @@ fn prepare(mut request: Request, native_host: bool) -> crate::Result<Plan> {
     if request.no_tts && request.tts_key_file.is_some() {
         return Err("NoTts cannot be combined with TtsKeyFile.".into());
     }
-    if request.native_engine && (!request.no_abliterate_lora || request.use_repacked_ptq1) {
-        return Err("NativeEngine requires NoAbliterateLora and original PQ2 weights; Rust adapter and repacked PTQ1 integration remain unqualified.".into());
-    }
     validate_paths(&request)?;
     let own_canary = request.canary_key_file.is_none() && !request.no_speech_models;
     let own_tts = request.tts_key_file.is_none() && !request.no_tts && !request.no_speech_models;
