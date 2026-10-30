@@ -394,20 +394,8 @@ fn strict_json_and_wave_validation_rejects_untrusted_payloads() {
         bytes[offset] ^= 1;
         assert!(wave::decode(&bytes).is_err());
     }
-    assert!(
-        wave::header(&Audio {
-            samples: vec![f32::NAN],
-            sample_rate: 24_000
-        })
-        .is_err()
-    );
-    assert!(
-        wave::header(&Audio {
-            samples: vec![0.0],
-            sample_rate: 16_000
-        })
-        .is_err()
-    );
+    assert!(wave::header(&[f32::NAN], 24_000).is_err());
+    assert!(wave::header(&[0.0], 16_000).is_err());
 }
 
 #[test]
@@ -521,7 +509,7 @@ fn watchdog_terminates_only_its_companion_on_disconnect_extra_data_and_deadline(
     Ok(())
 }
 
-struct CompletionFake;
+struct CompletionFake(bool);
 
 impl Engine for CompletionFake {
     fn kind(&self) -> Kind {
@@ -531,6 +519,13 @@ impl Engine for CompletionFake {
         true
     }
     fn infer(&mut self, _: Request<'_>) -> io::Result<Output> {
+        self.0 = !self.0;
+        if self.0 {
+            return Ok(Output::Waveform {
+                samples: Box::new(vec![0.0; 4]),
+                sample_rate: 24_000,
+            });
+        }
         Ok(Output::Audio(Audio {
             samples: vec![0.0; 4],
             sample_rate: 24_000,
@@ -562,7 +557,7 @@ fn completed_response_child() -> io::Result<()> {
     let pending = ready.with_extension("pending");
     std::fs::write(&pending, port.to_string())?;
     std::fs::rename(pending, ready)?;
-    let mut engine = CompletionFake;
+    let mut engine = CompletionFake(false);
     for _ in 0..COMPLETED_REQUESTS {
         let (mut peer, _) = listener.accept()?;
         http::handle(&mut peer, port, &KEY, &mut engine);
@@ -708,6 +703,53 @@ fn protected_credential_keeps_a_read_handle_that_denies_writes() -> io::Result<(
 }
 
 struct AudioFake(Option<Audio>);
+
+struct WaveformFake(Option<Audio>);
+
+impl Engine for WaveformFake {
+    fn kind(&self) -> Kind {
+        Kind::QwenTts
+    }
+
+    fn infer(&mut self, _: Request<'_>) -> io::Result<Output> {
+        let audio = self
+            .0
+            .take()
+            .ok_or_else(|| io::Error::other("Waveform already taken."))?;
+        Ok(Output::Waveform {
+            samples: Box::new(audio.samples),
+            sample_rate: audio.sample_rate,
+        })
+    }
+}
+
+#[test]
+fn native_owned_and_vector_waveforms_emit_identical_complete_http_responses() -> io::Result<()> {
+    let body = speech();
+    let audio = || Audio {
+        samples: vec![-2.0, -1.0, -0.5, -0.0, 0.0, 0.5, 1.0, 2.0],
+        sample_rate: 24_000,
+    };
+    let headers = [
+        ("Content-Type", "application/json"),
+        ("Content-Length", &body.len().to_string()),
+    ];
+    let owned = exchange_engine(
+        "POST /v1/audio/speech",
+        &headers,
+        &body,
+        WaveformFake(Some(audio())),
+    )?;
+    let vector = exchange_engine(
+        "POST /v1/audio/speech",
+        &headers,
+        &body,
+        AudioFake(Some(audio())),
+    )?;
+    assert!(owned.starts_with(b"HTTP/1.1 200"));
+    assert_eq!(owned, vector);
+    Ok(())
+}
 
 impl Engine for AudioFake {
     fn kind(&self) -> Kind {

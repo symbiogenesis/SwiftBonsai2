@@ -86,6 +86,18 @@ pub enum Output {
     Transcript(String),
     /// Complete voice-design waveform with no reference recording or preset.
     Audio(Audio),
+    /// Complete waveform retained by its original allocation owner.
+    ///
+    /// Native engines can keep their matching release guard here instead of
+    /// copying the full clip into a Rust vector. The service borrows samples
+    /// only after inference returns, validates the complete clip before sending
+    /// headers, and drops this owner after the response or any failure.
+    Waveform {
+        /// Immutable complete samples, owned for the lifetime of this object.
+        samples: Box<dyn AsRef<[f32]>>,
+        /// Output must use the fixed 24,000 Hz service rate.
+        sample_rate: u32,
+    },
 }
 
 /// An already loaded native model implementation.

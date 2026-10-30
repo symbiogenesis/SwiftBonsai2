@@ -66,14 +66,12 @@ impl bonsai_speech_service::Engine for NativeEngine {
         };
         let audio = self
             .synthesizer
-            .synthesize(text, voice_description)
+            .synthesize_owned(text, voice_description)
             .map_err(|_| io::Error::other("Native synthesis failed."))?;
-        Ok(bonsai_speech_service::Output::Audio(
-            bonsai_speech_service::Audio {
-                samples: audio.samples,
-                sample_rate: audio.sample_rate,
-            },
-        ))
+        Ok(bonsai_speech_service::Output::Waveform {
+            samples: Box::new(audio),
+            sample_rate: bonsai_speech_tts::SAMPLE_RATE,
+        })
     }
 }
 

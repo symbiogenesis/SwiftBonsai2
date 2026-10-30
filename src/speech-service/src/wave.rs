@@ -1,6 +1,6 @@
 //! Complete canonical PCM input and output; never opens an audio device.
 
-use crate::{Audio, http::Error};
+use crate::http::Error;
 
 pub(super) fn decode(bytes: &[u8]) -> Result<Vec<f32>, Error> {
     let pcm = bonsai_audio::mono_pcm16_data(bytes, 16_000, 16_000 * 30)
@@ -20,13 +20,12 @@ pub(super) const PCM_BYTES: usize = PCM_SAMPLES * 2;
 pub(super) const MAX_SAMPLES: usize = 2_880_000;
 
 // Validate all output before a caller can commit successful response headers.
-pub(super) fn header(audio: &Audio) -> Result<[u8; 44], Error> {
-    if audio.sample_rate != 24_000
-        || bonsai_audio::finite_sample_count(&audio.samples, 0, MAX_SAMPLES).is_none()
+pub(super) fn header(samples: &[f32], sample_rate: u32) -> Result<[u8; 44], Error> {
+    if sample_rate != 24_000 || bonsai_audio::finite_sample_count(samples, 0, MAX_SAMPLES).is_none()
     {
         return Err(Error::new(502, "invalid_audio_output"));
     }
-    bonsai_audio::mono_pcm16_header(audio.sample_rate, audio.samples.len())
+    bonsai_audio::mono_pcm16_header(sample_rate, samples.len())
         .ok_or_else(|| Error::new(502, "invalid_audio_output"))
 }
 
@@ -50,7 +49,8 @@ pub(super) fn pcm(sample: f32) -> i16 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Audio, header, pcm_into};
+    use super::{header, pcm_into};
+    use crate::Audio;
 
     #[test]
     fn pcm_bytes_preserve_clipping_rounding_and_signed_zero() {
@@ -75,7 +75,7 @@ mod tests {
             samples: vec![0.0; 2_880_000],
             sample_rate: 24_000,
         };
-        let bytes = header(&audio).ok();
+        let bytes = header(&audio.samples, audio.sample_rate).ok();
         assert_eq!(
             bytes.as_ref().map(|bytes| &bytes[..4]),
             Some(b"RIFF".as_slice())
@@ -89,13 +89,13 @@ mod tests {
             Some(5_760_000_u32.to_le_bytes().as_slice())
         );
         audio.samples[2_879_999] = f32::NAN;
-        assert!(header(&audio).is_err());
+        assert!(header(&audio.samples, audio.sample_rate).is_err());
         audio.samples[2_879_999] = f32::INFINITY;
-        assert!(header(&audio).is_err());
+        assert!(header(&audio.samples, audio.sample_rate).is_err());
         audio.samples[2_879_999] = 0.0;
         audio.samples.push(0.0);
-        assert!(header(&audio).is_err());
+        assert!(header(&audio.samples, audio.sample_rate).is_err());
         audio.samples.clear();
-        assert!(header(&audio).is_err());
+        assert!(header(&audio.samples, audio.sample_rate).is_err());
     }
 }

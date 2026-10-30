@@ -103,8 +103,12 @@ no-go decision, including losing cases.
   speech/chat overlap with recycled PCM playback buffers and WinMM descriptors,
   including segment changes, Stop, driver refusal and recovery trials.
   Include borrowed-PCM microphone uploads without full canonical-WAV or multipart
-  copies, retaining exact upload framing and cancellation. Qualify shared buffered
-  speech response intake with direct final-storage reads, including maximum-size
+  copies, retaining exact upload framing and cancellation. Qualify complete-WAV
+  synthesis that retains the native float allocation through PCM conversion and
+  HTTP writes without a full Rust waveform copy, including invalid-output
+  rejection, failed writes, Stop and speech/chat overlap. Pointer/release and
+  byte-identity regressions remain model-free. Qualify shared buffered speech
+  response intake with direct final-storage reads, including maximum-size
   WAV fallback, partial responses and cancellation. Qualify broker request intake
   that reuses authorized header storage and fills large bodies in final spare
   capacity, including exact declared-length reads, truncation and cancellation;

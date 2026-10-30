@@ -222,11 +222,24 @@ impl Context {
         self.synthesize_audio(&clone_params(text, &reference.0))
     }
 
+    pub(super) fn synthesize_owned(
+        &mut self,
+        text: &CStr,
+        reference: &VoiceReference,
+    ) -> io::Result<NativeSamples> {
+        self.generate_audio(&clone_params(text, &reference.0))?
+            .into_samples()
+    }
+
+    fn synthesize_audio(&mut self, params: &qwen::TtsParams) -> io::Result<Vec<f32>> {
+        self.generate_audio(params)?.copy_samples()
+    }
+
     #[allow(
         ffi_unwind_calls,
         reason = "The potentially throwing Qwen call is contained by abort_on_unwind."
     )]
-    fn synthesize_audio(&mut self, params: &qwen::TtsParams) -> io::Result<Vec<f32>> {
+    fn generate_audio(&mut self, params: &qwen::TtsParams) -> io::Result<NativeAudio> {
         let mut audio = NativeAudio(RawAudio::default());
         // SAFETY: The exclusive context borrow prevents simultaneous calls.
         // All strings and reference buffers borrowed by params survive this
@@ -238,7 +251,7 @@ impl Context {
         if status != 0 {
             return Err(io::Error::other("Native Qwen speech synthesis failed."));
         }
-        audio.copy_samples()
+        Ok(audio)
     }
 
     #[allow(
@@ -339,8 +352,24 @@ impl Drop for Context {
 
 struct NativeAudio(RawAudio);
 
+/// An immutable validated allocation, released by its original native allocator.
+pub(super) struct NativeSamples {
+    audio: NativeAudio,
+    count: usize,
+}
+
+impl AsRef<[f32]> for NativeSamples {
+    fn as_ref(&self) -> &[f32] {
+        // SAFETY: into_samples validated this independent malloc allocation's
+        // pointer, alignment, count, format and finite values before constructing
+        // this owner. Neither the allocation nor metadata can be mutated again.
+        // Its native release guard outlives this borrow and frees it exactly once.
+        unsafe { std::slice::from_raw_parts(self.audio.0.samples, self.count) }
+    }
+}
+
 impl NativeAudio {
-    fn copy_samples(&self) -> io::Result<Vec<f32>> {
+    fn samples(&self) -> io::Result<&[f32]> {
         let count = usize::try_from(self.0.sample_count).map_err(|_| invalid_audio())?;
         if count == 0
             || count > super::MAX_SAMPLES
@@ -354,12 +383,22 @@ impl NativeAudio {
         // SAFETY: A successful pinned C API call returns an aligned allocation
         // of sample_count f32 elements owned by this guard. Count is positive,
         // bounded to 120 seconds and far below isize::MAX. The allocation stays
-        // alive while copied and is freed only when this guard drops afterward.
+        // alive throughout this borrow and is freed only when this guard drops.
         let source = unsafe { std::slice::from_raw_parts(self.0.samples, count) };
         super::sample_count(source, 0).ok_or_else(invalid_audio)?;
+        Ok(source)
+    }
+
+    fn into_samples(self) -> io::Result<NativeSamples> {
+        let count = self.samples()?.len();
+        Ok(NativeSamples { audio: self, count })
+    }
+
+    fn copy_samples(&self) -> io::Result<Vec<f32>> {
+        let source = self.samples()?;
         let mut samples = Vec::new();
         samples
-            .try_reserve_exact(count)
+            .try_reserve_exact(source.len())
             .map_err(|_| io::Error::other("Could not allocate the bounded speech audio buffer."))?;
         samples.extend_from_slice(source);
         Ok(samples)
@@ -390,6 +429,64 @@ mod tests {
     use std::{error::Error, ffi::CString, fs, io, process::Command, time::SystemTime};
 
     type TestResult = Result<(), Box<dyn Error>>;
+
+    // The pinned qt_audio_free uses the same linked UCRT free function.
+    unsafe extern "C" {
+        fn malloc(size: usize) -> *mut std::ffi::c_void;
+    }
+
+    fn native_audio(samples: &[f32]) -> io::Result<NativeAudio> {
+        let sample_count = i32::try_from(samples.len()).map_err(io::Error::other)?;
+        // SAFETY: Request a bounded nonzero allocation; malloc returns null on
+        // failure or suitably aligned storage for this many f32 values.
+        let storage = unsafe { malloc(size_of_val(samples)) };
+        let storage = std::ptr::NonNull::new(storage)
+            .ok_or_else(|| io::Error::other("Synthetic native allocation failed."))?;
+        let audio = NativeAudio(qwen::RawAudio {
+            samples: storage.as_ptr().cast(),
+            sample_count,
+            sample_rate: 24_000,
+            channels: 1,
+        });
+        // SAFETY: The distinct malloc allocation owns samples.len() writable
+        // f32 slots. The NativeAudio guard now guarantees its matching release.
+        unsafe { std::ptr::copy_nonoverlapping(samples.as_ptr(), audio.0.samples, samples.len()) };
+        Ok(audio)
+    }
+
+    #[test]
+    fn complete_native_waveform_retains_original_allocation_and_validates_before_borrow()
+    -> TestResult {
+        let expected = [0.25, -0.5, 1.0];
+        let audio = native_audio(&expected)?;
+        let storage = audio.0.samples.cast_const();
+        let samples = audio.into_samples()?;
+        assert_eq!(samples.as_ref().as_ptr(), storage);
+        assert_eq!(samples.as_ref(), expected);
+        assert_eq!(samples.as_ref().as_ptr(), storage);
+        drop(samples); // Calls the actual pinned qt_audio_free on this allocation.
+
+        for case in 0..6 {
+            let mut audio = native_audio(&expected)?;
+            match case {
+                0 => audio.0.sample_count = 0,
+                1 => audio.0.sample_count = -1,
+                2 => audio.0.sample_count = i32::MAX,
+                3 => audio.0.sample_rate = 16_000,
+                4 => audio.0.channels = 2,
+                _ => {
+                    // SAFETY: This guard exclusively owns the initialized three
+                    // f32 allocation. Mutate a sample before validation only.
+                    unsafe { audio.0.samples.wrapping_add(2).write(f32::NAN) };
+                }
+            }
+            assert_eq!(
+                audio.into_samples().err().map(|error| error.kind()),
+                Some(io::ErrorKind::InvalidData)
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn every_utterance_borrows_the_same_speaker_codes_and_reference_transcript() {

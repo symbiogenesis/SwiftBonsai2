@@ -130,6 +130,31 @@ generation; disconnects, rejected samples and suspected token truncation close
 the stream without that terminator. Neither PCM nor WAV extends the accepted
 model, language, plain-text or voice-description contract.
 
+Complete WAV requests retain the native `qt_audio` allocation through bounded
+PCM conversion and HTTP writes. `Synthesizer::synthesize_owned` validates the
+whole waveform before returning an immutable owner; the service borrows its
+samples and the matching `qt_audio_free` releases them after success, validation
+failure or a failed write. The original vector-returning `synthesize` API remains
+available. In pinned `pipeline-tts.cpp`, `fill_qt_audio` makes an independent
+`malloc` allocation; `qwen.cpp` releases that allocation with `free`. No model
+context owns or mutates it after synchronous synthesis returns, and Rust never
+adopts it as a vector.
+
+This removes one full native-to-Rust float copy and its overlapping allocation
+from complete WAV responses. The unchanged native token-truncation ceiling
+admits at most 2,876,159 samples, or 11,504,636 bytes (about 11 MiB) for that copy.
+This is a storage bound, not a measured process-memory saving. The service still
+validates complete finite mono 24 kHz audio before successful headers, retains
+one bounded PCM conversion buffer and disarms/joins its watchdog after inference
+returns and before response writes. Streaming PCM, voice conditioning, sampling,
+admission and reserves are unchanged.
+
+Model-free regressions retain the original sample pointer, exercise the actual
+pinned native release on success and invalid output, check exactly one owner
+drop after validation/write failures, and compare complete HTTP/WAV bytes from
+both storage variants. Actual X2 peak memory, latency, long speech/chat overlap
+and independent listening remain target-device CI work under `PLAN.md`.
+
 `--quantization Q8_0` selects the default compiled artifact lock.
 `--quantization Q4_K_M` explicitly selects the separate reviewed four-bit talker
 evaluation lock with the same VoiceDesign/Base checkpoints and Q8 codec. It does not

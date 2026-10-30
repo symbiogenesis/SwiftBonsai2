@@ -43,6 +43,18 @@ pub struct Audio {
     pub sample_rate: u32,
 }
 
+/// Complete validated mono 24 kHz samples retained in their native allocation.
+///
+/// Borrow with [`AsRef::as_ref`]. The matching native allocator releases the
+/// waveform on drop; no Rust vector or copy of the full clip is retained.
+pub struct Waveform(native::NativeSamples);
+
+impl AsRef<[f32]> for Waveform {
+    fn as_ref(&self) -> &[f32] {
+        self.0.as_ref()
+    }
+}
+
 /// Exclusive ownership of one native model and its selected reusable voice.
 ///
 /// `VoiceDesign` creates a fixed reference once per profile. Base synthesis then
@@ -171,6 +183,24 @@ impl Synthesizer {
             samples: audio,
             sample_rate: SAMPLE_RATE,
         })
+    }
+
+    /// Generate a complete clip while retaining its original native allocation.
+    ///
+    /// The returned owner is independent of the loaded model and can be borrowed
+    /// during bounded PCM conversion without copying the full float waveform.
+    ///
+    /// # Errors
+    /// Returns the same input, inference and complete-output validation failures
+    /// as [`Self::synthesize`], before returning any samples.
+    pub fn synthesize_owned(&mut self, text: &str, voice: &str) -> io::Result<Waveform> {
+        let text = bounded_input(text, MAX_TEXT)?;
+        let voice = bounded_input(voice, MAX_VOICE)?;
+        let voice = self.voice(&voice)?;
+        voice
+            .context
+            .synthesize_owned(&text, &voice.reference)
+            .map(Waveform)
     }
 
     /// Generate mono 24 kHz chunks while inference is still running.

@@ -122,13 +122,32 @@ fn respond(
             }
             send(peer, 200, "application/json", body.as_bytes())
         }
-        (Kind::QwenTts, Ok(Output::Audio(audio))) => {
-            let header = wave::header(&audio)?;
-            send_wave(peer, &audio.samples, &header)
+        (Kind::QwenTts, Ok(audio @ (Output::Audio(_) | Output::Waveform { .. }))) => {
+            return complete_wave(audio, |samples, header| send_wave(peer, samples, header));
         }
         _ => return Err(Error::new(502, "model_failure")),
     }
     .map_err(|_| Error::new(0, "response_failed"))
+}
+
+fn complete_wave(
+    audio: Output,
+    send: impl FnOnce(&[f32], &[u8; 44]) -> io::Result<()>,
+) -> Result<(), Error> {
+    let (samples, sample_rate) = match &audio {
+        Output::Audio(audio) => (audio.samples.as_slice(), audio.sample_rate),
+        Output::Waveform {
+            samples,
+            sample_rate,
+        } => (samples.as_ref().as_ref(), *sample_rate),
+        Output::Transcript(_) => return Err(Error::new(502, "model_failure")),
+    };
+    let header = wave::header(samples, sample_rate)?;
+    // Both storage owners stay alive until bounded conversion/writes finish.
+    // Returning through validation or I/O errors releases the same owner.
+    let result = send(samples, &header).map_err(|_| Error::new(0, "response_failed"));
+    drop(audio);
+    result
 }
 
 fn stream(
@@ -527,8 +546,79 @@ mod intake_tests {
 
 #[cfg(test)]
 mod pcm_tests {
-    use super::{PcmFrame, wave, write_pcm};
-    use std::io;
+    use super::{Error, Output, PcmFrame, complete_wave, wave, write_pcm};
+    use std::{cell::Cell, io, rc::Rc};
+
+    struct SampleOwner {
+        samples: Vec<f32>,
+        drops: Rc<Cell<usize>>,
+        borrows: Rc<Cell<usize>>,
+    }
+
+    impl AsRef<[f32]> for SampleOwner {
+        fn as_ref(&self) -> &[f32] {
+            assert_eq!(self.drops.get(), 0);
+            self.borrows.set(self.borrows.get() + 1);
+            &self.samples
+        }
+    }
+
+    impl Drop for SampleOwner {
+        fn drop(&mut self) {
+            self.drops.set(self.drops.get() + 1);
+        }
+    }
+
+    #[test]
+    fn complete_waveform_borrows_original_storage_and_releases_on_validation_or_write_failure() {
+        for case in 0..7 {
+            let drops = Rc::new(Cell::new(0));
+            let borrows = Rc::new(Cell::new(0));
+            let samples = match case {
+                1 => vec![0.0, f32::NAN],
+                2 => vec![0.0, f32::INFINITY],
+                3 => vec![],
+                4 => vec![0.0; wave::MAX_SAMPLES + 1],
+                _ => vec![-1.0, 0.0, 0.5, 1.0],
+            };
+            let storage = samples.as_ptr();
+            let audio = Output::Waveform {
+                samples: Box::new(SampleOwner {
+                    samples,
+                    drops: Rc::clone(&drops),
+                    borrows: Rc::clone(&borrows),
+                }),
+                sample_rate: if case == 5 { 16_000 } else { 24_000 },
+            };
+            let mut writes = 0;
+            let result = complete_wave(audio, |samples, header| {
+                writes += 1;
+                assert_eq!(drops.get(), 0, "Original sample owner was released early");
+                assert_eq!(samples.as_ptr(), storage, "A full waveform copy was made");
+                assert_eq!(&header[40..], &8_u32.to_le_bytes());
+                if case == 6 {
+                    return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Closed fixture"));
+                }
+                let mut bytes = [0; 8];
+                assert_eq!(
+                    wave::pcm_into(samples, &mut bytes),
+                    &[1, 128, 0, 0, 0, 64, 255, 127]
+                );
+                Ok(())
+            });
+            assert_eq!(borrows.get(), 1);
+            assert_eq!(drops.get(), 1);
+            assert_eq!(writes, usize::from(case == 0 || case == 6));
+            assert_eq!(
+                result,
+                match case {
+                    0 => Ok(()),
+                    6 => Err(Error::new(0, "response_failed")),
+                    _ => Err(Error::new(502, "invalid_audio_output")),
+                }
+            );
+        }
+    }
 
     #[test]
     fn complete_pcm_reuses_one_bounded_buffer_and_stops_on_write_failure() -> io::Result<()> {
