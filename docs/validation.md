@@ -6,6 +6,13 @@ belong to [Prism](https://github.com/symbiogenesis/prism-inference/blob/main/doc
 **Local builds, Release analyzers and focused named tests are allowed. Complete
 suites and every benchmark run only in CI; do not recreate a full suite with local filters.**
 
+Owner-laptop diagnostics, model qualification and benchmarks have a five-minute
+total maximum, preferably less, including preparation, loading, comparison and
+cleanup. The same limit applies to self-hosted CI; its job timeout is five minutes.
+Shrink the workload or retain an unqualified gate when it cannot fit. Do not split
+a long matrix into repeated runs to work around this limit. Hosted cloud CI keeps
+its existing limits.
+
 Physical Snapdragon capture/qualification workflows, including speech/sandbox,
 share the non-cancelling `swift-lora-snapdragon` concurrency group. Hosted targets
 have independent groups. Serialization prevents overlapping laptop CI jobs,

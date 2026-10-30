@@ -19,8 +19,10 @@ and installation gates below with reproducible evidence before expanding that pr
 
 Follow the [research scope, budgets and experiment
 checklist](docs/research-register.md#experiment-scope-and-budgets): existing native
-Windows ARM64 X Elite/X2 Elite hardware, independent family qualification, 30-minute
-feasibility and two-hour initial-compute budgets. Apply the [promotion
+Windows ARM64 X Elite/X2 Elite hardware, independent family qualification and a
+five-minute total ceiling for owner-device diagnostics, model trials and benchmarks,
+including self-hosted CI. Prefer smaller trials; longer qualification remains pending.
+Apply the [promotion
 criteria](#promotion-criteria) before changing defaults or admission. Full suites,
 benchmarks and performance captures stay in owning CI.
 

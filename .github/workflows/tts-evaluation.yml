@@ -27,7 +27,7 @@ jobs:
   evaluate:
     if: github.ref == 'refs/heads/main'
     runs-on: ${{ fromJSON(inputs.target == 'snapdragon' && '["self-hosted","Windows","ARM64","swift-bonsai-snapdragon"]' || '"windows-11-arm"') }}
-    timeout-minutes: 90
+    timeout-minutes: ${{ inputs.target == 'snapdragon' && 5 || 90 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
