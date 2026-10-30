@@ -1,0 +1,602 @@
+{
+  "schemaVersion": 1,
+  "kind": "runner-headless-argv-source-pilot",
+  "observedOn": "2026-10-29",
+  "device": {
+    "processor": "Snapdragon(R) X2 Elite Extreme - X2E94100 - Qualcomm Oryon(TM) CPU",
+    "operatingSystem": {
+      "source": "HKLM/SOFTWARE/Microsoft/Windows NT/CurrentVersion",
+      "currentBuildNumber": "26300",
+      "ubr": 9818,
+      "displayVersion": "26H2"
+    },
+    "nativeArchitecture": "ARM64"
+  },
+  "scope": {
+    "modelLoaded": false,
+    "cpuBackendBuilt": true,
+    "performanceMeasured": false,
+    "workerPolicyRelaxed": false,
+    "runtimePinChanged": false
+  },
+  "source": {
+    "schemaVersion": 1,
+    "kind": "review-only-prism-source-candidate",
+    "repository": "https://github.com/PrismML-Eng/llama.cpp",
+    "base": {
+      "commit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+      "url": "https://github.com/PrismML-Eng/llama.cpp/archive/73bfe6cc485554822f80c473a3c0c4f25e80f41b.zip",
+      "bytes": 39423279,
+      "sha256": "5ee8738706229e84e85db7051d7a40797c91e22a7ffa8f4bfb8fea4bf2cb0293"
+    },
+    "patch": {
+      "filename": "headless-ucrt-argv.patch",
+      "bytes": 5291,
+      "sha256": "10cd9ec4dc4d29bd955744bc07d7a7914755d5e22e146a98f254d4c84d9caf2b"
+    },
+    "files": [
+      {
+        "path": "common/arg.cpp",
+        "baseSha256": "9ee7ddeccca0e2172668c525c373629fe2a8ee27806d018af774a9cb76664aa4",
+        "candidateSha256": "818b4ed19d334eec28bbeb079acb2f662cdefe0318b018fa35c0257149192be2"
+      },
+      {
+        "path": "tests/CMakeLists.txt",
+        "baseSha256": "6e98c7ef99797bd07514931fb175df6c8d30fb373349c57448ffee6b5ca9b75e",
+        "candidateSha256": "0aa254526ae2b69f69280f032a374d9091adc9d48a2fab89191a6280b92a343d"
+      },
+      {
+        "path": "tests/test-headless-argv.cpp",
+        "baseSha256": null,
+        "candidateSha256": "b3039dcbee79715b19316169b5aa22c14ed02da0d797abc7990a1e7c8aed4330"
+      }
+    ],
+    "activation": "requires-reviewed-source-integration-CPU-release-and-device-CI; unchanged-Runner-pin",
+    "license": {
+      "identifier": "MIT",
+      "file": "LICENSE",
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+    },
+    "qualification": "source-only-model-free-startup; no-runtime-promotion-or-performance-result"
+  },
+  "compiler": {
+    "project": "llvm/llvm-project",
+    "release": "llvmorg-23.1.4",
+    "commit": "7a941dfb2877a0b8cf30323fefa85ad019e0b0f5",
+    "archive": "clang+llvm-23.1.4-aarch64-pc-windows-msvc.tar.zst",
+    "archiveBytes": 259190688,
+    "archiveSha256": "6a1f1a4eaa18c6b83d0c61c85813664143643fa7df3c11f49750773d560a2164",
+    "executables": [
+      {
+        "file": "clang-cl.exe",
+        "bytes": 102901760,
+        "sha256": "d5487944bbd56cea6ac4fdde2496f58b32802a3276c24b32e231e0d72e2122c9",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "KERNEL32.dll",
+          "ADVAPI32.dll",
+          "ntdll.dll",
+          "VERSION.dll",
+          "OLEAUT32.dll"
+        ]
+      },
+      {
+        "file": "lld-link.exe",
+        "bytes": 69166592,
+        "sha256": "f2f7ca41fb1f98b25f2a271619add3bfe9526fd01a6f3ca3c8320dd71fbcad65",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "KERNEL32.dll",
+          "ADVAPI32.dll",
+          "ntdll.dll",
+          "OLEAUT32.dll"
+        ]
+      }
+    ],
+    "target": "aarch64-pc-windows-msvc"
+  },
+  "build": {
+    "configuration": "Release",
+    "generator": "Ninja",
+    "msvcTools": "14.51.36231",
+    "windowsSdk": "10.0.26100.0",
+    "maximumCompileJobs": 4,
+    "cpuBackend": true,
+    "ggmlNative": false,
+    "dynamicBackendLoading": false,
+    "openmp": false,
+    "acceleratorsEnabled": false,
+    "subprocess": false,
+    "openssl": false,
+    "uiBuilt": false,
+    "modelFreeTargets": [
+      "llama-completion",
+      "test-headless-argv"
+    ],
+    "cacheSha256": "6c97abb2081708383e8687b8a47a1c47317d260d7bbc905dc3ad22c3900a9ff5",
+    "ucrtArgvSourceSha256": "3d93772ae6b0730a36011f6f062387008509f965d4c9262337209971803b292f"
+  },
+  "workerSupervision": {
+    "toolSha256": "72d52e363ee710661c402dbc4dbba9da89ae01c16d1a25c3eedbbc18b3f395a9",
+    "workerPolicy": "ordinary-required-headless",
+    "memoryLimitBytes": 536870912,
+    "activeProcessLimit": 1,
+    "timeoutSeconds": 10,
+    "stdoutLimitBytes": 65536,
+    "stderrLimitBytes": 65536,
+    "exactArtifactsHeld": true,
+    "fixtureVerified": {
+      "win32kDenial": true,
+      "extensionPointDenial": true,
+      "noRemoteImages": true,
+      "noLowIntegrityImages": true
+    }
+  },
+  "artifacts": {
+    "control": [
+      {
+        "file": "ggml-base.dll",
+        "bytes": 769024,
+        "sha256": "b3ad2dc73d2ef2786ab79d20627af77d4e68396fc52d629d4331f1ee8c230cb4",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "KERNEL32.dll",
+          "MSVCP140.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-time-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll",
+          "api-ms-win-crt-utility-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "ggml-cpu.dll",
+        "bytes": 727552,
+        "sha256": "fdb7125e620f7622076143c20787b1feb91fbd0b199e7e2e4a052d7626ea233e",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "ggml-base.dll",
+          "KERNEL32.dll",
+          "ADVAPI32.dll",
+          "MSVCP140.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "ggml.dll",
+        "bytes": 76288,
+        "sha256": "76d30cbde29f55fba8625a2b23cebcb15abd264b77e484e7c96e9206c12d276b",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "ggml-cpu.dll",
+          "ggml-base.dll",
+          "KERNEL32.dll",
+          "MSVCP140.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "llama-common.dll",
+        "bytes": 4542464,
+        "sha256": "fdb15056e1849c0c11d2713681c17f42e1155e64b624592639adea18662d8a35",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "llama.dll",
+          "ggml.dll",
+          "ggml-base.dll",
+          "KERNEL32.dll",
+          "SHELL32.dll",
+          "MSVCP140.dll",
+          "WS2_32.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-time-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll",
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "llama-completion-impl.dll",
+        "bytes": 116736,
+        "sha256": "31298f8cba121780b52c3da0338d509c06f7367430f2a6b61a0885c3282b48a6",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "llama-common.dll",
+          "llama.dll",
+          "ggml-base.dll",
+          "KERNEL32.dll",
+          "MSVCP140.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "llama-completion.exe",
+        "bytes": 9728,
+        "sha256": "7f0c30b30c3c35391567e8140d89f17b489f72e37e50aef330cc093d73dc6907",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "llama-completion-impl.dll",
+          "KERNEL32.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "llama.dll",
+        "bytes": 2669056,
+        "sha256": "742c2e48144673c1e4f1cd5a52ca0212f024a75290a84c5f0ab6668d009fa8f5",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "ggml.dll",
+          "ggml-base.dll",
+          "KERNEL32.dll",
+          "MSVCP140.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ]
+      }
+    ],
+    "candidate": [
+      {
+        "file": "ggml-base.dll",
+        "bytes": 769024,
+        "sha256": "11586d5cd1031ee5753f2b7a38c758879db195249801a0293be3c98d87627fe8",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "KERNEL32.dll",
+          "MSVCP140.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-time-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll",
+          "api-ms-win-crt-utility-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "ggml-cpu.dll",
+        "bytes": 727552,
+        "sha256": "03306cab2af5a9e896b1fb8a173d4b4d10c14b71b99bc2e7e0d78290d7e7a075",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "ggml-base.dll",
+          "KERNEL32.dll",
+          "ADVAPI32.dll",
+          "MSVCP140.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "ggml.dll",
+        "bytes": 76288,
+        "sha256": "a8d9c98ff12b6437e8b69d78b9ea1b66361bf9232ed7c8da6914033a44ee72b8",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "ggml-cpu.dll",
+          "ggml-base.dll",
+          "KERNEL32.dll",
+          "MSVCP140.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "llama-common.dll",
+        "bytes": 4542976,
+        "sha256": "1d9b8daf8497c62771c2fb98d8d0ea6f4e403fffde7abd7948e9bdc2630c60e1",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "llama.dll",
+          "ggml.dll",
+          "ggml-base.dll",
+          "KERNEL32.dll",
+          "MSVCP140.dll",
+          "WS2_32.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-time-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll",
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "llama-completion-impl.dll",
+        "bytes": 116736,
+        "sha256": "ad3a186533e8ce742e167bf45b6a0b06bbf12898a31a008189ba170d98857c32",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "llama-common.dll",
+          "llama.dll",
+          "ggml-base.dll",
+          "KERNEL32.dll",
+          "MSVCP140.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "llama-completion.exe",
+        "bytes": 9728,
+        "sha256": "09d70eb10275779154ea2ff3f83e7e0dc978088ef415a0f371c2f95387f24f88",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "llama-completion-impl.dll",
+          "KERNEL32.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "llama.dll",
+        "bytes": 2669056,
+        "sha256": "3eb2c6ed6487b6949ab513dc989499cd31c0abb06fda94654b45d7b2da4e88aa",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "ggml.dll",
+          "ggml-base.dll",
+          "KERNEL32.dll",
+          "MSVCP140.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-filesystem-l1-1-0.dll",
+          "api-ms-win-crt-convert-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-environment-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ]
+      },
+      {
+        "file": "test-headless-argv.exe",
+        "bytes": 28672,
+        "sha256": "f09aa09b7ab09ab63246f99b490f45c539a470a8e3c6596317b0f04b87d910a6",
+        "machine": "0xAA64",
+        "directDependencies": [
+          "llama-common.dll",
+          "llama.dll",
+          "KERNEL32.dll",
+          "MSVCP140.dll",
+          "VCRUNTIME140.dll",
+          "api-ms-win-crt-runtime-l1-1-0.dll",
+          "api-ms-win-crt-stdio-l1-1-0.dll",
+          "api-ms-win-crt-math-l1-1-0.dll",
+          "api-ms-win-crt-heap-l1-1-0.dll",
+          "api-ms-win-crt-locale-l1-1-0.dll",
+          "api-ms-win-crt-string-l1-1-0.dll"
+        ]
+      }
+    ]
+  },
+  "changedImports": {
+    "removed": {
+      "SHELL32.dll": [
+        "CommandLineToArgvW"
+      ]
+    },
+    "candidateUcrtImports": {
+      "api-ms-win-crt-runtime-l1-1-0.dll": [
+        "__p___argc",
+        "__p___wargv",
+        "_configure_wide_argv"
+      ]
+    }
+  },
+  "checks": {
+    "patchApply": "git -c core.autocrlf=false -c core.eol=lf apply; all three changed files byte-identical",
+    "control": [
+      {
+        "id": "version",
+        "arguments": [
+          "--version"
+        ],
+        "status": "failed",
+        "exitCode": 3221225794,
+        "receiptSha256": "b760346f9c358489c79bd611ab38249ed381718a25f4afc5e1ec731aaf381567",
+        "stdout": "",
+        "stderr": ""
+      }
+    ],
+    "candidate": [
+      {
+        "id": "version",
+        "arguments": [
+          "--version"
+        ],
+        "status": "completed",
+        "exitCode": 0,
+        "receiptSha256": "eff3b7044a944a3b61feb4f7385e1c539fec02a57ce883ed28ded8c28a6c1dc9",
+        "stdout": "",
+        "stderr": "version: 0.2.0-dev (build 10787, commit 73bfe6c)\r\nbuilt with Clang 23.1.4 for Windows ARM64\r\n"
+      },
+      {
+        "id": "argv-0",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "0",
+          "--prompt",
+          ""
+        ],
+        "status": "completed",
+        "exitCode": 0,
+        "receiptSha256": "a206543d0b2b74016e044a96cf48fd3455d1b9ce35d3d6eabbe6b39ff5e14930",
+        "stdout": "Win32k=1 Extensions=1 Images=3; Unicode argv and synthetic argc guard passed\r\n",
+        "stderr": ""
+      },
+      {
+        "id": "argv-1",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "1",
+          "--prompt",
+          "日本語 🪴 café"
+        ],
+        "status": "completed",
+        "exitCode": 0,
+        "receiptSha256": "9de7d3d01fdfecc70c420fb369b149b34936d4400751cf1dbb73a80e595bee7d",
+        "stdout": "Win32k=1 Extensions=1 Images=3; Unicode argv and synthetic argc guard passed\r\n",
+        "stderr": ""
+      },
+      {
+        "id": "argv-2",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "2",
+          "--prompt",
+          "C:\\notes dir\\ \"quoted\" tail\\\\"
+        ],
+        "status": "completed",
+        "exitCode": 0,
+        "receiptSha256": "d5511b3d59cd587b30f6cf938c9a351d8d8a66ccf4ce06c8f4ae5c824f9fe891",
+        "stdout": "Win32k=1 Extensions=1 Images=3; Unicode argv and synthetic argc guard passed\r\n",
+        "stderr": ""
+      },
+      {
+        "id": "argv-3",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "3",
+          "--prompt",
+          "line1\tline2\nline3"
+        ],
+        "status": "completed",
+        "exitCode": 0,
+        "receiptSha256": "8aef01399894d53368658ba7754850f16b1e798d650c216bd2457ca649237b64",
+        "stdout": "Win32k=1 Extensions=1 Images=3; Unicode argv and synthetic argc guard passed\r\n",
+        "stderr": ""
+      },
+      {
+        "id": "argv-4",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "4",
+          "--prompt",
+          "*.gguf"
+        ],
+        "status": "completed",
+        "exitCode": 0,
+        "receiptSha256": "2ebe3440fdeebb08e1472e7d3cad75d0ac9fc9654c9b6db9f39919b37ebc7b6c",
+        "stdout": "Win32k=1 Extensions=1 Images=3; Unicode argv and synthetic argc guard passed\r\n",
+        "stderr": ""
+      },
+      {
+        "id": "argv-5",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "5",
+          "--prompt",
+          "  leading and trailing  "
+        ],
+        "status": "completed",
+        "exitCode": 0,
+        "receiptSha256": "9237e4203d0fdc08eb467d67d318fd0ba0d84ea9b3a494c9d7e1fbfa32693ffe",
+        "stdout": "Win32k=1 Extensions=1 Images=3; Unicode argv and synthetic argc guard passed\r\n",
+        "stderr": ""
+      },
+      {
+        "id": "argv-6",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "6",
+          "--prompt",
+          "slashes\\\\\\\"quote"
+        ],
+        "status": "completed",
+        "exitCode": 0,
+        "receiptSha256": "cd5ced1d007985a1ecbbbc285aa7bca03bdcdc5b9b5223b4b93466d564d73283",
+        "stdout": "Win32k=1 Extensions=1 Images=3; Unicode argv and synthetic argc guard passed\r\n",
+        "stderr": ""
+      }
+    ],
+    "repeatedParsing": "two actual/synthetic pairs per argv case; retained CRT pointer stays identical",
+    "earlierFixtureAttempts": "Required model-option omission and default prompt escaping corrected; earlier bounded receipts retained in external evidence, no model was loaded."
+  },
+  "rawEvidenceDirectoryName": "Bonsai-HeadlessCandidate-fba2eac88a7d4668aaa393b4ab83a51e",
+  "verdict": "Reviewable CPU-enabled source candidate removes the reproduced headless-start failure; integrate and release upstream before device CI and any Runner pin change."
+}

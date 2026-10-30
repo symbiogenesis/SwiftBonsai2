@@ -1,0 +1,130 @@
+diff --git a/common/arg.cpp b/common/arg.cpp
+--- a/common/arg.cpp
++++ b/common/arg.cpp
+@@ -19,7 +19,12 @@
+ #   define NOMINMAX
+ #endif
+ #include <windows.h>
++#if defined(_MSC_VER)
++#include <corecrt_startup.h>
++#include <cstdlib>
++#else
+ #include <shellapi.h>
++#endif
+ #endif
+ 
+ #include <algorithm>
+@@ -1253,8 +1258,23 @@
+ 
+ static utf8_argv make_utf8_argv() {
+     utf8_argv out;
++#if defined(_MSC_VER)
++    // clang-cl/MSVC use the existing UCRT command-line parser, without a shell
++    // DLL import that requires desktop initialization under Win32k denial.
++    // Keep wildcard expansion disabled and leave the CRT-owned table intact.
++    // Reconfiguration overwrites the CRT pointer rather than freeing its old
++    // table. Initialize once, and reuse wide startup's table when it exists.
++    static const bool ready = [] {
++        return __wargv != nullptr ||
++            _configure_wide_argv(_crt_argv_unexpanded_arguments) == 0;
++    }();
++    if (!ready) return out;
++    const int wargc = __argc;
++    wchar_t** wargv = __wargv;
++#else
+     int wargc = 0;
+     LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
++#endif
+     if (!wargv) return out;
+ 
+     out.buf.reserve(wargc);
+@@ -1265,7 +1285,9 @@
+         s.resize(static_cast<size_t>(n - 1));
+         (void)WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, s.data(), n, nullptr, nullptr);
+     }
++#if !defined(_MSC_VER)
+     LocalFree(wargv);
++#endif
+ 
+     out.ptrs.reserve(out.buf.size() + 1);
+     for (auto& s : out.buf) out.ptrs.push_back(s.data());
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -305,6 +305,12 @@
+ set_tests_properties(test-thread-safety PROPERTIES FIXTURES_REQUIRED test-download-model)
+ 
+ llama_build_and_test(test-arg-parser.cpp)
++if (WIN32 AND MSVC)
++    # This model-free fixture requires creation-time headless mitigations.
++    # Execute it through bounded worker supervision instead of plain CTest.
++    llama_build(test-headless-argv.cpp)
++    target_compile_options(test-headless-argv PRIVATE /utf-8)
++endif()
+ llama_build_and_test(test-mtp-catchup-batch.cpp)
+ llama_build_and_test(test-model-resolution.cpp)
+ # the test serves its repos from an httplib server, and the library links it privately
+diff --git a/tests/test-headless-argv.cpp b/tests/test-headless-argv.cpp
+new file mode 100644
+--- /dev/null
++++ b/tests/test-headless-argv.cpp
+@@ -0,0 +1,59 @@
++// Model-free Windows UCRT argv regression. No model or backend is initialized.
++// Invoke the named cases through the native worker supervisor to also retain
++// Win32k-denied startup and the application's command-line quoting boundary.
++#include "arg.h"
++#include "common.h"
++
++#include <windows.h>
++#include <cstdio>
++#include <cstdlib>
++#include <string>
++#include <vector>
++
++int main(int argc, char ** argv) {
++    const std::vector<std::string> expected = {
++        "",
++        u8"日本語 🪴 café",
++        R"(C:\notes dir\ "quoted" tail\\)",
++        "line1\tline2\nline3",
++        "*.gguf",
++        "  leading and trailing  ",
++        R"(slashes\\\"quote)",
++    };
++    PROCESS_MITIGATION_SYSTEM_CALL_DISABLE_POLICY calls{};
++    PROCESS_MITIGATION_EXTENSION_POINT_DISABLE_POLICY extensions{};
++    PROCESS_MITIGATION_IMAGE_LOAD_POLICY images{};
++    if (!GetProcessMitigationPolicy(GetCurrentProcess(), ProcessSystemCallDisablePolicy, &calls, sizeof(calls)) ||
++        !GetProcessMitigationPolicy(GetCurrentProcess(), ProcessExtensionPointDisablePolicy, &extensions, sizeof(extensions)) ||
++        !GetProcessMitigationPolicy(GetCurrentProcess(), ProcessImageLoadPolicy, &images, sizeof(images)) ||
++        !calls.DisallowWin32kSystemCalls || !extensions.DisableExtensionPoints ||
++        !images.NoRemoteImages || !images.NoLowMandatoryLabelImages) return 5;
++    if (argc != 7) return 1;
++    wchar_t** retained_argv = nullptr;
++    for (int repeat = 0; repeat < 2; ++repeat) {
++        common_params params;
++        // Check argv bytes before the CLI's optional prompt escape processing.
++        params.escape = false;
++        if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_COMPLETION)) return 2;
++        if (params.model.path != u8"模型/test.gguf") return 7;
++        if (!__wargv) return 6;
++        if (repeat == 0) retained_argv = __wargv;
++        if (retained_argv != __wargv) return 6;
++        const auto index = params.sampling.seed;
++        if (index >= expected.size() || params.prompt != expected[index]) return 3;
++        // Preserve the existing repair guard for callers providing a synthetic
++        // argv whose count differs from the process's command line.
++        char name[] = "fixture";
++        char option[] = "--prompt";
++        char value[] = "custom";
++        char model_option[] = "--model";
++        char model_value[] = "synthetic.gguf";
++        char * custom[] = {name, model_option, model_value, option, value, nullptr};
++        common_params synthetic;
++        if (!common_params_parse(5, custom, synthetic, LLAMA_EXAMPLE_COMPLETION) ||
++            synthetic.prompt != "custom") return 4;
++        if (retained_argv != __wargv) return 6;
++    }
++    std::puts("Win32k=1 Extensions=1 Images=3; Unicode argv and synthetic argc guard passed");
++    return 0;
++}

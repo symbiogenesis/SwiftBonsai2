@@ -81,3 +81,11 @@ graph checkpoint/reset behavior. Full suites, benchmarks, actual-model/device
 qualification and release publication remain separate work under
 [PLAN.md](../../PLAN.md#cpu-kernels) and the
 [runtime lock-update procedure](../development-guide.md#prepare-a-runtime-lock-update).
+
+## Legacy completion startup candidate
+
+The [headless UCRT argv candidate](headless-ucrt-argv.md) retains a separately
+reviewable MIT-licensed change against the exact legacy Prism source. Its CPU
+control reproduces the X2 headless DLL-initialization failure; its candidate
+passes fixed startup and Unicode argument checks with worker mitigations intact.
+It leaves Runner's runtime lock unchanged pending upstream integration and CI.

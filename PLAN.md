@@ -354,6 +354,10 @@ existing full-context/continuation/LoRA gates.
   Resolve the provisioned legacy completion runtime's model-free headless-start
   failure (`0xC0000142`) before capture; audit its shell DLL dependency chain
   and repeat a bounded `--version` probe without relaxing worker mitigations.
+  The [UCRT argv source candidate](docs/runtime-candidates/headless-ucrt-argv.md)
+  now passes CPU-enabled model-free startup and Unicode/quoting checks on X2;
+  integrate/release it upstream and qualify the exact binary before updating
+  Runner's pin. The currently provisioned runtime remains unchanged.
   Retain the screen's verdict for topology, AC/battery saver, active power scheme
   and effective mode at batch and per-sample boundaries, including the transition
   between paired samples; suppress comparisons when observations change or are

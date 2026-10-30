@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "kind": "review-only-prism-source-candidate",
+  "repository": "https://github.com/PrismML-Eng/llama.cpp",
+  "base": {
+    "commit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+    "url": "https://github.com/PrismML-Eng/llama.cpp/archive/73bfe6cc485554822f80c473a3c0c4f25e80f41b.zip",
+    "bytes": 39423279,
+    "sha256": "5ee8738706229e84e85db7051d7a40797c91e22a7ffa8f4bfb8fea4bf2cb0293"
+  },
+  "patch": {
+    "filename": "headless-ucrt-argv.patch",
+    "bytes": 5291,
+    "sha256": "10cd9ec4dc4d29bd955744bc07d7a7914755d5e22e146a98f254d4c84d9caf2b"
+  },
+  "files": [
+    {
+      "path": "common/arg.cpp",
+      "baseSha256": "9ee7ddeccca0e2172668c525c373629fe2a8ee27806d018af774a9cb76664aa4",
+      "candidateSha256": "818b4ed19d334eec28bbeb079acb2f662cdefe0318b018fa35c0257149192be2"
+    },
+    {
+      "path": "tests/CMakeLists.txt",
+      "baseSha256": "6e98c7ef99797bd07514931fb175df6c8d30fb373349c57448ffee6b5ca9b75e",
+      "candidateSha256": "0aa254526ae2b69f69280f032a374d9091adc9d48a2fab89191a6280b92a343d"
+    },
+    {
+      "path": "tests/test-headless-argv.cpp",
+      "baseSha256": null,
+      "candidateSha256": "b3039dcbee79715b19316169b5aa22c14ed02da0d797abc7990a1e7c8aed4330"
+    }
+  ],
+  "activation": "requires-reviewed-source-integration-CPU-release-and-device-CI; unchanged-Runner-pin",
+  "license": {
+    "identifier": "MIT",
+    "file": "LICENSE",
+    "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+  },
+  "qualification": "source-only-model-free-startup; no-runtime-promotion-or-performance-result"
+}

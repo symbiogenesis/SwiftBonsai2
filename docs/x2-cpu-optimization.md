@@ -187,6 +187,15 @@ Resolve the runtime's headless-start compatibility and repeat the bounded probe
 before attempting a device screen. The inspection-only version/help policy
 does not qualify a model worker or authorize weakening its Win32k denial.
 
+A subsequent [UCRT argv source candidate](runtime-candidates/headless-ucrt-argv.md)
+removes the shell import in an exact-source CPU-enabled build: the paired control
+reproduces `0xC0000142`, while the candidate's fixed version probe and seven
+Unicode/quoting/ownership cases pass under the unchanged worker policy on X2.
+Exact source, compiler, imports, binary hashes and bounded supervision receipts
+are retained with the candidate. This is source-level model-free progress;
+Runner's provisioned runtime and thread defaults remain unchanged until reviewed
+upstream release integration and device CI qualification.
+
 ## Device evidence separation
 
 Native speech builds use a separate checked host identity for build-cache reuse.
