@@ -221,6 +221,17 @@ one-process 512 MiB Job, ten-second deadline and 64 KiB output bounds. The fixtu
 requires effective Win32k, extension-point and unsafe-image denial. Actions
 credentials are removed from the preparation child before these probes.
 
+The [2026-10-30 hosted result](../evidence/headless-publisher-startup.json) records
+all ten probes passing at Runner `e11c5a289528bc435b0a1339071a26d6063f0745`:
+completion/server version, benchmark help and seven argument fixtures under the
+unchanged mitigations. Independent review verified all 14 packaged file digests
+and 13 ARM64 binaries. The full public candidate, exact source ZIPs, bounded logs,
+probe receipts and API proofs are durably archived with a digest manifest.
+Initially unavailable job metadata later recovered; the archived run and prepare
+job API snapshots both report success. This establishes hosted model-free startup.
+Model loading, numerical and inference performance qualification and production
+runtime promotion remain pending.
+
 The resulting artifact is a source-bound candidate for review, not an installed
 runtime or a model speed result. A passed hosted preparation still needs a
 separately authorized owner-device trial within the existing five-minute total

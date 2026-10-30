@@ -1,0 +1,387 @@
+{
+  "schemaVersion": 1,
+  "kind": "publisher-headless-hosted-model-free-startup",
+  "status": "hosted-build-and-ten-model-free-probes-passed",
+  "recordedAtUtc": "2026-10-30T17:59:49.1880205Z",
+  "scope": "Separate source-bound publisher CPU candidate, hosted ARM64 version/help/argv startup only. No model loading, numerical or inference performance result, installed-bundle replacement or promotion.",
+  "execution": {
+    "runId": "41100062393",
+    "runAttempt": 1,
+    "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41100062393",
+    "runnerRevision": "e11c5a289528bc435b0a1339071a26d6063f0745",
+    "gitRef": "refs/heads/main",
+    "hosted": true,
+    "ownerDeviceExecuted": false,
+    "workflowConclusion": "success",
+    "prepareJobId": 124215650477,
+    "prepareJobConclusion": "success",
+    "startedAtUtc": "2026-10-30T17:36:05Z",
+    "completedAtUtc": "2026-10-30T17:41:23Z",
+    "imageOS": "win11-vs2026-arm64",
+    "imageVersion": "20261026.197.1",
+    "metadataRecovery": "Earlier API polls returned null conclusions and empty steps despite uploaded artifacts. Both archived API snapshots later report success."
+  },
+  "artifact": {
+    "id": 12997548189,
+    "name": "publisher-headless-candidate-41100062393-1",
+    "bytes": 8425124,
+    "sha256": "ac68134c23f8b36a9d4476b77dc9b28104253b2f86945dcbfe31dab6d30baad8",
+    "createdAtUtc": "2026-10-30T17:41:09Z",
+    "expiredWhenArchived": false,
+    "zipIndependentlyDownloadedAndDigestVerified": true,
+    "buildReceiptSha256": "64b54cbf8eb10384c8e782f866339d91a83d34d6528cf3dbcfd2983a0067e5ba"
+  },
+  "source": {
+    "repository": "https://github.com/PrismML-Eng/llama.cpp",
+    "base": {
+      "commit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+      "url": "https://github.com/PrismML-Eng/llama.cpp/archive/73bfe6cc485554822f80c473a3c0c4f25e80f41b.zip",
+      "bytes": 39423279,
+      "sha256": "5ee8738706229e84e85db7051d7a40797c91e22a7ffa8f4bfb8fea4bf2cb0293"
+    },
+    "patch": {
+      "filename": "headless-ucrt-argv.patch",
+      "bytes": 5291,
+      "sha256": "10cd9ec4dc4d29bd955744bc07d7a7914755d5e22e146a98f254d4c84d9caf2b"
+    },
+    "patchedFiles": [
+      {
+        "path": "common/arg.cpp",
+        "baseSha256": "9ee7ddeccca0e2172668c525c373629fe2a8ee27806d018af774a9cb76664aa4",
+        "candidateSha256": "818b4ed19d334eec28bbeb079acb2f662cdefe0318b018fa35c0257149192be2"
+      },
+      {
+        "path": "tests/CMakeLists.txt",
+        "baseSha256": "6e98c7ef99797bd07514931fb175df6c8d30fb373349c57448ffee6b5ca9b75e",
+        "candidateSha256": "0aa254526ae2b69f69280f032a374d9091adc9d48a2fab89191a6280b92a343d"
+      },
+      {
+        "path": "tests/test-headless-argv.cpp",
+        "baseSha256": null,
+        "candidateSha256": "b3039dcbee79715b19316169b5aa22c14ed02da0d797abc7990a1e7c8aed4330"
+      }
+    ],
+    "license": {
+      "identifier": "MIT",
+      "file": "LICENSE",
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+    },
+    "exactUpstreamAndRunnerSourceZipsArchived": true
+  },
+  "build": {
+    "target": "aarch64-pc-windows-msvc",
+    "configuration": "Release",
+    "generator": "Ninja",
+    "compileJobs": 4,
+    "llvm": {
+      "project": "llvm/llvm-project",
+      "release": "llvmorg-23.1.4",
+      "commit": "7a941dfb2877a0b8cf30323fefa85ad019e0b0f5",
+      "archive": "clang+llvm-23.1.4-aarch64-pc-windows-msvc.tar.zst",
+      "archiveBytes": 259190688,
+      "archiveSha256": "6a1f1a4eaa18c6b83d0c61c85813664143643fa7df3c11f49750773d560a2164",
+      "executables": [
+        {
+          "file": "clang-cl.exe",
+          "bytes": 102901760,
+          "sha256": "d5487944bbd56cea6ac4fdde2496f58b32802a3276c24b32e231e0d72e2122c9",
+          "machine": "0xAA64",
+          "directDependencies": [
+            "KERNEL32.dll",
+            "ADVAPI32.dll",
+            "ntdll.dll",
+            "VERSION.dll",
+            "OLEAUT32.dll"
+          ]
+        },
+        {
+          "file": "lld-link.exe",
+          "bytes": 69166592,
+          "sha256": "f2f7ca41fb1f98b25f2a271619add3bfe9526fd01a6f3ca3c8320dd71fbcad65",
+          "machine": "0xAA64",
+          "directDependencies": [
+            "KERNEL32.dll",
+            "ADVAPI32.dll",
+            "ntdll.dll",
+            "OLEAUT32.dll"
+          ]
+        }
+      ],
+      "target": "aarch64-pc-windows-msvc"
+    },
+    "visualCppToolsVersion": "14.51.36231",
+    "windowsSdkVersion": "10.0.26100.0",
+    "cFlags": "/clang:-march=armv8.7-a /clang:-fvectorize /clang:-ffp-model=fast /clang:-fno-finite-math-only",
+    "cxxFlags": "/EHsc /clang:-march=armv8.7-a /clang:-fvectorize /clang:-ffp-model=fast /clang:-fno-finite-math-only",
+    "cmakeCacheSha256": "157a0762e941e85e88e67d7236d423ab9f3cb4b5795b1547a37913b938e316f6",
+    "sharedCpuLibraries": true,
+    "dynamicBackendLoading": false,
+    "openmp": false,
+    "optionalAccelerators": false,
+    "ui": false,
+    "tlsFetching": false,
+    "subprocess": false
+  },
+  "supervision": {
+    "workerPolicy": "ordinary-required-headless",
+    "supervisorSha256": "948ee7c42e354f2d02ab6567f7097c2c22229db6ead4ae1129375e4901fe6414",
+    "supervisorSourceId": "16cf0da5bed1bb74c5e0ddfe3ff89d249c313153fde824e4d23aa82b810839e5",
+    "memoryLimitBytes": 536870912,
+    "activeProcessLimit": 1,
+    "timeoutSeconds": 10,
+    "outputLimitBytesPerStream": 65536,
+    "exactArtifactHandlesRetainedThroughTeardown": true,
+    "credentialsRemovedFromPreparationChild": true,
+    "argvFixtureEffectiveMitigations": {
+      "win32kDenial": true,
+      "extensionPointDenial": true,
+      "noRemoteImages": true,
+      "noLowIntegrityImages": true,
+      "observedFixtures": 7
+    }
+  },
+  "results": {
+    "probeCount": 10,
+    "allProbesPassed": true,
+    "probes": [
+      {
+        "name": "completion-version",
+        "arguments": [
+          "--version"
+        ],
+        "exitCode": 0,
+        "wallMilliseconds": 132,
+        "modelLoaded": false
+      },
+      {
+        "name": "server-version",
+        "arguments": [
+          "--version"
+        ],
+        "exitCode": 0,
+        "wallMilliseconds": 44,
+        "modelLoaded": false
+      },
+      {
+        "name": "bench-help",
+        "arguments": [
+          "--help"
+        ],
+        "exitCode": 0,
+        "wallMilliseconds": 44,
+        "modelLoaded": false
+      },
+      {
+        "name": "argv-0",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "0",
+          "--prompt",
+          ""
+        ],
+        "exitCode": 0,
+        "wallMilliseconds": 45,
+        "modelLoaded": false
+      },
+      {
+        "name": "argv-1",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "1",
+          "--prompt",
+          "日本語 🪴 café"
+        ],
+        "exitCode": 0,
+        "wallMilliseconds": 38,
+        "modelLoaded": false
+      },
+      {
+        "name": "argv-2",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "2",
+          "--prompt",
+          "C:\\notes dir\\ \"quoted\" tail\\\\"
+        ],
+        "exitCode": 0,
+        "wallMilliseconds": 36,
+        "modelLoaded": false
+      },
+      {
+        "name": "argv-3",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "3",
+          "--prompt",
+          "line1\tline2\nline3"
+        ],
+        "exitCode": 0,
+        "wallMilliseconds": 37,
+        "modelLoaded": false
+      },
+      {
+        "name": "argv-4",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "4",
+          "--prompt",
+          "*.gguf"
+        ],
+        "exitCode": 0,
+        "wallMilliseconds": 37,
+        "modelLoaded": false
+      },
+      {
+        "name": "argv-5",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "5",
+          "--prompt",
+          "  leading and trailing  "
+        ],
+        "exitCode": 0,
+        "wallMilliseconds": 37,
+        "modelLoaded": false
+      },
+      {
+        "name": "argv-6",
+        "arguments": [
+          "--model",
+          "模型/test.gguf",
+          "--seed",
+          "6",
+          "--prompt",
+          "slashes\\\\\\\"quote"
+        ],
+        "exitCode": 0,
+        "wallMilliseconds": 38,
+        "modelLoaded": false
+      }
+    ],
+    "modelLoaded": false,
+    "packagedFilesVerified": 14,
+    "nativeArm64PeFilesVerified": 13,
+    "packageFiles": [
+      {
+        "Name": "ggml-base.dll",
+        "Bytes": 660480,
+        "Sha256": "ac28887c1f5989a645e8bd16b570a9b7d5663a971aaf3b5361cf2df7f9e65ff6"
+      },
+      {
+        "Name": "ggml-cpu.dll",
+        "Bytes": 742912,
+        "Sha256": "1f1ff26411b6513e6ccc0e388da610b25b80d4c6ccafb3bcdd9f030d3821efdc"
+      },
+      {
+        "Name": "ggml.dll",
+        "Bytes": 75776,
+        "Sha256": "2c4e63301306cb5f836cf6223520b57ac410fed9cb2aa4909f46b7910c931eaf"
+      },
+      {
+        "Name": "LICENSE",
+        "Bytes": 1078,
+        "Sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+      },
+      {
+        "Name": "llama-bench-impl.dll",
+        "Bytes": 319488,
+        "Sha256": "ebf04613ff8eb82d48c071d7974936fb2fa5310030bf532d57533dece76fb9b4"
+      },
+      {
+        "Name": "llama-bench.exe",
+        "Bytes": 9728,
+        "Sha256": "b9ecf1c3052c721adae8510ed125ae4e5446c82f18925956c6f290eb04fe6a72"
+      },
+      {
+        "Name": "llama-common.dll",
+        "Bytes": 4513792,
+        "Sha256": "aec0b67ed36a3a0e1f1c16fbb75ba9fdc852d6d38c5e36b0bbe3289ed6dc513e"
+      },
+      {
+        "Name": "llama-completion-impl.dll",
+        "Bytes": 116736,
+        "Sha256": "c66577ca306b8f8c754e65796f890d2042a29c630ec9211aa2fefe4ca4fd1226"
+      },
+      {
+        "Name": "llama-completion.exe",
+        "Bytes": 9728,
+        "Sha256": "10f15f662e323eacd7e50285ee4da992d744b32bb77f6ccc9368648288c16093"
+      },
+      {
+        "Name": "llama-server-impl.dll",
+        "Bytes": 6057984,
+        "Sha256": "88c097eba34d33a72bfe607ab9f3040c1f79dfdc252d5c4fad2fff2c81284b63"
+      },
+      {
+        "Name": "llama-server.exe",
+        "Bytes": 9728,
+        "Sha256": "9b20897b8198c3f578985c871845697a0fd5a8443a9160dcb89245ddc56d2fa5"
+      },
+      {
+        "Name": "llama.dll",
+        "Bytes": 2663936,
+        "Sha256": "f2ee77f241f86e36e25beec414e939950684fe847486823a4954bb7c5570ac99"
+      },
+      {
+        "Name": "mtmd.dll",
+        "Bytes": 1402368,
+        "Sha256": "8105f494fca70770fc9ec8ce77af8c5f38ee31016649f75382c592eef801dd49"
+      },
+      {
+        "Name": "test-headless-argv.exe",
+        "Bytes": 28672,
+        "Sha256": "bc1325d58166946eb776af520ad9270070b08f8c4846d51756083fae83e98fe0"
+      }
+    ],
+    "staticNamedClosureStatus": "candidate-and-mandatory-named-import-closure-gui-free",
+    "staticModules": 24,
+    "staticReportSha256": "21c325901e250cb86864343147d8125961df4e3ad1c785a2a5ea7050eba0d8cb",
+    "forwardedExportsResolved": false,
+    "optionalOsDelayImports": "recorded, not followed or claimed absent",
+    "runtimeLoadLibraryCallsAudited": false,
+    "genericSupervisorFieldNote": "ModelProcessStarted in individual supervisor receipts means the executable was created; these exact version/help/parser-only invocations loaded no model."
+  },
+  "changes": {
+    "installedRuntimeBundleChanged": false,
+    "productionRuntimePinChanged": false,
+    "engineDefaultChanged": false,
+    "modelAdmissionChanged": false,
+    "workerPolicyRelaxed": false,
+    "filesystemGrantsBroadened": false
+  },
+  "unqualified": [
+    "model loading and serving",
+    "numerical parity",
+    "ISA compatibility during inference",
+    "inference TPS and sustained performance",
+    "model output quality",
+    "default promotion"
+  ],
+  "archive": {
+    "directory": "%LOCALAPPDATA%/SwiftBonsai2/qualification/publisher-headless-candidate-20261030/attempt-41100062393",
+    "manifest": "sha256-manifest.json",
+    "manifestSha256": "65e84dff794bf7552480016550f5cdc87417ed6e33eddca9154223657236e301",
+    "payloadFiles": 74,
+    "payloadBytes": 66070327,
+    "manifestSelfExcluded": true,
+    "everyPayloadDigestReread": true,
+    "independentReview": "independent-review.json",
+    "independentReviewSha256": "ebab20c0d956862fb17a3ca1e72765b2c902aea95d40884125acc7c799315a90",
+    "initialUnknownStatusReviewPreserved": "independent-review.initial-api-unknown.json",
+    "candidateExecutedDuringArchival": false,
+    "compilerArchiveBytesArchived": false,
+    "compilerArchiveIdentityRetained": true
+  }
+}
