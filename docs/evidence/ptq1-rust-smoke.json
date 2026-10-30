@@ -1,0 +1,287 @@
+{
+  "schemaVersion": 1,
+  "kind": "ptq1-rust-one-token-approved-adapter-smoke",
+  "status": "passed-bounded-one-token-smoke",
+  "runnerSourceRevision": "cda911c1de405c1cd37f6eabff5992bc373df2ae",
+  "runtimeSourceRevision": "27e4860ea71b998b896191524ed980a586f022c6",
+  "scope": "Source-built Rust correctness checker against the unchanged released native DLL reference; one supplied token, approved adapter at 1.3, Auto requested. Not released-server or profile qualification.",
+  "profile": {
+    "weightRepresentation": "current-repacked-PTQ1_0",
+    "modelBytes": 5946648928,
+    "modelSha256": "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5",
+    "adapterBytes": 9682464,
+    "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42",
+    "adapterScale": 1.3,
+    "adapterScaleBinary32Bits": "3fa66666",
+    "suppliedTokenIds": [
+      248045
+    ],
+    "sampledOrGeneratedTokenCount": 0,
+    "contextCapacityTokens": 8192,
+    "nativeThreads": 4,
+    "nativeBatchTokens": 128,
+    "nativeMicrobatchTokens": 64,
+    "attentionKvType": "FP16",
+    "convolutionAndRecurrentType": "FP32",
+    "rustBackendRequested": "auto",
+    "perOperationDispatchCountersObserved": false,
+    "rustGraphIdentity": "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5:qwen35-text-v1:nonflash-f16:kv-f16:gdn-f32:prism-arm64-fused-v1:rank-one-lora-v1:f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42:3fa66666"
+  },
+  "sources": {
+    "native": {
+      "commit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+      "url": "https://github.com/PrismML-Eng/llama.cpp/archive/73bfe6cc485554822f80c473a3c0c4f25e80f41b.zip",
+      "bytes": 39423279,
+      "sha256": "5ee8738706229e84e85db7051d7a40797c91e22a7ffa8f4bfb8fea4bf2cb0293",
+      "headerSha256": "50d9375b080df279b9a5d93df9e489f18785b0b9fa98a51045a7c637433e0d9c"
+    },
+    "rust": {
+      "commit": "27e4860ea71b998b896191524ed980a586f022c6",
+      "url": "https://github.com/symbiogenesis/prism-inference/archive/27e4860ea71b998b896191524ed980a586f022c6.zip",
+      "bytes": 4193790,
+      "sha256": "dfbd4f09692a3ca6805776a6a605a2acc0736e9bb2b21c5a72d97df0e7724e1d"
+    },
+    "collectorSourceSha256": "3d73ecc5bbf569d82fdaedfde093407cac93af070777be2077e695762e0b6508",
+    "comparatorSourceSha256": "a62e0d0d26207241798912d77f6c61f5970f7de6afbd9d3e6eda4aadd896be1a",
+    "wrapperSourceSha256": "dcaab6da600b7724e8b4c45081952cd6511f2dc5f2cb31a1c007879e242089db",
+    "nativeRuntimePackage": {
+      "filename": "llama-prism-b10787-73bfe6c-bin-win-cpu-arm64.zip",
+      "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10787-73bfe6c/llama-prism-b10787-73bfe6c-bin-win-cpu-arm64.zip",
+      "bytes": 12412126,
+      "sha256": "cc808b33d35c72a3bd5c69a0d609d422426feb9dce23868e77992b6c33b8ddb3",
+      "digestSource": "https://api.github.com/repos/PrismML-Eng/llama.cpp/releases/tags/prism-b10787-73bfe6c"
+    },
+    "nativeCpuDllSha256": "701b354a38b25e5c6dc57a1559f71cd26b2d0f8d69c1576a0e77a59a4273d2ab",
+    "nativeVerifiedPackageFileCount": 63
+  },
+  "build": {
+    "compiler": {
+      "Path": "C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostarm64\\arm64\\cl.exe",
+      "Sha256": "9f36f48c99f07158a62f3d013247095f318d3560b0c31555f3664f0de25ebbcb",
+      "VisualCppToolsVersion": "14.51.36231",
+      "WindowsSdkVersion": "10.0.26100.0",
+      "CollectorArguments": [
+        "/nologo",
+        "/std:c++17",
+        "/MD",
+        "/W4",
+        "/WX",
+        "/O2",
+        "/EHsc",
+        "/I",
+        "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\Bonsai-HostedPtq1Build-852acd58a97d4535bc3fc69dd20decce\\73bfe6cc485554822f80c473a3c0c4f25e80f41b\\llama.cpp-73bfe6cc485554822f80c473a3c0c4f25e80f41b\\include",
+        "/I",
+        "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\Bonsai-HostedPtq1Build-852acd58a97d4535bc3fc69dd20decce\\73bfe6cc485554822f80c473a3c0c4f25e80f41b\\llama.cpp-73bfe6cc485554822f80c473a3c0c4f25e80f41b\\ggml\\include",
+        "C:\\a\\SwiftBonsai2Runner\\SwiftBonsai2Runner\\tools\\native-reference\\swift_ptq1_reference.cpp",
+        "/Fe:C:\\Users\\runneradmin\\AppData\\Local\\Temp\\Bonsai-HostedPtq1Build-852acd58a97d4535bc3fc69dd20decce\\swift-ptq1-reference.exe",
+        "/Fo:C:\\Users\\runneradmin\\AppData\\Local\\Temp\\Bonsai-HostedPtq1Build-852acd58a97d4535bc3fc69dd20decce\\reference.obj",
+        "/link",
+        "/incremental:no"
+      ],
+      "RustcVerbose": "rustc 1.101.0-nightly (1a2c4797e 2026-10-21)\nbinary: rustc\ncommit-hash: 1a2c4797ef2570bd76ca5dee34449169bc7dc457\ncommit-date: 2026-10-21\nhost: aarch64-pc-windows-msvc\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4"
+    },
+    "rustToolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+    "capturedTools": [
+      {
+        "Name": "swift-ptq1-reference.exe",
+        "Bytes": 46592,
+        "Sha256": "a12d819c35ed3e50551582035b3340da2821fcc063135fbbfe99d3c831aa57ec"
+      },
+      {
+        "Name": "swift_model_check.exe",
+        "Bytes": 708096,
+        "Sha256": "147e5ecb23abe095a0f27fcbd7cdca0096bcdff64331c0ba9f6f1d6eea70ad5d"
+      }
+    ],
+    "captureToolsReceiptSha256": "17c621a5f4adad529ed9774d9395cf72424b5bdce5d2a016fc23067e1a4659c7",
+    "maintenanceReceipt": {
+      "Sha256": "169ab708e26e01f27ac1291f9727ed3c4f75581a14a58f0522f9e8fc54c47d0f",
+      "SchemaVersion": 2,
+      "ProbeSha256": "5c7f9a2cacb92d637613d4240b2e1f5307d43325da995338c5576f52a06cf009",
+      "Revision": "cda911c1de405c1cd37f6eabff5992bc373df2ae"
+    },
+    "maintenanceReceiptSha256": "534cca29c15d954e9a989d64fb258782267bdca485dcaf3995ec19c078ee8801"
+  },
+  "ci": {
+    "runId": 41012887460,
+    "attempt": 1,
+    "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41012887460",
+    "conclusion": "success",
+    "hostedPreparationJobId": 123922529542,
+    "ownerJobId": 123923663501,
+    "ownerJobUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41012887460/job/123923663501",
+    "ownerJobApiStartedUtc": "2026-10-30T06:20:19Z",
+    "ownerJobApiCompletedUtc": "2026-10-30T06:23:24Z",
+    "ownerJobApiSeconds": 185.0,
+    "earliestReportedOwnerSetupStepUtc": "2026-10-30T06:20:08Z",
+    "earliestOwnerStepThroughApiEndSeconds": 196.0,
+    "timestampLimit": "GitHub's earliest setup step precedes the job started_at field; retain both API and conservative elapsed intervals.",
+    "artifacts": [
+      {
+        "id": 12958302154,
+        "name": "bonsai-tools-windows-arm64-cda911c1de405c1cd37f6eabff5992bc373df2ae",
+        "size_in_bytes": 1477633,
+        "digest": "sha256:a8052b730eec1ac9056be105cefc72877705a176eda7bfc8f536ab9d3c4bccf9",
+        "expired": false,
+        "created_at": "2026-10-30T06:17:31Z",
+        "expires_at": "2027-01-28T06:14:08Z"
+      },
+      {
+        "id": 12957989395,
+        "name": "tools-build-prepare-41012887460-1-b09f59a793044c4a91b68c4d33ce9eb9",
+        "size_in_bytes": 1588,
+        "digest": "sha256:73f7ea22fa66e818c81ab54f42ac08a57d6e82d87f4efd36986cb47fcfcb3436",
+        "expired": false,
+        "created_at": "2026-10-30T06:15:32Z",
+        "expires_at": "2027-01-28T06:14:08Z"
+      },
+      {
+        "id": 12957948262,
+        "name": "ptq1-capture-tools-41012887460-1",
+        "size_in_bytes": 383912,
+        "digest": "sha256:2a310706999ecc685024ba64341283777e887f7ee19624b4112637f60c715416",
+        "expired": false,
+        "created_at": "2026-10-30T06:17:30Z",
+        "expires_at": "2027-01-28T06:14:08Z"
+      },
+      {
+        "id": 12957584799,
+        "name": "native-ptq1-numerics-41012887460-1",
+        "size_in_bytes": 294085281,
+        "digest": "sha256:f8b76250afbf9de7b73baf42f4b741c23539d6ac07358bbdc28e0b665bb56a3a",
+        "expired": false,
+        "created_at": "2026-10-30T06:23:20Z",
+        "expires_at": "2027-01-28T06:14:08Z"
+      }
+    ],
+    "artifactArchiveDigests": "Server-reported SHA-256 of Actions archives. Raw files and retained tool/source/package copies were independently hash-verified; Actions ZIP bytes were not separately downloaded for digest verification.",
+    "upstreamFoundation": {
+      "url": "https://github.com/symbiogenesis/prism-inference/actions/runs/41009394716",
+      "sourceRevision": "27e4860ea71b998b896191524ed980a586f022c6",
+      "conclusion": "success"
+    },
+    "upstreamConformance": {
+      "url": "https://github.com/symbiogenesis/prism-inference/actions/runs/41009394718",
+      "sourceRevision": "27e4860ea71b998b896191524ed980a586f022c6",
+      "conclusion": "success"
+    }
+  },
+  "device": {
+    "processorName": "Snapdragon(R) X2 Elite Extreme - X2E94100 - Qualcomm Oryon(TM) CPU",
+    "runnerName": "ptq1-five-minute-x2-20261030",
+    "runnerLabels": [
+      "self-hosted",
+      "Windows",
+      "ARM64",
+      "swift-bonsai-snapdragon"
+    ],
+    "osArchitecture": "Windows ARM64; enforced by the capture workflow/script",
+    "osBuildRetained": false,
+    "otherDeviceFamiliesQualified": false
+  },
+  "comparison": {
+    "files": 129,
+    "elements": 39504384,
+    "byteExactFiles": 129,
+    "failedElements": 0,
+    "maximumAbsoluteError": 0.0,
+    "absoluteTolerance": 0.001,
+    "relativeTolerance": 0.001,
+    "finiteValuesAndCompleteInventoryRequired": true,
+    "completeLogicalKvConvolutionRecurrentStateIncluded": true,
+    "greedyActualAndReference": [
+      198
+    ],
+    "greedyTokensMatch": true,
+    "reportSha256": "60c1e338199ab1fc3c05211e6a8db60e1f10cbbcc9d2764599980b29ccebd977",
+    "nativeCaptureSha256": "25eadca64860a91a2b1c041a0ee878f120afd00d3bd1f0c0656cbcb7eb3eac09",
+    "nativeSerializedStateSha256": "c64c8c426f7383b2221654fa514b5cc18577c755dd08fdacf4cf3f42fe3264d6",
+    "rustControlStdoutSha256": "4c8189d1caba5629c9f6f879f47b24f48b84c8ec5bf37dd5328416b75ec233c8"
+  },
+  "boundsAndObservedResources": {
+    "wholeOwnerJobLimitSeconds": 300,
+    "wrapperWorkLimitSeconds": 240,
+    "wrapperWorkElapsedSeconds": 153.285146,
+    "modelProcesses": 2,
+    "modelsActiveAtOnce": 1,
+    "jobCommitCeilingBytes": 12348030976,
+    "availablePhysicalAdmissionBytes": 16642998272,
+    "runningPhysicalReserveBytes": 4294967296,
+    "native": {
+      "PeakJobMemoryBytes": 2070224896,
+      "MinimumAvailablePhysicalBytes": 21116194816,
+      "ProcessMemory": {
+        "LifetimePeakWorkingSetBytes": 6652440576,
+        "NominalSamplingIntervalMilliseconds": 1000,
+        "SampledPeakPrivateBytes": 1507930112,
+        "SampledPeakWorkingSetBytes": 2890526720,
+        "Samples": 3,
+        "Scope": "Root-process counters from existing safety queries and final-exit observation. Sampled maxima can miss brief peaks; OS lifetime peak working set includes mapped residency. Counters are not additive with Job commit or system available memory. No model-phase attribution or energy measurement."
+      }
+    },
+    "rust": {
+      "PeakJobMemoryBytes": 6283157504,
+      "MinimumAvailablePhysicalBytes": 17766457344,
+      "ProcessMemory": {
+        "LifetimePeakWorkingSetBytes": 6270754816,
+        "NominalSamplingIntervalMilliseconds": 1000,
+        "SampledPeakPrivateBytes": 6270754816,
+        "SampledPeakWorkingSetBytes": 6259765248,
+        "Samples": 103,
+        "Scope": "Root-process counters from existing safety queries and final-exit observation. Sampled maxima can miss brief peaks; OS lifetime peak working set includes mapped residency. Counters are not additive with Job commit or system available memory. No model-phase attribution or energy measurement."
+      }
+    },
+    "scope": "Safety/resource observations only. Job commit excludes mapped weight residency; memory domains overlap and sampled maxima can miss brief peaks. No benchmark, throughput, energy or reduced-admission conclusion."
+  },
+  "archive": {
+    "ownerManagedPath": "%LOCALAPPDATA%\\SwiftBonsai2\\qualification\\native-ptq1-20261030",
+    "absolutePath": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\native-ptq1-20261030",
+    "fileManifest": "manifest.json",
+    "fileManifestSha256": "781ab4ea42fe0b64501d78be0555f8ebab8031d695eb4ac3a9ec425419d42a3b",
+    "manifestEntriesExcludingManifestItself": 170,
+    "manifestedBytes": 376446253,
+    "originalCaptureFiles": 149,
+    "originalCaptureBytes": 316250407,
+    "verificationReceiptSha256": "6f2c13ca764821c223b8e1189cf372cc942bab8244e49c7c732b5d1b9636b8d7",
+    "allOriginalCaptureCopiesSha256Verified": true,
+    "sourceArchivesAndNativeRuntimePackageRetained": true,
+    "hostedCaptureAndMaintenanceBinariesRetained": true,
+    "modelWeightsAdaptersAndCredentialsArchived": false,
+    "offDeviceBackupVerified": false,
+    "retrievalWithoutOriginalRunnerRehearsed": false
+  },
+  "review": {
+    "kind": "Separate-agent artifact/identity review; no additional model or numerical comparator execution",
+    "verifiedUtc": "2026-10-30T06:27:23.634750+00:00",
+    "comparedRustFileDigestsVerified": 129,
+    "nativeHeaderStateLogitsAndControlDigestsVerified": true,
+    "hostedToolDigestsAndArm64PeVerified": true,
+    "maintenanceAndSourceArchiveDigestsVerified": true,
+    "externalHumanQualityReview": false
+  },
+  "boundedAdapterOneTokenAutoParityQualified": true,
+  "fullContextOrLongOutputQualified": false,
+  "loadedZeroIdentityQualified": false,
+  "nonzeroChangeControlQualified": false,
+  "scalarOrExplicitNeonQualified": false,
+  "writerAuthoringBasisQualified": false,
+  "qualityQualified": false,
+  "performanceQualified": false,
+  "serviceQualified": false,
+  "releasedServerBinaryQualifiedByThisCapture": false,
+  "fullQualificationApproved": false,
+  "defaultMayChange": false,
+  "memoryRequirementsMayChange": false,
+  "pendingControls": [
+    "no-adapter",
+    "loaded-zero-identity",
+    "nonzero-change",
+    "scalar",
+    "explicit-neon",
+    "writer-authoring-basis",
+    "quality",
+    "performance",
+    "full-context",
+    "service"
+  ]
+}
