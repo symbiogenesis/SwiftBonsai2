@@ -43,6 +43,7 @@ const MAX_ERROR_BODY: usize = 256;
 const READ_SIZE: usize = 8192;
 const EVIDENCE_PREFIX: &str = "Protected credentials and technical evidence: ";
 const RUNNING_MEMORY_MESSAGE: &str = "Swift stopped because its running memory requirements were no longer met. Close other apps, then select Retry model. Completed conversation turns remain in memory.";
+const PUBLISHER_INIT_FAILURE_MESSAGE: &str = "The publisher CPU runtime failed Windows initialization (0xC0000142). Retry model repeats that runtime choice. Copy any conversation or drafts you want to keep before closing. Close this app and relaunch scripts/Start-Chat.ps1 with -NativeEngine to try the experimental Rust runtime, preserving your DataDirectory and the same model and adapter options.";
 const LOCAL_CONNECTION_CLOSED: &str = "The connection to the model on this computer closed before a complete reply was received. The cause was not reported.";
 const CONTEXT_LIMIT_MESSAGE: &str = "This conversation and the selected output cap do not fit within the model's 8,192-token context limit. Choose a smaller output cap or start a new conversation, then send again.";
 const CONTROL_TOKEN_MESSAGE: &str = "This conversation contains reserved chat markers, such as <|im_start|> or <think>. Remove them or start a new conversation before sending again.";
@@ -255,7 +256,7 @@ pub(crate) fn run(config: Config, commands: Receiver<Command>, events: EventSend
 }
 
 fn retry_guidance(message: &str) -> String {
-    if message == RUNNING_MEMORY_MESSAGE {
+    if message == RUNNING_MEMORY_MESSAGE || message == PUBLISHER_INIT_FAILURE_MESSAGE {
         return message.to_owned();
     }
     format!(
@@ -466,7 +467,7 @@ fn wait_ready(
             .is_some()
         {
             let diagnostic = read_bounded_file(stderr_path, MAX_HEAD).unwrap_or_default();
-            return Err(startup_failure(&diagnostic));
+            return Err(startup_failure(&diagnostic, config.native_engine));
         }
         if Instant::now() >= until {
             return Err(Failure::Message(
@@ -477,9 +478,15 @@ fn wait_ready(
     }
 }
 
-fn startup_failure(diagnostic: &[u8]) -> Failure {
+fn startup_failure(diagnostic: &[u8], native_engine: bool) -> Failure {
     let text = String::from_utf8_lossy(diagnostic);
-    if text.contains("SandboxEnvironment") {
+    if !native_engine
+        && text.lines().any(|line| {
+            line == "Native backend startup failure: stage=authenticated-readiness, error=Backend, process=exited-0xC0000142"
+        })
+    {
+        Failure::Message(PUBLISHER_INIT_FAILURE_MESSAGE)
+    } else if text.contains("SandboxEnvironment") {
         Failure::Message(
             "The model sandbox rejected inherited service credentials. Restart the app from a terminal or app session without service credentials in its parent environment.",
         )
@@ -2041,17 +2048,67 @@ mod tests {
     #[test]
     fn startup_sandbox_failures_explain_support_and_policy_separately() {
         assert!(
-            matches!(startup_failure(b"Development backend launch failed: SandboxEnvironment."),
+            matches!(startup_failure(b"Development backend launch failed: SandboxEnvironment.", false),
                 Failure::Message(message) if message.contains("parent environment") && !message.contains("Update Windows"))
         );
         assert!(
-            matches!(startup_failure(b"Development backend launch failed: SandboxUnavailable."),
+            matches!(startup_failure(b"Development backend launch failed: SandboxUnavailable.", false),
                 Failure::Message(message) if message.contains("Update Windows") && message.contains("loopback"))
         );
         assert!(
-            matches!(startup_failure(b"Development backend launch failed: Sandbox."),
+            matches!(startup_failure(b"Development backend launch failed: Sandbox.", false),
                 Failure::Message(message) if message.contains("required policy") && message.contains("diagnostics"))
         );
+    }
+
+    #[test]
+    fn publisher_runtime_initialization_failure_offers_explicit_native_relaunch()
+    -> Result<(), Failure> {
+        let diagnostic = b"Native backend startup failure: stage=authenticated-readiness, error=Backend, process=exited-0xC0000142\r\nDevelopment backend launch failed: Backend.\r\nsynthetic-private-backend-detail\r\n";
+        let Failure::Message(message) = startup_failure(diagnostic, false) else {
+            return Err(Failure::Message(
+                "Missing publisher initialization guidance",
+            ));
+        };
+        assert!(message.contains("publisher CPU runtime"));
+        assert!(message.contains("Windows initialization (0xC0000142)"));
+        assert!(message.contains("Close this app"));
+        assert!(message.contains("Retry model repeats that runtime choice"));
+        assert!(message.contains("Copy any conversation or drafts"));
+        assert!(message.contains("Start-Chat.ps1 with -NativeEngine"));
+        assert!(message.contains("experimental Rust runtime"));
+        assert!(message.contains("DataDirectory"));
+        assert!(message.contains("same model and adapter options"));
+        assert!(!message.contains("synthetic-private-backend-detail"));
+        assert_eq!(super::retry_guidance(message), message);
+        assert_eq!(
+            startup_failure(diagnostic, true),
+            startup_failure(b"Development backend launch failed: Backend.", true)
+        );
+        assert!(
+            matches!(startup_failure(diagnostic, true), Failure::Message(native)
+                if !native.contains("-NativeEngine") && !native.contains("publisher"))
+        );
+        assert_eq!(
+            startup_failure(b"Development backend launch failed: Memory.", true),
+            Failure::Memory
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn startup_initialization_guidance_requires_the_exact_fixed_marker() {
+        let generic = startup_failure(b"Development backend launch failed: Backend.", false);
+        for diagnostic in [
+            "Native backend startup failure: stage=authenticated-readiness, error=Backend, process=exited-0xC0000005\n",
+            "Native backend startup failure: stage=native-identity, error=Backend, process=exited-0xC0000142\n",
+            "Native backend startup failure: stage=authenticated-readiness, error=Backend, process=exited-0xc0000142\n",
+            "prefix Native backend startup failure: stage=authenticated-readiness, error=Backend, process=exited-0xC0000142\n",
+            "Native backend startup failure: stage=authenticated-readiness, error=Backend, process=exited-0xC0000142 suffix\n",
+            "Development backend launch failed: Backend. 0xC0000142\n",
+        ] {
+            assert_eq!(startup_failure(diagnostic.as_bytes(), false), generic);
+        }
     }
 
     #[test]
@@ -2061,11 +2118,11 @@ mod tests {
                 .is_none()
         );
         assert_eq!(
-            startup_failure(b"Development backend launch failed: Memory."),
+            startup_failure(b"Development backend launch failed: Memory.", false),
             Failure::Memory
         );
         let Failure::Message(message) =
-            startup_failure(b"Development backend launch failed: Adapter.")
+            startup_failure(b"Development backend launch failed: Adapter.", false)
         else {
             return Err(Failure::Message("Missing adapter startup guidance"));
         };
@@ -2106,11 +2163,11 @@ mod tests {
             reasoning_content: None,
         }];
         assert_eq!(
-            startup_failure(b"Development backend launch failed: Memory."),
+            startup_failure(b"Development backend launch failed: Memory.", false),
             Failure::Memory
         );
         assert!(matches!(
-            startup_failure(b"Development backend launch failed: Artifacts."),
+            startup_failure(b"Development backend launch failed: Artifacts.", false),
             Failure::Message(_)
         ));
         assert!(commands.send(Command::NewChat).is_ok());
