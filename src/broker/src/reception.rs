@@ -28,6 +28,8 @@ pub enum ReceiveError {
     Deadline,
     /// The supplied stream failed during reception.
     Io,
+    /// Storage for an authorized, bounded request could not be reserved.
+    Storage,
     /// The stream ended before the complete request arrived.
     Incomplete,
     /// The header block exceeded the byte or header-count limit.
@@ -79,7 +81,8 @@ impl<R> ReceivedChat<R> {
 /// Requires a Tokio time driver. Takes ownership so errors and cancellation drop
 /// the stream. At most 16 KiB (including line/whitespace) is read before head
 /// authorization; this fixed buffer also receives bodies that fit beside the
-/// head. A separate body of at most 1 MiB is allocated only after authorization.
+/// head. Larger authorized bodies reuse that allocation, with requested growth
+/// bounded by the declared body length (at most 1 MiB).
 /// Duplicate headers reach [`RequestPolicy`] unchanged in multiplicity. No chunked
 /// decoding, trailing requests, connection reuse, listener or production token
 /// counter is provided.
@@ -87,7 +90,8 @@ impl<R> ReceivedChat<R> {
 ///
 /// # Errors
 /// Returns [`ReceiveError`] for an expired deadline, stream failure, incomplete
-/// or oversized headers/body, invalid wire syntax, surplus bytes or policy rejection.
+/// or oversized headers/body, invalid wire syntax, surplus bytes, unavailable
+/// body storage or policy rejection.
 pub async fn receive_chat<R: AsyncRead + Unpin + 'static>(
     stream: R,
     policy: &RequestPolicy,
@@ -195,7 +199,6 @@ async fn receive_body<R: AsyncRead + Unpin>(
         intake_deadline,
     } = head;
     let length = authorized.length;
-    let prefix_length = used - head_end;
     let chat = if length <= raw.len() - head_end {
         // Reuse the head buffer for small bodies, even when fragmented across
         // reads. Its coalesced prefix is already in place, so no body allocation
@@ -207,18 +210,45 @@ async fn receive_body<R: AsyncRead + Unpin>(
         ensure_time(intake_deadline)?;
         authorized.prepare(&raw[head_end..body_end])
     } else {
-        let mut body = vec![0u8; length];
-        body[..prefix_length].copy_from_slice(&raw[head_end..used]);
-        let mut filled = prefix_length;
-        drop(raw);
-        while filled < length {
-            filled += read_before(&mut stream, &mut body[filled..], intake_deadline).await?;
+        let mut body = body_buffer(raw, head_end, used, length)?;
+        while body.len() < length {
+            ensure_time(intake_deadline)?;
+            // Capacity can exceed the requested length. Bound read_buf so an
+            // allocator's spare capacity never admits bytes of a next request.
+            let remaining =
+                u64::try_from(length - body.len()).map_err(|_| ReceiveError::Storage)?;
+            let mut bounded = (&mut stream).take(remaining);
+            let count = timeout_at(intake_deadline, bounded.read_buf(&mut body))
+                .await
+                .map_err(|_| ReceiveError::Deadline)?
+                .map_err(|_| ReceiveError::Io)?;
+            ensure_time(intake_deadline)?;
+            if count == 0 {
+                return Err(ReceiveError::Incomplete);
+            }
         }
         ensure_time(intake_deadline)?;
         authorized.prepare(&body)
     };
     ensure_time(intake_deadline)?;
     Ok((stream, chat))
+}
+
+fn body_buffer(
+    raw: Box<[u8]>,
+    head_end: usize,
+    used: usize,
+    length: usize,
+) -> Result<Vec<u8>, ReceiveError> {
+    // Keep the authorized header allocation, compact only its received body
+    // prefix, and read directly into final spare capacity. Do not initialize a
+    // separate whole body only for the reader to overwrite it.
+    let mut body = raw.into_vec();
+    body.copy_within(head_end..used, 0);
+    body.truncate(used - head_end);
+    body.try_reserve_exact(length - body.len())
+        .map_err(|_| ReceiveError::Storage)?;
+    Ok(body)
 }
 
 async fn read_before<R: AsyncRead + Unpin>(
@@ -279,3 +309,6 @@ fn parse_head(policy: &RequestPolicy, raw: &[u8]) -> Result<AuthorizedHead, Rece
         .check_head(&request.into_parts().0)
         .map_err(ReceiveError::Policy)
 }
+
+#[cfg(test)]
+mod memory_tests;

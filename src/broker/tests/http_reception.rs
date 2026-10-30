@@ -295,7 +295,7 @@ fn incomplete_and_surplus_bodies_close_the_stream() {
 fn body_buffer_boundary_preserves_framing_with_fragmented_reads() {
     run(async {
         // Both lengths have the same Content-Length digit count. Exercise an
-        // exact fit in the head buffer and the separate-body allocation path.
+        // exact fit in the head buffer and the compacted-body storage path.
         let capacity = MAX_HEADER_BYTES - head(MAX_HEADER_BYTES, "").len();
         for length in [capacity, capacity + 1] {
             let mut body = CHAT.to_vec();

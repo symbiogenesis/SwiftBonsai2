@@ -103,10 +103,14 @@ no-go decision, including losing cases.
   Include borrowed-PCM microphone uploads without full canonical-WAV or multipart
   copies, retaining exact upload framing and cancellation. Qualify shared buffered
   speech response intake with direct final-storage reads, including maximum-size
-  WAV fallback, partial responses and cancellation. Include broker nonstreaming
-  JSON reads into bounded final storage, exact-cap overflow probing and truncated
-  framing; their ownership and read-buffer regressions remain model-free. Capture
-  complete-task latency and peak memory in target-device CI before claiming gains.
+  WAV fallback, partial responses and cancellation. Qualify broker request intake
+  that reuses authorized header storage and fills large bodies in final spare
+  capacity, including exact declared-length reads, truncation and cancellation;
+  its allocation/read-buffer regressions remain model-free. Include broker
+  nonstreaming JSON reads into bounded final storage, exact-cap overflow probing
+  and truncated framing; their ownership and read-buffer regressions remain
+  model-free. Capture complete-task latency and peak memory in target-device CI
+  before claiming gains.
 - Extend the implemented exact 33-spelling Swift control-token rejection,
   fixed HTTP 400 recovery and count/generation identity regressions to actual
   template/tokenizer sessions. Include user/system content, supplied assistant
