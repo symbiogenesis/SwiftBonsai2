@@ -151,7 +151,8 @@ LLVM extraction uses `System32/tar.exe`. Cached launch invokes neither download.
 
 Only explicitly enabled, Windows-permitted microphone capture starts input.
 Five-second mono 16 kHz WAV clips remain in memory; capture pauses for each
-transcription and reuses the recorder only for the same enabled generation.
+transcription and reuses the recorder only for the same enabled, permitted
+generation. Disabling or revoking access closes the recorder.
 Fixed clip boundaries can split words: this is neither streaming ASR nor VAD.
 Transcripts return to the composer for review, never automatic send. Disabling,
 revocation, Send, New conversation, read-aloud or closing cancels input; late
