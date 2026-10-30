@@ -148,6 +148,15 @@ try {
         $script:ProbeRecords = [Collections.Generic.List[object]]::new()
         $script:ReplaceOutput = $false
         $script:FixtureTool = $null
+        $script:FirstCargo = Join-Path $FixtureRoot 'first-cargo.exe'
+        function script:Get-Command {
+            [CmdletBinding()]
+            [OutputType([pscustomobject])]
+            param([Parameter(Position = 0)][string]$Name, [string]$CommandType)
+            if ($Name -cne 'cargo' -or $CommandType -cne 'Application') { throw 'Unexpected bootstrap command discovery.' }
+            [pscustomobject]@{ Source = $script:FirstCargo }
+            [pscustomobject]@{ Source = (Join-Path $FixtureRoot 'second-cargo.exe') }
+        }
         $script:VersionJson = ConvertTo-Json -Compress -InputObject @{
             Name = 'bonsai-tools'; Version = '0.1.0'; ProtocolVersion = 5
             StartupProtocolVersion = 1; BootstrapProtocolVersion = 1; ChatLaunchProtocolVersion = 1; Commands = @('source-build', 'chat-launch')
@@ -164,6 +173,7 @@ try {
                 return [pscustomobject]@{ ExitCode = 0; StandardOutput = $script:VersionJson; StandardError = '' }
             }
             if ($ArgumentList[0].StartsWith('+', [StringComparison]::Ordinal)) {
+                if ($Executable -cne $script:FirstCargo) { throw 'Bootstrap must select the first Cargo executable on PATH.' }
                 if ($null -eq $Environment -or $Environment.CARGO_BUILD_FINGERPRINT -cne 'content' -or -not $LogPath -or -not $OwnDescendants) { throw 'Cold bootstrap dropped its compiler environment, evidence or descendant ownership.' }
                 [IO.File]::WriteAllBytes($script:FixtureTool, $script:FixtureBytes)
                 return [pscustomobject]@{ ExitCode = 0; StandardOutput = ''; StandardError = '' }

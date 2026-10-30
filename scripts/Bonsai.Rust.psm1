@@ -165,8 +165,8 @@ function Invoke-BonsaiRustCheck {
     $work = Resolve-ExternalPath -Path (Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-RustCheck-' + [guid]::NewGuid().ToString('N')))
     [void][IO.Directory]::CreateDirectory($work)
     $environment = @{ CARGO_TARGET_DIR = $target; TEMP = $work; TMP = $work }
-    $cargo = (Get-Command -Name cargo -CommandType Application -ErrorAction Stop).Source
-    $rustc = (Get-Command -Name rustc -CommandType Application -ErrorAction Stop).Source
+    $cargo = @(Get-Command -Name cargo -CommandType Application -ErrorAction Stop)[0].Source
+    $rustc = @(Get-Command -Name rustc -CommandType Application -ErrorAction Stop)[0].Source
     $records = [Collections.Generic.List[object]]::new()
     $receipt = [ordered]@{
         SchemaVersion = 2; Revision = $env:GITHUB_SHA; Toolchain = $Toolchain; CheckProfile = $CheckProfile

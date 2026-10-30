@@ -89,7 +89,7 @@ function Resolve-BonsaiRustTool {
         try {
             $tool = Resolve-ExternalPath (Join-Path $target 'release/bonsai-tools.exe')
             if ([IO.File]::Exists($tool)) { [IO.File]::Delete($tool) }
-            $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
+            $cargo = @(Get-Command cargo -CommandType Application -ErrorAction Stop)[0].Source
             $arguments = @("+$channel", 'build', '--locked', '--release', '--manifest-path', (Join-Path $repository 'tools/bonsai/Cargo.toml'), '--target-dir', $target)
             $log = Join-Path $scratch 'bootstrap-build.log'
             $built = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList $arguments -WorkingDirectory $scratch -Environment @{ CARGO_BUILD_FINGERPRINT = 'content'; CARGO_UNSTABLE_CHECKSUM_FRESHNESS = 'true' } -LogPath $log -TimeoutSeconds 3600 -OwnDescendants
