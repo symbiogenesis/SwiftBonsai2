@@ -1,9 +1,10 @@
 //! Complete POD layouts for the pinned Qwen public ABI, version 6.
+// Default initializers derive from qwen.cpp and sampling-defaults.h at
+// ENGINE_REVISION; MIT licensed, see ../../LICENSE.qwen-core.
 
 use std::ffi::{c_char, c_int, c_void};
 
 #[repr(C)]
-#[derive(Default)]
 pub(super) struct InitParams {
     pub(super) abi_version: c_int,
     pub(super) talker_path: *const c_char,
@@ -15,8 +16,24 @@ pub(super) struct InitParams {
     pub(super) device: *const c_char,
 }
 
+// Port of qt_init_default_params at ENGINE_REVISION. Keep defaults in safe Rust;
+// the linked native implementation remains an independent model-free test oracle.
+impl Default for InitParams {
+    fn default() -> Self {
+        Self {
+            abi_version: 6,
+            talker_path: std::ptr::null(),
+            codec_path: std::ptr::null(),
+            use_fa: true,
+            clamp_fp16: false,
+            max_batch: 1,
+            codec_chunk_sec: 24.0,
+            device: std::ptr::null(),
+        }
+    }
+}
+
 #[repr(C)]
-#[derive(Default)]
 pub(super) struct TtsParams {
     pub(super) abi_version: c_int,
     pub(super) text: *const c_char,
@@ -46,6 +63,41 @@ pub(super) struct TtsParams {
     pub(super) ref_frames: c_int,
 }
 
+// Port of qt_tts_default_params and sampling-defaults.h at ENGINE_REVISION.
+// Explicitly initialize the complete ABI, including unsupported trailing fields.
+impl Default for TtsParams {
+    fn default() -> Self {
+        Self {
+            abi_version: 6,
+            text: std::ptr::null(),
+            lang: std::ptr::null(),
+            instruct: std::ptr::null(),
+            speaker: std::ptr::null(),
+            ref_audio_24k: std::ptr::null(),
+            ref_n_samples: 0,
+            ref_text: std::ptr::null(),
+            seed: -1,
+            max_new_tokens: 2048,
+            temperature: 0.9,
+            top_k: 50,
+            top_p: 1.0,
+            repetition_penalty: 1.05,
+            subtalker_temperature: 0.9,
+            subtalker_top_k: 50,
+            subtalker_top_p: 1.0,
+            dump_dir: std::ptr::null(),
+            cancel: None,
+            cancel_user_data: std::ptr::null_mut(),
+            on_chunk: None,
+            on_chunk_user_data: std::ptr::null_mut(),
+            ref_spk_emb: std::ptr::null(),
+            ref_spk_dim: 0,
+            ref_codes: std::ptr::null(),
+            ref_frames: 0,
+        }
+    }
+}
+
 // malloc-owned latent buffers returned by qt_extract_voice_ref.
 #[repr(C)]
 #[derive(Default)]
@@ -71,7 +123,9 @@ pub(super) struct RawAudio {
 unsafe extern "C" {
     // Runner's reviewed private build overlay adds this bounded atomic setter.
     pub(super) fn bonsai_qt_set_cpu_threads(threads: c_int);
+    #[cfg(test)]
     pub(super) fn qt_init_default_params(params: *mut InitParams);
+    #[cfg(test)]
     pub(super) fn qt_tts_default_params(params: *mut TtsParams);
     pub(super) fn qt_model_type(context: *const c_void) -> *const c_char;
     pub(super) fn qt_audio_free(audio: *mut RawAudio);
@@ -102,7 +156,7 @@ unsafe extern "C-unwind" {
 }
 
 // Windows ARM64, audited against qwen.h at ENGINE_REVISION. Keep the entire
-// structures, including unsupported trailing fields, before calling defaults.
+// structures, including unsupported trailing fields, before crossing the ABI.
 const _: () = {
     use std::mem::offset_of;
     assert!(size_of::<InitParams>() == 48 && align_of::<InitParams>() == 8);

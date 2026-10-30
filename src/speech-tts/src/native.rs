@@ -52,14 +52,13 @@ pub(super) struct Context(NonNull<c_void>);
 // The returned pointers borrow their arguments and are used only during the
 // synchronous native call; no parameter object escapes its borrowed storage.
 fn synthesis_params(text: &CStr) -> qwen::TtsParams {
-    let mut params = qwen::TtsParams::default();
-    // SAFETY: params is the complete, exclusively writable pinned ABI-v6 POD.
-    unsafe { qwen::qt_tts_default_params(&raw mut params) };
-    params.text = text.as_ptr();
-    params.lang = c"auto".as_ptr();
-    params.seed = VOICE_SEED;
-    params.max_new_tokens = 1500;
-    params
+    qwen::TtsParams {
+        text: text.as_ptr(),
+        lang: c"auto".as_ptr(),
+        seed: VOICE_SEED,
+        max_new_tokens: 1500,
+        ..qwen::TtsParams::default()
+    }
 }
 
 fn design_params(voice: &CStr) -> qwen::TtsParams {
@@ -143,15 +142,15 @@ impl Context {
             // once: the upstream callback user-data slot is not atomic.
             unsafe { qwen::qt_log_set(discard_log, std::ptr::null_mut()) };
         });
-        let mut params = qwen::InitParams::default();
-        // SAFETY: This is the complete, writable ABI-v6 POD layout.
-        unsafe { qwen::qt_init_default_params(&raw mut params) };
-        params.talker_path = model.as_ptr();
-        params.codec_path = codec.as_ptr();
-        params.device = c"CPU".as_ptr();
-        params.use_fa = false;
-        params.max_batch = 1;
-        params.codec_chunk_sec = 8.0;
+        let params = qwen::InitParams {
+            talker_path: model.as_ptr(),
+            codec_path: codec.as_ptr(),
+            device: c"CPU".as_ptr(),
+            use_fa: false,
+            max_batch: 1,
+            codec_chunk_sec: 8.0,
+            ..qwen::InitParams::default()
+        };
         // SAFETY: The reviewed overlay atomically stores a validated bounded
         // count. INITIALIZE prevents another context changing it during init.
         unsafe { qwen::bonsai_qt_set_cpu_threads(threads) };
@@ -590,30 +589,76 @@ mod tests {
     }
 
     #[test]
-    fn pinned_qwen_defaults_populate_complete_rust_abi() {
+    fn rust_parameter_defaults_match_every_pinned_cpp_field() {
+        // Compare fields, never padding bytes or function-pointer addresses.
+        macro_rules! equal_fields {
+            ($rust:ident, $native:ident, $($field:ident),+ $(,)?) => {
+                $(assert_eq!($rust.$field, $native.$field, stringify!($field));)+
+            };
+        }
+        macro_rules! equal_float_bits {
+            ($rust:ident, $native:ident, $($field:ident),+ $(,)?) => {
+                $(assert_eq!(
+                    $rust.$field.to_bits(), $native.$field.to_bits(), stringify!($field)
+                );)+
+            };
+        }
+
+        let rust_init = qwen::InitParams::default();
         let mut init = qwen::InitParams::default();
         // SAFETY: init is the complete initialized ABI-v6 POD, exclusively borrowed.
         unsafe { qwen::qt_init_default_params(&raw mut init) };
-        assert_eq!(init.abi_version, 6);
-        assert!(init.talker_path.is_null() && init.codec_path.is_null());
-        assert!(init.use_fa && !init.clamp_fp16);
-        assert_eq!(init.max_batch, 1);
-        assert_eq!(init.codec_chunk_sec.to_bits(), 24.0_f32.to_bits());
-        assert!(init.device.is_null());
+        equal_fields!(
+            rust_init,
+            init,
+            abi_version,
+            talker_path,
+            codec_path,
+            use_fa,
+            clamp_fp16,
+            max_batch,
+            device,
+        );
+        equal_float_bits!(rust_init, init, codec_chunk_sec);
 
+        let rust_tts = qwen::TtsParams::default();
         let mut tts = qwen::TtsParams::default();
         // SAFETY: tts is the complete initialized ABI-v6 POD, exclusively borrowed.
         unsafe { qwen::qt_tts_default_params(&raw mut tts) };
-        assert_eq!(tts.abi_version, 6);
-        assert!(tts.text.is_null() && tts.lang.is_null() && tts.instruct.is_null());
-        assert_eq!(tts.seed, -1);
-        assert!(tts.max_new_tokens > 0);
-        assert!(tts.speaker.is_null() && tts.ref_audio_24k.is_null() && tts.ref_text.is_null());
-        assert!(tts.dump_dir.is_null() && tts.cancel.is_none() && tts.on_chunk.is_none());
-        assert!(tts.cancel_user_data.is_null() && tts.on_chunk_user_data.is_null());
-        assert!(tts.ref_spk_emb.is_null() && tts.ref_codes.is_null());
-        assert_eq!(tts.ref_spk_dim, 0);
-        assert_eq!(tts.ref_frames, 0);
+        equal_fields!(
+            rust_tts,
+            tts,
+            abi_version,
+            text,
+            lang,
+            instruct,
+            speaker,
+            ref_audio_24k,
+            ref_n_samples,
+            ref_text,
+            seed,
+            max_new_tokens,
+            top_k,
+            subtalker_top_k,
+            dump_dir,
+            cancel_user_data,
+            on_chunk_user_data,
+            ref_spk_emb,
+            ref_spk_dim,
+            ref_codes,
+            ref_frames,
+        );
+        equal_float_bits!(
+            rust_tts,
+            tts,
+            temperature,
+            top_p,
+            repetition_penalty,
+            subtalker_temperature,
+            subtalker_top_p,
+        );
+        assert!(rust_tts.cancel.is_none() && tts.cancel.is_none());
+        assert!(rust_tts.on_chunk.is_none() && tts.on_chunk.is_none());
     }
 
     #[test]
