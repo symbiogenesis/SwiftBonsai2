@@ -93,6 +93,17 @@ reasoning fields on user/system messages are rejected. Omitted reasoning stays
 omitted; supplied reasoning is preserved and counted within the same body and
 context bounds.
 
+Caller-supplied content and assistant reasoning reject the exact 33 control and
+user-defined token spellings in the pinned Swift vocabulary before counting or
+backend contact. This includes role/turn markers, reasoning/tool tags and the
+declared media/TTS controls. The independently extracted
+[inventory](../src/broker/tests/fixtures/swift-control-tokens.json) binds their IDs
+and types to the locked model and raw tokenizer-metadata digest. Validation runs
+after JSON decoding and text-part concatenation, so escapes or split parts cannot
+introduce a control spelling. Rejection never removes or normalizes text; other
+literal lookalikes are preserved exactly. This is a narrow model-control boundary,
+not a defense against arbitrary natural-language prompt injection.
+
 Model selection, token-cap aliases, tools, media, other template or sampling
 controls, arbitrary LoRA selection or arrays, slots and timing overrides are
 unsupported. URLs in strings stay plain text; the broker fetches no remote content.

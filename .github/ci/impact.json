@@ -8,7 +8,7 @@
   "ignored": ["*.md", "docs/**", "LICENSE", "NOTICE", ".gitignore"],
   "package_inputs": {
     "bonsai-cpu-policy": ["config/runtime.lock.json", "config/swift-assessment.lock.json", "config/swift-lora.lock.json", "config/swift.ptq1-export.json", "config/profiles/reference-cpu.json"],
-    "bonsai-broker": ["config/runtime.lock.json", "config/swift-assessment.lock.json", "config/profiles/reference-cpu.json", "config/prism-inference.lock.json"],
+    "bonsai-broker": ["config/runtime.lock.json", "config/swift-assessment.lock.json", "config/swift.metadata.json", "config/profiles/reference-cpu.json", "config/prism-inference.lock.json"],
     "bonsai-tools": ["config/swift-assessment.lock.json", "config/swift-lora.lock.json", "config/swift.ptq1-export.json", "config/swift-lora.qualification.json", "config/swift.metadata.json", "tests/fixtures/lora-qualification-v1.json", "src/speech-asr/model.lock.json", "src/speech-tts/model*.lock.json", "config/native-speech.lock.json", "config/prism-inference.lock.json"]
   },
   "groups": {

@@ -41,6 +41,8 @@ use serde::{Deserialize, Deserializer, Serialize, de};
 use std::{borrow::Cow, fmt, marker::PhantomData};
 use subtle::ConstantTimeEq;
 
+mod chat_controls;
+
 /// Largest accepted client or canonical backend request body in bytes.
 pub const MAX_BODY_BYTES: usize = 1024 * 1024;
 /// Largest accepted HTTP header block in bytes.
@@ -111,6 +113,8 @@ pub enum Rejection {
     BodySize,
     /// The body does not match the strict chat schema or role sequence.
     ChatSchema,
+    /// Supplied text contains a pinned model control or user-defined spelling.
+    ChatControlTokens,
     /// The requested completion token budget is outside the allowed range.
     CompletionLimit,
     /// The trusted counter could not provide a positive prompt token count.
@@ -293,6 +297,15 @@ impl AuthorizedHead {
     fn prepare_chat(self, chat: &ClientChat<'_>) -> Result<PendingChat, Rejection> {
         if !valid_history(&chat.messages) {
             return Err(Rejection::ChatSchema);
+        }
+        if chat.messages.iter().any(|message| {
+            chat_controls::contains(&message.content)
+                || message
+                    .reasoning_content
+                    .as_deref()
+                    .is_some_and(chat_controls::contains)
+        }) {
+            return Err(Rejection::ChatControlTokens);
         }
         if !(1..=MAX_COMPLETION_TOKENS).contains(&chat.max_completion_tokens) {
             return Err(Rejection::CompletionLimit);

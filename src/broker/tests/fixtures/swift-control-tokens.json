@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "model_repository": "ukisai/Swift-Bonsai-2-GGUF",
+  "model_revision": "a3bdac086bbb6b04d87d0108d18943b5f63868f7",
+  "model_sha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+  "model_bytes": 7206168928,
+  "tokenizer_metadata_sha256": "4ac520292c253d0f559aa3a22de4784dee3eefec14cc0d62e2507c47063c1fe5",
+  "extraction": "All token_type 3 (control) or 4 (user-defined) entries from the exact tokens/token_type metadata arrays; raw tokenizer-record digest verified before extraction. No model tensor payload read.",
+  "entries": [
+    {
+      "id": 248044,
+      "kind": 3,
+      "spelling": "<|endoftext|>"
+    },
+    {
+      "id": 248045,
+      "kind": 3,
+      "spelling": "<|im_start|>"
+    },
+    {
+      "id": 248046,
+      "kind": 3,
+      "spelling": "<|im_end|>"
+    },
+    {
+      "id": 248047,
+      "kind": 3,
+      "spelling": "<|object_ref_start|>"
+    },
+    {
+      "id": 248048,
+      "kind": 3,
+      "spelling": "<|object_ref_end|>"
+    },
+    {
+      "id": 248049,
+      "kind": 3,
+      "spelling": "<|box_start|>"
+    },
+    {
+      "id": 248050,
+      "kind": 3,
+      "spelling": "<|box_end|>"
+    },
+    {
+      "id": 248051,
+      "kind": 3,
+      "spelling": "<|quad_start|>"
+    },
+    {
+      "id": 248052,
+      "kind": 3,
+      "spelling": "<|quad_end|>"
+    },
+    {
+      "id": 248053,
+      "kind": 3,
+      "spelling": "<|vision_start|>"
+    },
+    {
+      "id": 248054,
+      "kind": 3,
+      "spelling": "<|vision_end|>"
+    },
+    {
+      "id": 248055,
+      "kind": 3,
+      "spelling": "<|vision_pad|>"
+    },
+    {
+      "id": 248056,
+      "kind": 3,
+      "spelling": "<|image_pad|>"
+    },
+    {
+      "id": 248057,
+      "kind": 3,
+      "spelling": "<|video_pad|>"
+    },
+    {
+      "id": 248058,
+      "kind": 4,
+      "spelling": "<tool_call>"
+    },
+    {
+      "id": 248059,
+      "kind": 4,
+      "spelling": "</tool_call>"
+    },
+    {
+      "id": 248060,
+      "kind": 3,
+      "spelling": "<|fim_prefix|>"
+    },
+    {
+      "id": 248061,
+      "kind": 3,
+      "spelling": "<|fim_middle|>"
+    },
+    {
+      "id": 248062,
+      "kind": 3,
+      "spelling": "<|fim_suffix|>"
+    },
+    {
+      "id": 248063,
+      "kind": 3,
+      "spelling": "<|fim_pad|>"
+    },
+    {
+      "id": 248064,
+      "kind": 3,
+      "spelling": "<|repo_name|>"
+    },
+    {
+      "id": 248065,
+      "kind": 3,
+      "spelling": "<|file_sep|>"
+    },
+    {
+      "id": 248066,
+      "kind": 4,
+      "spelling": "<tool_response>"
+    },
+    {
+      "id": 248067,
+      "kind": 4,
+      "spelling": "</tool_response>"
+    },
+    {
+      "id": 248068,
+      "kind": 4,
+      "spelling": "<think>"
+    },
+    {
+      "id": 248069,
+      "kind": 4,
+      "spelling": "</think>"
+    },
+    {
+      "id": 248070,
+      "kind": 3,
+      "spelling": "<|audio_start|>"
+    },
+    {
+      "id": 248071,
+      "kind": 3,
+      "spelling": "<|audio_end|>"
+    },
+    {
+      "id": 248072,
+      "kind": 3,
+      "spelling": "<tts_pad>"
+    },
+    {
+      "id": 248073,
+      "kind": 3,
+      "spelling": "<tts_text_bos>"
+    },
+    {
+      "id": 248074,
+      "kind": 3,
+      "spelling": "<tts_text_eod>"
+    },
+    {
+      "id": 248075,
+      "kind": 3,
+      "spelling": "<tts_text_bos_single>"
+    },
+    {
+      "id": 248076,
+      "kind": 3,
+      "spelling": "<|audio_pad|>"
+    }
+  ]
+}
