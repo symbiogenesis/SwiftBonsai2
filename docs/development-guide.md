@@ -268,7 +268,7 @@ bypass the script guard. Installed launches use [package verification](chat-pack
 | --- | --- | --- |
 | Publisher Prism CPU, original Swift PQ2 | Default; pinned adapter enabled | Adapter scale follows response settings. Missing/altered adapters fail with provisioning guidance, without download or fallback. |
 | Publisher Prism CPU, current-weight PTQ1 export | `-UseRepackedPtq1` (app/broker `--use-repacked-ptq1`) | Same adapter opt-out/scale. Missing/changed bytes reject; no older publisher PTQ1 substitution or fallback. |
-| Experimental native Rust 0.1.8, original Swift PQ2 or exact current-weight PTQ1 | `-NativeEngine`, optionally `-UseRepackedPtq1` and `-NoAbliterateLora` (app/broker `--native-engine`) | Exact model, approved adapter and representation-aware readiness are verified; no engine switch after failure. Separate [PTQ1 qualification](swift-memory.md#current-weight-ptq1-option) is pending. |
+| Experimental native Rust 0.1.9, original Swift PQ2 or exact current-weight PTQ1 | `-NativeEngine`, optionally `-UseRepackedPtq1` and `-NoAbliterateLora` (app/broker `--native-engine`) | Exact model, approved adapter and representation-aware readiness are verified; no engine switch after failure. Separate [PTQ1 qualification](swift-memory.md#current-weight-ptq1-option) is pending. |
 
 `-NoAbliterateLora` (direct app `--no-abliterate-lora`) omits the adapter and disables
 its control. Provision the native release before selecting it:
@@ -283,6 +283,14 @@ runtime initialization. **Retry model** repeats the selected runtime; it does no
 switch to Rust. Close the window and relaunch with `-NativeEngine` after provisioning
 with `Get-Inference.ps1`. Retain the same data directory, model and adapter options;
 `-NativeEngine` alone keeps original PQ2 and the approved adapter selected.
+
+`-NativeEngine -NativeRowWorkers 4` explicitly selects the reviewed 0.1.9
+four-worker implementation. The default remains one worker; publisher/reference
+launches reject four, and no request can override this private launch setting.
+The [fixed-input comparison](evidence/row-parallel-smoke.json) preserves all logits
+and logical state bytes with a lower one-step evaluation duration. Application
+startup/streaming acceptance, complete-answer latency and broader qualification
+are separate. Keep the same model, adapter and resource limits when comparing.
 
 Publisher Prism stays default until [runtime promotion](native-rust-engine.md#default-runtime-promotion).
 Thinking uses the same setting across engines; native quality, throughput and

@@ -12,11 +12,11 @@ feature parity does not qualify inference.
 ## Swift CPU supported subset
 
 The target is native Windows ARM64, initially the 32 GB Snapdragon X Elite. Runner
-pins [**0.1.8 prerelease**](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.8),
-main revision `fce300b94234c2dd70756dd4bbc33ea703848cb6`, with passing
-[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/41017335054)
+pins [**0.1.9 prerelease**](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.9),
+main revision `7aca2251f09acb345d4afb53d5ce411f81017745`, with passing
+[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/41029550347)
 and
-[conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/41017335160).
+[conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/41028418717).
 Release/focused integration does not establish full-context, sustained-performance,
 creative, adapter or daily-isolation acceptance.
 
@@ -209,10 +209,20 @@ for CI-only timing/tracing, actual-model comparisons and evidence limits.
 
 ## Bounded parallel-row qualification
 
-The published 0.1.8 app path uses one compute worker. The 0.1.9 candidate makes
+The published 0.1.8 app path uses one compute worker. The 0.1.9 prerelease makes
 the existing bounded `parallel-rows` implementation available in its binary
 bundle; all runtime entry points still default to one worker. Feature availability
 does not qualify a worker budget or change the selected engine.
+
+The [first original-PQ2 trial](evidence/row-parallel-smoke.json) matches all
+129 files / 39,504,384 logits and logical state values byte for byte at adapter
+scale 1.3. One forward evaluation falls from 1,553.3135 ms to 575.6722 ms, with
+401 observed parallel projections. The CI owner job takes 125 seconds and the
+outer runner lifetime 131.13 seconds; the later explicit cleanup confirmation is
+also retained. These are fixed-step source-checker observations, not application
+TPS or complete performance qualification. Explicit app selection uses
+`-NativeEngine -NativeRowWorkers 4`; one remains the default and unsupported
+versions/engine selections fail closed.
 
 The [row-worker workflow](../.github/workflows/native-row-qualification.yml) builds
 its exact source/hash-bound checker on hosted Windows ARM64 without models.
