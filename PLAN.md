@@ -11,6 +11,10 @@ changes or compatible drafters. Bounded GPU/NPU access discovery can run in para
 Automatic profiles require device qualification; broader Prism work needs a Swift
 dependency or chosen milestone.
 
+The next delivery milestone is an accepted daily-use Swift PQ2 CPU profile on the
+owner-managed hardware. Close the application, isolation, creative-quality, resource
+and installation gates below with reproducible evidence before expanding that profile.
+
 ## Research scope and practical budgets
 
 Follow the [research scope, budgets and experiment
@@ -46,6 +50,9 @@ benchmarks and performance captures stay in owning CI.
 - Complete [signed distribution acceptance](docs/chat-packages.md): binary provenance,
   dependency and license notices, clean-machine ARM64 Visual C++ prerequisites,
   installation, upgrades and rollback.
+- Consolidate the native UI's independent model-lifecycle flags into explicit states.
+  Cover late completion, rejection, failure and Stop events, preserving newer drafts
+  and keeping Send closed until owned teardown or verified readiness completes.
 
 ### Isolation, transport and recovery
 
@@ -55,6 +62,9 @@ benchmarks and performance captures stay in owning CI.
   native loading, private storage and broker-only communication without broader host
   loopback authority. Preserve atomic Job limits, exact worker identity and [native
   integration](docs/sandboxing.md#native-integration-contract), with no weaker fallback.
+- Bound worker scratch, PSEC-private temporary storage and stdout/stderr disk usage;
+  define retention for diagnostics and credentials across retries. Qualify storage
+  exhaustion and owner-loss cleanup while preserving evidence needed for review.
 - Qualify the [broker security and transport contract](docs/broker-policy.md): numeric
   loopback, exact Host, Origin and routes, private credentials, rejected tools/MCP,
   dynamic loading and capability overrides, bounds on queues, bytes, tokens and
@@ -78,6 +88,15 @@ benchmarks and performance captures stay in owning CI.
 - Qualify load, allocation-failure and backend-loss recovery: bounded restore attempts,
   unchanged workspace on failure, no restart loops, silent profile changes, corruption
   or automatic cloud fallback.
+
+### Durable qualification evidence
+
+- Establish durable owner-managed archival for the credential-free qualification
+  selections under [evidence retention](docs/validation.md#evidence-retention). Bind
+  exact files and SHA-256 digests to source/build/device identities, run and artifact
+  references and independent reviews, retaining losing/no-go results. Automate capture
+  before temporary Actions artifacts expire and rehearse digest-verified retrieval
+  without the original runner. Missing archived evidence keeps promotion pending.
 
 ## Runtime and correctness
 
