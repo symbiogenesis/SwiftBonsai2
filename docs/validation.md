@@ -24,27 +24,38 @@ and fresh restart. Only credential-free receipts are uploaded; protected key
 directories are excluded. Failure rejects without an unrestricted retry.
 Ordinary Foundation/local runs never execute the ignored case.
 
+All owner-laptop diagnostics share a **five-minute total ceiling**, including
+setup, model loading, execution and cleanup. The workflow's owner job stops at
+five minutes; each actual-model case has one **240-second aggregate soft deadline**,
+including startup and cleanup. Per-request deadlines cannot extend it. Do not
+split a long matrix across repeated owner jobs. Hosted ARM64 prepares exact
+source-bound test and maintenance binaries without loading models; the owner job
+verifies their run/revision, SHA-256 and native architecture before direct execution,
+with no Cargo build on the laptop.
+
 The workflow defaults to `profile: pq2-no-adapter`, preserving the original case
-and its optional workloads. Explicit `profile: ptq1-adapter` selects a separate
-ignored case using the exact current-weight export, approved adapter and pinned
-Rust service under the same required native sandbox. It rejects both optional
-long workloads. Its 4/8-token caps cover supplied-history streaming at scales
-0, negative zero, 1.3 and 2; invalid-scale HTTP 400 and context HTTP 413 with
-same-owner reuse; owned shutdown/listener cleanup; and fresh-owner restart.
+within that aggregate bound. Both long optional workloads are disabled for all
+profiles pending a budget-compliant design. Explicit `profile: ptq1-adapter`
+selects a minimal required-sandbox smoke case for the exact current-weight export
+and approved adapter: one scale-1.3 streamed request with a four-token cap and
+owned cleanup. A scale-zero two-token request and invalid-scale HTTP 400/reuse
+may run only if the same budget retains a conservative teardown reserve. Skipped
+checks remain pending. Signed-zero/scale-two trials, supplied history, context
+rejection, restart, long output and sustained use are not qualified by this smoke.
 Credential-free progress receipts bind the complete runtime/model/adapter locks,
 terminal reason, reported usage when supplied and cleanup. Partial failure retains
-the latest completed observations with `passed: false`. This bounded source/service
-acceptance proves neither full numerical state or authoring basis, full 8K/4K,
-performance, output quality, sustained resources nor default promotion.
+completed observations with `passed: false`. This does not establish complete-state
+parity, adapter authoring basis, performance, output quality or default promotion.
 
 | Workload | Required behavior | Evidence limit |
 | --- | --- | --- |
 | Default | Valid streaming, context rejection/reuse, owned shutdown, abandonment and fresh restart | Short outputs do not qualify 8K/4K, numerical state, LoRA, sustained resources, speed or broker-only isolation. |
-| Optional `extended_history` | Admit 3,900 synthetic forest-note repetitions in assistant history with the full 4,096-token output reserve; reject 4,500, then reuse the same instance for a short request | Fixture repetitions are not tokens. Record visible bytes, terminal reason and usage when supplied; missing usage is unknown, events are not tokens, early completion does not prove 4K generation/exact 8K occupancy. |
-| Optional `stalled_consumer` | Request the full 4,096-token output reservation, read first nonempty content, retain the connection without reads for one second, then explicit owner Stop. Finish within 30 seconds with empty Job/released listener; require one additional failed operation and no completed operation, require generated content from a fresh owner after Stop and a further successful fresh-owner request after the existing abandonment trial | Natural completion cannot qualify interruption. The receipt proves unfinished broker forwarding, not backend activity at Stop, socket saturation, maximum backlog or measured cancellation latency. |
+| Disabled `extended_history` (pending bounded redesign) | Admit 3,900 synthetic forest-note repetitions in assistant history with the full 4,096-token output reserve; reject 4,500, then reuse the same instance for a short request | Fixture repetitions are not tokens. Record visible bytes, terminal reason and usage when supplied; missing usage is unknown, events are not tokens, early completion does not prove 4K generation/exact 8K occupancy. |
+| Disabled `stalled_consumer` (pending bounded redesign) | Request the full 4,096-token output reservation, read first nonempty content, retain the connection without reads for one second, then explicit owner Stop. Finish within 30 seconds with empty Job/released listener; require one additional failed operation and no completed operation, require generated content from a fresh owner after Stop and a further successful fresh-owner request after the existing abandonment trial | Natural completion cannot qualify interruption. The receipt proves unfinished broker forwarding, not backend activity at Stop, socket saturation, maximum backlog or measured cancellation latency. |
 
-All exchanges retain the ten-minute deadline, 8K context, 64-token margin, output,
-memory and containment limits. Streams require complete HTTP framing, a supported
+The original per-request safety limits, 8K context, 64-token margin, output,
+memory and containment limits remain; the shorter aggregate device budget takes
+precedence over every longer timeout. Streams require complete HTTP framing, a supported
 terminal reason and `[DONE]`. Interrupted instances never reopen admission or replay
 the request. Optional workloads remain unqualified until successful device CI
 receipts are retained. The [promotion evaluator](native-rust-engine.md#default-runtime-promotion) keeps exits independent.
