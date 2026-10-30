@@ -23,6 +23,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Check bounded credential-free startup diagnostic retention
+        shell: pwsh
+        run: ./tests/Test-NativeStartupDiagnostics.ps1
       - uses: ./.github/actions/bonsai-tools
       - uses: ./.github/actions/rust-toolchain
         with:
@@ -68,6 +71,8 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
     timeout-minutes: 5
+    env:
+      BONSAI_NATIVE_DIAGNOSTICS_READY: 'false'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -139,6 +144,10 @@ jobs:
             Profile=$env:BONSAI_NATIVE_PROFILE
             ExtendedHistoryRequested=($env:BONSAI_NATIVE_EXTENDED -eq 'true')
             StalledConsumerRequested=($env:BONSAI_NATIVE_STALLED_CONSUMER -eq 'true')
+            AcceptanceProcessExitCode=$null; AggregateBudgetExpired=$false
+            StartupDiagnosticsReceipt='startup-diagnostics.json'
+            StartupDiagnosticsReady=$false; StartupDiagnosticsClassification='not-collected'
+            StartupFailureMarkers=@()
             Passed=$false; DefaultRuntimeQualified=$false
           }
           try {
@@ -174,10 +183,19 @@ jobs:
             try {
               $stdout = $child.StandardOutput.ReadToEndAsync()
               $stderr = $child.StandardError.ReadToEndAsync()
-              if (-not $child.WaitForExit(240000)) { throw 'The aggregate 240-second model case budget expired.' }
+              if (-not $child.WaitForExit(240000)) {
+                $hostReport.AggregateBudgetExpired = $true
+                throw 'The aggregate 240-second model case budget expired.'
+              }
               [Console]::Out.Write($stdout.GetAwaiter().GetResult())
-              [Console]::Error.Write($stderr.GetAwaiter().GetResult())
+              $testStderr = $stderr.GetAwaiter().GetResult()
+              [Console]::Error.Write($testStderr)
+              # Retain only fixed broker classifications, never arbitrary
+              # test stderr or native arguments in this public JSON receipt.
+              $marker = '(?m)^Native backend startup failure: stage=(authenticated-readiness|native-identity), error=(Backend|Memory|Cancelled), process=(running|status-unavailable|exited-0x[0-9A-F]{8})\r?$'
+              $hostReport.StartupFailureMarkers = @([regex]::Matches($testStderr, $marker) | ForEach-Object { $_.Value.TrimEnd("`r") })
               $code = $child.ExitCode
+              $hostReport.AcceptanceProcessExitCode = $code
             } finally {
               try {
                 if (-not $child.HasExited) {
@@ -191,8 +209,21 @@ jobs:
             if (-not (Test-Path -LiteralPath $receipt -PathType Leaf)) { throw 'Actual-model acceptance receipt is missing.' }
             $hostReport.Passed = $true
           } finally {
-            $hostReport | ConvertTo-Json -Depth 4 |
-              Set-Content -LiteralPath (Join-Path $env:BONSAI_NATIVE_EVIDENCE 'host.json') -Encoding utf8NoBOM
+            $env:BONSAI_NATIVE_DIAGNOSTICS_READY = 'false'
+            $env:BONSAI_NATIVE_DIAGNOSTICS_STATUS = 'collection-failed'
+            'BONSAI_NATIVE_DIAGNOSTICS_READY=false' >> $env:GITHUB_ENV
+            try {
+              & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Save-NativeStartupDiagnostics.ps1') `
+                -EvidenceDirectory $env:BONSAI_NATIVE_EVIDENCE `
+                -AcceptanceExitCode $hostReport.AcceptanceProcessExitCode `
+                -BudgetExpired:$hostReport.AggregateBudgetExpired
+            } finally {
+              $hostReport.StartupDiagnosticsReady = $env:BONSAI_NATIVE_DIAGNOSTICS_READY -ceq 'true'
+              $hostReport.StartupDiagnosticsClassification = $env:BONSAI_NATIVE_DIAGNOSTICS_STATUS
+              ('BONSAI_NATIVE_DIAGNOSTICS_READY=' + $env:BONSAI_NATIVE_DIAGNOSTICS_READY) >> $env:GITHUB_ENV
+              $hostReport | ConvertTo-Json -Depth 4 |
+                Set-Content -LiteralPath (Join-Path $env:BONSAI_NATIVE_EVIDENCE 'host.json') -Encoding utf8NoBOM
+            }
           }
           $profileScope = if ($env:BONSAI_NATIVE_PROFILE -ceq 'ptq1-adapter') {
             'PTQ1 with the approved adapter requires one scale-1.3 four-token stream; scale-zero and invalid-scale/reuse checks run only within the same budget. Unrun multi-scale, history, context and restart gates remain pending.'
@@ -218,5 +249,17 @@ jobs:
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/acceptance.json
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/host.json
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/hosted-build.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain only verified regular sanitized diagnostic files
+        if: always() && env.BONSAI_NATIVE_DIAGNOSTICS_READY == 'true' && env.BONSAI_NATIVE_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-runtime-startup-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          # A failed/unsafe collection skips this entire artifact, including JSON.
+          path: |
+            ${{ env.BONSAI_NATIVE_EVIDENCE }}/startup-diagnostics.json
+            ${{ env.BONSAI_NATIVE_EVIDENCE }}/startup-backend.stdout.txt
+            ${{ env.BONSAI_NATIVE_EVIDENCE }}/startup-backend.stderr.txt
           if-no-files-found: error
           retention-days: 90

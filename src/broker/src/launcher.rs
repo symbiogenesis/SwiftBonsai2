@@ -522,6 +522,7 @@ impl LaunchConfig {
         )
         .await;
         if let Err(error) = startup {
+            note_startup_failure(StartupStage::AuthenticatedReadiness, error, &process);
             process.stop(STOP_TIMEOUT).map_err(|_| LaunchError::Stop)?;
             return Err(error);
         }
@@ -535,6 +536,7 @@ impl LaunchConfig {
             )
             .await
         {
+            note_startup_failure(StartupStage::NativeIdentity, LaunchError::Backend, &process);
             process.stop(STOP_TIMEOUT).map_err(|_| LaunchError::Stop)?;
             return Err(LaunchError::Backend);
         }
@@ -561,6 +563,38 @@ impl LaunchConfig {
             memory_limit_bytes: specification.memory_limit_bytes,
             backend_port: self.backend_port,
         })
+    }
+}
+
+#[derive(Clone, Copy)]
+enum StartupStage {
+    AuthenticatedReadiness,
+    NativeIdentity,
+}
+
+fn note_startup_failure(stage: StartupStage, error: LaunchError, process: &OwnedProcess) {
+    let _result =
+        write_startup_failure(&mut io::stderr().lock(), stage, error, &process.try_wait());
+}
+
+fn write_startup_failure(
+    output: &mut impl io::Write,
+    stage: StartupStage,
+    error: LaunchError,
+    status: &io::Result<Option<u32>>,
+) -> io::Result<()> {
+    let stage = match stage {
+        StartupStage::AuthenticatedReadiness => "authenticated-readiness",
+        StartupStage::NativeIdentity => "native-identity",
+    };
+    write!(
+        output,
+        "Native backend startup failure: stage={stage}, error={error:?}, process="
+    )?;
+    match status {
+        Ok(Some(code)) => writeln!(output, "exited-0x{code:08X}"),
+        Ok(None) => writeln!(output, "running"),
+        Err(_) => writeln!(output, "status-unavailable"),
     }
 }
 
@@ -867,6 +901,35 @@ mod lifecycle_tests;
 mod tests {
     use super::{LaunchConfig, LaunchError, LaunchProfile, validate_health};
     use std::ffi::OsString;
+
+    #[test]
+    fn startup_failure_evidence_contains_only_fixed_stage_error_and_exit_fields()
+    -> std::io::Result<()> {
+        for (stage, status, expected) in [
+            (
+                super::StartupStage::AuthenticatedReadiness,
+                Ok(Some(0xC000_0142)),
+                "Native backend startup failure: stage=authenticated-readiness, error=Backend, process=exited-0xC0000142\n",
+            ),
+            (
+                super::StartupStage::NativeIdentity,
+                Ok(None),
+                "Native backend startup failure: stage=native-identity, error=Backend, process=running\n",
+            ),
+            (
+                super::StartupStage::AuthenticatedReadiness,
+                Err(std::io::Error::other(
+                    "private credential and path must never be formatted",
+                )),
+                "Native backend startup failure: stage=authenticated-readiness, error=Backend, process=status-unavailable\n",
+            ),
+        ] {
+            let mut evidence = Vec::new();
+            super::write_startup_failure(&mut evidence, stage, LaunchError::Backend, &status)?;
+            assert_eq!(evidence, expected.as_bytes());
+        }
+        Ok(())
+    }
 
     #[test]
     fn sandbox_failure_evidence_preserves_validation_and_windows_causes() -> std::io::Result<()> {
