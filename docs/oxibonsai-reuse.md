@@ -100,14 +100,14 @@ target-device CI for useful benefit. Oxi's AArch64 prefetch helper is a no-op wi
 its nightly compiler cfg; the presence of a prefetch API alone does not establish
 executed hints.
 
-No Oxi kernel/parser dependency was imported; see [implementation
-status](#implementation-status) and [PLAN.md](../PLAN.md#cpu-kernels) for adopted
-scenarios and outstanding work.
+Runner imports no Oxi kernel/parser dependency. [Implementation status](#implementation-status)
+describes current regression coverage and controls; [PLAN.md](../PLAN.md#cpu-kernels)
+tracks outstanding work.
 
 ## Additional optimization and data-structure review
 
-The 2026-10-29 head recheck still found `1d10c48`; these are source comparisons, without
-local benchmarks or measured Snapdragon gains.
+These comparisons use the same `1d10c48` revision as the 2026-10-29 review above.
+They establish neither benchmark results nor Snapdragon gains.
 
 | Candidate | Source evidence and decision |
 | --- | --- |
@@ -135,7 +135,7 @@ establish another missing optimization.
 
 ## Security features and transfer boundaries
 
-The review checked actual serving code as well as helper modules. Runner's [broker
+The review covers serving code and helper modules. Runner's [broker
 policy](broker-policy.md), [artifact verification](../src/artifacts/README.md) and
 [worker containment](sandboxing.md) remain authoritative; source inspection does not
 close outstanding actual-model or broker-only isolation qualification.
@@ -156,7 +156,7 @@ diagnostics and fail-closed worker launch.
 
 ## Implementation status
 
-Runner adopted two controls under the [broker contract](broker-policy.md):
+Runner implements two controls under the [broker contract](broker-policy.md):
 
 | Control | Implemented boundary |
 | --- | --- |
@@ -171,9 +171,12 @@ manifest](runtime-candidates/oxibonsai-row-parallel.json) retain the independent
 authored implementation and checks. Its newer Prism base `ff3d54d` and reviewed
 complete-tree match do not promote Runner's older release pin.
 
-Separate worktree/commit changes passed focused delimiter/inventory/parser-parity,
-burst/refill/concurrency/deadline, real-loopback/client framing/history and affected
-Release Clippy checks. Runtime bitwise/shared-row/malformed-payload/graph-recovery/
-feature-policy checks, formatting, Release Clippy and rustdoc also passed. Full suites,
-device performance/actual-model qualification and release review remain pending in
-[PLAN.md](../PLAN.md).
+Retained passing evidence has two scopes:
+
+- Runner: focused delimiter/inventory/parser parity, burst/refill/concurrency/deadline,
+  real-loopback/client framing/history and affected Release Clippy checks.
+- Runtime candidate: bitwise/shared-row/malformed-payload/graph-recovery/feature-policy
+  checks, formatting, Release Clippy and rustdoc.
+
+Full suites, device performance, actual-model acceptance and release review remain
+separate exits in [PLAN.md](../PLAN.md).
