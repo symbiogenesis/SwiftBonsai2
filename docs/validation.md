@@ -59,7 +59,7 @@ an accepted implementation path.
 
 The manually dispatched [native-runtime application acceptance](../.github/workflows/native-runtime-acceptance.yml)
 runs one explicitly ignored actual-model broker case on the owner-managed
-Snapdragon X Elite runner and settled `main`. It requires already provisioned
+Snapdragon X/X2 Elite runner and settled `main`. It requires already provisioned
 original PQ2 and the pinned Rust release, native sandbox admission, unchanged
 memory limits and retained exact artifact handles. It covers supplied-history
 streaming, framed context rejection and reuse, owned shutdown, abandonment after
@@ -70,6 +70,28 @@ qualify 8K context, 4K generation, numerical state, LoRA, sustained resources,
 performance or broker-only isolation. The [promotion evidence evaluator](runtime-promotion.md)
 keeps these requirements separate. The ignored case never runs in ordinary
 Foundation suites or locally.
+
+Its optional `extended_history` input adds a supplied-history request with the
+full 4,096-token output reservation and a larger-history framed context
+rejection, followed by a short request against the same model instance. The
+fixtures contain 3,900 and 4,500 repetitions of a synthetic forest-note word in
+assistant history; these counts are fixture sizes, not claimed token counts.
+Actual public tokenizer admission must reject the larger fixture and admit the
+smaller one with the unchanged 8K context, 64-token margin and 4K output reserve.
+Streaming must finish with valid HTTP framing, a supported terminal reason and
+`[DONE]`, then existing abandonment, teardown and fresh-restart checks still run.
+Every exchange keeps the ten-minute production deadline; no output, memory or
+containment limit is relaxed. The receipt records visible output bytes, terminal
+reason and completion-token usage when the runtime supplies it. Missing usage
+remains unknown; SSE event counts are never treated as token counts. Natural
+early completion remains visible and does not qualify full 4K generation or
+exact 8K occupancy. This optional workload has not supplied device acceptance
+evidence until a successful native CI receipt is retained.
+
+The focused model-free
+`native_extended_acceptance_distinguishes_output_usage_from_delta_count` case
+checks the extended fixture and that reported usage stays separate from visible
+bytes and event counts. It does not load a model.
 
 [Foundation](../.github/workflows/foundation.yml) runs only on `main` pushes or
 manual dispatch, skipping documentation-only pushes (root Markdown and `docs/`).

@@ -24,6 +24,14 @@ use tokio::{
 
 const CASE: &str = "pinned_native_model_streams_recovers_and_restarts_in_required_sandbox";
 const WAIT: Duration = Duration::from_secs(600);
+const EXTENDED_COMPLETION_CAP: u32 = 4096;
+
+#[derive(Debug, PartialEq, Eq)]
+struct StreamSummary {
+    finish_reason: String,
+    content_bytes: usize,
+    completion_tokens: Option<u64>,
+}
 
 fn ci_only() {
     assert_eq!(env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
@@ -133,7 +141,7 @@ fn json_response(bytes: &[u8], status: &str) -> Value {
     serde_json::from_slice(body).unwrap()
 }
 
-fn streamed_response(bytes: &[u8]) {
+fn streamed_response(bytes: &[u8]) -> StreamSummary {
     let (head, mut body) = response(bytes, "HTTP/1.1 200 OK");
     assert!(
         head.lines()
@@ -157,6 +165,9 @@ fn streamed_response(bytes: &[u8]) {
     let mut terminal = false;
     let mut done = false;
     let mut content = false;
+    let mut finish_reason = String::new();
+    let mut content_bytes = 0;
+    let mut completion_tokens = None;
     for line in payload
         .lines()
         .filter_map(|line| line.strip_prefix("data: "))
@@ -167,25 +178,86 @@ fn streamed_response(bytes: &[u8]) {
             done = true;
             continue;
         }
-        assert!(
-            !terminal,
-            "No generation event may follow a terminal reason."
-        );
         let event: Value = serde_json::from_str(line).unwrap();
         assert!(event.get("error").is_none());
+        if let Some(tokens) = event["usage"]["completion_tokens"].as_u64() {
+            assert!(completion_tokens.replace(tokens).is_none());
+        }
         let choices = event["choices"].as_array().unwrap();
         for choice in choices {
-            content |= choice["delta"]["content"]
-                .as_str()
-                .is_some_and(|text| !text.is_empty());
+            assert!(
+                !terminal,
+                "No generation event may follow a terminal reason."
+            );
+            if let Some(text) = choice["delta"]["content"].as_str() {
+                content |= !text.is_empty();
+                content_bytes += text.len();
+            }
             if let Some(reason) = choice["finish_reason"].as_str() {
                 assert!(!terminal);
                 assert!(["length", "stop"].contains(&reason));
                 terminal = true;
+                reason.clone_into(&mut finish_reason);
             }
         }
     }
     assert!(terminal && done && content);
+    StreamSummary {
+        finish_reason,
+        content_bytes,
+        completion_tokens,
+    }
+}
+
+fn extended_history(repetitions: usize) -> Value {
+    json!([
+        {"role":"user", "content":"Keep the following fictional forest notes for the next scene."},
+        {"role":"assistant", "content":format!("Forest notes:{}", " tree".repeat(repetitions))},
+        {"role":"user", "content":"Write a long, detailed story continuing these notes. Develop several scenes, characters and a complete ending."}
+    ])
+}
+
+async fn extended_acceptance(port: u16, credential: &str) -> Value {
+    // Tokenization is deliberately exercised through ordinary public admission.
+    // These are fixed fixture sizes, never bytes/characters relabeled as tokens.
+    let rejected = exchange(
+        port,
+        credential,
+        &request(extended_history(4500), true, EXTENDED_COMPLETION_CAP),
+    )
+    .await;
+    assert_eq!(
+        json_response(&rejected, "HTTP/1.1 413 Content Too Large")["error"]["code"],
+        "context_length_exceeded"
+    );
+    let summary = streamed_response(
+        &exchange(
+            port,
+            credential,
+            &request(extended_history(3900), true, EXTENDED_COMPLETION_CAP),
+        )
+        .await,
+    );
+    assert!(summary.completion_tokens.is_none_or(|count| count <= 4096));
+    // A successful long request must leave the same model instance usable.
+    streamed_response(
+        &exchange(
+            port,
+            credential,
+            &request(json!([{"role":"user", "content":"Name a bird."}]), true, 16),
+        )
+        .await,
+    );
+    json!({
+        "enabled":true, "scope":"supplied-history-and-full-output-reservation",
+        "rejectedHistoryRepetitions":4500, "admittedHistoryRepetitions":3900,
+        "requestedCompletionCap":EXTENDED_COMPLETION_CAP,
+        "finishReason":summary.finish_reason, "visibleContentBytes":summary.content_bytes,
+        "reportedCompletionTokens":summary.completion_tokens,
+        "postCompletionRequestPassed":true,
+        "exactPromptTokenCountKnown":false, "fullContextQualified":false,
+        "fullOutputQualified":false
+    })
 }
 
 async fn abandon_after_content(client: TcpStream) {
@@ -240,7 +312,7 @@ async fn abandon_after_content(client: TcpStream) {
     }
 }
 
-async fn acceptance(data: &Path, evidence: &Path) {
+async fn acceptance(data: &Path, evidence: &Path, extended: bool) -> Value {
     let owner = start(data, evidence).await;
     let port = owner.port();
     let credential = key(&owner);
@@ -279,6 +351,11 @@ async fn acceptance(data: &Path, evidence: &Path) {
     assert!(
         ["length", "stop"].contains(&completed["choices"][0]["finish_reason"].as_str().unwrap())
     );
+    let extended_report = if extended {
+        extended_acceptance(port, &credential).await
+    } else {
+        json!({"enabled":false})
+    };
     stop.send(()).unwrap();
     assert_eq!(
         timeout(WAIT, running).await.unwrap().unwrap().unwrap().exit,
@@ -327,6 +404,7 @@ async fn acceptance(data: &Path, evidence: &Path) {
         RunExit::Shutdown
     );
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    extended_report
 }
 
 #[test]
@@ -357,6 +435,47 @@ fn native_acceptance_requires_framed_terminal_generation() {
 }
 
 #[test]
+fn native_extended_acceptance_distinguishes_output_usage_from_delta_count() {
+    let framed = |payload: &str| {
+        format!(
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:X}\r\n{payload}\r\n0\r\n\r\n",
+            payload.len()
+        )
+    };
+    let content =
+        "data: {\"choices\":[{\"delta\":{\"content\":\"cedar\"},\"finish_reason\":null}]}\n\n";
+    let terminal = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n";
+    let terminal_usage = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"completion_tokens\":7}}\n\n";
+    let usage = "data: {\"choices\":[],\"usage\":{\"completion_tokens\":7}}\n\n";
+    let done = "data: [DONE]\n\n";
+    let expected = StreamSummary {
+        finish_reason: "stop".into(),
+        content_bytes: 5,
+        completion_tokens: Some(7),
+    };
+    for payload in [
+        format!("{content}{terminal_usage}{done}"),
+        format!("{content}{terminal}{usage}{done}"),
+    ] {
+        assert_eq!(streamed_response(framed(&payload).as_bytes()), expected);
+    }
+    assert_eq!(
+        streamed_response(framed(&format!("{content}{terminal}{done}")).as_bytes()),
+        StreamSummary {
+            finish_reason: "stop".into(),
+            content_bytes: 5,
+            completion_tokens: None,
+        }
+    );
+    let duplicate = framed(&format!("{content}{terminal_usage}{usage}{done}"));
+    assert!(std::panic::catch_unwind(|| streamed_response(duplicate.as_bytes())).is_err());
+    let body = request(extended_history(3900), true, EXTENDED_COMPLETION_CAP);
+    assert_eq!(body["max_completion_tokens"], 4096);
+    assert_eq!(body["messages"].as_array().unwrap().len(), 3);
+    assert_eq!(body["messages"][1]["role"], "assistant");
+}
+
+#[test]
 #[ignore = "Actual pinned model; explicitly dispatched main-only device CI, never ordinary suites."]
 fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
     ci_only();
@@ -368,7 +487,14 @@ fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
         .enable_all()
         .build()
         .unwrap();
-    runtime.block_on(LocalSet::new().run_until(acceptance(data, evidence)));
+    let setting = env::var("BONSAI_NATIVE_EXTENDED");
+    assert!(matches!(
+        setting.as_deref(),
+        Ok("true" | "false") | Err(env::VarError::NotPresent)
+    ));
+    let extended = setting.as_deref() == Ok("true");
+    let extended_report =
+        runtime.block_on(LocalSet::new().run_until(acceptance(data, evidence, extended)));
     let report = json!({
         "schemaVersion":1, "case":CASE, "revision":env::var("GITHUB_SHA").unwrap(),
         "runId":env::var("GITHUB_RUN_ID").unwrap(), "runAttempt":env::var("GITHUB_RUN_ATTEMPT").unwrap(),
@@ -377,7 +503,8 @@ fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
         "modelSha256":"5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
         "requiredNativeSandbox":true, "adapterEnabled":false, "fullContextQualified":false,
         "fullModelNumericalParityQualified":false, "performanceQualified":false,
-        "dailyServiceIsolationQualified":false, "defaultRuntimeQualified":false
+        "dailyServiceIsolationQualified":false, "defaultRuntimeQualified":false,
+        "extendedWorkload":extended_report
     });
     fs::write(
         evidence.join("acceptance.json"),

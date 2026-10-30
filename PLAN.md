@@ -50,6 +50,11 @@ no-go decision, including losing cases.
 
 - Qualify actual-model startup, supplied-history streaming, full 8K-context/4K-output
   requests, long conversations, speech input/output, offline restart and recovery.
+  Run the native acceptance workflow's optional `extended_history` workload on
+  the owner-managed X2 runner: it pairs larger-history context rejection with
+  admitted supplied history at the full 4K output reservation and same-instance
+  reuse. Retain actual termination/usage evidence; the fixture sizes and requested
+  cap do not establish exact 8K occupancy or achieved 4K generation.
   Include speech startup after moving an existing X1 data directory to X2 and
   after CPU-feature/Windows changes; host-bound Cargo/native cache regressions
   remain model-free, while actual speech behavior requires device acceptance.

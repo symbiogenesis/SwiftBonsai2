@@ -1,6 +1,12 @@
 name: Native Rust actual-model application acceptance
 on:
   workflow_dispatch:
+    inputs:
+      extended_history:
+        description: Exercise long supplied history with the full 4096-token output reservation
+        type: boolean
+        default: false
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -44,18 +50,21 @@ jobs:
       - name: Exercise actual-model broker lifecycle under the required native sandbox
         shell: pwsh
         working-directory: ${{ env.BONSAI_NATIVE_WORK }}
+        env:
+          BONSAI_NATIVE_EXTENDED: ${{ inputs.extended_history && 'true' || 'false' }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           [Environment]::CurrentDirectory = $env:BONSAI_NATIVE_WORK
           $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-          if ($cpu.Name -notmatch 'Snapdragon.*X.*Elite') { throw 'Actual Snapdragon X Elite identity is required; no generic ARM substitute.' }
+          if ($cpu.Name -notmatch 'Snapdragon.*X.*Elite') { throw 'Actual Snapdragon X/X2 Elite identity is required; no generic ARM substitute.' }
           $hostReport = [ordered]@{
             SchemaVersion=1; Revision=$env:GITHUB_SHA; RunId=$env:GITHUB_RUN_ID
             RunAttempt=$env:GITHUB_RUN_ATTEMPT; Cpu=$cpu.Name
             Os=[Environment]::OSVersion.VersionString
             Architecture=[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+            ExtendedHistoryRequested=($env:BONSAI_NATIVE_EXTENDED -eq 'true')
             Passed=$false; DefaultRuntimeQualified=$false
           }
           try {
@@ -103,6 +112,8 @@ jobs:
               Set-Content -LiteralPath (Join-Path $env:BONSAI_NATIVE_EVIDENCE 'host.json') -Encoding utf8NoBOM
           }
           @('Bounded actual-model Rust application lifecycle passed under required native containment.',
+            ('Long supplied-history/full output reservation requested: ' + $env:BONSAI_NATIVE_EXTENDED),
+            'The optional workload records framing, termination and reported output usage; a requested 4096 cap does not prove 4096 generated tokens or exact 8K occupancy.',
             'No adapter was enabled. Full-context numerical/resource, performance, quality and daily-service qualification remain separate.',
             'This workflow cannot promote the default runtime.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
       - name: Retain only credential-free acceptance receipts
