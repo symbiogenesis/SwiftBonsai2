@@ -15,7 +15,7 @@ earlier PTQ checkpoint and about 5.53 GiB smaller than Qwen; file size is not pe
 or speed. Sources: [publisher](https://ukisai.com/swift-bonsai-2) and [immutable
 metadata](https://huggingface.co/api/models/ukisai/Swift-Bonsai-2-GGUF/revision/a3bdac086bbb6b04d87d0108d18943b5f63868f7?blobs=true).
 
-The native ARM64 package is Prism `prism-b10787-73bfe6c`, commit
+The publisher ARM64 package is Prism `prism-b10787-73bfe6c`, commit
 `73bfe6cc485554822f80c473a3c0c4f25e80f41b`: packed NEON, transforms and graph support
 for PQ2/PTQ, which stock upstream binaries lack. Full builds require Clang; the upstream
 MSVC builder needs changes. Integrity/architecture checks do not attest source-to-binary
@@ -63,12 +63,15 @@ its behavior, runtime cost and standard-profile qualification are independent.
 The lossless representation is not rejected. The historical [decision receipt](evidence/ptq1-release-decision.json)
 binds the local and CI X2 startup failures, exact runtime/build identities and retained raw
 evidence digests. Rust service [source `27e4860`](https://github.com/symbiogenesis/prism-inference/pull/2)
-now implements the missing PTQ1/approved-adapter profiles and passes its owning
+introduced PTQ1/approved-adapter profiles and passed its owning
 [Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/41009394716)
 and [conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/41009394718).
 The [one-token device smoke](evidence/ptq1-rust-smoke.json) passes complete numerical
-comparison at scale 1.3. This removes a source-support blocker; release/pin integration,
-actual private-service acceptance and the independent gates below remain separate.
+comparison at scale 1.3 for that historical source. Runner now pins Rust **0.1.9**,
+source `7aca2251f09acb345d4afb53d5ce411f81017745`; its [release receipt](evidence/prism-019-release.json)
+binds both complete upstream CI gates, public bundles, source/helper archives and
+the reviewed pin. Release integration is complete. Actual service evidence remains
+versioned, and the independent qualification gates below remain open.
 
 | Gate | Evidence and decision |
 | --- | --- |
@@ -77,6 +80,7 @@ actual private-service acceptance and the independent gates below remain separat
 | Historical Rust 0.1.6 app integration | This version accepts original PQ2 without LoRA; PTQ1 and adapter service support are absent. The earlier three-token diagnostic remains valid only for its no-adapter scope. |
 | Rust replacement source | Source `27e4860` implements explicit PTQ1/approved-adapter service and sealed scale/reset semantics. A single supplied token at scale 1.3 on X2 matches all native logits and live state exactly. This does not establish actual service, quality or resource qualification. |
 | Rust 0.1.8 required-sandbox smoke | [X2 main-only application CI](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41020705958) passes exact readiness, one scale-1.3 streamed response and owned Job/listener cleanup in a three-minute owner job. The four-token cap yields one reported output token and three visible bytes with `stop`; zero-scale and invalid-scale/reuse checks are skipped. [History](evidence/ptq1-native-service.json) retains the earlier 0.1.7 startup failure. This does not qualify broader lifecycle, answers, quality, resources or default promotion. |
+| Current Rust 0.1.9 release | [Exact published artifacts and reviewed pin](evidence/prism-019-release.json) include optional row-worker support and retain one worker by default. Artifact verification does not transfer the 0.1.8 service smoke to these binaries or establish PTQ1 quality, performance or default promotion. |
 | Complete correctness, answers and sustained use | Scalar/explicit NEON trajectories, PTQ1 LoRA basis/forward execution, 8K context/4K output, recovery, independent answer quality, target-device benefit and owner-accepted comfort remain unqualified. No throughput or quality verdict was collected in this session. |
 
 The startup failure is shared by the publisher executable, so it also blocks that
@@ -91,13 +95,13 @@ are model-free; neither establishes a performance or quality comparison. The fir
 [owning CI attempt](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41005833161)
 stopped in compiler discovery before capture; that build failure is not a PTQ1 verdict.
 
-Reopen app qualification only after a reviewed runtime release can serve the intended format and
-adapter under unchanged containment. For the publisher path, review and release a
+Further app qualification must use a reviewed runtime serving the intended format
+and adapter under unchanged containment. For the publisher path, review and release a
 startup fix; the [headless UCRT source candidate](runtime-candidates/README.md#headless-ucrt-argv-candidate)
 is one lead, not a diagnosis of the independently built release. Then pass the exact
-worker preflight in settled-main device CI. For the Rust path,
-release PTQ1 plus adapter service integration and qualify matching scalar/NEON
-logits and complete live state; the diagnostic does not provide that service.
+worker preflight in settled-main device CI. For the Rust path, qualify the current
+published service and matching scalar/NEON logits and complete live state; the
+historical numerical diagnostic alone does not qualify service behavior.
 Then run the stable-condition prefix screen, the separate
 [scale-1.3 complete-response contract](swift-lora.md#standard-profile-qualification),
 full-context/output and cancellation/recovery trials, independent quality review,
@@ -166,7 +170,9 @@ publisher Prism CPU server; direct app/broker launches use `--use-repacked-ptq1`
 artifact handle stays verified/held through owned teardown. Arbitrary paths, checkpoint
 substitutions and missing-file fallback are unsupported. The explicit experimental
 `-NativeEngine` route implements this selection and the approved adapter in Rust
-0.1.8 prerelease; service implementation alone does not establish release qualification.
+[0.1.9 prerelease](evidence/prism-019-release.json); service implementation alone does
+not establish release qualification. Row workers remain one unless explicitly
+selected; separate source-checker evidence does not qualify app TPS.
 
 Both packings retain the [CPU resource policy](#native-cpu-status), context, retry
 and recovery. Serialized savings alone do not lower admission or promote PTQ1.

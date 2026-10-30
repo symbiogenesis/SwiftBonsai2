@@ -247,9 +247,23 @@ loading, snapshots and output I/O. One fixed-step observation is not application
 TPS, prefill attribution, statistical benefit or promotion evidence. Exhausting
 the budget retains a failure/partial report and leaves the gate pending.
 
-Prompt processing remains sequential across tokens, and current request reset
-semantics recompute supplied history. Preserve adapter-scale and checkpoint
-provenance while investigating those costs. The 4,096-token output gate alone
+At pinned source `7aca225`, [session completion](https://github.com/symbiogenesis/prism-inference/blob/7aca2251f09acb345d4afb53d5ce411f81017745/src/swift_session.rs#L313)
+resets model state before every request, including unchanged adapter scale and
+no-adapter requests; [session construction](https://github.com/symbiogenesis/prism-inference/blob/7aca2251f09acb345d4afb53d5ce411f81017745/src/swift_session.rs#L174)
+also sets retained checkpoints to zero. Consequently the generic
+[runtime's exact live-prefix matcher](https://github.com/symbiogenesis/prism-inference/blob/7aca2251f09acb345d4afb53d5ce411f81017745/src/runtime.rs#L566)
+cannot reuse prior serving state. The [default block ingestion](https://github.com/symbiogenesis/prism-inference/blob/7aca2251f09acb345d4afb53d5ce411f81017745/src/lib.rs#L161)
+still evaluates tokens sequentially, so each request recomputes its supplied
+history; a 64-token prefill block is not a batched projection.
+
+Same-session live-prefix reuse at an identical model/profile and bit-identical
+adapter scale is a future qualification candidate. Require fresh-recompute parity,
+edited/switched history, cancellation/rollback, scale changes and change-back, and
+fault/explicit-reset recovery before changing the serving reset contract. Preserve
+graph/checkpoint provenance and current memory bounds; no reuse or TPS benefit is
+established by this source audit or the single fixed-step timing.
+
+The 4,096-token output gate alone
 would require more than 17 tokens/s to fit a 240-second case before any prefill;
 optimize and estimate first rather than scheduling a trial that cannot fit.
 

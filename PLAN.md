@@ -149,7 +149,13 @@ identities and leaves missing evidence pending.
   research](docs/inference-algorithms.md#2026-state-traffic-and-verification-research).
 - Qualify exact prompt reuse across edits, switches, cancellation and restore: matching
   model, template, tokens and complete state, with bounded private snapshots and
-  eviction. Start with latest committed state, immutable KV pages, exact suffix replay
+  eviction. First qualify latest committed same-session state at bit-identical adapter
+  scale: the pinned serving wrapper currently resets every request and defeats the
+  generic runtime's live-prefix matcher, as recorded in the [source
+  audit](docs/native-rust-engine.md#bounded-parallel-row-qualification). Require
+  fresh-recompute parity, switched/edited histories, cancellation/rollback,
+  scale-change/change-back and fault/explicit-reset recovery before changing that
+  serving contract. Start with immutable KV pages, exact suffix replay
   and simple lookup and eviction before radix trees or sparse placement. Resolve total
   versus incremental accounting: two 149.625 MiB recurrent/convolution snapshots already
   cost **299.25 MiB before KV/metadata**, exceeding a 256 MiB total cache. Keep that

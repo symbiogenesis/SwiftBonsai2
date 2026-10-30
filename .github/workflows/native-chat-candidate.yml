@@ -1,0 +1,165 @@
+name: Native chat app hosted candidate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-11-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/bonsai-tools
+      - uses: ./.github/actions/rust-toolchain
+        id: rust
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Build exact native GUI and broker without launching either
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          PINNED_TOOLCHAIN_PATH: ${{ steps.rust.outputs.toolchain-path }}
+          CARGO_UNSTABLE_CHECKSUM_FRESHNESS: 'true'
+          CARGO_BUILD_FINGERPRINT: content
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64' -or
+              [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
+              $env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or
+              $env:RUNNER_ARCH -cne 'ARM64' -or $env:GITHUB_REF -cne 'refs/heads/main' -or
+              $env:GITHUB_REPOSITORY -cne 'symbiogenesis/SwiftBonsai2Runner' -or
+              $env:GITHUB_SHA -cnotmatch '^[a-f0-9]{40}$') {
+            throw 'Native chat candidate preparation requires this repository main on hosted native Windows ARM64.'
+          }
+          $repo = $env:GITHUB_WORKSPACE
+          Import-Module (Join-Path $repo 'scripts/Bonsai.Common.psm1')
+          Import-Module (Join-Path $repo 'scripts/Bonsai.Native.psm1')
+          $scratch = Resolve-ExternalPath (Join-Path $env:RUNNER_TEMP ('Bonsai-NativeChatCandidate-' + [guid]::NewGuid().ToString('N')))
+          $package = Join-Path $scratch 'package'
+          $evidence = Join-Path $scratch 'evidence'
+          [void][IO.Directory]::CreateDirectory($package)
+          [void][IO.Directory]::CreateDirectory($evidence)
+          "BONSAI_CHAT_CANDIDATE_PACKAGE=$package" >> $env:GITHUB_ENV
+          "BONSAI_CHAT_CANDIDATE_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          $env:CARGO_TARGET_DIR = Join-Path $scratch 'target'
+          $channel = 'nightly-2026-10-22-aarch64-pc-windows-msvc'
+          $toolchain = Resolve-ExternalPath $env:PINNED_TOOLCHAIN_PATH
+          $cargo = Join-Path $toolchain 'bin/cargo.exe'
+          $rustc = Join-Path $toolchain 'bin/rustc.exe'
+          $linker = Join-Path $toolchain 'lib/rustlib/aarch64-pc-windows-msvc/bin/rust-lld.exe'
+          $arguments = @('build', '--locked', '--release', '-p', 'bonsai-chat', '-p', 'bonsai-broker', '--bins',
+              '--manifest-path', (Join-Path $repo 'Cargo.toml'), '--target-dir', $env:CARGO_TARGET_DIR, '--jobs', '4')
+          $receipt = [ordered]@{
+            SchemaVersion=1; Scope='hosted-native-chat-and-broker-build-only'
+            Revision=$env:GITHUB_SHA; GitRef=$env:GITHUB_REF; Repository=$env:GITHUB_REPOSITORY
+            RunId=$env:GITHUB_RUN_ID; RunAttempt=$env:GITHUB_RUN_ATTEMPT
+            RunUrl="https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            ImageOS=$env:ImageOS; ImageVersion=$env:ImageVersion; Target='aarch64-pc-windows-msvc'
+            Toolchain=$channel; CompilerIdentity=$null; ToolImages=@(); CargoArguments=$arguments
+            WorkspaceSha256=(Get-FileHash -LiteralPath (Join-Path $repo 'Cargo.toml') -Algorithm SHA256).Hash.ToLowerInvariant()
+            CargoLockSha256=(Get-FileHash -LiteralPath (Join-Path $repo 'Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
+            CheckedMaintenance=$null; RuntimePin=$null; Files=@(); Status='preparing'; Failure=$null
+            ModelExecuted=$false; GuiExecuted=$false; BrokerExecuted=$false; SpeechBuiltOrLaunched=$false
+            DistributionQualified=$false; SigningQualified=$false; PerformanceQualified=$false; DefaultMayChange=$false
+          }
+          function Save-CandidateBuildEvidence {
+            [CmdletBinding()]
+            [OutputType([void])]
+            param()
+            foreach ($name in @('rustc.txt', 'build.txt')) {
+              $path = Join-Path $scratch $name
+              if (-not [IO.File]::Exists($path)) { continue }
+              $stream = [IO.FileStream]::new($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+              try {
+                $count = [int][Math]::Min(65536, $stream.Length)
+                [void]$stream.Seek(-$count, [IO.SeekOrigin]::End)
+                $tail = [byte[]]::new($count)
+                $stream.ReadExactly($tail, 0, $tail.Length)
+                [IO.File]::WriteAllBytes((Join-Path $evidence $name), $tail)
+              } finally { $stream.Dispose() }
+            }
+            $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($receipt | ConvertTo-Json -Depth 16) + "`n")
+            if ($bytes.Length -gt 65536) { throw 'Native chat build receipt exceeds its fixed bound.' }
+            [IO.File]::WriteAllBytes((Join-Path $evidence 'build-receipt.json'), $bytes)
+          }
+          Save-CandidateBuildEvidence
+          try {
+            $receipt.ToolImages = @(foreach ($path in @($cargo, $rustc, $linker)) {
+              Assert-Arm64PE $path
+              [ordered]@{ Name=[IO.Path]::GetFileName($path); Bytes=(Get-Item -LiteralPath $path).Length
+                Sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
+            })
+            $compiler = Invoke-BonsaiNativeProcess -Executable $rustc -WorkingDirectory $scratch -TimeoutSeconds 30 -LogPath (Join-Path $scratch 'rustc.txt') -ArgumentList @('-vV')
+            if ($compiler.ExitCode -ne 0 -or $compiler.StandardOutput -notmatch 'host: aarch64-pc-windows-msvc') {
+              throw 'The pinned native ARM64 compiler identity did not pass.'
+            }
+            $receipt.CompilerIdentity = $compiler.StandardOutput.Trim()
+            $tool = Resolve-ExternalPath $env:BONSAI_TOOLS_PATH
+            $toolReceipt = Get-Content -LiteralPath (Join-Path ([IO.Path]::GetDirectoryName($tool)) 'receipt.json') -Raw | ConvertFrom-Json
+            if ($toolReceipt.SchemaVersion -ne 2 -or $toolReceipt.SourceId -cne $env:BONSAI_TOOLS_SOURCE_ID -or
+                $toolReceipt.Toolchain -cne $channel -or
+                $toolReceipt.Sha256 -cne (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()) {
+              throw 'Checked maintenance source, toolchain or executable identity changed.'
+            }
+            Assert-Arm64PE $tool
+            $receipt.CheckedMaintenance = $toolReceipt
+            $runtime = Get-Content -LiteralPath (Join-Path $repo 'config/prism-inference.lock.json') -Raw | ConvertFrom-Json
+            $receipt.RuntimePin = @{ Version=$runtime.version; SourceRevision=$runtime.commit; ArchiveSha256=$runtime.asset.sha256 }
+            $receipt.Status = 'building'
+            Save-CandidateBuildEvidence
+            # Use exact compiler images and LLD, matching the owned hosted row
+            # build. No reusable MSVC PDB-server descendant is left behind.
+            $rustFlags = @('-C', "linker=$linker", '-C', 'linker-flavor=lld-link')
+            $built = Invoke-BonsaiNativeProcess -Executable $cargo -WorkingDirectory $scratch -TimeoutSeconds 1200 -OwnDescendants -LogPath (Join-Path $scratch 'build.txt') -ArgumentList $arguments -Environment @{
+              RUSTC=$rustc; RUSTC_WRAPPER=''; RUSTC_WORKSPACE_WRAPPER=''
+              CARGO_TARGET_DIR=$env:CARGO_TARGET_DIR; CARGO_ENCODED_RUSTFLAGS=$rustFlags -join [char]0x1f
+            }
+            if ($built.ExitCode -ne 0) { throw 'Hosted native GUI/broker candidate build failed.' }
+            foreach ($name in @('bonsai-chat.exe', 'bonsai-broker.exe')) {
+              $path = Join-Path $env:CARGO_TARGET_DIR ('release/' + $name)
+              Assert-Arm64PE $path
+              [IO.File]::Copy($path, (Join-Path $package $name), $false)
+            }
+            [IO.File]::Copy($tool, (Join-Path $package 'bonsai-tools.exe'), $false)
+            $receipt.Files = @(foreach ($name in @('bonsai-chat.exe', 'bonsai-broker.exe', 'bonsai-tools.exe')) {
+              $path = Join-Path $package $name
+              [ordered]@{ Name=$name; Bytes=(Get-Item -LiteralPath $path).Length
+                Sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
+            })
+            $receipt.Status = 'completed'
+            Save-CandidateBuildEvidence
+            [IO.File]::Copy((Join-Path $evidence 'build-receipt.json'), (Join-Path $package 'receipt.json'), $false)
+          } catch {
+            $receipt.Status = 'failed'
+            $message = $_.Exception.Message
+            $receipt.Failure = $message.Substring(0, [Math]::Min(4096, $message.Length))
+            throw
+          } finally { Save-CandidateBuildEvidence }
+          @('Hosted native Rust GUI/broker candidate built without launching either binary or a model.',
+            'Review the exact revision, compiler and three file digests before explicit -ChatPath/-BrokerPath/-ToolPath use.',
+            'This is an unsigned development build artifact, not distribution, application, performance or default-runtime qualification.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+      - name: Retain exact native chat candidate binaries and receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-chat-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.BONSAI_CHAT_CANDIDATE_PACKAGE }}/bonsai-chat.exe
+            ${{ env.BONSAI_CHAT_CANDIDATE_PACKAGE }}/bonsai-broker.exe
+            ${{ env.BONSAI_CHAT_CANDIDATE_PACKAGE }}/bonsai-tools.exe
+            ${{ env.BONSAI_CHAT_CANDIDATE_PACKAGE }}/receipt.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain bounded public-source build evidence
+        if: always() && env.BONSAI_CHAT_CANDIDATE_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-chat-candidate-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BONSAI_CHAT_CANDIDATE_EVIDENCE }}
+          if-no-files-found: error
+          retention-days: 90
