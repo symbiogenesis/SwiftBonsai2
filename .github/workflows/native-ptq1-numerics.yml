@@ -110,7 +110,10 @@ jobs:
             $code = $child.ExitCode
           } finally {
             try {
-              if (-not $child.HasExited) { $child.Kill($true); $child.WaitForExit() }
+              if (-not $child.HasExited) {
+                $child.Kill($true)
+                if (-not $child.WaitForExit(10000)) { throw 'PTQ1 smoke cleanup did not finish within ten seconds.' }
+              }
             } finally { $child.Dispose() }
           }
           if ($code -ne 0) { throw 'PTQ1 numerical capture/comparison failed; inspect retained evidence.' }
