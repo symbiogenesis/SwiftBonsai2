@@ -180,7 +180,10 @@ jobs:
               $code = $child.ExitCode
             } finally {
               try {
-                if (-not $child.HasExited) { $child.Kill($true); $child.WaitForExit() }
+                if (-not $child.HasExited) {
+                  $child.Kill($true)
+                  if (-not $child.WaitForExit(10000)) { throw 'Native acceptance cleanup did not finish within ten seconds.' }
+                }
               } finally { $child.Dispose() }
             }
             if ($code -ne 0) { throw 'Actual-model application acceptance failed.' }
