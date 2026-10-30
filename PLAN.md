@@ -265,6 +265,11 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
 - Capture prefill, first useful answer, decode TPS, complete-task time,
   retries/truncation, peak working/private/Job/system/device memory, hard faults,
   energy where observable, UI responsiveness and sustained heat/fan behavior.
+  Retain the completion supervisor's `ProcessMemory` aggregates in X2 CPU CI
+  evidence: sampled private/current working-set maxima and Windows lifetime
+  resident peak reuse existing safety queries. Qualify their complete-model
+  coverage and phase attribution separately; these overlapping counters are
+  not additive, and sampled maxima can miss short-lived allocations.
   Interleave repeated paired trials, report uncertainty and qualify X1/X2
   independently. Separate instrumented attribution from unprofiled request timing,
   and idle from active power. Use consistent first/last-token boundaries rather

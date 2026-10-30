@@ -18,6 +18,26 @@ use windows::caller_identity;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+fn check_memory_observations(receipt: &Value) -> Result<()> {
+    let memory = &receipt["ProcessMemory"];
+    assert_eq!(memory["NominalSamplingIntervalMilliseconds"], 1000);
+    let samples = memory["Samples"]
+        .as_u64()
+        .ok_or("Missing memory sample count.")?;
+    for field in [
+        "SampledPeakPrivateBytes",
+        "SampledPeakWorkingSetBytes",
+        "LifetimePeakWorkingSetBytes",
+    ] {
+        if samples == 0 {
+            assert!(memory[field].is_null());
+        } else {
+            assert!(memory[field].is_u64());
+        }
+    }
+    Ok(())
+}
+
 fn fixture(name: &str) -> Result<(PathBuf, Value)> {
     let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let lane = std::env::temp_dir().join(format!(
@@ -69,6 +89,7 @@ fn batch_preserves_outputs_and_retains_verified_inputs() -> Result<()> {
             serde_json::from_slice(&fs::read(lane.join(id).join("supervision.json"))?)?;
         assert_eq!(receipt["Status"], "completed");
         assert_eq!(receipt["ExitCode"], 0);
+        check_memory_observations(&receipt)?;
         assert!(receipt.get("CpuConditions").is_none());
         assert!(!lane.join(id).join("capture.json").exists());
     }
@@ -104,6 +125,7 @@ fn cpu_conditions_are_retained_per_sample_through_failed_sample() -> Result<()> 
             serde_json::from_slice(&fs::read(lane.join(id).join("supervision.json"))?)?;
         assert_eq!(receipt, batch["Samples"][index]);
         assert_eq!(receipt["ModelProcessStarted"], true);
+        check_memory_observations(&receipt)?;
         assert!(receipt["WallMilliseconds"].is_u64());
         assert_eq!(
             receipt["Status"],

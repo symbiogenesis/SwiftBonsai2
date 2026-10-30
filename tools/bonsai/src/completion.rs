@@ -2,6 +2,8 @@
 
 #[cfg(windows)]
 mod capture;
+#[cfg(windows)]
+mod memory;
 mod report;
 #[cfg(windows)]
 mod timing;

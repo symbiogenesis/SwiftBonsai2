@@ -104,6 +104,20 @@ verification and the CPU/power observations immediately before process creation
 and after owned teardown. Job commit excludes mapped weight residency, and one-second
 physical-memory observations can miss brief pressure.
 
+Each sample also retains `ProcessMemory` from the supervisor's existing safety
+queries, with the nominal one-second interval and successful query count.
+`SampledPeakPrivateBytes` and `SampledPeakWorkingSetBytes` are maxima of current
+process counters; `LifetimePeakWorkingSetBytes` is the Windows process-lifetime
+resident peak. The final exit observation participates when available. Missing
+process observations remain null with zero samples. Failed samples retain their
+observations, including a process counter that crosses the safety ceiling.
+No extra polling is introduced. Short-lived allocations can escape the sampled
+maxima, whereas the OS resident peak includes mapped pages. Process private
+commit, working set, Job commit and system available memory overlap and must
+not be added. These aggregates do not identify load/prefill/decode phases,
+allocation lifetimes, total model buffers or energy; those remain separate
+qualification work.
+
 Initial and final native observations include AC/battery, battery-saver and
 charge snapshots where Windows supplies them, plus the active power-scheme GUID
 and checked effective power mode from documented version-two notifications.

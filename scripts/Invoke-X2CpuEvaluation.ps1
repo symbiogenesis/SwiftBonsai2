@@ -93,7 +93,7 @@ $report = [ordered]@{
         PromptMilliseconds = 'Pinned native prompt eval; actual prompt token count retained.'
         DecodeMilliseconds = 'Pinned native eval time; count excludes first sampled token.'
         WallMilliseconds = 'Owned process creation through exit and final supervision; includes model load; excludes artifact verification and CPU/power boundary observations.'
-        Memory = 'Job commit peak excludes mapped weight residency; one-second physical observations can miss brief pressure.'
+        Memory = 'ProcessMemory retains sampled private/current working-set maxima and OS lifetime peak working set from existing one-second safety queries plus final exit. Sampled maxima can miss brief peaks. Working set includes mapped residency; Job commit excludes it. These domains overlap and must not be added. No phase attribution or energy measurement.'
     }
     Qualification = 'screen-only'; DefaultProfileChanged = $false
     ModelTrialsRequested = $false
@@ -167,6 +167,7 @@ try {
             DecodeThreads = $trial.DecodeThreads; PrefillThreads = $trial.PrefillThreads
             Timing = $sample.Timing; Counts = $sample.Counts; WallMilliseconds = $sample.WallMilliseconds
             PeakJobMemoryBytes = $sample.PeakJobMemoryBytes; MinimumAvailablePhysicalBytes = $sample.MinimumAvailablePhysicalBytes
+            ProcessMemory = $sample.ProcessMemory
             CpuConditions = $sample.CpuConditions
             ResponseSha256 = $captured.Sha256
             ReachedTokenCap = $sample.Counts.GeneratedSampledTokens -eq $plan.GeneratedTokenCap

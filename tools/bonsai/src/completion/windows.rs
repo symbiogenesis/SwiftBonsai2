@@ -344,6 +344,8 @@ fn supervise(
     let mut minimum = receipt["MinimumAvailablePhysicalBytes"]
         .as_u64()
         .ok_or("Missing admission memory observation.")?;
+    let mut memory = super::memory::Observation::default();
+    receipt["ProcessMemory"] = memory.receipt(INTERVAL);
     let exit = loop {
         parent.ensure_alive().map_err(|error| error.to_string())?;
         if let Some(exit) = process
@@ -357,14 +359,14 @@ fn supervise(
         }
         check_output(&spec.stdout, request.stdout_limit_bytes)?;
         check_output(&spec.stderr, request.stderr_limit_bytes)?;
-        observe_memory(request, process, &mut minimum, receipt)?;
+        observe_memory(request, process, &mut minimum, &mut memory, receipt)?;
     };
     receipt["ExitCode"] = json!(exit);
     receipt["WallMilliseconds"] = json!(start.elapsed().as_millis());
     parent.ensure_alive().map_err(|error| error.to_string())?;
     check_output(&spec.stdout, request.stdout_limit_bytes)?;
     check_output(&spec.stderr, request.stderr_limit_bytes)?;
-    observe_memory(request, process, &mut minimum, receipt)?;
+    observe_memory(request, process, &mut minimum, &mut memory, receipt)?;
     if exit != 0 {
         return Err(format!("Native operation failed with exit code {exit}."));
     }
@@ -411,6 +413,7 @@ fn observe_memory(
     request: &Request,
     process: &OwnedProcess,
     minimum: &mut u64,
+    observation: &mut super::memory::Observation,
     receipt: &mut Value,
 ) -> Result<()> {
     *minimum = (*minimum).min(available_memory_bytes().map_err(|error| error.to_string())?);
@@ -420,13 +423,19 @@ fn observe_memory(
     }
     // A root can exit between the preceding wait and this observation.
     match process.memory_usage() {
-        Ok(memory)
+        Ok(memory) => {
+            // Retain even the observation that rejects a sample. This reuses
+            // safety queries without adding a separate profiling poll loop.
+            observation.observe(memory);
+            receipt["ProcessMemory"] = observation.receipt(INTERVAL);
             if memory.private_bytes > request.memory_limit_bytes
-                || memory.working_set_bytes > request.memory_limit_bytes =>
-        {
-            Err("Native operation crossed its current process memory ceiling.".into())
+                || memory.working_set_bytes > request.memory_limit_bytes
+            {
+                Err("Native operation crossed its current process memory ceiling.".into())
+            } else {
+                Ok(())
+            }
         }
-        Ok(_) => Ok(()),
         Err(_)
             if process
                 .try_wait()
