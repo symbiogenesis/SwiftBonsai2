@@ -16,7 +16,7 @@ It was not an exhaustive transitive/native-source audit.
 | --- | --- | --- |
 | Baseline `f9c7ade2de57eb537f397429eed42a297740fd06` | 449 locked; RustSec `3279c99911354c400e1d41e47c7d60e39258b147`, 1,378 advisories | No known vulnerabilities or yanked packages |
 | Concurrent MXC integration; then ZIP 9.1.2 | 492 locked; same database | Same result |
-| [2026-10-29 refresh](#dependency-refresh-2026-10-29) | 490 dependencies; RustSec `ee1a49a2769a24a596afc1c20cb33748d2769586`, 1,386 advisories | Same result with `cargo-audit 0.22.2 --deny yanked` |
+| [2026-10-29 selection](#reviewed-pins-and-tooling) | 490 dependencies; RustSec `ee1a49a2769a24a596afc1c20cb33748d2769586`, 1,386 advisories | Same result with `cargo-audit 0.22.2 --deny yanked` |
 
 All scans retained three unmaintained-package notices: `zvariant 5.15.1`
 ([0370](https://rustsec.org/advisories/RUSTSEC-2026-0370.html)), `zbus_names 4.3.5`
@@ -28,18 +28,20 @@ compatible requirements still select zbus 5. Keep notices visible; removing
 accessibility or forcing an incompatible major is inappropriate. Exact pins
 provide reproducibility, not continuing advisory notification.
 
-## Changes made
+## Dependency policy
 
-- Removed the broker's unused direct `sha2` edge; hashing remains in `bonsai-artifacts`.
-  This claims no binary-size or speed gain.
-- Updated ZIP 9.1.0 → 9.1.2 on 2026-10-26, retaining disabled defaults and only
-  `deflate-flate2-zlib-rs`. Upstream hardened [symlink extraction](https://github.com/zip-rs/zip2/pull/1116)
-  and [Unicode-path renaming](https://github.com/zip-rs/zip2/pull/1177). Runner already
-  uses bounded custom extraction, so this is preventive maintenance, not evidence
-  of an exploitable Runner flaw. The later refresh selects 9.1.3.
-- Added [Dependency audit CI](../.github/workflows/dependency-audit.yml) for relevant
-  main pushes, weekly and manual runs. Pinned cargo-audit fetches RustSec anew;
-  vulnerabilities/yanks fail, maintenance notices remain visible without blanket ignores.
+Hashing belongs in `bonsai-artifacts`; the broker has no direct `sha2` dependency.
+ZIP 9.1.3 disables defaults and enables only `deflate-flate2-zlib-rs`.
+Upstream hardening includes [symlink extraction](https://github.com/zip-rs/zip2/pull/1116),
+[Unicode-path renaming](https://github.com/zip-rs/zip2/pull/1177) and
+[9.1.3 archive fixes](https://github.com/zip-rs/zip2/releases/tag/v9.1.3).
+Runner still requires bounded custom extraction; these fixes establish neither
+an exploitable Runner flaw nor a measured size/speed gain.
+
+[Dependency audit CI](../.github/workflows/dependency-audit.yml) runs for relevant
+main pushes, weekly and manually. Pinned cargo-audit fetches RustSec anew;
+vulnerabilities/yanks fail, while maintenance notices remain visible without
+blanket ignores.
 
 ## Dependency footprint and duplication
 
@@ -75,7 +77,7 @@ Requirements are incompatible; do not force unification with patches. MXC adds
 0.4.3, and `windows-sys 0.59.0` via winreg. Same-version log/memchr/Serde rows can
 be host/target or feature build units, not multiple library versions per executable.
 
-### MXC has the largest new footprint
+### MXC footprint
 
 `mxc-sdk =1.0.1` plus `flatbuffers =25.12.19` broadens every shared-process-boundary
 consumer. VM/WSL/Hyperlight features are disabled; the Nanvix download is gated
@@ -99,10 +101,9 @@ Dependency counts alone prove no slowdown: build tools and linker elimination
 matter. Consider a separate supervisor only if measured build/size savings justify
 its lifecycle/IPC cost; containment must remain mandatory and fail closed.
 
-### Renderer features are now explicit
+### Renderer features
 
-The initial eframe `wgpu` feature re-enabled `egui-wgpu/default` and broad wgpu
-defaults. `wgpu_no_default_features` plus a pinned direct wgpu edge now selects
+`wgpu_no_default_features` plus a pinned direct wgpu edge selects
 `std`, `parking_lot`, `dx12`, `vulkan`, `gles`, `wgsl`. All three supported Windows
 backends remain real fallbacks; upstream `NativeOptions` selects `PRIMARY | GL`
 unless overridden by the environment.
@@ -114,10 +115,10 @@ is claimed. Removing a Windows backend requires a separate support/device decisi
 Font parsers, color-font rendering, `vello_cpu` and `glifo` serve actual native UI
 functionality, not an inference framework or browser frontend.
 
-Format, Release Clippy, docs/build and ten DX12 capture layouts passed; default
-and forced-DX12 previews were responsive and closed. This does not qualify every
-backend/device or inference performance. Evidence:
-`C:\Users\symbi\AppData\Local\Temp\Bonsai-WgpuRefine-2143bcc4c15b4cdfbfa4b483ea4d7937`.
+Retained renderer checks cover format, Release Clippy, docs/build, ten DX12
+capture layouts and responsive default/forced-DX12 previews through closure.
+They do not qualify every backend/device or inference performance; see
+[validation evidence](#validation-and-evidence).
 
 ### Native inference source review
 
@@ -199,7 +200,7 @@ allocation, validation, serialization and destruction.
 
 ### Current candidate and pending gate
 
-The optional `json-candidate` now pins published **0.19.0**, upstream
+The optional `json-candidate` pins published **0.19.0**, upstream
 [`00a71f6`](https://github.com/simd-lite/simd-json/commit/00a71f6a931f7f365c23d7fc8d1f84ad693304d3),
 with Cargo.lock registry checksum; no submodule is required. It includes Unicode
 fixes and [PR #495](https://github.com/simd-lite/simd-json/pull/495) for
@@ -253,51 +254,52 @@ not Snapdragon inference or stable-versus-nightly evidence. The pinned nightly
 supports branch-sensitive broker lending; this screen proves no compiler speedup.
 All benchmarks run in CI only.
 
+## Reviewed pins and tooling
+
+Selection reviewed **2026-10-29**; this date is not a claim of continuing freshness.
+
+| Dependency/tool | Reviewed selection |
+| --- | --- |
+| `zip` | 9.1.3; minimal deflate features |
+| Optional `simd-json` | crates.io 0.19.0 at `00a71f6`; qualification pending |
+| `openssl-probe` | 0.2.2 |
+| `rustix` | 1.1.6 |
+| `schannel` | 0.1.30 |
+| `unicode-width` | 0.2.3 |
+| .NET SDK | 10.0.403, listed on the [release page](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) and installed |
+| PSScriptAnalyzer / cargo-audit / LLVM | 1.25.0 / 0.22.2 / 23.1.4 |
+
+At review, `cargo update --dry-run --verbose` found no further compatible updates;
+Actions/tool pins were current and windows-future 0.3.2 was deliberate. Registry
+selection adds no SIMD-JSON qualification evidence. Nightly, inference/speech
+sources/binaries and model locks require their separate
+[runtime review](development-guide.md#prepare-a-runtime-lock-update).
+
 ## Validation and evidence
 
-The original audit passed format, Release Clippy/docs/build for `bonsai-artifacts`,
-`bonsai-broker`, `bonsai-tools`; named regressions covered archive paths, expansion
-budgets and hostile source names. actionlint 1.7.12 and YAML/event/permission checks
-passed. That review dispatched no hosted validation and ran no local full suite
-or benchmark; it claimed no performance gain. Raw audit/source/metadata/logs:
-`C:\Users\symbi\AppData\Local\Temp\Bonsai-DependencyAudit-b2037a17954346d992abd517055f1ecb`.
-
-## Dependency refresh 2026-10-29
-
-| Dependency | Previous | Reviewed selection |
-| --- | --- | --- |
-| `zip` | 9.1.2 | 9.1.3 |
-| Optional `simd-json` | 0.18.1 at `77ec801` | crates.io 0.19.0 at `00a71f6` |
-| `openssl-probe` | 0.2.1 | 0.2.2 |
-| `rustix` | 1.1.5 | 1.1.6 |
-| `schannel` | 0.1.29 | 0.1.30 |
-| `unicode-width` | 0.2.2 | 0.2.3 |
-| .NET SDK | 10.0.402 | 10.0.403 |
-
-[ZIP 9.1.3](https://github.com/zip-rs/zip2/releases/tag/v9.1.3) adds archive hardening
-without changing minimal deflate features. SIMD-JSON's registry update adds no
-qualification evidence. The [.NET release page](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
-listed installed SDK 10.0.403. At review, `cargo update --dry-run --verbose` found
-zero further compatible updates; windows-future 0.3.2 remained deliberate.
-Actions, PSScriptAnalyzer 1.25.0, cargo-audit 0.22.2 and LLVM 23.1.4 were current.
-Nightly, inference/speech sources/binaries and model locks remain separately
-qualified through the [runtime promotion procedure](development-guide.md#prepare-a-runtime-lock-update).
-
-All-feature Release Clippy (all targets), format, rustdoc and native builds passed
-for ten workspace packages outside separately provisioned ASR/TTS binaries.
-Optional-comparison strict-lint fixes did not change parsing. Exact Release cases:
+The 2026-10-29 evidence covers all-feature/all-target Release Clippy, format,
+rustdoc and native builds for ten workspace packages, excluding separately
+provisioned ASR/TTS binaries. Optional-comparison lint fixes preserve parsing.
+Exact Release regressions:
 
 - `tests::zipped_installation_verifies_deflated_payload_and_rejects_drift`
 - `speech_build::tests::source_staging_preserves_bytes_and_rejects_changed_archive_or_cache`
 - `json_candidate::fixed_candidate_preserves_unicode_and_rejections`
 - `json_candidate_parser::tests::reuse_preserves_parity_through_failures_and_size_changes`
 
-PSScriptAnalyzer passed 62 scripts; strict Release C# passed the one extracted
-helper under SDK 10.0.403. Full suites/benchmarks remained CI-only and were not run locally.
+PSScriptAnalyzer covers 62 scripts; strict Release C# covers the extracted helper
+under SDK 10.0.403. The original 2026-10-26 audit also retains format/Release
+Clippy/docs/build for `bonsai-artifacts`, `bonsai-broker`, `bonsai-tools`, archive
+path/expansion/hostile-source regressions, actionlint 1.7.12 and YAML/event/permission
+checks. The original audit dispatched no hosted validation. Neither review ran a
+local full suite/benchmark or establishes a performance gain; full suites/benchmarks
+stay CI-only.
 Evidence directories under `C:\Users\symbi\AppData\Local\Temp\`:
 
 | Evidence | Path suffix |
 | --- | --- |
+| Original audit, sources, metadata and logs | `Bonsai-DependencyAudit-b2037a17954346d992abd517055f1ecb` |
+| Renderer checks | `Bonsai-WgpuRefine-2143bcc4c15b4cdfbfa4b483ea4d7937` |
 | Fresh audit JSON | `Runner-DependencyAudit-ee63cbf6ce19403d9afcfef303829a94\audit.json` |
 | Rust update checks | `Runner-DependencyUpdate-1793293946274` |
 | Standards | `SwiftBonsai-Standards-4f0235a8a0164835a225fed72989ab83` |
