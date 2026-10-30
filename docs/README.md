@@ -2,7 +2,8 @@
 
 Start with the [development guide](development-guide.md) to install/provision,
 launch the native app or run bounded developer checks. [PLAN.md](../PLAN.md) is
-the only backlog; these pages describe current behavior, contracts and evidence.
+the only backlog; these pages describe behavior, contracts and evidence. Files
+ending in `-plan.md` define technical constraints, not separate task lists.
 
 **Current boundary:** native Windows ARM64/Rust UI, CPU execution and a strict
 local HTTP/JSON/SSE subset. Experimental runtimes, formats and accelerators retain
@@ -24,10 +25,10 @@ does not establish actual-model quality, speed, isolation or sustained comfort.
 | --- | --- |
 | [UI architecture](ui-architecture.md) | Lasting Rust/native presentation boundary, state/lifecycle and interoperability responsibilities |
 | [Broker policy](broker-policy.md) | Exact public/private protocol, authentication, framing, admission and completion/recovery |
-| [Streaming resources](streaming-resources.md) | Bounded text, request/response storage, queues, Find, recovery and PCM lifetimes |
+| [Streaming resources](streaming-resources.md) | Text/Find, HTTP buffers, speech/PCM and recovery: bounds, ownership and focused evidence |
 | [Sandboxing and Windows integration](sandboxing.md) | Worker authority, containment, Jobs/handles, files/locks, threads, power and Windows capability limits |
 | [Implementation decisions](implementation-research.md) | Design rationale, file-integrity ownership, protocol choices and runtime-overhead research implications |
-| [Dependency audit and choices](dependency-audit.md) | Dated security/feature/footprint reviews, parser/runtime comparisons and retained dependency decisions |
+| [Dependency audit and choices](dependency-audit.md) | Dated security/footprint/source reviews, parser/runtime comparisons and dependency decisions; license obligations live in Licensing |
 
 ## Models, memory and runtime
 
@@ -59,7 +60,7 @@ does not establish actual-model quality, speed, isolation or sustained comfort.
 | [Hexagon](hexagon-npu-plan.md) | Signed deployment, exact packed execution/state, memory and failure contracts |
 | [Inference algorithms](inference-algorithms.md) | Runtime semantics, LUT/prefill/GDN, attention, hybrid cache and speculation constraints |
 | [Inference defaults](inference-defaults.md) | Sampler/thinking/output settings, prompt harness and quality evidence limits |
-| [Performance and speech evidence](performance-expectations.md) | Published benchmark context, measured-versus-unqualified results, paired speech resources and measurement methodology |
+| [Performance and speech evidence](performance-expectations.md) | Publisher benchmark limits, paired speech results and the shared latency/memory/energy measurement protocol |
 | [Research register](research-register.md) | Dated primary sources, derivations, applicability, negative results and experiment review |
 
 ## Evidence files
