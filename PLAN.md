@@ -90,7 +90,7 @@ no-go decision, including losing cases.
   loopback authority with proven broker-only communication, preserving atomic
   Job limits and exact worker identity without weaker fallback tiers. Follow the
   [worker sandbox architecture](docs/sandboxing.md),
-  [Windows integration review](docs/windows-integration.md) and qualify the
+  [Windows integration review](docs/sandboxing.md) and qualify the
   [daily-service boundary](docs/broker-policy.md).
 - Qualify the complete transport/security boundary: numeric loopback, exact
   Host/Origin/routes, private credentials, tools/MCP and dynamic-loading rejection,
@@ -254,7 +254,7 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
   target-device CI and independent listening, retaining voice quality alongside
   startup, first-audio, synthesis latency and resource evidence. Use the
   [paired speech comparison contract](docs/validation.md) and
-  [hosted resource evidence](docs/speech-memory.md). Attribute voice bootstrap,
+  [hosted resource evidence](docs/performance-expectations.md#q4-speech-resource-comparison). Attribute voice bootstrap,
   warm Base prefill, residual-code prediction, codec, transport and playback
   separately. Record first generated PCM versus first audible output and chunk
   supply gaps/underruns. Conditioning reuse, bounded graph retention and PCM
@@ -676,7 +676,7 @@ Reference: [exact conformance requirements](docs/prism-upstream-tests.md).
   pass and at least 5% lower equal-weight geometric-mean time
   with no case more than 5% slower in both cold and reused-request screens,
   including supplemental scale-setting cases. Preserve the existing dependency decision
-  until those gates pass; see [dependency contracts](docs/dependency-choice.md).
+  until those gates pass; see [dependency contracts](docs/dependency-audit.md).
 
 ## Optional agents
 

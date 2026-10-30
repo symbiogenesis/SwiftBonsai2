@@ -100,10 +100,11 @@ Supply a genuine review of every sample in this form:
 }
 ```
 
-Creative prompts also require `creativeUsefulness`. The 0-4 rubric and prompt checks
-cover fiction/art dialogue, continuity, tone, composition, sensitive permitted themes,
-coherence, instruction following, refusal, repetition and usable completions. Example
-scores are schema illustrations, not reviews; one response cannot settle the scale.
+Creative prompts also require `creativeUsefulness` under the fixed 0-4 rubric.
+Broader fiction/art acceptance separately covers dialogue, continuity, tone,
+composition, sensitive permitted themes, coherence, instruction following, refusal,
+repetition and usable completions. Example scores illustrate the schema, not actual
+reviews; one response cannot settle the scale.
 The scorer rejects malformed/hash-mismatched reviews but cannot authenticate reviewers
 or attestations. Missing reviews/native evidence stay pending; known regressions reject.
 

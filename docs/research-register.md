@@ -111,8 +111,8 @@ Real-arithmetic equivalence permits parallel prompt work; reordered floats still
 need logits/state and long-continuation checks.
 
 **Derived rollback limit:** transition eigenvalues `alpha_t` and
-`alpha_t*(1-beta_t*||k_t||^2)` can be singular/near-zero, making inversion invalid
-or unstable; convolution overwrites history too. Retain snapshots or saved factors
+`alpha_t*(1-beta_t*||k_t||^2)` can be zero/near-zero, making the transition
+singular or inversion unstable; convolution overwrites history too. Retain snapshots or saved factors
 with forward reconstruction and atomic commit. For strictly triangular size-`c`
 `L`, `L^c=0` and `(I-L)^(-1)=I+L+...+L^(c-1)` exactly, but short-truncation error
 depends on powers/norms of `L`, not spectral radius zero alone. This constrains
@@ -143,8 +143,8 @@ including transient restore/rollback. Admission conservatively charges every
 referenced sealed page per snapshot without relying on sharing; this survey
 changes neither budget nor policy.
 
-Exact tokens/reset state/positions plus model, adapter, transforms, precision and
-execution contract determine exact prefix state. A recurrent checkpoint cannot
+For deterministic execution, exact tokens/reset state/positions plus model, adapter,
+transforms, precision and execution contract determine exact prefix state. A recurrent checkpoint cannot
 stand for a shorter position; immutable sharing saves copies only with independent
 mutable tails. Simultaneously live buffers bound storage; reuse waits for the
 last use, including asynchronous device work. [Memory Allocation for Constant-Bounded Programs](https://arxiv.org/abs/2608.14471v1)
@@ -223,7 +223,7 @@ repositories are observations as of the review date, not immutable evidence.
 | L11: [ELUTQ](https://arxiv.org/abs/2510.19482v4), v4 2026-02-01; [code](https://github.com/Nkniexin/ELUTQ) | Hierarchical nonuniform quantization remains executable through bit-serial LUTs. | New artifacts; RK3588/M2 CPU evidence is useful but does not establish PQ2/PTQ1 or Windows support. |
 | L12: [Shannonic](https://proceedings.mlsys.org/paper_files/paper/2026/hash/96f39c8de84678cb2a908cd52bfd7819-Abstract-Conference.html), MLSys 2026 | Lossless range-partitioned ANS reduces table state; its theorem compares specified probability-allocation/offset losses. | Not universally better than ideal ANS. Communication-bound wins do not prove faster local matvec; charge independent streams and decode work. |
 | L13: [QTEA](https://arxiv.org/abs/2609.00224v2), v2 2026-09-02, EMNLP 2026 acceptance listed; [code](https://github.com/Intelligent-Microsystems-Lab/QTEA) | Ternary bulk plus salient-column 1:4 residuals and columnwise refinement. | New PTQ artifact/residual memory. GPU/CUDA Graph results and architecture estimates are not post-layout silicon or NEON evidence. |
-| L14: [HARP](https://arxiv.org/abs/2605.29843v2), v2 2026-09-02; [code](https://github.com/brain-lab-research/HARP) | Learned sparse butterfly/mixed-radix orthogonal transforms replace fixed preprocessing. | New fitted artifacts. Full-precision equivalence does not preserve stored quantized Swift; fitting, parameters and transforms count. |
+| L14: [HARP](https://arxiv.org/abs/2605.29843v2), v2 2026-09-02; [code](https://github.com/brain-lab-research/HARP) | Learned sparse butterfly/mixed-radix orthogonal transforms replace fixed preprocessing. | New fitted artifacts. Full-precision equivalence does not preserve stored quantized Swift; fitting, parameters and transforms count. Throughput evidence uses RTX 5080. |
 | L15: [Leech Lattice Vector Quantization](https://arxiv.org/abs/2603.11021v2), v2 2026-07-07 | Structured 24D indexing avoids materializing a huge codebook. | New-artifact research; sphere-packing optimality is not universal model-quantization optimality. |
 | L16: [Tetra](https://arxiv.org/abs/2609.35465v1), 2026-09-28; [Rust/CUDA code](https://github.com/pjmalandrino/llvq); [author report](https://huggingface.co/blog/Pier-Jean/llvq-init), 2026-08-29 | Fused lattice reconstruction distinguishes serialized bitrate from bytes read by execution. | L40S/new-artifact evidence includes quality losses. Independent implementation; Rust source does not qualify Windows Arm. |
 | L17: [XOR-Trellis](https://arxiv.org/abs/2610.00432v1), submission history 2026-09-30 | Parity/XOR structure and a small FP4 palette replace a larger state-to-value lookup. | New trellis quantizer; gate-level analysis is not commodity-CPU end-to-end speed. |
@@ -328,7 +328,7 @@ replacing exact KV/state or re-quantizing the selected model by default.
 
 The [Adreno](adreno-gpu-plan.md#2026-research-evidence),
 [Hexagon](hexagon-npu-plan.md#2026-research-evidence) and
-[speech](speech-memory.md#2026-speech-inference-research) guides retain device,
+[speech](performance-expectations.md#2026-speech-inference-research) guides retain device,
 runtime-access and measurement details.
 
 | ID / source and date | Mechanism or observation | Disposition |

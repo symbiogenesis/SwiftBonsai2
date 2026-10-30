@@ -74,6 +74,6 @@ Inspect a capture offline:
 
 The screen enforces artifacts/resources, retains failures and compares per-arm median
 decode throughput. Rejection blocks the candidate; continue means only that this small
-prefix screen did not reject it. It cannot establish completed- answer quality,
+prefix screen did not reject it. It cannot establish quality of completed answers,
 long-context/statistical equivalence, total physical RAM, default promotion or
 app-scale-1.3 acceptance under the scale-one/512-token LoRA contract.

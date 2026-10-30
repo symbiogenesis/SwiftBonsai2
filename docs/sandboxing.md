@@ -161,8 +161,8 @@ bindings, and audio retains waveOut headers/buffers until driver release.
 
 `src/windows-process` creates hidden suspended processes with explicit executable,
 working directory and quoted arguments. Creation attributes assign an unnamed
-Job and inherit only the three standard streams. Jobs kill descendants on owner
-loss, reject breakaway and enforce process/commit bounds; they do not restrict
+Job and inherit only the three standard streams. [Jobs](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) kill
+descendants on owner loss, reject breakaway and enforce process/commit bounds; they do not restrict
 security identity. Parent monitoring retains query/synchronize handles and checks
 creation time against PID reuse. Native PSEC composition and its distinct
 effective mitigations are specified above.

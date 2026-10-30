@@ -195,7 +195,7 @@ the unchanged Q8 codec explicitly:
 ```
 
 Each immutable profile is verified before loading. Actual evaluation belongs to
-the main-only TTS workflow; [speech memory](speech-memory.md) defines paired
+the main-only TTS workflow; [speech memory](performance-expectations.md#q4-speech-resource-comparison) defines paired
 fresh/warm resource and listening review. Q4 is not qualified as equivalent to Q8;
 streaming, prefetch and warm reuse alone establish no throughput or peak-memory gain.
 
