@@ -11,6 +11,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 $env:BONSAI_NATIVE_DIAGNOSTICS_READY = 'false'
 $env:BONSAI_NATIVE_DIAGNOSTICS_STATUS = 'not-collected'
 $maximumBytes = 65536

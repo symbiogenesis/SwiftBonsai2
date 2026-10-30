@@ -7,6 +7,7 @@ Checks bounded native log retention, strict decoding and credential nondisclosur
 param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 $script = Join-Path $PSScriptRoot '../scripts/Save-NativeStartupDiagnostics.ps1'
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('Bonsai-Startup-Diagnostics-' + [guid]::NewGuid().ToString('N'))
