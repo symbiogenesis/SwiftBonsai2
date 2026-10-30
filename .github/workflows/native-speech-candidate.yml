@@ -151,6 +151,12 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
+          # The owning builder selects cargo +<dated channel>. Compiler/wrapper
+          # overrides deliberately disable its reusable source-build receipt.
+          foreach ($name in @('RUSTC', 'RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER',
+              'CARGO_BUILD_RUSTC', 'CARGO_BUILD_RUSTC_WRAPPER', 'CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER')) {
+            Remove-Item -LiteralPath ('Env:' + $name) -ErrorAction SilentlyContinue
+          }
           Import-Module (Join-Path $RepositoryRoot 'scripts/Bonsai.NativeSpeech.psm1')
           $result = Invoke-NativeSpeechBuild -RepositoryRoot $RepositoryRoot -DataDirectory $DataDirectory -WorkingDirectory $WorkingDirectory -Model All -ToolPath $ToolPath
           $result | ConvertTo-Json -Depth 12 -Compress
@@ -162,7 +168,6 @@ jobs:
             Save-SpeechCandidateEvidence
             $rustFlags = @('-C', "linker=$linker", '-C', 'linker-flavor=lld-link')
             $built = Invoke-BonsaiNativeProcess -Executable $pwsh -WorkingDirectory $scratch -TimeoutSeconds 1200 -OwnDescendants -LogPath (Join-Path $scratch 'build.txt') -ArgumentList $arguments -Environment @{
-              RUSTC=$rustc; RUSTC_WRAPPER=''; RUSTC_WORKSPACE_WRAPPER=''
               CARGO_ENCODED_RUSTFLAGS=$rustFlags -join [char]0x1f
             }
             if ($built.ExitCode -ne 0 -or [Text.Encoding]::UTF8.GetByteCount($built.StandardOutput) -gt 65536) {
