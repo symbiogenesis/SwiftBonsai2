@@ -28,7 +28,7 @@ impl State {
             self.streaming_read_aloud = true;
             self.streaming_suppressed = false;
             "New responses will be read aloud as they arrive.".clone_into(&mut self.speech_status);
-            if self.busy && !self.last_answer.is_empty() {
+            if self.model.busy() && !self.last_answer.is_empty() {
                 self.stop_speech();
                 self.streaming_suppressed = false;
                 self.stream_answer(&self.last_answer.clone());
@@ -39,7 +39,7 @@ impl State {
     }
 
     pub(super) fn stream_answer(&mut self, text: &str) {
-        if !self.busy
+        if !self.model.busy()
             || !self.streaming_read_aloud
             || self.streaming_suppressed
             || !self.speech_output
@@ -94,7 +94,10 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{client, window::transcript::Role};
+    use crate::{
+        client,
+        window::{ModelLifecycle, transcript::Role},
+    };
     use std::{io, sync::mpsc, time::Duration};
 
     fn fixture() -> io::Result<(State, mpsc::Receiver<speech::Command>)> {
@@ -105,8 +108,7 @@ mod tests {
         state.speech = Some(session);
         state.speech_output = true;
         state.preview = false;
-        state.ready = true;
-        state.busy = true;
+        state.model = ModelLifecycle::Generating;
         state.transcript.push(Role::Assistant, String::new());
         Ok((state, speech_commands))
     }
@@ -126,7 +128,7 @@ mod tests {
         state.model_event(client::Event::Reasoning("Private reasoning".to_owned()));
         state.model_event(client::Event::Draft("Retained draft".to_owned()));
         state.model_event(client::Event::Text("Hello ".to_owned()));
-        assert!(state.busy && state.streaming_active);
+        assert!(state.model.busy() && state.streaming_active);
         assert!(matches!(next(&commands)?, speech::Command::StopListening));
         assert!(
             matches!(next(&commands)?, speech::Command::BeginStream { voice_description } if voice_description == state.voice_profile)
@@ -140,7 +142,7 @@ mod tests {
         );
         state.model_event(client::Event::Complete(client::Completion::TokenLimit));
         assert!(matches!(next(&commands)?, speech::Command::FinishStream));
-        assert!(!state.busy);
+        assert!(!state.model.busy());
         assert_eq!(state.last_answer, "Hello world.");
         Ok(())
     }

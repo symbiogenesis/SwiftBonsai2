@@ -13,7 +13,7 @@ fn harness() -> Harness<'static, Fixture> {
     let (events, incoming_events) = client::event_channel();
     let mut app = State::create(commands, incoming_events, None, None);
     app.preview = false;
-    app.ready = true;
+    app.model = ModelLifecycle::Ready;
     app.input = "Preserve this draft".to_owned();
     app.transcript
         .push(Role::User, "Find this message".to_owned());
@@ -49,11 +49,11 @@ fn open_find(chat: &mut Harness<'_, Fixture>) {
 #[test]
 fn find_escape_preserves_generation_and_draft_before_explicit_stop() {
     let mut chat = harness();
-    chat.state_mut().app.busy = true;
+    chat.state_mut().app.model = ModelLifecycle::Generating;
     open_find(&mut chat);
     chat.key_press(egui::Key::Enter);
     chat.run();
-    assert!(chat.state().app.busy);
+    assert!(chat.state().app.model.busy());
     assert!(matches!(
         chat.state().commands.try_recv(),
         Err(mpsc::TryRecvError::Empty)
@@ -62,7 +62,7 @@ fn find_escape_preserves_generation_and_draft_before_explicit_stop() {
     chat.key_press(egui::Key::Escape);
     chat.run();
     assert!(chat.query_by_label("Find in conversation").is_none());
-    assert!(chat.state().app.busy);
+    assert!(chat.state().app.model.busy());
     assert_eq!(chat.state().app.input, "Preserve this draft");
     assert!(matches!(
         chat.state().commands.try_recv(),
@@ -71,7 +71,7 @@ fn find_escape_preserves_generation_and_draft_before_explicit_stop() {
 
     chat.key_press(egui::Key::Escape);
     chat.run();
-    assert!(!chat.state().app.busy);
+    assert!(!chat.state().app.model.busy());
     assert!(matches!(
         chat.state().commands.try_recv(),
         Ok(Command::Stop)

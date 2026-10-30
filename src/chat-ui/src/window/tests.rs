@@ -6,6 +6,7 @@ fn state() -> (State, Receiver<Command>, client::EventSender) {
     let (events, incoming_events) = client::event_channel();
     let mut state = State::create(commands, incoming_events, None, None);
     state.preview = false;
+    state.model = ModelLifecycle::Preparing;
     (state, incoming, events)
 }
 
@@ -26,7 +27,7 @@ fn application_messages_never_enter_the_conversation() {
     state.model_event(Event::Failed(
         "Startup failed. Protected credentials and technical evidence: C:\\private".to_owned(),
     ));
-    state.model_event(Event::Retryable("Free memory, then retry.".to_owned()));
+    state.model = ModelLifecycle::Generating;
     state.model_event(Event::Rejected {
         message: "Prompt exceeds the context limit.".to_owned(),
         text: "Keep this message".to_owned(),
@@ -40,29 +41,29 @@ fn application_messages_never_enter_the_conversation() {
     assert!(!state.diagnostics.is_empty());
     assert!(!state.status.contains("C:\\private"));
     assert_eq!(state.input, "Keep this message");
-    assert!(state.ready);
-    assert!(!state.waiting_model);
+    assert!(state.model.ready());
+    assert!(!state.model.waiting_model());
 }
 
 #[test]
 fn stopped_empty_response_leaves_only_conversation_content() {
     let (mut state, commands, _events) = state();
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     state.input = "Keep my question".to_owned();
     state.submit();
     assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
     state.stop_generation();
     assert!(matches!(commands.try_recv(), Ok(Command::Stop)));
-    assert!(state.waiting_model);
+    assert!(state.model.waiting_model());
     assert_eq!(state.transcript.messages.len(), 1);
     assert_eq!(state.transcript.plain_text(), "You\nKeep my question");
     state.model_event(Event::Stopping("Keep my question".to_owned()));
     assert_eq!(state.input, "Keep my question");
     assert!(!state.warning);
-    assert!(!state.retryable);
+    assert!(!state.model.retryable());
     state.model_event(Event::Stopped);
-    assert!(!state.waiting_model);
-    assert!(state.retryable);
+    assert!(!state.model.waiting_model());
+    assert!(state.model.retryable());
     assert!(!state.warning);
     assert_eq!(state.transcript.messages.len(), 1);
 }
@@ -70,7 +71,7 @@ fn stopped_empty_response_leaves_only_conversation_content() {
 #[test]
 fn stop_freezes_queued_output_and_preserves_a_new_composer_draft() {
     let (mut state, commands, events) = state();
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     state.input = "Original question".to_owned();
     state.submit();
     assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
@@ -94,8 +95,8 @@ fn stop_freezes_queued_output_and_preserves_a_new_composer_draft() {
     state.drain_events();
     assert_eq!(state.transcript.plain_text(), transcript);
     assert_eq!(state.status, status);
-    assert!(state.stopping && state.waiting_model);
-    assert!(!state.ready && !state.retryable && !state.warning);
+    assert!(state.model.stopping() && state.model.waiting_model());
+    assert!(!state.model.ready() && !state.model.retryable() && !state.warning);
     state.input = "My next question".to_owned();
     state.model_event(Event::Stopping("Original question".to_owned()));
     assert_eq!(state.input, "My next question");
@@ -103,7 +104,7 @@ fn stop_freezes_queued_output_and_preserves_a_new_composer_draft() {
     assert!(!state.warning);
     state.retry();
     assert!(matches!(commands.try_recv(), Ok(Command::Retry)));
-    assert!(!state.ready);
+    assert!(!state.model.ready());
 }
 
 #[test]
@@ -111,7 +112,7 @@ fn queued_rejections_after_stop_preserve_teardown_and_composer_drafts() {
     for retry_required in [false, true] {
         for newer_draft in ["", "My next question"] {
             let (mut state, commands, events) = state();
-            state.ready = true;
+            state.model = ModelLifecycle::Ready;
             state.input = "Original question".to_owned();
             state.submit();
             assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
@@ -132,8 +133,13 @@ fn queued_rejections_after_stop_preserve_teardown_and_composer_drafts() {
             );
 
             state.drain_events();
-            assert!(state.stopping && state.waiting_model);
-            assert!(!state.ready && !state.busy && !state.retryable && !state.warning);
+            assert!(state.model.stopping() && state.model.waiting_model());
+            assert!(
+                !state.model.ready()
+                    && !state.model.busy()
+                    && !state.model.retryable()
+                    && !state.warning
+            );
             assert_eq!(state.status, status);
             assert_eq!(state.transcript.plain_text(), transcript);
             assert_eq!(
@@ -148,7 +154,9 @@ fn queued_rejections_after_stop_preserve_teardown_and_composer_drafts() {
             assert!(commands.try_recv().is_err());
 
             state.model_event(Event::Stopped);
-            assert!(state.retryable && !state.ready && !state.waiting_model);
+            assert!(
+                state.model.retryable() && !state.model.ready() && !state.model.waiting_model()
+            );
             state.retry();
             assert!(matches!(commands.try_recv(), Ok(Command::Retry)));
             assert!(commands.try_recv().is_err());
@@ -160,7 +168,7 @@ fn queued_rejections_after_stop_preserve_teardown_and_composer_drafts() {
 fn queued_rejection_after_stop_retains_completed_extra_effort_draft() {
     for retry_required in [false, true] {
         let (mut state, commands, events) = state();
-        state.ready = true;
+        state.model = ModelLifecycle::Ready;
         state.input = "Original question".to_owned();
         state.submit();
         assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
@@ -190,7 +198,7 @@ fn queued_rejection_after_stop_retains_completed_extra_effort_draft() {
         assert_eq!(state.transcript.plain_text(), transcript);
         assert_eq!(state.input, "Original question");
         assert!(state.committed.is_empty());
-        assert!(state.retryable && !state.ready);
+        assert!(state.model.retryable() && !state.model.ready());
         assert_eq!(state.status, client::STOPPED_MESSAGE);
     }
 }
@@ -198,7 +206,7 @@ fn queued_rejection_after_stop_retains_completed_extra_effort_draft() {
 #[test]
 fn completed_turn_winning_stop_race_keeps_visible_and_committed_answers_consistent() {
     let (mut state, _commands, _events) = state();
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     state.input = "A question".to_owned();
     state.submit();
     state.model_event(Event::Text("Partial".to_owned()));
@@ -222,16 +230,16 @@ fn completed_turn_winning_stop_race_keeps_visible_and_committed_answers_consiste
     assert_eq!(state.committed[1].content.as_ref(), state.last_answer);
     assert!(state.answer_complete);
     assert_eq!(state.status, status);
-    assert!(!state.ready && !state.retryable && !state.warning);
+    assert!(!state.model.ready() && !state.model.retryable() && !state.warning);
     state.model_event(Event::Stopped);
-    assert!(state.retryable);
+    assert!(state.model.retryable());
     assert!(!state.warning);
 }
 
 #[test]
 fn response_controls_preserve_limits_recover_composer_and_retain_complete_draft() {
     let (mut state, commands, _events) = state();
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     state.input = "A story about a garden".to_owned();
     state.extra_effort = true;
     state.output_budget = 1;
@@ -246,7 +254,7 @@ fn response_controls_preserve_limits_recover_composer_and_retain_complete_draft(
             ..
         })
     ));
-    assert!(state.busy);
+    assert!(state.model.busy());
     assert_eq!(state.input, "");
     assert_eq!(state.transcript.messages.len(), 2);
     state.model_event(Event::Stage("Draft"));
@@ -260,8 +268,8 @@ fn response_controls_preserve_limits_recover_composer_and_retain_complete_draft(
         text: "A story about a garden".to_owned(),
         retry_required: true,
     });
-    assert!(!state.ready);
-    assert!(!state.busy);
+    assert!(!state.model.ready());
+    assert!(!state.model.busy());
     assert!(state.answer_complete);
     assert_eq!(state.last_answer, "A complete draft.");
     assert_eq!(state.transcript.messages.len(), count);
@@ -269,7 +277,7 @@ fn response_controls_preserve_limits_recover_composer_and_retain_complete_draft(
     state.model_event(Event::Retryable("Retry the local model.".to_owned()));
     state.retry();
     assert!(matches!(commands.try_recv(), Ok(Command::Retry)));
-    assert!(!state.retryable);
+    assert!(!state.model.retryable());
     assert_eq!(state.transcript.messages.len(), count);
 }
 
@@ -308,7 +316,7 @@ fn response_speakers_select_individual_answers_and_ignore_replaced_playback_even
     let (session, speech_commands) = speech::Session::fixture()?;
     state.speech = Some(session);
     state.speech_output = true;
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     state
         .transcript
         .push(Role::User, "Do not speak my prompt".to_owned());
@@ -376,11 +384,11 @@ fn response_speakers_select_individual_answers_and_ignore_replaced_playback_even
         .push(Role::Assistant, "Still streaming".to_owned());
     state.toggle_read_aloud(state.transcript.messages[3].id);
     assert!(!state.speaking);
-    state.busy = true;
+    state.model = ModelLifecycle::Generating;
     state.toggle_read_aloud(older);
     assert!(state.speaking);
     assert_eq!(state.speaking_message, Some(older));
-    state.busy = false;
+    state.model = ModelLifecycle::Ready;
     state.toggle_read_aloud(latest);
     state.new_chat();
     assert!(!state.speaking);
@@ -391,7 +399,7 @@ fn response_speakers_select_individual_answers_and_ignore_replaced_playback_even
 #[test]
 fn speech_memory_failure_keeps_text_chat_and_completed_answer_available() -> io::Result<()> {
     let (mut state, commands, _events) = state();
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     state.input = "A short answer".to_owned();
     state.submit();
     assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
@@ -405,10 +413,10 @@ fn speech_memory_failure_keeps_text_chat_and_completed_answer_available() -> io:
         generation: 0,
         message: "Read aloud stopped to preserve text chat memory.",
     });
-    assert!(state.ready);
+    assert!(state.model.ready());
     assert!(state.answer_complete);
     assert!(!state.speaking);
-    assert!(!state.retryable);
+    assert!(!state.model.retryable());
     assert_eq!(state.last_answer, "The completed answer.");
     assert_eq!(state.transcript.plain_text(), transcript);
     assert!(state.speech_status.contains("preserve text chat"));
@@ -422,7 +430,7 @@ fn speech_memory_failure_keeps_text_chat_and_completed_answer_available() -> io:
 #[test]
 fn cancelled_dictation_cannot_insert_a_late_transcript() {
     let (mut state, _commands, _events) = state();
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     state.input = "Existing text".to_owned();
     state.dictation_requested = true;
     state.microphone_generation = Some(7);
@@ -436,7 +444,7 @@ fn cancelled_dictation_cannot_insert_a_late_transcript() {
 #[test]
 fn dictation_replaces_the_unicode_selection_and_advances_the_caret() {
     let (mut state, _commands, _events) = state();
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     state.dictation_requested = true;
     state.microphone_generation = Some(7);
     state.input = "café 日本語 🌿 end".to_owned();
@@ -479,7 +487,7 @@ fn diagnostics_are_bounded_and_separate_from_copyable_chat() {
 fn chat_renders_at_minimum_window_size_without_starting_services() {
     let (mut state, _commands, _events) = state();
     state.preview = true;
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     state.sidebar_open = false;
     state.transcript.push(
         Role::User,
@@ -509,7 +517,7 @@ fn chat_renders_at_minimum_window_size_without_starting_services() {
 #[test]
 fn conversation_workspace_preserves_drafts_settings_and_exact_committed_turns() {
     let (mut state, commands, _events) = state();
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     state.input = "A garden story".to_owned();
     state.submit();
     assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
@@ -565,7 +573,7 @@ fn conversation_workspace_preserves_drafts_settings_and_exact_committed_turns() 
 #[test]
 fn conversation_workspace_never_promotes_interrupted_visible_output() {
     let (mut state, commands, _events) = state();
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     state.input = "Unfinished request".to_owned();
     state.submit();
     assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
@@ -576,6 +584,9 @@ fn conversation_workspace_never_promotes_interrupted_visible_output() {
         retry_required: true,
     });
     state.model_event(Event::Retryable("Retry required".to_owned()));
+    state.retry();
+    assert!(matches!(commands.try_recv(), Ok(Command::Retry)));
+    state.model_event(Event::Starting);
     state.model_event(Event::Ready);
     let original = state.active_conversation;
     state.new_chat();
@@ -590,19 +601,19 @@ fn conversation_workspace_never_promotes_interrupted_visible_output() {
 #[test]
 fn conversation_workspace_bounds_count_blocks_busy_switches_and_deletes_explicitly() {
     let (mut state, commands, _events) = state();
-    state.ready = true;
+    state.model = ModelLifecycle::Ready;
     let original = state.active_conversation;
     state.new_chat();
     assert!(matches!(commands.try_recv(), Ok(Command::NewChat)));
     let second = state.active_conversation;
-    state.busy = true;
+    state.model = ModelLifecycle::Generating;
     state.switch_conversation(original);
     state.remove_conversation(second);
     state.new_chat();
     assert_eq!(state.active_conversation, second);
     assert_eq!(state.conversations.len(), 2);
     assert!(commands.try_recv().is_err());
-    state.busy = false;
+    state.model = ModelLifecycle::Ready;
     state.remove_conversation(second);
     assert_eq!(state.active_conversation, original);
     assert_eq!(state.conversations.len(), 1);
@@ -619,4 +630,168 @@ fn conversation_workspace_bounds_count_blocks_busy_switches_and_deletes_explicit
     assert_eq!(state.conversations.len(), MAX_CONVERSATIONS);
     assert!(state.warning);
     assert!(commands.try_recv().is_err());
+}
+
+#[test]
+fn model_lifecycle_requires_teardown_and_explicit_retry_before_verified_readiness() {
+    let (mut state, commands, _events) = state();
+    state.model_event(Event::Ready);
+    state.input = "Original question".into();
+    state.submit();
+    assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
+    assert_eq!(state.model, ModelLifecycle::Generating);
+    for event in [Event::Ready, Event::Starting, Event::Stopped] {
+        state.model_event(event);
+        assert_eq!(state.model, ModelLifecycle::Generating);
+    }
+    state.input = "A newer draft".into();
+    state.model_event(Event::Rejected {
+        message: "Connection failed".into(),
+        text: "Original question".into(),
+        retry_required: true,
+    });
+    assert_eq!(state.model, ModelLifecycle::AwaitingTeardown);
+    assert_eq!(state.input, "A newer draft");
+    let status = state.status.clone();
+    for event in [
+        Event::Ready,
+        Event::Starting,
+        Event::Complete(Completion::Finished),
+    ] {
+        state.model_event(event);
+        assert_eq!(state.model, ModelLifecycle::AwaitingTeardown);
+        assert_eq!(state.status, status);
+    }
+    state.submit();
+    state.retry();
+    assert!(commands.try_recv().is_err());
+    state.model_event(Event::Retryable("Teardown finished".into()));
+    assert_eq!(state.model, ModelLifecycle::Retryable);
+    state.model_event(Event::Ready);
+    assert_eq!(state.model, ModelLifecycle::Retryable);
+    state.retry();
+    assert!(matches!(commands.try_recv(), Ok(Command::Retry)));
+    assert_eq!(state.model, ModelLifecycle::Restarting);
+    for event in [
+        Event::Retryable("Old teardown notice".into()),
+        Event::Ready,
+        Event::Stopped,
+        Event::Stopping("Old prompt".into()),
+        Event::Complete(Completion::Finished),
+    ] {
+        state.model_event(event);
+        assert_eq!(state.model, ModelLifecycle::Restarting);
+    }
+    state.submit();
+    assert!(commands.try_recv().is_err());
+    state.model_event(Event::Starting);
+    assert_eq!(state.model, ModelLifecycle::Preparing);
+    state.model_event(Event::Ready);
+    assert_eq!(state.model, ModelLifecycle::Ready);
+    assert_eq!(state.input, "A newer draft");
+}
+
+#[test]
+fn model_lifecycle_stop_and_terminal_failure_never_reopen_send_from_late_events() {
+    let (mut state, commands, _events) = state();
+    state.model_event(Event::Ready);
+    state.input = "Original question".into();
+    state.submit();
+    assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
+    state.stop_generation();
+    assert!(matches!(commands.try_recv(), Ok(Command::Stop)));
+    for event in [
+        Event::Ready,
+        Event::Starting,
+        Event::Complete(Completion::Finished),
+    ] {
+        state.model_event(event);
+        assert_eq!(state.model, ModelLifecycle::Stopping);
+    }
+    state.input = "A newer draft".into();
+    state.model_event(Event::Failed("Owned teardown could not be verified".into()));
+    assert_eq!(state.model, ModelLifecycle::Unavailable);
+    let status = state.status.clone();
+    for event in [
+        Event::Ready,
+        Event::Starting,
+        Event::Stopped,
+        Event::Retryable("Old notice".into()),
+        Event::Rejected {
+            message: "Old rejection".into(),
+            text: "Original question".into(),
+            retry_required: false,
+        },
+    ] {
+        state.model_event(event);
+        assert_eq!(state.model, ModelLifecycle::Unavailable);
+        assert_eq!(state.status, status);
+        assert_eq!(state.input, "A newer draft");
+    }
+    state.submit();
+    state.retry();
+    assert!(commands.try_recv().is_err());
+}
+
+#[test]
+fn model_lifecycle_recoverable_rejection_preserves_a_newer_composer_draft() {
+    let (mut state, commands, _events) = state();
+    state.model_event(Event::Ready);
+    state.input = "Original question".into();
+    state.submit();
+    assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
+    state.input = "A newer draft".into();
+    state.model_event(Event::Rejected {
+        message: "Prompt rejected".into(),
+        text: "Original question".into(),
+        retry_required: false,
+    });
+    assert_eq!(state.model, ModelLifecycle::Ready);
+    assert_eq!(state.input, "A newer draft");
+    state.model_event(Event::Complete(Completion::Finished));
+    assert_eq!(state.status, "Prompt rejected");
+    assert!(!state.answer_complete);
+}
+
+#[test]
+fn model_lifecycle_queued_rejection_cannot_cancel_an_explicit_restart() {
+    for newer_draft in ["", "A newer draft"] {
+        let (mut state, commands, _events) = state();
+        state.model_event(Event::Retryable("Teardown finished".into()));
+        newer_draft.clone_into(&mut state.input);
+        state.retry();
+        assert!(matches!(commands.try_recv(), Ok(Command::Retry)));
+        let status = state.status.clone();
+        state.model_event(Event::Rejected {
+            message: "Queued behind teardown".into(),
+            text: "Original question".into(),
+            retry_required: true,
+        });
+        assert_eq!(state.model, ModelLifecycle::Restarting);
+        assert_eq!(state.status, status);
+        assert_eq!(
+            state.input,
+            if newer_draft.is_empty() {
+                "Original question"
+            } else {
+                newer_draft
+            }
+        );
+        for event in [
+            Event::Retryable("Duplicate teardown notice".into()),
+            Event::Stopped,
+            Event::Ready,
+        ] {
+            state.model_event(event);
+            assert_eq!(state.model, ModelLifecycle::Restarting);
+            assert_eq!(state.status, status);
+            state.retry();
+            state.submit();
+            assert!(commands.try_recv().is_err());
+        }
+        state.model_event(Event::Starting);
+        assert_eq!(state.model, ModelLifecycle::Preparing);
+        state.model_event(Event::Ready);
+        assert_eq!(state.model, ModelLifecycle::Ready);
+    }
 }

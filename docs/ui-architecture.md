@@ -58,6 +58,15 @@ establish promotion or full-model/device qualification.
 | Rejections/failures | Recognized local input rejections restore the draft and retain readiness. Other disconnects require retry and identify no token/memory cause. [Broker policy](broker-policy.md#native-client-completion-and-recovery) defines accepted errors and completion. |
 | Response settings | Thinking, output cap and adapter scale apply to the next response and every Extra effort pass; lock controls during generation. [Settings](development-guide.md#conversations-and-response-settings) defines defaults, bounds and execution; Extra effort quality gains remain unproven. |
 
+The model lifecycle has one explicit state: unavailable, preparing, ready,
+generating, awaiting teardown, stopping, retryable or restarting. Send requires ready;
+retry requires an owned-teardown notification and explicit user action before
+restarting. The worker must acknowledge the new attempt before readiness can
+open Send. Queued readiness/completion events cannot bypass those states,
+and recognized rejections restore their prompt only to an empty composer.
+Events come from one ordered worker channel, replaced when attaching a worker;
+these phase guards do not add independent request or attempt identifiers.
+
 [Find controls](development-guide.md#conversations-and-response-settings) search
 visible message bodies. [Streaming resources](streaming-resources.md#native-chat-and-transcript)
 defines incremental matching, highlight/underline-cache invalidation and work bounds.

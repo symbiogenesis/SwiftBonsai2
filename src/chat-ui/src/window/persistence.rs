@@ -375,6 +375,7 @@ fn valid_parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::window::ModelLifecycle;
     use crate::window::{Role, mpsc, transcript::MAX_MESSAGES};
 
     fn state() -> State {
@@ -546,7 +547,7 @@ mod tests {
         restored.restore_workspace(&bytes)?;
         assert_eq!(restored.last_answer, original.last_answer);
         assert!(restored.committed.is_empty());
-        assert!(!restored.busy && !restored.speaking);
+        assert!(!restored.model.busy() && !restored.speaking);
         Ok(())
     }
 
@@ -713,7 +714,7 @@ mod tests {
         );
         assert!(restored.committed.is_empty());
         assert!(restored.restore_history);
-        assert!(!restored.busy);
+        assert!(!restored.model.busy());
         assert!(!restored.speech_input);
         assert!(!restored.speaking);
         let mut invalid: serde_json::Value =
@@ -839,7 +840,7 @@ mod tests {
             .unwrap_or_else(Instant::now);
         state.poll_recovery();
         assert!(state.recovery_notice.starts_with("Could not save"));
-        state.ready = true;
+        state.model = ModelLifecycle::Ready;
         state.new_chat();
         assert!(state.transcript.messages.is_empty());
         assert!(state.workspace_bytes().is_err());

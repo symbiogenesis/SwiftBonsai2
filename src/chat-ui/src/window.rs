@@ -26,6 +26,7 @@ mod keyboard_tests;
     reason = "Audited UI-thread WinRT microphone initialization and teardown."
 )]
 mod microphone;
+mod model_lifecycle;
 mod persistence;
 #[allow(
     unsafe_code,
@@ -38,6 +39,7 @@ mod tests;
 mod transcript;
 mod workspace;
 
+use model_lifecycle::ModelLifecycle;
 use transcript::{Role, Transcript};
 use workspace::Conversation;
 
@@ -60,11 +62,7 @@ struct State {
     startup_request: Option<crate::startup::Request>,
     startup: Option<crate::startup::Session>,
     startup_failure: Option<std::sync::Arc<std::sync::Mutex<Option<String>>>>,
-    ready: bool,
-    busy: bool,
-    stopping: bool,
-    retryable: bool,
-    waiting_model: bool,
+    model: ModelLifecycle,
     preview: bool,
     input: String,
     transcript: Transcript,
@@ -141,11 +139,11 @@ impl State {
             startup_request: None,
             startup: None,
             startup_failure: None,
-            ready: false,
-            busy: false,
-            stopping: false,
-            retryable: false,
-            waiting_model: config.is_some(),
+            model: if config.is_some() {
+                ModelLifecycle::Preparing
+            } else {
+                ModelLifecycle::Unavailable
+            },
             preview: config.is_none(),
             input: String::new(),
             transcript: Transcript::default(),
@@ -215,7 +213,7 @@ impl State {
     ) -> Self {
         let mut state = Self::create(commands, events, None, None);
         state.preview = false;
-        state.waiting_model = true;
+        state.model = ModelLifecycle::Preparing;
         state.abliteration_enabled = false;
         state.startup_request = Some(request);
         state.set_status(
@@ -320,7 +318,7 @@ impl State {
             );
             return;
         }
-        if !self.ready || self.busy || self.input.trim().is_empty() {
+        if self.model != ModelLifecycle::Ready || self.input.trim().is_empty() {
             return;
         }
         let text = self.input.trim().to_owned();
@@ -367,13 +365,13 @@ impl State {
         self.recovery_dirty = true;
         self.input.clear();
         self.place_composer_cursor(0);
-        self.busy = true;
+        self.model = ModelLifecycle::Generating;
         self.streaming_suppressed = false;
         self.set_status("Responding…", false);
     }
 
     fn new_chat(&mut self) {
-        if !self.ready || self.busy {
+        if !self.model.ready() || self.model.busy() {
             return;
         }
         if self.conversations.len() >= MAX_CONVERSATIONS {
@@ -400,7 +398,7 @@ impl State {
     }
 
     fn retry(&mut self) {
-        if !self.retryable {
+        if !self.model.retryable() {
             return;
         }
         if self.commands.send(Command::Retry).is_err() {
@@ -408,15 +406,12 @@ impl State {
             return;
         }
         self.stop_speech();
-        self.retryable = false;
-        self.ready = false;
-        self.busy = false;
-        self.waiting_model = true;
+        self.model = ModelLifecycle::Restarting;
         self.set_status("Restarting the local model…", false);
     }
 
     fn stop_generation(&mut self) {
-        if !self.busy {
+        if !self.model.busy() {
             return;
         }
         if self.commands.send(Command::Stop).is_err() {
@@ -424,11 +419,7 @@ impl State {
             return;
         }
         self.stop_speech();
-        self.ready = false;
-        self.busy = false;
-        self.stopping = true;
-        self.retryable = false;
-        self.waiting_model = true;
+        self.model = ModelLifecycle::Stopping;
         self.transcript.remove_empty_response();
         self.set_status("Stopping the response…", false);
     }
@@ -441,7 +432,7 @@ impl State {
             self.focus_composer = true;
         } else if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
         {
-            if self.busy {
+            if self.model.busy() {
                 self.stop_generation();
             } else if self.speaking || self.dictation_requested {
                 self.stop_speech();
@@ -458,20 +449,17 @@ impl State {
 
     fn fail(&mut self, message: &str) {
         self.stop_speech();
-        self.ready = false;
-        self.busy = false;
-        self.stopping = false;
-        self.retryable = false;
-        self.waiting_model = false;
+        self.model = ModelLifecycle::Unavailable;
         self.transcript.remove_empty_response();
         self.retain_draft();
         self.set_status(message, true);
     }
 
     fn reject(&mut self, message: &str, text: &str, retry_required: bool) {
-        if self.stopping {
-            // A rejection can queue just before Stop reaches the worker. The
-            // explicit stop still owns readiness and status until teardown ends.
+        if self.model.stopping() || self.model == ModelLifecycle::Restarting {
+            // A rejection can queue just before Stop or behind the first
+            // teardown notice. Preserve explicit Stop/retry ownership until
+            // teardown ends or the worker acknowledges the new attempt.
             if self.input.is_empty() {
                 self.input = text.chars().take(INPUT_LIMIT).collect();
                 self.place_composer_cursor(self.input.chars().count());
@@ -480,13 +468,20 @@ impl State {
             return;
         }
         self.stop_speech();
-        self.busy = false;
-        self.ready = !retry_required;
-        self.retryable = false;
-        self.waiting_model = retry_required;
+        self.model = if retry_required {
+            if self.model.retryable() {
+                ModelLifecycle::Retryable
+            } else {
+                ModelLifecycle::AwaitingTeardown
+            }
+        } else {
+            ModelLifecycle::Ready
+        };
         self.transcript.remove_empty_response();
-        self.input = text.chars().take(INPUT_LIMIT).collect();
-        self.place_composer_cursor(self.input.chars().count());
+        if self.input.is_empty() {
+            self.input = text.chars().take(INPUT_LIMIT).collect();
+            self.place_composer_cursor(self.input.chars().count());
+        }
         self.retain_draft();
         self.set_status(message, true);
         self.focus_composer = !retry_required;
@@ -502,7 +497,9 @@ impl State {
                 Ok(event) => self.model_event(event),
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
-                    if !self.preview && (self.ready || self.busy || self.waiting_model) {
+                    if !self.preview
+                        && (self.model.ready() || self.model.busy() || self.model.waiting_model())
+                    {
                         self.fail("The model worker stopped. Close and restart the app.");
                     }
                     break;
@@ -512,34 +509,18 @@ impl State {
     }
 
     fn model_event(&mut self, event: Event) {
-        if self.stopping
-            && matches!(
-                event,
-                Event::Text(_)
-                    | Event::Reasoning(_)
-                    | Event::Stage(_)
-                    | Event::Draft(_)
-                    | Event::RetainedAnswer(_)
-                    | Event::Complete(_)
-            )
-        {
-            // Events already queued at the click cannot restart the response
-            // or replace the stop/cleanup status.
+        if !self.model.accepts(&event) {
             return;
         }
         self.recovery_dirty = true;
         match event {
             Event::Starting => {
-                self.stopping = false;
-                self.waiting_model = true;
-                self.ready = false;
-                self.busy = false;
-                self.retryable = false;
+                self.model = ModelLifecycle::Preparing;
                 self.set_status("Preparing your local model…", false);
             }
             Event::Retryable(message) => {
                 self.fail(&message);
-                self.retryable = true;
+                self.model = ModelLifecycle::Retryable;
             }
             Event::Stopping(text) => self.stopping_response(&text),
             Event::Stopped => self.stopped_response(),
@@ -555,9 +536,7 @@ impl State {
                         return;
                     }
                 }
-                self.waiting_model = false;
-                self.ready = true;
-                self.retryable = false;
+                self.model = ModelLifecycle::Ready;
                 self.set_status("Ready when you are.", false);
             }
             Event::Rejected {
@@ -589,7 +568,7 @@ impl State {
                     self.speech_command(speech::Command::FinishStream);
                 }
                 self.transcript.remove_empty_response();
-                self.busy = false;
+                self.model = ModelLifecycle::Ready;
                 self.answer_complete = true;
                 let message = match completion {
                     Completion::Finished => "Ready when you are.",
@@ -610,7 +589,7 @@ impl State {
     }
 
     fn commit_history(&mut self, history: Vec<client::Message>) {
-        if self.stopping
+        if self.model.stopping()
             && let Some(answer) = history.last().filter(|answer| answer.role == "assistant")
         {
             // A fully completed turn can win just before the stop click. Keep
@@ -626,11 +605,7 @@ impl State {
 
     fn stopping_response(&mut self, text: &str) {
         self.stop_speech();
-        self.busy = false;
-        self.ready = false;
-        self.stopping = true;
-        self.waiting_model = true;
-        self.retryable = false;
+        self.model = ModelLifecycle::Stopping;
         if self.input.is_empty() {
             self.input = text.chars().take(INPUT_LIMIT).collect();
             self.place_composer_cursor(self.input.chars().count());
@@ -641,11 +616,7 @@ impl State {
     }
 
     fn stopped_response(&mut self) {
-        self.stopping = false;
-        self.busy = false;
-        self.ready = false;
-        self.waiting_model = false;
-        self.retryable = true;
+        self.model = ModelLifecycle::Retryable;
         self.set_status(client::STOPPED_MESSAGE, false);
         self.focus_composer = true;
     }
@@ -710,10 +681,10 @@ impl State {
             let message = self.microphone_help();
             message.clone_into(&mut self.speech_status);
             self.help = Some(("Microphone setup", message));
-        } else if !self.ready {
+        } else if !self.model.ready() {
             "Enable the microphone after model startup completes."
                 .clone_into(&mut self.speech_status);
-        } else if !self.busy && !self.speaking {
+        } else if !self.model.busy() && !self.speaking {
             let Some(microphone) = &mut self.microphone else {
                 return;
             };
@@ -909,8 +880,8 @@ impl State {
     fn accept_transcript(&mut self, generation: u64, text: &str) {
         if !self.dictation_requested
             || self.microphone_generation != Some(generation)
-            || !self.ready
-            || self.busy
+            || !self.model.ready()
+            || self.model.busy()
         {
             return;
         }
@@ -1056,7 +1027,9 @@ impl State {
         ui.add_space(24.0);
         if ui
             .add_enabled(
-                self.ready && !self.busy && self.conversations.len() < MAX_CONVERSATIONS,
+                self.model.ready()
+                    && !self.model.busy()
+                    && self.conversations.len() < MAX_CONVERSATIONS,
                 egui::Button::new("+ New conversation")
                     .min_size(egui::vec2(ui.available_width(), 44.0))
                     .corner_radius(10),
@@ -1083,15 +1056,15 @@ impl State {
         ui.label(
             RichText::new(if self.preview {
                 "Interface preview"
-            } else if self.busy {
+            } else if self.model.busy() {
                 "●  Responding"
-            } else if self.ready {
+            } else if self.model.ready() {
                 "●  Model ready"
-            } else if self.retryable {
+            } else if self.model.retryable() {
                 "●  Model paused"
-            } else if self.stopping {
+            } else if self.model.stopping() {
                 "◌  Releasing model"
-            } else if self.waiting_model {
+            } else if self.model.waiting_model() {
                 "◌  Preparing model"
             } else {
                 "●  Model unavailable"
@@ -1112,7 +1085,7 @@ impl State {
 
     fn abliteration_controls(&mut self, ui: &mut egui::Ui) {
         ui.heading("Abliteration");
-        ui.add_enabled_ui(!self.busy && self.abliteration_enabled, |ui| {
+        ui.add_enabled_ui(!self.model.busy() && self.abliteration_enabled, |ui| {
             ui.add(
                 egui::Slider::new(&mut self.abliteration_scale, 0.0..=2.0)
                     .step_by(0.1)
@@ -1166,7 +1139,7 @@ impl State {
                 );
                 self.recovery_controls(ui);
                 ui.heading("Response");
-                ui.add_enabled_ui(!self.busy, |ui| {
+                ui.add_enabled_ui(!self.model.busy(), |ui| {
                     self.thinking_controls(ui);
                     ui.checkbox(&mut self.extra_effort, "Extra effort (experimental)");
                     ui.label(
@@ -1297,7 +1270,7 @@ impl State {
                 ui.label(
                     RichText::new(if self.preview {
                         "Interface preview · no model or audio services"
-                    } else if self.busy {
+                    } else if self.model.busy() {
                         "Making room for your next idea…"
                     } else {
                         "Your private, local AI companion"
@@ -1325,7 +1298,7 @@ impl State {
                 }
             });
         }
-        if self.warning || self.retryable {
+        if self.warning || self.model.retryable() {
             ui.horizontal_wrapped(|ui| {
                 let color = if self.warning {
                     ui.visuals().warn_fg_color
@@ -1333,7 +1306,7 @@ impl State {
                     ui.visuals().text_color()
                 };
                 ui.label(RichText::new(&self.status).color(color));
-                if self.retryable && ui.button("Retry model").clicked() {
+                if self.model.retryable() && ui.button("Retry model").clicked() {
                     self.retry();
                 }
                 if ui.small_button("Details").clicked() {
@@ -1389,7 +1362,7 @@ impl State {
     fn microphone_button(&mut self, ui: &mut egui::Ui) {
         let response = ui
             .add_enabled(
-                self.dictation_requested || (!self.busy && !self.speaking),
+                self.dictation_requested || (!self.model.busy() && !self.speaking),
                 egui::Button::new("")
                     .min_size(egui::Vec2::splat(32.0))
                     .selected(self.dictation_requested),
@@ -1468,16 +1441,16 @@ impl State {
                             .max_height(160.0)
                             .show(ui, |ui| {
                                 let output = ui
-                                    .add_enabled_ui(!self.busy, |ui| {
+                                    .add_enabled_ui(!self.model.busy(), |ui| {
                                         egui::TextEdit::multiline(&mut self.input)
                                             .id_salt("composer")
-                                            .hint_text(if self.ready {
+                                            .hint_text(if self.model.ready() {
                                                 "Ask anything…"
-                                            } else if self.retryable {
+                                            } else if self.model.retryable() {
                                                 "Retry the model to continue…"
-                                            } else if self.stopping {
+                                            } else if self.model.stopping() {
                                                 "Write while the model stops…"
-                                            } else if self.waiting_model {
+                                            } else if self.model.waiting_model() {
                                                 "Write while your local model prepares…"
                                             } else {
                                                 "Model unavailable"
@@ -1510,7 +1483,7 @@ impl State {
                                     }
                                 }
                                 let focus_requested =
-                                    self.focus_composer && self.ready && !self.busy;
+                                    self.focus_composer && self.model.ready() && !self.model.busy();
                                 if focus_requested {
                                     response.request_focus();
                                     self.focus_composer = false;
@@ -1581,13 +1554,13 @@ impl State {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    if self.busy {
+                                    if self.model.busy() {
                                         if ui.button("Stop").clicked() {
                                             self.stop_generation();
                                         }
                                     } else if ui
                                         .add_enabled(
-                                            self.ready && !self.input.trim().is_empty(),
+                                            self.model.ready() && !self.input.trim().is_empty(),
                                             egui::Button::new(
                                                 RichText::new("Send  ↑")
                                                     .color(ui.visuals().selection.stroke.color),
@@ -1611,7 +1584,7 @@ impl State {
                     egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true),
                     |ui| {
                         ui.label(
-                            RichText::new(if self.busy || !self.ready {
+                            RichText::new(if self.model.busy() || !self.model.ready() {
                                 &self.status
                             } else {
                                 "Enter to send · Shift+Enter for a new line"
@@ -1736,11 +1709,12 @@ impl State {
 
 impl eframe::App for State {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let was_ready = self.ready;
-        let was_busy = self.busy;
+        let was_ready = self.model.ready();
+        let was_busy = self.model.busy();
         self.poll_startup();
         self.drain_events();
-        if ((!was_ready && self.ready) || (was_busy && !self.busy && self.ready))
+        if ((!was_ready && self.model.ready())
+            || (was_busy && !self.model.busy() && self.model.ready()))
             && ctx.memory(|memory| {
                 memory
                     .focused()
@@ -1782,8 +1756,8 @@ impl eframe::App for State {
         // No frame-rate polling: wait between events when idle. Microphone's
         // WinRT state machine is polled only during an explicit capture session.
         let waiting = !self.preview
-            && (self.waiting_model
-                || self.busy
+            && (self.model.waiting_model()
+                || self.model.busy()
                 || self.speaking
                 || self.dictation_requested
                 || !self.speech_checked);
@@ -1864,7 +1838,7 @@ pub(super) fn run_preview() -> io::Result<()> {
         let (commands, _incoming) = mpsc::channel();
         let (_events, incoming_events) = client::event_channel();
         let mut state = State::create(commands, incoming_events, None, None);
-        state.ready = true;
+        state.model = ModelLifecycle::Ready;
         "Interface preview".clone_into(&mut state.status);
         state.transcript.push(Role::User, "I have a few ideas for a short story, but I’m not sure where to start.".to_owned());
         state.transcript.push(Role::Assistant, "Start with the moment something changes.\n\nA quiet bookshop receives a letter addressed to someone who has never existed. Its owner recognizes the handwriting as their own.\n\nWhat draws you in more: the mystery of the letter, or the person who finds it?".to_owned());
@@ -1919,12 +1893,12 @@ mod startup_tests {
         state.enable_thinking = true;
         state.output_budget = 1;
         state.voice_profile = "My chosen voice".into();
-        assert!(!state.preview && !state.ready && state.waiting_model);
+        assert!(!state.preview && !state.model.ready() && state.model.waiting_model());
         assert!(state.worker.is_none() && state.speech.is_none() && state.microphone.is_none());
         state.submit();
         state.drain_events();
         assert!(incoming.try_recv().is_err());
-        assert!(state.waiting_model && !state.warning);
+        assert!(state.model.waiting_model() && !state.warning);
         let failure = std::sync::Arc::new(std::sync::Mutex::new(None));
         state.startup_failure = Some(std::sync::Arc::clone(&failure));
         assert!(
@@ -1941,11 +1915,11 @@ mod startup_tests {
                 .as_deref(),
             Some("Synthetic setup failure")
         );
-        assert!(!state.waiting_model && state.warning && !state.retryable);
+        assert!(!state.model.waiting_model() && state.warning && !state.model.retryable());
         assert_eq!(state.input, "A message drafted while applications prepare");
         assert!(state.transcript.messages.is_empty());
         state.startup_request.take();
-        state.waiting_model = true;
+        state.model = ModelLifecycle::Preparing;
         let config = Config {
             broker: directory.join("broker.exe"),
             data: directory.clone(),
@@ -1965,7 +1939,7 @@ mod startup_tests {
         assert!(state.enable_thinking && state.output_budget == 1);
         assert_eq!(state.voice_profile, "My chosen voice");
         assert!(!state.abliteration_enabled);
-        assert!(!state.preview && !state.ready);
+        assert!(!state.preview && !state.model.ready());
         drop(state);
         fs::remove_dir_all(&directory)?;
         Ok(())

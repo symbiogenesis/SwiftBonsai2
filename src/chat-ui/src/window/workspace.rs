@@ -121,7 +121,7 @@ impl State {
     }
 
     pub(super) fn switch_conversation(&mut self, id: u64) {
-        if !self.ready || self.busy || id == self.active_conversation {
+        if !self.model.ready() || self.model.busy() || id == self.active_conversation {
             return;
         }
         let Some(index) = self
@@ -154,7 +154,7 @@ impl State {
     }
 
     pub(super) fn remove_conversation(&mut self, id: u64) {
-        if !self.ready || self.busy {
+        if !self.model.ready() || self.model.busy() {
             return;
         }
         let Some(index) = self
@@ -251,7 +251,7 @@ impl State {
                 ui.visuals().text_color()
             });
             let response = ui
-                .add_enabled_ui(self.ready && !self.busy, |ui| {
+                .add_enabled_ui(self.model.ready() && !self.model.busy(), |ui| {
                     ui.add_sized(
                         [width, 40.0],
                         egui::Button::selectable(active, title)
@@ -263,7 +263,7 @@ impl State {
                 .inner;
             // Only scroll when the composer can consume this focus request in
             // the same frame; pending focus during generation must not repaint forever.
-            if active && self.focus_composer && self.ready && !self.busy {
+            if active && self.focus_composer && self.model.ready() && !self.model.busy() {
                 response.scroll_to_me(Some(egui::Align::Center));
             }
             if response.on_hover_text(&conversation.title).clicked() {
@@ -290,7 +290,7 @@ impl State {
     ) -> Option<ConversationAction> {
         ui.set_min_width(156.0);
         if ui
-            .add_enabled(!self.busy, egui::Button::new("Rename"))
+            .add_enabled(!self.model.busy(), egui::Button::new("Rename"))
             .clicked()
         {
             ui.close();
@@ -319,7 +319,7 @@ impl State {
         ui.separator();
         if ui
             .add_enabled(
-                self.ready && !self.busy,
+                self.model.ready() && !self.model.busy(),
                 egui::Button::new(RichText::new("Delete").color(ui.visuals().error_fg_color)),
             )
             .clicked()
@@ -399,7 +399,7 @@ impl State {
                         cancelled = ui.button("Keep conversation").clicked();
                         confirmed = ui
                             .add_enabled(
-                                self.ready && !self.busy,
+                                self.model.ready() && !self.model.busy(),
                                 egui::Button::new(RichText::new("Delete conversation").color(ui.visuals().error_fg_color)),
                             )
                             .clicked();

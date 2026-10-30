@@ -19,8 +19,7 @@ impl Fixture {
         let (events, incoming_events) = client::event_channel();
         let mut app = State::create(commands, incoming_events, None, None);
         app.preview = false;
-        app.ready = true;
-        app.waiting_model = false;
+        app.model = ModelLifecycle::Ready;
         app.status = "Ready when you are.".to_owned();
         if seeded {
             app.transcript.push(Role::User, QUESTION.to_owned());
@@ -192,12 +191,12 @@ fn streaming_read_aloud_control_is_available_during_generation_and_stops_audio()
             .app
             .model_event(Event::Text("Live answer.".to_owned()));
         chat.run();
-        assert!(chat.state().app.busy && chat.state().app.streaming_active);
+        assert!(chat.state().app.model.busy() && chat.state().app.streaming_active);
         chat.get_by_role_and_label(egui::Role::Button, "Stop speech")
             .click();
         chat.run();
         assert!(!chat.state().app.speaking);
-        assert!(chat.state().app.busy && chat.state().app.streaming_read_aloud);
+        assert!(chat.state().app.model.busy() && chat.state().app.streaming_read_aloud);
         chat.get_all_by_role_and_label(egui::Role::Button, "Read this response aloud")
             .next()
             .ok_or_else(|| io::Error::other("Missing older response speaker"))?
@@ -361,7 +360,7 @@ fn thinking_setting_defaults_off_reaches_next_turn_and_locks_while_busy() {
         .click();
     chat.run();
     assert!(chat.state().app.enable_thinking);
-    chat.state_mut().app.busy = false;
+    chat.state_mut().app.model = ModelLifecycle::Ready;
     chat.get_by_role_and_label(egui::Role::CheckBox, "Thinking")
         .click();
     chat.run();
@@ -471,7 +470,7 @@ fn accessible_chat_controls_handle_enter_and_shift_enter() {
         matches!(chat.state().commands.try_recv(), Ok(Command::Send { text, .. })
         if text == "First line\nSecond line")
     );
-    assert!(chat.state().app.busy);
+    assert!(chat.state().app.model.busy());
     assert_eq!(chat.state().app.transcript.messages.len(), 2);
     assert_eq!(chat.state().app.input, "");
     assert!(
@@ -487,8 +486,7 @@ fn accessible_chat_controls_handle_enter_and_shift_enter() {
 #[test]
 fn composer_keeps_a_draft_while_the_model_prepares() {
     let mut chat = harness([620.0, 760.0], false);
-    chat.state_mut().app.ready = false;
-    chat.state_mut().app.waiting_model = true;
+    chat.state_mut().app.model = ModelLifecycle::Preparing;
     chat.run();
     chat.get_by_role_and_label(egui::Role::MultilineTextInput, "Message")
         .focus();
@@ -557,7 +555,7 @@ fn maximum_drafts_keep_transcript_and_actions_visible_and_editable() {
             assert!(
                 matches!(chat.state().commands.try_recv(), Ok(Command::Send { text, .. }) if text == draft.trim())
             );
-            assert!(chat.state().app.busy);
+            assert!(chat.state().app.model.busy());
             let stop = chat
                 .get_by_role_and_label(egui::Role::Button, "Stop")
                 .rect();
@@ -589,6 +587,7 @@ fn transcript_export_preserves_roles_spacing_and_visible_unicode_only() {
 #[test]
 fn thinking_toggle_reveals_current_streamed_reasoning_after_each_expansion() {
     let mut chat = harness([1180.0, 860.0], true);
+    chat.state_mut().app.model = ModelLifecycle::Generating;
     chat.state_mut()
         .app
         .model_event(Event::Reasoning("First thought.".to_owned()));
@@ -642,6 +641,7 @@ fn thinking_toggle_reveals_current_streamed_reasoning_after_each_expansion() {
 #[test]
 fn streaming_append_preserves_a_real_transcript_text_selection() {
     let mut chat = harness([1180.0, 860.0], true);
+    chat.state_mut().app.model = ModelLifecycle::Generating;
     chat.run();
     let answer = chat.get_by_label(ANSWER).rect();
     let start = answer.left_top() + egui::vec2(3.0, 8.0);
