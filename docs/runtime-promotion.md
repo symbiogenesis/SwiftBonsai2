@@ -3,7 +3,9 @@
 `Get-RuntimePromotion.ps1` reports the reviewed requirements for replacing the current
 Swift PQ2 standard profile with Rust Prism while retaining its pinned LoRA at scale 1.3.
 It reads the compiled release/model/adapter/template locks and requires an explicit full
-Runner revision. PTQ1 remains a separate lane.
+Runner revision. PTQ1 is evaluated separately.
+
+## Inspect the policy
 
 ```powershell
 $revision = git rev-parse main
@@ -17,6 +19,8 @@ benchmarks, selection changes, reviewer authentication or network provenance che
 Independently review CI/source/report/reviewer identities and require `promotionReady:
 true`; command success alone cannot authorize promotion.
 
+## Required evidence
+
 Required gates cover release provenance, runtime Foundation/conformance, Runner
 Foundation, 8K logits/full state, prompts/sampling/stops, 4K-output lifecycle/recovery,
 complete-model resources, adapter basis/logits, standard-scale TPS/human quality,
@@ -29,6 +33,8 @@ Device gates require the real self-hosted Snapdragon X Elite ARM64 runner. Paire
 promotion requires predeclared **10% end-to-end latency benefit**, or reviewed
 capacity/energy benefit within accepted limits; same-engine LoRA TPS is independent.
 Full suites/benchmarks stay CI-only; focused local correctness checks are allowed.
+
+## Manifest format
 
 The 1 MiB UTF-8 JSON evidence manifest must live outside Git alongside its retained
 reports. Copy `policySha256` and the entire `policy.identities` object from the plan.
@@ -71,6 +77,8 @@ Prism source revision; application gates bind the supplied settled Runner revisi
 named CI execution must use `refs/heads/main`. Passed gates require an identified
 reviewer; human quality and sustained comfort also require `humanReviewed: true`.
 Pending records need only `id`, `status` and a bounded nonempty `note`.
+
+## Evaluation rules
 
 Unknown or duplicate gates, malformed identities, non-main provenance, wrong devices,
 missing reports and digest mismatches fail the command. Any known rejected gate makes

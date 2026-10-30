@@ -1,7 +1,7 @@
 # Runtime conformance contract
 
 Runtime algorithms, source/backend catalogs, codec parity, native overlays and source
-tests belong to [Prism Inference](https://github.com/symbiogenesis/prism-inference). Its
+tests belong to [Prism Inference](https://github.com/symbiogenesis/prism-inference). The
 [complete conformance
 guide](https://github.com/symbiogenesis/prism-inference/blob/main/docs/prism-upstream-tests.md),
 [71-source
@@ -12,16 +12,14 @@ inventory](https://github.com/symbiogenesis/prism-inference/blob/main/tools/pris
 workflow](https://github.com/symbiogenesis/prism-inference/blob/main/.github/workflows/runtime-conformance.yml)
 and [focused
 diagnostics](https://github.com/symbiogenesis/prism-inference/blob/main/.github/workflows/prism-focused.yml)
-define the upstream authority. The canonical [deferred migration
-work](../PLAN.md#deferred-prism-migration) lives only in `PLAN.md`; this document
-defines acceptance boundaries.
+define upstream acceptance. This page records Runner's boundaries; [PLAN.md](../PLAN.md#deferred-prism-migration)
+alone tracks deferred migration work.
 
-Runner's [Foundation](../.github/workflows/foundation.yml) validates its app, broker,
-process ownership, provisioning and released-runtime integration. It neither builds the
-upstream catalog nor runs runtime algorithm/codec suites. Full suites and every
-benchmark remain CI-only in their owning repository. The target is Windows ARM64 on
-Snapdragon X Elite; Apple work is excluded. Generic hosted Windows ARM64 is not physical
-Snapdragon performance evidence.
+Runner's [Foundation](../.github/workflows/foundation.yml) validates the app, broker,
+process ownership, provisioning and release integration, without building the upstream
+catalog or running runtime algorithm/codec suites. Full suites/benchmarks are CI-only
+in their owning repository. The target is Windows ARM64 on Snapdragon X Elite; Apple
+work is excluded. Hosted Windows ARM64 results cannot establish Snapdragon performance.
 
 ## Source fidelity and evidence
 
@@ -174,8 +172,7 @@ running scripts. No framework dependency was added.
 
 Camelid attribution is retained in [NOTICE](../NOTICE) and its complete [MIT
 license](https://github.com/symbiogenesis/prism-inference/blob/main/CAMELID-LICENSE.txt).
-Existing ggml attribution covers the direct Prism adaptations. No framework dependency
-was added.
+Existing ggml attribution covers direct Prism adaptations.
 
 The bounded Q1_0/Q2_0 implementation supplies checked storage, reference encoding,
 arbitrary-byte decoding, native Q8_0 dots, prepared matvec and graph routing. Its

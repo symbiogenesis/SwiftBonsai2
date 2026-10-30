@@ -2,13 +2,12 @@
 
 [Prism Inference](https://github.com/symbiogenesis/prism-inference) owns the safe Rust
 CPU runtime, tokenizer, packed kernels and hybrid graph. Runner owns the app, broker,
-provisioning and [immutable release integration](../config/prism-inference.lock.json);
-the publisher's pinned native engine remains comparison and fallback.
-[PLAN.md](../PLAN.md#runtime-and-correctness) owns outstanding work; the [promotion
-evaluator](runtime-promotion.md) requires the complete scale-1.3 LoRA profile and
-reports missing evidence as pending without changing selection. The [native Rust
-UI](ui-architecture.md) is a separate broker client; its availability and browser/server
-UI parity do not qualify the runtime.
+provisioning and [release integration](../config/prism-inference.lock.json). The pinned
+publisher engine remains the comparison/fallback; Rust promotion requires the complete
+scale-1.3 LoRA profile under the [promotion contract](runtime-promotion.md).
+[PLAN.md](../PLAN.md#runtime-and-correctness) owns outstanding work. The [native Rust
+UI](ui-architecture.md) is a separate broker client: UI availability or browser/server
+feature parity does not qualify inference.
 
 ## Swift CPU supported subset
 
@@ -39,11 +38,11 @@ creative, adapter or daily-isolation acceptance.
 | Lifecycle | Verified readiness, identical canonical count/generation requests, one active generation, authentication, streaming, cancellation, deadlines, reset and recovery |
 | Admission | 15.5 GiB available physical memory, 11.5 GiB Job commit limit and 4 GiB running physical reserve; owner-selected development budget, with full-context resource qualification pending; diagnostic allowances are not launch profiles |
 
-This subset is PQ2 without LoRA, cache reuse, speculation or offload. PTQ1, other
-families and adapters qualify separately, including independent [LoRA TPS/quality
-gates](lora-qualification.md). [Hardware discovery](hardware-capabilities.md) reports
-inventory; the runtime owns kernel eligibility. Kernel `Auto` is distinct from Runner's
-planned qualified-device selector.
+The service subset is **PQ2 without LoRA, cache reuse, speculation or offload**.
+PTQ1, other families and adapters require separate qualification, including [LoRA
+TPS/quality](lora-qualification.md). [Hardware discovery](hardware-capabilities.md)
+reports inventory; the runtime determines kernel eligibility. Kernel `Auto` is distinct
+from Runner's planned qualified-device selector.
 
 Bounded Swift numerical comparisons use the unchanged `1e-3 + 1e-3 * abs(reference)`
 tolerance for logits, complete logical recurrent/convolution state and live FP16 KV rows
@@ -58,11 +57,11 @@ rejection/recovery, abandonment, shutdown and restart checks are bounded evidenc
 
 ## Numerical and replacement boundaries
 
-Preserve exact model/adapter identities, decoded scales, activation/cache precision,
+Preserve model/adapter identities, decoded scales, activation/cache precision,
 transforms, attention topology, sampler and ordinary decoding. PQ2, verified
-current-weight PTQ1 and the Qwen reference are distinct lanes; lossless weights do not
-imply identical activation arithmetic. Generic PQ2's fourth symbol remains valid even
-when Swift's particular census is ternary.
+current-weight PTQ1 and Qwen are separate controls; lossless weights do not imply
+identical activation arithmetic. Generic PQ2's fourth symbol remains valid despite
+Swift's ternary census.
 
 Lossless layout changes, SIMD, tiling, buffer reuse, fusion and scheduling use the same
 arithmetic contract. Reassociation and altered reductions/FMA need declared numerical
@@ -134,15 +133,14 @@ sharing for admission.
 
 The [conformance contract](prism-upstream-tests.md) preserves original source inputs,
 assertions, tolerances, unsupported results and production bridges. Full source
-conformance, generic APIs and accelerator coverage are separate from the bounded Swift
-subset. Future release promotions use the [lock-update
-procedure](development-guide.md#prepare-a-runtime-lock-update); reviewed source,
-immutable released bytes and Runner integration are distinct acceptance inputs.
+conformance, generic APIs and accelerator coverage exceed the bounded Swift subset.
+The [lock-update procedure](development-guide.md#prepare-a-runtime-lock-update)
+separately reviews source, immutable released bytes and Runner integration.
 
-Under [validation policy](validation.md), local builds, analyzers, assembly inspection
-and focused correctness checks are allowed. Full suites and every benchmark run only in
-CI. Device promotion requires reviewed main-only CI on the actual target; generic hosted
-ARM64 evidence supplies no Snapdragon performance verdict. Qualified profiles retain
-reproducible native fallback, standard LoRA TPS/quality gates and no material
-correctness, quality, security or resource regression. Runtime/backend changes require
-complete-state phase handoff and a compatible state/numerical identity.
+[Validation policy](validation.md) permits local builds, analyzers, assembly inspection
+and focused correctness checks; full suites and benchmarks are CI-only. The [promotion
+contract](runtime-promotion.md) requires reviewed main-only target-device evidence,
+native fallback, independent standard-LoRA TPS/quality and no material correctness,
+quality, security or resource regression. Hosted ARM64 results cannot establish
+Snapdragon performance. Backend changes also require complete-state phase handoff and
+compatible state/numerical identity.
