@@ -12,7 +12,8 @@ use crate::{
         receive_chat_with_budget,
     },
     response::{
-        ResponseError, send_chat_response_mode, send_context_rejection, send_rate_rejection,
+        ResponseError, send_chat_response_mode, send_context_rejection, send_control_rejection,
+        send_rate_rejection,
     },
     service::BurstBudget,
 };
@@ -220,6 +221,12 @@ where
                 discard_rate_body(&mut stream, remaining, intake_deadline)
                     .await
                     .map_err(ServeError::Receive)?;
+                Ok(None)
+            }
+            BudgetedChat::Rejected(client, Rejection::ChatControlTokens) => {
+                send_control_rejection(client, deadline)
+                    .await
+                    .map_err(ServeError::Response)?;
                 Ok(None)
             }
             BudgetedChat::Rejected(_client, rejection) => {

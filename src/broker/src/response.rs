@@ -68,6 +68,26 @@ pub(crate) async fn send_context_rejection<W: AsyncWrite + Unpin>(
     .await
 }
 
+/// Reject exact model controls in a completely received, authenticated body.
+/// The caller must not have contacted counting or generation endpoints.
+pub(crate) async fn send_control_rejection<W: AsyncWrite + Unpin>(
+    mut client: W,
+    supervisor_deadline: Instant,
+) -> Result<(), ResponseError> {
+    const BODY: &[u8] = br#"{"error":{"code":"input_control_tokens_rejected"}}"#;
+    let head = format!(
+        "HTTP/1.1 400 Bad Request\r\n{COMMON_HEADERS}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+        BODY.len()
+    );
+    write_group(
+        &mut client,
+        &[head.as_bytes(), BODY],
+        supervisor_deadline,
+        true,
+    )
+    .await
+}
+
 /// Send one fixed authenticated burst denial before counting or generation.
 /// The fixed one-token-per-second budget needs at most one second to refill.
 pub(crate) async fn send_rate_rejection<W: AsyncWrite + Unpin>(

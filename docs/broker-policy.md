@@ -122,6 +122,12 @@ after JSON decoding and text-part concatenation, so escapes or split parts canno
 introduce a control spelling. Rejection never removes or normalizes text; other
 literal lookalikes are preserved exactly. This is a narrow model-control boundary,
 not a defense against arbitrary natural-language prompt injection.
+The owned service returns the fixed HTTP 400 JSON code
+`input_control_tokens_rejected`, with complete framing and no-store headers,
+before either backend endpoint is contacted. The service remains ready for a
+corrected request. The native client restores the draft without committing or
+replaying the rejected turn. A control spelling in already committed assistant
+content or reasoning requires a new conversation or an explicitly edited history.
 
 Model selection, token-cap aliases, tools, media, other template or sampling
 controls, arbitrary LoRA selection or arrays, slots and timing overrides are
