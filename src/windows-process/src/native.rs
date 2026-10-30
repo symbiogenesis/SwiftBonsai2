@@ -57,12 +57,17 @@ mod cpu;
 mod environment;
 mod host;
 mod isa;
+mod opencl;
 mod power;
 mod power_policy;
 mod vulkan;
 
 pub(super) fn vulkan_inventory() -> io::Result<crate::VulkanInventory> {
     vulkan::query()
+}
+
+pub(super) fn opencl_inventory() -> io::Result<crate::OpenClInventory> {
+    opencl::query()
 }
 
 pub(super) fn cpu_sets() -> io::Result<Vec<crate::CpuSet>> {

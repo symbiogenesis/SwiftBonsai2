@@ -315,6 +315,7 @@ try {
     }
     $nativeCpu = $null
     $nativeGpu = $null
+    $nativeOpenCl = $null
     if ($ToolPath) {
         Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
         $nativeCpu = Invoke-BonsaiTool -Command host-cpu -ToolPath $ToolPath -Request @{}
@@ -327,6 +328,11 @@ try {
             throw 'The selected maintenance tool returned an unsupported native GPU observation.'
         }
         if ($nativeGpu.status -cne 'observed') { $issues.Add('Native Vulkan observations unavailable; API capabilities remain unknown.') }
+        $nativeOpenCl = Invoke-BonsaiTool -Command host-opencl -ToolPath $ToolPath -Request @{}
+        if ($nativeOpenCl.schema_version -ne 1 -or $nativeOpenCl.kind -cne 'runner-native-opencl-observations') {
+            throw 'The selected maintenance tool returned an unsupported native OpenCL observation.'
+        }
+        if ($nativeOpenCl.status -cne 'observed') { $issues.Add('Native OpenCL observations unavailable; API capabilities remain unknown.') }
     }
     $report = [ordered] @{
         SchemaVersion = 1
@@ -358,6 +364,7 @@ try {
         Capabilities = $capabilities
         NativeCpuObservations = $nativeCpu
         NativeGpuObservations = $nativeGpu
+        NativeOpenClObservations = $nativeOpenCl
         CpuCompatibilityIdentity = Get-BonsaiCpuCompatibilityIdentity -Capabilities $capabilities
         Gaps = @($issues)
         Qualification = 'Inventory only: no engine, GPU backend, memory admission, or daily security policy has been qualified.'

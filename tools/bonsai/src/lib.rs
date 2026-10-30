@@ -10,6 +10,7 @@ pub const COMMANDS: &[&str] = &[
     "memory",
     "host-cpu",
     "host-gpu",
+    "host-opencl",
     "cpu-evaluation",
     "cpu-check-plan",
     "cpu-check-report",
@@ -51,6 +52,9 @@ pub mod host_cpu;
 
 /// Bounded model-free Vulkan adapter observations, without backend selection.
 pub mod host_gpu;
+
+/// Bounded model-free `OpenCL` feasibility observations, without backend selection.
+pub mod host_opencl;
 
 /// Bounded paired CPU tuning plans for the X2 Elite Extreme CI lane.
 pub mod cpu_evaluation;

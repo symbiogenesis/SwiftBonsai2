@@ -100,6 +100,8 @@ fn execute() -> bonsai_tools::Result<serde_json::Value> {
         Some("host-cpu") => bonsai_tools::host_cpu::run(&request),
         Some("host-gpu") => bonsai_tools::host_gpu::run(&request),
         Some("host-gpu-query") => bonsai_tools::host_gpu::query(&request),
+        Some("host-opencl") => bonsai_tools::host_opencl::run(&request),
+        Some("host-opencl-query") => bonsai_tools::host_opencl::query(&request),
         Some("cpu-evaluation") => bonsai_tools::cpu_evaluation::run(request),
         Some("cpu-check-plan") => bonsai_tools::completion::cpu_check_plan(request),
         Some("cpu-check-report") => bonsai_tools::completion::cpu_check_report(request),

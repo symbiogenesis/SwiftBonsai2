@@ -86,6 +86,73 @@ pub fn vulkan_inventory() -> io::Result<VulkanInventory> {
     native::vulkan_inventory()
 }
 
+/// Model-free observations from the absolute Windows system `OpenCL` loader.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenClInventory {
+    /// Selected loader path; this is not a signature or dependency trust verdict.
+    pub loader_path: PathBuf,
+    /// Enumerated `OpenCL` platforms, each containing only GPU observations.
+    pub platforms: Vec<OpenClPlatform>,
+}
+
+/// One system `OpenCL` platform, without a context, queue or executable program.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenClPlatform {
+    /// Driver-reported platform name.
+    pub name: String,
+    /// Driver-reported vendor name.
+    pub vendor: String,
+    /// `OpenCL` platform version string; not parsed as a kernel qualification.
+    pub version: String,
+    /// Enumerated GPU devices; CPU devices are not requested.
+    pub devices: Vec<OpenClDevice>,
+}
+
+/// Read-only capabilities of one `OpenCL` GPU; no inference backend is qualified.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpenClDevice {
+    /// Driver-reported GPU name, not an independently verified silicon SKU.
+    pub name: String,
+    /// Driver-reported vendor name.
+    pub vendor: String,
+    /// Raw Khronos/PCI vendor identifier.
+    pub vendor_id: u32,
+    /// Driver-reported `OpenCL` device version.
+    pub version: String,
+    /// Driver-reported driver version.
+    pub driver_version: String,
+    /// `OpenCL` C language version reported by the compiler.
+    pub opencl_c_version: String,
+    /// Whether the driver reports the device currently available.
+    pub available: bool,
+    /// Whether the driver reports an online `OpenCL` C compiler.
+    pub compiler_available: bool,
+    /// Device address width in bits.
+    pub address_bits: u32,
+    /// Reported global memory capacity, not a live free-memory budget.
+    pub global_memory_bytes: u64,
+    /// Maximum single memory-object allocation, not guaranteed allocatable bytes.
+    pub maximum_allocation_bytes: u64,
+    /// Reported local memory capacity per compute unit.
+    pub local_memory_bytes: u64,
+    /// Advertised extension names in sorted order.
+    pub extensions: Vec<String>,
+}
+
+/// Enumerate native ARM64 GPU capabilities using the absolute system `OpenCL` loader.
+///
+/// Queries create no context, queue, program, kernel or device allocation. Storage
+/// is bounded to eight platforms, sixteen total GPUs and 16 KiB per string.
+/// Driver calls need an externally owned deadline, as in `host-opencl`.
+///
+/// # Errors
+/// Rejects emulated/non-ARM64 queries, `OpenCL` environment overrides, missing
+/// loaders, failed calls and malformed/oversized driver data. Loading the system
+/// implementation does not establish its signature or dependency provenance.
+pub fn opencl_inventory() -> io::Result<OpenClInventory> {
+    native::opencl_inventory()
+}
+
 /// One observed Windows CPU Set; processor indices are relative to `group`.
 ///
 /// Efficiency and scheduling classes are raw operating-system observations,

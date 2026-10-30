@@ -169,6 +169,16 @@ PowerShell/C# standards run only for their own inputs. Embedded configuration
 and fixtures are mapped to their owning crates in
 [the routing configuration](../.github/ci/impact.json).
 
+Focused OpenCL discovery checks are
+`opencl_inventory_rejects_unbounded_or_malformed_native_properties` in
+`bonsai-windows-process` and
+`opencl_inventory_rejects_overrides_and_unqualified_claim_changes` in
+`bonsai-tools`. They exercise property/count bounds and unqualified report
+admission without calling a driver. `host-opencl` is a separately bounded
+model-free information query; it creates no executable GPU workload and does
+not establish an accelerator performance or inference verdict. Its public
+source-coverage no-go is retained in [OpenCL feasibility](opencl-feasibility.md).
+
 The maintenance job owns Windows Job lifetime/resource-limit tests when those
 packages are affected. It produces one CLI artifact for selected app groups;
 script-only changes reuse/build the CLI without running unrelated Rust suites.

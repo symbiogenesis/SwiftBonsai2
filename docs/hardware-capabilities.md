@@ -132,6 +132,18 @@ model-worker access. The shipped inventory command keeps its ordinary headless
 policy and returns unknown; it has no tool-policy retry. Both probes created
 only a Vulkan instance, with no logical device or shader execution.
 
+The same explicit `-ToolPath` now adds `NativeOpenClObservations` from the
+bounded `host-opencl` command. It observes only GPU information through the
+absolute system OpenCL loader under unchanged headless worker policy, with
+no context, queue, program, kernel or device allocation. Its separate report
+retains native architecture, platform/device/driver/compiler capabilities and a
+bounded loader file size/hash observation, while leaving provenance unverified
+and `backend_ready: false`. CPU compatibility digests and launch policy do not
+consume it. See the [bounded OpenCL feasibility screen](opencl-feasibility.md)
+for exact bounds, immutable source identities and the unchanged pinned backend's
+missing Swift PQ2/PTQ1 packed-projection support. The separate bounded kernel
+implementation pilot remains in PLAN. This does not resolve Vulkan worker access.
+
 Names such as X1/X2 and a signed driver do not establish optional ISA, GPU/NPU
 execution or deployment trust. An emulated process's ISA result cannot qualify
 a native runtime. Current memory is a diagnostic snapshot, never a substitute

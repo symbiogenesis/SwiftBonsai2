@@ -340,7 +340,7 @@ existing full-context/continuation/LoRA gates.
 ## Hardware selection
 
 - Extend shared discovery beyond scoped CPU observations, native CPU sets,
-  native Windows NEON/dotprod/I8MM reports and bounded Vulkan inventory:
+  native Windows NEON/dotprod/I8MM reports and bounded Vulkan/OpenCL inventories:
   independently checked
   SoC/SKU, GPU/NPU API/features/architecture, driver/runtime/firmware,
   signed backend readiness and static accelerator identities. Reuse the checked
@@ -458,11 +458,19 @@ Reference: [CPU arithmetic and dispatch contracts](docs/simd-plan.md).
   X2-90 features but does not qualify the headless worker path or identify the
   cause of its failure. Preserve the distinct evidence and unchanged CPU policy;
   see [native Vulkan discovery](docs/hardware-capabilities.md#host-inventory).
-- Bound a public native Windows ARM64 OpenCL feasibility comparison alongside
-  Vulkan, checking actual source/binary availability, packed Swift operations,
-  fallback and API features. End with a reproducible candidate or no-go; keep
-  Qualcomm's internal assembly kernels separate. A public OpenCL comparator is
-  not a change to the selected Vulkan/CPU profiles or a new UI dependency.
+- Implement a bounded public native ARM64 OpenCL packed-projection pilot in a
+  separately reviewed Prism candidate. The [feasibility screen](docs/opencl-feasibility.md)
+  establishes missing direct reuse in the unchanged pinned backend, not a ban
+  on writing kernels. Start with one candidate and one real Swift projection
+  shape, using scalar CPU PQ2-by-Q8_K arithmetic as the control: preserve actual
+  activation grouping, raw scales and ordered floating scale/add operations.
+  Keep PTQ1 as a separate numerical/packing lane. Prove information queries and
+  supported workload access under unchanged worker mitigations before device
+  execution; never substitute a weaker policy after refusal. Predeclare at most
+  30 minutes for feasibility and two hours of initial CI-only compute, one matrix
+  at a time within existing reserves. Count preparation, scratch and transfers;
+  retain a qualified CPU fallback and losing/no-go results. Do not retain a
+  whole-model expanded copy or change Runner's selected profile from this pilot.
 - Build a separately locked pinned-Prism `GGML_VULKAN=ON` candidate with reviewed
   ARM64 SDK/shader/compiler/library identities, unrelated accelerators disabled
   and a bounded experimental profile preserving the CPU lane and service policy.

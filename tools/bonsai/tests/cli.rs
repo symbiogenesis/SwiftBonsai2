@@ -40,6 +40,7 @@ fn version_advertises_policy_commands_without_resolving_a_request_file()
         "cpu-check-report",
         "host-cpu",
         "host-gpu",
+        "host-opencl",
         "cpu-evaluation",
         "runtime-stage",
         "runtime-verify",
