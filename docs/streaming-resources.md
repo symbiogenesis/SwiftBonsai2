@@ -10,7 +10,7 @@ conversion. Limits include JSON escaping and protocol framing where stated.
 | --- | --- |
 | Authorized request intake | Small requests keep coalesced bodies in the fixed 16 KiB header allocation. Larger requests compact only the received payload prefix, reuse the allocation and reserve fallibly to Content-Length, capped at 1 MiB. Reads fill uninitialized final spare capacity, avoiding a separately zeroed whole-body allocation. Read limits exclude trailing requests even when capacity exceeds Content-Length. Authorization, framing, deadlines and cancellation precede backend work. |
 | Canonical requests | A bounded writer rejects the first write exceeding 1 MiB and caps requested vector growth there. Counting and generation use identical bytes. Generation releases them after the complete write/flush, before reading response headers. |
-| Backend payload intake | Reads into the caller's final storage when staging is empty, at least 8 KiB remains in the destination and that space fits the current Content-Length/chunk payload. Coalesced prefixes and framing tails use buffered reads; chunk endings never enter payload. Empty-read, truncation, sticky-failure and absolute-deadline behavior is unchanged. |
+| Backend payload intake | Reads into the caller's final storage when staging is empty, at least 8 KiB remains in the destination and that space fits the current Content-Length/chunk payload. Coalesced prefixes and framing tails use buffered reads; chunk endings never enter payload. Direct reads enforce the same empty-read, truncation, sticky-failure and absolute-deadline rules. |
 | SSE forwarding | Reuses an 8 KiB buffer, combining only immediately ready payload after the first read, at most 32 reads per group. A pending read immediately releases the prefix; no batching timer. |
 | Buffered JSON responses | Reads into uninitialized final-vector spare capacity using fallible geometric reservations capped at 4 MiB, at most 8 KiB per read. A separate one-byte probe detects overflow at the cap. Complete HTTP framing, UTF-8 and JSON-object validation precede client writes. |
 
@@ -19,12 +19,12 @@ conversion. Limits include JSON escaping and protocol framing where stated.
 | Boundary | Storage and work contract |
 | --- | --- |
 | HTTP decoding | Releases available payload without waiting to fill the 8 KiB buffer or finish an HTTP chunk. Checks chunk endings before further payload; success requires complete HTTP framing and terminal SSE events. Chunk-size metadata uses fixed stack storage. |
-| Request lifetime | Standard generation and each Extra effort pass own serialized request bytes, releasing them after full write/flush and before response headers. The locally validated original is released before constructing Extra effort stage bodies. Bytes, limits, shared stage deadlines and failure policy are unchanged. |
+| Request lifetime | Standard generation and each Extra effort pass own serialized request bytes, releasing them after full write/flush and before response headers. The locally validated original is released before constructing Extra effort stage bodies. Releasing storage preserves canonical bytes, limits, shared stage deadlines and failure policy. |
 | Notifications | Admits streaming notifications below 64 queued entries and at most 1 MiB of queued incremental text/reasoning. Adjacent same-kind deltas combine up to 16 KiB within lifecycle boundaries. Another 16 entries are reserved for ordered lifecycle notifications; the window handles at most 64 events/frame. Backpressure observes cancellation and the request deadline. |
 | Transcript accounting | Updates text-byte totals per change without scanning the conversation per delta. The 512-message live/recovery limit bounds per-frame traversal even for empty/rejected turns. Count and byte eviction remove one combined prefix, preserving the trailing-message byte policy and recovery format. |
 | Native transcript find | Streams scalar-lowercased UTF-8 through a linear matcher with query-sized offset/fallback arrays. Only the current tail retains continuation scratch, so appending an answer scans only its new bytes, including matches spanning appends. Ordinary appends retain completed cache entries and results in place, copying only newly discovered results. Saturated result prefixes skip tail work until a structural/query change requires refresh. Retains no whole-message folded string or per-message-byte offset table. Preserves original UTF-8 highlights, nonoverlapping folded matches and the existing 10,000-result cap with one-match lookahead. Replacements invalidate their cached matches even when the byte length is unchanged. |
 | Native transcript highlight layouts | Uses fixed-size body/query revisions and visible match counts instead of duplicating and comparing highlight-range vectors each frame. Find navigation reuses the highlighted text galley and caches only the active result's underline glyph runs, without rebuilding all highlight sections or copying the body. Geometry and theme remain separate cache keys. Appending another message preserves completed layouts; replacement, query changes and newly exposed results invalidate affected highlights. Width and display-scale changes refresh both layout and active underline geometry. |
-| Committed history | Shares immutable content/reasoning allocations across worker, UI, queued commits, request snapshots and restored conversations; history vectors remain independent. Extra effort allocates its augmented final user task without copying preceding bodies. Recovery and HTTP JSON strings are unchanged. |
+| Committed history | Shares immutable content/reasoning allocations across worker, UI, queued commits, request snapshots and restored conversations; history vectors remain independent. Extra effort allocates its augmented final user task without copying preceding bodies. Shared ownership preserves recovery and HTTP JSON bytes. |
 
 Extra effort retains drafts/answers through ordered lifecycle events, each bounded
 by the 4 MiB response cap. They do not bypass the incremental stream limit.
@@ -69,8 +69,8 @@ cancellation.
 
 | Boundary | Storage and work contract |
 | --- | --- |
-| Complete WAV response | Borrows native float samples through their matching allocation owner during validation, PCM conversion and HTTP writes, without a full Rust waveform copy. Success, invalid output and write failure release the owner. The complete clip is validated before success headers. One reusable 32 KiB conversion buffer/44-byte header replaces an encoded clip up to 5,760,044 bytes. The pinned sample ceiling bounds removed float-copy overlap at 11,504,636 bytes; neither figure is measured process peak memory. |
-| Voice bootstrap | The independently owned VoiceDesign waveform survives Design teardown and synchronous Base extraction, releasing on success/failure. Design/Base remain mutually exclusive. Removes one Rust allocation/copy and temporary overlap, at most 720,000 float samples (2,880,000 bytes) per profile acquisition. Startup latency and process peak memory remain unmeasured. |
+| Complete WAV response | Borrows native float samples through their matching allocation owner during validation, PCM conversion and HTTP writes, without a full Rust waveform copy. Success, invalid output and write failure release the owner. The complete clip is validated before success headers. A reusable 32 KiB conversion buffer and 44-byte header avoid an encoded clip allocation of up to 5,760,044 bytes. The pinned sample ceiling bounds avoided float-copy overlap at 11,504,636 bytes; neither figure is measured process peak memory. |
+| Voice bootstrap | The independently owned VoiceDesign waveform survives Design teardown and synchronous Base extraction, releasing on success/failure. Design/Base remain mutually exclusive. Native ownership avoids a Rust copy and temporary overlap of at most 720,000 float samples (2,880,000 bytes) per profile acquisition. Startup latency and process peak memory remain unmeasured. |
 | Streaming PCM output | Reuses a 32 KiB payload buffer with fixed HTTP-framing spare space. Each encoded chunk uses one write, avoiding a vector allocation and separate prefix/payload/suffix writes. |
 | PCM intake | Reuses a fixed 16 KiB buffer for HTTP headers, chunk framing and PCM. Parses buffered metadata without byte-sized socket reads; chunk-size lines use ten fixed bytes. Releases available even-byte prefixes immediately, retaining at most one split sample in two stack bytes. Checks cancellation/deadlines even for buffered data; requires exact chunk endings, terminal framing and EOF. |
 | TTS decode graphs | The private pinned-source overlay retains at most one talker decode graph context/native allocator workspace rather than up to sixteen attention windows. Obsolete workspaces are freed before replacement, after CPU execution completes. Weights, KV and hidden-state bridge retain separate persistent ownership. Small host staging-vector capacities stay cached; revisiting an earlier window rebuilds its workspace. |
@@ -97,15 +97,15 @@ with EOF and consecutive PCM/WAV responses followed by immediate client closure.
 
 Focused regressions check byte identity, PCM clipping and rounding, bounded
 storage reuse, operation counts, pending reads, cancellation and failures. Such
-checks measure neither elapsed time nor device throughput. The removed encoded
-WAV vector is a storage-lifetime fact, not a measured reduction in process peak
-memory. Actual-model latency, allocation/peak-memory captures, combined speech
+checks measure neither elapsed time nor device throughput. Avoiding a complete
+encoded-WAV vector establishes a storage lifetime, not a measured reduction in
+process peak memory. Actual-model latency, allocation/peak-memory captures, combined speech
 and chat resource use, accessibility and sustained comfort remain subject to the
 [validation policy](validation.md) and the outstanding acceptance work in
 [PLAN.md](../PLAN.md#application-and-daily-service).
 TTS graph eviction trades cross-window reuse for bounded retained scratch;
 the latency cost of rebuilding windows and the complete-model memory benefit
-still need target-device qualification. The storage changes do not qualify a
-lower model admission threshold. Separately, the owner-selected Swift development
-budget uses 15.5 GiB admission and an 11.5 GiB Job cap, retaining the 4 GiB
+still need target-device qualification. These storage contracts do not qualify a
+lower model admission threshold. The Swift development profile uses 15.5 GiB
+admission and an 11.5 GiB Job cap, retaining the 4 GiB
 physical reserve, memory-pressure shutdown and full context/output reservations.

@@ -10,7 +10,7 @@ Electron or web-rendered Tauri frontend, or adopt the inference server's browser
 UI. A replacement toolkit must preserve this boundary without a browser runtime
 or second frontend language. Interoperability belongs at the HTTP API boundary.
 
-## Native MVP
+## Native application
 
 `src/chat-ui/` provides the Windows `bonsai-chat` application using `egui`,
 `eframe`, a native window and `wgpu`. State, widgets and HTTP clients are Rust.
@@ -57,7 +57,7 @@ promotion or full-model/device qualification.
 | Recovery | Off by default; user-scoped DPAPI, 8 MiB bound, atomic replacement outside Git and one writer/data directory. A fresh broker restores only completed history, without request replay, microphone or playback. Interrupted visible text stays separate. [Recovery operation](development-guide.md#optional-recovery-and-preview) owns saved fields, unreadable-file preservation, explicit saving/deletion choices and same-user protection limits. |
 | Stop/retry | Stop freezes queued stream updates and wakes network waits. **Retry model** waits for owned-backend teardown, creates fresh credentials/diagnostics and repeats artifact/identity/15.5 GiB admission checks. Completed turns survive; no automatic resend or reduced profile. An interrupted prompt returns only to an empty composer, preserving newer drafts. If completion wins the Stop race, visible answer and committed history agree. |
 | Rejections/failures | Recognized local input rejections restore the draft and retain readiness. Unexpected disconnects require retry and do not identify a token/memory cause. [Broker policy](broker-policy.md#native-client-completion-and-recovery) owns the exact error/completion rules. |
-| Response settings | Thinking's explicit boolean and bounded output/adapter scale apply to the next response/every Extra effort pass; controls lock during generation. [Settings](development-guide.md#conversations-and-response-settings) owns defaults, controls and Standard/experimental Extra effort execution. Extra effort quality gains remain unproven. |
+| Response settings | The explicit Thinking boolean, output limit and adapter scale apply to the next response and every Extra effort pass; controls lock during generation. [Settings](development-guide.md#conversations-and-response-settings) owns bounds, defaults and Standard/experimental Extra effort execution. Extra effort quality gains remain unproven. |
 
 Find controls follow the [development guide](development-guide.md#conversations-and-response-settings).
 [Streaming resources](streaming-resources.md#native-chat-and-transcript) owns
@@ -101,8 +101,8 @@ before send. Audio uses authenticated numeric loopback, never a cloud service.
 Speech uses only visible assistant answers; reasoning/private drafts are excluded.
 The development guide owns fixed profile conditioning, mutually exclusive talkers,
 external `consistent_voice: true` capabilities, complete-WAV fallback and missing-service
-guidance without substitute recognizers/Windows voices. Images, video and image
-generation remain unavailable in the pinned Swift profile.
+guidance. Service failure never silently substitutes another recognizer or a Windows
+voice. Images, video and image generation remain unavailable in the pinned Swift profile.
 
 ## Review and validation
 
