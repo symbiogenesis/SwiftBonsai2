@@ -1,9 +1,9 @@
-# Hardware discovery and compatibility contracts
+# Hardware discovery and profile policy
 
-Implemented discovery provides host/runtime inventory and checked profile/evidence structures;
-it selects no profiles. The optional verified, model-free runtime probe uses the immutable `0.1.5`
-release lock. [Profile policy](hardware-profiles.md) defines selection, and
-[PLAN.md](../PLAN.md#hardware-selection) tracks outstanding work.
+Runner uses CPU profiles. Implemented discovery supplies host/runtime inventory and checked
+compatibility/evidence records; **automatic selection is not implemented**. The optional verified,
+model-free runtime probe uses the immutable `0.1.5` release lock. The [selection contract](#automatic-profile-selection)
+below defines future eligibility; [PLAN.md](../PLAN.md#hardware-selection) owns pending work.
 
 ## Host inventory
 
@@ -54,7 +54,7 @@ no optional instruction and changes no dispatch/selection.
 
 Malformed, missing or oversized registry values make the whole host identity unknown. Registry
 name is an independent observation, not verified silicon SKU/firmware. Identity is separate from
-live availability/power. The [X2 screen](x2-cpu-optimization.md) requires CIM/registry-name agreement
+live availability/power. The [X2 screen](simd-plan.md#x2-cpu-thread-screen) requires CIM/registry-name agreement
 and retains exact identity in plans/receipts. Unknown/changed identity, including legacy receipts
 lacking it, suppresses timing ratios. Kernel/feature changes require fresh captures; compare the
 whole bounded feature list, not descriptive `isa` flags. No new digest/backend permission follows.
@@ -101,9 +101,9 @@ The same `-ToolPath` adds `NativeOpenClObservations` from bounded `host-opencl`:
 through the absolute system loader under unchanged headless policy, with no context, queue,
 program, kernel or device allocation. It retains architecture/platform/device/driver/compiler
 facts and bounded loader size/hash; provenance stays unverified, `backend_ready: false`.
-CPU digests/launch policy ignore it. [OpenCL feasibility](opencl-feasibility.md) owns exact bounds,
-identities and missing pinned PQ2/PTQ1 projections. Its pilot remains in PLAN and does not
-resolve Vulkan worker access.
+CPU digests/launch policy ignore it. [OpenCL access and source audit](adreno-gpu-plan.md#opencl-access-and-source-audit)
+owns exact bounds, identities and missing pinned PQ2/PTQ1 projections. Its pilot remains in PLAN;
+OpenCL observations do not resolve Vulkan worker access.
 
 ## Runtime inventory
 
@@ -162,8 +162,108 @@ acceptance still need review.
 
 Reserved value-free `FallbackReason` codes are `unknown-capability`, `unavailable-backend`,
 `incompatible-runtime`, `incompatible-driver`, `stale-evidence`, `insufficient-memory` and
-`strict-backend-unavailable`. [Profile policy](hardware-profiles.md) defines their future use;
+`strict-backend-unavailable`. [Profile policy](hardware-capabilities.md#automatic-profile-selection) defines their future use;
 no selector emits them yet.
+
+## Automatic profile selection
+
+This is the selection contract, not enabled behavior. Runner owns discovery, selection,
+verification and admission. [Prism Inference][prism] owns kernels, graph/device/state execution
+and effective-placement reporting. Their versioned handshake keeps kernel eligibility rules
+out of the broker.
+
+### Device classes and observed identity
+
+The recorded development target is an ASUS Zenbook A16, Snapdragon X2 Elite Extreme X2E94100.
+The [X2 CPU screen](simd-plan.md#x2-cpu-thread-screen) retains its 2026-10-29 inventory and phase
+thread controls; inventory establishes neither kernel eligibility nor performance/backend readiness.
+
+| Target | Candidates | Required independent evidence |
+| --- | --- | --- |
+| X1: initially X1E-78-100 / Adreno X1-85 / Hexagon v73 | Packed scalar/NEON CPU, Vulkan, viable packed Hexagon regions | Windows ISA/driver, signed NPU access, mapping costs, exact Swift graph/state and device results |
+| X2: initially Elite Extreme / Adreno X2-90 / Hexagon v81 | Packed CPU/Vulkan, batched HMX prefill, packed HVX decode | Actual SKU/capabilities, signed package, extended DMA and separate phase/sustained results |
+| Unknown SKU or invalidated/unavailable accelerator | Reviewed compatible CPU fallback | Native ARM64, baseline ISA, verified artifacts and ordinary memory/context admission; otherwise refuse execution |
+
+Family rules cover only independently qualified SKU/capability/driver classes. The
+[X2E-94-100/X2E-96-100 product brief][x2-specs] advertises up to 228 GB/s system bandwidth and 80
+INT8 TOPS; neither predicts Swift throughput or exclusive bandwidth, and other SKUs differ.
+
+[DMA64][dma64] permits v81+ buffers beyond the older 32-bit mapping window only with the actual
+supported Windows runtime/driver/DMA path; X1 mapping/tiling remains separate. Address windows are
+not physical RAM budgets. [Q1/Q2 Hadamard support][q2-hadamard] does not establish PQ2/PTQ1
+activation arithmetic, grouped recurrent transforms, adapters or signed distribution. A catalog for
+existing binaries cannot sign rebuilt code.
+
+### Eligibility, ranking and admission
+
+Selection is a bounded deterministic lookup/ranking over versioned qualified profiles; ordinary
+startup neither benchmarks nor tunes. Explicit CPU controls remain reproducible.
+
+A profile binds exact model/derived artifact, adapter, runtime/build/backend, static hardware/driver
+compatibility, numerical/state/settings contract, shapes, context/full output reservation, objective
+and fresh/reused workload bucket. Required unknown, mismatched or stale facts exclude it. Discovery,
+family matches and asserted receipts cannot authorize execution; signed backend readiness is
+independent.
+
+| Objective | Ranking basis |
+| --- | --- |
+| Interactive | Complete-task latency within qualified quality/resource/security constraints |
+| Battery | Measured energy per useful task within accepted latency/quality/resource limits; battery operation alone proves no saving |
+
+Retained device evidence, versioned thresholds and deterministic tie-breaking include losing/no-go
+entries. Placement, phase threads/waits, batches/tiles, sustained power policy and state layout
+belong to profile identity. Four threads and all cores are controls, not universal optima.
+
+Recheck current RAM/commit/device budgets and backend readiness immediately before admission. An
+unavailable preferred accelerator may yield an eligible qualified CPU fallback; an explicit
+strict-backend diagnostic fails. Never silently change model, sampler, adapter, precision, context
+or full output reservation to fit a profile.
+
+Diagnostics report requested/effective profile, device class, phase placement, build/evidence
+identity and a value-free fallback reason, excluding prompts/tensors. The [native Rust
+UI](ui-architecture.md) presents a simple automatic choice; tuning stays in trusted configuration,
+without arbitrary public arguments/paths or inherited environment overrides.
+
+### Prefill, decode and complete state
+
+Batched prefill reuses weight tiles across tokens; sequential blocks alone do not. Packed decode has
+little reuse and pays bandwidth, unpacking, transforms and dispatch/submission costs. [Algorithm
+contracts](inference-algorithms.md) separately govern tiled projections and chunkwise GDN.
+
+Keep PQ2/PTQ1 packed storage and bounded local tiles as the control. Charge repacked/expanded
+weights, duplicate CPU/GPU/NPU storage, scratch, load/repack/compile, synchronization, migrations
+and cache misses. Residency, contiguous regions and reusable submissions help only with correct
+ownership. Shared bandwidth/power makes simultaneous execution a measured candidate.
+
+Plans remain stable during a request. Reevaluate power, memory, runtime or driver changes only at
+safe boundaries. Backend/phase transitions require qualified complete KV/recurrent/convolution/
+checkpoint migration with declared numerical/layout identity and cost, or verified teardown/
+rebuild. Otherwise retain the eligible plan or return a bounded recovery result; never continue
+partial work on another backend. Driver changes invalidate affected accelerator evidence/caches, not
+an independently compatible CPU control.
+
+Every route preserves the [broker contract](broker-policy.md): one active conversation,
+authentication, exact counts, deadlines, cancellation, admission and daily isolation. Rust
+acceleration also preserves the [runtime's safe device/replacement boundaries](native-rust-engine.md).
+
+### Qualification scope
+
+Receipts bind actual SKU/capabilities, OS/driver/backend, artifacts/profile, settled main revision,
+CI run, raw captures and uncertainty. Workloads distinguish cold/warm/reused/edited state, short/
+long prefill, fixed/natural outputs, AC/battery, pressure and sustained use. Report first useful
+token, complete task, decode, peak memory, responsiveness, thermals/comfort and observable energy.
+One family/device does not qualify another; missing valid power telemetry excludes energy ranking.
+
+Selector checks cover unknown/misidentified devices, missing ISA/signed backend, stale runtime/
+driver/evidence/cache, budgets/workload boundaries, deterministic ranking, objective changes, CPU
+fallback, strict rejection and complete-state handoff/failure/cancellation. Simulate negative ISA
+cases; execute optional instructions/accelerators only on eligible hardware.
+
+Promotion follows [PLAN.md's criteria](../PLAN.md#promotion-criteria), including independent [LoRA
+TPS/quality](lora-qualification.md), installation/rollback and affected-upgrade requalification.
+Qualified families may coexist with unsupported classes and qualified CPU fallbacks.
+[Validation policy](validation.md) requires main-only matching-device CI for full suites,
+benchmarks and performance captures; local builds/focused untimed checks are allowed.
 
 ## Focused checks
 
@@ -187,3 +287,7 @@ strict wire parsing, identity invalidation and output reservation. Full suites/b
 [properties2]: https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDeviceProperties2.html
 [application-api]: https://docs.vulkan.org/refpages/latest/refpages/source/VkApplicationInfo.html
 [ash]: https://docs.rs/ash/0.38.0+1.3.281/ash/struct.Entry.html
+[x2-specs]: https://www.qualcomm.com/content/dam/qcomm-martech/dm-assets/documents/Snapdragon-X2-Elite-Product-Brief.pdf
+[dma64]: https://github.com/ggml-org/llama.cpp/pull/29197
+[q2-hadamard]: https://github.com/ggml-org/llama.cpp/pull/30627
+[prism]: https://github.com/symbiogenesis/prism-inference

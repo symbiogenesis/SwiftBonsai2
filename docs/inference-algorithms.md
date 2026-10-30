@@ -6,7 +6,7 @@ The [research register](research-register.md) owns source reviews and derivation
 pinned Prism under existing promotion criteria; source reuse needs immutable revisions/license
 review, and published results establish no Snapdragon speedup.
 
-[Hardware policy](hardware-profiles.md) qualifies algorithms and placement separately for prefill
+[Hardware policy](hardware-capabilities.md#automatic-profile-selection) qualifies algorithms and placement separately for prefill
 and decode. Batched projections/chunkwise GDN are NPU prefill candidates; packed HVX, NEON and
 Adreno remain decode comparisons. Sequential scheduling alone provides no matrix-matrix reuse.
 Automatic selection must preserve numerical/state identity and charge phase handoffs.

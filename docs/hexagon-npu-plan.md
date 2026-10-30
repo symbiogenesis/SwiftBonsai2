@@ -1,9 +1,9 @@
 # Hexagon deployment and execution contracts
 
-Current builds/launch policies use CPU execution, including scalar/NEON in the [Rust
-runtime][rust-runtime]. Hexagon deployment, performance and automatic selection remain unqualified
-on X1/X2. [PLAN.md](../PLAN.md#hexagon-npu) tracks the work; the shared [hardware
-contract](hardware-profiles.md) governs eligibility by device, workload and interactive/battery objective.
+Current builds use CPU execution, including scalar/NEON in the [Rust runtime][rust-runtime].
+Hexagon deployment, performance and automatic selection remain unqualified on X1/X2.
+[PLAN.md](../PLAN.md#hexagon-npu) owns pending work; shared [profile policy](hardware-capabilities.md#automatic-profile-selection)
+governs device/workload eligibility and interactive/battery objectives.
 
 ## Device and route boundaries
 
@@ -67,13 +67,12 @@ each PQ2 block and duplicate its scale at approximately 5.9% more packed-weight 
 layout, raw scale bits and transform metadata remain exact. Equal decoded weights do not establish
 activation quantization, reduction/scale-order, logits or state parity with PQ2/Q8_K.
 
-Operator acceptance includes exact PQ2 symbols, activation quantization, integer sums and scale
-order; PTQ1 canonicality/Q8_0 rounding is an independent path. Fourth symbols, extremes/zeros,
-malformed bytes, unaligned blocks, tails and awkward dimensions remain covered. Initial operator
-parity is bitwise; FMA/reassociation or alternate precision requires declared tolerances and quality
-acceptance. HVX/HMX eligibility comes from actual supported arithmetic. HMX prefill requires genuine
-batched work with compatible hybrid-state scheduling; sequential block matvec alone does not reuse
-weights across tokens.
+Apply [packed arithmetic and fixtures](simd-plan.md#packed-arithmetic) to PQ2 symbols, activation
+quantization, integer sums/scale order and the independent PTQ1 canonicality/Q8_0 path. Include
+fourth symbols, extremes/zeros, malformed/unaligned blocks, tails and awkward dimensions. Initial
+operator parity is bitwise; FMA/reassociation or alternate precision needs declared tolerances and
+quality acceptance. HVX/HMX eligibility requires supported arithmetic. HMX prefill needs genuine
+batched weight reuse and compatible hybrid-state scheduling.
 
 Transform normalization/signs/axes and grouped recurrent projection basis are part of identity.
 Approved LoRA also requires [adapter basis correctness](swift-lora.md), including grouped SSM;
@@ -129,7 +128,7 @@ diagnostics exclude tensor payloads and prompts.
 
 ## Qualification evidence
 
-Correctness precedes timing. Follow [profile qualification](hardware-profiles.md#qualification-scope)
+Correctness precedes timing. Follow [profile qualification](hardware-capabilities.md#qualification-scope)
 and [measurement rules](performance-expectations.md#2026-literature-measurement-and-comparison),
 fixing artifacts, adapter, sampler, context/precision, tolerances, failures and useful-benefit gates.
 Charge load/repack/compile, migrations/cache misses, peak storage, shared bandwidth/power and
@@ -144,11 +143,11 @@ qualified-Vulkan and NPU runs retain median/p95/variance, prefill/first-token/de
 retries to acceptable output, memory and sustained thermals/responsiveness. AC/battery and
 15–30-minute runs have distinct scope; missing power telemetry means no energy verdict.
 
-Use the shared [profile receipt/promotion contract](hardware-profiles.md#qualification-scope),
-including exact kernel/driver identities and per-metric verdicts. Absent/unknown devices,
-unsupported mappings, stale identity or insufficient budgets require bounded visible failure or
-qualified CPU fallback with consistent state; absence supplies no device verdict. Missing evidence
-or critical failures keep profiles experimental, and affected upgrades invalidate evidence/caches.
+The shared [receipt/promotion contract](hardware-capabilities.md#qualification-scope) binds kernel/driver
+identity and per-metric verdicts. Absent/unknown devices, unsupported mappings, stale identity or
+insufficient budgets require bounded failure or qualified CPU fallback with consistent state.
+Absence supplies no verdict; missing evidence/critical failures keep profiles experimental.
+Affected upgrades invalidate evidence/caches.
 
 [Validation](validation.md) allows local builds, assembly inspection and focused untimed checks;
 full suites, benchmarks and timing/profile captures require reviewed main-only matching-device CI.
