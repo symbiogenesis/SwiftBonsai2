@@ -2,11 +2,11 @@
 
 Research cutoff and last source review: **2026-10-29**.
 
-This curated index connects mathematical results, algorithms, implementations and
-engineering reports to Swift Bonsai 2. It records applicability, assumptions and
-unresolved checks, not implementation approval or a complete literature search.
-Derivations are reviewable arguments, not machine-checked proofs. Topic contracts
-remain authoritative; [PLAN.md](../PLAN.md) alone tracks delivery work.
+This index records mathematical results, algorithms, implementations and reports
+relevant to Swift Bonsai 2, with their assumptions and unresolved checks. Inclusion
+does not approve implementation or imply a complete search. Derivations are
+reviewable arguments, not machine-checked proofs. Topic contracts remain
+authoritative; [PLAN.md](../PLAN.md) alone tracks delivery work.
 
 Jump to [priorities](#priorities-for-this-model-and-hardware),
 [proof obligations](#mathematical-results-and-proof-obligations),
@@ -16,8 +16,8 @@ Jump to [priorities](#priorities-for-this-model-and-hardware),
 
 ## Existing evidence and project scope
 
-Use the [documentation index](README.md) for topic contracts. The target is native
-Windows ARM64 on Snapdragon X/X2, initially the 32 GiB X1E-78-100. Swift's `qwen35`
+The target is native Windows ARM64 on Snapdragon X/X2; the baseline host is the
+32 GiB X1E-78-100. Swift's `qwen35`
 graph has **16 full-attention and 48 Gated DeltaNet/convolution layers**: one
 8,192-token conversation, default packed PQ2 weights, FP16 full-attention KV and
 FP32 recurrent state; PTQ1 is a separate candidate. [Verified metadata](../config/swift.metadata.json)
@@ -27,11 +27,11 @@ Kernels belong in [Prism Inference](https://github.com/symbiogenesis/prism-infer
 Runner owns provisioning, admission, orchestration and [native Rust presentation](ui-architecture.md).
 Ideas from Python/C++/GPU systems do not require their UI, broad API or backend.
 
-Evidence labels: **theorem** = published result under stated assumptions (preprints
-can remain unreviewed); **derivation** = local algebra/counting; **paper** = authors'
-algorithm/evaluation; **implementation** = inspectable source requiring pin/license/
-conformance review; **report** = author/maintainer account. HN is a discovery/discussion
-source; trace technical claims to originals.
+Evidence labels: **theorem** = published result under stated assumptions (possibly
+an unreviewed preprint); **derivation** = local algebra/counting; **paper** = authors'
+algorithm/evaluation; **implementation** = inspectable source needing revision,
+license and conformance review; **report** = author/maintainer account. HN supplies
+leads and discussion; trace claims to originals.
 
 ## Priorities for this model and hardware
 
@@ -351,9 +351,8 @@ runtime-access and measurement details.
 
 ### 2026 systems, measurement and output-budget work
 
-The follow-up survey also considers overhead around tensor math and the number
-of tokens needed to complete a task. These are different optimization objectives.
-The [implementation guide](implementation-research.md#2026-literature-runtime-overhead-and-work-placement),
+Runtime overhead and tokens needed to finish a task are separate optimization
+objectives. The [runtime contract](native-rust-engine.md#2026-literature-runtime-overhead-and-work-placement),
 [performance guide](performance-expectations.md#2026-literature-measurement-and-comparison)
 and [defaults guide](inference-defaults.md#2026-literature-token-budgets-are-a-separate-experiment)
 record the project implications in more detail.
@@ -412,10 +411,9 @@ runtime replacements. Pin the relevant source revision before an experiment.
 | 2026-09-26: [Hayder Tirmazi's prompt-lookup report](https://jadidbourbaki.github.io/blog/prompt-lookup-llama-cpp/), [HN discussion](https://news.ycombinator.com/item?id=49859982), [Lemire follow-up PR](https://github.com/jadidbourbaki/llama.cpp/pull/12) | Remove nested-map copies, use compact lookup structures, prebuild immutable maps and avoid scoring candidates that cannot pass thresholds | The reported 42x and later up-to-140x concern drafting on an M4 Pro, not model inference. Static corpus indexes consume memory. Interesting only after a sound verifier/recovery path exists. |
 | 2026-08-28: [TurinTech's fused dequantization/GEMM report](https://www.turintech.ai/blog/improving-vllm-cpu-inference-rebuilding-a-dequantisation-gemm-kernel) | Profile unpacking, scaling, conversion and packing separately; fuse where it removes intermediate traffic | Author-reported AWQ/W4A16 results on 48-core dual-socket Intel Granite Rapids. Neither AMX kernels nor its 10–30% throughput range establishes a NEON/PQ2 benefit. |
 
-Watch [SGLang's author blog](https://www.lmsys.org/blog/), the repositories above,
-and original links in relevant HN threads. Community comments can reveal
-confounders or missing comparisons; votes, stars and repeated headlines do not
-validate numerical equivalence or speed.
+[SGLang's author blog](https://www.lmsys.org/blog/), these repositories and relevant
+HN threads supply leads. Community comments can expose confounders or missing
+comparisons; votes, stars and repeated headlines do not validate equivalence or speed.
 
 ## Turning a lead into an experiment
 
@@ -447,15 +445,12 @@ complete-task accounting; UI delivery timing is not inference-kernel throughput.
 
 ## Keeping the register current
 
-The bounded survey searched accessible arXiv/proceedings, original source repos,
-author/vendor reports and HN links through 2026-10-29. Absence is not evidence of
-nonexistence/completeness. No models, benchmark tools or third-party code were
-installed, and this document installs no recurring task.
+Coverage through **2026-10-29** includes accessible arXiv/proceedings, original
+repositories, author/vendor reports and HN links, prioritizing 2026 work and its
+citations, revisions, source changes, counterexamples and withdrawals. Absence
+from this bounded catalog does not establish nonexistence.
 
-### 2026 follow-up search coverage
-
-The 2026-10-29 expansion followed citations, revised versions, source changes,
-counterexamples and withdrawn work, prioritizing 2026 submissions/proceedings.
+### Source coverage
 
 | Source family | Retained review evidence |
 | --- | --- |
