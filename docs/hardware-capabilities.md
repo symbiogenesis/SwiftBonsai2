@@ -274,7 +274,7 @@ driver/evidence/cache, budgets/workload boundaries, deterministic ranking, objec
 fallback, strict rejection and complete-state handoff/failure/cancellation. Simulate negative ISA
 cases; execute optional instructions/accelerators only on eligible hardware.
 
-Promotion follows [PLAN.md's criteria](../PLAN.md#promotion-criteria), including independent [LoRA
+Promotion follows the [validation criteria](validation.md#promotion-criteria), including independent [LoRA
 TPS/quality](swift-lora.md#standard-profile-qualification), installation/rollback and affected-upgrade requalification.
 Qualified families may coexist with unsupported classes and qualified CPU fallbacks.
 [Validation policy](validation.md) requires main-only matching-device CI for full suites,

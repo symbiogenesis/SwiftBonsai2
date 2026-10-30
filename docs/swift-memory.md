@@ -358,5 +358,5 @@ Cross-block entropy coding does not contradict the independent fixed-block bound
 Changing codebooks, scales, rotations, sparsity or residual weights is not lossless
 export. New artifacts require their own length/hash, activation, quality, compatibility
 and runtime evidence. The [SIMD
-review](simd-plan.md#cpu-kernel-research-reviewed-in-october-2026) and register also
+review](cpu-kernels.md#cpu-kernel-research-reviewed-in-october-2026) and register also
 retain unsupported and withdrawn lattice/rotation/hardware leads.

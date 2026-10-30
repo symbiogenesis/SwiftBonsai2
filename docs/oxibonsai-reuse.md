@@ -66,7 +66,7 @@ establish different format identities:
 | Qwen3 full-attention graph | Swift's `qwen35` has full-attention plus GDN/convolution state. |
 
 Do not substitute these types/kernels for PQ2/PTQ1; Swift's ternary census does not
-equalize activation arithmetic. The [SIMD contract](simd-plan.md) governs.
+equalize activation arithmetic. The [SIMD contract](cpu-kernels.md) governs.
 
 Potential implementation references are [fused packed decode/dot and independent
 accumulators](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-kernels/src/simd_neon.rs),

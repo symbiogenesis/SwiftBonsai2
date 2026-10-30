@@ -161,7 +161,7 @@ probability rounding before their bounds transfer.
 
 [T1's packing bound](research-register.md#t1-packing-limits-and-the-difference-between-sparse-and-small)
 requires 26 code bytes per independent 128-trit block, already used by PTQ1 plus its two-byte scale.
-It leaves correlated/cross-block coding open; the [packing decision](swift-memory-options.md#packing-decision)
+It leaves correlated/cross-block coding open; the [packing decision](swift-memory.md#packing-decision)
 accounts for execution and indexing costs.
 
 | Research | Constraint |

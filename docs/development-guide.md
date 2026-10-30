@@ -19,9 +19,9 @@ defines supported combinations; [memory](swift-memory.md) and
 development evidence from pending quality, performance and service acceptance.
 
 [Automatic profiles](hardware-capabilities.md#automatic-profile-selection),
-[Adreno](adreno-gpu-plan.md) and [Hexagon](hexagon-npu-plan.md) remain unqualified.
+[Adreno](adreno.md) and [Hexagon](hexagon.md) remain unqualified.
 Inventory and `-PlanOnly` load no model and cannot promote defaults; the
-[X2 thread screen](simd-plan.md#x2-cpu-thread-screen) runs in device CI.
+[X2 thread screen](cpu-kernels.md#x2-cpu-thread-screen) runs in device CI.
 Owned UI inference/speech requires [native containment](sandboxing.md), whose
 actual-model and broker-only/same-user isolation limits still apply.
 
@@ -281,7 +281,7 @@ evidence directories private.
 ## X1/X2 configuration boundary
 
 Retained inventories cover Snapdragon X2 Elite Extreme X2E94100 and a 32 GB
-X Elite X1E-78-100; see [device evidence](simd-plan.md#x2-cpu-thread-screen).
+X Elite X1E-78-100; see [device evidence](cpu-kernels.md#x2-cpu-thread-screen).
 Policies still select CPU explicitly. [Hardware profiles](hardware-capabilities.md#automatic-profile-selection)
 defines qualification for automatic device/workload/objective selection, phase
 placement, live-budget admission and CPU fallback/refusal. SKU names and TOPS

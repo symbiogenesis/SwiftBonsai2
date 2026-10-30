@@ -74,7 +74,7 @@ the device decode rate.
 | Energy and comfort | Observable energy per useful completed answer, output/retry/revision counts, desktop responsiveness and idle power. Cheaper tokens can cost more per useful answer. |
 
 Stable TPS can coexist with worse foreground behavior under shared bandwidth/power contention;
-see [mobile bandwidth research](hexagon-npu-plan.md). Keep current admission limits;
+see [mobile bandwidth research](hexagon.md). Keep current admission limits;
 timing/profile captures and benchmarks remain [CI-only](validation.md).
 
 ## Q4 speech resource comparison
