@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "kind": "published-native-ptq1-approved-adapter-service-attempt",
+  "status": "failed-initial-owner-startup",
+  "recordedAtUtc": "2026-10-30T06:48:45.703670+00:00",
+  "scope": "Preserved negative application-acceptance attempt against the exact published Rust 0.1.7 ARM64 server. This receipt establishes no stream, numerical parity or full profile qualification.",
+  "attempts": [
+    {
+      "runId": "41014805669",
+      "runAttempt": 1,
+      "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41014805669",
+      "runnerRevision": "4fb5484910927879688b40b093ea1480d3d1700f",
+      "workflow": ".github/workflows/native-runtime-acceptance.yml",
+      "profile": "ptq1-adapter",
+      "test": "pinned_native_ptq1_adapter_starts_and_streams_within_device_budget",
+      "ciConclusion": "failure",
+      "hostedPreparation": {
+        "jobId": 123928611268,
+        "conclusion": "success",
+        "startedAtUtc": "2026-10-30T06:33:53Z",
+        "completedAtUtc": "2026-10-30T06:37:51Z",
+        "modelExecuted": false,
+        "toolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+        "compilerIdentity": "rustc 1.101.0-nightly (1a2c4797e 2026-10-21)\nbinary: rustc\ncommit-hash: 1a2c4797ef2570bd76ca5dee34449169bc7dc457\ncommit-date: 2026-10-21\nhost: aarch64-pc-windows-msvc\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4",
+        "files": [
+          {
+            "Name": "native-model-acceptance.exe",
+            "Bytes": 2563072,
+            "Sha256": "de7d25eb1a09e2f33dc6492624049f4e19833be5bf95216f3fc056fb96c175a1"
+          },
+          {
+            "Name": "bonsai-tools.exe",
+            "Bytes": 3167232,
+            "Sha256": "dab5020bc2a5dbcc39f991aa1a7c8fd069d56ee89cceb42c67faae05e7012814"
+          }
+        ]
+      },
+      "ownerExecution": {
+        "jobId": 123929851424,
+        "conclusion": "failure",
+        "apiStartedAtUtc": "2026-10-30T06:38:42Z",
+        "completedAtUtc": "2026-10-30T06:39:27Z",
+        "apiElapsedSeconds": 45,
+        "earliestStepStartedAtUtc": "2026-10-30T06:38:31Z",
+        "conservativeEarliestStepThroughJobEndSeconds": 56,
+        "timestampNote": "The job API starts after its first setup step; both durations are retained.",
+        "testElapsedSeconds": 15.6,
+        "wholeJobLimitSeconds": 300,
+        "aggregateCaseLimitSeconds": 240,
+        "hostCpu": "Snapdragon(R) X2 Elite Extreme - X2E94100 - Qualcomm Oryon(TM) CPU",
+        "hostOs": "Microsoft Windows NT 10.0.26300.0",
+        "hostArchitecture": "Arm64"
+      },
+      "failure": {
+        "phase": "initial-owner-startup",
+        "passed": false,
+        "verifiedReadinessObserved": false,
+        "observedError": "start_adapter returned LaunchError::Backend; Result::unwrap panicked at src/broker/tests/native_model.rs:774:6.",
+        "firstStreamEstablished": false,
+        "backendProcessStarted": "unknown",
+        "modelLoaded": "unknown",
+        "adapterLoaded": "unknown",
+        "backendExitCode": null,
+        "missingEvidence": "Private backend diagnostics under RUNNER_TEMP were cleaned before durable retention; the failing backend stage and model-load state cannot be recovered from the retained receipts.",
+        "historicalMetadataCaveat": "ModelProcessStarted:false in the embedded export receipt describes the earlier repack operation. ModelExecuted:false in hosted-build.json describes cloud preparation. Neither describes this owner startup attempt."
+      },
+      "runtime": {
+        "release": "v0.1.7",
+        "sourceRevision": "27e4860ea71b998b896191524ed980a586f022c6",
+        "asset": {
+          "bytes": 3011382,
+          "filename": "prism-inference-0.1.7-aarch64-pc-windows-msvc.zip",
+          "sha256": "07083af98f3215d950238fd1e75c951c69f40c296dfed115090fce90e85d906c",
+          "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.7/prism-inference-0.1.7-aarch64-pc-windows-msvc.zip"
+        },
+        "server": {
+          "bytes": 1936896,
+          "name": "prism-inference-server.exe",
+          "sha256": "9cd1f8f9d5bd6dd26c7f69fce9f8444e4a92605b98b68b6974f33fc5d380fce9"
+        }
+      },
+      "model": {
+        "bytes": 5946648928,
+        "sha256": "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5"
+      },
+      "adapter": {
+        "requested": true,
+        "receiptAdapterEnabled": false,
+        "bytes": 9682464,
+        "sha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42"
+      },
+      "containment": {
+        "requiredNativeSandbox": true,
+        "weakenedForAttempt": false,
+        "limitsChangedByThisReceipt": false,
+        "defaultsChangedByThisReceipt": false,
+        "cleanup": "Root reported no registered ephemeral runner and no remaining model process after completion; not an independent execution observation by the evidence collector."
+      },
+      "artifacts": [
+        {
+          "id": 12959755409,
+          "name": "native-acceptance-bin-41014805669-1",
+          "bytes": 2541902,
+          "sha256": "4aba06a09870cb47eb48cb2f5aeb64e6e1db050740fa1529a5d28c509cfd5ebb",
+          "digestProvenance": "GitHub API and public upload log; compressed artifact ZIP was not independently downloaded or rehashed."
+        },
+        {
+          "id": 12959227685,
+          "name": "native-runtime-acceptance-41014805669-1",
+          "bytes": 4304,
+          "sha256": "a91b0c744d08148a573da507c4b056c2539ff1937eb87a79fa015f38137deb26",
+          "digestProvenance": "GitHub API and public upload log; compressed artifact ZIP was not independently downloaded or rehashed."
+        },
+        {
+          "id": 12958259682,
+          "name": "tools-build-prepare-41014805669-1-3edf78e3abf04ca9b5eb49980baddd8f",
+          "bytes": 1552,
+          "sha256": "8b066d9b371baa53f8c8056fc6b24bb14d3f255566413f4930aca29b1e208712",
+          "digestProvenance": "GitHub API and public upload log; compressed artifact ZIP was not independently downloaded or rehashed."
+        }
+      ],
+      "retainedReceipts": [
+        {
+          "path": "receipts/acceptance.json",
+          "bytes": 7765,
+          "sha256": "2011649855ffc5bc4f908f7e361328a675bcbc98955de226f136eaf3b82493ca"
+        },
+        {
+          "path": "receipts/host.json",
+          "bytes": 453,
+          "sha256": "ee1443c2b5fab95f85057db59b23b4272353730fc4e345fb18eaa7883b83a8ec"
+        },
+        {
+          "path": "receipts/hosted-build.json",
+          "bytes": 906,
+          "sha256": "934c3d2924c1a501b2a1a9aac2fbb248df3560e1eee7248a288667e55f1e254e"
+        }
+      ],
+      "sourceBindings": "source-bindings.json",
+      "durableArchive": {
+        "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\native-ptq1-service-20261030\\attempt-41014805669",
+        "manifest": "manifest.json",
+        "bytes": 1539,
+        "sha256": "368d65b04304837cf152823c4a4d963cadbb528f7aac1c6211196c3ae626ba7a",
+        "fileCountExcludingManifest": 8,
+        "retainedBytesExcludingManifest": 228139,
+        "allCopyAndManifestDigestsVerified": true,
+        "privateBackendCredentialsAndLogsIncluded": false
+      },
+      "qualification": {
+        "applicationAcceptancePassed": false,
+        "fullPtq1ReleaseQualityApproved": false,
+        "defaultRuntimeQualified": false,
+        "requiredContainmentRelaxed": false,
+        "pendingIndependentGates": [
+          "signed-zero-and-scale-2",
+          "context-rejection-and-reuse",
+          "fresh-owner-restart",
+          "supplied-history",
+          "extended-history",
+          "stalled-consumer",
+          "full-context-and-output"
+        ],
+        "numericalSmokeUnaffected": true,
+        "failureMustRemainRetainedAfterAnyFuturePass": true
+      },
+      "archiveCollection": {
+        "modelRuns": 0,
+        "comparatorRuns": 0,
+        "publications": 0
+      }
+    }
+  ]
+}
