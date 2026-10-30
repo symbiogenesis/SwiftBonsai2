@@ -39,7 +39,7 @@ and the independent [LoRA performance/quality gates](swift-lora.md#standard-prof
 
 ## X1/X2 configuration evidence
 
-[Hardware policy](hardware-profiles.md) owns selection, admission, phase handoff and qualified CPU
+[Hardware policy](hardware-capabilities.md#automatic-profile-selection) owns selection, admission, phase handoff and qualified CPU
 fallback/refusal. No X2 speedup or automatic selector is accepted. Family/core counts, NPU TOPS and
 bandwidth bounds cannot forecast TPS or energy: prefill can reuse weight tiles, while single-chat
 decode pays bandwidth, unpack/transform and dispatch costs with little reuse. Whole-model expansion

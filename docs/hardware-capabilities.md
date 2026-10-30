@@ -2,7 +2,7 @@
 
 Runner uses CPU profiles. Implemented discovery supplies host/runtime inventory and checked
 compatibility/evidence records; **automatic selection is not implemented**. The optional verified,
-model-free runtime probe uses the immutable `0.1.5` release lock. The [selection contract](#automatic-profile-selection)
+model-free runtime probe uses the immutable [release lock](../config/prism-inference.lock.json). The [selection contract](#automatic-profile-selection)
 below defines future eligibility; [PLAN.md](../PLAN.md#hardware-selection) owns pending work.
 
 ## Host inventory
@@ -260,7 +260,7 @@ fallback, strict rejection and complete-state handoff/failure/cancellation. Simu
 cases; execute optional instructions/accelerators only on eligible hardware.
 
 Promotion follows [PLAN.md's criteria](../PLAN.md#promotion-criteria), including independent [LoRA
-TPS/quality](lora-qualification.md), installation/rollback and affected-upgrade requalification.
+TPS/quality](swift-lora.md#standard-profile-qualification), installation/rollback and affected-upgrade requalification.
 Qualified families may coexist with unsupported classes and qualified CPU fallbacks.
 [Validation policy](validation.md) requires main-only matching-device CI for full suites,
 benchmarks and performance captures; local builds/focused untimed checks are allowed.

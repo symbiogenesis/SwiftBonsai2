@@ -34,7 +34,7 @@ All exchanges retain the ten-minute deadline, 8K context, 64-token margin, outpu
 memory and containment limits. Streams require complete HTTP framing, a supported
 terminal reason and `[DONE]`. Interrupted instances never reopen admission or replay
 the request. Optional workloads remain unqualified until successful device CI
-receipts are retained. The [promotion evaluator](runtime-promotion.md) keeps exits independent.
+receipts are retained. The [promotion evaluator](native-rust-engine.md#default-runtime-promotion) keeps exits independent.
 
 Model-free acceptance regressions:
 
@@ -250,14 +250,14 @@ cannot promote a pin; follow the [lock-update review](development-guide.md#prepa
 | Rust speech sampler | `philox::tests::`, `native::philox_tests::rust_philox_scalar_abi_matches_pinned_cpp_bits`: block/f32 vectors and 4,411 deterministic edge/corpus cases against pinned C++, without a model. `rust_philox_overlay_removes_native_algorithm_and_rejects_source_drift` checks both call replacements/complete native removal. Use provisioned `BONSAI_TTS_COMPILER`/native environment; see [sampler port](../src/speech-tts/README.md#rust-sampler-port). |
 | ISA discovery | `native::isa::tests::native_isa_queries_neon_dotprod_and_neon_i8mm_independently`: exact Windows feature IDs through an injected query, without executing optional kernels. |
 | X2 conditions | `cpu_evaluation::conditions::tests::condition_comparison_rejects_known_drift_and_unknowns_without_treating_charge_as_energy`; `condition_comparison_binds_exact_native_host_even_when_core_counts_match`; `host_cpu::tests::host_identity_retains_native_cpu_kernel_and_feature_facts_separately`: reject topology/power/registry/kernel/feature drift, malformed/missing identities, legacy receipts and cross-sample changes; separate identity from live availability. |
-| OpenCL inventory | `opencl_inventory_rejects_unbounded_or_malformed_native_properties` (process crate), `opencl_inventory_rejects_overrides_and_unqualified_claim_changes` (tools): property/count bounds without a driver. `host-opencl` only queries bounded information; no executable GPU workload or inference verdict. See [feasibility](opencl-feasibility.md). |
+| OpenCL inventory | `opencl_inventory_rejects_unbounded_or_malformed_native_properties` (process crate), `opencl_inventory_rejects_overrides_and_unqualified_claim_changes` (tools): property/count bounds without a driver. `host-opencl` only queries bounded information; no executable GPU workload or inference verdict. See [feasibility](adreno-gpu-plan.md#opencl-access-and-source-audit). |
 | Native containment | Main-only [sandbox qualification](../.github/workflows/sandbox-qualification.yml) runs explicitly ignored PSEC fixtures on hosted ARM64/selected owner hardware, retaining revision/SDK/OS and synthetic logs. Checks file/temp authority, external-network denial, broader host-loopback scope, process limits, artifact/key validation and abrupt-owner cleanup. Foundation excludes these cases; no model/benchmark runs. |
 
 The X2 screen records CPU/power before/after each sample outside process wall
 time and rejects changed/unknown observations within or between paired boundaries,
 even if the batch returns to its initial mode. There is no inside-sample monitoring
 or energy verdict. Its retained legacy headless startup failed DLL initialization;
-inspection success does not qualify worker startup. See [X2 evidence](x2-cpu-optimization.md).
+inspection success does not qualify worker startup. See [X2 evidence](simd-plan.md#x2-cpu-thread-screen).
 
 Synthetic checks establish the tested policy/parser/storage/process properties;
 native checks establish only the tested Windows behavior. Neither establishes

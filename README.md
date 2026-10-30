@@ -22,7 +22,7 @@ which derives from [Alibaba's Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-2
 
 This project provides a local creative assistant for **Windows ARM64 laptops
 with Snapdragon X and X2 processors**. It currently runs on the CPU, with
-[automatic hardware tuning and GPU/NPU support](docs/hardware-profiles.md)
+[automatic hardware tuning and GPU/NPU support](docs/hardware-capabilities.md#automatic-profile-selection)
 planned.
 
 The native Rust engine lives in [Prism Inference](https://github.com/symbiogenesis/prism-inference).
@@ -79,7 +79,7 @@ and [local API contract](docs/broker-policy.md#public-request-contract).
 > state match the native reference byte for byte on the automatic ARM64 backend.
 > Completed scalar/explicit NEON controls, full-context/4K-output, adapter and
 > quality qualification remain outstanding. PQ2 remains the app default. See the
-> [captured result](docs/ptq1-readiness.md#numerical-and-admission-boundaries).
+> [captured result](docs/swift-memory.md#numerical-and-admission-boundaries).
 >
 > Admission values are configured budgets including a 4 GiB physical reserve.
 > The restore-copy figure describes a transient allocation lifetime. Mapped weight

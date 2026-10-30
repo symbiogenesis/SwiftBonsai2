@@ -22,7 +22,7 @@ creative, adapter or daily-isolation acceptance.
 
 | Retained implementation | Evidence boundary |
 | --- | --- |
-| PTQ1 Q8_0 scale/inverse repair | Automatic ARM64 three-token logits/live state match native bytes; scalar/explicit NEON and broader qualification remain pending in the [PTQ1 contract](ptq1-readiness.md). Generic/PQ2 preparation is preserved. |
+| PTQ1 Q8_0 scale/inverse repair | Automatic ARM64 three-token logits/live state match native bytes; scalar/explicit NEON and broader qualification remain pending in the [PTQ1 contract](swift-memory.md#current-weight-ptq1-option). Generic/PQ2 preparation is preserved. |
 | Reused sampler candidates; 32-channel attention-value tiles with at most 2 KiB accumulator payload | Retains 0.1.5 storage without copying scratch into transaction clones; frozen sampler/graph and bitwise attention fixtures preserve arithmetic/recovery. No measured TPS or model-peak-RAM gain. |
 | Atomic checkpoint restore | Stages fallible KV copies, then restores recurrent/convolution bits into live storage, preserving independent checkpoints and failure atomicity. Avoids 156,893,184 bytes (149.625 MiB) transient Swift payload. |
 | Aligned F32/F16 projection controls and accumulation repair | Native-backed operator evidence only; generic, BF16 and unqualified tails are unchanged. No broader PTQ1 or reduced-admission claim. |
@@ -40,7 +40,7 @@ creative, adapter or daily-isolation acceptance.
 
 The service subset is **PQ2 without LoRA, cache reuse, speculation or offload**.
 PTQ1, other families and adapters require separate qualification, including [LoRA
-TPS/quality](lora-qualification.md). [Hardware discovery](hardware-capabilities.md)
+TPS/quality](swift-lora.md#standard-profile-qualification). [Hardware discovery](hardware-capabilities.md)
 reports inventory; the runtime determines kernel eligibility. Kernel `Auto` is distinct
 from Runner's planned qualified-device selector.
 
@@ -199,8 +199,10 @@ acceptance, installation and rollback. Released private-service adapter readines
 per-request scale/state lifecycle qualify independently of source-graph support or
 adapter-disabled smoke checks.
 
-Device gates require the real self-hosted Snapdragon X Elite ARM64 runner. Paired
-promotion requires predeclared **10% end-to-end latency benefit**, or reviewed
+Device gates require self-hosted ARM64 Snapdragon X Elite, X2 Elite or X2 Elite
+Extreme evidence, with the same family across all completed device gates.
+`processorName` must match that family; only legacy X Elite receipts may omit it.
+Paired promotion requires predeclared **10% end-to-end latency benefit**, or reviewed
 capacity/energy benefit within accepted limits; same-engine LoRA TPS is independent.
 Full suites/benchmarks stay CI-only; focused local correctness checks are allowed.
 

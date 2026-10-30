@@ -297,7 +297,7 @@ New LoRA and PTQ1 captures retain the observed processor name and distinguish `S
 `Snapdragon X2 Elite` and `Snapdragon X2 Elite Extreme`. X2 receipts require a matching processor
 observation; relabeling historical X1 evidence rejects. Device-dependent runtime promotion gates
 cannot combine different families. Existing frozen X1 contract hashes and legacy receipt shapes
-remain readable; the added identity observations do not qualify any X2 profile.
+remain readable; identity observations alone do not qualify any X2 profile.
 
 [fearless]: https://docs.rs/fearless_simd/1.1.0/fearless_simd/
 [target-feature]: https://doc.rust-lang.org/reference/attributes/codegen.html#the-target_feature-attribute

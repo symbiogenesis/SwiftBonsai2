@@ -140,7 +140,7 @@ no-go decision, including losing cases.
 ## Runtime and correctness
 
 Default-runtime promotion retains the current standard profile's adapter at
-scale 1.3. Use the [promotion contract and offline evidence evaluator](docs/runtime-promotion.md)
+scale 1.3. Use the [promotion contract and offline evidence evaluator](docs/native-rust-engine.md#default-runtime-promotion)
 to bind each independent requirement to exact source/release/application
 identities; missing reports remain pending.
 
@@ -171,7 +171,7 @@ identities; missing reports remain pending.
   Choose the largest demonstrated avoidable allocation/copy first, retaining
   independent snapshot ownership. Qualify tiled attention-value traversal on
   complete long-context workloads. See the
-  [2026 overhead review](docs/implementation-research.md#2026-literature-runtime-overhead-and-work-placement).
+  [2026 overhead review](docs/native-rust-engine.md#2026-literature-runtime-overhead-and-work-placement).
 - Qualify faithful chunkwise GDN prefill after the packed projection work in
   [CPU kernels](#cpu-kernels). Start with one bounded CPU chunk implementation and
   a small chunk-size set; preserve grouped/sign transforms, normalization,
@@ -243,7 +243,7 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
   following, coherence, repetition, unwanted refusals and useful completed answers.
   Qualify the actual thinking/output settings and experimental Extra effort mode;
   changed text or benchmark averages are insufficient.
-- Complete the [standard LoRA qualification](docs/lora-qualification.md): verify SSM
+- Complete the [standard LoRA qualification](docs/swift-lora.md#standard-profile-qualification): verify SSM
   basis at residual writers, loaded-at-zero response/logits identity and nonzero
   application; capture paired target-device trials and genuine independent human
   reviews. Require both same-engine decode TPS and output quality parity, keeping
@@ -285,7 +285,7 @@ Reference: [native Rust runtime contract](docs/native-rust-engine.md).
   NEON, including no-LoRA/LoRA basis and forward execution. After correctness,
   run the bounded paired device screen and review complete responses,
   context/recovery, quality and comfort. Keep PQ2 as rollback; use the
-  [PTQ1 contract](docs/ptq1-readiness.md).
+  [PTQ1 contract](docs/swift-memory.md#current-weight-ptq1-option).
 - Promote PTQ1 to the default only after suitability and lower admission thresholds
   are demonstrated. Use the exact verified 1,259,520,000-byte packing difference
   for a candidate reduction; account for mapped residency separately from private
@@ -365,13 +365,13 @@ existing full-context/continuation/LoRA gates.
   resource budgets separate from immutable compatibility evidence.
 - Qualify safe scalar/NEON CPU controls independently on X1 and X2, including
   optional ISA eligibility and phase-specific thread/batch/wait/power choices.
-  Run the bounded [X2 CPU thread screen](docs/x2-cpu-optimization.md) on settled
+  Run the bounded [X2 CPU thread screen](docs/simd-plan.md#x2-cpu-thread-screen) on settled
   main and retain results before selecting a new default. Restore/register the
   owner-managed ARM64 runner first; the 2026-10-29 CI inventory reports none.
   Resolve the provisioned legacy completion runtime's model-free headless-start
   failure (`0xC0000142`) before capture; audit its shell DLL dependency chain
   and repeat a bounded `--version` probe without relaxing worker mitigations.
-  The [UCRT argv source candidate](docs/runtime-candidates/headless-ucrt-argv.md)
+  The [UCRT argv source candidate](docs/runtime-candidates/README.md#headless-ucrt-argv-candidate)
   now passes CPU-enabled model-free startup and Unicode/quoting checks on X2;
   integrate/release it upstream and qualify the exact binary before updating
   Runner's pin. The currently provisioned runtime remains unchanged.
@@ -409,7 +409,7 @@ existing full-context/continuation/LoRA gates.
   and X2 classes, including reproducible installation/rollback, sustained use and
   affected-upgrade requalification. No energy ranking without valid telemetry.
 
-References: [selection contract](docs/hardware-profiles.md),
+References: [selection contract](docs/hardware-capabilities.md#automatic-profile-selection),
 [capability identities](docs/hardware-capabilities.md).
 
 ## CPU kernels
@@ -481,7 +481,7 @@ Reference: [CPU arithmetic and dispatch contracts](docs/simd-plan.md).
   cause of its failure. Preserve the distinct evidence and unchanged CPU policy;
   see [native Vulkan discovery](docs/hardware-capabilities.md#host-inventory).
 - Implement a bounded public native ARM64 OpenCL packed-projection pilot in a
-  separately reviewed Prism candidate. The [feasibility screen](docs/opencl-feasibility.md)
+  separately reviewed Prism candidate. The [feasibility screen](docs/adreno-gpu-plan.md#opencl-access-and-source-audit)
   establishes missing direct reuse in the unchanged pinned backend, not a ban
   on writing kernels. Start with one candidate and one real Swift projection
   shape, using scalar CPU PQ2-by-Q8_K arithmetic as the control: preserve actual

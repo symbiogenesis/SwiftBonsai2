@@ -99,7 +99,7 @@ The [OxiBonsai source review](oxibonsai-reuse.md) pins v0.2.3 revision
 `1d10c48e14754ff6999158f8fa13c7c92b40b0dc`. Its selected GGUF/NEON sources
 declare Apache-2.0, compatible with Runner's original license. Preserve COOLJAPAN
 OU (Team Kitasan) attribution and identify modifications if importing source.
-This review does not add Oxi crates or approve its optional backend dependencies.
+Oxi crates are not dependencies; their optional backends remain unapproved.
 
 | Artifact | Pinned source | Terms |
 | --- | --- | --- |
@@ -107,7 +107,7 @@ This review does not add Oxi crates or approve its optional backend dependencies
 | Swift assessment Prism | `73bfe6cc485554822f80c473a3c0c4f25e80f41b` | [MIT](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/LICENSE) |
 | Prism overlay source | `b87ca7225456b06b0975b8239c66b5aecf07e37c` | [MIT](https://github.com/PrismML-Eng/llama.cpp/blob/b87ca7225456b06b0975b8239c66b5aecf07e37c/LICENSE) |
 
-The review-only [headless argv patch](runtime-candidates/headless-ucrt-argv.md)
+The review-only [headless argv patch](runtime-candidates/README.md#headless-ucrt-argv-candidate)
 modifies that exact Swift assessment source under its MIT license. Its manifest
 retains the source LICENSE digest; preserve the upstream copyright/license with
 any source or binary integration. No UCRT implementation source is distributed.
@@ -139,6 +139,6 @@ copyright/license/notice material, including Unicode notices. Mark modified
 Apache-licensed files. Include separate upstream notices/licenses when shipping
 models/adapters. If shipping cbindgen, satisfy its MPL source-availability terms.
 
-This review is not a complete installer notice bundle. Assemble that bundle
-from the exact packages, runtime archive and artifacts shipped; repeat the
+Assemble a complete installer notice bundle from the exact packages, runtime
+archive and artifacts shipped; repeat the
 review when pins, enabled features or bundled assets change.

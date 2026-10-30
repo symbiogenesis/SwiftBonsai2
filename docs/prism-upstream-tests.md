@@ -161,7 +161,7 @@ qualification.
 ## Source reuse review
 
 Reuse follows pinned source contracts and licenses; upstream comments do not authorize
-running scripts. No framework dependency was added.
+running scripts. Reuse introduces no framework dependency.
 
 | Project and pinned revision | Relevant code | Decision |
 | --- | --- | --- |

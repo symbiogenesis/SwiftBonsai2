@@ -9,7 +9,7 @@ admission, state transitions and promotion for both Vulkan and OpenCL.
 
 Pinned Prism Vulkan is the initial implementation route. Rust GPU execution has its own
 safety/coverage boundary after Rust CPU parity; reusable Rust storage does not provide GPU
-execution. PQ2 and [current-weight PTQ1](swift-memory.md) are distinct qualification lanes. The
+execution. PQ2 and [current-weight PTQ1](swift-memory.md#current-weight-ptq1-option) are distinct qualification lanes. The
 [Prism backend audit][prism-audit] describes packed scalar, coopmat1 and integer-dot
 paths/transforms, with no direct coopmat2 decoder for these formats. Source support alone does not
 establish Adreno kernel or graph coverage.
@@ -93,7 +93,7 @@ timestamps, submission/waits and critical-path traces. Overlapping durations can
 utilization is not energy. [GPUView][gpuview] needs
 compatible native ARM64 tooling.
 
-Independent [LoRA TPS/quality](lora-qualification.md) remains a promotion gate; comparisons bind
+Independent [LoRA TPS/quality](swift-lora.md#standard-profile-qualification) remains a promotion gate; comparisons bind
 the tested adapter/SKU/driver/family. [Validation](validation.md) requires matching-device CI for
 full suites and timing/profile captures. Local builds/focused untimed checks are allowed. Native
 diagnostics use absolute system-temp lanes and inherited Windows system/profile variables.

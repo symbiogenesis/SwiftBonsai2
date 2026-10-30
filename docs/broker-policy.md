@@ -276,7 +276,8 @@ it does not authenticate that server's process/model identity.
 `service::LocalChatService::bind(frontend_port, frontend_key, backend_port,
 backend_key, max_waiting)` validates distinct ports/keys before opening numeric
 IPv4 loopback. Frontend zero permits OS assignment; other ports must be
-unprivileged. Windows binding requests `SO_EXCLUSIVEADDRUSE`. `accept()` reserves
+unprivileged. Windows binding requests
+[`SO_EXCLUSIVEADDRUSE`](https://learn.microsoft.com/en-us/windows/win32/winsock/using-so-reuseaddr-and-so-exclusiveaddruse). `accept()` reserves
 capacity before accepting; pending accepts and unpolled returned handles count.
 The OS backlog is separate. Full capacity returns immediately, so callers must
 avoid busy retry loops.

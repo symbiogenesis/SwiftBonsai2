@@ -14,13 +14,13 @@ Swift PQ2_0 CPU is the priority low-memory profile. Load/decode, optional pretra
 LoRA and current-weight lossless PTQ1 export have development evidence; quality,
 performance and daily-service acceptance remain pending. Swift and Qwen
 `reference-cpu` use separate immutable pins. See [memory](swift-memory.md),
-[LoRA qualification](lora-qualification.md) and [memory options](swift-memory-options.md).
+[LoRA qualification](swift-lora.md#standard-profile-qualification) and [memory options](swift-memory-options.md).
 No new training is required. [Prism Inference](https://github.com/symbiogenesis/prism-inference)
 is a separately published experimental Rust runtime, initially for Swift/Bonsai.
 
 Current launches explicitly select CPU. [Adreno](adreno-gpu-plan.md),
-[Hexagon](hexagon-npu-plan.md) and [automatic profiles](hardware-profiles.md) remain
-planned. The [X2 CPU screen](x2-cpu-optimization.md) compares prefill/decode budgets
+[Hexagon](hexagon-npu-plan.md) and [automatic profiles](hardware-capabilities.md#automatic-profile-selection) remain
+planned. The [X2 CPU screen](simd-plan.md#x2-cpu-thread-screen) compares prefill/decode budgets
 in target-device CI; local inventory/`-PlanOnly` loads no model and cannot promote
 defaults. Owned UI model/speech workers require [native containment](sandboxing.md);
 actual-model and broker-only/same-user isolation acceptance remain pending.
@@ -260,7 +260,7 @@ bypass the script guard. Installed launches use [package verification](chat-pack
 | --- | --- | --- |
 | Publisher Prism CPU, original Swift PQ2 | Default; pinned adapter enabled | Adapter scale follows response settings. Missing/altered adapters fail with provisioning guidance, without download or fallback. |
 | Publisher Prism CPU, current-weight PTQ1 export | `-UseRepackedPtq1` (app/broker `--use-repacked-ptq1`) | Same adapter opt-out/scale. Missing/changed bytes reject; no older publisher PTQ1 substitution or fallback. |
-| Experimental native Rust 0.1.6, original Swift PQ2 | `-NativeEngine -NoAbliterateLora` (app/broker `--native-engine`) | Rejects PTQ1/adapters before preparation; no engine switch after failure. Separate [PTQ1 qualification](ptq1-readiness.md) is pending. |
+| Experimental native Rust 0.1.6, original Swift PQ2 | `-NativeEngine -NoAbliterateLora` (app/broker `--native-engine`) | Rejects PTQ1/adapters before preparation; no engine switch after failure. Separate [PTQ1 qualification](swift-memory.md#current-weight-ptq1-option) is pending. |
 
 `-NoAbliterateLora` (direct app `--no-abliterate-lora`) omits the adapter and disables
 its control. Provision the native release before selecting it:
@@ -270,7 +270,7 @@ its control. Provision the native release before selecting it:
 ./scripts/Start-Chat.ps1 -DataDirectory $data -NativeEngine -NoAbliterateLora
 ```
 
-Publisher Prism stays default until [runtime promotion](runtime-promotion.md).
+Publisher Prism stays default until [runtime promotion](native-rust-engine.md#default-runtime-promotion).
 Thinking uses the same setting across engines; native quality, throughput and
 daily-service qualification remain pending. Native HTTP remains numeric loopback
 with the [broker's strict public subset](broker-policy.md).
@@ -282,8 +282,8 @@ evidence directories private.
 ## X1/X2 configuration boundary
 
 The current machine is Snapdragon X2 Elite Extreme X2E94100; the previous machine
-was a 32 GB X Elite X1E-78-100. [Retained inventory](x2-cpu-optimization.md) records
-observations. [Hardware profiles](hardware-profiles.md) owns planned automatic
+was a 32 GB X Elite X1E-78-100. [Retained inventory](simd-plan.md#x2-cpu-thread-screen) records
+observations. [Hardware profiles](hardware-capabilities.md#automatic-profile-selection) owns planned automatic
 capability/driver/workload/objective selection, qualified prefill/decode placement,
 actual-budget admission and supported CPU fallback/refusal. Released policies
 remain explicit CPU selections; SKU names or TOPS never authorize acceleration.
@@ -313,30 +313,23 @@ and a 12.78 MB CPU runtime archive. To provision Swift instead, pass
 Neither path downloads fallback, projector or full-precision weights.
 
 Model bytes live under `models/<revision>/`, archives under `downloads/`, and
-installed runtimes under `runtime/<commit>/`. Downloads resume immutable URLs
-through a retained `.partial` handle; ignored Range requests restart. Size/hash
-checks precede exclusive hard-link publication. Invalid partials and failed
-extraction staging directories remain for inspection. Scripts never substitute
-another model/runtime. Runtime verification compares installed files to the
-verified archive, ARM64 PE architecture and reported build identity; publisher
-digests do not attest source-to-binary builds.
-
-The shared Rust verifier owns installed-runtime checks and retains verified handles
-through bounded version/help probes. CPU and paired completion re-verify the runtime
-inside their Rust supervisor and hold the guards until execution ends. Provisioning
-therefore uses the packaged maintenance tool or builds it from the pinned sources.
+installed runtimes under `runtime/<commit>/`. Downloads resume immutable URLs;
+ignored Range requests restart. The same exclusive `.partial` handle remains held
+through size/hash verification and same-volume hard-link publication, which cannot
+overwrite a destination. Cancellation reaches streamed bodies: header timeouts
+alone cannot bound reads. Invalid partials, publication failures and failed extraction staging
+remain for inspection. Scripts never substitute another model/runtime.
 
 `bonsai-artifacts` shares ZIP, SHA-256, installed-file and PE checks between the
 broker and maintenance. Extraction rejects unsafe or duplicate paths and excessive
-expansion. Guards hold the archive, verified files and ancestors through probes;
-completion takes a fresh guard for its batch. GGUF inspection/export also holds
-its verified source and validates output before publication. Receipts record
-identity but cannot transfer live file ownership or prove parser isolation.
-
-Download cancellation reaches streamed bodies; a header timeout alone does not
-bound a body read. Publication holds the exclusive partial-file handle through
-verification and a same-volume hard link, which cannot overwrite a destination.
-Failure preserves the partial. See the API contracts for
+expansion. Runtime verification compares installed files to the verified archive,
+ARM64 PE architecture and reported build identity. Guards deny write/delete access
+to the archive, verified files and ancestors through bounded version/help probes.
+CPU and paired completion re-verify and hold fresh guards through execution;
+GGUF inspection/export holds its source and validates output before publication.
+Provisioning uses the packaged maintenance tool or builds it from pinned sources.
+Receipts cannot transfer live file ownership, prove parser isolation or attest
+source-to-binary provenance. See the API contracts for
 [streamed HTTP](https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpcompletionoption),
 [PE images](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format),
 [exclusive creation](https://doc.rust-lang.org/std/fs/struct.OpenOptions.html#method.create_new)
@@ -404,7 +397,7 @@ but never starts inference.
 
 Swift and LoRA load/decode success does not establish finished-answer quality,
 throughput, numerical basis or refusal behavior. The approved standard LoRA
-requires [paired same-backend TPS and quality gates](swift-lora.md#required-standard-profile-qualification).
+requires [paired same-backend TPS and quality gates](swift-lora.md#standard-profile-qualification).
 
 ## Prepare the server policy
 

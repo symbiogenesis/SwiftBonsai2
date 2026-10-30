@@ -117,6 +117,6 @@ trained artifacts, so compare them separately from faster kernels:
 
 Measure time/energy to a useful completed answer, including predictor work, extra prefills, failed
 attempts and human revision. Preserve selected thinking/Extra effort, exact reservations,
-cancellation and truthful truncation. No method is quality-qualified on current Swift/LoRA; none is
-enabled by this review. See
+cancellation and truthful truncation. These methods are neither quality-qualified on current Swift/LoRA nor enabled in
+the pinned profile. See
 [measurement](performance-expectations.md#2026-literature-measurement-and-comparison).

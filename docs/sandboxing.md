@@ -46,7 +46,7 @@ The owned-worker policy grants:
 - Read-only access to exact selected executable/runtime files, model, tokenizer
   or codec, adapter and only that worker's backend credential. Public policy
   inputs accept files, not broad data/profile directories.
-- Internal read-only Windows runtime directories. No drive-root grant is added:
+- Internal read-only Windows runtime directories, with no drive-root grant:
   a native negative test showed that a generated read-only volume-root grant
   exposed an unrelated credential. The trusted owner validates and retains full
   ancestry. Read validation inside an actual AppContainer skips only the denied
@@ -162,7 +162,8 @@ bindings, and audio retains waveOut headers/buffers until driver release.
 `src/windows-process` creates hidden suspended processes with explicit executable,
 working directory and quoted arguments. Creation attributes assign an unnamed
 Job and inherit only the three standard streams. [Jobs](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) kill
-descendants on owner loss, reject breakaway and enforce process/commit bounds; they do not restrict
+descendants on owner loss, reject breakaway and enforce
+[process/commit bounds](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_limit_information); they do not restrict
 security identity. Parent monitoring retains query/synchronize handles and checks
 creation time against PID reuse. Native PSEC composition and its distinct
 effective mitigations are specified above.

@@ -291,9 +291,9 @@ PSScriptAnalyzer covers 62 scripts; strict Release C# covers the extracted helpe
 under SDK 10.0.403. The original 2026-10-26 audit also retains format/Release
 Clippy/docs/build for `bonsai-artifacts`, `bonsai-broker`, `bonsai-tools`, archive
 path/expansion/hostile-source regressions, actionlint 1.7.12 and YAML/event/permission
-checks. The original audit dispatched no hosted validation. Neither review ran a
-local full suite/benchmark or establishes a performance gain; full suites/benchmarks
-stay CI-only.
+checks. The original audit has no hosted-validation receipts. Neither review
+includes local full-suite/benchmark evidence or establishes a performance gain;
+full suites and benchmarks remain CI-only.
 Evidence directories under `C:\Users\symbi\AppData\Local\Temp\`:
 
 | Evidence | Path suffix |
