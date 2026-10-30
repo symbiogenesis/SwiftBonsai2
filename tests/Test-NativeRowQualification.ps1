@@ -18,7 +18,7 @@ if ($Case -ceq 'Plan') {
     Assert ($plan.Representation -ceq 'PQ2_0' -and $plan.AdapterScale -eq 1.3 -and $plan.RustBackend -ceq 'auto') 'Row plan changed the intended app artifacts/settings.'
     Assert ($plan.SuppliedTokens.Count -eq 1 -and $plan.SuppliedTokens[0] -eq 248045) 'Row plan expanded the supplied token workload.'
     Assert ($plan.Conditions.Count -eq 2 -and $plan.Conditions[0].Name -ceq 'serial' -and $plan.Conditions[0].RowWorkers -eq 1 -and
-        $plan.Conditions[1].Name -ceq 'parallel' -and $plan.Conditions[1].RowWorkers -eq 2) 'Row plan changed ordering or worker budgets.'
+        $plan.Conditions[1].Name -ceq 'parallel' -and $plan.Conditions[1].RowWorkers -eq 4) 'Row plan changed ordering or worker budgets.'
     Assert ($plan.WorkBudgetSeconds -eq 240 -and $plan.WholeJobMinutes -eq 5 -and
         $plan.JobBytes -eq 12348030976 -and $plan.AdmissionBytes -eq 16642998272 -and
         $plan.PhysicalReserveBytes -eq 4294967296) 'Row plan changed time or memory limits.'

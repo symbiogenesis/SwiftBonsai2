@@ -1,6 +1,6 @@
 #requires -Version 7.6
 <# .SYNOPSIS
-Captures one exact PQ2 token with one then two Rust row workers in owner CI.
+Captures one exact PQ2 token with one then four Rust row workers in owner CI.
 .DESCRIPTION
 All setup, verification, loading and comparison share 240 seconds inside a
 five-minute owning job. Requires hosted-prepared tools; never builds or downloads
@@ -24,7 +24,7 @@ if ([IO.File]::Exists($pinsPath)) {
 $plan = [pscustomobject]@{
     Status = 'plan-only'; ModelProcessStarted = $false; Representation = 'PQ2_0'
     SuppliedTokens = @(248045); AdapterScale = 1.3; RustBackend = 'auto'
-    Conditions = @(@{ Name = 'serial'; RowWorkers = 1 }, @{ Name = 'parallel'; RowWorkers = 2 })
+    Conditions = @(@{ Name = 'serial'; RowWorkers = 1 }, @{ Name = 'parallel'; RowWorkers = 4 })
     WorkBudgetSeconds = 240; WholeJobMinutes = 5; ContextTokens = 8192
     JobBytes = 12348030976; AdmissionBytes = 16642998272; PhysicalReserveBytes = 4294967296
     EstimatedSnapshotBytes = 316035072; RequiredFreeDiskBytes = 1073741824
