@@ -374,6 +374,46 @@ impl<S: AsyncRead + Unpin> BackendBody<S> {
         }
         Poll::Ready(Ok(available))
     }
+
+    fn poll_payload(
+        &mut self,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+        remaining: usize,
+    ) -> Poll<io::Result<usize>> {
+        if output.remaining() <= remaining {
+            // Let BufReader read directly into final payload storage when its
+            // buffer is empty and the caller offers at least its capacity. The
+            // output bound must fit inside this payload: framing bytes may
+            // never escape here.
+            let Some(reader) = self.reader.as_mut() else {
+                return self.fail(io::ErrorKind::InvalidData);
+            };
+            let previous = output.filled().len();
+            if ready!(Pin::new(reader).poll_read(cx, output)).is_err() {
+                return self.fail(io::ErrorKind::Other);
+            }
+            if Instant::now() >= self.deadline {
+                return self.fail(io::ErrorKind::TimedOut);
+            }
+            let count = output.filled().len() - previous;
+            if count == 0 {
+                return self.fail(io::ErrorKind::UnexpectedEof);
+            }
+            Poll::Ready(Ok(count))
+        } else {
+            // Near a framing boundary, copy only its payload prefix and leave
+            // the coalesced ending/next chunk buffered.
+            let available = ready!(self.poll_available(cx))?;
+            let count = available.len().min(remaining).min(output.remaining());
+            output.put_slice(&available[..count]);
+            let Some(reader) = self.reader.as_mut() else {
+                return self.fail(io::ErrorKind::InvalidData);
+            };
+            Pin::new(reader).consume(count);
+            Poll::Ready(Ok(count))
+        }
+    }
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
@@ -398,13 +438,7 @@ impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
             match this.framing {
                 Framing::Length(0) | Framing::Complete => return Poll::Ready(Ok(())),
                 Framing::Length(remaining) | Framing::Data(remaining) => {
-                    let available = ready!(this.poll_available(cx))?;
-                    let count = available.len().min(remaining).min(output.remaining());
-                    output.put_slice(&available[..count]);
-                    let Some(reader) = this.reader.as_mut() else {
-                        return this.fail(io::ErrorKind::InvalidData);
-                    };
-                    Pin::new(reader).consume(count);
+                    let count = ready!(this.poll_payload(cx, output, remaining))?;
                     this.remaining_budget -= count;
                     this.framing = match this.framing {
                         Framing::Length(_) => Framing::Length(remaining - count),
@@ -496,3 +530,6 @@ fn ensure_time(deadline: Instant) -> Result<(), BackendError> {
 
 #[cfg(test)]
 mod memory_tests;
+
+#[cfg(test)]
+mod payload_tests;

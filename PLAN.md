@@ -115,7 +115,11 @@ no-go decision, including losing cases.
   its allocation/read-buffer regressions remain model-free. Include broker
   nonstreaming JSON reads into bounded final storage, exact-cap overflow probing
   and truncated framing; their ownership and read-buffer regressions remain
-  model-free. Capture complete-task latency and peak memory in target-device CI
+  model-free. Qualify backend payload reads that bypass the 8 KiB staging copy
+  when final storage fits within the current framed payload, including buffered
+  prefixes, framing tails, partial delivery, deadlines and cancellation; their
+  pointer-identity and work-count checks remain model-free.
+  Capture complete-task latency and peak memory in target-device CI
   before claiming gains.
 - Extend the implemented exact 33-spelling Swift control-token rejection,
   fixed HTTP 400 recovery and count/generation identity regressions to actual

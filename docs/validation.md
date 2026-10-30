@@ -299,6 +299,11 @@ These captures do not establish native screen-reader, model or speech behavior.
 
 Memory-storage regressions use untimed ownership and encoded-byte checks:
 `request_buffer::tests::` and `backend::memory_tests::` in the broker;
+`backend::payload_tests::` additionally checks final-destination source reads,
+bytewise and larger fragments, coalesced prefixes, chunk boundaries, empty reads
+and sticky truncation/I/O teardown. Large eligible payload reads bypass the
+decoder's 8 KiB staging buffer; framing tails retain bounded buffered copies.
+These pointer/byte checks do not measure X2 throughput or process peak memory.
 `response::memory_tests::` additionally checks direct final-storage JSON reads,
 uninitialized spare tails, bounded growth, exact-limit probing, framing errors,
 deadlines and cancellation ownership;
