@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "kind": "prism-0.1.7-public-prerelease-artifact-identity",
+  "status": "published-prerelease-assets-and-runner-pin-verified",
+  "scope": "Public runtime publication, reviewed pin and installed ARM64 file identities only. This is not full PTQ1 profile qualification or application acceptance.",
+  "verifiedAtUtc": "2026-10-30T06:38:35.946688+00:00",
+  "release": {
+    "repository": "https://github.com/symbiogenesis/prism-inference",
+    "url": "https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.7",
+    "tag": "v0.1.7",
+    "sourceRevision": "27e4860ea71b998b896191524ed980a586f022c6",
+    "publishedAtUtc": "2026-10-30T06:31:34Z",
+    "draft": false,
+    "prerelease": true,
+    "sourceArchive": {
+      "url": "https://github.com/symbiogenesis/prism-inference/archive/27e4860ea71b998b896191524ed980a586f022c6.zip",
+      "bytes": 4193790,
+      "sha256": "dfbd4f09692a3ca6805776a6a605a2acc0736e9bb2b21c5a72d97df0e7724e1d"
+    }
+  },
+  "upstreamCi": [
+    {
+      "name": "Foundation",
+      "runId": "41009394716",
+      "runAttempt": 1,
+      "url": "https://github.com/symbiogenesis/prism-inference/actions/runs/41009394716",
+      "sourceRevision": "27e4860ea71b998b896191524ed980a586f022c6",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "Runtime conformance",
+      "runId": "41009394718",
+      "runAttempt": 1,
+      "url": "https://github.com/symbiogenesis/prism-inference/actions/runs/41009394718",
+      "sourceRevision": "27e4860ea71b998b896191524ed980a586f022c6",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "assets": [
+    {
+      "name": "prism-inference-0.1.7-aarch64-pc-windows-msvc.zip",
+      "assetId": 691149589,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.7/prism-inference-0.1.7-aarch64-pc-windows-msvc.zip",
+      "bytes": 3011382,
+      "sha256": "07083af98f3215d950238fd1e75c951c69f40c296dfed115090fce90e85d906c",
+      "publicDownloadMatchesCiBundle": true
+    },
+    {
+      "name": "prism-inference-0.1.7-aarch64-pc-windows-msvc.receipt.json",
+      "assetId": 691149596,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.7/prism-inference-0.1.7-aarch64-pc-windows-msvc.receipt.json",
+      "bytes": 1976,
+      "sha256": "70f739f38080e563dc8cbb0a069980057af5670c13b190359f7c4c99c705f2b7",
+      "publicDownloadMatchesCiBundle": true
+    },
+    {
+      "name": "prism-inference-0.1.7-x86_64-pc-windows-msvc.zip",
+      "assetId": 691149594,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.7/prism-inference-0.1.7-x86_64-pc-windows-msvc.zip",
+      "bytes": 3275110,
+      "sha256": "9e9e0c49f5bfff3374a2f0007c8aadf1c03aaf174875a44e81b3a12a79072c1f",
+      "publicDownloadMatchesCiBundle": true
+    },
+    {
+      "name": "prism-inference-0.1.7-x86_64-pc-windows-msvc.receipt.json",
+      "assetId": 691149592,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.7/prism-inference-0.1.7-x86_64-pc-windows-msvc.receipt.json",
+      "bytes": 1974,
+      "sha256": "fd1f8208d1b4b3c3422a3c52e46648f5e1dbb51c353cb593ced8d4c964396491",
+      "publicDownloadMatchesCiBundle": true
+    }
+  ],
+  "verification": {
+    "allFourPublicDownloadsMatchCiBundlesAndReleaseApiDigests": true,
+    "bothZipExactNineFileInventoriesAndAllEntryHashesVerified": true,
+    "publicZipDownloadReportVerifiedAtUtc": "2026-10-30T06:32:58.6934242Z",
+    "offlineCandidateEqualsMergedRunnerPin": true,
+    "offlineReview": {
+      "runId": "41009394716",
+      "runAttempt": 1,
+      "target": "aarch64-pc-windows-msvc",
+      "sourceRevision": "27e4860ea71b998b896191524ed980a586f022c6",
+      "verified": true
+    },
+    "retainedVerification": "independent-verification.json",
+    "modelRunsPerformedForThisReceipt": 0,
+    "comparatorRunsPerformedForThisReceipt": 0
+  },
+  "runnerPin": {
+    "revision": "4fb5484910927879688b40b093ea1480d3d1700f",
+    "pullRequest": "https://github.com/symbiogenesis/SwiftBonsai2Runner/pull/3",
+    "mergedAtUtc": "2026-10-30T06:33:26Z",
+    "file": "config/prism-inference.lock.json",
+    "bytes": 2359,
+    "sha256": "7608411a9ed2bcfa996647eea400f7bd364ef2733ebdc37eb93d30e2808d6d8a",
+    "target": "aarch64-pc-windows-msvc",
+    "version": "0.1.7",
+    "runtimeSourceRevision": "27e4860ea71b998b896191524ed980a586f022c6",
+    "installedDirectory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\inference\\27e4860ea71b998b896191524ed980a586f022c6\\aarch64-pc-windows-msvc",
+    "installedFileCount": 9,
+    "installedExactFileInventoryAndDigestsVerified": true,
+    "installedFiveExecutablePeMachineTypesAreArm64": true,
+    "retainedPureGetInferenceVerifyOnlyReceipt": "runner/installed-0.1.7-verification.json",
+    "server": {
+      "bytes": 1936896,
+      "name": "prism-inference-server.exe",
+      "sha256": "9cd1f8f9d5bd6dd26c7f69fce9f8444e4a92605b98b68b6974f33fc5d380fce9"
+    },
+    "archivedPinBytesAreExactCommittedGitBlob": true
+  },
+  "qualificationBoundary": {
+    "fullPtq1ReleaseQualityApproved": false,
+    "ptq1PromotedToDefault": false,
+    "applicationAcceptanceEstablishedByThisReceipt": false,
+    "previousNumericalSmokeReceipt": "docs/evidence/ptq1-rust-smoke.json",
+    "previousNumericalArchiveModified": false,
+    "pending": [
+      "scalar numerical comparison",
+      "explicit NEON numerical comparison",
+      "no-adapter and loaded-at-zero exact identity controls",
+      "nonzero adapter change control",
+      "writer-basis qualification",
+      "creative quality",
+      "performance and comfort",
+      "full context and output",
+      "published server actual-model application acceptance",
+      "daily service isolation and recovery"
+    ]
+  },
+  "durableArchive": {
+    "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\prism-017-release-20261030",
+    "manifest": "manifest.json",
+    "bytes": 4374,
+    "sha256": "0f31bfde7529e8de89b2b2a5f2b936ee21bfe6f7b6330ecda403b6ed916e99cb",
+    "manifestFileCountExcludingManifest": 22,
+    "retainedBytesExcludingManifest": 16843484,
+    "allCopiedFileDigestsVerifiedAgainstSourcesAndManifest": true,
+    "contents": [
+      "published public ZIPs and receipts",
+      "reviewed CI ZIPs and receipts",
+      "release and successful CI API metadata",
+      "Runner merged PR metadata and exact pin",
+      "offline pin-review candidate and verification",
+      "reviewed release notes",
+      "exact source archive",
+      "public-download and independent verification receipts"
+    ],
+    "credentialsIncluded": false
+  }
+}
