@@ -1,4 +1,5 @@
 name: Native Rust actual-model application acceptance
+run-name: Native Rust actual-model application acceptance (${{ inputs.profile }})
 on:
   workflow_dispatch:
     inputs:
