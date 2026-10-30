@@ -58,6 +58,7 @@ jobs:
           $evidence = $entry[0].Substring('BONSAI_PTQ1_EVIDENCE='.Length)
           $result = Get-Content -LiteralPath (Join-Path $evidence 'screen-receipt.json') -Raw | ConvertFrom-Json
           @('PTQ1 screen captured. This is a reject-or-continue diagnostic, not profile qualification.',
+            ('Screen status: ' + $result.ScreenStatus),
             '64-token prefixes do not establish complete-answer quality.',
             'Changed or unknown CPU conditions make timing inconclusive; rerun before a timing decision.',
             'Native adapter basis/logits and independent full-answer review remain separate requirements.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
