@@ -28,15 +28,14 @@ The publisher reports uneven instruction following, tool use and open-ended codi
 [Swift's evaluation and limitations](https://ukisai.com/swift-bonsai-2#evaluation) and its
 [evaluation artifact](https://huggingface.co/ukisai/Swift-Bonsai-2-GGUF/blob/main/benchmark_results.json).
 
-The pinned Prism CPU runtime completes a bounded 16-token Swift decode check. Current-weight PTQ1
-also decodes and saves 1.173 GiB of file payload, but uses different activation arithmetic. The
-experimental Rust engine has selected NEON kernels and a hybrid graph. See the [memory
-assessment](swift-memory.md) and [runtime contract](native-rust-engine.md) for bounded source
-evidence. Outstanding release/profile qualification lives in the [central TODO](../PLAN.md).
+The [Swift artifact/memory contract](swift-memory.md) records bounded 16-token
+Prism CPU decode and current-weight PTQ1 results; the [Rust runtime contract](native-rust-engine.md)
+owns its NEON/hybrid-graph evidence. These checks do not establish complete-answer
+performance. [PLAN.md](../PLAN.md) owns outstanding release/profile qualification.
 
 Snapdragon TPS, sustained comfort, creative quality, GPU/NPU profiles, daily-service isolation
 and actual-model application acceptance remain unqualified. Follow [validation policy](validation.md)
-and the independent [LoRA performance/quality gates](lora-qualification.md).
+and the independent [LoRA performance/quality gates](swift-lora.md#standard-profile-qualification).
 
 ## X1/X2 configuration evidence
 
@@ -142,4 +141,4 @@ Measure first generated PCM separately from first audible output, chunk supply g
 long-read peak memory and combined chat/speech use in target-device CI. Average
 faster-than-real-time synthesis can still stall individual chunks, while overlap contends with
 Swift/native rendering. Framing/ownership checks do not replace these measurements or independent
-listening; this survey ran no model or benchmark.
+listening.

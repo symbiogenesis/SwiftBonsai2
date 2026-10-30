@@ -1,11 +1,11 @@
-# Swift pretrained LoRA
+# Swift LoRA: artifact, basis and qualification
 
 The pinned OrcaRouter adapter passes bounded native ARM64 loading/decode;
 **effectiveness, correctness and quality on Swift remain unqualified**. The native app
 enables it experimentally at scale **1.3**; `Start-Chat.ps1 -NoAbliterateLora` opts out.
 Settings accepts 0 to 2 in 0.1 steps for the next response and every Extra effort pass,
-without reloading; zero disables correction but retains the adapter. The owner chose
-the default without establishing an optimum or standard/daily-service acceptance.
+without reloading; zero disables correction but retains the adapter. This default
+has no established optimum or standard/daily-service acceptance.
 The broker also exposes an explicit development option. No local training is needed.
 [PLAN.md](../PLAN.md#creative-quality-adapters-and-memory) owns remaining work.
 
@@ -87,7 +87,7 @@ replacement. Each of 128 linear sites adds two rank-1 multiplications, scale and
 addition; the embedding uses lookup plus multiplication. Backend buffers, graph nodes,
 intermediates and changed lifetimes add overhead beyond the file's payload.
 
-Recorded 16-token checks exited zero with peak Job commit of **2,074,329,088 bytes**
+Bounded 16-token checks pass with peak Job commit of **2,074,329,088 bytes**
 with the adapter and **1,487,458,304 bytes** for the base: a diagnostic difference of
 **586,870,784 bytes (559.68 MiB)**. These separate process counters exclude mapped
 weights and do not isolate adapter allocation. They establish bounded loading/decode,
@@ -132,10 +132,117 @@ results; bit identity is part of this contract.
 Quantizing factors, reducing rank/scale, pruning sites or merging into the ternary base
 changes the correction or weights; these are outside lossless allocation work.
 
-## Required standard-profile qualification
+## Standard-profile qualification
 
-The [fixed LoRA contract and paired CI procedure](lora-qualification.md) define
-per-prompt throughput, independent human quality, memory and native correctness.
-All must pass; reduced refusals or memory cannot offset a primary regression. Its
-scale-one/512-token harness does not qualify app scale 1.3, broader creative/comfort
-behavior or daily service.
+Standard-profile acceptance requires **decode throughput and output quality each to
+match or improve on the same model without the adapter**. Target-device evaluation,
+native correctness evidence and independent human review remain pending. The fixed
+scale-one/512-token harness below does not qualify app scale 1.3, broader creative
+quality, comfort or daily service.
+
+### Fixed acceptance contract
+
+[swift-lora.qualification.json](../config/swift-lora.qualification.json) pins four
+general/creative prompts, three repetitions, alternating baseline/adapter order, fresh processes,
+seed 42, greedy sampling, a 512-token cap, 8K FP16 context, 128/64 batch/microbatch,
+four CPU threads and exact artifact identities.
+
+Every prompt must independently pass all three requirements:
+
+| Measure | Requirement |
+| --- | --- |
+| Decode throughput | Median ratio **≥ 1.0** against no LoRA. |
+| Human-reviewed quality | Every applicable dimension **≥ 3/4**, with median no lower than baseline; any unwanted adapter refusal rejects quality. |
+| Memory | Median peak Job-commit premium **≤ 768 MiB**, within the unchanged **11.5 GiB** Job cap and **4 GiB** available-physical-memory floor. |
+
+Reduced refusals, shorter answers and memory savings cannot offset either primary
+failure. Job commit excludes mapped weights; the one-second physical watchdog is not a
+continuous peak-RAM measurement. The memory premium is a policy allowance, not measured
+adapter allocation.
+
+The standard scorer and [PTQ1 prefix screen](swift-memory.md#bounded-decision-screen-interface)
+validate the Job cap against compiled Swift process policy. Contract-hash checks
+reject captures under the obsolete 12 GiB scoring allowance; recapture rather than
+rewrite evidence or review hashes.
+
+### Capture on the target device
+
+The manually dispatched [workflow](../.github/workflows/swift-lora-qualification.yml)
+runs only on `main`, using a Windows ARM64 self-hosted Snapdragon X Elite runner
+labelled `swift-bonsai-snapdragon` and a read-only token. The owner must provide the
+runner and already provisioned external artifacts; the workflow downloads no model
+weights. PQ2 is the default. The exact current-weight PTQ1 export is a separate fixed
+comparison because its activation quantization differs.
+
+Inspect the plan locally without model loading or benchmarking:
+
+```powershell
+./scripts/Invoke-LoraQualification.ps1 -DataDirectory "$env:LOCALAPPDATA/SwiftBonsai2" -PlanOnly
+```
+
+Actual capture rejects local execution. CI retains 24 paired samples plus four
+loaded-at-zero controls, including completed samples before any later batch failure.
+
+| Capture component | Contract |
+| --- | --- |
+| Integrity and lifetime | Verify the complete publisher package/model/adapter, retain write/delete-denying handles and copy the verified adapter into a unique external temp lane. Every process enters a one-process kill-on-close Windows Job at creation, with ten-minute deadline and bounded diagnostics. |
+| Receipts | Rust parses timings, strictly decodes UTF-8 and hashes exact responses. Each sample has `capture.json`, raw stdout and `diagnostics.json`; completed supervision is written last. PowerShell assembles paired evidence. Upload controls, stdout/logs/arguments/counters/failures; exclude model/adapter files. |
+| Scale | The pinned [`--lora-scaled` parser](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/common/arg.cpp) splits every colon in `FNAME:SCALE`; relative filenames avoid drive-colon ambiguity. [Zero scale](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/src/llama-context.cpp) loads the adapter without its active graph branch. |
+| Throughput | Native single-token **eval-run count / eval time**, from the pinned [stderr timing printer](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/common/sampling.cpp), invariant decimals, missing/duplicate/invalid counters rejected. `decodeTokens` counts eval runs: final sampled tokens normally are not decoded, and a one-token prompt remainder may count. [Completion diagnostics](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/tools/completion/completion.cpp) cross-check sampler accepts minus verbose-prompt tokens, including EOG; visible text is not a token counter. |
+| Limits | Exact stdout preserves reasoning, EOG and trailing newlines; EOG is not an authoritative finish reason. Wall time includes startup; first-token latency, power and thermals are absent. This small greedy corpus proves neither broad creative quality nor statistical equivalence. |
+
+Broader useful-completion comparisons separately account for prompt processing,
+first-token latency, decode throughput, generated/reasoning tokens, response time,
+retries and resources under equal budgets. Fewer refusals alone cannot prove improvement.
+
+### Independent review and correctness evidence
+
+`evidence.json` binds the LF-normalized UTF-8 contract and matched controls by hash. The
+capture reports SSM basis verification, zero-scale logits and nonzero logits application
+as pending: completion exposes no logits or generated token IDs. Native writer-level SSM
+basis, loaded-at-zero response/logits identity and nonzero application are prerequisites
+for interpreting effects; response changes or successful exits cannot satisfy them.
+Capture identity binds the exact model, adapter, runtime, template, sampler, context,
+batching, threads and seed. Failed generations and individual regressions remain
+visible.
+
+After external human review, score the capture without loading a model:
+
+```powershell
+./scripts/Get-LoraQualification.ps1 -EvidencePath C:/external/evidence.json -ReviewPath C:/external/review.json
+```
+
+Supply a genuine review of every sample in this form:
+
+```json
+{
+  "schemaVersion": 1,
+  "source": "external-human-review",
+  "attestation": "I reviewed the exact captured responses without automated scoring.",
+  "runId": "COPY_FROM_CAPTURE",
+  "contractSha256": "COPY_FROM_CAPTURE",
+  "reviews": [{
+    "sampleId": "s0001",
+    "responseSha256": "COPY_EXACT_RESPONSE_HASH",
+    "reviewerId": "REVIEWER",
+    "humanReviewed": true,
+    "reviewedAtUtc": "2026-10-23T18:00:00Z",
+    "answerComplete": true,
+    "refused": false,
+    "scores": { "instructionFollowing": 3, "correctness": 3, "coherence": 3 },
+    "rationale": "Replace with a specific assessment of this exact response."
+  }]
+}
+```
+
+Creative prompts also require `creativeUsefulness` under the fixed 0-4 rubric.
+Broader fiction/art acceptance separately covers dialogue, continuity, tone,
+composition, sensitive permitted themes, coherence, instruction following, refusal,
+repetition and usable completions. Example scores illustrate the schema, not actual
+reviews; one response cannot settle the scale.
+The scorer rejects malformed/hash-mismatched reviews but cannot authenticate reviewers
+or attestations. Missing reviews/native evidence stay pending; known regressions reject.
+
+`StandardProfileMayEnable` becomes true only when all implemented mandatory gates pass.
+The scorer enables no serving profile, and daily security and broader creative/comfort
+gates remain separate.

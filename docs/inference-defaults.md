@@ -2,7 +2,7 @@
 
 Chat defaults to thinking off and preserves the native template and publisher's evaluated sampler.
 Thinking is opt-in; its evaluated configuration remains available without a claim that it is best
-for this laptop or creative writing. Daily chat and Swift serving remain under development.
+for this laptop or creative writing. Actual-model application acceptance remains pending.
 
 ## Applied defaults
 
@@ -32,9 +32,10 @@ For exact counting and generation, the broker uses the identical canonical body 
 is preserved. Clients must retain/supply assistant-only text `reasoning_content` alongside answers;
 both consume context. The broker cannot recover omitted history.
 
-Fixed paired LoRA qualification retains its separate greedy/template controls, not the interactive
-sampler. Native Rust token-level reference also defaults to greedy with explicit seeded sampling;
-its SplitMix64 contract proves no Prism RNG parity and is not the chat backend.
+The [paired LoRA qualification](swift-lora.md#fixed-acceptance-contract) uses separate
+greedy/template controls. Native Rust token-level reference also defaults to greedy
+with explicit seeded sampling; its SplitMix64 contract proves no Prism RNG parity
+and is not the chat backend.
 
 ## Experimental extra effort mode
 
@@ -98,7 +99,7 @@ reservation. Retain native RoPE: Qwen warns static YaRN can affect short texts. 
 context does not itself improve accuracy. Offload, flash, threads, batches and prefix reuse need
 backend/device evidence; other-hardware throughput is not better answer quality.
 
-Optional abliteration retains [independent TPS/quality gates](lora-qualification.md); fewer refusals
+Optional abliteration retains [independent TPS/quality gates](swift-lora.md#standard-profile-qualification); fewer refusals
 prove neither reasoning nor prose gains. Defaults do not promote adapters, representations,
 accelerators or daily-service profiles.
 
