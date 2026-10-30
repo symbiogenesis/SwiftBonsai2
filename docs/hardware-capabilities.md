@@ -104,6 +104,13 @@ Retained **2026-10-29 X2** observations remain distinct:
 Neither probe ran a model, shader or benchmark. The shipped command has no tool-policy retry;
 CPU fallback and worker mitigations remain required.
 
+The [fresh structured X2 failure receipt](evidence/vulkan-x2-worker-failure.json) binds
+source `fe68af25baa713956a516b9d6d7ca7b719374d24`, the exact ARM64 Release maintenance
+executable and raw diagnostic digests. It reproduces `instance-creation` / `-9`, loader
+1.3.301 and application 1.3.0 under the unchanged headless envelope. This narrows the
+observable failure stage; it does not resolve the DLL/policy/resource cause or qualify
+GPU worker access. External raw diagnostics remain temporary rather than durably archived.
+
 ### Native OpenCL observations
 
 The same `-ToolPath` adds `NativeOpenClObservations` from bounded `host-opencl`: GPU information

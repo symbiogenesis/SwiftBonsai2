@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "kind": "runner-vulkan-worker-failure-evidence",
+  "captured_date": "2026-10-29",
+  "source_commit": "fe68af25baa713956a516b9d6d7ca7b719374d24",
+  "tool": {
+    "name": "bonsai-tools.exe",
+    "bytes": 3102720,
+    "sha256": "955d924e20efdb9ec0e39f2515dad945b625eb57cc3c0494e6366eec855f020b"
+  },
+  "build": {
+    "target": "aarch64-pc-windows-msvc",
+    "toolchain": "nightly-2026-10-22",
+    "rustc_commit": "1a2c4797ef2570bd76ca5dee34449169bc7dc457",
+    "profile": "release",
+    "locked": true,
+    "offline": true,
+    "maximum_jobs": 4,
+    "cargo_lock_sha256": "adbb55b8b626cea4dd6430bb73877eda3f373f555058be66fb04f4afad337ab9"
+  },
+  "device": {
+    "processor_name": "Snapdragon(R) X2 Elite Extreme - X2E94100 - Qualcomm Oryon(TM) CPU",
+    "source": "HKLM/HARDWARE/DESCRIPTION/System/CentralProcessor/0/ProcessorNameString",
+    "identity_qualification": "observed-registry-name-only"
+  },
+  "enforced_policy": {
+    "launcher": "OwnedProcess::start",
+    "headless_mitigations": [
+      "win32k-denied",
+      "extension-points-disabled",
+      "remote-images-denied",
+      "low-integrity-images-denied",
+      "heap-termination"
+    ],
+    "memory_limit_bytes": 536870912,
+    "active_process_limit": 1,
+    "deadline_seconds": 10,
+    "stop_timeout_seconds": 10,
+    "maximum_stdout_bytes": 1048576,
+    "maximum_stderr_bytes": 1048576,
+    "job_ownership": "kill-on-close; retained through confirmed teardown",
+    "weaker_policy_retry": false
+  },
+  "query": {
+    "adapters": null,
+    "application_api_version": 4206592,
+    "architecture": "aarch64",
+    "backend_ready": false,
+    "error": "native-vulkan-query-unavailable",
+    "execution_policy": "headless-worker",
+    "failure": {
+      "classification": "query-failed-device-support-unknown",
+      "stage": "instance-creation",
+      "vulkan_result": -9
+    },
+    "kind": "runner-native-gpu-observations",
+    "loader_api_version": 4206893,
+    "qualification": "unqualified",
+    "required_execution_policy": "headless-worker",
+    "schema_version": 1,
+    "source": "system-vulkan-loader",
+    "status": "unknown"
+  },
+  "raw_evidence": {
+    "directory_name": "SwiftBonsai-GpuInventory-19928-1793335903537686100",
+    "files": [
+      {
+        "name": "request.json",
+        "bytes": 2,
+        "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      {
+        "name": "stdout.json",
+        "bytes": 470,
+        "sha256": "ebc00c2bc3736a83e7711b50e93f6717845cfe31ab71314da041a050a68cce58"
+      },
+      {
+        "name": "stderr.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "retention": "external temporary diagnostics; durable archival is not established"
+  },
+  "interpretation": {
+    "worker_access": "not-established",
+    "device_vulkan_support": "unknown",
+    "failing_dll_or_policy_cause": "unknown",
+    "models_executed": 0,
+    "shaders_executed": 0,
+    "default_profile_changed": false,
+    "qualification": "unqualified"
+  }
+}
