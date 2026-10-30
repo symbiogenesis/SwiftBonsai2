@@ -50,7 +50,7 @@ Assert ($null -ne $definition) 'The bounded LLVM extraction boundary is missing.
     Expand-CandidateLlvmArchive -Zstd 'fixture-zstd.exe' -Tar 'fixture-tar.exe' -Archive $archive -Destination $destination
     Assert ($calls.Count -eq 2) 'LLVM extraction did not use separate decoder and tar operations.'
     Assert ($calls[0].Executable -ceq 'fixture-zstd.exe' -and $calls[0].LogName -ceq 'llvm-decompress.txt' -and
-        ($calls[0].Arguments -join '|') -ceq (@('--decompress', '--long=31', '--output', $plainTar, $archive) -join '|')) 'LLVM decoder lost its explicit window bound or output path.'
+        ($calls[0].Arguments -join '|') -ceq (@('--decompress', '--long=31', '-o', $plainTar, $archive) -join '|')) 'LLVM decoder must use the observed zstd 1.5.7 -o output syntax and explicit window bound.'
     Assert ($calls[1].Executable -ceq 'fixture-tar.exe' -and $calls[1].LogName -ceq 'llvm-extract.txt' -and
         ($calls[1].Arguments -join '|') -ceq (@('-xf', $plainTar, '-C', $destination) -join '|')) 'System tar was given compressed LLVM input.'
     Assert ($calls[0].TimeoutSeconds -eq 300 -and $calls[1].TimeoutSeconds -eq 300) 'An extraction operation lost its deadline.'

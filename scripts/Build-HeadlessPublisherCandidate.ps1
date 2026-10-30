@@ -70,7 +70,8 @@ function Expand-CandidateLlvmArchive {
     if ([IO.File]::Exists($plainTar)) { throw 'LLVM decompression output must be new.' }
     # System tar's implicit Zstandard decoder rejects this frame's window.
     # The hosted zstd CLI explicitly permits at most 2 GiB (windowLog 31).
-    Invoke-CandidateTool -Executable $Zstd -Arguments @('--decompress', '--long=31', '--output', $plainTar, $Archive) -LogName 'llvm-decompress.txt' -TimeoutSeconds 300 | Out-Null
+    # Hosted zstd 1.5.7 supports -o OUTPUT, not a --output alias.
+    Invoke-CandidateTool -Executable $Zstd -Arguments @('--decompress', '--long=31', '-o', $plainTar, $Archive) -LogName 'llvm-decompress.txt' -TimeoutSeconds 300 | Out-Null
     Invoke-CandidateTool -Executable $Tar -Arguments @('-xf', $plainTar, '-C', $Destination) -LogName 'llvm-extract.txt' -TimeoutSeconds 300 | Out-Null
 }
 try {
