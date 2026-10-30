@@ -154,7 +154,7 @@ try {
         "-DCMAKE_C_COMPILER=$cmakeCompiler", "-DCMAKE_CXX_COMPILER=$cmakeCompiler", "-DCMAKE_LINKER=$cmakeLinker",
         "-DCMAKE_RC_COMPILER=$cmakeRc", "-DCMAKE_MT=$cmakeMt",
         '-DCMAKE_C_FLAGS=/clang:-march=armv8.7-a /clang:-fvectorize /clang:-ffp-model=fast /clang:-fno-finite-math-only',
-        '-DCMAKE_CXX_FLAGS=/clang:-march=armv8.7-a /clang:-fvectorize /clang:-ffp-model=fast /clang:-fno-finite-math-only',
+        '-DCMAKE_CXX_FLAGS=/EHsc /clang:-march=armv8.7-a /clang:-fvectorize /clang:-ffp-model=fast /clang:-fno-finite-math-only',
         '-DBUILD_SHARED_LIBS=ON', '-DGGML_CPU=ON', '-DGGML_NATIVE=OFF', '-DGGML_BACKEND_DL=OFF', '-DGGML_CPU_ALL_VARIANTS=OFF',
         '-DGGML_OPENMP=OFF', '-DGGML_CPU_KLEIDIAI=OFF', '-DGGML_LLAMAFILE=OFF', '-DGGML_RPC=OFF',
         '-DGGML_CUDA=OFF', '-DGGML_VULKAN=OFF', '-DGGML_OPENCL=OFF', '-DGGML_HEXAGON=OFF',
