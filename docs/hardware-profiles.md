@@ -1,18 +1,18 @@
 # Automatic Snapdragon X1/X2 selection contract
 
-Current released policies are CPU-only: no automatic selector or qualified accelerator default is
-established. [PLAN.md](../PLAN.md#hardware-selection) tracks outstanding work; [capability
-contracts](hardware-capabilities.md) describe implemented discovery and evidence APIs. Runner owns
+Released policies are CPU-only; no automatic selector or qualified accelerator default exists.
+[PLAN.md](../PLAN.md#hardware-selection) tracks the work, and [capability
+contracts](hardware-capabilities.md) define implemented discovery/evidence APIs. Runner owns
 discovery, selection, verification and admission. [Prism Inference][prism] owns kernels,
-graph/device/state execution and effective-placement reporting; the versioned handshake keeps kernel
-eligibility rules out of the broker.
+graph/device/state execution and effective-placement reporting. Their versioned handshake keeps
+kernel eligibility rules out of the broker.
 
 ## Device classes and observed identity
 
-The 2026-10-29 development inventory reports an ASUS Zenbook A16, Snapdragon X2 Elite Extreme
-X2E94100, 18 physical/logical cores and Adreno X2-90 driver 32.0.149.0. This identifies a target,
-not optional ISA, performance or backend readiness. The [X2 CPU screen](x2-cpu-optimization.md)
-retains its phase-specific thread controls and exact device observations.
+The 2026-10-29 development target is an ASUS Zenbook A16 with Snapdragon X2 Elite Extreme
+X2E94100. The [X2 CPU screen](x2-cpu-optimization.md) retains its exact CPU/GPU/driver observations
+and phase-specific thread controls; inventory alone establishes neither kernel eligibility nor
+performance/backend readiness.
 
 | Target | Candidates | Required independent evidence |
 | --- | --- | --- |
@@ -30,10 +30,9 @@ not physical RAM budgets. [Q1/Q2 Hadamard support][q2-hadamard] does not establi
 activation arithmetic, grouped recurrent transforms, adapters or signed distribution. A catalog for
 existing binaries cannot sign rebuilt code.
 
-Discovery reports, scoped CPU digests and verified runtime capability probes identify limited
-observations, not accepted profiles. CPU records exclude accelerator API/firmware/readiness and
-broader optional ISA/topology. Failed probes remain unknown. Live RAM/power affects admission, not
-immutable compatibility identity.
+[Discovery reports and scoped digests](hardware-capabilities.md) retain observations, not accepted
+profiles. Unobserved ISA/topology and accelerator API/firmware/readiness stay unknown; failed probes
+do not supply defaults. Live RAM/power affects admission, not immutable compatibility identity.
 
 ## Eligibility, ranking and admission
 
@@ -60,10 +59,10 @@ unavailable preferred accelerator may yield an eligible qualified CPU fallback; 
 strict-backend diagnostic fails. Never silently change model, sampler, adapter, precision, context
 or full output reservation to fit a profile.
 
-Report requested/effective profile, device class, phase placement, build/evidence identity and a
-value-free fallback reason; exclude prompts/tensors. The [native Rust UI](ui-architecture.md)
-presents a simple automatic choice. Tuning remains trusted configuration, excluding arbitrary public
-arguments, paths and inherited environment overrides.
+Diagnostics report requested/effective profile, device class, phase placement, build/evidence
+identity and a value-free fallback reason, excluding prompts/tensors. The [native Rust
+UI](ui-architecture.md) presents a simple automatic choice; tuning stays in trusted configuration,
+without arbitrary public arguments/paths or inherited environment overrides.
 
 ## Prefill, decode and complete state
 
@@ -83,9 +82,9 @@ rebuild. Otherwise retain the eligible plan or return a bounded recovery result;
 partial work on another backend. Driver changes invalidate affected accelerator evidence/caches, not
 an independently compatible CPU control.
 
-Every route preserves one active conversation, authentication, exact token counts, deadlines,
-cancellation, admission and daily isolation. Rust acceleration also preserves the audited safe
-device and replacement boundaries in the [runtime contract](native-rust-engine.md).
+Every route preserves the [broker contract](broker-policy.md): one active conversation,
+authentication, exact counts, deadlines, cancellation, admission and daily isolation. Rust
+acceleration also preserves the [runtime's safe device/replacement boundaries](native-rust-engine.md).
 
 ## Qualification scope
 
@@ -101,11 +100,11 @@ fallback, strict rejection and complete-state handoff/failure/cancellation. Simu
 cases; execute optional instructions/accelerators only on eligible hardware.
 
 Promotion follows [PLAN.md's criteria](../PLAN.md#promotion-criteria), including independent [LoRA
-TPS/quality](swift-lora.md), installation/rollback and affected-upgrade requalification. Qualified
-families can coexist with unsupported classes or qualified CPU fallbacks.
-[Validation](validation.md) permits local builds/focused untimed checks; full suites, benchmarks and
-performance captures remain main-only CI on matching target devices. Documentation changes neither
-enable profiles nor update pins.
+TPS/quality](lora-qualification.md), installation/rollback and affected-upgrade requalification.
+Qualified families may coexist with unsupported classes and qualified CPU fallbacks. Under
+[validation policy](validation.md), local builds/focused untimed checks are allowed; full suites,
+benchmarks and performance captures require main-only CI on matching devices. This contract enables
+no profile and updates no pin.
 
 [x2-specs]: https://www.qualcomm.com/content/dam/qcomm-martech/dm-assets/documents/Snapdragon-X2-Elite-Product-Brief.pdf
 [dma64]: https://github.com/ggml-org/llama.cpp/pull/29197

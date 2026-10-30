@@ -1,8 +1,8 @@
 # Hardware discovery and compatibility contracts
 
-Discovery implements host/runtime inventory and checked profile/evidence structures, without
-selecting profiles. The optional verified model-free runtime probe uses the immutable `0.1.5`
-release lock. [Profile policy](hardware-profiles.md) defines selection;
+Implemented discovery provides host/runtime inventory and checked profile/evidence structures;
+it selects no profiles. The optional verified, model-free runtime probe uses the immutable `0.1.5`
+release lock. [Profile policy](hardware-profiles.md) defines selection, and
 [PLAN.md](../PLAN.md#hardware-selection) tracks outstanding work.
 
 ## Host inventory
@@ -43,9 +43,9 @@ Existing host projection and CPU digest retain their original scope.
 | `isa` | Native ARM64 [Windows feature query][windows-features]: NEON/AdvSimd 19, dot product 43, **NEON I8MM 66**; SVE I8MM 57 is distinct |
 | `host_identity` | Checked speech-build host query: fixed hardware-registry CPU name/architecture/family/model/revision/vendor, `RtlGetVersion` kernel and sorted available feature IDs in `0..256` |
 
-CPU-set IDs/classes do not prove persistent/process-affinity eligibility, optional ISA or core
-names. Windows defines [group-relative indices/classes][cpu-sets]. Power snapshots neither
-change settings nor measure energy; equal values cannot exclude intervening or in-scheme edits.
+Windows CPU sets use [group-relative indices/classes][cpu-sets]; IDs/classes establish neither
+persistent/process-affinity eligibility, optional ISA nor core names. Power snapshots observe
+settings, not energy; equal values cannot exclude intervening or in-scheme edits.
 ISA observations are independent of CPU-set success/.NET digest; non-ARM64 processes report null
 ISA even on ARM hardware. `dispatch_qualified` stays false. False Windows flags mean unsupported
 **or HAL-undetected**. I8MM detection arrived in Windows 11 24H2 / Server 2025; the pinned bindings
@@ -92,8 +92,8 @@ Retained **2026-10-29 X2** observations remain distinct:
 | Shipped headless child | Loader loaded; instance failed `VK_ERROR_INCOMPATIBLE_DRIVER` (`-9`), report unknown | Bounded stderr in external `SwiftBonsai-GpuInventory-15116-1793325174261883700`; cause/hardware support unresolved |
 | Separate ten-second `Invoke-BonsaiNativeProcess` diagnostic | Loader 1.3.301, application 1.3.0, device 1.4.295; `Qualcomm(R) Adreno(TM) X2-90 GPU`; vendor `20803`, device `909329968`, driver `2151018496`; FP16/integer-dot true, subgroup 64 | External task-lane `gpu-tool-policy.json` / `.log`; differing mitigation, provenance and worker access unproven |
 
-Both created only an instance; no model, shader or benchmark ran. The shipped command has no
-tool-policy retry. Preserve CPU fallback and worker mitigations while investigating.
+Both probes were limited to instance-level queries: no model, shader or benchmark ran. The shipped command
+has no tool-policy retry; CPU fallback and worker mitigations remain required.
 
 ### Native OpenCL observations
 
@@ -160,10 +160,10 @@ including objective/workload, without trusting asserted verdicts or authorizing 
 Source ancestry/build provenance/run-capture existence/numerical/quality/resource/security
 acceptance still need review.
 
-Reserved value-free `FallbackReason` codes: `unknown-capability`, `unavailable-backend`,
-`incompatible-runtime`, `incompatible-driver`, `stale-evidence`, `insufficient-memory`,
-`strict-backend-unavailable`. No selector emits them yet; [profile policy](hardware-profiles.md)
-defines future use.
+Reserved value-free `FallbackReason` codes are `unknown-capability`, `unavailable-backend`,
+`incompatible-runtime`, `incompatible-driver`, `stale-evidence`, `insufficient-memory` and
+`strict-backend-unavailable`. [Profile policy](hardware-profiles.md) defines their future use;
+no selector emits them yet.
 
 ## Focused checks
 
