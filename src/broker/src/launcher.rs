@@ -4,6 +4,10 @@
 //! The native sandbox is required unless the direct development caller explicitly
 //! selects the unisolated backend. Same-user interference remains unqualified.
 
+mod identity;
+
+use identity::validate_native_identity;
+
 use crate::{
     artifacts::VerifiedArtifacts,
     launch_policy::{LaunchPlan, LaunchProfile},
@@ -43,8 +47,8 @@ pub const LAUNCH_USAGE: &str = concat!(
     "  --frontend-port <0-or-1024..65535> --backend-port <1024..65535>\n",
     "  [--profile <reference-cpu|swift-pq2-assessment>]\n",
     "  [--native-engine] (requires the pinned Prism inference release and swift-pq2-assessment)\n",
-    "  [--use-abliterate-lora] (pinned adapter; request scale 0..2, default 1.3; Swift Prism CPU server only)\n",
-    "  [--use-repacked-ptq1] (verified current-weight export; Swift Prism CPU server only)\n",
+    "  [--use-abliterate-lora] (pinned adapter; request scale 0..2, default 1.3; Swift CPU only)\n",
+    "  [--use-repacked-ptq1] (verified current-weight export; Swift CPU only)\n",
     "  [--max-waiting <0..8>] [--check-only]\n",
     "Default: reference-cpu. Only compiled model/runtime pins and fixed CPU policies are accepted.\n",
     "Swift defaults to original PQ2 weights; PTQ1 requires explicit selection. Daily use remains unqualified.\n",
@@ -194,10 +198,8 @@ impl LaunchConfig {
             || backend_port == frontend_port
             || max_waiting > MAX_WAITING
             || (native_engine && profile != LaunchProfile::SwiftPq2Assessment)
-            || (use_abliterate_lora
-                && (native_engine || profile != LaunchProfile::SwiftPq2Assessment))
-            || (use_repacked_ptq1
-                && (native_engine || profile != LaunchProfile::SwiftPq2Assessment))
+            || (use_abliterate_lora && profile != LaunchProfile::SwiftPq2Assessment)
+            || (use_repacked_ptq1 && profile != LaunchProfile::SwiftPq2Assessment)
         {
             return Err(LaunchError::Arguments);
         }
@@ -317,8 +319,12 @@ impl LaunchConfig {
 
     fn verify_artifacts(&self, plan: &LaunchPlan) -> Result<VerifiedArtifacts, LaunchError> {
         if self.native_engine {
-            let artifacts = VerifiedArtifacts::verify_model_for_profile(&self.data, self.profile)
-                .map_err(|_| LaunchError::Artifacts)?;
+            let artifacts = VerifiedArtifacts::verify_model_for_profile(
+                &self.data,
+                self.profile,
+                self.uses_repacked_ptq1(),
+            )
+            .map_err(|_| LaunchError::Artifacts)?;
             if artifacts.model() != plan.model_path {
                 return Err(LaunchError::Artifacts);
             }
@@ -372,7 +378,7 @@ impl LaunchConfig {
         validate_external_path(&working_directory).map_err(|_| LaunchError::Path)?;
         let native = self.native_executable_guard()?;
         let (executable, arguments, guard) = if let Some((executable, guard)) = native {
-            let arguments = vec![
+            let mut arguments = vec![
                 OsString::from("--native-engine-child"),
                 OsString::from("--model"),
                 plan.model_path.into_os_string(),
@@ -383,6 +389,15 @@ impl LaunchConfig {
                 OsString::from("--seed"),
                 OsString::from("42"),
             ];
+            if self.uses_repacked_ptq1() {
+                arguments.push("--use-repacked-ptq1".into());
+            }
+            if let Some(adapter) = &plan.adapter {
+                arguments.extend([
+                    OsString::from("--abliterate-lora"),
+                    adapter.path.as_os_str().to_owned(),
+                ]);
+            }
             (executable, arguments, Some(guard))
         } else {
             (plan.executable, plan.arguments, None)
@@ -511,7 +526,14 @@ impl LaunchConfig {
             return Err(error);
         }
         if self.native_engine
-            && !native_identity(self.backend_port, credentials.backend_key(), process.id()).await
+            && !native_identity(
+                self.backend_port,
+                credentials.backend_key(),
+                process.id(),
+                self.uses_repacked_ptq1(),
+                self.use_abliterate_lora,
+            )
+            .await
         {
             process.stop(STOP_TIMEOUT).map_err(|_| LaunchError::Stop)?;
             return Err(LaunchError::Backend);
@@ -706,48 +728,22 @@ async fn healthy(port: u16, key: &str, process_id: u32) -> bool {
     .is_ok_and(|result| result.is_ok())
 }
 
-async fn native_identity(port: u16, key: &str, process_id: u32) -> bool {
+async fn native_identity(
+    port: u16,
+    key: &str,
+    process_id: u32,
+    repacked: bool,
+    adapter: bool,
+) -> bool {
     timeout(Duration::from_secs(2), async {
-        validate_native_identity(&exchange(port, "/v1/models", Some(key), process_id).await?)
+        validate_native_identity(
+            &exchange(port, "/v1/models", Some(key), process_id).await?,
+            repacked,
+            adapter,
+        )
     })
     .await
     .is_ok_and(|result| result.is_ok())
-}
-
-fn validate_native_identity(bytes: &[u8]) -> io::Result<()> {
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Models {
-        data: Vec<crate::Object<NativeModel>>,
-    }
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct NativeModel {
-        id: String,
-        object: String,
-        model_sha256: String,
-        template_sha256: String,
-        runtime: String,
-        context_tokens: usize,
-        seed: u32,
-    }
-    let body = validate_response(bytes, 200)?;
-    let crate::Object(models): crate::Object<Models> =
-        serde_json::from_slice(body).map_err(io::Error::other)?;
-    let [crate::Object(model)] = models.data.as_slice() else {
-        return Err(io::Error::other("native model inventory mismatch"));
-    };
-    if model.id != "Swift-Bonsai-2-PQ2_0"
-        || model.object != "model"
-        || model.model_sha256 != crate::inference::MODEL_SHA256
-        || model.template_sha256 != crate::inference::TEMPLATE_SHA256
-        || model.runtime != "prism-inference"
-        || model.context_tokens != crate::CONTEXT_TOKENS
-        || model.seed != 42
-    {
-        return Err(io::Error::other("native model readiness identity mismatch"));
-    }
-    Ok(())
 }
 
 async fn health_exchange(port: u16, key: &str, process_id: u32) -> io::Result<()> {
@@ -961,14 +957,15 @@ mod tests {
         let mut with_lora = enabled.clone();
         with_lora.push("--use-abliterate-lora".into());
         assert!(LaunchConfig::parse(with_lora).is_ok());
-        for extra in ["--use-repacked-ptq1", "--native-engine"] {
-            let mut rejected = enabled.clone();
-            rejected.push(extra.into());
-            assert_eq!(
-                LaunchConfig::parse(rejected).err(),
-                Some(LaunchError::Arguments)
-            );
-        }
+        let mut rust = enabled.clone();
+        rust.extend(["--native-engine", "--use-abliterate-lora"].map(OsString::from));
+        assert!(LaunchConfig::parse(rust).is_ok());
+        let mut rejected = enabled.clone();
+        rejected.push("--use-repacked-ptq1".into());
+        assert_eq!(
+            LaunchConfig::parse(rejected).err(),
+            Some(LaunchError::Arguments)
+        );
         let mut reference = arguments();
         reference.push("--use-repacked-ptq1".into());
         assert_eq!(
@@ -987,14 +984,15 @@ mod tests {
         );
         let config = LaunchConfig::parse(enabled.clone()).ok();
         assert!(config.is_some_and(|config| config.use_abliterate_lora));
-        for extra in ["--use-abliterate-lora", "--native-engine"] {
-            let mut rejected = enabled.clone();
-            rejected.push(extra.into());
-            assert_eq!(
-                LaunchConfig::parse(rejected).err(),
-                Some(LaunchError::Arguments)
-            );
-        }
+        let mut rust = enabled.clone();
+        rust.push("--native-engine".into());
+        assert!(LaunchConfig::parse(rust).is_ok());
+        let mut rejected = enabled.clone();
+        rejected.push("--use-abliterate-lora".into());
+        assert_eq!(
+            LaunchConfig::parse(rejected).err(),
+            Some(LaunchError::Arguments)
+        );
         let mut reference = arguments();
         reference.push("--use-abliterate-lora".into());
         assert_eq!(
@@ -1124,7 +1122,7 @@ mod tests {
             "template_sha256":crate::inference::TEMPLATE_SHA256,
             "runtime":"prism-inference","context_tokens":8192,"seed":42});
         let body = serde_json::to_string(&json!({"data":[model]}))?;
-        assert!(super::validate_native_identity(&response(&body)).is_ok());
+        assert!(super::validate_native_identity(&response(&body), false, false).is_ok());
         for (field, changed) in [
             ("id", json!("foreign")),
             ("object", json!("list")),
@@ -1138,7 +1136,7 @@ mod tests {
             changed_model[field] = changed;
             let body = serde_json::to_string(&json!({"data":[changed_model]}))?;
             assert!(
-                super::validate_native_identity(&response(&body)).is_err(),
+                super::validate_native_identity(&response(&body), false, false).is_err(),
                 "{field}"
             );
         }
@@ -1148,10 +1146,83 @@ mod tests {
             json!([["positional"]]),
         ] {
             let body = serde_json::to_string(&json!({"data":data}))?;
-            assert!(super::validate_native_identity(&response(&body)).is_err());
+            assert!(super::validate_native_identity(&response(&body), false, false).is_err());
+        }
+        for field in [
+            "weight_representation",
+            "adapter_sha256",
+            "supports_abliteration_scale",
+            "abliteration_scale_range",
+        ] {
+            let mut changed_model = model.clone();
+            changed_model[field] = json!(null);
+            let body = serde_json::to_string(&json!({"data":[changed_model]}))?;
+            assert!(
+                super::validate_native_identity(&response(&body), false, false).is_err(),
+                "{field}"
+            );
         }
         let duplicate = body.replace("\"seed\":42", "\"seed\":42,\"seed\":42");
-        assert!(super::validate_native_identity(&response(&duplicate)).is_err());
+        assert!(super::validate_native_identity(&response(&duplicate), false, false).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn native_readiness_binds_explicit_packing_and_adapter_scale_capability() -> std::io::Result<()>
+    {
+        use super::validate_native_identity;
+        use serde_json::json;
+        use std::io;
+        for (repacked, adapter) in [(true, false), (false, true), (true, true)] {
+            let mut model = json!({
+                "id": if repacked { "Swift-Bonsai-2-current-repacked-PTQ1_0" } else { "Swift-Bonsai-2-PQ2_0" },
+                "object":"model",
+                "model_sha256": if repacked { crate::inference::REPACKED_PTQ1_SHA256 } else { crate::inference::MODEL_SHA256 },
+                "template_sha256":crate::inference::TEMPLATE_SHA256,
+                "runtime":"prism-inference", "context_tokens":8192, "seed":42,
+                "weight_representation": if repacked { "current-repacked-PTQ1_0" } else { "PQ2_0" },
+                "adapter_sha256": adapter.then_some(crate::inference::ADAPTER_SHA256),
+                "supports_abliteration_scale":adapter,
+            });
+            if adapter {
+                model["abliteration_scale_range"] = json!([0, 2]);
+            }
+            let body = serde_json::to_string(&json!({"data":[model]}))?;
+            assert!(validate_native_identity(&response(&body), repacked, adapter).is_ok());
+            assert!(validate_native_identity(&response(&body), !repacked, adapter).is_err());
+            assert!(validate_native_identity(&response(&body), repacked, !adapter).is_err());
+            for (field, value) in [
+                ("weight_representation", json!("other")),
+                ("adapter_sha256", json!("0".repeat(64))),
+                ("supports_abliteration_scale", json!(!adapter)),
+                ("abliteration_scale_range", json!([0, 3])),
+                ("abliteration_scale_range", json!(null)),
+            ] {
+                let mut changed = model.clone();
+                changed[field] = value;
+                let body = serde_json::to_string(&json!({"data":[changed]}))?;
+                assert!(
+                    validate_native_identity(&response(&body), repacked, adapter).is_err(),
+                    "{field}"
+                );
+            }
+            for field in [
+                "weight_representation",
+                "adapter_sha256",
+                "supports_abliteration_scale",
+            ] {
+                let mut changed = model.clone();
+                changed
+                    .as_object_mut()
+                    .ok_or_else(|| io::Error::other("fixture"))?
+                    .remove(field);
+                let body = serde_json::to_string(&json!({"data":[changed]}))?;
+                assert!(
+                    validate_native_identity(&response(&body), repacked, adapter).is_err(),
+                    "{field}"
+                );
+            }
+        }
         Ok(())
     }
 

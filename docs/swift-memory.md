@@ -163,8 +163,9 @@ serialized-size disadvantage alone excludes the proposed layout.
 `scripts/Start-Chat.ps1 -UseRepackedPtq1` selects only this verified artifact on the pinned
 publisher Prism CPU server; direct app/broker launches use `--use-repacked-ptq1`. The
 artifact handle stays verified/held through owned teardown. Arbitrary paths, checkpoint
-substitutions and missing-file fallback are unsupported. The experimental Rust service
-still rejects PTQ1; codec/operator support does not establish service parity.
+substitutions and missing-file fallback are unsupported. The explicit experimental
+`-NativeEngine` route implements this selection and the approved adapter in Rust
+0.1.7; service implementation alone does not establish release qualification.
 
 Both packings retain the [CPU resource policy](#native-cpu-status), context, retry
 and recovery. Serialized savings alone do not lower admission or promote PTQ1.

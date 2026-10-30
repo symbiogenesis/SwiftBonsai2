@@ -14,6 +14,10 @@ use crate::{Object, launcher::LaunchError};
 const LOCK: &str = include_str!("../../../config/prism-inference.lock.json");
 pub(super) const MODEL_SHA256: &str =
     "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5";
+pub(super) const REPACKED_PTQ1_SHA256: &str =
+    "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5";
+pub(super) const ADAPTER_SHA256: &str =
+    "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42";
 pub(super) const TEMPLATE_SHA256: &str =
     "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041";
 

@@ -268,7 +268,7 @@ bypass the script guard. Installed launches use [package verification](chat-pack
 | --- | --- | --- |
 | Publisher Prism CPU, original Swift PQ2 | Default; pinned adapter enabled | Adapter scale follows response settings. Missing/altered adapters fail with provisioning guidance, without download or fallback. |
 | Publisher Prism CPU, current-weight PTQ1 export | `-UseRepackedPtq1` (app/broker `--use-repacked-ptq1`) | Same adapter opt-out/scale. Missing/changed bytes reject; no older publisher PTQ1 substitution or fallback. |
-| Experimental native Rust 0.1.6, original Swift PQ2 | `-NativeEngine -NoAbliterateLora` (app/broker `--native-engine`) | Rejects PTQ1/adapters before preparation; no engine switch after failure. Separate [PTQ1 qualification](swift-memory.md#current-weight-ptq1-option) is pending. |
+| Experimental native Rust 0.1.7, original Swift PQ2 or exact current-weight PTQ1 | `-NativeEngine`, optionally `-UseRepackedPtq1` and `-NoAbliterateLora` (app/broker `--native-engine`) | Exact model, approved adapter and representation-aware readiness are verified; no engine switch after failure. Separate [PTQ1 qualification](swift-memory.md#current-weight-ptq1-option) is pending. |
 
 `-NoAbliterateLora` (direct app `--no-abliterate-lora`) omits the adapter and disables
 its control. Provision the native release before selecting it:
@@ -572,13 +572,15 @@ or a trusted `BONSAI_TOOLS_PATH` to avoid building the maintenance tool. See the
 [capability contract](hardware-capabilities.md#runtime-inventory).
 
 Run from an external native working directory. The selection accepts only the
-original Swift model and verified release, with no adapter/alternate model/overrides.
+original Swift model or explicit verified current-weight PTQ1 export and the verified
+release. The exact approved adapter is optional; arbitrary models/adapters and backend
+overrides are unsupported.
 It retains the executable against replacement, fixes seed 42 and requires matching
 native identity before frontend readiness. Ordinary 11.5 GiB Job / 15.5 GiB admission,
 4 GiB watchdog, protected keys and listener checks apply. Interrupted generation
 closes admission and stops the backend; relaunch creates a fresh owned instance.
 
-The [runtime contract](native-rust-engine.md) defines release 0.1.6's supported
+The [runtime contract](native-rust-engine.md) defines release 0.1.7's supported
 loading, logits/state, tokenizer, sampler and recovery behavior;
 [PLAN.md](../PLAN.md#runtime-and-correctness) owns pending qualification.
 Private child protocol alone proves neither Job ownership nor same-user bypass

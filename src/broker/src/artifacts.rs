@@ -81,8 +81,9 @@ impl VerifiedArtifacts {
     pub(crate) fn verify_model_for_profile(
         data: &Path,
         profile: LaunchProfile,
+        use_repacked_ptq1: bool,
     ) -> Result<Self, ArtifactError> {
-        let (model, model_guard) = Self::verify_selected_model(data, profile, false)?;
+        let (model, model_guard) = Self::verify_selected_model(data, profile, use_repacked_ptq1)?;
         Ok(Self {
             executable: PathBuf::new(),
             model,
@@ -207,7 +208,7 @@ mod tests {
         // Identity, rather than Path, proves admission reached the model without
         // first opening a C++ archive or requiring its installed runtime tree.
         assert_eq!(
-            VerifiedArtifacts::verify_model_for_profile(&data, profile).err(),
+            VerifiedArtifacts::verify_model_for_profile(&data, profile, false).err(),
             Some(ArtifactError::Identity)
         );
         assert!(!data.join("downloads").exists());
