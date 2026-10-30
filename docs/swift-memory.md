@@ -1,36 +1,33 @@
 # Swift Bonsai 2 memory assessment
 
-**Swift Bonsai 2 is the current memory and implementation priority.** The
-[Qwen reference](model-selection.md) remains reproducible through its default
-lock; it is not a compatible Swift profile. Swift's bounded native CPU decode
-passes, but creative quality, performance and daily isolation remain unqualified.
-Daily chat is disabled. No new training or fine-tuning is planned on this machine.
+**Swift is the memory and implementation priority.** Its bounded native CPU decode
+passes; creative quality, performance and daily-service isolation remain unqualified.
+The reproducible [Qwen reference](model-selection.md) has a separate lock/profile. No
+local training or fine-tuning is planned.
 
 ## Pinned artifacts
 
 [swift-assessment.lock.json](../config/swift-assessment.lock.json) pins
-`Swift-Bonsai-2-PQ2_0.gguf` at revision
-`a3bdac086bbb6b04d87d0108d18943b5f63868f7`: **7,206,168,928 bytes (6.71 GiB)**.
-This is the current merged-weight release, distinct from the earlier PTQ
-checkpoint. It is about 5.53 GiB smaller than Qwen's file; file size does not
-measure peak RAM or speed. Sources: [publisher](https://ukisai.com/swift-bonsai-2)
-and [immutable metadata](https://huggingface.co/api/models/ukisai/Swift-Bonsai-2-GGUF/revision/a3bdac086bbb6b04d87d0108d18943b5f63868f7?blobs=true).
+`Swift-Bonsai-2-PQ2_0.gguf` at revision `a3bdac086bbb6b04d87d0108d18943b5f63868f7`:
+**7,206,168,928 bytes (6.71 GiB)**. The merged-weight release is distinct from the
+earlier PTQ checkpoint and about 5.53 GiB smaller than Qwen; file size is not peak RAM
+or speed. Sources: [publisher](https://ukisai.com/swift-bonsai-2) and [immutable
+metadata](https://huggingface.co/api/models/ukisai/Swift-Bonsai-2-GGUF/revision/a3bdac086bbb6b04d87d0108d18943b5f63868f7?blobs=true).
 
-The native ARM64 CPU package is Prism `prism-b10787-73bfe6c`, commit
-`73bfe6cc485554822f80c473a3c0c4f25e80f41b`. Stock upstream binaries do not support
-its PQ2/PTQ types. Prism supplies packed ARM NEON kernels and the required
-transforms/graph support. Full source builds require Clang; the upstream MSVC
-builder cannot be reused unchanged. Package integrity and architecture checks
-do not attest source-to-binary correspondence or model correctness. See
-[backend support](https://github.com/PrismML-Eng/Bonsai-demo/blob/main/BACKEND-SUPPORT.md).
+The native ARM64 package is Prism `prism-b10787-73bfe6c`, commit
+`73bfe6cc485554822f80c473a3c0c4f25e80f41b`: packed NEON, transforms and graph support
+for PQ2/PTQ, which stock upstream binaries lack. Full builds require Clang; the upstream
+MSVC builder needs changes. Integrity/architecture checks do not attest source-to-binary
+correspondence or model correctness. See [backend
+support](https://github.com/PrismML-Eng/Bonsai-demo/blob/main/BACKEND-SUPPORT.md).
 
 ## Actual artifact census
 
 The complete file passed size/SHA-256 verification. Its
-[metadata](../config/swift.metadata.json) records 851 tensors across PQ2/F32/BF16,
-64 main blocks, no MTP block, and tokenizer/template identities. The streamed
-[census](../config/swift.pq2-census.json) used a 64 KiB payload buffer and found
-402 PQ2 tensors, 209,920,000 blocks and 26,869,760,000 encoded symbols:
+[metadata](../config/swift.metadata.json) records 851 tensors across PQ2/F32/BF16, 64
+main blocks, no MTP block, and tokenizer/template identities. The streamed
+[census](../config/swift.pq2-census.json) used a 64 KiB payload buffer and found 402 PQ2
+tensors, 209,920,000 blocks and 26,869,760,000 encoded symbols:
 
 | Symbol | Count |
 | --- | ---: |
@@ -39,41 +36,37 @@ The complete file passed size/SHA-256 verification. Its
 | +1 | 9,023,997,939 |
 | +2 | 0 |
 
-Every scale is finite and nonzero. All 402 tensors qualify for lossless
-three-symbol repacking under the census rules; no floating-point weight
-conversion is involved.
+Every scale is finite and nonzero. All 402 tensors qualify for lossless three-symbol
+repacking under the census rules; no floating-point weight conversion is involved.
 
 ## Current-weight PTQ1 option
 
-Prism **PTQ1_0** uses group-128 base-3 packing. It is distinct from the
-weight-changing PTQ1.61 research algorithm and the older published PTQ model.
-The [Rust exporter](https://github.com/symbiogenesis/prism-inference/blob/main/tools/gguf/README.md), exposed through
-[Export-SwiftPtq1.ps1](../scripts/Export-SwiftPtq1.ps1), preserves current symbols,
-raw scale bits, other tensor bytes and tokenizer/template/transform metadata.
-It verifies byte-identical PQ2 reconstruction for every converted batch.
+Prism **PTQ1_0** uses group-128 base-3 packing. It is distinct from the weight-changing
+PTQ1.61 research algorithm and the older published PTQ model. The [Rust
+exporter](https://github.com/symbiogenesis/prism-inference/blob/main/tools/gguf/README.md),
+exposed through [Export-SwiftPtq1.ps1](../scripts/Export-SwiftPtq1.ps1), preserves
+current symbols, raw scale bits, other tensor bytes and tokenizer/template/transform
+metadata. It verifies byte-identical PQ2 reconstruction for every converted batch.
 
-The verified output is **5,946,648,928 bytes**, saving **1,259,520,000 bytes
-(1.1730 GiB)**. Its [receipt](../config/swift.ptq1-export.json) records SHA-256
-`e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5`,
-209,920,000 verified blocks and 258,720 working-buffer bytes. Native pinned
-PQ2/PTQ dequantizers also agree bit-for-bit on 853,760 synthetic values.
+The verified output is **5,946,648,928 bytes**, saving **1,259,520,000 bytes (1.1730
+GiB)**. Its [receipt](../config/swift.ptq1-export.json) records SHA-256
+`e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5`, 209,920,000 verified
+blocks and 258,720 working-buffer bytes. Native pinned PQ2/PTQ dequantizers also agree
+bit-for-bit on 853,760 synthetic values.
 
-PTQ uses Q8_0 activations while PQ2 uses Q8_K. Equal weights therefore do not
-prove equal logits, text or speed. `-UseRepackedPtq1` selects only this exact
-derived artifact and retains the same memory allowance. Bounded 16-token native
-decode passes with and without the approved adapter. See the
-[allocation audit](swift-memory-options.md); the
+PTQ uses Q8_0 activations while PQ2 uses Q8_K. Equal weights therefore do not prove
+equal logits, text or speed. `-UseRepackedPtq1` selects only this exact derived artifact
+and retains the same memory allowance. Bounded 16-token native decode passes with and
+without the approved adapter. See the [allocation audit](swift-memory-options.md); the
 [packing decision](swift-memory-options.md#packing-decision) excludes BITCOS.
 
-A pretrained [LoRA](swift-lora.md) is a separate behavioral change with runtime
-cost, not lossless memory savings. Its explicit development switch does not
-qualify the intended standard profile.
+The pretrained [LoRA](swift-lora.md) changes behavior and adds runtime cost; it has
+independent standard-profile qualification.
 
 ## Reproduce the assessment
 
-Use native ARM64 PowerShell 7.6, the existing owner-selected external data
-directory and a new external report path. These explicit locks leave the Qwen
-default unchanged:
+Use native ARM64 PowerShell 7.6, the existing owner-selected external data directory and
+a new external report path. These explicit locks leave the Qwen default unchanged:
 
 ```powershell
 $data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
@@ -98,32 +91,29 @@ $derived = Join-Path ([IO.Path]::GetDirectoryName($model)) 'Swift-Bonsai-2-curre
 ./scripts/Invoke-CpuCheck.ps1 -DataDirectory $data -Profile swift-pq2-assessment -UseRepackedPtq1 -UseAbliterateLora
 ```
 
-Inspection and export use the same Rust CLI and can run in one PowerShell
-session. Finish hashing/census/export and close their buffers before inference.
-The wrappers can use a prebuilt CLI through `-GgufToolPath`; otherwise they
-build pinned sources in external storage.
+Inspection/export share one Rust CLI. Complete them and release buffers before
+inference. `-GgufToolPath` selects a prebuilt CLI; otherwise wrappers build pinned
+sources in external storage.
 
 ## Native CPU status
 
-The fixed check uses an 8K context, FP16 K/V, F32 recurrent/convolution state,
-batch 128/microbatch 64, four threads, a
-synthetic prompt, a 16-token cap and a ten-minute deadline. It retains Swift's
-embedded template/default reasoning and omits the explicit system preamble,
-which the template cannot render alone without a user query.
+The fixed check uses an 8K context, FP16 K/V, F32 recurrent/convolution state, batch
+128/microbatch 64, four threads, a synthetic prompt, a 16-token cap and a ten-minute
+deadline. It retains Swift's embedded template/default reasoning and omits the explicit
+system preamble, which the template cannot render alone without a user query.
 
-Known allocation accounting includes the entire PQ2 file, live KV/recurrent
-state, shared rotation and deduplicated signs/metadata: **7,904,356,704 bytes**.
-The **11.5 GiB** Job commit allowance leaves 4,443,674,272 bytes for remaining
-runtime/scratch/temporary allocations. A separate **4 GiB** physical reserve
-requires **15.5 GiB available** for admission. The owner selected this 512 MiB
-reduction from the original 12/16 GiB development budget; the reduction is not a
-measured consequence of the application allocation changes. Full-context and
-4K-output peak-memory qualification remains outstanding. These are development limits;
-they do not lower Qwen's 22 GiB admission requirement.
+Known allocation accounting includes the entire PQ2 file, live KV/recurrent state,
+shared rotation and deduplicated signs/metadata: **7,904,356,704 bytes**. The **11.5
+GiB** Job commit allowance leaves 4,443,674,272 bytes for remaining
+runtime/scratch/temporary allocations. A separate **4 GiB** physical reserve requires
+**15.5 GiB available** for admission. The owner selected this 512 MiB reduction from the
+original 12/16 GiB development budget; the reduction is not a measured consequence of
+the application allocation changes. Full-context and 4K-output peak-memory qualification
+remains outstanding. These are development limits; they do not lower Qwen's 22 GiB
+admission requirement.
 
-PQ2 and current-weight PTQ1 both complete the bounded decode, with and without
-the approved adapter. A recorded base check reported about 1.49 GB peak Job
-commit. Job commit excludes mapped weight residency and is not total RAM;
-working-set/private-byte and available-memory watchdogs remain required.
-Sixteen tokens establish loading and decode only, not a finished answer,
-creative quality, throughput or daily isolation.
+PQ2 and current-weight PTQ1 both complete the bounded decode, with and without the
+approved adapter. A recorded base check reported about 1.49 GB peak Job commit. Job
+commit excludes mapped weight residency and is not total RAM; working-set/private-byte
+and available-memory watchdogs remain required. Sixteen tokens establish loading and
+decode only, not a finished answer, creative quality, throughput or daily isolation.
