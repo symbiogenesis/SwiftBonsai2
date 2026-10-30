@@ -71,7 +71,14 @@ param([string]$DataDirectory, [switch]$VerifyOnly)
 @{}
 '@ | Set-Content -LiteralPath (Join-Path $fixture 'Get-Adapter.ps1') -Encoding utf8
     function Get-CimInstance {
+        <# .SYNOPSIS
+        Supplies the fixture's already-identified native Snapdragon device.
+        #>
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '', Justification = 'This scoped test seam supplies a fixed processor identity and is removed in finally.')]
+        [CmdletBinding()]
+        [OutputType([pscustomobject])]
         param([string]$ClassName)
+        Assert ($ClassName -ceq 'Win32_Processor') 'Unexpected fixture CIM query.'
         return [pscustomobject]@{ Name = 'Snapdragon X2 Elite Extreme - fixture' }
     }
     $names = @('GITHUB_ACTIONS', 'GITHUB_REF', 'GITHUB_REPOSITORY', 'RUNNER_ARCH', 'GITHUB_RUN_ID',
