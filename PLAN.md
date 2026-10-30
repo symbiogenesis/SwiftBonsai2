@@ -358,6 +358,12 @@ bandwidth, packing and dispatch evidence.
 - Optimize measured transforms, elementwise work, quantizers, reductions and prefill
   through safe APIs or audited isolated unsafe code. Cover edges, malformed input,
   rollback, non-ARM and absent ISA; recheck dependencies, licenses and codegen.
+- Revisit [signed constant floor division](docs/cpu-kernels.md#signed-constant-floor-division)
+  only if profiling identifies an eligible signed fixed-divisor caller. The current
+  audit found none in Runner; preserve unsigned, truncating, floating-point and
+  runtime-stride semantics. Implement a justified consumer in Prism, with full-range
+  integer parity, pinned-Rust ARM64 codegen and paired complete-request CI evidence
+  before repinning. An unused utility or the article's C++ timings cannot close this gate.
 - If integer-dot dependencies are material, screen [two
   accumulators](docs/oxibonsai-reuse.md#neon-retain-concepts-preserve-swift-arithmetic)
   in Prism's `i32x4` loop on three shapes. Preserve widening, exact dots, Q8 groups and

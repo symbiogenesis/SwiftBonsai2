@@ -1,6 +1,8 @@
 # Inference research and proof register
 
 Research cutoff and last source review: **2026-10-29**.
+Signed constant floor-division addendum reviewed **2026-10-30**; the other source
+reviews retain their original cutoff.
 
 This index records mathematical results, algorithms, implementations and reports
 relevant to Swift Bonsai 2, with their assumptions and unresolved checks. Inclusion
@@ -421,6 +423,7 @@ runtime replacements. Pin the relevant source revision before an experiment.
 | --- | --- | --- |
 | [Prism Inference](https://github.com/symbiogenesis/prism-inference) and [PrismML native reference](https://github.com/PrismML-Eng/llama.cpp) | Actual PQ2/PTQ1, Hadamard/grouped transforms, scalar/NEON graph and pinned native arithmetic | Compare with the lock and existing implementations first; mutable `main` is not the provisioned release. |
 | [OxiBonsai, reviewed at `1d10c48`](oxibonsai-reuse.md) | GGUF hostile-descriptor regressions, fused packed decode/dot, row tiling and prefetch controls | Apache-2.0 permits reuse. Q1/TQ2 encodings, FP32 activation/FMA arithmetic and Qwen3 state differ from Swift; float SIMD slice guards need review before reuse. |
+| [Ben Joffe's fastdiv](https://github.com/benjoffe/fastdiv/blob/main/algorithms/benjoffe.hpp), [algorithm and proof](https://www.benjoffe.com/fast-floordiv), 2026-10-27; reviewed 2026-10-30 | Signed constant floor division with selected multipliers or bounded input adjustments | MIT source; preserve notices when copying. The [applicability audit](cpu-kernels.md#signed-constant-floor-division) found no eligible Runner caller. Unsigned packing, float quantizers and runtime-stride division are outside this replacement's scope. Rust code generation and whole-request benefit remain unmeasured; implement justified kernels in Prism. |
 | [Microsoft BitNet](https://github.com/microsoft/BitNet), [T-MAC](https://github.com/microsoft/T-MAC), [Vec-LUT](https://github.com/OpenBitSys/vlut.cpp) | Packed lookup kernels, table construction, activation tiling and CPU prefill | Model quantizers, scale groups, exact/approximate paths and temporary layouts differ. |
 | [KleidiAI on Arm GitLab](https://gitlab.arm.com/kleidi/kleidiai), [official GitHub mirror](https://github.com/ARM-software/kleidiai) | Arm microkernels, packing APIs, fusion, DotProd/I8MM and architecture dispatch | Canonical GitLab was bot-protected during review; the official mirror was readable. C/assembly examples inform a Rust port; SME/SVE/optional ISA availability cannot be inferred for Snapdragon. |
 | [Flash Linear Attention](https://github.com/fla-org/flash-linear-attention) | Chunkwise GDN, recurrent controls and state layouts | GPU/Triton implementation is an algebra/layout reference; retain Swift gates, normalization, convolution and grouped transforms. |

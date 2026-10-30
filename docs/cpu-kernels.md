@@ -82,6 +82,56 @@ signed zero, finite extremes and nonfinite rejection are part of the contract. E
 PQ2/PTQ1 weights can produce different matvec outputs; see the [packing
 assessment](swift-memory.md).
 
+## Signed constant floor division
+
+[Ben Joffe's algorithm](https://www.benjoffe.com/fast-floordiv), published
+2026-10-27 and reviewed here on **2026-10-30**, computes signed integer division
+rounded toward negative infinity using a multiply and arithmetic shift. It is
+a candidate for a measured signed constant-divisor hotspot in Prism. Ordinary
+Rust signed `/` truncates toward zero; replacing it requires an existing floor
+contract or proof that the caller's admitted inputs give the same result.
+
+The [reference implementation](https://github.com/benjoffe/fastdiv/blob/main/algorithms/benjoffe.hpp)
+searches multiplier/shift pairs for both rounding directions. When both work,
+it can select the multiplier using the dividend's sign. Some divisors require
+a bounded input adjustment instead; the sign-selected formula is not universal.
+For a valid sign-selected pair `(M, S)`, the quotient is
+`(i128(x) * (M + (x >> 63))) >> S`, with an arithmetic right shift.
+Positive powers of two already reduce to an arithmetic shift. A Rust port must
+use compile-time parameters and widened integer products, preserve full-range
+behavior and explicitly reject zero and the unrepresentable `i64::MIN / -1`.
+Negative-divisor floor division differs from `div_euclid`; do not use the latter
+as its general reference. The reference's `main` link is a discovery pointer;
+pin a reviewed revision and retain its license notices before copying source.
+
+The **2026-10-30 source audit found no eligible production caller in Runner**:
+
+| Existing arithmetic | Applicability |
+| --- | --- |
+| Speech graph `(n_kv_pad + 255) / 256` in `src/speech-tts/build_overlay.rs` | Nonnegative ceiling division by a power of two |
+| Audio elapsed time `/ 48` in `src/chat-ui/src/speech/pipeline.rs` | Unsigned byte-count conversion |
+| Buffer, sample and packed-code indexing | Unsigned extents or power-of-two divisors |
+| Quantization scales and timing ratios | Floating-point division |
+
+The audit also covered the clean pinned Prism revision
+`fce300b94234c2dd70756dd4bbc33ea703848cb6`. Its
+[convolution extent calculation](https://github.com/symbiogenesis/prism-inference/blob/fce300b94234c2dd70756dd4bbc33ea703848cb6/src/backend/call.rs#L73)
+uses an `i128` numerator and a runtime stride. Its
+[backward-image divisions](https://github.com/symbiogenesis/prism-inference/blob/fce300b94234c2dd70756dd4bbc33ea703848cb6/src/backend/backward_image.rs#L90)
+use runtime strides after exact-divisibility guards. Neither is a fixed-`i64`
+replacement site. Runtime-invariant specialization would require its own setup
+and reuse-cost evidence. No runtime code or dependency pin changes follow from
+this audit, and no throughput, latency or complete-request gain has been measured.
+
+For a future eligible caller, compare exact results with an independent widened
+quotient/remainder reference: both signs, zero dividend, signed extrema, exact
+multiples and their neighbors, large divisors, forced round-up/down cases and
+power-of-two cases. Check optimized ARM64 code generation under the pinned Rust
+compiler; the article's C++ results do not establish Rust performance. Measure
+throughput, dependent latency and complete-request cost in owning CI under the
+[five-minute device budget](validation.md), retaining losing results. Implement
+only a justified consumer upstream; [PLAN.md](../PLAN.md#cpu-kernels) owns that gate.
+
 ## Numerical and resource acceptance
 
 Optimized-Rust/scalar and Rust/Prism comparisons have separate purposes; an existing
