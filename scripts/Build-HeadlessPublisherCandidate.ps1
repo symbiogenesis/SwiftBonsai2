@@ -74,6 +74,15 @@ function Expand-CandidateLlvmArchive {
     Invoke-CandidateTool -Executable $Zstd -Arguments @('--decompress', '--long=31', '-o', $plainTar, $Archive) -LogName 'llvm-decompress.txt' -TimeoutSeconds 300 | Out-Null
     Invoke-CandidateTool -Executable $Tar -Arguments @('-xf', $plainTar, '-C', $Destination) -LogName 'llvm-extract.txt' -TimeoutSeconds 300 | Out-Null
 }
+function ConvertTo-CandidateCMakePath {
+    <# .SYNOPSIS
+    Preserves Windows paths without CMake quoted-string backslash escapes.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$Path)
+    return $Path.Replace('\', '/')
+}
 try {
     $archive = Join-Path $scratch 'source.zip'
     Receive-LockedArtifact -Uri $manifest.base.url -Path $archive -Bytes $manifest.base.bytes -Sha256 $manifest.base.sha256 -TimeoutSeconds 180 | Out-Null
@@ -135,9 +144,15 @@ try {
     $cmake = (Get-Command cmake -CommandType Application | Select-Object -First 1).Source
     $python = (Get-Command python -CommandType Application | Select-Object -First 1).Source
     $build = Join-Path $scratch 'build'
+    # CMake serializes these cache paths into quoted compiler files. Raw
+    # backslashes (notably \Program Files) become invalid CMake escapes.
+    $cmakeCompiler = ConvertTo-CandidateCMakePath $compiler
+    $cmakeLinker = ConvertTo-CandidateCMakePath $linker
+    $cmakeRc = ConvertTo-CandidateCMakePath (Join-Path $sdkBin 'rc.exe')
+    $cmakeMt = ConvertTo-CandidateCMakePath (Join-Path $sdkBin 'mt.exe')
     $flags = @('-S', $source, '-B', $build, '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
-        "-DCMAKE_C_COMPILER=$compiler", "-DCMAKE_CXX_COMPILER=$compiler", "-DCMAKE_LINKER=$linker",
-        ('-DCMAKE_RC_COMPILER=' + (Join-Path $sdkBin 'rc.exe')), ('-DCMAKE_MT=' + (Join-Path $sdkBin 'mt.exe')),
+        "-DCMAKE_C_COMPILER=$cmakeCompiler", "-DCMAKE_CXX_COMPILER=$cmakeCompiler", "-DCMAKE_LINKER=$cmakeLinker",
+        "-DCMAKE_RC_COMPILER=$cmakeRc", "-DCMAKE_MT=$cmakeMt",
         '-DCMAKE_C_FLAGS=/clang:-march=armv8.7-a /clang:-fvectorize /clang:-ffp-model=fast /clang:-fno-finite-math-only',
         '-DCMAKE_CXX_FLAGS=/clang:-march=armv8.7-a /clang:-fvectorize /clang:-ffp-model=fast /clang:-fno-finite-math-only',
         '-DBUILD_SHARED_LIBS=ON', '-DGGML_CPU=ON', '-DGGML_NATIVE=OFF', '-DGGML_BACKEND_DL=OFF', '-DGGML_CPU_ALL_VARIANTS=OFF',

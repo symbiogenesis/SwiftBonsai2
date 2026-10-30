@@ -61,4 +61,17 @@ Assert ($null -ne $definition) 'The bounded LLVM extraction boundary is missing.
     }
     Assert ($message -ceq 'synthetic decoder failure' -and $calls.Count -eq 1) 'A failed decoder still reached tar extraction.'
 } ([scriptblock]::Create($definition.Extent.Text)) $output
-Write-Output 'Hosted guard and bounded two-stage LLVM extraction checks passed without writes, builds, probes or model access.'
+$pathDefinition = $ast.Find({ param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'ConvertTo-CandidateCMakePath'
+}, $true)
+Assert ($null -ne $pathDefinition) 'The CMake path conversion boundary is missing.'
+& {
+    param([scriptblock]$Definition)
+    . $Definition
+    $sdkPath = 'C:\Program Files (x86)\Windows Kits\10\Bin\10.0.26100.0\arm64\rc.exe'
+    $expected = 'C:/Program Files (x86)/Windows Kits/10/Bin/10.0.26100.0/arm64/rc.exe'
+    Assert ((ConvertTo-CandidateCMakePath $sdkPath) -ceq $expected) 'CMake RC path retains backslash escape sequences or loses spaces.'
+    Assert ((ConvertTo-CandidateCMakePath 'D:\LLVM\bin\clang-cl.exe') -ceq 'D:/LLVM/bin/clang-cl.exe') 'CMake compiler path changed its filename or drive.'
+    Assert ((ConvertTo-CandidateCMakePath $expected) -ceq $expected) 'Already normalized CMake paths must be unchanged.'
+} ([scriptblock]::Create($pathDefinition.Extent.Text))
+Write-Output 'Hosted guard, bounded LLVM extraction and CMake path checks passed without writes, builds, probes or model access.'
