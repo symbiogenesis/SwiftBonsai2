@@ -338,16 +338,14 @@ Follow [CPU arithmetic, dispatch and acceptance](docs/cpu-kernels.md). Pin artif
 runtime, compiler, format, shapes, ISA and numerics; choose work from CI hotspot,
 bandwidth, packing and dispatch evidence.
 
-- Qualify the [shared-slice row-parallel
-  candidate](docs/oxibonsai-reuse.md#implementation-status) in Swift prepared
-  projections: first use the [single serial-versus-four-worker
-  trial](docs/native-rust-engine.md#bounded-parallel-row-qualification) for original
-  PQ2 and the approved adapter at scale 1.3 within one five-minute owner job.
+- Qualify actual prompt/response latency and complete application lifecycle for the
+  [shared-slice row-parallel candidate](docs/oxibonsai-reuse.md#implementation-status),
+  beyond the retained [fixed-step and short service evidence](docs/native-rust-engine.md#bounded-parallel-row-qualification).
   Preserve shared packed weights and prepared Q8 activations, complete state,
   cancellation, pool/task accounting and whole-request cost. Leave further shapes,
   formats and worker budgets pending; do not split a longer matrix across short jobs.
-  Review source and released bytes before repinning or enabling workers, and qualify
-  actual prompt/response latency independently of fixed-step evaluation timing.
+  Review exact source and released bytes before new selections; fixed-step timing
+  and one short service stream do not qualify prefill, decode TPS or defaults.
 - Qualify full-model and memory behavior of NEON PQ2, odd-group PQ2 and PTQ1. Preserve
   scalar forcing, diagnostics, fourth-symbol support and [intermediate LUT and
   correction bounds](docs/cpu-kernels.md#packed-arithmetic) before narrowing. Prototype

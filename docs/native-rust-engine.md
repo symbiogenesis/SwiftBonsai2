@@ -223,6 +223,15 @@ also retained. These are fixed-step source-checker observations, not application
 TPS or complete performance qualification. Explicit app selection uses
 `-NativeEngine -NativeRowWorkers 4`; one remains the default and unsupported
 versions/engine selections fail closed.
+The [published-runtime service check](evidence/pq2-native-service-row4.json)
+also starts verified 0.1.9 with original PQ2, the approved adapter at scale 1.3
+and four workers explicitly configured under required native containment. Its one
+four-token-cap stream ends normally after one reported token; the owned Job is
+empty and the listener released after shutdown. The full owner attempt, including
+a setup correction and cleanup, takes 220.58 seconds without resetting its
+original five-minute deadline. This is broker/service acceptance evidence, not
+GUI, TPS, full-context or default-runtime qualification. The receipt preserves
+the then-unconfirmed GitHub verdict separately from the passed local model case.
 
 The [row-worker workflow](../.github/workflows/native-row-qualification.yml) builds
 its exact source/hash-bound checker on hosted Windows ARM64 without models.
