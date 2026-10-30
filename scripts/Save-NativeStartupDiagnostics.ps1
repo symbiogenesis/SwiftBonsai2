@@ -11,6 +11,8 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$env:BONSAI_NATIVE_DIAGNOSTICS_READY = 'false'
+$env:BONSAI_NATIVE_DIAGNOSTICS_STATUS = 'not-collected'
 $maximumBytes = 65536
 $maximumSessions = 8
 $encoding = [Text.UTF8Encoding]::new($false, $true)
@@ -21,6 +23,9 @@ $receipt = [ordered]@{
     Classification='not-collected'; Sources=@(); PublishedFiles=@()
 }
 $rootValidated = $false
+$outputsSafe = $false
+$collectionSucceeded = $false
+$keys = [Collections.Generic.List[string]]::new()
 
 function Read-BoundedByte {
     [CmdletBinding()]
@@ -53,14 +58,21 @@ try {
         throw [IO.InvalidDataException]::new('unsafe-evidence-directory')
     }
     $rootValidated = $true
-    # Delete only our two fixed public outputs, so a failed collection cannot
-    # leave stale logs behind. Never copy or upload the protected directories.
+    # Check every selected output before changing any of them. An existing
+    # directory/reparse stays untouched and closes the entire diagnostic upload.
     foreach ($name in @($outputs) + 'startup-diagnostics.json') {
         $path = Join-Path $root.FullName $name
-        if (Test-Path -LiteralPath $path) {
-            if ((Get-Item -LiteralPath $path -Force).PSIsContainer) { throw [IO.InvalidDataException]::new('unsafe-output') }
-            Remove-Item -LiteralPath $path -Force
+        $existing = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        if ($existing -and ($existing.PSIsContainer -or ($existing.Attributes -band [IO.FileAttributes]::ReparsePoint))) {
+            $receipt.Classification = 'unsafe-output'
+            return
         }
+    }
+    $outputsSafe = $true
+    # Remove only stale regular files from the exact public-output whitelist.
+    foreach ($name in @($outputs) + 'startup-diagnostics.json') {
+        $path = Join-Path $root.FullName $name
+        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force }
     }
     $directories = [Collections.Generic.List[string]]::new()
     foreach ($directory in [IO.Directory]::EnumerateDirectories($root.FullName)) {
@@ -72,7 +84,6 @@ try {
         }
     }
     if ($directories.Count -eq 0) { $receipt.Classification = 'no-protected-worker-directory'; return }
-    $keys = [Collections.Generic.List[string]]::new()
     # Validate every actual key first, so a log cannot disclose another
     # session's credential. Failure closes publication for every raw log.
     try {
@@ -133,11 +144,30 @@ try {
     $receipt.Sources = @($sources)
     $receipt.PublishedFiles = @($published)
     $receipt.Classification = if ($published.Count) { 'bounded-sanitized-logs-retained' } else { 'no-log-published' }
+    $collectionSucceeded = $published.Count -eq 2 -and @($sources | Where-Object Classification -CNE 'sanitized').Count -eq 0
 } catch {
     # Never serialize exception messages: they can include private paths/data.
     $receipt.Classification='collection-failed'
 } finally {
-    if ($rootValidated) {
-        $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $EvidenceDirectory 'startup-diagnostics.json') -Encoding utf8NoBOM
+    $env:BONSAI_NATIVE_DIAGNOSTICS_STATUS = $receipt.Classification
+    if ($rootValidated -and $outputsSafe) {
+        try {
+            $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $EvidenceDirectory 'startup-diagnostics.json') -Encoding utf8NoBOM
+            if ($collectionSucceeded) {
+                # Every diagnostic upload path must be a bounded regular file.
+                # Recheck content too, including hashes/metadata in the receipt.
+                foreach ($name in @($outputs) + 'startup-diagnostics.json') {
+                    $bytes = [byte[]]@(Read-BoundedByte -Path (Join-Path $root.FullName $name) -Maximum ($maximumBytes * $maximumSessions + 4096))
+                    $text = $encoding.GetString($bytes)
+                    foreach ($key in $keys) {
+                        if ($text.Contains($key, [StringComparison]::OrdinalIgnoreCase)) { throw [IO.InvalidDataException]::new('credential-check-failed') }
+                    }
+                }
+                $env:BONSAI_NATIVE_DIAGNOSTICS_READY = 'true'
+            }
+        } catch {
+            $env:BONSAI_NATIVE_DIAGNOSTICS_READY = 'false'
+            $env:BONSAI_NATIVE_DIAGNOSTICS_STATUS = 'publication-check-failed'
+        }
     }
 }

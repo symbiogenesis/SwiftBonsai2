@@ -60,7 +60,11 @@ a 64 KiB limit per log and strict UTF-8 decoding. It validates both actual keys
 for every session, redacts those values across all retained logs, checks again
 before publication, and suppresses logs when key validation fails. Only two fixed
 sanitized top-level log names and `startup-diagnostics.json` enter the upload
-selection. `host.json` retains fixed broker startup stage/error/exit-status markers;
+selection, in a separate artifact gated on successful collection and final
+regular-file, reparse and credential checks of all three paths. Unsafe output
+directories or reparse points remain untouched and suppress the entire diagnostic
+artifact; the three base acceptance JSON receipts retain their existing upload.
+`host.json` retains fixed broker startup stage/error/exit-status markers;
 the acceptance test process exit code is recorded separately. No raw exception,
 argument or key content is copied into those classifications.
 

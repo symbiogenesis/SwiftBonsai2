@@ -71,6 +71,8 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
     timeout-minutes: 5
+    env:
+      BONSAI_NATIVE_DIAGNOSTICS_READY: 'false'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -144,6 +146,7 @@ jobs:
             StalledConsumerRequested=($env:BONSAI_NATIVE_STALLED_CONSUMER -eq 'true')
             AcceptanceProcessExitCode=$null; AggregateBudgetExpired=$false
             StartupDiagnosticsReceipt='startup-diagnostics.json'
+            StartupDiagnosticsReady=$false; StartupDiagnosticsClassification='not-collected'
             StartupFailureMarkers=@()
             Passed=$false; DefaultRuntimeQualified=$false
           }
@@ -206,12 +209,18 @@ jobs:
             if (-not (Test-Path -LiteralPath $receipt -PathType Leaf)) { throw 'Actual-model acceptance receipt is missing.' }
             $hostReport.Passed = $true
           } finally {
+            $env:BONSAI_NATIVE_DIAGNOSTICS_READY = 'false'
+            $env:BONSAI_NATIVE_DIAGNOSTICS_STATUS = 'collection-failed'
+            'BONSAI_NATIVE_DIAGNOSTICS_READY=false' >> $env:GITHUB_ENV
             try {
               & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Save-NativeStartupDiagnostics.ps1') `
                 -EvidenceDirectory $env:BONSAI_NATIVE_EVIDENCE `
                 -AcceptanceExitCode $hostReport.AcceptanceProcessExitCode `
                 -BudgetExpired:$hostReport.AggregateBudgetExpired
             } finally {
+              $hostReport.StartupDiagnosticsReady = $env:BONSAI_NATIVE_DIAGNOSTICS_READY -ceq 'true'
+              $hostReport.StartupDiagnosticsClassification = $env:BONSAI_NATIVE_DIAGNOSTICS_STATUS
+              ('BONSAI_NATIVE_DIAGNOSTICS_READY=' + $env:BONSAI_NATIVE_DIAGNOSTICS_READY) >> $env:GITHUB_ENV
               $hostReport | ConvertTo-Json -Depth 4 |
                 Set-Content -LiteralPath (Join-Path $env:BONSAI_NATIVE_EVIDENCE 'host.json') -Encoding utf8NoBOM
             }
@@ -240,6 +249,15 @@ jobs:
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/acceptance.json
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/host.json
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/hosted-build.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain only verified regular sanitized diagnostic files
+        if: always() && env.BONSAI_NATIVE_DIAGNOSTICS_READY == 'true' && env.BONSAI_NATIVE_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-runtime-startup-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          # A failed/unsafe collection skips this entire artifact, including JSON.
+          path: |
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/startup-diagnostics.json
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/startup-backend.stdout.txt
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/startup-backend.stderr.txt
