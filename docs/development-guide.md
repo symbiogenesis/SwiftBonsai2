@@ -3,6 +3,11 @@
 Run these examples from the repository root in native Windows ARM64 PowerShell
 7.6+. Use [validation](validation.md) for language standards and focused checks.
 
+Start with [Native chat app](#native-chat-app), or [portable packages](chat-packages.md)
+for a launch without a checkout. [Inventory/provisioning](#inventory-and-provisioning),
+[CPU checks](#bounded-cpu-loaddecode-check) and the [development broker](#explicit-development-broker)
+are separate developer workflows, not additional app-setup steps.
+
 ## Current state
 
 Swift PQ2_0 CPU is the priority low-memory profile. Load/decode, optional pretrained
@@ -63,9 +68,10 @@ collapsible diagnostics stay outside the user/assistant transcript.
 The composer scrolls long drafts without hiding Microphone or Send/Stop.
 **Enter** sends when ready, **Shift+Enter** inserts a newline and **Ctrl+End**
 moves to the draft's end. **Find** / **Ctrl+F** searches visible message bodies
-with Unicode case-insensitive matching, excluding reasoning. **F3/Shift+F3**
+with Unicode case-insensitive matching, excluding reasoning. Its magnifying glass
+sits beside Settings; previous/next controls appear below the header. **F3/Shift+F3**
 (or **Enter/Shift+Enter** while Find is focused) moves between matches; **Latest**
-returns to the newest message. **Escape** closes Find and clears highlights;
+or the bottom-center down arrow returns to the newest message. **Escape** closes Find and clears highlights;
 a second Escape stops active generation or speech.
 
 | Setting | Behavior |
@@ -247,32 +253,30 @@ Repeated launches report already starting/running. The empty sentinel persists
 after release; `-SpeechModelsOnly` is independent and direct executable launches
 bypass the script guard. Installed launches use [package verification](chat-packages.md#launch-without-a-checkout).
 
-The default remains pinned publisher Prism CPU + original Swift PQ2 + adapter.
-`-NoAbliterateLora` (direct app `--no-abliterate-lora`) omits the adapter and disables
-its control. Missing/altered adapters fail with provisioning guidance, without
-download or fallback. `-FrontendPort`/`-BackendPort` select distinct local ports.
-Swift/runtime provisioning remains explicit; only speech is downloaded at launch.
-Keep external credentials and complete evidence directories private.
+### Runtime selection
 
-For the experimental native Rust release 0.1.6, provision and opt out of adapters:
+| Runtime/model | Source and installed launch options | Boundary |
+| --- | --- | --- |
+| Publisher Prism CPU, original Swift PQ2 | Default; pinned adapter enabled | Adapter scale follows response settings. Missing/altered adapters fail with provisioning guidance, without download or fallback. |
+| Publisher Prism CPU, current-weight PTQ1 export | `-UseRepackedPtq1` (app/broker `--use-repacked-ptq1`) | Same adapter opt-out/scale. Missing/changed bytes reject; no older publisher PTQ1 substitution or fallback. |
+| Experimental native Rust 0.1.6, original Swift PQ2 | `-NativeEngine -NoAbliterateLora` (app/broker `--native-engine`) | Rejects PTQ1/adapters before preparation; no engine switch after failure. Separate [PTQ1 qualification](ptq1-readiness.md) is pending. |
+
+`-NoAbliterateLora` (direct app `--no-abliterate-lora`) omits the adapter and disables
+its control. Provision the native release before selecting it:
 
 ```powershell
 ./scripts/Get-Inference.ps1 -DataDirectory $data
 ./scripts/Start-Chat.ps1 -DataDirectory $data -NativeEngine -NoAbliterateLora
 ```
 
-Installed launch accepts the same options; app/broker use `--native-engine`.
-This selection requires original PQ2, rejects PTQ1/adapters before preparation,
-and never switches engines after failure. Publisher Prism remains default until
-[runtime promotion](runtime-promotion.md). Thinking follows the same setting;
-quality, throughput and daily-service qualification remain pending.
+Publisher Prism stays default until [runtime promotion](runtime-promotion.md).
+Thinking uses the same setting across engines; native quality, throughput and
+daily-service qualification remain pending. Native HTTP remains numeric loopback
+with the [broker's strict public subset](broker-policy.md).
 
-`-UseRepackedPtq1` (app/broker `--use-repacked-ptq1`) explicitly selects the verified
-current-weight export on publisher Prism, with the same adapter opt-out/scale.
-Missing/changed bytes reject without older publisher PTQ1 substitution or fallback.
-The native Rust service rejects this option pending separate end-to-end
-[PTQ1 qualification](ptq1-readiness.md). Native HTTP remains numeric loopback;
-unsupported public fields remain rejected under [broker policy](broker-policy.md).
+`-FrontendPort`/`-BackendPort` select distinct local ports. Swift/runtime provisioning
+is explicit; only speech downloads at launch. Keep credentials and complete
+evidence directories private.
 
 ## X1/X2 configuration boundary
 
@@ -286,11 +290,9 @@ Outstanding work stays in [PLAN.md](../PLAN.md).
 
 ## Inventory and provisioning
 
-Choose an absolute local data directory outside Git on a hard-link-capable
-filesystem such as NTFS. Provisioning rejects junctions and device paths.
-
-The default data directory keeps the `SwiftBonsai2` name for compatibility with
-existing installations. It is separate from the `SwiftBonsai2Runner` checkout.
+Use an absolute local data directory outside Git on a hard-link-capable filesystem
+such as NTFS; junctions/device paths reject. The default retains `SwiftBonsai2`
+for installation compatibility, separate from the `SwiftBonsai2Runner` checkout.
 
 ```powershell
 ./scripts/Doctor.ps1
@@ -393,10 +395,9 @@ requires [paired same-backend TPS and quality gates](swift-lora.md#required-stan
 ./scripts/Get-ServerPlan.ps1 -DataDirectory $data -VerifyArtifacts
 ```
 
-The default uses the maintenance tool for policy planning; it creates no model or
-key storage and starts no inference or listener. Tool resolution may compile the
-pinned Rust sources and retain build/request evidence in external temp. Select
-`-ToolPath` or `BONSAI_TOOLS_PATH` to use a trusted packaged binary.
+Policy planning uses the maintenance tool without model/key storage, inference
+or a listener. Resolution may compile pinned Rust and retain build/request evidence
+in external temp; `-ToolPath`/`BONSAI_TOOLS_PATH` selects a trusted packaged binary.
 `-VerifyRuntime` verifies installed runtime files and runs bounded version/help
 probes; `-VerifyArtifacts` also hashes the existing model. Neither downloads nor
 loads a model. The preflight rejects unknown profile fields, unsafe/network paths
@@ -508,14 +509,12 @@ CPU backend supports the pinned adapter with either original PQ2 or the explicit
 Profile names are exact; arbitrary adapters,
 models, runtimes and inference overrides remain rejected.
 
-The launcher retains verified model/runtime handles, creates fresh protected
-credentials/evidence and applies the selected Job cap plus 4 GiB physical reserve
-(18 GiB/22 GiB available RAM for the default reference).
-The frontend opens only after health/authentication checks and listener-PID
-verification. Backend connections recheck that PID. Ctrl-C, backend exit, guard
-failure, startup failure or closed generation admission stops the whole Job;
-owner drop or abrupt broker death also ends it. See the [launcher contract](broker-policy.md#owned-windows-development-launcher)
-for detailed ownership and readiness limits.
+The [launcher contract](broker-policy.md#owned-windows-development-launcher) owns
+retained artifact handles, fresh protected credentials/evidence, health/authentication
+and listener-PID checks, memory guards and whole-Job teardown. Reference uses an
+18 GiB Job cap/22 GiB admission with the same 4 GiB physical reserve. Startup,
+guard or backend failure, Ctrl-C, closed generation admission and owner loss all
+stop the Job; every backend connection rechecks listener identity.
 
 The printed evidence directory contains `frontend.key`, `backend.key` and technical
 logs. A client may read `frontend.key`; never share either key or the whole
