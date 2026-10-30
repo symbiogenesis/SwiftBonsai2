@@ -142,8 +142,8 @@ close outstanding actual-model or broker-only isolation qualification.
 
 | Oxi feature | Transfer decision |
 | --- | --- |
-| [ChatML marker neutralization](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-runtime/src/server.rs#L1217) in user-supplied message content, including nested reveal-by-removal tests | Useful regression scenarios for forged turn/role delimiters. Swift renders the verified template then parses special tokens, so qualify content-versus-control handling at that exact boundary. Oxi removes marker text repeatedly; copying it would alter legitimate literal content and counting/template parity. Declare a reject/escape/literal policy before changing behavior. This is not a general prompt-injection defense or an OS security boundary. |
-| [Optional per-client/global token buckets](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-runtime/src/rate_limiter.rs), trusted-proxy identity and `Retry-After` | Potential additional availability control for rapid request churn, separate from concurrency and queue limits. Disabled in default middleware. For Runner's one local service, prefer fixed-size state and measured need; forwarding headers remain rejected. Oxi's `max_clients` only triggers stale-entry removal, then inserts even if all entries are fresh: it is not a hard cardinality cap. Do not copy that allocation policy. |
+| [ChatML marker neutralization](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-runtime/src/server.rs#L1217), including nested reveal-by-removal tests | Adopted forged-turn/role regression scenarios. Swift renders its verified template then parses special tokens; qualify content/control handling there. Oxi repeatedly removes markers, altering legitimate literals and count/template parity. Runner instead rejects exact control spellings ([status below](#implementation-status)). This supplies neither general prompt-injection defense nor OS isolation. |
+| [Optional per-client/global token buckets](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-runtime/src/rate_limiter.rs), trusted-proxy identity and `Retry-After` | Availability control for rapid churn, separate from concurrency/queue limits. Oxi disables it by default; Runner adopted fixed-size global state ([status below](#implementation-status)) and still rejects forwarding headers. Oxi's `max_clients` removes stale entries but inserts even if all remain fresh, so it is not a hard cardinality cap; do not copy that allocation policy. |
 | [Process-wide admission and timeout layers](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-serve/src/main.rs#L238) | Useful integration-test principle: routes share one budget. Runner already bounds pending accepts, active requests, queue time, I/O and generation lifetime. Preserve cancellation and streaming-lifetime accounting rather than adopting response-header-only middleware as equivalent. |
 | Bearer checks, request/output bounds and malformed-model rejection | Already implemented in Runner. Oxi's hand-written XOR-fold comparison is not an improvement over Runner's `subtle` comparison and fixed-format keys. The adopted hostile-GGUF tests cover useful additional release-regression scenarios. |
 
@@ -156,13 +156,15 @@ diagnostics and fail-closed worker launch.
 
 ## Implementation status
 
-Runner adopted exact rejection of the verified Swift tokenizer's 33 control/user-
-defined spellings after text-part decoding/concatenation, bound to model/tokenizer
-identity; literal lookalikes remain unchanged. The framed HTTP 400 precedes backend
-calls and preserves service reuse. A fixed service-wide burst of eight refills one
-request/monotonic second; HTTP 429 includes `Retry-After: 1`, with allocation-free
-bounded draining while clients write. The [broker](broker-policy.md) and [native
-client](ui-architecture.md) own exact framing, draft/history and explicit-resend policy.
+Runner adopted two controls under the [broker contract](broker-policy.md):
+
+| Control | Implemented boundary |
+| --- | --- |
+| Control-token rejection | Rejects the verified Swift tokenizer's 33 control/user-defined spellings after decoding/concatenating text parts, bound to model/tokenizer identity. Literal lookalikes stay unchanged; framed HTTP 400 precedes backend calls and preserves reuse. |
+| Global burst budget | Eight requests, refilling one per monotonic second; HTTP 429 with `Retry-After: 1` and allocation-free bounded draining while clients write. |
+
+The broker and [native client](ui-architecture.md) own framing, draft/history and
+explicit-resend policy.
 
 The [row-parallel source candidate](runtime-candidates/README.md) and [patch/base
 manifest](runtime-candidates/oxibonsai-row-parallel.json) retain the independently
