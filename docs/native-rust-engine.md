@@ -30,7 +30,7 @@ creative, adapter or daily-isolation acceptance.
 | Area | Contract |
 | --- | --- |
 | Model | Exact original PQ2 from the [assessment lock](../config/swift-assessment.lock.json), or explicitly selected verified [current-weight PTQ1 export](../config/swift.ptq1-export.json); length, SHA-256 and metadata remain mandatory |
-| Weights | Dense `qwen35`; [851 tensors](../config/swift.metadata.json): 353 F32, 96 BF16 and 402 PQ2_0 |
+| Weights | Dense `qwen35`; [851 tensors](../config/swift.metadata.json): 353 F32, 96 BF16 and 402 PQ2_0 or PTQ1_0, according to the selected artifact |
 | Execution | CPU only; scalar reference and eligible baseline NEON, with explicit unsupported-operation errors |
 | State | One 8,192-token conversation; 16 full-attention and 48 recurrent blocks; FP16 attention K/V, F32 recurrent/convolution state and bounded allocation |
 | Input/output | Verified embedded template, exact prompt tokens, supplied reasoning history, declared stops and incremental text |
@@ -44,8 +44,10 @@ selection when `--native-engine` is requested, retains all artifact handles and
 requires exact representation/adapter readiness. The native child receives
 `--use-repacked-ptq1` and `--abliterate-lora ABSOLUTE_PATH`; canonical count/generation
 requests bind the single adapter slot and finite scale in `[0, 2]`. Generation
-resets graph state at the prepared request's sealed scale; requests remain bound
-to their originating session, and graph checkpoints cannot cross a reset. The old PQ2/no-adapter
+resets graph state at the prepared request's sealed scale; each adapter request
+renews checkpoint provenance. Requests remain bound to their originating session
+and may be reused after an explicit session reset. Successful requests and scale
+changes preserve sampler draw progression; explicit session reset reseeds it. The old PQ2/no-adapter
 readiness shape remains supported. There is no inference-library dependency or
 engine switch after failure.
 
