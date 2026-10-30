@@ -12,11 +12,11 @@ feature parity does not qualify inference.
 ## Swift CPU supported subset
 
 The target is native Windows ARM64, initially the 32 GB Snapdragon X Elite. Runner
-pins [**0.1.6**](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.6),
-main revision `02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0`, with passing
-[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357453)
+pins [**0.1.7 prerelease**](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.7),
+main revision `27e4860ea71b998b896191524ed980a586f022c6`, with passing
+[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/41009394716)
 and
-[conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/40449357329).
+[conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/41009394718).
 Release/focused integration does not establish full-context, sustained-performance,
 creative, adapter or daily-isolation acceptance.
 
@@ -29,7 +29,7 @@ creative, adapter or daily-isolation acceptance.
 
 | Area | Contract |
 | --- | --- |
-| Model | Exact `Swift-Bonsai-2-PQ2_0.gguf` from the [assessment lock](../config/swift-assessment.lock.json), verified by length, SHA-256 and metadata |
+| Model | Exact original PQ2 from the [assessment lock](../config/swift-assessment.lock.json), or explicitly selected verified [current-weight PTQ1 export](../config/swift.ptq1-export.json); length, SHA-256 and metadata remain mandatory |
 | Weights | Dense `qwen35`; [851 tensors](../config/swift.metadata.json): 353 F32, 96 BF16 and 402 PQ2_0 |
 | Execution | CPU only; scalar reference and eligible baseline NEON, with explicit unsupported-operation errors |
 | State | One 8,192-token conversation; 16 full-attention and 48 recurrent blocks; FP16 attention K/V, F32 recurrent/convolution state and bounded allocation |
@@ -38,8 +38,20 @@ creative, adapter or daily-isolation acceptance.
 | Lifecycle | Verified readiness, identical canonical count/generation requests, one active generation, authentication, streaming, cancellation, deadlines, reset and recovery |
 | Admission | 15.5 GiB available physical memory, 11.5 GiB Job commit limit and 4 GiB running physical reserve; owner-selected development budget, with full-context resource qualification pending; diagnostic allowances are not launch profiles |
 
-The service supports **PQ2 without LoRA, cache reuse, speculation or offload**.
-PTQ1, other families and adapters need separate qualification, including [LoRA
+The service implements the explicit PQ2/PTQ1 profiles with or without the exact
+approved rank-one adapter. Runner preserves `--use-repacked-ptq1` and adapter
+selection when `--native-engine` is requested, retains all artifact handles and
+requires exact representation/adapter readiness. The native child receives
+`--use-repacked-ptq1` and `--abliterate-lora ABSOLUTE_PATH`; canonical count/generation
+requests bind the single adapter slot and finite scale in `[0, 2]`. Generation
+resets graph state at the prepared request's sealed scale; requests remain bound
+to their originating session, and graph checkpoints cannot cross a reset. The old PQ2/no-adapter
+readiness shape remains supported. There is no inference-library dependency or
+engine switch after failure.
+
+This service implementation does not qualify PTQ1 or adapters for release. Cache
+reuse, speculation and offload remain outside the serving subset. PTQ1, other
+families and adapters need separate qualification, including [LoRA
 TPS/quality](swift-lora.md#standard-profile-qualification). [Hardware discovery](hardware-capabilities.md)
 reports inventory; runtime kernel eligibility/`Auto` does not implement Runner's planned
 qualified-device selector.
