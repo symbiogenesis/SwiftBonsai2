@@ -12,18 +12,29 @@ feature parity does not qualify inference.
 ## Swift CPU supported subset
 
 The target is native Windows ARM64, initially the 32 GB Snapdragon X Elite. Runner
-pins [**0.1.7 prerelease**](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.7),
-main revision `27e4860ea71b998b896191524ed980a586f022c6`, with passing
-[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/41009394716)
+pins [**0.1.8 prerelease**](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.8),
+main revision `fce300b94234c2dd70756dd4bbc33ea703848cb6`, with passing
+[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/41017335054)
 and
-[conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/41009394718).
+[conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/41017335160).
 Release/focused integration does not establish full-context, sustained-performance,
 creative, adapter or daily-isolation acceptance.
 
-The first required-container X2 PTQ1/adapter attempt on this release
+The first required-container X2 PTQ1/adapter attempt on 0.1.7
 [failed during backend startup](evidence/ptq1-native-service.json), before verified
 readiness or streaming. The retained receipt does not establish whether weights
 loaded. The separate numerical checker result cannot qualify this service path.
+
+Version 0.1.8 uses the reviewed Windows read-consumer helper at Runner revision
+`abe04b4a8eff18388af96f0e75c8a8d180b81989`. Inside an actual AppContainer, it skips
+only the denied volume-root metadata check; the owner still validates ancestry,
+and local-drive, non-root, Git/reparse, exact-file and retained-handle checks remain.
+Filesystem grants and resource limits do not change. Startup diagnostics retain
+only a fixed stage, error kind and optional numeric OS code.
+
+The server is distributed through checked GitHub binaries and exact source
+checkouts. Its registry publication remains disabled until the reviewed helper
+API has a registry release; the core runtime crate's publication policy is unchanged.
 
 | Implementation | Evidence boundary |
 | --- | --- |
