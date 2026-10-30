@@ -20,6 +20,11 @@ and
 Release/focused integration does not establish full-context, sustained-performance,
 creative, adapter or daily-isolation acceptance.
 
+The first required-container X2 PTQ1/adapter attempt on this release
+[failed during backend startup](evidence/ptq1-native-service.json), before verified
+readiness or streaming. The retained receipt does not establish whether weights
+loaded. The separate numerical checker result cannot qualify this service path.
+
 | Implementation | Evidence boundary |
 | --- | --- |
 | PTQ1 Q8_0 scale/inverse | Automatic ARM64 three-token logits/live state match native bytes; scalar/explicit NEON and broader qualification remain pending in the [PTQ1 contract](swift-memory.md#current-weight-ptq1-option). Generic/PQ2 preparation is preserved. |
