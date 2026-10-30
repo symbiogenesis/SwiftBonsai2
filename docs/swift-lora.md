@@ -191,9 +191,8 @@ loaded-at-zero controls, including completed samples before any later batch fail
 | Throughput | Native single-token **eval-run count / eval time**, from the pinned [stderr timing printer](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/common/sampling.cpp), invariant decimals, missing/duplicate/invalid counters rejected. `decodeTokens` counts eval runs: final sampled tokens normally are not decoded, and a one-token prompt remainder may count. [Completion diagnostics](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/tools/completion/completion.cpp) cross-check sampler accepts minus verbose-prompt tokens, including EOG; visible text is not a token counter. |
 | Limits | Exact stdout preserves reasoning, EOG and trailing newlines; EOG is not an authoritative finish reason. Wall time includes startup; first-token latency, power and thermals are absent. This small greedy corpus proves neither broad creative quality nor statistical equivalence. |
 
-Broader useful-completion comparisons separately account for prompt processing,
-first-token latency, decode throughput, generated/reasoning tokens, response time,
-retries and resources under equal budgets. Fewer refusals alone cannot prove improvement.
+Use the [complete-task measurement protocol](performance-expectations.md#2026-literature-measurement-and-comparison)
+for broader useful-completion comparisons under equal budgets.
 
 ### Independent review and correctness evidence
 

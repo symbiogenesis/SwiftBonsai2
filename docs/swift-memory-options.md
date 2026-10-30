@@ -7,17 +7,6 @@ still apply. Lossless allocation work preserves the checkpoint, weight/KV precis
 and adapter behavior. Approximate research is labelled separately below;
 [PLAN.md](../PLAN.md#creative-quality-adapters-and-memory) owns outstanding work.
 
-| Option | Current contract | Quantified scope and limitation |
-| --- | --- | --- |
-| Current-symbol PQ2 → PTQ1 | Verified export and bounded native decode | Saves 1,259,520,000 weight bytes (1.1730 GiB); broader [numerical/output qualification](swift-memory.md#numerical-and-admission-boundaries) and performance remain pending. |
-| mmap, no repack | Selected | Avoids a separate complete private weight copy only for tensors supported by the mapped backend buffer type. |
-| Microbatch | 64 selected | A 32-token variant changes execution grouping and its memory benefit is unmeasured. |
-| Output rows | Completion normally samples one row | One F32 logits row is 993,280 bytes; graph logits and persistent host output have distinct lifetimes. |
-| Hadamard/sign cleanup | Main buffers already shared | At most 4 MiB temporary staging plus 114,688 bytes retained sign metadata. |
-| F32/BF16 narrowing | Original types retained | Only 10.09 MiB F32 and 45 MiB BF16 exist; narrowing is not a lossless default. |
-| Thread stacks | Four matching decode/batch threads | Reserved address space is distinct from committed/resident memory. |
-| Rust checkpoint restore | Pinned runtime 0.1.5 stages fallible KV copies and reuses live recurrent/convolution storage | Avoids 156,893,184 bytes (149.625 MiB) of transient Swift restore payload; not measured peak RAM or steady-state savings. |
-
 ## Exact PTQ1 packing
 
 PTQ1 stores each 128-symbol group in **28 bytes**, versus PQ2's **34**: 24 five-trit
@@ -96,9 +85,10 @@ inference touches the weights. No current CLI switch exposes it.
 The [context
 allocator](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/src/llama-context.cpp)
 reserves prompt/decode graphs and grows the persistent output buffer to the largest
-requested count. With 248,320 vocabulary entries, reducing a retained 64-row F32 logits
-buffer to one row would save **62,576,640 bytes**. This is conditional: completion may
-already retain only one row, and graph logits can differ from persistent host output.
+requested count. With 248,320 vocabulary entries, one F32 logits row is 993,280 bytes;
+reducing a retained 64-row buffer to one row would save **62,576,640 bytes**. Completion
+normally samples one row and may already retain only that row; graph logits and
+persistent host output have distinct lifetimes.
 Single-row output, optional embeddings, capture layers, MTP and backend sampling each
 have separate allocation contracts.
 
@@ -121,8 +111,9 @@ initialization vector. Finished sign metadata accounts for 114,688 bytes. Counti
 rotation per transformed weight would count shared storage repeatedly. A butterfly
 rewrite changes floating-point order rather than merely reducing storage.
 
-F32/BF16 weights total 57,767,936 bytes. Narrowing all F32 to sixteen bits could save at
-most 5,291,008 bytes and would require exactness proofs. BF16 already has a [native dot
+Original F32/BF16 weights are retained: 10.09 MiB F32 and 45 MiB BF16, totalling
+57,767,936 bytes. Narrowing all F32 to sixteen bits could save at most 5,291,008 bytes
+and would require exactness proofs. BF16 already has a [native dot
 route](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-cpu/ggml-cpu.c);
 there is no demonstrated complete F32-expanded copy to remove. FP16 can lose BF16 range.
 The 8K FP16 KV/recurrent estimates remain 536,870,912 and 156,893,184 bytes; lowering
@@ -135,6 +126,11 @@ non-OpenMP path. Windows [stack
 reservation](https://learn.microsoft.com/en-us/windows/win32/procthread/thread-stack-size)
 is not committed/resident memory. PE headers and actual stack depth determine whether
 stack settings represent a material allocation bound.
+
+The [pinned Rust runtime's atomic checkpoint restore](native-rust-engine.md#swift-cpu-supported-subset)
+stages fallible KV copies and reuses live recurrent/convolution storage, avoiding
+149.625 MiB of transient Swift payload. This is neither measured peak RAM nor a
+steady-state saving.
 
 ## 2026 state and cache research outside the lossless scope
 
