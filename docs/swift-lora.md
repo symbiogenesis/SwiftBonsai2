@@ -198,12 +198,14 @@ Inspect the plan locally without model loading or benchmarking:
 ./scripts/Invoke-LoraQualification.ps1 -DataDirectory "$env:LOCALAPPDATA/SwiftBonsai2" -PlanOnly
 ```
 
-Actual capture rejects local execution. CI retains 24 paired samples plus four
-loaded-at-zero controls, including completed samples before any later batch failure.
+Actual capture rejects local execution. The legacy matrix requires 24 paired samples
+plus four loaded-at-zero controls, including completed samples before any later batch
+failure. Redesign it to fit the owner's five-minute whole-job limit before scheduling
+it; do not split the matrix across repeated owner jobs.
 
 | Capture component | Contract |
 | --- | --- |
-| Integrity and lifetime | Verify the complete publisher package/model/adapter, retain write/delete-denying handles and copy the verified adapter into a unique external temp lane. Every process enters a one-process kill-on-close Windows Job at creation, with ten-minute deadline and bounded diagnostics. |
+| Integrity and lifetime | Verify the complete publisher package/model/adapter, retain write/delete-denying handles and copy the verified adapter into a unique external temp lane. Every process enters a one-process kill-on-close Windows Job at creation, with a three-minute worker deadline and bounded diagnostics. All owner-device setup, samples, comparison and cleanup must fit five minutes total. |
 | Receipts | Rust parses timings, strictly decodes UTF-8 and hashes exact responses. Each sample has `capture.json`, raw stdout and `diagnostics.json`; completed supervision is written last. PowerShell assembles paired evidence. Upload controls, stdout/logs/arguments/counters/failures; exclude model/adapter files. |
 | Scale | The pinned [`--lora-scaled` parser](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/common/arg.cpp) splits every colon in `FNAME:SCALE`; relative filenames avoid drive-colon ambiguity. [Zero scale](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/src/llama-context.cpp) loads the adapter without its active graph branch. |
 | Throughput | Native single-token **eval-run count / eval time**, from the pinned [stderr timing printer](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/common/sampling.cpp), invariant decimals, missing/duplicate/invalid counters rejected. `decodeTokens` counts eval runs: final sampled tokens normally are not decoded, and a one-token prompt remainder may count. [Completion diagnostics](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/tools/completion/completion.cpp) cross-check sampler accepts minus verbose-prompt tokens, including EOG; visible text is not a token counter. |
