@@ -59,17 +59,23 @@ its behavior, runtime cost and standard-profile qualification are independent.
 
 ## Release decision
 
-**2026-10-30: no-go for shipping PTQ1 with the current pinned runtime/profile.**
-The lossless representation is not rejected. The [decision receipt](evidence/ptq1-release-decision.json)
+**2026-10-30: no-go for shipping PTQ1 as the app default; diagnostic use only.**
+The lossless representation is not rejected. The historical [decision receipt](evidence/ptq1-release-decision.json)
 binds the local and CI X2 startup failures, exact runtime/build identities and retained raw
-evidence digests. This closes the current release proposal; a replacement runtime
-must satisfy the reopening conditions below before PTQ1 is proposed again.
+evidence digests. Rust service [source `27e4860`](https://github.com/symbiogenesis/prism-inference/pull/2)
+now implements the missing PTQ1/approved-adapter profiles and passes its owning
+[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/41009394716)
+and [conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/41009394718).
+The [one-token device smoke](evidence/ptq1-rust-smoke.json) passes complete numerical
+comparison at scale 1.3. This removes a source-support blocker; release/pin integration,
+actual private-service acceptance and the independent gates below remain separate.
 
 | Gate | Evidence and decision |
 | --- | --- |
 | Current-weight packing | Fresh export matches all 209,920,000 reconstructed blocks, the pinned 5,946,648,928 bytes and SHA-256 `e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5`. The 1,259,520,000-byte saving is real. |
 | Publisher runtime startup on X2 Elite Extreme | The exact 63-file verified package at `73bfe6cc485554822f80c473a3c0c4f25e80f41b` exits `3221225794` (`0xC0000142`) on `llama-completion.exe --version` under the ordinary required worker policy. No model option or model artifact is supplied. The 512 MiB Job and ten-second deadline retain the shared 15.5 GiB admission and 4 GiB reserve; the local minimum available physical memory is 21,811,826,688 bytes. This is a startup failure, not a capacity or PTQ1/PQ2 performance comparison. |
-| Rust 0.1.6 app integration | The released service accepts original PQ2 without LoRA. PTQ1 and adapter service support are absent; removing Runner's rejection would bypass qualification. The historical three-token PTQ1 diagnostic remains valid only for its declared no-adapter scope. |
+| Historical Rust 0.1.6 app integration | This version accepts original PQ2 without LoRA; PTQ1 and adapter service support are absent. The earlier three-token diagnostic remains valid only for its no-adapter scope. |
+| Rust replacement source | Source `27e4860` implements explicit PTQ1/approved-adapter service and sealed scale/reset semantics. A single supplied token at scale 1.3 on X2 matches all native logits and live state exactly. This does not establish actual service, quality or resource qualification. |
 | Complete correctness, answers and sustained use | Scalar/explicit NEON trajectories, PTQ1 LoRA basis/forward execution, 8K context/4K output, recovery, independent answer quality, target-device benefit and owner-accepted comfort remain unqualified. No throughput or quality verdict was collected in this session. |
 
 The startup failure is shared by the publisher executable, so it also blocks that
@@ -84,7 +90,7 @@ are model-free; neither establishes a performance or quality comparison. The fir
 [owning CI attempt](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41005833161)
 stopped in compiler discovery before capture; that build failure is not a PTQ1 verdict.
 
-Reopen only after a reviewed runtime release can serve the intended format and
+Reopen app qualification only after a reviewed runtime release can serve the intended format and
 adapter under unchanged containment. For the publisher path, review and release a
 startup fix; the [headless UCRT source candidate](runtime-candidates/README.md#headless-ucrt-argv-candidate)
 is one lead, not a diagnosis of the independently built release. Then pass the exact
@@ -232,6 +238,7 @@ token IDs cannot override a logits/state failure.
 
 | Retained evidence | Result and limit |
 | --- | --- |
+| Rust **0.1.7 source `27e4860`**, approved adapter **1.3**, automatic ARM64, supplied `[248045]` | [Main-only X2 CI](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41012887460) matches all **129 files / 39,504,384 logits/live-state values** byte for byte; maximum absolute error zero and greedy ID matches. Work takes 153.285 seconds; earliest recorded setup through job completion is 196 seconds, below the five-minute ceiling. Uses unchanged **15.5 GiB admission / 11.5 GiB Job / 4 GiB reserve**; Rust peak Job commit is 6,283,157,504 bytes and minimum available physical memory 17,766,457,344 bytes. The [receipt](evidence/ptq1-rust-smoke.json) binds exact tools, sources, controls and retained raw evidence. No scalar/explicit NEON, zero-scale identity, changed-nonzero effect, writer-basis, service, quality or throughput qualification. |
 | Rust **0.1.6**, no adapter, automatic ARM64, supplied `[248045, 872, 198]` | All **483 files / 118,611,456 logits/live-state values** match native bytes; max absolute error zero. Greedy IDs `[198, 198, 220]` match. [Repair receipt](evidence/ptq1-arithmetic-evidence.json) binds source/checker/reference/comparison/supervision hashes and earlier failures, including 430,526 out-of-tolerance one-token values. |
 | Q8_0 repair | Matches pinned DLL scale `maximum * rounded-binary32(1/127)` and inverse `127/maximum`; resolves halfway-code divergence first localized to block 13 FFN down. Generic/PQ2 preparation is unchanged. |
 | Offline comparator | Reconstructs every KV/convolution/recurrent value from original hash-bound serialized native state; exact inventory and finite values required. Both historical failure controls were reproduced exactly first. |
