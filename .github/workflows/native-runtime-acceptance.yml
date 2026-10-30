@@ -3,20 +3,10 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Explicit bounded profile; PTQ1 adapter cannot use the optional long workloads
+        description: Explicit bounded profile; all setup/model work/cleanup shares one five-minute job
         type: choice
         options: [pq2-no-adapter, ptq1-adapter]
         default: pq2-no-adapter
-        required: false
-      extended_history:
-        description: Exercise long supplied history with the full 4096-token output reservation
-        type: boolean
-        default: false
-        required: false
-      stalled_consumer:
-        description: Stop an unfinished stream while its connected client stops reading, then require fresh-owner recovery
-        type: boolean
-        default: false
         required: false
 permissions:
   contents: read
@@ -25,17 +15,68 @@ concurrency:
   group: swift-lora-snapdragon
   cancel-in-progress: false
 jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-11-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/bonsai-tools
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Build exact acceptance binary without executing model tests
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $package = Join-Path $env:RUNNER_TEMP 'Native-Acceptance-Package'
+          [void][IO.Directory]::CreateDirectory($package)
+          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'Native-Acceptance-Build'
+          $messages = Join-Path $env:RUNNER_TEMP 'native-acceptance-build.jsonl'
+          $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+          & $cargo +nightly-2026-10-22 test --locked --release --no-run --message-format=json --manifest-path (Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml') --package bonsai-broker --test native_model | Set-Content -LiteralPath $messages -Encoding utf8NoBOM
+          if ($LASTEXITCODE -ne 0) { throw 'Hosted acceptance binary build failed.' }
+          $artifacts = @(Get-Content -LiteralPath $messages | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -ceq 'compiler-artifact' -and $_.target.name -ceq 'native_model' -and $_.executable })
+          if ($artifacts.Count -ne 1) { throw 'Exactly one native_model test binary is required.' }
+          Copy-Item -LiteralPath $artifacts[0].executable -Destination (Join-Path $package 'native-model-acceptance.exe')
+          Copy-Item -LiteralPath $env:BONSAI_TOOLS_PATH -Destination (Join-Path $package 'bonsai-tools.exe')
+          $files = @('native-model-acceptance.exe', 'bonsai-tools.exe') | ForEach-Object {
+            $path = Join-Path $package $_
+            [ordered]@{ Name=$_; Bytes=(Get-Item -LiteralPath $path).Length; Sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          [ordered]@{
+            SchemaVersion=1; Revision=$env:GITHUB_SHA; RunId=$env:GITHUB_RUN_ID; RunAttempt=$env:GITHUB_RUN_ATTEMPT
+            Toolchain='nightly-2026-10-22-aarch64-pc-windows-msvc'; CompilerIdentity=(& rustc +nightly-2026-10-22 -vV) -join "`n"
+            ToolsSourceId=$env:BONSAI_TOOLS_SOURCE_ID; Files=@($files); ModelExecuted=$false
+          } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $package 'receipt.json') -Encoding utf8NoBOM
+          "BONSAI_ACCEPTANCE_PACKAGE=$package" >> $env:GITHUB_ENV
+      - name: Retain public-source binaries and source/digest receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: native-acceptance-bin-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.BONSAI_ACCEPTANCE_PACKAGE }}
+          if-no-files-found: error
+          retention-days: 90
+
   acceptance:
+    needs: prepare
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
-    timeout-minutes: 90
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: ./.github/actions/rust-toolchain
+      - name: Download exact hosted acceptance package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+          name: native-acceptance-bin-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/Native-Acceptance-Package
       - name: Prepare private external working and evidence directories
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -49,7 +90,25 @@ jobs:
           "BONSAI_NATIVE_WORK=$(Join-Path $root 'work')" >> $env:GITHUB_ENV
           "BONSAI_NATIVE_EVIDENCE=$(Join-Path $root 'evidence')" >> $env:GITHUB_ENV
           "BONSAI_NATIVE_DATA=$(Join-Path $env:LOCALAPPDATA 'SwiftBonsai2')" >> $env:GITHUB_ENV
-          "CARGO_TARGET_DIR=$(Join-Path $env:RUNNER_TEMP 'Bonsai-Native-Acceptance-Target')" >> $env:GITHUB_ENV
+          $package = Join-Path $env:RUNNER_TEMP 'Native-Acceptance-Package'
+          $receiptPath = Join-Path $package 'receipt.json'
+          $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+          if ($receipt.SchemaVersion -ne 1 -or $receipt.Revision -cne $env:GITHUB_SHA -or
+              $receipt.RunId -cne $env:GITHUB_RUN_ID -or $receipt.RunAttempt -cne $env:GITHUB_RUN_ATTEMPT -or
+              $receipt.Toolchain -cne 'nightly-2026-10-22-aarch64-pc-windows-msvc' -or
+              $receipt.ModelExecuted -ne $false -or $receipt.ToolsSourceId -cnotmatch '^[a-f0-9]{64}$' -or
+              [string]::IsNullOrWhiteSpace($receipt.CompilerIdentity) -or @($receipt.Files).Count -ne 2) { throw 'Hosted acceptance source/run identity mismatch.' }
+          Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Common.psm1')
+          foreach ($name in @('native-model-acceptance.exe', 'bonsai-tools.exe')) {
+            $matching = @($receipt.Files | Where-Object Name -CEQ $name)
+            $path = Join-Path $package $name
+            if ($matching.Count -ne 1 -or (Get-Item -LiteralPath $path).Length -ne $matching[0].Bytes -or
+                (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $matching[0].Sha256) { throw 'Hosted acceptance binary digest mismatch.' }
+            Assert-Arm64PE -Path $path
+          }
+          Copy-Item -LiteralPath $receiptPath -Destination (Join-Path $root 'evidence/hosted-build.json')
+          "BONSAI_NATIVE_TEST=$(Join-Path $package 'native-model-acceptance.exe')" >> $env:GITHUB_ENV
+          "BONSAI_TOOLS_PATH=$(Join-Path $package 'bonsai-tools.exe')" >> $env:GITHUB_ENV
       - name: Verify already provisioned pinned release without downloading weights
         shell: pwsh
         working-directory: ${{ env.BONSAI_NATIVE_WORK }}
@@ -63,8 +122,8 @@ jobs:
         working-directory: ${{ env.BONSAI_NATIVE_WORK }}
         env:
           BONSAI_NATIVE_PROFILE: ${{ inputs.profile }}
-          BONSAI_NATIVE_EXTENDED: ${{ inputs.extended_history && 'true' || 'false' }}
-          BONSAI_NATIVE_STALLED_CONSUMER: ${{ inputs.stalled_consumer && 'true' || 'false' }}
+          BONSAI_NATIVE_EXTENDED: 'false'
+          BONSAI_NATIVE_STALLED_CONSUMER: 'false'
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
@@ -89,26 +148,23 @@ jobs:
                 if ($env:BONSAI_NATIVE_EXTENDED -ceq 'true' -or $env:BONSAI_NATIVE_STALLED_CONSUMER -ceq 'true') {
                   throw 'The bounded PTQ1 adapter profile does not admit extended_history or stalled_consumer.'
                 }
-                'pinned_native_ptq1_adapter_streams_scales_recovers_and_restarts_in_required_sandbox'
+                'pinned_native_ptq1_adapter_starts_and_streams_within_device_budget'
               }
               default { throw 'Unknown actual-model acceptance profile.' }
             }
-            $manifest = Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml'
-            $arguments = @('+nightly-2026-10-22', 'test', '--locked', '--release', '--manifest-path', $manifest,
-              '--package', 'bonsai-broker', '--test', 'native_model')
-            $listed = @(& cargo @arguments -- --list --ignored)
+            $test = $env:BONSAI_NATIVE_TEST
+            $listed = @(& $test --list --ignored)
             if ($LASTEXITCODE -ne 0 -or $listed -cnotcontains ($case + ': test')) { throw 'Required actual-model case was not found.' }
             # The model owner must not inherit Actions' artifact/OIDC/GitHub
             # credentials. Scope this omission to the test child; retain the
             # complete Windows/profile environment and the production guard.
-            $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-            $start = [Diagnostics.ProcessStartInfo]::new($cargo)
+            $start = [Diagnostics.ProcessStartInfo]::new($test)
             $start.WorkingDirectory = $env:BONSAI_NATIVE_WORK
             $start.UseShellExecute = $false
             $start.CreateNoWindow = $true
             $start.RedirectStandardOutput = $true
             $start.RedirectStandardError = $true
-            foreach ($argument in @($arguments) + @($case, '--', '--exact', '--ignored', '--nocapture')) {
+            foreach ($argument in @($case, '--exact', '--ignored', '--nocapture')) {
               $start.ArgumentList.Add($argument)
             }
             foreach ($name in @('ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNNER_INPUT_TOKEN')) {
@@ -118,7 +174,7 @@ jobs:
             try {
               $stdout = $child.StandardOutput.ReadToEndAsync()
               $stderr = $child.StandardError.ReadToEndAsync()
-              $child.WaitForExit()
+              if (-not $child.WaitForExit(240000)) { throw 'The aggregate 240-second model case budget expired.' }
               [Console]::Out.Write($stdout.GetAwaiter().GetResult())
               [Console]::Error.Write($stderr.GetAwaiter().GetResult())
               $code = $child.ExitCode
@@ -136,12 +192,13 @@ jobs:
               Set-Content -LiteralPath (Join-Path $env:BONSAI_NATIVE_EVIDENCE 'host.json') -Encoding utf8NoBOM
           }
           $profileScope = if ($env:BONSAI_NATIVE_PROFILE -ceq 'ptq1-adapter') {
-            'PTQ1 with the approved adapter used 4/8-token output caps, scales 0/-0/1.3/2, rejection/reuse and fresh-owner restart. This does not qualify complete state, authoring basis, full 8K/4K, resources, speed or quality.'
+            'PTQ1 with the approved adapter requires one scale-1.3 four-token stream; scale-zero and invalid-scale/reuse checks run only within the same budget. Unrun multi-scale, history, context and restart gates remain pending.'
           } else {
             'No adapter was enabled. Full-context numerical/resource, performance, quality and daily-service qualification remain separate.'
           }
           @('Bounded actual-model Rust application lifecycle passed under required native containment.',
             ('Explicit acceptance profile: ' + $env:BONSAI_NATIVE_PROFILE),
+            'All setup, model loading, execution and cleanup share one five-minute job; actual-model cases have one 240-second aggregate soft deadline. Long optional workloads are disabled. Do not split a matrix into repeated jobs.',
             ('Long supplied-history/full output reservation requested: ' + $env:BONSAI_NATIVE_EXTENDED),
             ('Explicit Stop with a nonreading connected client requested: ' + $env:BONSAI_NATIVE_STALLED_CONSUMER),
             'The stalled-client workload requires an interrupted broker operation, bounded owned shutdown and fresh-owner recovery; it does not prove socket-buffer saturation or that the backend was still generating at Stop.',
@@ -157,5 +214,6 @@ jobs:
           path: |
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/acceptance.json
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/host.json
+            ${{ env.BONSAI_NATIVE_EVIDENCE }}/hosted-build.json
           if-no-files-found: error
           retention-days: 90
