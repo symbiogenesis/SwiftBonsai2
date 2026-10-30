@@ -1,301 +1,145 @@
 # Pure-Rust native UI and local API compatibility
 
-The first-party Swift Bonsai 2 UI must remain a **pure-Rust native application**.
-This is a lasting architecture requirement for the MVP and subsequent product
-work. UI application code, state, event handling, rendering integration and
-network clients belong in Rust. Native operating-system APIs and audited Rust
-bindings to those APIs are permitted.
+The first-party UI must remain a **pure-Rust native application**, for the MVP
+and later product work. Application code, state, events, rendering integration
+and network clients belong in Rust; native OS APIs and audited Rust bindings
+are permitted. PowerShell may provision, build and launch the application.
 
-Do not introduce a JavaScript or TypeScript frontend, HTML/CSS application UI,
-browser shell, WebView, Electron, or a Tauri HTML frontend. Do not adopt the
-inference server's browser UI as the first-party interface. A future UI toolkit
-must preserve the Rust application boundary and must not require a browser
-runtime or a second frontend language. PowerShell may orchestrate builds and
-startup; it does not implement the UI.
+Do not add a JavaScript/TypeScript frontend, HTML/CSS UI, browser shell, WebView,
+Electron or web-rendered Tauri frontend, or adopt the inference server's browser
+UI. A replacement toolkit must preserve this boundary without a browser runtime
+or second frontend language. Interoperability belongs at the HTTP API boundary.
 
 ## Native MVP
 
-`src/chat-ui/` provides the `bonsai-chat` Windows application. Its presentation
-uses `egui` and `eframe`, with a native window and `wgpu` rendering; application
-state, widgets and the HTTP client are Rust. It has no browser runtime or web
-frontend. The UI runs separately from the broker and inference process;
-network work runs off the native event loop. The toolkit supports other desktop
-platforms, but the broker ownership, credentials and speech integrations remain
-Windows-specific; this migration does not establish a cross-platform runner.
-PowerShell bootstraps a trusted maintenance executable; Rust owns source build
-reuse, immutable tool snapshots and the per-user launch guard through app
-teardown. Warm source launches reuse digest-checked capability receipts without
-a separate version process. Installed launches verify the selected package and
-open the app in one native operation after the PowerShell trust bootstrap.
-The launcher checks or builds the native presentation executable first. Its
-pending conversation shell then starts an owned Rust preparation worker, which
-builds/verifies the broker and speech companions and creates fresh credentials.
-Drafts and recovered conversations survive that handoff. The window stays
-available on setup failure; closing it cancels preparation and waits for owned
-descendants. Model admission and artifact verification still precede model use.
-Owned model and speech workers require the native Windows containment described
-in the [worker sandbox architecture](sandboxing.md); microphone consent remains
-a separate UI capability check.
+`src/chat-ui/` provides the Windows `bonsai-chat` application using `egui`,
+`eframe`, a native window and `wgpu`. State, widgets and HTTP clients are Rust.
+The production manifest selects DX12, Vulkan and OpenGL/GLES through eframe's
+`wgpu_no_default_features`, retaining upstream adapter selection and
+`WGPU_BACKEND`. Browser/Metal backends are not requested; upstream test features
+and installed drivers can affect backend availability. Toolkit portability does
+not make Runner cross-platform: process ownership, credentials and speech remain
+Windows-specific.
 
-The production manifest explicitly selects wgpu's DX12, Vulkan and OpenGL/GLES
-Windows backends through eframe's `wgpu_no_default_features` integration. It
-retains upstream adapter selection and `WGPU_BACKEND` handling. Browser and Metal
-backends are not requested by the production manifest; upstream test dependencies
-can enable additional platform features. Available backends still depend on the
-device and installed drivers.
+The dark native UI runs separately from the broker and inference worker. Network, disk,
+DPAPI and speech work stay off the event loop, with bounded queues, cancellation
+and joined shutdown. Windows high contrast, per-monitor scaling, labelled
+AccessKit controls and keyboard navigation are supported. Full bidirectional
+editing and native-control accessibility parity still require qualification.
 
-The window uses a dark palette, maps Windows high-contrast settings to its
-Rust-drawn widgets and keeps an in-memory workspace of up to 16 conversations.
-Each conversation retains its draft, response settings, visible transcript and
-separate exact committed model history. The visible transcript retains at most
-512 messages; count and byte-budget eviction remove the oldest visible messages
-without changing committed model history. Switching while idle never promotes an
-interrupted turn to model history. Each conversation row has a labelled actions
-menu for rename, copying and deletion. Rename and delete use centered native
-modals; deletion names its target, blocks background input and shows completion
-feedback. Cancel and Escape preserve the conversation and its draft.
-Optional recovery uses Windows user-scoped DPAPI through the audited credentials
-boundary, with encrypted atomic file replacement outside Git and a single-writer
-file lock. Saving is off by default; disabling it removes the saved copy. Only
-completed history is restored to a fresh broker, with no automatic request replay
-or microphone activation. Disk and encryption work run on a separate bounded worker.
-The encrypted workspace is limited to 8 MiB; unreadable recovery remains untouched
-until an explicit user saving choice. `eframe` handles
-window input and per-monitor display scaling. Rust-drawn controls expose labels
-through AccessKit and support keyboard navigation.
-The conversation contains only user and assistant content. Startup, retry,
-transport and speech status use separate controls; bounded application
-diagnostics have their own collapsible view rather than appearing as chat
-messages. The transcript supports selection and explicit copying without
-interpreting model output as HTML. Find highlights Unicode case-insensitive
-message-body matches, with a magnifying-glass control beside Settings and
-previous/next navigation below the header. A circular down arrow floats at the
-bottom center of the transcript when newer messages are below the current view;
-selecting it resumes following the latest response. Reasoning is excluded from
-search. Focused
-interaction tests cover streaming selection, search and startup drafting.
-Find navigation reuses the highlighted text galley and paints the active result's
-underline from separately cached glyph runs. Only the active result retains
-underline geometry; moving between results does not rebuild all highlight
-sections or copy the message body. Wrapped rows, Unicode byte ranges and font
-fallback baselines use the galley's existing glyph geometry. Body, query,
-highlight-color, width and display-scale changes invalidate the relevant cache.
-Focused work-count checks cover saturated results and navigation; actual X2
-long-conversation frame delivery remains part of device acceptance.
-Toolkit support for non-Latin glyphs does not imply full
-bidirectional text editing or complete native-control accessibility parity.
-An insufficient-memory startup failure offers **Retry model** after RAM is
-freed. Retrying creates a fresh broker attempt with new diagnostic storage and
-repeats the ordinary artifact, identity and 15.5 GiB admission checks. There is no
-automatic retry or reduced-memory profile.
+### Launch and ownership
 
-Stop and uncertain request failures also leave the window available for an
-explicit **Retry model**. The client tears down the owned backend before a fresh
-attempt, retains completed conversation turns, and never automatically replays
-an interrupted request. Stop immediately freezes queued streaming updates;
-network waits wake on the cancellation command. Requested stops use neutral
-status messages while the backend is released, with Retry available only after
-teardown. An interrupted prompt returns to an empty composer without replacing
-a newly typed draft. If a fully completed turn wins the stop race, its visible
-answer stays consistent with committed history. Local input-limit rejections restore the composer.
-Response settings expose the fixed 8,192-token context bound and select a
-reasoning-inclusive completion cap up to 4,096 tokens. Thinking is off by default;
-the Response settings checkbox enables it for the next response and every Extra
-effort pass. Each conversation preserves its choice, including optional encrypted
-recovery; older saved conversations default to off. Response controls lock during
-generation. Standard remains the
-default single-call workflow; opt-in Extra effort performs at most three
-sequential plan/draft/review calls with a shared deadline, stage labels and
-retained drafts. Its quality gains remain unproven.
+PowerShell bootstraps a trusted maintenance executable; Rust owns build reuse,
+immutable tool snapshots and the per-user launch guard through teardown. Warm
+source launches reuse digest-checked capability receipts; installed launches
+verify the selected package and open the app in one native operation. See the
+[development guide](development-guide.md#native-chat-app) and
+[package contract](chat-packages.md) for commands and cache rules.
 
-Exact context-limit rejections return a bounded, framed local error before
-generation begins. The UI restores the prompt with specific output-cap/context
-guidance and leaves the model ready. Unexpected disconnects describe the local
-connection and do not guess at a token or memory cause. HTTP communication here
-uses numeric loopback on the same computer, rather than an Internet service.
+The launcher checks/builds presentation first. After the first UI tick, an owned
+preparation worker builds/verifies the broker and speech companions and creates
+fresh credentials. Drafts and recovered conversations survive preparation;
+failures leave the window available. Closing cancels preparation and waits for
+owned descendants. Artifact verification and memory admission precede model use.
+Owned inference and speech require [native containment](sandboxing.md), with no
+uncontained fallback. Microphone consent is a separate UI capability check.
 
-The app uses the existing pinned Swift PQ2 CPU backend through the broker.
-`Start-Chat.ps1 -NativeEngine -NoAbliterateLora` explicitly selects the separately
-verified Rust Prism release with the original PQ2 model. The selection survives
-deferred preparation, source/installed launches and explicit retries. Rust's
-current service rejects adapters and PTQ1; conflicting selections fail before
-preparation. This experimental path preserves required native containment and
-does not promote the default or establish full-model/device qualification. See
-the [runtime promotion contract](runtime-promotion.md).
-`Start-Chat.ps1 -UseRepackedPtq1` explicitly selects the verified current-weight
-PTQ1 artifact on that same backend. PQ2 remains the default. This selection
-retains the memory admission, running reserve, conversation and retry policies;
-it does not qualify equivalent outputs, speed or adapter correctness.
-Its pinned abliteration LoRA is enabled by default at scale **1.3**, with an
-explicit `-NoAbliterateLora` opt-out; the broker verifies and holds the selected
-adapter. Settings exposes a scale from 0 to 2 in 0.1 steps, applied to the next
-response without restarting the model. Zero disables the correction for that
-response. The selected scale also applies to every Extra effort pass. Optional
-conversation recovery preserves it; older saved conversations default to 1.3.
-The launch-time opt-out disables the scale control and omits adapter requests.
-The UI does not load model weights, select arbitrary runtime arguments, bypass
-artifact verification or change model, memory, context or sampler policy.
-Thinking selection uses the broker's explicit boolean request option.
-Completion selection stays within the broker's existing request bound.
-A native UI does not by itself qualify runtime correctness, LoRA,
-creative quality, performance or daily-service isolation.
+The UI cannot load weights, select arbitrary runtime arguments or bypass broker
+artifact, model, memory, context or sampler policy. The development guide owns
+explicit PQ2/PTQ1/native-engine and adapter selections; none establishes runtime
+promotion or full-model/device qualification.
 
-Use the [development guide](development-guide.md) for launch commands and
-[broker policy](broker-policy.md) for the exact supported request contract.
+### Conversation and failure semantics
 
-`bonsai-chat.exe --preview` opens the same presentation with sample content and
-an explicit preview indicator. It does not start a broker, access credentials,
-initialize a microphone or start speech services. Preview checks establish UI
-layout and interaction only; they do not qualify model or speech behavior.
+The workspace holds up to 16 conversations, each with a draft, response settings,
+visible transcript and separate exact committed history. Visible transcripts
+retain at most 512 messages; count/byte eviction never changes model history.
+Rename/delete use centered native modals; deletion names its target and blocks
+background input, while Cancel/Escape preserves the conversation and draft.
+Only user/assistant content appears in the transcript. Setup, retry, transport
+and speech status have separate controls; bounded diagnostics are collapsible.
+Model output remains selectable plain text, never interpreted HTML.
+
+Optional recovery is off by default: user-scoped DPAPI, an 8 MiB bound, atomic
+replacement outside Git and one writer per data directory. Unreadable recovery
+is preserved until an explicit saving choice; disabling saving removes its copy.
+Only completed history is restored to a fresh broker, without request replay,
+microphone activation or playback. Interrupted visible text remains separate.
+See the development guide for saved fields and same-user protection limits.
+
+Stop freezes queued streaming updates and wakes network waits. The owned
+backend tears down before **Retry model** becomes available. Retry creates fresh
+credentials/diagnostics and repeats artifact, identity and 15.5 GiB admission
+checks; it preserves completed turns without automatically resending a request
+or reducing the profile. An interrupted prompt returns only to an empty composer,
+preserving newly typed drafts. If completion wins the Stop race, the visible
+answer and committed history agree. Recognized local input rejections restore
+the draft and keep the service ready; unexpected disconnects require retry and
+do not imply a token/memory cause.
+
+Thinking defaults off; its explicit boolean and the bounded output/adapter-scale
+settings apply to the next response and every Extra effort pass. Controls lock
+during generation. Standard makes one call; experimental Extra effort makes at
+most three sequential plan/draft/review calls with one deadline, stage labels
+and retained drafts. Quality gains remain unproven.
+
+Find searches Unicode case-insensitive message bodies, excluding reasoning.
+Its magnifying-glass control sits beside Settings, with previous/next navigation
+below the header. A bottom-center down arrow resumes following newer messages.
+[Streaming resources](streaming-resources.md) owns incremental matching,
+highlight/underline cache invalidation and work bounds.
+
+`bonsai-chat.exe --preview` uses the same presentation with marked sample content
+and no broker, credentials, microphone or speech service. It checks layout and
+interaction, not model/speech behavior.
 
 ## Interoperability belongs at the API boundary
 
-A Rust-only UI remains compatible with local LLM conventions through the
-language-independent HTTP API, rather than through a browser frontend.
-The compatibility surface is an OpenAI-style `POST /v1/chat/completions`
-endpoint, JSON text messages, bearer authorization and incremental
-`text/event-stream` Server-Sent Events (SSE). Clients retain supplied assistant
-reasoning separately from visible answer text and replay it using
-`reasoning_content` when supported by the contract.
+Use the language-independent local LLM HTTP/JSON/SSE conventions: numeric
+loopback, bearer authorization, `POST /v1/chat/completions`, text messages and
+`text/event-stream`. Preserve supplied assistant reasoning separately as
+`reasoning_content`. [Broker policy](broker-policy.md#public-request-contract)
+defines the complete supported subset, bounds, errors and native completion
+semantics. A route name alone establishes neither arbitrary-server nor OpenAI
+SDK compatibility; clients emitting extra fields need an explicit adapter.
 
-The present broker implements a deliberately strict subset. Its complete public
-request contains `messages`, `max_completion_tokens`, `stream`, optional
-`enable_thinking` (default false), and an optional
-fixed `model: "bonsai"` alias. An owned Swift backend with the verified pinned
-adapter also accepts the bounded `abliteration_scale` scalar. Content accepts
-strings or bounded standard text parts; arbitrary model selection, adapters,
-sampling controls, tools, media and unknown fields remain unsupported.
-Clients must use the exact loopback Host, preserve request framing, respect
-bounds and distinguish framed transport completion from a successful terminal
-generation event. See the [public request contract](broker-policy.md#public-request-contract).
-
-The native SSE client accepts UTF-8 BOM and CR/LF/CRLF line endings, including
-fragmented input, and UTF-8 charset parameters on the event-stream media type.
-It requires a terminal `finish_reason` plus `[DONE]` and completed HTTP framing.
-A `length` result retains partial text and displays the token-limit outcome;
-unsupported terminal reasons, error events and missing completion reject.
-Before generation, the broker may instead return HTTP 413 with the fixed JSON
-code `context_length_exceeded`. Only a fully framed, bounded, recognized error
-is treated as a recoverable context rejection; other failures require retry.
-The client also recognizes the fixed HTTP 400 `input_control_tokens_rejected`
-and HTTP 429 `rate_limit_exceeded` errors. The latter requires the broker's
-singleton `Retry-After: 1` header. Complete framing and the exact bounded JSON
-code are required before either is treated as a recoverable input rejection.
-These rejections restore the draft and retain the ready service; the user edits
-or waits and explicitly sends again. The app never automatically replays a
-rejected turn or adds it to committed model history.
+Protocol changes must preserve plain-text/streaming semantics and document
+unsupported features. Keep backend policy outside presentation. Compatibility
+cannot bypass ownership, admission, credentials or context limits.
 
 ## Speech input and output
 
-The Rust maintenance command behind the PowerShell entry point provisions the
-pinned Canary Qwen 2.5B and Qwen3-TTS
-1.7B VoiceDesign and Base Q8_0 GGUF files using immutable URLs and exact size/SHA-256
-verification for downloads and explicit provisioning. Ordinary launch checks
-cached speech file sizes; Rust verifies SHA-256 and holds the verified files
-before loading a speech model on first use. `-SpeechModelsOnly` fully verifies
-files without building or launching the app;
-`-NoSpeechModels` skips automatic speech setup. Rust startup builds native ARM64
-Rust companions and creates separate protected credentials. Rust owns their
-HTTP/authentication, schema validation, WAV processing and model-file verification.
-Speech clients and companions share the dependency-free `bonsai-audio` crate's
-strict mono PCM16 WAV framing; each caller retains its own sample-rate, duration
-and error policy. The codec opens no devices and borrows validated payloads.
-Reviewed native GGML C++ cores implement inference. Separate executables avoid
-mixing different native GGML versions in one process.
+Rust owns companion HTTP/authentication, schema validation, WAV processing and
+verified model files; reviewed native GGML C++ cores perform inference in
+separate executables, avoiding mixed GGML versions. The shared dependency-free
+`bonsai-audio` codec borrows validated mono PCM16 WAV payloads and opens no
+devices; callers retain their own sample-rate, duration and error policies.
+The [development guide](development-guide.md#speech-setup-and-operation) owns
+provisioning, controls, voice conditioning, resource budgets and service lifetime.
+The [Canary](../tools/canary-asr/README.md) and
+[Qwen](../tools/qwen-tts/README.md) READMEs own their protocols.
 
-The UI owns speech through separate Windows Jobs. Canary loads only after an
-explicitly enabled and permitted microphone captures its first clip, stays warm
-for that enabled generation, and stops on input cancellation. Read Aloud releases
-Canary before loading Qwen; transcription releases Qwen first. Output uses
-sequential 256-character synthesis requests with bounded streaming playback and
-prefetch while earlier audio plays. After successful reading, its owned process
-stays warm for at most 30 idle seconds, retaining resource monitoring. Stop,
-failure, microphone transcription and shutdown release it immediately. Both
-services require 9 GiB available at startup and use an independent 5 GiB physical
-reserve with a 16 GiB commit ceiling. Speech failure preserves text chat and the
-completed answer. Swift's existing admission and running reserve remain unchanged.
-`-NoTts` skips automatic TTS setup. Explicit `-CanaryKeyFile`/`-TtsKeyFile` select
-independently managed companions instead. Runtime orchestration stays outside
-presentation controls.
+Microphone access is requested on the UI thread only after explicit action.
+Denied/cancelled/unavailable access fails closed; stale permission, capture or
+transcription results cannot reactivate it. Five-second mono 16 kHz clips stay
+in memory; capture pauses during transcription and retains its recorder only
+for the same enabled, permitted generation. Disabling/revoking closes it.
+Transcripts return to the composer for review, never automatic send. Audio uses
+authenticated numeric loopback and is not sent to a cloud service.
 
-Speech input uses the authenticated numeric-loopback
-[Canary companion](../tools/canary-asr/README.md). The Rust UI requests the Windows
-`microphone` capability on its UI thread before
-audio-only capture. Denied, cancelled or unavailable access fails closed. The
-microphone is off initially; only the explicit microphone toggle can start it.
-Disabling it, sending a prompt, starting read-aloud, creating a conversation or
-closing the window cancels capture and invalidates outstanding session results.
-Late permission/capture/transcription completions cannot reactivate capture.
-
-Bounded five-second mono 16 kHz PCM WAV clips stay in memory in the client. Capture pauses
-while Canary transcribes a clip, retaining the initialized recorder only for the
-same enabled, permitted generation. Disabling or revoking access closes it.
-Recognized text returns to the composer for
-review, with no automatic send. The companion uses the actual pinned Canary
-weights and no recognition fallback; its native engine is separate from
-the Swift CPU backend. No audio is sent to a cloud service by this integration.
-
-Each assistant bubble has a native speaker button in its lower-right corner.
-It plays that response independently, changes to a stop control while active,
-and replaces playback when another response is selected. Completed responses remain
-available during generation of another response. Streaming and empty responses
-cannot start manual playback; an active streaming response's stop button cancels it.
-Read-aloud uses the separate, authenticated local
-[Qwen3-TTS 1.7B VoiceDesign companion](../tools/qwen-tts/README.md). The
-**Voice profile** text setting describes the desired voice in ordinary language;
-no preset, speaker file or reference recording is required. It applies to the
-next read-aloud request or streaming response. Only visible assistant answers are synthesized,
-as plain text; reasoning is excluded. Long answers are split into bounded text
-segments and synthesized sequentially with the same speaker reference. The companion
-designs one fixed reference phrase with a fixed seed from the voice profile, then
-releases VoiceDesign before loading Base. Base extracts speaker and acoustic
-conditioning once and reuses it for every segment and message with that profile.
-Answer text, paragraph boundaries and conversation/request identifiers never
-select the reference. A profile change creates a new reference; worker restarts
-regenerate it from the same fixed phrase, seed and profile. Only one talker model
-is resident at a time. No user recording or reference file is needed.
-Native PCM playback overlaps synthesis through a bounded queue; independently managed
-companions must advertise `consistent_voice: true`, and may use complete-WAV playback
-when streaming is unavailable. Older companions need an update. Stop speech cancels synthesis and native
-audio playback. Missing/not-ready TTS prevents
-output independently of Canary input, with no Windows-voice fallback. Idle
-speech controls remain visible and show native setup/prerequisite guidance when
-selected; a missing service never activates the microphone or substitutes output. Images,
-video and generated images remain unavailable in the pinned Swift profile.
-
-The conversation-wide **Read aloud as responses arrive** checkbox is off by
-default. It feeds visible answer deltas into a separate incremental speech
-session while the model is still generating. Sentence boundaries and bounded
-256-character chunks release text promptly; a short timeout releases accumulated
-words during a pause, and completion flushes the final tail. Synthesis and playback
-use bounded queues, so speech can lag behind text according to local model speed.
-Reasoning and retained working drafts are never fed into speech. Extra effort
-reads each visible stage, cancelling outstanding audio when the next stage replaces
-it. Selecting a completed response's speaker button or **Stop speech** suppresses
-automatic reading for the rest of that response; the mode applies again on the
-next submitted prompt. Switching conversations, stopping generation or a model
-failure cancels pending speech. Each conversation retains its mode choice,
-including optional encrypted recovery; restoring never starts playback. Older
-saved conversations default to off. The existing companion HTTP and model
-request contracts remain unchanged.
-
-This is not a claim of unrestricted OpenAI SDK or arbitrary local-server
-compatibility. A generic client that emits extra fields needs an adapter to
-the supported subset. Likewise, connecting `bonsai-chat` to another local server
-requires checking that server's endpoint, authentication, JSON/SSE and reasoning
-contracts; a matching route name alone is insufficient.
-
-Future compatibility work should extend or adapt explicit protocol contracts
-with focused tests. Keep backend-specific policy outside native presentation
-code, preserve plain text and streaming semantics, and document unsupported
-features. Interoperability does not authorize bypassing the broker's ownership,
-admission, credential or context requirements.
+Only visible assistant answers become plain-text speech; reasoning and private
+working drafts are excluded. Profile-based fixed reference conditioning is
+reused across segments/messages, with only one talker resident at a time.
+Independent companions must advertise `consistent_voice: true`; complete-WAV
+fallback is allowed when streaming is unavailable. Missing services expose
+setup guidance without substitute recognizers/Windows voices. Images, video
+and image generation remain unavailable in the pinned Swift profile.
 
 ## Review and validation
 
-Review UI changes against both boundaries: first-party application code remains
-Rust/native, and the HTTP adapter preserves the documented local LLM contract.
-Use native builds, focused protocol/UI checks and an actual-model session where
-appropriate. Full suites and all benchmarks remain CI-only under the existing
-[validation policy](validation.md). Do not use a successful window launch as
-evidence of model quality or sustained inference performance.
+Review both boundaries: presentation stays native Rust, and the adapter preserves
+the documented protocol. Use native builds, focused UI/protocol checks and
+actual-model acceptance as appropriate. Full suites and all benchmarks remain
+CI-only under [validation](validation.md). Window launch or synthetic work-count
+checks do not establish model quality, speech behavior, sustained performance
+or daily-service isolation; outstanding qualification stays in [PLAN.md](../PLAN.md).

@@ -1,16 +1,11 @@
 # Broker policy and development service
 
-`src/broker/` implements authenticated text-chat admission, bounded HTTP I/O,
-exact-count context admission, single-slot scheduling and a development runner.
-A separate explicit Windows launcher owns the pinned Qwen reference or Swift
-assessment backend.
-The PowerShell preflight and daily profile remain launch-disabled. Development
-controls do not establish daily security or real-model qualification.
-
-The first-party `bonsai-chat` interface is a separate pure-Rust native Windows
-client. The broker serves the HTTP API; it supplies no browser UI or WebView.
-The permanent [UI architecture](ui-architecture.md) keeps presentation native
-while preserving the language-independent local LLM protocol boundary.
+`src/broker/` owns authenticated text-chat admission, exact context counting,
+bounded HTTP I/O and single-slot scheduling. Its explicit Windows launcher owns
+the pinned Qwen reference or Swift assessment backend. The separate first-party
+client remains [native Rust](ui-architecture.md); the broker has no browser UI.
+PowerShell preflight and the daily profile remain launch-disabled. Development
+checks establish neither daily security nor actual-model qualification.
 
 ## Public request contract
 
@@ -28,23 +23,20 @@ A single decimal Content-Length from 1 byte through 1 MiB must match the body.
 Content-Type must be `application/json`, optionally with `; charset=utf-8`.
 Policy-only callers must bound their own prior allocations.
 
-Each `LocalChatService` also owns one fixed-size authenticated-request budget:
-eight requests may arrive as a burst, with one request refilled per monotonic
-second, capped at eight. The budget is checked after header authorization and
-before body intake beyond the existing 16 KiB head buffer, separate body
-allocation, JSON preparation or backend token counting. Invalid credentials
-never spend this budget. Authorized requests spend it even when their body is
-subsequently invalid; rejection does not reset fractional refill credit. This
-is independent of the active/waiting gate and retains no client-indexed map.
-Exhaustion sends a bounded HTTP 429 JSON `rate_limit_exceeded` error with
-`Retry-After: 1`, `Connection: close` and the ordinary no-store headers, then
-write-half-closes immediately and drains only the remaining declared body with
-a fixed 4 KiB buffer under the original intake deadline. This preserves a
-complete error for clients that write their whole request before reading;
-header-only clients may read the error/FIN and close without sending the body.
-Admission remains reusable. The caller may retry explicitly after the delay;
-the broker never replays a request. Low-level policy, reception and supervisor
-APIs still require their caller to supply service-wide admission ownership.
+Each `LocalChatService` owns one constant-space burst budget: eight authenticated
+requests, refilled at one per monotonic second up to eight, independent of the
+active/waiting gate. Check it after header authorization but before body intake
+beyond the 16 KiB head buffer, separate allocation, JSON preparation or counting.
+Invalid credentials spend nothing; authorized invalid bodies spend a request,
+and rejection preserves fractional refill credit. There is no client-indexed map.
+
+Exhaustion sends framed HTTP 429 `rate_limit_exceeded`, `Retry-After: 1`,
+`Connection: close` and ordinary no-store headers, then immediately write-half-closes.
+It drains only the remaining declared body with a fixed 4 KiB buffer under the
+original intake deadline. Whole-request writers receive the complete error;
+header-only clients may read error/FIN and close. Service admission stays reusable;
+resend is explicit. Low-level policy/reception/supervisor callers must provide
+service-wide admission ownership themselves.
 
 | Bound | Limit |
 | --- | --- |
@@ -66,13 +58,8 @@ parsing; it is not a preemptive CPU limit. Errors expose value-free categories.
 
 ## Text-chat admission
 
-The API uses familiar local LLM chat JSON and SSE conventions, with a strict
-supported subset. Generic OpenAI-style clients need an adapter if they send
-fields such as sampling controls or tool definitions. Native Rust UI
-implementation does not widen that public schema or claim unrestricted SDK
-compatibility.
-
-The entire public JSON schema is:
+This strict local LLM JSON/SSE subset needs an adapter for generic clients that
+send unsupported fields; it does not claim full OpenAI SDK compatibility:
 
 ```json
 {
@@ -84,50 +71,34 @@ The entire public JSON schema is:
 }
 ```
 
-`model` is optional and accepts only the fixed alias `bonsai`. It identifies the
-already selected, verified profile; it cannot select another model or path and
-is removed before canonical backend serialization. `stream` defaults to true.
-`enable_thinking` accepts only a boolean and defaults to false. The native UI's
-Thinking setting controls it for the next response and every Extra effort pass.
-The owned Swift Prism CPU launcher with `--use-abliterate-lora` additionally
-accepts an optional numeric `abliteration_scale` from 0 through 2 inclusive,
-defaulting to **1.3** when omitted. Zero disables the correction for that request.
-This field is rejected unless that launcher has verified and loaded the pinned
-adapter; reference, native-engine, no-adapter and independently bound services
-do not accept it. The broker translates it to the sole pinned adapter at slot 0
-in the canonical private request used unchanged for counting and generation.
-The UI changes this scalar for the next response, with no model restart.
-Null, wrong types, unknown fields and duplicate fields
-are rejected at every schema level. An optional first system message may precede
-alternating user/assistant turns ending on user. Content may be a string or one
-through 128 text parts, for example
-`[{"type":"text","text":"Draft a scene."}]`. Parts allow exactly `type` and
-`text`, and are concatenated without adding separators into the same canonical
-text used for both counting and generation. Empty arrays, unknown part types,
-nulls and duplicate fields are rejected. Ending
-on user avoids the pinned runtime's automatic assistant-prefill behavior.
-Assistant messages may also contain a string `reasoning_content` to replay
-previous reasoning returned by the backend. Present null/non-string values and
-reasoning fields on user/system messages are rejected. Omitted reasoning stays
-omitted; supplied reasoning is preserved and counted within the same body and
-context bounds.
+| Field | Contract |
+| --- | --- |
+| `model` | Optional fixed `bonsai` alias for the already verified profile; stripped before backend serialization. Cannot select paths/models. |
+| `stream` | Boolean, defaults true. |
+| `enable_thinking` | Boolean, defaults false; controls the next response/every Extra effort pass. |
+| `max_completion_tokens` | Reasoning-inclusive integer under the limits above. |
+| `messages` | Optional first system message, then alternating user/assistant turns ending on user, avoiding pinned-runtime assistant prefill. |
+| Message `content` | String or 1-128 text parts with exactly `type: "text"` and string `text`. Parts concatenate without separators before counting/generation. |
+| Assistant `reasoning_content` | Optional string, preserved/countable even when thinking is off; omitted stays omitted. Rejected on user/system messages. |
+| `abliteration_scale` | Optional numeric 0-2, default 1.3, only for the owned Swift Prism CPU launcher with verified pinned adapter (`--use-abliterate-lora`). Zero disables that request's correction. |
 
-Caller-supplied content and assistant reasoning reject the exact 33 control and
-user-defined token spellings in the pinned Swift vocabulary before counting or
-backend contact. This includes role/turn markers, reasoning/tool tags and the
-declared media/TTS controls. The independently extracted
-[inventory](../src/broker/tests/fixtures/swift-control-tokens.json) binds their IDs
-and types to the locked model and raw tokenizer-metadata digest. Validation runs
-after JSON decoding and text-part concatenation, so escapes or split parts cannot
-introduce a control spelling. Rejection never removes or normalizes text; other
-literal lookalikes are preserved exactly. This is a narrow model-control boundary,
-not a defense against arbitrary natural-language prompt injection.
-The owned service returns the fixed HTTP 400 JSON code
-`input_control_tokens_rejected`, with complete framing and no-store headers,
-before either backend endpoint is contacted. The service remains ready for a
-corrected request. The native client restores the draft without committing or
-replaying the rejected turn. A control spelling in already committed assistant
-content or reasoning requires a new conversation or an explicitly edited history.
+Null, wrong types, duplicate/unknown fields at every schema level, empty part
+arrays and unknown part types reject. Scale rejects for reference, native-engine,
+no-adapter and independently bound services; it maps only to pinned adapter slot
+0 in identical canonical count/generation requests, without model restart.
+
+Before counting/backend contact, caller content and assistant reasoning reject
+the exact 33 control/user-defined spellings in the pinned Swift vocabulary,
+including role/turn, reasoning/tool and media/TTS markers. The independently
+extracted [inventory](../src/broker/tests/fixtures/swift-control-tokens.json) binds
+IDs/types to the locked model and raw tokenizer-metadata digest. Validation follows
+JSON decoding and part concatenation, covering escapes/split parts; it never
+normalizes or strips text, and preserves literal lookalikes. This is a narrow
+model-control boundary, not general natural-language prompt-injection protection.
+The fixed framed HTTP 400 `input_control_tokens_rejected` with no-store headers
+leaves the service ready without backend contact. The client restores the draft
+without committing/replaying it. Control spellings already in committed assistant
+content/reasoning require new or explicitly edited history.
 
 Model selection, token-cap aliases, tools, media, other template or sampling
 controls, arbitrary LoRA selection or arrays, slots and timing overrides are
@@ -170,13 +141,23 @@ The reserve is conservative policy, not a measured tokenizer-error allowance.
 Bytes/characters are never treated as tokens. Counter errors or identity drift
 must reject admission.
 
-An exact `ContextLimit` rejection returns HTTP 413 with the fixed JSON body
-`{"error":{"code":"context_length_exceeded"}}` before any generation connection.
-It uses `Content-Type: application/json`, `Content-Length`, `Connection: close`,
-`Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. The response contains
-no prompt, credentials, token-counter payload or native diagnostic. This rejection
-leaves generation admission available for an edited request. Other failures retain
-their socket-close behavior; no error response is appended after streaming begins.
+An exact `ContextLimit` rejection returns HTTP 413 before generation:
+`{"error":{"code":"context_length_exceeded"}}`, `Content-Type: application/json`,
+computed `Content-Length`, `Connection: close`, `Cache-Control: no-store` and
+`X-Content-Type-Options: nosniff`. No prompt, key, counter payload or native diagnostic
+is exposed. Admission remains ready for edits; other failures close the socket,
+and no error response is appended after streaming starts.
+
+### Native client completion and recovery
+
+The native SSE client accepts fragmented UTF-8 BOM, CR/LF/CRLF line endings and
+UTF-8 charset media parameters. Success requires terminal `finish_reason`,
+`[DONE]` and complete HTTP framing. `length` retains partial text with token-limit
+status; unsupported terminal reasons, error events and incomplete completion reject.
+Only bounded, fully framed HTTP 413/400/429 with the exact codes above permit
+input recovery; 429 also requires singleton `Retry-After: 1`. These restore the
+draft, preserve the ready service and require explicit edit/wait/resend. They
+never enter committed history. Other failures require backend teardown/retry.
 
 ## One-request receiver
 
@@ -362,16 +343,15 @@ When selected, the adapter's pinned size/SHA-256 is also verified and its handle
 retained through backend shutdown; missing or altered files fail startup.
 This does not attest source-to-binary builds or restricted execution.
 
-Safe broker code delegates Win32 ownership to the audited
-`bonsai-windows-process` and protected credential creation to
-`bonsai-windows-credentials`. A fresh protected evidence directory contains two
-keys and new stdout/stderr files. The reference requires 22 GiB available RAM
-for its 18 GiB service; Swift requires 15.5 GiB for its 11.5 GiB service. Both retain
-a 4 GiB physical reserve. Swift fixes batch/microbatch at 128/64; the reference
-retains 256/128. Suspended process creation atomically applies
-Job/standard-handle attributes: kill-on-close, the selected job-wide commit cap,
-one-process limit, no breakaway and noninheritable Job handle. The absolute
-external evidence directory is the process working directory.
+Safe broker code delegates Win32 ownership to `bonsai-windows-process` and protected
+keys to `bonsai-windows-credentials`. Fresh protected evidence holds two keys and
+stdout/stderr. Reference admission is 22 GiB available / 18 GiB service; Swift is
+15.5 / 11.5 GiB, each retaining 4 GiB physical reserve. Batch/microbatch is 256/128
+for reference, 128/64 for Swift. Suspended creation applies kill-on-close Job,
+commit/process-one/no-breakaway bounds and standard-handle attributes before
+execution; Job handles are noninheritable. The external evidence directory is cwd.
+See [Windows ownership and storage](sandboxing.md) for retained-handle, identity
+and containment contracts.
 
 No frontend opens before a ten-minute startup deadline, complete bounded health
 response, authenticated `/v1/models` checks and listener PID matching the owned
@@ -394,15 +374,12 @@ components. Evidence and credentials remain retained; never share either key or
 the whole directory. CPU/LoRA checks use the packaged Rust maintenance tool and
 same Windows process boundary, with their separate fixed arguments/pins.
 
-The native UI selects `--require-native-sandbox`; direct development can instead
-explicitly choose the exclusive `--allow-unisolated-backend` opt-out. Owned UI
-model and speech workers use pinned native MXC containment with exact file grants,
-private scratch and preserved atomic Job ownership. The
-[worker sandbox architecture](sandboxing.md) owns the detailed policy, OS-managed
-temp behavior, coarse host-loopback authority and remaining qualification gates.
-Broker-only/same-user bypass prevention, complete actual-model acceptance and
-quality/performance remain unqualified.
-Synthetic loopback/stream regressions establish broker behavior, not those gates.
-See [launch commands](development-guide.md#owned-windows-development-backend) and
-[validation](validation.md). Dependency/toolchain pins live in the Cargo workspace
-and lockfile; full suites run only in main-only Foundation CI.
+The native UI requires `--require-native-sandbox`; direct development may explicitly
+select the exclusive `--allow-unisolated-backend` opt-out. The
+[sandbox contract](sandboxing.md) owns exact file grants, private/OS-managed temp,
+verified atomic Job ownership and coarse host-loopback limits. Broker-only/same-user
+bypass prevention, actual-model acceptance, quality and performance remain pending.
+Synthetic loopback/stream checks do not qualify them. Use
+[launch commands](development-guide.md#owned-windows-development-backend) and
+[validation](validation.md); dependency/toolchain pins live in Cargo files and
+full suites run only in main-only Foundation CI.

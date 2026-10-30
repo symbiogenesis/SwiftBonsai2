@@ -5,47 +5,30 @@ Run these examples from the repository root in native Windows ARM64 PowerShell
 
 ## Current state
 
-Swift Bonsai 2 PQ2_0 is the priority low-memory CPU candidate. Its
-[assessment](swift-memory.md) uses separate immutable model/runtime pins from the
-Qwen `reference-cpu` profile. Swift CPU load/decode, optional pretrained LoRA and
-weight-lossless PTQ1 export work as development checks. Quality, performance and
-daily-service acceptance remain pending. See [LoRA qualification](lora-qualification.md),
-[storage sharing](prism-storage-overlay.md) and [memory options](swift-memory-options.md).
-No new training is required.
+Swift PQ2_0 CPU is the priority low-memory profile. Load/decode, optional pretrained
+LoRA and current-weight lossless PTQ1 export have development evidence; quality,
+performance and daily-service acceptance remain pending. Swift and Qwen
+`reference-cpu` use separate immutable pins. See [memory](swift-memory.md),
+[LoRA qualification](lora-qualification.md) and [memory options](swift-memory-options.md).
+No new training is required. [Prism Inference](https://github.com/symbiogenesis/prism-inference)
+is a separately published experimental Rust runtime, initially for Swift/Bonsai.
 
-The repository provides inventory, verified provisioning, source builds, GGUF
-inspection, bounded CPU checks, a strict Rust broker and an explicit Windows
-launcher for the Qwen reference or Swift assessment backend. The experimental
-[Prism Inference runtime](https://github.com/symbiogenesis/prism-inference) is a
-separate Rust project. Its initial supported model path is Swift/Bonsai; broader
-Prism inference support remains future work.
-[Adreno](adreno-gpu-plan.md) and [Hexagon](hexagon-npu-plan.md) integration remain
-planned. Current launch policies select CPU execution.
-
-For the current Snapdragon X2 Elite Extreme device, the bounded
-[CPU thread screen](x2-cpu-optimization.md) compares separate prefill/decode
-budgets in target-device CI. Local `-PlanOnly` inspection and native CPU inventory
-load no model; measured evidence is required before changing launch defaults.
-
-A native Rust chat app is available through `Start-Chat.ps1`.
-Owned model and speech workers require the native Windows containment described
-in the [worker sandbox architecture](sandboxing.md). Complete actual-model and
-daily-service acceptance, including broker-only/same-user bypass prevention,
-remain pending.
+Current launches explicitly select CPU. [Adreno](adreno-gpu-plan.md),
+[Hexagon](hexagon-npu-plan.md) and [automatic profiles](hardware-profiles.md) remain
+planned. The [X2 CPU screen](x2-cpu-optimization.md) compares prefill/decode budgets
+in target-device CI; local inventory/`-PlanOnly` loads no model and cannot promote
+defaults. Owned UI model/speech workers require [native containment](sandboxing.md);
+actual-model and broker-only/same-user isolation acceptance remain pending.
 
 ## Native chat app
 
-For reviewed prebuilt application files, the [portable package workflow](chat-packages.md)
-provides versioned installation, explicit update/rollback and launch without a
-checkout or compiler. The source-build path follows below.
+The [portable package workflow](chat-packages.md) installs reviewed prebuilt app
+files without a checkout/compiler. Source launch requires native Windows ARM64
+PowerShell 7.6+, the pinned Rust toolchain, Swift model/runtime files and
+**15.5 GiB available RAM**. Serviced Windows 11 must admit PSEC 1.1 and
+container-hosted loopback; failed containment never falls back to caller authority.
 
-Use native Windows ARM64 PowerShell 7.6+, the pinned Rust toolchain, an existing
-Swift PQ2 model/runtime installation and at least **15.5 GiB of available RAM**.
-The native app also requires serviced Windows 11 with PSEC 1.1 and container-hosted
-loopback support. Startup checks the actual capabilities and policy admission;
-it does not automatically retry with the caller's unrestricted authority.
-For a new installation, provision the model/runtime with Swift's assessment lock
-and the pinned abliteration adapter:
+Provision Swift and its pinned adapter, then launch:
 
 ```powershell
 $data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
@@ -55,29 +38,68 @@ $data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
 ./scripts/Start-Chat.ps1 -DataDirectory $data
 ```
 
-The native `egui`/`eframe` window follows the lasting
-[UI architecture policy](ui-architecture.md): application UI code stays in Rust;
-native system bindings are permitted, while WebViews, JavaScript, TypeScript,
-HTML and CSS are excluded. `wgpu` renders the Rust-drawn controls. The app
-starts and owns the development broker, uses a dark appearance, shows startup
-status and streams responses. If startup
-reports insufficient RAM, free memory and select **Retry model**. Each retry
-starts a fresh owned broker and repeats artifact verification and the standard
-15.5 GiB memory admission check. Conversation history stays in memory.
-Stopping an active response closes backend admission and stops its owned broker
-and inference process. Select **Retry model** to start a fresh owned session,
-repeat artifact/memory admission, and continue with completed conversation turns
-retained in memory. Retry never resends a prompt automatically. Uncertain
-transport/protocol failures also require this explicit retry. Closing the window
-stops its owned broker and inference process.
+The native Rust `egui`/`eframe` app follows the [UI contract](ui-architecture.md).
+The window opens before broker/speech preparation finishes, so drafting remains
+available during setup. Setup errors stay visible; close and relaunch after
+correcting them. Closing stops preparation, compiler descendants and owned model
+workers. Artifact verification and memory admission still precede model use.
 
-Thinking is off by default. Turn on **Settings → Response → Thinking** to enable
-it for the next response and every Extra effort pass. Each conversation keeps
-its own choice; saving conversations also saves that choice. Older saved
-conversations and newly created conversations start with thinking off.
+**Stop** tears down the owned broker/backend. After teardown, **Retry model**
+starts a fresh owned instance, repeating identity, artifact and 15.5 GiB admission
+checks while retaining completed turns. Use the same explicit retry after
+uncertain transport/protocol failures or after freeing RAM for a failed startup.
+There is no automatic replay or reduced-memory fallback. Interrupted prompts
+return only to an empty composer, preserving any newly typed draft. A local
+connection closure alone does not establish a token or memory failure.
 
-For a model-free visual check, build the chat executable into an external temp
-directory and open its sample preview:
+### Conversations and response settings
+
+The sidebar holds up to 16 conversations with independent drafts and settings.
+Switch while ready/idle; use **New conversation** or the row's **actions** menu to
+rename, copy or delete. Deletion names its target; **Keep conversation** or
+Escape cancels, and deleting the last chat creates an empty one. Status and
+collapsible diagnostics stay outside the user/assistant transcript.
+
+The composer scrolls long drafts without hiding Microphone or Send/Stop.
+**Enter** sends when ready, **Shift+Enter** inserts a newline and **Ctrl+End**
+moves to the draft's end. **Find** / **Ctrl+F** searches visible message bodies
+with Unicode case-insensitive matching, excluding reasoning. **F3/Shift+F3**
+(or **Enter/Shift+Enter** while Find is focused) moves between matches; **Latest**
+returns to the newest message. **Escape** closes Find and clears highlights;
+a second Escape stops active generation or speech.
+
+| Setting | Behavior |
+| --- | --- |
+| **Thinking** | Off initially and in older saved chats; enables reasoning for the next response and every Extra effort pass. |
+| **Mode** | Standard makes one call. Experimental Extra effort makes at most three sequential plan/draft/review calls under one ten-minute deadline, shows stage labels and retains complete drafts. A truncated revision does not replace a complete draft; quality gains remain unproven. |
+| **Output cap** | Defaults to 4,096; also offers 512/1,024/2,048 reasoning-inclusive tokens within the fixed 8,192-token context and 64-token template reserve. |
+| **Abliteration scale** | Pinned adapter defaults to 1.3; choose 0-2 in 0.1 steps for the next response/every Extra effort pass without restart. Zero disables the correction. Older saved chats use 1.3; effectiveness and quality remain experimental. |
+
+Settings belong to each conversation and are retained by optional saving;
+response controls lock during generation. The broker counts the exact prompt
+for every call: controls neither estimate tokens nor discard history. A framed
+context rejection restores the prompt and keeps the model ready; lower the output
+cap or start a conversation. Reaching an admitted response's cap is a separate
+partial-answer outcome, after which you can explicitly ask Swift to continue.
+Other recognized input/burst rejections follow the [broker error contract](broker-policy.md#native-client-completion-and-recovery).
+
+### Optional recovery and preview
+
+In **Settings**, enable **Save conversations on this device** to save drafts,
+response settings, voice description, transcript and exact completed history in
+`DataDirectory/chat-recovery.dpapi`. User-scoped DPAPI encrypts the bounded 8 MiB
+workspace; a file lock permits one writer per data folder. Saving defaults off.
+Interrupted text can remain visible after recovery but never becomes committed
+history or an automatic request. Restore activates neither microphone nor playback.
+Disabling saving deletes the saved copy and keeps the workspace open. Corrupt or
+unreadable recovery is preserved with a warning until explicit saving replaces it.
+Keep the data folder private and outside Git: DPAPI does not isolate other
+same-user processes, and deletion is neither secure erasure nor backup removal.
+
+The app supports Windows high contrast, display scaling, labelled AccessKit
+controls and selectable/copyable text. Full bidirectional editing and native-control
+accessibility parity remain unqualified. Check layout, streaming selection,
+resizing and keyboard navigation with a marked model-free preview:
 
 ```powershell
 $previewTarget = Join-Path ([IO.Path]::GetTempPath()) ('Bonsai-Preview-' + [guid]::NewGuid().ToString('N'))
@@ -85,119 +107,20 @@ cargo build --locked --release --package bonsai-chat --target-dir $previewTarget
 Start-Process -FilePath (Join-Path $previewTarget 'release/bonsai-chat.exe') -ArgumentList '--preview' -WorkingDirectory ([IO.Path]::GetTempPath())
 ```
 
-The preview is visibly marked and uses the same UI with sample content. It
-starts no broker or speech services and does not access credentials or a
-microphone. Use it to inspect resizing, display scaling, selection and keyboard
-navigation. The preview does not establish real-model streaming or audio
-behavior. Although the toolkit supports Windows, macOS and Linux, this runner's
-process ownership, credentials and speech integrations remain Windows-specific.
+Preview uses the same UI and sample content, without broker, credentials,
+microphone or speech services. It establishes neither real-model nor audio behavior.
 
-The conversation shows only user and assistant content. Model readiness,
-generation errors, retry guidance and speech status appear outside the chat;
-application diagnostics are available in a separate collapsible view.
+### Speech setup and operation
 
-The sidebar keeps up to 16 conversations, each with its own unsent draft and
-response settings. Start a **New conversation** without clearing the previous
-one, select a chat to resume it, or open the **⋯** menu beside any conversation
-to rename, copy or delete that conversation. The deletion confirmation names the
-conversation; **Keep conversation** or Escape cancels. Deleting the last chat
-leaves a fresh empty conversation ready to use.
-Switching is available while the model is ready and idle. You can draft a
-message while the model prepares; sending waits for readiness.
+The launcher provisions native ARM64 Canary Qwen 2.5B and Qwen3-TTS 1.7B
+VoiceDesign/Base companions. Rust owns services, authentication, validation, WAV
+processing and process ownership; reviewed native GGML C++ engines infer on CPU.
+The four pinned Q8_0 GGUF files total about 6.7 GiB under
+`$data/speech/native/<revision>/`. Downloads resume with exact size/SHA-256
+verification; launch checks cached sizes, then each service fully hashes and holds
+files before first load. Original snapshots/private runtimes are preserved.
 
-Long or pasted drafts scroll inside the composer, keeping the conversation and
-Microphone and Send/Stop controls visible. Each Swift Bonsai response has its
-own speaker button at the lower right of its bubble. **Ctrl+End** moves to the
-end of a draft; **Shift+Enter** inserts a new line and **Enter** sends when ready.
-
-Use **Find** or **Ctrl+F** to search visible message text, **F3** / **Shift+F3**
-for the next / previous match, and **Latest** to return to the newest message.
-While Find has focus, **Enter** / **Shift+Enter** moves to the next / previous
-match. **Escape** closes Find and clears its highlights. A second **Escape**
-stops an active response or speech.
-Search is case-insensitive, supports Unicode, and excludes private thinking.
-The search controls stay above the scrolling transcript.
-
-Conversations remain in memory by default. In **Settings**, enable **Save
-conversations on this device** for recovery across launches. The app encrypts
-the workspace with Windows user-scoped DPAPI in `DataDirectory/chat-recovery.dpapi`;
-no plaintext conversation is written to that file. Saving includes unsent drafts,
-response settings, voice description, transcript and exact completed model history.
-Interrupted text stays visible after recovery and is never promoted to completed
-history or automatically sent. The microphone remains off. Turning saving off
-removes the saved copy while keeping the current workspace open. Recovery is
-bounded to 8 MiB and only one window can write it for each data folder. Corrupt or
-unreadable recovery is preserved with a visible warning until you explicitly
-enable saving to replace it. Windows user protection does not isolate data from
-other processes running as that user, and deletion is not secure erasure or backup
-removal. Keep the model data folder private and outside Git.
-
-**Mode** defaults to **Standard**, which makes one completion request.
-**Extra effort (experimental)** makes up to three sequential planning, drafting
-and review requests to the same model, with visible stage labels and a shared
-ten-minute deadline. It keeps complete drafts visible for comparison. A
-truncated revision does not replace a complete draft. Extra passes take longer;
-quality improvements remain unproven.
-
-**Output cap** defaults to 4,096 tokens and offers 512, 1,024 and 2,048 tokens.
-Every completion cap includes reasoning, within the fixed 8,192-token total
-context. The broker also reserves 64 tokens for template accounting. These
-controls do not estimate an exact local token count or discard history; the
-broker still performs exact admission for every call. A conversation that exceeds
-this combined allowance gets a specific message to reduce the output cap or start
-a new conversation. The prompt returns to the composer for editing, and the model
-stays ready without requiring a retry. Reaching the output cap during an otherwise
-complete reply is a separate outcome and lets you ask Swift to continue.
-
-HTTP is used only between the UI, broker and model server on this computer,
-through numeric loopback (`127.0.0.1`); chat inference does not send the conversation
-to a website. An unexpected local connection closure requires **Retry model** and
-does not by itself establish a token-limit or memory failure. Completed turns stay
-in memory and the interrupted prompt is restored for review.
-
-The window maps Windows high-contrast colors to its controls, uses `eframe`
-display scaling and exposes control labels through AccessKit. Conversation
-text remains selectable and can be copied explicitly. Check selection while
-streaming and scrolling long conversations; full bidirectional editing and
-native-control accessibility parity are not established. The window
-distinguishes an answer that reached its token limit from a naturally completed
-answer. Select a response's **speaker button** to play that response using
-Qwen3-TTS 1.7B VoiceDesign. The active button becomes **Stop** to cancel synthesis
-and playback; selecting another response switches playback to it. Each button
-becomes available when its response finishes; older responses remain available
-while another response is generating. Reasoning is
-not read aloud. Edit **Voice profile** to
-describe a voice, for example "A warm, low-pitched narrator with a calm pace and
-clear consonants." No voice preset or reference recording is required.
-The companion creates a fixed reference voice from this profile and reuses its
-speaker conditioning across paragraphs and messages. Change the profile explicitly
-to choose another voice. First use also prepares the reference before speech starts.
-
-Enable **Read aloud as responses arrive** beside the composer to read new
-responses while Swift writes them. The choice is off by default and belongs to
-the current conversation. Speech starts in short sentence or word chunks and may
-lag behind the text while Qwen loads or synthesizes. **Stop speech** cancels the
-current reading without stopping text generation. Selecting any completed
-response's speaker button takes over playback and pauses automatic reading until
-the next prompt. Disable the checkbox to stop automatic reading; manual replay
-remains available. Extra effort reads its visible stages and cancels queued audio
-at each stage change. Optional conversation saving preserves the checkbox choice
-without replaying anything on restore.
-
-The app automatically provisions and configures both native ARM64 speech
-companions. Canary uses the selected NVIDIA Canary Qwen 2.5B model and Qwen uses
-the selected 1.7B VoiceDesign and Base models. Rust implements the services, authentication,
-request validation, WAV processing and process ownership. Reviewed native GGML
-C++ engines perform inference. GPU/NPU acceleration is not enabled.
-
-The four pinned Q8_0 GGUF files total approximately 6.7 GiB and live below
-`$data/speech/native/` in revision-specific directories. Exact size and SHA-256
-verification rejects altered caches. Ordinary chat launch checks cached file
-sizes without reading all model bytes; each Rust speech service verifies the exact
-SHA-256 and retains the verified files before loading on first use. New downloads,
-`-SpeechModelsOnly` and standalone provisioning still verify full hashes. Interrupted downloads
-resume. Existing original snapshots and old private runtimes are preserved.
-Download without compiling or launching:
+Download and verify without compiling or launching:
 
 ```powershell
 $speech = ./scripts/Start-Chat.ps1 -DataDirectory $data -SpeechModelsOnly
@@ -208,249 +131,158 @@ $speech.TtsVoiceModelPath
 ```
 
 `Get-NativeSpeechModels.ps1 -DataDirectory $data -Model Canary` or `-Model QwenTts`
-selects one engine's files. `Get-SpeechModels.ps1` remains an explicit utility for
-original reference snapshots; the app no longer consumes those snapshots.
+selects one engine. `Get-SpeechModels.ps1` explicitly provisions original reference
+snapshots, which the app no longer uses. `-NoTts` skips automatic TTS setup;
+`-NoSpeechModels` skips all automatic speech setup/downloads. Neither provisioning
+nor compiling opens a microphone.
 
-Native artifact planning uses `bonsai-tools` with the crates' compiled model
-locks. Select a trusted packaged tool with `BONSAI_TOOLS_PATH` or the provisioning
-script's `-ToolPath`; otherwise the shared resolver builds the maintenance CLI
-in a reusable external cache under `%LOCALAPPDATA%/SwiftBonsai2/build/tools/`,
-separated by checkout and pinned Rust compiler. Unchanged source inputs and
-SHA-256-checked executable receipts skip Cargo on repeat launches; changed inputs
-run the pinned build with Cargo's content freshness checks. PowerShell only
-bootstraps the CLI; Rust owns source fingerprints, receipts and build execution.
-An immutable bootstrap copy permits rebuilding the CLI on Windows without
-replacing the running executable. Provisioning, native build planning and
-credential creation share that executable. Logs and requests stay in unique
-system-temp lanes.
-This also applies to model-only provisioning. It never loads a
-speech model or builds the speech engines.
+Native speech builds require the pinned Rust compiler, Visual Studio 18 ARM64 C++
+tools and Windows SDK. Pinned LLVM ARM64/engine archives and all outputs stay
+outside Git; only child compiler settings change. Downloads use Windows
+`System32/curl.exe` 8.4+ with HTTPS-only redirects and resumable verified partials;
+LLVM extraction uses `System32/tar.exe`. Cached launch invokes neither download.
+`-AsrPath`/`-TtsPath` select built executables, whose services still verify models.
 
-Native builds require the pinned Rust compiler and Visual Studio 18 ARM64 C++
-tools/Windows SDK. The provisioner downloads pinned LLVM ARM64 and native engine
-source archives into external storage. It changes only child compiler settings,
-with no global installation or profile modification. Build outputs and evidence
-stay outside Git. `-AsrPath` and `-TtsPath` can supply already built executables;
-the service still verifies pinned model files when loading.
-Downloads use Windows' `System32/curl.exe` version 8.4 or newer with HTTPS-only
-redirects, resumable partial files and exact size/SHA-256 verification. Cached
-launches do not run curl. LLVM extraction uses Windows' `System32/tar.exe`.
+Only explicitly enabled, Windows-permitted microphone capture starts input.
+Five-second mono 16 kHz WAV clips remain in memory; capture pauses for each
+transcription and reuses the recorder only for the same enabled generation.
+Fixed clip boundaries can split words: this is neither streaming ASR nor VAD.
+Transcripts return to the composer for review, never automatic send. Disabling,
+revocation, Send, New conversation, read-aloud or closing cancels input; late
+completions cannot reactivate it. Missing/not-ready Canary or denied permission
+keeps capture off and exposes setup guidance.
 
-Canary loads after the first permitted microphone clip, stays warm while the
-microphone generation remains enabled, and stops when input is disabled or
-cancelled. Read Aloud releases input before loading Qwen. Qwen generates bounded
-256-character segments sequentially, streaming PCM through bounded native playback
-while generation continues. Older independently managed companions retain WAV
-playback with bounded prefetch. After successful reading, an owned Qwen service
-stays warm for up to 30 idle seconds. Stop speech, failure, transcription and
-shutdown release it immediately; the memory monitor remains active while idle.
-Both speech services use separate owned Windows Jobs. Admission requires 9 GiB
-available; an independent monitor stops only speech below 5 GiB. The Job commit
-ceiling is 16 GiB. Swift's 15.5 GiB startup admission and 4 GiB running reserve are
-unchanged. Resource failures preserve text chat and the completed answer.
+Each completed response's lower-right **speaker button** reads it independently,
+including while a newer response generates. The active button becomes **Stop**;
+selecting another response switches playback. Empty/streaming responses cannot
+start manual playback. Only visible answer text is spoken, excluding reasoning.
+Describe the **Voice profile**, for example "A warm, low-pitched narrator with a
+calm pace and clear consonants." No preset or reference recording is required.
+VoiceDesign makes one fixed reference phrase with a fixed seed/profile, then
+releases before Base extracts/reuses conditioning across segments and messages.
+Text, paragraphs and request/conversation IDs never choose the reference.
+Changing profile creates another; restarts regenerate the same fixed inputs.
+This conditioning design does not guarantee perceived speaker identity.
 
-TTS uses native ARM64 CPU inference. Its default thread budget reserves two of
-the available logical CPUs instead of assuming SMT and halving the count. Use
-`-TtsThreads 6` (or another count from 1 through 256) to select an explicit
-budget; zero selects automatic sizing. More threads do not guarantee higher
-throughput. Compare thread counts with the CI evaluation workflow.
+**Read aloud as responses arrive** is off by default per conversation. It sends
+visible answer deltas in bounded sentence/word chunks while Swift generates;
+loading/synthesis can lag text. **Stop speech** or manual replay suppresses
+automatic reading for that response; the next prompt re-enables it. Disabling the
+checkbox stops automatic reading while preserving manual replay. Extra effort
+reads visible stages and cancels queued audio on replacement. Conversation
+switch, generation Stop or model failure cancels speech. Saving retains the
+checkbox without replay on restore. Working drafts and reasoning are excluded.
 
-Q8_0 remains the default voice-design profile. To evaluate the smaller pinned
-Q4_K_M talker, retaining the Q8_0 codec:
+Owned speech uses separate Windows Jobs and mutual exclusion: read-aloud releases
+Canary before Qwen loads; transcription releases Qwen. Canary stays warm only for
+the enabled input generation. Qwen synthesizes sequential 256-character segments
+with bounded streaming playback/prefetch and stays warm at most 30 idle seconds
+after success. Stop, failure, transcription or shutdown releases it immediately;
+resource monitoring continues while warm. Each service requires 9 GiB available,
+a 5 GiB physical reserve and a 16 GiB Job commit ceiling. Swift retains its
+15.5 GiB admission/4 GiB reserve; speech failure preserves text chat and answers.
+[Streaming resources](streaming-resources.md) owns queue, segmentation and playback bounds.
+
+TTS automatically reserves two logical CPUs; `-TtsThreads 1` through `256` selects
+an explicit budget and zero restores automatic sizing. More threads do not imply
+better throughput. Q8_0 remains the default. Evaluate smaller Q4_K_M talkers with
+the unchanged Q8 codec explicitly:
 
 ```powershell
 ./scripts/Start-Chat.ps1 -DataDirectory $data -TtsQuantization Q4_K_M
 ./scripts/Get-NativeSpeechModels.ps1 -DataDirectory $data -Model QwenTts -TtsQuantization Q4_K_M
-```
-
-Each profile has its own immutable artifact identity and the service verifies
-the selected profile before loading. Q4 is an explicit quality/speed tradeoff;
-it has not been promoted as equivalent to Q8. Streaming reduces time to first
-sound, prefetch reduces segment gaps, and warm reuse avoids repeated model
-verification/loading. These changes do not establish a throughput improvement.
-
-Inspect the paired resource-evaluation schedule without model provisioning or
-inference:
-
-```powershell
 ./scripts/Invoke-TtsEvaluation.ps1 -DataDirectory $data -PlanOnly
 ```
 
-Actual evaluation runs only through the main-only TTS workflow. It alternates
-fresh Q8/Q4 processes and records bootstrap separately from warm synthesis,
-including sampled phase memory and process/Job high-water counters. Each active
-talker is 860,203,008 bytes (0.801 GiB) smaller in the Q4 lock; Design and Base
-are sequential, so their file reductions are not added as RAM savings. The codec
-is unchanged. Counter differences and retained clips require separate resource
-and listening review before profile promotion.
+Each immutable profile is verified before loading. Actual evaluation belongs to
+the main-only TTS workflow; [speech memory](speech-memory.md) defines paired
+fresh/warm resource and listening review. Q4 is not qualified as equivalent to Q8;
+streaming, prefetch and warm reuse alone establish no throughput or peak-memory gain.
 
-`-NoTts` skips automatic TTS setup; `-NoSpeechModels` skips all automatic speech
-setup and downloads. Neither downloading nor compiling opens a microphone.
-The launcher provisions files only for automatically owned speech services;
-externally managed services do not trigger unused model downloads or builds.
-For independently managed services, pass `-CanaryKeyFile C:\Speech\canary.key`
-and/or `-TtsKeyFile C:\Speech\qwen-tts.key`. Ports default to 8766/8767 and must
-be distinct from one another and the chat ports. Key-only services are not owned
-by the app. Both authenticated capability responses are checked, and no fallback
-recognizer or Windows voice is substituted. See the
-[Canary](../tools/canary-asr/README.md) and [Qwen](../tools/qwen-tts/README.md)
-protocol contracts. Voice descriptions guide generation without guaranteeing
-persistent speaker identity between segments. Native actual-model smoke checks
-establish one working path, not a measured performance gain.
+For external services, pass `-CanaryKeyFile C:\Speech\canary.key` and/or
+`-TtsKeyFile C:\Speech\qwen-tts.key`. Default ports 8766/8767 must differ from
+each other and chat ports. Key-only services remain externally owned and trigger
+no unused provisioning/builds. Authenticated capabilities are checked; TTS requires
+`consistent_voice: true` and can use complete-WAV playback without streaming.
+No substitute recognizer or Windows voice is used. Idle controls expose missing
+setup guidance. See [Canary](../tools/canary-asr/README.md) and
+[Qwen](../tools/qwen-tts/README.md) for protocols. Native smoke checks establish a
+working path, not full audio quality, latency or daily-use qualification.
 
-The visible **Microphone: off** button explains speech setup when Canary is not
-configured or ready. With Canary ready, selecting it requests Windows microphone
-permission before recording and changes the button to **Microphone: on**.
-The microphone remains off unless explicitly enabled, and capture pauses while
-each bounded five-second clip is transcribed. While enabled, the initialized
-recorder is reused after transcription instead of initializing the device for
-every clip. Fixed clip boundaries can still divide words; this is not streaming
-recognition or voice-activity detection. Selecting **Microphone: on** to turn it off, Send, New conversation,
-read-aloud or closing the window stops capture and cancels pending input.
-Transcripts appear in the composer for review; they are never sent automatically.
-Permission denial or a missing/not-ready Canary service keeps capture off.
-Each response's **speaker button** explains missing Qwen service setup when it
-cannot start. Speech controls remain visible and actionable while
-idle; they do not silently hide setup requirements behind greyed-out buttons.
-The native UI does not download Canary weights or substitute another recognizer. The
-companion's supported runtime and memory requirements are separate from Swift's
-15.5 GiB admission check; native Windows ARM64 Canary inference is not yet
-qualified. Qwen uses the isolated x64 environment because the official
-torchaudio package has no Windows ARM64 wheel. UI/protocol tests do not establish
-real-model audio quality or latency.
+### Source launch, caches and runtime selection
 
-`Start-Chat.ps1` is a thin options/bootstrap bridge to Rust's `chat-launch`
-command. Rust owns option validation, speech setup, build selection, credentials
-and app launch. It first checks or builds only the chat executable, then opens
-the native conversation window. After the first UI tick, an owned Rust worker
-runs `chat-prepare` to prepare the broker, speech files, companions and credentials.
-You can draft while setup runs. Setup failures remain visible in the window;
-close and relaunch after correcting them. Closing during preparation stops the
-worker and its compiler descendants before the launch guard is released.
-Backend artifact verification and memory admission still gate model use.
-It checks and builds the chat app and broker in a reusable external
-Cargo cache under `DataDirectory/build/chat/`, separated by checkout and pinned
-toolchain. Repeat launches hash source/build inputs and cached executables, then
-reuse matching builds without running Cargo. Speech companions use the same
-checked reuse under `DataDirectory/build/native-speech/`, skipping LLVM verification,
-source staging and Visual Studio setup when unchanged. Native speech also partitions
-the Cargo output directory and receipt by checked CPU registry identity, Windows
-kernel version and OS processor-feature observations. Moving a data directory
-from X1 to X2 therefore builds fresh native objects and repeats CMake's native
-ISA probes. Unavailable mandatory host facts reject reuse/build rather than
-selecting an older host's outputs. Source, lockfile, build
-configuration or environment changes invalidate the receipt; missing or changed
-executables rebuild. Cargo's content freshness mode handles edits with preserved
-timestamps while retaining compiler outputs. No startup cache cleanup is needed.
-Model verification and memory admission still run in Rust.
-Each build variant keeps its own atomic receipt, so another package selection
-does not erase its cache record. Receipts still require exact executable bytes.
-Documentation, CI and PowerShell helper edits do not rebuild unchanged Rust;
-embedded files, model/configuration pins and local dependency inputs remain
-tracked. Unknown embedded inputs disable reuse conservatively. Short cache
-labels leave room for MSVC's linker artifact paths.
-The bootstrap reuses a version probe only for the exact executable digest
-already checked during this launch. Changed tool bytes require fresh discovery,
-including a replacement that preserves its length and timestamp.
+`Start-Chat.ps1` bridges to Rust `chat-launch`; an owned `chat-prepare` worker runs
+after the first UI tick. Rust owns option validation, speech setup, build selection,
+credentials and app launch. `BONSAI_TOOLS_PATH` or `-ToolPath` selects a trusted
+packaged maintenance CLI. Otherwise its reusable cache is
+`%LOCALAPPDATA%/SwiftBonsai2/build/tools/`, separated by checkout/compiler. An
+immutable bootstrap copy permits rebuilding without replacing the running tool.
+This resolver also serves model-only provisioning without loading models or
+building speech engines.
 
-Startup commands retain the caller's process identity. Cancellation or caller
-exit stops the owned Windows Job and waits for compiler descendants before
-releasing the build lock. A startup-process crash also closes that Job. Source
-files and receipts are published only after complete writes; interrupted work
-can be retried. A corrupt completed download partial is preserved separately
-before one fresh attempt. Session credentials and diagnostics remain fresh.
-The first launch after this update builds new isolated speech outputs and records
-receipts. Use `-ForceBuild` to repeat Cargo and native build preparation explicitly,
-including after changing external compiler installations or dependency caches.
-Pass absolute `-ChatPath` and `-BrokerPath` values to select matching current
-builds. Older chat binaries do not support the launcher's deferred startup flags.
-A fresh system-temp lane retains compiler output in `source-build-*.log` and app
-output in `chat.log`. `Start-Chat.ps1` is the supported launcher.
-Installed launch checks the selected manifest, fixed package inventory and
-maintenance executable before running package code. Rust then verifies every
-packaged file's length, SHA-256 and required executable identity. Installation,
-activation and rollback retain their existing atomic selection behavior.
-The launcher allows one chat instance per Windows user. It acquires an exclusive
-handle to `%LOCALAPPDATA%/SwiftBonsai2/chat.lock` before speech provisioning or
-builds and holds it until the app exits. Rapid repeated launches return with an
-already-starting-or-running message, including before the window appears and
-when using another checkout, installed package, data directory or set of ports.
-Closing the app or a startup failure releases the guard automatically; the empty
-lock file stays in place and does not mean the app is running. `-SpeechModelsOnly`
-continues to work independently. Direct executable launches bypass this script guard.
-The pinned abliteration LoRA is enabled at scale **1.3** by default. In Settings,
-adjust **Abliteration scale** from 0 to 2 in 0.1 steps; the choice applies to the
-next response and every Extra effort pass without restarting the model. Zero
-disables the correction for a response. Optional conversation saving preserves
-the selected scale; older saved conversations use 1.3. This experimental default
-does not establish effectiveness or output quality on Swift. Pass
-`-NoAbliterateLora` to run without it; direct `bonsai-chat` launches accept
-`--no-abliterate-lora`. Missing or altered adapter bytes fail startup with
-provisioning guidance; there is no automatic download or fallback.
-`-FrontendPort` and `-BackendPort` select distinct local API ports when the
-defaults are occupied. The script provisions speech model files by default; the
-Swift model and CPU runtime must already be provisioned. It
-retains credentials and technical evidence in external temp storage. Do not
-share those credentials or the complete evidence directory.
+Chat/broker outputs use `DataDirectory/build/chat/`; companions use
+`DataDirectory/build/native-speech/`. Source/build fingerprints and SHA-256 executable
+receipts skip Cargo, LLVM checks, source staging and VS setup when unchanged.
+Speech receipts/output additionally bind CPU registry identity, Windows kernel
+and OS processor-feature observations: moving X1 data to X2 rebuilds native
+objects and CMake ISA probes. Missing mandatory host facts reject reuse/build.
+Source, embedded/configuration pins, locks, local dependencies, build environment
+or executable changes invalidate receipts; unknown embedded inputs disable reuse.
+Documentation/CI/PowerShell helper changes alone do not rebuild Rust. Cargo's
+content freshness handles preserved timestamps. Each variant has an atomic receipt,
+short labels protect MSVC path space, and no startup cache cleanup is needed.
+A version probe is reused only for the executable digest checked during that launch.
 
-The app uses the broker's documented strict subset of OpenAI-style JSON/SSE
-chat conventions. Unsupported fields remain rejected; this is not a claim of
-drop-in compatibility with every OpenAI client.
+Build cancellation, owner exit or crash closes its Windows Job and waits for
+descendants before releasing the build lock. Writes complete before source/receipt
+publication; corrupt completed partials are preserved before one fresh attempt.
+Session credentials and diagnostics stay fresh. `-ForceBuild` repeats Cargo/native
+preparation, including after external compiler/cache changes. Absolute `-ChatPath`
+and `-BrokerPath` must select matching current builds; older apps lack deferred
+startup flags. Unique system-temp lanes retain `source-build-*.log` and `chat.log`.
 
-The app uses the pinned Prism/llama CPU backend with original Swift PQ2 weights
-and the pinned adapter unless opted out. This development default does not
-qualify the [standard LoRA profile](swift-lora.md#required-standard-profile-qualification).
-The separate native inference release `0.1.6` supports the selected thinking mode.
-To use it in the native app, provision that release and select it explicitly:
+One user-wide exclusive `%LOCALAPPDATA%/SwiftBonsai2/chat.lock` covers preparation
+through app exit, including launches from other checkouts/packages/data/ports.
+Repeated launches report already starting/running. The empty sentinel persists
+after release; `-SpeechModelsOnly` is independent and direct executable launches
+bypass the script guard. Installed launches use [package verification](chat-packages.md#launch-without-a-checkout).
+
+The default remains pinned publisher Prism CPU + original Swift PQ2 + adapter.
+`-NoAbliterateLora` (direct app `--no-abliterate-lora`) omits the adapter and disables
+its control. Missing/altered adapters fail with provisioning guidance, without
+download or fallback. `-FrontendPort`/`-BackendPort` select distinct local ports.
+Swift/runtime provisioning remains explicit; only speech is downloaded at launch.
+Keep external credentials and complete evidence directories private.
+
+For the experimental native Rust release 0.1.6, provision and opt out of adapters:
 
 ```powershell
 ./scripts/Get-Inference.ps1 -DataDirectory $data
 ./scripts/Start-Chat.ps1 -DataDirectory $data -NativeEngine -NoAbliterateLora
 ```
 
-`Start-InstalledChat.ps1` accepts the same `-NativeEngine -NoAbliterateLora`
-selection. The broker and direct app use `--native-engine`. This path requires
-original PQ2 weights and an explicit adapter opt-out; selecting PTQ1 or leaving
-the adapter enabled rejects before preparation. A missing or rejected Rust
-runtime fails launch without switching engines. The publisher runtime remains
-the default until the [promotion requirements](runtime-promotion.md) pass.
-Thinking is off by
-default; enable it under **Settings → Response** for the next response.
-Quality, throughput and daily-service qualification remain pending.
+Installed launch accepts the same options; app/broker use `--native-engine`.
+This selection requires original PQ2, rejects PTQ1/adapters before preparation,
+and never switches engines after failure. Publisher Prism remains default until
+[runtime promotion](runtime-promotion.md). Thinking follows the same setting;
+quality, throughput and daily-service qualification remain pending.
 
-Pass `Start-Chat.ps1 -UseRepackedPtq1` to explicitly select only the verified
-current-weight PTQ1 export described in [the memory assessment](swift-memory.md).
-Direct `bonsai-chat` and development broker launches accept
-`--use-repacked-ptq1`. Missing or changed PTQ1 bytes fail verification; the app
-does not substitute the older publisher PTQ1 checkpoint or silently fall back.
-The pinned adapter remains available with the same opt-out and scale setting.
-The native Rust inference service rejects this option until its separate
-end-to-end PTQ1 qualification is complete. See the
-[PTQ1 contract](ptq1-readiness.md) and [central TODO](../PLAN.md#creative-quality-adapters-and-memory).
+`-UseRepackedPtq1` (app/broker `--use-repacked-ptq1`) explicitly selects the verified
+current-weight export on publisher Prism, with the same adapter opt-out/scale.
+Missing/changed bytes reject without older publisher PTQ1 substitution or fallback.
+The native Rust service rejects this option pending separate end-to-end
+[PTQ1 qualification](ptq1-readiness.md). Native HTTP remains numeric loopback;
+unsupported public fields remain rejected under [broker policy](broker-policy.md).
 
 ## X1/X2 configuration boundary
 
-The current development machine reports Snapdragon X2 Elite Extreme X2E94100;
-the previous development machine was a 32 GB Snapdragon X Elite X1E-78-100.
-See the retained [X2 inventory and bounded CPU screen](x2-cpu-optimization.md).
-The ultimate target covers Snapdragon X1 and X2 Windows ARM64 systems with
-[automatic hardware profiles](hardware-profiles.md). That selector is planned;
-current released launch policies remain explicit CPU profiles and provide no
-automatic generation detection or GPU/NPU placement.
-
-The planned Auto mode will identify actual CPU/OS capabilities, GPU/NPU and
-driver/runtime compatibility, then select a qualified bounded configuration for
-the device, workload and interactive or battery objective. Prefill and decode
-may use different approved placements and CPU settings when the complete
-state-transfer cost and numerical contract are qualified. Admission uses actual
-available RAM and device budgets, rather than assuming every X1 or X2 has the
-recorded machine's capacity.
-
-Unknown or unsupported hardware will select a supported baseline CPU profile
-with a recorded reason, or refuse admission when its requirements cannot be
-met. Hardware names and advertised TOPS alone will not enable acceleration.
-The CPU MVP and existing model, context, LoRA and service acceptance requirements
-are tracked in the [central TODO](../PLAN.md).
+The current machine is Snapdragon X2 Elite Extreme X2E94100; the previous machine
+was a 32 GB X Elite X1E-78-100. [Retained inventory](x2-cpu-optimization.md) records
+observations. [Hardware profiles](hardware-profiles.md) owns planned automatic
+capability/driver/workload/objective selection, qualified prefill/decode placement,
+actual-budget admission and supported CPU fallback/refusal. Released policies
+remain explicit CPU selections; SKU names or TOPS never authorize acceleration.
+Outstanding work stays in [PLAN.md](../PLAN.md).
 
 ## Inventory and provisioning
 
@@ -641,9 +473,9 @@ parent-directory owner remain within the trust boundary. No UI route is supplied
 
 ### Owned Windows development backend
 
-The launcher supports only the compiled-in Qwen `reference-cpu` pins, without
-LoRA or arbitrary arguments. It performs no download and does not select Swift.
-Use existing external data/evidence directories:
+The launcher defaults to the compiled-in Qwen `reference-cpu` pins; Swift and
+its pinned adapter require the explicit selections below. It performs no download
+and accepts no arbitrary arguments. Use existing external data/evidence directories:
 
 ```powershell
 $previous = [Environment]::CurrentDirectory
@@ -687,8 +519,9 @@ for detailed ownership and readiness limits.
 
 The printed evidence directory contains `frontend.key`, `backend.key` and technical
 logs. A client may read `frontend.key`; never share either key or the whole
-directory. Restricted tokens, filesystem/egress isolation, same-user bypass
-prevention and real-model daily acceptance remain unqualified.
+directory. This example explicitly retains caller authority. The native UI instead requires
+[sandboxing](sandboxing.md); broker-only/same-user bypass prevention and actual-model
+daily acceptance remain unqualified.
 
 ## Build the CPU server from source
 
@@ -725,26 +558,18 @@ verification evidence. This optional probe uses `bonsai-tools`; supply `-ToolPat
 or a trusted `BONSAI_TOOLS_PATH` to avoid building the maintenance tool. See the
 [capability contract](hardware-capabilities.md#runtime-inventory).
 
-Run the broker from an external native working directory as above. The
-selection requires the original pinned Swift model and verified Prism Inference
-release; it accepts no adapter, alternate model or inference overrides.
-The separately installed server executable is verified against the release lock
-and retained against replacement. Its child process
-receives the shared 11.5 GiB Job, 15.5 GiB available-memory admission, 4 GiB
-reserve watchdog, protected keys and listener-PID checks. The seed is fixed at
-42. Native identity must match before the frontend opens. Interrupted frontend
-generation closes admission and stops the owned backend; restart the launcher
-to establish a fresh owned instance.
+Run from an external native working directory. The selection accepts only the
+original Swift model and verified release, with no adapter/alternate model/overrides.
+It retains the executable against replacement, fixes seed 42 and requires matching
+native identity before frontend readiness. Ordinary 11.5 GiB Job / 15.5 GiB admission,
+4 GiB watchdog, protected keys and listener checks apply. Interrupted generation
+closes admission and stops the backend; relaunch creates a fresh owned instance.
 
-This is an experimental path. Bounded source-runtime checks qualify actual model
-loading, native logit/state parity, prompt/tokenizer and seeded sampler parity,
-and owned HTTP recovery. The provisioned `0.1.6` release includes those source
-repairs and pins the reviewed binary and source identities. See the
-[runtime contract](native-rust-engine.md) for supported scope and the
-[central TODO](../PLAN.md#runtime-and-correctness) for outstanding qualification.
-Full-context behavior, throughput and daily-service acceptance
-remain open. The server's private child protocol alone does not establish Job
-ownership or prevent same-user bypass.
+Release 0.1.6 includes reviewed source loading/logit/state/tokenizer/sampler/recovery
+repairs. [The runtime contract](native-rust-engine.md) defines their exact supported
+scope; [PLAN.md](../PLAN.md#runtime-and-correctness) tracks full-context, throughput
+and daily-service qualification. Private child protocol alone proves neither Job
+ownership nor same-user bypass prevention.
 
 ### Prepare a runtime lock update
 
