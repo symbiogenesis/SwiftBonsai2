@@ -8,7 +8,8 @@ does not approve implementation or imply a complete search. Derivations are
 reviewable arguments, not machine-checked proofs. Topic contracts remain
 authoritative; [PLAN.md](../PLAN.md) alone tracks delivery work.
 
-Jump to [priorities](#priorities-for-this-model-and-hardware),
+Jump to [scope and budgets](#experiment-scope-and-budgets),
+[priorities](#priorities-for-this-model-and-hardware),
 [proof obligations](#mathematical-results-and-proof-obligations),
 [papers](#research-catalog), [implementations](#implementation-sources-to-inspect),
 [reports/HN](#engineering-reports-and-hacker-news-leads),
@@ -32,6 +33,32 @@ an unreviewed preprint); **derivation** = local algebra/counting; **paper** = au
 algorithm/evaluation; **implementation** = inspectable source needing revision,
 license and conformance review; **report** = author/maintainer account. HN supplies
 leads and discussion; trace claims to originals.
+
+## Experiment scope and budgets
+
+Use existing **Snapdragon X Elite or X2 Elite on native Windows ARM64**. Qualify
+each family independently; absent X2 hardware must not block an X Elite result.
+Record SKUs, drivers and ISAs. WSL, x64 emulation, cloud GPUs, unavailable
+proprietary kernels and future instructions are outside scope.
+
+Prefer existing weights and compatible published auxiliaries. Exclude full
+retraining, pretraining and new architectures. Bounded statistics, calibration,
+layerwise transforms and tiny auxiliary fits need a native implementation and
+measured laptop time/RAM estimate; “training-free” does not establish feasibility.
+
+Predeclare candidate count, shapes, prompt/token sample, peak RAM and deadline.
+Default to **30 minutes for feasibility and two hours of initial compute per idea**;
+reduce the sample or record a no-go if it cannot fit. Process one candidate or
+layer at a time, without whole-model expansion or open-ended sweeps. Preserve
+admission, physical reserves, context/output reservations and quality gates.
+These exploration budgets do not replace qualification.
+
+Follow the [experiment checklist](#turning-a-lead-into-an-experiment) and
+[validation policy](validation.md): full suites, benchmarks and performance
+captures run in their owning CI workflows, with owner-managed laptop runners
+for device evidence. Retain losing results and a next step or no-go decision;
+apply [promotion criteria](validation.md#promotion-criteria) before changing
+defaults or admission.
 
 ## Priorities for this model and hardware
 
@@ -59,7 +86,7 @@ injective fixed-length encoding needs `ceil(log2(3^128)) = 203` bits, or 26 byte
 PTQ1's 26 code bytes plus unchanged two-byte scale reach that independent,
 byte-aligned bound. Correlated/variable-length/cross-block coding remains possible
 but must pay for indexes, padding, decoding and random access.
-[Swift's 32.76154% zeros](swift-memory-options.md#packing-decision) miss BITCOS's
+[Swift's 32.76154% zeros](swift-memory.md#packing-decision) miss BITCOS's
 37.5% ideal break-even. Zeros do not skip dense-loop work; sparsity must repay
 indexes and irregular execution.
 
@@ -326,8 +353,8 @@ replacing exact KV/state or re-quantizing the selected model by default.
 
 ### 2026 mobile acceleration and speech
 
-The [Adreno](adreno-gpu-plan.md#2026-research-evidence),
-[Hexagon](hexagon-npu-plan.md#2026-research-evidence) and
+The [Adreno](adreno.md#2026-research-evidence),
+[Hexagon](hexagon.md#2026-research-evidence) and
 [speech](performance-expectations.md#2026-speech-inference-research) guides retain device,
 runtime-access and measurement details.
 
@@ -427,7 +454,7 @@ comparisons; votes, stars and repeated headlines do not validate equivalence or 
    nominal buffers and Job commit measure different things.
 4. Pin source/license; implement kernels upstream, preserving Runner policy and
    Rust/native presentation. Predeclare candidate count, shapes, sample, peak RAM
-   and deadline under [PLAN's practical budgets](../PLAN.md#research-scope-and-practical-budgets).
+   and deadline under the [experiment budgets](#experiment-scope-and-budgets).
 5. Run focused untimed conformance for relevant tails, generic PQ2 `+2`, i8 `-128`,
    continuation, edits, restores, cancellation and failed commit; reuse suitable fixtures.
 6. Run all benchmarks/full suites in [CI only](validation.md), on actual Snapdragon
@@ -445,19 +472,13 @@ complete-task accounting; UI delivery timing is not inference-kernel throughput.
 
 ## Keeping the register current
 
-Coverage through **2026-10-29** includes accessible arXiv/proceedings, original
-repositories, author/vendor reports and HN links, prioritizing 2026 work and its
-citations, revisions, source changes, counterexamples and withdrawals. Absence
-from this bounded catalog does not establish nonexistence.
-
 ### Source coverage
 
-| Source family | Retained review evidence |
-| --- | --- |
-| arXiv/full texts: low-bit kernels, recurrent compression, attention, speculation, mobile/speech, measurement | Submission/revision dates, assumptions, arithmetic identity, hardware, overhead exclusions and negative results |
-| MLSys, ICLR, ACL/EMNLP, MobiSys, OSDI, DATE and related proceedings | Inspectable venue-backed papers; future acceptance claims remain labelled as authors' statements |
-| GitHub/Arm GitLab implementations, PRs/releases, codecs/bugs | Observed source/PR status, platform limits and availability; no adoption or pin update |
-| Author/vendor blogs and HN | Dated primary report/workload/caveats; comments/headlines only supply leads |
+The **2026-10-29** cutoff covers accessible papers/proceedings, original
+repositories, author/vendor reports and HN leads, with emphasis on 2026 work.
+This bounded search does not establish that omitted work is absent. Future
+venue acceptances remain author claims; observed PR/release status is neither
+adoption nor a pin update.
 
 Refresh queries: `ternary LUT ARM NEON inference`, `batched low-bit prefill`,
 `Gated DeltaNet chunkwise speculative rollback`, `hybrid recurrent prefix checkpoint`,
@@ -465,10 +486,11 @@ Refresh queries: `ternary LUT ARM NEON inference`, `batched low-bit prefill`,
 `bounded neural-network memory allocation`. Follow versions/citations, inspect
 implementation release diffs and PR status, and resolve community claims to originals.
 
-Each lead needs title/primary URL, publication/version/review dates, assumptions
-or benchmark hardware/workload, exactness/error contract, memory overhead,
-Swift/ARM64 applicability, source/experiment revision and disposition: `candidate`,
-`approximation`, `requires new artifacts`, `implemented with bounded evidence`,
-`rejected` or `deferred`. Mark inaccessible material unverified; update the cutoff
-only after reviewing sources. Topic-specific implications remain in their
-[contract pages](README.md), with this register as the source catalog.
+Retain each lead's primary URL/title, publication/version/review dates,
+assumptions, hardware/workload, arithmetic/error contract, excluded work and
+memory overhead, Swift/ARM64 applicability, revision and disposition:
+`candidate`, `approximation`, `requires new artifacts`, `implemented with bounded
+evidence`, `rejected` or `deferred`. Follow revisions/citations, counterexamples,
+withdrawals and source changes; mark inaccessible material unverified. Update
+the cutoff only after review. Keep topic-specific implications in their
+[contracts](README.md) and delivery work in PLAN.
