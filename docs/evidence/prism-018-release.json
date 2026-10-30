@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 1,
+  "kind": "prism-0.1.8-public-prerelease-artifact-identity",
+  "status": "published-prerelease-assets-and-runner-pin-verified",
+  "verifiedAtUtc": "2026-10-30T07:34:20.953771+00:00",
+  "scope": "Runtime publication, safe startup source repair, exact external credential helper, reviewed pin and installed ARM64 identities only. Server actual-model acceptance and full PTQ1 profile qualification remain unqualified.",
+  "release": {
+    "url": "https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.8",
+    "tag": "v0.1.8",
+    "sourceRevision": "fce300b94234c2dd70756dd4bbc33ea703848cb6",
+    "publishedAtUtc": "2026-10-30T07:31:42Z",
+    "draft": false,
+    "prerelease": true,
+    "latestStableRelease": false,
+    "observedLatestStableTag": "v0.1.6"
+  },
+  "sourceArchives": [
+    {
+      "repository": "symbiogenesis/prism-inference",
+      "commit": "fce300b94234c2dd70756dd4bbc33ea703848cb6",
+      "url": "https://github.com/symbiogenesis/prism-inference/archive/fce300b94234c2dd70756dd4bbc33ea703848cb6.zip",
+      "bytes": 4197502,
+      "sha256": "9c2d742c49b656c83e987878dfa21fd50df896a91751d6f5183279f65cb41f26"
+    },
+    {
+      "repository": "symbiogenesis/SwiftBonsai2Runner",
+      "commit": "abe04b4a8eff18388af96f0e75c8a8d180b81989",
+      "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/archive/abe04b4a8eff18388af96f0e75c8a8d180b81989.zip",
+      "bytes": 1363804,
+      "sha256": "092665eea91f678b7d76998fd4e567bec8bfd1e9e860f6b6fa03a063f94785ee"
+    }
+  ],
+  "externalCredentialHelper": {
+    "revision": "abe04b4a8eff18388af96f0e75c8a8d180b81989",
+    "exactGitDependencyRetainedInCargoLock": true,
+    "includedInsidePrismSourceZip": false,
+    "separateSourceArchiveRetained": true,
+    "serverCratesIoPublishEnabled": false,
+    "rootRuntimeLibraryPublicationContractChanged": false
+  },
+  "upstreamCi": [
+    {
+      "name": "Foundation",
+      "runId": "41017335054",
+      "runAttempt": 1,
+      "url": "https://github.com/symbiogenesis/prism-inference/actions/runs/41017335054",
+      "sourceRevision": "fce300b94234c2dd70756dd4bbc33ea703848cb6",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "name": "Runtime conformance",
+      "runId": "41017335160",
+      "runAttempt": 1,
+      "url": "https://github.com/symbiogenesis/prism-inference/actions/runs/41017335160",
+      "sourceRevision": "fce300b94234c2dd70756dd4bbc33ea703848cb6",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "assets": [
+    {
+      "name": "prism-inference-0.1.8-aarch64-pc-windows-msvc.zip",
+      "assetId": 691268833,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.8/prism-inference-0.1.8-aarch64-pc-windows-msvc.zip",
+      "bytes": 3014310,
+      "sha256": "7e97e8a14778ff334df4b6f4cc41c1128ddafc48b02dd069617af7895a1d3487",
+      "publicDownloadMatchesCiBundle": true
+    },
+    {
+      "name": "prism-inference-0.1.8-aarch64-pc-windows-msvc.receipt.json",
+      "assetId": 691268845,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.8/prism-inference-0.1.8-aarch64-pc-windows-msvc.receipt.json",
+      "bytes": 1976,
+      "sha256": "a4b2cba20b41ff0a6a5a0001dd8510f3d0ffe58ad54348bceccc2bd46b8bcd0a",
+      "publicDownloadMatchesCiBundle": true
+    },
+    {
+      "name": "prism-inference-0.1.8-x86_64-pc-windows-msvc.zip",
+      "assetId": 691268841,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.8/prism-inference-0.1.8-x86_64-pc-windows-msvc.zip",
+      "bytes": 3277024,
+      "sha256": "11be7848c721583a98f1be9c22f14b10c9b2aeb4daaaa52a79fcecc762f99b1a",
+      "publicDownloadMatchesCiBundle": true
+    },
+    {
+      "name": "prism-inference-0.1.8-x86_64-pc-windows-msvc.receipt.json",
+      "assetId": 691268837,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.8/prism-inference-0.1.8-x86_64-pc-windows-msvc.receipt.json",
+      "bytes": 1974,
+      "sha256": "fa272498203dc413b9393ee098b04acc7ce64054d4a78c7028af39711fdab046",
+      "publicDownloadMatchesCiBundle": true
+    }
+  ],
+  "verification": {
+    "allFourPublicDownloadsMatchCiBundlesAndReleaseApiDigests": true,
+    "bothZipExactNineFileInventoriesAndAllEntryHashesVerified": true,
+    "publicZipDownloadReportVerifiedAtUtc": "2026-10-30T07:31:51.9547658Z",
+    "offlineCandidateEqualsMergedRunnerPinExactBytes": true,
+    "offlineReview": {
+      "runId": "41017335054",
+      "runAttempt": 1,
+      "target": "aarch64-pc-windows-msvc",
+      "verified": true
+    },
+    "retainedIndependentVerification": "independent-verification.json",
+    "modelRunsForThisReceipt": 0,
+    "comparatorRunsForThisReceipt": 0
+  },
+  "runnerPin": {
+    "revision": "1540297e7656094c92922fd77f723b38948b612a",
+    "commitUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/commit/1540297e7656094c92922fd77f723b38948b612a",
+    "file": "config/prism-inference.lock.json",
+    "bytes": 2359,
+    "sha256": "fb889738008e0021a419926c233f668ca47d709130f1ae89d3f148201aa96cee",
+    "archivedPinBytesAreExactCommittedGitBlob": true,
+    "target": "aarch64-pc-windows-msvc",
+    "version": "0.1.8",
+    "runtimeSourceRevision": "fce300b94234c2dd70756dd4bbc33ea703848cb6",
+    "installedDirectory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\inference\\fce300b94234c2dd70756dd4bbc33ea703848cb6\\aarch64-pc-windows-msvc",
+    "installedFileCount": 9,
+    "installedExactInventoryAndDigestsVerified": true,
+    "allFiveExecutablePeHeadersAreArm64": true,
+    "retainedProvisioningReceipt": "runner/installed-verification.json",
+    "server": {
+      "bytes": 1945088,
+      "name": "prism-inference-server.exe",
+      "sha256": "4251750cec9a86f672755ca4845d699890f2979a466e84386e8d246b04155f41"
+    }
+  },
+  "qualificationBoundary": {
+    "serverApplicationAcceptance": "pending-not-qualified",
+    "applicationAcceptanceEstablishedByThisReceipt": false,
+    "fullPtq1ReleaseQualityApproved": false,
+    "ptq1PromotedToDefault": false,
+    "previousFailedApplicationAttemptReceipt": "docs/evidence/ptq1-native-service.json",
+    "previousNumericalSmokeReceipt": "docs/evidence/ptq1-rust-smoke.json",
+    "priorNumericalReleaseAndNegativeAttemptArchivesModified": false,
+    "pending": [
+      "published server actual-model application acceptance",
+      "scalar and explicit NEON numerical comparisons",
+      "no-adapter and loaded-at-zero exact identity controls",
+      "nonzero adapter change control",
+      "independent writer-authoring-basis proof",
+      "creative quality",
+      "performance and comfort",
+      "full context and output",
+      "daily service isolation and recovery"
+    ]
+  },
+  "durableArchive": {
+    "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\prism-018-release-20261030",
+    "manifest": "manifest.json",
+    "bytes": 5981,
+    "sha256": "3b88a72902ad3959dcfdedc254822100aa3573d7cdc5cf0503b3e139d6b95d30",
+    "fileCountExcludingManifest": 31,
+    "retainedBytesExcludingManifest": 18272946,
+    "allCopyAndManifestDigestsVerified": true,
+    "credentialsIncluded": false,
+    "contents": [
+      "public ZIPs and receipts",
+      "reviewed CI ZIPs and receipts",
+      "Prism and exact external credential-helper source ZIPs",
+      "source-download receipt",
+      "offline pin review and candidate",
+      "published release/tag and both successful CI metadata",
+      "exact merged Runner pin and installed verification",
+      "historical draft and pending-conformance preparation snapshots",
+      "independent verification and complete file digest manifest"
+    ]
+  }
+}
