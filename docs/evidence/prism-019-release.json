@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "kind": "prism-0.1.9-public-prerelease-artifact-and-runner-pin-identity",
+  "status": "published-prerelease-assets-and-reviewed-runner-pin-verified",
+  "verifiedAtUtc": "2026-10-30T17:29:23.5839820+00:00",
+  "scope": "Exact public release/source/helper identities, full upstream CI, parallel-row feature availability and reviewed Runner pin only. No new installed-runtime or actual-model acceptance claim.",
+  "release": {
+    "url": "https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.9",
+    "tag": "v0.1.9",
+    "sourceRevision": "7aca2251f09acb345d4afb53d5ce411f81017745",
+    "publishedAtUtc": "2026-10-30T17:01:39Z",
+    "draft": false,
+    "prerelease": true,
+    "tagResolvesToExactSource": true,
+    "observedLatestStableTag": "v0.1.6"
+  },
+  "sourceArchives": [
+    {
+      "repository": "symbiogenesis/prism-inference",
+      "commit": "7aca2251f09acb345d4afb53d5ce411f81017745",
+      "url": "https://github.com/symbiogenesis/prism-inference/archive/7aca2251f09acb345d4afb53d5ce411f81017745.zip",
+      "bytes": 4199748,
+      "sha256": "b84fc882cbc7ee95109bdca0fe4bfa2246c674d7c021612ce3a9311ad74ea719"
+    },
+    {
+      "repository": "symbiogenesis/SwiftBonsai2Runner",
+      "commit": "abe04b4a8eff18388af96f0e75c8a8d180b81989",
+      "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/archive/abe04b4a8eff18388af96f0e75c8a8d180b81989.zip",
+      "bytes": 1363804,
+      "sha256": "092665eea91f678b7d76998fd4e567bec8bfd1e9e860f6b6fa03a063f94785ee"
+    }
+  ],
+  "upstreamCi": [
+    {
+      "name": "Foundation-full",
+      "runId": "41029550347",
+      "runAttempt": 1,
+      "url": "https://github.com/symbiogenesis/prism-inference/actions/runs/41029550347",
+      "sourceRevision": "7aca2251f09acb345d4afb53d5ce411f81017745",
+      "conclusion": "success"
+    },
+    {
+      "name": "Runtime-conformance-full",
+      "runId": "41028418717",
+      "runAttempt": 1,
+      "url": "https://github.com/symbiogenesis/prism-inference/actions/runs/41028418717",
+      "sourceRevision": "7aca2251f09acb345d4afb53d5ce411f81017745",
+      "conclusion": "success"
+    }
+  ],
+  "assets": [
+    {
+      "name": "prism-inference-0.1.9-aarch64-pc-windows-msvc.zip",
+      "assetId": 692775186,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.9/prism-inference-0.1.9-aarch64-pc-windows-msvc.zip",
+      "bytes": 3190688,
+      "sha256": "a776891d7a07ffa76bf6a733e57dd8c659249572026c7429ff1980af8cc2d56f",
+      "freshPublicDownloadMatchesCiAndApi": true
+    },
+    {
+      "name": "prism-inference-0.1.9-aarch64-pc-windows-msvc.receipt.json",
+      "assetId": 692775189,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.9/prism-inference-0.1.9-aarch64-pc-windows-msvc.receipt.json",
+      "bytes": 1976,
+      "sha256": "6703cd9a887ea9ee0120ab4f566d1110292564fed3534e3ab65f58bd8978c883",
+      "freshPublicDownloadMatchesCiAndApi": true
+    },
+    {
+      "name": "prism-inference-0.1.9-x86_64-pc-windows-msvc.zip",
+      "assetId": 692775191,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.9/prism-inference-0.1.9-x86_64-pc-windows-msvc.zip",
+      "bytes": 3464239,
+      "sha256": "f553493e43ac9c5af26ae8462f1f5d2c9ab1db7db7ec737602fe7d2ee2a6a28f",
+      "freshPublicDownloadMatchesCiAndApi": true
+    },
+    {
+      "name": "prism-inference-0.1.9-x86_64-pc-windows-msvc.receipt.json",
+      "assetId": 692775184,
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.9/prism-inference-0.1.9-x86_64-pc-windows-msvc.receipt.json",
+      "bytes": 1974,
+      "sha256": "6d4fa8da70c3a5758ea970b07a31e6b8858c44067c3eedd141d615f62be9f56d",
+      "freshPublicDownloadMatchesCiAndApi": true
+    }
+  ],
+  "externalCredentialHelper": {
+    "revision": "abe04b4a8eff18388af96f0e75c8a8d180b81989",
+    "exactCargoGitDependencyUnchanged": true,
+    "includedInPrismSourceZip": false,
+    "separateSourceRetained": true,
+    "serverCratesIoPublishEnabled": false
+  },
+  "releaseFeatures": {
+    "buildFeatures": [
+      "prism-inference/parallel-rows",
+      "prism-inference-server/parallel-rows"
+    ],
+    "defaultRowWorkers": 1,
+    "explicitSelectionRequired": true,
+    "finalBinaryBuildEnablesFeatures": true,
+    "packagingCopiesWithoutRecompilation": true,
+    "bothTargetsServerAndWorkerStaticMarkersVerified": true,
+    "retainedBuildChainProof": "proof/feature-build-chain.json",
+    "runtimeBehaviorOrSpeedEstablishedByStaticMarkers": false
+  },
+  "runnerPin": {
+    "revision": "eaf241b3c218c38fdd00ed9d55ed2ff4b27dcd33",
+    "commitUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/commit/eaf241b3c218c38fdd00ed9d55ed2ff4b27dcd33",
+    "file": "config/prism-inference.lock.json",
+    "gitBlobSha1": "a3481ca1f294f47b9ad33de444f11fb66db1c9ce",
+    "bytes": 2359,
+    "sha256": "a68e5b19c2b848f95c6ccfdcb253578e1398643ef5a33da3f774336f1cf81918",
+    "target": "aarch64-pc-windows-msvc",
+    "offlineCandidateEqualsExactCommittedBytes": true,
+    "offlineReviewRunId": "41029550347",
+    "offlineReviewRunAttempt": 1,
+    "trustedMaintenanceToolSha256": "8ec612d4bccfde0f8e7aa2a38970d2de7a51a2235eecf63fd8744bfaa9903892",
+    "runtimeInstallationEstablishedByThisReceipt": false
+  },
+  "verification": {
+    "allFourFreshAnonymousPublicDownloadsMatchCiAndApi": true,
+    "bothZipNineFileInventoriesAndAllEighteenPayloadHashesVerified": true,
+    "allTenExecutableArchitecturesVerified": true,
+    "bothSourceArchiveDigestsVerified": true,
+    "originalDraftAndPublicationManifestsUnchanged": true,
+    "runtimeExecutionsForThisReceipt": 0,
+    "modelRunsForThisReceipt": 0,
+    "localBuildsForThisReceipt": 0,
+    "appSettingsChangedByThisReceipt": false
+  },
+  "qualificationBoundary": {
+    "published019ServerActualModelAcceptanceEstablishedByThisReceipt": false,
+    "fullPtq1ReleaseQualityApproved": false,
+    "ptq1PromotedToDefault": false,
+    "appFourWorkersQualifiedByThisReceipt": false,
+    "performanceQualifiedByThisReceipt": false,
+    "defaultRowWorkers": 1,
+    "separateSourceCheckerEvidence": "docs/evidence/row-parallel-smoke.json",
+    "historical018ServiceReceipt": "docs/evidence/ptq1-native-service.json",
+    "historical017ReleaseReceipt": "docs/evidence/prism-017-release.json",
+    "historical018ReleaseReceipt": "docs/evidence/prism-018-release.json",
+    "historicalEvidenceModified": false
+  },
+  "durableArchives": [
+    {
+      "scope": "immutable-draft-snapshot",
+      "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\prism-019-release-candidate-20261030",
+      "manifest": "manifest.json",
+      "manifestBytes": 3795,
+      "manifestSha256": "0a2cf6f3d0e853b445e5ded8d40a709069ca8617ffb3873f872bc41905621e56",
+      "fileCountExcludingManifest": 19,
+      "retainedBytesExcludingManifest": 18899309,
+      "allDigestsVerified": true,
+      "credentialsIncluded": false
+    },
+    {
+      "scope": "published-assets-and-offline-candidate-before-runner-pin",
+      "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\prism-019-release-candidate-20261030\\published-20261030T170139Z",
+      "manifest": "manifest.json",
+      "manifestBytes": 3528,
+      "manifestSha256": "a9091c9cc2dfc986f873b2c8d91cfcc7ad00d92d0d0f631923e59be30857d4e7",
+      "fileCountExcludingManifest": 18,
+      "retainedBytesExcludingManifest": 12242885,
+      "allDigestsVerified": true,
+      "credentialsIncluded": false
+    },
+    {
+      "scope": "later-exact-committed-runner-pin",
+      "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\prism-019-release-candidate-20261030\\runner-pin-eaf241b",
+      "manifest": "manifest.json",
+      "manifestBytes": 463,
+      "manifestSha256": "d86ca4540446ff22d198bb6975725956191cd77724a4b5dc580d69731e138f19",
+      "fileCountExcludingManifest": 2,
+      "retainedBytesExcludingManifest": 2915,
+      "allDigestsVerified": true,
+      "credentialsIncluded": false
+    }
+  ]
+}
