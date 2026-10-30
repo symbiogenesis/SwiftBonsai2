@@ -1,20 +1,15 @@
 # Inference algorithms and mathematical constraints
 
-The [research and proof register](research-register.md) indexes the wider literature, recent
-implementations and engineering reports, distinguishing mathematical guarantees from experimental
-results and project applicability.
+This reference defines numerical/state constraints for the [Rust engine](native-rust-engine.md).
+The [research register](research-register.md) owns source reviews and derivations;
+[PLAN.md](../PLAN.md#runtime-and-correctness) owns outstanding work. Compare exact artifacts with
+pinned Prism under existing promotion criteria; source reuse needs immutable revisions/license
+review, and published results establish no Snapdragon speedup.
 
-This reference defines numerical and state constraints for the [Rust engine](native-rust-engine.md).
-Outstanding algorithm and qualification work lives in [PLAN.md](../PLAN.md#runtime-and-correctness).
-Algorithm descriptions and published results do not establish a Snapdragon speedup. Pinned Prism
-controls, exact artifacts and the existing promotion criteria remain the comparison contract. Source
-reuse requires immutable revisions and a license review.
-
-The [X1/X2 hardware contract](hardware-profiles.md) treats qualified algorithms and placements
-separately for prefill and decode. Batched projections and chunkwise GDN are NPU prefill candidates;
-packed HVX, NEON and Adreno remain decode comparisons. Sequential block scheduling alone does not
-provide tiled matrix-matrix reuse. Preserve each path's numerical/state identity and include phase
-handoff costs before making it an automatic choice.
+[Hardware policy](hardware-profiles.md) qualifies algorithms and placement separately for prefill
+and decode. Batched projections/chunkwise GDN are NPU prefill candidates; packed HVX, NEON and
+Adreno remain decode comparisons. Sequential scheduling alone provides no matrix-matrix reuse.
+Automatic selection must preserve numerical/state identity and charge phase handoffs.
 
 ## Runtime semantics
 
@@ -41,11 +36,10 @@ bounds and atomic commit.
 
 ## Scratch lifetimes
 
-The August 2026 [bounded-program memory allocation preprint](https://arxiv.org/html/2608.14471v1)
-identifies fixed-shape neural networks as a consumer of lifetime-based planning. Its tight storage
-bounds allow defragmentation and control-flow expansion. For the current sequential graph, a small
-fixed reuse is sufficient: Prism source shares attention projections with FFN up activations, shares
-their gate storage, and convolves recurrent QKV in place after each raw element's last use.
+The [lifetime-planning review](research-register.md#t7-state-size-lifetimes-and-prefix-identity)
+covers the bounded-program allocation preprint and its transformation assumptions. The current
+sequential graph needs only fixed reuse: Prism shares attention projections with FFN up activations,
+shares their gate storage, and convolves recurrent QKV in place after each raw element's last use.
 
 At Swift's widths, the affected buffers need 34,816 rather than 73,728 F32 slots: **152 KiB less
 nominal high-water payload**, with four fewer separate vectors. Arithmetic/reduction order,
@@ -67,16 +61,15 @@ implementation](https://github.com/microsoft/BitNet) is a technique reference su
 engine's `q8k_into`/`q8_into`, 128-weight scales, 256-activation Q8_K groups, 32-activation Q8_0
 groups and floating scale/add order. Stock BitNet quantization is not this engine's specification.
 
-The [Swift census](../config/swift.pq2-census.json) is ternary, but generic PQ2 code 3 means **+2**.
-Ternary-only selection needs validated eligibility and fallback. For arbitrary signed i8
-activations, including -128, a 128-trit dot is bounded by 16,384; generic PQ2 raises the bound to
-32,768. Bound tables, partial sums and corrections independently with wide accumulators. SIMD
-wrapping arithmetic is not checked by Rust overflow flags.
+The [Swift census](../config/swift.pq2-census.json) is ternary, but generic PQ2 code 3 means **+2**;
+ternary-only dispatch needs validated eligibility/fallback. [Integer bounds and correction
+arithmetic](research-register.md#t3-exact-low-bit-dots-need-bounds-at-every-intermediate) apply to
+every table and partial sum, not only the final dot; Rust overflow flags do not check wrapping SIMD.
 
-The [SIMD contract](simd-plan.md) defines packed controls. Validated immutable representations can
-avoid repeated canonical decoding, but arbitrary public tensors still need rejection checks. The
-identity `dot(code - 1, q) = dot(code, q) - sum(q)` also permits a candidate using `Q8KBlock.sums`;
-this formulation and lane subtraction share the same scale contract.
+The [SIMD contract](simd-plan.md) owns packed controls. Validated immutable representations may
+avoid repeated canonical decoding; arbitrary public tensors still need rejection checks.
+`dot(code - 1, q) = dot(code, q) - sum(q)` permits using `Q8KBlock.sums` under the same scale contract
+as lane subtraction.
 
 ### Vec-LUT for multiple prompt tokens
 
@@ -102,11 +95,9 @@ needs declared state/logit tolerances and long-prefix restoration checks, preser
 
 ## Attention locality and the I/O bound
 
-[Saha and Ye](https://proceedings.mlr.press/v235/saha24a.html) prove FlashAttention I/O-optimal up
-to constants for fast memory `M >= d^2` in their model. This motivates cache tiling and reduced
-traffic; it is not a hardware forecast or an unconditional subquadratic exact algorithm.
-[FlashAttention](https://arxiv.org/abs/2205.14135) is an attention-tiling technique subject to the
-rounding boundary below.
+The [attention I/O theorem](research-register.md#t4-attention-io-optimality-has-a-computation-model)
+motivates tiling under its stated memory/computation model; it forecasts neither device speed nor
+unconditional exact subquadratic work. FlashAttention also faces the rounding boundary below.
 
 Scalar nonflash attention rounds **globally normalized probabilities to FP16 before multiplying V**.
 Ordinary online-softmax merging changes that operation. Grouped-head tiling and contiguous V reads
@@ -132,29 +123,32 @@ Stochastic speculation needs proven acceptance/rejection correction, as in [Levi
 al.](https://proceedings.mlr.press/v202/leviathan23a.html); greedy agreement does not qualify
 creative sampling. Retain request rollback even if candidate recovery becomes cheaper.
 
-Generic inverse-state rollback is unsafe mathematically: the transition `alpha (I - beta k k^T)` has
-eigenvalues `alpha` and `alpha (1 - beta ||k||^2)` and can be singular/ill-conditioned. Floating
-gates can underflow/saturate, and convolution overwrites history. Use snapshots, saved factors and
-forward reconstruction with numerical checks.
+[Inverse-state rollback can be singular or unstable](research-register.md#t5-chunking-recurrence-and-recovering-rejected-tokens);
+floating gates can underflow/saturate and convolution overwrites history. Use snapshots or saved
+factors with checked forward reconstruction.
 
 ### 2026 state-traffic and verification research
 
-The [hybrid-state
-catalog](research-register.md#hybrid-recurrence-prefix-caching-and-speculative-decoding) records
-versions reviewed through **2026-10-29**. These are candidates, not selected-runtime features.
+The [hybrid-state catalog, H20 to H21](research-register.md#hybrid-recurrence-prefix-caching-and-speculative-decoding)
+retains KVBuffer/TreeWY mechanisms, versions, hardware and negative results through **2026-10-29**.
+Neither is a selected-runtime feature:
 
-| Mechanism | Swift proof obligation |
+| Candidate | Swift proof obligation |
 | --- | --- |
-| [KVBuffer](https://arxiv.org/html/2605.19049v1): base state plus buffered decays/keys/deltas, deferred writeback and chunk verification | Charge buffer reads, flush/materialization and precision conversion. Checkpoints must retain/materialize every pending update plus convolution history; buffered state cannot masquerade as materialized state. SGLang/Qwen3-Next four-L40S, FP32-state/FP16-vector results do not establish Prism bitwise replay. |
-| [TreeWY](https://arxiv.org/html/2608.20961v2): ancestor-masked triangular WY equations retain pseudo-values and reconstruct the accepted path | Real-arithmetic exactness is not BF16 bit identity. B200/vLLM greedy evaluation disables prefix caching; wide trees can lose latency. Qualify topology, attention causality, convolution, failed commit and prefix-cache integration independently; smaller state does not prove faster batch-one decode. |
+| KVBuffer deferred state writes | Charge buffer reads, flush/materialization and precision conversion. Checkpoints must retain/materialize every pending decay/key/delta plus convolution history; buffered state cannot claim materialized-state identity. |
+| TreeWY accepted-path reconstruction | Qualify topology, attention causality, convolution, failed commit and prefix-cache integration. Real-arithmetic equivalence does not imply bit identity; smaller state does not prove faster batch-one decode. |
 
 ### Trained parallel proposals and full-state verification
 
 | Proposal/verification route | Swift boundary |
 | --- | --- |
-| DFlash: diffusion block drafter conditioned on target hidden features, AR target verification | Nonzero-temperature/GPU results need compatible tokenizer, ternary weights, feature interface, adapter and CPU execution. Admit drafter weights/KV, retained target features and verification scratch; compare complete cycles. |
-| DFlash 2: adjacent-candidate scoring, path selection and block-local convolution | The Qwen3.8-27B drafter is a lead, not Swift/LoRA evidence. This is an author report with released drafters, not another peer-reviewed paper. Expose actual conditional proposal probabilities for rejection sampling; coherent-path selection alone does not preserve the target distribution. Learned components require provisioned artifact identities. |
-| VeriCache: compressed-KV drafting plus separately retained full-KV verification | Its identical-output claim is greedy except hardware nondeterminism; sampling needs correction. Multi-request GPU/transfer overlap does not transfer to this one-request CPU runner. Full plus compressed KV may increase laptop RAM, and KV-only verification omits GDN/convolution recovery. |
+| DFlash target-feature diffusion drafts | Require compatible tokenizer, ternary weights, feature interface, adapter and CPU execution. Admit drafter weights/KV, retained target features and verification scratch; compare complete cycles. |
+| DFlash 2 candidate scoring/path selection | Require provisioned drafter identities and actual conditional proposal probabilities: coherent paths alone do not preserve the target distribution. Its released Qwen3.8-27B drafter is no Swift/LoRA qualification. |
+| VeriCache compressed drafts/full-KV verification | Correct stochastic acceptance separately from greedy identity. Full plus compressed KV can increase RAM; KV-only verification omits GDN/convolution recovery, and multi-request GPU overlap does not transfer to this one-request CPU runner. |
+
+The [catalog, H19/H22 to H23](research-register.md#hybrid-recurrence-prefix-caching-and-speculative-decoding)
+retains sources, mechanisms and evaluation scope. DFlash 2 is an author report with released
+drafters, not another peer-reviewed paper; learned components remain separate artifacts.
 
 ### Certified sparse attention is a separate approximation
 
@@ -165,19 +159,19 @@ defines run-wide failure budgeting.
 
 | Method | Guarantee boundary |
 | --- | --- |
-| vAttention | Important-token selection plus tail sampling gives relative operator-output bounds. Practical pilot/CLT budgets differ from conservative variants; `(epsilon, delta)` is neither exact output nor an answer-wide certificate. |
-| [Certified Sparse Attention via Perturbed Retrieval](https://arxiv.org/html/2610.24991v1) | Anytime-valid per-call certificates require exact candidates and fresh independent perturbations per decode step. Budget failure across heads/layers/steps. Context-independent value-read bounds still include linear compressed-key scans; AVX-512 VNNI reference retains full 16-bit KV plus indexes (40% extra storage), not a smaller exact Snapdragon cache. |
-| DoSA | Conservative score bounds safely skip entries outside an existing sparse indexer's Top-K, including numerical bounds/recovery. Exact indexer selection does not equal dense attention; Swift lacks the required learned indexer/artifacts. Transfer bounded early rejection with full fallback, not silent dense-token omission. |
+| vAttention (Q22) | Practical pilot/CLT budgets differ from conservative relative operator-output certificates. `(epsilon, delta)` gives neither exact output nor an answer-wide certificate. |
+| Perturbed retrieval (Q23) | Require exact candidates, fresh independent per-step perturbations and a run-wide head/layer/step failure budget. Charge the linear key scan and retained full KV/indexes; bounded value reads do not imply bounded total work or smaller RAM. |
+| DoSA (Q24) | Bounds preserve an existing sparse indexer's Top-K, including numerical recovery, rather than dense attention. Swift lacks its learned indexer/artifacts. Transfer bounded early rejection with full fallback, not silent dense-token omission. |
 
 Both certified approximation methods need references consistent with Prism's FP16 normalized-
 probability rounding before their bounds transfer.
 
 ## Compression and approximation constraints
 
-An independent 128-trit block has `3^128` possibilities and needs `ceil(128 log2(3)) = 203` bits:
-**26 whole code bytes**, already used by PTQ1 plus its unchanged two-byte scale. This rules out a
-general whole-byte saving per independent block, not correlated/cross-block coding. See the [packing
-decision](swift-memory-options.md#packing-decision).
+[T1's packing bound](research-register.md#t1-packing-limits-and-the-difference-between-sparse-and-small)
+requires 26 code bytes per independent 128-trit block, already used by PTQ1 plus its two-byte scale.
+It leaves correlated/cross-block coding open; the [packing decision](swift-memory-options.md#packing-decision)
+accounts for execution and indexing costs.
 
 | Research | Constraint |
 | --- | --- |
@@ -186,15 +180,15 @@ decision](swift-memory-options.md#packing-decision).
 | [Signed-digit LUT KV](https://arxiv.org/abs/2608.03229) | Changes KV representation/precision for a hardware datapath; separate from exact FP16-bit storage. |
 | [Gated DeltaNet-2](https://arxiv.org/abs/2605.22791), [Sherry](https://arxiv.org/abs/2601.07892), [ReaDy](https://arxiv.org/abs/2610.20503) | Changed gates, sparsity or trained speculative components require compatible artifacts, not inference-only substitution. |
 
-Strict triangularity gives a finite exact Neumann expansion, but low-order error needs norm/entry
-bounds. Spectral radius zero does not bound intermediate growth. Check signed Gram entries/ranges
-before applying approximation arguments.
+[T5](research-register.md#t5-chunking-recurrence-and-recovering-rejected-tokens) derives the finite
+Neumann expansion and explains why spectral radius zero cannot bound low-order error or
+intermediate growth. Check signed Gram entries/ranges before applying approximation arguments.
 
 ## Validation and promotion
 
 The [validation policy](validation.md) applies independently to each change. Exact integer/storage
 changes need bitwise fixtures, scales, malformed-input and -128/+2 cases. Reordered floating work
-needs predeclared logits/KV/GDN and full- continuation tolerances. Both need checkpoint isolation,
+needs predeclared logits/KV/GDN and full continuation tolerances. Both need checkpoint isolation,
 edits, cancellation, failed recovery/reset and memory-budget checks.
 
 Local builds and focused correctness checks are allowed. Full suites, benchmarks and

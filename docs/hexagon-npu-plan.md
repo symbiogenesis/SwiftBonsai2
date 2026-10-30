@@ -1,10 +1,9 @@
 # Hexagon deployment and execution contracts
 
-Outstanding NPU work is tracked only in [PLAN.md](../PLAN.md#hexagon-npu). Current builds and launch
-policies use CPU execution, including scalar/NEON in the [Rust runtime][rust-runtime]. Hexagon
-deployment, performance and automatic selection are unqualified on both Snapdragon X1 and X2. The
-[hardware selection contract](hardware-profiles.md) owns eligibility by actual device, workload and
-interactive/battery objective.
+Current builds/launch policies use CPU execution, including scalar/NEON in the [Rust
+runtime][rust-runtime]. Hexagon deployment, performance and automatic selection remain unqualified
+on X1/X2. [PLAN.md](../PLAN.md#hexagon-npu) tracks the work; the shared [hardware
+contract](hardware-profiles.md) governs eligibility by device, workload and interactive/battery objective.
 
 ## Device and route boundaries
 
@@ -19,7 +18,7 @@ independent qualification scopes.
 | X2 / Hexagon v81, initially Elite Extreme | Batched HMX prefill and packed HVX decode, verified extended DMA/VTCM constraints and signed matching package |
 
 Processor names do not establish architecture, mapping capabilities, signed kernels or readiness.
-Receipts identify exact SKU/capabilities, driver/runtime/ kernel package, ABI and resource limits.
+Receipts identify exact SKU/capabilities, driver/runtime/kernel package, ABI and resource limits.
 Missing or changed facts exclude the candidate; any CPU fallback still requires its own
 qualification and admission. Every prototype retains bounded process lifetime, deadlines, memory
 supervision and safe device teardown. A trusted operation oracle precedes packed execution.
@@ -45,7 +44,7 @@ source/license/codec/transform research lead rather than an approved deployment.
 
 [GenieX v0.8.0][geniex-signed] reports a signed HTP catalog for its bundled revision. That catalog
 covers only the corresponding v73/v81 binaries and kernels, not later source or rebuilt DSP code.
-Custom binaries require a supported signing/ distribution route. The [Windows
+Custom binaries require a supported signing/distribution route. The [Windows
 guide][hexagon-windows] also describes test-signing; Secure Boot, boot/signing policy and
 certificate trust changes require a separate owner decision. Missing signed deployment blocks
 execution.
@@ -100,7 +99,7 @@ speculation are distinct qualification scopes.
 
 Packed weights can remain in shared RAM with bounded expansion into VTCM. VTCM tiles, DMA staging,
 padding/alignment and repack scratch have explicit bounds; persistent expansion has a separate
-budget. The ledger covers host weights/ mappings, device tiles/repacked copies, RPC/shared buffers,
+budget. The ledger covers host weights/mappings, device tiles/repacked copies, RPC/shared buffers,
 state/checkpoints, compilation/graph caches, CPU/GPU/NPU/adapter copies and peak load overlap.
 Unique physical bytes count once; address-space budgets are separate. Shared memory does not
 establish zero-copy.
@@ -110,8 +109,8 @@ approximate 3.5 GB mapping window/dynamic mapping for X1/v73; the selected signe
 its own DMA64/VTCM-only access constraints. Neither address window describes physical RAM capacity.
 Layer-partitioned sessions include their overhead and state duplication. The existing Swift 11.5 GiB
 service allowance and 4 GiB physical reserve remain fixed, including allocations outside Job commit.
-Qwen's 18 GiB allowance is not a Swift budget. Placement rejection or explicit qualified reduction
-cannot silently shorten context or change model policy.
+Qwen's 18 GiB allowance is not a Swift budget. Any smaller placement needs its own qualified
+profile; rejection cannot silently shorten context or change model policy.
 
 The broker boundary retains reviewed libraries, fixed arguments, child-only environment settings,
 authentication, exact Host/Origin/routes and canonical token counts, one active conversation, caps,
@@ -125,7 +124,7 @@ Submitted work retains buffers until device use ends. Timeout, unsupported shape
 failure, device loss or cancellation either restore all committed state or close admission until
 verified teardown/reset. Hidden replay and partial continuation on CPU violate the contract.
 Compiled/repacked caches are private, bounded and keyed by artifacts/kernel/runtime/ABI/observable
-driver/firmware/shape/ precision/placement, with checked metadata and invalidation. Technical
+driver/firmware/shape/precision/placement, with checked metadata and invalidation. Technical
 diagnostics exclude tensor payloads and prompts.
 
 ## Qualification evidence
@@ -145,39 +144,32 @@ qualified-Vulkan and NPU runs retain median/p95/variance, prefill/first-token/de
 retries to acceptable output, memory and sustained thermals/responsiveness. AC/battery and
 15–30-minute runs have distinct scope; missing power telemetry means no energy verdict.
 
-Each X1/X2 receipt binds capabilities, source/build/kernel/driver, effective placement/settings,
-tested main/run, raw captures and per-metric verdicts. Absent/unknown devices, unsupported mappings,
-stale identity or insufficient budgets need bounded visible failure/fallback, CPU rollback and
-consistent state; absence cannot establish a device verdict. Promotion retains full correctness,
-daily security/resources, creative quality and independent same-engine LoRA TPS/quality, plus
-**10% lower end-to-end latency** or predeclared capacity/energy benefit within accepted interactive
-latency/quality. Missing evidence/critical failures keep profiles experimental; affected upgrades
-invalidate evidence/caches.
+Use the shared [profile receipt/promotion contract](hardware-profiles.md#qualification-scope),
+including exact kernel/driver identities and per-metric verdicts. Absent/unknown devices,
+unsupported mappings, stale identity or insufficient budgets require bounded visible failure or
+qualified CPU fallback with consistent state; absence supplies no device verdict. Missing evidence
+or critical failures keep profiles experimental, and affected upgrades invalidate evidence/caches.
 
-[Validation](validation.md) permits local builds/assembly inspection/focused untimed checks.
-Full suites, benchmarks and timing/profile captures stay reviewed main-only matching-device CI.
-Use absolute system-temp native-diagnostic lanes with inherited Windows system/profile variables.
+[Validation](validation.md) allows local builds, assembly inspection and focused untimed checks;
+full suites, benchmarks and timing/profile captures require reviewed main-only matching-device CI.
+Native diagnostics use absolute system-temp lanes with inherited Windows system/profile variables.
 Moving links below are research leads, not pins.
 
 ## 2026 research evidence
 
-The [mobile-acceleration catalog](research-register.md#2026-mobile-acceleration-and-speech) records
-the **2026-10-29** review. Prepared/static graphs, direct ggml HVX/HMX kernels and signed Windows
-packages remain separate routes.
+The [mobile-acceleration catalog, E3 to E8](research-register.md#2026-mobile-acceleration-and-speech)
+retains the **2026-10-29** source review, hardware/configurations and counterexamples. Apply its NPU
+lessons without conflating prepared/static graphs, direct ggml HVX/HMX and signed Windows packages:
 
-| Lead | Project-specific constraint |
+| Evidence | NPU decision rule |
 | --- | --- |
-| PowerBench / Is Your NPU Ready for LLMs? | Rooted Android SM8650/8750/8850 framework results motivate quantization/offload/polling/wake-up attribution; their estimated combined tuning benefit is not an implemented Windows result. |
-| When NPUs Are Not Always Faster | Android 15/v75, Q4_0 and llama.cpp b7588 provide a CPU-winning-prefill counterexample. Synchronous profiling changes scheduling; its phase ranking cannot transfer to Swift. |
-| Energy-Efficient On-Device RAG | X Elite static-graph loading order/context limits are useful deployment lessons. Its 64 GB X1E80100, Qwen3-4B QAIRT/GGUF comparison, different contexts and always-NPU reranker prevent a same-artifact 32 GB Swift or GPU-ceiling claim. |
-| ShadowNPU | Pilot-score sparse attention, graph bucketing and per-head pipelining are approximation leads for full-attention blocks, not unchanged dense attention or recurrent state. Phone evidence remains separate. |
-| Quant.npu | Fitted rotations/scales and static mixed-precision quantization create new artifacts; fixed scales cannot silently replace dynamic Q8_K/Q8_0 or lossless PTQ1. |
-| [Sereno paper](https://www.usenix.org/system/files/osdi26-xin.pdf) | Foreground jank can worsen while TPS barely changes. Android bandwidth diagnosis does not establish Windows arbitration; speculative yield points require a verifier and accepted-prefix recovery. |
+| PowerBench / When NPUs Are Not Always Faster | Attribute quantization, offload, polling/wake-up and profiling overhead. Keep a competitive CPU control: different hardware/frameworks/quantizers/scheduling can reverse phase winners. |
+| Energy-Efficient On-Device RAG | Validate static-context limits/loading order while preserving context/output reservations. Different packages, contexts and always-NPU reranking cannot rank same-artifact Swift or establish a GPU ceiling. |
+| ShadowNPU / Quant.npu | Sparse attention and fitted static rotations/scales are approximation/new-artifact routes, not unchanged dense/GDN execution or dynamic Q8_K/Q8_0/lossless PTQ1. |
+| Sereno | Include foreground jank even with stable TPS. Windows arbitration needs independent evidence; speculative yield points need a verifier and accepted-prefix recovery. |
 
-Different hardware/frameworks/quantizers/scheduling explain conflicting phase winners. Keep a
-competitive CPU control and charge communication, activation preparation and fallback regions. A
-fast HMX GEMM does not overcome graph breaks automatically. Preserve context/output reservations
-when comparing prepared packages.
+Charge communication, activation preparation and fallback regions: fast HMX GEMM alone cannot
+overcome graph breaks.
 
 Two upstream changes provide concrete regression patterns, without updating Runner's pin:
 

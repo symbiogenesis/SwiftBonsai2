@@ -1,9 +1,9 @@
 # Native Rust CPU SIMD contracts
 
-Outstanding CPU kernel work is tracked only in [PLAN.md](../PLAN.md#cpu-kernels). This document
-defines arithmetic, dispatch and qualification boundaries. Baseline NEON PQ2/PTQ1 kernels include
-odd-group PQ2; scalar is the reference and fallback. Synthetic parity does not establish
-target-device speedup or whole-model parity. Pinned Prism remains the assessment/control engine.
+This contract defines CPU arithmetic, dispatch and qualification; [PLAN.md](../PLAN.md#cpu-kernels)
+tracks outstanding work. Baseline NEON supports PQ2, odd-group PQ2 and PTQ1, with scalar reference
+and fallback. Synthetic parity establishes neither whole-model parity nor target-device speedup;
+pinned Prism remains the assessment/control engine.
 
 ## Execution and dispatch
 
@@ -68,15 +68,13 @@ interleaved: bytes 0–15 hold five digits at stride 16, bytes 16–23 hold five
 24–25 hold four at stride 2. Q4_0 stores 16 low nibbles before 16 high nibbles. Canonicality and
 byte order remain exact.
 
-For arbitrary signed i8 activations, including -128, a 128-element PQ2 dot has tight signed range
-`[-32768, 32512]`; the final integer does fit i16. That does not certify an unpacking or correction
-scheme: an uncorrected dot with unsigned codes `0..3` instead ranges over `[-49152, 48768]` and
-needs wider storage. A 32-element ternary sum has absolute bound 4,096 and its PQ2 counterpart
-8,192. Bound every intermediate and correction independently before narrowing lanes; Rust overflow
-flags do not check wrapping SIMD arithmetic. See the [integer
-derivation](research-register.md#t3-exact-low-bit-dots-need-bounds-at-every-intermediate). Block
-scales apply before accumulation into subsequent blocks. Malformed scales and noncanonical PTQ1
-bytes remain errors even at zero scale.
+The [integer-bound derivation](research-register.md#t3-exact-low-bit-dots-need-bounds-at-every-intermediate)
+covers arbitrary i8 activations, including -128: a 128-element PQ2 dot fits i16
+(`[-32768, 32512]`), but its uncorrected unsigned-code dot does not (`[-49152, 48768]`).
+At 32 elements the ternary/PQ2 absolute bounds are 4,096/8,192. Bound every intermediate and
+correction before narrowing; Rust overflow flags do not check wrapping SIMD. Apply each block's
+scale before accumulating later blocks. Malformed scales/noncanonical PTQ1 bytes reject even at
+zero scale.
 
 Q8_K chooses the first signed value with strictly greater absolute magnitude, uses `-127 / maximum`,
 ties-to-even rounding and an f32 scale. Q8_0 uses an absolute maximum, ties-away rounding and an
@@ -125,23 +123,24 @@ mixed-device contention are part of a profile's declared scope.
 
 ## CPU kernel research reviewed in October 2026
 
-The [research catalog](research-register.md#packed-projections-cpu-kernels-and-compression) records
-sources and versions reviewed through **2026-10-29**. Its mechanisms suggest the following bounded
-experiments; none changes current arithmetic or acceptance:
+The [research catalog](research-register.md#packed-projections-cpu-kernels-and-compression)
+records sources, versions and transfer limits through **2026-10-29**. Apply these CPU-specific rules:
 
-| Lead | Swift decision boundary |
-| --- | --- |
-| Ultra-low-bit shape-specific kernels | Interleaving must fit NEON lane geometry, quantizers and scale groups; charge repacking and retained copies. Published AVX2/VNNI/Xe2 results do not qualify ARM64. |
-| ELUTQ, QTEA, HARP, LLVQ, Tetra, XOR-Trellis | Nonuniform codes, sparse compensation, fitted rotations, lattices and trellis palettes create new artifacts. GPU/source results do not establish exact PQ2/PTQ1 conversion or Windows CPU speed. |
-| Shannonic | Independent entropy streams may feed a kernel, but count indexes, decode dependencies, scratch and consumed bytes; most evidence concerns 8-bit/communication workloads. |
-| T-SAR / ExaGEMM | Simulated instruction/datapath changes require unavailable hardware; they are outside existing-Snapdragon software work. |
+- **Layout/LUT reuse (L1 to L4, L10):** derive NEON consumption order from its lane geometry,
+  quantizers and scale groups. Attribute unpack, activation preparation, dots and scaling; include
+  repacking/retained copies. Larger tables/live accumulators can spill registers or evict useful
+  cache lines, so select bounded tiles using complete-workload CI evidence.
+- **Entropy coding (L12):** count indexes, decode dependencies, scratch and consumed bytes.
+  Independent streams may feed kernels; predominantly 8-bit/communication evidence does not
+  establish faster packed matvec.
+- **Changed representations (L11, L13 to L17):** nonuniform codes, compensation, fitted rotations,
+  lattices and trellises require new artifacts; they are not exact PQ2/PTQ1 conversions.
+- **Changed hardware (L18 to L19):** simulated ISA/datapath changes are outside software work on
+  existing Snapdragon devices.
 
-Keep original packed bytes as the storage control and separate decode from genuine multi-token
-prefill. Attribute unpack, activation preparation, integer dots and scaling. Prove intermediate
-bounds for every borrowed layout, including unsigned-code corrections. Avoid persistent expanded
-weights. Larger LUTs/live accumulators can spill registers or evict useful cache lines; select
-bounded tiles from complete-workload CI evidence. New quantizers, rotations and ISA retain separate
-research identities.
+Keep packed bytes as the storage control, avoid persistent expansion and separate decode from
+genuine multi-token prefill. Every borrowed layout needs intermediate/correction bounds above;
+new quantizers, rotations or ISA retain separate research identities and qualification.
 
 [fearless]: https://docs.rs/fearless_simd/1.1.0/fearless_simd/
 [target-feature]: https://doc.rust-lang.org/reference/attributes/codegen.html#the-target_feature-attribute
