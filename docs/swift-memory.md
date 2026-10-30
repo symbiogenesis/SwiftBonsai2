@@ -198,8 +198,11 @@ in external storage.
 ## Native CPU status
 
 The fixed check uses 8K context, FP16 K/V, F32 recurrent/convolution state, batch
-128/microbatch 64, four threads, a synthetic prompt, a 16-token cap and ten-minute
-deadline. It uses the embedded template/default reasoning without a system preamble:
+128/microbatch 64, four threads, a synthetic prompt and a 16-token cap. New owner-device
+checks require prebuilt tools, allow at most three minutes in the worker and share a
+four-minute setup/verification/execution budget, leaving cleanup inside the five-minute
+total ceiling. Historical captures used a ten-minute worker deadline. The check uses
+the embedded template/default reasoning without a system preamble:
 the template cannot render that preamble alone without a user query.
 
 | Accounting domain | Current bound |

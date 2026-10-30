@@ -32,6 +32,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+$trialClock = [Diagnostics.Stopwatch]::StartNew()
+if (-not $CheckOnly -and -not $ToolPath -and -not $env:BONSAI_TOOLS_PATH) {
+    throw 'Select already built maintenance tools with ToolPath or BONSAI_TOOLS_PATH; owner-device diagnostics cannot include an unbounded bootstrap build.'
+}
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
     [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
@@ -75,11 +79,13 @@ if ($UseAbliterateLora) {
 }
 $report['EvidenceDirectory'] = $scratch
 try {
-    $supervision = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
+    $remaining = [int][Math]::Floor(240 - $trialClock.Elapsed.TotalSeconds)
+    if ($remaining -lt 1) { throw 'The owner-device CPU check exhausted its setup budget before model launch.' }
+    $supervision = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -TimeoutSeconds $remaining -Request @{
         schemaVersion = 1; executable = $executable; arguments = $report.EffectiveArguments
         workingDirectory = $scratch; evidenceDirectory = $scratch; artifacts = $artifacts; runtime = $runtime.Runtime
         memoryLimitBytes = [long]$report.ServiceCeilingBytes; requiredAvailableBytes = [long]$report.RequiredAvailableBytes
-        physicalReserveBytes = [long]$report.AvailableMemoryFloorBytes; timeoutSeconds = [int]$report.TimeoutSeconds
+        physicalReserveBytes = [long]$report.AvailableMemoryFloorBytes; timeoutSeconds = [int][Math]::Min($report.TimeoutSeconds, $remaining)
         stdoutLimitBytes = $null; stderrLimitBytes = $null; requireNonemptyStdout = $true; ciOnly = $false
     }
     $report.ModelProcessStarted = $supervision.ModelProcessStarted
