@@ -7,6 +7,7 @@ Requires hosted candidate preparation to reject before writes outside its exact 
 param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 $output = Join-Path ([IO.Path]::GetTempPath()) ('Bonsai-RejectedHeadless-' + [guid]::NewGuid().ToString('N'))
 $script = Join-Path $PSScriptRoot '../scripts/Build-HeadlessPublisherCandidate.ps1'
