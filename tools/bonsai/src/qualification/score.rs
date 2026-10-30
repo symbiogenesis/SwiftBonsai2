@@ -309,7 +309,10 @@ fn zero_proofs(evidence: &Evidence, policy: &Policy, results: &mut Results) -> R
 
 fn nonzero_proof(evidence: &Evidence, policy: &Policy, results: &mut Results) -> Result<()> {
     let nonzero = &evidence.nonzero_adapter_check;
-    number(nonzero.scale, 1.0, 1.0, true)?;
+    require(
+        nonzero.scale == policy.adapter_scale(),
+        "Nonzero proof uses a different qualification adapter scale.",
+    )?;
     hash(&nonzero.adapter_sha256)?;
     require(
         matches!(nonzero.status.as_str(), "pending" | "verified")
@@ -590,6 +593,15 @@ pub(super) fn score(evidence: Value, review: Option<Value>, policy: &Policy) -> 
             "NonzeroApplication": if results.nonzero { "passed" } else { "not-passed" }},
         "Prompts": results.prompts, "Rejections": results.rejections, "Pending": results.pending,
         "Scope": "Matched pinned representation only. Job commit is not total RAM. Human review identity is recorded, not authenticated. No serving configuration was changed."});
+    if policy.profile == super::QualificationProfile::AppScale {
+        report["StandardProfileMayEnable"] = json!(false);
+        report["AppSettingGatesPassed"] = json!(status == "accepted");
+        report["QualificationProfile"] = json!("app-scale-1.3");
+        report["AdapterScale"] = json!(policy.adapter_scale());
+        report["Scope"] = json!(
+            "Matched pinned representation at app adapter scale 1.3 with fixed greedy controls and 512-token cap. Requires complete human-reviewed answers. Other app settings, broad creative quality, sustained comfort and daily service remain separate. No serving configuration was changed."
+        );
+    }
     // Preserve frozen legacy X1 receipts while binding new observations in
     // reports so a device-specific result cannot lose its family identity.
     if let Some(processor_name) = &execution.processor_name {

@@ -343,6 +343,7 @@ jobs:
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraQualification.ps1') -Case Rejection
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraQualification.ps1') -Case Json
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraQualification.ps1') -Case Compatibility
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraQualification.ps1') -Case AppSettings
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-LoraEvaluation.ps1') -Case All
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Ptq1Screen.ps1') -Case All
           $plan = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-LoraQualification.ps1') -DataDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Runtime') -PlanOnly

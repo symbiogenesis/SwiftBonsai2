@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "name": "swift-app-scale-1.3-abliteration-paired-qualification",
+  "purpose": "Separate complete-response paired LoRA gate at app scale 1.3; fixed greedy controls and 512-token cap. Does not qualify other app settings, broad creative use, daily service or serving promotion.",
+  "execution": {
+    "githubActionsRequired": true,
+    "runnerArchitecture": "Arm64",
+    "deviceModel": "Snapdragon X Elite",
+    "repeatCount": 3,
+    "ordering": "alternate arm order within each prompt and repeat; fresh process for every sample",
+    "seed": 42,
+    "minimumDecodeTokens": 16,
+    "metricDefinition": "decodeTokens / (decodeMilliseconds / 1000); both values from the same pinned native eval timing record, excluding prompt evaluation",
+    "memoryMetric": "Windows peak Job committed bytes; excludes mapped weight pages and is not total physical RAM"
+  },
+  "controls": {
+    "runtimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+    "templateSha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+    "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42",
+    "contextTokens": 8192,
+    "batchTokens": 128,
+    "microbatchTokens": 64,
+    "threads": 4,
+    "seed": 42,
+    "maxOutputTokens": 512,
+    "sampler": {
+      "temperature": 0,
+      "topP": 1,
+      "topK": 1,
+      "minP": 0,
+      "repeatPenalty": 1
+    },
+    "adapterScale": 1.3
+  },
+  "representations": {
+    "PQ2_0": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+    "current-repacked-PTQ1_0": "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5"
+  },
+  "gates": {
+    "minimumPerPromptMedianTpsRatio": 1.0,
+    "minimumQualityScore": 3,
+    "minimumPerPromptDimensionMedianQualityDelta": 0,
+    "rejectUnwantedAdapterRefusals": true,
+    "maximumPeakJobMemoryBytes": 12348030976,
+    "maximumPerPromptMedianJobMemoryPremiumBytes": 805306368,
+    "minimumAvailablePhysicalBytes": 4294967296,
+    "basisVerificationRequired": true,
+    "zeroScaleResponseAndLogitsIdentityRequired": true,
+    "nonzeroLogitsApplicationRequired": true,
+    "qualityAggregation": "Every prompt and each applicable dimension independently passes; reduced refusals or total generated tokens never compensate for throughput or quality regression."
+  },
+  "rubric": {
+    "scale": "0 unusable; 1 major defects; 2 material defects; 3 useful with minor defects; 4 fully satisfies the prompt with no identified defect",
+    "dimensions": {
+      "instructionFollowing": "Required content, constraints, structure, and requested length are respected.",
+      "correctness": "Factual and logical claims are correct; creative writing is internally consistent.",
+      "coherence": "The final answer is clear, complete, relevant, and non-repetitive.",
+      "creativeUsefulness": "Creative prompts receive specific, engaging, useful writing rather than generic filler."
+    },
+    "humanReview": "An external human must review the exact hashed captured response and record a reason for each sample. The scorer does not manufacture scores or authenticate a reviewer identity. Incomplete or missing reviews stay pending."
+  },
+  "prompts": [
+    {
+      "id": "general-logic",
+      "category": "general",
+      "text": "A library has 120 books. On Monday, one quarter are borrowed. On Tuesday, 18 are returned and 12 are borrowed. On Wednesday, half of the books currently in the library are borrowed. Explain the calculation step by step, state how many books remain in the library, and give one independent check. Use 100 to 160 words.",
+      "reviewNotes": "Correct final count: 48. Monday 90, Tuesday 96, Wednesday 48. A useful check accounts for 72 books outside the library."
+    },
+    {
+      "id": "general-explanation",
+      "category": "general",
+      "text": "Explain to a curious teenager why a metal spoon and a wooden spoon at the same room temperature can feel different to the touch. Distinguish temperature from heat transfer, mention the direction of energy flow, and give one safe everyday demonstration. Use 100 to 160 words.",
+      "reviewNotes": "Metal conducts heat from a warmer hand faster; room-temperature objects can share temperature while feeling different. A safe demonstration avoids hot surfaces."
+    },
+    {
+      "id": "creative-scene",
+      "category": "creative",
+      "text": "Write a complete 120 to 170 word scene about an elderly lighthouse keeper who discovers a handwritten letter from their future self. Include a concrete sensory detail, one line of dialogue, and a hopeful ending. Avoid explaining the time travel mechanism.",
+      "reviewNotes": "Check all explicit constraints, internal consistency, specific sensory detail, dialogue, and a complete hopeful ending."
+    },
+    {
+      "id": "creative-plan",
+      "category": "creative",
+      "text": "Design a welcoming, inexpensive two-hour neighborhood event where strangers exchange practical skills. Give the event a memorable name, a timed schedule totaling exactly 120 minutes, three concrete skill examples, and a way for a shy newcomer to participate. Use 120 to 180 words.",
+      "reviewNotes": "The schedule totals exactly 120 minutes, examples are practical, cost is modest, and newcomer participation is concrete and welcoming."
+    }
+  ],
+  "qualificationProfile": "app-scale-1.3",
+  "adapterScale": 1.3
+}

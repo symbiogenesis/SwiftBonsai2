@@ -10,8 +10,9 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use super::{
-    Policy, control_identity, decode, digest, invocation, policy, read_json, read_json_with_limit,
-    require, schema::Controls, score, string, validate_path,
+    Policy, QualificationProfile, control_identity, decode, digest, invocation, policy,
+    policy_for_profile, read_json, read_json_with_limit, require, schema::Controls, score, string,
+    validate_path,
 };
 use crate::Result;
 
@@ -21,6 +22,8 @@ const CAPTURE_JSON_LIMIT: u64 = 25 * MIB;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Request {
+    #[serde(default)]
+    qualification_profile: QualificationProfile,
     data_directory: PathBuf,
     weight_representation: String,
     admission: Value,
@@ -420,7 +423,7 @@ fn capture_with(
 ) -> Result<Value> {
     let device = SnapdragonFamily::from_processor_name(&request.processor_name)
         .ok_or("Capture requires a recognized Snapdragon X/X2 Elite processor name.")?;
-    let policy = policy()?;
+    let policy = policy_for_profile(request.qualification_profile)?;
     let (plan, controls, runtime) = compiled_plan(request, &policy)?;
     let root = validate_path(&request.evidence_directory)?;
     require(
@@ -453,7 +456,7 @@ fn capture_with(
             "controls": controls, "samples": [], "zeroScaleChecks": [],
             "basis": {"status": "pending", "evidenceSha256": null, "reviewerId": null,
                 "note": "The artifact does not declare the source SSM basis; residual-writer verification remains required."},
-            "nonzeroAdapterCheck": {"status": "pending", "scale": 1, "adapterSha256": controls["adapterSha256"],
+            "nonzeroAdapterCheck": {"status": "pending", "scale": policy.adapter_scale(), "adapterSha256": controls["adapterSha256"],
                 "logitsChanged": null, "evidenceSha256": null},
         }),
         receipt: json!({

@@ -38,19 +38,27 @@ pub(super) fn samples(
         )?;
         result.push(SampleInvocation {
             id: sample.sample_id.clone(),
-            arguments: arguments(
+            arguments: arguments_at_scale(
                 controls,
                 model_path,
                 ADAPTER_FILENAME,
                 sample.arm,
                 &prompt.text,
+                &policy.adapter_scale().to_string(),
             )?,
         });
     }
     for prompt in &policy.prompts {
         result.push(SampleInvocation {
             id: format!("zero-{}", prompt.id),
-            arguments: arguments(controls, model_path, ADAPTER_FILENAME, "zero", &prompt.text)?,
+            arguments: arguments_at_scale(
+                controls,
+                model_path,
+                ADAPTER_FILENAME,
+                "zero",
+                &prompt.text,
+                &policy.adapter_scale().to_string(),
+            )?,
         });
     }
     Ok(result)
@@ -78,6 +86,7 @@ fn prefix(controls: &Controls, model_path: &str) -> Result<Vec<String>> {
     Ok(result)
 }
 
+#[cfg(test)]
 fn arguments(
     controls: &Controls,
     model_path: &str,

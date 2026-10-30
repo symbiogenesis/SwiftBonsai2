@@ -11,13 +11,13 @@ encodings retain the previous reader's decoding behavior.
 #>
 [CmdletBinding()]
 [OutputType([pscustomobject])]
-param([Parameter(Mandatory)][string]$EvidencePath, [string]$ReviewPath, [string]$ToolPath)
+param([Parameter(Mandatory)][string]$EvidencePath, [string]$ReviewPath, [switch]$AppSettings, [string]$ToolPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
 # Rust reads and validates the original bounded files directly; no PowerShell
 # JSON parse/serialize roundtrip can alter their numeric or Unicode contents.
-$request = @{ operation = 'file-score'; evidencePath = $EvidencePath
+$request = @{ operation = 'file-score'; qualificationProfile = $(if ($AppSettings) { 'app-scale-1.3' } else { 'standard-scale-one' }); evidencePath = $EvidencePath
     reviewPath = $(if ($ReviewPath) { $ReviewPath } else { $null }) }
 [pscustomobject](Invoke-BonsaiTool -Command qualification -Request $request -ToolPath $ToolPath)

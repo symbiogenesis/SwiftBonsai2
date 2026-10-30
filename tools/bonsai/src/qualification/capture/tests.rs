@@ -269,3 +269,34 @@ fn capture_rejects_mismatched_runtime_or_admission_before_supervision() -> Resul
     }
     Ok(())
 }
+
+#[test]
+fn app_scale_capture_uses_separate_contract_and_retains_pending_proofs() -> Result<()> {
+    let (mut request, context) = fixture()?;
+    request.qualification_profile = crate::qualification::QualificationProfile::AppScale;
+    let result = capture_with(&request, &context, |native| {
+        assert!(
+            native["samples"]
+                .as_array()
+                .ok_or("Missing app samples.")?
+                .iter()
+                .any(|sample| sample["arguments"]
+                    .as_array()
+                    .is_some_and(|arguments| arguments
+                        .iter()
+                        .any(|value| value == "bonsai-abliterate-lora.gguf:1.3")))
+        );
+        completed(&native, 28, false)
+    })?;
+    assert_eq!(result["QualificationStatus"], "pending");
+    let evidence = read_json(&request.evidence_directory.join("evidence.json"))?;
+    let plan = crate::qualification::run(
+        json!({"operation": "plan", "qualificationProfile": "app-scale-1.3"}),
+    )?;
+    assert_eq!(evidence["contractSha256"], plan["ContractSha256"]);
+    assert_eq!(evidence["nonzeroAdapterCheck"]["scale"], 1.3);
+    let report = read_json(&request.evidence_directory.join("qualification.json"))?;
+    assert_eq!(report["AppSettingGatesPassed"], false);
+    assert_eq!(report["StandardProfileMayEnable"], false);
+    Ok(())
+}

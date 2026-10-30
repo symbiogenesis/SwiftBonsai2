@@ -139,6 +139,25 @@ native correctness evidence and independent human review remain pending. The fix
 scale-one/512-token harness below does not qualify app scale 1.3, broader creative
 quality, comfort or daily service.
 
+A separate opt-in [app-scale contract](../config/swift-lora.app-qualification.json)
+uses **scale 1.3** with the same four prompts, 24 paired samples, four zero-scale
+controls, greedy sampler and **512-token output cap**. Its distinct contract digest
+binds captures, nonzero-logits proof and independent complete-answer reviews;
+scale-one evidence cannot satisfy it. Select `qualification: app-scale-1.3` in the
+manual workflow, or inspect it without inference:
+
+```powershell
+./scripts/Invoke-LoraQualification.ps1 -DataDirectory "$env:LOCALAPPDATA/SwiftBonsai2" -UseRepackedPtq1 -AppSettings -PlanOnly
+./scripts/Get-LoraQualification.ps1 -EvidencePath C:/external/evidence.json -ReviewPath C:/external/review.json -AppSettings
+```
+
+`AppSettingGatesPassed` reports only these matched LoRA gates.
+`StandardProfileMayEnable` stays false for this separate contract. The 512-token cap
+does not prove answer completeness: every exact response still requires human review.
+Thinking, sampler changes, full 4K output, long context, broad creative quality,
+comfort and daily service remain separate qualification. Omitting `AppSettings`
+preserves the original scale-one contract.
+
 ### Fixed acceptance contract
 
 [swift-lora.qualification.json](../config/swift-lora.qualification.json) pins four

@@ -4,7 +4,7 @@ Focused synthetic qualification scoring regressions; no model or benchmark runs.
 #>
 [CmdletBinding()]
 [OutputType([string])]
-param([Parameter(Mandatory)][ValidateSet('Scoring', 'Rejection', 'Json', 'Compatibility')][string]$Case, [string]$ToolPath)
+param([Parameter(Mandatory)][ValidateSet('Scoring', 'Rejection', 'Json', 'Compatibility', 'AppSettings')][string]$Case, [string]$ToolPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -44,7 +44,35 @@ function New-Fixture {
     }
 }
 
-if ($Case -ceq 'Compatibility') {
+if ($Case -ceq 'AppSettings') {
+    $standard = Get-BonsaiLoraQualificationPlan @toolArguments
+    $app = Get-BonsaiLoraQualificationPlan @toolArguments -AppSettings
+    Assert ($app.Contract.adapterScale -eq 1.3 -and $app.Contract.controls.maxOutputTokens -eq 512 -and
+        $app.ContractSha256 -cne $standard.ContractSha256) 'App scale lacks its separate full-response contract.'
+    $scratch = Join-Path ([IO.Path]::GetTempPath()) ('SwiftBonsai-AppQualification-' + [guid]::NewGuid().ToString('N'))
+    [void][IO.Directory]::CreateDirectory($scratch)
+    $plan = & (Join-Path $PSScriptRoot '../scripts/Invoke-LoraQualification.ps1') @toolArguments -DataDirectory $scratch -UseRepackedPtq1 -AppSettings -PlanOnly
+    Assert ($plan.AdapterScale -eq 1.3 -and $plan.QualificationProfile -ceq 'app-scale-1.3' -and
+        $plan.ContractSha256 -ceq $app.ContractSha256 -and -not $plan.ModelProcessStarted) 'AppSettings did not reach PlanOnly.'
+    $fixture = New-Fixture
+    $fixture.Evidence.contractSha256 = $app.ContractSha256
+    $fixture.Evidence.nonzeroAdapterCheck.scale = 1.3
+    $fixture.Evidence.controls.adapterScale = 1.3
+    $digest = Get-BonsaiLoraControlDigest @toolArguments -Controls $fixture.Evidence.controls -AppSettings
+    foreach ($sample in $fixture.Evidence.samples) { $sample.controlsSha256 = $digest }
+    $fixture.Review.contractSha256 = $app.ContractSha256
+    $result = Test-BonsaiLoraQualification @toolArguments -Evidence $fixture.Evidence -Review $fixture.Review -AppSettings
+    Assert ($result.Status -ceq 'accepted' -and $result.AppSettingGatesPassed -and
+        -not $result.StandardProfileMayEnable) 'The separate app gate bypassed its scope or failed matched evidence.'
+    $evidencePath = Join-Path $scratch 'evidence.json'
+    $reviewPath = Join-Path $scratch 'review.json'
+    [IO.File]::WriteAllText($evidencePath, ($fixture.Evidence | ConvertTo-Json -Depth 30))
+    [IO.File]::WriteAllText($reviewPath, ($fixture.Review | ConvertTo-Json -Depth 30))
+    $command = Join-Path $PSScriptRoot '../scripts/Get-LoraQualification.ps1'
+    $result = & $command @toolArguments -EvidencePath $evidencePath -ReviewPath $reviewPath -AppSettings
+    Assert ($result.AppSettingGatesPassed -and $result.AdapterScale -eq 1.3) 'AppSettings did not reach file scoring.'
+    Assert-Failure { & $command @toolArguments -EvidencePath $evidencePath -ReviewPath $reviewPath } 'Scale-one scoring accepted app evidence.'
+} elseif ($Case -ceq 'Compatibility') {
     Assert-JsonEqual -Actual (Get-BonsaiLoraQualificationPlan @toolArguments) -Expected $golden.plan -Message 'The packaged plan differs from the frozen PowerShell contract.'
     foreach ($vector in $golden.controlVectors) {
         Assert ((Get-BonsaiLoraControlDigest @toolArguments $vector.controls) -ceq $vector.sha256) 'A legacy canonical control identity changed.'

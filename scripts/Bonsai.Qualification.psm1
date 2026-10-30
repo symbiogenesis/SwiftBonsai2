@@ -23,9 +23,9 @@ function Get-BonsaiLoraQualificationPlan {
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
-    param([string]$ToolPath,
+    param([string]$ToolPath, [switch]$AppSettings,
           [ValidateSet('PQ2_0','current-repacked-PTQ1_0')][string]$WeightRepresentation)
-    $request = @{ operation = 'plan' }
+    $request = @{ operation = 'plan'; qualificationProfile = $(if ($AppSettings) { 'app-scale-1.3' } else { 'standard-scale-one' }) }
     if ($PSBoundParameters.ContainsKey('WeightRepresentation')) { $request.weightRepresentation = $WeightRepresentation }
     $result = Invoke-BonsaiTool -Command qualification -Request $request -ToolPath $ToolPath
     return [pscustomobject]$result
@@ -37,8 +37,8 @@ function Get-BonsaiLoraControlDigest {
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory)][Collections.IDictionary]$Controls, [string]$ToolPath)
-    $result = Invoke-BonsaiTool -Command qualification -Request @{ operation = 'controls'; controls = $Controls } -ToolPath $ToolPath
+    param([Parameter(Mandatory)][Collections.IDictionary]$Controls, [string]$ToolPath, [switch]$AppSettings)
+    $result = Invoke-BonsaiTool -Command qualification -Request @{ operation = 'controls'; controls = $Controls; qualificationProfile = $(if ($AppSettings) { 'app-scale-1.3' } else { 'standard-scale-one' }) } -ToolPath $ToolPath
     return [string]$result.Sha256
 }
 
@@ -56,9 +56,10 @@ function Test-BonsaiLoraQualification {
     param(
         [Parameter(Mandatory)][Collections.IDictionary]$Evidence,
         [AllowNull()][Collections.IDictionary]$Review,
-        [string]$ToolPath
+        [string]$ToolPath,
+        [switch]$AppSettings
     )
-    $result = Invoke-BonsaiTool -Command qualification -Request @{ operation = 'score'; evidence = $Evidence; review = $Review } -ToolPath $ToolPath
+    $result = Invoke-BonsaiTool -Command qualification -Request @{ operation = 'score'; evidence = $Evidence; review = $Review; qualificationProfile = $(if ($AppSettings) { 'app-scale-1.3' } else { 'standard-scale-one' }) } -ToolPath $ToolPath
     return [pscustomobject]$result
 }
 

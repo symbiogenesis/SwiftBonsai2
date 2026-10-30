@@ -348,3 +348,123 @@ fn legacy_external_path_policy_preserves_unc_percent_and_normalization() -> Resu
     // Retain the unique tiny evidence lane for inspection; no broad cleanup.
     Ok(())
 }
+
+#[test]
+fn app_scale_contract_binds_commands_proofs_reviews_and_keeps_standard_frozen() -> Result<()> {
+    let fixture = golden()?;
+    let standard = run(json!({"operation": "plan"}))?;
+    assert_eq!(standard, fixture["plan"]);
+    let app = run(json!({"operation": "plan", "qualificationProfile": "app-scale-1.3"}))?;
+    assert_ne!(app["ContractSha256"], standard["ContractSha256"]);
+    assert_eq!(app["Contract"]["adapterScale"], 1.3);
+    assert_eq!(app["Contract"]["controls"]["maxOutputTokens"], 512);
+    assert_eq!(app["Schedule"], standard["Schedule"]);
+    assert_eq!(app["Contract"]["gates"], standard["Contract"]["gates"]);
+    let accepted = &fixture["scenarios"][0];
+    let mut app_controls = accepted["evidence"]["controls"].clone();
+    app_controls["adapterScale"] = json!(1.3);
+    let app_digest = run(json!({"operation": "controls", "qualificationProfile": "app-scale-1.3", "controls": app_controls}))?["Sha256"].clone();
+    assert_ne!(
+        app_digest,
+        accepted["evidence"]["samples"][0]["controlsSha256"]
+    );
+    assert!(run(json!({"operation": "plan", "qualificationProfile": "app-scale-2"})).is_err());
+    assert!(
+        run(
+            json!({"operation": "score", "qualificationProfile": "app-scale-1.3",
+        "evidence": accepted["evidence"], "review": accepted["review"]})
+        )
+        .is_err()
+    );
+    let mut evidence = accepted["evidence"].clone();
+    let mut review = accepted["review"].clone();
+    evidence["contractSha256"] = app["ContractSha256"].clone();
+    review["contractSha256"] = app["ContractSha256"].clone();
+    assert!(
+        run(
+            json!({"operation": "score", "qualificationProfile": "app-scale-1.3",
+        "evidence": evidence, "review": review})
+        )
+        .is_err()
+    );
+    evidence["nonzeroAdapterCheck"]["scale"] = json!(1.3);
+    evidence["controls"] = app_controls;
+    for sample in evidence["samples"]
+        .as_array_mut()
+        .ok_or("Missing app samples.")?
+    {
+        sample["controlsSha256"] = app_digest.clone();
+    }
+    let report = run(
+        json!({"operation": "score", "qualificationProfile": "app-scale-1.3",
+        "evidence": evidence, "review": review}),
+    )?;
+    assert_eq!(report["Status"], "accepted");
+    assert_eq!(report["StandardProfileMayEnable"], false);
+    assert_eq!(report["AppSettingGatesPassed"], true);
+    assert_eq!(report["AdapterScale"], 1.3);
+    assert!(run(json!({"operation": "score", "evidence": evidence, "review": review})).is_err());
+    assert!(
+        run(
+            json!({"operation": "score", "qualificationProfile": "app-scale-1.3",
+        "evidence": evidence, "review": accepted["review"]})
+        )
+        .is_err()
+    );
+    review["reviews"][0]["answerComplete"] = json!(false);
+    let report = run(
+        json!({"operation": "score", "qualificationProfile": "app-scale-1.3",
+        "evidence": evidence, "review": review}),
+    )?;
+    assert_eq!(report["Status"], "pending");
+    assert_eq!(report["AppSettingGatesPassed"], false);
+    evidence["samples"][1]["decodeMilliseconds"] = json!(86_000_000);
+    evidence["samples"][2]["decodeMilliseconds"] = json!(86_000_000);
+    evidence["samples"][5]["decodeMilliseconds"] = json!(86_000_000);
+    let report = run(
+        json!({"operation": "score", "qualificationProfile": "app-scale-1.3",
+        "evidence": evidence, "review": null}),
+    )?;
+    assert_eq!(report["Status"], "rejected");
+    Ok(())
+}
+
+#[test]
+fn app_scale_invocations_use_512_tokens_and_only_the_pinned_scale() -> Result<()> {
+    let mut app_controls = golden()?["scenarios"][0]["evidence"]["controls"].clone();
+    app_controls["adapterScale"] = json!(1.3);
+    let invocations = run(
+        json!({"operation": "invocations", "qualificationProfile": "app-scale-1.3",
+        "controls": app_controls, "modelPath": "model.gguf"}),
+    )?;
+    let samples = invocations["Samples"]
+        .as_array()
+        .ok_or("Missing app invocations.")?;
+    assert_eq!(samples.len(), 28);
+    let mut adapters = 0;
+    let mut zeros = 0;
+    for sample in samples {
+        let arguments = sample["arguments"]
+            .as_array()
+            .ok_or("Missing app arguments.")?;
+        assert!(
+            arguments
+                .windows(2)
+                .any(|pair| pair[0] == "--n-predict" && pair[1] == "512")
+        );
+        if let Some(index) = arguments.iter().position(|value| value == "--lora-scaled") {
+            if sample["id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("zero-"))
+            {
+                assert_eq!(arguments[index + 1], "bonsai-abliterate-lora.gguf:0");
+                zeros += 1;
+            } else {
+                assert_eq!(arguments[index + 1], "bonsai-abliterate-lora.gguf:1.3");
+                adapters += 1;
+            }
+        }
+    }
+    assert_eq!((adapters, zeros), (12, 4));
+    Ok(())
+}

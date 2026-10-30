@@ -25,14 +25,35 @@ use crate::identity::{is_lower_hex, sha256};
 use schema::{Controls, Prompt};
 
 const CONTRACT: &str = include_str!("../../../../config/swift-lora.qualification.json");
+const APP_CONTRACT: &str = include_str!("../../../../config/swift-lora.app-qualification.json");
+
+#[derive(Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+enum QualificationProfile {
+    #[default]
+    StandardScaleOne,
+    #[serde(rename = "app-scale-1.3")]
+    AppScale,
+}
+
 const GIB: f64 = 1_073_741_824.0;
 const JSON_LIMIT: u64 = 16 * 1024 * 1024;
 
 struct Policy {
+    profile: QualificationProfile,
     contract: Value,
     contract_sha256: String,
     prompts: Vec<Prompt>,
     schedule: Vec<Scheduled>,
+}
+
+impl Policy {
+    const fn adapter_scale(&self) -> f64 {
+        match self.profile {
+            QualificationProfile::StandardScaleOne => 1.0,
+            QualificationProfile::AppScale => 1.3,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -145,22 +166,27 @@ fn validate_fixed_contract(contract: &Value) -> Result<()> {
             && contract["execution"]["deviceModel"] == "Snapdragon X Elite",
         "Qualification device changed.",
     )?;
+    let mut control_fields = vec![
+        "runtimeCommit",
+        "templateSha256",
+        "adapterSha256",
+        "contextTokens",
+        "batchTokens",
+        "microbatchTokens",
+        "threads",
+        "seed",
+        "maxOutputTokens",
+        "sampler",
+    ];
+    if contract["qualificationProfile"] == "app-scale-1.3" {
+        require(
+            contract["controls"]["adapterScale"] == 1.3,
+            "App qualification controls require scale 1.3.",
+        )?;
+        control_fields.push("adapterScale");
+    }
     for (value, expected) in [
-        (
-            &contract["controls"],
-            &[
-                "runtimeCommit",
-                "templateSha256",
-                "adapterSha256",
-                "contextTokens",
-                "batchTokens",
-                "microbatchTokens",
-                "threads",
-                "seed",
-                "maxOutputTokens",
-                "sampler",
-            ][..],
-        ),
+        (&contract["controls"], &control_fields[..]),
         (
             &contract["controls"]["sampler"],
             &["temperature", "topP", "topK", "minP", "repeatPenalty"][..],
@@ -179,8 +205,22 @@ fn validate_fixed_contract(contract: &Value) -> Result<()> {
 }
 
 fn policy() -> Result<Policy> {
-    let contract: Value = serde_json::from_str(CONTRACT).map_err(|error| error.to_string())?;
+    policy_for_profile(QualificationProfile::StandardScaleOne)
+}
+
+fn policy_for_profile(profile: QualificationProfile) -> Result<Policy> {
+    let contents = match profile {
+        QualificationProfile::StandardScaleOne => CONTRACT,
+        QualificationProfile::AppScale => APP_CONTRACT,
+    };
+    let contract: Value = serde_json::from_str(contents).map_err(|error| error.to_string())?;
     validate_fixed_contract(&contract)?;
+    if profile == QualificationProfile::AppScale {
+        require(
+            contract["qualificationProfile"] == "app-scale-1.3" && contract["adapterScale"] == 1.3,
+            "App-setting qualification requires its separate fixed scale-1.3 contract.",
+        )?;
+    }
     for (contents, path, contract_path) in [
         (
             include_str!("../../../../config/swift-assessment.lock.json"),
@@ -247,8 +287,9 @@ fn policy() -> Result<Policy> {
         }
     }
     Ok(Policy {
+        profile,
         contract,
-        contract_sha256: digest(&CONTRACT.replace("\r\n", "\n")),
+        contract_sha256: digest(&contents.replace("\r\n", "\n")),
         prompts,
         schedule,
     })
@@ -256,6 +297,14 @@ fn policy() -> Result<Policy> {
 
 fn control_identity(controls: &Controls, policy: &Policy) -> Result<(String, String)> {
     hash(&controls.model_sha256)?;
+    require(
+        controls.adapter_scale
+            == match policy.profile {
+                QualificationProfile::StandardScaleOne => None,
+                QualificationProfile::AppScale => Some(1.3),
+            },
+        "Qualification controls use a different adapter scale contract.",
+    )?;
     require(
         matches!(
             controls.weight_representation.as_str(),
@@ -336,7 +385,12 @@ pub fn run(request: Value) -> Result<Value> {
     if operation.starts_with("screen-") {
         return screen::run(&operation, request);
     }
-    let policy = policy()?;
+    let profile = request
+        .remove("qualificationProfile")
+        .map(decode)
+        .transpose()?
+        .unwrap_or_default();
+    let policy = policy_for_profile(profile)?;
     let result = match operation.as_str() {
         "plan" => {
             let mut plan = json!({"Contract": policy.contract, "ContractSha256": policy.contract_sha256, "Schedule": policy.schedule});

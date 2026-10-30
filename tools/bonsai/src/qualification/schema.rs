@@ -44,7 +44,7 @@ object!(Controls {
     seed: f64 => "seed",
     max_output_tokens: f64 => "maxOutputTokens",
     sampler: Sampler => "sampler",
-});
+} optional { adapter_scale: f64 => "adapterScale" });
 object!(Sampler {
     temperature: f64 => "temperature",
     top_p: f64 => "topP",
