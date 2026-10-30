@@ -131,8 +131,17 @@ fn release(input: &str) -> Result<ReleasePin, LaunchError> {
     Ok(release)
 }
 
-pub(super) fn verify(data: &Path) -> Result<(PathBuf, VerifiedFile), LaunchError> {
+fn row_workers_supported(version: &str, workers: u8) -> Result<(), LaunchError> {
+    if workers == 1 || (workers == 4 && version == "0.1.9") {
+        Ok(())
+    } else {
+        Err(LaunchError::Artifacts)
+    }
+}
+
+pub(super) fn verify(data: &Path, row_workers: u8) -> Result<(PathBuf, VerifiedFile), LaunchError> {
     let release = release(LOCK)?;
+    row_workers_supported(&release.version, row_workers)?;
     let file = release
         .files
         .iter()
@@ -200,5 +209,24 @@ mod tests {
         changed["asset"]["url"] = serde_json::json!("https://example.com/runtime.zip");
         assert!(release(&serde_json::to_string(&changed)?).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn four_row_workers_require_the_reviewed_parallel_release() {
+        assert!(row_workers_supported("0.1.8", 1).is_ok());
+        assert!(row_workers_supported("0.1.9", 1).is_ok());
+        assert!(row_workers_supported("0.1.9", 4).is_ok());
+        for version in ["0.1.8", "0.1.10", "0.1.9-dev", "", "latest"] {
+            assert_eq!(
+                row_workers_supported(version, 4),
+                Err(LaunchError::Artifacts)
+            );
+        }
+        for workers in [0, 2, 3, 5, 16, 255] {
+            assert_eq!(
+                row_workers_supported("0.1.9", workers),
+                Err(LaunchError::Artifacts)
+            );
+        }
     }
 }
