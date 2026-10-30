@@ -1,4 +1,4 @@
-// Fixed two-token correctness capture against the released 73bfe6cc DLL ABI.
+// Fixed one-token correctness smoke against the released 73bfe6cc DLL ABI.
 // Build with that exact source's llama.h/ggml headers. This is a diagnostic,
 // never a serving engine. The caller must verify and hold the exact runtime,
 // current-weight PTQ1 model, approved adapter and this executable throughout.
@@ -95,7 +95,7 @@ static std::string token_record(size_t position, llama_token token, size_t state
 }
 
 static int run(int argc, wchar_t ** argv) {
-    require(argc == 3 || argc == 7, "usage: --abi-probe RUNTIME | capture RUNTIME PTQ1 EVIDENCE none|ADAPTER 0|1.3");
+    require(argc == 3 || argc == 7, "usage: --abi-probe RUNTIME | capture RUNTIME PTQ1 EVIDENCE ADAPTER 1.3");
     const bool probe = std::wstring(argv[1]) == L"--abi-probe";
     require((probe && argc == 3) || (!probe && argc == 7 && std::wstring(argv[1]) == L"capture"), "invalid capture mode");
     const std::wstring runtime = argv[2];
@@ -122,11 +122,10 @@ static int run(int argc, wchar_t ** argv) {
         "exact current-weight PTQ1 filename and absolute path required");
     require(absolute(evidence) && GetFileAttributesW(evidence.c_str()) != INVALID_FILE_ATTRIBUTES,
         "existing absolute evidence directory required");
-    const bool with_adapter = adapter_path != L"none";
-    require(!with_adapter || (absolute(adapter_path) && basename(adapter_path) == L"bonsai-abliterate-lora.gguf"),
+    require(absolute(adapter_path) && basename(adapter_path) == L"bonsai-abliterate-lora.gguf",
         "approved absolute adapter path required");
-    require(scale_text == L"0" || (with_adapter && scale_text == L"1.3"), "only fixed zero and 1.3 arms are supported");
-    float scale = scale_text == L"1.3" ? 1.3F : 0.0F;
+    require(scale_text == L"1.3", "only the fixed adapter 1.3 smoke is supported");
+    float scale = 1.3F;
     FN(llama_backend_init);
     FN(llama_backend_free);
     FN(llama_model_load_from_file);
@@ -161,9 +160,9 @@ static int run(int argc, wchar_t ** argv) {
     require(model != nullptr, "native model loading failed");
     require(llama_vocab_n_tokens(llama_model_get_vocab(model.get())) == vocabulary, "native vocabulary mismatch");
     std::unique_ptr<llama_adapter_lora, decltype(llama_adapter_lora_free)> adapter(
-        with_adapter ? llama_adapter_lora_init(model.get(), utf8(adapter_path).c_str()) : nullptr,
+        llama_adapter_lora_init(model.get(), utf8(adapter_path).c_str()),
         llama_adapter_lora_free);
-    require(!with_adapter || adapter != nullptr, "approved native adapter loading failed");
+    require(adapter != nullptr, "approved native adapter loading failed");
     auto context_params = defaults_context;
     context_params.n_ctx = 8192;
     context_params.n_batch = 128;
@@ -181,13 +180,11 @@ static int run(int argc, wchar_t ** argv) {
     std::unique_ptr<llama_context, decltype(llama_free)> context(
         llama_init_from_model(model.get(), context_params), llama_free);
     require(context != nullptr, "native context allocation failed");
-    if (with_adapter) {
-        llama_adapter_lora * pointer = adapter.get();
-        require(llama_set_adapters_lora(context.get(), &pointer, 1, &scale) == 0, "native adapter application failed");
-    }
-    const llama_token supplied[2] = {248045, 872};
+    llama_adapter_lora * pointer = adapter.get();
+    require(llama_set_adapters_lora(context.get(), &pointer, 1, &scale) == 0, "native adapter application failed");
+    const llama_token supplied[1] = {248045};
     std::string records;
-    for (size_t step = 0; step < 2; ++step) {
+    for (size_t step = 0; step < 1; ++step) {
         llama_token token = supplied[step];
         require(llama_decode(context.get(), llama_batch_get_one(&token, 1)) == 0, "native decode failed");
         const float * logits = llama_get_logits_ith(context.get(), -1);
@@ -207,8 +204,7 @@ static int run(int argc, wchar_t ** argv) {
     }
     const std::string report = "{\"schemaVersion\":1,\"nativeCommit\":\"73bfe6cc485554822f80c473a3c0c4f25e80f41b\","
         "\"modelSha256\":\"e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5\","
-        "\"adapterLoaded\":" + std::string(with_adapter ? "true" : "false") + ",\"adapterScale\":"
-        + (scale_text == L"1.3" ? "1.3" : "0") + ",\"contextTokens\":8192,\"threads\":4,"
+        "\"adapterLoaded\":true,\"adapterScale\":1.3,\"contextTokens\":8192,\"threads\":4,"
         "\"stateFormat\":\"pinned-llama_state_seq_get_data-sequence-zero\",\"writerBasisQualified\":false,"
         "\"numericalParityQualified\":false,\"steps\":[" + records + "]}\n";
     write_new(evidence + L"\\native-capture.json", report.data(), report.size());

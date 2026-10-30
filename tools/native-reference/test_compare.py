@@ -18,6 +18,7 @@ def fixture(transposed):
     data = bytearray()
     def add(code, *values):
         data.extend(struct.pack("<" + code, *values))
+    add("Ii", 0xAF143CD8, 0)
     add("II", 1, 2)
     for token in (0, 1):
         add("iIiii", token, 1, token, token, 0)
@@ -44,20 +45,20 @@ class NativeStateTests(unittest.TestCase):
                    {"event": "rank-one-adapter-loaded", "model_sha256": MODULE.MODEL,
                     "adapter_sha256": MODULE.ADAPTER, "target_pairs": 129, "scale_bits": "3fa66666"}]
         records += [{"event": "forward-step", "position": i, "input_token": token,
-                     "backend_requested": "neon"} for i, token in enumerate((248045, 872))]
+                     "backend_requested": "auto"} for i, token in enumerate((248045,))]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             (path / "stdout.txt").write_text("\n".join(map(json.dumps, records)), encoding="utf-8")
-            self.assertEqual(len(MODULE.validate_rust_controls(path, {"adapterLoaded": True, "adapterScale": 1.3}, "neon")), 2)
-            for capture, backend in (({"adapterLoaded": True, "adapterScale": 0}, "neon"),
-                                     ({"adapterLoaded": False, "adapterScale": 0}, "neon"),
+            self.assertEqual(len(MODULE.validate_rust_controls(path, {"adapterLoaded": True, "adapterScale": 1.3}, "auto")), 1)
+            for capture, backend in (({"adapterLoaded": True, "adapterScale": 0}, "auto"),
+                                     ({"adapterLoaded": False, "adapterScale": 0}, "auto"),
                                      ({"adapterLoaded": True, "adapterScale": 1.3}, "scalar")):
                 with self.assertRaises(ValueError):
                     MODULE.validate_rust_controls(path, capture, backend)
             records[-1]["input_token"] = 198
             (path / "stdout.txt").write_text("\n".join(map(json.dumps, records)), encoding="utf-8")
             with self.assertRaises(ValueError):
-                MODULE.validate_rust_controls(path, {"adapterLoaded": True, "adapterScale": 1.3}, "neon")
+                MODULE.validate_rust_controls(path, {"adapterLoaded": True, "adapterScale": 1.3}, "auto")
 
     def test_transposed_v_and_complete_recurrent_inventory_match_logical_rows(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -80,10 +81,19 @@ class NativeStateTests(unittest.TestCase):
         data, layout = fixture(1)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "state"
-            for bad in (data[:-1], data + b"extra", b"\x02\0\0\0" + data[4:]):
+            for bad in (data[:-1], data + b"extra", b"\x02\0\0\0" + data[4:],
+                        data[:4] + b"\x01\0\0\0" + data[8:],
+                        data[:8] + b"\x02\0\0\0" + data[12:]):
                 path.write_bytes(bad)
                 with self.assertRaises(ValueError):
                     list(MODULE.native_components(path, 1, layout))
+
+    def test_capture_pre_read_bounds_reject_oversized_json_and_logits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "input"
+            path.write_bytes(b"x" * 17)
+            with self.assertRaises(ValueError):
+                MODULE.read_bounded(path, 16)
 
     def test_comparator_enforces_finite_values_exact_extents_and_original_tolerance(self):
         with tempfile.TemporaryDirectory() as directory:

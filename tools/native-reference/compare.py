@@ -1,4 +1,4 @@
-"""Strict same-format two-token comparison; no inference or benchmark execution."""
+"""Strict same-format one-token smoke; no inference or benchmark execution."""
 import argparse
 from dataclasses import dataclass
 import hashlib
@@ -25,6 +25,7 @@ class Layout:
 
 
 LAYOUT = Layout()
+TOKENS = (248045,)
 
 
 def require(condition, message):
@@ -35,6 +36,14 @@ def require(condition, message):
 def digest(path):
     with Path(path).open("rb") as file:
         return hashlib.file_digest(file, "sha256").hexdigest()
+
+
+def read_bounded(path, limit):
+    require(0 < Path(path).stat().st_size <= limit, "capture input exceeds pre-read byte bound")
+    with Path(path).open("rb") as file:
+        data = file.read(limit + 1)
+    require(len(data) <= limit, "capture input grew beyond byte bound")
+    return data
 
 
 class Reader:
@@ -58,11 +67,13 @@ def native_components(path, position, layout=LAYOUT):
     llama_kv_cache::state_write_{meta,data}, llama_memory_recurrent::state_write_data.
     FP16 V may be serialized by channel; return each logical token row in order.
     """
-    require(position in (0, 1), "only two supplied token positions are supported")
+    require(position in (0, 1), "decoder position is outside its bounded smoke/fixture extent")
     require(0 < Path(path).stat().st_size <= MAX_STATE, "native state exceeds byte bound")
     count = position + 1
     with Path(path).open("rb") as file:
         reader = Reader(file)
+        require(reader.value("I") == 0xAF143CD8, "native sequence-state magic changed")
+        require(reader.value("i") == 0, "native sequence-state identity changed")
         require(reader.value("I") == 1, "native attention stream count changed")
         require(reader.value("I") == count, "native live attention cell count changed")
         for token in range(count):
@@ -136,15 +147,15 @@ def compare_payload(reference, code, actual_path):
 
 
 def validate_rust_controls(rust, capture, backend):
-    records = [json.loads(line) for line in (rust / "stdout.txt").read_text(encoding="utf-8").splitlines() if line]
+    records = [json.loads(line) for line in read_bounded(rust / "stdout.txt", 65536).splitlines() if line]
     weights = [r for r in records if r.get("event") == "weights-loaded"]
     steps = [r for r in records if r.get("event") == "forward-step"]
     adapters = [r for r in records if r.get("event") == "rank-one-adapter-loaded"]
     require(len(weights) == 1 and weights[0]["model_sha256"] == MODEL
             and weights[0]["weight_representation"] == "current-repacked-PTQ1_0",
             "Rust capture used a different artifact")
-    require([s["position"] for s in steps] == [0, 1]
-            and [s["input_token"] for s in steps] == [248045, 872]
+    require([s["position"] for s in steps] == [0]
+            and [s["input_token"] for s in steps] == list(TOKENS)
             and all(s["backend_requested"] == backend for s in steps),
             "Rust supplied tokens/backend differ from comparison controls")
     require(type(capture["adapterLoaded"]) is bool, "invalid native adapter control")
@@ -162,22 +173,24 @@ def compare(native, rust, backend):
     native, rust = Path(native), Path(rust)
     native_inventory = {file.relative_to(native).as_posix() for file in native.rglob("*")
                         if file.is_file() and file.suffix in (".f32le", ".native-seq")}
-    require(native_inventory == {f"logits-{i}.f32le" for i in range(2)}
-            | {f"state-{i}.native-seq" for i in range(2)}, "native payload inventory changed")
-    capture = json.loads((native / "native-capture.json").read_text(encoding="utf-8"))
+    require(native_inventory == {"logits-0.f32le", "state-0.native-seq"}, "native payload inventory changed")
+    capture = json.loads(read_bounded(native / "native-capture.json", 65536))
     require(capture["nativeCommit"] == NATIVE and capture["modelSha256"] == MODEL,
             "native capture identity differs from exact same-format control")
     require(capture["contextTokens"] == 8192 and capture["threads"] == 4,
             "native capture controls changed")
-    require([step["inputToken"] for step in capture["steps"]] == [248045, 872],
+    require([step["inputToken"] for step in capture["steps"]] == list(TOKENS),
             "native supplied trajectory changed")
-    require(capture["adapterScale"] in (0, 1.3), "native adapter scale changed")
+    require([step["position"] for step in capture["steps"]] == [0]
+            and capture["steps"][0]["logitsCount"] == LAYOUT.vocabulary,
+            "native smoke position/logits geometry changed")
+    require(capture["adapterLoaded"] is True and capture["adapterScale"] == 1.3, "native smoke adapter control changed")
     steps = validate_rust_controls(rust, capture, backend)
     files = []
     expected = set()
-    for position in range(2):
+    for position in range(1):
         logits = f"logits-{position}.f32le"
-        reference = (native / logits).read_bytes()
+        reference = read_bounded(native / logits, LAYOUT.vocabulary * 4)
         require(len(reference) == LAYOUT.vocabulary * 4, "native logits extent changed")
         files.append({"path": logits, "nativeSha256": digest(native / logits),
                       "rustSha256": digest(rust / logits), **compare_payload(reference, "f", rust / logits)})
@@ -194,23 +207,25 @@ def compare(native, rust, backend):
     require(observed == expected, "Rust complete-state inventory differs from exact native extent")
     failed = sum(file["failedElements"] for file in files)
     greedy = [s["greedy_token"] for s in steps] == [s["greedyToken"] for s in capture["steps"]]
-    return {"schemaVersion": 1, "status": "failed" if failed or not greedy else "passed-bounded-two-token",
+    return {"schemaVersion": 1, "status": "failed" if failed or not greedy else "passed-bounded-one-token-smoke",
             "nativeCommit": NATIVE, "modelSha256": MODEL, "absoluteTolerance": 1e-3,
             "relativeTolerance": 1e-3, "files": len(files), "elements": sum(f["elements"] for f in files),
             "failedElements": failed, "byteExactFiles": sum(f["byteExact"] for f in files),
             "nativeCaptureSha256": digest(native / "native-capture.json"),
-            "nativeStateSha256": [digest(native / f"state-{i}.native-seq") for i in range(2)],
+            "nativeStateSha256": [digest(native / "state-0.native-seq")],
             "maximumAbsoluteError": max(f["maximumAbsoluteError"] for f in files), "comparisons": files,
             "backendRequested": backend, "greedyTokensMatch": greedy,
             "rustStdoutSha256": digest(rust / "stdout.txt"),
-            "writerBasisQualified": False, "qualityQualified": False, "defaultMayChange": False}
+            "writerBasisQualified": False, "qualityQualified": False, "defaultMayChange": False,
+            "pendingControls": ["no-adapter", "loaded-zero-identity", "nonzero-change", "scalar", "explicit-neon",
+                                "writer-authoring-basis", "quality", "performance", "full-context"]}
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--native", required=True, type=Path)
     parser.add_argument("--rust", required=True, type=Path)
-    parser.add_argument("--backend", required=True, choices=("scalar", "auto", "neon"))
+    parser.add_argument("--backend", required=True, choices=("auto",))
     parser.add_argument("--output", required=True, type=Path)
     arguments = parser.parse_args()
     report = compare(arguments.native, arguments.rust, arguments.backend)
