@@ -1,51 +1,81 @@
 # Bounded streaming work and response storage
 
-Runner bounds the work between model output, local HTTP forwarding and native
-presentation. These storage and lifetime changes preserve the model,
-sampler, numerical contract and speech PCM conversion.
+Runner bounds work and storage from model output through local HTTP to native
+presentation. These contracts preserve model/sampler numerics and speech PCM
+conversion. Limits include JSON escaping and protocol framing where stated.
+
+## Broker HTTP storage
 
 | Boundary | Storage and work contract |
 | --- | --- |
-| Broker authorized request intake | Small requests retain the coalesced body in the fixed 16 KiB header allocation without a copy. Larger authorized requests compact only the received payload prefix, reuse that allocation and reserve fallibly to their declared length, capped at 1 MiB. Remaining reads fill final uninitialized spare capacity without a separately zeroed whole-body allocation. Exact read limits exclude trailing requests even if allocated capacity exceeds Content-Length. Authorization, framing, deadlines and cancellation still precede backend work. |
-| Broker canonical requests | Serializes directly through a bounded writer, rejecting the first write that would exceed 1 MiB and capping requested vector growth at that limit. Counting and generation use identical canonical bytes. The production generation exchange releases those bytes after the complete write and flush, before waiting for response headers. |
-| Broker backend payload intake | Reads directly from the source into the caller's final payload storage when the reader's staging buffer is empty, the destination has at least 8 KiB remaining and that space fits inside the current Content-Length or chunk payload. Coalesced prefixes and framing tails retain buffered reads; chunk endings never enter decoded payload. Empty reads, truncation, sticky failure and absolute deadlines keep their existing behavior. |
-| Broker SSE forwarding | Reuses its 8 KiB payload buffer. After the first read, combines only immediately ready payload, with at most 32 reads per group. A pending read releases the available prefix immediately; there is no batching timer. |
-| Broker buffered JSON responses | Reads directly into uninitialized final-vector spare capacity, with fallible geometric reservations capped at 4 MiB and at most 8 KiB per read. Uses a separate one-byte overflow probe at the cap. Complete HTTP framing, UTF-8 and JSON-object validation still precede every client write. |
-| Native chat HTTP decoding | Releases each available payload read without waiting to fill the 8 KiB read buffer or complete a declared HTTP chunk. Chunk endings are checked before the next payload; successful generation still requires complete HTTP framing and terminal SSE events. Chunk-size metadata uses fixed stack storage. |
-| Native chat request lifetime | Transfers ownership of serialized request bytes into Standard generation and each Extra effort pass. Releases the allocation after the full write and flush, before reading response headers. The original request used for local validation is released before constructing Extra effort stage bodies. Request bytes, limits, shared stage deadlines and failure policy stay the same. |
-| Native chat notifications | Admits streaming notifications below 64 queued entries and at most 1 MiB of queued incremental text/reasoning payload. Adjacent deltas of the same kind combine up to 16 KiB without crossing lifecycle boundaries. Reserves 16 further entries for ordered lifecycle notifications; the window processes at most 64 events per frame. Backpressure observes cancellation and the request deadline. |
-| Native transcript accounting | Maintains text-byte totals as messages change instead of scanning the whole conversation for each delta. Live transcripts retain at most 512 messages, matching the recovery admission limit and bounding per-frame traversal even for empty or repeatedly rejected turns. Count and byte-budget eviction remove one combined prefix, preserving the existing trailing-message byte policy and recovery format. |
+| Authorized request intake | Small requests keep coalesced bodies in the fixed 16 KiB header allocation. Larger requests compact only the received payload prefix, reuse the allocation and reserve fallibly to Content-Length, capped at 1 MiB. Reads fill uninitialized final spare capacity, avoiding a separately zeroed whole-body allocation. Read limits exclude trailing requests even when capacity exceeds Content-Length. Authorization, framing, deadlines and cancellation precede backend work. |
+| Canonical requests | A bounded writer rejects the first write exceeding 1 MiB and caps requested vector growth there. Counting and generation use identical bytes. Generation releases them after the complete write/flush, before reading response headers. |
+| Backend payload intake | Reads into the caller's final storage when staging is empty, at least 8 KiB remains in the destination and that space fits the current Content-Length/chunk payload. Coalesced prefixes and framing tails use buffered reads; chunk endings never enter payload. Empty-read, truncation, sticky-failure and absolute-deadline behavior is unchanged. |
+| SSE forwarding | Reuses an 8 KiB buffer, combining only immediately ready payload after the first read, at most 32 reads per group. A pending read immediately releases the prefix; no batching timer. |
+| Buffered JSON responses | Reads into uninitialized final-vector spare capacity using fallible geometric reservations capped at 4 MiB, at most 8 KiB per read. A separate one-byte probe detects overflow at the cap. Complete HTTP framing, UTF-8 and JSON-object validation precede client writes. |
+
+## Native chat and transcript
+
+| Boundary | Storage and work contract |
+| --- | --- |
+| HTTP decoding | Releases available payload without waiting to fill the 8 KiB buffer or finish an HTTP chunk. Checks chunk endings before further payload; success requires complete HTTP framing and terminal SSE events. Chunk-size metadata uses fixed stack storage. |
+| Request lifetime | Standard generation and each Extra effort pass own serialized request bytes, releasing them after full write/flush and before response headers. The locally validated original is released before constructing Extra effort stage bodies. Bytes, limits, shared stage deadlines and failure policy are unchanged. |
+| Notifications | Admits streaming notifications below 64 queued entries and at most 1 MiB of queued incremental text/reasoning. Adjacent same-kind deltas combine up to 16 KiB within lifecycle boundaries. Another 16 entries are reserved for ordered lifecycle notifications; the window handles at most 64 events/frame. Backpressure observes cancellation and the request deadline. |
+| Transcript accounting | Updates text-byte totals per change without scanning the conversation per delta. The 512-message live/recovery limit bounds per-frame traversal even for empty/rejected turns. Count and byte eviction remove one combined prefix, preserving the trailing-message byte policy and recovery format. |
 | Native transcript find | Streams scalar-lowercased UTF-8 through a linear matcher with query-sized offset/fallback arrays. Only the current tail retains continuation scratch, so appending an answer scans only its new bytes, including matches spanning appends. Ordinary appends retain completed cache entries and results in place, copying only newly discovered results. Saturated result prefixes skip tail work until a structural/query change requires refresh. Retains no whole-message folded string or per-message-byte offset table. Preserves original UTF-8 highlights, nonoverlapping folded matches and the existing 10,000-result cap with one-match lookahead. Replacements invalidate their cached matches even when the byte length is unchanged. |
 | Native transcript highlight layouts | Uses fixed-size body/query revisions and visible match counts instead of duplicating and comparing highlight-range vectors each frame. Find navigation reuses the highlighted text galley and caches only the active result's underline glyph runs, without rebuilding all highlight sections or copying the body. Geometry and theme remain separate cache keys. Appending another message preserves completed layouts; replacement, query changes and newly exposed results invalidate affected highlights. Width and display-scale changes refresh both layout and active underline geometry. |
-| Native committed history | Shares immutable content and reasoning allocations across worker, UI, queued commit events, request snapshots and restored conversations. History vectors remain independent. Extra effort allocates its augmented final user task without copying every preceding message body. Recovery and HTTP serialization retain the same JSON strings. |
-| Native JSON serialization | Recovery and outgoing chat requests stop serialization at their existing 8 MiB and 1 MiB encoded-byte bounds, including JSON escaping. Extra effort's temporary encoded working material is also bounded by the request limit. Requested vector growth is capped at the corresponding bound; oversized workspaces are rejected before constructing their complete encoded representation. |
-| Native recovery admission | Reserves one plaintext snapshot slot before serialization and retains it through encryption and disk completion. An occupied worker leaves the workspace dirty without constructing another encoded snapshot. Final-save serialization waits for the slot; explicit erase and shutdown retain command ordering. The encrypted format and 8 MiB plaintext bound stay the same. |
-| Native recovery decoding | Enforces the existing 16-conversation, 128-committed-message and 512-visible-message collection limits during deserialization, including inactive snapshots. Rejects an excess element before decoding its payload. Invalid recovery preserves the current workspace and existing saved file. |
-| Startup tool captures | Valid UTF-8 output transfers its bounded byte allocation into the returned string; invalid UTF-8 retains the existing replacement-character decoding. The log writes stdout then stderr directly, without constructing a combined output string. Each raw stream retains its 16 MiB cap. |
-| Speech request intake | Multipart fields and header lines are borrowed lazily; the fourth field is rejected before field parsing without collecting all delimiter matches. The authorized HTTP intake allocation is reused for the body, with exact fallible growth and direct reads into final storage. PCM normalization, supported fields and request limits stay the same. |
-| Native microphone upload | Validates captured WAV framing without copying PCM. Canonicalization constructs only a 44-byte header and borrows the original samples, including extensible WAV input. Upload writes multipart fields, header, PCM and ending separately with checked aggregate Content-Length and cancellation between partial writes. Boundary selection checks both source slices and their fixed-size join. Upload framing leaves scope before inference response reads. |
-| Native buffered speech responses | Reuses the validated HTTP header allocation for JSON and complete-WAV response bodies. Moves only already received payload, grows storage fallibly to the checked Content-Length and reads remaining bytes directly into final storage. Retains the 64 KiB JSON and 5,760,044-byte WAV limits, framing checks, deadlines and cancellation. Streaming PCM keeps its separate fixed-buffer path. |
-| Fragmented speech HTTP headers | Native buffered responses and companion request intake scan each possible header-delimiter position once, retaining only the three-byte overlap between reads. Split delimiters and coalesced bodies preserve the first header ending, the 16 KiB header bound, framing validation and existing deadlines/cancellation. |
-| Native speech commands | Bounds queued commands to 64 entries and 1 MiB of payload, with room reserved for control commands. Adjacent same-generation text combines up to 16 KiB. Enforces the existing 32,768 UTF-16-unit stream lifetime before enqueueing, including text already consumed by the worker. Overload invalidates synthesis and reports an explicit speech failure; Stop and shutdown remain nonblocking. |
-| Native speech waits | A cold command worker with no output, warm service or retained input generation/service blocks on its queue condition variable. Commands and sender closure wake it under the same queue lock. Active output, warm TTS and retained Canary input keep the existing 50 ms timeout for streaming, expiry, cancellation and health checks; owned-service memory monitoring remains independent. |
-| Incremental speech segmentation | Scans segments using byte offsets and compacts the final unconsumed text tail at most once per call, preserving Unicode boundaries. Sentence boundaries and the 256-character limit release text during continuous generation; the 700 ms word fallback waits for input to idle. Completion flushes the final tail. |
-| Native speech playback | Combines immediately queued text up to 256 characters per request. Normalizes PCM to 100 ms frames, with 700 ms startup pre-roll and 16 seconds of producer lookahead. Allows the codec's 640 ms burst interval when checking supply speed. Slow supply or a playback underrun switches to buffering validated complete segments. Application staging is bounded to 5,760,000 PCM bytes, plus the 768,000-byte producer queue, 38,400-byte native queue and two 4,800-byte frame buffers. Short completed segments drain without waiting for more text. |
-| Native speech PCM reuse | Returns released 4,800-byte packet allocations to synthesis through a nonblocking queue after successful WinMM unprepare. Reuses buffers across segments without retaining their old audio. At most eight spare packets (38,400 bytes) remain cached in addition to the playback bounds above; full or disconnected return queues discard excess buffers without delaying Stop or playback. |
-| Native speech playback descriptors | Circulates at most eight boxed WinMM descriptors between the active queue and an empty spare pool instead of allocating a new box per packet. Successful unprepare releases PCM for recycling and clears every native descriptor field before reuse. Still-playing or failed unprepare retains both active allocations; teardown preserves the existing bounded quarantine for driver refusal. Spares retain no PCM allocation. |
-| Complete speech WAV response | Retains the native float waveform in its matching allocation owner through validation, PCM conversion and HTTP writes; the service borrows samples without a full Rust waveform copy. Releases that owner on success, invalid output or write failure. Validates the complete generated clip before success headers. Converts samples through one reusable 32 KiB buffer plus a 44-byte WAV header instead of retaining an additional encoded clip of up to 5,760,044 bytes. The pinned native sample ceiling bounds the removed float-copy overlap to 11,504,636 bytes; this is a storage bound, not measured process peak memory. |
-| Native voice bootstrap | Retains the independently owned native VoiceDesign reference waveform through Design teardown and synchronous Base extraction, releasing it on success or failure. Design and Base models remain mutually exclusive. Removes one Rust allocation/copy and its temporary overlap, bounded to 720,000 float samples (2,880,000 bytes) per profile acquisition. This is a storage bound; startup latency and process peak memory remain unmeasured. |
-| Streaming speech PCM | Reuses one 32 KiB payload buffer with fixed spare space for HTTP chunk framing. Each encoded chunk uses one write operation instead of allocating a vector and writing its prefix, payload and suffix separately. |
-| Native speech PCM intake | Reuses one fixed 16 KiB buffer for HTTP headers, chunk framing and PCM payload. Metadata parsing consumes buffered bytes rather than issuing byte-sized socket reads; chunk-size lines use ten fixed bytes. Delivers each available even-byte PCM prefix immediately, retaining at most one split sample in two stack bytes. Checks cancellation/deadlines even for buffered data and requires exact chunk endings, terminal framing and EOF. |
-| Native TTS decode graphs | The private pinned-source overlay retains at most one talker decode graph context and native allocator workspace, instead of caching up to sixteen attention windows. It frees obsolete native workspaces before building a replacement. CPU graph execution completes before eviction; model weights, KV and the hidden-state bridge have separate persistent ownership. Small host staging-vector capacities remain cached. A request returning to an earlier window rebuilds its workspace. |
+| Committed history | Shares immutable content/reasoning allocations across worker, UI, queued commits, request snapshots and restored conversations; history vectors remain independent. Extra effort allocates its augmented final user task without copying preceding bodies. Recovery and HTTP JSON strings are unchanged. |
 
-Extra effort retained drafts/answers use explicit lifecycle events, each bounded
-by the existing 4 MiB response cap, rather than bypassing the incremental stream
-limit. Committed history retains its existing request/response bounds. Unexpected
-lifecycle-capacity exhaustion closes the worker without blocking teardown.
-Speech overload ends that readout and keeps text chat available. A new explicit
-readout or the next response can begin a fresh stream; queued text is never
-silently replayed after failure. Superseding speech commands discard obsolete
-queued work using the existing generation-cancellation boundary.
+Extra effort retains drafts/answers through ordered lifecycle events, each bounded
+by the 4 MiB response cap. They do not bypass the incremental stream limit.
+Committed history keeps its request/response bounds. Unexpected lifecycle-capacity
+exhaustion closes the worker without blocking teardown.
+
+## Recovery and startup
+
+| Boundary | Storage and work contract |
+| --- | --- |
+| JSON serialization | Recovery/outgoing requests stop at 8 MiB/1 MiB encoded bytes, including JSON escapes. Extra effort's temporary encoded material also fits the request limit. Requested vector growth cannot exceed the bound; oversized workspaces reject before complete encoding. |
+| Recovery admission | One plaintext snapshot slot is reserved before serialization through encryption/disk completion. A busy worker leaves the workspace dirty without encoding another snapshot. Final save waits for the slot; erase/shutdown retain command ordering. The encrypted format and 8 MiB plaintext bound are unchanged. |
+| Recovery decoding | Enforces 16-conversation, 128-committed-message and 512-visible-message limits during deserialization, including inactive snapshots. Excess elements reject before payload decoding. Invalid recovery preserves the live workspace and saved file. |
+| Startup tool captures | Valid UTF-8 transfers its bounded allocation into the returned string; invalid UTF-8 keeps replacement-character decoding. Logs write stdout then stderr without a combined string. Each raw stream is capped at 16 MiB. |
+
+## Speech HTTP storage
+
+| Boundary | Storage and work contract |
+| --- | --- |
+| Request intake | Borrows multipart fields/header lines lazily; rejects the fourth field before parsing without collecting delimiter matches. Reuses authorized HTTP intake storage for the body with exact fallible growth and direct final-storage reads. PCM normalization, supported fields and request limits are unchanged. |
+| Microphone upload | Validates WAV framing without copying PCM. Canonicalization builds a 44-byte header and borrows original samples, including extensible WAV. Writes multipart fields, header, PCM and ending separately with checked aggregate Content-Length and cancellation between partial writes. Boundary checks cover both source slices and their fixed-size join. Upload framing leaves scope before inference response reads. |
+| Buffered responses | Reuses validated HTTP header storage for JSON/complete-WAV bodies, moves only received payload, grows fallibly to checked Content-Length and reads directly into final storage. Retains 64 KiB JSON/5,760,044-byte WAV limits, framing, deadlines and cancellation. Streaming PCM uses its separate fixed buffer. |
+| Fragmented headers | Buffered responses and companion intake scan each delimiter position once, retaining three overlap bytes. Split delimiters/coalesced bodies preserve the first header ending, 16 KiB header bound, framing, deadlines and cancellation. |
+
+## Speech scheduling and playback
+
+| Boundary | Storage and work contract |
+| --- | --- |
+| Commands | At most 64 queued entries/1 MiB payload, with control-command reserve. Adjacent same-generation text combines up to 16 KiB. The 32,768 UTF-16-unit lifetime bound applies before enqueueing, including text already consumed. Overload invalidates synthesis and reports failure; Stop/shutdown remain nonblocking. |
+| Waits | A cold worker with no output, warm service or retained input generation/service blocks on the queue condition variable. Commands/sender closure wake it under the same lock. Active output, warm TTS and retained Canary input use a 50 ms timeout for streaming, expiry, cancellation and health checks. Owned-service memory monitoring is independent. |
+| Segmentation | Scans byte offsets and compacts the unconsumed tail at most once/call, preserving Unicode boundaries. Sentences and the 256-character limit release text during continuous generation; the 700 ms word fallback waits for idle input. Completion flushes the tail. |
+| Playback | Combines immediately queued text up to 256 characters/request. PCM uses 100 ms frames, 700 ms startup pre-roll and 16 seconds of producer lookahead; supply-speed checks allow the codec's 640 ms bursts. Slow supply/underrun switches to buffering validated complete segments. Staging is capped at 5,760,000 PCM bytes, plus 768,000-byte producer/38,400-byte native queues and two 4,800-byte frame buffers. Short completed segments drain without more text. |
+| PCM reuse | Successful WinMM unprepare returns 4,800-byte packets to synthesis through a nonblocking queue. Reuse spans segments without retaining old audio. At most eight spares (38,400 bytes) are cached beyond playback bounds; full/disconnected queues discard excess without delaying Stop/playback. |
+| Playback descriptors | At most eight boxed WinMM descriptors circulate between the active queue and an empty spare pool, avoiding per-packet boxes. Successful unprepare releases PCM for recycling and clears every descriptor field. Still-playing/failed unprepare retains both active allocations; teardown keeps bounded quarantine for driver refusal. Spares retain no PCM. |
+
+Speech overload ends the readout and leaves text chat available. Explicit readout
+or the next response can start a fresh stream; failure never silently replays
+queued text. Superseding commands discard obsolete work through generation
+cancellation.
+
+## Native speech generation and streaming
+
+| Boundary | Storage and work contract |
+| --- | --- |
+| Complete WAV response | Borrows native float samples through their matching allocation owner during validation, PCM conversion and HTTP writes, without a full Rust waveform copy. Success, invalid output and write failure release the owner. The complete clip is validated before success headers. One reusable 32 KiB conversion buffer/44-byte header replaces an encoded clip up to 5,760,044 bytes. The pinned sample ceiling bounds removed float-copy overlap at 11,504,636 bytes; neither figure is measured process peak memory. |
+| Voice bootstrap | The independently owned VoiceDesign waveform survives Design teardown and synchronous Base extraction, releasing on success/failure. Design/Base remain mutually exclusive. Removes one Rust allocation/copy and temporary overlap, at most 720,000 float samples (2,880,000 bytes) per profile acquisition. Startup latency and process peak memory remain unmeasured. |
+| Streaming PCM output | Reuses a 32 KiB payload buffer with fixed HTTP-framing spare space. Each encoded chunk uses one write, avoiding a vector allocation and separate prefix/payload/suffix writes. |
+| PCM intake | Reuses a fixed 16 KiB buffer for HTTP headers, chunk framing and PCM. Parses buffered metadata without byte-sized socket reads; chunk-size lines use ten fixed bytes. Releases available even-byte prefixes immediately, retaining at most one split sample in two stack bytes. Checks cancellation/deadlines even for buffered data; requires exact chunk endings, terminal framing and EOF. |
+| TTS decode graphs | The private pinned-source overlay retains at most one talker decode graph context/native allocator workspace rather than up to sixteen attention windows. Obsolete workspaces are freed before replacement, after CPU execution completes. Weights, KV and hidden-state bridge retain separate persistent ownership. Small host staging-vector capacities stay cached; revisiting an earlier window rebuilds its workspace. |
+
+## Completion and cancellation
 
 HTTP byte limits, framing, absolute deadlines and failure handling still apply.
 Clean decoded completion permits the broker's HTTP zero chunk; the client still
@@ -62,6 +92,8 @@ This prevents normal completion closure from terminating a warm speech worker;
 disconnects, extra data and deadlines still terminate active inference. Final
 framing keeps its bounded write timeout. Focused regressions cover a stop racing
 with EOF and consecutive PCM/WAV responses followed by immediate client closure.
+
+## Evidence limits
 
 Focused regressions check byte identity, PCM clipping and rounding, bounded
 storage reuse, operation counts, pending reads, cancellation and failures. Such
