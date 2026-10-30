@@ -107,6 +107,56 @@ fn stop_freezes_queued_output_and_preserves_a_new_composer_draft() {
 }
 
 #[test]
+fn queued_rejections_after_stop_preserve_teardown_and_composer_drafts() {
+    for retry_required in [false, true] {
+        for newer_draft in ["", "My next question"] {
+            let (mut state, commands, events) = state();
+            state.ready = true;
+            state.input = "Original question".to_owned();
+            state.submit();
+            assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
+            state.model_event(Event::Text("Partial answer".to_owned()));
+            state.stop_generation();
+            assert!(matches!(commands.try_recv(), Ok(Command::Stop)));
+            newer_draft.clone_into(&mut state.input);
+            let transcript = state.transcript.plain_text();
+            let status = state.status.clone();
+            assert!(
+                events
+                    .send(Event::Rejected {
+                        message: "Queued rejection".to_owned(),
+                        text: "Original question".to_owned(),
+                        retry_required,
+                    })
+                    .is_ok()
+            );
+
+            state.drain_events();
+            assert!(state.stopping && state.waiting_model);
+            assert!(!state.ready && !state.busy && !state.retryable && !state.warning);
+            assert_eq!(state.status, status);
+            assert_eq!(state.transcript.plain_text(), transcript);
+            assert_eq!(
+                state.input,
+                if newer_draft.is_empty() {
+                    "Original question"
+                } else {
+                    newer_draft
+                }
+            );
+            state.submit();
+            assert!(commands.try_recv().is_err());
+
+            state.model_event(Event::Stopped);
+            assert!(state.retryable && !state.ready && !state.waiting_model);
+            state.retry();
+            assert!(matches!(commands.try_recv(), Ok(Command::Retry)));
+            assert!(commands.try_recv().is_err());
+        }
+    }
+}
+
+#[test]
 fn completed_turn_winning_stop_race_keeps_visible_and_committed_answers_consistent() {
     let (mut state, _commands, _events) = state();
     state.ready = true;

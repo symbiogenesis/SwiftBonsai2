@@ -469,6 +469,15 @@ impl State {
     }
 
     fn reject(&mut self, message: &str, text: &str, retry_required: bool) {
+        if self.stopping {
+            // A rejection can queue just before Stop reaches the worker. The
+            // explicit stop still owns readiness and status until teardown ends.
+            if self.input.is_empty() {
+                self.input = text.chars().take(INPUT_LIMIT).collect();
+                self.place_composer_cursor(self.input.chars().count());
+            }
+            return;
+        }
         self.stop_speech();
         self.busy = false;
         self.ready = !retry_required;
