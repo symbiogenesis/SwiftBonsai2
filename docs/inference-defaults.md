@@ -1,9 +1,8 @@
 # Inference defaults and quality evidence
 
-The sampler defaults preserve the publisher's evaluated configuration and native chat template.
-Thinking is off by default for chat, with an explicit opt-in. The evaluated thinking configuration
-remains available but is not a measured optimum for this laptop or creative writing. Daily chat and
-Swift serving remain under development.
+Chat defaults to thinking off and preserves the native template and publisher's evaluated sampler.
+Thinking is opt-in; its evaluated configuration remains available without a claim that it is best
+for this laptop or creative writing. Daily chat and Swift serving remain under development.
 
 ## Applied defaults
 
@@ -23,9 +22,9 @@ Swift serving remain under development.
 | Cache reuse / speculation | Disabled | Current memory/state and execution baseline; these are not established quality improvements |
 
 CPU checks, server plans and the Rust development launcher pass sampler/reasoning arguments
-explicitly. The pinned completion renderer omits template kwargs at formatting, so its parsed
-switches alone do not enforce thinking/effort: that single-turn check relies on verified embedded
-on/`xhigh` defaults. The server request path applies explicit settings.
+explicitly. However, the pinned completion renderer omits template kwargs during formatting:
+its single-turn check relies on the verified template's thinking-on/`xhigh` defaults, rather than
+the parsed switches. The server request path applies the selected settings explicitly.
 
 For exact counting and generation, the broker uses the identical canonical body with
 `chat_template_kwargs`: selected `enable_thinking` (default false), `reasoning_effort: "xhigh"`,
@@ -47,9 +46,9 @@ is a Rust client workflow with no new broker option, following
 2. Draft from the original task, relevant sources and plan.
 3. Review against original constraints and revise, retaining the draft for comparison.
 
-At most three sequential calls use the same model, each with a fresh context of original task
-and relevant state. User instructions/approved facts remain authoritative; generated notes and
-references are data. There is no autonomous tool use or open-ended manager loop.
+At most three sequential calls use the same model with fresh contexts containing the original
+task and relevant state. User instructions/approved facts remain authoritative; generated notes
+and references are data. No autonomous tools or open-ended manager loop are enabled.
 
 Each call retains sampler/template/exact admission: 8K context, reasoning-inclusive caps
 512/1,024/2,048/4,096 (default 4,096), and the broker's 64-token margin. Smaller caps leave more
@@ -58,19 +57,16 @@ overflow rather than dropping history or raising limits. A shared deadline/cance
 all stages, with progress labels. Retain failed/incomplete stages; truncated revisions neither
 replace complete drafts nor become finished answers.
 
-Focused checks cover default single-call behavior, order, bounds, cancellation and draft retention.
-Exposing the opt-in mode does not require a prior extensive benchmark campaign; promoting it or
-claiming quality/speed gains does require evidence. GVS5H coding results do not establish Swift
-creative quality. Benchmarks remain CI-only; service/security gates apply independently.
+Focused checks cover default single-call behavior, stage order, bounds, cancellation and draft
+retention. The opt-in can be exposed before extensive benchmarking; promotion or quality/speed
+claims require evidence. GVS5H coding results do not establish Swift creative quality.
+Benchmarks remain CI-only; service/security gates apply independently.
 
 ## What the benchmarks establish
 
-[Swift's publisher](https://ukisai.com/swift-bonsai-2) and
-[evaluation artifact](https://huggingface.co/ukisai/Swift-Bonsai-2-GGUF/blob/main/benchmark_results.json)
-support the sampler baseline. Only IFBench/AIME were refreshed on merged PQ2; GPQA/C-Eval used
-historical runtime correction, and current AIME final-answer-only ties the base. These are not
-sampler/effort/prompt sweeps or creative-writing gains; practical instruction following/tool use
-remain uneven.
+[Swift's published evaluations](performance-expectations.md#current-swift-evidence) support the
+sampler baseline, with separate current-weight and historical results. They establish neither an
+optimal sampler/effort/prompt nor creative-writing gains.
 
 [Qwen guidance](https://huggingface.co/Qwen/Qwen3.8-27B#best-practices) supports the thinking sampler,
 warns stronger presence penalties can hurt, and separately defines non-thinking settings.
@@ -109,15 +105,14 @@ accelerators or daily-service profiles.
 ## 2026 literature: token budgets are a separate experiment
 
 The [source register](research-register.md#2026-systems-measurement-and-output-budget-work) records
-the **2026-10-29** review of ESTAR, Budget Guidance, BudgetThinker and CASE. Kernel acceleration
-reduces token cost; these methods change token counts, candidate answers, output distributions or
-trained artifacts and need separate comparisons:
+the **2026-10-29** review. These methods change output counts/distributions, candidate answers or
+trained artifacts, so compare them separately from faster kernels:
 
-- ESTAR and [BudgetThinker](https://github.com/MobileLLM/BudgetThinker) require compatible training/components/control tokens.
-- [Budget Guidance](https://github.com/UMass-Embodied-AGI/BudgetGuidance) avoids base-model fine-tuning but needs a compatible length predictor;
-  guided sampling, predictor overhead and creative quality remain independent questions.
-- CASE saves work against multi-sample self-consistency, which does not establish a gain over
-  the current single completion or justify parallel candidates.
+| Method | Admission boundary |
+| --- | --- |
+| ESTAR; [BudgetThinker](https://github.com/MobileLLM/BudgetThinker) | Require compatible training/components/control tokens. |
+| [Budget Guidance](https://github.com/UMass-Embodied-AGI/BudgetGuidance) | Avoids base-model fine-tuning but needs a compatible length predictor. Evaluate guided sampling, predictor overhead and creative quality separately. |
+| CASE | Saves work against multi-sample self-consistency; that does not establish a gain over the current single completion or justify parallel candidates. |
 
 Measure time/energy to a useful completed answer, including predictor work, extra prefills, failed
 attempts and human revision. Preserve selected thinking/Extra effort, exact reservations,

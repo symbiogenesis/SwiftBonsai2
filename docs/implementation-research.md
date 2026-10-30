@@ -13,14 +13,11 @@ establishes neither runtime qualification nor broad OpenAI SDK compatibility.
 
 ## Model and runtime evidence
 
-| Topic | Authoritative evidence and distinction |
-| --- | --- |
-| Swift artifacts | [Memory assessment](swift-memory.md): census, immutable pins and budgets; generic PQ2 must preserve the fourth symbol even though this artifact is ternary. |
-| Current-weight PTQ1 | [Readiness](ptq1-readiness.md): lossless weights do not establish equal activation arithmetic, logits or quality. |
-| Adapter | [Swift LoRA](swift-lora.md) and [qualification](lora-qualification.md): storage savings, basis correctness, throughput and quality are separate claims. |
-| Rust replacement | [Engine](native-rust-engine.md) and [promotion](runtime-promotion.md): bounded source checks do not qualify a release, full-context use or adapters. |
-| Qwen control | [Reference decision](model-selection.md): published base-model results and a verified CPU route do not establish exact-pack application acceptance. |
-| Hardware | [Profiles](hardware-profiles.md), [Adreno](adreno-gpu-plan.md), [Hexagon](hexagon-npu-plan.md): launch profiles remain CPU-only. |
+The [model/runtime index](README.md#models-memory-and-runtime) maps artifact,
+arithmetic, adapter and promotion contracts. Keep their evidence separate:
+lossless storage does not prove numerical parity, source checks do not qualify
+a release, and base-model results do not qualify Swift. Launch profiles remain
+[CPU-only](hardware-profiles.md).
 
 Swift's bounded completion check omits a system-only preamble rejected by its
 template; it does not replace that template or qualify another chat profile.
@@ -30,11 +27,10 @@ from the app's thinking-off default and records sampler and harness limits.
 
 ## Provisioning and file integrity
 
-Downloads are bounded, resume only when the server honors the range, and pass
-size/hash checks before publication. Cancellation must reach streamed body reads:
-a header timeout alone cannot bound them. Extraction rejects unsafe paths,
-duplicates and excessive expansion, then checks installed files, ARM64 PE
-architecture and reported runtime identity.
+Bounded downloads resume only when the server honors ranges and pass size/hash
+checks before publication. Cancellation reaches streamed bodies; header timeouts
+alone cannot bound reads. Extraction rejects unsafe/duplicate paths and excessive
+expansion, then verifies installed files, ARM64 PE architecture and runtime identity.
 
 Verified files retain write/delete-denying handles. Downloads keep the exclusive
 partial-file handle through verification and same-volume hard-link publication,
@@ -42,11 +38,11 @@ which cannot overwrite a destination. This requires a hard-link-capable filesyst
 such as NTFS; failure preserves the partial. GGUF inspection/export likewise
 holds its verified source and validates output before publication.
 
-`bonsai-artifacts` shares bounded ZIP, SHA-256, installed-file and PE checks between
-broker and maintenance. Guards retain the archive, verified files and ancestors
-through version/help probes; completion re-verifies and holds a fresh guard for
-the batch. A receipt is evidence, not a transfer of live ownership. Identity
-checks prove neither parser isolation nor source-to-binary provenance.
+`bonsai-artifacts` shares ZIP, SHA-256, installed-file and PE checks between broker
+and maintenance. Guards retain the archive, verified files and ancestors through
+version/help probes; completion re-verifies and holds a fresh guard for the batch.
+Receipts cannot transfer live ownership; identity checks prove neither parser
+isolation nor source-to-binary provenance.
 
 Primary contracts: [streamed HTTP](https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpcompletionoption),
 [PE format](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format),
@@ -56,12 +52,11 @@ Primary contracts: [streamed HTTP](https://learn.microsoft.com/en-us/dotnet/api/
 
 ## HTTP and admission choices
 
-The [broker policy](broker-policy.md) owns exact bounds/routes. Its narrow HTTP/1.1
-transport retains duplicate wire headers, checks raw targets before normalization,
-rejects ambiguous framing and uses absolute deadlines. Strict JSON visitors reject
-duplicate/unknown keys and invalid shapes before rebuilding one canonical request.
-Counting and generation receive identical immutable bytes; permissive maps/enums
-can erase distinctions needed for rejection.
+The [broker policy](broker-policy.md) owns bounds/routes. Its HTTP/1.1 transport
+retains duplicate wire headers, checks raw targets before normalization, rejects
+ambiguous framing and uses absolute deadlines. Strict JSON visitors reject
+duplicate/unknown keys and invalid shapes before rebuilding one immutable request
+for counting and generation. Permissive maps/enums can erase rejection evidence.
 
 Socket EOF cannot establish response completeness. Only clean decoded framing
 permits downstream terminal chunks; transport completion still does not prove
@@ -85,10 +80,10 @@ does not bound mapped residency/device memory; physical watchdogs remain necessa
 and reported peaks can include denied allocations. Jobs alone establish no
 restricted identity, filesystem or egress policy.
 
-The broker reserves sockets with `SO_EXCLUSIVEADDRUSE` and checks listener PID
-ownership. Distinct random credentials receive owner/LocalSystem ACLs before
-writing and stay under read-only write/delete-denying guards. These controls alone
-cannot prevent same-user/admin access or backend bypass.
+The broker reserves `SO_EXCLUSIVEADDRUSE` sockets and checks listener PIDs.
+Distinct random credentials receive owner/LocalSystem ACLs before writing and
+remain under read-only write/delete-denying guards. These controls alone cannot
+prevent same-user/admin access or backend bypass.
 
 Primary contracts: [process attributes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute),
 [Job limits](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_limit_information),
@@ -122,7 +117,7 @@ debug assertions disabled to preserve [subtle's release contract](https://github
 
 ## 2026 literature: runtime overhead and work placement
 
-Reviewed 2026-10-29. Exact sources/platform limits live in the
+Reviewed 2026-10-29. Sources and platform limits live in the
 [systems catalog](research-register.md#2026-systems-measurement-and-output-budget-work);
 none establishes a defect or new profile in the pinned runtime.
 
@@ -135,10 +130,10 @@ none establishes a defect or new profile in the pinned runtime.
 | S6 Event-triggered SGLang | Measure idle polling, wake latency and active decode separately; affinity only relocates polling. |
 | S3 Beyond the Buzz | Charge state handoff, rate matching and coordination before selecting CPU/GPU/NPU phase placement. |
 
-Review actual work/traffic, then representation/ownership, then scheduling/fusion.
+Measure work/traffic before changing representation, ownership, scheduling or fusion.
 Preallocation can hide full-size copies; in-place writes can alias snapshots.
-Record allocation lifetimes and independent state ownership together.
+Record allocation lifetimes alongside independent state ownership.
 [Streaming contracts](streaming-resources.md) cover Runner queues/text/PCM;
-runtime experiments belong in Prism. Timing/tracing, actual-model comparisons
-and full suites stay CI-only; hosted builds and synthetic reuse do not establish
-laptop gains. Follow the [measurement guide](performance-expectations.md#2026-literature-measurement-and-comparison).
+runtime experiments belong in Prism. Follow the
+[measurement guide](performance-expectations.md#2026-literature-measurement-and-comparison)
+for CI-only timing/tracing, actual-model comparisons and evidence limits.

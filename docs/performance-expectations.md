@@ -1,8 +1,7 @@
 # Performance expectations and benchmark context
 
-The [README](../README.md#performance-expectations) uses publisher benchmarks to explain the model's
-tradeoffs. Its charts use zero-based axes and reproduce reported values, not measurements from this
-project.
+The [README charts](../README.md#performance-expectations) reproduce publisher results on
+zero-based axes. They are reference points, not Runner measurements.
 
 ## Published reference results
 
@@ -13,17 +12,21 @@ our Qwen Q3 reference. Source: [Prism's model
 card](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf#cross-platform-throughput), checked
 October 23, 2026.
 
-Do not infer Snapdragon speed from other hardware, or prose quality from a general benchmark
-average. Compare time to a useful answer, including prompt processing, thinking, retries and
-revisions, rather than decode throughput alone.
+Other-hardware throughput and general benchmark averages predict neither Snapdragon speed
+nor prose quality. Measure useful-answer time under the protocol below.
 
 ## Current Swift evidence
 
-Swift's publisher reports current PQ2 results for IFBench and AIME; the older GPQA/C-Eval
-runtime-correction results were not rerun on current merged weights. Small score differences are not
-established gains, and token-count changes do not measure latency. The publisher describes uneven
-instruction following, tool use and open-ended coding. See [Swift's evaluation and
-limitations](https://ukisai.com/swift-bonsai-2#evaluation).
+| Publisher evidence | What it establishes |
+| --- | --- |
+| Current merged PQ2 | IFBench and AIME were refreshed; AIME final-answer-only ties the base. |
+| Historical runtime correction | GPQA/C-Eval were not rerun on current merged weights. |
+| Evaluation configuration | Supports the [sampler baseline](inference-defaults.md#applied-defaults), without a sampler/effort/prompt sweep or creative-writing comparison. |
+
+Small score differences are not established gains; token counts do not measure latency.
+The publisher reports uneven instruction following, tool use and open-ended coding. See
+[Swift's evaluation and limitations](https://ukisai.com/swift-bonsai-2#evaluation) and its
+[evaluation artifact](https://huggingface.co/ukisai/Swift-Bonsai-2-GGUF/blob/main/benchmark_results.json).
 
 The pinned Prism CPU runtime completes a bounded 16-token Swift decode check. Current-weight PTQ1
 also decodes and saves 1.173 GiB of file payload, but uses different activation arithmetic. The
@@ -31,38 +34,32 @@ experimental Rust engine has selected NEON kernels and a hybrid graph. See the [
 assessment](swift-memory.md) and [runtime contract](native-rust-engine.md) for bounded source
 evidence. Outstanding release/profile qualification lives in the [central TODO](../PLAN.md).
 
-Snapdragon TPS, sustained comfort, creative quality and accepted GPU/NPU profiles remain
-unqualified. The [pure-Rust native UI](ui-architecture.md) supplies a chat workspace with
-conversation recovery and search; daily-service isolation and real-model acceptance remain separate
-requirements. Follow [validation policy](validation.md) for focused checks, CI-only benchmarks and
-the separate standard LoRA performance/quality gates.
+Snapdragon TPS, sustained comfort, creative quality, GPU/NPU profiles, daily-service isolation
+and actual-model application acceptance remain unqualified. Follow [validation policy](validation.md)
+and the independent [LoRA performance/quality gates](lora-qualification.md).
 
 ## X1/X2 configuration evidence
 
-[Hardware policy](hardware-profiles.md) defines per-device/workload selection, admission, phase
-handoff and deterministic qualified CPU fallback/refusal. No X2 speedup or automatic selector is
-accepted. Family/core counts, NPU TOPS and bandwidth bounds cannot forecast TPS or energy. Batched
-prefill reuses weight tiles; single-conversation decode pays bandwidth, unpack/transform and
-dispatch costs with little reuse. Whole-model expansion can erase packed weights' capacity/traffic
-advantage; simultaneous processors share bandwidth and power.
+[Hardware policy](hardware-profiles.md) owns selection, admission, phase handoff and qualified CPU
+fallback/refusal. No X2 speedup or automatic selector is accepted. Family/core counts, NPU TOPS and
+bandwidth bounds cannot forecast TPS or energy: prefill can reuse weight tiles, while single-chat
+decode pays bandwidth, unpack/transform and dispatch costs with little reuse. Whole-model expansion
+can erase packing benefits; simultaneous processors share bandwidth and power.
 
-Compare CPU/Adreno/Hexagon and phase combinations independently for each SKU/driver/runtime, with
-fixed artifacts, adapter and numerical contracts. Include load/repack/compile, migrations, prefill,
-first useful answer, decode, complete task, peak memory and observable energy. Interactive/battery
-rankings require matching-device evidence. Timing/profile captures remain CI-only; focused untimed
-checks can validate discovery/selection.
+Compare CPU/Adreno/Hexagon and phase combinations separately for each SKU/driver/runtime, using
+the measurement protocol below. Interactive/battery rankings require matching-device evidence;
+focused untimed discovery/selection checks cannot establish them.
 
 ## 2026 literature: measurement and comparison
 
 The [systems catalog](research-register.md#2026-systems-measurement-and-output-budget-work) records
-sources reviewed **2026-10-29**. MLPerf Client v2.0 motivates TTFT/token-rate separation,
-prompt/output variation and accuracy gates, including Windows Arm/X/X2 coverage; different
-models/quantizers, experimental power tooling and general accuracy checks do not qualify Swift
-creative quality. Sequential Isolation Protocol's A100/vLLM variance and MLSys deployment-search
-results motivate controlled repeated phase-specific comparisons, not laptop thresholds or universal
-batches. The edge-continuum study's Jetson/server Pareto frontier is not a Snapdragon CPU verdict.
-Completed-task energy includes output counts/retries; cheaper tokens can cost more per useful
-answer. These sources supply measurement practice, not a Swift speed forecast.
+sources reviewed **2026-10-29** and their platform limits:
+
+| Source | Measurement lesson and limit |
+| --- | --- |
+| MLPerf Client v2.0 | Separate TTFT/token rate, vary prompt/output lengths and retain accuracy gates. Windows Arm/X/X2 coverage uses other models/quantizers; experimental power tools and general accuracy do not qualify Swift creative quality. |
+| Sequential Isolation Protocol; MLSys deployment search | Repeat controlled phase-specific comparisons. A100/vLLM variance and deployment results supply neither laptop thresholds nor a universal batch size. |
+| Edge-continuum study | Compare latency/energy tradeoffs; its Jetson/server frontier is not a Snapdragon CPU verdict. |
 
 For `N >= 2` output tokens, define the interval rate as `r = (N-1)/(t_last-t_first)` over a positive
 measured interval at the same observation boundary. Then `last-token latency = TTFT + (N-1)/r` is an
@@ -72,18 +69,16 @@ separate endpoints. Reasoning tokens, buffered delivery and speculative bursts m
 *first visible answer* and *first useful answer* distinct observations. A client burst rate is not
 the device decode rate.
 
-Retain paired repeated trials with order reversal or balanced ordering, clear cold/warm/prefix-cache
-state, identical artifacts/adapter/sampler, and complete output or explicitly labelled truncation.
-Profiled runs explain attribution; unprofiled runs establish the corresponding request time. Include
-initialization, repack/compile and state-migration costs in the workload that actually pays them.
+| Comparison requirement | Record |
+| --- | --- |
+| Paired repeated trials | Reverse or balance order; identify cold/warm/prefix-cache state; hold artifacts, adapter, sampler and numerical contracts fixed. Retain complete output or label truncation. |
+| Phase and task costs | Load/initialization, repack/compile, migration, prefill, first useful answer, decode and complete task. Charge each cost to the workload that pays it. Use profiled runs for attribution and unprofiled runs for request timing. |
+| Memory | Persistent payload, temporary peak, private/commit, file-backed residency, device memory and machine headroom. Identify excluded reconstruction scratch or retained high-precision copies before comparing compression ratios. |
+| Energy and comfort | Observable energy per useful completed answer, output/retry/revision counts, desktop responsiveness and idle power. Cheaper tokens can cost more per useful answer. |
 
-Memory reports distinguish persistent payload, temporary peak, private/commit, file-backed
-residency, device memory and machine headroom. Compression papers often report only persistent
-KV/state and omit reconstruction scratch or the original high-precision copy. Record those
-exclusions before comparing ratios. Desktop responsiveness and idle power also matter: the [mobile
-bandwidth research](hexagon-npu-plan.md) explains why stable model TPS can coexist with worse
-foreground behavior. Actual profiles retain the current memory admission and [CI-only
-validation](validation.md) boundaries.
+Stable TPS can coexist with worse foreground behavior under shared bandwidth/power contention;
+see [mobile bandwidth research](hexagon-npu-plan.md). Keep current admission limits;
+timing/profile captures and benchmarks remain [CI-only](validation.md).
 
 ## Q4 speech resource comparison
 
@@ -124,9 +119,10 @@ clips.
 ## 2026 speech inference research
 
 The [mobile/speech catalog](research-register.md#2026-mobile-acceleration-and-speech) records
-sources reviewed **2026-10-29**. Papers do not qualify model, quantization, thread or accelerator
-changes. The [speech contract](../tools/qwen-tts/README.md) retains sequential VoiceDesign/Base,
-reused conditioning, bounded playback and existing admission/reserve.
+sources reviewed **2026-10-29**. Their implications below retain the
+[speech contract](../tools/qwen-tts/README.md): sequential VoiceDesign/Base, reused conditioning,
+bounded playback and existing admission/reserve. No model, quantization, thread or accelerator
+change is qualified by these papers.
 
 | Lead | Decision boundary |
 | --- | --- |
