@@ -84,6 +84,16 @@ CPU digest/launch policy are unchanged. No performance/energy is measured. Queri
 [Khronos properties][properties], [properties2][properties2], [application API][application-api]
 and locked [ash 0.38.0][ash].
 
+Completed native failures now retain a fixed `failure.stage`, raw `failure.vulkan_result`
+when supplied by Vulkan, and any already-observed loader/application API versions. The
+classification stays `query-failed-device-support-unknown`: an incompatible-driver result
+does not identify an absent API, failing DLL, mitigation or memory limit. Arbitrary driver
+error text and paths are excluded from this context. `required_execution_policy` labels the
+internal query's contract; only the owning wrapper adds `execution_policy: headless-worker`
+after its child exits under that policy. Failed queries retain their bounded child JSON;
+supervision or malformed-report failures retain `worker-supervision-or-report` without a
+guessed Vulkan result. No weaker-policy retry is performed.
+
 Retained **2026-10-29 X2** observations remain distinct:
 
 | Policy | Result | Retained evidence and limit |

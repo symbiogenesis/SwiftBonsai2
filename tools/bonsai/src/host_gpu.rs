@@ -15,8 +15,26 @@ fn unknown() -> Value {
         "status": "unknown", "source": "system-vulkan-loader",
         "architecture": std::env::consts::ARCH, "loader_api_version": null,
         "application_api_version": null,
+        "required_execution_policy": "headless-worker", "failure": null,
         "adapters": null, "qualification": "unqualified",
         "backend_ready": false, "error": "native-vulkan-query-unavailable"})
+}
+
+#[cfg(windows)]
+fn failed_query(error: &std::io::Error) -> Value {
+    let mut report = unknown();
+    let failure = error
+        .get_ref()
+        .and_then(|error| error.downcast_ref::<bonsai_windows_process::VulkanQueryFailure>());
+    report["failure"] = json!({
+        "stage": failure.map_or("native-query", |failure| failure.stage),
+        "vulkan_result": failure.and_then(|failure| failure.vulkan_result),
+        "classification": "query-failed-device-support-unknown",
+    });
+    report["loader_api_version"] = json!(failure.and_then(|failure| failure.loader_api_version));
+    report["application_api_version"] =
+        json!(failure.and_then(|failure| failure.application_api_version));
+    report
 }
 
 /// Query Vulkan adapters in a ten-second, 512 MiB, one-process owned Job.
@@ -44,13 +62,16 @@ pub fn run(request: &Value) -> crate::Result<Value> {
 /// timeout. This is separate from model execution and never qualifies a GPU.
 ///
 /// # Errors
-/// Rejects nonempty requests or unsupported/failed native queries.
+/// Rejects nonempty requests. Failed native queries return an unknown report
+/// retaining value-free stage and raw Vulkan result when available.
 pub fn query(request: &Value) -> crate::Result<Value> {
     validate(request)?;
     #[cfg(windows)]
     {
-        let inventory =
-            bonsai_windows_process::vulkan_inventory().map_err(|error| error.to_string())?;
+        let inventory = match bonsai_windows_process::vulkan_inventory() {
+            Ok(inventory) => inventory,
+            Err(error) => return Ok(failed_query(&error)),
+        };
         let adapters: Vec<_> = inventory.adapters.iter().map(|adapter| json!({
             "name": adapter.name, "vendor_id": adapter.vendor_id, "device_id": adapter.device_id,
             "driver_version_raw": adapter.driver_version, "api_version": adapter.api_version,
@@ -69,6 +90,7 @@ pub fn query(request: &Value) -> crate::Result<Value> {
             json!({"schema_version": 1, "kind": "runner-native-gpu-observations",
             "status": "observed", "source": "system-vulkan-loader",
             "architecture": std::env::consts::ARCH,
+            "required_execution_policy": "headless-worker", "failure": null,
             "loader_api_version": inventory.loader_api_version, "adapters": adapters,
             "application_api_version": inventory.application_api_version,
             "qualification": "unqualified", "backend_ready": false, "error": null}),
@@ -121,12 +143,21 @@ mod windows {
                 .and_then(|output| {
                     serde_json::from_str::<Value>(&output.stdout).map_err(|error| error.to_string())
                 });
-        if let Ok(report) = report
+        if let Ok(mut report) = report
             && report["schema_version"] == 1
             && report["kind"] == "runner-native-gpu-observations"
             && report["qualification"] == "unqualified"
             && report["backend_ready"] == false
+            && report["required_execution_policy"] == "headless-worker"
+            && (report["status"] == "observed" || report["status"] == "unknown")
         {
+            report["execution_policy"] = json!("headless-worker");
+            if report["status"] == "unknown" {
+                // A completed discovery failure is evidence, not unsupported
+                // hardware. Keep the exact bounded child report for review.
+                report["evidence_directory"] = json!(scratch);
+                return Ok(report);
+            }
             // The owned probe has exited and its Job was reaped. Delete only
             // these exact files, without recursive removal or directory walking.
             for path in [&spec.stdout, &spec.stderr, &scratch.join("request.json")] {
@@ -138,6 +169,11 @@ mod windows {
             // Retain bounded failure diagnostics, including cases where native
             // teardown could not confirm completion, and expose their location.
             let mut report = unknown();
+            report["failure"] = json!({
+                "stage": "worker-supervision-or-report",
+                "vulkan_result": null,
+                "classification": "query-failed-device-support-unknown",
+            });
             report["evidence_directory"] = json!(scratch);
             Ok(report)
         }
@@ -162,5 +198,31 @@ mod tests {
         }
         assert_eq!(unknown()["adapters"], Value::Null);
         assert_eq!(unknown()["backend_ready"], false);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_gpu_failures_retain_stage_result_and_observed_api_without_driver_text() {
+        let error = std::io::Error::other(bonsai_windows_process::VulkanQueryFailure {
+            stage: "instance-creation",
+            vulkan_result: Some(-9),
+            loader_api_version: Some(4_206_893),
+            application_api_version: Some(4_206_592),
+        });
+        let report = failed_query(&error);
+        assert_eq!(report["status"], "unknown");
+        assert_eq!(report["required_execution_policy"], "headless-worker");
+        assert_eq!(report["failure"]["stage"], "instance-creation");
+        assert_eq!(report["failure"]["vulkan_result"], -9);
+        assert_eq!(report["loader_api_version"], 4_206_893);
+        assert_eq!(report["application_api_version"], 4_206_592);
+        assert!(report["adapters"].is_null());
+        assert_eq!(report["backend_ready"], false);
+
+        let report = failed_query(&std::io::Error::other("sensitive driver path"));
+        assert_eq!(report["failure"]["stage"], "native-query");
+        assert!(report["failure"]["vulkan_result"].is_null());
+        assert!(report["loader_api_version"].is_null());
+        assert!(!report.to_string().contains("sensitive"));
     }
 }

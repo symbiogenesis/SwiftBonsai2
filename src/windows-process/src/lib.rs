@@ -25,6 +25,34 @@ use std::time::Duration;
 )]
 mod native;
 
+/// Value-free failure context retained inside a Vulkan query's `io::Error`.
+///
+/// Downcast `io::Error::get_ref()` to this type to distinguish failed discovery
+/// stages without parsing driver messages or inferring unsupported hardware.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VulkanQueryFailure {
+    /// Fixed query-stage label; never a driver-provided string or file path.
+    pub stage: &'static str,
+    /// Raw `VkResult` when a Vulkan entry point returned one.
+    pub vulkan_result: Option<i32>,
+    /// Loader API version already observed before failure, if available.
+    pub loader_api_version: Option<u32>,
+    /// Requested application API version, if instance creation was attempted.
+    pub application_api_version: Option<u32>,
+}
+
+impl std::fmt::Display for VulkanQueryFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "Vulkan inventory failed at {}", self.stage)?;
+        if let Some(result) = self.vulkan_result {
+            write!(formatter, " (VkResult {result})")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for VulkanQueryFailure {}
+
 /// Model-free observations from the native system Vulkan loader.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VulkanInventory {
@@ -82,6 +110,8 @@ pub struct VulkanAdapter {
 /// # Errors
 /// Returns unsupported target, missing loader, malformed/oversized native data
 /// or Vulkan failures. Installed loader/ICD trust is not established by a query.
+/// Known stages carry a downcastable [`VulkanQueryFailure`]; a failed query does
+/// not establish that the physical device lacks Vulkan support.
 pub fn vulkan_inventory() -> io::Result<VulkanInventory> {
     native::vulkan_inventory()
 }

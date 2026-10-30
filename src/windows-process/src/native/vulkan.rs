@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use ash::{Entry, vk};
 
-use crate::{VulkanAdapter, VulkanInventory};
+use crate::{VulkanAdapter, VulkanInventory, VulkanQueryFailure};
 
 const MAX_ADAPTERS: usize = 16;
 const MAX_QUEUES: usize = 64;
@@ -17,14 +17,35 @@ fn invalid() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, "unsupported Vulkan inventory")
 }
 
+fn failure(
+    stage: &'static str,
+    vulkan_result: Option<i32>,
+    loader_api_version: Option<u32>,
+    application_api_version: Option<u32>,
+    kind: io::ErrorKind,
+) -> io::Error {
+    io::Error::new(
+        kind,
+        VulkanQueryFailure {
+            stage,
+            vulkan_result,
+            loader_api_version,
+            application_api_version,
+        },
+    )
+}
+
 fn check(result: vk::Result) -> io::Result<()> {
     if result == vk::Result::SUCCESS {
         Ok(())
     } else {
-        Err(io::Error::other(format!(
-            "Vulkan query failed ({})",
-            result.as_raw()
-        )))
+        Err(failure(
+            "device-query",
+            Some(result.as_raw()),
+            None,
+            None,
+            io::ErrorKind::Other,
+        ))
     }
 }
 
@@ -273,20 +294,27 @@ pub(super) fn query() -> io::Result<VulkanInventory> {
                 .starts_with("VK_")
         })
     {
-        return Err(io::Error::new(
+        return Err(failure(
+            "eligibility",
+            None,
+            None,
+            None,
             io::ErrorKind::Unsupported,
-            "native ARM64 Vulkan inventory rejects environment overrides",
         ));
     }
-    let entry = loader()?;
+    let entry =
+        loader().map_err(|error| failure("system-loader", None, None, None, error.kind()))?;
     // SAFETY: The Entry owns the live native Vulkan loader. Version enumeration
     // needs no Vulkan instance and ash handles a missing Vulkan 1.0 entry point.
     let loader_api_version = unsafe { entry.try_enumerate_instance_version() }
         .map_err(|error| {
-            io::Error::other(format!(
-                "Vulkan loader version query failed ({})",
-                error.as_raw()
-            ))
+            failure(
+                "loader-version",
+                Some(error.as_raw()),
+                None,
+                None,
+                io::ErrorKind::Other,
+            )
         })?
         .unwrap_or(vk::API_VERSION_1_0);
     let application_api = loader_api_version.min(vk::API_VERSION_1_3);
@@ -298,29 +326,55 @@ pub(super) fn query() -> io::Result<VulkanInventory> {
     // extensions are requested. The instance is destroyed before its Entry.
     let instance = Instance(
         unsafe { entry.create_instance(&create, None) }.map_err(|error| {
-            io::Error::other(format!(
-                "Vulkan instance creation failed ({})",
-                error.as_raw()
-            ))
+            failure(
+                "instance-creation",
+                Some(error.as_raw()),
+                Some(loader_api_version),
+                Some(application_api),
+                io::ErrorKind::Other,
+            )
         })?,
     );
     let mut devices = [vk::PhysicalDevice::null(); MAX_ADAPTERS];
     let mut count = u32::try_from(devices.len()).map_err(|_| invalid())?;
     // SAFETY: Valid instance and initialized storage for the advertised count.
     // SUCCESS is required; INCOMPLETE rejects rather than growing without bound.
-    check(unsafe {
+    let result = unsafe {
         (instance.0.fp_v1_0().enumerate_physical_devices)(
             instance.0.handle(),
             &raw mut count,
             devices.as_mut_ptr(),
         )
-    })?;
+    };
+    if result != vk::Result::SUCCESS {
+        return Err(failure(
+            "physical-device-enumeration",
+            Some(result.as_raw()),
+            Some(loader_api_version),
+            Some(application_api),
+            io::ErrorKind::Other,
+        ));
+    }
     let count = usize::try_from(count).map_err(|_| invalid())?;
     let adapters = devices
         .get(..count)
         .ok_or_else(invalid)?
         .iter()
-        .map(|device| adapter(&instance.0, *device, application_api))
+        .map(|device| {
+            adapter(&instance.0, *device, application_api).map_err(|error| {
+                let result = error
+                    .get_ref()
+                    .and_then(|error| error.downcast_ref::<VulkanQueryFailure>())
+                    .and_then(|failure| failure.vulkan_result);
+                failure(
+                    "adapter-properties",
+                    result,
+                    Some(loader_api_version),
+                    Some(application_api),
+                    error.kind(),
+                )
+            })
+        })
         .collect::<io::Result<_>>()?;
     Ok(VulkanInventory {
         loader_api_version,
@@ -332,6 +386,27 @@ pub(super) fn query() -> io::Result<VulkanInventory> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vulkan_failure_payload_preserves_raw_results_and_unknown_versions() -> io::Result<()> {
+        let error = check(vk::Result::ERROR_INCOMPATIBLE_DRIVER)
+            .err()
+            .ok_or_else(invalid)?;
+        let context = error
+            .get_ref()
+            .and_then(|error| error.downcast_ref::<VulkanQueryFailure>())
+            .ok_or_else(invalid)?;
+        assert_eq!(context.stage, "device-query");
+        assert_eq!(context.vulkan_result, Some(-9));
+        assert_eq!(context.loader_api_version, None);
+        assert_eq!(context.application_api_version, None);
+        assert_eq!(error.kind(), io::ErrorKind::Other);
+        assert_eq!(
+            error.to_string(),
+            "Vulkan inventory failed at device-query (VkResult -9)"
+        );
+        Ok(())
+    }
 
     #[test]
     fn vulkan_names_and_device_types_preserve_unqualified_boundaries() -> io::Result<()> {
