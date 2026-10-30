@@ -192,8 +192,9 @@ def compare(native, rust, backend):
         logits = f"logits-{position}.f32le"
         reference = read_bounded(native / logits, LAYOUT.vocabulary * 4)
         require(len(reference) == LAYOUT.vocabulary * 4, "native logits extent changed")
+        result = compare_payload(reference, "f", rust / logits)
         files.append({"path": logits, "nativeSha256": digest(native / logits),
-                      "rustSha256": digest(rust / logits), **compare_payload(reference, "f", rust / logits)})
+                      "rustSha256": digest(rust / logits), **result})
         expected.add(logits)
         state = native / f"state-{position}.native-seq"
         require(state.stat().st_size == capture["steps"][position]["sequenceStateBytes"],
@@ -201,8 +202,8 @@ def compare(native, rust, backend):
         for name, reference, code in native_components(state, position):
             relative = f"state-{position}/{name}"
             expected.add(relative)
-            files.append({"path": relative, "rustSha256": digest(rust / relative),
-                          **compare_payload(reference, code, rust / relative)})
+            result = compare_payload(reference, code, rust / relative)
+            files.append({"path": relative, "rustSha256": digest(rust / relative), **result})
     observed = {file.relative_to(rust).as_posix() for file in rust.rglob("*.f32le")}
     require(observed == expected, "Rust complete-state inventory differs from exact native extent")
     failed = sum(file["failedElements"] for file in files)
