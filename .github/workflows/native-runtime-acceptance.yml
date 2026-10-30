@@ -135,4 +135,4 @@ jobs:
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/acceptance.json
             ${{ env.BONSAI_NATIVE_EVIDENCE }}/host.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90

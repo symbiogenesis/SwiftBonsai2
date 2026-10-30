@@ -76,5 +76,5 @@ jobs:
             ${{ env.BONSAI_TTS_EVIDENCE }}/**/supervisor.stderr
             ${{ env.BONSAI_TTS_EVIDENCE }}/**/*.wav
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
           compression-level: 1

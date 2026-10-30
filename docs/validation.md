@@ -247,6 +247,20 @@ In particular, untimed storage checks do not qualify the 15.5 GiB admission/11.5
 Job budget. Source checks do not qualify a provisioned binary; release acceptance
 requires independently reviewed artifacts and promotion evidence.
 
+## Evidence retention
+
+Device acceptance, sandbox, LoRA, PTQ1, X2 CPU and TTS workflows request 90-day
+artifact retention. This extends the review window; Actions artifacts remain
+temporary, and repository or organization policy can shorten their availability.
+Before using a capture for promotion or a published claim, preserve its existing
+credential-free upload selection in durable owner-managed storage. Keep the exact
+files and their SHA-256 digests, repository revision, run URL/attempt, artifact
+identity, device/build identities and independent reviews, including losing/no-go
+results. Verify the archived bytes against the recorded digests before review.
+Do not expand upload selections to include credentials, private conversations,
+model weights or adapters. Run URLs and expired artifacts alone cannot reproduce
+evidence; unavailable evidence leaves the associated gate pending.
+
 ## Promotion criteria
 
 Every promoted runtime/profile must:

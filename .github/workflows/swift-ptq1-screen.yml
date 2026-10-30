@@ -41,5 +41,5 @@ jobs:
             ${{ env.BONSAI_PTQ1_EVIDENCE }}/**/*.json
             ${{ env.BONSAI_PTQ1_EVIDENCE }}/**/*.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
           compression-level: 1
