@@ -1,704 +1,600 @@
-# Swift Bonsai 2 Runner TODO
+# Swift Bonsai 2 Runner plan
 
-This is the single list of outstanding project work. Current implementation
-contracts, commands, evidence and supported-subset boundaries live in `docs/`.
+This is the single backlog. [Technical docs](docs/README.md) own current
+behavior, contracts, commands and evidence; completed work belongs in Git
+history.
 
-Prioritize actual-model application acceptance, daily-service isolation and
-creative/comfort qualification. Preserve the Swift CPU runtime boundary while
-closing those exits. Hardware discovery and bounded Vulkan/Hexagon access
-investigations can proceed independently; automatic profile promotion requires
-qualified device evidence. Reopen broader Prism work only for a concrete Swift
-dependency or an explicitly chosen later milestone.
+Prioritize actual-model application acceptance, daily-service isolation,
+creative quality and comfort. Preserve the qualified Swift CPU fallback. Within
+research, measure the batch-one bottleneck and PTQ1 suitability, then improve
+packed CPU work and prefill, exact prefix reuse and short-chain speculation
+before optional precision or compatible drafters. Bounded GPU/NPU access
+discovery can proceed in parallel; automatic profile promotion requires device
+qualification. Broader Prism work waits for a concrete Swift dependency or
+chosen milestone.
 
 ## Research scope and practical budgets
 
-Apply the [2026 research survey](docs/research-register.md) to **existing
-Snapdragon X Elite or Snapdragon X2 Elite hardware, running native Windows
-ARM64**. A candidate may qualify on either family independently; missing X2
-hardware must not block an otherwise useful X Elite result. Record the supported
-SKU/driver/ISA explicitly and preserve the qualified CPU fallback. WSL, x64
-emulation, cloud GPUs, unavailable proprietary kernels and future CPU/GPU/NPU
-instructions are not execution paths for these additions.
+Use the [research register](docs/research-register.md) for **existing Snapdragon
+X Elite or X2 Elite hardware on native Windows ARM64**. Qualify each family
+independently; missing X2 hardware must not block an X Elite result. Record
+supported SKUs, drivers and ISAs. WSL, x64 emulation, cloud GPUs, unavailable
+proprietary kernels and future instructions are outside scope.
 
-Full model retraining, pretraining and new model-architecture development are
-out of scope. Bounded statistics, calibration, layerwise offline transforms and
-very small auxiliary fits are eligible only when a native implementation and
-measured laptop time/RAM estimate justify them. Prefer existing weights and
-published compatible auxiliaries. A method being training-free does not establish
-that its full-model Hessians, source weights, codebooks or preparation fit here.
+Prefer existing weights and compatible published auxiliaries. Exclude full
+retraining, pretraining and new architectures. Bounded statistics, calibration,
+layerwise transforms and tiny auxiliary fits need a native implementation and
+measured laptop time and RAM estimate; “training-free” alone does not prove
+feasibility.
 
-For each new research pilot, declare candidate count, representative shapes,
-prompt/token sample, peak-memory allowance and a hard deadline before execution.
-Use **30 minutes for feasibility and two hours of initial compute per idea** as
-planning defaults; reduce the sample or retain a no-go when the estimate fails.
-These are exploration budgets, not claimed runtimes or substitutes for complete
-qualification. Process one candidate/layer at a time where possible; avoid a
-whole-model expanded copy or open-ended parameter sweep. Existing admission,
-physical reserves, context/output reservations and quality gates remain binding.
-Full suites, benchmarks and performance captures remain CI-only; the
-owner-managed laptop runner supplies native device evidence under
-[validation](docs/validation.md).
+Before each pilot, declare candidate count, shapes, prompt and token sample,
+peak RAM and deadline. Default to **30 minutes for feasibility and two hours of
+initial compute per idea**. Reduce the sample or record a no-go if it cannot
+fit. Process one candidate or layer at a time; avoid whole-model expansion and
+open-ended sweeps. Preserve admission, physical reserves, context and output
+reservations and quality gates. Exploration budgets do not substitute for
+qualification.
 
-Keep existing application/correctness exits first in delivery priority. Within
-research, establish the batch-one bottleneck and PTQ1 suitability; improve packed CPU work and genuine
-prefill; qualify exact prefix reuse and short-chain speculation; then screen
-optional precision or compatible drafters. Bounded GPU/NPU access discovery can
-proceed in parallel. Every pilot ends with a retained result and a next-step or
-no-go decision, including losing cases.
+Follow the [experiment
+checklist](docs/research-register.md#turning-a-lead-into-an-experiment) and
+[validation policy](docs/validation.md): full suites, benchmarks and performance
+captures run only in their owning CI workflows; the owner-managed laptop runner
+supplies device evidence. Retain results, including losing cases, with a next
+step or no-go decision. Apply [promotion criteria](#promotion-criteria) before
+changing defaults or admission.
 
 ## Application and daily service
 
-- Qualify actual-model startup, supplied-history streaming, full 8K-context/4K-output
-  requests, long conversations, speech input/output, offline restart and recovery.
-  Run the native acceptance workflow's optional `extended_history` workload on
-  the owner-managed X2 runner: it pairs larger-history context rejection with
-  admitted supplied history at the full 4K output reservation and same-instance
-  reuse. Retain actual termination/usage evidence; the fixture sizes and requested
-  cap do not establish exact 8K occupancy or achieved 4K generation.
-  Include speech startup after moving an existing X1 data directory to X2 and
-  after CPU-feature/Windows changes; host-bound Cargo/native cache regressions
-  remain model-free, while actual speech behavior requires device acceptance.
-  Exercise Stop, abandonment, deadlines, memory pressure, process cleanup and
-  explicit retry without replaying interrupted turns.
-  Run the optional native acceptance `stalled_consumer` workload on the X2 runner
-  to qualify explicit Stop while an unfinished stream's connected client stops
-  reading, owned Job/listener cleanup and fresh-owner recovery. Its operation
-  counters reject natural completion as an interruption; socket-buffer saturation
-  and backend generation activity at Stop remain separately unproven.
-  Include Find across streamed appends, response replacements and conversation
-  switches in long-conversation acceptance, including append-only result/cache
-  reuse and saturated results.
-  Exercise the 512-message live transcript boundary during retry-heavy sessions,
-  Find navigation and recovery. Matching, cached-result and combined count/byte
-  eviction regressions remain model-free. Qualify fixed-size highlight layout
-  keys and separately cached active-result underlines under saturated Find,
-  navigation, Unicode wrapping, query changes and response replacement. Include
-  width/display-scale changes and selection preservation; their invalidation,
-  glyph-coverage and layout-work regressions also remain model-free.
-- Review Windows assistive-technology support, keyboard/focus behavior, scaling,
-  high contrast, minimum-window layout and multilingual text input with the
-  actual native application.
-- Complete signed installation/distribution acceptance: reviewed binary provenance,
-  exact dependency/license notices, clean-machine ARM64 Visual C++ runtime
-  prerequisites, installation/update/rollback and compatibility across upgrades.
-  Use the [portable package contract](docs/chat-packages.md).
-- Establish a restricted inference identity with read-only approved artifacts,
-  private bounded cache/temp storage, denied unrelated files/credentials and
-  denied egress. Prevent same-user backend bypass; Jobs, ACLs and loopback alone
-  are insufficient. Qualify native MXC containment, including
-  actual-model loading and private temporary storage. Close its broader host
-  loopback authority with proven broker-only communication, preserving atomic
-  Job limits and exact worker identity without weaker fallback tiers. Follow the
-  [worker sandbox architecture](docs/sandboxing.md),
-  [Windows integration review](docs/sandboxing.md) and qualify the
+### Actual-model acceptance
+
+- Qualify startup, supplied-history streaming, requests with full 8K context and
+  4K output, long conversations, speech, offline restart and recovery. Exercise
+  Stop, abandonment, deadlines, memory pressure, process cleanup and explicit
+  retry without replaying interrupted turns.
+- Run optional `extended_history` and `stalled_consumer` workloads on the
+  owner-managed X2 runner under the [native acceptance
+  contract](docs/validation.md#actual-model-application-acceptance). Retain
+  context rejection, same-instance reuse, termination and usage, explicit Stop,
+  owned Job and listener cleanup and fresh-owner recovery evidence. Fixture size
+  and output reservation do not prove exact 8K occupancy or 4K generation;
+  stalled forwarding does not prove socket saturation or backend activity at
+  Stop.
+- Qualify [transcript and Find
+  behavior](docs/streaming-resources.md#native-chat-and-transcript) across
+  appends, replacements, conversation switches and the 512-message limit. Cover
+  retry-heavy sessions, saturated results, cached matches, highlights and active
+  underlines, Unicode wrapping, query, width and display-scale changes,
+  selection preservation and recovery.
+- Qualify speech startup after moving an X1 data directory to X2 and after
+  CPU-feature or Windows changes; model-free cache checks do not qualify speech.
+- Review Windows assistive technology, keyboard and focus, scaling, high
+  contrast, minimum-window layout and multilingual input in the native app.
+- Complete signed distribution acceptance under the [portable package
+  contract](docs/chat-packages.md): binary provenance, dependency and license
+  notices, clean-machine ARM64 Visual C++ prerequisites, installation, upgrades
+  and rollback.
+
+### Isolation, transport and recovery
+
+- Establish a restricted inference identity: read-only approved artifacts,
+  private bounded cache/temp storage, denied unrelated files, credentials and
+  egress, and no same-user backend bypass. Qualify native MXC model loading and
+  private storage. Close broader host loopback authority with broker-only
+  communication. Preserve atomic Job limits and exact worker identity without
+  weaker fallbacks. Follow [worker
+  authority](docs/sandboxing.md#worker-authority), [native
+  integration](docs/sandboxing.md#native-integration-contract) and the
   [daily-service boundary](docs/broker-policy.md).
-- Qualify the complete transport/security boundary: numeric loopback, exact
-  Host/Origin/routes, private credentials, tools/MCP and dynamic-loading rejection,
-  capability-override rejection, bounded queues/bytes/tokens/duration and reliable
-  cancellation when clients disconnect or stop consuming output. Qualify linear
-  speech-header scanning under fragmented delivery at the exact header limits;
-  comparison counts and coalesced-body framing remain model-free checks. Extend
-  the [bounded streaming regressions](docs/streaming-resources.md) to actual-model
-  ready-prefix delivery, long-transcript updates, stalled-consumer speech backlog,
-  speech/chat overlap with recycled PCM playback buffers and WinMM descriptors,
-  including segment changes, Stop, driver refusal and recovery trials.
-  Include borrowed-PCM microphone uploads without full canonical-WAV or multipart
-  copies, retaining exact upload framing and cancellation. Qualify complete-WAV
-  synthesis that retains the native float allocation through PCM conversion and
-  HTTP writes without a full Rust waveform copy, including invalid-output
-  rejection, failed writes, Stop and speech/chat overlap. Pointer/release and
-  byte-identity regressions remain model-free. Qualify shared buffered speech
-  response intake with direct final-storage reads, including maximum-size
-  WAV fallback, partial responses and cancellation. Qualify broker request intake
-  that reuses authorized header storage and fills large bodies in final spare
-  capacity, including exact declared-length reads, truncation and cancellation;
-  its allocation/read-buffer regressions remain model-free. Include broker
-  nonstreaming JSON reads into bounded final storage, exact-cap overflow probing
-  and truncated framing; their ownership and read-buffer regressions remain
-  model-free. Qualify backend payload reads that bypass the 8 KiB staging copy
-  when final storage fits within the current framed payload, including buffered
-  prefixes, framing tails, partial delivery, deadlines and cancellation; their
-  pointer-identity and work-count checks remain model-free.
-  Capture complete-task latency and peak memory in target-device CI
-  before claiming gains.
-- Extend the implemented exact 33-spelling Swift control-token rejection,
-  fixed HTTP 400 recovery and count/generation identity regressions to actual
-  template/tokenizer sessions. Include user/system content, supplied assistant
-  history/reasoning, split text parts, JSON escapes and literal lookalikes;
-  qualify the reference profile's separate vocabulary. See the
-  [OxiBonsai security review](docs/oxibonsai-reuse.md#security-features-and-transfer-boundaries).
-- Qualify the implemented fixed-size global burst budget (8 requests, refill
-  1/second) under actual application request/recovery patterns. Preserve absolute
-  deadlines, complete HTTP 429 delivery during request writes, constant-space
-  body draining, service reuse and explicit resend without replay. Its focused
-  framing/refill/concurrency/deadline checks remain model-free.
-- Qualify recovery under load, allocation failure and backend loss without restart
-  loops, silent profile changes, state corruption or automatic cloud fallback.
-  Extend the bounded restore-count and unchanged-workspace regressions to these
-  actual-application failure trials.
+- Qualify the [transport/security contract](docs/broker-policy.md): numeric
+  loopback, exact Host, Origin and routes, private credentials, rejection of
+  tools/MCP, dynamic loading and capability overrides, bounded queues, bytes,
+  tokens and duration, and cancellation on disconnect or stalled consumption.
+- Extend [bounded streaming contracts](docs/streaming-resources.md) to
+  actual-model trials: ready-prefix delivery, long transcripts, speech backlog
+  and chat overlap, PCM and WinMM reuse, borrowed-PCM uploads, native-owned WAV
+  synthesis and direct final-storage HTTP intake. Cover fragmented headers at
+  exact limits, maximum WAV fallback, buffered prefixes, framing tails, exact
+  declared lengths, cap overflow, truncation/partial delivery, invalid output,
+  failed writes, segment changes, driver refusal, deadlines, Stop and recovery.
+  Capture task latency and peak memory in device CI; byte and pointer identity
+  and work counts alone cannot prove gains.
+- Extend [control-token
+  rejection](docs/oxibonsai-reuse.md#security-features-and-transfer-boundaries)
+  to actual template and tokenizer sessions: all 33 Swift spellings, user and
+  system content, assistant history and reasoning, split parts, JSON escapes and
+  lookalikes. Verify fixed HTTP 400 recovery and count/generation identity;
+  qualify the reference vocabulary separately.
+- Qualify the [global burst
+  budget](docs/broker-policy.md#public-request-contract) (8 requests, refill
+  1/second) under app request and recovery patterns: absolute deadlines,
+  complete HTTP 429 during writes, constant-space draining, service reuse and
+  explicit resend without replay.
+- Qualify load, allocation-failure and backend-loss recovery, including bounded
+  restore attempts and unchanged workspace on failure. Reject restart loops,
+  silent profile changes, corruption and automatic cloud fallback.
 
 ## Runtime and correctness
 
-Default-runtime promotion retains the current standard profile's adapter at
-scale 1.3. Use the [promotion contract and offline evidence evaluator](docs/native-rust-engine.md#default-runtime-promotion)
-to bind each independent requirement to exact source/release/application
-identities; missing reports remain pending.
+Use the [native Rust contract](docs/native-rust-engine.md) and [promotion
+evaluator](docs/native-rust-engine.md#default-runtime-promotion).
+Default-runtime promotion retains the standard adapter at scale 1.3 and binds
+independent gates to exact source, release and app identities; missing evidence
+stays pending.
 
-- Audit comparison and reusable engine/kernel sources at immutable revisions,
-  including model/adapter/tensor/transform identities, hardware assumptions,
-  numerical evidence, licenses and notices. Keep PQ2, current-weight PTQ1 and
-  the Qwen reference as separate controls. The
-  [OxiBonsai review](docs/oxibonsai-reuse.md) records Apache-2.0 compatibility,
-  GGUF regression reuse and the Q1/TQ2 versus PQ2/PTQ1 arithmetic boundary;
-  any future kernel pilot belongs in Prism and still needs measured justification.
-- Qualify the pinned native Rust runtime over full-context/long-output Swift
-  workloads, including scalar/NEON logits, complete live KV/recurrent/convolution
-  state, exact prompts/token IDs, sampler/termination and lifecycle recovery.
-  Preserve the declared `1e-3 + 1e-3 * abs(reference)` numerical tolerance.
-- Qualify the [explicit rank-one Rust graph implementation](https://github.com/symbiogenesis/prism-inference/blob/c192575cb70be3aa2c4b6e2a5c313c6d4bd68525/docs/rank-one-adapter.md)
-  with native writer-level basis and full-model zero/nonzero logits/state
-  evidence, then integrate private-service scale changes and lifecycle before
-  admitting adapter-enabled replacement profiles. Source-only numerical
-  execution and synthetic regressions do not enable adapters in the service. Keep
-  current-weight PTQ1 and other model/format support separately qualified.
-- Measure complete model-level allocation, scratch lifetimes and peak memory for
-  reusable logits, state-only prompt ingestion, activation sharing, physical FP16
-  KV, checkpoint pages and retained sampler candidates. Produce a batch-one
-  bottleneck receipt separating projections, transforms/quantization, attention,
-  GDN/convolution, copying, output/sampler and transport/speech costs. Audit hot
-  paths for full-cache replacement, broadcast/transpose materialization and
-  repeated preparation; preallocated storage alone does not remove that work.
-  Choose the largest demonstrated avoidable allocation/copy first, retaining
-  independent snapshot ownership. Qualify tiled attention-value traversal on
-  complete long-context workloads. See the
-  [2026 overhead review](docs/native-rust-engine.md#2026-literature-runtime-overhead-and-work-placement).
-- Qualify faithful chunkwise GDN prefill after the packed projection work in
-  [CPU kernels](#cpu-kernels). Start with one bounded CPU chunk implementation and
-  a small chunk-size set; preserve grouped/sign transforms, normalization,
-  convolution and FP32 recurrent state. Declare floating tolerances before
-  comparing long prefixes/restores. All prefill paths need causal scheduling,
-  bounded scratch/cancellation and whole-request rollback; sequential blocks
-  alone do not supply matrix reuse. See [algorithm constraints](docs/inference-algorithms.md).
-- If full-attention work is material, compare grouped-query-head KV reuse and
-  bounded score/value tiles on native CPU, building on the existing V traversal.
-  Screen retained-score versus recomputed-score normalization where useful;
-  preserve the reference's globally normalized FP16 probabilities before V.
-  An online-softmax/Flash-style alternative needs a separate declared numerical
-  path and continuation checks, rather than assumed equivalence from algebra.
-- If measured recurrent-state traffic is material, prototype a short FP32
-  KVBuffer-style factor buffer on native CPU, comparing base-state-plus-pending
-  updates with the sequential control. Charge buffer reads, materialization and
-  flush costs; checkpoints and cancellation must include every pending update
-  and convolution value. Keep deferred writeback separate from any factor/state
-  precision change, and stop if batch-one complete-cycle cost does not improve.
-  See [state-traffic research](docs/inference-algorithms.md#2026-state-traffic-and-verification-research).
-- Qualify full-model prompt reuse with exact model/template/token identity and
-  matching KV plus recurrent/convolution state. Bound snapshots/eviction/private
-  storage and cover edits, conversation switches, cancellation and restore.
-  Start with reuse of the latest live committed state, immutable KV pages and
-  exact suffix replay for edited histories. Resolve total versus incremental
-  cache accounting:
-  two independent 149.625 MiB recurrent/convolution snapshots already cost
-  **299.25 MiB before KV/metadata**, so cannot fit a 256 MiB total cache. Admit only
-  snapshots that fit the existing budget and conservative per-snapshot page
-  charges; do not silently raise it. Compare simple lookup/eviction before a
-  radix tree or optimized sparse checkpoint-placement policy.
-- Implement a short-chain native CPU block verifier before speculative proposals.
-  Cover complete KV/GDN/convolution state, partial acceptance, EOS/output limits,
-  Stop, failed commit and whole-request rollback. Establish greedy parity first,
-  then conditional acceptance/residual sampling for the actual temperature,
-  top-k/top-p/penalty policy. Distinguish target-distribution preservation from
-  identical RNG consumption and seeded output.
-- Add bounded prompt/history suffix proposals after the verifier is qualified.
-  Start with a few short draft windows, no second model, and both repetitive and
-  creative held-out prompts. Measure draft/verify/commit/recovery together;
-  retain ordinary decoding and stop when acceptance does not pay for the cycle.
-- After measuring the simple chain verifier, compare complete snapshot/replay
-  with compact saved-factor recovery and delayed commit if state-copy/replay
-  costs are material. Use SpecLA/TreeWY/RecoverSSM algebra
-  as references for a native Rust chain implementation; preserve complete state
-  and declared float identity. Wide-tree machinery waits for a demonstrated
-  benefit over short chains. See [verification research](docs/inference-algorithms.md#trained-parallel-proposals-and-full-state-verification).
-- After the verifier is qualified and measured verification/recovery costs leave
-  a feasible break-even, screen an already published small drafter for exact
-  tokenizer/vocabulary, Swift/LoRA and native ARM64 runtime compatibility. Check
-  target-feature compatibility where the drafter consumes those features; an
-  independent small model does not require that interface. Charge both models'
-  weights/KV/features/scratch and batch-one startup/prefill cost before provisioning
-  a full candidate. Suffix failure on low-repetition prose does not rule out a
-  compatible learned drafter. A Qwen family name alone is insufficient; record a
-  no-go if no compatible artifact fits. Do not
-  train a general replacement drafter or expand into the deferred DSpark migration.
-- Qualify each Rust replacement profile against pinned Prism at matching artifacts,
-  adapters and settings, retaining deterministic streams where applicable,
-  creative quality, resource/security/comfort results and reproducible fallback.
-  Retire old build/overlay/FFI paths only after replacement acceptance.
-
-Reference: [native Rust runtime contract](docs/native-rust-engine.md).
+- Audit comparison and reuse sources at immutable revisions: model, adapter,
+  tensor and transform identity, hardware assumptions, numerics, licenses and
+  notices. Keep PQ2, current-weight PTQ1 and Qwen as separate controls. Respect
+  the [OxiBonsai arithmetic/reuse boundaries](docs/oxibonsai-reuse.md);
+  justified kernel pilots belong in Prism.
+- Qualify pinned Rust on full-context, long-output Swift: scalar/NEON logits,
+  complete KV, recurrent and convolution state, exact prompts and token IDs,
+  sampler and termination and lifecycle recovery. Preserve `1e-3 + 1e-3 *
+  abs(reference)` tolerance.
+- Qualify the [rank-one Rust
+  graph](https://github.com/symbiogenesis/prism-inference/blob/c192575cb70be3aa2c4b6e2a5c313c6d4bd68525/docs/rank-one-adapter.md)
+  with native writer-basis and full-model zero/nonzero logits and state
+  evidence. Integrate private-service scale changes and lifecycle before
+  admitting adapters; synthetic or source-only execution is insufficient.
+  Qualify PTQ1 and other formats separately.
+- Produce a batch-one bottleneck receipt for projections,
+  transforms/quantization, attention, GDN/convolution, copies, output, sampler,
+  transport and speech. Measure complete-model allocations, scratch lifetimes
+  and peaks for reusable logits, state-only prompt ingestion, shared
+  activations, physical FP16 KV, checkpoint pages and sampler candidates. Audit
+  full-cache replacement, broadcast/transpose materialization and repeated
+  preparation; remove the largest demonstrated avoidable copy or allocation
+  while preserving independent snapshots. Qualify tiled attention-value
+  traversal on long contexts; see the [overhead
+  review](docs/native-rust-engine.md#2026-literature-runtime-overhead-and-work-placement).
+- After [packed projections](#cpu-kernels), implement one bounded CPU chunkwise
+  GDN prefill path with a small chunk-size set. Preserve transforms,
+  normalization, convolution and FP32 state; predeclare long-prefix and restore
+  tolerances. Require causal scheduling, bounded scratch and cancellation and
+  whole-request rollback under the [prefill
+  contract](docs/inference-algorithms.md#chunkwise-gated-deltanet-prefill).
+  Sequential blocks alone do not reuse matrices.
+- If attention is material, compare grouped-head KV reuse and bounded
+  score/value tiles, including retained versus recomputed scores. Preserve
+  globally normalized FP16 probabilities before V. Online-softmax/Flash paths
+  need separate numerical identity and continuation checks under the [attention
+  contract](docs/inference-algorithms.md#attention-locality-and-the-io-bound).
+- If recurrent-state traffic is material, test a short FP32 KVBuffer-style
+  factor buffer against sequential updates. Charge reads, materialization and
+  flushes and include every pending update and convolution value in checkpoints
+  and cancellation recovery. Keep deferred writeback separate from precision
+  changes; stop without complete-cycle benefit. See [state-traffic
+  research](docs/inference-algorithms.md#2026-state-traffic-and-verification-research).
+- Qualify exact prompt reuse: model, template and token identity, matching
+  complete state, bounded snapshots, eviction and private storage, edits,
+  switches, cancellation and restore. Start with latest committed state,
+  immutable KV pages, exact suffix replay and simple lookup and eviction before
+  radix trees or sparse placement. Resolve total versus incremental accounting:
+  two 149.625 MiB recurrent/convolution snapshots cost **299.25 MiB before
+  KV/metadata**, exceeding a 256 MiB total cache. Keep the budget and
+  conservative per-snapshot page charges.
+- Implement a short-chain CPU block verifier before proposals: complete state,
+  partial acceptance, EOS and output limits, Stop, failed commit and rollback.
+  Establish greedy parity, then conditional acceptance and residual sampling for
+  the actual temperature/top-k/top-p/penalty policy. Distribution preservation
+  does not imply identical RNG consumption or seeded output.
+- After verifier qualification, add bounded prompt/history suffix proposals with
+  a few short windows and no second model. Use repetitive and creative held-out
+  prompts; measure drafting, verification, commit and recovery together. Keep
+  ordinary decoding and stop when acceptance cannot repay the cycle.
+- If measured chain recovery costs are material, compare snapshot/replay with
+  saved-factor recovery and delayed commit using SpecLA/TreeWY/RecoverSSM
+  references. Preserve complete state and declared float identity; wide trees
+  need demonstrated benefit over chains. See [verification
+  research](docs/inference-algorithms.md#trained-parallel-proposals-and-full-state-verification).
+- After verifier qualification, if measured verification and recovery costs
+  leave a feasible break-even, screen a published small drafter for exact
+  tokenizer and vocabulary, Swift/LoRA and native ARM64 compatibility. Check
+  target-feature interfaces only when consumed. Charge both models' weights, KV,
+  features and scratch, plus startup/prefill costs, before provisioning. Suffix
+  failure does not rule out learned drafters; a Qwen family name does not prove
+  compatibility. Record a no-go if none fits; exclude general drafter training
+  and deferred DSpark.
+- Qualify replacements against pinned Prism at matching artifacts, adapters and
+  settings and all promotion gates, retaining deterministic streams where
+  applicable. Retire old build/overlay/FFI paths only after acceptance.
 
 ## Creative quality, adapters and memory
 
-- Establish an independent writing/art-direction rubric covering drafting,
-  constrained revision, continuity, dialogue, voice, tone, composition, instruction
-  following, coherence, repetition, unwanted refusals and useful completed answers.
-  Qualify the actual thinking/output settings and experimental Extra effort mode;
-  changed text or benchmark averages are insufficient.
-- Complete the [standard LoRA qualification](docs/swift-lora.md#standard-profile-qualification): verify SSM
-  basis at residual writers, loaded-at-zero response/logits identity and nonzero
-  application; capture paired target-device trials and genuine independent human
-  reviews. Require both same-engine decode TPS and output quality parity, keeping
-  the bounded RAM premium and every individual regression visible.
-- Qualify app-scale 1.3 and other intended adapter settings explicitly. Do not
-  relabel the scale-one/512-token contract or choose a scale from one response.
-- Evaluate Q8_0/Q4_K_M speech profiles and bounded CPU thread choices through
-  target-device CI and independent listening, retaining voice quality alongside
-  startup, first-audio, synthesis latency and resource evidence. Use the
-  [paired speech comparison contract](docs/validation.md) and
-  [hosted resource evidence](docs/performance-expectations.md#q4-speech-resource-comparison). Attribute voice bootstrap,
-  warm Base prefill, residual-code prediction, codec, transport and playback
-  separately. Record first generated PCM versus first audible output and chunk
-  supply gaps/underruns. Conditioning reuse, bounded graph retention and PCM
-  recycling already exist; optimize measured remaining work, not those labels.
-  Qualify native-owned VoiceDesign reference samples through Design teardown
-  and Base extraction on first use, profile changes and bootstrap failures;
-  pointer/ownership and model-ordering regressions remain model-free.
-  Include the Rust Philox semantic/predictor draw path in actual-model speech
-  acceptance; exact block/rounding vectors and pinned-C++ bit comparisons remain
-  model-free checks, separate from output, listening and resource qualification.
-- Qualify chat alone, warm TTS alone and concurrent chat/TTS under a small set of
-  shared CPU-thread budgets. Include native UI frame delivery, audio continuity,
-  useful-answer time and sustained memory/heat. Qualify cold speech command waits,
-  which now block until notified, separately from the retained periodic monitoring
-  of active output, warm TTS and retained Canary input. Check idle CPU/waits and
-  wake/Stop responsiveness during the existing 30-second warm TTS lease. Preserve
-  ASR/TTS mutual exclusion and independent reserves; postpone speech speculation unless
-  an existing compatible native artifact or a measured laptop-feasible tiny fit
-  is available for the selected 1.7B path, rather than the paper's 0.6B model.
-  Before any such fit, require a native residual-code verifier, sampler correction,
-  accepted-state recovery and bounded extra scratch. Stop if verification/recovery
-  erases the complete-readout benefit.
-- Investigate lossless adapter graph-reservation and rank-one accumulation changes
-  only with allocator and strict rounding/order checks. Resolve unexplained memory
-  counter differences before claiming saved RAM; preserve dynamic scale and
-  load-without-apply behavior.
-- Qualify current-weight PTQ1 full-model logits/live state on scalar and explicit
-  NEON, including no-LoRA/LoRA basis and forward execution. After correctness,
-  run the bounded paired device screen and review complete responses,
-  context/recovery, quality and comfort. Keep PQ2 as rollback; use the
-  [PTQ1 contract](docs/swift-memory.md#current-weight-ptq1-option).
-- Promote PTQ1 to the default only after suitability and lower admission thresholds
-  are demonstrated. Use the exact verified 1,259,520,000-byte packing difference
-  for a candidate reduction; account for mapped residency separately from private
-  commit and preserve the physical reserve.
-- Capture prefill, first useful answer, decode TPS, complete-task time,
-  retries/truncation, peak working/private/Job/system/device memory, hard faults,
-  energy where observable, UI responsiveness and sustained heat/fan behavior.
-  Retain the completion supervisor's `ProcessMemory` aggregates in X2 CPU CI
-  evidence: sampled private/current working-set maxima and Windows lifetime
-  resident peak reuse existing safety queries. Qualify their complete-model
-  coverage and phase attribution separately; these overlapping counters are
-  not additive, and sampled maxima can miss short-lived allocations.
-  Interleave repeated paired trials, report uncertainty and qualify X1/X2
-  independently. Separate instrumented attribution from unprofiled request timing,
-  and idle from active power. Use consistent first/last-token boundaries rather
-  than averages of incomparable rates; retain output/retry counts and energy per
-  acceptable completed task. See [measurement research](docs/performance-expectations.md#2026-literature-measurement-and-comparison).
-- Qualify creative, daily, long-context and battery profiles within total resource
-  budgets. Larger context, Q8/Q4 KV, Flash Attention and altered recurrent precision
-  require separate numerical/state/quality gates; do not silently discard canon
-  or weaken output reservation to fit.
-- Attribute actual mapped buffers, microbatch 32/64 costs, persistent output rows,
-  post-prefill workspace trimming, optional prefetch, rotation/sign metadata and
-  thread stacks before pursuing lossless memory reductions. Review integration
-  of the immutable-B-sharing overlay against the intended runtime; preserve
-  exact rounding and distinguish overlapping from disjoint allocation lifetimes.
-- Independently exercise the Qwen reference's actual-model loading and service
-  control when its 18 GiB allowance plus 4 GiB reserve can be admitted.
-- Add source-referenced scene packets and author-approved writing context while
-  keeping manuscripts and the edited project bible authoritative. Start with
-  manual excerpts/lexical retrieval; require evidence of need before embeddings.
-  Generated summaries need source versions and author acceptance. Vision/image
-  critique or image generation needs a matching model and shared-memory budget.
+### Quality and speech
+
+- Establish an independent writing/art-direction rubric: drafting, constrained
+  revision, continuity, dialogue, voice and tone, composition, instruction
+  following, coherence, repetition, unwanted refusals and useful completed
+  answers. Qualify actual thinking and output settings and Extra effort; changed
+  text or benchmark averages are insufficient.
+- Complete [standard LoRA
+  qualification](docs/swift-lora.md#standard-profile-qualification): SSM
+  writer-basis, loaded-at-zero response/logits identity, nonzero application,
+  paired device trials and independent human reviews. Require both same-engine
+  decode TPS and quality parity, bounded RAM premium and visible regressions.
+  Qualify app-scale 1.3 and other intended scales separately from the
+  scale-one, 512-token contract; one response cannot choose a scale.
+- Compare Q8_0/Q4_K_M speech and bounded thread choices through [paired device
+  CI and independent listening](docs/validation.md#paired-speech-comparison).
+  Retain voice quality, startup, first-audio, synthesis latency and resources;
+  attribute bootstrap, warm Base prefill, residual-code prediction, codec,
+  transport and playback separately. Distinguish generated PCM from audible
+  output and record supply gaps and underruns. Use [resource
+  evidence](docs/performance-expectations.md#q4-speech-resource-comparison) and
+  existing reuse contracts to target measured remaining costs.
+- Qualify native-owned VoiceDesign references through Design teardown and Base
+  extraction on first use, profile changes and bootstrap failure under the
+  [ownership
+  contract](docs/streaming-resources.md#native-speech-generation-and-streaming).
+  Include Rust Philox semantic/predictor sampling in actual-model acceptance;
+  exact vectors/C++ bit comparisons do not qualify output, listening or
+  resources.
+- Qualify chat alone, warm TTS and chat/TTS together with a small set of shared
+  thread budgets: UI frames, audio continuity, useful-answer time and sustained
+  memory and heat. Check cold idle waits separately from active/warm/Canary
+  monitoring, including wake and Stop during the 30-second TTS lease. Preserve
+  ASR/TTS exclusion and independent reserves under the [scheduling
+  contract](docs/streaming-resources.md#speech-scheduling-and-playback).
+- Defer speech speculation unless a compatible native artifact or
+  laptop-feasible tiny fit exists for the selected 1.7B path (not the paper's
+  0.6B). Before a fit, require residual-code verification, sampler correction,
+  accepted-state recovery and bounded scratch; stop if those costs erase
+  complete-readout benefit. See [speech
+  research](docs/performance-expectations.md#2026-speech-inference-research).
+
+### Memory and profiles
+
+- Investigate lossless adapter reservation and rank-one accumulation with
+  allocator and strict rounding/order checks. Resolve counter discrepancies
+  before claiming savings; preserve dynamic scale and load-without-apply under
+  [allocation rules](docs/swift-lora.md#allocation-semantics).
+- Qualify [current-weight PTQ1](docs/swift-memory.md#current-weight-ptq1-option)
+  full-model logits and live state on scalar and explicit NEON with no-LoRA and
+  LoRA basis and forward execution. Then screen paired complete responses,
+  context/recovery, quality and comfort, retaining PQ2 rollback. Promote or
+  lower admission only after suitability; base candidate reductions on the
+  verified **1,259,520,000-byte** packing difference, separate mapped residency
+  from private commit and preserve reserves.
+- Capture prefill, first useful answer, decode TPS, task time,
+  retries/truncation, working/private/Job/system/device peaks, hard faults,
+  observable energy, UI responsiveness and sustained heat and fan behavior.
+  Retain X2 `ProcessMemory` aggregates; qualify complete-model coverage and
+  phase attribution. Overlapping counters are not additive; sampled maxima can
+  miss brief allocations. Follow [measurement
+  rules](docs/performance-expectations.md#2026-literature-measurement-and-comparison):
+  repeated interleaved pairs, uncertainty, independent X1/X2 results,
+  instrumented attribution separate from timing, idle versus active power,
+  consistent token boundaries and energy per acceptable completed task with
+  output and retry counts.
+- Qualify creative, daily, long-context and battery profiles within total
+  budgets. Larger context, Q8/Q4 KV, Flash Attention and recurrent precision
+  changes need separate numerical, state and quality gates. Preserve canon and
+  output reservations.
+- Attribute mapped buffers, microbatch 32/64, persistent output rows,
+  post-prefill trimming, prefetch, rotation/sign metadata and stacks before
+  [lossless reductions](docs/swift-memory-options.md). Review immutable-B
+  sharing against the intended runtime; preserve rounding and distinguish
+  overlapping from disjoint allocation lifetimes.
+- Independently qualify Qwen loading and service control when its 18 GiB
+  allowance plus 4 GiB reserve can be admitted.
+- Add source-referenced scene packets and author-approved context; manuscripts
+  and the edited project bible stay authoritative. Start with manual
+  excerpts/lexical retrieval; add embeddings only for a demonstrated need.
+  Summaries need source versions and author approval; vision, image critique or
+  generation needs a matching model and shared-memory budget.
 
 ## Bounded calibration and optional precision
 
-These are conditional, separately identified native CPU experiments after exact
-controls work. Use a small fixed calibration sample and disjoint held-out prompts,
-online/bounded statistics and the research budgets above. Calibration alone never
-qualifies quality or reduced admission; surviving candidates still need the
-existing full-context/continuation/LoRA gates.
+Run separate native CPU experiments after exact controls work, using a small
+fixed calibration sample, disjoint held-out prompts, bounded statistics and
+[research budgets](#research-scope-and-practical-budgets). Calibration does not
+qualify quality or reduced admission; retain full-context, continuation and LoRA
+gates.
 
-- Estimate component savings and conversion traffic before implementing a codec.
-  Full-attention KV is 512 MiB at 8K; INT8 can save at most about 256 MiB of that
-  payload before scales/scratch. Live recurrent/convolution payload is a separate
-  149.625 MiB. Compare actual complete-process benefit with the existing PTQ1
-  packing gain; do not apply a component's compression ratio to model weights.
-- Screen simple native Q8 full-attention KV first. If it earns further work,
-  compare one bounded asymmetric key/value or rotation-plus-scalar candidate,
-  retaining FP16 as the control. Charge metadata, conversion, rotations and
-  dequantization; reject full-plus-compressed copies as a total-RAM saving.
-  Retain explicit numerical/cache identity and exact checkpoint ownership;
-  defer low-rank/SVD or large-index schemes without a measured need at 8K.
-- Only if state traffic or admitted snapshot storage is material, screen FP16
-  recurrent state against FP32, then at most one DAMP-inspired calibrated
-  FP16/INT8 split. Keep convolution precision separate and account for scales,
-  rounding/RNG, restore and long-trajectory error. Low-rank bypass/directional
-  rounding is a follow-up only if a simple screen exposes update loss and enough
-  net benefit to justify its factors/merge/rollback complexity.
-- Run a bounded entropy/correlation feasibility check on existing packed tensors,
-  including scales, block/stream indexes, random access and native decode work.
-  Shannonic supplies lossless coding ideas; implement a stream prototype only if
-  a realistic byte/traffic estimate beats current PTQ1 without a retained expanded
-  model. Keep the current-census BITCOS layout rejected. New weight codebooks,
-  rotations or scale selection require a separate native, layerwise cost/benefit
-  preflight before any quantization work; do not start a whole-model refit from a
-  paper's GPU result. See [weight and state research](docs/swift-memory-options.md).
+- Estimate savings and conversion traffic first: 8K attention KV is 512 MiB, so
+  INT8 saves at most about 256 MiB before scales/scratch. Recurrent/convolution
+  payload is a separate 149.625 MiB. Compare process benefit with PTQ1; cache
+  compression ratios do not apply to weights.
+- Screen native Q8 attention KV first, then at most one asymmetric key/value or
+  rotation-plus-scalar candidate if justified. Keep FP16 controls, explicit
+  cache and numerical identity and exact checkpoints. Charge metadata, conversion,
+  rotations, dequantization and retained copies; defer SVD/index schemes without
+  an 8K need. See [compression
+  constraints](docs/inference-algorithms.md#compression-and-approximation-constraints).
+- Only for material state traffic or snapshot storage, screen FP16 recurrent
+  state against FP32, then at most one DAMP-inspired FP16/INT8 split. Keep
+  convolution separate; account for scales, rounding/RNG, restore and trajectory
+  error. Add low-rank bypass/directional rounding only if update loss and net
+  benefit justify factor, merge and rollback complexity.
+- Check packed-tensor entropy/correlation, including scales, indexes, random
+  access and decode work. Prototype Shannonic-inspired streams only if realistic
+  bytes and traffic beat PTQ1 without retained expansion. Keep current-census
+  BITCOS rejected. New codebooks, rotations or scales need a native layerwise
+  cost/benefit preflight, not whole-model refitting from GPU results. See
+  [weight/state
+  research](docs/swift-memory-options.md#2026-entropy-coding-and-alternative-weight-artifacts).
 
 ## Hardware selection
 
-- Extend shared discovery beyond native CPU registry/kernel/feature identity, CPU sets,
-  native Windows NEON/dotprod/I8MM reports and bounded Vulkan/OpenCL inventories:
-  independently checked
-  SoC/SKU, GPU/NPU API/features/architecture, driver/runtime/firmware,
-  signed backend readiness and static accelerator identities. Reuse the checked
-  representation in Doctor and launch policy; keep unknowns explicit and live
-  resource budgets separate from immutable compatibility evidence.
-- Qualify safe scalar/NEON CPU controls independently on X1 and X2, including
-  optional ISA eligibility and phase-specific thread/batch/wait/power choices.
-  Run the bounded [X2 CPU thread screen](docs/simd-plan.md#x2-cpu-thread-screen) on settled
-  main and retain results before selecting a new default. Restore/register the
-  owner-managed ARM64 runner first; the 2026-10-29 CI inventory reports none.
-  Resolve the provisioned legacy completion runtime's model-free headless-start
-  failure (`0xC0000142`) before capture; audit its shell DLL dependency chain
-  and repeat a bounded `--version` probe without relaxing worker mitigations.
-  The [UCRT argv source candidate](docs/runtime-candidates/README.md#headless-ucrt-argv-candidate)
-  now passes CPU-enabled model-free startup and Unicode/quoting checks on X2;
-  integrate/release it upstream and qualify the exact binary before updating
-  Runner's pin. The currently provisioned runtime remains unchanged.
-  Retain the screen's verdict for native CPU/kernel/feature identity, topology,
-  AC/battery saver, active power scheme and effective mode at batch and per-sample
-  boundaries, including the transition
-  between paired samples; suppress comparisons when observations change or are
-  unknown. Extend the screen
-  only when its phase measurements identify a useful next candidate.
-  Compare supported event-based waits with polling using idle CPU, wake latency,
-  active decode and cancellation responsiveness. Inventory native Windows timing,
-  energy/thermal and memory observations plus their sampling limits; absent valid
-  telemetry means no energy verdict. Do not assume four threads, all cores or a
-  marketing family is sufficient, or port a bare-metal gang scheduler into the app.
-- Build a bounded reviewed profile catalog keyed by exact artifact/adapter,
-  runtime/build/backend/driver/capabilities, numerical/state/settings identity,
-  context/shape/output/workload buckets, objective and fresh/reused state.
-  Retain paired evidence, thresholds and losing/no-go entries.
-- Implement deterministic eligibility/ranking for interactive complete-task latency
-  and battery energy within accepted bounds. Include startup/repack/compile,
-  phase/state migration and sustained costs; use stable tie-breaking and no
-  startup benchmark search.
-- Recheck current budgets and backend readiness before admission. Choose a
-  qualified CPU fallback or explicit strict-backend rejection without silently
-  changing model, adapter, sampler, precision, context or output reservation.
-  Report requested/effective profile, placement, evidence identity and value-free
-  fallback reasons in diagnostics and a simple native Rust Auto control.
-- Reevaluate at safe request boundaries after power, memory, runtime or driver
-  changes. Prove complete-state migration or verified teardown/rebuild; invalidate
-  affected evidence/caches and never continue a partial request on another backend.
-- Cover unknown/misidentified devices, absent optional ISA/signed accelerators,
-  stale identities, budget pressure, workload boundaries, deterministic ties,
-  objective changes, fallback/strict rejection and failed/cancelled state handoff.
-- Demonstrate automatic interactive/battery operation separately on supported X1
-  and X2 classes, including reproducible installation/rollback, sustained use and
-  affected-upgrade requalification. No energy ranking without valid telemetry.
-
-References: [selection contract](docs/hardware-capabilities.md#automatic-profile-selection),
-[capability identities](docs/hardware-capabilities.md).
+- Extend [discovery](docs/hardware-capabilities.md#host-inventory) with
+  independently checked SoC/SKU, GPU/NPU APIs/features/architecture,
+  drivers/runtime/firmware, signed readiness and static identities. Share
+  checked data between Doctor and launch policy; keep unknowns explicit and live
+  budgets separate from compatibility.
+- Restore or register the owner-managed ARM64 runner before the [X2 CPU thread
+  screen](docs/simd-plan.md#x2-cpu-thread-screen); the current inventory has
+  none. Resolve legacy startup failure `0xC0000142` by auditing shell DLL
+  dependencies and bounded `--version` probes under unchanged mitigations.
+  Integrate and release the [headless UCRT argv
+  candidate](docs/runtime-candidates/README.md#headless-ucrt-argv-candidate)
+  upstream and qualify its exact binary before changing Runner's pin.
+- Qualify scalar/NEON controls independently on X1/X2, optional ISA and
+  phase-specific thread/batch/wait/power choices. Run the bounded screen on
+  settled `main` before selecting defaults; extend only for a measured
+  opportunity. Suppress comparisons for changed or unknown CPU, kernel,
+  features, topology or power, including between pairs; follow [screen
+  controls](docs/simd-plan.md#controls-and-cost).
+- Compare event waits with polling for idle CPU, wake latency, decode and
+  cancellation. Inventory Windows timing/energy/thermal/memory sampling limits;
+  no energy verdict without valid telemetry. Four threads, all cores or a family
+  name do not choose a profile; bare-metal gang scheduling remains outside the
+  app.
+- Build the bounded reviewed [profile
+  catalog](docs/hardware-capabilities.md#profile-and-evidence-keys) with exact
+  compatibility/workload/reuse/objective keys, paired evidence, thresholds and
+  losing/no-go entries. Implement deterministic [eligibility, ranking and
+  admission](docs/hardware-capabilities.md#eligibility-ranking-and-admission)
+  for task latency and battery energy, charging startup, repacking, compilation,
+  migrations and sustained costs. Use stable ties without startup benchmark
+  search.
+- Recheck budgets and readiness before admission. Choose qualified CPU fallback
+  or strict rejection without changing model, adapter, sampler, precision,
+  context or output. Report requested/effective profile, placement, evidence and
+  value-free fallback reasons in diagnostics and a simple native Rust Auto
+  control.
+- Reevaluate at safe request boundaries after power/memory/runtime/driver
+  changes; invalidate evidence and caches and prove complete-state migration or
+  teardown and rebuild. Never move partial requests between backends. Cover
+  unknown devices, absent ISA or accelerators, stale identity, pressure, workload
+  boundaries, ties, objective changes, strict rejection and failed or cancelled
+  handoff.
+- Demonstrate automatic interactive and battery operation separately on X1/X2,
+  including installation and rollback, sustained use and upgrade requalification
+  under the [selection
+  contract](docs/hardware-capabilities.md#automatic-profile-selection).
 
 ## CPU kernels
 
-- Freeze artifact/runtime/compiler/format/shape/ISA and numerical contracts, then
-  use CI hotspot, bandwidth, packing and dispatch evidence to select optimizations.
-- Qualify the [shared-slice row-parallel source candidate](docs/oxibonsai-reuse.md#implementation-status)
-  in Prism's actual Swift prepared-projection path: serial control versus two
-  small worker budgets on three real shapes, sharing immutable packed weights
-  and prepared Q8 activations. Extend the implemented bitwise/error/restore
-  controls to complete model state, cancellation, pool/task accounting and
-  whole-request target-device CI cost. Review the exact source and a released
-  binary before changing Runner's pin or enabling a multi-worker profile.
-- Complete full-model and memory qualification of baseline NEON PQ2, odd-group
-  PQ2 and PTQ1. Retain scalar forcing, bounded loads/quantization, ordered scales,
-  malformed-input rejection and actual-backend diagnostics; qualify the single
-  bounded LUT candidate set below without changing fourth-symbol semantics. Bound
-  table construction, unsigned-code sums and corrections independently; a final
-  128-term generic PQ2 dot fitting i16 does not certify intermediate i16 sums.
-- Prototype direct PTQ1-by-Q8_K execution for eligible current-weight projections,
-  retaining PQ2's actual activation grouping and odd-group fallback route. Start
-  with scalar Rust and a few real Swift shapes, then baseline NEON. Preserve raw
-  scales, quantized activations and floating scale/add order so compact packing
-  can be evaluated independently from PTQ1-by-Q8_0's numerical change. Keep this
-  a distinct experimental path through full-model/adapter qualification.
-- Compare a bounded set of NEON layouts that unpack directly into consumption
-  order, avoiding unpack/shuffle/repack passes. Start with up to four layouts and
-  three representative projection shapes, one matrix at a time. Borrow Intel's
-  two-bit layout principle rather than its VNNI instructions; compare at most two
-  exact TL1_1/TL2_1-style LUT designs with the current control, validated ternary
-  eligibility and generic PQ2 fallback. Charge preparation, source/repacked overlap, table/cache
-  pressure and startup before claiming a whole-model gain.
-- Implement one genuinely tiled projection-prefill family before a broader port.
-  Compare a few token tiles, initially 8/16/32 where shapes permit, sharing
-  compatible activation preparation and bounded cache-sized LUT/weight tiles.
-  Reuse weights across tokens without a persistent INT8/FP16 expansion. Count LUT
-  construction and scratch; stop if those costs erase the reuse benefit.
-- Use the audited native Windows NEON/dotprod/I8MM availability observations
-  in [capability discovery](docs/hardware-capabilities.md) to establish the
-  installed OS/process eligibility before separately dispatched variants.
-  Inspect Release code generation and
-  forbidden-ISA leakage; require reliable detection, parity and useful benefit.
-- Optimize measured Hadamard/elementwise, activation/quantizer, reduction and tiled
-  prefill bottlenecks through safe APIs or an audited isolated unsafe boundary.
-  Expand boundary/tie/extreme/unaligned/malformed/rollback and non-ARM/absent-ISA
-  fixtures; recheck dependency/license/code generation after relevant changes.
-- If the packed integer-dot dependency chain is material, screen the
-  [OxiBonsai two-accumulator idea](docs/oxibonsai-reuse.md#neon-retain-concepts-preserve-swift-arithmetic)
-  in Prism's existing `i32x4` loop: control versus two independent accumulators
-  on three real Swift shapes, retaining signed widening, exact integer dots,
-  Q8 groups and ordered floating scales/adds. Inspect register spills and
-  require target-device CI benefit before changing Runner's runtime pin.
-- Compare scalar Rust, optimized Rust and applicable Prism controls in paired
-  target-device CI, separating hot/streaming weights, packing/dispatch, prefill,
-  decode, task cost, allocations and sustained energy/thermal behavior. Admit
-  only qualified per-device, format/shape, phase and objective entries.
+Follow [CPU arithmetic, dispatch and acceptance contracts](docs/simd-plan.md).
+Pin artifacts, runtime, compiler, format, shapes, ISA and numerics. Select
+optimizations from CI hotspot, bandwidth, packing and dispatch evidence.
 
-Reference: [CPU arithmetic and dispatch contracts](docs/simd-plan.md).
+- Qualify the [shared-slice row-parallel
+  candidate](docs/oxibonsai-reuse.md#implementation-status) in Swift prepared
+  projections: serial versus two small worker budgets on three shapes, sharing
+  packed weights and prepared Q8 activations. Extend to complete state,
+  cancellation, pool and task accounting and whole-request cost. Review source
+  and a released binary before changing the pin or enabling workers.
+- Complete full-model and memory qualification of NEON PQ2, odd-group PQ2 and
+  PTQ1. Preserve scalar forcing, backend diagnostics and [packed
+  arithmetic](docs/simd-plan.md#packed-arithmetic), including fourth symbols and
+  bounds on every LUT sum and correction before narrowing.
+- Prototype direct PTQ1-by-Q8_K, first scalar on a few Swift shapes, then NEON.
+  Preserve activation grouping, raw scales, quantized activations, float order
+  and odd-group fallback. Keep packing separate from PTQ1-by-Q8_0 numerics
+  through full-model/adapter qualification.
+- Compare at most four NEON layouts on three shapes, one matrix at a time,
+  unpacking directly into consumption order. Adapt two-bit layout principles
+  without VNNI instructions; compare at most two exact TL1_1/TL2_1-style LUT
+  designs with ternary eligibility and generic PQ2 fallback. Charge preparation,
+  source/repacked overlap, tables/cache and startup.
+- Implement one tiled projection-prefill family, initially token tiles 8/16/32
+  where valid, sharing activation preparation and bounded LUT/weight tiles.
+  Reuse weights without persistent INT8/FP16 expansion; stop if construction or
+  scratch erases the gain.
+- Establish installed Windows CPU/OS NEON/dotprod/I8MM eligibility before
+  separate dispatch. Inspect Release code generation and forbidden-ISA leakage;
+  require detection, parity and benefit under the [dispatch
+  contract](docs/simd-plan.md#execution-and-dispatch).
+- Optimize measured transforms, elementwise work, quantizers, reductions and
+  prefill through safe APIs or audited isolated unsafe code. Extend edge,
+  malformed, rollback, non-ARM and absent-ISA fixtures; recheck dependencies,
+  licenses and code generation after relevant changes.
+- If integer-dot dependency chains are material, screen the [two-accumulator
+  idea](docs/oxibonsai-reuse.md#neon-retain-concepts-preserve-swift-arithmetic)
+  in Prism's `i32x4` loop on three shapes. Preserve widening, exact dots, Q8
+  groups and float order; inspect spills and require device CI benefit before
+  repinning.
+- Compare scalar Rust, optimized Rust and Prism in paired device CI. Separate
+  hot-cache and streaming weights, preparation, dispatch, prefill/decode/task
+  costs, allocations and sustained energy/heat. Scope qualified profiles by
+  device, format, shape, phase and objective.
 
 ## Adreno Vulkan
 
-- Capture native ARM64 GPU/SKU/OS/driver/loader/ICD/dependency identities and exact
-  Vulkan queues/features/extensions/limits, subgroup/FP16/integer-dot/cooperative
-  matrix support and available memory-budget telemetry. Reject software/emulated
-  execution and preserve explicit unknowns/conservative admission.
-  Resolve the retained X2 `host-gpu` instance-creation no-go before qualifying
-  worker GPU access. The separate bounded tool-policy inventory observes Adreno
-  X2-90 features but does not qualify the headless worker path or identify the
-  cause of its failure. Preserve the distinct evidence and unchanged CPU policy;
-  see [native Vulkan discovery](docs/hardware-capabilities.md#host-inventory).
-- Implement a bounded public native ARM64 OpenCL packed-projection pilot in a
-  separately reviewed Prism candidate. The [feasibility screen](docs/adreno-gpu-plan.md#opencl-access-and-source-audit)
-  establishes missing direct reuse in the unchanged pinned backend, not a ban
-  on writing kernels. Start with one candidate and one real Swift projection
-  shape, using scalar CPU PQ2-by-Q8_K arithmetic as the control: preserve actual
-  activation grouping, raw scales and ordered floating scale/add operations.
-  Keep PTQ1 as a separate numerical/packing lane. Prove information queries and
-  supported workload access under unchanged worker mitigations before device
-  execution; never substitute a weaker policy after refusal. Predeclare at most
-  30 minutes for feasibility and two hours of initial CI-only compute, one matrix
-  at a time within existing reserves. Count preparation, scratch and transfers;
-  retain a qualified CPU fallback and losing/no-go results. Do not retain a
-  whole-model expanded copy or change Runner's selected profile from this pilot.
-- Build a separately locked pinned-Prism `GGML_VULKAN=ON` candidate with reviewed
-  ARM64 SDK/shader/compiler/library identities, unrelated accelerators disabled
-  and a bounded experimental profile preserving the CPU lane and service policy.
-- Produce the complete PQ2/PTQ1 operation/placement/fallback/transfer ledger,
-  including embedding/output indexing, quantizers/transforms, attention/RoPE,
-  GDN/convolution, hybrid state and adapters. Verify actual descriptor placement
-  without forced-limit overrides.
-- Prove packed/operator and full-model logits/KV/GDN/lifecycle parity against
-  same-artifact CPU controls, including Vulkan Q8_1 versus CPU Q8_K/Q8_0 arithmetic,
-  awkward shapes and separate no-LoRA/approved-LoRA basis/forward lanes.
-- Screen CPU-only, bounded partial and maximum feasible offload in device CI.
-  Measure prefill/decode, batches/threads/waits, transfer/submission/kernel costs
-  and phase migrations. Attribute CPU preparation/packing, command submission,
-  GPU service, completion waits and sampling separately; distinguish a slow kernel
-  from an idle GPU awaiting host work. Qualify attention/cache/flash changes
-  independently and compare eligible Hexagon candidates.
-- Optimize only measured kernel, layout, residency, descriptor/pipeline/allocation,
-  scheduling and cache bottlenecks. Compare packed-field/coalesced layouts,
-  vector unpacking, shape-specific tiles and supported submission replay;
-  image/texture-backed weights require the installed native API's actual support.
-  Charge cold preparation and retained copies, count physical memory once,
-  bound/invalidate caches and preserve asynchronous buffer lifetimes. Rerun
-  numerical/state/adapter/lifecycle gates after changes.
-- Qualify per-device GPU profiles for quality, comfort, memory and useful benefit;
-  integrate current-budget admission and effective-plan reporting. Exercise device
-  absence/loss, allocation pressure, stale evidence, cancellation and upgrade
-  invalidation with committed-state preservation and a reproducible CPU rollback.
-- After Rust CPU parity, separately qualify Rust GPU coverage and audited device
-  safety against the same full-model/state and per-device acceptance contracts.
+Follow the [Adreno contracts](docs/adreno-gpu-plan.md). Access discovery alone
+does not qualify a worker backend or change the selected CPU profile.
 
-Reference: [Adreno architecture and qualification contracts](docs/adreno-gpu-plan.md).
+- Capture native GPU/driver/API identities, features, limits and memory
+  telemetry under the [inventory
+  contract](docs/hardware-capabilities.md#native-vulkan-observations). Reject
+  emulation; keep unknowns and conservative admission. Resolve X2 `host-gpu`
+  instance-creation failure; tool-policy Adreno X2-90 observations neither
+  explain that failure nor qualify worker access.
+- Pilot native ARM64 OpenCL packed projection in a reviewed Prism candidate: one
+  candidate and one Swift shape, scalar PQ2-by-Q8_K control, exact grouping,
+  raw scales and float order, and a separate PTQ1 lane. Prove queries and workload access
+  under unchanged worker mitigations before execution; retain refusal as a
+  no-go. Follow [access/source
+  boundaries](docs/adreno-gpu-plan.md#opencl-access-and-source-audit) with hard
+  caps of 30 minutes for feasibility and two hours of initial CI compute. Charge
+  preparation, scratch and transfers; preserve reserves and CPU fallback.
+  Exclude whole-model expansion and profile selection from the pilot.
+- Build a separately locked pinned-Prism `GGML_VULKAN=ON` candidate with
+  reviewed ARM64 SDK/shader/compiler/library identities and unrelated
+  accelerators disabled. Keep a bounded experimental profile and preserve
+  service policy and the CPU lane.
+- Complete the PQ2/PTQ1 operation/placement/fallback/transfer ledger and verify
+  descriptors without limit overrides. Prove packed/operator and full-model
+  logits/KV/GDN/lifecycle parity, awkward shapes, Vulkan Q8_1 versus CPU
+  Q8_K/Q8_0 and separate no-LoRA/approved-LoRA basis/forward lanes under the
+  [arithmetic/placement
+  contract](docs/adreno-gpu-plan.md#swift-arithmetic-and-placement).
+- Screen CPU, partial and maximum feasible offload against eligible Hexagon
+  candidates. Separate prefill/decode, batches/threads/waits,
+  preparation/packing, submission, transfers, GPU service, sampling and
+  migration; distinguish slow kernels from host starvation. Qualify
+  attention/cache/Flash changes separately.
+- Optimize measured kernels, layouts, residency,
+  descriptors/pipelines/allocations, scheduling and caches. Compare
+  packed/coalesced layouts, vector unpacking, shape-specific tiles and supported
+  replay; textures require native API support. Charge cold preparation/copies,
+  count physical memory once, bound caches and preserve asynchronous lifetimes;
+  rerun numerical/state/adapter/lifecycle gates.
+- Qualify per-device benefit, quality, comfort, memory, admission and
+  effective-plan reporting. Cover absence or loss, pressure, stale evidence,
+  cancellation and upgrades with committed-state preservation and CPU rollback
+  under [resource/failure
+  rules](docs/adreno-gpu-plan.md#resources-failure-and-acceptance).
+- After Rust CPU parity, separately qualify Rust GPU coverage and device safety
+  against the same full-model, state and device gates.
 
 ## Hexagon NPU
 
-- Discover bounded native signed access independently on X1/v73 and X2/v81,
-  recording driver/firmware/SDK/compiler/source/DLL/DSP/ABI/license identities,
-  signatures and actual mapping/execution. Audit DMA64, low-bit Hadamard and HTP
-  leads; prove a small supported-type dispatch fixture and retain scoped no-go
-  reasons. Trust/Secure Boot changes require a separate owner decision.
-- Map Swift operations/types/shapes/strides/transforms/basis, state, support/fallback
-  and resident/scratch bytes for prefill/decode. Choose one bounded prototype
-  region; generic Q2/Q4/Q8 support does not establish PQ2/PTQ1 compatibility.
-- Implement exact lossless PQ2 tiling/fused packed matvec and separately qualify
-  PTQ1 canonicality/Q8_0, including symbol/scale/rounding/tail/malformed fixtures.
-  Audit any PQ2-to-Q2 bridge's metadata and storage premium before timing.
-- Evaluate eligible HVX packed work and genuine batched HMX prefill. Bound VTCM,
-  DMA, padding/repack/expansion scratch; prove dependency/fusion arithmetic,
-  transform/grouped recurrent basis and independent adapter execution. Exercise
-  descriptor-ring saturation, partial-tile initialization, double-buffer ownership
-  and cancellation with transfers outstanding. Check requested versus effective
-  VTCM and allocation refusal; use the documented DMA-ring failure as a regression
-  pattern without assuming the selected Swift path has that defect.
-- Prove ownership and restoration of resident weights, scratch, KV/convolution/GDN,
-  checkpoints and phase layouts across fresh/reused/edited prefixes, cancellation,
-  reset and failed continuation. Qualify chunkwise scheduling separately.
-- Establish total peak memory/address-space accounting across host/device mappings,
-  copies, RPC, state, caches and load overlap. Verify the selected X1 mapping window
-  and signed X2 DMA64 path; start with one session and justify partitioned sessions.
-  Preserve Swift admission/reserve and account for resources outside Job commit.
-- Screen CPU, qualified Adreno, contiguous Hexagon and mixed phase placements on
-  X1/X2 with fixed model/adapter/sampler/context/precision. Include startup,
-  migrations, mapping/traffic/RPC/synchronization, contention and sustained power;
-  prioritize X2 packed prefill/decode investigation when a target is available.
-  Separate RPC/queue work, dynamic quantization, DMA, HVX/HMX execution, wake-up and
-  completion waits. Compare contiguous regions with fragmented offload; phone
-  phase rankings and unavailable root/DVFS controls do not choose a Windows winner.
-- Integrate a separately locked experimental profile with checked effective
-  placement/readiness, child-only environment and owned helper teardown. Preserve
-  authentication/counting/one-slot/deadline/cancellation policies and reject arbitrary
-  overrides; qualify isolation/resources beyond the single-process Job.
-- Cover unsupported shapes, bounded waits, allocation/mapping failure, device loss,
-  cancellation after submission and stale compiled/repacked caches. Never free
-  in-use buffers, replay secretly or continue partial work on CPU; restore complete
-  committed state or close admission through verified teardown.
-- Qualify/publish scoped device profiles or no-go results through paired repeated
-  CI over admitted short/near-limit prompts, full output reservation, fixed/natural
-  completions, edited/reused state, AC/battery, pressure and 15–30-minute sustained
-  use. Require correctness/security/quality/resources, LoRA parity and useful
-  benefit, retaining raw evidence, uncertainty, CPU rollback and upgrade rules.
-- Separately qualify Rust NPU coverage and audited device safety after Rust CPU
-  parity; signed deployment and full-state correctness remain mandatory.
+Follow the [Hexagon contracts](docs/hexagon-npu-plan.md).
 
-Reference: [Hexagon deployment and arithmetic contracts](docs/hexagon-npu-plan.md).
+- Prove native signed access independently on X1/v73 and X2/v81: exact
+  deployment, license and signature identities, actual mapping/execution and a small
+  supported-type dispatch fixture. Audit DMA64, low-bit Hadamard and HTP leads;
+  retain scoped no-go reasons. Trust/Secure Boot changes need a separate owner
+  decision.
+- Map Swift operations, layouts, transforms/basis, complete state, placement,
+  fallback and bytes; choose one prototype region. Generic Q2/Q4/Q8 does not
+  prove PQ2/PTQ1 support. Implement lossless PQ2 tiling/fused matvec and
+  separately qualify PTQ1 canonicality/Q8_0. Audit any PQ2-to-Q2 bridge's
+  metadata/storage premium before timing under [arithmetic/state
+  rules](docs/hexagon-npu-plan.md#packed-arithmetic-and-graph-state).
+- Evaluate HVX packed work and batched HMX prefill with bounded
+  VTCM/DMA/repacking scratch, exact fusion/recurrent basis and independent
+  adapters. Qualify ring saturation, partial tiles, double buffering,
+  requested/effective VTCM, allocation refusal and cancellation during
+  transfers. Use documented DMA-ring failure as a regression pattern, without
+  assuming Swift has that defect.
+- Prove complete ownership and restore across fresh, reused and edited prefixes,
+  cancellation, reset and failed continuation; qualify chunkwise scheduling
+  separately. Account for host/device mappings, copies, RPC, state/caches and
+  load overlap, including resources outside Job commit. Verify X1 mapping
+  windows and signed X2 DMA64; start with one session and justify partitions while
+  preserving reserves.
+- Compare CPU, qualified Adreno, contiguous Hexagon and mixed phases on X1/X2 at
+  fixed artifacts and settings. Include startup, migration,
+  traffic/RPC/synchronization, contention and sustained power; prioritize X2
+  packed prefill/decode when available. Attribute queues, quantization, DMA,
+  HVX/HMX, wake and waits; phone rankings and unavailable root/DVFS controls do
+  not choose a Windows winner.
+- Integrate a locked experimental profile with checked placement and readiness,
+  child-only environment and helper teardown. Preserve authentication, counting,
+  one-slot/deadline/cancellation policy; reject overrides and qualify isolation
+  and resources beyond one process Job.
+- Cover unsupported shapes, bounded waits, mapping/allocation failure, device
+  loss, post-submit cancellation and stale caches under [lifecycle/failure
+  rules](docs/hexagon-npu-plan.md#memory-lifecycle-and-failure). Keep in-use
+  buffers alive; restore complete committed state or close admission through
+  verified teardown, without secret replay or partial CPU continuation.
+- Publish scoped profiles or no-go results from paired repeated CI: short and
+  near-limit prompts, full output reserve, fixed and natural completions, edited
+  and reused state, AC/battery, pressure and 15–30-minute sustained use. Apply
+  [qualification gates](docs/hexagon-npu-plan.md#qualification-evidence),
+  retaining raw evidence, uncertainty, LoRA parity, CPU rollback and upgrade
+  rules.
+- Qualify Rust NPU coverage and device safety after Rust CPU parity; retain
+  signed deployment and full-state requirements.
 
 ## Survey ideas outside the current laptop backlog
 
-Keep T-SAR/ExaGEMM instruction/datapath modifications, RVV/SVE/SME ports requiring
-unavailable hardware, proprietary internal kernels and Android-root/QPT/DVFS
-controls as literature context. They are not prerequisites or implementation
-tasks for the current X Elite/X2 Elite program.
+The [research catalog](docs/research-register.md#research-catalog) records
+excluded literature: unavailable ISA/datapath changes, proprietary kernels,
+Android-root, QPT and DVFS controls, new architectures/readers, large drafter
+training, full-Hessian pipelines and wholesale lattice/rotation refits.
+Published GPU results alone do not justify a laptop job or replacement for
+already-ternary Swift; bounded native preflights still need the research budgets
+above. Existing thinking/effort controls remain the baseline for methods needing
+compatible training.
 
-Methods requiring new trained weights/architectures/readers (GDN-2, Sherry,
-ReaDy), large drafter training,
-full-Hessian quantization pipelines and wholesale lattice/rotation refits are
-not scheduled. CoS-VQ/YAQA/FastKron/ELUTQ/QTEA/HARP/Tetra can inform a future
-bounded native preflight, but their published GPU pipelines do not establish a
-reasonable laptop job or a better already-ternary Swift artifact. Likewise,
-ESTAR/BudgetThinker require compatible training; existing thinking/effort controls
-remain the practical task-token baseline.
-
-Defer DASC/Tail-Replay checkpoint omission until exact reuse demonstrably cannot
-meet an actual cache need; simple suffix recomputation comes first. Defer wide
-TreeWY trees, JoLT/iS-KV SVD caches and certified sparse-attention index ports
-until a batch-one/8K bottleneck and bounded native benefit justify them. VeriCache
-and multi-tier/multi-request serving do not supply a total-RAM saving for the
-current one-request shared-memory runner. Retain withdrawn PolarQuant and the
-unresolved Litespark claims as negative evidence, not implementation work.
+Defer DASC/Tail-Replay checkpoint omission until exact reuse and suffix
+recomputation cannot meet a real cache need. Wide trees, SVD caches and
+sparse-attention indexes need a measured batch-one/8K bottleneck and bounded
+native benefit. Multi-tier or multi-request serving is not a total-RAM saving
+here. Keep [withdrawn PolarQuant and unresolved
+Litespark](docs/research-register.md#withdrawn-or-unresolved-reports) as
+negative evidence, not tasks.
 
 ## Deferred Prism migration
 
-Broader runtime implementation remains owned by
-[Prism Inference](https://github.com/symbiogenesis/prism-inference).
+Broader implementation belongs in [Prism
+Inference](https://github.com/symbiogenesis/prism-inference) and reopens only
+for a Swift dependency or chosen milestone. The [conformance
+contract](docs/prism-upstream-tests.md) owns exact inventories, assertions and
+exclusions. Remaining areas:
 
-- Complete full reference qualification and hosted provenance: every backend
-  partition, all 22,817 ordered evaluation/support geometries, the separate
-  1,530 performance workloads and exactly 70 Windows-applicable source results
-  with the Apple exclusion explicit. Ratchet baselines only from complete
-  reviewed evidence, retaining required green IDs and full diagnostic handoffs.
-- Complete numerical operations, custom/map callbacks and backward graphs within
-  pinned shape/stride/alias/arithmetic contracts. Preserve transactional gradients,
-  packed ADD1 restrictions and explicit unavailable GEGLU/FLASH_ATTN_BACK
-  derivatives; do not invent skips or port an aborting native constructor blindly.
-- Finish remaining packed importance encoders, including IQ2_XXS/XS and IQ1, and
-  full-source codec qualification. Preserve native-unavailable encoder identities
-  and numeric-zero canonicalization rather than undefined native payload bytes.
-- Complete owned `qb-*` tensor/transport APIs, persistent model sessions, file
-  transfers and real supported clocks for quantization/function/performance/stats
-  sources: all 144 trait slots, 22 eligible types, original layouts/offsets/
-  schedules/thresholds and actual pinned F32/F16 statistics.
-- Complete general chat direct apply/statistics, differential template analysis,
-  generated parsers, format detection, reasoning/tool mapping and all six named
-  capability-execution gaps. Preserve original assertions, supplied time,
-  undefined-variable behavior, byte-prefix diffs, reconstruction and distinct
-  byte-regex/UTF-8 domains; finish server reasoning budgets, template kwargs,
-  Responses/developer conversion and model-specific thinking/tool ordering.
-- Complete production CLI registration/negation/environment handling across all
-  27 contexts, parameter mutation, numeric/CSV validation and speculative
-  output-limit conversion. Finish bounded HTTP/HTTPS/curl retrieval with original
-  headers/timeouts and 200/404/oversize/cancellation/body-framing behavior.
-- Qualify resolver URL/multi-shard/redirect/Content-Length domains, recursive
-  cached snapshots and metadata-inferred draft resolution. Support or explicitly
-  reject native ECMAScript-only quant-tag regex syntax.
-- Provide generic encoder/decoder contexts, vocabulary/logit ownership, graph
-  reservation/export, sequence/KV state, independent checkpoints, file/buffer
-  save/restore and concurrent persistent sessions with callback errors. Retain
-  generated-tensor/progress callbacks, streaming GGUF saving and nonfinite rejection.
-- Implement architecture-family graphs, tensor/metadata inventory and hybrid
-  memory/session contracts across the source's 149 names, 151 variants and
-  128 supported variants, preserving unsupported distinctions and original
-  encode/decode/NMSE/export/reload/restored-logit assertions.
-- Complete original model/progress/state/concurrency sources against unchanged
-  stories15M assets and full schedules, recurrent rollback, backend sampling,
-  graph export and KV mean-centering behavior.
-- Complete the four DSpark sources' metadata/log-SNR, forward/loop/speculative
-  state and real-eval APIs with original synthetic references and the full
-  24-prompt AR/verification schedule. Complete actual LoRA conversion,
-  merge/application and inference, retaining approved production corrections.
-- Provide actual LLGuidance/model-session grammar integration and public C
-  header/ABI through safe Rust boundaries. Keep `test-c.c` compile-only with
-  zero behavioral assertions.
-- Finish every tokenizer-source qualification, including original decoder/loader
-  failures, file wrappers/generators, randomized HF references, immutable corpora,
-  complete SPM/BPE token/Unicode roundtrips and ignore-merges behavior. Preserve
-  the invalid-UTF-8 skip, Falcon exclusion and verified Llama 3 correction.
-
-Reference: [exact conformance requirements](docs/prism-upstream-tests.md).
+- Complete reference qualification/provenance: all backend partitions, 22,817
+  ordered evaluation/support geometries, 1,530 separate performance workloads
+  and 70 Windows-applicable source results with Apple exclusion. Ratchet only
+  complete reviewed evidence, retaining required green IDs/full diagnostic
+  handoffs.
+- Complete numerical operations, custom/map callbacks, backward graphs,
+  remaining importance encoders, codec qualification and owned `qb-*` APIs under
+  [numerical/codec
+  contracts](docs/prism-upstream-tests.md#numerical-operations-and-codec-contracts).
+- Complete general chat/template/parser behavior, capability execution, server
+  conversions and every tokenizer source under [chat/parser/tokenizer
+  contracts](docs/prism-upstream-tests.md#chat-parser-and-tokenizer-contracts).
+- Complete production CLI, retrieval/resolution, generic model/session APIs,
+  architecture-family graphs and original model/state/concurrency sources under
+  [acquisition/model/session
+  contracts](docs/prism-upstream-tests.md#acquisition-model-and-session-contracts).
+- Complete DSpark, actual LoRA conversion/merge/inference, LLGuidance
+  integration and safe public C ABI under [DSpark/adapter/grammar/ABI
+  contracts](docs/prism-upstream-tests.md#dspark-adapters-grammar-and-abi).
+  Preserve approved corrections and the compile-only scope of `test-c.c`.
 
 ## Deferred dependency experiments
 
-- Follow the [dependency audit](docs/dependency-audit.md) and
-  [MXC #1579](https://github.com/microsoft/mxc/issues/1579) for backend/capability
-  dependency features in the supported SDK before changing supervisor boundaries.
-  Keep all three supported Windows wgpu
-  backends explicitly selected; any future removal needs a separate support
-  decision and device/fallback qualification. Consider separating artifact archive
-  APIs only if independently built speech companions show a worthwhile build/size
-  benefit. Keep containment,
-  accessibility and native UI behavior intact; all timing benchmarks remain CI-only.
-- Qualify the pinned SIMD-JSON tape-reuse candidate through main-only CI. Require
-  unchanged Unicode/duplicate/unknown-field/shape/bound/canonical-byte checks to
-  pass and at least 5% lower equal-weight geometric-mean time
-  with no case more than 5% slower in both cold and reused-request screens,
-  including supplemental scale-setting cases. Preserve the existing dependency decision
-  until those gates pass; see [dependency contracts](docs/dependency-audit.md).
+- Follow the [dependency audit](docs/dependency-audit.md) and [MXC
+  capability-feature issue](https://github.com/microsoft/mxc/issues/1579) before
+  supervisor changes. Keep all three Windows wgpu backends; removal needs a
+  support decision and device/fallback acceptance. Split archive APIs only for
+  demonstrated build/size benefits in independent speech builds. Preserve
+  containment, accessibility and native UI.
+- Qualify the pinned [SIMD-JSON tape-reuse
+  candidate](docs/dependency-audit.md#current-candidate-and-pending-gate) in
+  main-only CI: preserve Unicode, duplicate/unknown-field handling, shape/bounds
+  and canonical bytes. Require at least 5% lower equal-weight geometric-mean
+  time and no case over 5% slower in both cold and reused screens, including
+  scale-setting cases. Keep the
+  current dependency decision until all gates pass.
 
 ## Optional agents
 
-- Qualify creative chat before enabling agent automation. Evaluate OpenCode first
-  and Aider as fallback, preserving a bounded authenticated inference bridge.
-- Qualify whole-agent, plugin, hook and descendant containment through MXC
-  ProcessContainer with `allowDaclMutation:false`, no audit mode for untrusted
-  execution and no unsandboxed fallback. Exercise filesystem/reparse, handle,
-  subprocess and network bypasses; prompts are not containment. A VM tier needs
-  separate acceptance when a separate kernel is required.
+- Qualify creative chat first; evaluate OpenCode, then Aider, through a bounded
+  authenticated inference bridge.
+- Qualify MXC ProcessContainer containment for agents, plugins, hooks and descendants
+  with `allowDaclMutation:false`, no untrusted audit mode or unsandboxed
+  fallback. Exercise filesystem/reparse, handle, subprocess and network
+  bypasses; a VM tier with a separate kernel needs its own acceptance.
 
 ## Promotion criteria
 
-- Complete each profile's correctness, security, full-state recovery, creative
-  quality and resource gates, including independent LoRA TPS/quality requirements.
+- Pass profile-specific correctness, security, full-state recovery, creative
+  quality and resource gates, including independent LoRA TPS/quality
+  requirements.
 - Demonstrate bounded memory without sustained paging and owner-accepted
-  responsiveness/heat/fan behavior over sustained use.
-- Establish a useful paired target-device CI benefit: initially 10% lower
-  end-to-end latency, or a documented capacity/energy benefit within accepted
-  latency/quality limits. Predeclare tolerances and retain losing/no-go outcomes.
-- Reproduce accepted results on settled `main`, with immutable artifact/build/device
-  identities, run/capture references, declared limitations and a rollback profile.
-  All benchmarks and full suites stay in their owning main-only CI workflows;
-  local builds/analyzers and focused correctness checks remain allowed under
-  [validation policy](docs/validation.md).
+  responsiveness, heat and fan behavior during sustained use.
+- Demonstrate paired target-device CI benefit: initially **10% lower end-to-end
+  latency**, or documented capacity/energy benefit within accepted
+  latency/quality limits. Predeclare tolerances and retain losing/no-go results.
+- Reproduce on settled `main` with immutable artifact/build/device identities,
+  run/capture references, limitations and rollback profile. Follow [validation
+  policy](docs/validation.md): full suites and benchmarks stay in owning
+  main-only CI; local builds, analyzers and focused correctness checks remain
+  allowed.
