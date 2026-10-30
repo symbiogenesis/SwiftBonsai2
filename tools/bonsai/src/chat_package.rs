@@ -293,6 +293,7 @@ fn launch_options(package: &Value, options: Value) -> crate::Result<Value> {
                 | "NoAbliterateLora"
                 | "UseRepackedPtq1"
                 | "NativeEngine"
+                | "NativeRowWorkers"
                 | "TtsQuantization"
                 | "TtsThreads"
                 | "FrontendPort"
@@ -511,10 +512,11 @@ mod tests {
         let native = launch_options(
             &package,
             json!({
-                "NoSpeechModels": true, "NativeEngine": true, "NoAbliterateLora": true
+                "NoSpeechModels": true, "NativeEngine": true, "NativeRowWorkers": 4, "NoAbliterateLora": true
             }),
         )?;
         assert_eq!(native["NativeEngine"], true);
+        assert_eq!(native["NativeRowWorkers"], 4);
         assert_eq!(native["NoAbliterateLora"], true);
         assert!(launch_options(&package, json!({"ChatPath": "outside.exe"})).is_err());
         assert!(launch_options(&package, json!({"ForceBuild": true})).is_err());

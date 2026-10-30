@@ -25,6 +25,8 @@ use tokio::{
 const CASE: &str = "pinned_native_model_streams_recovers_and_restarts_in_required_sandbox";
 const PTQ1_ADAPTER_CASE: &str =
     "pinned_native_ptq1_adapter_starts_and_streams_within_device_budget";
+const PQ2_ADAPTER_ROW4_CASE: &str =
+    "pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget";
 const CASE_BUDGET: Duration = Duration::from_secs(240);
 const OPTIONAL_RESERVE: Duration = Duration::from_secs(120);
 const WAIT: Duration = Duration::from_secs(600);
@@ -36,6 +38,29 @@ struct Workloads {
     extended_history: bool,
     stalled_consumer: bool,
 }
+
+struct AdapterProfile {
+    name: &'static str,
+    case: &'static str,
+    repacked: bool,
+    row_workers: u8,
+    optional_requests: bool,
+}
+
+const PTQ1_ADAPTER_PROFILE: AdapterProfile = AdapterProfile {
+    name: "ptq1-adapter",
+    case: PTQ1_ADAPTER_CASE,
+    repacked: true,
+    row_workers: 1,
+    optional_requests: true,
+};
+const PQ2_ADAPTER_ROW4_PROFILE: AdapterProfile = AdapterProfile {
+    name: "pq2-adapter-row4",
+    case: PQ2_ADAPTER_ROW4_CASE,
+    repacked: false,
+    row_workers: 4,
+    optional_requests: false,
+};
 
 #[derive(Debug, PartialEq, Eq)]
 struct StreamSummary {
@@ -732,42 +757,59 @@ fn profile_case(profile: &str, extended: bool, stalled: bool) -> Option<&'static
     }
     match profile {
         "pq2-no-adapter" => Some(CASE),
-        "ptq1-adapter" => Some(PTQ1_ADAPTER_CASE),
+        name => adapter_profile(name).map(|selected| selected.case),
+    }
+}
+
+fn adapter_profile(name: &str) -> Option<&'static AdapterProfile> {
+    match name {
+        "ptq1-adapter" => Some(&PTQ1_ADAPTER_PROFILE),
+        "pq2-adapter-row4" => Some(&PQ2_ADAPTER_ROW4_PROFILE),
         _ => None,
     }
 }
 
-fn adapter_configuration(data: &Path, evidence: &Path) -> LaunchConfig {
-    let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = reservation.local_addr().unwrap().port().to_string();
-    drop(reservation);
+fn adapter_arguments(profile: &AdapterProfile, port: &str) -> Vec<OsString> {
     let mut args: Vec<OsString> = [
         "--launch-development",
         "--require-native-sandbox",
         "--native-engine",
         "--profile",
         "swift-pq2-assessment",
-        "--use-repacked-ptq1",
         "--use-abliterate-lora",
         "--frontend-port",
         "0",
         "--backend-port",
-        &port,
-        "--data-directory",
+        port,
     ]
     .into_iter()
     .map(OsString::from)
     .collect();
+    if profile.repacked {
+        args.push("--use-repacked-ptq1".into());
+    }
+    if profile.row_workers == 4 {
+        args.extend(["--native-row-workers", "4"].map(OsString::from));
+    }
+    args
+}
+
+fn adapter_configuration(profile: &AdapterProfile, data: &Path, evidence: &Path) -> LaunchConfig {
+    let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = reservation.local_addr().unwrap().port().to_string();
+    drop(reservation);
+    let mut args = adapter_arguments(profile, &port);
+    args.push("--data-directory".into());
     args.push(data.as_os_str().to_owned());
     args.push("--evidence-parent".into());
     args.push(evidence.as_os_str().to_owned());
     LaunchConfig::parse(args).unwrap()
 }
 
-async fn start_adapter(data: &Path, evidence: &Path) -> LaunchedService {
+async fn start_adapter(profile: &AdapterProfile, data: &Path, evidence: &Path) -> LaunchedService {
     timeout(
         WAIT,
-        adapter_configuration(data, evidence).start(pending::<io::Result<()>>()),
+        adapter_configuration(profile, data, evidence).start(pending::<io::Result<()>>()),
     )
     .await
     .unwrap()
@@ -831,11 +873,16 @@ async fn adapter_owned_stop(
         "failedOperations":report.failed, "ownedJobEmpty":true, "listenerReleased":true})
 }
 
-async fn ptq1_adapter_acceptance(data: &Path, evidence: &Path, report: &mut Value) {
+async fn bounded_adapter_acceptance(
+    profile: &AdapterProfile,
+    data: &Path,
+    evidence: &Path,
+    report: &mut Value,
+) {
     let deadline = tokio::time::Instant::now() + CASE_BUDGET;
     report["phase"] = json!("initial-owner-startup");
     save_adapter_report(evidence, report);
-    let owner = start_adapter(data, evidence).await;
+    let owner = start_adapter(profile, data, evidence).await;
     report["verifiedReadinessObserved"] = json!(true);
     report["adapterEnabled"] = json!(true);
     report["phase"] = json!("required-scale-1.3-stream");
@@ -850,7 +897,9 @@ async fn ptq1_adapter_acceptance(data: &Path, evidence: &Path, report: &mut Valu
     save_adapter_report(evidence, report);
     // Optional requests share this one aggregate budget; no matrix or restart
     // can continue in another job. Preserve a conservative teardown reserve.
-    if deadline.saturating_duration_since(tokio::time::Instant::now()) > OPTIONAL_RESERVE {
+    if profile.optional_requests
+        && deadline.saturating_duration_since(tokio::time::Instant::now()) > OPTIONAL_RESERVE
+    {
         report["phase"] = json!("optional-scale-zero");
         save_adapter_report(evidence, report);
         streams.push(adapter_stream(port, &credential, 0.0, "optional-scale-zero", 2).await);
@@ -896,6 +945,8 @@ fn native_profile_selection_and_scale_receipts_preserve_bounded_scope() {
     for (profile, extended, stalled) in [
         ("ptq1-adapter", true, false),
         ("ptq1-adapter", false, true),
+        ("pq2-adapter-row4", true, false),
+        ("pq2-adapter-row4", false, true),
         ("unknown", false, false),
     ] {
         assert_eq!(profile_case(profile, extended, stalled), None);
@@ -936,6 +987,57 @@ fn native_profile_selection_and_scale_receipts_preserve_bounded_scope() {
 }
 
 #[test]
+fn native_row4_profile_is_explicit_original_pq2_and_one_stream_only() {
+    assert_eq!(
+        profile_case("pq2-adapter-row4", false, false),
+        Some(PQ2_ADAPTER_ROW4_CASE)
+    );
+    assert!(adapter_profile("pq2-no-adapter").is_none());
+    assert!(adapter_profile("pq2-adapter").is_none());
+    for profile in [&PTQ1_ADAPTER_PROFILE, &PQ2_ADAPTER_ROW4_PROFILE] {
+        assert_eq!(adapter_profile(profile.name).unwrap().case, profile.case);
+        let args = adapter_arguments(profile, "8081");
+        for required in [
+            "--native-engine",
+            "--require-native-sandbox",
+            "--use-abliterate-lora",
+        ] {
+            assert_eq!(args.iter().filter(|arg| *arg == required).count(), 1);
+        }
+        assert!(
+            args.windows(2)
+                .any(|pair| pair[0] == "--profile" && pair[1] == "swift-pq2-assessment")
+        );
+        assert_eq!(
+            args.iter().any(|arg| arg == "--use-repacked-ptq1"),
+            profile.repacked
+        );
+        assert_eq!(
+            args.iter()
+                .filter(|arg| *arg == "--native-row-workers")
+                .count(),
+            usize::from(profile.row_workers == 4)
+        );
+        if profile.row_workers == 4 {
+            assert!(
+                args.windows(2)
+                    .any(|pair| pair[0] == "--native-row-workers" && pair[1] == "4")
+            );
+            assert!(!profile.repacked);
+            assert!(!profile.optional_requests);
+        } else {
+            assert_eq!(profile.row_workers, 1);
+            assert!(profile.optional_requests);
+        }
+    }
+    let body = adapter_request(json!([{"role":"user","content":"Name a tree."}]), 1.3, 4);
+    assert_eq!(body["abliteration_scale"], 1.3);
+    assert_eq!(body["max_completion_tokens"], 4);
+    assert_eq!(body["enable_thinking"], false);
+    assert_eq!(CASE_BUDGET, Duration::from_secs(240));
+}
+
+#[test]
 #[ignore = "Actual PTQ1 and approved adapter; explicit bounded main-only device CI, never ordinary suites."]
 fn pinned_native_ptq1_adapter_starts_and_streams_within_device_budget() {
     ci_only();
@@ -971,7 +1073,68 @@ fn pinned_native_ptq1_adapter_starts_and_streams_within_device_budget() {
     runtime.block_on(LocalSet::new().run_until(async {
         timeout(
             CASE_BUDGET,
-            ptq1_adapter_acceptance(Path::new(&data), evidence, &mut report),
+            bounded_adapter_acceptance(
+                &PTQ1_ADAPTER_PROFILE,
+                Path::new(&data),
+                evidence,
+                &mut report,
+            ),
+        )
+        .await
+        .unwrap();
+    }));
+}
+
+#[test]
+#[ignore = "Actual original PQ2 and approved adapter with four row workers; explicit bounded main-only device CI."]
+fn pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget() {
+    ci_only();
+    assert_eq!(
+        profile_case(
+            &env::var("BONSAI_NATIVE_PROFILE").unwrap(),
+            env::var("BONSAI_NATIVE_EXTENDED").as_deref() == Ok("true"),
+            env::var("BONSAI_NATIVE_STALLED_CONSUMER").as_deref() == Ok("true")
+        ),
+        Some(PQ2_ADAPTER_ROW4_CASE)
+    );
+    let runtime_lock =
+        serde_json::from_str::<Value>(include_str!("../../../config/prism-inference.lock.json"))
+            .unwrap();
+    assert_eq!(runtime_lock["version"], "0.1.9");
+    let data = env::var_os("BONSAI_NATIVE_DATA").unwrap();
+    let evidence = env::var_os("BONSAI_NATIVE_EVIDENCE").unwrap();
+    let evidence = Path::new(&evidence);
+    let mut report = json!({"schemaVersion":1, "case":PQ2_ADAPTER_ROW4_CASE,
+        "revision":env::var("GITHUB_SHA").unwrap(), "runId":env::var("GITHUB_RUN_ID").unwrap(),
+        "runAttempt":env::var("GITHUB_RUN_ATTEMPT").unwrap(), "scope":"bounded-actual-model-pq2-adapter-row4-lifecycle",
+        "profile":PQ2_ADAPTER_ROW4_PROFILE.name, "passed":false, "requiredNativeSandbox":true,
+        "aggregateModelCaseBudgetSeconds":CASE_BUDGET.as_secs(), "wholeJobMaximumSeconds":300,
+        "configuredNativeRowWorkers":4, "rowWorkerCountIndependentlyObserved":false,
+        "requiredStreams":1, "requestedAdapterScale":1.3, "requestedCompletionCap":4,
+        "weightRepresentation":"PQ2_0", "runtimeLock":runtime_lock,
+        "modelIdentity":serde_json::from_str::<Value>(include_str!("../../../config/swift-assessment.lock.json")).unwrap()["model"],
+        "adapterLock":serde_json::from_str::<Value>(include_str!("../../../config/swift-lora.lock.json")).unwrap(),
+        "adapterRequested":true, "adapterEnabled":false, "verifiedReadinessObserved":false,
+        "sameOwnerAfterInvalidScalePassed":false, "invalidScaleRejected":false,
+        "unrunIndependentGates":["multi-scale-and-signed-zero", "invalid-scale-and-reuse", "context-rejection-and-reuse",
+            "fresh-owner-restart", "supplied-history", "extended-history", "stalled-consumer", "full-context-and-output",
+            "performance-and-TPS", "creative-quality", "daily-service-isolation"],
+        "completeStateParityQualified":false, "authoringBasisQualified":false,
+        "fullContextQualified":false, "fullOutputQualified":false, "performanceQualified":false,
+        "qualityQualified":false, "dailyServiceIsolationQualified":false, "defaultRuntimeQualified":false});
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(LocalSet::new().run_until(async {
+        timeout(
+            CASE_BUDGET,
+            bounded_adapter_acceptance(
+                &PQ2_ADAPTER_ROW4_PROFILE,
+                Path::new(&data),
+                evidence,
+                &mut report,
+            ),
         )
         .await
         .unwrap();

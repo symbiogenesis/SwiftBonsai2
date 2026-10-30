@@ -41,6 +41,8 @@ struct Request {
     use_repacked_ptq1: bool,
     #[serde(default)]
     native_engine: bool,
+    #[serde(default = "default_native_row_workers")]
+    native_row_workers: u8,
     #[serde(default = "default_frontend_port")]
     frontend_port: u16,
     #[serde(default = "default_backend_port")]
@@ -65,6 +67,10 @@ struct Request {
 
 fn default_quantization() -> String {
     "Q8_0".into()
+}
+
+const fn default_native_row_workers() -> u8 {
+    1
 }
 
 const fn default_frontend_port() -> u16 {
@@ -178,6 +184,11 @@ fn validate_paths(request: &Request) -> crate::Result<()> {
 }
 
 fn prepare(mut request: Request, native_host: bool) -> crate::Result<Plan> {
+    if !matches!(request.native_row_workers, 1 | 4)
+        || (request.native_row_workers == 4 && !request.native_engine)
+    {
+        return Err("NativeRowWorkers must be 1 or 4; four requires NativeEngine.".into());
+    }
     if !request.speech_models_only && !native_host {
         return Err("Run chat in native ARM64 PowerShell on Windows ARM64.".into());
     }
@@ -393,6 +404,9 @@ fn launch_arguments(
     }
     if request.native_engine {
         arguments.push("--native-engine".into());
+    }
+    if request.native_row_workers == 4 {
+        argument(&mut arguments, "--native-row-workers", "4");
     }
     if let Some(key) = &request.canary_key_file {
         argument(&mut arguments, "--canary-key-file", key);

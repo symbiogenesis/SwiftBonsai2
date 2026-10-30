@@ -72,6 +72,7 @@ pub(crate) struct Config {
     pub(crate) use_abliterate_lora: bool,
     pub(crate) use_repacked_ptq1: bool,
     pub(crate) native_engine: bool,
+    pub(crate) native_row_workers: u8,
     pub(crate) canary: Option<crate::canary::Config>,
     pub(crate) qwen_tts: Option<crate::tts::Config>,
 }
@@ -301,6 +302,23 @@ fn wait_for_retry(
     }
 }
 
+fn runtime_arguments(config: &Config) -> Vec<&'static str> {
+    let mut arguments = Vec::with_capacity(5);
+    if config.use_abliterate_lora {
+        arguments.push("--use-abliterate-lora");
+    }
+    if config.use_repacked_ptq1 {
+        arguments.push("--use-repacked-ptq1");
+    }
+    if config.native_engine {
+        arguments.push("--native-engine");
+    }
+    if config.native_row_workers == 4 {
+        arguments.extend(["--native-row-workers", "4"]);
+    }
+    arguments
+}
+
 fn worker(
     config: &Config,
     commands: &Receiver<Command>,
@@ -312,15 +330,7 @@ fn worker(
     let stdout = new_log(&stdout_path)?;
     let stderr = new_log(&stderr_path)?;
     let mut process = ProcessCommand::new(&config.broker);
-    if config.use_abliterate_lora {
-        process.arg("--use-abliterate-lora");
-    }
-    if config.use_repacked_ptq1 {
-        process.arg("--use-repacked-ptq1");
-    }
-    if config.native_engine {
-        process.arg("--native-engine");
-    }
+    process.args(runtime_arguments(config));
     process
         .args([
             "--launch-development",
@@ -1399,9 +1409,55 @@ impl Sse {
 #[cfg(test)]
 mod tests {
     use super::{
-        Command, Completion, Event, Failure, HttpBody, Message, READ_SIZE, Sse, evidence_directory,
-        finish_turn, parse_head, serialize_request, startup_failure, wait_for_retry,
+        Command, Completion, Config, Event, Failure, HttpBody, Message, READ_SIZE, Sse,
+        evidence_directory, finish_turn, parse_head, runtime_arguments, serialize_request,
+        startup_failure, wait_for_retry,
     };
+
+    #[test]
+    fn explicit_native_row_workers_preserve_model_adapter_and_legacy_broker_arguments() {
+        let mut config = Config {
+            broker: "broker.exe".into(),
+            data: "data".into(),
+            evidence: "evidence".into(),
+            frontend_port: 5173,
+            backend_port: 8081,
+            use_abliterate_lora: true,
+            use_repacked_ptq1: false,
+            native_engine: false,
+            native_row_workers: 1,
+            canary: None,
+            qwen_tts: None,
+        };
+        assert_eq!(runtime_arguments(&config), ["--use-abliterate-lora"]);
+        config.native_engine = true;
+        config.native_row_workers = 4;
+        assert_eq!(
+            runtime_arguments(&config),
+            [
+                "--use-abliterate-lora",
+                "--native-engine",
+                "--native-row-workers",
+                "4"
+            ]
+        );
+        config.use_abliterate_lora = false;
+        config.use_repacked_ptq1 = true;
+        assert_eq!(
+            runtime_arguments(&config),
+            [
+                "--use-repacked-ptq1",
+                "--native-engine",
+                "--native-row-workers",
+                "4"
+            ]
+        );
+        config.native_row_workers = 1;
+        assert_eq!(
+            runtime_arguments(&config),
+            ["--use-repacked-ptq1", "--native-engine"]
+        );
+    }
 
     #[test]
     fn committed_and_pending_history_share_payloads_without_sharing_turn_mutations()

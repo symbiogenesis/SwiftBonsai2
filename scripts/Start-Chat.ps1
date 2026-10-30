@@ -13,6 +13,8 @@ SpeechModelsOnly fully verifies speech files without building or launching apps.
 NoSpeechModels disables automatic speech setup. Models load only when used.
 NativeEngine explicitly selects the pinned Rust runtime. Original PQ2 remains
 the weight default; UseRepackedPtq1 selects the verified current-weight export.
+NativeRowWorkers selects one or four workers; four requires NativeEngine and
+the reviewed 0.1.9 runtime. One remains the default.
 NoAbliterateLora explicitly omits the approved adapter. Selection is not promotion.
 .EXAMPLE
 ./scripts/Start-Chat.ps1 -UseRepackedPtq1
@@ -27,6 +29,7 @@ param(
     [ValidateSet('Q8_0', 'Q4_K_M')][string]$TtsQuantization = 'Q8_0',
     [ValidateRange(0, 256)][int]$TtsThreads = 0,
     [switch]$NoAbliterateLora, [switch]$UseRepackedPtq1, [switch]$NativeEngine,
+    [ValidateSet(1, 4)][int]$NativeRowWorkers = 1,
     [ValidateRange(1024, 65535)][int]$FrontendPort = 5173,
     [ValidateRange(1024, 65535)][int]$BackendPort = 8081,
     [string]$CanaryKeyFile, [ValidateRange(1024, 65535)][int]$CanaryPort = 8766,
@@ -36,6 +39,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+if ($NativeRowWorkers -eq 4 -and -not $NativeEngine) { throw 'NativeRowWorkers 4 requires NativeEngine.' }
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 # A short probe avoids resolving/building the maintenance tool for a running app.
 # Rust arbitrates racing launches and owns this persistent lock through teardown.

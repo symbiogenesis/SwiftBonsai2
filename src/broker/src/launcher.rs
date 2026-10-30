@@ -47,6 +47,7 @@ pub const LAUNCH_USAGE: &str = concat!(
     "  --frontend-port <0-or-1024..65535> --backend-port <1024..65535>\n",
     "  [--profile <reference-cpu|swift-pq2-assessment>]\n",
     "  [--native-engine] (requires the pinned Prism inference release and swift-pq2-assessment)\n",
+    "  [--native-row-workers 1|4] (4 requires --native-engine and pinned release 0.1.9)\n",
     "  [--use-abliterate-lora] (pinned adapter; request scale 0..2, default 1.3; Swift CPU only)\n",
     "  [--use-repacked-ptq1] (verified current-weight export; Swift CPU only)\n",
     "  [--max-waiting <0..8>] [--check-only]\n",
@@ -118,6 +119,7 @@ pub struct LaunchConfig {
     containment: BackendContainment,
     profile: LaunchProfile,
     native_engine: bool,
+    native_row_workers: u8,
     use_abliterate_lora: bool,
     weight_representation: WeightRepresentation,
 }
@@ -139,6 +141,7 @@ impl LaunchConfig {
         let (mut launch, mut unisolated, mut require_native_sandbox) = (false, false, false);
         let mut check_only = false;
         let mut native_engine = false;
+        let mut native_row_workers = None;
         let mut use_abliterate_lora = false;
         let mut use_repacked_ptq1 = false;
         let mut profile = None;
@@ -154,6 +157,15 @@ impl LaunchConfig {
                 Some("--check-only") if !check_only => check_only = true,
                 Some("--native-engine") if !native_engine => {
                     native_engine = true;
+                }
+                Some("--native-row-workers") if native_row_workers.is_none() => {
+                    native_row_workers = Some(
+                        match args.next().as_deref().and_then(std::ffi::OsStr::to_str) {
+                            Some("1") => 1,
+                            Some("4") => 4,
+                            _ => return Err(LaunchError::Arguments),
+                        },
+                    );
                 }
                 Some("--use-abliterate-lora") if !use_abliterate_lora => {
                     use_abliterate_lora = true;
@@ -191,6 +203,7 @@ impl LaunchConfig {
         let backend_port = backend_port.ok_or(LaunchError::Arguments)?;
         let max_waiting = max_waiting.unwrap_or(2);
         let profile = profile.unwrap_or_default();
+        let native_row_workers = native_row_workers.unwrap_or(1);
         if !launch
             || unisolated == require_native_sandbox
             || (frontend_port != 0 && frontend_port < 1024)
@@ -198,6 +211,7 @@ impl LaunchConfig {
             || backend_port == frontend_port
             || max_waiting > MAX_WAITING
             || (native_engine && profile != LaunchProfile::SwiftPq2Assessment)
+            || (native_row_workers == 4 && !native_engine)
             || (use_abliterate_lora && profile != LaunchProfile::SwiftPq2Assessment)
             || (use_repacked_ptq1 && profile != LaunchProfile::SwiftPq2Assessment)
         {
@@ -217,6 +231,7 @@ impl LaunchConfig {
             },
             profile,
             native_engine,
+            native_row_workers,
             use_abliterate_lora,
             weight_representation: if use_repacked_ptq1 {
                 WeightRepresentation::CurrentRepackedPtq1
@@ -360,10 +375,37 @@ impl LaunchConfig {
         &self,
     ) -> Result<Option<(PathBuf, bonsai_artifacts::VerifiedFile)>, LaunchError> {
         if self.native_engine {
-            crate::inference::verify(&self.data).map(Some)
+            crate::inference::verify(&self.data, self.native_row_workers).map(Some)
         } else {
             Ok(None)
         }
+    }
+
+    fn native_arguments(&self, plan: &LaunchPlan, key_path: &std::path::Path) -> Vec<OsString> {
+        let mut arguments = vec![
+            OsString::from("--native-engine-child"),
+            OsString::from("--model"),
+            plan.model_path.as_os_str().to_owned(),
+            OsString::from("--port"),
+            OsString::from(self.backend_port.to_string()),
+            OsString::from("--key-file"),
+            key_path.as_os_str().to_owned(),
+            OsString::from("--seed"),
+            OsString::from("42"),
+        ];
+        if self.native_row_workers == 4 {
+            arguments.extend([OsString::from("--row-workers"), OsString::from("4")]);
+        }
+        if self.uses_repacked_ptq1() {
+            arguments.push("--use-repacked-ptq1".into());
+        }
+        if let Some(adapter) = &plan.adapter {
+            arguments.extend([
+                OsString::from("--abliterate-lora"),
+                adapter.path.as_os_str().to_owned(),
+            ]);
+        }
+        arguments
     }
 
     fn specification(
@@ -378,26 +420,7 @@ impl LaunchConfig {
         validate_external_path(&working_directory).map_err(|_| LaunchError::Path)?;
         let native = self.native_executable_guard()?;
         let (executable, arguments, guard) = if let Some((executable, guard)) = native {
-            let mut arguments = vec![
-                OsString::from("--native-engine-child"),
-                OsString::from("--model"),
-                plan.model_path.into_os_string(),
-                OsString::from("--port"),
-                OsString::from(self.backend_port.to_string()),
-                OsString::from("--key-file"),
-                credentials.backend_path().as_os_str().to_owned(),
-                OsString::from("--seed"),
-                OsString::from("42"),
-            ];
-            if self.uses_repacked_ptq1() {
-                arguments.push("--use-repacked-ptq1".into());
-            }
-            if let Some(adapter) = &plan.adapter {
-                arguments.extend([
-                    OsString::from("--abliterate-lora"),
-                    adapter.path.as_os_str().to_owned(),
-                ]);
-            }
+            let arguments = self.native_arguments(&plan, credentials.backend_path());
             (executable, arguments, Some(guard))
         } else {
             (plan.executable, plan.arguments, None)
@@ -1146,6 +1169,91 @@ mod tests {
             LaunchConfig::parse(collision).err(),
             Some(LaunchError::Arguments)
         );
+    }
+
+    #[test]
+    fn native_row_workers_are_explicit_bounded_and_reach_only_the_native_child()
+    -> Result<(), LaunchError> {
+        let mut native = arguments();
+        native.extend(["--profile", "swift-pq2-assessment", "--native-engine"].map(OsString::from));
+        assert_eq!(LaunchConfig::parse(native.clone())?.native_row_workers, 1);
+        for invalid in ["0", "2", "3", "5", "16", "01", "+4", "4.0", " 4"] {
+            let mut rejected = native.clone();
+            rejected.extend(["--native-row-workers", invalid].map(OsString::from));
+            assert_eq!(
+                LaunchConfig::parse(rejected).err(),
+                Some(LaunchError::Arguments)
+            );
+        }
+        let mut missing = native.clone();
+        missing.push("--native-row-workers".into());
+        assert_eq!(
+            LaunchConfig::parse(missing).err(),
+            Some(LaunchError::Arguments)
+        );
+        let mut repeated = native.clone();
+        repeated
+            .extend(["--native-row-workers", "1", "--native-row-workers", "4"].map(OsString::from));
+        assert_eq!(
+            LaunchConfig::parse(repeated).err(),
+            Some(LaunchError::Arguments)
+        );
+        for profile in [None, Some("swift-pq2-assessment")] {
+            let mut publisher = arguments();
+            if let Some(profile) = profile {
+                publisher.extend(["--profile", profile].map(OsString::from));
+            }
+            publisher.extend(["--native-row-workers", "4"].map(OsString::from));
+            assert_eq!(
+                LaunchConfig::parse(publisher).err(),
+                Some(LaunchError::Arguments)
+            );
+        }
+        let data = std::env::temp_dir().join("Bonsai-row-routing");
+        let key = data.join("backend.key");
+        for workers in ["1", "4"] {
+            for repacked in [false, true] {
+                let mut args = native.clone();
+                args.extend(
+                    ["--native-row-workers", workers, "--use-abliterate-lora"].map(OsString::from),
+                );
+                if repacked {
+                    args.push("--use-repacked-ptq1".into());
+                }
+                let config = LaunchConfig::parse(args)?;
+                let plan = super::LaunchPlan::for_profile_with_options(
+                    &data,
+                    8081,
+                    &key,
+                    LaunchProfile::SwiftPq2Assessment,
+                    true,
+                    repacked,
+                )
+                .map_err(|_| LaunchError::Policy)?;
+                let child = config.native_arguments(&plan, &key);
+                assert_eq!(
+                    child.iter().filter(|arg| *arg == "--row-workers").count(),
+                    usize::from(workers == "4")
+                );
+                if workers == "4" {
+                    assert!(
+                        child
+                            .windows(2)
+                            .any(|args| args[0] == "--row-workers" && args[1] == "4")
+                    );
+                }
+                let adapter = plan.adapter.as_ref().ok_or(LaunchError::Adapter)?;
+                assert!(
+                    child.windows(2).any(|args| args[0] == "--abliterate-lora"
+                        && args[1] == adapter.path.as_os_str())
+                );
+                assert_eq!(
+                    child.iter().any(|arg| arg == "--use-repacked-ptq1"),
+                    repacked
+                );
+            }
+        }
+        Ok(())
     }
 
     #[test]

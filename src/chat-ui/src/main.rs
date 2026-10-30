@@ -51,11 +51,21 @@ fn configuration(
     let mut no_abliterate_lora = false;
     let mut use_repacked_ptq1 = false;
     let mut native_engine = false;
+    let mut native_row_workers = None;
     while let Some(option) = args.next() {
         match option.to_str() {
             Some("--no-abliterate-lora") if !no_abliterate_lora => no_abliterate_lora = true,
             Some("--use-repacked-ptq1") if !use_repacked_ptq1 => use_repacked_ptq1 = true,
             Some("--native-engine") if !native_engine => native_engine = true,
+            Some("--native-row-workers") if native_row_workers.is_none() => {
+                native_row_workers = Some(
+                    match args.next().as_deref().and_then(std::ffi::OsStr::to_str) {
+                        Some("1") => 1,
+                        Some("4") => 4,
+                        _ => return Err("Native row workers must be 1 or 4."),
+                    },
+                );
+            }
             Some("--broker-path") if broker.is_none() => broker = args.next().map(PathBuf::from),
             Some("--data-directory") if data.is_none() => data = args.next().map(PathBuf::from),
             Some("--evidence-directory") if evidence.is_none() => {
@@ -155,10 +165,14 @@ fn configuration(
             }
             _ => {
                 return Err(
-                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--use-repacked-ptq1] [--native-engine] [--canary-key-file ABSOLUTE_FILE --canary-port 8766 [--canary-executable ABSOLUTE_EXE --canary-model ABSOLUTE_GGUF]] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-executable ABSOLUTE_EXE --tts-model ABSOLUTE_GGUF --tts-codec ABSOLUTE_GGUF --tts-voice-model ABSOLUTE_GGUF [--tts-quantization Q8_0|Q4_K_M] [--tts-threads 10]]]",
+                    "Usage: bonsai-chat --broker-path ABSOLUTE_EXE --data-directory ABSOLUTE_DIRECTORY --evidence-directory ABSOLUTE_DIRECTORY [--frontend-port 5173] [--backend-port 8081] [--no-abliterate-lora] [--use-repacked-ptq1] [--native-engine] [--native-row-workers 1|4] [--canary-key-file ABSOLUTE_FILE --canary-port 8766 [--canary-executable ABSOLUTE_EXE --canary-model ABSOLUTE_GGUF]] [--tts-key-file ABSOLUTE_FILE --tts-port 8767 [--tts-executable ABSOLUTE_EXE --tts-model ABSOLUTE_GGUF --tts-codec ABSOLUTE_GGUF --tts-voice-model ABSOLUTE_GGUF [--tts-quantization Q8_0|Q4_K_M] [--tts-threads 10]]]",
                 );
             }
         }
+    }
+    let native_row_workers = native_row_workers.unwrap_or(1);
+    if native_row_workers == 4 && !native_engine {
+        return Err("Four native row workers require --native-engine.");
     }
     let canary_launch = match (canary_executable, canary_model) {
         (None, None) => None,
@@ -208,6 +222,7 @@ fn configuration(
         use_abliterate_lora: !no_abliterate_lora,
         use_repacked_ptq1,
         native_engine,
+        native_row_workers,
         canary: canary_key_file.map(|key_file| canary::Config {
             port: canary_port.unwrap_or(8766),
             key_file,
@@ -517,6 +532,7 @@ mod tests {
         assert!(default.use_abliterate_lora);
         assert!(!default.use_repacked_ptq1);
         assert!(!default.native_engine);
+        assert_eq!(default.native_row_workers, 1);
         let mut repacked = args.clone();
         repacked.push("--use-repacked-ptq1".into());
         let alternate = configuration(repacked.clone()).map_err(io::Error::other)?;
@@ -527,6 +543,26 @@ mod tests {
         let mut native = args.clone();
         native.push("--native-engine".into());
         assert!(configuration(native.clone()).is_ok_and(|config| config.use_abliterate_lora));
+        for value in ["0", "2", "3", "16", "01", "+4", "4.0", " 4"] {
+            let mut rejected = native.clone();
+            rejected.extend(["--native-row-workers", value].map(OsString::from));
+            assert!(configuration(rejected).is_err());
+        }
+        for value in ["1", "4"] {
+            let mut configured = native.clone();
+            configured.extend(["--native-row-workers", value].map(OsString::from));
+            let selected = configuration(configured.clone()).map_err(io::Error::other)?;
+            assert_eq!(selected.native_row_workers.to_string(), value);
+            assert!(selected.use_abliterate_lora && !selected.use_repacked_ptq1);
+            configured.extend(["--native-row-workers", value].map(OsString::from));
+            assert!(configuration(configured).is_err());
+        }
+        let mut publisher_rows = args.clone();
+        publisher_rows.extend(["--native-row-workers", "4"].map(OsString::from));
+        assert!(configuration(publisher_rows).is_err());
+        let mut missing_rows = native.clone();
+        missing_rows.push("--native-row-workers".into());
+        assert!(configuration(missing_rows).is_err());
         native.push("--no-abliterate-lora".into());
         let rust = configuration(native.clone()).map_err(io::Error::other)?;
         assert!(rust.native_engine);

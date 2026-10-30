@@ -5,7 +5,7 @@ on:
       profile:
         description: Explicit bounded profile; all setup/model work/cleanup shares one five-minute job
         type: choice
-        options: [pq2-no-adapter, ptq1-adapter]
+        options: [pq2-no-adapter, ptq1-adapter, pq2-adapter-row4]
         default: pq2-no-adapter
         required: false
 permissions:
@@ -25,7 +25,11 @@ jobs:
           persist-credentials: false
       - name: Check bounded credential-free startup diagnostic retention
         shell: pwsh
-        run: ./tests/Test-NativeStartupDiagnostics.ps1
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          ./tests/Test-NativeStartupDiagnostics.ps1
       - uses: ./.github/actions/bonsai-tools
       - uses: ./.github/actions/rust-toolchain
         with:
@@ -47,6 +51,10 @@ jobs:
           $artifacts = @(Get-Content -LiteralPath $messages | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -ceq 'compiler-artifact' -and $_.target.name -ceq 'native_model' -and $_.executable })
           if ($artifacts.Count -ne 1) { throw 'Exactly one native_model test binary is required.' }
           Copy-Item -LiteralPath $artifacts[0].executable -Destination (Join-Path $package 'native-model-acceptance.exe')
+          foreach ($case in @('native_profile_selection_and_scale_receipts_preserve_bounded_scope', 'native_row4_profile_is_explicit_original_pq2_and_one_stream_only')) {
+            & (Join-Path $package 'native-model-acceptance.exe') $case --exact
+            if ($LASTEXITCODE -ne 0) { throw 'Hosted acceptance profile/argument checks failed.' }
+          }
           Copy-Item -LiteralPath $env:BONSAI_TOOLS_PATH -Destination (Join-Path $package 'bonsai-tools.exe')
           $files = @('native-model-acceptance.exe', 'bonsai-tools.exe') | ForEach-Object {
             $path = Join-Path $package $_
@@ -88,6 +96,7 @@ jobs:
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $root = Join-Path $env:RUNNER_TEMP ('Native-Runtime-Acceptance-' + [guid]::NewGuid().ToString('N'))
           foreach ($name in @('work', 'evidence')) {
             [void][IO.Directory]::CreateDirectory((Join-Path $root $name))
@@ -159,6 +168,12 @@ jobs:
                 }
                 'pinned_native_ptq1_adapter_starts_and_streams_within_device_budget'
               }
+              'pq2-adapter-row4' {
+                if ($env:BONSAI_NATIVE_EXTENDED -ceq 'true' -or $env:BONSAI_NATIVE_STALLED_CONSUMER -ceq 'true') {
+                  throw 'The bounded PQ2 four-row adapter profile does not admit extended_history or stalled_consumer.'
+                }
+                'pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget'
+              }
               default { throw 'Unknown actual-model acceptance profile.' }
             }
             $test = $env:BONSAI_NATIVE_TEST
@@ -227,6 +242,8 @@ jobs:
           }
           $profileScope = if ($env:BONSAI_NATIVE_PROFILE -ceq 'ptq1-adapter') {
             'PTQ1 with the approved adapter requires one scale-1.3 four-token stream; scale-zero and invalid-scale/reuse checks run only within the same budget. Unrun multi-scale, history, context and restart gates remain pending.'
+          } elseif ($env:BONSAI_NATIVE_PROFILE -ceq 'pq2-adapter-row4') {
+            'Original PQ2 with the approved adapter explicitly configures four native row workers and requires exactly one scale-1.3 four-token-cap stream, verified model/adapter readiness and owned cleanup. This does not independently observe thread count or establish TPS. Multi-scale, rejection/reuse, history, context, restart, performance and quality gates remain unrun.'
           } else {
             'No adapter was enabled. Full-context numerical/resource, performance, quality and daily-service qualification remain separate.'
           }
