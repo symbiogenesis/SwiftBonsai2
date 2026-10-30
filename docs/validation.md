@@ -17,12 +17,25 @@ without proving the machine otherwise idle. [PLAN.md](../PLAN.md) owns pending a
 
 Main-only, manually dispatched [native-runtime acceptance](../.github/workflows/native-runtime-acceptance.yml)
 runs an explicitly ignored case on the owner-managed Snapdragon X/X2 runner.
-It requires provisioned original PQ2, the pinned Rust release, native sandbox
-admission, unchanged limits and retained artifact handles. It tests supplied-history
+The default case requires provisioned original PQ2, the pinned Rust release, native
+sandbox admission, unchanged limits and retained artifact handles. It tests supplied-history
 streaming, framed context rejection/reuse, shutdown, abandonment after content,
 and fresh restart. Only credential-free receipts are uploaded; protected key
 directories are excluded. Failure rejects without an unrestricted retry.
 Ordinary Foundation/local runs never execute the ignored case.
+
+The workflow defaults to `profile: pq2-no-adapter`, preserving the original case
+and its optional workloads. Explicit `profile: ptq1-adapter` selects a separate
+ignored case using the exact current-weight export, approved adapter and pinned
+Rust service under the same required native sandbox. It rejects both optional
+long workloads. Its 4/8-token caps cover supplied-history streaming at scales
+0, negative zero, 1.3 and 2; invalid-scale HTTP 400 and context HTTP 413 with
+same-owner reuse; owned shutdown/listener cleanup; and fresh-owner restart.
+Credential-free progress receipts bind the complete runtime/model/adapter locks,
+terminal reason, reported usage when supplied and cleanup. Partial failure retains
+the latest completed observations with `passed: false`. This bounded source/service
+acceptance proves neither full numerical state or authoring basis, full 8K/4K,
+performance, output quality, sustained resources nor default promotion.
 
 | Workload | Required behavior | Evidence limit |
 | --- | --- | --- |

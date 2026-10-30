@@ -2,6 +2,12 @@ name: Native Rust actual-model application acceptance
 on:
   workflow_dispatch:
     inputs:
+      profile:
+        description: Explicit bounded profile; PTQ1 adapter cannot use the optional long workloads
+        type: choice
+        options: [pq2-no-adapter, ptq1-adapter]
+        default: pq2-no-adapter
+        required: false
       extended_history:
         description: Exercise long supplied history with the full 4096-token output reservation
         type: boolean
@@ -56,6 +62,7 @@ jobs:
         shell: pwsh
         working-directory: ${{ env.BONSAI_NATIVE_WORK }}
         env:
+          BONSAI_NATIVE_PROFILE: ${{ inputs.profile }}
           BONSAI_NATIVE_EXTENDED: ${{ inputs.extended_history && 'true' || 'false' }}
           BONSAI_NATIVE_STALLED_CONSUMER: ${{ inputs.stalled_consumer && 'true' || 'false' }}
         run: |
@@ -70,12 +77,22 @@ jobs:
             RunAttempt=$env:GITHUB_RUN_ATTEMPT; Cpu=$cpu.Name
             Os=[Environment]::OSVersion.VersionString
             Architecture=[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+            Profile=$env:BONSAI_NATIVE_PROFILE
             ExtendedHistoryRequested=($env:BONSAI_NATIVE_EXTENDED -eq 'true')
             StalledConsumerRequested=($env:BONSAI_NATIVE_STALLED_CONSUMER -eq 'true')
             Passed=$false; DefaultRuntimeQualified=$false
           }
           try {
-            $case = 'pinned_native_model_streams_recovers_and_restarts_in_required_sandbox'
+            $case = switch -CaseSensitive ($env:BONSAI_NATIVE_PROFILE) {
+              'pq2-no-adapter' { 'pinned_native_model_streams_recovers_and_restarts_in_required_sandbox' }
+              'ptq1-adapter' {
+                if ($env:BONSAI_NATIVE_EXTENDED -ceq 'true' -or $env:BONSAI_NATIVE_STALLED_CONSUMER -ceq 'true') {
+                  throw 'The bounded PTQ1 adapter profile does not admit extended_history or stalled_consumer.'
+                }
+                'pinned_native_ptq1_adapter_streams_scales_recovers_and_restarts_in_required_sandbox'
+              }
+              default { throw 'Unknown actual-model acceptance profile.' }
+            }
             $manifest = Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml'
             $arguments = @('+nightly-2026-10-22', 'test', '--locked', '--release', '--manifest-path', $manifest,
               '--package', 'bonsai-broker', '--test', 'native_model')
@@ -84,7 +101,7 @@ jobs:
             # The model owner must not inherit Actions' artifact/OIDC/GitHub
             # credentials. Scope this omission to the test child; retain the
             # complete Windows/profile environment and the production guard.
-            $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop).Source
+            $cargo = (Get-Command cargo -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
             $start = [Diagnostics.ProcessStartInfo]::new($cargo)
             $start.WorkingDirectory = $env:BONSAI_NATIVE_WORK
             $start.UseShellExecute = $false
@@ -118,12 +135,18 @@ jobs:
             $hostReport | ConvertTo-Json -Depth 4 |
               Set-Content -LiteralPath (Join-Path $env:BONSAI_NATIVE_EVIDENCE 'host.json') -Encoding utf8NoBOM
           }
+          $profileScope = if ($env:BONSAI_NATIVE_PROFILE -ceq 'ptq1-adapter') {
+            'PTQ1 with the approved adapter used 4/8-token output caps, scales 0/-0/1.3/2, rejection/reuse and fresh-owner restart. This does not qualify complete state, authoring basis, full 8K/4K, resources, speed or quality.'
+          } else {
+            'No adapter was enabled. Full-context numerical/resource, performance, quality and daily-service qualification remain separate.'
+          }
           @('Bounded actual-model Rust application lifecycle passed under required native containment.',
+            ('Explicit acceptance profile: ' + $env:BONSAI_NATIVE_PROFILE),
             ('Long supplied-history/full output reservation requested: ' + $env:BONSAI_NATIVE_EXTENDED),
             ('Explicit Stop with a nonreading connected client requested: ' + $env:BONSAI_NATIVE_STALLED_CONSUMER),
             'The stalled-client workload requires an interrupted broker operation, bounded owned shutdown and fresh-owner recovery; it does not prove socket-buffer saturation or that the backend was still generating at Stop.',
             'The optional workload records framing, termination and reported output usage; a requested 4096 cap does not prove 4096 generated tokens or exact 8K occupancy.',
-            'No adapter was enabled. Full-context numerical/resource, performance, quality and daily-service qualification remain separate.',
+            $profileScope,
             'This workflow cannot promote the default runtime.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
       - name: Retain only credential-free acceptance receipts
         if: always() && env.BONSAI_NATIVE_EVIDENCE != ''

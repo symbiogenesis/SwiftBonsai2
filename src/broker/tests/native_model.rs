@@ -23,6 +23,8 @@ use tokio::{
 };
 
 const CASE: &str = "pinned_native_model_streams_recovers_and_restarts_in_required_sandbox";
+const PTQ1_ADAPTER_CASE: &str =
+    "pinned_native_ptq1_adapter_streams_scales_recovers_and_restarts_in_required_sandbox";
 const WAIT: Duration = Duration::from_secs(600);
 const EXTENDED_COMPLETION_CAP: u32 = 4096;
 const STALLED_CONSUMER_PAUSE: Duration = Duration::from_secs(1);
@@ -709,4 +711,302 @@ fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
         serde_json::to_vec_pretty(&report).unwrap(),
     )
     .unwrap();
+}
+
+fn profile_case(profile: &str, extended: bool, stalled: bool) -> Option<&'static str> {
+    match profile {
+        "pq2-no-adapter" => Some(CASE),
+        "ptq1-adapter" if !extended && !stalled => Some(PTQ1_ADAPTER_CASE),
+        _ => None,
+    }
+}
+
+fn adapter_configuration(data: &Path, evidence: &Path) -> LaunchConfig {
+    let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = reservation.local_addr().unwrap().port().to_string();
+    drop(reservation);
+    let mut args: Vec<OsString> = [
+        "--launch-development",
+        "--require-native-sandbox",
+        "--native-engine",
+        "--profile",
+        "swift-pq2-assessment",
+        "--use-repacked-ptq1",
+        "--use-abliterate-lora",
+        "--frontend-port",
+        "0",
+        "--backend-port",
+        &port,
+        "--data-directory",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect();
+    args.push(data.as_os_str().to_owned());
+    args.push("--evidence-parent".into());
+    args.push(evidence.as_os_str().to_owned());
+    LaunchConfig::parse(args).unwrap()
+}
+
+async fn start_adapter(data: &Path, evidence: &Path) -> LaunchedService {
+    timeout(
+        WAIT,
+        adapter_configuration(data, evidence).start(pending::<io::Result<()>>()),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+}
+
+fn adapter_request(messages: Value, scale: f64, limit: u32) -> Value {
+    assert!(scale.is_finite() && (0.0..=2.0).contains(&scale));
+    assert!([4, 8].contains(&limit));
+    let mut body = request(messages, true, limit);
+    body["enable_thinking"] = json!(false);
+    body["abliteration_scale"] = json!(scale);
+    body
+}
+
+fn adapter_summary(label: &str, scale: f64, cap: u32, summary: &StreamSummary) -> Value {
+    assert!(summary.content_bytes > 0);
+    assert!(["length", "stop"].contains(&summary.finish_reason.as_str()));
+    assert!(
+        summary
+            .completion_tokens
+            .is_none_or(|tokens| tokens <= u64::from(cap))
+    );
+    json!({"phase":label, "requestedScale":scale,
+        "requestedScaleF64Bits":format!("{:016x}", scale.to_bits()),
+        "requestedCompletionCap":cap, "finishReason":summary.finish_reason,
+        "visibleContentBytes":summary.content_bytes,
+        "reportedCompletionTokens":summary.completion_tokens})
+}
+
+fn save_adapter_report(evidence: &Path, report: &Value) {
+    fs::write(
+        evidence.join("acceptance.json"),
+        serde_json::to_vec_pretty(report).unwrap(),
+    )
+    .unwrap();
+}
+
+async fn adapter_stream(
+    port: u16,
+    credential: &str,
+    scale: f64,
+    label: &str,
+    history: bool,
+) -> Value {
+    let messages = if history {
+        json!([
+            {"role":"user","content":"Remember the word cedar."},
+            {"role":"assistant","content":"Cedar.","reasoning_content":"The supplied word is cedar."},
+            {"role":"user","content":"Name that tree in one sentence."}
+        ])
+    } else {
+        json!([{"role":"user","content":"Name a tree."}])
+    };
+    let cap = if history { 8 } else { 4 };
+    adapter_summary(
+        label,
+        scale,
+        cap,
+        &streamed_response(
+            &exchange(port, credential, &adapter_request(messages, scale, cap)).await,
+        ),
+    )
+}
+
+async fn adapter_owned_stop(
+    stop: oneshot::Sender<()>,
+    running: tokio::task::JoinHandle<Result<RunReport, bonsai_broker::launcher::LaunchError>>,
+    port: u16,
+) -> Value {
+    stop.send(()).unwrap();
+    let report = timeout(STOP_WAIT, running).await.unwrap().unwrap().unwrap();
+    assert_eq!(report.exit, RunExit::Shutdown);
+    assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    json!({"exit":"shutdown", "completedOperations":report.completed,
+        "failedOperations":report.failed, "ownedJobEmpty":true, "listenerReleased":true})
+}
+
+async fn ptq1_adapter_acceptance(data: &Path, evidence: &Path, report: &mut Value) {
+    report["phase"] = json!("initial-owner-startup");
+    save_adapter_report(evidence, report);
+    let owner = start_adapter(data, evidence).await;
+    report["verifiedReadinessObserved"] = json!(true);
+    report["adapterEnabled"] = json!(true);
+    save_adapter_report(evidence, report);
+    let port = owner.port();
+    let credential = key(&owner);
+    let (stop, stopped) = oneshot::channel();
+    let running = spawn_local(owner.run(async { stopped.await.map_err(io::Error::other) }));
+    let mut streams = Vec::new();
+    for scale in [0.0, -0.0, 1.3, 2.0] {
+        report["phase"] = json!("supplied-history-scale-stream");
+        save_adapter_report(evidence, report);
+        streams.push(
+            adapter_stream(
+                port,
+                &credential,
+                scale,
+                "supplied-history-scale-stream",
+                true,
+            )
+            .await,
+        );
+        report["streams"] = json!(streams);
+        save_adapter_report(evidence, report);
+    }
+    let mut rejected_scales = Vec::new();
+    for invalid in [json!(-0.1), json!(2.000_000_01), Value::Null, json!("1.3")] {
+        report["phase"] = json!("invalid-scale-rejection-and-reuse");
+        save_adapter_report(evidence, report);
+        let mut body = adapter_request(json!([{"role":"user","content":"Name a tree."}]), 1.3, 4);
+        body["abliteration_scale"] = invalid.clone();
+        let rejection = json_response(
+            &exchange(port, &credential, &body).await,
+            "HTTP/1.1 400 Bad Request",
+        );
+        assert!(rejection["error"].is_object());
+        rejected_scales.push(invalid);
+        streams.push(
+            adapter_stream(
+                port,
+                &credential,
+                1.3,
+                "same-owner-after-invalid-scale",
+                false,
+            )
+            .await,
+        );
+        report["invalidScalesRejected"] = json!(rejected_scales);
+        report["streams"] = json!(streams);
+        save_adapter_report(evidence, report);
+    }
+    report["phase"] = json!("context-rejection-and-reuse");
+    save_adapter_report(evidence, report);
+    let oversized = adapter_request(
+        json!([{"role":"user","content":" cedar".repeat(9000)}]),
+        1.3,
+        4,
+    );
+    assert_eq!(
+        json_response(
+            &exchange(port, &credential, &oversized).await,
+            "HTTP/1.1 413 Content Too Large"
+        )["error"]["code"],
+        "context_length_exceeded"
+    );
+    report["contextRejected"] = json!(true);
+    streams.push(
+        adapter_stream(
+            port,
+            &credential,
+            0.0,
+            "same-owner-after-context-rejection",
+            false,
+        )
+        .await,
+    );
+    report["streams"] = json!(streams);
+    report["initialCleanup"] = adapter_owned_stop(stop, running, port).await;
+    report["phase"] = json!("fresh-owner-restart");
+    save_adapter_report(evidence, report);
+    let owner = start_adapter(data, evidence).await;
+    let port = owner.port();
+    let credential = key(&owner);
+    let (stop, stopped) = oneshot::channel();
+    let running = spawn_local(owner.run(async { stopped.await.map_err(io::Error::other) }));
+    streams.push(adapter_stream(port, &credential, 2.0, "fresh-owner-restart", false).await);
+    report["streams"] = json!(streams);
+    report["restartCleanup"] = adapter_owned_stop(stop, running, port).await;
+    report["phase"] = json!("completed");
+    report["passed"] = json!(true);
+    save_adapter_report(evidence, report);
+}
+
+#[test]
+fn native_profile_selection_and_scale_receipts_preserve_bounded_scope() {
+    assert_eq!(profile_case("pq2-no-adapter", true, true), Some(CASE));
+    assert_eq!(
+        profile_case("ptq1-adapter", false, false),
+        Some(PTQ1_ADAPTER_CASE)
+    );
+    for (profile, extended, stalled) in [
+        ("ptq1-adapter", true, false),
+        ("ptq1-adapter", false, true),
+        ("unknown", false, false),
+    ] {
+        assert_eq!(profile_case(profile, extended, stalled), None);
+    }
+    let summary = adapter_summary(
+        "synthetic",
+        -0.0,
+        4,
+        &StreamSummary {
+            finish_reason: "length".into(),
+            content_bytes: 5,
+            completion_tokens: Some(4),
+        },
+    );
+    assert_eq!(summary["requestedScaleF64Bits"], "8000000000000000");
+    let body = adapter_request(json!([{"role":"user","content":"Name a tree."}]), -0.0, 8);
+    assert_eq!(
+        body["abliteration_scale"].as_f64().unwrap().to_bits(),
+        (-0.0_f64).to_bits()
+    );
+    assert_eq!(body["max_completion_tokens"], 8);
+    assert_eq!(body["enable_thinking"], false);
+    assert!(std::panic::catch_unwind(|| adapter_request(json!([]), f64::NAN, 4)).is_err());
+    assert!(std::panic::catch_unwind(|| adapter_request(json!([]), 1.3, 4096)).is_err());
+    assert!(
+        std::panic::catch_unwind(|| adapter_summary(
+            "synthetic",
+            1.3,
+            4,
+            &StreamSummary {
+                finish_reason: "length".into(),
+                content_bytes: 5,
+                completion_tokens: Some(5),
+            }
+        ))
+        .is_err()
+    );
+}
+
+#[test]
+#[ignore = "Actual PTQ1 and approved adapter; explicit bounded main-only device CI, never ordinary suites."]
+fn pinned_native_ptq1_adapter_streams_scales_recovers_and_restarts_in_required_sandbox() {
+    ci_only();
+    assert_eq!(
+        profile_case(
+            &env::var("BONSAI_NATIVE_PROFILE").unwrap(),
+            env::var("BONSAI_NATIVE_EXTENDED").as_deref() == Ok("true"),
+            env::var("BONSAI_NATIVE_STALLED_CONSUMER").as_deref() == Ok("true")
+        ),
+        Some(PTQ1_ADAPTER_CASE)
+    );
+    let data = env::var_os("BONSAI_NATIVE_DATA").unwrap();
+    let evidence = env::var_os("BONSAI_NATIVE_EVIDENCE").unwrap();
+    let evidence = Path::new(&evidence);
+    let mut report = json!({"schemaVersion":1, "case":PTQ1_ADAPTER_CASE,
+        "revision":env::var("GITHUB_SHA").unwrap(), "runId":env::var("GITHUB_RUN_ID").unwrap(),
+        "runAttempt":env::var("GITHUB_RUN_ATTEMPT").unwrap(), "scope":"bounded-actual-model-ptq1-adapter-lifecycle",
+        "profile":"ptq1-adapter", "passed":false, "requiredNativeSandbox":true,
+        "runtimeLock":serde_json::from_str::<Value>(include_str!("../../../config/prism-inference.lock.json")).unwrap(),
+        "modelExportReceipt":serde_json::from_str::<Value>(include_str!("../../../config/swift.ptq1-export.json")).unwrap(),
+        "adapterLock":serde_json::from_str::<Value>(include_str!("../../../config/swift-lora.lock.json")).unwrap(),
+        "adapterRequested":true, "adapterEnabled":false, "verifiedReadinessObserved":false, "completeStateParityQualified":false, "authoringBasisQualified":false,
+        "fullContextQualified":false, "fullOutputQualified":false, "performanceQualified":false,
+        "qualityQualified":false, "dailyServiceIsolationQualified":false, "defaultRuntimeQualified":false});
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(LocalSet::new().run_until(ptq1_adapter_acceptance(
+        Path::new(&data),
+        evidence,
+        &mut report,
+    )));
 }
