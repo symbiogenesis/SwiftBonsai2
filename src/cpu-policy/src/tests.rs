@@ -9,7 +9,8 @@ fn profile(value: &Value) -> Result<Profile, String> {
 }
 
 #[test]
-fn complete_policies_arguments_and_artifacts_match_frozen_powershell() -> Result<(), String> {
+fn frozen_policies_keep_arguments_and_artifacts_with_reviewed_shorter_deadline()
+-> Result<(), String> {
     let frozen = parse(FROZEN)?;
     let model = frozen["modelPath"]
         .as_str()
@@ -27,7 +28,11 @@ fn complete_policies_arguments_and_artifacts_match_frozen_powershell() -> Result
         let use_ptq1 = case["useRepackedPtq1"]
             .as_bool()
             .ok_or("Missing PTQ1 flag.")?;
-        assert_eq!(policy(selected, use_adapter, use_ptq1)?, case["policy"]);
+        let mut expected = case["policy"].clone();
+        // Preserve the historical capture; only the owner-requested deadline changed.
+        assert_eq!(expected["TimeoutSeconds"], 600);
+        expected["TimeoutSeconds"] = json!(180);
+        assert_eq!(policy(selected, use_adapter, use_ptq1)?, expected);
         let argv = check_arguments(model, selected, use_adapter, use_adapter.then_some(adapter))?;
         assert_eq!(json!(argv), case["arguments"]);
         let lock = parse(if selected == Profile::ReferenceCpu {
@@ -56,7 +61,10 @@ fn planning_selects_only_explicit_artifact_paths_and_keeps_null_adapter() -> Res
             "useAbliterateLora": case["useAbliterateLora"],
             "useRepackedPtq1": case["useRepackedPtq1"],
         }))?;
-        assert_eq!(output["Policy"], case["policy"]);
+        let mut expected = case["policy"].clone();
+        assert_eq!(expected["TimeoutSeconds"], 600);
+        expected["TimeoutSeconds"] = json!(180);
+        assert_eq!(output["Policy"], expected);
         assert_eq!(output["Artifact"], case["artifact"]);
         let filename = case["artifact"]["Filename"]
             .as_str()
