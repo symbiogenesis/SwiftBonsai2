@@ -61,28 +61,34 @@ its behavior, runtime cost and standard-profile qualification are independent.
 
 **2026-10-30: no-go for shipping PTQ1 with the current pinned runtime/profile.**
 The lossless representation is not rejected. The [decision receipt](evidence/ptq1-release-decision.json)
-binds the local X2 startup failure, exact runtime/build identities and retained raw
+binds the local and CI X2 startup failures, exact runtime/build identities and retained raw
 evidence digests. This closes the current release proposal; a replacement runtime
 must satisfy the reopening conditions below before PTQ1 is proposed again.
 
 | Gate | Evidence and decision |
 | --- | --- |
 | Current-weight packing | Fresh export matches all 209,920,000 reconstructed blocks, the pinned 5,946,648,928 bytes and SHA-256 `e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5`. The 1,259,520,000-byte saving is real. |
-| Publisher runtime startup on X2 Elite Extreme | The exact 63-file verified package at `73bfe6cc485554822f80c473a3c0c4f25e80f41b` exits `3221225794` (`0xC0000142`) on `llama-completion.exe --version` under the ordinary required worker policy. No model option or model artifact is supplied. The 512 MiB Job and ten-second deadline retain the shared 15.5 GiB admission and 4 GiB reserve; minimum available physical memory is 21,811,826,688 bytes. This is a startup failure, not a capacity or PTQ1/PQ2 performance comparison. |
+| Publisher runtime startup on X2 Elite Extreme | The exact 63-file verified package at `73bfe6cc485554822f80c473a3c0c4f25e80f41b` exits `3221225794` (`0xC0000142`) on `llama-completion.exe --version` under the ordinary required worker policy. No model option or model artifact is supplied. The 512 MiB Job and ten-second deadline retain the shared 15.5 GiB admission and 4 GiB reserve; the local minimum available physical memory is 21,811,826,688 bytes. This is a startup failure, not a capacity or PTQ1/PQ2 performance comparison. |
 | Rust 0.1.6 app integration | The released service accepts original PQ2 without LoRA. PTQ1 and adapter service support are absent; removing Runner's rejection would bypass qualification. The historical three-token PTQ1 diagnostic remains valid only for its declared no-adapter scope. |
 | Complete correctness, answers and sustained use | Scalar/explicit NEON trajectories, PTQ1 LoRA basis/forward execution, 8K context/4K output, recovery, independent answer quality, target-device benefit and owner-accepted comfort remain unqualified. No throughput or quality verdict was collected in this session. |
 
 The startup failure is shared by the publisher executable, so it also blocks that
 PQ2 diagnostic on this host. It is not evidence that PTQ1 arithmetic is worse.
 The supervisor's generic `ModelProcessStarted` field records executable launch;
-the fixed `--version` command did not load model weights. This local model-free
-result is not CI model qualification. The first [owning CI attempt](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41005833161)
-stopped in compiler discovery before capture; its failure is not a PTQ1 verdict.
+the fixed `--version` command did not load model weights. The corrected
+[settled-main CI run](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41007117743)
+built the maintenance tool successfully and reproduced the same startup failure,
+with `ModelLoaded=false` and `ModelTrialsRequested=false`. Its retrieved build and
+startup artifacts are archived with exact file digests in the receipt. Both checks
+are model-free; neither establishes a performance or quality comparison. The first
+[owning CI attempt](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41005833161)
+stopped in compiler discovery before capture; that build failure is not a PTQ1 verdict.
 
 Reopen only after a reviewed runtime release can serve the intended format and
-adapter under unchanged containment. For the publisher path, integrate/release the
-[headless startup repair](runtime-candidates/README.md#headless-ucrt-argv-candidate)
-and pass the exact worker preflight in settled-main device CI. For the Rust path,
+adapter under unchanged containment. For the publisher path, review and release a
+startup fix; the [headless UCRT source candidate](runtime-candidates/README.md#headless-ucrt-argv-candidate)
+is one lead, not a diagnosis of the independently built release. Then pass the exact
+worker preflight in settled-main device CI. For the Rust path,
 release PTQ1 plus adapter service integration and qualify matching scalar/NEON
 logits and complete live state; the diagnostic does not provide that service.
 Then run the stable-condition prefix screen, the separate

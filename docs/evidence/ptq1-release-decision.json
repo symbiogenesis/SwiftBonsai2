@@ -19,6 +19,7 @@
   },
   "packing": {
     "freshExportStatus": "verified",
+    "freshExportReceipt": "fresh-export.json",
     "sourceSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
     "outputSha256": "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5",
     "sourceBytes": 7206168928,
@@ -67,7 +68,32 @@
     "firstAttemptRevision": "5d81304702abd513a69db9acefc3de4b9d2de0f9",
     "firstAttemptStatus": "failed-in-maintenance-build-before-capture",
     "firstAttemptIsPtq1Verdict": false,
-    "correctedDeviceCapture": "not-run"
+    "correctedDeviceCapture": "worker-startup-failed-before-model-trials",
+    "correctedRunUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41007117743",
+    "correctedRunAttempt": 1,
+    "correctedRunRevision": "af69f917f6630f03f06eca18ec3a65d9a1fcaa2c",
+    "maintenanceBuildPassed": true,
+    "toolsSourceId": "0f318dcbc4eb9557ff225ed3e930b9918d19dc6f41522f7c0f63d78933cd2ef8",
+    "workerStartupExitCode": 3221225794,
+    "modelLoaded": false,
+    "modelTrialsRequested": false,
+    "verifiedRuntimeFiles": 63,
+    "peakJobMemoryBytes": 3518464,
+    "minimumAvailablePhysicalBytes": 21158981632,
+    "extractedStartupFilesMatchOriginalCapture": true,
+    "startupArtifact": {
+      "id": 12955329157,
+      "name": "swift-ptq1-screen-41007117743-1",
+      "bytes": 5193,
+      "sha256": "d85fe6374ceae2a7dd003240e0486e285246e86c5313dca7ab2015aebd868b6d"
+    },
+    "buildArtifact": {
+      "id": 12955548137,
+      "name": "tools-build-screen-41007117743-1-1ab04f15803147a1a53ae528ad82fd9f",
+      "bytes": 2839,
+      "sha256": "ae6a46e009b639d9964c2235c0586b8d8b7aca80ea069c01120e16b676593e17"
+    },
+    "scope": "Model-free required-worker startup failure in settled-main device CI; no numerical, performance or quality comparison ran. Artifact archive identities come from GitHub; extracted archived file digests are listed separately."
   },
   "remainingIndependentGates": [
     "reviewed runtime release with intended PTQ1 and adapter service under unchanged containment",
@@ -81,9 +107,17 @@
   ],
   "archive": {
     "directoryRelativeToDataDirectory": "qualification/ptq1-resolution-20261030",
-    "scope": "Selected credential-free raw local diagnostic and analyzer evidence. Local archival does not constitute independently reviewed CI qualification.",
+    "scope": "Selected credential-free raw local diagnostic, fresh export, CI build/startup and analyzer evidence. Archival does not constitute independent review or model qualification.",
     "files": [
       {"path": "combined-standards.log", "bytes": 9208, "sha256": "1343873e23dd7e720e1dbf6bb5dbab033e06aaf837ea91ed724355de8431c2ae"},
+      {"path": "fresh-export.json", "bytes": 1085, "sha256": "1375090a7d8d6450581714a963123c031db7a16a756205fd32e655be4b84888c"},
+      {"path": "ci/worker-preflight.json", "bytes": 1008, "sha256": "0da9da8d4388406b1aab48e17644f7ec19272e32e65117cffb1a6b564bfd2b09"},
+      {"path": "ci/worker-preflight/stderr.txt", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+      {"path": "ci/worker-preflight/stdout.txt", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+      {"path": "ci/worker-preflight/supervision.json", "bytes": 17020, "sha256": "40eaad8b4cc0e5c62b2b138006c28838c510789e0dae94c73d14c7bbd056e300"},
+      {"path": "ci-build/bonsai-tools-build.log", "bytes": 4746, "sha256": "852d563b567ea99dd1c61ec84c36b59271b44ba286f79f85163fb48178f757da"},
+      {"path": "ci-build/rust-checks.json", "bytes": 2105, "sha256": "6cdd3565b68b6350b8bcce03dba985f3e88e98730db760bce68da9dfb60b178e"},
+      {"path": "ci-build/rustc.log", "bytes": 213, "sha256": "3d03c3c0e97a9e6a04bb31d7194e26147d4c2ef2fd6528725d47f94a21f32b23"},
       {"path": "local-worker-preflight.ps1", "bytes": 1625, "sha256": "12e20b63e83177e129d2db586a357a162daed25f1c703d27ba598677c06eb039"},
       {"path": "runtime-verification.json", "bytes": 17347, "sha256": "50bcc3fd781f13320713a145aa2600d8a13974ce5f294225345619c299bcf252"},
       {"path": "stderr.txt", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
