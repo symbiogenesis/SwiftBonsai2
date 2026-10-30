@@ -227,9 +227,15 @@ Inspect a capture offline:
 ```
 
 The screen verifies artifacts/resources, retains failures and compares median decode
-throughput. Rejection blocks the candidate; continue means only this prefix screen did
-not reject it. Neither verdict qualifies completed answers, long contexts, statistical
-equivalence, total physical RAM, defaults or the scale-one/512-token LoRA contract.
+throughput. Schema 2 retains native CPU identity, topology and power observations
+before/after all fourteen processes and compares adjacent boundaries. Changed or
+unknown conditions make timing **inconclusive**, requiring a new capture; legacy
+schema-1 captures remain inspectable with the same timing limitation. Boundary
+observations do not establish steady clocks, thermal stability or an idle machine.
+Rejection blocks the candidate only for the declared screen; continue means only this
+prefix screen did not reject it. Neither verdict qualifies completed answers, long
+contexts, statistical equivalence, total physical RAM, defaults or the
+scale-one/512-token LoRA contract.
 
 ## Allocation audit
 

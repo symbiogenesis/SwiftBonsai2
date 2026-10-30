@@ -131,11 +131,15 @@ fn reconcile(root: &Path, evidence: &mut Value, screen: &Value, incomplete: bool
             .as_array_mut()
             .ok_or("Missing screen sample array.")?
             .push(sample);
+        evidence["cpuConditions"]
+            .as_array_mut()
+            .ok_or("Missing screen CPU conditions.")?
+            .push(json!({"sampleId": id, "observations": supervision["CpuConditions"]}));
         capture::save(&root.join("screen-evidence.json"), evidence, false)?;
     }
     for representation in REPRESENTATIONS {
-        let Some((_, captured)) = capture::read_sample(root, &format!("zero-{representation}"))?
-        else {
+        let id = format!("zero-{representation}");
+        let Some((supervision, captured)) = capture::read_sample(root, &id)? else {
             require(
                 incomplete,
                 "Completed decision screen zero-scale control is missing.",
@@ -158,6 +162,10 @@ fn reconcile(root: &Path, evidence: &mut Value, screen: &Value, incomplete: bool
             .as_array_mut()
             .ok_or("Missing screen zero controls.")?
             .push(check);
+        evidence["cpuConditions"]
+            .as_array_mut()
+            .ok_or("Missing screen CPU conditions.")?
+            .push(json!({"sampleId": id, "observations": supervision["CpuConditions"]}));
         capture::save(&root.join("screen-evidence.json"), evidence, false)?;
     }
     Ok(())
@@ -213,10 +221,10 @@ fn capture_with(
     }
     string(&request.run_id, 128)?;
     string(&request.started_utc, 128)?;
-    let mut evidence = json!({"schemaVersion": 1, "runId": request.run_id,
+    let mut evidence = json!({"schemaVersion": 2, "runId": request.run_id,
         "contractSha256": screen["ContractSha256"], "execution": context,
         "controls": {REPRESENTATIONS[0]: controls[0], REPRESENTATIONS[1]: controls[1]},
-        "samples": [], "zeroScaleChecks": []});
+        "samples": [], "zeroScaleChecks": [], "cpuConditions": []});
     let mut receipt = json!({"Status": "capturing", "StartedUtc": request.started_utc,
         "EvidenceDirectory": root, "ModelProcessStarted": false, "DefaultMayChange": false,
         "DeviceModel": device, "ProcessorName": request.processor_name,
@@ -251,6 +259,7 @@ fn capture_with(
         "memoryLimitBytes": fixed["ServiceCeilingBytes"], "requiredAvailableBytes": fixed["RequiredAvailableBytes"],
         "physicalReserveBytes": fixed["AvailableMemoryFloorBytes"], "timeoutSeconds": fixed["TimeoutSeconds"],
         "stdoutLimitBytes": 4 * MIB, "stderrLimitBytes": 64 * MIB, "requireNonemptyStdout": false, "ciOnly": true,
+        "observeCpuConditions": true,
         "parentProcessId": request.parent_process_id, "parentCreationTimeFileTime": request.parent_creation_time_file_time}));
         reconcile(&root, &mut evidence, &screen, result.is_err())?;
         let supervision = result?;

@@ -59,6 +59,7 @@ jobs:
           $result = Get-Content -LiteralPath (Join-Path $evidence 'screen-receipt.json') -Raw | ConvertFrom-Json
           @('PTQ1 screen captured. This is a reject-or-continue diagnostic, not profile qualification.',
             '64-token prefixes do not establish complete-answer quality.',
+            'Changed or unknown CPU conditions make timing inconclusive; rerun before a timing decision.',
             'Native adapter basis/logits and independent full-answer review remain separate requirements.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
           if ($result.ScreenStatus -ceq 'rejected') { throw 'The bounded screen rejected the candidate; inspect retained observations.' }
       - name: Retain screen observations and failures

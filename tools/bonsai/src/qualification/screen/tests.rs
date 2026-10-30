@@ -2,9 +2,29 @@
 
 use serde_json::{Value, json};
 
-use super::{REPRESENTATIONS, controls_identity, plan, score};
+use super::{REPRESENTATIONS, controls_identity, plan, plan_version, score};
 use crate::Result;
 use crate::qualification::digest;
+
+pub(super) fn condition_boundaries() -> Value {
+    let observed = json!({
+        "schema_version": 1, "kind": "runner-native-cpu-observations",
+        "status": "observed", "architecture": "aarch64", "scope": "current-process",
+        "source": "GetSystemCpuSetInformation", "topology": {"logical_processors": 12},
+        "host_identity": {"status": "observed", "source": crate::host_cpu::HOST_IDENTITY_SOURCE,
+            "processor_name": "Qualcomm Snapdragon X Elite",
+            "processor_identifier": "ARMv8 (64-bit) Family 8 Model 0 Revision 1",
+            "vendor_identifier": "Qualcomm Technologies Inc", "windows_version": [10, 0, 26300],
+            "processor_features": [19, 43]},
+        "power_snapshot": {"status": "observed", "source": "GetSystemPowerStatus",
+            "ac_online": true, "battery_saver": false},
+        "power_policy_snapshot": {"status": "observed",
+            "source": "PowerGetActiveScheme/PowerRegisterForEffectivePowerModeNotifications",
+            "notification_version": 2,
+            "active_scheme": "381b4222-f694-41f0-9685-ff5bb260df2e", "effective_mode": "balanced"},
+    });
+    json!({"Before": observed, "After": observed})
+}
 
 fn evidence() -> Result<Value> {
     let screen = plan()?;
@@ -48,12 +68,18 @@ fn evidence() -> Result<Value> {
             "zeroScaleResponseSha256": digest(&text)})
         })
         .collect();
+    let conditions: Vec<_> = samples
+        .iter()
+        .map(|sample| sample["sampleId"].clone())
+        .chain(REPRESENTATIONS.map(|representation| json!(format!("zero-{representation}"))))
+        .map(|id| json!({"sampleId": id, "observations": condition_boundaries()}))
+        .collect();
     Ok(
-        json!({"schemaVersion": 1, "runId": "synthetic-screen", "contractSha256": screen["ContractSha256"],
+        json!({"schemaVersion": 2, "runId": "synthetic-screen", "contractSha256": screen["ContractSha256"],
         "execution": {"githubActions": true, "runUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/1",
             "runnerArchitecture": "Arm64", "deviceModel": "Snapdragon X Elite", "runnerName": "synthetic-runner",
             "sourceRevision": "7335eb9cf009989d4a9a11ed98878b28ad15dddd"},
-        "controls": controls, "samples": samples, "zeroScaleChecks": zero}),
+        "controls": controls, "samples": samples, "zeroScaleChecks": zero, "cpuConditions": conditions}),
     )
 }
 
@@ -160,5 +186,62 @@ fn prefix_screen_rejects_regressions_and_mismatched_evidence() -> Result<()> {
     let mut resource = base;
     resource["samples"][0]["minimumAvailablePhysicalBytes"] = json!(0);
     assert_eq!(score::score(&resource, None)?["Status"], "rejected");
+    Ok(())
+}
+
+#[test]
+fn screen_conditions_invalidate_timing_without_rejecting_the_candidate() -> Result<()> {
+    assert_eq!(
+        plan_version(1)?["ContractSha256"],
+        "ed8ab507e5a866c3ed707a5ae727f33126e45c55fd265500dc959f054cb08171"
+    );
+    let mut slow = evidence()?;
+    for sample in slow["samples"].as_array_mut().ok_or("Missing samples.")? {
+        if sample["weightRepresentation"] == REPRESENTATIONS[1] {
+            sample["decodeMilliseconds"] = json!(2000);
+        }
+    }
+    assert_eq!(score::score(&slow, None)?["Status"], "rejected");
+    for pointer in [
+        "/cpuConditions/1/observations/Before/power_snapshot/ac_online",
+        "/cpuConditions/1/observations/After/power_policy_snapshot/effective_mode",
+        "/cpuConditions/13/observations/After/topology/logical_processors",
+    ] {
+        let mut changed = slow.clone();
+        *changed.pointer_mut(pointer).ok_or("Missing condition.")? = Value::Null;
+        let report = score::score(&changed, None)?;
+        assert_eq!(report["Status"], "inconclusive", "{pointer}");
+        assert_eq!(report["CpuConditions"]["Comparable"], false);
+        assert_eq!(report["Comparisons"][0]["throughputPassed"], Value::Null);
+        assert_eq!(report["Comparisons"][0]["ptq1ToPq2TpsRatio"], Value::Null);
+        assert_eq!(report["Rejections"], json!([]));
+    }
+    // Individually stable processes can still disagree between boundaries.
+    let mut changed = slow.clone();
+    for boundary in ["Before", "After"] {
+        changed["cpuConditions"][1]["observations"][boundary]["power_snapshot"]["ac_online"] =
+            json!(false);
+    }
+    let report = score::score(&changed, None)?;
+    assert_eq!(report["Status"], "inconclusive");
+    assert_eq!(
+        report["CpuConditions"]["Details"][1]["comparison"]["BetweenSamples"]["Comparable"],
+        false
+    );
+    // Retained derived comparisons cannot override raw observations.
+    changed["cpuConditions"][1]["observations"]["Comparison"] = json!({"Comparable": true});
+    assert_eq!(score::score(&changed, None)?["Status"], "inconclusive");
+
+    let mut legacy = slow;
+    legacy["schemaVersion"] = json!(1);
+    legacy["contractSha256"] = plan_version(1)?["ContractSha256"].clone();
+    legacy
+        .as_object_mut()
+        .ok_or("Missing evidence.")?
+        .remove("cpuConditions");
+    let report = score::score(&legacy, None)?;
+    assert_eq!(report["Status"], "inconclusive");
+    assert_eq!(report["CpuConditions"]["Status"], "legacy-unobserved");
+    assert_eq!(report["Decision"], "rerun-with-stable-cpu-conditions");
     Ok(())
 }

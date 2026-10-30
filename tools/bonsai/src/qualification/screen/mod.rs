@@ -1,6 +1,7 @@
 //! Small representation decision screen; it never qualifies or promotes a profile.
 
 mod capture;
+mod conditions;
 mod score;
 #[cfg(test)]
 mod tests;
@@ -17,6 +18,11 @@ const PROMPT_ID: &str = "creative-scene";
 const SCALE: f64 = 1.3;
 
 fn plan() -> Result<Value> {
+    plan_version(2)
+}
+
+fn plan_version(version: u64) -> Result<Value> {
+    require(matches!(version, 1 | 2), "Unsupported screen schema.")?;
     let policy = policy()?;
     let prompt = policy.contract["prompts"]
         .as_array()
@@ -24,8 +30,8 @@ fn plan() -> Result<Value> {
         .ok_or("The fixed creative decision prompt is missing.")?;
     let mut controls = policy.contract["controls"].clone();
     controls["maxOutputTokens"] = json!(64);
-    let contract = json!({
-        "schemaVersion": 1, "purpose": "reject-or-continue representation screen; never qualification or promotion",
+    let mut contract = json!({
+        "schemaVersion": version, "purpose": "reject-or-continue representation screen; never qualification or promotion",
         "standardContractSha256": policy.contract_sha256, "prompt": prompt,
         "repeatCount": 3, "adapterScale": SCALE, "controls": controls,
         "representations": policy.contract["representations"],
@@ -36,6 +42,13 @@ fn plan() -> Result<Value> {
         "maximumMedianJobMemoryPremiumBytes": 805_306_368_u64,
         "scope": "One fixed creative prefix, 64 output tokens per process, 12 timed fresh-process samples and two loaded-at-zero controls. Prefixes cannot establish answer completeness, quality, first-token latency, thermal behavior, long-context correctness or broad capability."
     });
+    if version == 2 {
+        contract["cpuConditions"] = json!({
+            "required": "Observed stable host identity, topology, power source, battery saver and active power policy before/after every process and between adjacent processes.",
+            "ineligibleTimingDecision": "inconclusive; rerun with stable observed conditions",
+            "scope": "Boundary observations only; transitions within a process, thermal throttling, background load and individual power-scheme setting edits remain unobserved. No energy verdict."
+        });
+    }
     let bytes = serde_json::to_string(&contract).map_err(|error| error.to_string())?;
     let mut schedule = Vec::with_capacity(12);
     for repeat in 1..=3 {

@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use serde_json::{Value, json};
 
-use super::{REPRESENTATIONS, controls_identity, object, plan, require};
+use super::{REPRESENTATIONS, conditions, controls_identity, object, plan_version, require};
 use crate::Result;
 use crate::qualification::{GIB, digest, hash, number, string};
 
@@ -100,20 +100,22 @@ fn sample_values(sample: &Value) -> Result<()> {
 }
 
 fn validate<'a>(evidence: &'a Value, screen: &Value) -> Result<&'a [Value]> {
-    object(
-        evidence,
-        &[
-            "schemaVersion",
-            "runId",
-            "contractSha256",
-            "execution",
-            "controls",
-            "samples",
-            "zeroScaleChecks",
-        ],
-    )?;
+    let mut fields = vec![
+        "schemaVersion",
+        "runId",
+        "contractSha256",
+        "execution",
+        "controls",
+        "samples",
+        "zeroScaleChecks",
+    ];
+    if evidence["schemaVersion"] == 2 {
+        fields.push("cpuConditions");
+    }
+    object(evidence, &fields)?;
     require(
-        evidence["schemaVersion"] == 1 && evidence["contractSha256"] == screen["ContractSha256"],
+        evidence["schemaVersion"] == screen["Contract"]["schemaVersion"]
+            && evidence["contractSha256"] == screen["ContractSha256"],
         "Screen schema or fixed contract changed.",
     )?;
     string(
@@ -263,17 +265,22 @@ fn arm(samples: &[Value], representation: &str, arm: &str, key: &str) -> Result<
     )
 }
 
-fn comparisons(samples: &[Value], rejections: &mut Vec<String>) -> Result<Vec<Value>> {
+fn comparisons(
+    samples: &[Value],
+    timing_eligible: bool,
+    rejections: &mut Vec<String>,
+) -> Result<Vec<Value>> {
     let mut comparisons = Vec::with_capacity(2);
     for name in ["baseline", "adapter"] {
         let pq2 = arm(samples, REPRESENTATIONS[0], name, "tps")?;
         let ptq1 = arm(samples, REPRESENTATIONS[1], name, "tps")?;
         let ratio = ptq1 / pq2;
-        if ratio < 1.0 {
+        if timing_eligible && ratio < 1.0 {
             rejections.push(format!("PTQ1 screen throughput is below PQ2: {name}."));
         }
         comparisons.push(json!({"arm": name, "pq2MedianTps": pq2, "ptq1MedianTps": ptq1,
-            "ptq1ToPq2TpsRatio": ratio, "throughputPassed": ratio >= 1.0,
+            "ptq1ToPq2TpsRatio": timing_eligible.then_some(ratio),
+            "throughputPassed": timing_eligible.then_some(ratio >= 1.0),
             "medianJobMemoryDeltaBytes": arm(samples, REPRESENTATIONS[1], name, "peakJobMemoryBytes")?
                 - arm(samples, REPRESENTATIONS[0], name, "peakJobMemoryBytes")?}));
     }
@@ -294,8 +301,14 @@ pub(super) fn score(evidence: &Value, review: Option<&Value>) -> Result<Value> {
         review.is_none(),
         "A 64-token prefix screen cannot consume full-answer qualification reviews.",
     )?;
-    let screen = plan()?;
+    let screen = plan_version(
+        evidence["schemaVersion"]
+            .as_u64()
+            .ok_or("Missing screen schema.")?,
+    )?;
     let samples = validate(evidence, &screen)?;
+    let cpu_conditions = conditions::evaluate(evidence, &screen)?;
+    let timing_eligible = cpu_conditions["Comparable"] == true;
     let job_memory_limit = screen["Contract"]["maximumPeakJobMemoryBytes"]
         .as_f64()
         .ok_or("Missing validated screen Job-commit limit.")?;
@@ -317,10 +330,17 @@ pub(super) fn score(evidence: &Value, review: Option<&Value>) -> Result<Value> {
         }
     }
     zero_controls(evidence, samples, &mut rejections)?;
-    let comparisons = comparisons(samples, &mut rejections)?;
-    let mut report = json!({"SchemaVersion": 1, "RunId": evidence["runId"], "ContractSha256": screen["ContractSha256"],
-        "Status": if rejections.is_empty() { "continue" } else { "rejected" },
-        "Decision": if rejections.is_empty() { "continue-correctness-and-review" } else { "stop-candidate" },
+    let comparisons = comparisons(samples, timing_eligible, &mut rejections)?;
+    let (status, decision) = if !rejections.is_empty() {
+        ("rejected", "stop-candidate")
+    } else if timing_eligible {
+        ("continue", "continue-correctness-and-review")
+    } else {
+        ("inconclusive", "rerun-with-stable-cpu-conditions")
+    };
+    let mut report = json!({"SchemaVersion": 2, "RunId": evidence["runId"], "ContractSha256": screen["ContractSha256"],
+        "Status": status, "Decision": decision,
+        "CpuConditions": cpu_conditions,
         "DefaultMayChange": false, "StandardProfileMayEnable": false,
         "Comparisons": comparisons, "Rejections": rejections,
         "Gates": {"Quality": "pending", "AuthoringBasis": "pending", "NativeLogits": "pending", "FullQualification": "not-run"},

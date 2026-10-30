@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
+use super::super::tests::condition_boundaries;
 use super::{Request, capture_with};
 use crate::Result;
 use crate::qualification::{capture::save, digest, read_json};
@@ -73,6 +74,7 @@ fn fixture() -> Result<(Request, Value)> {
 
 fn completed(native: &Value, count: usize) -> Result<Value> {
     assert_eq!(native["ciOnly"], true);
+    assert_eq!(native["observeCpuConditions"], true);
     assert_eq!(native["memoryLimitBytes"], 12_348_030_976_u64);
     assert_eq!(native["requiredAvailableBytes"], 16_642_998_272_u64);
     assert_eq!(native["physicalReserveBytes"], 4_u64 * 1024 * 1024 * 1024);
@@ -125,7 +127,8 @@ fn completed(native: &Value, count: usize) -> Result<Value> {
         save(
             &lane.join("supervision.json"),
             &json!({"Status": "completed", "Timing": {"DecodeTokens": 63, "DecodeMilliseconds": 1000},
-            "PeakJobMemoryBytes": 1_073_741_824, "MinimumAvailablePhysicalBytes": 8_589_934_592_u64}),
+            "PeakJobMemoryBytes": 1_073_741_824, "MinimumAvailablePhysicalBytes": 8_589_934_592_u64,
+            "CpuConditions": condition_boundaries()}),
             true,
         )?;
     }
@@ -143,6 +146,7 @@ fn screen_capture_uses_fourteen_bounded_processes_without_promoting() -> Result<
     assert_eq!(receipt["DefaultMayChange"], false);
     let evidence = read_json(&request.evidence_directory.join("screen-evidence.json"))?;
     assert_eq!(evidence["samples"].as_array().map(Vec::len), Some(12));
+    assert_eq!(evidence["cpuConditions"].as_array().map(Vec::len), Some(14));
     assert_eq!(
         evidence["zeroScaleChecks"].as_array().map(Vec::len),
         Some(2)
