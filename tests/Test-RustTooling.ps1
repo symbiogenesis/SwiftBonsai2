@@ -77,6 +77,17 @@ foreach ($group in @('All', 'Broker')) {
                     if ($required -cnotin $check.Arguments) { throw "A Cargo batch dropped $required." }
                 }
                 if ($phase -eq 'clippy' -and '--all-targets' -cnotin $check.Arguments) { throw 'Batching omitted a Clippy target.' }
+                if ($phase -eq 'doc') {
+                    $formatIndex = [Array]::IndexOf($check.Arguments, '--output-format')
+                    $unstableIndex = [Array]::IndexOf($check.Arguments, '-Z')
+                    if ('--no-deps' -cnotin $check.Arguments -or $formatIndex -lt 0 -or
+                        $check.Arguments[$formatIndex + 1] -cne 'json' -or $unstableIndex -lt 0 -or
+                        $check.Arguments[$unstableIndex + 1] -cne 'unstable-options') {
+                        throw 'Documentation checks must select JSON output on the pinned nightly without dependency rendering.'
+                    }
+                } elseif ('--output-format' -cin $check.Arguments -or 'unstable-options' -cin $check.Arguments) {
+                    throw 'Documentation output flags escaped into another Rust check phase.'
+                }
                 if ($phase -eq 'test' -and '--no-fail-fast' -cnotin $check.Arguments) {
                     throw 'One failed test binary must not suppress later package suites in a Cargo batch.'
                 }

@@ -73,7 +73,7 @@ function Get-BonsaiRustArgument {
     if ('*' -in $features) { $arguments += '--all-features' }
     elseif ($features.Count) { $arguments += @('--features', ($features -join ',')) }
     if ($Phase -eq 'clippy') { $arguments += @('--all-targets', '--', '-D', 'warnings') }
-    elseif ($Phase -eq 'doc') { $arguments += '--no-deps' }
+    elseif ($Phase -eq 'doc') { $arguments += @('--no-deps', '-Z', 'unstable-options', '--output-format', 'json') }
     elseif ($Phase -eq 'test') { $arguments += '--no-fail-fast' }
     return $arguments
 }

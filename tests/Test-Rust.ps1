@@ -4,6 +4,8 @@
 Runs registered Rust format, Release analyzer, documentation and optional CI suites.
 .DESCRIPTION
 Uses Foundation's registry of Runner application and process-boundary packages.
+Documentation checks emit rustdoc JSON on the pinned nightly rather than HTML
+or JavaScript; the workspace's documentation lints remain enforced.
 Packages share Cargo invocations by phase; restricted feature profiles remain
 separate. Receipts retain package coverage and command durations for each batch.
 Targets, command logs and receipts remain external. Complete suites require

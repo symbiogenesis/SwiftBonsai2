@@ -240,6 +240,21 @@ Safe package roots forbid unsafe code; individually documented Win32 operations
 remain confined to the Windows boundary crates. The maintenance CLI reuses those
 boundaries. Scoped allowances retain their reasons and safety documentation.
 
+The shared Rust `doc` phase emits JSON for selected packages using
+`cargo doc --no-deps -Z unstable-options --output-format json` on the pinned
+nightly. This applies to local `Test-Rust.ps1` checks and every Foundation Rust
+lane through the same command planner. It preserves explicit package/features,
+Release settings and warnings-as-errors, including missing documentation,
+intra-doc links, markup and Rust code-block lints. JSON generation writes no
+rustdoc HTML or JavaScript assets. It replaces the HTML documentation check
+that triggered Defender's quarantine of a generated `trait.Send.js`; this does
+not establish whether that detection was a false positive. Existing cached
+HTML is not removed, and machine-wide Cargo settings are not changed. The
+[JSON output option](https://doc.rust-lang.org/nightly/cargo/commands/cargo-doc.html#option-cargo-doc---output-format)
+is unstable and must be rechecked when changing the pinned toolchain. Ordinary
+validation does not build browsable documentation or run doctests; complete
+test execution retains its separate CI guard.
+
 PowerShell 7.6+ scripts use latest strict mode, terminating native-command errors,
 advanced functions and typed output contracts. PSScriptAnalyzer 1.25.0 rejects
 unsuppressed diagnostics. The .NET SDK is pinned in [global.json](../global.json);
