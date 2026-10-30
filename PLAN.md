@@ -104,6 +104,11 @@ promotion](docs/native-rust-engine.md#default-runtime-promotion) retains the sta
 adapter at scale 1.3, binds independent gates to exact source, release and app
 identities and leaves missing evidence pending.
 
+- Release the reviewed Windows read-consumer helper API through the registry,
+  replace Prism server's exact Git dependency with that reviewed registry release,
+  and validate packaging before re-enabling server crate publication. Preserve
+  the explicit GitHub binary/source delivery boundary until those gates pass.
+
 - Audit immutable comparison and reuse revisions: model, adapter, tensor and transform
   identity, hardware, numerics, licenses and notices. Keep PQ2, current-weight PTQ1 and
   Qwen as separate controls; respect [OxiBonsai reuse

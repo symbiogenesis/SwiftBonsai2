@@ -75,6 +75,16 @@ AtomicChat reports an explicit order correction. Different source-matrix orders 
 explain that disagreement. Orca accepts an external checkpoint directory, and the
 shipped metadata declares neither its revision nor input order.
 
+The exporter's optional `--check` does not resolve this gate. It checks only layer
+0, compares inverse-Hadamard stored columns without the native SSM input
+permutation, and imposes no absolute SSM-error ceiling. An identity mapping that
+scores best in that comparison is not proof of the native writer's input basis.
+The producer [does not ship the checkpoint](https://github.com/Continuum-AI-Corp/OrcaBonsai-27B-Uncensored/blob/703028bb7fba03496e796b144839b161cf0f5409/README.md#gguf--llamacpp).
+Resolving this needs an immutable checkpoint/conversion identity bound to the
+approved adapter hash, an explicit channel mapping and independent verification
+of all 48 shipped SSM A vectors under that mapping. Reproduction can run on
+hosted infrastructure; matching native inference alone cannot replace it.
+
 Native residual-writer evidence must establish the correction's basis on Swift;
 loading or changed text cannot. Even correct input order does not establish that an
 original-Bonsai correction suits Swift's modified weights. The approved file is unmodified.
