@@ -206,6 +206,13 @@ The manual main-only `swift-ptq1-screen.yml` workflow uses already provisioned a
 on the native ARM64 Snapdragon runner. Its fixed workload is one creative prompt, both
 packings, adapter off/on at 1.3 and three interleaved repetitions: **12 timed 64-token
 prefixes plus two zero-scale controls**. All benchmark execution is CI-only.
+The workflow omits Actions credentials from the evaluation process tree. Before
+model admission or artifact hashing, the verified completion executable must pass
+a retained, model-free `--version` preflight under the ordinary headless worker
+policy: ten seconds, 512 MiB Job, unchanged admission and physical reserve.
+Failure stops the screen and records no PTQ1 suitability verdict; the pinned
+publisher runtime's known X2 DLL startup failure is tracked under
+[headless startup](cpu-kernels.md#ci-availability-and-headless-startup).
 
 Inspect its plan without loading a model:
 

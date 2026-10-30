@@ -26,8 +26,37 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-Ptq1Screen.ps1'
           $data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
-          $result = & $script -DataDirectory $data
-          $result | ConvertTo-Json -Depth 12
+          # Keep upload credentials in this step, outside the evaluation tree.
+          $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME 'pwsh.exe'))
+          $start.WorkingDirectory = $env:RUNNER_TEMP
+          $start.UseShellExecute = $false
+          $start.CreateNoWindow = $true
+          $start.RedirectStandardOutput = $true
+          $start.RedirectStandardError = $true
+          foreach ($argument in @('-NoProfile', '-File', $script, '-DataDirectory', $data)) {
+            $start.ArgumentList.Add($argument)
+          }
+          foreach ($name in @('ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNNER_INPUT_TOKEN')) {
+            [void]$start.Environment.Remove($name)
+          }
+          $child = [Diagnostics.Process]::Start($start)
+          try {
+            $stdout = $child.StandardOutput.ReadToEndAsync()
+            $stderr = $child.StandardError.ReadToEndAsync()
+            $child.WaitForExit()
+            [Console]::Out.Write($stdout.GetAwaiter().GetResult())
+            [Console]::Error.Write($stderr.GetAwaiter().GetResult())
+            $code = $child.ExitCode
+          } finally {
+            try {
+              if (-not $child.HasExited) { $child.Kill($true); $child.WaitForExit() }
+            } finally { $child.Dispose() }
+          }
+          if ($code -ne 0) { throw 'PTQ1 screening failed; inspect retained startup/capture evidence.' }
+          $entry = @(Get-Content -LiteralPath $env:GITHUB_ENV | Where-Object { $_.StartsWith('BONSAI_PTQ1_EVIDENCE=') })
+          if ($entry.Count -ne 1) { throw 'PTQ1 screen evidence path is missing or ambiguous.' }
+          $evidence = $entry[0].Substring('BONSAI_PTQ1_EVIDENCE='.Length)
+          $result = Get-Content -LiteralPath (Join-Path $evidence 'screen-receipt.json') -Raw | ConvertFrom-Json
           @('PTQ1 screen captured. This is a reject-or-continue diagnostic, not profile qualification.',
             '64-token prefixes do not establish complete-answer quality.',
             'Native adapter basis/logits and independent full-answer review remain separate requirements.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
