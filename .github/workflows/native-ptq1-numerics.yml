@@ -16,6 +16,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/bonsai-tools
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
       - name: Check the hosted-only build boundary
         shell: pwsh
         run: ./tests/Test-NativePtq1CaptureTools.ps1 -Case HostedGuard
