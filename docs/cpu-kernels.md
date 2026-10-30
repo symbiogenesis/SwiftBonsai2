@@ -1,16 +1,15 @@
 # CPU kernels and X2 thread evaluation
 
-This guide defines CPU arithmetic, dispatch, qualification and the [X2 thread screen](#x2-cpu-thread-screen).
-Baseline NEON supports PQ2, odd-group PQ2 and PTQ1, with scalar reference/fallback. Synthetic parity
-establishes neither whole-model parity nor device speedup; pinned Prism remains the control engine.
-[PLAN.md](../PLAN.md#cpu-kernels) owns pending work.
+Baseline NEON supports PQ2, odd-group PQ2 and PTQ1 with scalar reference/fallback. This guide owns
+arithmetic, dispatch, qualification and the [X2 thread screen](#x2-cpu-thread-screen).
+Synthetic parity does not qualify whole-model parity or device speedup; pinned Prism remains the
+control engine. [PLAN.md](../PLAN.md#cpu-kernels) owns outstanding work.
 
 ## Execution and dispatch
 
-The default `experimental-neon` feature uses the safe core API of [`fearless_simd` 1.1.0][fearless]
-under the runtime's `forbid(unsafe_code)`. `MatvecBackend::Auto` selects once per matrix operation;
-the Qwen35 graph and token driver inherit that policy. `Qwen35::with_backend` and the driver's
-`--backend auto|scalar|neon` select an explicit policy.
+The default `experimental-neon` feature uses [`fearless_simd` 1.1.0][fearless]'s safe core API under
+`forbid(unsafe_code)`. `MatvecBackend::Auto` selects once per matrix operation; Qwen35 and the token
+driver inherit it. `Qwen35::with_backend` and `--backend auto|scalar|neon` select explicit policies.
 
 `backend_requested` reports the requested policy. `backend_statistics` retains cumulative matrix
 attempts/successes, scalar/NEON dispatches, preparation failures and fallback reasons, including
@@ -123,24 +122,18 @@ mixed-device contention are part of a profile's declared scope.
 
 ## CPU kernel research reviewed in October 2026
 
-The [research catalog](research-register.md#packed-projections-cpu-kernels-and-compression)
-records sources, versions and transfer limits through **2026-10-29**. Apply these CPU-specific rules:
+The [research catalog](research-register.md#packed-projections-cpu-kernels-and-compression) owns
+sources, versions and transfer limits through **2026-10-29**. Its CPU applicability rules are:
 
-- **Layout/LUT reuse (L1 to L4, L10):** derive NEON consumption order from its lane geometry,
-  quantizers and scale groups. Attribute unpack, activation preparation, dots and scaling; include
-  repacking/retained copies. Larger tables/live accumulators can spill registers or evict useful
-  cache lines, so select bounded tiles using complete-workload CI evidence.
-- **Entropy coding (L12):** count indexes, decode dependencies, scratch and consumed bytes.
-  Independent streams may feed kernels; predominantly 8-bit/communication evidence does not
-  establish faster packed matvec.
-- **Changed representations (L11, L13 to L17):** nonuniform codes, compensation, fitted rotations,
-  lattices and trellises require new artifacts; they are not exact PQ2/PTQ1 conversions.
-- **Changed hardware (L18 to L19):** simulated ISA/datapath changes are outside software work on
-  existing Snapdragon devices.
+| Candidate | Constraint |
+| --- | --- |
+| Layout/LUT reuse (L1–L4, L10) | Derive NEON consumption order from lanes, quantizers and scale groups. Include unpack/preparation/dot/scale work, repacking and retained copies. Larger tables/accumulators can spill registers or evict useful cache; choose bounded tiles using complete-workload CI. |
+| Entropy coding (L12) | Charge indexes, decode dependencies, scratch and consumed bytes. Independent streams may feed kernels, but 8-bit/communication results do not establish packed-matvec benefit. |
+| Representations (L11, L13–L17) | Nonuniform codes, compensation, fitted rotations, lattices and trellises need new artifacts and separate qualification. |
+| Hardware (L18–L19) | Simulated ISA/datapath changes are outside existing Snapdragon software work. |
 
-Keep packed bytes as the storage control, avoid persistent expansion and separate decode from
-genuine multi-token prefill. Every borrowed layout needs intermediate/correction bounds above;
-new quantizers, rotations or ISA retain separate research identities and qualification.
+Retain packed storage without persistent expansion, distinguish decode from genuine multi-token
+prefill and apply the intermediate/correction bounds above to every borrowed layout.
 
 ## X2 CPU thread screen
 
@@ -157,15 +150,14 @@ or GPU/NPU profile. Native ISA semantics live in [capability contracts](hardware
 | Power policy | Effective `balanced`; scheme `381b4222-f694-41f0-9685-ff5bb260df2e` |
 | Planned screen | `d6-p6`, `d4-p12`, `d8-p18`; 24 samples; `ModelProcessStarted: false` |
 
-Model-free identity checks accept unchanged observations and reject injected AC, effective-mode,
-kernel-build changes and legacy observations lacking host identity. The speech-host query agrees
-on CPU/kernel. External `Bonsai-PerfNext3-20261029/x2-evidence` retains the reports, plans and
-comparison receipts; no model timing is available from these checks.
+Identity checks accept unchanged observations and reject injected AC/mode/kernel changes and legacy
+records lacking host identity. The speech-host query agrees on CPU/kernel. Reports, plans and
+comparison receipts are retained externally in `Bonsai-PerfNext3-20261029/x2-evidence`; they contain
+no model timing.
 
-The manual [X2 CPU workflow](../.github/workflows/x2-cpu-evaluation.yml) supplies a bounded first
-thread screen on the owner-managed native ARM64 runner, on settled `main`. It shares the existing
-model-capture concurrency group. All performance execution remains CI-only under
-[validation](validation.md).
+The manual [X2 CPU workflow](../.github/workflows/x2-cpu-evaluation.yml) runs a bounded first thread
+screen on the owner-managed native ARM64 runner and settled `main`, sharing the model-capture
+concurrency group. Performance execution remains [CI-only](validation.md).
 
 ### Controls and cost
 
@@ -266,16 +258,16 @@ The retained **2026-10-29** GitHub Actions inventory contains zero self-hosted r
 X2 screen runs. Device evidence requires native ARM64 `swift-bonsai-snapdragon` on settled `main`;
 local model execution cannot substitute for CI.
 
-The retained legacy `llama-completion.exe --version` result is `3221225794` (`0xC0000142`, DLL
-initialization failure), reproduced while holding all 63 verified runtime files through exit.
-Its scope is ordinary completion supervision: ten-second limit, 512 MiB Job, one process, no
-selected/loaded model; source `73bfe6cc485554822f80c473a3c0c4f25e80f41b`, archive SHA-256
+The pinned legacy `llama-completion.exe --version` fails with `3221225794` (`0xC0000142`, DLL
+initialization failure) under ordinary supervision: ten seconds, 512 MiB Job, one process, all 63
+verified files held through exit and no selected/loaded model. Identity: source
+`73bfe6cc485554822f80c473a3c0c4f25e80f41b`, archive SHA-256
 `cc808b33d35c72a3bd5c69a0d609d422426feb9dce23868e77992b6c33b8ddb3`. The PE chain
-`llama-completion.exe` -> `llama-completion-impl.dll` -> `llama-common.dll` -> `SHELL32.dll` is consistent
-with the shell concern but does not identify the failing DLL. External
-`Bonsai-X2-HeadlessProbe-dcbb58f9ed3440ff809d03673989ec31` holds `runtime-verification.json` and
-`verified-headless/supervision.json`. A passing bounded preflight is required before model trials;
-inspection-only help/version cannot qualify a worker or authorize weaker Win32k denial.
+`llama-completion.exe` → `llama-completion-impl.dll` → `llama-common.dll` → `SHELL32.dll` suggests a
+shell dependency without identifying the failing DLL. External
+`Bonsai-X2-HeadlessProbe-dcbb58f9ed3440ff809d03673989ec31` retains `runtime-verification.json` and
+`verified-headless/supervision.json`. Model trials require a passing bounded worker preflight;
+inspection-only help/version cannot qualify it or authorize weaker Win32k denial.
 
 The [UCRT argv source candidate](runtime-candidates/README.md#headless-ucrt-argv-candidate) removes the shell
 import in an exact-source CPU build. Its paired control reproduces `0xC0000142`; candidate version
@@ -293,7 +285,7 @@ and verifies it in the static-library receipt. This prevents an older machine's 
 silently bypassing X2 compilation; it does not select new thread counts or qualify a speech
 performance gain.
 
-New LoRA and PTQ1 captures retain the observed processor name and distinguish `Snapdragon X Elite`,
+LoRA and PTQ1 captures retain the observed processor name and distinguish `Snapdragon X Elite`,
 `Snapdragon X2 Elite` and `Snapdragon X2 Elite Extreme`. X2 receipts require a matching processor
 observation; relabeling historical X1 evidence rejects. Device-dependent runtime promotion gates
 cannot combine different families. Existing frozen X1 contract hashes and legacy receipt shapes

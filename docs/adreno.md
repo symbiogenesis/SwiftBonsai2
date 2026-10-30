@@ -1,7 +1,7 @@
 # Adreno GPU contracts and OpenCL feasibility
 
-Inference remains CPU-only; native Windows ARM64 GPU builds, correctness and performance are
-unqualified on X1/X2. [PLAN.md](../PLAN.md#adreno-vulkan) owns pending work. The shared
+Inference remains CPU-only; native Windows ARM64 GPU execution is unqualified on X1/X2.
+[PLAN.md](../PLAN.md#adreno-vulkan) owns outstanding work. The shared
 [profile policy](hardware-capabilities.md#automatic-profile-selection) governs selection,
 admission, state transitions and promotion for both Vulkan and OpenCL.
 
@@ -76,15 +76,10 @@ is not automatically best. Charge cold pipeline compilation/repack, submissions/
 phase/state migrations, duplicate storage and complete-task latency. Contiguous residency needs
 correct numerical/ownership contracts.
 
-The ledger covers packed/repacked weights, staging, scratch, adapters, caches/checkpoints,
-mappings and load overlap, counting unique physical storage once. UMA does not prove zero-copy;
-Job commit omits mapped/device bytes. Persistent expansion pays cold-load/residency cost.
-Reused pipelines/descriptors/allocations and compiled caches bind source/options/toolchain/device/
-driver and checked invalidation; precision/decoding changes remain separate contracts.
-
-Apply the shared [profile lifecycle](hardware-capabilities.md#prefill-decode-and-complete-state)
-to allocation refusal, device loss, driver changes and cancellation: preserve committed state,
-teardown safely and use only a qualified fallback, never partial CPU continuation.
+The shared [accelerator resource contract](hardware-capabilities.md#accelerator-storage-and-lifetime)
+owns storage accounting, asynchronous lifetimes, cache keys/invalidation and failure recovery.
+Apply it to pipelines, descriptors and reused allocations as well as compiled kernels.
+Persistent expansion pays cold-load/residency cost; precision/decoding changes need separate qualification.
 
 [Profile receipts](hardware-capabilities.md#qualification-scope) bind identities, settings/workloads,
 main/CI/raw captures and resource/comfort verdicts. Distinguish peak/resident/commit/headroom,
@@ -93,27 +88,21 @@ timestamps, submission/waits and critical-path traces. Overlapping durations can
 utilization is not energy. [GPUView][gpuview] needs
 compatible native ARM64 tooling.
 
-Independent [LoRA TPS/quality](swift-lora.md#standard-profile-qualification) remains a promotion gate; comparisons bind
-the tested adapter/SKU/driver/family. [Validation](validation.md) requires matching-device CI for
-full suites and timing/profile captures. Local builds/focused untimed checks are allowed. Native
-diagnostics use absolute system-temp lanes and inherited Windows system/profile variables.
-Moving source links below are leads, not build pins.
+The shared qualification contract includes independent [LoRA TPS/quality](swift-lora.md#standard-profile-qualification)
+and matching-device CI. Native diagnostics use absolute system-temp lanes and inherited Windows
+system/profile variables. Moving source links below are leads, not build pins.
 
 ## 2026 research evidence
 
 The [mobile-acceleration catalog, E1 to E3/E8](research-register.md#2026-mobile-acceleration-and-speech)
-retains the **2026-10-29** source review and platform limits. Its Adreno implications are:
+owns the **2026-10-29** source review. For Adreno, keep internal X2 MoE assembly, public OpenCL C
+and Vulkan as separate routes. Image/texture/residency work needs observed API support, shaders
+and byte accounting; replay needs supported APIs and valid lifetimes.
 
-- Qualcomm's layout/submission techniques need public implementations: internal X2 MoE assembly,
-  OpenCL C and Vulkan are separate routes. Image/texture/residency features require observed Vulkan
-  support, byte accounting and shaders; replay needs supported APIs and valid resource lifetimes.
-- TurboInfer/PowerBench motivate separating CPU preparation, queue service, shared-DRAM traffic,
-  polling/wake-ups and task energy. Faster kernels can leave host gaps unchanged; phone telemetry
-  and power controls establish no Windows authority/savings and are not launch prerequisites.
-- Greater residency can raise register pressure or rendering/audio contention. Include foreground
-  frame delivery and speech underruns in sustained comfort: stable TPS can hide worse responsiveness.
-
-These leads enable neither a backend nor a power-policy change.
+Attribute CPU preparation, GPU service, shared-DRAM traffic and polling/wake-ups separately: faster
+kernels may leave host gaps unchanged. Residency can increase register pressure and rendering/audio
+contention; include frame delivery and speech underruns even when TPS is stable. Phone telemetry
+and power controls provide no Windows authority, saving or launch prerequisite.
 
 ## OpenCL access and source audit
 
@@ -122,10 +111,10 @@ format appears in `GGML_OP_MUL_MAT` eligibility, and PQ2/PTQ1/Hadamard implement
 Generic Q1/Q4/Q8 or an installed compiler cannot supply them. Public kernels remain possible;
 this information-query/source audit selects no profile and is independent of Vulkan qualification.
 
-The audit covers one installed implementation and one immutable source revision: a 30-minute
-feasibility budget, zero model/kernel compute, and no prompts, tokens or projection shapes.
-The ten-second information query uses a 512 MiB one-process Job and 1 MiB per-output-stream bounds;
-it creates no context, queue, program, kernel or device allocation.
+Scope: one installed implementation and one immutable source revision, a 30-minute feasibility
+budget, zero model/kernel compute and no prompts, tokens or projection shapes. The ten-second query
+uses a 512 MiB one-process Job and 1 MiB per-output-stream bounds, creating no context, queue,
+program, kernel or device allocation.
 
 ### Reproducible native query
 
@@ -176,11 +165,10 @@ X2E94100:
   system loader with SHA-256
   `b5b0c8e990c06d4477ee8d9957460b466e52e7d8bf80e413d7e41aa7039dab7f`.
 
-The successful diagnostic used ordinary tool ownership/deadline without the worker's 512 MiB Job
-or mitigation envelope. It identifies a combined policy/resource incompatibility without isolating
-its cause, DLL or mitigation. The shipped command has no weaker-policy retry. Neither result
-includes device compute or qualifies worker access, compiler output, provenance or Swift arithmetic.
-Device execution requires resolving access under unchanged worker policy.
+The successful diagnostic omits the worker's Job/mitigation envelope, exposing a policy/resource
+incompatibility without identifying its cause, DLL or mitigation. The shipped command has no
+weaker-policy retry. Neither result qualifies worker access, device compute, compiler output,
+provenance or Swift arithmetic; execution requires access under unchanged worker policy.
 
 ### Immutable public source audit
 

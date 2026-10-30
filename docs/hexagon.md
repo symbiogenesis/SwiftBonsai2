@@ -1,8 +1,8 @@
 # Hexagon deployment and execution contracts
 
 Current builds use CPU execution, including scalar/NEON in the [Rust runtime][rust-runtime].
-Hexagon deployment, performance and automatic selection remain unqualified on X1/X2.
-[PLAN.md](../PLAN.md#hexagon-npu) owns pending work; shared [profile policy](hardware-capabilities.md#automatic-profile-selection)
+Hexagon execution remains unqualified on X1/X2; automatic selection is not implemented.
+[PLAN.md](../PLAN.md#hexagon-npu) owns outstanding work; shared [profile policy](hardware-capabilities.md#automatic-profile-selection)
 governs device/workload eligibility and interactive/battery objectives.
 
 ## Device and route boundaries
@@ -17,11 +17,10 @@ independent qualification scopes.
 | Recorded X1E-78-100 / Hexagon v73 | Packed HVX arithmetic, native signed runtime access, mapping-window/dynamic-mapping costs |
 | X2 / Hexagon v81, initially Elite Extreme | Batched HMX prefill and packed HVX decode, verified extended DMA/VTCM constraints and signed matching package |
 
-Processor names do not establish architecture, mapping capabilities, signed kernels or readiness.
-Receipts identify exact SKU/capabilities, driver/runtime/kernel package, ABI and resource limits.
-Missing or changed facts exclude the candidate; any CPU fallback still requires its own
-qualification and admission. Every prototype retains bounded process lifetime, deadlines, memory
-supervision and safe device teardown. A trusted operation oracle precedes packed execution.
+Receipts identify exact SKU/capabilities, driver/runtime/kernel package, ABI and resource limits;
+processor names establish none of these. Unknown or changed facts exclude the candidate. The shared
+profile contract governs fallback, admission, bounded lifetime and safe teardown. A trusted operation
+oracle precedes packed execution.
 
 [64-bit DMA support][hexagon-dma64] targets v81+ and avoids dynamic weight-buffer mappings above the
 old address window through DMA/VTCM execution. [Q1/Q2 Hadamard matmul and row reads][hexagon-q2] are
@@ -58,7 +57,7 @@ that is outside the current device budget without a separately demonstrated boun
 The [assessment lock](../config/swift-assessment.lock.json) identifies PQ2; [current-weight
 PTQ1](swift-memory.md) is separate. Weight/tokenizer/template, sampler, transforms, attention and
 declared activation/cache precision remain fixed within a comparison. PQ2's Q8_K or odd-group Q8_0
-arithmetic differs from PTQ1's Q8_0 and from generic upstream types. [SIMD contracts](simd-plan.md)
+arithmetic differs from PTQ1's Q8_0 and from generic upstream types. [SIMD contracts](cpu-kernels.md)
 define operation fixtures; pinned Prism is the whole-model oracle until the relevant Rust parity
 scope is qualified.
 
@@ -67,7 +66,7 @@ each PQ2 block and duplicate its scale at approximately 5.9% more packed-weight 
 layout, raw scale bits and transform metadata remain exact. Equal decoded weights do not establish
 activation quantization, reduction/scale-order, logits or state parity with PQ2/Q8_K.
 
-Apply [packed arithmetic and fixtures](simd-plan.md#packed-arithmetic) to PQ2 symbols, activation
+Apply [packed arithmetic and fixtures](cpu-kernels.md#packed-arithmetic) to PQ2 symbols, activation
 quantization, integer sums/scale order and the independent PTQ1 canonicality/Q8_0 path. Include
 fourth symbols, extremes/zeros, malformed/unaligned blocks, tails and awkward dimensions. Initial
 operator parity is bitwise; FMA/reassociation or alternate precision needs declared tolerances and
@@ -96,12 +95,10 @@ speculation are distinct qualification scopes.
 
 ## Memory, lifecycle and failure
 
-Packed weights can remain in shared RAM with bounded expansion into VTCM. VTCM tiles, DMA staging,
-padding/alignment and repack scratch have explicit bounds; persistent expansion has a separate
-budget. The ledger covers host weights/mappings, device tiles/repacked copies, RPC/shared buffers,
-state/checkpoints, compilation/graph caches, CPU/GPU/NPU/adapter copies and peak load overlap.
-Unique physical bytes count once; address-space budgets are separate. Shared memory does not
-establish zero-copy.
+Apply the shared [accelerator resource contract](hardware-capabilities.md#accelerator-storage-and-lifetime)
+to NPU storage, asynchronous buffers, failure recovery and private caches. Packed weights may stay
+in shared RAM with bounded expansion into VTCM; explicitly bound VTCM tiles, DMA staging,
+padding/alignment and repack scratch. Persistent expansion needs its own budget.
 
 One NPU session is the bounded control. The [upstream design][hexagon-design] describes an
 approximate 3.5 GB mapping window/dynamic mapping for X1/v73; the selected signed X2/v81 runtime has
@@ -118,13 +115,6 @@ requirements fail explicitly; preferred fallback happens before generation, usin
 eligibility and memory/state-transition rules. Arbitrary inherited overrides remain unsupported.
 Helpers beyond the single-process Job need owned lifetime, parent-death teardown and independent
 resource/isolation qualification. Drivers/services are not implicitly Job-contained.
-
-Submitted work retains buffers until device use ends. Timeout, unsupported shape, allocation/mapping
-failure, device loss or cancellation either restore all committed state or close admission until
-verified teardown/reset. Hidden replay and partial continuation on CPU violate the contract.
-Compiled/repacked caches are private, bounded and keyed by artifacts/kernel/runtime/ABI/observable
-driver/firmware/shape/precision/placement, with checked metadata and invalidation. Technical
-diagnostics exclude tensor payloads and prompts.
 
 ## Qualification evidence
 
@@ -143,34 +133,25 @@ qualified-Vulkan and NPU runs retain median/p95/variance, prefill/first-token/de
 retries to acceptable output, memory and sustained thermals/responsiveness. AC/battery and
 15–30-minute runs have distinct scope; missing power telemetry means no energy verdict.
 
-The shared [receipt/promotion contract](hardware-capabilities.md#qualification-scope) binds kernel/driver
-identity and per-metric verdicts. Absent/unknown devices, unsupported mappings, stale identity or
-insufficient budgets require bounded failure or qualified CPU fallback with consistent state.
-Absence supplies no verdict; missing evidence/critical failures keep profiles experimental.
-Affected upgrades invalidate evidence/caches.
-
-[Validation](validation.md) allows local builds, assembly inspection and focused untimed checks;
-full suites, benchmarks and timing/profile captures require reviewed main-only matching-device CI.
-Native diagnostics use absolute system-temp lanes with inherited Windows system/profile variables.
-Moving links below are research leads, not pins.
+The shared [receipt/promotion contract](hardware-capabilities.md#qualification-scope) owns identity,
+per-metric verdicts, CI, fallback and upgrade invalidation. Missing evidence or critical failures keep
+profiles experimental; absence supplies no verdict. Native diagnostics use absolute system-temp
+lanes with inherited Windows system/profile variables. Moving links below are research leads, not pins.
 
 ## 2026 research evidence
 
 The [mobile-acceleration catalog, E3 to E8](research-register.md#2026-mobile-acceleration-and-speech)
-retains the **2026-10-29** source review, hardware/configurations and counterexamples. Apply its NPU
-lessons without conflating prepared/static graphs, direct ggml HVX/HMX and signed Windows packages:
+owns the **2026-10-29** source review and counterexamples. Keep prepared/static graphs, direct ggml
+HVX/HMX and signed Windows packages distinct. Attribute quantization, offload, polling/wake-up,
+profiling and fallback costs against a competitive CPU: fast HMX GEMM can lose to graph breaks.
 
-| Evidence | NPU decision rule |
-| --- | --- |
-| PowerBench / When NPUs Are Not Always Faster | Attribute quantization, offload, polling/wake-up and profiling overhead. Keep a competitive CPU control: different hardware/frameworks/quantizers/scheduling can reverse phase winners. |
-| Energy-Efficient On-Device RAG | Validate static-context limits/loading order while preserving context/output reservations. Different packages, contexts and always-NPU reranking cannot rank same-artifact Swift or establish a GPU ceiling. |
-| ShadowNPU / Quant.npu | Sparse attention and fitted static rotations/scales are approximation/new-artifact routes, not unchanged dense/GDN execution or dynamic Q8_K/Q8_0/lossless PTQ1. |
-| Sereno | Include foreground jank even with stable TPS. Windows arbitration needs independent evidence; speculative yield points need a verifier and accepted-prefix recovery. |
+Validate static-context limits and loading order without reducing reservations. Different packages,
+contexts and always-NPU reranking cannot rank same-artifact Swift or establish a GPU ceiling.
+Sparse attention and fitted rotations/scales change computation/artifacts; they do not preserve
+dense/GDN or dynamic Q8_K/Q8_0/lossless PTQ1. Check foreground jank even at stable TPS; Windows
+arbitration needs independent evidence and speculative yields need accepted-prefix verification/recovery.
 
-Charge communication, activation preparation and fallback regions: fast HMX GEMM alone cannot
-overcome graph breaks.
-
-Two upstream changes provide concrete regression patterns, without updating Runner's pin:
+Upstream regression references, outside Runner's pin:
 
 - [DMA-ring fix #30189](https://github.com/ggml-org/llama.cpp/pull/30189), merged **2026-10-09**,
   fixes silently dropped DDR-to-VTCM transfers on descriptor-ring saturation. Its convolution/

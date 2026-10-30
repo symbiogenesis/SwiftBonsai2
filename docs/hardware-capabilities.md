@@ -1,9 +1,9 @@
 # Hardware discovery and profile policy
 
-Runner uses CPU profiles. Implemented discovery supplies host/runtime inventory and checked
-compatibility/evidence records; **automatic selection is not implemented**. The optional verified,
-model-free runtime probe uses the immutable [release lock](../config/prism-inference.lock.json). The [selection contract](#automatic-profile-selection)
-below defines future eligibility; [PLAN.md](../PLAN.md#hardware-selection) owns pending work.
+Runner uses CPU profiles. Discovery supplies host/runtime inventory and checked compatibility/evidence
+records; **automatic selection is not implemented**. The optional model-free probe verifies the
+runtime against the immutable [release lock](../config/prism-inference.lock.json). The [selection contract](#automatic-profile-selection)
+defines eligibility; [PLAN.md](../PLAN.md#hardware-selection) owns outstanding work.
 
 ## Host inventory
 
@@ -21,12 +21,11 @@ projection in `scripts/Bonsai.Capabilities.psm1` also serves fixture checks.
 | `npu` | ComputeAccelerator signed drivers | Architecture/firmware/backend readiness |
 
 Each section retains source and `observed`/`partial`/`unknown` status; unknown values are null.
-Successful empty lists differ from failed queries. CIM operations time out at ten seconds;
-missing/denied classes stay unknown. Capabilities exclude hostnames, serials, user/network
-inventory, but outer Doctor tool paths require review before sharing. CIM
-`memory.reported_total_physical_bytes` can omit hardware-reserved RAM. Live memory never replaces
-request admission. Family names/driver signatures do not prove ISA, execution or deployment trust;
-emulated-process ISA cannot qualify a native runtime.
+Empty lists indicate successful queries; failures stay unknown. CIM queries time out at ten seconds.
+Capabilities exclude hostnames, serials and user/network inventory; review outer Doctor tool paths
+before sharing. CIM `memory.reported_total_physical_bytes` can omit hardware-reserved RAM. Live
+memory does not replace admission. Family names/driver signatures do not prove ISA, execution or
+deployment trust; emulated-process ISA cannot qualify a native runtime.
 
 ### Native CPU observations
 
@@ -54,7 +53,7 @@ no optional instruction and changes no dispatch/selection.
 
 Malformed, missing or oversized registry values make the whole host identity unknown. Registry
 name is an independent observation, not verified silicon SKU/firmware. Identity is separate from
-live availability/power. The [X2 screen](simd-plan.md#x2-cpu-thread-screen) requires CIM/registry-name agreement
+live availability/power. The [X2 screen](cpu-kernels.md#x2-cpu-thread-screen) requires CIM/registry-name agreement
 and retains exact identity in plans/receipts. Unknown/changed identity, including legacy receipts
 lacking it, suppresses timing ratios. Kernel/feature changes require fresh captures; compare the
 whole bounded feature list, not descriptive `isa` flags. No new digest/backend permission follows.
@@ -92,8 +91,8 @@ Retained **2026-10-29 X2** observations remain distinct:
 | Shipped headless child | Loader loaded; instance failed `VK_ERROR_INCOMPATIBLE_DRIVER` (`-9`), report unknown | Bounded stderr in external `SwiftBonsai-GpuInventory-15116-1793325174261883700`; cause/hardware support unresolved |
 | Separate ten-second `Invoke-BonsaiNativeProcess` diagnostic | Loader 1.3.301, application 1.3.0, device 1.4.295; `Qualcomm(R) Adreno(TM) X2-90 GPU`; vendor `20803`, device `909329968`, driver `2151018496`; FP16/integer-dot true, subgroup 64 | External task-lane `gpu-tool-policy.json` / `.log`; differing mitigation, provenance and worker access unproven |
 
-Both probes were limited to instance-level queries: no model, shader or benchmark ran. The shipped command
-has no tool-policy retry; CPU fallback and worker mitigations remain required.
+Neither probe ran a model, shader or benchmark. The shipped command has no tool-policy retry;
+CPU fallback and worker mitigations remain required.
 
 ### Native OpenCL observations
 
@@ -101,7 +100,7 @@ The same `-ToolPath` adds `NativeOpenClObservations` from bounded `host-opencl`:
 through the absolute system loader under unchanged headless policy, with no context, queue,
 program, kernel or device allocation. It retains architecture/platform/device/driver/compiler
 facts and bounded loader size/hash; provenance stays unverified, `backend_ready: false`.
-CPU digests/launch policy ignore it. [OpenCL access and source audit](adreno-gpu-plan.md#opencl-access-and-source-audit)
+CPU digests/launch policy ignore it. [OpenCL access and source audit](adreno.md#opencl-access-and-source-audit)
 owns exact bounds, identities and missing pinned PQ2/PTQ1 projections. Its pilot remains in PLAN;
 OpenCL observations do not resolve Vulkan worker access.
 
@@ -162,8 +161,7 @@ acceptance still need review.
 
 Reserved value-free `FallbackReason` codes are `unknown-capability`, `unavailable-backend`,
 `incompatible-runtime`, `incompatible-driver`, `stale-evidence`, `insufficient-memory` and
-`strict-backend-unavailable`. [Profile policy](hardware-capabilities.md#automatic-profile-selection) defines their future use;
-no selector emits them yet.
+`strict-backend-unavailable`. The selection contract below defines their use; no selector emits them yet.
 
 ## Automatic profile selection
 
@@ -175,7 +173,7 @@ out of the broker.
 ### Device classes and observed identity
 
 The recorded development target is an ASUS Zenbook A16, Snapdragon X2 Elite Extreme X2E94100.
-The [X2 CPU screen](simd-plan.md#x2-cpu-thread-screen) retains its 2026-10-29 inventory and phase
+The [X2 CPU screen](cpu-kernels.md#x2-cpu-thread-screen) retains its 2026-10-29 inventory and phase
 thread controls; inventory establishes neither kernel eligibility nor performance/backend readiness.
 
 | Target | Candidates | Required independent evidence |
@@ -230,10 +228,10 @@ Batched prefill reuses weight tiles across tokens; sequential blocks alone do no
 little reuse and pays bandwidth, unpacking, transforms and dispatch/submission costs. [Algorithm
 contracts](inference-algorithms.md) separately govern tiled projections and chunkwise GDN.
 
-Keep PQ2/PTQ1 packed storage and bounded local tiles as the control. Charge repacked/expanded
-weights, duplicate CPU/GPU/NPU storage, scratch, load/repack/compile, synchronization, migrations
-and cache misses. Residency, contiguous regions and reusable submissions help only with correct
-ownership. Shared bandwidth/power makes simultaneous execution a measured candidate.
+Keep PQ2/PTQ1 packed storage and bounded local tiles as the control. Charge load/repack/compile,
+synchronization, migrations and cache misses as well as storage. Residency, contiguous regions and
+reusable submissions require correct ownership. Shared bandwidth/power makes simultaneous execution
+a candidate to measure, not an assumed gain.
 
 Plans remain stable during a request. Reevaluate power, memory, runtime or driver changes only at
 safe boundaries. Backend/phase transitions require qualified complete KV/recurrent/convolution/
@@ -245,6 +243,23 @@ an independently compatible CPU control.
 Every route preserves the [broker contract](broker-policy.md): one active conversation,
 authentication, exact counts, deadlines, cancellation, admission and daily isolation. Rust
 acceleration also preserves the [runtime's safe device/replacement boundaries](native-rust-engine.md).
+
+### Accelerator storage and lifetime
+
+The GPU/NPU resource ledger includes packed/repacked or expanded weights, duplicate CPU/device/
+adapter storage, mappings, staging/RPC buffers, scratch, state/checkpoints, compilation caches and
+peak load overlap. Count unique physical bytes once; shared memory does not prove zero-copy.
+Address windows and heap capacities are separate from physical RAM and live free-memory budgets.
+Job commit omits some mapped/device allocations, so admission also charges resources outside it.
+
+Submitted work retains buffers until device use ends. Allocation/mapping refusal, timeout,
+unsupported shapes, device loss, driver changes or cancellation must preserve complete committed
+state or close admission through verified teardown/reset; hidden replay and partial CPU continuation
+are invalid. Qualified fallback follows the request-boundary rules above.
+
+Private bounded repack/compiled caches bind artifacts, source/options/toolchain, kernel/runtime/ABI,
+observable driver/firmware, device, shape, precision and placement. Check metadata and invalidate
+affected entries on changes. Diagnostics exclude prompts and tensor payloads.
 
 ### Qualification scope
 

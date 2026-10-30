@@ -1,15 +1,14 @@
 # Inference algorithms and mathematical constraints
 
 This reference defines numerical/state constraints for the [Rust engine](native-rust-engine.md).
-The [research register](research-register.md) owns source reviews and derivations;
-[PLAN.md](../PLAN.md#runtime-and-correctness) owns outstanding work. Compare exact artifacts with
-pinned Prism under existing promotion criteria; source reuse needs immutable revisions/license
-review, and published results establish no Snapdragon speedup.
+The [research register](research-register.md) owns sources and derivations; [PLAN.md](../PLAN.md#runtime-and-correctness)
+owns outstanding work. Pinned Prism controls same-artifact comparisons. Reuse requires immutable
+source/license review; published speedups do not qualify Snapdragon execution.
 
-[Hardware policy](hardware-capabilities.md#automatic-profile-selection) qualifies algorithms and placement separately for prefill
-and decode. Batched projections/chunkwise GDN are NPU prefill candidates; packed HVX, NEON and
-Adreno remain decode comparisons. Sequential scheduling alone provides no matrix-matrix reuse.
-Automatic selection must preserve numerical/state identity and charge phase handoffs.
+[Hardware policy](hardware-capabilities.md#automatic-profile-selection) qualifies algorithms and placement
+separately for prefill/decode, preserving numerical/state identity and charging handoffs. Batched
+projections/chunkwise GDN are NPU prefill candidates; packed HVX, NEON and Adreno are decode
+comparisons. Sequential scheduling alone provides no matrix-matrix reuse.
 
 ## Runtime semantics
 
@@ -29,27 +28,24 @@ Source map: [runtime](https://github.com/symbiogenesis/prism-inference/blob/main
 [kernels](https://github.com/symbiogenesis/prism-inference/blob/main/src/kernels.rs) and
 [codecs](https://github.com/symbiogenesis/prism-inference/blob/main/tools/ternary/src/lib.rs).
 
-Retained scratch is storage reuse, not proof that repeated computation or model-level allocation
-costs are removed. Qwen35 state-only ingestion deliberately omits unused output/logit checks while
-validating every computed state value. Block prefill must also preserve cancellation/backpressure
-bounds and atomic commit.
+Retained scratch proves storage reuse, not eliminated computation or model-level allocation cost.
+State-only ingestion validates every computed state value while omitting unused output/logit checks.
+Block prefill preserves cancellation/backpressure bounds and atomic commit.
 
 ## Scratch lifetimes
 
-The [lifetime-planning review](research-register.md#t7-state-size-lifetimes-and-prefix-identity)
-covers the bounded-program allocation preprint and its transformation assumptions. The current
-sequential graph needs only fixed reuse: Prism shares attention projections with FFN up activations,
-shares their gate storage, and convolves recurrent QKV in place after each raw element's last use.
+Prism's sequential graph shares attention-projection/FFN-up storage and their gate storage, then
+convolves recurrent QKV in place after each raw element's last use. This is fixed reuse; the
+[lifetime-planning review](research-register.md#t7-state-size-lifetimes-and-prefix-identity) covers
+broader bounded-program transformations.
 
-At Swift's widths, the affected buffers need 34,816 rather than 73,728 F32 slots: **152 KiB less
-nominal high-water payload**, with four fewer separate vectors. Arithmetic/reduction order,
-committed state, transaction deltas and checkpoints retain their existing contracts. Frozen
-pre-change hybrid logits/state fixtures cover both FFN/QKV size orderings, failed evaluation, retry,
-restore and reset. The [graph
-implementation](https://github.com/symbiogenesis/prism-inference/blob/326d0dd45b2d3c61ea6ce8ebe67f8249bdfa22a6/src/graph.rs)
-defines the storage ownership. Allocator capacity rounding and process memory are separate from this
-finite buffer count; nominal scratch payload does not establish measured memory or throughput
-benefit. Moving arenas and general placement search require actual-workload evidence.
+At Swift's widths, these buffers occupy 34,816 F32 slots versus 73,728 separately: **152 KiB less
+nominal high-water payload** and four fewer vectors. Arithmetic/reduction order, committed state,
+transaction deltas and checkpoints are unchanged. Frozen baseline hybrid logits/state fixtures cover
+both FFN/QKV size orderings, failed evaluation, retry, restore and reset. The [graph implementation](https://github.com/symbiogenesis/prism-inference/blob/326d0dd45b2d3c61ea6ce8ebe67f8249bdfa22a6/src/graph.rs)
+defines ownership. Allocator rounding/process peaks require separate measurement; nominal payload
+does not establish process-memory or throughput gains. Moving arenas/general placement search need
+actual-workload evidence.
 
 ## Packed lookup kernels
 
@@ -61,24 +57,19 @@ implementation](https://github.com/microsoft/BitNet) is a technique reference su
 engine's `q8k_into`/`q8_into`, 128-weight scales, 256-activation Q8_K groups, 32-activation Q8_0
 groups and floating scale/add order. Stock BitNet quantization is not this engine's specification.
 
-The [Swift census](../config/swift.pq2-census.json) is ternary, but generic PQ2 code 3 means **+2**;
-ternary-only dispatch needs validated eligibility/fallback. [Integer bounds and correction
-arithmetic](research-register.md#t3-exact-low-bit-dots-need-bounds-at-every-intermediate) apply to
-every table and partial sum, not only the final dot; Rust overflow flags do not check wrapping SIMD.
-
-The [SIMD contract](simd-plan.md) owns packed controls. Validated immutable representations may
+The [CPU contract](cpu-kernels.md#packed-arithmetic) owns packed controls, including generic PQ2's
+**+2** symbol and bounds for every LUT intermediate/correction; the ternary [Swift census](../config/swift.pq2-census.json)
+does not authorize ternary-only dispatch for arbitrary tensors. Validated immutable representations may
 avoid repeated canonical decoding; arbitrary public tensors still need rejection checks.
 `dot(code - 1, q) = dot(code, q) - sum(q)` permits using `Q8KBlock.sums` under the same scale contract
 as lane subtraction.
 
 ### Vec-LUT for multiple prompt tokens
 
-[Vec-LUT](https://arxiv.org/html/2512.06443v2) groups lookups across tokens and streams cache-sized
-table tiles, using bounded INT16 partials and INT32 accumulation. Its
-[implementation](https://github.com/OpenBitSys/vlut.cpp) is a batched-prefill technique.
-Applicability depends on unchanged quantizers/scales, bounds for all accepted inputs and accounting
-for layouts, repacking, retained copies and scratch. Published platforms do not qualify Windows
-ARM64 or Swift.
+[Vec-LUT](https://arxiv.org/html/2512.06443v2) and its [implementation](https://github.com/OpenBitSys/vlut.cpp)
+group lookups across prompt tokens and stream cache-sized tables using bounded INT16 partials/INT32
+accumulation. Transfer requires unchanged quantizers/scales, bounds for all accepted inputs and
+accounting for layouts, repacking, retained copies and scratch; published platforms do not qualify Swift.
 
 ## Chunkwise Gated DeltaNet prefill
 
@@ -130,8 +121,8 @@ factors with checked forward reconstruction.
 ### 2026 state-traffic and verification research
 
 The [hybrid-state catalog, H20 to H21](research-register.md#hybrid-recurrence-prefix-caching-and-speculative-decoding)
-retains KVBuffer/TreeWY mechanisms, versions, hardware and negative results through **2026-10-29**.
-Neither is a selected-runtime feature:
+owns KVBuffer/TreeWY sources and negative results through **2026-10-29**. Neither is implemented
+in the selected runtime:
 
 | Candidate | Swift proof obligation |
 | --- | --- |
@@ -186,12 +177,12 @@ intermediate growth. Check signed Gram entries/ranges before applying approximat
 
 ## Validation and promotion
 
-The [validation policy](validation.md) applies independently to each change. Exact integer/storage
-changes need bitwise fixtures, scales, malformed-input and -128/+2 cases. Reordered floating work
-needs predeclared logits/KV/GDN and full continuation tolerances. Both need checkpoint isolation,
-edits, cancellation, failed recovery/reset and memory-budget checks.
+[Validation policy](validation.md) applies independently to each change. Exact integer/storage work
+needs bitwise fixtures, scales, malformed-input and -128/+2 cases. Reordered floats need declared
+logits/KV/GDN and full-continuation tolerances. Both require checkpoint isolation, edits, cancellation,
+failed recovery/reset and memory-budget checks.
 
-Local builds and focused correctness checks are allowed. Full suites, benchmarks and
-performance-profile captures remain CI-only. Promotion needs same-artifact, same-adapter comparisons
-and standard LoRA TPS/quality gates on the target laptop. Synthetic parity, smaller files and other
-devices' results do not establish acceptance; paper speedups cannot be multiplied.
+Local builds/focused correctness checks are allowed; full suites, benchmarks and performance captures
+remain CI-only. Promotion requires same-artifact/adapter target-laptop comparisons and independent
+LoRA TPS/quality gates. Synthetic parity, smaller files and other-device results are insufficient;
+paper speedups cannot be multiplied.
