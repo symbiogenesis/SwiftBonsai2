@@ -169,6 +169,13 @@ unsupported terminal reasons, error events and missing completion reject.
 Before generation, the broker may instead return HTTP 413 with the fixed JSON
 code `context_length_exceeded`. Only a fully framed, bounded, recognized error
 is treated as a recoverable context rejection; other failures require retry.
+The client also recognizes the fixed HTTP 400 `input_control_tokens_rejected`
+and HTTP 429 `rate_limit_exceeded` errors. The latter requires the broker's
+singleton `Retry-After: 1` header. Complete framing and the exact bounded JSON
+code are required before either is treated as a recoverable input rejection.
+These rejections restore the draft and retain the ready service; the user edits
+or waits and explicitly sends again. The app never automatically replays a
+rejected turn or adds it to committed model history.
 
 ## Speech input and output
 

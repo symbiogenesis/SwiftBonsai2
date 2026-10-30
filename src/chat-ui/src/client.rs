@@ -45,6 +45,9 @@ const EVIDENCE_PREFIX: &str = "Protected credentials and technical evidence: ";
 const RUNNING_MEMORY_MESSAGE: &str = "Swift stopped because its running memory requirements were no longer met. Close other apps, then select Retry model. Completed conversation turns remain in memory.";
 const LOCAL_CONNECTION_CLOSED: &str = "The connection to the model on this computer closed before a complete reply was received. The cause was not reported.";
 const CONTEXT_LIMIT_MESSAGE: &str = "This conversation and the selected output cap do not fit within the model's 8,192-token context limit. Choose a smaller output cap or start a new conversation, then send again.";
+const CONTROL_TOKEN_MESSAGE: &str = "This conversation contains reserved chat markers, such as <|im_start|> or <think>. Remove them or start a new conversation before sending again.";
+const RATE_LIMIT_MESSAGE: &str =
+    "Too many messages were sent in a short time. Wait a moment, then send again.";
 pub(crate) const STOPPED_MESSAGE: &str = "Response stopped. Select Retry model to continue. Completed conversation turns are retained; the interrupted turn is not added to model history.";
 
 pub(crate) const DEFAULT_ABLITERATION_SCALE: f32 = 1.3;
@@ -889,6 +892,21 @@ enum Framing {
 enum ResponseKind {
     Stream,
     ContextError,
+    ControlTokenError,
+    RateError,
+}
+
+impl ResponseKind {
+    const fn rejection(self) -> Option<(&'static str, &'static str)> {
+        match self {
+            Self::Stream => None,
+            Self::ContextError => Some(("context_length_exceeded", CONTEXT_LIMIT_MESSAGE)),
+            Self::ControlTokenError => {
+                Some(("input_control_tokens_rejected", CONTROL_TOKEN_MESSAGE))
+            }
+            Self::RateError => Some(("rate_limit_exceeded", RATE_LIMIT_MESSAGE)),
+        }
+    }
 }
 
 struct HttpBody<R> {
@@ -921,13 +939,13 @@ impl<R: Read> HttpBody<R> {
             done: false,
             chunk_ending: false,
         };
-        if matches!(kind, ResponseKind::ContextError) {
-            return Err(body.context_error()?);
+        if let Some((code, message)) = kind.rejection() {
+            return Err(body.rejection(code, message)?);
         }
         Ok(body)
     }
 
-    fn context_error(&mut self) -> Result<Failure> {
+    fn rejection(&mut self, code: &str, message: &'static str) -> Result<Failure> {
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Envelope {
@@ -948,10 +966,10 @@ impl<R: Read> HttpBody<R> {
             error.extend_from_slice(&bytes[..count]);
         }
         let envelope: Envelope = serde_json::from_slice(&error).map_err(|_| invalid)?;
-        if envelope.error.code != "context_length_exceeded" {
+        if envelope.error.code != code {
             return Err(invalid);
         }
-        Ok(Failure::Rejected(CONTEXT_LIMIT_MESSAGE))
+        Ok(Failure::Rejected(message))
     }
 
     fn next(&mut self, bytes: &mut [u8; READ_SIZE]) -> Result<Option<usize>> {
@@ -1083,7 +1101,9 @@ fn parse_head(head: &[u8]) -> Result<(Framing, ResponseKind)> {
     }
     let kind = match response.code {
         Some(200) => ResponseKind::Stream,
+        Some(400) => ResponseKind::ControlTokenError,
         Some(413) => ResponseKind::ContextError,
+        Some(429) => ResponseKind::RateError,
         _ => {
             return Err(Failure::Message(
                 "The local model rejected the request without reporting a recognized reason.",
@@ -1093,6 +1113,7 @@ fn parse_head(head: &[u8]) -> Result<(Framing, ResponseKind)> {
     let mut content_type = None;
     let mut length = None;
     let mut transfer = None;
+    let mut retry_after = None;
     for header in response.headers {
         let field = if header.name.eq_ignore_ascii_case("content-type") {
             Some(&mut content_type)
@@ -1100,6 +1121,8 @@ fn parse_head(head: &[u8]) -> Result<(Framing, ResponseKind)> {
             Some(&mut length)
         } else if header.name.eq_ignore_ascii_case("transfer-encoding") {
             Some(&mut transfer)
+        } else if header.name.eq_ignore_ascii_case("retry-after") {
+            Some(&mut retry_after)
         } else {
             None
         };
@@ -1114,10 +1137,15 @@ fn parse_head(head: &[u8]) -> Result<(Framing, ResponseKind)> {
             return Err(Failure::Message("Encoded local responses are unsupported."));
         }
     }
+    if matches!(kind, ResponseKind::RateError) && retry_after != Some(b"1".as_slice()) {
+        return Err(Failure::Message(
+            "The local model returned an unrecognized retry delay.",
+        ));
+    }
     let valid_media = match kind {
         ResponseKind::Stream => content_type
             .is_some_and(|value| crate::http::utf8_media_type(value, "text/event-stream")),
-        ResponseKind::ContextError => {
+        ResponseKind::ContextError | ResponseKind::ControlTokenError | ResponseKind::RateError => {
             content_type.is_some_and(|value| value.eq_ignore_ascii_case(b"application/json"))
         }
     };
@@ -1136,7 +1164,9 @@ fn parse_head(head: &[u8]) -> Result<(Framing, ResponseKind)> {
                     *length
                         <= match kind {
                             ResponseKind::Stream => MAX_BODY,
-                            ResponseKind::ContextError => MAX_ERROR_BODY,
+                            ResponseKind::ContextError
+                            | ResponseKind::ControlTokenError
+                            | ResponseKind::RateError => MAX_ERROR_BODY,
                         }
                 })
                 .ok_or(Failure::Message(
@@ -1730,8 +1760,12 @@ mod tests {
     }
 
     fn context_response(body: &[u8], chunked: bool) -> Vec<u8> {
-        let mut wire =
-            b"HTTP/1.1 413 Content Too Large\r\nContent-Type: application/json\r\n".to_vec();
+        rejection_response("413 Content Too Large", "", body, chunked)
+    }
+
+    fn rejection_response(status: &str, headers: &str, body: &[u8], chunked: bool) -> Vec<u8> {
+        let mut wire = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\n{headers}")
+            .into_bytes();
         if chunked {
             wire.extend_from_slice(
                 format!("Transfer-Encoding: chunked\r\n\r\n{:X}\r\n", body.len()).as_bytes(),
@@ -1743,6 +1777,83 @@ mod tests {
             wire.extend_from_slice(body);
         }
         wire
+    }
+
+    #[test]
+    fn security_rejections_require_exact_codes_retry_metadata_and_complete_framing() {
+        for (status, headers, body, message) in [
+            (
+                "400 Bad Request",
+                "",
+                br#"{"error":{"code":"input_control_tokens_rejected"}}"#.as_slice(),
+                super::CONTROL_TOKEN_MESSAGE,
+            ),
+            (
+                "429 Too Many Requests",
+                "Retry-After: 1\r\n",
+                br#"{"error":{"code":"rate_limit_exceeded"}}"#.as_slice(),
+                super::RATE_LIMIT_MESSAGE,
+            ),
+        ] {
+            for chunked in [false, true] {
+                let wire = rejection_response(status, headers, body, chunked);
+                assert!(
+                    matches!(HttpBody::new(Fragmented(&wire)), Err(Failure::Rejected(actual))
+                        if actual == message)
+                );
+                assert!(matches!(
+                    HttpBody::new(Fragmented(&wire[..wire.len() - 1])),
+                    Err(Failure::Message(_))
+                ));
+                for invalid in [
+                    br#"{"error":{"code":"context_length_exceeded"}}"#.as_slice(),
+                    br#"{"error":{"code":"rate_limit_exceeded","message":"untrusted text"}}"#,
+                    br#"{"error":{"code":"input_control_tokens_rejected","code":"input_control_tokens_rejected"}}"#,
+                    b"not JSON",
+                    &[b'x'; super::MAX_ERROR_BODY + 1],
+                ] {
+                    let wire = rejection_response(status, headers, invalid, chunked);
+                    assert!(matches!(
+                        HttpBody::new(Fragmented(&wire)),
+                        Err(Failure::Message(_))
+                    ));
+                }
+            }
+        }
+        for headers in [
+            "",
+            "Retry-After: 0\r\n",
+            "Retry-After: 2\r\n",
+            "Retry-After: tomorrow\r\n",
+            "Retry-After: 1\r\nRetry-After: 1\r\n",
+        ] {
+            let wire = rejection_response(
+                "429 Too Many Requests",
+                headers,
+                br#"{"error":{"code":"rate_limit_exceeded"}}"#,
+                false,
+            );
+            assert!(matches!(
+                HttpBody::new(Fragmented(&wire)),
+                Err(Failure::Message(_))
+            ));
+        }
+        for (status, body) in [
+            (
+                "400 Bad Request",
+                br#"{"error":{"code":"rate_limit_exceeded"}}"#.as_slice(),
+            ),
+            (
+                "429 Too Many Requests",
+                br#"{"error":{"code":"input_control_tokens_rejected"}}"#.as_slice(),
+            ),
+        ] {
+            let wire = rejection_response(status, "Retry-After: 1\r\n", body, false);
+            assert!(matches!(
+                HttpBody::new(Fragmented(&wire)),
+                Err(Failure::Message(_))
+            ));
+        }
     }
 
     #[test]
@@ -2059,6 +2170,8 @@ mod tests {
         let original = serialize_request(&history, 4096, false, None)?;
         for failure in [
             Failure::Rejected("Shorten the request."),
+            Failure::Rejected(super::CONTROL_TOKEN_MESSAGE),
+            Failure::Rejected(super::RATE_LIMIT_MESSAGE),
             Failure::Stopped,
             Failure::Message("Malformed response"),
         ] {
