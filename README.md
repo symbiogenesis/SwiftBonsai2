@@ -69,7 +69,7 @@ and [local API contract](docs/broker-policy.md#public-request-contract).
 
 | Model | Runtime | Model file | Job commit cap / measured peak | Available RAM admission | Restore copy saved vs. Rust 0.1.4 |
 | --- | --- | ---: | ---: | ---: | ---: |
-| **Swift Bonsai 2 `PTQ1_0` (diagnostic only)** | **Rust 0.1.7 source + LoRA 1.3** | **5.54 GiB** | **11.5 GiB / 5.85 GiB** | **15.5 GiB** | **149.625 MiB** |
+| **Swift Bonsai 2 `PTQ1_0` (diagnostic only)** | **Rust 0.1.8 prerelease + LoRA 1.3** | **5.54 GiB** | **11.5 GiB / not recorded** | **15.5 GiB** | **149.625 MiB** |
 | Swift Bonsai 2 `PTQ1_0` | PrismML C++ CPU | 5.54 GiB | 11.5 GiB / — | 15.5 GiB | — |
 | Swift Bonsai 2 `PQ2_0` (current default) | PrismML C++ CPU | 6.71 GiB | 11.5 GiB / — | 15.5 GiB | — |
 | Qwen3.8-27B `UD-Q3_K_XL` | llama.cpp reference | 12.24 GiB | 18 GiB / — | 22 GiB | — |
@@ -77,11 +77,13 @@ and [local API contract](docs/broker-policy.md#public-request-contract).
 > [!NOTE]
 > **PTQ1 is diagnostic only; shipping it as the app default remains no-go.**
 > The [Rust service fix](https://github.com/symbiogenesis/prism-inference/pull/2)
-> implements explicit PTQ1 and the approved adapter. The bold row is its one-token
-> source diagnostic at scale 1.3: all **129 files / 39,504,384 logits and live-state
-> values** match the native reference byte for byte on the automatic ARM64 backend.
-> The entire device job completed within four minutes. Released Rust 0.1.8 also
-> passes a bounded [sandboxed startup, stream and cleanup smoke](docs/evidence/ptq1-native-service.json).
+> implements explicit PTQ1 and the approved adapter. The bold row uses the pinned
+> Rust 0.1.8 prerelease, which passes a bounded [sandboxed startup, stream and cleanup
+> smoke](docs/evidence/ptq1-native-service.json); that run did not record a memory peak.
+> The earlier [0.1.7 source diagnostic](docs/evidence/ptq1-rust-smoke.json) measured
+> **5.85 GiB peak Job commit** at scale 1.3: all **129 files / 39,504,384 logits and
+> live-state values** match the native reference byte for byte on the automatic ARM64
+> backend. Both device jobs completed within four minutes.
 > Broader service acceptance, scalar/explicit NEON and zero-scale controls,
 > full-context/4K-output, adapter basis,
 > quality and benefit qualification remain outstanding. PQ2 remains the app default.
