@@ -188,6 +188,10 @@ their handles: unlink/recreate can give processes different locked file objects.
 No record-oriented shared database needs independently locked ranges.
 [Byte-range locks](https://learn.microsoft.com/en-us/windows/win32/fileio/locking-and-unlocking-byte-ranges-in-files)
 do not constrain mapped I/O or replace deny-write/delete sharing for models.
+The [file-sharing contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)
+governs those retained handles. Job [commit accounting](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information)
+does not cover mapped residency or device memory; reported peaks can include
+denied allocations. Physical-memory monitoring remains necessary.
 Flush and atomic namespace replacement have distinct purposes; neither promises
 survival of every device/power failure.
 

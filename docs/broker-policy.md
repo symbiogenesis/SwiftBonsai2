@@ -7,6 +7,14 @@ client remains [native Rust](ui-architecture.md); the broker has no browser UI.
 PowerShell preflight and the daily profile remain launch-disabled. Development
 checks establish neither daily security nor actual-model qualification.
 
+The transport follows [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) and
+[RFC 9112](https://www.rfc-editor.org/rfc/rfc9112.html) within the subset below.
+Strict JSON visitors preserve duplicate/unknown-key rejection before constructing
+the canonical request; permissive maps or enums can erase that evidence.
+[Absolute deadlines](https://docs.rs/tokio/1.54.1/tokio/time/fn.timeout_at.html)
+include expiry checks around immediately ready operations. Parser and runtime
+selection rationale lives in the [dependency audit](dependency-audit.md).
+
 ## Public request contract
 
 Only HTTP/1.1 origin-form `POST /v1/chat/completions` is accepted. Host must be

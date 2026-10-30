@@ -145,6 +145,29 @@ quality, security or resource regression. Hosted ARM64 results cannot establish
 Snapdragon performance. Backend changes also require complete-state phase handoff and
 compatible state/numerical identity.
 
+## 2026 literature: runtime overhead and work placement
+
+Sources reviewed 2026-10-29 and their platform limits live in the
+[systems catalog](research-register.md#2026-systems-measurement-and-output-budget-work);
+none establishes a defect or new profile in the pinned runtime.
+
+| Register source | Project implication |
+| --- | --- |
+| S1 ProfInfer | Correlate timelines/counters before optimizing; qualify Windows instrumentation overhead separately from eBPF. |
+| S5 rvllm | Audit cache replacement, broadcasts and contiguous operations for repeated copies. Shared immutable storage and independent mutable snapshots need distinct ownership. |
+| S7 SMG | Attribute tokenization, parsing and backpressure separately from accelerator service; its broader gateway API is unnecessary here. |
+| S4 Elastic Gang | Dynamic participants need acknowledged barrier/epoch transitions; compare existing phase/thread controls before adding a scheduler. |
+| S6 Event-triggered SGLang | Measure idle polling, wake latency and active decode separately; affinity only relocates polling. |
+| S3 Beyond the Buzz | Charge state handoff, rate matching and coordination before selecting CPU/GPU/NPU phase placement. |
+
+Measure work/traffic before changing representation, ownership, scheduling or fusion.
+Preallocation can hide full-size copies; in-place writes can alias snapshots.
+Record allocation lifetimes alongside independent state ownership.
+[Streaming contracts](streaming-resources.md) cover Runner queues/text/PCM;
+runtime experiments belong in Prism. Follow the
+[measurement guide](performance-expectations.md#2026-literature-measurement-and-comparison)
+for CI-only timing/tracing, actual-model comparisons and evidence limits.
+
 ## Default-runtime promotion
 
 `Get-RuntimePromotion.ps1` reports the reviewed requirements for replacing the current

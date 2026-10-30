@@ -326,6 +326,22 @@ through bounded version/help probes. CPU and paired completion re-verify the run
 inside their Rust supervisor and hold the guards until execution ends. Provisioning
 therefore uses the packaged maintenance tool or builds it from the pinned sources.
 
+`bonsai-artifacts` shares ZIP, SHA-256, installed-file and PE checks between the
+broker and maintenance. Extraction rejects unsafe or duplicate paths and excessive
+expansion. Guards hold the archive, verified files and ancestors through probes;
+completion takes a fresh guard for its batch. GGUF inspection/export also holds
+its verified source and validates output before publication. Receipts record
+identity but cannot transfer live file ownership or prove parser isolation.
+
+Download cancellation reaches streamed bodies; a header timeout alone does not
+bound a body read. Publication holds the exclusive partial-file handle through
+verification and a same-volume hard link, which cannot overwrite a destination.
+Failure preserves the partial. See the API contracts for
+[streamed HTTP](https://learn.microsoft.com/en-us/dotnet/api/system.net.http.httpcompletionoption),
+[PE images](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format),
+[exclusive creation](https://doc.rust-lang.org/std/fs/struct.OpenOptions.html#method.create_new)
+and [hard links](https://learn.microsoft.com/en-us/windows/win32/fileio/hard-links-and-junctions).
+
 Doctor marks unavailable facts when inventory queries are denied. Reports include
 local paths; review them before sharing.
 
@@ -358,8 +374,10 @@ Metadata inspection skips tensor payloads; census and export read them.
 state, no prompt-cache reuse and a ten-minute deadline. Swift uses batch
 128/microbatch 64. The embedded template's
 thinking behavior is requested explicitly with `--reasoning on` and
-`--reasoning-effort xhigh`, alongside the publisher sampler. No extra system
-persona is injected. This is not a finished-answer quality check; see
+`--reasoning-effort xhigh`, alongside the publisher sampler. No system-only
+preamble is injected: Swift's verified template rejects it. This check preserves
+that template and does not qualify another chat profile. It is not a
+finished-answer quality check; see
 [inference defaults](inference-defaults.md) for the pinned completion renderer's
 template-argument limitation. Modern `llama-cli` starts a server and is not used
 here.

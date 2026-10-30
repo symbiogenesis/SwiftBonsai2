@@ -1,6 +1,6 @@
 #requires -Version 7.6
 # Nonlaunching M1 policy preparation; this module is not an HTTP or OS boundary.
-# Literature and pre-implementation sanity checks: docs/implementation-research.md.
+# Protocol and admission rationale: docs/broker-policy.md.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true

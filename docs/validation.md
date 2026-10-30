@@ -144,6 +144,22 @@ code; documented Win32 operations stay in boundary crates reused by maintenance.
 Scoped allowances retain reasons and safety documentation. UI checks preserve
 [native Rust presentation and the explicit API subset](ui-architecture.md).
 
+`bonsai-cpu-policy` shares profile limits, memory accounting, completion flags and
+source/PTQ1 selection. Qualification derives argv from validated controls and
+reports their canonical identity. Prism's ARM source route requires Clang rather
+than silently reusing the MSVC builder; archives, configuration and overlays stay
+pinned. Compiler-object and Cargo caches are separate and cannot bypass checks.
+Native codec checks run the production Rust codec against the pinned DLL in a
+supervised probe, using independent base-3 bytes, frozen FP32 scale bits and
+captured C++ fixtures.
+
+The [pinned nightly](../rust-toolchain.toml) enables Polonius branch-sensitive
+broker lending; caller-owned reusable logits also work on stable.
+[Compiler probes](https://github.com/symbiogenesis/prism-inference/blob/main/tools/rust-trial/README.md)
+retain stable as an isolated control. Release overflow checks stay enabled and
+debug assertions disabled to preserve
+[subtle's release contract](https://github.com/dalek-cryptography/subtle/blob/2.6.1/src/lib.rs#L50-L53).
+
 Shared `doc` planning uses `cargo doc --no-deps -Z unstable-options --output-format json`
 for selected packages/features in Release, locally through `Test-Rust.ps1` and in
 Foundation. Missing docs, intra-doc links, markup and Rust-block lints still fail.
