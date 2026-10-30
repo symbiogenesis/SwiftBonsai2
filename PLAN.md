@@ -50,9 +50,6 @@ benchmarks and performance captures stay in owning CI.
 - Complete [signed distribution acceptance](docs/chat-packages.md): binary provenance,
   dependency and license notices, clean-machine ARM64 Visual C++ prerequisites,
   installation, upgrades and rollback.
-- Consolidate the native UI's independent model-lifecycle flags into explicit states.
-  Cover late completion, rejection, failure and Stop events, preserving newer drafts
-  and keeping Send closed until owned teardown or verified readiness completes.
 
 ### Isolation, transport and recovery
 
@@ -229,8 +226,8 @@ identities and leaves missing evidence pending.
 - Capture prefill, first useful answer, decode TPS, task time, retries and truncation,
   working, private, Job, system and device memory peaks, hard faults, observable energy,
   responsiveness and sustained heat and fan behavior. Retain X2 `ProcessMemory`
-  aggregates and qualify complete-model coverage and phase attribution. Follow the
-  [measurement
+  aggregates and qualify complete-model coverage and model-phase attribution beyond
+  observed stdout boundaries. Follow the [measurement
   rules](docs/performance-expectations.md#2026-literature-measurement-and-comparison):
   repeated interleaved pairs with uncertainty, independent X1 and X2 results,
   instrumented attribution apart from timing, idle versus active power and consistent
@@ -366,8 +363,9 @@ Follow [Adreno contracts](docs/adreno.md); discovery alone changes no CPU profil
 - Capture native GPU, driver and API features, limits and [memory
   telemetry](docs/hardware-capabilities.md#native-vulkan-observations), rejecting
   emulation and preserving unknowns and conservative admission. Resolve X2 `host-gpu`
-  instance creation failure; tool-policy X2-90 observations neither explain it nor
-  qualify worker access.
+  headless-worker `instance-creation` failure (`VK_ERROR_INCOMPATIBLE_DRIVER`), using
+  retained stage/result diagnostics; tool-policy X2-90 observations neither explain it
+  nor qualify worker access.
 - Pilot one native ARM64 OpenCL packed projection candidate and Swift shape in Prism:
   scalar PQ2-by-Q8_K control, exact grouping, raw scales and float order, separate PTQ1
   lane. Prove query and workload access under unchanged worker mitigations; refusal is a
