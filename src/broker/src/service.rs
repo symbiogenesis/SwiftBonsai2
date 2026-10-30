@@ -8,7 +8,7 @@ use crate::{
     RequestPolicy,
     backend::{BackendError, BackendPolicy},
     scheduler::{GateError, RequestGate, Reservation},
-    supervisor::{BackendConnector, REQUEST_TIMEOUT, ServeError, serve_chat},
+    supervisor::{BackendConnector, REQUEST_TIMEOUT, ServeError, serve_chat_with_budget},
     transport::LoopbackBackend,
 };
 use std::{
@@ -28,6 +28,9 @@ use tokio::{
 
 /// Maximum time an accepted socket may wait for the single active request slot.
 pub const QUEUE_TIMEOUT: Duration = Duration::from_secs(30);
+
+mod burst;
+pub(crate) use burst::BurstBudget;
 
 /// Reserve numeric IPv4 loopback with exclusive Windows address ownership.
 pub(crate) fn bound_loopback_socket(port: u16) -> io::Result<TcpSocket> {
@@ -65,6 +68,7 @@ pub struct LocalChatService {
     gate: RequestGate,
     port: u16,
     capacity: usize,
+    burst: BurstBudget,
 }
 
 impl LocalChatService {
@@ -114,6 +118,7 @@ impl LocalChatService {
             gate,
             port,
             capacity: max_waiting + 1,
+            burst: BurstBudget::new(Instant::now()),
         })
     }
 
@@ -234,11 +239,12 @@ impl AcceptedChat<'_> {
             completed: AtomicBool::new(false),
         };
         let mut shutdown = pin!(self.service.gate.closed());
-        let mut serving = pin!(serve_chat(
+        let mut serving = pin!(serve_chat_with_budget(
             self.stream,
             &self.service.policy,
             &backend,
-            deadline
+            deadline,
+            &self.service.burst
         ));
         let result = poll_fn(|cx| {
             if shutdown.as_mut().poll(cx).is_ready() {

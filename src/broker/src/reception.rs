@@ -5,7 +5,8 @@
 //! the connection. No background task or borrowed stream is retained here.
 
 use crate::{
-    AuthorizedHead, MAX_HEADER_BYTES, MAX_HEADERS, PendingChat, Rejection, RequestPolicy, wire,
+    AuthorizedHead, MAX_HEADER_BYTES, MAX_HEADERS, PendingChat, Rejection, RequestPolicy,
+    service::BurstBudget, wire,
 };
 use http::{Method, Request, Version, uri::PathAndQuery};
 use std::time::Duration;
@@ -45,6 +46,25 @@ pub struct ReceivedChat<R> {
     chat: PendingChat,
 }
 
+pub(crate) enum BudgetedChat<R> {
+    Ready(ReceivedChat<R>),
+    RateLimited {
+        stream: R,
+        remaining: usize,
+        intake_deadline: Instant,
+    },
+    Rejected(R, Rejection),
+}
+
+struct ReceivedHead<R> {
+    stream: R,
+    authorized: AuthorizedHead,
+    raw: Box<[u8]>,
+    used: usize,
+    head_end: usize,
+    intake_deadline: Instant,
+}
+
 impl<R> ReceivedChat<R> {
     /// The response adapter must send one response with Connection: close,
     /// then drop the stream. Never reuse it for another request. Exact token
@@ -69,10 +89,65 @@ impl<R> ReceivedChat<R> {
 /// Returns [`ReceiveError`] for an expired deadline, stream failure, incomplete
 /// or oversized headers/body, invalid wire syntax, surplus bytes or policy rejection.
 pub async fn receive_chat<R: AsyncRead + Unpin + 'static>(
-    mut stream: R,
+    stream: R,
     policy: &RequestPolicy,
     supervisor_deadline: Instant,
 ) -> Result<ReceivedChat<R>, ReceiveError> {
+    let head = receive_head(stream, policy, supervisor_deadline).await?;
+    let (stream, chat) = receive_body(head).await?;
+    Ok(ReceivedChat {
+        stream,
+        chat: chat.map_err(ReceiveError::Policy)?,
+    })
+}
+
+pub(crate) async fn receive_chat_with_budget<R: AsyncRead + Unpin + 'static>(
+    stream: R,
+    policy: &RequestPolicy,
+    supervisor_deadline: Instant,
+    budget: &BurstBudget,
+) -> Result<BudgetedChat<R>, ReceiveError> {
+    let head = receive_head(stream, policy, supervisor_deadline).await?;
+    if budget.take(Instant::now()).is_err() {
+        return Ok(BudgetedChat::RateLimited {
+            stream: head.stream,
+            remaining: head.authorized.length - (head.used - head.head_end),
+            intake_deadline: head.intake_deadline,
+        });
+    }
+    let (stream, chat) = receive_body(head).await?;
+    Ok(match chat {
+        Ok(chat) => BudgetedChat::Ready(ReceivedChat { stream, chat }),
+        Err(rejection) => BudgetedChat::Rejected(stream, rejection),
+    })
+}
+
+/// Finish receiving only the already bounded, rejected body after write-half
+/// shutdown. This avoids resetting a write-before-read TCP client on close.
+pub(crate) async fn discard_rate_body<R: AsyncRead + Unpin>(
+    stream: &mut R,
+    mut remaining: usize,
+    intake_deadline: Instant,
+) -> Result<(), ReceiveError> {
+    let mut scratch = [0u8; 4096];
+    while remaining != 0 {
+        let limit = remaining.min(scratch.len());
+        match read_before(stream, &mut scratch[..limit], intake_deadline).await {
+            Ok(count) => remaining -= count,
+            // A client which read the denial/FIN may close without sending its
+            // body. No accepted request or backend work depends on those bytes.
+            Err(ReceiveError::Incomplete) => break,
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+async fn receive_head<R: AsyncRead + Unpin>(
+    mut stream: R,
+    policy: &RequestPolicy,
+    supervisor_deadline: Instant,
+) -> Result<ReceivedHead<R>, ReceiveError> {
     let start = Instant::now();
     let intake_deadline = supervisor_deadline.min(start + INTAKE_TIMEOUT);
     let header_deadline = intake_deadline.min(start + HEADER_TIMEOUT);
@@ -98,6 +173,29 @@ pub async fn receive_chat<R: AsyncRead + Unpin + 'static>(
     if prefix_length > length {
         return Err(ReceiveError::SurplusBytes);
     }
+    Ok(ReceivedHead {
+        stream,
+        authorized,
+        raw,
+        used,
+        head_end,
+        intake_deadline,
+    })
+}
+
+async fn receive_body<R: AsyncRead + Unpin>(
+    head: ReceivedHead<R>,
+) -> Result<(R, Result<PendingChat, Rejection>), ReceiveError> {
+    let ReceivedHead {
+        mut stream,
+        authorized,
+        mut raw,
+        mut used,
+        head_end,
+        intake_deadline,
+    } = head;
+    let length = authorized.length;
+    let prefix_length = used - head_end;
     let chat = if length <= raw.len() - head_end {
         // Reuse the head buffer for small bodies, even when fragmented across
         // reads. Its coalesced prefix is already in place, so no body allocation
@@ -107,9 +205,7 @@ pub async fn receive_chat<R: AsyncRead + Unpin + 'static>(
             used += read_before(&mut stream, &mut raw[used..body_end], intake_deadline).await?;
         }
         ensure_time(intake_deadline)?;
-        authorized
-            .prepare(&raw[head_end..body_end])
-            .map_err(ReceiveError::Policy)?
+        authorized.prepare(&raw[head_end..body_end])
     } else {
         let mut body = vec![0u8; length];
         body[..prefix_length].copy_from_slice(&raw[head_end..used]);
@@ -119,10 +215,10 @@ pub async fn receive_chat<R: AsyncRead + Unpin + 'static>(
             filled += read_before(&mut stream, &mut body[filled..], intake_deadline).await?;
         }
         ensure_time(intake_deadline)?;
-        authorized.prepare(&body).map_err(ReceiveError::Policy)?
+        authorized.prepare(&body)
     };
     ensure_time(intake_deadline)?;
-    Ok(ReceivedChat { stream, chat })
+    Ok((stream, chat))
 }
 
 async fn read_before<R: AsyncRead + Unpin>(

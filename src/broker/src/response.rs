@@ -48,7 +48,7 @@ pub enum ResponseError {
     JsonSyntax,
 }
 
-/// Send the sole fixed pre-generation admission error without private values.
+/// Send a fixed pre-generation context admission error without private values.
 /// The caller must not have written any response bytes or begun generation.
 pub(crate) async fn send_context_rejection<W: AsyncWrite + Unpin>(
     mut client: W,
@@ -57,6 +57,26 @@ pub(crate) async fn send_context_rejection<W: AsyncWrite + Unpin>(
     const BODY: &[u8] = br#"{"error":{"code":"context_length_exceeded"}}"#;
     let head = format!(
         "HTTP/1.1 413 Content Too Large\r\n{COMMON_HEADERS}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+        BODY.len()
+    );
+    write_group(
+        &mut client,
+        &[head.as_bytes(), BODY],
+        supervisor_deadline,
+        true,
+    )
+    .await
+}
+
+/// Send one fixed authenticated burst denial before counting or generation.
+/// The fixed one-token-per-second budget needs at most one second to refill.
+pub(crate) async fn send_rate_rejection<W: AsyncWrite + Unpin>(
+    mut client: W,
+    supervisor_deadline: Instant,
+) -> Result<(), ResponseError> {
+    const BODY: &[u8] = br#"{"error":{"code":"rate_limit_exceeded"}}"#;
+    let head = format!(
+        "HTTP/1.1 429 Too Many Requests\r\n{COMMON_HEADERS}Retry-After: 1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
         BODY.len()
     );
     write_group(

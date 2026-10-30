@@ -90,6 +90,115 @@ async fn send_body(client: &mut TcpStream, port: u16, body: &[u8]) {
 }
 
 #[test]
+fn burst_limit_rejects_authenticated_headers_before_body_or_backend_and_refills() {
+    run(async {
+        let backend = listener().await;
+        let service = service(&backend, 0).await;
+        // Invalid credentials never spend the authenticated request budget.
+        for _ in 0..8 {
+            let (_, rejected) = burst_probe(&service, false, false).await;
+            assert_eq!(
+                rejected,
+                Err(ServiceError::Request(ServeError::Receive(
+                    bonsai_broker::reception::ReceiveError::Policy(Rejection::Unauthorized)
+                )))
+            );
+        }
+        let mut admitted = 0;
+        loop {
+            // Body-policy rejections spend the budget without contacting a
+            // backend, so rapid malformed traffic is bounded too.
+            let (wire, result) = burst_probe(&service, true, false).await;
+            if wire.is_empty() {
+                assert_eq!(
+                    result,
+                    Err(ServiceError::Request(ServeError::Receive(
+                        bonsai_broker::reception::ReceiveError::Policy(Rejection::ChatSchema)
+                    )))
+                );
+                admitted += 1;
+                assert!(admitted < 32, "authenticated burst was not bounded");
+                continue;
+            }
+            assert!(admitted >= 8);
+            assert_eq!(result, Ok(()));
+            let (head, body) = wire.split_once("\r\n\r\n").unwrap();
+            assert!(head.starts_with("HTTP/1.1 429 Too Many Requests\r\n"));
+            assert!(head.contains("\r\nRetry-After: 1\r\n"));
+            assert!(head.contains("\r\nConnection: close\r\n"));
+            assert!(head.contains("\r\nCache-Control: no-store\r\n"));
+            assert!(head.contains(&format!("\r\nContent-Length: {}", body.len())));
+            assert_eq!(body, r#"{"error":{"code":"rate_limit_exceeded"}}"#);
+            break;
+        }
+        // Send only headers declaring a one-MiB body. The exhausted service
+        // must send its complete response without waiting for that body.
+        let (head_only, result) = burst_probe(&service, true, true).await;
+        assert!(head_only.starts_with("HTTP/1.1 429 Too Many Requests\r\n"));
+        assert_eq!(result, Ok(()));
+        let worker = Arc::clone(&service);
+        let serving = spawn_local(async move { worker.accept().await.unwrap().serve().await });
+        let mut client = TcpStream::connect(("127.0.0.1", service.port()))
+            .await
+            .unwrap();
+        // Match the native client's write-all-before-read ordering. The
+        // rejected body exceeds typical socket buffers, so unread input must
+        // not turn the authenticated denial into broken-pipe or reset.
+        send_body(&mut client, service.port(), &vec![b'x'; 1024 * 1024]).await;
+        let mut full_body_response = Vec::new();
+        client.read_to_end(&mut full_body_response).await.unwrap();
+        let full_body_response = String::from_utf8(full_body_response).unwrap();
+        assert!(full_body_response.starts_with("HTTP/1.1 429 Too Many Requests\r\n"));
+        assert!(full_body_response.ends_with(r#"{"error":{"code":"rate_limit_exceeded"}}"#));
+        assert_eq!(serving.await.unwrap(), Ok(()));
+        // Authentication still wins after exhaustion rather than returning a
+        // rate response for a caller with an invalid credential.
+        assert_eq!(burst_probe(&service, false, false).await.0, "");
+        assert!(
+            timeout(Duration::from_millis(20), backend.accept())
+                .await
+                .is_err()
+        );
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let (wire, result) = burst_probe(&service, true, false).await;
+        assert_eq!(wire, "");
+        assert_eq!(
+            result,
+            Err(ServiceError::Request(ServeError::Receive(
+                bonsai_broker::reception::ReceiveError::Policy(Rejection::ChatSchema)
+            )))
+        );
+    });
+}
+
+async fn burst_probe(
+    service: &Arc<LocalChatService>,
+    authenticated: bool,
+    head_only: bool,
+) -> (String, Result<(), ServiceError>) {
+    let worker = Arc::clone(service);
+    let serving = spawn_local(async move { worker.accept().await.unwrap().serve().await });
+    let mut client = TcpStream::connect(("127.0.0.1", service.port()))
+        .await
+        .unwrap();
+    let key = if authenticated { FRONT_KEY } else { BACK_KEY };
+    let (length, body) = if head_only {
+        (1024 * 1024, "")
+    } else {
+        (2, "{}")
+    };
+    let head = format!(
+        "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {key}\r\nContent-Type: application/json\r\nContent-Length: {length}\r\n\r\n{body}",
+        service.port()
+    );
+    client.write_all(head.as_bytes()).await.unwrap();
+    let mut response = Vec::new();
+    client.read_to_end(&mut response).await.unwrap();
+    drop(client);
+    (String::from_utf8(response).unwrap(), serving.await.unwrap())
+}
+
+#[test]
 fn rejected_context_preserves_admission_for_a_subsequent_multiturn_request() {
     run(async {
         let backend = listener().await;

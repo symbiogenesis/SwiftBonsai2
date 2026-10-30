@@ -7,8 +7,14 @@
 use crate::{
     Rejection, RequestPolicy,
     backend::{BackendError, BackendPolicy, count_and_admit, request_chat_owned},
-    reception::{ReceiveError, receive_chat},
-    response::{ResponseError, send_chat_response_mode, send_context_rejection},
+    reception::{
+        BudgetedChat, ReceiveError, ReceivedChat, discard_rate_body, receive_chat,
+        receive_chat_with_budget,
+    },
+    response::{
+        ResponseError, send_chat_response_mode, send_context_rejection, send_rate_rejection,
+    },
+    service::BurstBudget,
 };
 use std::{future::poll_fn, pin::pin, task::Poll, time::Duration};
 use tokio::{
@@ -94,12 +100,46 @@ pub async fn serve_chat<C>(
 where
     C: AsyncRead + AsyncWrite + Unpin + 'static,
 {
+    serve_chat_inner(client, policy, backend, deadline, None).await
+}
+
+#[allow(
+    clippy::future_not_send,
+    reason = "the supplied connector and streams may be local; no task is spawned"
+)]
+pub(crate) async fn serve_chat_with_budget<C>(
+    client: C,
+    policy: &RequestPolicy,
+    backend: &impl BackendConnector,
+    deadline: Instant,
+    budget: &BurstBudget,
+) -> Result<(), ServeError>
+where
+    C: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    serve_chat_inner(client, policy, backend, deadline, Some(budget)).await
+}
+
+#[allow(
+    clippy::future_not_send,
+    reason = "the supplied connector and streams may be local; no task is spawned"
+)]
+async fn serve_chat_inner<C>(
+    client: C,
+    policy: &RequestPolicy,
+    backend: &impl BackendConnector,
+    deadline: Instant,
+    budget: Option<&BurstBudget>,
+) -> Result<(), ServeError>
+where
+    C: AsyncRead + AsyncWrite + Unpin + 'static,
+{
     let deadline = deadline.min(Instant::now() + REQUEST_TIMEOUT);
     ensure_time(deadline)?;
-    let (client, pending) = receive_chat(client, policy, deadline)
-        .await
-        .map_err(ServeError::Receive)?
-        .into_parts();
+    let Some(received) = receive_admitted(client, policy, deadline, budget).await? else {
+        return Ok(());
+    };
+    let (client, pending) = received.into_parts();
     let (mut input, output) = split(client);
     let mut surplus = [0u8; 1];
     let mut abandoned = pin!(input.read(&mut surplus));
@@ -148,6 +188,50 @@ where
     .await;
     ensure_time(deadline)?;
     result
+}
+
+#[allow(
+    clippy::future_not_send,
+    reason = "the supplied client may be local; no task is spawned"
+)]
+async fn receive_admitted<C>(
+    client: C,
+    policy: &RequestPolicy,
+    deadline: Instant,
+    budget: Option<&BurstBudget>,
+) -> Result<Option<ReceivedChat<C>>, ServeError>
+where
+    C: AsyncRead + AsyncWrite + Unpin + 'static,
+{
+    if let Some(budget) = budget {
+        match receive_chat_with_budget(client, policy, deadline, budget)
+            .await
+            .map_err(ServeError::Receive)?
+        {
+            BudgetedChat::Ready(received) => Ok(Some(received)),
+            BudgetedChat::RateLimited {
+                mut stream,
+                remaining,
+                intake_deadline,
+            } => {
+                send_rate_rejection(&mut stream, intake_deadline)
+                    .await
+                    .map_err(ServeError::Response)?;
+                discard_rate_body(&mut stream, remaining, intake_deadline)
+                    .await
+                    .map_err(ServeError::Receive)?;
+                Ok(None)
+            }
+            BudgetedChat::Rejected(_client, rejection) => {
+                Err(ServeError::Receive(ReceiveError::Policy(rejection)))
+            }
+        }
+    } else {
+        receive_chat(client, policy, deadline)
+            .await
+            .map(Some)
+            .map_err(ServeError::Receive)
+    }
 }
 
 fn ensure_time(deadline: Instant) -> Result<(), ServeError> {

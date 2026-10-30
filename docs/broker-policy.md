@@ -28,6 +28,24 @@ A single decimal Content-Length from 1 byte through 1 MiB must match the body.
 Content-Type must be `application/json`, optionally with `; charset=utf-8`.
 Policy-only callers must bound their own prior allocations.
 
+Each `LocalChatService` also owns one fixed-size authenticated-request budget:
+eight requests may arrive as a burst, with one request refilled per monotonic
+second, capped at eight. The budget is checked after header authorization and
+before body intake beyond the existing 16 KiB head buffer, separate body
+allocation, JSON preparation or backend token counting. Invalid credentials
+never spend this budget. Authorized requests spend it even when their body is
+subsequently invalid; rejection does not reset fractional refill credit. This
+is independent of the active/waiting gate and retains no client-indexed map.
+Exhaustion sends a bounded HTTP 429 JSON `rate_limit_exceeded` error with
+`Retry-After: 1`, `Connection: close` and the ordinary no-store headers, then
+write-half-closes immediately and drains only the remaining declared body with
+a fixed 4 KiB buffer under the original intake deadline. This preserves a
+complete error for clients that write their whole request before reading;
+header-only clients may read the error/FIN and close without sending the body.
+Admission remains reusable. The caller may retry explicitly after the delay;
+the broker never replays a request. Low-level policy, reception and supervisor
+APIs still require their caller to supply service-wide admission ownership.
+
 | Bound | Limit |
 | --- | --- |
 | Parsed header names/values/separators; complete raw request/response head | 16 KiB each |
@@ -37,6 +55,7 @@ Policy-only callers must bound their own prior allocations.
 | Completion tokens | 1–4096, default 4096 |
 | Decoded backend response | 4 MiB |
 | Exact-count response | 4 KiB |
+| Authenticated burst / sustained request admission | 8 requests / 1 request per second |
 | Header intake / complete intake | 5 seconds / 30 seconds from intake start |
 | Connect / complete write operation | 5 seconds each |
 | Queue wait / total request | 30 seconds / 10 minutes from acceptance |
