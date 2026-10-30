@@ -8,7 +8,7 @@
 
 use bonsai_broker::{
     launcher::{LaunchConfig, LaunchedService},
-    runtime::RunExit,
+    runtime::{RunExit, RunReport},
 };
 use serde_json::{Value, json};
 use std::{
@@ -25,6 +25,13 @@ use tokio::{
 const CASE: &str = "pinned_native_model_streams_recovers_and_restarts_in_required_sandbox";
 const WAIT: Duration = Duration::from_secs(600);
 const EXTENDED_COMPLETION_CAP: u32 = 4096;
+const STALLED_CONSUMER_PAUSE: Duration = Duration::from_secs(1);
+const STOP_WAIT: Duration = Duration::from_secs(30);
+
+struct Workloads {
+    extended_history: bool,
+    stalled_consumer: bool,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 struct StreamSummary {
@@ -260,23 +267,37 @@ async fn extended_acceptance(port: u16, credential: &str) -> Value {
     })
 }
 
-async fn abandon_after_content(client: TcpStream) {
+async fn prefix_line(reader: &mut BufReader<TcpStream>, limit: usize) -> String {
+    let mut line = String::new();
+    let count = reader
+        .take(u64::try_from(limit + 1).unwrap())
+        .read_line(&mut line)
+        .await
+        .unwrap();
+    assert!(count > 0 && count <= limit && line.ends_with("\r\n"));
+    line
+}
+
+async fn read_until_content(client: TcpStream) -> (BufReader<TcpStream>, usize) {
     let mut reader = BufReader::new(client);
-    let mut header_bytes = 0;
+    let mut header = String::new();
     loop {
-        let mut line = String::new();
-        assert_ne!(reader.read_line(&mut line).await.unwrap(), 0);
-        header_bytes += line.len();
-        assert!(header_bytes < 16 * 1024);
+        let line = prefix_line(&mut reader, 16 * 1024 - header.len()).await;
+        header.push_str(&line);
         if line == "\r\n" {
             break;
         }
     }
+    let (head, _) = response(header.as_bytes(), "HTTP/1.1 200 OK");
+    for required in [
+        "Content-Type: text/event-stream",
+        "Transfer-Encoding: chunked",
+    ] {
+        assert!(head.lines().any(|line| line.eq_ignore_ascii_case(required)));
+    }
     let mut payload = Vec::new();
     loop {
-        let mut line = String::new();
-        assert_ne!(reader.read_line(&mut line).await.unwrap(), 0);
-        assert!(line.len() <= 32);
+        let line = prefix_line(&mut reader, 32).await;
         let length = usize::from_str_radix(line.trim_end(), 16).unwrap();
         assert!(length > 0 && payload.len() + length <= 64 * 1024);
         let first = payload.len();
@@ -298,34 +319,83 @@ async fn abandon_after_content(client: TcpStream) {
                 continue;
             };
             if let Ok(event) = serde_json::from_str::<Value>(data)
-                && event["choices"].as_array().is_some_and(|choices| {
-                    choices.iter().any(|choice| {
+                && let Some(text) = event["choices"].as_array().and_then(|choices| {
+                    choices.iter().find_map(|choice| {
                         choice["delta"]["content"]
                             .as_str()
-                            .is_some_and(|text| !text.is_empty())
+                            .filter(|text| !text.is_empty())
                     })
                 })
             {
-                return;
+                return (reader, text.len());
             }
         }
     }
 }
 
-async fn acceptance(data: &Path, evidence: &Path, extended: bool) -> Value {
-    let owner = start(data, evidence).await;
-    let port = owner.port();
-    let credential = key(&owner);
-    let (stop, stopped) = oneshot::channel();
-    let running = spawn_local(owner.run(async { stopped.await.map_err(io::Error::other) }));
+fn stalled_stop_summary(
+    report: &RunReport,
+    completed_before: usize,
+    failed_before: usize,
+    content_bytes: usize,
+) -> Value {
+    assert_eq!(report.exit, RunExit::Shutdown);
+    // A naturally completed response cannot qualify interruption merely because
+    // its client stopped reading. These are broker operation counters, not proof
+    // that the native backend was still generating at the instant of Stop.
+    assert_eq!(report.completed, completed_before);
+    assert_eq!(report.failed, failed_before + 1);
+    assert!(content_bytes > 0);
+    json!({
+        "enabled":true, "scope":"explicit-stop-with-nonreading-client",
+        "requestedCompletionCap":EXTENDED_COMPLETION_CAP,
+        "observedVisiblePrefixBytes":content_bytes,
+        "nonreadingPauseMilliseconds":STALLED_CONSUMER_PAUSE.as_millis(),
+        "stopCompletionBoundSeconds":STOP_WAIT.as_secs(),
+        "completedOperationsBeforeStall":completed_before,
+        "failedOperationsBeforeStall":failed_before,
+        "completedOperationsAtStop":report.completed,
+        "failedOperationsAtStop":report.failed,
+        "brokerOperationInterrupted":true, "ownedJobStopped":true,
+        "backendGeneratingAtStopKnown":false, "socketBackpressureQualified":false,
+        "freshRestartAfterStopPassed":false, "performanceQualified":false
+    })
+}
 
+async fn nonreading_prefix(port: u16, credential: &str) -> (BufReader<TcpStream>, usize) {
+    let body = request(
+        json!([{"role":"user", "content":"Write a long, detailed story about a cedar forest. Develop several scenes, characters and a complete ending."}]),
+        true,
+        EXTENDED_COMPLETION_CAP,
+    );
+    let observed = timeout(WAIT, async {
+        let client = connect(port, credential, &body).await;
+        read_until_content(client).await
+    })
+    .await
+    .unwrap();
+    // Keep the socket and any read-ahead bytes alive without consuming more
+    // output. The short pause is a workload condition, not a timing sample.
+    tokio::time::sleep(STALLED_CONSUMER_PAUSE).await;
+    observed
+}
+
+async fn supplied_history_acceptance(port: u16, credential: &str) {
     let history = json!([
         {"role":"user", "content":"Remember the word cedar."},
         {"role":"assistant", "content":"I will remember cedar.", "reasoning_content":"The supplied word is cedar."},
         {"role":"user", "content":"Write one sentence about cedar."}
     ]);
-    streamed_response(&exchange(port, &credential, &request(history, true, 32)).await);
+    streamed_response(&exchange(port, credential, &request(history, true, 32)).await);
+}
 
+async fn acceptance(data: &Path, evidence: &Path, workloads: &Workloads) -> Value {
+    let owner = start(data, evidence).await;
+    let port = owner.port();
+    let credential = key(&owner);
+    let (stop, stopped) = oneshot::channel();
+    let running = spawn_local(owner.run(async { stopped.await.map_err(io::Error::other) }));
+    supplied_history_acceptance(port, &credential).await;
     // Exact tokenizer counting must reject before generation, then permit a
     // fresh request in the same owned model instance. This is not an 8K decode.
     let oversized = json!([{"role":"user", "content":" cedar".repeat(9000)}]);
@@ -351,18 +421,30 @@ async fn acceptance(data: &Path, evidence: &Path, extended: bool) -> Value {
     assert!(
         ["length", "stop"].contains(&completed["choices"][0]["finish_reason"].as_str().unwrap())
     );
-    let extended_report = if extended {
+    let extended_report = if workloads.extended_history {
         extended_acceptance(port, &credential).await
     } else {
         json!({"enabled":false})
     };
+    let stalled = if workloads.stalled_consumer {
+        Some(nonreading_prefix(port, &credential).await)
+    } else {
+        None
+    };
     stop.send(()).unwrap();
-    assert_eq!(
-        timeout(WAIT, running).await.unwrap().unwrap().unwrap().exit,
-        RunExit::Shutdown
-    );
+    let stopped_report = timeout(STOP_WAIT, running).await.unwrap().unwrap().unwrap();
+    assert_eq!(stopped_report.exit, RunExit::Shutdown);
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
-
+    let mut stalled_report = if let Some((client, content_bytes)) = stalled {
+        let extra = usize::from(workloads.extended_history);
+        let summary =
+            stalled_stop_summary(&stopped_report, 2 + 2 * extra, 1 + extra, content_bytes);
+        // The client handle stays held through owned shutdown/listener cleanup.
+        drop(client);
+        summary
+    } else {
+        json!({"enabled":false})
+    };
     let owner = start(data, evidence).await;
     let port = owner.port();
     let credential = key(&owner);
@@ -373,7 +455,7 @@ async fn acceptance(data: &Path, evidence: &Path, extended: bool) -> Value {
         4096,
     );
     let client = connect(port, &credential, &long).await;
-    timeout(WAIT, abandon_after_content(client)).await.unwrap();
+    drop(timeout(WAIT, read_until_content(client)).await.unwrap());
     assert_eq!(
         timeout(WAIT, running).await.unwrap().unwrap().unwrap().exit,
         RunExit::AdmissionClosed
@@ -404,7 +486,116 @@ async fn acceptance(data: &Path, evidence: &Path, extended: bool) -> Value {
         RunExit::Shutdown
     );
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
-    extended_report
+    if workloads.stalled_consumer {
+        stalled_report["freshRestartAfterStopPassed"] = json!(true);
+    }
+    json!({"extendedWorkload":extended_report, "stalledConsumerWorkload":stalled_report})
+}
+
+#[test]
+fn native_stalled_consumer_retains_fragmented_prefix_connection_until_dropped() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        timeout(Duration::from_secs(10), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let client = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+            let (mut peer, _) = listener.accept().await.unwrap();
+            peer.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n")
+                .await
+                .unwrap();
+            let payload = "data: {\"choices\":[{\"delta\":{\"content\":\"cèdre\"},\"finish_reason\":null}]}\n\n";
+            let split = payload.find('è').unwrap() + 1;
+            for part in [&payload.as_bytes()[..split], &payload.as_bytes()[split..]] {
+                peer.write_all(format!("{:X}\r\n", part.len()).as_bytes())
+                    .await
+                    .unwrap();
+                peer.write_all(part).await.unwrap();
+                peer.write_all(b"\r\n").await.unwrap();
+            }
+            let observed = read_until_content(client).await;
+            assert_eq!(observed.1, "cèdre".len());
+            {
+                let mut byte = [0];
+                let mut reading = std::pin::pin!(peer.read(&mut byte));
+                assert!(
+                    std::future::poll_fn(|cx| {
+                        std::task::Poll::Ready(reading.as_mut().poll(cx).is_pending())
+                    })
+                    .await
+                );
+            }
+            drop(observed);
+            assert_eq!(peer.read(&mut [0]).await.unwrap(), 0);
+        })
+        .await
+        .unwrap();
+    });
+}
+
+#[test]
+fn native_stalled_consumer_rejects_error_or_unframed_stream_headers() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        timeout(Duration::from_secs(10), async {
+            for head in [
+                "HTTP/1.1 429 Too Many Requests\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 20\r\n\r\n",
+            ] {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let client = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+                let (mut peer, _) = listener.accept().await.unwrap();
+                peer.write_all(head.as_bytes()).await.unwrap();
+                let reading = tokio::spawn(read_until_content(client));
+                assert!(reading.await.unwrap_err().is_panic());
+            }
+        })
+        .await
+        .unwrap();
+    });
+}
+
+#[test]
+fn native_stalled_consumer_never_qualifies_natural_completion_as_interruption() {
+    let interrupted = RunReport {
+        exit: RunExit::Shutdown,
+        completed: 2,
+        failed: 2,
+        peak_in_flight: 1,
+    };
+    let summary = stalled_stop_summary(&interrupted, 2, 1, 5);
+    assert_eq!(summary["brokerOperationInterrupted"], true);
+    assert_eq!(summary["backendGeneratingAtStopKnown"], false);
+    assert_eq!(summary["socketBackpressureQualified"], false);
+    assert_eq!(summary["performanceQualified"], false);
+    for report in [
+        RunReport {
+            completed: 3,
+            failed: 1,
+            ..interrupted
+        },
+        RunReport {
+            failed: 1,
+            ..interrupted
+        },
+        RunReport {
+            failed: 3,
+            ..interrupted
+        },
+        RunReport {
+            exit: RunExit::AdmissionClosed,
+            ..interrupted
+        },
+    ] {
+        assert!(std::panic::catch_unwind(|| stalled_stop_summary(&report, 2, 1, 5)).is_err());
+    }
+    assert!(std::panic::catch_unwind(|| stalled_stop_summary(&interrupted, 2, 1, 0)).is_err());
 }
 
 #[test]
@@ -487,14 +678,20 @@ fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
         .enable_all()
         .build()
         .unwrap();
-    let setting = env::var("BONSAI_NATIVE_EXTENDED");
-    assert!(matches!(
-        setting.as_deref(),
-        Ok("true" | "false") | Err(env::VarError::NotPresent)
-    ));
-    let extended = setting.as_deref() == Ok("true");
-    let extended_report =
-        runtime.block_on(LocalSet::new().run_until(acceptance(data, evidence, extended)));
+    let enabled = |name: &str| {
+        let setting = env::var(name);
+        assert!(matches!(
+            setting.as_deref(),
+            Ok("true" | "false") | Err(env::VarError::NotPresent)
+        ));
+        setting.as_deref() == Ok("true")
+    };
+    let workloads = Workloads {
+        extended_history: enabled("BONSAI_NATIVE_EXTENDED"),
+        stalled_consumer: enabled("BONSAI_NATIVE_STALLED_CONSUMER"),
+    };
+    let workload_report =
+        runtime.block_on(LocalSet::new().run_until(acceptance(data, evidence, &workloads)));
     let report = json!({
         "schemaVersion":1, "case":CASE, "revision":env::var("GITHUB_SHA").unwrap(),
         "runId":env::var("GITHUB_RUN_ID").unwrap(), "runAttempt":env::var("GITHUB_RUN_ATTEMPT").unwrap(),
@@ -504,7 +701,8 @@ fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
         "requiredNativeSandbox":true, "adapterEnabled":false, "fullContextQualified":false,
         "fullModelNumericalParityQualified":false, "performanceQualified":false,
         "dailyServiceIsolationQualified":false, "defaultRuntimeQualified":false,
-        "extendedWorkload":extended_report
+        "extendedWorkload":workload_report["extendedWorkload"],
+        "stalledConsumerWorkload":workload_report["stalledConsumerWorkload"]
     });
     fs::write(
         evidence.join("acceptance.json"),

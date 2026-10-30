@@ -93,6 +93,29 @@ The focused model-free
 checks the extended fixture and that reported usage stays separate from visible
 bytes and event counts. It does not load a model.
 
+The optional `stalled_consumer` input reads through the first nonempty visible
+content event of a full-output-reservation request, keeps that connection open
+without further reads for one second, and invokes explicit owner Stop. The
+owned runner must finish within 30 seconds, confirm the backend Job is empty
+and release its listener without relying on client closure. Operation counters
+must show one additional failed operation and no additional completed operation;
+natural response completion cannot qualify interruption. Subsequent acceptance
+requires generated content from a freshly owned backend and another successful
+fresh-owner request after the existing abandonment trial, without replaying the
+interrupted request. Interrupted instances never reopen admission.
+
+Its credential-free receipt distinguishes unfinished broker forwarding from
+unknown backend generation activity at Stop. This bounded workload does not
+establish socket-buffer saturation, maximum-size backlog, cancellation latency
+measurements or a performance gain. Actual X2 qualification remains pending a
+successful main-only device CI receipt. Model-free named
+`native_stalled_consumer_retains_fragmented_prefix_connection_until_dropped`
+and `native_stalled_consumer_never_qualifies_natural_completion_as_interruption`
+regressions cover fragmented UTF-8/SSE intake, retained client ownership and the
+natural-completion guard without loading a model. The named
+`native_stalled_consumer_rejects_error_or_unframed_stream_headers` case requires
+HTTP 200 with chunked event-stream framing before accepting that prefix.
+
 [Foundation](../.github/workflows/foundation.yml) runs only on `main` pushes or
 manual dispatch, skipping documentation-only pushes (root Markdown and `docs/`).
 Its lightweight planner selects changed Cargo packages and every transitive

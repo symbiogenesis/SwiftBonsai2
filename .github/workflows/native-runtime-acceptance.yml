@@ -7,6 +7,11 @@ on:
         type: boolean
         default: false
         required: false
+      stalled_consumer:
+        description: Stop an unfinished stream while its connected client stops reading, then require fresh-owner recovery
+        type: boolean
+        default: false
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -52,6 +57,7 @@ jobs:
         working-directory: ${{ env.BONSAI_NATIVE_WORK }}
         env:
           BONSAI_NATIVE_EXTENDED: ${{ inputs.extended_history && 'true' || 'false' }}
+          BONSAI_NATIVE_STALLED_CONSUMER: ${{ inputs.stalled_consumer && 'true' || 'false' }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
@@ -65,6 +71,7 @@ jobs:
             Os=[Environment]::OSVersion.VersionString
             Architecture=[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
             ExtendedHistoryRequested=($env:BONSAI_NATIVE_EXTENDED -eq 'true')
+            StalledConsumerRequested=($env:BONSAI_NATIVE_STALLED_CONSUMER -eq 'true')
             Passed=$false; DefaultRuntimeQualified=$false
           }
           try {
@@ -113,6 +120,8 @@ jobs:
           }
           @('Bounded actual-model Rust application lifecycle passed under required native containment.',
             ('Long supplied-history/full output reservation requested: ' + $env:BONSAI_NATIVE_EXTENDED),
+            ('Explicit Stop with a nonreading connected client requested: ' + $env:BONSAI_NATIVE_STALLED_CONSUMER),
+            'The stalled-client workload requires an interrupted broker operation, bounded owned shutdown and fresh-owner recovery; it does not prove socket-buffer saturation or that the backend was still generating at Stop.',
             'The optional workload records framing, termination and reported output usage; a requested 4096 cap does not prove 4096 generated tokens or exact 8K occupancy.',
             'No adapter was enabled. Full-context numerical/resource, performance, quality and daily-service qualification remain separate.',
             'This workflow cannot promote the default runtime.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY

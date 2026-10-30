@@ -59,9 +59,15 @@ no-go decision, including losing cases.
   after CPU-feature/Windows changes; host-bound Cargo/native cache regressions
   remain model-free, while actual speech behavior requires device acceptance.
   Exercise Stop, abandonment, deadlines, memory pressure, process cleanup and
-  explicit retry without replaying interrupted turns. Include Find across streamed
-  appends, response replacements and conversation switches in long-conversation
-  acceptance, including append-only result/cache reuse and saturated results.
+  explicit retry without replaying interrupted turns.
+  Run the optional native acceptance `stalled_consumer` workload on the X2 runner
+  to qualify explicit Stop while an unfinished stream's connected client stops
+  reading, owned Job/listener cleanup and fresh-owner recovery. Its operation
+  counters reject natural completion as an interruption; socket-buffer saturation
+  and backend generation activity at Stop remain separately unproven.
+  Include Find across streamed appends, response replacements and conversation
+  switches in long-conversation acceptance, including append-only result/cache
+  reuse and saturated results.
   Exercise the 512-message live transcript boundary during retry-heavy sessions,
   Find navigation and recovery. Matching, cached-result and combined count/byte
   eviction regressions remain model-free. Qualify fixed-size highlight layout
