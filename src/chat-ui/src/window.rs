@@ -476,6 +476,7 @@ impl State {
                 self.input = text.chars().take(INPUT_LIMIT).collect();
                 self.place_composer_cursor(self.input.chars().count());
             }
+            self.retain_draft();
             return;
         }
         self.stop_speech();

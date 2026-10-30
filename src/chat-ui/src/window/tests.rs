@@ -157,6 +157,45 @@ fn queued_rejections_after_stop_preserve_teardown_and_composer_drafts() {
 }
 
 #[test]
+fn queued_rejection_after_stop_retains_completed_extra_effort_draft() {
+    for retry_required in [false, true] {
+        let (mut state, commands, events) = state();
+        state.ready = true;
+        state.input = "Original question".to_owned();
+        state.submit();
+        assert!(matches!(commands.try_recv(), Ok(Command::Send { .. })));
+        state.model_event(Event::Text("A complete draft.".to_owned()));
+        state.model_event(Event::Draft("A complete draft.".to_owned()));
+        state.model_event(Event::Stage("Review"));
+        state.model_event(Event::Text("An unfinished revision".to_owned()));
+        state.stop_generation();
+        assert!(matches!(commands.try_recv(), Ok(Command::Stop)));
+        let transcript = state.transcript.plain_text();
+        let status = state.status.clone();
+        assert!(
+            events
+                .send(Event::Rejected {
+                    message: "Review failed".to_owned(),
+                    text: "Original question".to_owned(),
+                    retry_required,
+                })
+                .is_ok()
+        );
+
+        state.drain_events();
+        assert_eq!(state.status, status);
+        state.model_event(Event::Stopped);
+        assert_eq!(state.last_answer, "A complete draft.");
+        assert!(state.answer_complete);
+        assert_eq!(state.transcript.plain_text(), transcript);
+        assert_eq!(state.input, "Original question");
+        assert!(state.committed.is_empty());
+        assert!(state.retryable && !state.ready);
+        assert_eq!(state.status, client::STOPPED_MESSAGE);
+    }
+}
+
+#[test]
 fn completed_turn_winning_stop_race_keeps_visible_and_committed_answers_consistent() {
     let (mut state, _commands, _events) = state();
     state.ready = true;
