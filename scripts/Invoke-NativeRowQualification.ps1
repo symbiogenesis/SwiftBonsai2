@@ -63,6 +63,7 @@ function Save-RowReport {
     Flushes partial evidence before atomically replacing the previous report.
     #>
     [CmdletBinding()]
+    [OutputType([void])]
     param([Parameter(Mandatory)][Collections.IDictionary]$Report, [Parameter(Mandatory)][string]$Path)
     $temporary = $Path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
     $stream = [IO.FileStream]::new($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)

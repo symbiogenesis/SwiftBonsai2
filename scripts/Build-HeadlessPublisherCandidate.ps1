@@ -58,6 +58,22 @@ function Invoke-CandidateTool {
     if ($result.ExitCode -ne 0) { throw ('Hosted candidate tool failed: ' + $LogName) }
     return $result
 }
+function Expand-CandidateLlvmArchive {
+    <# .SYNOPSIS
+    Decodes the pinned long-window Zstandard frame before reading its tar payload.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([string]$Zstd, [string]$Tar, [string]$Archive, [string]$Destination)
+    if (-not $Archive.EndsWith('.tar.zst', [StringComparison]::Ordinal)) { throw 'Expected the pinned LLVM tar.zst archive.' }
+    $plainTar = $Archive.Substring(0, $Archive.Length - '.zst'.Length)
+    if ([IO.File]::Exists($plainTar)) { throw 'LLVM decompression output must be new.' }
+    # System tar's implicit Zstandard decoder rejects this frame's window.
+    # The hosted zstd CLI explicitly permits at most 2 GiB (windowLog 31).
+    # Hosted zstd 1.5.7 supports -o OUTPUT, not a --output alias.
+    Invoke-CandidateTool -Executable $Zstd -Arguments @('--decompress', '--long=31', '-o', $plainTar, $Archive) -LogName 'llvm-decompress.txt' -TimeoutSeconds 300 | Out-Null
+    Invoke-CandidateTool -Executable $Tar -Arguments @('-xf', $plainTar, '-C', $Destination) -LogName 'llvm-extract.txt' -TimeoutSeconds 300 | Out-Null
+}
 try {
     $archive = Join-Path $scratch 'source.zip'
     Receive-LockedArtifact -Uri $manifest.base.url -Path $archive -Bytes $manifest.base.bytes -Sha256 $manifest.base.sha256 -TimeoutSeconds 180 | Out-Null
@@ -80,8 +96,13 @@ try {
     Receive-LockedArtifact -Uri ('https://github.com/llvm/llvm-project/releases/download/' + $llvmPin.release + '/' + $llvmPin.archive) -Path $llvmArchive -Bytes $llvmPin.archiveBytes -Sha256 $llvmPin.archiveSha256 -TimeoutSeconds 600 | Out-Null
     $llvmRoot = Join-Path $scratch 'llvm'
     [void][IO.Directory]::CreateDirectory($llvmRoot)
-    $tar = (Get-Command tar -CommandType Application | Select-Object -First 1).Source
-    Invoke-CandidateTool -Executable $tar -Arguments @('-xf', $llvmArchive, '-C', $llvmRoot) -LogName 'llvm-extract.txt' -TimeoutSeconds 300 | Out-Null
+    $zstd = @(Get-Command zstd -CommandType Application -ErrorAction Stop)[0].Source
+    $tar = Join-Path $env:WINDIR 'System32/tar.exe'
+    $receipt.LlvmExtraction = @{ ZstdPath=$zstd; ZstdSha256=(Get-FileHash -LiteralPath $zstd -Algorithm SHA256).Hash.ToLowerInvariant()
+        ZstdVersion=(Invoke-CandidateTool -Executable $zstd -Arguments @('--version') -LogName 'zstd-version.txt' -TimeoutSeconds 30).StandardOutput.Trim()
+        TarPath=$tar; TarSha256=(Get-FileHash -LiteralPath $tar -Algorithm SHA256).Hash.ToLowerInvariant(); MaximumWindowLog=31 }
+    $receipt.Phase='llvm-extract'; & $save
+    Expand-CandidateLlvmArchive -Zstd $zstd -Tar $tar -Archive $llvmArchive -Destination $llvmRoot
     $llvmDirectories = @(Get-ChildItem -LiteralPath $llvmRoot -Directory)
     if ($llvmDirectories.Count -ne 1) { throw 'Expected one pinned LLVM directory.' }
     $llvm = Join-Path $llvmDirectories[0].FullName 'bin'
