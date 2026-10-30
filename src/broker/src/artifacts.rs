@@ -12,6 +12,9 @@ pub struct VerifiedArtifacts {
     model: PathBuf,
     runtime_directory: PathBuf,
     archive_path: PathBuf,
+    // Retain archive/installation handles through the Windows backend lifetime.
+    // The non-Windows verifier rejects before acquiring any runtime guard.
+    #[cfg(windows)]
     runtime: Option<VerifiedRuntime>,
     _model: Option<VerifiedFile>,
 }
@@ -72,6 +75,7 @@ impl VerifiedArtifacts {
             model,
             runtime_directory: spec.runtime_directory,
             archive_path: spec.archive_path,
+            #[cfg(windows)]
             runtime: Some(runtime),
             _model: Some(model_guard),
         })
