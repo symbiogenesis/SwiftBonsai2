@@ -217,12 +217,14 @@ identities and leaves missing evidence pending.
   strict rounding and order checks. Resolve counter discrepancies and preserve dynamic
   scale and load-without-apply under [allocation
   rules](docs/swift-lora.md#allocation-semantics).
-- Qualify [current-weight PTQ1](docs/swift-memory.md#current-weight-ptq1-option)
-  full-model scalar and explicit-NEON logits and live state, no-LoRA and LoRA basis and
-  forward execution; then paired complete responses, context and recovery, quality and
-  comfort with PQ2 rollback. Promote or reduce admission only after suitability, using
-  the verified **1,259,520,000-byte** packing difference. Account for mapped residency
-  separately from private commit and preserve reserves.
+- Reopen [PTQ1 release qualification](docs/swift-memory.md#release-decision) only after
+  a reviewed runtime release passes unchanged worker startup and supports the intended
+  PTQ1/adapter service. Qualify full-model scalar/explicit-NEON logits and live state,
+  no-LoRA and LoRA basis/forward execution, then stable-condition paired complete
+  responses at app scale 1.3, context/output and recovery, quality and comfort with PQ2
+  rollback. Promote or reduce admission only after suitability, using the verified
+  **1,259,520,000-byte** packing difference. Account for mapped residency separately
+  from private commit and preserve reserves.
 - Capture prefill, first useful answer, decode TPS, task time, retries and truncation,
   working, private, Job, system and device memory peaks, hard faults, observable energy,
   responsiveness and sustained heat and fan behavior. Retain X2 `ProcessMemory`

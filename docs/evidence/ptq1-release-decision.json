@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "kind": "ptq1-pinned-profile-release-decision",
+  "observedOn": "2026-10-30",
+  "decision": "no-go-current-pinned-profile",
+  "scope": "Current pinned publisher CPU runtime and Rust 0.1.6 PTQ1 app proposal on the observed X2 Elite Extreme; no intrinsic format verdict or other-family qualification.",
+  "formatRejected": false,
+  "releaseApproved": false,
+  "modelLoaded": false,
+  "benchmarkRun": false,
+  "defaultChanged": false,
+  "runtimePinChanged": false,
+  "workerPolicyRelaxed": false,
+  "device": {
+    "processorName": "Snapdragon(R) X2 Elite Extreme - X2E94100 - Qualcomm Oryon(TM) CPU",
+    "nativeArchitecture": "ARM64",
+    "windowsBuild": "26300.9818",
+    "windowsDisplayVersion": "26H2"
+  },
+  "packing": {
+    "freshExportStatus": "verified",
+    "sourceSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+    "outputSha256": "e658f0f0736a03a4549535a439f9b07254ebf8ab88ae27cbe6e52d098ca5d1f5",
+    "sourceBytes": 7206168928,
+    "outputBytes": 5946648928,
+    "savingBytes": 1259520000,
+    "convertedTensors": 402,
+    "exactReconstructedBlocks": 209920000,
+    "exporterSha256": "32bc70ff91ab87685ee37a70ffaa79814c174467fb599b3362157c28b3d34491"
+  },
+  "localWorkerStartup": {
+    "status": "failed",
+    "execution": "local-model-free; not CI qualification",
+    "runnerSourceRevision": "6797e5646dcfbeaee64f33d4e1db5b7b5a95ec41",
+    "maintenanceToolSha256": "78310de271202643d062949856e5048cb2e2f72f871f08ca6ae8a5611795a3c0",
+    "rustToolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+    "rustcCommit": "1a2c4797ef2570bd76ca5dee34449169bc7dc457",
+    "runtimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+    "runtimeArchiveSha256": "cc808b33d35c72a3bd5c69a0d609d422426feb9dce23868e77992b6c33b8ddb3",
+    "verifiedRuntimeFiles": 63,
+    "executable": "llama-completion.exe",
+    "executableSha256": "8c632ad9817dd5d85cfcdf0d8d80d8c41127356ea7be5ea6eb5278b5870630aa",
+    "arguments": ["--version"],
+    "modelArtifacts": [],
+    "workerPolicy": "required-headless",
+    "jobMemoryLimitBytes": 536870912,
+    "requiredAvailablePhysicalBytes": 16642998272,
+    "physicalReserveBytes": 4294967296,
+    "timeoutSeconds": 10,
+    "stdoutLimitBytes": 65536,
+    "stderrLimitBytes": 65536,
+    "exitCode": 3221225794,
+    "exitCodeHex": "0xC0000142",
+    "peakJobMemoryBytes": 3436544,
+    "minimumAvailablePhysicalBytes": 21811826688,
+    "scope": "DLL initialization failure of the shared publisher executable before model selection. The generic supervisor ModelProcessStarted flag means a worker executable launched, not that weights loaded. No format performance, quality or memory comparison."
+  },
+  "rustService": {
+    "version": "0.1.6",
+    "sourceRevision": "02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0",
+    "ptq1AppService": "unsupported",
+    "adapterAppService": "unsupported",
+    "historicalNumericalEvidence": "ptq1-arithmetic-evidence.json; bounded three supplied tokens without adapter only"
+  },
+  "ci": {
+    "firstAttemptUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41005833161",
+    "firstAttemptRevision": "5d81304702abd513a69db9acefc3de4b9d2de0f9",
+    "firstAttemptStatus": "failed-in-maintenance-build-before-capture",
+    "firstAttemptIsPtq1Verdict": false,
+    "correctedDeviceCapture": "not-run"
+  },
+  "remainingIndependentGates": [
+    "reviewed runtime release with intended PTQ1 and adapter service under unchanged containment",
+    "settled-main native device worker preflight and stable-condition suitability capture",
+    "full-model scalar and explicit NEON logits and complete live-state parity against matching native PTQ1 reference",
+    "adapter authoring basis, zero-scale identity and nonzero forward execution",
+    "complete responses and independent quality review at intended app settings including scale 1.3",
+    "8K context, 4K output, cancellation, recovery and PQ2 rollback",
+    "predeclared latency or capacity/energy benefit, sustained resources and owner-accepted comfort",
+    "installation, provenance and durable qualification review"
+  ],
+  "archive": {
+    "directoryRelativeToDataDirectory": "qualification/ptq1-resolution-20261030",
+    "scope": "Selected credential-free raw local diagnostic and analyzer evidence. Local archival does not constitute independently reviewed CI qualification.",
+    "files": [
+      {"path": "combined-standards.log", "bytes": 9208, "sha256": "1343873e23dd7e720e1dbf6bb5dbab033e06aaf837ea91ed724355de8431c2ae"},
+      {"path": "local-worker-preflight.ps1", "bytes": 1625, "sha256": "12e20b63e83177e129d2db586a357a162daed25f1c703d27ba598677c06eb039"},
+      {"path": "runtime-verification.json", "bytes": 17347, "sha256": "50bcc3fd781f13320713a145aa2600d8a13974ce5f294225345619c299bcf252"},
+      {"path": "stderr.txt", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+      {"path": "stdout.txt", "bytes": 0, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+      {"path": "supervision.json", "bytes": 17002, "sha256": "819bb09075e94ae9d0f6f04d5354103a99cdbca1ab68a3f966d596c84c335d19"},
+      {"path": "wrapper-failure.txt", "bytes": 327, "sha256": "2f7819239b5420b628d706117db7a8fb3ba85e96b88bed4c44f41c1eff34ce59"}
+    ]
+  }
+}
