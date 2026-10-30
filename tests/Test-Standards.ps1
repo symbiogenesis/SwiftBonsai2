@@ -34,10 +34,9 @@ if ($AnalyzerModulePath) {
 if ($analyzer.Name -ne 'PSScriptAnalyzer' -or $analyzer.Version -ne $requiredAnalyzerVersion) {
     throw "Standards validation requires exactly PSScriptAnalyzer $requiredAnalyzerVersion."
 }
-# Exported-function rules resolve this cmdlet's parameters on parallel workers.
-# Initialize its lazy metadata on the caller thread first: PowerShell 7.6 can
-# otherwise throw inside CommandInfo.ResolveParameter during unchanged-file scans.
-$null = (Get-Command -Name Export-ModuleMember -CommandType Cmdlet -ErrorAction Stop).Parameters
+# Keep both export-resolution rules, scheduling their runspace-bound parameter
+# lookups separately rather than relying on lazy metadata warmup.
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Standards.psm1')
 if (-not $DotNetPath) { $DotNetPath = (Get-Command -Name dotnet -CommandType Application -ErrorAction Stop).Source }
 if (-not [IO.Path]::IsPathFullyQualified($DotNetPath) -or $DotNetPath -match '%[^%]+%' -or
     -not [IO.File]::Exists($DotNetPath)) { throw 'DotNetPath must name an existing expanded absolute executable.' }
@@ -139,7 +138,7 @@ foreach ($file in ($files | Sort-Object -Property FullName -Unique)) {
         }
     }
     Write-Information -MessageData "PowerShell standards: analyzing $($file.FullName)." -InformationAction Continue
-    $diagnostics = @(Invoke-ScriptAnalyzer -Path $file.FullName -Settings $settings -ErrorAction Stop)
+    $diagnostics = @(Invoke-BonsaiStandardsAnalyzer -Path $file.FullName -Settings $settings)
     foreach ($diagnostic in $diagnostics) {
         Write-Information -MessageData ('{0}:{1}: {2} {3}: {4}' -f $file.FullName, $diagnostic.Line, $diagnostic.Severity, $diagnostic.RuleName, $diagnostic.Message) -InformationAction Continue
     }

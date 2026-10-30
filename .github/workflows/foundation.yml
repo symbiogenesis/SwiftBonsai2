@@ -212,6 +212,7 @@ jobs:
           }
           $tooling = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Standards-Tools'
           $analyzer = Join-Path $tooling 'PSScriptAnalyzer/1.25.0/PSScriptAnalyzer.psd1'
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-StandardsAnalyzer.ps1') -AnalyzerModulePath $analyzer
           & (Join-Path $env:GITHUB_WORKSPACE 'tests/Test-Standards.ps1') -AnalyzerModulePath $analyzer
   # Preserve the required check name; only the planner may authorize skips.
   foundation:
