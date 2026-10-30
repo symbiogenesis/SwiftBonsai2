@@ -23,6 +23,10 @@ use tokio::{
 };
 
 const CASE: &str = "pinned_native_model_streams_recovers_and_restarts_in_required_sandbox";
+const PTQ1_ADAPTER_CASE: &str =
+    "pinned_native_ptq1_adapter_starts_and_streams_within_device_budget";
+const CASE_BUDGET: Duration = Duration::from_secs(240);
+const OPTIONAL_RESERVE: Duration = Duration::from_secs(120);
 const WAIT: Duration = Duration::from_secs(600);
 const EXTENDED_COMPLETION_CAP: u32 = 4096;
 const STALLED_CONSUMER_PAUSE: Duration = Duration::from_secs(1);
@@ -690,8 +694,19 @@ fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
         extended_history: enabled("BONSAI_NATIVE_EXTENDED"),
         stalled_consumer: enabled("BONSAI_NATIVE_STALLED_CONSUMER"),
     };
-    let workload_report =
-        runtime.block_on(LocalSet::new().run_until(acceptance(data, evidence, &workloads)));
+    assert_eq!(
+        profile_case(
+            "pq2-no-adapter",
+            workloads.extended_history,
+            workloads.stalled_consumer
+        ),
+        Some(CASE)
+    );
+    let workload_report = runtime.block_on(LocalSet::new().run_until(async {
+        timeout(CASE_BUDGET, acceptance(data, evidence, &workloads))
+            .await
+            .unwrap()
+    }));
     let report = json!({
         "schemaVersion":1, "case":CASE, "revision":env::var("GITHUB_SHA").unwrap(),
         "runId":env::var("GITHUB_RUN_ID").unwrap(), "runAttempt":env::var("GITHUB_RUN_ATTEMPT").unwrap(),
@@ -709,4 +724,290 @@ fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
         serde_json::to_vec_pretty(&report).unwrap(),
     )
     .unwrap();
+}
+
+fn profile_case(profile: &str, extended: bool, stalled: bool) -> Option<&'static str> {
+    if extended || stalled {
+        return None;
+    }
+    match profile {
+        "pq2-no-adapter" => Some(CASE),
+        "ptq1-adapter" => Some(PTQ1_ADAPTER_CASE),
+        _ => None,
+    }
+}
+
+fn adapter_configuration(data: &Path, evidence: &Path) -> LaunchConfig {
+    let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = reservation.local_addr().unwrap().port().to_string();
+    drop(reservation);
+    let mut args: Vec<OsString> = [
+        "--launch-development",
+        "--require-native-sandbox",
+        "--native-engine",
+        "--profile",
+        "swift-pq2-assessment",
+        "--use-repacked-ptq1",
+        "--use-abliterate-lora",
+        "--frontend-port",
+        "0",
+        "--backend-port",
+        &port,
+        "--data-directory",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect();
+    args.push(data.as_os_str().to_owned());
+    args.push("--evidence-parent".into());
+    args.push(evidence.as_os_str().to_owned());
+    LaunchConfig::parse(args).unwrap()
+}
+
+async fn start_adapter(data: &Path, evidence: &Path) -> LaunchedService {
+    timeout(
+        WAIT,
+        adapter_configuration(data, evidence).start(pending::<io::Result<()>>()),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+}
+
+fn adapter_request(messages: Value, scale: f64, limit: u32) -> Value {
+    assert!(scale.is_finite() && (0.0..=2.0).contains(&scale));
+    assert!([2, 4].contains(&limit));
+    let mut body = request(messages, true, limit);
+    body["enable_thinking"] = json!(false);
+    body["abliteration_scale"] = json!(scale);
+    body
+}
+
+fn adapter_summary(label: &str, scale: f64, cap: u32, summary: &StreamSummary) -> Value {
+    assert!(summary.content_bytes > 0);
+    assert!(["length", "stop"].contains(&summary.finish_reason.as_str()));
+    assert!(
+        summary
+            .completion_tokens
+            .is_none_or(|tokens| tokens <= u64::from(cap))
+    );
+    json!({"phase":label, "requestedScale":scale,
+        "requestedScaleF64Bits":format!("{:016x}", scale.to_bits()),
+        "requestedCompletionCap":cap, "finishReason":summary.finish_reason,
+        "visibleContentBytes":summary.content_bytes,
+        "reportedCompletionTokens":summary.completion_tokens})
+}
+
+fn save_adapter_report(evidence: &Path, report: &Value) {
+    fs::write(
+        evidence.join("acceptance.json"),
+        serde_json::to_vec_pretty(report).unwrap(),
+    )
+    .unwrap();
+}
+
+async fn adapter_stream(port: u16, credential: &str, scale: f64, label: &str, cap: u32) -> Value {
+    let messages = json!([{"role":"user","content":"Name a tree."}]);
+    adapter_summary(
+        label,
+        scale,
+        cap,
+        &streamed_response(
+            &exchange(port, credential, &adapter_request(messages, scale, cap)).await,
+        ),
+    )
+}
+
+async fn adapter_owned_stop(
+    stop: oneshot::Sender<()>,
+    running: tokio::task::JoinHandle<Result<RunReport, bonsai_broker::launcher::LaunchError>>,
+    port: u16,
+) -> Value {
+    stop.send(()).unwrap();
+    let report = timeout(STOP_WAIT, running).await.unwrap().unwrap().unwrap();
+    assert_eq!(report.exit, RunExit::Shutdown);
+    assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    json!({"exit":"shutdown", "completedOperations":report.completed,
+        "failedOperations":report.failed, "ownedJobEmpty":true, "listenerReleased":true})
+}
+
+async fn ptq1_adapter_acceptance(data: &Path, evidence: &Path, report: &mut Value) {
+    let deadline = tokio::time::Instant::now() + CASE_BUDGET;
+    report["phase"] = json!("initial-owner-startup");
+    save_adapter_report(evidence, report);
+    let owner = start_adapter(data, evidence).await;
+    report["verifiedReadinessObserved"] = json!(true);
+    report["adapterEnabled"] = json!(true);
+    report["phase"] = json!("required-scale-1.3-stream");
+    save_adapter_report(evidence, report);
+    let port = owner.port();
+    let credential = key(&owner);
+    let (stop, stopped) = oneshot::channel();
+    let running = spawn_local(owner.run(async { stopped.await.map_err(io::Error::other) }));
+    let mut streams =
+        vec![adapter_stream(port, &credential, 1.3, "required-scale-1.3-stream", 4).await];
+    report["streams"] = json!(streams);
+    save_adapter_report(evidence, report);
+    // Optional requests share this one aggregate budget; no matrix or restart
+    // can continue in another job. Preserve a conservative teardown reserve.
+    if deadline.saturating_duration_since(tokio::time::Instant::now()) > OPTIONAL_RESERVE {
+        report["phase"] = json!("optional-scale-zero");
+        save_adapter_report(evidence, report);
+        streams.push(adapter_stream(port, &credential, 0.0, "optional-scale-zero", 2).await);
+        report["streams"] = json!(streams);
+        save_adapter_report(evidence, report);
+        if deadline.saturating_duration_since(tokio::time::Instant::now()) > OPTIONAL_RESERVE {
+            report["phase"] = json!("optional-invalid-scale-and-reuse");
+            save_adapter_report(evidence, report);
+            let mut body =
+                adapter_request(json!([{"role":"user","content":"Name a tree."}]), 1.3, 2);
+            body["abliteration_scale"] = json!(2.000_000_01);
+            let rejected = json_response(
+                &exchange(port, &credential, &body).await,
+                "HTTP/1.1 400 Bad Request",
+            );
+            assert!(rejected["error"].is_object());
+            report["invalidScaleRejected"] = json!(true);
+            save_adapter_report(evidence, report);
+            streams.push(
+                adapter_stream(port, &credential, 1.3, "same-owner-after-invalid-scale", 2).await,
+            );
+            report["streams"] = json!(streams);
+            report["sameOwnerAfterInvalidScalePassed"] = json!(true);
+            save_adapter_report(evidence, report);
+        }
+    }
+    report["phase"] = json!("owned-cleanup");
+    save_adapter_report(evidence, report);
+    report["initialCleanup"] = adapter_owned_stop(stop, running, port).await;
+    report["phase"] = json!("completed");
+    report["passed"] = json!(true);
+    save_adapter_report(evidence, report);
+}
+
+#[test]
+fn native_profile_selection_and_scale_receipts_preserve_bounded_scope() {
+    assert_eq!(profile_case("pq2-no-adapter", false, false), Some(CASE));
+    assert_eq!(profile_case("pq2-no-adapter", true, true), None);
+    assert_eq!(
+        profile_case("ptq1-adapter", false, false),
+        Some(PTQ1_ADAPTER_CASE)
+    );
+    for (profile, extended, stalled) in [
+        ("ptq1-adapter", true, false),
+        ("ptq1-adapter", false, true),
+        ("unknown", false, false),
+    ] {
+        assert_eq!(profile_case(profile, extended, stalled), None);
+    }
+    let summary = adapter_summary(
+        "synthetic",
+        -0.0,
+        4,
+        &StreamSummary {
+            finish_reason: "length".into(),
+            content_bytes: 5,
+            completion_tokens: Some(4),
+        },
+    );
+    assert_eq!(summary["requestedScaleF64Bits"], "8000000000000000");
+    let body = adapter_request(json!([{"role":"user","content":"Name a tree."}]), -0.0, 2);
+    assert_eq!(
+        body["abliteration_scale"].as_f64().unwrap().to_bits(),
+        (-0.0_f64).to_bits()
+    );
+    assert_eq!(body["max_completion_tokens"], 2);
+    assert_eq!(body["enable_thinking"], false);
+    assert!(std::panic::catch_unwind(|| adapter_request(json!([]), f64::NAN, 4)).is_err());
+    assert!(std::panic::catch_unwind(|| adapter_request(json!([]), 1.3, 4096)).is_err());
+    assert!(
+        std::panic::catch_unwind(|| adapter_summary(
+            "synthetic",
+            1.3,
+            4,
+            &StreamSummary {
+                finish_reason: "length".into(),
+                content_bytes: 5,
+                completion_tokens: Some(5),
+            }
+        ))
+        .is_err()
+    );
+}
+
+#[test]
+#[ignore = "Actual PTQ1 and approved adapter; explicit bounded main-only device CI, never ordinary suites."]
+fn pinned_native_ptq1_adapter_starts_and_streams_within_device_budget() {
+    ci_only();
+    assert_eq!(
+        profile_case(
+            &env::var("BONSAI_NATIVE_PROFILE").unwrap(),
+            env::var("BONSAI_NATIVE_EXTENDED").as_deref() == Ok("true"),
+            env::var("BONSAI_NATIVE_STALLED_CONSUMER").as_deref() == Ok("true")
+        ),
+        Some(PTQ1_ADAPTER_CASE)
+    );
+    let data = env::var_os("BONSAI_NATIVE_DATA").unwrap();
+    let evidence = env::var_os("BONSAI_NATIVE_EVIDENCE").unwrap();
+    let evidence = Path::new(&evidence);
+    let mut report = json!({"schemaVersion":1, "case":PTQ1_ADAPTER_CASE,
+        "revision":env::var("GITHUB_SHA").unwrap(), "runId":env::var("GITHUB_RUN_ID").unwrap(),
+        "runAttempt":env::var("GITHUB_RUN_ATTEMPT").unwrap(), "scope":"bounded-actual-model-ptq1-adapter-lifecycle",
+        "profile":"ptq1-adapter", "passed":false, "requiredNativeSandbox":true,
+        "aggregateModelCaseBudgetSeconds":CASE_BUDGET.as_secs(), "wholeJobMaximumSeconds":300,
+        "sameOwnerAfterInvalidScalePassed":false, "invalidScaleRejected":false,
+        "unrunIndependentGates":["signed-zero-and-scale-2", "context-rejection-and-reuse", "fresh-owner-restart",
+            "supplied-history", "extended-history", "stalled-consumer", "full-context-and-output"],
+        "runtimeLock":serde_json::from_str::<Value>(include_str!("../../../config/prism-inference.lock.json")).unwrap(),
+        "modelExportReceipt":serde_json::from_str::<Value>(include_str!("../../../config/swift.ptq1-export.json")).unwrap(),
+        "adapterLock":serde_json::from_str::<Value>(include_str!("../../../config/swift-lora.lock.json")).unwrap(),
+        "adapterRequested":true, "adapterEnabled":false, "verifiedReadinessObserved":false, "completeStateParityQualified":false, "authoringBasisQualified":false,
+        "fullContextQualified":false, "fullOutputQualified":false, "performanceQualified":false,
+        "qualityQualified":false, "dailyServiceIsolationQualified":false, "defaultRuntimeQualified":false});
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(LocalSet::new().run_until(async {
+        timeout(
+            CASE_BUDGET,
+            ptq1_adapter_acceptance(Path::new(&data), evidence, &mut report),
+        )
+        .await
+        .unwrap();
+    }));
+}
+
+#[test]
+fn native_case_budget_cancels_owned_tasks_before_followup() {
+    struct Owned(std::rc::Rc<std::cell::Cell<bool>>);
+    impl Drop for Owned {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+    let dropped = std::rc::Rc::new(std::cell::Cell::new(false));
+    let followed = std::rc::Rc::new(std::cell::Cell::new(false));
+    let owner = Owned(dropped.clone());
+    let observed = followed.clone();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .start_paused(true)
+        .build()
+        .unwrap();
+    runtime.block_on(LocalSet::new().run_until(async {
+        let result = timeout(CASE_BUDGET, async {
+            spawn_local(async move {
+                let _owner = owner;
+                pending::<()>().await;
+            });
+            tokio::task::yield_now().await;
+            pending::<()>().await;
+            observed.set(true);
+        })
+        .await;
+        assert!(result.is_err());
+    }));
+    assert!(dropped.get());
+    assert!(!followed.get());
 }

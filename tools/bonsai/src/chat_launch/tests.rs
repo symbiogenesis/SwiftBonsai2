@@ -510,6 +510,32 @@ fn explicit_rust_runtime_survives_early_window_and_backend_preparation() -> crat
 }
 
 #[test]
+fn native_alternate_profiles_keep_verified_launch_options() -> crate::Result<()> {
+    for (repacked, adapter) in [(true, false), (false, true), (true, true)] {
+        let mut fixture = fixture("native-alternate")?;
+        fixture.request["NativeEngine"] = json!(true);
+        fixture.request["NoAbliterateLora"] = json!(!adapter);
+        fixture.request["UseRepackedPtq1"] = json!(repacked);
+        fixture.request["NoSpeechModels"] = json!(true);
+        let mut recorder = Recorder::new(fixture.root);
+        let result = prepare_backend(plan(fixture.request)?, &mut recorder, &fixture.working)?;
+        let args = result["Arguments"]
+            .as_array()
+            .ok_or("Missing launch arguments.")?;
+        assert!(args.iter().any(|value| value == "--native-engine"));
+        assert_eq!(
+            args.iter().any(|value| value == "--use-repacked-ptq1"),
+            repacked
+        );
+        assert_eq!(
+            args.iter().any(|value| value == "--no-abliterate-lora"),
+            !adapter
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn invalid_options_reject_before_provisioning() -> crate::Result<()> {
     let fixture = fixture("invalid")?;
     for patch in [
@@ -523,8 +549,6 @@ fn invalid_options_reject_before_provisioning() -> crate::Result<()> {
         json!({"NoTts": true, "TtsKeyFile": fixture.root.join("external.key")}),
         json!({"NoSpeechModels": true, "AsrPath": fixture.root.join("asr.exe")}),
         json!({"TtsThreads": 257}),
-        json!({"NativeEngine": true}),
-        json!({"NativeEngine": true, "NoAbliterateLora": true, "UseRepackedPtq1": true}),
         json!({"ChatPath": fixture.root.join("external.key")}),
         json!({"DataDirectory": "relative-data"}),
         json!({"DataDirectory": fixture.root.join("missing-data")}),
