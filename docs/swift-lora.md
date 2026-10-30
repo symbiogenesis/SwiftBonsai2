@@ -3,10 +3,10 @@
 The pinned OrcaRouter adapter passes bounded native ARM64 loading/decode;
 **effectiveness, correctness and quality on Swift remain unqualified**. The native app
 enables it experimentally at scale **1.3**; `Start-Chat.ps1 -NoAbliterateLora` opts out.
-Settings selects 0 to 2 in 0.1 steps for the next response and every Extra effort pass
-without reloading; zero disables correction while retaining the adapter. The
-owner-selected default is not a measured optimum or standard/daily-service acceptance.
-The broker exposes an explicit development option; no local training is needed.
+Settings accepts 0 to 2 in 0.1 steps for the next response and every Extra effort pass,
+without reloading; zero disables correction but retains the adapter. The owner chose
+the default without establishing an optimum or standard/daily-service acceptance.
+The broker also exposes an explicit development option. No local training is needed.
 [PLAN.md](../PLAN.md#creative-quality-adapters-and-memory) owns remaining work.
 
 ## Artifact and published evidence
@@ -75,10 +75,9 @@ AtomicChat reports an explicit order correction. Different source-matrix orders 
 explain that disagreement. Orca accepts an external checkpoint directory, and the
 shipped metadata declares neither its revision nor input order.
 
-Native residual-writer evidence determines whether the intended correction is
-mathematically valid on Swift. Loading and changed text cannot settle this question. A
-correctly ordered original-Bonsai correction also need not be the right correction for
-Swift's changed weights. The approved file is unmodified.
+Native residual-writer evidence must establish the correction's basis on Swift;
+loading or changed text cannot. Even correct input order does not establish that an
+original-Bonsai correction suits Swift's modified weights. The approved file is unmodified.
 
 ## Memory and execution cost
 
@@ -108,9 +107,10 @@ overlap.
 
 ## Allocation semantics
 
-Common initialization reserves the base graph before activating adapters, causing
-another reserve. Old compute buffers are freed before replacement; this does not prove
-that two buffers coexist or explain the commit delta. Prism Inference owns the immutable B-storage overlay, native regression and
+Common initialization reserves the base graph, then reserves again when activating
+adapters. It frees old compute buffers before replacement, so the commit delta does
+not demonstrate coexistence. Prism Inference owns the immutable B-storage overlay,
+native regression and
 [builder](https://github.com/symbiogenesis/prism-inference/blob/main/scripts/Build-PrismEngine.ps1).
 Its [overlay guide](https://github.com/symbiogenesis/prism-inference/blob/main/docs/prism-storage-overlay.md)
 records byte-identical operations and a 2.5 MiB storage saving. Runner consumes
@@ -134,8 +134,8 @@ changes the correction or weights; these are outside lossless allocation work.
 
 ## Required standard-profile qualification
 
-The [fixed LoRA contract and paired CI procedure](lora-qualification.md) own the
-per-prompt throughput, independent human-quality, memory and native-correctness gates.
-Each must pass; reduced refusals or memory use cannot offset a primary regression. The
-scale-one/512-token harness does not qualify the app's scale 1.3. Broader
-creative/comfort and daily-service acceptance remain separate.
+The [fixed LoRA contract and paired CI procedure](lora-qualification.md) define
+per-prompt throughput, independent human quality, memory and native correctness.
+All must pass; reduced refusals or memory cannot offset a primary regression. Its
+scale-one/512-token harness does not qualify app scale 1.3, broader creative/comfort
+behavior or daily service.

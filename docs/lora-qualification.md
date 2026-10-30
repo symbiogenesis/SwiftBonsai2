@@ -8,27 +8,26 @@ independent human review remain pending.
 ## Fixed acceptance contract
 
 [swift-lora.qualification.json](../config/swift-lora.qualification.json) pins four
-general/creative prompts, three repetitions, alternating arm order, fresh processes,
+general/creative prompts, three repetitions, alternating baseline/adapter order, fresh processes,
 seed 42, greedy sampling, a 512-token cap, 8K FP16 context, 128/64 batch/microbatch,
 four CPU threads and exact artifact identities.
 
-Every prompt independently requires:
+Every prompt must independently pass all three requirements:
 
-- Median decode-throughput ratio of at least **1.0** against no LoRA.
-- Every applicable quality dimension at least **3/4** and no lower median than
-  baseline; an independently reviewed unwanted adapter refusal rejects quality.
-- Median peak Job-commit premium at most **768 MiB**, within the unchanged
-  **11.5 GiB** Job cap and **4 GiB** available-physical-memory floor.
+| Measure | Requirement |
+| --- | --- |
+| Decode throughput | Median ratio **≥ 1.0** against no LoRA. |
+| Human-reviewed quality | Every applicable dimension **≥ 3/4**, with median no lower than baseline; any unwanted adapter refusal rejects quality. |
+| Memory | Median peak Job-commit premium **≤ 768 MiB**, within the unchanged **11.5 GiB** Job cap and **4 GiB** available-physical-memory floor. |
 
 Reduced refusals, shorter answers and memory savings cannot offset either primary
 failure. Job commit excludes mapped weights; the one-second physical watchdog is not a
 continuous peak-RAM measurement. The memory premium is a policy allowance, not measured
 adapter allocation.
 
-The contract validator binds the Job cap to the compiled Swift process policy; both the
-standard scorer and PTQ1 prefix screen use that validated cap. The corrected contract
-hash rejects captures made against the former 12 GiB scoring allowance. Recapture under
-the current contract rather than rewriting historical evidence or review hashes.
+The standard scorer and PTQ1 prefix screen both validate the Job cap against compiled
+Swift process policy. The corrected contract hash rejects captures under the former
+12 GiB scoring allowance; recapture rather than rewrite historical evidence/review hashes.
 
 ## Capture on the target device
 
