@@ -1,4 +1,4 @@
-# Worker sandbox architecture
+# Windows integration and worker sandboxing
 
 Runner's native UI requires Windows process containment for its owned inference,
 ASR and TTS workers. `bonsai-windows-process` composes the pinned **MXC 1.0.1**
@@ -6,7 +6,9 @@ Process Security Environment (PSEC) with suspended process creation,
 verified Job ownership before resume, exact worker PID, resource limits and
 restricted handle inheritance. Missing capabilities or rejected policies fail launch without an
 uncontained retry. Actual-model and stronger broker-only isolation acceptance
-remain unqualified; this document records the implemented scope and its limits.
+remain unqualified. This document also owns the Runner-native handle, storage,
+thread and audio contracts; separately published Prism/speech engines need their
+own reviews. The [UI architecture](ui-architecture.md) remains binding.
 
 ## Windows consent and capabilities
 
@@ -148,3 +150,92 @@ selection and unsupported media. Model output remains inert text. Future plugins
 or generated-code execution need separate per-task capabilities and, where the
 threat model requires it, a separately qualified VM boundary. They must not
 inherit the UI's or inference worker's authority.
+
+## Resource ownership and process lifetime
+
+Use Rust [owned/borrowed handle types](https://doc.rust-lang.org/std/os/windows/io/),
+`File`, socket and process owners; transfer fresh Win32 handles into owners
+immediately and borrow raw handles only for a call. Pseudo handles stay borrowed.
+Match allocator-specific destructors: credentials use `LocalFree`, WinRT uses its
+bindings, and audio retains waveOut headers/buffers until driver release.
+
+`src/windows-process` creates hidden suspended processes with explicit executable,
+working directory and quoted arguments. Creation attributes assign an unnamed
+Job and inherit only the three standard streams. Jobs kill descendants on owner
+loss, reject breakaway and enforce process/commit bounds; they do not restrict
+security identity. Parent monitoring retains query/synchronize handles and checks
+creation time against PID reuse. Native PSEC composition and its distinct
+effective mitigations are specified above.
+
+Build tools preserve the Unicode Windows/profile environment with reviewed child
+overlays. Never clear it, relocate system/profile folders or run native diagnostics
+from a repository working directory; use [external validation lanes](validation.md).
+
+## Files, locks and publication
+
+| Purpose | Mechanism |
+| --- | --- |
+| One startup/build/download writer | Persistent sentinel, exclusive sharing and `File::try_lock`; handle release covers exit/crash. |
+| One recovery writer | Persistent sentinel plus `File::try_lock`, read/write sharing without delete sharing, preventing replacement while locked. |
+| Pinned artifacts/credentials | Retained read handles deny write/delete sharing; artifact ancestors remain held. |
+| New evidence/private keys | Exclusive creation; protected owner/LocalSystem DACL precedes secret writes. |
+| Artifact publication | Bounded staging, exact identity/hash verification and writer-guarded publication. |
+| Recovery publication | Bounded user-scoped DPAPI, flushed temporary file and same-directory replacement under the recovery guard. |
+
+Rust's [`File::try_lock`](https://doc.rust-lang.org/std/fs/struct.File.html#method.try_lock)
+uses Windows byte-range locking (`LockFileEx`). Keep sentinels after releasing
+their handles: unlink/recreate can give processes different locked file objects.
+No record-oriented shared database needs independently locked ranges.
+[Byte-range locks](https://learn.microsoft.com/en-us/windows/win32/fileio/locking-and-unlocking-byte-ranges-in-files)
+do not constrain mapped I/O or replace deny-write/delete sharing for models.
+Flush and atomic namespace replacement have distinct purposes; neither promises
+survival of every device/power failure.
+
+Validate expanded absolute paths, device names (including superscript COM/LPT
+digits), alternate streams, control characters and reparse points. Audited storage
+boundaries use `FILE_FLAG_OPEN_REPARSE_POINT` and metadata from opened handles,
+not only earlier pathname checks. [Credential storage](../src/windows-credentials/README.md)
+requires owner-controlled ancestors; leaf checks cannot freeze all ancestry or
+protect against hostile same-user processes.
+
+## Threads, responsiveness and power
+
+Named `std::thread::Builder` workers are OS threads. Network, disk/DPAPI, speech
+orchestration and playback stay off the event loop, with bounded queues,
+cancellation generations and joined shutdown. The broker uses async I/O,
+bounded admission and absolute deadlines; a separate speech watchdog can kill
+an owned companion when native inference cannot cancel cooperatively. Microphone
+operations stay on their WinRT apartment thread with balanced initialization
+and bounded asynchronous operations.
+
+Retain normal Windows scheduling. Do not give inference realtime priority,
+guess affinity from SKU or raise system timer resolution for polling.
+[MMCSS](https://learn.microsoft.com/en-us/windows/win32/procthread/multimedia-class-scheduler-service)
+requires a demonstrated audio deadline problem on that audio thread and balanced
+registration; it does not justify boosting inference.
+[EcoQoS](https://learn.microsoft.com/en-us/windows/win32/procthread/quality-of-service)
+can suit explicit background work, but response generation/playback needs device
+latency/power evidence. Current configurable thread budgets reserve CPU capacity;
+they establish neither optimal topology nor performance.
+
+WinMM waveOut playback retains stable headers/buffers, bounded buffering,
+stop/reset and unprepare-before-free ordering. Microsoft
+[recommends newer audio APIs](https://learn.microsoft.com/en-us/windows/win32/multimedia/waveform-functions);
+WASAPI/AudioGraph migration still needs device-change, suspend/resume,
+cancellation and latency qualification.
+
+## Permissions and capability isolation
+
+Credentials use system CSPRNG bytes, protected ACLs, noninheritable retained
+handles and scrubbed buffers; recovery uses user-scoped DPAPI. The UI requests
+`AppCapability` microphone access only after user action and stops capture on
+observed revocation. Deadlines/revocation are cooperative, not an OS-enforced
+recording quota while UI/processes are suspended. Model-capability reports are
+not Windows permission grants; microphone permission does not sandbox inference.
+
+Owned UI inference/speech requires PSEC; explicitly unisolated development retains
+caller authority. The daily profile remains disabled pending the
+[broker boundary](broker-policy.md) and acceptance in [PLAN.md](../PLAN.md).
+Focused synthetic regressions establish repaired path/handle/lock behavior;
+Foundation owns full suites. Real models, audio hardware, restricted-identity
+acceptance, performance and comfort require independent evidence.
